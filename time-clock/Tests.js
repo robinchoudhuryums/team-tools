@@ -334,6 +334,13 @@ function _runAllTests() {
   _smokeTest('isLastBusinessDayOfMonth',           test_isLastBusinessDayOfMonth);
   _smokeTest('biweeklyPeriodMath',                 test_biweeklyPeriodMath);
 
+  _smokeTest('timeDiffSeconds_positive',           test_timeDiffSeconds_positive);
+  _smokeTest('timeDiffSeconds_negative',           test_timeDiffSeconds_negative);
+  _smokeTest('timeDiffSeconds_HHmmFormat',         test_timeDiffSeconds_HHmmFormat);
+  _smokeTest('timeDiffSeconds_invalidInput',       test_timeDiffSeconds_invalidInput);
+  _smokeTest('normalizeTime_passthroughString',    test_normalizeTime_passthroughString);
+  _smokeTest('normalizeTime_DateObject',           test_normalizeTime_DateObject);
+
   _smokeTest('holidays_2026_dates',                test_holidays_2026_dates);
   _smokeTest('holidays_independenceDay_weekendShift', test_holidays_independenceDay_weekendShift);
 
@@ -379,6 +386,30 @@ function _runAllTests() {
   _integrationTest('emptyTimezone_fallsBackToConfig',   test_emptyTimezone_fallsBackToConfig);
   _integrationTest('emptyLeaveBalance_treatedAsZero',   test_emptyLeaveBalance_treatedAsZero);
   _integrationTest('installAutomationTriggers_nonManagerThrows', test_installAutomationTriggers_nonManagerThrows);
+
+  // ── New endpoints (post-sync coverage backfill) ─────────────────────────
+  _integrationTest('recordPunch_minIntervalRejectsRapidLive',  test_recordPunch_minIntervalRejectsRapidLive);
+  _integrationTest('recordPunch_minIntervalAllowsAdjustment',  test_recordPunch_minIntervalAllowsAdjustment);
+
+  _integrationTest('selfDeletePunch_withinWindow',             test_selfDeletePunch_withinWindow);
+  _integrationTest('selfDeletePunch_beyondWindow',             test_selfDeletePunch_beyondWindow);
+  _integrationTest('selfDeletePunch_rejectsAdjustment',        test_selfDeletePunch_rejectsAdjustment);
+  _integrationTest('selfDeletePunch_rejectsOtherDay',          test_selfDeletePunch_rejectsOtherDay);
+  _integrationTest('selfDeletePunch_unknownType',              test_selfDeletePunch_unknownType);
+
+  _integrationTest('managerSubmitTimeOff_pendingFlow',         test_managerSubmitTimeOff_pendingFlow);
+  _integrationTest('managerSubmitTimeOff_autoApproveDeducts',  test_managerSubmitTimeOff_autoApproveDeducts);
+  _integrationTest('managerSubmitTimeOff_autoApproveHalfDay',  test_managerSubmitTimeOff_autoApproveHalfDay);
+  _integrationTest('managerSubmitTimeOff_nonManagerRejected',  test_managerSubmitTimeOff_nonManagerRejected);
+  _integrationTest('managerSubmitTimeOff_badDateRejected',     test_managerSubmitTimeOff_badDateRejected);
+  _integrationTest('managerSubmitTimeOff_employeeNotFound',    test_managerSubmitTimeOff_employeeNotFound);
+  _integrationTest('managerSubmitTimeOff_writesAudit',         test_managerSubmitTimeOff_writesAudit);
+
+  _integrationTest('getTeammateStatus_shapeRestricted',        test_getTeammateStatus_shapeRestricted);
+  _integrationTest('getTeammateStatus_disabledFlag',           test_getTeammateStatus_disabledFlag);
+
+  _integrationTest('ptoEnabled_falseHidesFromState',           test_ptoEnabled_falseHidesFromState);
+  _integrationTest('ptoEnabled_blankDefaultsTrue',             test_ptoEnabled_blankDefaultsTrue);
 }
 
 
@@ -1069,4 +1100,355 @@ function test_installAutomationTriggers_nonManagerThrows() {
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertThrows(() => installAutomationTriggers(), 'managers');
   });
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  NEW-ENDPOINT TESTS (post-sync coverage backfill)
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Pure-logic helpers: timeDiffSeconds_ + normalizeTime_ (smoke) ──
+
+function test_timeDiffSeconds_positive() {
+  _assertEq(timeDiffSeconds_('09:00:00', '09:00:30'), 30);
+  _assertEq(timeDiffSeconds_('09:00:00', '09:01:00'), 60);
+  _assertEq(timeDiffSeconds_('09:00:00', '10:00:00'), 3600);
+}
+
+function test_timeDiffSeconds_negative() {
+  // Earlier > later signals "skip the window check" (treated as different day).
+  _assertTrue(timeDiffSeconds_('09:00:30', '09:00:00') < 0,
+    'later before earlier yields negative');
+}
+
+function test_timeDiffSeconds_HHmmFormat() {
+  // Accepts strings without seconds.
+  _assertEq(timeDiffSeconds_('09:00', '09:01'), 60);
+  _assertEq(timeDiffSeconds_('09:00:00', '09:01'), 60);
+}
+
+function test_timeDiffSeconds_invalidInput() {
+  // Returns -1 (caller treats as "skip the window check") for non-time inputs.
+  _assertEq(timeDiffSeconds_('abc', '09:00:00'), -1);
+  _assertEq(timeDiffSeconds_('', ''), -1);
+}
+
+function test_normalizeTime_passthroughString() {
+  _assertEq(normalizeTime_('09:00:00'), '09:00:00');
+  _assertEq(normalizeTime_('14:30:00'), '14:30:00');
+  _assertEq(normalizeTime_('  09:00:00  '), '09:00:00', 'Whitespace trimmed');
+  _assertEq(normalizeTime_(''), '', 'Empty string passes through');
+}
+
+function test_normalizeTime_DateObject() {
+  // Construct a Date and verify it formats to HH:mm:ss. Exact value depends on
+  // the spreadsheet's timezone, so we assert format and idempotence only.
+  const d = new Date(2026, 4, 17, 9, 30, 0);
+  const result = normalizeTime_(d);
+  _assertTrue(/^\d{2}:\d{2}:\d{2}$/.test(result),
+    `Should match HH:mm:ss, got "${result}"`);
+  _assertEq(normalizeTime_(d), result, 'Idempotent across calls');
+}
+
+
+// ── Helpers shared by new integration tests ──
+
+function _empTzToday(empTz) {
+  return Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+}
+function _empTzNow(empTz) {
+  return Utilities.formatDate(new Date(), empTz, 'HH:mm:ss');
+}
+
+function _findLatestAuditNote(empId, action) {
+  // Walks audit log bottom-up; returns the notes column for the most-recent
+  // matching (empId, action) row, or null if none. Audit columns are:
+  // 0=timestamp, 1=empId, 2=empName, 3=empEmail, 4=action,
+  // 5=punchDate, 6=punchTime, 7=isAdj, 8=daysBack, 9=notes, 10=callerEmail
+  const rows = getOrCreateAuditSheet_().getDataRange().getValues();
+  for (let i = rows.length - 1; i >= 1; i--) {
+    if (String(rows[i][1]).trim() === empId
+        && String(rows[i][4]).trim() === action) {
+      return String(rows[i][9] || '');
+    }
+  }
+  return null;
+}
+
+function _setEmpPtoEnabled(empId, value) {
+  // Sets column K (EMP.PTO_ENABLED) and returns the original value so callers
+  // can restore in finally. Invalidates the roster cache on each write.
+  const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][EMP.ID]).trim() === empId) {
+      const cell = sheet.getRange(i + 1, EMP.PTO_ENABLED + 1);
+      const original = cell.getValue();
+      cell.setValue(value);
+      invalidateRosterCache_();
+      return original;
+    }
+  }
+  throw new Error('Employee not found in Employees sheet: ' + empId);
+}
+
+
+// ── recordPunch min-interval debounce (INV-22) ──
+
+function test_recordPunch_minIntervalRejectsRapidLive() {
+  // Two back-to-back live punches: the second should be rejected. Uses _TEST_PH
+  // because prior tests don't punch them live, so we know the only "previous
+  // punch today" is the one this test just wrote.
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r1 = recordPunch('ClockIn', null);
+    _assertSuccess(r1, 'First live punch should succeed');
+    _assertFailure(recordPunch('LunchOut', null), 'just',
+      'Second live punch within 30s should be rejected with a "just Xs ago" message');
+  });
+}
+
+function test_recordPunch_minIntervalAllowsAdjustment() {
+  // Adjustments bypass the debounce check (isAdj branch is excluded). Even with
+  // a fresh live punch in the recent history, an adjustment for a past date
+  // should succeed.
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r = recordPunch('ClockOut', {
+      date: _TEST_DATE_RECENT, time: '17:00', reason: '',
+    });
+    _assertSuccess(r, 'Adjustment should bypass min-interval');
+    _assertEq(r.isAdjustment, true);
+  });
+}
+
+
+// ── selfDeletePunch (INV-23) ──
+
+function test_selfDeletePunch_withinWindow() {
+  // Pre-position a punch at "now" for the manager test user (clean state — no
+  // prior recordPunch tests target _TEST_MGR). Then self-undo it.
+  const empTz = 'America/Chicago';
+  const today = _empTzToday(empTz);
+  const time  = _empTzNow(empTz);
+  _appendTestPunch(_TEST_MGR_ID, 'Test US Manager', today, time, 'IN', 'ClockIn');
+  _assertEq(_countTimesheetRows(_TEST_MGR_ID, today, 'ClockIn'), 1, 'Punch was inserted');
+
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(selfDeletePunch(today, time, 'ClockIn'));
+  });
+
+  _assertEq(_countTimesheetRows(_TEST_MGR_ID, today, 'ClockIn'), 0, 'Row removed');
+  _assertNotNull(_findLatestAuditNote(_TEST_MGR_ID, 'PunchSelfUndo'),
+    'PunchSelfUndo audit row should exist');
+}
+
+function test_selfDeletePunch_beyondWindow() {
+  // The time-window check fires before any row scan — no need to pre-position.
+  const empTz = 'America/Chicago';
+  const today = _empTzToday(empTz);
+  const past = new Date(Date.now() - 6 * 60 * 1000);  // 6 min ago, beyond 5-min window
+  const oldTime = Utilities.formatDate(past, empTz, 'HH:mm:ss');
+
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertFailure(selfDeletePunch(today, oldTime, 'ClockIn'), 'within',
+      'Should reject with "Self-undo only works within X minutes" message');
+  });
+}
+
+function test_selfDeletePunch_rejectsAdjustment() {
+  // Insert an adjustment punch (ADJ-ClockIn in COMMENTS). Self-undo must reject
+  // even though date+time+type match — leaving adjustments to go through Adjust
+  // preserves the audit trail.
+  const empTz = 'America/Chicago';
+  const today = _empTzToday(empTz);
+  const time  = _empTzNow(empTz);
+  _appendTestPunch(_TEST_MGR_ID, 'Test US Manager', today, time, 'IN', 'ADJ-ClockIn');
+
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertFailure(selfDeletePunch(today, time, 'ClockIn'), 'adjustment');
+  });
+
+  // Row should still exist
+  _assertEq(_countTimesheetRows(_TEST_MGR_ID, today, 'ClockIn'), 1,
+    'Adjustment row not removed by self-undo attempt');
+}
+
+function test_selfDeletePunch_rejectsOtherDay() {
+  // Date check fires before any row scan — no need to pre-position a row.
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertFailure(
+      selfDeletePunch(_TEST_DATE_RECENT, '09:00:00', 'ClockIn'),
+      'today'
+    );
+  });
+}
+
+function test_selfDeletePunch_unknownType() {
+  // Punch-type validation fires before date/time/scan logic.
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertFailure(selfDeletePunch('2026-05-19', '09:00:00', 'Nope'),
+      'Invalid punch type');
+  });
+}
+
+
+// ── managerSubmitTimeOff (INV-25) ──
+
+function test_managerSubmitTimeOff_pendingFlow() {
+  // Submit without auto-approve. Verify return + balance untouched.
+  const before = _getBalance(_TEST_INDIA_ID, 'annual');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSubmitTimeOff(
+      _TEST_INDIA_ID, _TEST_DATE_FUTURE, 'Full Day', 'mgr-filed', false
+    );
+    _assertSuccess(r);
+    _assertEq(r.status, 'Pending');
+    _assertNull(r.newBalance, 'No balance change when not auto-approving');
+  });
+  _assertEqClose(_getBalance(_TEST_INDIA_ID, 'annual'), before,
+    'Balance unchanged on pending');
+}
+
+function test_managerSubmitTimeOff_autoApproveDeducts() {
+  const before = _getBalance(_TEST_PH_ID, 'annual');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSubmitTimeOff(
+      _TEST_PH_ID, _TEST_DATE_FUTURE, 'Full Day', '', true
+    );
+    _assertSuccess(r);
+    _assertEq(r.status, 'Approved');
+    _assertEqClose(r.newBalance, before - 1);
+  });
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 1,
+    'Annual deducted by 1 on auto-approve');
+}
+
+function test_managerSubmitTimeOff_autoApproveHalfDay() {
+  const before = _getBalance(_TEST_PH_ID, 'annual');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSubmitTimeOff(
+      _TEST_PH_ID, _TEST_DATE_FUTURE, 'Half Day - Morning', '', true
+    );
+    _assertSuccess(r);
+    _assertEqClose(r.newBalance, before - 0.5);
+  });
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 0.5);
+}
+
+function test_managerSubmitTimeOff_nonManagerRejected() {
+  // Even though _TEST_INDIA is the target, calling as them must be rejected.
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(
+      managerSubmitTimeOff(_TEST_PH_ID, _TEST_DATE_FUTURE, 'Full Day', '', false),
+      'Manager access required'
+    );
+  });
+}
+
+function test_managerSubmitTimeOff_badDateRejected() {
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertFailure(
+      managerSubmitTimeOff(_TEST_PH_ID, '05/17/2026', 'Full Day', '', false),
+      'Invalid date format'
+    );
+  });
+}
+
+function test_managerSubmitTimeOff_employeeNotFound() {
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertFailure(
+      managerSubmitTimeOff('TEST_NOPE_999', _TEST_DATE_FUTURE, 'Full Day', '', false),
+      'Employee not found'
+    );
+  });
+}
+
+function test_managerSubmitTimeOff_writesAudit() {
+  // Auto-approve marks "filed by manager, auto-approved" in the notes column.
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(managerSubmitTimeOff(
+      _TEST_INDIA_ID, _TEST_DATE_FUTURE, 'Personal Day', 'family event', true
+    ));
+  });
+  const notes = _findLatestAuditNote(_TEST_INDIA_ID, 'TimeOffRequest');
+  _assertNotNull(notes, 'TimeOffRequest audit row should exist for target');
+  _assertContains(notes, 'filed by manager');
+  _assertContains(notes, 'auto-approved');
+}
+
+
+// ── getTeammateStatus (INV-24) ──
+
+function test_getTeammateStatus_shapeRestricted() {
+  // Critical privacy check: response must NOT carry email, ID, last-punch time,
+  // or timezone for non-managers. Only { name, status, isSelf } per row.
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    const r = getTeammateStatus();
+    if (r.error) throw new Error('Unexpected error: ' + r.error);
+    _assertEq(r.enabled, true);
+    _assertTrue(Array.isArray(r.teammates), 'teammates is an array');
+    _assertTrue(r.teammates.length > 0, 'teammates non-empty');
+
+    const ALLOWED_KEYS = ['name', 'status', 'isSelf'];
+    const ALLOWED_STATUS = ['clocked_in', 'on_lunch', 'not_in', 'clocked_out'];
+    r.teammates.forEach(t => {
+      Object.keys(t).forEach(k => {
+        _assertTrue(ALLOWED_KEYS.indexOf(k) >= 0,
+          `Unexpected key "${k}" in teammate row — leak risk`);
+      });
+      _assertTrue(ALLOWED_STATUS.indexOf(t.status) >= 0,
+        `Invalid status "${t.status}"`);
+      _assertEq(typeof t.name, 'string');
+      _assertEq(typeof t.isSelf, 'boolean');
+    });
+
+    const selfCount = r.teammates.filter(t => t.isSelf).length;
+    _assertEq(selfCount, 1, 'Exactly one teammate has isSelf=true');
+  });
+}
+
+function test_getTeammateStatus_disabledFlag() {
+  const orig = CONFIG.SHOW_TEAMMATE_STATUS;
+  CONFIG.SHOW_TEAMMATE_STATUS = false;
+  try {
+    _asUser(_TEST_INDIA_EMAIL, () => {
+      const r = getTeammateStatus();
+      _assertEq(r.enabled, false);
+      _assertEq(r.teammates.length, 0);
+    });
+  } finally {
+    CONFIG.SHOW_TEAMMATE_STATUS = orig;
+  }
+}
+
+
+// ── Per-employee PTO toggle (INV-27) ──
+
+function test_ptoEnabled_falseHidesFromState() {
+  const original = _setEmpPtoEnabled(_TEST_PH_ID, 'FALSE');
+  try {
+    _asUser(_TEST_PH_EMAIL, () => {
+      const info = getEmployeeInfo_();
+      _assertEq(info.ptoEnabled, false,
+        'PTO disabled column-K value should propagate to employee info');
+      const state = getEmployeeState();
+      _assertEq(state.ptoEnabled, false,
+        'getEmployeeState should reflect per-row PTO disable');
+    });
+  } finally {
+    _setEmpPtoEnabled(_TEST_PH_ID, original);
+  }
+}
+
+function test_ptoEnabled_blankDefaultsTrue() {
+  // setupTestEnvironment writes only 10 columns, so column K starts blank
+  // for test employees. Verify back-compat: blank → enabled.
+  const original = _setEmpPtoEnabled(_TEST_PH_ID, '');
+  try {
+    _asUser(_TEST_PH_EMAIL, () => {
+      const info = getEmployeeInfo_();
+      _assertEq(info.ptoEnabled, true, 'Blank PtoEnabled defaults to true');
+    });
+  } finally {
+    _setEmpPtoEnabled(_TEST_PH_ID, original);
+  }
 }
