@@ -1,0 +1,262 @@
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  SHARED CONSTANTS
+// ════════════════════════════════════════════════════════════════════════════
+const PUNCH_META = {
+  ClockIn:  { label:'Clock In',     emoji:'🟢', dir:'in',  cls:'btn-clockin'  },
+  LunchOut: { label:'Lunch Out',    emoji:'🍽️', dir:'out', cls:'btn-lunchout' },
+  LunchIn:  { label:'Lunch Return', emoji:'↩️',  dir:'in',  cls:'btn-lunchin'  },
+  ClockOut: { label:'Clock Out',    emoji:'🔴', dir:'out', cls:'btn-clockout' },
+  Adjust:   { label:'Adjust / Fix Punch', emoji:'✏️', dir:null, cls:'btn-adjust' },
+};
+const STATUS_PILL = {
+  idle:   { label:'Not Clocked In', cls:'s-idle'   },
+  active: { label:'Clocked In',     cls:'s-active' },
+  lunch:  { label:'On Lunch',       cls:'s-lunch'  },
+  done:   { label:'Shift Complete', cls:'s-done'   },
+};
+const MGR_STATUS = {
+  clocked_in:  { label:'In',     pillCls:'ms-active', avCls:'av-active' },
+  on_lunch:    { label:'Lunch',  pillCls:'ms-lunch',  avCls:'av-lunch'  },
+  clocked_out: { label:'Done',   pillCls:'ms-done',   avCls:'av-done'   },
+  not_in:      { label:'Not In', pillCls:'ms-idle',   avCls:'av-idle'   },
+};
+const MONTH_NAMES = ['January','February','March','April','May','June',
+  'July','August','September','October','November','December'];
+const DOW_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SHARED STATE
+// ════════════════════════════════════════════════════════════════════════════
+let empState = null;
+let currentView = 'clock';
+let tsData = null, tsViewMode = 'month', tsStart = null, tsEnd = null;
+let calData = null, calYear = null, calMonth = null;
+let mgrData = null;
+let dayModalDate = null;
+let clockInterval = null;
+let adjustWindowDays = 30;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  google.script.run
+    .withSuccessHandler(state => {
+      if (state.error) { renderError(state.error); return; }
+      empState = state;
+      adjustWindowDays = state.adjustWindowDays || 30;
+      document.getElementById('adj-days-disp').textContent = adjustWindowDays;
+      tsViewMode = (empState.payCycle === 'Biweekly' && empState.payAnchor) ? 'period' : 'month';
+      renderShell(state);
+      showView('clock');
+    })
+    .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
+    .getEmployeeState();
+});
+
+function renderError(msg) {
+  document.getElementById('app').innerHTML = `
+    <div class="state-center"><div class="state-icon">⚠️</div>
+      <div class="state-title">Couldn't Load</div>
+      <div class="state-detail">${esc(msg)}</div></div>`;
+}
+
+function renderShell(state) {
+  const mgrLink = state.isManager
+    ? `<button class="sb-link" data-view="manage" onclick="showView('manage')">
+         <span class="sb-icon">👥</span>Manage</button>` : '';
+  const mgrNavBtn = state.isManager
+    ? `<button class="nav-btn" data-view="manage" onclick="showView('manage')">
+         <span class="nav-icon">👥</span>Manage</button>` : '';
+  const tzTag = state.timezoneAbbr
+    ? `<span class="sb-user-tz">${esc(state.timezoneAbbr)}</span>` : '';
+  const tzTagMobile = state.timezoneAbbr
+    ? `<span class="hdr-tz">${esc(state.timezoneAbbr)}</span>` : '';
+  const initials = (state.name || '').split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase();
+
+  document.getElementById('app').innerHTML = `
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sb-brand">
+          <div class="sb-brand-title">
+            <div class="sb-brand-mark">U</div>
+            <span>UMS Time Clock</span>
+          </div>
+        </div>
+        <div class="sb-section-label">Navigate</div>
+        <button class="sb-link" data-view="clock" onclick="showView('clock')">
+          <span class="sb-icon">⏱</span>Clock
+        </button>
+        <button class="sb-link" data-view="timesheet" onclick="showView('timesheet')">
+          <span class="sb-icon">📋</span>Timesheet
+        </button>
+        <button class="sb-link" data-view="timeoff" onclick="showView('timeoff')">
+          <span class="sb-icon">🗓</span>Time Off
+        </button>
+        ${mgrLink}
+        <div class="sb-user">
+          <div class="sb-user-avatar">${esc(initials)}</div>
+          <div class="sb-user-info">
+            <div class="sb-user-name">${esc(state.name)}</div>
+            <div class="sb-user-meta">${esc(state.id)} ${tzTag}</div>
+          </div>
+        </div>
+      </aside>
+
+      <div style="display:flex;flex-direction:column;min-height:100vh">
+        <header class="mobile-header">
+          <div>
+            <div class="hdr-title">UMS Time Clock</div>
+            <div class="hdr-sub">${esc(state.name)} ${tzTagMobile}</div>
+          </div>
+          <div class="hdr-id">${esc(state.id)}</div>
+        </header>
+
+        <div class="view-area" id="view-area"></div>
+
+        <nav class="mobile-nav">
+          <div class="mobile-nav-inner">
+            <button class="nav-btn" data-view="clock" onclick="showView('clock')">
+              <span class="nav-icon">⏱</span>Clock</button>
+            <button class="nav-btn" data-view="timesheet" onclick="showView('timesheet')">
+              <span class="nav-icon">📋</span>Timesheet</button>
+            <button class="nav-btn" data-view="timeoff" onclick="showView('timeoff')">
+              <span class="nav-icon">🗓</span>Time Off</button>
+            ${mgrNavBtn}
+          </div>
+        </nav>
+      </div>
+    </div>`;
+}
+
+function showView(view) {
+  currentView = view;
+  document.querySelectorAll('.nav-btn, .sb-link').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view));
+  const area = document.getElementById('view-area');
+  if (!area) return;
+  if (view === 'clock') { renderClockView(area); startClock(); }
+  else if (view === 'timesheet') {
+    stopClock();
+    if (!tsStart) {
+      const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
+      tsStart = range.start; tsEnd = range.end;
+    }
+    renderLoading(area, 'Loading timesheet…');
+    loadTimesheet(tsStart, tsEnd);
+  } else if (view === 'timeoff') {
+    stopClock();
+    if (!calYear) {
+      const todayInTz = isoDateTz(empTz());
+      const parts = todayInTz.split('-');
+      calYear = parseInt(parts[0], 10);
+      calMonth = parseInt(parts[1], 10);
+    }
+    renderLoading(area, 'Loading calendar…');
+    loadCalendar(calYear, calMonth);
+  } else if (view === 'manage') {
+    stopClock();
+    renderLoading(area, 'Loading dashboard…');
+    loadManagerDashboard();
+  }
+}
+
+function renderLoading(area, label) {
+  area.innerHTML = `<div class="state-center"><div class="spinner"></div>
+    <div class="state-label">${esc(label)}</div></div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SHARED UTILITIES
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Employee's timezone (falls back to Asia/Kolkata pre-login or if missing). */
+function empTz() { return (empState && empState.timezone) || 'Asia/Kolkata'; }
+
+/** Current date as yyyy-MM-dd in the given timezone. */
+function isoDateTz(tz) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+}
+
+/** Current time as HH:mm (24-hr) in the given timezone. */
+function timeHmTz(tz) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date());
+}
+
+/** Live clock display "h:mm:ss AM/PM" in the given timezone. */
+function liveTimeTz(tz) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour: 'numeric', minute: '2-digit', second: '2-digit',
+  }).format(new Date());
+}
+
+/** Today's date label "Saturday, May 17" in the given timezone. */
+function dateLabelTz(tz) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, weekday: 'long', month: 'short', day: 'numeric',
+  }).format(new Date());
+}
+
+function deriveShiftStatus(nextActions, punches) {
+  if (!punches || punches.length === 0) return 'idle';
+  if (nextActions.length === 1 && nextActions[0] === 'Adjust') return 'done';
+  return punches[punches.length-1].type === 'LunchOut' ? 'lunch' : 'active';
+}
+
+function dispTime(t) {
+  if (!t) return '';
+  const p = String(t).split(':');
+  if (p.length < 2) return t;
+  const h = parseInt(p[0],10);
+  return `${h%12||12}:${p[1]} ${h>=12?'PM':'AM'}`;
+}
+
+function fmtHrs(h) {
+  if (h === null || h === undefined) return '--';
+  const hrs = Math.floor(h), mins = Math.round((h - hrs) * 60);
+  return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+}
+
+function isoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function pad(n) { return String(n).padStart(2,'0'); }
+
+/** Calendar-day distance between two yyyy-MM-dd strings, positive if laterIso > earlierIso. */
+function daysBetweenIso(earlierIso, laterIso) {
+  return Math.round(
+    (new Date(laterIso + 'T00:00:00Z') - new Date(earlierIso + 'T00:00:00Z')) / 86400000
+  );
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Toast stack ────────────────────────────────────────────────────────
+// Stackable, auto-dismissing toasts with semantic variants.
+// API: showToast(message, 'toast-success' | 'toast-error' | 'toast-warn' | undefined)
+function showToast(msg, cls) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+  const icon = cls === 'toast-success' ? '✓'
+             : cls === 'toast-error'   ? '✕'
+             : cls === 'toast-warn'    ? '⚠'
+             : '·';
+  // Strip leading emoji/icon from msg if caller prepended (legacy callsites)
+  const clean = String(msg).replace(/^[\u2705\u274C\u26A0\uFE0F\u2713\u2717\s]+/, '').trim() || String(msg);
+  const t = document.createElement('div');
+  t.className = `toast ${cls || ''}`.trim();
+  t.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg"></span>`;
+  t.querySelector('.toast-msg').textContent = clean;
+  stack.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('toast-leave');
+    t.addEventListener('animationend', () => t.remove(), { once: true });
+  }, 3500);
+  // Cap the stack at 5
+  while (stack.children.length > 5) stack.firstChild.remove();
+}
+</script>

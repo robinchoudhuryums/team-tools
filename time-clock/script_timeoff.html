@@ -1,0 +1,285 @@
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  TIME OFF VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+function loadCalendar(year, month) {
+  google.script.run
+    .withSuccessHandler(data => {
+      if (data.error) { showToast('❌ ' + data.error,'toast-error'); return; }
+      calData = data; calYear = year; calMonth = month;
+      const area = document.getElementById('view-area');
+      if (area && currentView === 'timeoff') renderTimeOffView(area, data);
+    })
+    .withFailureHandler(err => showToast('❌ ' + (err.message||'Load failed'),'toast-error'))
+    .getCalendarData(year, month);
+}
+
+function renderTimeOffView(area, data) {
+  const tz = empTz();
+  const todayIso = data.today || isoDateTz(tz);
+  const todayParts = todayIso.split('-');
+  const todayY = parseInt(todayParts[0], 10);
+  const todayM = parseInt(todayParts[1], 10);
+  const curYM = todayY * 12 + todayM;
+  const thisYM = data.year * 12 + data.month;
+  const canPrev = thisYM > curYM - 3;
+  const canNext = thisYM < curYM + 3;
+
+  const workedSet = new Set(data.workedDates);
+  const ownMap = {};
+  data.timeOffRequests.forEach(r => { ownMap[r.date] = r; });
+  const tmByDate = {};
+  data.teammates.forEach(t => {
+    if (!tmByDate[t.date]) tmByDate[t.date] = [];
+    tmByDate[t.date].push(t);
+  });
+  const holidayMap = {};
+  data.holidays.forEach(h => { holidayMap[h.date] = h; });
+
+  // ── Leave balances (Phase 7) ────────────────────────────────────────────
+  let balancesHtml = '';
+  if (data.ptoEnabled && (data.annualLeave !== undefined || data.sickLeave !== undefined)) {
+    balancesHtml = `
+      <div class="leave-balance-row">
+        <div class="lb-card">
+          <div class="lb-label">Annual Leave</div>
+          <div class="lb-val">${formatLeaveDays(data.annualLeave)}</div>
+          <div class="lb-unit">days left</div>
+        </div>
+        <div class="lb-card">
+          <div class="lb-label">Sick Leave</div>
+          <div class="lb-val">${formatLeaveDays(data.sickLeave)}</div>
+          <div class="lb-unit">days left</div>
+        </div>
+      </div>`;
+  }
+
+  let calHtml = '<div class="cal-grid">';
+  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => { calHtml += `<div class="cal-dow">${d}</div>`; });
+  for (let i = 0; i < data.firstDayOfWeek; i++) calHtml += '<div class="cal-cell"></div>';
+
+  for (let d = 1; d <= data.lastDay; d++) {
+    const dateStr = `${data.year}-${String(data.month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dow = new Date(data.year, data.month - 1, d).getDay();
+    const isWeekend = dow === 0 || dow === 6;
+    const isToday = dateStr === todayIso;
+    const hasWork = workedSet.has(dateStr);
+    const own = ownMap[dateStr];
+    const tms = tmByDate[dateStr];
+    const hol = holidayMap[dateStr];
+    const hasContent = hasWork || own || (tms && tms.length) || hol || (dateStr >= todayIso && !isWeekend);
+
+    let cls = 'cal-cell';
+    if (isWeekend) cls += ' weekend';
+    if (isToday) cls += ' today';
+    if (hasWork && !own) cls += ' has-worked';
+    if (own) {
+      const st = (own.status||'').toLowerCase();
+      cls += st==='approved'?' has-approved':st==='denied'?' has-denied':' has-pending';
+    }
+    if (hasContent) cls += ' clickable';
+    const click = hasContent ? `onclick="openDayModal('${dateStr}')"` : '';
+    let dot = '';
+    if (hasWork && !own) dot = '<div class="cal-dot worked"></div>';
+    if (own) {
+      const st = (own.status||'').toLowerCase();
+      dot = `<div class="cal-dot ${st==='approved'?'approved':st==='denied'?'denied':'pending'}"></div>`;
+    }
+    const holidayMark = hol ? '<div class="cal-holiday">★</div>' : '';
+    const tmMark = (tms && tms.length) ? `<div class="cal-tm">+${tms.length}</div>` : '';
+    calHtml += `<div class="${cls}" ${click}>${holidayMark}<span class="cal-dn">${d}</span>${dot}${tmMark}</div>`;
+  }
+  calHtml += '</div>';
+
+  const legendHtml = `<div class="cal-legend">
+    <div class="leg-item"><div class="leg-dot" style="background:var(--green)"></div>Worked</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--amber)"></div>Pending</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--blue)"></div>Approved</div>
+    <div class="leg-item"><span class="leg-star">★</span>US Holiday</div>
+    <div class="leg-item"><span style="font-weight:700;font-size:10px;color:var(--ink-s)">+N</span>Teammates off</div>
+    <div class="leg-item" style="color:var(--ink-m);font-size:11px;width:100%">Tap any day for details</div>
+  </div>`;
+
+  let reqHtml = '';
+  if (data.allRequests && data.allRequests.length > 0) {
+    reqHtml = `<hr class="section-divider">
+      <div class="card-label" style="margin-bottom:10px">Your Requests</div>
+      <div class="req-list">` +
+      data.allRequests.map(r => {
+        const p = r.date.split('-');
+        const mo = MONTH_NAMES[parseInt(p[1],10)-1].slice(0,3).toUpperCase();
+        const dy = parseInt(p[2],10);
+        const st = (r.status||'pending').toLowerCase();
+        const bCls = st==='approved'?'rb-approved':st==='denied'?'rb-denied':'rb-pending';
+        const cancelBtn = st === 'pending'
+          ? `<button class="req-cancel-btn" data-date="${esc(r.date)}" data-submitted="${esc(r.submittedAt)}">Cancel</button>`
+          : '';
+        return `<div class="req-card">
+          <div class="req-date-block"><div class="req-date-d">${dy}</div><div class="req-date-m">${mo}</div></div>
+          <div class="req-info"><div class="req-type">${esc(r.type)}</div>
+            ${r.notes && r.notes !== 'undefined' ? `<div class="req-notes">${esc(r.notes)}</div>` : ''}</div>
+          <div class="req-side">
+            <div class="req-badge ${bCls}">${r.status}</div>
+            ${cancelBtn}
+          </div>
+        </div>`;
+      }).join('') + '</div>';
+  }
+
+  area.innerHTML = `
+    <div class="view-title">Time Off</div>
+    ${balancesHtml}
+    <div class="month-nav">
+      <button class="month-nav-btn" id="cal-prev" ${!canPrev?'disabled':''}>‹</button>
+      <span class="month-label">${data.monthName}</span>
+      <button class="month-nav-btn" id="cal-next" ${!canNext?'disabled':''}>›</button>
+    </div>
+    <div class="card">${calHtml}${legendHtml}</div>
+    ${reqHtml}`;
+
+  document.getElementById('cal-prev').addEventListener('click', () => {
+    if (!canPrev) return;
+    const nm = data.month === 1 ? 12 : data.month - 1;
+    const ny = data.month === 1 ? data.year - 1 : data.year;
+    calYear = ny; calMonth = nm;
+    renderLoading(area, 'Loading calendar…'); loadCalendar(ny, nm);
+  });
+  document.getElementById('cal-next').addEventListener('click', () => {
+    if (!canNext) return;
+    const nm = data.month === 12 ? 1 : data.month + 1;
+    const ny = data.month === 12 ? data.year + 1 : data.year;
+    calYear = ny; calMonth = nm;
+    renderLoading(area, 'Loading calendar…'); loadCalendar(ny, nm);
+  });
+
+  // Cancel button wiring
+  document.querySelectorAll('.req-cancel-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const date = btn.dataset.date;
+      const submittedAt = btn.dataset.submitted;
+      const parts = date.split('-');
+      const human = `${MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3)} ${parseInt(parts[2],10)}, ${parts[0]}`;
+      if (!confirm(`Cancel your time off request for ${human}?`)) return;
+      btn.disabled = true;
+      btn.textContent = '...';
+      google.script.run
+        .withSuccessHandler(r => {
+          if (!r.success) {
+            btn.disabled = false; btn.textContent = 'Cancel';
+            showToast('❌ ' + (r.error||'Error'), 'toast-error');
+            return;
+          }
+          showToast('✓ Request cancelled', 'toast-success');
+          renderLoading(area, 'Loading calendar…');
+          loadCalendar(calYear, calMonth);
+        })
+        .withFailureHandler(err => {
+          btn.disabled = false; btn.textContent = 'Cancel';
+          showToast('❌ ' + (err.message||'Server error'), 'toast-error');
+        })
+        .cancelTimeOffRequest(date, submittedAt);
+    });
+  });
+}
+
+function formatLeaveDays(n) {
+  if (n === null || n === undefined) return '—';
+  // Show as integer if whole, else 1 decimal
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+// ── DAY DETAILS MODAL ─────────────────────────────────────────────────────
+function openDayModal(dateStr) {
+  if (!calData) return;
+  dayModalDate = dateStr;
+  const todayIso = calData.today || isoDateTz(empTz());
+  const parts = dateStr.split('-');
+  const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+  const dow = dateObj.getDay();
+  const isWeekend = dow === 0 || dow === 6;
+  const dateLabel = `${DOW_NAMES[dow]}, ${MONTH_NAMES[parseInt(parts[1],10)-1]} ${parseInt(parts[2],10)}`;
+  const workedSet = new Set(calData.workedDates);
+  const hasWork = workedSet.has(dateStr);
+  const own = calData.timeOffRequests.find(r => r.date === dateStr);
+  const teammates = calData.teammates.filter(t => t.date === dateStr);
+  const holiday = calData.holidays.find(h => h.date === dateStr);
+
+  document.getElementById('day-title').textContent = dateLabel;
+  document.getElementById('day-subtitle').textContent = parts[0];
+
+  let body = '';
+  if (holiday) body += `<div class="day-section"><div class="day-info-row holiday">
+    <span class="di-icon">★</span><span class="di-text">US Holiday: ${esc(holiday.name)}</span></div></div>`;
+  let yourStatusHtml = '';
+  if (own) {
+    const st = (own.status||'pending').toLowerCase();
+    const cls = st==='approved'?'own-approved':st==='denied'?'own-denied':'own-pending';
+    yourStatusHtml = `<div class="day-info-row ${cls}">
+      <span class="di-icon">📌</span>
+      <span class="di-text">Your time off request: ${esc(own.type)}${own.notes && own.notes !== 'undefined' ? ' — ' + esc(own.notes) : ''}</span>
+      <span class="di-tag">${esc(own.status)}</span></div>`;
+  } else if (hasWork) {
+    yourStatusHtml = `<div class="day-info-row worked">
+      <span class="di-icon">✓</span><span class="di-text">You worked this day</span></div>`;
+  }
+  if (yourStatusHtml) body += `<div class="day-section">${yourStatusHtml}</div>`;
+  if (teammates.length > 0) {
+    let tmHtml = `<div class="day-section"><div class="day-section-label">Teammates Off (${teammates.length})</div>`;
+    teammates.forEach(t => {
+      const st = (t.status||'pending').toLowerCase();
+      tmHtml += `<div class="tm-row">
+        <span class="tm-name">${esc(t.name)}</span>
+        <span class="tm-type">${esc(t.type)}</span>
+        <span class="tm-badge ${st}">${esc(t.status)}</span></div>`;
+    });
+    tmHtml += `</div>`;
+    body += tmHtml;
+  }
+  if (!body && !isWeekend && dateStr >= todayIso) {
+    body = `<div class="day-section"><div class="day-info-row">
+      <span class="di-icon">📅</span><span class="di-text">No activity recorded for this day yet.</span></div></div>`;
+  }
+  document.getElementById('day-body').innerHTML = body;
+
+  const canRequest = !isWeekend && dateStr >= todayIso && !own;
+  const formSec = document.getElementById('day-form-section');
+  const submitBtn = document.getElementById('day-submit');
+  if (canRequest) {
+    formSec.style.display = ''; submitBtn.style.display = '';
+    document.getElementById('day-type').value = 'Full Day';
+    document.getElementById('day-notes').value = '';
+  } else {
+    formSec.style.display = 'none'; submitBtn.style.display = 'none';
+  }
+  document.getElementById('day-overlay').classList.add('open');
+}
+
+document.getElementById('day-cancel').addEventListener('click', () =>
+  document.getElementById('day-overlay').classList.remove('open'));
+document.getElementById('day-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('day-overlay'))
+    document.getElementById('day-overlay').classList.remove('open');
+});
+document.getElementById('day-submit').addEventListener('click', () => {
+  const type = document.getElementById('day-type').value;
+  const notes = document.getElementById('day-notes').value.trim();
+  const btn = document.getElementById('day-submit');
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(result => {
+      btn.disabled = false;
+      document.getElementById('day-overlay').classList.remove('open');
+      if (!result.success) { showToast('❌ ' + (result.error||'Error'),'toast-error'); return; }
+      showToast('✓ Time off request submitted','toast-success');
+      renderLoading(document.getElementById('view-area'), 'Loading calendar…');
+      loadCalendar(calYear, calMonth);
+    })
+    .withFailureHandler(err => {
+      btn.disabled = false;
+      showToast('❌ ' + (err.message||'Server error'),'toast-error');
+    })
+    .submitTimeOffRequest(dayModalDate, type, notes);
+});
+</script>

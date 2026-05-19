@@ -1,0 +1,258 @@
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  CLOCK VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+function renderClockView(area) {
+  const s = empState;
+  const sp = STATUS_PILL[deriveShiftStatus(s.nextActions, s.punches)];
+  const dateStr = dateLabelTz(empTz());
+  const tzAbbr = s.timezoneAbbr || '';
+  const ptoBlock = renderPtoRings(s);
+  area.innerHTML = `
+    <div class="hero-clock">
+      <div class="hero-clock-content">
+        <div class="hero-clock-date">${esc(dateStr)}</div>
+        <div class="hero-clock-time" id="live-time">--:--:--<span class="hc-ampm"></span></div>
+        <div class="hero-clock-tz">${esc(tzAbbr)}</div>
+        <div class="hero-clock-status ${sp.cls}"><span class="dot"></span>${sp.label}</div>
+      </div>
+    </div>
+
+    ${ptoBlock}
+
+    <div class="card">
+      <div class="card-label">Today's Punches</div>
+      ${renderPunchHistory(s.punches)}
+    </div>
+
+    <div class="card">
+      <div class="card-label">Actions</div>
+      ${renderActions(s.nextActions)}
+    </div>`;
+  bindClockBtns();
+}
+
+/** Two-ring PTO donut (annual + sick) shown beneath the hero clock. */
+function renderPtoRings(s) {
+  if (!s.ptoEnabled) return '';
+  const annualMax = Math.max(s.annualLeaveMax || 15, s.annualLeave || 0, 1);
+  const sickMax   = Math.max(s.sickLeaveMax   || 10, s.sickLeave   || 0, 1);
+  const annual = ptoRingSvg(s.annualLeave, annualMax, 'annual');
+  const sick   = ptoRingSvg(s.sickLeave,   sickMax,   'sick');
+  return `
+    <div class="card pto-card">
+      <div class="card-label">Leave Balance</div>
+      <div class="pto-rings">
+        <div class="pto-ring">
+          <div class="pto-svg">${annual.svg}
+            <div class="pto-ring-center">
+              <div class="pto-ring-val">${annual.label}</div>
+              <div class="pto-ring-of">of ${annual.maxLabel}</div>
+            </div>
+          </div>
+          <div class="pto-ring-label">Annual</div>
+        </div>
+        <div class="pto-ring">
+          <div class="pto-svg">${sick.svg}
+            <div class="pto-ring-center">
+              <div class="pto-ring-val">${sick.label}</div>
+              <div class="pto-ring-of">of ${sick.maxLabel}</div>
+            </div>
+          </div>
+          <div class="pto-ring-label">Sick</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function ptoRingSvg(value, max, cls) {
+  const v = Math.max(0, Number(value) || 0);
+  const m = Math.max(1, Number(max)   || 1);
+  const pct = Math.min(1, v / m);
+  const r = 48, c = 2 * Math.PI * r;
+  const dashOffset = c * (1 - pct);
+  const fgCls = v <= 0 ? 'depleted' : cls;
+  const svg = `<svg viewBox="0 0 120 120" width="120" height="120">
+      <circle class="pto-svg-bg" cx="60" cy="60" r="${r}" stroke-width="10"/>
+      <circle class="pto-svg-fg ${fgCls}" cx="60" cy="60" r="${r}" stroke-width="10"
+        stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${dashOffset.toFixed(2)}"/>
+    </svg>`;
+  // Format: integer if whole, .5 if half
+  const fmt = n => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
+  return { svg, label: fmt(v), maxLabel: fmt(m) };
+}
+
+function renderPunchHistory(punches) {
+  if (!punches || punches.length === 0)
+    return '<div class="no-data">No punches recorded yet today</div>';
+  return '<div class="punch-list">' + punches.map(p => {
+    const m  = PUNCH_META[p.type] || { label:p.type, emoji:'●', dir:p.direction==='IN'?'in':'out' };
+    const dc = m.dir === 'in' ? 'in' : 'out';
+    const adj = p.isAdjustment ? '<span class="adj-pill">✏️ adj</span>' : '';
+    return `<div class="punch-row">
+      <div class="punch-icon ${dc}">${m.emoji}</div>
+      <div class="punch-name">${m.label} ${adj}</div>
+      <div class="punch-tag ${dc}">${p.direction}</div>
+      <div class="punch-tv">${dispTime(p.time)}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderActions(actions) {
+  if (!actions || actions.length === 0) return '<div class="no-data">No actions available</div>';
+  const onlyAdjust = actions.length === 1 && actions[0] === 'Adjust';
+  const main = actions.filter(a => a !== 'Adjust');
+  const isSingle = main.length === 1;
+  let html = '';
+  if (onlyAdjust) html += '<div class="shift-done-msg">✓ Shift complete for today</div>';
+  html += `<div class="actions-grid${(isSingle || onlyAdjust) ? ' fw' : ''}">`;
+  main.forEach(a => { html += actionBtnHtml(a); });
+  html += actionBtnHtml('Adjust');
+  html += '</div>';
+  return html;
+}
+
+function actionBtnHtml(type) {
+  const m = PUNCH_META[type];
+  return `<button class="action-btn ${m.cls}" data-action="${type}">
+    <span class="be">${m.emoji}</span>${m.label}</button>`;
+}
+
+function bindClockBtns() {
+  document.querySelectorAll('.action-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const a = btn.dataset.action;
+      if (a === 'Adjust') { openAdjustModal(); return; }
+      handlePunch(a);
+    });
+  });
+}
+
+function startClock() {
+  stopClock();
+  const tz = empTz();
+  const tick = () => {
+    const el = document.getElementById('live-time');
+    if (!el) return;
+    const raw = liveTimeTz(tz);   // e.g. "9:34:22 AM"
+    const m = raw.match(/^(.*?)\s*(AM|PM)$/i);
+    if (m) {
+      el.innerHTML = esc(m[1]) + '<span class="hc-ampm">' + esc(m[2]) + '</span>';
+    } else {
+      el.textContent = raw;
+    }
+  };
+  tick(); clockInterval = setInterval(tick, 1000);
+}
+function stopClock() { if (clockInterval) { clearInterval(clockInterval); clockInterval = null; } }
+
+function handlePunch(punchType) {
+  const tz = empTz();
+  const nowStr = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour: 'numeric', minute: '2-digit',
+  }).format(new Date());
+  if (!confirm(`Record "${PUNCH_META[punchType].label}" at ${nowStr}?`)) return;
+  submitPunch(punchType, null);
+}
+
+function submitPunch(punchType, custom) {
+  setClockBtnsDisabled(true);
+  google.script.run
+    .withSuccessHandler(result => {
+      setClockBtnsDisabled(false);
+      if (!result.success) { showToast('❌ ' + (result.error||'Error'), 'toast-error'); return; }
+      const tag = result.isAdjustment ? ' (adj)' : '';
+      showToast(`✓ ${PUNCH_META[punchType].label}${tag} at ${result.displayTime}`, 'toast-success');
+      google.script.run
+        .withSuccessHandler(state => {
+          empState = state;
+          adjustWindowDays = state.adjustWindowDays || 30;
+          const area = document.getElementById('view-area');
+          if (area && currentView === 'clock') renderClockView(area);
+          startClock();
+        })
+        .withFailureHandler(()=>{})
+        .getEmployeeState();
+    })
+    .withFailureHandler(err => {
+      setClockBtnsDisabled(false);
+      showToast('❌ ' + (err.message||'Server error'), 'toast-error');
+    })
+    .recordPunch(punchType, custom);
+}
+
+function setClockBtnsDisabled(v) { document.querySelectorAll('.action-btn').forEach(b => { b.disabled = v; }); }
+
+// ── ADJUST MODAL ──────────────────────────────────────────────────────────
+function openAdjustModal() {
+  const tz = empTz();
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+  const now = new Date();
+  const back = new Date(now); back.setDate(back.getDate() - adjustWindowDays);
+  const todayIso = fmt.format(now);
+  const minIso = fmt.format(back);
+
+  document.getElementById('adj-date').value = todayIso;
+  document.getElementById('adj-date').min   = minIso;
+  document.getElementById('adj-date').max   = todayIso;
+  document.getElementById('adj-time').value = timeHmTz(tz);
+  document.getElementById('adj-reason').value = '';
+  updateAdjReasonRequirement();
+  document.getElementById('adjust-overlay').classList.add('open');
+}
+
+/**
+ * Switches the reason label between optional / required based on how far back
+ * the selected date is from today (in the employee's timezone).
+ */
+function updateAdjReasonRequirement() {
+  const dateInput = document.getElementById('adj-date');
+  const label = document.getElementById('adj-reason-label');
+  const reason = document.getElementById('adj-reason');
+  if (!dateInput || !label || !reason) return;
+  const date = dateInput.value;
+  if (!date) return;
+  const today = isoDateTz(empTz());
+  const diff = daysBetweenIso(date, today);
+  const threshold = (empState && empState.adjustReasonThresholdDays) || 7;
+  if (diff > threshold) {
+    label.innerHTML = 'Reason <span class="req-marker">(required)</span>';
+    reason.placeholder = `Required — this punch is ${diff} days back. Brief explanation:`;
+  } else {
+    label.innerHTML = 'Reason <span class="opt-marker">(optional)</span>';
+    reason.placeholder = 'e.g. Forgot to clock out, system was down…';
+  }
+}
+
+function daysBetweenIsoLocal(earlierIso, laterIso) {
+  // (kept for callers in this file; prefer shared daysBetweenIso from core)
+  return daysBetweenIso(earlierIso, laterIso);
+}
+
+document.getElementById('adj-cancel').addEventListener('click', () =>
+  document.getElementById('adjust-overlay').classList.remove('open'));
+document.getElementById('adjust-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('adjust-overlay'))
+    document.getElementById('adjust-overlay').classList.remove('open');
+});
+document.getElementById('adj-date').addEventListener('change', updateAdjReasonRequirement);
+
+document.getElementById('adj-submit').addEventListener('click', () => {
+  const date = document.getElementById('adj-date').value;
+  const type = document.getElementById('adj-type').value;
+  const time = document.getElementById('adj-time').value;
+  const reason = document.getElementById('adj-reason').value.trim();
+  if (!date || !time) { showToast('Please fill in all fields','toast-error'); return; }
+  const today = isoDateTz(empTz());
+  const diff = daysBetweenIso(date, today);
+  const threshold = (empState && empState.adjustReasonThresholdDays) || 7;
+  if (diff > threshold && !reason) {
+    showToast(`A reason is required for adjustments more than ${threshold} days back`, 'toast-error');
+    document.getElementById('adj-reason').focus();
+    return;
+  }
+  document.getElementById('adjust-overlay').classList.remove('open');
+  submitPunch(type, { date, time, reason });
+});
+</script>

@@ -1,0 +1,163 @@
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  TIMESHEET VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+function loadTimesheet(startDate, endDate) {
+  google.script.run
+    .withSuccessHandler(data => {
+      if (data.error) { showToast('❌ ' + data.error,'toast-error'); return; }
+      tsData = data; tsStart = data.startDate; tsEnd = data.endDate;
+      const area = document.getElementById('view-area');
+      if (area && currentView === 'timesheet') renderTimesheetView(area, data);
+    })
+    .withFailureHandler(err => showToast('❌ ' + (err.message||'Load failed'),'toast-error'))
+    .getTimesheetData(startDate, endDate);
+}
+
+function computeRange(mode, refDateIso, offset) {
+  const ref = new Date(refDateIso + 'T12:00:00Z');
+  if (mode === 'period' && empState && empState.payAnchor) {
+    const anchor = new Date(empState.payAnchor + 'T12:00:00Z');
+    const daysDiff = Math.round((ref - anchor) / 86400000);
+    const currentIdx = Math.floor((daysDiff + 13) / 14);
+    const idx = currentIdx + offset;
+    const endMs = anchor.getTime() + idx * 14 * 86400000;
+    const startMs = endMs - 13 * 86400000;
+    return { start: isoFromMs(startMs), end: isoFromMs(endMs) };
+  }
+  const y = ref.getUTCFullYear();
+  const m = ref.getUTCMonth();
+  const targetDate = new Date(Date.UTC(y, m + offset, 1));
+  const ty = targetDate.getUTCFullYear();
+  const tm = targetDate.getUTCMonth();
+  const lastDay = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
+  return { start: `${ty}-${pad(tm+1)}-01`, end: `${ty}-${pad(tm+1)}-${pad(lastDay)}` };
+}
+
+function isoFromMs(ms) {
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+}
+
+function rangeLabel(startIso, endIso, mode) {
+  const s = parseIso(startIso), e = parseIso(endIso);
+  if (mode === 'month') return { main: `${MONTH_NAMES[s.m]} ${s.y}`, sub: 'Calendar month' };
+  const sMo = MONTH_NAMES[s.m].slice(0,3), eMo = MONTH_NAMES[e.m].slice(0,3);
+  let main;
+  if (s.y !== e.y)       main = `${sMo} ${s.d}, ${s.y} – ${eMo} ${e.d}, ${e.y}`;
+  else if (s.m !== e.m)  main = `${sMo} ${s.d} – ${eMo} ${e.d}, ${s.y}`;
+  else                   main = `${sMo} ${s.d} – ${e.d}, ${s.y}`;
+  return { main, sub: 'Pay period (biweekly)' };
+}
+
+function parseIso(iso) {
+  const p = iso.split('-');
+  return { y: parseInt(p[0],10), m: parseInt(p[1],10)-1, d: parseInt(p[2],10) };
+}
+
+function renderTimesheetView(area, data) {
+  const tz = empTz();
+  const todayIso = isoDateTz(tz);
+  const showToggle = empState.payCycle === 'Biweekly' && !!empState.payAnchor;
+  const curRange = computeRange(tsViewMode, todayIso, 0);
+  const canNext = data.endDate < curRange.end;
+  // Six months back in employee's tz
+  const back = new Date(); back.setMonth(back.getMonth() - 6);
+  const sixMoBack = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(back);
+  const canPrev = data.startDate > sixMoBack;
+  const label = rangeLabel(data.startDate, data.endDate, tsViewMode);
+  const visibleDays = data.days.filter(d => d.hasData || (!d.isWeekend && !d.isFuture));
+
+  let toggleHtml = '';
+  if (showToggle) {
+    toggleHtml = `<div class="view-mode-toggle">
+      <button class="vmt-btn ${tsViewMode==='period'?'active':''}" id="vmt-period">Pay Period</button>
+      <button class="vmt-btn ${tsViewMode==='month'?'active':''}" id="vmt-month">Calendar Month</button>
+    </div>`;
+  }
+
+  area.innerHTML = `
+    <div class="view-title">Timesheet</div>
+    ${toggleHtml}
+    <div class="month-nav">
+      <button class="month-nav-btn" id="ts-prev" ${!canPrev?'disabled':''}>‹</button>
+      <div class="month-label">${label.main}<span class="ml-sub">${label.sub}</span></div>
+      <button class="month-nav-btn" id="ts-next" ${!canNext?'disabled':''}>›</button>
+    </div>
+    <div class="ts-summary">
+      <div class="ts-stat"><div class="ts-stat-val">${data.daysWorked}</div><div class="ts-stat-lbl">Days Worked</div></div>
+      <div class="ts-stat"><div class="ts-stat-val">${fmtHrs(data.totalHours)}</div><div class="ts-stat-lbl">Total Hours</div></div>
+      <div class="ts-stat ${data.incompleteCount>0?'warn':''}"><div class="ts-stat-val">${data.incompleteCount}</div><div class="ts-stat-lbl">Incomplete</div></div>
+    </div>
+    <div class="day-list">
+      ${visibleDays.length === 0
+        ? '<div class="no-data" style="padding:20px 0">No records this period yet</div>'
+        : visibleDays.map(renderDayCard).join('')}
+    </div>`;
+
+  if (showToggle) {
+    document.getElementById('vmt-period').addEventListener('click', () => {
+      if (tsViewMode === 'period') return;
+      tsViewMode = 'period';
+      const range = computeRange('period', todayIso, 0);
+      tsStart = range.start; tsEnd = range.end;
+      renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
+    });
+    document.getElementById('vmt-month').addEventListener('click', () => {
+      if (tsViewMode === 'month') return;
+      tsViewMode = 'month';
+      const range = computeRange('month', todayIso, 0);
+      tsStart = range.start; tsEnd = range.end;
+      renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
+    });
+  }
+  document.getElementById('ts-prev').addEventListener('click', () => {
+    if (!canPrev) return;
+    const range = computeRange(tsViewMode, data.startDate, -1);
+    tsStart = range.start; tsEnd = range.end;
+    renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
+  });
+  document.getElementById('ts-next').addEventListener('click', () => {
+    if (!canNext) return;
+    const refDate = tsViewMode === 'period' ? data.endDate : data.startDate;
+    const range = computeRange(tsViewMode, refDate, 1);
+    tsStart = range.start; tsEnd = range.end;
+    renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
+  });
+}
+
+function renderDayCard(d) {
+  let cls = 'day-card';
+  if (d.isWeekend) cls += ' weekend';
+  if (d.isToday) cls += ' today';
+  if (d.isIncomplete) cls += ' incomplete';
+  if (!d.hasData) cls += ' no-data';
+
+  let hoursHtml = '';
+  if (d.hoursWorked !== null) hoursHtml = `<span class="day-hours">${fmtHrs(d.hoursWorked)}</span>`;
+  else if (d.inProgress)      hoursHtml = `<span class="day-hours progress">In progress</span>`;
+  else if (d.isIncomplete)    hoursHtml = `<span class="day-hours incomplete">⚠ Missing punch</span>`;
+  else if (d.isWeekend)       hoursHtml = `<span class="day-hours" style="color:var(--ink-m)">Weekend</span>`;
+
+  const chips = [];
+  if (d.clockIn)  chips.push(ptChip('In',         d.clockIn,  d.adjClockIn));
+  if (d.lunchOut) chips.push(ptChip('Lunch Out',  d.lunchOut, d.adjLunchOut));
+  if (d.lunchIn)  chips.push(ptChip('Return',     d.lunchIn,  d.adjLunchIn));
+  if (d.clockOut) chips.push(ptChip('Out',        d.clockOut, d.adjClockOut));
+
+  return `<div class="${cls}">
+    <div class="day-top">
+      <span class="day-name">${d.dayLabel}${d.isToday ? ' <span style="font-size:10px;color:var(--blue)">TODAY</span>' : ''}</span>
+      ${hoursHtml}
+    </div>
+    ${chips.length ? `<div class="punch-times">${chips.join('')}</div>` : ''}
+  </div>`;
+}
+
+function ptChip(label, time, adj) {
+  const cls = adj ? 'pt-chip adj' : 'pt-chip';
+  const mark = adj ? '<span class="adj-mark">✏️</span>' : '';
+  return `<div class="${cls}"><span class="pt-lbl">${label}</span>${dispTime(time)}${mark}</div>`;
+}
+</script>

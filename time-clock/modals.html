@@ -1,0 +1,112 @@
+<!-- ADJUST PUNCH MODAL -->
+<div class="overlay" id="adjust-overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Adjust Punch</div>
+    <div class="modal-hint">
+      Use this to record missed punches or fix mistakes within the last <span id="adj-days-disp">30</span>
+      days. Adjustments more than 7 days back require a reason and notify your manager.
+    </div>
+    <div class="field"><label>Date</label><input type="date" id="adj-date"></div>
+    <div class="field"><label>Punch Type</label>
+      <select id="adj-type">
+        <option value="ClockIn">Clock In</option>
+        <option value="LunchOut">Lunch Out</option>
+        <option value="LunchIn">Lunch Return</option>
+        <option value="ClockOut">Clock Out</option>
+      </select>
+    </div>
+    <div class="field"><label>Time</label><input type="time" id="adj-time"></div>
+    <div class="field">
+      <label id="adj-reason-label">Reason <span class="opt-marker">(optional)</span></label>
+      <textarea id="adj-reason" placeholder="e.g. Forgot to clock out, system was down…"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" id="adj-cancel">Cancel</button>
+      <button class="btn-modal-ok" id="adj-submit">Submit Punch</button>
+    </div>
+  </div>
+</div>
+
+<!-- DAY DETAILS MODAL -->
+<div class="overlay" id="day-overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="day-title">—</div>
+    <div class="modal-sub" id="day-subtitle"></div>
+    <div id="day-body"></div>
+    <div id="day-form-section" style="display:none">
+      <div class="day-section-label" style="margin-top:6px">Request Time Off</div>
+      <div class="field"><label>Type</label>
+        <select id="day-type">
+          <option value="Full Day">Full Day</option>
+          <option value="Half Day - Morning">Half Day – Morning</option>
+          <option value="Half Day - Afternoon">Half Day – Afternoon</option>
+          <option value="Sick Leave">Sick Leave</option>
+          <option value="Personal Day">Personal Day</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Notes (optional)</label>
+        <textarea id="day-notes" placeholder="Reason, trip, appointment…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" id="day-cancel">Close</button>
+      <button class="btn-modal-ok" id="day-submit" style="display:none">Submit Request</button>
+    </div>
+  </div>
+</div>
+
+<!-- DAY EDIT MODAL (manager) -->
+<div class="overlay" id="day-edit-overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Edit Day</div>
+    <div class="modal-sub" id="day-edit-subtitle">—</div>
+    <div class="modal-hint">
+      Set each punch's time in 24-hour format. Leave a field blank to remove that punch.
+      Edits more than 7 days back require a reason.
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Clock In</label><input type="time" id="de-clockin"></div>
+      <div class="field"><label>Lunch Out</label><input type="time" id="de-lunchout"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Lunch Return</label><input type="time" id="de-lunchin"></div>
+      <div class="field"><label>Clock Out</label><input type="time" id="de-clockout"></div>
+    </div>
+    <div class="field">
+      <label id="de-reason-label">Reason <span class="opt-marker">(optional)</span></label>
+      <textarea id="de-reason" placeholder="Why is this edit needed?"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" id="de-cancel">Cancel</button>
+      <button class="btn-modal-ok" id="de-save">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADP EXPORT MODAL -->
+<div class="overlay" id="export-overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Export ADP Upload File</div>
+    <div class="modal-sub">Generates an upload-ready Google Sheet — open it and use File → Download → Excel (.xlsx)</div>
+    <div class="day-section-label">Quick Presets</div>
+    <div class="preset-grid">
+      <button class="preset-btn" data-preset="this-month">This Month</button>
+      <button class="preset-btn" data-preset="last-month">Last Month</button>
+      <button class="preset-btn" data-preset="last-14">Last 14 Days</button>
+      <button class="preset-btn" data-preset="last-30">Last 30 Days</button>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Start Date</label><input type="date" id="exp-start"></div>
+      <div class="field"><label>End Date</label><input type="date" id="exp-end"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" id="exp-cancel">Cancel</button>
+      <button class="btn-modal-ok" id="exp-submit">Generate Export</button>
+    </div>
+  </div>
+</div>

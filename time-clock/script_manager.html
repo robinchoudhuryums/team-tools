@@ -1,0 +1,408 @@
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  MANAGER VIEW
+// ════════════════════════════════════════════════════════════════════════════
+
+function loadManagerDashboard() {
+  google.script.run
+    .withSuccessHandler(data => {
+      if (data.error) { showToast('❌ ' + data.error,'toast-error'); return; }
+      mgrData = data;
+      const area = document.getElementById('view-area');
+      if (area && currentView === 'manage') renderManagerView(area, data);
+    })
+    .withFailureHandler(err => showToast('❌ ' + (err.message||'Load failed'),'toast-error'))
+    .getManagerDashboard();
+}
+
+function renderManagerView(area, data) {
+  const counts = { clocked_in: 0, on_lunch: 0, clocked_out: 0, not_in: 0 };
+  data.liveStatus.forEach(e => { counts[e.status]++; });
+  const totalEmp = data.liveStatus.length;
+  const mgrTzAbbr = data.mgrTzAbbr || '';
+  const pendingCount = data.pending.length;
+  const missedCount = data.missedPunches.length;
+
+  // ── Hero metrics row ────────────────────────────────────────────────────
+  const heroHtml = `
+    <div class="metric-grid">
+      <div class="metric-card success">
+        <div class="metric-label"><span class="metric-icon">●</span>Active</div>
+        <div class="metric-value success">${counts.clocked_in}</div>
+        <div class="metric-sub">of ${totalEmp} team members</div>
+      </div>
+      <div class="metric-card warning">
+        <div class="metric-label"><span class="metric-icon">●</span>On Lunch</div>
+        <div class="metric-value warning">${counts.on_lunch}</div>
+        <div class="metric-sub">currently away</div>
+      </div>
+      <div class="metric-card ${missedCount > 0 ? 'danger' : ''}">
+        <div class="metric-label"><span class="metric-icon">⚠</span>Missed Punches</div>
+        <div class="metric-value ${missedCount > 0 ? 'danger' : ''}">${missedCount}</div>
+        <div class="metric-sub">last ${data.missedLookbackDays} days</div>
+      </div>
+      <div class="metric-card ${pendingCount > 0 ? 'accent' : ''}">
+        <div class="metric-label"><span class="metric-icon">◆</span>Pending Requests</div>
+        <div class="metric-value">${pendingCount}</div>
+        <div class="metric-sub">awaiting approval</div>
+      </div>
+    </div>`;
+
+  // ── Live status: employee grid cards ────────────────────────────────────
+  const liveHtml = data.liveStatus.length === 0
+    ? '<div class="no-data">No employees registered</div>'
+    : '<div class="emp-grid">' + data.liveStatus.map(e => {
+        const meta = MGR_STATUS[e.status];
+        const initials = e.name.split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase();
+        let line;
+        if (e.lastPunchType) {
+          const showMgr = e.lastPunchTimeMgr && e.empTzAbbr !== e.mgrTzAbbr;
+          const empTime = `<span class="emp-time">${dispTime(e.lastPunchTime)}</span> <span class="tz-tag">${esc(e.empTzAbbr)}</span>`;
+          const mgrTime = showMgr
+            ? ` · <span class="emp-time">${dispTime(e.lastPunchTimeMgr)}</span> <span class="tz-tag mgr-tz">${esc(e.mgrTzAbbr)}</span>`
+            : '';
+          line = `${prettyType(e.lastPunchType)} · ${empTime}${mgrTime}`;
+        } else {
+          line = '<em style="color:var(--text-3)">No punches today</em>';
+        }
+        return `<div class="emp-card">
+          <div class="emp-card-top">
+            <div class="emp-avatar ${meta.avCls}">${initials}</div>
+            <div class="emp-name">${esc(e.name)}</div>
+          </div>
+          <div class="emp-status-line">${line}</div>
+        </div>`;
+      }).join('') + '</div>';
+
+  // ── Pending time-off (now with balance context) ─────────────────────────
+  const pendingHtml = data.pending.length === 0
+    ? '<div class="no-data">No pending requests 🎉</div>'
+    : data.pending.map(p => {
+        const parts = p.date.split('-');
+        const mo = MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3).toUpperCase();
+        const dy = parseInt(parts[2],10);
+        const yr = parts[0];
+        const key = JSON.stringify({
+          empId: p.empId, date: p.date, submittedAt: p.submittedAt,
+          empName: p.empName, projectedBalance: p.projectedBalance,
+          leaveBucket: p.leaveBucket,
+        });
+
+        let balLine = '';
+        if (data.ptoEnabled && p.currentBalance !== null && p.currentBalance !== undefined) {
+          const bucketLabel = p.leaveBucket === 'sick' ? 'Sick' : 'Annual';
+          const projCls = p.projectedBalance < 0 ? 'neg' : '';
+          balLine = `<div class="pending-balance">
+            ${bucketLabel}: ${formatLeaveDays(p.currentBalance)}
+            → <span class="${projCls}">${formatLeaveDays(p.projectedBalance)}</span>
+            <span class="pending-balance-unit">days</span>
+          </div>`;
+        }
+
+        return `<div class="pending-card">
+          <div class="pending-top">
+            <div class="pending-date-block">
+              <div class="pending-date-d">${dy}</div>
+              <div class="pending-date-m">${mo}</div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div class="pending-emp">${esc(p.empName)}</div>
+              <div class="pending-meta">${esc(p.type)} · ${yr}</div>
+              ${p.notes && p.notes !== 'undefined' ? `<div class="pending-notes">"${esc(p.notes)}"</div>` : ''}
+              ${balLine}
+            </div>
+          </div>
+          <div class="pending-actions">
+            <button class="pending-btn pb-approve" data-key='${esc(key)}' data-status="Approved">✓ Approve</button>
+            <button class="pending-btn pb-deny"    data-key='${esc(key)}' data-status="Denied">✕ Deny</button>
+          </div>
+        </div>`;
+      }).join('');
+
+  // ── Missed clock-outs ───────────────────────────────────────────────────
+  const missedHtml = data.missedPunches.length === 0
+    ? '<div class="no-data">No missed clock-outs 👌</div>'
+    : data.missedPunches.map(m => {
+        const parts = m.date.split('-');
+        const dateLabel = `${MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3)} ${parseInt(parts[2],10)}, ${parts[0]}`;
+        return `<div class="missed-row">
+          <div class="missed-icon">⚠️</div>
+          <div class="missed-info">
+            <div class="missed-emp">${esc(m.empName)}</div>
+            <div class="missed-date">${esc(dateLabel)}</div>
+          </div>
+        </div>`;
+      }).join('');
+
+  // ── Recent punches (NEW Phase 7 — for delete) ───────────────────────────
+  const recent = data.recentPunches || [];
+  const recentHtml = recent.length === 0
+    ? '<div class="no-data">No recent punches</div>'
+    : recent.map(p => {
+        const dateParts = p.date.split('-');
+        const dateShort = `${MONTH_NAMES[parseInt(dateParts[1],10)-1].slice(0,3)} ${parseInt(dateParts[2],10)}`;
+        const adjTag = p.isAdjustment ? '<span class="adj-pill">adj</span>' : '';
+        const delBtn = p.canDelete
+          ? `<button class="rp-del" title="Delete this punch"
+              data-emp="${esc(p.empId)}" data-date="${esc(p.date)}"
+              data-time="${esc(p.time)}" data-type="${esc(p.type)}"
+              data-name="${esc(p.empName)}">×</button>`
+          : '<div class="rp-del-spacer"></div>';
+        return `<div class="rp-row">
+          <div class="rp-info">
+            <div class="rp-top">
+              <span class="rp-emp">${esc(p.empName)}</span>
+              ${adjTag}
+            </div>
+            <div class="rp-detail">
+              ${prettyType(p.type)} · ${dateShort} ${dispTime(p.time)}
+              <span class="tz-tag">${esc(p.empTzAbbr)}</span>
+            </div>
+          </div>
+          ${delBtn}
+        </div>`;
+      }).join('');
+
+  // ── Recent activity (audit log w/ tz-converted + reasons) ───────────────
+  const auditHtml = data.recentAudits.length === 0
+    ? '<div class="no-data">No recent activity</div>'
+    : data.recentAudits.map(a => {
+        const tsShort = a.timestampMgr || (a.timestamp ? a.timestamp.substring(5, 16) : '');
+        const adj = a.isAdjustment ? `<span class="audit-adj-tag">ADJ ${a.daysBack}d</span>` : '';
+        const detail = a.action === 'TimeOffRequest' || a.action === 'TimeOffStatusChange'
+          ? `${a.action.replace(/([A-Z])/g, ' $1').trim()} for ${a.punchDate}`
+          : a.action === 'PunchDelete'
+          ? `Punch deleted: ${a.punchDate} ${dispTime(a.punchTime)}`
+          : a.action === 'TimeOffCancel'
+          ? `Time off cancelled for ${a.punchDate}`
+          : `${a.action} ${a.punchDate}${a.punchTime ? ' ' + dispTime(a.punchTime) : ''}`;
+        const reasonHtml = a.notes && a.isAdjustment
+          ? `<div class="audit-reason">"${esc(a.notes)}"</div>` : '';
+        return `<div class="audit-row">
+          <div class="audit-ts">${esc(tsShort)}</div>
+          <div class="audit-body">
+            <span class="audit-emp">${esc(a.empName)}</span>
+            <span class="audit-action"> · ${esc(detail)}</span>${adj}
+            ${reasonHtml}
+          </div>
+        </div>`;
+      }).join('');
+
+  const auditFootnote = mgrTzAbbr
+    ? `<div style="font-size:10px;color:var(--ink-m);margin-top:8px;text-align:right">Times shown in ${esc(mgrTzAbbr)}</div>`
+    : '';
+
+  area.innerHTML = `
+    <div class="view-title-row">
+      <div class="view-title">Manager Dashboard</div>
+      <button class="refresh-btn" id="mgr-refresh">⟳ Refresh</button>
+    </div>
+
+    ${heroHtml}
+
+    <div class="card">
+      <div class="card-label with-count">
+        <span>Live Status</span>
+        <span class="count-pill">${counts.clocked_in}/${totalEmp} in</span>
+      </div>
+      ${liveHtml}
+    </div>
+
+    <div class="card">
+      <div class="card-label with-count">
+        <span>Pending Time Off</span>
+        ${data.pending.length > 0 ? `<span class="count-pill">${data.pending.length}</span>` : ''}
+      </div>
+      ${pendingHtml}
+    </div>
+
+    <div class="card">
+      <div class="card-label with-count">
+        <span>Missed Clock-Outs (last ${data.missedLookbackDays}d)</span>
+        ${data.missedPunches.length > 0 ? `<span class="count-pill">${data.missedPunches.length}</span>` : ''}
+      </div>
+      ${missedHtml}
+    </div>
+
+    <div class="card">
+      <div class="card-label">Export ADP Upload</div>
+      <button class="export-btn-large" id="mgr-export">📄 Generate ADP Export File</button>
+    </div>
+
+    <div class="card">
+      <div class="card-label with-count">
+        <span>Recent Punches (× to delete, within ${data.mgrDeleteWindowDays}d)</span>
+        ${recent.length > 0 ? `<span class="count-pill">${recent.length}</span>` : ''}
+      </div>
+      ${recentHtml}
+    </div>
+
+    <div class="card">
+      <div class="card-label">Recent Activity</div>
+      ${auditHtml}
+      ${auditFootnote}
+    </div>`;
+
+  document.getElementById('mgr-refresh').addEventListener('click', () => {
+    renderLoading(area, 'Refreshing…');
+    loadManagerDashboard();
+  });
+  document.getElementById('mgr-export').addEventListener('click', openExportModal);
+
+  // Approve / Deny buttons
+  document.querySelectorAll('.pending-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = JSON.parse(btn.dataset.key);
+      const newStatus = btn.dataset.status;
+      const verb = newStatus === 'Approved' ? 'Approve' : 'Deny';
+      let msg = `${verb} time off request from ${key.empName}?`;
+      if (newStatus === 'Approved'
+          && key.projectedBalance !== null && key.projectedBalance !== undefined
+          && key.projectedBalance < 0) {
+        const bucket = key.leaveBucket === 'sick' ? 'sick' : 'annual';
+        msg += `\n\n⚠ This will take their ${bucket} leave balance to ${key.projectedBalance} day(s) (negative).`;
+      }
+      if (!confirm(msg)) return;
+      handleApprovalAction(key.empId, key.date, key.submittedAt, newStatus, btn);
+    });
+  });
+
+  // Delete punch buttons (Phase 7)
+  document.querySelectorAll('.rp-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const empId = btn.dataset.emp;
+      const date = btn.dataset.date;
+      const time = btn.dataset.time;
+      const type = btn.dataset.type;
+      const empName = btn.dataset.name;
+      if (!confirm(
+        `Delete ${prettyType(type)} for ${empName} on ${date} at ${dispTime(time)}?\n\n` +
+        `This permanently removes the punch and cannot be undone.`
+      )) return;
+      handleDeletePunch(empId, date, time, type, btn);
+    });
+  });
+}
+
+function prettyType(type) {
+  return ({
+    ClockIn: 'Clock In', LunchOut: 'Lunch Out', LunchIn: 'Lunch Return', ClockOut: 'Clock Out',
+  })[type] || type;
+}
+
+function handleApprovalAction(empId, date, submittedAt, newStatus, btn) {
+  const card = btn.closest('.pending-card');
+  card.querySelectorAll('.pending-btn').forEach(b => { b.disabled = true; });
+  google.script.run
+    .withSuccessHandler(result => {
+      if (!result.success) {
+        showToast('❌ ' + (result.error||'Error'),'toast-error');
+        card.querySelectorAll('.pending-btn').forEach(b => { b.disabled = false; });
+        return;
+      }
+      const balMsg = result.newBalance !== null && result.newBalance !== undefined
+        ? ` · balance: ${formatLeaveDays(result.newBalance)}` : '';
+      showToast(`✓ ${newStatus}${balMsg}`, 'toast-success');
+      renderLoading(document.getElementById('view-area'), 'Refreshing…');
+      loadManagerDashboard();
+    })
+    .withFailureHandler(err => {
+      showToast('❌ ' + (err.message||'Server error'),'toast-error');
+      card.querySelectorAll('.pending-btn').forEach(b => { b.disabled = false; });
+    })
+    .updateTimeOffStatus(empId, date, submittedAt, newStatus);
+}
+
+function handleDeletePunch(empId, date, time, type, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  google.script.run
+    .withSuccessHandler(r => {
+      if (!r.success) {
+        btn.disabled = false; btn.textContent = '×';
+        showToast('❌ ' + (r.error||'Error'), 'toast-error');
+        return;
+      }
+      showToast('✓ Punch deleted', 'toast-success');
+      renderLoading(document.getElementById('view-area'), 'Refreshing…');
+      loadManagerDashboard();
+    })
+    .withFailureHandler(err => {
+      btn.disabled = false; btn.textContent = '×';
+      showToast('❌ ' + (err.message||'Server error'), 'toast-error');
+    })
+    .deletePunch(empId, date, time, type);
+}
+
+// ── ADP EXPORT MODAL ──────────────────────────────────────────────────────
+function openExportModal() {
+  const tz = empTz();
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+  const now = new Date();
+  const todayIso = fmt.format(now);
+  const firstOfMonth = todayIso.substring(0, 7) + '-01';
+  document.getElementById('exp-start').value = firstOfMonth;
+  document.getElementById('exp-end').value   = todayIso;
+  document.getElementById('export-overlay').classList.add('open');
+}
+
+document.getElementById('exp-cancel').addEventListener('click', () =>
+  document.getElementById('export-overlay').classList.remove('open'));
+document.getElementById('export-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('export-overlay'))
+    document.getElementById('export-overlay').classList.remove('open');
+});
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tz = empTz();
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+    const now = new Date();
+    const todayIso = fmt.format(now);
+    const parts = todayIso.split('-');
+    const today = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+    let start, end;
+    const preset = btn.dataset.preset;
+    if (preset === 'this-month') {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+      end = today;
+    } else if (preset === 'last-month') {
+      start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      end = new Date(today.getFullYear(), today.getMonth(), 0);
+    } else if (preset === 'last-14') {
+      start = new Date(today); start.setDate(today.getDate() - 13);
+      end = today;
+    } else if (preset === 'last-30') {
+      start = new Date(today); start.setDate(today.getDate() - 29);
+      end = today;
+    }
+    document.getElementById('exp-start').value = isoDate(start);
+    document.getElementById('exp-end').value   = isoDate(end);
+  });
+});
+
+document.getElementById('exp-submit').addEventListener('click', () => {
+  const start = document.getElementById('exp-start').value;
+  const end   = document.getElementById('exp-end').value;
+  if (!start || !end) { showToast('Please pick both dates','toast-error'); return; }
+  if (start > end)     { showToast('Start date must be before end date','toast-error'); return; }
+  const btn = document.getElementById('exp-submit');
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  google.script.run
+    .withSuccessHandler(result => {
+      btn.disabled = false;
+      btn.textContent = 'Generate Export';
+      if (!result.success) { showToast('❌ ' + (result.error||'Error'),'toast-error'); return; }
+      document.getElementById('export-overlay').classList.remove('open');
+      showToast(`✓ Generated ${result.rowCount} rows — opening sheet`, 'toast-success');
+      window.open(result.url, '_blank');
+    })
+    .withFailureHandler(err => {
+      btn.disabled = false;
+      btn.textContent = 'Generate Export';
+      showToast('❌ ' + (err.message||'Server error'),'toast-error');
+    })
+    .exportAdpRange(start, end);
+});
+</script>
