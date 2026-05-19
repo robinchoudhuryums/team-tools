@@ -27,6 +27,7 @@ function renderTimeOffView(area, data) {
   const canNext = thisYM < curYM + 3;
 
   const workedSet = new Set(data.workedDates);
+  const hoursMap = data.workedHoursByDate || {};
   const ownMap = {};
   data.timeOffRequests.forEach(r => { ownMap[r.date] = r; });
   const tmByDate = {};
@@ -37,20 +38,24 @@ function renderTimeOffView(area, data) {
   const holidayMap = {};
   data.holidays.forEach(h => { holidayMap[h.date] = h; });
 
-  // ── Leave balances (Phase 7) ────────────────────────────────────────────
-  let balancesHtml = '';
-  if (data.ptoEnabled && (data.annualLeave !== undefined || data.sickLeave !== undefined)) {
-    balancesHtml = `
-      <div class="leave-balance-row">
-        <div class="lb-card">
-          <div class="lb-label">Annual Leave</div>
-          <div class="lb-val">${formatLeaveDays(data.annualLeave)}</div>
-          <div class="lb-unit">days left</div>
-        </div>
-        <div class="lb-card">
-          <div class="lb-label">Sick Leave</div>
-          <div class="lb-val">${formatLeaveDays(data.sickLeave)}</div>
-          <div class="lb-unit">days left</div>
+  // ── Leave balance (right rail beside calendar, PTO ring) ─────────────────
+  // Only annual leave shown — most UMS staff don't have a separate sick bucket.
+  // Per-employee ptoEnabled flag hides this entirely for contractors.
+  let balanceCardHtml = '';
+  if (data.ptoEnabled && data.annualLeave !== undefined) {
+    const annualMax = Math.max(data.annualLeaveMax || 15, data.annualLeave || 0, 1);
+    const ring = ptoRingSvg(data.annualLeave, annualMax, 'annual');
+    balanceCardHtml = `
+      <div class="card pto-card-side">
+        <div class="card-label">Annual Leave</div>
+        <div class="pto-ring">
+          <div class="pto-svg">${ring.svg}
+            <div class="pto-ring-center">
+              <div class="pto-ring-val">${ring.label}</div>
+              <div class="pto-ring-of">of ${ring.maxLabel}</div>
+            </div>
+          </div>
+          <div class="pto-ring-label">days remaining</div>
         </div>
       </div>`;
   }
@@ -87,8 +92,17 @@ function renderTimeOffView(area, data) {
       dot = `<div class="cal-dot ${st==='approved'?'approved':st==='denied'?'denied':'pending'}"></div>`;
     }
     const holidayMark = hol ? '<div class="cal-holiday">★</div>' : '';
-    const tmMark = (tms && tms.length) ? `<div class="cal-tm">+${tms.length}</div>` : '';
-    calHtml += `<div class="${cls}" ${click}>${holidayMark}<span class="cal-dn">${d}</span>${dot}${tmMark}</div>`;
+    // Corner badge priority: worked hours > teammate count
+    let cornerMark = '';
+    const hrs = hoursMap[dateStr];
+    if (hasWork && hrs !== undefined && hrs !== null && hrs !== 'inProgress') {
+      cornerMark = `<div class="cal-hrs">${formatHoursShort(hrs)}</div>`;
+    } else if (hasWork && hrs === 'inProgress') {
+      cornerMark = `<div class="cal-hrs in-progress">●</div>`;
+    } else if (tms && tms.length) {
+      cornerMark = `<div class="cal-tm">+${tms.length}</div>`;
+    }
+    calHtml += `<div class="${cls}" ${click}>${holidayMark}<span class="cal-dn">${d}</span>${dot}${cornerMark}</div>`;
   }
   calHtml += '</div>';
 
@@ -129,13 +143,19 @@ function renderTimeOffView(area, data) {
 
   area.innerHTML = `
     <div class="view-title">Time Off</div>
-    ${balancesHtml}
     <div class="month-nav">
       <button class="month-nav-btn" id="cal-prev" ${!canPrev?'disabled':''}>‹</button>
       <span class="month-label">${data.monthName}</span>
       <button class="month-nav-btn" id="cal-next" ${!canNext?'disabled':''}>›</button>
     </div>
-    <div class="card">${calHtml}${legendHtml}</div>
+    <div class="timeoff-layout">
+      <div class="timeoff-main">
+        <div class="card cal-card">${calHtml}${legendHtml}</div>
+      </div>
+      <div class="timeoff-side">
+        ${balanceCardHtml}
+      </div>
+    </div>
     ${reqHtml}`;
 
   document.getElementById('cal-prev').addEventListener('click', () => {

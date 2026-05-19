@@ -3,6 +3,8 @@
 //  CLOCK VIEW
 // ════════════════════════════════════════════════════════════════════════════
 
+const SELF_UNDO_WINDOW_SECONDS = 300; // mirror server's CONFIG.SELF_UNDO_WINDOW_SECONDS
+
 function renderClockView(area) {
   const s = empState;
   const sp = STATUS_PILL[deriveShiftStatus(s.nextActions, s.punches)];
@@ -29,8 +31,97 @@ function renderClockView(area) {
     <div class="card">
       <div class="card-label">Actions</div>
       ${renderActions(s.nextActions)}
-    </div>`;
+    </div>
+
+    <div id="teammate-card-slot"></div>`;
   bindClockBtns();
+  bindSelfUndoBtns();
+  loadTeammateStatus();
+}
+
+/** Load teammate status into the slot below Actions (best-effort, silent on failure). */
+function loadTeammateStatus() {
+  const slot = document.getElementById('teammate-card-slot');
+  if (!slot) return;
+  google.script.run
+    .withSuccessHandler(data => {
+      if (!data || !data.enabled || data.error) { slot.innerHTML = ''; return; }
+      renderTeammateCard(slot, data.teammates);
+    })
+    .withFailureHandler(() => { slot.innerHTML = ''; })
+    .getTeammateStatus();
+}
+
+function renderTeammateCard(slot, teammates) {
+  if (!teammates || teammates.length === 0) { slot.innerHTML = ''; return; }
+  const TM_STATUS = {
+    clocked_in:  { label:'In',     avCls:'av-active' },
+    on_lunch:    { label:'Lunch',  avCls:'av-lunch'  },
+    clocked_out: { label:'Done',   avCls:'av-done'   },
+    not_in:      { label:'—',      avCls:'av-idle'   },
+  };
+  const counts = { clocked_in: 0, on_lunch: 0, clocked_out: 0, not_in: 0 };
+  teammates.forEach(t => { counts[t.status]++; });
+  const summary = `${counts.clocked_in} in · ${counts.on_lunch} on lunch · ${counts.clocked_out + counts.not_in} away`;
+
+  const cardsHtml = teammates.map(t => {
+    const meta = TM_STATUS[t.status] || TM_STATUS.not_in;
+    const initials = t.name.split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase();
+    const youTag = t.isSelf ? ' <span class="emp-self-tag">you</span>' : '';
+    return `<div class="emp-card emp-card-compact${t.isSelf ? ' is-self' : ''}">
+      <div class="emp-card-top">
+        <div class="emp-avatar ${meta.avCls}">${esc(initials)}</div>
+        <div class="emp-name">${esc(t.name)}${youTag}</div>
+      </div>
+      <div class="emp-status-line">${meta.label}</div>
+    </div>`;
+  }).join('');
+
+  slot.innerHTML = `
+    <div class="card">
+      <div class="card-label with-count">
+        <span>Team Right Now</span>
+        <span style="font-size:11px;font-weight:500;color:var(--text-2);text-transform:none;letter-spacing:0">${summary}</span>
+      </div>
+      <div class="emp-grid">${cardsHtml}</div>
+    </div>`;
+}
+
+function bindSelfUndoBtns() {
+  document.querySelectorAll('.punch-undo').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const date = btn.dataset.date;
+      const time = btn.dataset.time;
+      const type = btn.dataset.type;
+      const label = btn.dataset.label || type;
+      if (!confirm(`Undo your "${label}" punch at ${dispTime(time)}?\n\nThis only works within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)} min of the punch.`)) return;
+      btn.disabled = true;
+      google.script.run
+        .withSuccessHandler(result => {
+          if (!result.success) {
+            btn.disabled = false;
+            showToast('❌ ' + (result.error || 'Could not undo'), 'toast-error');
+            return;
+          }
+          showToast('✓ Punch undone', 'toast-success');
+          google.script.run
+            .withSuccessHandler(state => {
+              empState = state;
+              const area = document.getElementById('view-area');
+              if (area && currentView === 'clock') renderClockView(area);
+              startClock();
+            })
+            .withFailureHandler(()=>{})
+            .getEmployeeState();
+        })
+        .withFailureHandler(err => {
+          btn.disabled = false;
+          showToast('❌ ' + (err.message||'Server error'), 'toast-error');
+        })
+        .selfDeletePunch(date, time, type);
+    });
+  });
 }
 
 /** Two-ring PTO donut (annual + sick) shown beneath the hero clock. */
@@ -86,17 +177,47 @@ function ptoRingSvg(value, max, cls) {
 function renderPunchHistory(punches) {
   if (!punches || punches.length === 0)
     return '<div class="no-data">No punches recorded yet today</div>';
+  // Use client-local clock to decide which punches are still in the undo window.
+  // Server re-validates on submit, so stale UI just causes a friendly error.
+  const tz = empTz();
+  const nowHMS = liveTimeHmsTz(tz);
   return '<div class="punch-list">' + punches.map(p => {
     const m  = PUNCH_META[p.type] || { label:p.type, emoji:'●', dir:p.direction==='IN'?'in':'out' };
     const dc = m.dir === 'in' ? 'in' : 'out';
     const adj = p.isAdjustment ? '<span class="adj-pill">✏️ adj</span>' : '';
+    const eligible = !p.isAdjustment && timeDiffSecondsClient(p.time, nowHMS) <= SELF_UNDO_WINDOW_SECONDS;
+    const undoBtn = eligible
+      ? `<button class="punch-undo" title="Undo this punch (within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)}min)"
+           data-date="${esc(empState.today)}" data-time="${esc(p.time)}" data-type="${esc(p.type)}"
+           data-label="${esc(m.label)}">×</button>`
+      : '';
     return `<div class="punch-row">
       <div class="punch-icon ${dc}">${m.emoji}</div>
       <div class="punch-name">${m.label} ${adj}</div>
       <div class="punch-tag ${dc}">${p.direction}</div>
       <div class="punch-tv">${dispTime(p.time)}</div>
+      ${undoBtn}
     </div>`;
   }).join('') + '</div>';
+}
+
+/** Live time in tz formatted "HH:mm:ss" — used for client-side undo eligibility. */
+function liveTimeHmsTz(tz) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).format(new Date());
+}
+
+/** Client mirror of server's timeDiffSeconds_. Returns -1 if either string malformed. */
+function timeDiffSecondsClient(earlier, later) {
+  const toSec = (t) => {
+    const p = String(t).split(':');
+    if (p.length < 2) return NaN;
+    return (parseInt(p[0],10)||0)*3600 + (parseInt(p[1],10)||0)*60 + (parseInt(p[2],10)||0);
+  };
+  const a = toSec(earlier), b = toSec(later);
+  if (isNaN(a) || isNaN(b)) return -1;
+  return b - a;
 }
 
 function renderActions(actions) {

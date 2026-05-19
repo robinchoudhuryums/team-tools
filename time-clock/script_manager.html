@@ -211,7 +211,10 @@ function renderManagerView(area, data) {
     <div class="card">
       <div class="card-label with-count">
         <span>Pending Time Off</span>
-        ${data.pending.length > 0 ? `<span class="count-pill">${data.pending.length}</span>` : ''}
+        <span style="display:flex;align-items:center;gap:10px">
+          ${data.pending.length > 0 ? `<span class="count-pill">${data.pending.length}</span>` : ''}
+          <button class="refresh-btn" id="mgr-add-timeoff" style="padding:4px 10px;font-size:12px">+ Add Time Off</button>
+        </span>
       </div>
       ${pendingHtml}
     </div>
@@ -248,6 +251,7 @@ function renderManagerView(area, data) {
     loadManagerDashboard();
   });
   document.getElementById('mgr-export').addEventListener('click', openExportModal);
+  document.getElementById('mgr-add-timeoff').addEventListener('click', () => openMgrTimeOffModal(data));
 
   // Approve / Deny buttons
   document.querySelectorAll('.pending-btn').forEach(btn => {
@@ -404,5 +408,53 @@ document.getElementById('exp-submit').addEventListener('click', () => {
       showToast('❌ ' + (err.message||'Server error'),'toast-error');
     })
     .exportAdpRange(start, end);
+});
+
+// ─── MANAGER: ADD TIME OFF FOR EMPLOYEE ─────────────────────────────────
+function openMgrTimeOffModal(data) {
+  const sel = document.getElementById('mto-emp');
+  sel.innerHTML = data.liveStatus
+    .map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`)
+    .join('');
+  // Default date = today (in manager's tz)
+  document.getElementById('mto-date').value = isoDateTz(empTz());
+  document.getElementById('mto-type').value = 'Full Day';
+  document.getElementById('mto-notes').value = '';
+  document.getElementById('mto-auto').checked = true;
+  document.getElementById('mgr-timeoff-overlay').classList.add('open');
+}
+
+document.getElementById('mto-cancel').addEventListener('click', () => {
+  document.getElementById('mgr-timeoff-overlay').classList.remove('open');
+});
+
+document.getElementById('mto-submit').addEventListener('click', () => {
+  const empId = document.getElementById('mto-emp').value;
+  const date  = document.getElementById('mto-date').value;
+  const type  = document.getElementById('mto-type').value;
+  const notes = document.getElementById('mto-notes').value.trim();
+  const auto  = document.getElementById('mto-auto').checked;
+  if (!empId) { showToast('Pick an employee', 'toast-error'); return; }
+  if (!date)  { showToast('Pick a date', 'toast-error'); return; }
+
+  const btn = document.getElementById('mto-submit');
+  btn.disabled = true;
+  btn.textContent = auto ? 'Filing & approving…' : 'Filing…';
+  google.script.run
+    .withSuccessHandler(result => {
+      btn.disabled = false;
+      btn.textContent = 'File Request';
+      if (!result.success) { showToast('❌ ' + (result.error||'Error'),'toast-error'); return; }
+      document.getElementById('mgr-timeoff-overlay').classList.remove('open');
+      showToast(`✓ Time off filed${result.status === 'Approved' ? ' & approved' : ''}`, 'toast-success');
+      renderLoading(document.getElementById('view-area'), 'Refreshing…');
+      loadManagerDashboard();
+    })
+    .withFailureHandler(err => {
+      btn.disabled = false;
+      btn.textContent = 'File Request';
+      showToast('❌ ' + (err.message||'Server error'),'toast-error');
+    })
+    .managerSubmitTimeOff(empId, date, type, notes, auto);
 });
 </script>

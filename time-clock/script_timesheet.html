@@ -68,6 +68,9 @@ function renderTimesheetView(area, data) {
   const canPrev = data.startDate > sixMoBack;
   const label = rangeLabel(data.startDate, data.endDate, tsViewMode);
   const visibleDays = data.days.filter(d => d.hasData || (!d.isWeekend && !d.isFuture));
+  // Calendar grid is only meaningful for month range
+  const showLayoutToggle = tsViewMode === 'month';
+  const effectiveLayout = showLayoutToggle ? tsLayout : 'list';
 
   let toggleHtml = '';
   if (showToggle) {
@@ -77,8 +80,29 @@ function renderTimesheetView(area, data) {
     </div>`;
   }
 
+  const layoutToggleHtml = showLayoutToggle ? `
+    <div class="layout-toggle">
+      <button class="layout-btn ${tsLayout==='list'?'active':''}" id="lo-list" title="List view" aria-label="List view">
+        <span class="lo-icon">≡</span>List
+      </button>
+      <button class="layout-btn ${tsLayout==='calendar'?'active':''}" id="lo-cal" title="Calendar view" aria-label="Calendar view">
+        <span class="lo-icon">▦</span>Calendar
+      </button>
+    </div>` : '';
+
+  const bodyHtml = effectiveLayout === 'calendar'
+    ? renderTimesheetCalendar(data, todayIso)
+    : `<div class="day-list">
+        ${visibleDays.length === 0
+          ? '<div class="no-data" style="padding:20px 0">No records this period yet</div>'
+          : visibleDays.map(renderDayCard).join('')}
+       </div>`;
+
   area.innerHTML = `
-    <div class="view-title">Timesheet</div>
+    <div class="view-title-row">
+      <div class="view-title">Timesheet</div>
+      ${layoutToggleHtml}
+    </div>
     ${toggleHtml}
     <div class="month-nav">
       <button class="month-nav-btn" id="ts-prev" ${!canPrev?'disabled':''}>‹</button>
@@ -90,11 +114,7 @@ function renderTimesheetView(area, data) {
       <div class="ts-stat"><div class="ts-stat-val">${fmtHrs(data.totalHours)}</div><div class="ts-stat-lbl">Total Hours</div></div>
       <div class="ts-stat ${data.incompleteCount>0?'warn':''}"><div class="ts-stat-val">${data.incompleteCount}</div><div class="ts-stat-lbl">Incomplete</div></div>
     </div>
-    <div class="day-list">
-      ${visibleDays.length === 0
-        ? '<div class="no-data" style="padding:20px 0">No records this period yet</div>'
-        : visibleDays.map(renderDayCard).join('')}
-    </div>`;
+    ${bodyHtml}`;
 
   if (showToggle) {
     document.getElementById('vmt-period').addEventListener('click', () => {
@@ -112,6 +132,18 @@ function renderTimesheetView(area, data) {
       renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
     });
   }
+  if (showLayoutToggle) {
+    document.getElementById('lo-list').addEventListener('click', () => {
+      if (tsLayout === 'list') return;
+      tsLayout = 'list';
+      renderTimesheetView(area, data);
+    });
+    document.getElementById('lo-cal').addEventListener('click', () => {
+      if (tsLayout === 'calendar') return;
+      tsLayout = 'calendar';
+      renderTimesheetView(area, data);
+    });
+  }
   document.getElementById('ts-prev').addEventListener('click', () => {
     if (!canPrev) return;
     const range = computeRange(tsViewMode, data.startDate, -1);
@@ -125,6 +157,50 @@ function renderTimesheetView(area, data) {
     tsStart = range.start; tsEnd = range.end;
     renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
   });
+}
+
+/** Render a calendar grid view of the month with hours-worked badges per day. */
+function renderTimesheetCalendar(data, todayIso) {
+  const start = new Date(data.startDate + 'T12:00:00Z');
+  const y = start.getUTCFullYear();
+  const m = start.getUTCMonth();
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const firstDow = new Date(Date.UTC(y, m, 1)).getUTCDay();
+  const dayMap = {};
+  data.days.forEach(d => { dayMap[d.date] = d; });
+
+  let html = '<div class="card cal-card"><div class="cal-grid">';
+  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => { html += `<div class="cal-dow">${d}</div>`; });
+  for (let i = 0; i < firstDow; i++) html += '<div class="cal-cell"></div>';
+  for (let d = 1; d <= lastDay; d++) {
+    const dateStr = `${y}-${pad(m+1)}-${pad(d)}`;
+    const dd = dayMap[dateStr];
+    let cls = 'cal-cell ts-cal-cell';
+    let badge = '';
+    if (dd) {
+      if (dd.isWeekend) cls += ' weekend';
+      if (dd.isToday) cls += ' today';
+      if (dd.isFuture) cls += ' future';
+      if (dd.hoursWorked !== null && dd.hoursWorked !== undefined) {
+        cls += ' has-worked';
+        badge = `<div class="cal-hrs">${formatHoursShort(dd.hoursWorked)}</div>`;
+      } else if (dd.inProgress) {
+        cls += ' has-worked';
+        badge = `<div class="cal-hrs in-progress">●</div>`;
+      } else if (dd.isIncomplete) {
+        cls += ' has-pending';
+        badge = `<div class="cal-hrs warn">⚠</div>`;
+      }
+    }
+    html += `<div class="${cls}"><span class="cal-dn">${d}</span>${badge}</div>`;
+  }
+  html += '</div>';
+  html += `<div class="cal-legend" style="margin-top:12px">
+    <div class="leg-item"><div class="leg-dot" style="background:var(--success)"></div>Worked (hours shown)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--warning)"></div>Incomplete</div>
+    <div class="leg-item" style="color:var(--text-3);font-size:11px">Switch to List for full punch detail</div>
+  </div></div>`;
+  return html;
 }
 
 function renderDayCard(d) {

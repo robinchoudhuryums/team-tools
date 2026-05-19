@@ -31,6 +31,7 @@ const DOW_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','
 let empState = null;
 let currentView = 'clock';
 let tsData = null, tsViewMode = 'month', tsStart = null, tsEnd = null;
+let tsLayout = 'list'; // 'list' | 'calendar' — calendar grid only available in month range
 let calData = null, calYear = null, calMonth = null;
 let mgrData = null;
 let dayModalDate = null;
@@ -218,6 +219,13 @@ function fmtHrs(h) {
   if (h === null || h === undefined) return '--';
   const hrs = Math.floor(h), mins = Math.round((h - hrs) * 60);
   return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+}
+
+/** Short hours format for badges/calendar cells: 8 → "8h", 8.5 → "8.5h". */
+function formatHoursShort(h) {
+  if (h === null || h === undefined || isNaN(Number(h))) return '';
+  const n = Number(h);
+  return n % 1 === 0 ? `${n}h` : `${n.toFixed(1)}h`;
 }
 
 function isoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }

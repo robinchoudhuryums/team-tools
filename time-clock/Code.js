@@ -10,7 +10,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 const CONFIG = {
-  ADP_SS_ID:    '1DgjQhuSvtCFuL-3yRH4qyMug2mlOyTmzTSW2GJiaKAM',
+  ADP_SS_ID:    'YOUR_ADP_SPREADSHEET_ID',
   EMPLOYEE_TAB: 'Employees',
   ADP_TAB:      'Timesheet',
   TIMEOFF_TAB:  'TimeOffRequests',
@@ -19,11 +19,14 @@ const CONFIG = {
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
 
-  MANAGER_EMAILS: ['robin.choudhury@universalmedsupply.com'],
+  MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
   ADJUST_WINDOW_DAYS:        30,
   OLD_ADJUST_ALERT_DAYS:     7,   // also: reason becomes required beyond this
   MGR_DELETE_WINDOW_DAYS:    7,   // how far back a manager can delete a punch
+  MIN_PUNCH_INTERVAL_SECONDS: 30, // minimum seconds between live punches (prevents fat-finger)
+  SELF_UNDO_WINDOW_SECONDS:  300, // 5 min — employees can undo their own live punches within this
+  SHOW_TEAMMATE_STATUS:      true, // show teammate status card on Clock page
 
   ENABLE_PTO_TRACKING:       true,
   ANNUAL_LEAVE_MAX:          15,  // for PTO ring display only (e.g. "12/15")
@@ -40,7 +43,7 @@ const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6,
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
 const EMP = {
   EMAIL:0, ID:1, NAME:2, SHEET_ID:3, PAY_CYCLE:4, PAY_ANCHOR:5, IS_MANAGER:6,
-  TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9,
+  TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10,
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
@@ -48,7 +51,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v3';   // bumped: PTO columns added
+const ROSTER_CACHE_KEY = 'employee_roster_v4';   // bumped: PtoEnabled column
 const ROSTER_CACHE_TTL = 300;
 
 const TZ_ABBR = {
@@ -98,7 +101,7 @@ function getEmployeeState() {
       isManager: emp.isManager,
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
-      ptoEnabled: !!CONFIG.ENABLE_PTO_TRACKING,
+      ptoEnabled: !!(CONFIG.ENABLE_PTO_TRACKING && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
       annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
@@ -137,6 +140,22 @@ function recordPunch(punchType, custom) {
     if (date > todayStr) return { success: false, error: 'Cannot record punches for future dates.' };
     if (date === todayStr && time > nowTime)
       return { success: false, error: 'Cannot record punches in the future.' };
+
+    // Min-interval safeguard: prevent accidental rapid-fire punches.
+    // Only applies to live (non-adjustment) punches.
+    if (!isAdj) {
+      const { punches: todayPunches } = getTodayPunches_(emp.id, empTz);
+      if (todayPunches.length > 0) {
+        const last = todayPunches[todayPunches.length - 1];
+        const secondsSince = timeDiffSeconds_(last.time, nowTime);
+        if (secondsSince >= 0 && secondsSince < CONFIG.MIN_PUNCH_INTERVAL_SECONDS) {
+          const wait = CONFIG.MIN_PUNCH_INTERVAL_SECONDS - secondsSince;
+          return { success: false, error:
+            `Your last punch was just ${secondsSince}s ago. Please wait ${wait}s before punching again ` +
+            `(if you made a mistake, use Adjust instead).` };
+        }
+      }
+    }
 
     let daysBack = 0;
     let reason   = '';
@@ -298,7 +317,7 @@ function getManagerDashboard() {
       if (rowDate !== e.todayStr) continue;
       if (!todayPunchesByEmp[id]) todayPunchesByEmp[id] = [];
       todayPunchesByEmp[id].push({
-        time: String(adpRows[i][ADP.TIME]),
+        time: normalizeTime_(adpRows[i][ADP.TIME]),
         type: normalizeType_(String(adpRows[i][ADP.COMMENTS])),
       });
     }
@@ -399,7 +418,7 @@ function getManagerDashboard() {
       recentPunches.push({
         empId: id, empName: e.name,
         date: rowDate,
-        time: String(adpRows[i][ADP.TIME]),
+        time: normalizeTime_(adpRows[i][ADP.TIME]),
         type: normalizeType_(rawComment),
         isAdjustment: rawComment.indexOf('ADJ-') === 0,
         empTzAbbr: e.tzAbbr,
@@ -504,6 +523,54 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
   finally { lock.releaseLock(); }
 }
 
+/** Manager files a time-off request on behalf of an employee.
+ *  Optionally auto-approves it in the same call (skipping the Pending stage). */
+function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager)
+      return { success: false, error: 'Manager access required.' };
+
+    if (!empId) return { success: false, error: 'No employee selected.' };
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+      return { success: false, error: 'Invalid date format (expected yyyy-MM-dd).' };
+    if (!type) return { success: false, error: 'Leave type required.' };
+
+    const targetEmp = lookupEmployeeById_(empId);
+    if (!targetEmp) return { success: false, error: 'Employee not found.' };
+
+    const status = autoApprove ? 'Approved' : 'Pending';
+    const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    getOrCreateTimeOffSheet_()
+      .appendRow([targetEmp.id, targetEmp.name, date, type, notes || '', status, submittedAt]);
+
+    // Apply leave deduction immediately if auto-approving
+    let newBalance = null;
+    if (autoApprove && CONFIG.ENABLE_PTO_TRACKING) {
+      const dedu = getLeaveDeduction_(type);
+      if (dedu.bucket) newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
+    }
+
+    writeAuditLog_(targetEmp, 'TimeOffRequest', date, '', false, 0,
+      `${type}${notes ? ' — ' + notes : ''} (filed by manager${autoApprove ? ', auto-approved' : ''})`,
+      callerEmp.email);
+
+    // Only notify employee when auto-approving (Pending is just a queued item, no need to email yet)
+    if (autoApprove) {
+      try {
+        if (targetEmp.email) {
+          notifyEmployeeOfDecision_(targetEmp, date, type, notes || '', status);
+        }
+      } catch (e) { console.warn('Employee notify failed: ' + e.message); }
+    }
+
+    return { success: true, newBalance, status };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 /** Manager deletes a single punch within the delete window. */
 function deletePunch(empId, date, time, punchType) {
   const lock = LockService.getScriptLock();
@@ -526,7 +593,7 @@ function deletePunch(empId, date, time, punchType) {
     for (let i = 2; i < rows.length; i++) {
       if (String(rows[i][ADP.EMP_ID]).trim() !== empId) continue;
       if (normalizeDate_(rows[i][ADP.DATE]) !== date) continue;
-      if (String(rows[i][ADP.TIME]).trim() !== time) continue;
+      if (normalizeTime_(rows[i][ADP.TIME]).trim() !== time) continue;
       if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== punchType) continue;
 
       sheet.deleteRow(i + 1);
@@ -544,6 +611,112 @@ function deletePunch(empId, date, time, punchType) {
     return { success: false, error: 'Punch not found (may have already been removed).' };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+/** Employee self-undo of a recent live punch (today, within SELF_UNDO_WINDOW_SECONDS).
+ *  Adjustments are NOT eligible — use Adjust to fix those. */
+function selfDeletePunch(date, time, punchType) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    if (!PUNCH_LABELS_.includes(punchType))
+      return { success: false, error: 'Invalid punch type.' };
+
+    const empTz = empTz_(emp);
+    const todayStr = fmtDateTz_(new Date(), empTz);
+    if (date !== todayStr) {
+      return { success: false, error: 'You can only undo today\'s punches. For older corrections, use Adjust.' };
+    }
+
+    const nowTime = fmtTimeTz_(new Date(), empTz);
+    const secondsSince = timeDiffSeconds_(time, nowTime);
+    if (secondsSince < 0 || secondsSince > CONFIG.SELF_UNDO_WINDOW_SECONDS) {
+      const mins = Math.round(CONFIG.SELF_UNDO_WINDOW_SECONDS / 60);
+      return { success: false, error:
+        `Self-undo only works within ${mins} minutes of the punch. Use Adjust to fix older entries.` };
+    }
+
+    const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 2; i < rows.length; i++) {
+      if (String(rows[i][ADP.EMP_ID]).trim() !== emp.id) continue;
+      if (normalizeDate_(rows[i][ADP.DATE]) !== date) continue;
+      if (normalizeTime_(rows[i][ADP.TIME]).trim() !== time) continue;
+      const rawComment = String(rows[i][ADP.COMMENTS]);
+      if (normalizeType_(rawComment) !== punchType) continue;
+      // Block self-undo of adjustments — those are deliberate edits, must use Adjust again
+      if (rawComment.indexOf('ADJ-') === 0) {
+        return { success: false, error:
+          'Cannot self-undo an adjustment. Use Adjust again to fix it.' };
+      }
+      sheet.deleteRow(i + 1);
+      if (emp.sheetId) {
+        try { clearFromEmployeeSheet_(emp, date, punchType); }
+        catch (e) { console.warn('clearFromEmployeeSheet_ failed: ' + e.message); }
+      }
+      writeAuditLog_(emp, 'PunchSelfUndo', date, time, false, 0, `${punchType} self-undone`);
+      return { success: true };
+    }
+    return { success: false, error: 'Punch not found (may have already been removed).' };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Lightweight teammate-status view for the Clock page.
+ *  Returns name + status only — no email, no internal IDs, no last-punch detail. */
+function getTeammateStatus() {
+  try {
+    if (!CONFIG.SHOW_TEAMMATE_STATUS) return { enabled: false, teammates: [] };
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+
+    const rows = getEmployeeRosterRows_();
+    const employees = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][EMP.EMAIL]) continue;
+      const id = String(rows[i][EMP.ID]).trim();
+      let tzRaw = rows[i][EMP.TIMEZONE];
+      if (tzRaw === null || tzRaw === undefined) tzRaw = '';
+      const tz = String(tzRaw).trim() || CONFIG.TIMEZONE;
+      employees.push({ id, name: String(rows[i][EMP.NAME]).trim(), tz });
+    }
+
+    // Gather today's last punch per employee in their own tz
+    const adpRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    const todayByEmp = {};
+    employees.forEach(e => { todayByEmp[e.id] = { today: fmtDateTz_(new Date(), e.tz), last: null }; });
+    for (let i = 2; i < adpRows.length; i++) {
+      const id = String(adpRows[i][ADP.EMP_ID]).trim();
+      const slot = todayByEmp[id];
+      if (!slot) continue;
+      if (normalizeDate_(adpRows[i][ADP.DATE]) !== slot.today) continue;
+      const time = normalizeTime_(adpRows[i][ADP.TIME]);
+      const type = normalizeType_(String(adpRows[i][ADP.COMMENTS]));
+      if (!slot.last || time > slot.last.time) slot.last = { time, type };
+    }
+
+    const teammates = employees.map(e => {
+      const slot = todayByEmp[e.id];
+      const last = slot ? slot.last : null;
+      let status = 'not_in';
+      if (last) {
+        if (last.type === 'ClockIn' || last.type === 'LunchIn') status = 'clocked_in';
+        else if (last.type === 'LunchOut') status = 'on_lunch';
+        else if (last.type === 'ClockOut') status = 'clocked_out';
+      }
+      return {
+        name: e.name,
+        status,
+        isSelf: e.id === emp.id,
+      };
+    });
+    // Sort: active first, then on lunch, then idle, then done
+    const rank = { clocked_in: 0, on_lunch: 1, not_in: 2, clocked_out: 3 };
+    teammates.sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+    return { enabled: true, teammates };
+  } catch (err) { return { error: err.message }; }
 }
 
 /** Returns the list of registered employees (for the manager edit picker). */
@@ -638,7 +811,7 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       if (PUNCH_LABELS_.indexOf(type) < 0) continue;
       currentByType[type] = {
         rowIndex: i + 1,
-        time: String(allRows[i][ADP.TIME]).trim(),
+        time: normalizeTime_(allRows[i][ADP.TIME]).trim(),
       };
     }
 
@@ -975,7 +1148,7 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
     if (da !== db) return da.localeCompare(db);
     const ia = String(a[ADP.EMP_ID]), ib = String(b[ADP.EMP_ID]);
     if (ia !== ib) return ia.localeCompare(ib);
-    return String(a[ADP.TIME]).localeCompare(String(b[ADP.TIME]));
+    return normalizeTime_(a[ADP.TIME]).localeCompare(normalizeTime_(b[ADP.TIME]));
   });
 
   const stamp = fmtDate_(new Date()).replace(/-/g,'') + '_' + fmtTime_(new Date()).replace(/:/g,'');
@@ -1011,7 +1184,7 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
     const rawType = String(rows[i][ADP.COMMENTS]);
     const type    = normalizeType_(rawType);
     if (!byDate[rowDate]) byDate[rowDate] = [];
-    byDate[rowDate].push({ time: String(rows[i][ADP.TIME]), type,
+    byDate[rowDate].push({ time: normalizeTime_(rows[i][ADP.TIME]), type,
       isAdjustment: rawType.indexOf('ADJ-') === 0 });
   }
 
@@ -1063,12 +1236,28 @@ function buildCalendarForEmployee_(emp, year, month) {
   const endDate   = `${year}-${monthStr}-${String(lastDay).padStart(2,'0')}`;
   const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
   const workedDates = new Set();
+  // Group punches per date so we can compute hours per day
+  const punchesByDate = {};
   for (let i = 2; i < rows.length; i++) {
     const rowId   = String(rows[i][ADP.EMP_ID]).trim();
     const rowDate = normalizeDate_(rows[i][ADP.DATE]);
     if (rowId !== emp.id || rowDate < startDate || rowDate > endDate) continue;
-    if (normalizeType_(String(rows[i][ADP.COMMENTS])) === 'ClockIn') workedDates.add(rowDate);
+    const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
+    const time = normalizeTime_(rows[i][ADP.TIME]);
+    if (!punchesByDate[rowDate]) punchesByDate[rowDate] = {};
+    punchesByDate[rowDate][type] = time;
+    if (type === 'ClockIn') workedDates.add(rowDate);
   }
+  // Compute hours per worked date (when both ClockIn and ClockOut are present)
+  const hoursByDate = {};
+  Object.keys(punchesByDate).forEach(dateStr => {
+    const p = punchesByDate[dateStr];
+    if (p.ClockIn && p.ClockOut) {
+      hoursByDate[dateStr] = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+    } else if (p.ClockIn && dateStr === todayStr) {
+      hoursByDate[dateStr] = 'inProgress';
+    }
+  });
   const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
   const timeOffRequests = [], teammates = [];
   for (let i = 1; i < toRows.length; i++) {
@@ -1108,11 +1297,14 @@ function buildCalendarForEmployee_(emp, year, month) {
   return {
     year, month, monthName: `${MONTH_NAMES[month-1]} ${year}`,
     lastDay, firstDayOfWeek: new Date(year, month - 1, 1).getDay(),
-    workedDates: [...workedDates], timeOffRequests, teammates, holidays, allRequests,
+    workedDates: [...workedDates], workedHoursByDate: hoursByDate,
+    timeOffRequests, teammates, holidays, allRequests,
     today: todayStr, timezone: empTz,
-    ptoEnabled: !!CONFIG.ENABLE_PTO_TRACKING,
+    ptoEnabled: !!(CONFIG.ENABLE_PTO_TRACKING && emp.ptoEnabled),
     annualLeave: emp.annualLeave,
     sickLeave:   emp.sickLeave,
+    annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
+    sickLeaveMax:   CONFIG.SICK_LEAVE_MAX   || 10,
   };
 }
 
@@ -1301,12 +1493,16 @@ function getEmployeeInfo_() {
       let tzRaw = rows[i][EMP.TIMEZONE];
       if (tzRaw === null || tzRaw === undefined) tzRaw = '';
       const timezone = String(tzRaw).trim() || CONFIG.TIMEZONE;
+      // PtoEnabled defaults to TRUE — blank/missing column means PTO enabled (back-compat)
+      // Mark FALSE for contractors (e.g. PH team) who don't get paid leave
+      const ptoRaw = String(rows[i][EMP.PTO_ENABLED] || '').trim().toLowerCase();
+      const ptoEnabled = !(ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0');
       return {
         email,
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
         sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
-        payCycle: cycle, payAnchor: anchor, isManager, timezone,
+        payCycle: cycle, payAnchor: anchor, isManager, timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       };
@@ -1321,6 +1517,8 @@ function lookupEmployeeById_(empId) {
     if (String(rows[i][EMP.ID]).trim() !== empId) continue;
     let tzRaw = rows[i][EMP.TIMEZONE];
     if (tzRaw === null || tzRaw === undefined) tzRaw = '';
+    const ptoRaw = String(rows[i][EMP.PTO_ENABLED] || '').trim().toLowerCase();
+    const ptoEnabled = !(ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0');
     return {
       id: empId,
       name: String(rows[i][EMP.NAME]).trim(),
@@ -1329,6 +1527,7 @@ function lookupEmployeeById_(empId) {
       sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
       annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
+      ptoEnabled,
     };
   }
   return null;
@@ -1343,7 +1542,7 @@ function getTodayPunches_(empId, empTz) {
     if (normalizeDate_(rows[i][ADP.DATE]) !== today) continue;
     const raw = String(rows[i][ADP.COMMENTS]);
     punches.push({
-      time: String(rows[i][ADP.TIME]), direction: String(rows[i][ADP.DIR]),
+      time: normalizeTime_(rows[i][ADP.TIME]), direction: String(rows[i][ADP.DIR]),
       type: normalizeType_(raw), isAdjustment: raw.indexOf('ADJ-') === 0,
     });
   }
@@ -1485,10 +1684,8 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
     if (CONFIG.ENABLE_PTO_TRACKING) {
       // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
       const fresh = lookupEmployeeById_(emp.id);
-      if (fresh) {
-        body += `Your current leave balances:\n` +
-                `  Annual: ${fresh.annualLeave} day(s)\n` +
-                `  Sick:   ${fresh.sickLeave} day(s)\n\n`;
+      if (fresh && fresh.ptoEnabled !== false) {
+        body += `Your current annual leave balance: ${fresh.annualLeave} day(s)\n\n`;
       }
     }
     body += `Please contact your manager with any questions.\n\n` +
@@ -1519,8 +1716,34 @@ function getAdpSS_()    { return SpreadsheetApp.openById(CONFIG.ADP_SS_ID); }
 function fmtDate_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd'); }
 function fmtTime_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'HH:mm:ss'); }
 function normalizeDate_(val) {
-  if (val instanceof Date) return fmtDate_(val);
+  if (val instanceof Date) {
+    const ssTz = getAdpSS_().getSpreadsheetTimeZone();
+    return Utilities.formatDate(val, ssTz, 'yyyy-MM-dd');
+  }
   return String(val).trim().substring(0, 10);
+}
+/** Sheets auto-coerces "HH:mm:ss" strings to Date objects when written via appendRow.
+ *  On read, getValues returns that Date — String(date) produces "Sat Dec 30 1899 ..." which
+ *  breaks all downstream display logic. This helper reads the time back safely regardless of
+ *  whether the cell stored a string or an auto-coerced Date. */
+function normalizeTime_(val) {
+  if (val instanceof Date) {
+    const ssTz = getAdpSS_().getSpreadsheetTimeZone();
+    return Utilities.formatDate(val, ssTz, 'HH:mm:ss');
+  }
+  return String(val).trim();
+}
+/** Difference in seconds between two "HH:mm:ss" or "HH:mm" strings (later - earlier).
+ *  Returns negative if earlier > later (treat as "different day", skip the check). */
+function timeDiffSeconds_(earlier, later) {
+  const toSec = (t) => {
+    const p = String(t).split(':');
+    if (p.length < 2) return NaN;
+    return (parseInt(p[0],10)||0) * 3600 + (parseInt(p[1],10)||0) * 60 + (parseInt(p[2],10)||0);
+  };
+  const a = toSec(earlier), b = toSec(later);
+  if (isNaN(a) || isNaN(b)) return -1;
+  return b - a;
 }
 function isoFromUtc_(d) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
