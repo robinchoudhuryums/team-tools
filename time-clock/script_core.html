@@ -47,6 +47,7 @@ window.addEventListener('load', () => {
       if (state.error) { renderError(state.error); return; }
       empState = state;
       adjustWindowDays = state.adjustWindowDays || 30;
+      if (state.selfUndoWindowSeconds) SELF_UNDO_WINDOW_SECONDS = state.selfUndoWindowSeconds;
       document.getElementById('adj-days-disp').textContent = adjustWindowDays;
       tsViewMode = (empState.payCycle === 'Biweekly' && empState.payAnchor) ? 'period' : 'month';
       renderShell(state);

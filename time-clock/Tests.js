@@ -410,6 +410,16 @@ function _runAllTests() {
 
   _integrationTest('ptoEnabled_falseHidesFromState',           test_ptoEnabled_falseHidesFromState);
   _integrationTest('ptoEnabled_blankDefaultsTrue',             test_ptoEnabled_blankDefaultsTrue);
+
+  // ── managerSaveDay (the most complex single function — backfill, F8) ────
+  _integrationTest('managerSaveDay_addOnly',                   test_managerSaveDay_addOnly);
+  _integrationTest('managerSaveDay_updateOnly',                test_managerSaveDay_updateOnly);
+  _integrationTest('managerSaveDay_deleteOnly',                test_managerSaveDay_deleteOnly);
+  _integrationTest('managerSaveDay_mixedChanges',              test_managerSaveDay_mixedChanges);
+  _integrationTest('managerSaveDay_noChangesIsNoOp',           test_managerSaveDay_noChangesIsNoOp);
+  _integrationTest('managerSaveDay_nonManagerRejected',        test_managerSaveDay_nonManagerRejected);
+  _integrationTest('managerSaveDay_reasonRequiredBeyondWindow',test_managerSaveDay_reasonRequiredBeyondWindow);
+  _integrationTest('managerSaveDay_invalidTimeFormatRejected', test_managerSaveDay_invalidTimeFormatRejected);
 }
 
 
@@ -1451,4 +1461,187 @@ function test_ptoEnabled_blankDefaultsTrue() {
   } finally {
     _setEmpPtoEnabled(_TEST_PH_ID, original);
   }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  managerSaveDay TESTS (F8 backfill — three-pass diff at the heart of edit-day)
+// ════════════════════════════════════════════════════════════════════════════
+
+// Helper: wipe every Timesheet row matching (empId, date). Tests use this for
+// a clean slate before each managerSaveDay test, since the function's behavior
+// depends on the snapshot of "current state for this employee/date".
+function _clearPunchesForDay(empId, date) {
+  const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+  const rows = sheet.getDataRange().getValues();
+  for (let i = rows.length - 1; i >= 2; i--) {
+    if (String(rows[i][ADP.EMP_ID]).trim() === empId &&
+        normalizeDate_(rows[i][ADP.DATE]) === date) {
+      sheet.deleteRow(i + 1);
+    }
+  }
+}
+
+// Helper: count audit rows matching (empId, action) — used by managerSaveDay
+// tests to verify that the F4 vocabulary (PunchEdit / PunchAdd / PunchDelete)
+// was emitted the expected number of times.
+function _countAuditRows(empId, action) {
+  const rows = getOrCreateAuditSheet_().getDataRange().getValues();
+  let n = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][1]).trim() === empId
+        && String(rows[i][4]).trim() === action) n++;
+  }
+  return n;
+}
+
+function test_managerSaveDay_addOnly() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  const slots = { ClockIn:'09:00', LunchOut:'12:00', LunchIn:'13:00', ClockOut:'17:00' };
+  const before = _countAuditRows(_TEST_PH_ID, 'PunchAdd');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, slots, 'backfill from paper log');
+    _assertSuccess(r);
+    _assertEq(r.changes, 4, 'Four adds expected');
+  });
+  // All four rows present in Timesheet
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockIn'),  1);
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 1);
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'),  1);
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockOut'), 1);
+  // Four PunchAdd audit rows emitted (F4 vocabulary)
+  _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchAdd'), before + 4,
+    'Four PunchAdd audit rows expected');
+}
+
+function test_managerSaveDay_updateOnly() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  // Pre-position a full day's punches as adjustments (ADJ-* in COMMENTS)
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ADJ-ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:00:00', 'OUT', 'ADJ-LunchOut');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '13:00:00', 'IN',  'ADJ-LunchIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '17:00:00', 'OUT', 'ADJ-ClockOut');
+
+  const slots = { ClockIn:'09:15', LunchOut:'12:00', LunchIn:'13:00', ClockOut:'17:00' };
+  const before = _countAuditRows(_TEST_PH_ID, 'PunchEdit');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, slots, 'corrected start');
+    _assertSuccess(r);
+    _assertEq(r.changes, 1, 'Only ClockIn changed');
+  });
+  // Row count unchanged (4 rows), and exactly one PunchEdit audit row added
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, null), 4);
+  _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchEdit'), before + 1,
+    'Exactly one PunchEdit audit row expected');
+}
+
+function test_managerSaveDay_deleteOnly() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ADJ-ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:00:00', 'OUT', 'ADJ-LunchOut');
+
+  // Clear LunchOut by passing empty string for that slot
+  const slots = { ClockIn:'09:00', LunchOut:'', LunchIn:'', ClockOut:'' };
+  const beforeDel = _countAuditRows(_TEST_PH_ID, 'PunchDelete');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, slots, 'removing erroneous lunch out');
+    _assertSuccess(r);
+    _assertEq(r.changes, 1, 'One delete expected (LunchOut)');
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 0, 'LunchOut row gone');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockIn'),  1, 'ClockIn untouched');
+  _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchDelete'), beforeDel + 1,
+    'One PunchDelete audit row expected');
+}
+
+function test_managerSaveDay_mixedChanges() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  // Start with all four punches
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ADJ-ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:00:00', 'OUT', 'ADJ-LunchOut');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '13:00:00', 'IN',  'ADJ-LunchIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '17:00:00', 'OUT', 'ADJ-ClockOut');
+
+  // Edit two times, clear LunchIn, leave LunchOut alone
+  const slots = { ClockIn:'08:55', LunchOut:'12:00', LunchIn:'', ClockOut:'17:30' };
+  const beforeEdit = _countAuditRows(_TEST_PH_ID, 'PunchEdit');
+  const beforeDel = _countAuditRows(_TEST_PH_ID, 'PunchDelete');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, slots, 'comprehensive cleanup');
+    _assertSuccess(r);
+    _assertEq(r.changes, 3, '2 edits + 1 delete = 3 changes');
+  });
+  _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchEdit'),  beforeEdit + 2, 'Two edits');
+  _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchDelete'),beforeDel + 1,  'One delete');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchIn'), 0, 'LunchIn cleared');
+}
+
+function test_managerSaveDay_noChangesIsNoOp() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ADJ-ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '17:00:00', 'OUT', 'ADJ-ClockOut');
+
+  // Submit the same times — no diff. Note: reason still required at the input
+  // gate (date > 7d back), even though no changes will actually be made.
+  const slots = { ClockIn:'09:00', LunchOut:'', LunchIn:'', ClockOut:'17:00' };
+  const beforeEdit = _countAuditRows(_TEST_PH_ID, 'PunchEdit');
+  const beforeAdd  = _countAuditRows(_TEST_PH_ID, 'PunchAdd');
+  const beforeDel  = _countAuditRows(_TEST_PH_ID, 'PunchDelete');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, slots, 'verification re-save');
+    _assertSuccess(r);
+    _assertEq(r.changes, 0, 'No changes — same times submitted');
+  });
+  _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchEdit'),  beforeEdit, 'No edits');
+  _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchAdd'),   beforeAdd,  'No adds');
+  _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchDelete'),beforeDel,  'No deletes');
+}
+
+function test_managerSaveDay_nonManagerRejected() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(
+      managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        { ClockIn:'09:00', LunchOut:'', LunchIn:'', ClockOut:'17:00' }, ''),
+      'Manager access required'
+    );
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, null), 0,
+    'No rows written on auth failure');
+}
+
+function test_managerSaveDay_reasonRequiredBeyondWindow() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_VERY_OLD);
+  _asUser(_TEST_MGR_EMAIL, () => {
+    // 20 days back, no reason → rejected
+    _assertFailure(
+      managerSaveDay(_TEST_PH_ID, _TEST_DATE_VERY_OLD,
+        { ClockIn:'09:00', LunchOut:'', LunchIn:'', ClockOut:'17:00' }, ''),
+      'reason is required'
+    );
+    // Same call with a reason succeeds
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_VERY_OLD,
+      { ClockIn:'09:00', LunchOut:'', LunchIn:'', ClockOut:'17:00' },
+      'forgot to punch — recovered from paper log');
+    _assertSuccess(r);
+    _assertEq(r.changes, 2);
+  });
+}
+
+function test_managerSaveDay_invalidTimeFormatRejected() {
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertFailure(
+      managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        { ClockIn:'25:00', LunchOut:'', LunchIn:'', ClockOut:'' }, 'whatever'),
+      'Invalid time'
+    );
+    _assertFailure(
+      managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        { ClockIn:'9:00', LunchOut:'', LunchIn:'', ClockOut:'' }, 'whatever'),
+      'Invalid time'
+    );
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, null), 0,
+    'No rows written on validation failure');
 }

@@ -173,6 +173,10 @@ function renderManagerView(area, data) {
           ? `${a.action.replace(/([A-Z])/g, ' $1').trim()} for ${a.punchDate}`
           : a.action === 'PunchDelete'
           ? `Punch deleted: ${a.punchDate} ${dispTime(a.punchTime)}`
+          : a.action === 'PunchSelfUndo'
+          ? `${a.notes} (${a.punchDate} ${dispTime(a.punchTime)})`
+          : a.action === 'PunchEdit' || a.action === 'PunchAdd'
+          ? `${a.notes} on ${a.punchDate}`
           : a.action === 'TimeOffCancel'
           ? `Time off cancelled for ${a.punchDate}`
           : `${a.action} ${a.punchDate}${a.punchTime ? ' ' + dispTime(a.punchTime) : ''}`;
