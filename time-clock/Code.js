@@ -97,6 +97,7 @@ function getEmployeeState() {
       nextActions: getNextActions_(punches),
       adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS,
       adjustReasonThresholdDays: CONFIG.OLD_ADJUST_ALERT_DAYS,
+      selfUndoWindowSeconds: CONFIG.SELF_UNDO_WINDOW_SECONDS,
       payCycle: emp.payCycle, payAnchor: emp.payAnchor,
       isManager: emp.isManager,
       timezone: empTz,
@@ -142,11 +143,14 @@ function recordPunch(punchType, custom) {
       return { success: false, error: 'Cannot record punches in the future.' };
 
     // Min-interval safeguard: prevent accidental rapid-fire punches.
-    // Only applies to live (non-adjustment) punches.
+    // Only applies to live (non-adjustment) punches AND only considers prior
+    // live punches as the "last punch" — an adjustment a moment ago should not
+    // block the next live punch, since adjustments aren't fat-finger risk.
     if (!isAdj) {
       const { punches: todayPunches } = getTodayPunches_(emp.id, empTz);
-      if (todayPunches.length > 0) {
-        const last = todayPunches[todayPunches.length - 1];
+      const livePunches = todayPunches.filter(p => !p.isAdjustment);
+      if (livePunches.length > 0) {
+        const last = livePunches[livePunches.length - 1];
         const secondsSince = timeDiffSeconds_(last.time, nowTime);
         if (secondsSince >= 0 && secondsSince < CONFIG.MIN_PUNCH_INTERVAL_SECONDS) {
           const wait = CONFIG.MIN_PUNCH_INTERVAL_SECONDS - secondsSince;
@@ -851,8 +855,8 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
           writeToEmployeeSheet_(targetEmp, date, newTimeFull, dir, type);
         } catch (e) {}
       }
-      writeAuditLog_(targetEmp, type, date, newTimeFull, true, daysBack,
-        `Edited by manager (was ${oldTime})${noteSuffix}`, callerEmp.email);
+      writeAuditLog_(targetEmp, 'PunchEdit', date, newTimeFull, true, daysBack,
+        `${type}: ${oldTime} → ${newTimeFull} (manager edit)${noteSuffix}`, callerEmp.email);
       changes.push({ type, action: 'update' });
     });
 
@@ -867,8 +871,8 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       if (targetEmp.sheetId) {
         try { writeToEmployeeSheet_(targetEmp, date, newTimeFull, dir, type); } catch (e) {}
       }
-      writeAuditLog_(targetEmp, type, date, newTimeFull, true, daysBack,
-        `Added by manager${noteSuffix}`, callerEmp.email);
+      writeAuditLog_(targetEmp, 'PunchAdd', date, newTimeFull, true, daysBack,
+        `${type} at ${newTimeFull} (manager add)${noteSuffix}`, callerEmp.email);
       changes.push({ type, action: 'add' });
     });
 
@@ -899,7 +903,9 @@ function exportAdpRange(startDate, endDate) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function installAutomationTriggers() {
-  const userEmail = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  // Use getActiveUserEmail_() so test impersonation via _TEST_OVERRIDE_EMAIL
+  // is respected — matches the auth path of every other manager-gated function.
+  const userEmail = String(getActiveUserEmail_() || '').toLowerCase();
   const allowed = (CONFIG.MANAGER_EMAILS || []).map(e => String(e).toLowerCase());
   if (!userEmail || allowed.indexOf(userEmail) < 0) {
     throw new Error('Only managers (per CONFIG.MANAGER_EMAILS) can install triggers. ' +
@@ -919,11 +925,17 @@ function installAutomationTriggers() {
 }
 
 function removeAutomationTriggers() {
-  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  Logger.log('All triggers removed.');
+  const TARGETS = ['sendDailyMissedPunchAlerts','runDailyExportCheck'];
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  });
+  Logger.log('Automation triggers removed.');
 }
 
-function clearCaches() {
+function clearCaches_() {
+  // Private (underscore-suffixed) so it is NOT reachable via google.script.run.
+  // Run from the Apps Script editor when bumping ROSTER_CACHE_KEY or clearing
+  // a stuck cache after a manual Employees-sheet edit.
   CacheService.getScriptCache().removeAll([ROSTER_CACHE_KEY]);
   Logger.log('Caches cleared.');
 }
@@ -1055,8 +1067,11 @@ function getCurrentBiweeklyRange_(todayStr) {
 
 function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
   const recipients = getManagerEmails_();
+  const rangeLabel = `${range.start}..${range.end}`;
   if (recipients.length === 0) {
     Logger.log('No manager emails configured — skipping ' + payCycleFilter + ' export.');
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
+      `${payCycleFilter} skipped — no managers configured`);
     return;
   }
   try {
@@ -1067,6 +1082,8 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         subject: `${subjectPrefix}: ${result.error}`,
         body: `No export generated for ${range.start} to ${range.end}.\nReason: ${result.error}`,
       });
+      writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
+        `${payCycleFilter} skipped — ${result.error}`);
       return;
     }
     const xlsxUrl = `https://docs.google.com/spreadsheets/d/${result.fileId}/export?format=xlsx`;
@@ -1086,8 +1103,12 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
       attachments: [blob],
     });
     Logger.log(`Automated ${payCycleFilter} export sent: ${result.rowCount} rows.`);
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
+      `${payCycleFilter} sent: ${result.rowCount} rows → ${result.fileId}`);
   } catch (err) {
     Logger.log(`sendAutomatedExport_(${payCycleFilter}) failed: ` + err.message);
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
+      `${payCycleFilter} EXCEPTION: ${err.message}`);
     try {
       MailApp.sendEmail({
         to: recipients.join(','),
@@ -1098,6 +1119,9 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
     } catch (e) {}
   }
 }
+
+// Synthetic "employee" identity for system-initiated audit rows (no real actor).
+const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automation@system' };
 
 
 // ════════════════════════════════════════════════════════════════════════════

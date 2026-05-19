@@ -3,7 +3,9 @@
 //  CLOCK VIEW
 // ════════════════════════════════════════════════════════════════════════════
 
-const SELF_UNDO_WINDOW_SECONDS = 300; // mirror server's CONFIG.SELF_UNDO_WINDOW_SECONDS
+// Overridden from server's CONFIG.SELF_UNDO_WINDOW_SECONDS via getEmployeeState
+// in script_core.html's init handler. Default kept as a safety net.
+let SELF_UNDO_WINDOW_SECONDS = 300;
 
 function renderClockView(area) {
   const s = empState;
