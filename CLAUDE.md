@@ -34,23 +34,46 @@ These accumulate as audits surface real production hazards. Treat
 each entry as something that has bitten the project before — read
 this section before touching the relevant area.
 
+- **Repo ships with placeholder secrets.** `CONFIG.ADP_SS_ID` is
+  `'YOUR_ADP_SPREADSHEET_ID'` and `CONFIG.MANAGER_EMAILS` is
+  `['YOUR_EMAIL@umsupply.com']` in the committed `Code.js`. The
+  real values live only in the deployed Apps Script project. Any
+  fresh clone (Cloud Shell, local) must populate them before
+  running, and must NOT commit the real values back. The next
+  `clasp pull` will overwrite them with real values — re-scrub
+  before committing.
+- **Sheets auto-coerces `HH:mm:ss` strings to Date objects.** On
+  read, `row[ADP.TIME]` may come back as a JavaScript Date —
+  `String(date)` produces `"Sat Dec 30 1899 ..."` and breaks all
+  downstream display logic. Always read times through
+  `normalizeTime_()`, which detects Dates and re-formats them via
+  the spreadsheet's timezone.
 - **ScriptLock around every mutating op.** Every server function
   that writes to a sheet (`recordPunch`, `submitTimeOffRequest`,
   `updateTimeOffStatus`, `deletePunch`, `managerSaveDay`,
-  `cancelTimeOffRequest`) wraps its body in
-  `LockService.getScriptLock().waitLock(15000)` and releases in
-  `finally`. Skipping the lock causes interleaved approvals to
-  double-deduct PTO balances.
+  `cancelTimeOffRequest`, `managerSubmitTimeOff`, `selfDeletePunch`)
+  wraps its body in `LockService.getScriptLock().waitLock(15000)`
+  and releases in `finally`. Skipping the lock causes interleaved
+  approvals to double-deduct PTO balances.
 - **`normalizeType_` strips the `ADJ-` prefix.** Adjustments are
   stored in the COMMENTS column as `ADJ-ClockIn` / `ADJ-LunchOut` /
   etc. Reading `row[ADP.COMMENTS]` directly and comparing to
   `'ClockIn'` will silently miss adjustments. Always go through
   `normalizeType_()`.
-- **Roster cache invalidation.** Employee data is cached for 300s
-  under `ROSTER_CACHE_KEY` (`employee_roster_v3`). After editing
-  any Employees-sheet column (`adjustLeaveBalance_`, manual edits
-  for test setup, etc.) call `invalidateRosterCache_()` or
-  subsequent reads will return stale balances for up to 5 minutes.
+- **Roster cache invalidation + key bump.** Employee data is cached
+  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v4`).
+  After editing any Employees-sheet column (`adjustLeaveBalance_`,
+  manual edits for test setup, etc.) call `invalidateRosterCache_()`
+  or subsequent reads will return stale balances for up to 5
+  minutes. Whenever the `EMP` enum changes shape (new column),
+  bump the cache key — old cached entries would have wrong column
+  indices.
+- **`PtoEnabled` defaults to TRUE.** Column K (`EMP.PTO_ENABLED`)
+  defaults to enabled when blank — for back-compat with rows
+  added before the column existed. Contractors who don't accrue
+  paid leave need an explicit `FALSE` / `no` / `n` / `0` in this
+  column. The PTO UI then hides for them entirely (employee Calendar
+  ring, decision email balance line, etc.).
 - **`_TEST_OVERRIDE_EMAIL` only intercepts `getActiveUserEmail_()`.**
   Any code path that calls `Session.getActiveUser()` directly will
   bypass the test impersonation and use the real running user.
@@ -62,12 +85,14 @@ this section before touching the relevant area.
   manager-gated endpoint MUST start with the same check used by
   `getManagerDashboard`, `updateTimeOffStatus`, `deletePunch`,
   `managerSaveDay`, `exportAdpRange`, `installAutomationTriggers`,
-  etc. Returning a dashboard or accepting writes without this
-  check is a privilege escalation.
+  `managerSubmitTimeOff`. Returning a dashboard or accepting writes
+  without this check is a privilege escalation.
 - **PTO balance transitions.** `updateTimeOffStatus` only changes
   balances on Pending→Approved (deduct) or Approved→non-Approved
-  (restore). Skipping the transition guard double-deducts on
-  re-approval or fails to restore on revert.
+  (restore). `managerSubmitTimeOff` with `autoApprove=true` skips
+  the Pending stage and deducts immediately. Skipping the
+  transition guard double-deducts on re-approval or fails to
+  restore on revert.
 - **Bi-weekly anchor read.** `getCurrentBiweeklyRange_` reads the
   FIRST row whose PayCycle is `'biweekly'`. Multiple biweekly
   anchors in the Employees sheet are not supported — the second
@@ -76,6 +101,22 @@ this section before touching the relevant area.
   `date > todayStr` and same-day `time > nowTime` checks must
   remain in place; the manager edit-day flow has its own future-
   date guard (`daysBack < 0`).
+- **Min-interval debounce on live punches only.** `recordPunch`
+  rejects a non-adjustment punch within `MIN_PUNCH_INTERVAL_SECONDS`
+  (30s) of the previous one. Adjustment punches (`custom` set)
+  bypass this check intentionally — back-fills need to land
+  arbitrarily close to other times.
+- **Self-undo is narrow on purpose.** `selfDeletePunch` only
+  removes (a) today's punches, (b) within `SELF_UNDO_WINDOW_SECONDS`
+  (5 min), (c) that are NOT adjustments. Older or remote mistakes
+  must go through Adjust so they leave a clear `ADJ-*` row in the
+  audit log. Self-undo writes a `PunchSelfUndo` audit row before
+  deletion.
+- **`getTeammateStatus` is the low-privilege view.** Returns name +
+  status + isSelf only. Adding email, employee ID, last-punch
+  time, or tz to the response would leak data to non-managers who
+  can call this. Add fields only after auditing what the Clock
+  page actually needs.
 - **Fire-and-forget email.** Decision emails
   (`notifyEmployeeOfDecision_`), missed-punch alerts, and
   automated exports are wrapped in try/catch — the API call
@@ -101,14 +142,56 @@ this section before touching the relevant area.
   cleans up at the end; prefer a TEST copy of `CONFIG.ADP_SS_ID`
   for full runs.
 - **PTO bucket state lives in the Employees sheet** (columns
-  I/J = AnnualLeaveBalance / SickLeaveBalance). Time-off rows in
+  I/J = AnnualLeaveBalance / SickLeaveBalance; column K =
+  PtoEnabled per-employee toggle). Time-off rows in
   TimeOffRequests don't carry balance — they trigger balance
   updates on approve/revert transitions.
+- **Per-employee PTO opt-out via `EMP.PTO_ENABLED` column.**
+  Contractors (e.g. PH team) get `FALSE` in column K; their UI
+  hides the PTO ring and balance line entirely. Single codebase
+  serves both paid and unpaid populations without forks.
+- **Self-undo vs. Adjust split.** Live mistakes within 5 minutes
+  go through `selfDeletePunch` (audit row, no Manager
+  involvement). Anything older — or any adjustment — must go
+  through Adjust, which leaves a permanent `ADJ-*` row visible
+  to managers. The intent: keep the audit trail honest while
+  letting employees fix typos quickly.
+- **`normalizeTime_` as the universal read shim.** Because Sheets
+  auto-coerces time strings to Dates on read, every read of
+  `row[ADP.TIME]` goes through `normalizeTime_`. New code must
+  follow this pattern; raw `String(row[ADP.TIME])` is a bug.
 - **Timezone display split.** Each row in the manager dashboard
   shows the employee's last punch in BOTH the employee's local
   tz (e.g. IST/PHT) and the manager's tz (CST). All conversions
   go through `convertDateTime_`; abbreviations come from
   `TZ_ABBR` with passthrough for unknown zones.
+- **Secret scrubbing on commit.** The repo's `Code.js` carries
+  placeholder values for `ADP_SS_ID` and `MANAGER_EMAILS`
+  because the project root may end up public. Real values stay
+  in the deployed Apps Script project; `clasp pull` overwrites
+  with real values, then commit time scrubs them back to
+  placeholders.
+
+## Operator State Checklist
+
+State that exists outside the codebase and must be set up
+manually for a fresh deploy or environment:
+
+- **Populate `CONFIG.ADP_SS_ID` and `CONFIG.MANAGER_EMAILS`** in
+  the Apps Script editor (or before `clasp push`) — placeholders
+  in the repo will not work against real data.
+- **`Employees` sheet column K = `PtoEnabled`** — added in the
+  current schema; existing sheets must have this column added
+  (header row 1, leave blank for back-compat = enabled, write
+  `FALSE` for contractors).
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v4'`** — bumped when
+  PTO_ENABLED column landed. After deploying, run `clearCaches()`
+  once to flush any stale `_v3` cache entries.
+- **Daily automation triggers** must be installed by a manager
+  account via `installAutomationTriggers()` from the editor.
+  Triggers do not survive an Apps Script project re-clone.
+- **`MANAGER_TIMEZONE`** in CONFIG drives manager-dashboard
+  display tz; change requires a redeploy.
 
 ## Cycle Workflow Config
 
@@ -158,6 +241,14 @@ INV-18 | Bi-weekly period boundaries are computed from the FIRST `'biweekly'` an
 INV-19 | US holiday observance shift: Saturday → previous Friday, Sunday → following Monday (handled by `fixedHoliday_`) | Subsystem: Server
 INV-20 | Test impersonation uses `_TEST_OVERRIDE_EMAIL`, consumed only by `getActiveUserEmail_()`, and is cleared in `finally` by every entry point | Subsystem: Test Suite
 INV-21 | `cleanupTestData()` removes every row whose employee ID starts with `TEST_` across Timesheet, TimeOffRequests, and AuditLog; production IDs must never start with `TEST_` | Subsystem: Test Suite
+INV-22 | Live (non-adjustment) punches in `recordPunch` are rejected if within `CONFIG.MIN_PUNCH_INTERVAL_SECONDS` (30s) of the previous punch; adjustments bypass this check | Subsystem: Server
+INV-23 | `selfDeletePunch` only deletes punches that are (a) today's, (b) within `CONFIG.SELF_UNDO_WINDOW_SECONDS` (300s), and (c) not adjustments; it writes a `PunchSelfUndo` audit row before deletion | Subsystem: Server
+INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }` per teammate — no emails, IDs, last-punch times, or timezones leak to non-managers | Subsystem: Server
+INV-25 | `managerSubmitTimeOff` requires `callerEmp.isManager`; when `autoApprove=true` it skips the Pending stage, applies the PTO deduction in the same call, and emails the employee a decision notice | Subsystem: Server
+INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) go through `normalizeTime_`, which detects Date objects and re-formats via the spreadsheet's timezone | Subsystem: Server
+INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
+INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v4`) so old cached entries with the wrong column shape are not served | Subsystem: Server
+INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -227,6 +318,50 @@ S10 | Cross-timezone live status on dashboard | Subsystem: Server
     - As manager (`MANAGER_TIMEZONE = America/Chicago`), open Manage → Live Status
     - Inspect employee rows whose `Timezone` is `Asia/Kolkata` or `Asia/Manila`
   Expected: Each row shows last-punch time in BOTH the employee's tz abbreviation (IST / PHT) and the manager's (CST). Conversion matches `convertDateTime_` (e.g. 14:30 IST May 17 → 04:00 CST May 17).
+
+S11 | Min-interval debounce on live punches | Subsystem: Server, Client
+  Steps:
+    - As employee, click ClockIn, then immediately click LunchOut within ~5s
+    - Wait until 30s have elapsed since the ClockIn and retry
+  Expected: Second click within 30s returns `Your last punch was just Xs ago. Please wait Ys before punching again (if you made a mistake, use Adjust instead).` and writes no row. After the window elapses, the second punch succeeds. Adjustments via the Adjust modal are NOT blocked by this rule.
+
+S12 | Self-undo within 5 minutes | Subsystem: Server, Client
+  Steps:
+    - As employee, click ClockIn now
+    - Click the Undo button on the just-recorded punch within 5 minutes
+    - Check the ADP Timesheet sheet and AuditLog
+    - Wait > 5 minutes (or set system clock forward) and try to undo a fresh punch
+    - Try to undo an adjustment punch via the same UI (manual call to `selfDeletePunch` if needed)
+  Expected: Within window — punch row removed; AuditLog has a `PunchSelfUndo` row (not `PunchDelete`); personal-sheet mirror cleared. After window — "Self-undo only works within 5 minutes…" error. Adjustment punch — "Cannot self-undo an adjustment. Use Adjust again to fix it." error.
+
+S13 | Manager files time-off (with auto-approve) | Subsystem: Server, Client
+  Steps:
+    - As manager, in the Manage tab open the "File time-off on behalf of employee" modal
+    - Pick an employee, type=Full Day, future date, check Auto-approve, submit
+    - Check TimeOffRequests sheet, AuditLog, and the employee's AnnualLeaveBalance
+    - Repeat without Auto-approve and confirm Pending behavior
+  Expected: With auto-approve — row written with Status=`Approved` directly (no Pending stage); balance decremented by 1.0; AuditLog row notes `filed by manager, auto-approved`; employee gets the decision email. Without auto-approve — Status=`Pending`, no balance change yet, no email; an `updateTimeOffStatus` to Approved later behaves identically to S4.
+
+S14 | Teammate status low-privilege view | Subsystem: Server, Client
+  Steps:
+    - As a non-manager employee, open the Clock page
+    - Observe the teammate status card below Actions
+    - Inspect the network response for `getTeammateStatus` in DevTools
+  Expected: Card shows teammate names + their current status (clocked_in / on_lunch / not_in / clocked_out). The response payload contains ONLY `{ name, status, isSelf }` per teammate — no email, no employee ID, no last-punch time, no timezone field. If `CONFIG.SHOW_TEAMMATE_STATUS = false`, response is `{ enabled: false, teammates: [] }`.
+
+S15 | Per-employee PTO toggle | Subsystem: Server, Client
+  Steps:
+    - In the Employees sheet, set column K (`PtoEnabled`) to `FALSE` for a contractor row
+    - As that employee, reload the web app and open the Calendar tab
+    - Submit a time-off request and have a manager approve it
+    - Check the decision email body
+  Expected: Calendar tab hides the PTO ring + balance line entirely; the leave-balance UI does not render. Time-off submit/approve still works (the TimeOffRequest row is created, AuditLog written), but no balance is deducted because the contractor's `ptoEnabled` short-circuits both `getEmployeeState` and the decision email's balance line. Setting back to blank or `TRUE` restores the full UI.
+
+S16 | Sheet auto-coercion of time strings | Subsystem: Server
+  Steps:
+    - Manually edit the Timesheet sheet: pick a row, retype its Time cell as `09:00:00` so Sheets coerces it to a Date object
+    - Refresh the manager dashboard and the employee Timesheet view; run `runSmokeTests` (which doesn't cover this) plus an integration test against the edited row
+  Expected: Both views still render `09:00:00` / `9:00 AM` correctly because `normalizeTime_` reformats the coerced Date back through the spreadsheet's timezone. A regression here surfaces as `Sat Dec 30 1899 …` strings in the UI.
 
 ### Deploy Command
 Server: `cd time-clock && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
