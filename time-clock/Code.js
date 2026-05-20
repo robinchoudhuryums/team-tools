@@ -128,8 +128,8 @@ function recordPunch(punchType, custom) {
     if (isAdj) {
       if (!custom.date || !/^\d{4}-\d{2}-\d{2}$/.test(custom.date))
         return { success: false, error: 'Invalid date format (expected yyyy-MM-dd).' };
-      if (!custom.time || !/^\d{2}:\d{2}$/.test(custom.time))
-        return { success: false, error: 'Invalid time format (expected HH:mm).' };
+      if (!custom.time || !/^([01]\d|2[0-3]):[0-5]\d$/.test(custom.time))
+        return { success: false, error: 'Invalid time format (expected HH:mm, 24-hour).' };
     }
     if (!PUNCH_LABELS_.includes(punchType))
       return { success: false, error: 'Unknown punch type: ' + punchType };
@@ -791,8 +791,8 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
     for (let k = 0; k < PUNCH_LABELS_.length; k++) {
       const type = PUNCH_LABELS_[k];
       const raw = String((slots && slots[type]) || '').trim();
-      if (raw && !/^\d{2}:\d{2}$/.test(raw))
-        return { success: false, error: `Invalid time for ${type}: "${raw}" (expected HH:mm)` };
+      if (raw && !/^([01]\d|2[0-3]):[0-5]\d$/.test(raw))
+        return { success: false, error: `Invalid time for ${type}: "${raw}" (expected HH:mm, 24-hour)` };
       cleanSlots[type] = raw;
     }
 
@@ -904,11 +904,13 @@ function exportAdpRange(startDate, endDate) {
 
 function installAutomationTriggers() {
   // Use getActiveUserEmail_() so test impersonation via _TEST_OVERRIDE_EMAIL
-  // is respected — matches the auth path of every other manager-gated function.
+  // is respected, and getManagerEmails_() so the Script-Properties override
+  // is respected — matches the auth path of every other manager-gated
+  // function.
   const userEmail = String(getActiveUserEmail_() || '').toLowerCase();
-  const allowed = (CONFIG.MANAGER_EMAILS || []).map(e => String(e).toLowerCase());
+  const allowed = getManagerEmails_().map(e => String(e).toLowerCase());
   if (!userEmail || allowed.indexOf(userEmail) < 0) {
-    throw new Error('Only managers (per CONFIG.MANAGER_EMAILS) can install triggers. ' +
+    throw new Error('Only managers (per MANAGER_EMAILS) can install triggers. ' +
                     `Current user: ${userEmail || '<unknown>'}`);
   }
   const TARGETS = ['sendDailyMissedPunchAlerts','runDailyExportCheck'];
@@ -1444,7 +1446,14 @@ function invalidateRosterCache_() {
 }
 
 function getManagerEmails_() {
-  const arr = CONFIG.MANAGER_EMAILS || [];
+  // Script Properties takes precedence: set MANAGER_EMAILS = a comma-separated
+  // list in Apps Script editor → Project Settings → Script Properties. Same
+  // rationale as ADP_SS_ID — the placeholder in CONFIG never has to be
+  // swapped on clasp pull/push cycles.
+  const propEmails = PropertiesService.getScriptProperties().getProperty('MANAGER_EMAILS');
+  const arr = propEmails
+    ? propEmails.split(',').map(s => s.trim()).filter(s => s.length > 0)
+    : (CONFIG.MANAGER_EMAILS || []);
   return arr.filter(e =>
     e && typeof e === 'string' &&
     e.indexOf('YOUR_EMAIL') !== 0 &&
@@ -1736,7 +1745,16 @@ function daysBetween_(earlierIso, laterIso) {
 }
 function normalizeType_(rawComment) { return String(rawComment).replace(/^ADJ-/, ''); }
 
-function getAdpSS_()    { return SpreadsheetApp.openById(CONFIG.ADP_SS_ID); }
+function getAdpSS_() {
+  // Script Properties takes precedence over CONFIG.ADP_SS_ID so the deployed
+  // Apps Script project can hold the real spreadsheet ID without committing it
+  // to the repo. Set it once in Apps Script editor → Project Settings →
+  // Script Properties → add ADP_SS_ID = <real ID>. clasp pull/push leaves
+  // Script Properties untouched, so the placeholder in CONFIG stays inert.
+  const id = PropertiesService.getScriptProperties().getProperty('ADP_SS_ID')
+          || CONFIG.ADP_SS_ID;
+  return SpreadsheetApp.openById(id);
+}
 function fmtDate_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd'); }
 function fmtTime_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'HH:mm:ss'); }
 function normalizeDate_(val) {
