@@ -177,6 +177,16 @@ function _assertThrows(fn, errSubstring, msg) {
 
 function setupTestEnvironment() {
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+
+  // Ensure column K has a PtoEnabled header so getDataRange() reliably
+  // includes column 11 on subsequent reads. Without this, tests that toggle
+  // PtoEnabled per row see stale undefined-style reads. Non-destructive:
+  // only writes the header if the cell is blank.
+  const headerCell = sheet.getRange(1, EMP.PTO_ENABLED + 1);
+  if (!String(headerCell.getValue()).trim()) {
+    headerCell.setValue('PtoEnabled');
+  }
+
   const rows = sheet.getDataRange().getValues();
   const existingIds = new Set();
   for (let i = 1; i < rows.length; i++) {
@@ -227,6 +237,40 @@ function _cleanupRowsByPrefix(sheet, prefix, colIdx, firstDataRow) {
   for (let i = rows.length - 1; i >= firstDataRow - 1; i--) {
     const v = String(rows[i][colIdx] || '');
     if (v.indexOf(prefix) === 0) sheet.deleteRow(i + 1);
+  }
+}
+
+/**
+ * Per-employee state reset. Wipes every TEST-related row that belongs to
+ * `empId` (Timesheet punches, TimeOffRequests, AuditLog), then resets the
+ * employee's PTO balances to the test defaults. Used at the top of any
+ * integration test that depends on a known baseline — needed because tests
+ * within a single runAllTests share spreadsheet state and `cleanupTestData`
+ * only runs at the end of the suite.
+ */
+function _clearTestState(empId) {
+  const ss = getAdpSS_();
+  _clearRowsByEmp(ss.getSheetByName(CONFIG.ADP_TAB),     empId, ADP.EMP_ID, 3);
+  _clearRowsByEmp(ss.getSheetByName(CONFIG.TIMEOFF_TAB), empId, TO.EMP_ID,  2);
+  _clearRowsByEmp(ss.getSheetByName(CONFIG.AUDIT_TAB),   empId, 1,          2);
+
+  const empSheet = ss.getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const rows = empSheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][EMP.ID]).trim() === empId) {
+      empSheet.getRange(i + 1, EMP.ANNUAL_LEAVE + 1).setValue(_TEST_INITIAL_ANNUAL);
+      empSheet.getRange(i + 1, EMP.SICK_LEAVE   + 1).setValue(_TEST_INITIAL_SICK);
+      break;
+    }
+  }
+  invalidateRosterCache_();
+}
+
+function _clearRowsByEmp(sheet, empId, colIdx, firstDataRow) {
+  if (!sheet) return;
+  const rows = sheet.getDataRange().getValues();
+  for (let i = rows.length - 1; i >= firstDataRow - 1; i--) {
+    if (String(rows[i][colIdx] || '').trim() === empId) sheet.deleteRow(i + 1);
   }
 }
 
@@ -710,6 +754,7 @@ function test_adjustLeaveBalance_restore() {
 }
 
 function test_adjustLeaveBalance_invalidatesCache() {
+  _clearTestState(_TEST_INDIA_ID);
   // Read once to populate cache
   _asUser(_TEST_INDIA_EMAIL, () => {
     const info = getEmployeeInfo_();
@@ -749,6 +794,7 @@ function test_recordPunch_basic() {
 }
 
 function test_recordPunch_adjustDedup() {
+  _clearTestState(_TEST_INDIA_ID);
   // Pre-existing ClockIn for the test user
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   _assertEq(_countTimesheetRows(_TEST_INDIA_ID, _TEST_DATE_RECENT, 'ClockIn'), 1);
@@ -891,6 +937,7 @@ function test_cancelTimeOff_approvedRejected() {
 // ── updateTimeOffStatus (PTO math heart) ──
 
 function test_updateTimeOff_approveDeductsAnnual() {
+  _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
   });
@@ -905,6 +952,7 @@ function test_updateTimeOff_approveDeductsAnnual() {
 }
 
 function test_updateTimeOff_approveDeductsSick() {
+  _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Sick Leave', ''));
   });
@@ -918,6 +966,7 @@ function test_updateTimeOff_approveDeductsSick() {
 }
 
 function test_updateTimeOff_revertRestores() {
+  _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
   });
@@ -934,6 +983,7 @@ function test_updateTimeOff_revertRestores() {
 }
 
 function test_updateTimeOff_pendingToDenied_noChange() {
+  _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
   });
@@ -947,6 +997,7 @@ function test_updateTimeOff_pendingToDenied_noChange() {
 }
 
 function test_updateTimeOff_halfDay_deductsHalf() {
+  _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Half Day - Morning', ''));
   });
@@ -959,6 +1010,7 @@ function test_updateTimeOff_halfDay_deductsHalf() {
 }
 
 function test_updateTimeOff_nonManagerRejected() {
+  _clearTestState(_TEST_PH_ID);
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
   });
@@ -978,6 +1030,7 @@ function test_updateTimeOff_nonManagerRejected() {
 // ── deletePunch ──
 
 function test_deletePunch_withinWindow() {
+  _clearTestState(_TEST_INDIA_ID);
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   _assertEq(_countTimesheetRows(_TEST_INDIA_ID, _TEST_DATE_RECENT, 'ClockIn'), 1);
   _asUser(_TEST_MGR_EMAIL, () => {
@@ -987,6 +1040,7 @@ function test_deletePunch_withinWindow() {
 }
 
 function test_deletePunch_beyondWindowRejected() {
+  _clearTestState(_TEST_INDIA_ID);
   const d = new Date(); d.setDate(d.getDate() - 20);
   const oldDate = Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', oldDate, '09:00:00', 'IN', 'ClockIn');
@@ -1001,6 +1055,7 @@ function test_deletePunch_beyondWindowRejected() {
 }
 
 function test_deletePunch_notFound() {
+  _clearTestState(_TEST_INDIA_ID);
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertFailure(
       deletePunch(_TEST_INDIA_ID, _TEST_DATE_RECENT, '09:00:00', 'ClockIn'),
@@ -1010,6 +1065,7 @@ function test_deletePunch_notFound() {
 }
 
 function test_deletePunch_nonManagerRejected() {
+  _clearTestState(_TEST_INDIA_ID);
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(
