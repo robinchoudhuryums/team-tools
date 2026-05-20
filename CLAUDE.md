@@ -34,14 +34,22 @@ These accumulate as audits surface real production hazards. Treat
 each entry as something that has bitten the project before — read
 this section before touching the relevant area.
 
-- **Repo ships with placeholder secrets.** `CONFIG.ADP_SS_ID` is
-  `'YOUR_ADP_SPREADSHEET_ID'` and `CONFIG.MANAGER_EMAILS` is
-  `['YOUR_EMAIL@umsupply.com']` in the committed `Code.js`. The
-  real values live only in the deployed Apps Script project. Any
-  fresh clone (Cloud Shell, local) must populate them before
-  running, and must NOT commit the real values back. The next
-  `clasp pull` will overwrite them with real values — re-scrub
-  before committing.
+- **Secrets via Script Properties, not CONFIG.** `getAdpSS_()` and
+  `getManagerEmails_()` read `ADP_SS_ID` and `MANAGER_EMAILS` from
+  Script Properties first, falling back to the CONFIG placeholders.
+  Set the real values once in Apps Script editor → Project Settings
+  → Script Properties; clasp pull/push leaves Script Properties
+  untouched, so the committed `Code.js` never has to be scrubbed.
+  Projects that haven't migrated can still set CONFIG values directly,
+  but then every clasp pull will pull real values and require a scrub
+  before commit.
+- **Sheets coerces `'TRUE'`/`'FALSE'` strings to native booleans.** On
+  write, `setValue('FALSE')` stores boolean `false`; on read,
+  `getValues()` returns the boolean. Naive `String(value || '').trim()`
+  then short-circuits `false` to `''` and downstream `=== 'false'`
+  checks miss — `ptoEnabled` defaulted to TRUE for contractors marked
+  FALSE until this was fixed. Always handle null/undefined/`''`
+  explicitly before stringifying any TRUE/FALSE column.
 - **Sheets auto-coerces `HH:mm:ss` strings to Date objects.** On
   read, `row[ADP.TIME]` may come back as a JavaScript Date —
   `String(date)` produces `"Sat Dec 30 1899 ..."` and breaks all
@@ -165,25 +173,33 @@ this section before touching the relevant area.
   tz (e.g. IST/PHT) and the manager's tz (CST). All conversions
   go through `convertDateTime_`; abbreviations come from
   `TZ_ABBR` with passthrough for unknown zones.
-- **Secret scrubbing on commit.** The repo's `Code.js` carries
-  placeholder values for `ADP_SS_ID` and `MANAGER_EMAILS`
-  because the project root may end up public. Real values stay
-  in the deployed Apps Script project; `clasp pull` overwrites
-  with real values, then commit time scrubs them back to
-  placeholders.
+- **Secrets via Script Properties.** `ADP_SS_ID` and `MANAGER_EMAILS`
+  are read from Script Properties first (set in Apps Script editor →
+  Project Settings → Script Properties), falling back to the
+  placeholders in CONFIG. This lets the repo stay clean of real
+  values without manual scrubbing on every `clasp pull`, since
+  Script Properties live on the deployed project and are never
+  touched by clasp.
 
 ## Operator State Checklist
 
 State that exists outside the codebase and must be set up
 manually for a fresh deploy or environment:
 
-- **Populate `CONFIG.ADP_SS_ID` and `CONFIG.MANAGER_EMAILS`** in
-  the Apps Script editor (or before `clasp push`) — placeholders
-  in the repo will not work against real data.
+- **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
+  Apps Script editor → Project Settings → Script Properties. Without
+  it, `getAdpSS_()` falls back to the inert `'YOUR_ADP_SPREADSHEET_ID'`
+  placeholder in CONFIG and fails on first sheet open.
+- **Set Script Property `MANAGER_EMAILS`** to a comma-separated list
+  (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
+  reads this before CONFIG; without it, no one passes the
+  `isManager` check and manager features stay locked out.
 - **`Employees` sheet column K = `PtoEnabled`** — added in the
   current schema; existing sheets must have this column added
   (header row 1, leave blank for back-compat = enabled, write
-  `FALSE` for contractors).
+  `FALSE` for contractors). `setupTestEnvironment()` auto-writes
+  the header on test runs if missing, but production rows still
+  need it set manually.
 - **`ROSTER_CACHE_KEY` = `'employee_roster_v4'`** — bumped when
   PTO_ENABLED column landed. After deploying, run `clearCaches()`
   once to flush any stale `_v3` cache entries.
@@ -223,7 +239,7 @@ Test Suite:
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server
 INV-02 | All manager-gated functions verify `callerEmp.isManager` before any side effect and return `{ error: 'Manager access required.' }` (or `success: false`) on failure | Subsystem: Server
 INV-03 | PTO balance changes in `updateTimeOffStatus` fire only on Pending→Approved (deduct) or Approved→non-Approved (restore) transitions | Subsystem: Server
-INV-04 | Date inputs match `/^\d{4}-\d{2}-\d{2}$/` and time inputs match `/^\d{2}:\d{2}$/` before any sheet write | Subsystem: Server
+INV-04 | Date inputs match `/^\d{4}-\d{2}-\d{2}$/` and time inputs match `/^([01]\d|2[0-3]):[0-5]\d$/` (enforces 24-hour validity, not just `HH:mm` shape) before any sheet write | Subsystem: Server
 INV-05 | Future-dated punches are rejected: both `date > todayStr` and same-day `time > nowTime` | Subsystem: Server
 INV-06 | Employee adjustments beyond `CONFIG.ADJUST_WINDOW_DAYS` are rejected; beyond `CONFIG.OLD_ADJUST_ALERT_DAYS` a non-empty reason is required | Subsystem: Server
 INV-07 | Manager punch deletes are rejected when older than `CONFIG.MGR_DELETE_WINDOW_DAYS` | Subsystem: Server
@@ -234,7 +250,7 @@ INV-11 | Employee-scoped endpoints use the caller's identity (`getEmployeeInfo_`
 INV-12 | `tzAbbr_` passes unknown timezone strings through unchanged; it never throws | Subsystem: Server
 INV-13 | `getManagerDashboard` reads the audit sheet via a bounded range (last ~20 rows), never the full sheet | Subsystem: Server
 INV-14 | Email sends (`notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts`, `sendAutomatedExport_`) are wrapped in try/catch and never block the API result | Subsystem: Server
-INV-15 | Automation triggers can only be installed by emails in `CONFIG.MANAGER_EMAILS`; `installAutomationTriggers` throws otherwise | Subsystem: Server
+INV-15 | Automation triggers can only be installed by emails in `MANAGER_EMAILS` (Script Properties or CONFIG, via `getManagerEmails_()`); `installAutomationTriggers` throws otherwise | Subsystem: Server
 INV-16 | Empty timezone strings fall back to `CONFIG.TIMEZONE`; empty leave-balance cells parse as 0 | Subsystem: Server
 INV-17 | `getLeaveDeduction_` is case-insensitive and trims whitespace; unknown types default to `{ bucket: 'annual', days: 1.0 }`; `'Unpaid Leave'` returns `{ bucket: null, days: 0 }` | Subsystem: Server
 INV-18 | Bi-weekly period boundaries are computed from the FIRST `'biweekly'` anchor row in the Employees sheet via the anchor-floor formula in `getCurrentBiweeklyRange_` | Subsystem: Server
