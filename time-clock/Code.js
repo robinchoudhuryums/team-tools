@@ -1527,8 +1527,12 @@ function getEmployeeInfo_() {
       if (tzRaw === null || tzRaw === undefined) tzRaw = '';
       const timezone = String(tzRaw).trim() || CONFIG.TIMEZONE;
       // PtoEnabled defaults to TRUE — blank/missing column means PTO enabled (back-compat)
-      // Mark FALSE for contractors (e.g. PH team) who don't get paid leave
-      const ptoRaw = String(rows[i][EMP.PTO_ENABLED] || '').trim().toLowerCase();
+      // Mark FALSE for contractors (e.g. PH team) who don't get paid leave.
+      // Sheets coerces the strings 'TRUE'/'FALSE' to native booleans on write, so a
+      // naive `value || ''` would short-circuit boolean `false` to '' and read as enabled.
+      const ptoVal = rows[i][EMP.PTO_ENABLED];
+      const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
+        ? '' : String(ptoVal).trim().toLowerCase();
       const ptoEnabled = !(ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0');
       return {
         email,
@@ -1550,7 +1554,10 @@ function lookupEmployeeById_(empId) {
     if (String(rows[i][EMP.ID]).trim() !== empId) continue;
     let tzRaw = rows[i][EMP.TIMEZONE];
     if (tzRaw === null || tzRaw === undefined) tzRaw = '';
-    const ptoRaw = String(rows[i][EMP.PTO_ENABLED] || '').trim().toLowerCase();
+    // Sheets coerces 'TRUE'/'FALSE' strings to native booleans — see getEmployeeInfo_ for full note
+    const ptoVal = rows[i][EMP.PTO_ENABLED];
+    const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
+      ? '' : String(ptoVal).trim().toLowerCase();
     const ptoEnabled = !(ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0');
     return {
       id: empId,
