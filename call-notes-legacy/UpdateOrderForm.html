@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary-color: #4285F4;
+    --primary-hover: #3367D6;
+    --grey-background: #f8f9fa;
+    --border-color: #dee2e6;
+    --header-height: 60px; 
+    --footer-height: 70px; 
+  }
+  html, body { 
+    margin: 0; padding: 0; height: 100%; width: 100%; 
+    overflow: hidden; font-family: 'Roboto', Arial, sans-serif; box-sizing: border-box;
+  }
+  body { 
+    background-image: url('<?= config.BACKGROUND_IMAGE_URL ?>');
+    background-color: #e9ecef; background-size: cover;
+  }
+  .wrapper {
+    position: relative; width: 100%; height: 100vh;
+    background-color: rgba(255, 255, 255, 0.95);
+  }
+  .header { 
+    position: absolute; top: 0; left: 0; right: 0; height: var(--header-height);
+    padding: 0 24px; display: flex; align-items: center;
+    font-size: 1.2em; font-weight: 500; color: white; 
+    background: linear-gradient(to right, #4A6D9E, #223b5d); z-index: 10;
+  }
+  .container { 
+    position: absolute; top: var(--header-height); bottom: var(--footer-height); left: 0; right: 0;
+    overflow-y: auto; padding: 24px; 
+  }
+  .buttons { 
+    position: absolute; bottom: 0; left: 0; right: 0; height: var(--footer-height);
+    padding: 0 24px; background-color: var(--grey-background); border-top: 1px solid var(--border-color);
+    display: flex; align-items: center; justify-content: flex-end; z-index: 10;
+  }
+  .form-group { margin-bottom: 20px; }
+  label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
+  input, select, textarea { 
+    width: 100%; padding: 12px; border-radius: 6px; border: 1px solid var(--border-color); box-sizing: border-box; 
+  }
+  select[multiple] { height: 120px; padding: 5px; }
+  .checkbox-group { display: flex; align-items: center; margin-top: 20px; }
+  .checkbox-group input { width: auto; margin-right: 10px; }
+  button { 
+    padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; 
+  }
+  .btn-primary { background-color: var(--primary-color); color: white; margin-left: 10px; }
+  .btn-secondary { background-color: #e9ecef; color: #333; }
+  .subform-container {
+    display: none; background-color: #f1f8ff; border: 1px solid #cce5ff; padding: 15px; border-radius: 6px; margin-top: 15px;
+  }
+  .subform-header {
+    font-weight: 700; margin-bottom: 10px; color: #223b5d; border-bottom: 1px solid #cce5ff; padding-bottom: 5px;
+  }
+  .nested-input-container {
+    display: none; margin-top: 10px; padding-left: 10px; border-left: 2px solid #ccc;
+  }
+  #preview-view { display: none; height: 100%; width: 100%; }
+  #preview-view .container { top: var(--header-height); bottom: var(--footer-height); }
+</style>
+  </head>
+<body>
+  <div class="wrapper">
+    <div id="form-view">
+      <div class="header">Update Order</div>
+      <div class="container">
+        <div class="form-group">
+          <label for="department">Recipient (Hold Ctrl/Cmd to select multiple)</label>
+          <select id="department" multiple>
+            <option>Sales</option>
+            <option>Eligibility MM&R</option>
+            <option>Manual Mobility</option>
+            <option>Resupply</option>
+            <option>Power</option>
+            <option>Field Ops</option>
+            <option>Service</option>
+            <option>Billing</option>
+            <option>Denials</option>
+            <option>CSR</option>
+            <option>Spanish</option>
+            <option value="Other">Other</option>
+          </select>
+          <div id="individual-input-container" style="display:none; margin-top:10px;">
+            <label for="custom-email" style="font-size: 0.9em; color: #555;">Enter Email Address(es):</label>
+            <input type="email" id="custom-email" placeholder="name@universalmedsupply.com, manager@universalmedsupply.com" multiple>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="update-info">Update Type</label>
+          <input type="text" id="update-info" list="update-suggestions" placeholder="Select or type an update...">
+          <datalist id="update-suggestions"></datalist>
+        </div>
+
+        <div id="oop-subform" class="subform-container" style="background-color: #fff7e6; border-color: #ffd591;">
+           <div class="subform-header" style="color: #d46b08; border-color: #ffd591;">OOP Order Details</div>
+           
+           <div class="form-group">
+             <label for="oop-base-cost">OOP Cost (Base):</label>
+             <div style="display:flex; align-items:center;">
+               <span style="margin-right:5px; font-weight:bold;">$</span>
+               <input type="number" id="oop-base-cost" step="0.01" placeholder="0.00" onchange="calculateOOPTotal()">
+             </div>
+           </div>
+
+           <div style="text-align:center; font-weight:bold; color:#d46b08; margin-bottom: 10px;">+</div>
+
+           <div class="form-group">
+             <label for="oop-shipping-cost">Shipping Cost:</label>
+             <input type="text" id="oop-shipping-cost" list="shipping-options" placeholder="Select category or type custom amount..." onchange="handleShippingInput()">
+             <datalist id="shipping-options">
+               <option value="Shipping Category 1 - $14.99">
+               <option value="Shipping Category 2 - $19.99">
+             </datalist>
+             <input type="hidden" id="oop-shipping-val">
+             <input type="hidden" id="oop-shipping-label">
+           </div>
+
+           <div style="text-align:center; font-weight:bold; color:#d46b08; margin-bottom: 10px;">+</div>
+           
+           <div class="form-group">
+             <label for="oop-rx-check">Rx Present?</label>
+             <select id="oop-rx-check" onchange="calculateOOPTotal()">
+               <option value="No" selected>No (Charge Tax)</option>
+               <option value="Yes">Yes (Tax Exempt)</option>
+             </select>
+           </div>
+
+           <div class="form-group">
+              <label>Est. Sales Tax:</label>
+              <div style="display:flex; justify-content: space-between; align-items: center; background:#fff; border:1px solid #dee2e6; padding:10px; border-radius:6px;">
+                  <span id="oop-tax-rate-display" style="font-size:0.9em; color:#666;">(Select State below)</span>
+                  <span id="oop-tax-amount" style="font-weight:bold;">$0.00</span>
+              </div>
+              <input type="hidden" id="oop-tax-val" value="0">
+           </div>
+
+           <div class="form-group" style="border-top: 1px solid #ffd591; padding-top: 10px;">
+             <label>Total Customer Cost:</label>
+             <div style="font-size: 1.2em; font-weight: bold; color: #d46b08;" id="oop-display-total">$0.00</div>
+           </div>
+        </div>
+
+        <div id="field-ops-subform" class="subform-container" style="background-color: #f6ffed; border-color: #b7eb8f;">
+           <div class="subform-header" style="color: #389e0d; border-color: #b7eb8f;">Verified Shipping Details</div>
+           
+           <div class="checkbox-group" style="margin-top:0; margin-bottom: 15px;">
+             <input type="checkbox" id="fo-verified-addr">
+             <label for="fo-verified-addr" style="margin:0;">Verified Address?</label>
+           </div>
+           
+           <div id="fo-addr-text-container" class="nested-input-container" style="margin-bottom: 15px;">
+               <input type="text" id="fo-verified-addr-text" placeholder="Type verified address here..." style="width:100%;">
+               <label for="fo-state" style="margin-top:10px; display:block; font-size:0.9em;">State (for Tax):</label>
+               <select id="fo-state" onchange="handleStateChange()" style="margin-top:5px;">
+                 <option value="" disabled selected>-- Select State --</option>
+               </select>
+           </div>
+
+           <div class="form-group">
+             <label for="fo-patient-loc">Patient Currently In:</label>
+             <select id="fo-patient-loc">
+               <option value="" disabled selected>-- Select --</option>
+               <option value="Home">Home</option>
+               <option value="Hospital">Hospital</option>
+               <option value="Rehab/Facility">Rehab/Facility</option>
+             </select>
+           </div>
+           
+           <div class="form-group">
+             <label for="fo-docs-to">Send Delivery Documents To:</label>
+             <select id="fo-docs-to">
+               <option value="" disabled selected>-- Select --</option>
+               <option value="Email">Email</option>
+               <option value="Physical Address">Physical Address</option>
+             </select>
+             <div id="fo-email-text-container" class="nested-input-container">
+               <input type="email" id="fo-delivery-email" placeholder="Enter recipient email..." style="width:100%;">
+             </div>
+           </div>
+
+           <div class="form-group">
+             <label for="fo-pat-resp">Pat. Resp?:</label>
+             <select id="fo-pat-resp">
+               <option value="" disabled selected>-- Select --</option>
+               <option value="Collected">Collected</option>
+               <option value="N/A">N/A</option>
+             </select>
+           </div>
+           <div class="form-group">
+             <label for="fo-special-note">Special Note:</label>
+             <input type="text" id="fo-special-note" placeholder="Any additional shipping details...">
+           </div>
+        </div>
+
+        <div id="resupply-subform" class="subform-container" style="background-color: #f6ffed; border-color: #b7eb8f;">
+           <div class="subform-header" style="color: #389e0d; border-color: #b7eb8f;">Repeat Resupply Details</div>
+           
+           <div class="form-group">
+             <label for="rr-item-category">Item Category:</label>
+             <input type="text" id="rr-item-category" list="rr-category-list" placeholder="Select or type category...">
+             <datalist id="rr-category-list">
+               <option value="Trach/Suction">
+               <option value="PAP">
+               <option value="Incontinence/Catheter">
+               <option value="Other"> 
+             </datalist>
+           </div>
+
+           <div class="form-group">
+             <label for="rr-dob">D.O.B.:</label>
+             <input type="text" id="rr-dob" placeholder="MM/DD/YYYY">
+           </div>
+
+           <div class="form-group">
+             <label for="rr-resupply-month">Requesting supplies for:</label>
+             <select id="rr-resupply-month">
+               <option value="" disabled selected>-- Select Month --</option>
+               <option value="January">January</option>
+               <option value="February">February</option>
+               <option value="March">March</option>
+               <option value="April">April</option>
+               <option value="May">May</option>
+               <option value="June">June</option>
+               <option value="July">July</option>
+               <option value="August">August</option>
+               <option value="September">September</option>
+               <option value="October">October</option>
+               <option value="November">November</option>
+               <option value="December">December</option>
+             </select>
+           </div>
+
+           <div class="form-group">
+             <label for="rr-date">Last 'Date Scheduled' for same items:</label>
+             <input type="date" id="rr-date">
+           </div>
+           
+           <div class="checkbox-group">
+             <input type="checkbox" id="rr-same-items">
+             <label for="rr-same-items">Same items & quantity as previous?</label>
+           </div>
+
+           <div class="form-group" style="margin-top:20px;">
+             <label for="rr-addr-check">Verified Address?</label>
+             <select id="rr-addr-check">
+               <option value="" disabled selected>-- Select --</option>
+               <option value="Same">Same as previous</option>
+               <option value="Different">Different from previous</option>
+             </select>
+             <div id="rr-addr-new-container" class="nested-input-container">
+                <input type="text" id="rr-new-addr" placeholder="Enter New Address">
+             </div>
+           </div>
+
+           <div class="form-group">
+             <label for="rr-ins-check">Verified Same Insurance?</label>
+             <select id="rr-ins-check">
+               <option value="" disabled selected>-- Select --</option>
+               <option value="Same">Same as previous</option>
+               <option value="Changed">Changed Insurance</option>
+             </select>
+             <div id="rr-ins-new-container" class="nested-input-container">
+                <input type="text" id="rr-new-ins" placeholder="New Insurance Name" style="margin-bottom:8px;">
+                <input type="text" id="rr-new-member-id" placeholder="Member ID#">
+             </div>
+           </div>
+
+           <div class="form-group">
+             <label for="rr-prov-check">Verified Same Provider?</label>
+             <select id="rr-prov-check">
+               <option value="" disabled selected>-- Select --</option>
+               <option value="Same">Same as previous</option>
+               <option value="Changed">Changed Provider</option>
+             </select>
+             <div id="rr-prov-new-container" class="nested-input-container">
+                <input type="text" id="rr-new-prov" placeholder="New Provider Name" style="margin-bottom:8px;">
+                <input type="text" id="rr-new-mdo-ph" placeholder="MDO Phone #">
+             </div>
+           </div>
+           
+           <div class="form-group">
+             <label for="rr-special-note">Special Note:</label>
+             <input type="text" id="rr-special-note" placeholder="Any additional resupply details...">
+           </div>
+        </div>
+
+        <div id="close-order-subform" class="subform-container" style="background-color: #fff1f0; border-color: #ffa39e;">
+           <div class="subform-header" style="color: #cf1322; border-color: #ffa39e;">Close Order Details</div>
+           <div class="form-group">
+             <label for="close-reason">Reason for Close:</label>
+             <input type="text" id="close-reason" list="close-reason-list" placeholder="Select or type a reason...">
+             <datalist id="close-reason-list">
+               <option value="Dissatisfied with services">
+               <option value="Changing supplier">
+               <option value="Declined due to cost">
+               <option value="Patient deceased">
+               <option value="Entering hospice">
+               <option value="No longer needed">
+             </datalist>
+           </div>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="callback-needed">
+          <label for="callback-needed">Callback Needed?</label>
+        </div>
+      </div>
+      <div class="buttons">
+        <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>
+        <button class="btn-primary" id="preview-btn" onclick="getPreview()">Generate Email Preview</button>
+      </div>
+    </div>
+
+    <div id="preview-view">
+      <div class="header">Email Preview</div>
+      <div class="container" id="preview-content"></div>
+      <div class="buttons">
+        <button class="btn-secondary" onclick="showFormView()">Back</button>
+        <button class="btn-primary" id="send-btn" onclick="sendEmail()">Send Email</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+    const callDataFromServer = <?!= JSON.stringify(callData) ?>;
+    const initialState = <?!= (typeof initialState !== 'undefined') ? JSON.stringify(initialState) : 'null' ?>;
+    
+    // --- HARDCODED TAX RATES (Ethically Conservative) ---
+    const taxRates = {
+        "Alabama": 0.03, "Alaska": 0, "Arizona": 0.045, "Arkansas": 0.055,
+        "California": 0.06, "Colorado": 0.02, "Connecticut": 0.05, "Delaware": 0,
+        "District of Columbia": 0.05, "Florida": 0.05, "Georgia": 0.03, "Hawaii": 0.03,
+        "Idaho": 0.05, "Illinois": 0.05, "Indiana": 0.06, "Iowa": 0.05,
+        "Kansas": 0.055, "Kentucky": 0.05, "Louisiana": 0.035, "Maine": 0.045,
+        "Maryland": 0.05, "Massachusetts": 0.05, "Michigan": 0.05, "Minnesota": 0.055,
+        "Mississippi": 0.06, "Missouri": 0.03, "Montana": 0, "Nebraska": 0.045,
+        "Nevada": 0.055, "New Hampshire": 0, "New Jersey": 0.055, "New Mexico": 0.04,
+        "New York": 0.03, "North Carolina": 0.035, "North Dakota": 0.04, "Ohio": 0.045,
+        "Oklahoma": 0.035, "Oregon": 0, "Pennsylvania": 0.05, "Rhode Island": 0.06,
+        "South Carolina": 0.05, "South Dakota": 0.03, "Tennessee": 0.06, "Texas": 0.05,
+        "Utah": 0.05, "Vermont": 0.05, "Virginia": 0.03, "Washington": 0.055,
+        "West Virginia": 0.05, "Wisconsin": 0.04, "Wyoming": 0.03
+    };
+
+    // State Abbreviation Mapping for Auto-Detect
+    const stateAbbrMap = {
+      'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+      'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia',
+      'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
+      'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+      'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri',
+      'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
+      'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+      'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+      'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
+      'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
+      'DC': 'District of Columbia'
+    };
+    
+    let formData = {}; 
+
+    const updateSuggestionsByDept = {
+      'Sales': ['Appointment Re-scheduled', 'Insurance Details', 'Duplicate'], 
+      'Service': ['Pictures/Video', 'Additional Issue', 'Pending Validation'],
+      'Eligibility MM&R': ['Close Order','OOP Accepted','UPG Fee Accepted','New Insurance Details', 'Duplicate'],
+      'Manual Mobility': ['Insurance Change', 'Pending Auth'], 
+      'Power': ['New Appt Needed','New Appt Details', 'Insurance Change','Appeal Status', 'PAR Response', 'PT Eval','PV-PPD'],
+      'Resupply': ['Repeat Resupply', 'Wrong Item Received','Vent Inquiry'], 
+      'Field Ops': ['Verified Shipping','Re-schedule', 'Delivery Details'],
+      'Billing': ['Receipt Request','Refund'], 
+      'Denials': ['Appeal Needed', 'Redetermination'],
+      'CSR': ['General Inquiry', 'Status Check'],
+      'Spanish': ['Translator Needed']
+    };
+
+    const defaultOptions = [
+      'Verified Shipping', 
+      'Repeat Resupply', 
+      'Close Order',
+      'OOP Order',
+      'Supervisor/Complaint'
+    ];
+
+    function updateDatalist() {
+      const selectedDepts = Array.from(document.getElementById('department').selectedOptions).map(opt => opt.value);
+      const datalist = document.getElementById('update-suggestions');
+      let suggestionsToShow = [];
+
+      if (selectedDepts.length === 0) {
+        suggestionsToShow = defaultOptions;
+      } else {
+        selectedDepts.forEach(dept => { 
+           if(updateSuggestionsByDept[dept]) {
+             suggestionsToShow = suggestionsToShow.concat(updateSuggestionsByDept[dept]);
+           }
+        });
+        suggestionsToShow = suggestionsToShow.concat(defaultOptions);
+      }
+
+      const uniqueSuggestions = [...new Set(suggestionsToShow)];
+      
+      datalist.innerHTML = '';
+      uniqueSuggestions.forEach(function(item) {
+        const option = document.createElement('option');
+        option.value = item;
+        datalist.appendChild(option);
+      });
+    }
+
+    function handleUpdateInput() {
+       const updateInput = document.getElementById('update-info');
+       const deptSelect = document.getElementById('department');
+       const val = updateInput.value.trim(); 
+
+       checkConditionalLogic();
+
+       if (deptSelect.selectedOptions.length === 0) {
+          for (const [deptName, options] of Object.entries(updateSuggestionsByDept)) {
+             const match = options.find(opt => opt.toLowerCase() === val.toLowerCase());
+             if (match) {
+                for (let i = 0; i < deptSelect.options.length; i++) {
+                   if (deptSelect.options[i].value === deptName) {
+                      deptSelect.options[i].selected = true;
+                      updateDatalist(); 
+                      return; 
+                   }
+                }
+             }
+          }
+       }
+    }
+
+    function checkConditionalLogic() {
+       const updateInput = document.getElementById('update-info');
+       const fieldOpsForm = document.getElementById('field-ops-subform');
+       const closeOrderForm = document.getElementById('close-order-subform');
+       const resupplyForm = document.getElementById('resupply-subform');
+       const oopForm = document.getElementById('oop-subform');
+       
+       const updateValue = updateInput.value.trim().toLowerCase();
+
+       fieldOpsForm.style.display = 'none';
+       closeOrderForm.style.display = 'none';
+       resupplyForm.style.display = 'none';
+       oopForm.style.display = 'none';
+
+       if (updateValue === 'verified shipping') {
+           fieldOpsForm.style.display = 'block';
+       } else if (updateValue === 'close order') {
+           closeOrderForm.style.display = 'block';
+       } else if (updateValue === 'repeat resupply') {
+           resupplyForm.style.display = 'block';
+       } else if (updateValue === 'oop order') {
+           oopForm.style.display = 'block';
+           fieldOpsForm.style.display = 'block'; 
+       }
+    }
+
+    // --- TAX & OOP HELPERS ---
+    function handleShippingInput() {
+        const input = document.getElementById('oop-shipping-cost');
+        const val = input.value;
+        let cost = 0;
+        let label = "Custom";
+
+        if (val.includes('$14.99')) {
+            cost = 14.99;
+            label = "Category 1";
+        } else if (val.includes('$19.99')) {
+            cost = 19.99;
+            label = "Category 2";
+        } else {
+            const clean = val.replace(/[^0-9.]/g, '');
+            cost = parseFloat(clean) || 0;
+            label = "Custom Amount";
+        }
+
+        document.getElementById('oop-shipping-val').value = cost;
+        document.getElementById('oop-shipping-label').value = label;
+        calculateOOPTotal();
+    }
+
+    function handleStateChange() {
+        const state = document.getElementById('fo-state').value;
+        const rate = taxRates[state] || 0;
+        const rxPresent = document.getElementById('oop-rx-check').value;
+        
+        // Update Display Text
+        if (rxPresent === 'Yes') {
+           document.getElementById('oop-tax-rate-display').innerText = `${state} Base Rate (0% - Rx Exempt)`;
+        } else {
+           const percentage = (rate * 100).toFixed(2) + '%';
+           document.getElementById('oop-tax-rate-display').innerText = `${state} Base Rate (${percentage})`;
+        }
+        
+        calculateOOPTotal();
+    }
+
+    // NEW: Auto-Detect State from Address Input
+    function handleAddressInput() {
+      const addrInput = document.getElementById('fo-verified-addr-text');
+      const stateSelect = document.getElementById('fo-state');
+      const val = addrInput.value.toUpperCase();
+      
+      // Regex to find 2-letter code or Full Name at the end of the string
+      // Matches things like ", TX" or ", TX 78701" or ", Texas"
+      
+      // Check for Abbreviation (e.g., " TX " or " TX" at end)
+      // We look for a 2-letter code that exists in our map
+      const words = val.replace(/[^A-Z\s]/g, '').split(/\s+/);
+      
+      let detectedState = null;
+      
+      // Reverse loop to check end of address first
+      for (let i = words.length - 1; i >= 0; i--) {
+        const word = words[i];
+        if (stateAbbrMap[word]) {
+          detectedState = stateAbbrMap[word];
+          break;
+        }
+        // Also check if full state name is typed (e.g. "Texas")
+        const capitalWord = word.charAt(0) + word.slice(1).toLowerCase(); // basic normalization check
+        if (taxRates[capitalWord]) {
+           // This handles "Texas" if taxRates keys match (they do)
+           // But our taxRates keys are Title Case (e.g. "New York")
+           // Let's do a direct scan of keys
+        }
+      }
+
+      // If strict loop failed, try a broader search for full names in the string
+      if (!detectedState) {
+         for (const fullState of Object.keys(taxRates)) {
+             if (val.includes(fullState.toUpperCase())) {
+                 detectedState = fullState;
+                 break;
+             }
+         }
+      }
+
+      if (detectedState) {
+         stateSelect.value = detectedState;
+         handleStateChange(); // Update tax display immediately
+      }
+    }
+
+    function calculateOOPTotal() {
+        const base = parseFloat(document.getElementById('oop-base-cost').value) || 0;
+        const ship = parseFloat(document.getElementById('oop-shipping-val').value) || 0;
+        const state = document.getElementById('fo-state').value;
+        const rxPresent = document.getElementById('oop-rx-check').value;
+        
+        let rate = taxRates[state] || 0;
+        let displayNote = "";
+
+        // RX OVERRIDE LOGIC
+        if (rxPresent === 'Yes') {
+            rate = 0;
+            displayNote = " (Rx Exempt)";
+            document.getElementById('oop-tax-rate-display').innerText = (state) ? `${state} Base Rate (0% - Rx Exempt)` : "(Rx Exempt)";
+        } else if (state) {
+            const percentage = (rate * 100).toFixed(2) + '%';
+            document.getElementById('oop-tax-rate-display').innerText = `${state} Base Rate (${percentage})`;
+        }
+
+        const tax = base * rate;
+        
+        // Format Tax Display
+        let taxText = '$' + tax.toFixed(2);
+        if (rxPresent === 'Yes') taxText = '$0.00' + displayNote;
+        
+        document.getElementById('oop-tax-amount').innerText = taxText;
+        document.getElementById('oop-tax-val').value = tax; 
+
+        const total = base + ship + tax;
+        document.getElementById('oop-display-total').innerText = '$' + total.toFixed(2);
+    }
+
+    function checkIndividualVisibility() {
+       const deptSelect = document.getElementById('department');
+       const emailContainer = document.getElementById('individual-input-container');
+       const selectedValues = Array.from(deptSelect.selectedOptions).map(opt => opt.value);
+       
+       if (selectedValues.includes('Other')) { 
+           emailContainer.style.display = 'block';
+       } else {
+           emailContainer.style.display = 'none';
+           document.getElementById('custom-email').value = ''; 
+       }
+    }
+
+    function handleResupplyDropdowns() {
+        const addrVal = document.getElementById('rr-addr-check').value;
+        document.getElementById('rr-addr-new-container').style.display = (addrVal === 'Different') ? 'block' : 'none';
+
+        const insVal = document.getElementById('rr-ins-check').value;
+        document.getElementById('rr-ins-new-container').style.display = (insVal === 'Changed') ? 'block' : 'none';
+
+        const provVal = document.getElementById('rr-prov-check').value;
+        document.getElementById('rr-prov-new-container').style.display = (provVal === 'Changed') ? 'block' : 'none';
+    }
+
+    function handleFieldOpsInputs() {
+        const verifiedChecked = document.getElementById('fo-verified-addr').checked;
+        document.getElementById('fo-addr-text-container').style.display = verifiedChecked ? 'block' : 'none';
+
+        const docsVal = document.getElementById('fo-docs-to').value;
+        document.getElementById('fo-email-text-container').style.display = (docsVal === 'Email') ? 'block' : 'none';
+    }
+
+    document.getElementById('department').addEventListener('change', function() {
+        updateDatalist();
+        checkIndividualVisibility();
+    });
+    document.getElementById('update-info').addEventListener('input', handleUpdateInput);
+    document.getElementById('update-info').addEventListener('change', handleUpdateInput); 
+
+    document.getElementById('rr-addr-check').addEventListener('change', handleResupplyDropdowns);
+    document.getElementById('rr-ins-check').addEventListener('change', handleResupplyDropdowns);
+    document.getElementById('rr-prov-check').addEventListener('change', handleResupplyDropdowns);
+
+    document.getElementById('fo-verified-addr').addEventListener('change', handleFieldOpsInputs);
+    // Add Auto-Detect Listener for Address Input
+    document.getElementById('fo-verified-addr-text').addEventListener('input', handleAddressInput);
+    
+    document.getElementById('fo-docs-to').addEventListener('change', handleFieldOpsInputs);
+
+    // --- INITIALIZATION ---
+    window.onload = function() {
+        updateDatalist();
+
+        // Populate State Dropdown
+        const stateSelect = document.getElementById('fo-state');
+        const sortedStates = Object.keys(taxRates).sort();
+        sortedStates.forEach(state => {
+            const opt = document.createElement('option');
+            opt.value = state;
+            opt.text = state;
+            stateSelect.appendChild(opt);
+        });
+        
+        if (initialState && initialState.mode === 'OOP Order') {
+            const updateInput = document.getElementById('update-info');
+            updateInput.value = "OOP Order";
+            
+            checkConditionalLogic();
+
+            const deptSelect = document.getElementById('department');
+            Array.from(deptSelect.options).forEach(opt => opt.selected = false);
+            
+            initialState.departments.forEach(deptToSelect => {
+                for (let i = 0; i < deptSelect.options.length; i++) {
+                    if (deptSelect.options[i].value === deptToSelect) {
+                        deptSelect.options[i].selected = true;
+                    }
+                }
+            });
+            updateDatalist();
+        }
+    };
+
+    function showPreviewView() {
+      document.getElementById('form-view').style.display = 'none';
+      document.getElementById('preview-view').style.display = 'flex';
+    }
+    function showFormView() {
+      document.getElementById('preview-view').style.display = 'none';
+      document.getElementById('form-view').style.display = 'block';
+    }
+
+    function getPreview() {
+      const previewBtn = document.getElementById('preview-btn');
+      const deptSelect = document.getElementById('department');
+      const fieldOpsForm = document.getElementById('field-ops-subform');
+      const closeOrderForm = document.getElementById('close-order-subform');
+      const resupplyForm = document.getElementById('resupply-subform');
+      const oopForm = document.getElementById('oop-subform');
+      
+      const rawDepts = Array.from(deptSelect.selectedOptions).map(opt => opt.value.trim());
+
+      const selections = {
+        departments: rawDepts,
+        updateInfo: document.getElementById('update-info').value,
+        callbackNeeded: document.getElementById('callback-needed').checked,
+        shippingDetails: null,
+        closeDetails: null,
+        resupplyDetails: null,
+        oopDetails: null, 
+        individualEmail: null 
+      };
+
+      if (selections.departments.includes('Other')) {
+          const customEmail = document.getElementById('custom-email').value.trim();
+          if (!customEmail) {
+              alert("⚠️ You selected 'Other' but did not enter an email address.");
+              return;
+          }
+          selections.individualEmail = customEmail;
+      }
+
+      // --- SHARED SHIPPING VALIDATION ---
+      if (fieldOpsForm.style.display === 'block') {
+         const verifiedAddr = document.getElementById('fo-verified-addr').checked;
+         const verifiedAddrText = document.getElementById('fo-verified-addr-text').value.trim();
+         const patientLoc = document.getElementById('fo-patient-loc').value;
+         const docsTo = document.getElementById('fo-docs-to').value;
+         const deliveryEmail = document.getElementById('fo-delivery-email').value.trim();
+         const patResp = document.getElementById('fo-pat-resp').value;
+         const specialNote = document.getElementById('fo-special-note').value;
+         const taxState = document.getElementById('fo-state').value; 
+         const rxPresent = document.getElementById('oop-rx-check').value;
+
+         let missingFields = [];
+         
+         if (verifiedAddr && !verifiedAddrText) missingFields.push("- Verified Address (Type the address)");
+         
+         // New Check: If OOP is active, State is Required (unless we want to allow skipping if tax isn't an issue? 
+         // But usually good to require state for logistics anyway).
+         if (oopForm.style.display === 'block' && !taxState) missingFields.push("- Verified State (Required for Tax Calc)");
+         
+         if (!patientLoc) missingFields.push("- Patient Location");
+         if (!docsTo) missingFields.push("- Delivery Documents");
+         if (!patResp) missingFields.push("- Patient Responsibility");
+
+         if (missingFields.length > 0) {
+             alert("⚠️ Please complete the Verified Shipping Details:\n\n" + missingFields.join("\n"));
+             return; 
+         }
+         
+         selections.shippingDetails = {
+             verifiedAddr: verifiedAddr,
+             verifiedAddrText: verifiedAddrText,
+             patientLoc: patientLoc,
+             docsTo: docsTo,
+             deliveryEmail: deliveryEmail,
+             patResp: patResp,
+             specialNote: specialNote,
+             state: taxState
+         };
+      }
+
+      if (closeOrderForm.style.display === 'block') {
+          const closeReason = document.getElementById('close-reason').value.trim();
+          if (!closeReason) {
+              alert("⚠️ Please enter or select a Reason for Closing the order.");
+              return;
+          }
+          selections.closeDetails = { reason: closeReason };
+      }
+
+      if (resupplyForm.style.display === 'block') {
+          const itemCategory = document.getElementById('rr-item-category').value.trim();
+          const dob = document.getElementById('rr-dob').value.trim();
+          const resupplyMonth = document.getElementById('rr-resupply-month').value;
+          const date = document.getElementById('rr-date').value;
+          const sameItems = document.getElementById('rr-same-items').checked;
+          const addrStatus = document.getElementById('rr-addr-check').value;
+          const insStatus = document.getElementById('rr-ins-check').value;
+          const provStatus = document.getElementById('rr-prov-check').value;
+          const specialNote = document.getElementById('rr-special-note').value.trim(); 
+
+          let missingFields = [];
+          
+          if (!itemCategory) missingFields.push("- Item Category");
+          if (!date) missingFields.push("- Last Date Scheduled");
+          
+          if (!sameItems) {
+             if (!specialNote) {
+                 alert("⚠️ Validation Error:\n\nSince 'Same items & quantity' is NOT checked, you must provide details in the 'Special Note' field describing the changes.");
+                 return; 
+             }
+             const proceed = confirm("⚠️ 'Same items & quantity' is NOT checked.\n\nDid the patient confirm they need the exact same items/qty as their last order?\n\nClick OK to proceed (Note: You have entered details in Special Note).\nClick Cancel to go back.");
+             if (!proceed) return;
+          }
+
+          if (!addrStatus) missingFields.push("- Verified Address selection");
+          if (!insStatus) missingFields.push("- Verified Insurance selection");
+          if (!provStatus) missingFields.push("- Verified Provider selection");
+
+          if (addrStatus === 'Different' && !document.getElementById('rr-new-addr').value.trim()) {
+             missingFields.push("- New Address details");
+          }
+          if (insStatus === 'Changed') {
+             if (!document.getElementById('rr-new-ins').value.trim()) missingFields.push("- New Insurance Name");
+             if (!document.getElementById('rr-new-member-id').value.trim()) missingFields.push("- New Member ID");
+          }
+          if (provStatus === 'Changed') {
+             if (!document.getElementById('rr-new-prov').value.trim()) missingFields.push("- New Provider Name");
+             if (!document.getElementById('rr-new-mdo-ph').value.trim()) missingFields.push("- New Provider Phone");
+          }
+
+          if (missingFields.length > 0) {
+              alert("⚠️ Please complete the Repeat Resupply Details:\n\n" + missingFields.join("\n"));
+              return;
+          }
+
+          selections.resupplyDetails = {
+              itemCategory: itemCategory,
+              dob: dob, 
+              resupplyMonth: resupplyMonth,
+              lastDate: date,
+              sameItems: sameItems,
+              addrStatus: addrStatus,
+              newAddr: document.getElementById('rr-new-addr').value,
+              insStatus: insStatus,
+              newIns: document.getElementById('rr-new-ins').value,
+              newMemId: document.getElementById('rr-new-member-id').value,
+              provStatus: provStatus,
+              newProv: document.getElementById('rr-new-prov').value,
+              newMdoPh: document.getElementById('rr-new-mdo-ph').value,
+              specialNote: specialNote
+          };
+      }
+
+      // --- OOP VALIDATION ---
+      if (oopForm.style.display === 'block') {
+          const baseCost = document.getElementById('oop-base-cost').value;
+          calculateOOPTotal(); 
+          
+          const shipVal = document.getElementById('oop-shipping-val').value;
+          const shipLabel = document.getElementById('oop-shipping-label').value;
+          const taxVal = parseFloat(document.getElementById('oop-tax-val').value) || 0;
+          const rxPresent = document.getElementById('oop-rx-check').value;
+          
+          if (!baseCost) {
+              alert("⚠️ Please enter a Base Cost.");
+              return;
+          }
+
+          const total = (parseFloat(baseCost) + parseFloat(shipVal) + taxVal).toFixed(2);
+
+          // Logic for tax display label in email
+          let taxLabel = taxVal.toFixed(2);
+          if (rxPresent === 'Yes') taxLabel = '0.00 (Rx Exempt)';
+
+          selections.oopDetails = {
+              baseCost: parseFloat(baseCost).toFixed(2),
+              shippingCost: parseFloat(shipVal).toFixed(2),
+              shippingLabel: shipLabel,
+              taxAmt: taxLabel,
+              totalCost: total,
+              rxPresent: rxPresent
+          };
+      }
+
+      if (selections.departments.length === 0) {
+        alert("Please select at least one recipient.");
+        return;
+      }
+      
+      previewBtn.disabled = true;
+      previewBtn.textContent = "Generating...";
+
+      formData = { selections: selections, callData: callDataFromServer };
+      
+      google.script.run
+        .withSuccessHandler(function(html) {
+          previewBtn.disabled = false;
+          previewBtn.textContent = "Generate Email Preview";
+          document.getElementById('preview-content').innerHTML = html;
+          showPreviewView();
+        })
+        .withFailureHandler(function(err) {
+          previewBtn.disabled = false;
+          previewBtn.textContent = "Generate Email Preview";
+          alert("Error generating preview: " + err.message);
+        })
+        .generateUpdateOrderPreviewWrapper(formData); 
+    }
+    
+    function sendEmail() {
+      const sendButton = document.getElementById('send-btn');
+      sendButton.disabled = true;
+      sendButton.textContent = "Sending...";
+
+      google.script.run
+        .withSuccessHandler(function() {
+            google.script.host.close();
+        })
+        .withFailureHandler(function(error) {
+            sendButton.disabled = false;
+            sendButton.textContent = "Send Email";
+            google.script.run.showUpdateOrderFailureDialog(error.message);
+        })
+        .sendUpdateOrderEmailWrapper(formData); 
+    }
+</script>
+
+</body>
+</html>
