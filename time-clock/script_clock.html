@@ -10,16 +10,26 @@ let SELF_UNDO_WINDOW_SECONDS = 300;
 function renderClockView(area) {
   const s = empState;
   const sp = STATUS_PILL[deriveShiftStatus(s.nextActions, s.punches)];
-  const dateStr = dateLabelTz(empTz());
   const tzAbbr = s.timezoneAbbr || '';
+  const tz = empTz();
+  // Split the prior single-line "Saturday, May 17" into kicker + display:
+  // kicker line carries the weekday in mono-uppercase; the meta row carries
+  // the date in display-font next to tz + status pill.
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' }).format(new Date());
+  const dateStr = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'long', day: 'numeric' }).format(new Date());
+  const kicker = `Today · ${weekday}`;
   const ptoBlock = renderPtoRings(s);
   area.innerHTML = `
     <div class="hero-clock">
       <div class="hero-clock-content">
-        <div class="hero-clock-date">${esc(dateStr)}</div>
-        <div class="hero-clock-time" id="live-time">--:--:--<span class="hc-ampm"></span></div>
-        <div class="hero-clock-tz">${esc(tzAbbr)}</div>
-        <div class="hero-clock-status ${sp.cls}"><span class="dot"></span>${sp.label}</div>
+        <div class="hero-clock-kicker">${esc(kicker)}</div>
+        <div class="hero-clock-time tabular" id="live-time">--:--:--<span class="hc-ampm"></span></div>
+        <div class="hero-clock-meta">
+          <span class="hero-clock-datestr">${esc(dateStr)}</span>
+          ${tzAbbr ? `<span class="hero-clock-sep">·</span><span class="hero-clock-tz">${esc(tzAbbr)}</span>` : ''}
+          <span class="hero-clock-sep">·</span>
+          <span class="hero-clock-status ${sp.cls}"><span class="dot"></span>${sp.label}</span>
+        </div>
       </div>
     </div>
 
@@ -184,9 +194,9 @@ function renderPunchHistory(punches) {
   const tz = empTz();
   const nowHMS = liveTimeHmsTz(tz);
   return '<div class="punch-list">' + punches.map(p => {
-    const m  = PUNCH_META[p.type] || { label:p.type, emoji:'●', dir:p.direction==='IN'?'in':'out' };
+    const m  = PUNCH_META[p.type] || { label:p.type, icon:'info', dir:p.direction==='IN'?'in':'out' };
     const dc = m.dir === 'in' ? 'in' : 'out';
-    const adj = p.isAdjustment ? '<span class="adj-pill">✏️ adj</span>' : '';
+    const adj = p.isAdjustment ? `<span class="adj-pill">${icon('adjust', 10)} adj</span>` : '';
     const eligible = !p.isAdjustment && timeDiffSecondsClient(p.time, nowHMS) <= SELF_UNDO_WINDOW_SECONDS;
     const undoBtn = eligible
       ? `<button class="punch-undo" title="Undo this punch (within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)}min)"
@@ -194,7 +204,7 @@ function renderPunchHistory(punches) {
            data-label="${esc(m.label)}">×</button>`
       : '';
     return `<div class="punch-row">
-      <div class="punch-icon ${dc}">${m.emoji}</div>
+      <div class="punch-icon ${dc}">${icon(m.icon, 18)}</div>
       <div class="punch-name">${m.label} ${adj}</div>
       <div class="punch-tag ${dc}">${p.direction}</div>
       <div class="punch-tv">${dispTime(p.time)}</div>
@@ -228,7 +238,7 @@ function renderActions(actions) {
   const main = actions.filter(a => a !== 'Adjust');
   const isSingle = main.length === 1;
   let html = '';
-  if (onlyAdjust) html += '<div class="shift-done-msg">✓ Shift complete for today</div>';
+  if (onlyAdjust) html += `<div class="shift-done-msg">${icon('checkCircle', 16)}Shift complete for today</div>`;
   html += `<div class="actions-grid${(isSingle || onlyAdjust) ? ' fw' : ''}">`;
   main.forEach(a => { html += actionBtnHtml(a); });
   html += actionBtnHtml('Adjust');
@@ -239,7 +249,7 @@ function renderActions(actions) {
 function actionBtnHtml(type) {
   const m = PUNCH_META[type];
   return `<button class="action-btn ${m.cls}" data-action="${type}">
-    <span class="be">${m.emoji}</span>${m.label}</button>`;
+    <span class="be">${icon(m.icon, 22)}</span>${m.label}</button>`;
 }
 
 function bindClockBtns() {
