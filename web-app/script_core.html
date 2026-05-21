@@ -26,6 +26,38 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
 const DOW_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 // ════════════════════════════════════════════════════════════════════════════
+//  TOOL REGISTRY
+//  ────────────────────────────────────────────────────────────────────────
+//  Each top-level entry is a "tool" (Time Clock, Call Notes, …); each tool
+//  declares its views (= sidebar/nav entries). To add a new tool: append a
+//  new entry to TOOLS, implement the per-view enter handler in the
+//  corresponding script_*.html partial, and include() the partial in
+//  index.html. The shell auto-builds the sidebar / mobile nav from this
+//  registry and the showView() dispatcher routes to the handler. The
+//  sidebar `.sb-brand-sub` swaps to the active tool's label on each
+//  navigation so the user always sees which tool they're in.
+//
+//  managerOnly: true hides the view from non-managers.
+//  External: enter handlers are defined alongside their view code; the
+//  registry just looks them up by name (window[...]).
+// ════════════════════════════════════════════════════════════════════════════
+const TOOLS = {
+  timeClock: {
+    label: 'Time Clock',
+    views: {
+      clock:     { label: 'Clock',     icon: 'clock',     enter: 'enterClockView' },
+      timesheet: { label: 'Timesheet', icon: 'timesheet', enter: 'enterTimesheetView' },
+      timeoff:   { label: 'Time Off',  icon: 'timeoff',   enter: 'enterTimeoffView' },
+      manage:    { label: 'Manage',    icon: 'manage',    enter: 'enterManagerView', managerOnly: true },
+    },
+  },
+};
+const VIEW_TO_TOOL = {};
+Object.keys(TOOLS).forEach(toolKey => {
+  Object.keys(TOOLS[toolKey].views).forEach(viewKey => { VIEW_TO_TOOL[viewKey] = toolKey; });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  SHARED STATE
 // ════════════════════════════════════════════════════════════════════════════
 let empState = null;
@@ -69,12 +101,27 @@ function renderShell(state) {
   const sbIcon = (name) => `<span class="sb-icon">${icon(name, 18)}</span>`;
   const nvIcon = (name) => `<span class="nav-icon">${icon(name, 20)}</span>`;
 
-  const mgrLink = state.isManager
-    ? `<button class="sb-link" data-view="manage" onclick="showView('manage')">
-         ${sbIcon('manage')}Manage</button>` : '';
-  const mgrNavBtn = state.isManager
-    ? `<button class="nav-btn" data-view="manage" onclick="showView('manage')">
-         ${nvIcon('manage')}Manage</button>` : '';
+  // Build sidebar links + mobile nav buttons from the TOOLS registry. Views
+  // with managerOnly:true are filtered for non-managers. Order matches the
+  // declaration order in TOOLS (ES2015+ guarantees insertion order for
+  // string keys, which is what we rely on here).
+  const visibleViews = [];
+  Object.keys(TOOLS).forEach(toolKey => {
+    Object.keys(TOOLS[toolKey].views).forEach(viewKey => {
+      const v = TOOLS[toolKey].views[viewKey];
+      if (v.managerOnly && !state.isManager) return;
+      visibleViews.push({ viewKey, ...v });
+    });
+  });
+  const sbLinks = visibleViews.map(v =>
+    `<button class="sb-link" data-view="${v.viewKey}" onclick="showView('${v.viewKey}')">
+       ${sbIcon(v.icon)}${esc(v.label)}</button>`
+  ).join('');
+  const navBtns = visibleViews.map(v =>
+    `<button class="nav-btn" data-view="${v.viewKey}" onclick="showView('${v.viewKey}')">
+       ${nvIcon(v.icon)}${esc(v.label)}</button>`
+  ).join('');
+
   const tzTag = state.timezoneAbbr
     ? `<span class="sb-user-tz">${esc(state.timezoneAbbr)}</span>` : '';
   const tzTagMobile = state.timezoneAbbr
@@ -102,16 +149,7 @@ function renderShell(state) {
           <div class="sb-brand-sub" id="sb-tool-label">Time Clock</div>
         </div>
         <div class="sb-section-label">Navigate</div>
-        <button class="sb-link" data-view="clock" onclick="showView('clock')">
-          ${sbIcon('clock')}Clock
-        </button>
-        <button class="sb-link" data-view="timesheet" onclick="showView('timesheet')">
-          ${sbIcon('timesheet')}Timesheet
-        </button>
-        <button class="sb-link" data-view="timeoff" onclick="showView('timeoff')">
-          ${sbIcon('timeoff')}Time Off
-        </button>
-        ${mgrLink}
+        ${sbLinks}
         <div class="sb-theme">
           <span class="sb-theme-label">Theme</span>
           ${themeToggle}
@@ -144,13 +182,7 @@ function renderShell(state) {
 
         <nav class="mobile-nav">
           <div class="mobile-nav-inner">
-            <button class="nav-btn" data-view="clock" onclick="showView('clock')">
-              ${nvIcon('clock')}Clock</button>
-            <button class="nav-btn" data-view="timesheet" onclick="showView('timesheet')">
-              ${nvIcon('timesheet')}Timesheet</button>
-            <button class="nav-btn" data-view="timeoff" onclick="showView('timeoff')">
-              ${nvIcon('timeoff')}Time Off</button>
-            ${mgrNavBtn}
+            ${navBtns}
           </div>
         </nav>
       </div>
@@ -161,35 +193,53 @@ function renderShell(state) {
 }
 
 function showView(view) {
+  const toolKey = VIEW_TO_TOOL[view];
+  if (!toolKey) return;
   currentView = view;
+  // Swap the sidebar tool label (e.g. "Time Clock" ↔ "Call Notes") so the
+  // user always sees which tool they're in. Falls back silently if the
+  // element isn't on the page yet (initial loading state).
+  const lbl = document.getElementById('sb-tool-label');
+  if (lbl) lbl.textContent = TOOLS[toolKey].label;
   document.querySelectorAll('.nav-btn, .sb-link').forEach(b =>
     b.classList.toggle('active', b.dataset.view === view));
   const area = document.getElementById('view-area');
   if (!area) return;
-  if (view === 'clock') { renderClockView(area); startClock(); }
-  else if (view === 'timesheet') {
-    stopClock();
-    if (!tsStart) {
-      const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
-      tsStart = range.start; tsEnd = range.end;
-    }
-    renderLoading(area, 'Loading timesheet…');
-    loadTimesheet(tsStart, tsEnd);
-  } else if (view === 'timeoff') {
-    stopClock();
-    if (!calYear) {
-      const todayInTz = isoDateTz(empTz());
-      const parts = todayInTz.split('-');
-      calYear = parseInt(parts[0], 10);
-      calMonth = parseInt(parts[1], 10);
-    }
-    renderLoading(area, 'Loading calendar…');
-    loadCalendar(calYear, calMonth);
-  } else if (view === 'manage') {
-    stopClock();
-    renderLoading(area, 'Loading dashboard…');
-    loadManagerDashboard();
+  const enterFn = window[TOOLS[toolKey].views[view].enter];
+  if (typeof enterFn === 'function') enterFn(area);
+}
+
+// ── Time Clock view enter handlers ──────────────────────────────────────
+//  Each handler receives the view-area element and does whatever setup
+//  the view needs (data load, ticker start, etc.). They live here rather
+//  than in their respective script_*.html partials because they wire the
+//  router into the existing render* / load* functions that those
+//  partials own — keeping the cross-cutting glue in one place.
+function enterClockView(area)     { renderClockView(area); startClock(); }
+function enterTimesheetView(area) {
+  stopClock();
+  if (!tsStart) {
+    const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
+    tsStart = range.start; tsEnd = range.end;
   }
+  renderLoading(area, 'Loading timesheet…');
+  loadTimesheet(tsStart, tsEnd);
+}
+function enterTimeoffView(area) {
+  stopClock();
+  if (!calYear) {
+    const todayInTz = isoDateTz(empTz());
+    const parts = todayInTz.split('-');
+    calYear = parseInt(parts[0], 10);
+    calMonth = parseInt(parts[1], 10);
+  }
+  renderLoading(area, 'Loading calendar…');
+  loadCalendar(calYear, calMonth);
+}
+function enterManagerView(area) {
+  stopClock();
+  renderLoading(area, 'Loading dashboard…');
+  loadManagerDashboard();
 }
 
 function renderLoading(area, label) {

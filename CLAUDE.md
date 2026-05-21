@@ -137,6 +137,24 @@ this section before touching the relevant area.
 
 ## Key Design Decisions
 
+- **Multi-tool registry in `script_core.html`.** The `TOOLS` object
+  at the top of `script_core.html` is the single source of truth for
+  which tools/views exist, their sidebar label, icon, and the name of
+  their `enter*` handler. `renderShell` builds the sidebar links and
+  mobile-nav buttons by iterating `TOOLS`; `showView` dispatches to
+  the handler by name via `window[...]`. Adding a new view means
+  appending one entry to `TOOLS` and defining one `enter*` function
+  — the shell auto-rebuilds. The active tool's `label` is mirrored
+  into `#sb-tool-label` (the sidebar `.sb-brand-sub`) on every
+  navigation so the user always sees which tool they're in.
+- **Tool view partials live in their own subfolder.** Time Clock's
+  four views (`script_clock.html`, `script_timesheet.html`,
+  `script_timeoff.html`, `script_manager.html`) are under `web-app/tc/`
+  and `include`d as `tc/script_clock` etc. from `index.html`. Apps
+  Script supports `/` in filenames and renders them nested in the
+  editor; clasp pushes the subdirectory verbatim (works because
+  `.clasp.json` has `skipSubdirectories: false`). New tools should
+  follow the same pattern: `web-app/<tool-shortname>/script_*.html`.
 - **One `CONFIG` object** in `web-app/Code.js` holds all
   tunable values (windows, thresholds, automation hours, feature
   flags). Adjust behavior by editing CONFIG rather than
@@ -283,8 +301,10 @@ Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correc
 ### Subsystems
 Server:
   web-app/Code.js, web-app/appsscript.json, web-app/.clasp.json
-Client:
-  web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html, web-app/script_clock.html, web-app/script_timesheet.html, web-app/script_timeoff.html, web-app/script_manager.html
+Client (shell):
+  web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html
+Client (Time Clock views):
+  web-app/tc/script_clock.html, web-app/tc/script_timesheet.html, web-app/tc/script_timeoff.html, web-app/tc/script_manager.html
 Test Suite:
   web-app/Tests.js
 
