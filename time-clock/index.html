@@ -6,8 +6,36 @@
   <title>UMS Time Clock</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <?!= include('styles') ?>
+  <?!= include('styles_design_tokens') ?>
+  <script>
+    // Dark-mode bootstrap — runs in <head> so the first paint already
+    // reflects the persisted mode (no light-mode flash). Setting on
+    // documentElement makes :root[data-mode="dark"] match from frame 0;
+    // body gets the same attribute once it parses so legacy selectors
+    // targeting body[data-mode="dark"] also light up.
+    (function () {
+      try {
+        var stored = localStorage.getItem('umsTimeClockMode');
+        var mode = (stored === 'dark' || stored === 'light') ? stored
+          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-mode', mode);
+        var setBody = function () { document.body && document.body.setAttribute('data-mode', mode); };
+        if (document.body) setBody();
+        else document.addEventListener('DOMContentLoaded', setBody);
+      } catch (e) { /* localStorage unavailable — stay light */ }
+      // Temporary dev-only flipper. Replaced by the sidebar sun/moon
+      // control when Stage 1 lands; safe to keep until then.
+      window.setTimeClockMode = function (mode) {
+        if (mode === null) { try { localStorage.removeItem('umsTimeClockMode'); } catch (e) {} }
+        else { try { localStorage.setItem('umsTimeClockMode', mode); } catch (e) {} }
+        var m = mode || 'light';
+        document.documentElement.setAttribute('data-mode', m);
+        document.body && document.body.setAttribute('data-mode', m);
+      };
+    })();
+  </script>
 </head>
 <body>
 
@@ -19,6 +47,7 @@
   <div class="state-center"><div class="spinner"></div><div class="state-label">Loading…</div></div>
 </div>
 
+<?!= include('script_icons') ?>
 <?!= include('script_core') ?>
 <?!= include('script_clock') ?>
 <?!= include('script_timesheet') ?>

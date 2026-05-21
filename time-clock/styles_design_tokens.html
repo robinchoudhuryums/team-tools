@@ -1,0 +1,252 @@
+<style>
+  /* ═══════════════════════════════════════════════════════════════════════
+     UMS TEAM TOOLS — SHARED DESIGN TOKENS
+     ───────────────────────────────────────────────────────────────────────
+     Warm-paper editorial system. Slate palette (default), with dark-mode
+     overlay applied via [data-mode="dark"]. New tools should `include` this
+     partial AFTER their tool-specific styles partial — its :root block
+     defines the canonical tokens and aliases the legacy token names so
+     existing classes keep working during a staged migration.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  :root {
+    /* ── Type families ─────────────────────────────────────────────── */
+    --display: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+    --ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono:    'IBM Plex Mono', ui-monospace, Menlo, monospace;
+
+    /* ── Slate palette (light, default) ────────────────────────────── */
+    --paper:        #f6f7f9;
+    --paper-2:      #eceef2;
+    --paper-card:   #ffffff;
+    --ink:          #101418;
+    --muted:        #606872;
+    --line:         #dadde3;
+
+    --accent:       oklch(55% 0.12 240);
+    --accent-soft:  oklch(93% 0.04 240);
+
+    --good:         oklch(58% 0.10 160);
+    --good-soft:    oklch(94% 0.04 160);
+    --warn:         oklch(60% 0.16 30);
+    --warn-soft:    oklch(94% 0.05 60);
+    --destructive:      oklch(58% 0.18 25);
+    --destructive-soft: oklch(94% 0.04 25);
+
+    /* ── Depth (warm-paper aesthetic uses minimal shadow) ──────────── */
+    --shadow-sm: 0 1px 2px rgba(15,23,42,.04);
+    --shadow:    0 1px 3px rgba(15,23,42,.04);
+    --shadow-md: 0 2px 6px rgba(15,23,42,.06);
+    --shadow-lg: 0 8px 24px rgba(15,23,42,.10);
+    --ring-focus: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 80%);
+
+    /* ── Geometry / motion ─────────────────────────────────────────── */
+    --radius-sm: 6px;
+    --radius:    8px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --ease: cubic-bezier(.4, 0, .2, 1);
+    --t: 180ms;
+
+    /* ── Layout ────────────────────────────────────────────────────── */
+    --sidebar-w:     240px;
+    --content-max:   1280px;
+    --mobile-nav-h:  60px;
+
+    /* ── Legacy aliases — redirect old token names to new tokens ────
+       Stage 0 keeps every existing class working unchanged. Each stage
+       1–6 retones individual classes onto the new tokens directly; once
+       a class no longer references a legacy alias, the alias can be
+       dropped in stage 6 cleanup. */
+    --canvas:           var(--paper);
+    --surface:          var(--paper-card);
+    --surface-2:        var(--paper);
+    --surface-sunken:   var(--paper-2);
+    --border:           var(--line);
+    --border-strong:    color-mix(in oklch, var(--line), var(--ink) 25%);
+
+    --text:    var(--ink);
+    --text-2:  var(--muted);
+    --text-3:  color-mix(in oklch, var(--muted), var(--paper) 30%);
+    --text-on-dark:   var(--paper);
+    --text-on-dark-2: var(--muted);
+
+    --brand-ink:        var(--ink);
+    --brand-primary:    color-mix(in oklch, var(--ink), var(--paper) 8%);
+    --brand-accent:     var(--accent);
+    --brand-accent-2:   color-mix(in oklch, var(--accent), var(--ink) 15%);
+    --brand-accent-soft: var(--accent-soft);
+    --brand-warm:       var(--warn);
+
+    --success:      var(--good);
+    --success-soft: var(--good-soft);
+    --success-deep: color-mix(in oklch, var(--good), var(--ink) 45%);
+    --warning:      var(--warn);
+    --warning-soft: var(--warn-soft);
+    --warning-deep: color-mix(in oklch, var(--warn), var(--ink) 45%);
+    --danger:       var(--destructive);
+    --danger-soft:  var(--destructive-soft);
+    --danger-deep:  color-mix(in oklch, var(--destructive), var(--ink) 45%);
+    --info:         var(--accent);
+    --info-soft:    var(--accent-soft);
+    --info-deep:    color-mix(in oklch, var(--accent), var(--ink) 45%);
+  }
+
+  /* ── Dark mode overlay ───────────────────────────────────────────
+     Applied via the bootstrap script in index.html. Toggling lives at
+     :root level (set on <html>) so the very first paint already
+     reflects the persisted mode — no light-mode flash on load. */
+  :root[data-mode="dark"],
+  body[data-mode="dark"] {
+    --paper:        #0c0f14;
+    --paper-2:      #151a22;
+    --paper-card:   #13171e;
+    --ink:          #ecf0f6;
+    --muted:        #7d8694;
+    --line:         #242a34;
+
+    --accent-soft:      oklch(28% 0.05 240);
+    --good-soft:        oklch(28% 0.05 160);
+    --warn-soft:        oklch(28% 0.06 30);
+    --destructive-soft: oklch(28% 0.06 25);
+
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.25);
+    --shadow:    0 1px 3px rgba(0,0,0,.30);
+    --shadow-md: 0 2px 8px rgba(0,0,0,.35);
+    --shadow-lg: 0 10px 28px rgba(0,0,0,.45);
+    --ring-focus: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 70%);
+
+    /* In dark mode the "-deep" tone needs to lean lighter, not darker */
+    --success-deep: color-mix(in oklch, var(--good), var(--paper-card) 25%);
+    --warning-deep: color-mix(in oklch, var(--warn), var(--paper-card) 25%);
+    --danger-deep:  color-mix(in oklch, var(--destructive), var(--paper-card) 25%);
+    --info-deep:    color-mix(in oklch, var(--accent), var(--paper-card) 25%);
+
+    --text-3: color-mix(in oklch, var(--muted), var(--paper) 30%);
+    --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     WARM-PAPER UTILITY CLASSES
+     ───────────────────────────────────────────────────────────────────
+     These are NEW additive classes; they don't override anything. Stage 1+
+     refactors will start consuming them in place of the legacy `.card`,
+     `.view-title-row`, etc. — both vocabularies coexist during migration.
+     ═══════════════════════════════════════════════════════════════════ */
+
+  /* App bar — top edge of a view; carries breadcrumb + kicker + actions */
+  .app-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 18px 0 20px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 24px;
+  }
+  .app-bar-left  { min-width: 0; }
+  .app-bar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .breadcrumb {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .breadcrumb .crumb-sep { opacity: .5; }
+  .breadcrumb .crumb-current { color: var(--ink); }
+
+  /* Section kicker — small mono-uppercase label that sits above a title */
+  .section-kicker {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted); letter-spacing: .14em; text-transform: uppercase;
+    margin-bottom: 6px;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+
+  /* Display title — Inter Tight, lighter weight than legacy view-title */
+  .display-title {
+    font-family: var(--display);
+    font-size: 28px; font-weight: 500;
+    letter-spacing: -.02em; line-height: 1.15;
+    color: var(--ink); margin: 0;
+  }
+  .display-title.lg { font-size: 36px; }
+  .display-title.xl { font-size: 44px; }
+
+  /* Panel — hairline-bordered container; the warm-paper successor to .card */
+  .panel {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 18px 20px;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+  }
+  .panel.dense  { padding: 14px 16px; }
+  .panel.flush  { padding: 0; }
+  .panel.tinted { background: var(--paper-2); }
+  .panel[data-tone="accent"]      { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--accent); }
+  .panel[data-tone="sage"]        { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--good); }
+  .panel[data-tone="warn"]        { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--warn); }
+  .panel[data-tone="destructive"] { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--destructive); }
+
+  /* Doc row — hairline-separated row inside a panel or list */
+  .doc-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .doc-row:last-child  { border-bottom: none; }
+  .doc-row:first-child { padding-top: 4px; }
+
+  /* Kicker pill — tiny mono-uppercase status chip */
+  .kicker-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 4px;
+    background: var(--paper-2); color: var(--muted);
+    border: 1px solid var(--line);
+  }
+  .kicker-pill[data-tone="accent"]      { background: var(--accent-soft);      color: var(--info-deep);    border-color: transparent; }
+  .kicker-pill[data-tone="sage"]        { background: var(--good-soft);        color: var(--success-deep); border-color: transparent; }
+  .kicker-pill[data-tone="warn"]        { background: var(--warn-soft);        color: var(--warning-deep); border-color: transparent; }
+  .kicker-pill[data-tone="destructive"] { background: var(--destructive-soft); color: var(--danger-deep);  border-color: transparent; }
+
+  /* Tabular numerics — applied to anything that stacks numbers */
+  .tabular {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Toolbar tab — mono-uppercase button row (used in place of segmented controls) */
+  .toolbar-tabs {
+    display: inline-flex; gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px;
+    background: var(--paper-card);
+  }
+  .toolbar-tab {
+    appearance: none; border: none; background: transparent;
+    padding: 6px 14px; border-radius: 999px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    transition: color var(--t) var(--ease), background var(--t) var(--ease);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .toolbar-tab:hover      { color: var(--ink); }
+  .toolbar-tab[aria-pressed="true"],
+  .toolbar-tab.active     { background: var(--ink); color: var(--paper); }
+
+  /* Inline icon sizing helper — paired with the icon() function in script_icons.html */
+  .icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .icon svg { display: block; }
+
+  /* Reduced-motion safety */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>
