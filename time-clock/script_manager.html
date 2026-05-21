@@ -6,12 +6,12 @@
 function loadManagerDashboard() {
   google.script.run
     .withSuccessHandler(data => {
-      if (data.error) { showToast('❌ ' + data.error,'toast-error'); return; }
+      if (data.error) { showToast(data.error, 'toast-error'); return; }
       mgrData = data;
       const area = document.getElementById('view-area');
       if (area && currentView === 'manage') renderManagerView(area, data);
     })
-    .withFailureHandler(err => showToast('❌ ' + (err.message||'Load failed'),'toast-error'))
+    .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
     .getManagerDashboard();
 }
 
@@ -313,18 +313,18 @@ function handleApprovalAction(empId, date, submittedAt, newStatus, btn) {
   google.script.run
     .withSuccessHandler(result => {
       if (!result.success) {
-        showToast('❌ ' + (result.error||'Error'),'toast-error');
+        showToast((result.error||'Error'),'toast-error');
         card.querySelectorAll('.pending-btn').forEach(b => { b.disabled = false; });
         return;
       }
       const balMsg = result.newBalance !== null && result.newBalance !== undefined
         ? ` · balance: ${formatLeaveDays(result.newBalance)}` : '';
-      showToast(`✓ ${newStatus}${balMsg}`, 'toast-success');
+      showToast(`${newStatus}${balMsg}`, 'toast-success');
       renderLoading(document.getElementById('view-area'), 'Refreshing…');
       loadManagerDashboard();
     })
     .withFailureHandler(err => {
-      showToast('❌ ' + (err.message||'Server error'),'toast-error');
+      showToast((err.message||'Server error'),'toast-error');
       card.querySelectorAll('.pending-btn').forEach(b => { b.disabled = false; });
     })
     .updateTimeOffStatus(empId, date, submittedAt, newStatus);
@@ -341,16 +341,16 @@ function handleDeletePunch(empId, date, time, type, btn) {
     .withSuccessHandler(r => {
       if (!r.success) {
         btn.disabled = false; btn.innerHTML = original;
-        showToast('❌ ' + (r.error||'Error'), 'toast-error');
+        showToast((r.error||'Error'), 'toast-error');
         return;
       }
-      showToast('✓ Punch deleted', 'toast-success');
+      showToast('Punch deleted', 'toast-success');
       renderLoading(document.getElementById('view-area'), 'Refreshing…');
       loadManagerDashboard();
     })
     .withFailureHandler(err => {
       btn.disabled = false; btn.innerHTML = original;
-      showToast('❌ ' + (err.message||'Server error'), 'toast-error');
+      showToast((err.message||'Server error'), 'toast-error');
     })
     .deletePunch(empId, date, time, type);
 }
@@ -414,15 +414,15 @@ document.getElementById('exp-submit').addEventListener('click', () => {
     .withSuccessHandler(result => {
       btn.disabled = false;
       btn.textContent = 'Generate Export';
-      if (!result.success) { showToast('❌ ' + (result.error||'Error'),'toast-error'); return; }
+      if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       document.getElementById('export-overlay').classList.remove('open');
-      showToast(`✓ Generated ${result.rowCount} rows — opening sheet`, 'toast-success');
+      showToast(`Generated ${result.rowCount} rows — opening sheet`, 'toast-success');
       window.open(result.url, '_blank');
     })
     .withFailureHandler(err => {
       btn.disabled = false;
       btn.textContent = 'Generate Export';
-      showToast('❌ ' + (err.message||'Server error'),'toast-error');
+      showToast((err.message||'Server error'),'toast-error');
     })
     .exportAdpRange(start, end);
 });
@@ -461,16 +461,16 @@ document.getElementById('mto-submit').addEventListener('click', () => {
     .withSuccessHandler(result => {
       btn.disabled = false;
       btn.textContent = 'File Request';
-      if (!result.success) { showToast('❌ ' + (result.error||'Error'),'toast-error'); return; }
+      if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       document.getElementById('mgr-timeoff-overlay').classList.remove('open');
-      showToast(`✓ Time off filed${result.status === 'Approved' ? ' & approved' : ''}`, 'toast-success');
+      showToast(`Time off filed${result.status === 'Approved' ? ' & approved' : ''}`, 'toast-success');
       renderLoading(document.getElementById('view-area'), 'Refreshing…');
       loadManagerDashboard();
     })
     .withFailureHandler(err => {
       btn.disabled = false;
       btn.textContent = 'File Request';
-      showToast('❌ ' + (err.message||'Server error'),'toast-error');
+      showToast((err.message||'Server error'),'toast-error');
     })
     .managerSubmitTimeOff(empId, date, type, notes, auto);
 });

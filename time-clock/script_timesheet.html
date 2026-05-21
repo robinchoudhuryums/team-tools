@@ -6,12 +6,12 @@
 function loadTimesheet(startDate, endDate) {
   google.script.run
     .withSuccessHandler(data => {
-      if (data.error) { showToast('❌ ' + data.error,'toast-error'); return; }
+      if (data.error) { showToast(data.error, 'toast-error'); return; }
       tsData = data; tsStart = data.startDate; tsEnd = data.endDate;
       const area = document.getElementById('view-area');
       if (area && currentView === 'timesheet') renderTimesheetView(area, data);
     })
-    .withFailureHandler(err => showToast('❌ ' + (err.message||'Load failed'),'toast-error'))
+    .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
     .getTimesheetData(startDate, endDate);
 }
 

@@ -3,10 +3,12 @@
      UMS TEAM TOOLS — SHARED DESIGN TOKENS
      ───────────────────────────────────────────────────────────────────────
      Warm-paper editorial system. Slate palette (default), with dark-mode
-     overlay applied via [data-mode="dark"]. New tools should `include` this
-     partial AFTER their tool-specific styles partial — its :root block
-     defines the canonical tokens and aliases the legacy token names so
-     existing classes keep working during a staged migration.
+     overlay applied via [data-mode="dark"]. New tools should `include`
+     this partial FIRST in their `<head>`, then layer their tool-specific
+     view styles on top — the partial declares the canonical tokens
+     (colors, type families, radii, shadows, motion, layout vars) plus
+     the additive utility classes (`.app-bar`, `.panel`, `.doc-row`,
+     `.kicker-pill`, `.toolbar-tabs`, etc.) every tool can consume.
      ═══════════════════════════════════════════════════════════════════════ */
 
   :root {
@@ -53,42 +55,17 @@
     --content-max:   1280px;
     --mobile-nav-h:  60px;
 
-    /* ── Legacy aliases — redirect old token names to new tokens ────
-       Stage 0 keeps every existing class working unchanged. Each stage
-       1–6 retones individual classes onto the new tokens directly; once
-       a class no longer references a legacy alias, the alias can be
-       dropped in stage 6 cleanup. */
-    --canvas:           var(--paper);
-    --surface:          var(--paper-card);
-    --surface-2:        var(--paper);
-    --surface-sunken:   var(--paper-2);
-    --border:           var(--line);
-    --border-strong:    color-mix(in oklch, var(--line), var(--ink) 25%);
+    /* ── Derived tokens still in active use ─────────────────────────
+       The four `*-deep` variants and `--border-strong` are derived
+       darker shades that appear often enough across the views that
+       it's worth giving them a name. The dark-mode block below
+       inverts them so they read as lighter shades against the dark
+       canvas. */
+    --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
 
-    --text:    var(--ink);
-    --text-2:  var(--muted);
-    --text-3:  color-mix(in oklch, var(--muted), var(--paper) 30%);
-    --text-on-dark:   var(--paper);
-    --text-on-dark-2: var(--muted);
-
-    --brand-ink:        var(--ink);
-    --brand-primary:    color-mix(in oklch, var(--ink), var(--paper) 8%);
-    --brand-accent:     var(--accent);
-    --brand-accent-2:   color-mix(in oklch, var(--accent), var(--ink) 15%);
-    --brand-accent-soft: var(--accent-soft);
-    --brand-warm:       var(--warn);
-
-    --success:      var(--good);
-    --success-soft: var(--good-soft);
     --success-deep: color-mix(in oklch, var(--good), var(--ink) 45%);
-    --warning:      var(--warn);
-    --warning-soft: var(--warn-soft);
     --warning-deep: color-mix(in oklch, var(--warn), var(--ink) 45%);
-    --danger:       var(--destructive);
-    --danger-soft:  var(--destructive-soft);
     --danger-deep:  color-mix(in oklch, var(--destructive), var(--ink) 45%);
-    --info:         var(--accent);
-    --info-soft:    var(--accent-soft);
     --info-deep:    color-mix(in oklch, var(--accent), var(--ink) 45%);
   }
 
@@ -116,22 +93,24 @@
     --shadow-lg: 0 10px 28px rgba(0,0,0,.45);
     --ring-focus: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 70%);
 
-    /* In dark mode the "-deep" tone needs to lean lighter, not darker */
+    /* The "-deep" tones lean lighter (toward paper-card) in dark mode
+       so foreground text on the soft-bg pills stays legible. */
     --success-deep: color-mix(in oklch, var(--good), var(--paper-card) 25%);
     --warning-deep: color-mix(in oklch, var(--warn), var(--paper-card) 25%);
     --danger-deep:  color-mix(in oklch, var(--destructive), var(--paper-card) 25%);
     --info-deep:    color-mix(in oklch, var(--accent), var(--paper-card) 25%);
 
-    --text-3: color-mix(in oklch, var(--muted), var(--paper) 30%);
+    /* `--border-strong` still wants more contrast in dark mode */
     --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
   }
 
   /* ═══════════════════════════════════════════════════════════════════
      WARM-PAPER UTILITY CLASSES
      ───────────────────────────────────────────────────────────────────
-     These are NEW additive classes; they don't override anything. Stage 1+
-     refactors will start consuming them in place of the legacy `.card`,
-     `.view-title-row`, etc. — both vocabularies coexist during migration.
+     Shared layout + chrome primitives consumed by every tool. Time
+     clock uses these alongside its view-specific `.card` / `.metric-
+     card` / `.day-card` / etc. classes; future tools should reach for
+     these first before adding tool-local variants.
      ═══════════════════════════════════════════════════════════════════ */
 
   /* App bar — top edge of a view; carries breadcrumb + kicker + actions */

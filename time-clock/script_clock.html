@@ -93,7 +93,7 @@ function renderTeammateCard(slot, teammates) {
     <div class="card">
       <div class="card-label with-count">
         <span>Team Right Now</span>
-        <span style="font-size:11px;font-weight:500;color:var(--text-2);text-transform:none;letter-spacing:0">${summary}</span>
+        <span style="font-family:var(--mono);font-size:11px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:.04em">${summary}</span>
       </div>
       <div class="emp-grid">${cardsHtml}</div>
     </div>`;
@@ -113,10 +113,10 @@ function bindSelfUndoBtns() {
         .withSuccessHandler(result => {
           if (!result.success) {
             btn.disabled = false;
-            showToast('❌ ' + (result.error || 'Could not undo'), 'toast-error');
+            showToast((result.error || 'Could not undo'), 'toast-error');
             return;
           }
-          showToast('✓ Punch undone', 'toast-success');
+          showToast('Punch undone', 'toast-success');
           google.script.run
             .withSuccessHandler(state => {
               empState = state;
@@ -129,7 +129,7 @@ function bindSelfUndoBtns() {
         })
         .withFailureHandler(err => {
           btn.disabled = false;
-          showToast('❌ ' + (err.message||'Server error'), 'toast-error');
+          showToast((err.message||'Server error'), 'toast-error');
         })
         .selfDeletePunch(date, time, type);
     });
@@ -294,9 +294,9 @@ function submitPunch(punchType, custom) {
   google.script.run
     .withSuccessHandler(result => {
       setClockBtnsDisabled(false);
-      if (!result.success) { showToast('❌ ' + (result.error||'Error'), 'toast-error'); return; }
+      if (!result.success) { showToast((result.error||'Error'), 'toast-error'); return; }
       const tag = result.isAdjustment ? ' (adj)' : '';
-      showToast(`✓ ${PUNCH_META[punchType].label}${tag} at ${result.displayTime}`, 'toast-success');
+      showToast(`${PUNCH_META[punchType].label}${tag} at ${result.displayTime}`, 'toast-success');
       google.script.run
         .withSuccessHandler(state => {
           empState = state;
@@ -310,7 +310,7 @@ function submitPunch(punchType, custom) {
     })
     .withFailureHandler(err => {
       setClockBtnsDisabled(false);
-      showToast('❌ ' + (err.message||'Server error'), 'toast-error');
+      showToast((err.message||'Server error'), 'toast-error');
     })
     .recordPunch(punchType, custom);
 }

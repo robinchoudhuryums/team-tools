@@ -1,78 +1,23 @@
 <style>
   /* ═══════════════════════════════════════════════════════════════════════
-     UMS TIME CLOCK — DESIGN SYSTEM v12
-     Desktop-first, sidebar-nav, indigo/slate brand identity
+     UMS TIME CLOCK — view-scoped styles
+     ─────────────────────────────────────────────────────────────────────────
+     Design tokens (palette, typography, radii, shadows, motion, layout vars,
+     and shared utility classes like .app-bar / .panel / .doc-row) are
+     defined in styles_design_tokens.html. This file holds only tool-specific
+     view styles that consume those tokens.
      ═══════════════════════════════════════════════════════════════════════ */
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
-    /* ── Brand ─────────────────────────────────────────────────────── */
-    --brand-ink:        #0b1220;
-    --brand-primary:    #1e293b;
-    --brand-accent:     #6366f1;
-    --brand-accent-2:   #4f46e5;
-    --brand-accent-soft:#eef2ff;
-    --brand-warm:       #f59e0b;
-
-    /* ── Surfaces ──────────────────────────────────────────────────── */
-    --canvas:           #f7f8fb;
-    --surface:          #ffffff;
-    --surface-2:        #fafbfc;
-    --surface-sunken:   #f1f3f7;
-    --border:           #e6e8ed;
-    --border-strong:    #cbd2dd;
-
-    /* ── Text ──────────────────────────────────────────────────────── */
-    --text:    #0f172a;
-    --text-2:  #475569;
-    --text-3:  #94a3b8;
-    --text-on-dark:     #f1f5f9;
-    --text-on-dark-2:   #94a3b8;
-
-    /* ── Semantic ──────────────────────────────────────────────────── */
-    --success:      #059669;
-    --success-soft: #d1fae5;
-    --success-deep: #064e3b;
-    --warning:      #d97706;
-    --warning-soft: #fef3c7;
-    --warning-deep: #78350f;
-    --danger:       #dc2626;
-    --danger-soft:  #fee2e2;
-    --danger-deep:  #7f1d1d;
-    --info:         #2563eb;
-    --info-soft:    #dbeafe;
-    --info-deep:    #1e3a8a;
-
-    /* ── Depth ─────────────────────────────────────────────────────── */
-    --shadow-sm: 0 1px 2px rgba(15,23,42,.05);
-    --shadow:    0 2px 4px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.04);
-    --shadow-md: 0 4px 8px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.06);
-    --shadow-lg: 0 12px 32px rgba(15,23,42,.12);
-    --ring-focus: 0 0 0 3px rgba(99,102,241,.18);
-
-    /* ── Geometry / motion ─────────────────────────────────────────── */
-    --radius-sm:  6px;
-    --radius:     10px;
-    --radius-md:  14px;
-    --radius-lg:  18px;
-    --ease: cubic-bezier(.4,0,.2,1);
-    --t: 180ms;
-
-    /* ── Layout ────────────────────────────────────────────────────── */
-    --sidebar-w: 240px;
-    --content-max: 1280px;
-    --mobile-nav-h: 60px;
-  }
-
   /* BASE */
   html, body {
-    height: 100%; background: var(--canvas); color: var(--text);
+    height: 100%; background: var(--paper); color: var(--ink);
     font-family: var(--ui);
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   }
   button, input, select, textarea { font-family: inherit; font-size: inherit; }
-  ::selection { background: var(--brand-accent-soft); color: var(--text); }
+  ::selection { background: var(--accent-soft); color: var(--ink); }
 
   /* ─── APP SHELL ──────────────────────────────────────────────── */
   #app { min-height: 100vh; display: flex; flex-direction: column; }
@@ -292,7 +237,7 @@
 
   /* ─── CARDS ──────────────────────────────────────────────────── */
   .card {
-    background: var(--surface); border: 1px solid var(--border);
+    background: var(--paper-card); border: 1px solid var(--line);
     border-radius: var(--radius-md); padding: 20px 22px;
     margin-bottom: 16px; box-shadow: var(--shadow-sm);
     transition: box-shadow var(--t) var(--ease);
@@ -323,7 +268,7 @@
     font-size: 26px; font-weight: 700;
     letter-spacing: -.02em; line-height: 1.15; margin: 0 0 4px;
   }
-  .view-subtitle { font-size: 14px; color: var(--text-2); margin-bottom: 24px; }
+  .view-subtitle { font-size: 14px; color: var(--muted); margin-bottom: 24px; }
   .view-title-row {
     display: flex; align-items: center; justify-content: space-between;
     gap: 16px; margin-bottom: 24px;
@@ -1056,8 +1001,8 @@
   .timeoff-main { min-width: 0; }
   .timeoff-side { min-width: 0; }
   .pto-card-side {
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--paper-card);
+    border: 1px solid var(--line);
     border-radius: var(--radius-md);
     padding: 18px 16px;
     box-shadow: var(--shadow-sm);
@@ -1066,7 +1011,7 @@
   .pto-card-side .pto-svg { width: 140px; height: 140px; }
   .pto-card-side .pto-ring-val { font-size: 30px; }
   .pto-card-side .pto-ring-of { font-size: 11px; }
-  .pto-card-side .pto-ring-label { font-size: 11px; color: var(--text-2); margin-top: 4px; }
+  .pto-card-side .pto-ring-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
   .pto-card-side.empty { display: none; }
   @media (max-width: 900px) {
     .timeoff-layout { grid-template-columns: 1fr; }
@@ -1077,9 +1022,9 @@
   .punch-undo {
     width: 22px; height: 22px;
     border-radius: 6px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     background: transparent;
-    color: var(--text-3);
+    color: var(--muted);
     font-size: 14px; font-weight: 500; line-height: 1;
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
@@ -1088,9 +1033,9 @@
     margin-left: 4px;
   }
   .punch-undo:hover {
-    border-color: var(--danger);
-    color: var(--danger);
-    background: var(--danger-soft);
+    border-color: var(--destructive);
+    color: var(--destructive);
+    background: var(--destructive-soft);
   }
   .punch-undo:disabled { opacity: .4; cursor: not-allowed; }
 
@@ -1101,7 +1046,7 @@
   .emp-card-compact .emp-avatar { width: 30px; height: 30px; font-size: 11px; }
   .emp-card-compact .emp-avatar::after { width: 9px; height: 9px; bottom: -1px; right: -1px; }
   .emp-card-compact .emp-name { font-size: 12px; }
-  .emp-card-compact .emp-status-line { font-size: 11px; color: var(--text-2); }
+  .emp-card-compact .emp-status-line { font-size: 11px; color: var(--muted); }
   .emp-card-compact.is-self {
     background: var(--accent-soft);
     border-color: var(--accent);
@@ -1138,7 +1083,7 @@
     /* Inherits .cal-cell base styles; adjustments only */
     cursor: default;
   }
-  .ts-cal-cell.future .cal-dn { color: var(--text-3); opacity: .5; }
+  .ts-cal-cell.future .cal-dn { color: var(--muted); opacity: .5; }
   .ts-cal-cell.future { background: transparent !important; }
 
   /* ─── LAYOUT TOGGLE (Timesheet List vs Calendar) — matches the

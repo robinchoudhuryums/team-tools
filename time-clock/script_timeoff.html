@@ -6,12 +6,12 @@
 function loadCalendar(year, month) {
   google.script.run
     .withSuccessHandler(data => {
-      if (data.error) { showToast('❌ ' + data.error,'toast-error'); return; }
+      if (data.error) { showToast(data.error, 'toast-error'); return; }
       calData = data; calYear = year; calMonth = month;
       const area = document.getElementById('view-area');
       if (area && currentView === 'timeoff') renderTimeOffView(area, data);
     })
-    .withFailureHandler(err => showToast('❌ ' + (err.message||'Load failed'),'toast-error'))
+    .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
     .getCalendarData(year, month);
 }
 
@@ -198,16 +198,16 @@ function renderTimeOffView(area, data) {
         .withSuccessHandler(r => {
           if (!r.success) {
             btn.disabled = false; btn.textContent = 'Cancel';
-            showToast('❌ ' + (r.error||'Error'), 'toast-error');
+            showToast((r.error||'Error'), 'toast-error');
             return;
           }
-          showToast('✓ Request cancelled', 'toast-success');
+          showToast('Request cancelled', 'toast-success');
           renderLoading(area, 'Loading calendar…');
           loadCalendar(calYear, calMonth);
         })
         .withFailureHandler(err => {
           btn.disabled = false; btn.textContent = 'Cancel';
-          showToast('❌ ' + (err.message||'Server error'), 'toast-error');
+          showToast((err.message||'Server error'), 'toast-error');
         })
         .cancelTimeOffRequest(date, submittedAt);
     });
@@ -301,14 +301,14 @@ document.getElementById('day-submit').addEventListener('click', () => {
     .withSuccessHandler(result => {
       btn.disabled = false;
       document.getElementById('day-overlay').classList.remove('open');
-      if (!result.success) { showToast('❌ ' + (result.error||'Error'),'toast-error'); return; }
-      showToast('✓ Time off request submitted','toast-success');
+      if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
+      showToast('Time off request submitted','toast-success');
       renderLoading(document.getElementById('view-area'), 'Loading calendar…');
       loadCalendar(calYear, calMonth);
     })
     .withFailureHandler(err => {
       btn.disabled = false;
-      showToast('❌ ' + (err.message||'Server error'),'toast-error');
+      showToast((err.message||'Server error'),'toast-error');
     })
     .submitTimeOffRequest(dayModalDate, type, notes);
 });
