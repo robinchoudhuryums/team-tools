@@ -24,26 +24,28 @@ function renderManagerView(area, data) {
   const missedCount = data.missedPunches.length;
 
   // ── Hero metrics row ────────────────────────────────────────────────────
+  // .metric-icon spans dropped — the colored inset left-stripe + value
+  // tone carry the semantic without an extra decorative bullet.
   const heroHtml = `
     <div class="metric-grid">
       <div class="metric-card success">
-        <div class="metric-label"><span class="metric-icon">●</span>Active</div>
+        <div class="metric-label">Active</div>
         <div class="metric-value success">${counts.clocked_in}</div>
         <div class="metric-sub">of ${totalEmp} team members</div>
       </div>
       <div class="metric-card warning">
-        <div class="metric-label"><span class="metric-icon">●</span>On Lunch</div>
+        <div class="metric-label">On Lunch</div>
         <div class="metric-value warning">${counts.on_lunch}</div>
         <div class="metric-sub">currently away</div>
       </div>
       <div class="metric-card ${missedCount > 0 ? 'danger' : ''}">
-        <div class="metric-label"><span class="metric-icon">⚠</span>Missed Punches</div>
+        <div class="metric-label">Missed Punches</div>
         <div class="metric-value ${missedCount > 0 ? 'danger' : ''}">${missedCount}</div>
         <div class="metric-sub">last ${data.missedLookbackDays} days</div>
       </div>
       <div class="metric-card ${pendingCount > 0 ? 'accent' : ''}">
-        <div class="metric-label"><span class="metric-icon">◆</span>Pending Requests</div>
-        <div class="metric-value">${pendingCount}</div>
+        <div class="metric-label">Pending Requests</div>
+        <div class="metric-value ${pendingCount > 0 ? 'info' : ''}">${pendingCount}</div>
         <div class="metric-sub">awaiting approval</div>
       </div>
     </div>`;
@@ -63,7 +65,7 @@ function renderManagerView(area, data) {
             : '';
           line = `${prettyType(e.lastPunchType)} · ${empTime}${mgrTime}`;
         } else {
-          line = '<em style="color:var(--text-3)">No punches today</em>';
+          line = '<span style="color:var(--muted);font-style:italic">No punches today</span>';
         }
         return `<div class="emp-card">
           <div class="emp-card-top">
@@ -76,7 +78,7 @@ function renderManagerView(area, data) {
 
   // ── Pending time-off (now with balance context) ─────────────────────────
   const pendingHtml = data.pending.length === 0
-    ? '<div class="no-data">No pending requests 🎉</div>'
+    ? '<div class="no-data">No pending requests</div>'
     : data.pending.map(p => {
         const parts = p.date.split('-');
         const mo = MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3).toUpperCase();
@@ -113,20 +115,20 @@ function renderManagerView(area, data) {
             </div>
           </div>
           <div class="pending-actions">
-            <button class="pending-btn pb-approve" data-key='${esc(key)}' data-status="Approved">✓ Approve</button>
-            <button class="pending-btn pb-deny"    data-key='${esc(key)}' data-status="Denied">✕ Deny</button>
+            <button class="pending-btn pb-approve" data-key='${esc(key)}' data-status="Approved">${icon('check', 14)}Approve</button>
+            <button class="pending-btn pb-deny"    data-key='${esc(key)}' data-status="Denied">${icon('x', 14)}Deny</button>
           </div>
         </div>`;
       }).join('');
 
   // ── Missed clock-outs ───────────────────────────────────────────────────
   const missedHtml = data.missedPunches.length === 0
-    ? '<div class="no-data">No missed clock-outs 👌</div>'
+    ? '<div class="no-data">No missed clock-outs</div>'
     : data.missedPunches.map(m => {
         const parts = m.date.split('-');
         const dateLabel = `${MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3)} ${parseInt(parts[2],10)}, ${parts[0]}`;
         return `<div class="missed-row">
-          <div class="missed-icon">⚠️</div>
+          <div class="missed-icon">${icon('warning', 16)}</div>
           <div class="missed-info">
             <div class="missed-emp">${esc(m.empName)}</div>
             <div class="missed-date">${esc(dateLabel)}</div>
@@ -141,12 +143,12 @@ function renderManagerView(area, data) {
     : recent.map(p => {
         const dateParts = p.date.split('-');
         const dateShort = `${MONTH_NAMES[parseInt(dateParts[1],10)-1].slice(0,3)} ${parseInt(dateParts[2],10)}`;
-        const adjTag = p.isAdjustment ? '<span class="adj-pill">adj</span>' : '';
+        const adjTag = p.isAdjustment ? `<span class="adj-pill">${icon('adjust', 10)} adj</span>` : '';
         const delBtn = p.canDelete
-          ? `<button class="rp-del" title="Delete this punch"
+          ? `<button class="rp-del" title="Delete this punch" aria-label="Delete punch"
               data-emp="${esc(p.empId)}" data-date="${esc(p.date)}"
               data-time="${esc(p.time)}" data-type="${esc(p.type)}"
-              data-name="${esc(p.empName)}">×</button>`
+              data-name="${esc(p.empName)}">${icon('trash', 14)}</button>`
           : '<div class="rp-del-spacer"></div>';
         return `<div class="rp-row">
           <div class="rp-info">
@@ -193,13 +195,20 @@ function renderManagerView(area, data) {
       }).join('');
 
   const auditFootnote = mgrTzAbbr
-    ? `<div style="font-size:10px;color:var(--ink-m);margin-top:8px;text-align:right">Times shown in ${esc(mgrTzAbbr)}</div>`
+    ? `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;text-align:right;letter-spacing:.08em;text-transform:uppercase">Times shown in ${esc(mgrTzAbbr)}</div>`
     : '';
 
   area.innerHTML = `
-    <div class="view-title-row">
-      <div class="view-title">Manager Dashboard</div>
-      <button class="refresh-btn" id="mgr-refresh">⟳ Refresh</button>
+    <div class="app-bar">
+      <div class="app-bar-left">
+        <div class="breadcrumb">
+          <span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Manager Dashboard</span>
+        </div>
+        <h1 class="display-title">Manager Dashboard</h1>
+      </div>
+      <div class="app-bar-right">
+        <button class="refresh-btn" id="mgr-refresh">${icon('refresh', 14)}Refresh</button>
+      </div>
     </div>
 
     ${heroHtml}
@@ -215,9 +224,9 @@ function renderManagerView(area, data) {
     <div class="card">
       <div class="card-label with-count">
         <span>Pending Time Off</span>
-        <span style="display:flex;align-items:center;gap:10px">
-          ${data.pending.length > 0 ? `<span class="count-pill">${data.pending.length}</span>` : ''}
-          <button class="refresh-btn" id="mgr-add-timeoff" style="padding:4px 10px;font-size:12px">+ Add Time Off</button>
+        <span style="display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0">
+          ${data.pending.length > 0 ? `<span class="count-pill ${data.pending.length>0?'warn':''}">${data.pending.length}</span>` : ''}
+          <button class="refresh-btn" id="mgr-add-timeoff">${icon('plus', 12)}Add Time Off</button>
         </span>
       </div>
       ${pendingHtml}
@@ -225,20 +234,20 @@ function renderManagerView(area, data) {
 
     <div class="card">
       <div class="card-label with-count">
-        <span>Missed Clock-Outs (last ${data.missedLookbackDays}d)</span>
-        ${data.missedPunches.length > 0 ? `<span class="count-pill">${data.missedPunches.length}</span>` : ''}
+        <span>Missed Clock-Outs · last ${data.missedLookbackDays}d</span>
+        ${data.missedPunches.length > 0 ? `<span class="count-pill danger">${data.missedPunches.length}</span>` : ''}
       </div>
       ${missedHtml}
     </div>
 
     <div class="card">
       <div class="card-label">Export ADP Upload</div>
-      <button class="export-btn-large" id="mgr-export">📄 Generate ADP Export File</button>
+      <button class="export-btn-large" id="mgr-export">${icon('download', 16)}Generate ADP Export</button>
     </div>
 
     <div class="card">
       <div class="card-label with-count">
-        <span>Recent Punches (× to delete, within ${data.mgrDeleteWindowDays}d)</span>
+        <span>Recent Punches · within ${data.mgrDeleteWindowDays}d to delete</span>
         ${recent.length > 0 ? `<span class="count-pill">${recent.length}</span>` : ''}
       </div>
       ${recentHtml}
@@ -323,11 +332,15 @@ function handleApprovalAction(empId, date, submittedAt, newStatus, btn) {
 
 function handleDeletePunch(empId, date, time, type, btn) {
   btn.disabled = true;
-  btn.textContent = '…';
+  // Briefly substitute the trash glyph with an ellipsis while the
+  // request is in flight; restore the SVG on failure (success will
+  // re-render the whole list).
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span style="font-family:var(--mono);font-size:12px">…</span>';
   google.script.run
     .withSuccessHandler(r => {
       if (!r.success) {
-        btn.disabled = false; btn.textContent = '×';
+        btn.disabled = false; btn.innerHTML = original;
         showToast('❌ ' + (r.error||'Error'), 'toast-error');
         return;
       }
@@ -336,7 +349,7 @@ function handleDeletePunch(empId, date, time, type, btn) {
       loadManagerDashboard();
     })
     .withFailureHandler(err => {
-      btn.disabled = false; btn.textContent = '×';
+      btn.disabled = false; btn.innerHTML = original;
       showToast('❌ ' + (err.message||'Server error'), 'toast-error');
     })
     .deletePunch(empId, date, time, type);
