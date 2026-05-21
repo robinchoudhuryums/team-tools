@@ -59,44 +59,63 @@ window.addEventListener('load', () => {
 
 function renderError(msg) {
   document.getElementById('app').innerHTML = `
-    <div class="state-center"><div class="state-icon">⚠️</div>
+    <div class="state-center">
+      <div class="state-icon" style="color:var(--warn)">${icon('warning', 44)}</div>
       <div class="state-title">Couldn't Load</div>
       <div class="state-detail">${esc(msg)}</div></div>`;
 }
 
 function renderShell(state) {
+  const sbIcon = (name) => `<span class="sb-icon">${icon(name, 18)}</span>`;
+  const nvIcon = (name) => `<span class="nav-icon">${icon(name, 20)}</span>`;
+
   const mgrLink = state.isManager
     ? `<button class="sb-link" data-view="manage" onclick="showView('manage')">
-         <span class="sb-icon">👥</span>Manage</button>` : '';
+         ${sbIcon('manage')}Manage</button>` : '';
   const mgrNavBtn = state.isManager
     ? `<button class="nav-btn" data-view="manage" onclick="showView('manage')">
-         <span class="nav-icon">👥</span>Manage</button>` : '';
+         ${nvIcon('manage')}Manage</button>` : '';
   const tzTag = state.timezoneAbbr
     ? `<span class="sb-user-tz">${esc(state.timezoneAbbr)}</span>` : '';
   const tzTagMobile = state.timezoneAbbr
     ? `<span class="hdr-tz">${esc(state.timezoneAbbr)}</span>` : '';
   const initials = (state.name || '').split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase();
 
+  const themeToggle = `
+    <div class="sb-theme-toggle" role="group" aria-label="Color theme">
+      <button type="button" class="sb-theme-btn" data-theme-target="light"
+              aria-label="Light theme" title="Light theme"
+              onclick="setTimeClockMode('light')">${icon('sun', 14)}</button>
+      <button type="button" class="sb-theme-btn" data-theme-target="dark"
+              aria-label="Dark theme" title="Dark theme"
+              onclick="setTimeClockMode('dark')">${icon('moon', 14)}</button>
+    </div>`;
+
   document.getElementById('app').innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sb-brand">
           <div class="sb-brand-title">
-            <div class="sb-brand-mark">U</div>
+            <span class="sb-brand-mark" aria-hidden="true"></span>
             <span>UMS Time Clock</span>
           </div>
+          <div class="sb-brand-sub">Time Clock</div>
         </div>
         <div class="sb-section-label">Navigate</div>
         <button class="sb-link" data-view="clock" onclick="showView('clock')">
-          <span class="sb-icon">⏱</span>Clock
+          ${sbIcon('clock')}Clock
         </button>
         <button class="sb-link" data-view="timesheet" onclick="showView('timesheet')">
-          <span class="sb-icon">📋</span>Timesheet
+          ${sbIcon('timesheet')}Timesheet
         </button>
         <button class="sb-link" data-view="timeoff" onclick="showView('timeoff')">
-          <span class="sb-icon">🗓</span>Time Off
+          ${sbIcon('timeoff')}Time Off
         </button>
         ${mgrLink}
+        <div class="sb-theme">
+          <span class="sb-theme-label">Theme</span>
+          ${themeToggle}
+        </div>
         <div class="sb-user">
           <div class="sb-user-avatar">${esc(initials)}</div>
           <div class="sb-user-info">
@@ -108,11 +127,17 @@ function renderShell(state) {
 
       <div style="display:flex;flex-direction:column;min-height:100vh">
         <header class="mobile-header">
-          <div>
-            <div class="hdr-title">UMS Time Clock</div>
-            <div class="hdr-sub">${esc(state.name)} ${tzTagMobile}</div>
+          <div class="hdr-brand">
+            <span class="hdr-mark" aria-hidden="true"></span>
+            <div class="hdr-text">
+              <div class="hdr-title">UMS Time Clock</div>
+              <div class="hdr-sub">${esc(state.name)} ${tzTagMobile}</div>
+            </div>
           </div>
-          <div class="hdr-id">${esc(state.id)}</div>
+          <div class="hdr-right">
+            ${themeToggle}
+            <div class="hdr-id">${esc(state.id)}</div>
+          </div>
         </header>
 
         <div class="view-area" id="view-area"></div>
@@ -120,16 +145,19 @@ function renderShell(state) {
         <nav class="mobile-nav">
           <div class="mobile-nav-inner">
             <button class="nav-btn" data-view="clock" onclick="showView('clock')">
-              <span class="nav-icon">⏱</span>Clock</button>
+              ${nvIcon('clock')}Clock</button>
             <button class="nav-btn" data-view="timesheet" onclick="showView('timesheet')">
-              <span class="nav-icon">📋</span>Timesheet</button>
+              ${nvIcon('timesheet')}Timesheet</button>
             <button class="nav-btn" data-view="timeoff" onclick="showView('timeoff')">
-              <span class="nav-icon">🗓</span>Time Off</button>
+              ${nvIcon('timeoff')}Time Off</button>
             ${mgrNavBtn}
           </div>
         </nav>
       </div>
     </div>`;
+
+  // Reflect current theme in both toggle pills
+  syncThemeToggleState();
 }
 
 function showView(view) {

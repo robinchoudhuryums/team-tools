@@ -25,14 +25,25 @@
         if (document.body) setBody();
         else document.addEventListener('DOMContentLoaded', setBody);
       } catch (e) { /* localStorage unavailable — stay light */ }
-      // Temporary dev-only flipper. Replaced by the sidebar sun/moon
-      // control when Stage 1 lands; safe to keep until then.
+      // Theme flipper — wired to the sidebar + mobile-header sun/moon
+      // pill in script_core.html's renderShell. Pass null to clear the
+      // stored preference and fall back to prefers-color-scheme.
       window.setTimeClockMode = function (mode) {
         if (mode === null) { try { localStorage.removeItem('umsTimeClockMode'); } catch (e) {} }
         else { try { localStorage.setItem('umsTimeClockMode', mode); } catch (e) {} }
-        var m = mode || 'light';
+        var m = mode || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
         document.documentElement.setAttribute('data-mode', m);
         document.body && document.body.setAttribute('data-mode', m);
+        window.syncThemeToggleState && window.syncThemeToggleState();
+      };
+      // Reflect current mode on every sb-theme-btn / mobile-header theme btn.
+      // Safe to call when no toggles exist yet (initial loading state).
+      window.syncThemeToggleState = function () {
+        var m = document.documentElement.getAttribute('data-mode') || 'light';
+        var btns = document.querySelectorAll('.sb-theme-btn');
+        for (var i = 0; i < btns.length; i++) {
+          btns[i].setAttribute('aria-pressed', btns[i].getAttribute('data-theme-target') === m ? 'true' : 'false');
+        }
       };
     })();
   </script>
