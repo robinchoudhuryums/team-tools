@@ -91,7 +91,7 @@ function renderTimeOffView(area, data) {
       const st = (own.status||'').toLowerCase();
       dot = `<div class="cal-dot ${st==='approved'?'approved':st==='denied'?'denied':'pending'}"></div>`;
     }
-    const holidayMark = hol ? '<div class="cal-holiday">★</div>' : '';
+    const holidayMark = hol ? `<div class="cal-holiday">${icon('star', 12)}</div>` : '';
     // Corner badge priority: worked hours > teammate count
     let cornerMark = '';
     const hrs = hoursMap[dateStr];
@@ -106,13 +106,16 @@ function renderTimeOffView(area, data) {
   }
   calHtml += '</div>';
 
+  // Legend — tokens fixed (the prior `--green`/`--amber`/`--blue`/
+  // `--ink-s`/`--ink-m` were never defined anywhere and rendered as
+  // browser-default colors).
   const legendHtml = `<div class="cal-legend">
-    <div class="leg-item"><div class="leg-dot" style="background:var(--green)"></div>Worked</div>
-    <div class="leg-item"><div class="leg-dot" style="background:var(--amber)"></div>Pending</div>
-    <div class="leg-item"><div class="leg-dot" style="background:var(--blue)"></div>Approved</div>
-    <div class="leg-item"><span class="leg-star">★</span>US Holiday</div>
-    <div class="leg-item"><span style="font-weight:700;font-size:10px;color:var(--ink-s)">+N</span>Teammates off</div>
-    <div class="leg-item" style="color:var(--ink-m);font-size:11px;width:100%">Tap any day for details</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--good)"></div>Worked</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--warn)"></div>Pending</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--accent)"></div>Approved</div>
+    <div class="leg-item"><span class="leg-star">${icon('star', 12)}</span>US Holiday</div>
+    <div class="leg-item"><span style="font-family:var(--mono);font-weight:600;font-size:10px;color:var(--muted);letter-spacing:.04em">+N</span>Teammates off</div>
+    <div class="leg-item" style="color:var(--muted);font-size:11px;width:100%">Tap any day for details</div>
   </div>`;
 
   let reqHtml = '';
@@ -142,11 +145,18 @@ function renderTimeOffView(area, data) {
   }
 
   area.innerHTML = `
-    <div class="view-title">Time Off</div>
+    <div class="app-bar">
+      <div class="app-bar-left">
+        <div class="breadcrumb">
+          <span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Time Off</span>
+        </div>
+        <h1 class="display-title">Time Off</h1>
+      </div>
+    </div>
     <div class="month-nav">
-      <button class="month-nav-btn" id="cal-prev" ${!canPrev?'disabled':''}>‹</button>
+      <button class="month-nav-btn" id="cal-prev" ${!canPrev?'disabled':''} aria-label="Previous month">${icon('chevronLeft', 16)}</button>
       <span class="month-label">${data.monthName}</span>
-      <button class="month-nav-btn" id="cal-next" ${!canNext?'disabled':''}>›</button>
+      <button class="month-nav-btn" id="cal-next" ${!canNext?'disabled':''} aria-label="Next month">${icon('chevronRight', 16)}</button>
     </div>
     <div class="timeoff-layout">
       <div class="timeoff-main">
@@ -231,18 +241,18 @@ function openDayModal(dateStr) {
 
   let body = '';
   if (holiday) body += `<div class="day-section"><div class="day-info-row holiday">
-    <span class="di-icon">★</span><span class="di-text">US Holiday: ${esc(holiday.name)}</span></div></div>`;
+    <span class="di-icon">${icon('star', 16)}</span><span class="di-text">US Holiday: ${esc(holiday.name)}</span></div></div>`;
   let yourStatusHtml = '';
   if (own) {
     const st = (own.status||'pending').toLowerCase();
     const cls = st==='approved'?'own-approved':st==='denied'?'own-denied':'own-pending';
     yourStatusHtml = `<div class="day-info-row ${cls}">
-      <span class="di-icon">📌</span>
+      <span class="di-icon">${icon('info', 16)}</span>
       <span class="di-text">Your time off request: ${esc(own.type)}${own.notes && own.notes !== 'undefined' ? ' — ' + esc(own.notes) : ''}</span>
       <span class="di-tag">${esc(own.status)}</span></div>`;
   } else if (hasWork) {
     yourStatusHtml = `<div class="day-info-row worked">
-      <span class="di-icon">✓</span><span class="di-text">You worked this day</span></div>`;
+      <span class="di-icon">${icon('checkCircle', 16)}</span><span class="di-text">You worked this day</span></div>`;
   }
   if (yourStatusHtml) body += `<div class="day-section">${yourStatusHtml}</div>`;
   if (teammates.length > 0) {
@@ -259,7 +269,7 @@ function openDayModal(dateStr) {
   }
   if (!body && !isWeekend && dateStr >= todayIso) {
     body = `<div class="day-section"><div class="day-info-row">
-      <span class="di-icon">📅</span><span class="di-text">No activity recorded for this day yet.</span></div></div>`;
+      <span class="di-icon">${icon('timeoff', 16)}</span><span class="di-text">No activity recorded for this day yet.</span></div></div>`;
   }
   document.getElementById('day-body').innerHTML = body;
 

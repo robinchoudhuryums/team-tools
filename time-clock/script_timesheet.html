@@ -74,19 +74,23 @@ function renderTimesheetView(area, data) {
 
   let toggleHtml = '';
   if (showToggle) {
-    toggleHtml = `<div class="view-mode-toggle">
-      <button class="vmt-btn ${tsViewMode==='period'?'active':''}" id="vmt-period">Pay Period</button>
-      <button class="vmt-btn ${tsViewMode==='month'?'active':''}" id="vmt-month">Calendar Month</button>
+    toggleHtml = `<div class="view-mode-toggle" role="group" aria-label="Date range mode">
+      <button class="vmt-btn ${tsViewMode==='period'?'active':''}" id="vmt-period"
+              aria-pressed="${tsViewMode==='period'}">Pay Period</button>
+      <button class="vmt-btn ${tsViewMode==='month'?'active':''}" id="vmt-month"
+              aria-pressed="${tsViewMode==='month'}">Calendar Month</button>
     </div>`;
   }
 
   const layoutToggleHtml = showLayoutToggle ? `
-    <div class="layout-toggle">
-      <button class="layout-btn ${tsLayout==='list'?'active':''}" id="lo-list" title="List view" aria-label="List view">
-        <span class="lo-icon">≡</span>List
+    <div class="layout-toggle" role="group" aria-label="View layout">
+      <button class="layout-btn ${tsLayout==='list'?'active':''}" id="lo-list"
+              aria-pressed="${tsLayout==='list'}" title="List view" aria-label="List view">
+        <span class="lo-icon">${icon('list', 14)}</span>List
       </button>
-      <button class="layout-btn ${tsLayout==='calendar'?'active':''}" id="lo-cal" title="Calendar view" aria-label="Calendar view">
-        <span class="lo-icon">▦</span>Calendar
+      <button class="layout-btn ${tsLayout==='calendar'?'active':''}" id="lo-cal"
+              aria-pressed="${tsLayout==='calendar'}" title="Calendar view" aria-label="Calendar view">
+        <span class="lo-icon">${icon('grid', 14)}</span>Calendar
       </button>
     </div>` : '';
 
@@ -99,15 +103,20 @@ function renderTimesheetView(area, data) {
        </div>`;
 
   area.innerHTML = `
-    <div class="view-title-row">
-      <div class="view-title">Timesheet</div>
-      ${layoutToggleHtml}
+    <div class="app-bar">
+      <div class="app-bar-left">
+        <div class="breadcrumb">
+          <span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Timesheet</span>
+        </div>
+        <h1 class="display-title">Timesheet</h1>
+      </div>
+      <div class="app-bar-right">${layoutToggleHtml}</div>
     </div>
     ${toggleHtml}
     <div class="month-nav">
-      <button class="month-nav-btn" id="ts-prev" ${!canPrev?'disabled':''}>‹</button>
+      <button class="month-nav-btn" id="ts-prev" ${!canPrev?'disabled':''} aria-label="Previous period">${icon('chevronLeft', 16)}</button>
       <div class="month-label">${label.main}<span class="ml-sub">${label.sub}</span></div>
-      <button class="month-nav-btn" id="ts-next" ${!canNext?'disabled':''}>›</button>
+      <button class="month-nav-btn" id="ts-next" ${!canNext?'disabled':''} aria-label="Next period">${icon('chevronRight', 16)}</button>
     </div>
     <div class="ts-summary">
       <div class="ts-stat"><div class="ts-stat-val">${data.daysWorked}</div><div class="ts-stat-lbl">Days Worked</div></div>
@@ -189,16 +198,16 @@ function renderTimesheetCalendar(data, todayIso) {
         badge = `<div class="cal-hrs in-progress">●</div>`;
       } else if (dd.isIncomplete) {
         cls += ' has-pending';
-        badge = `<div class="cal-hrs warn">⚠</div>`;
+        badge = `<div class="cal-hrs warn">${icon('warning', 9)}</div>`;
       }
     }
     html += `<div class="${cls}"><span class="cal-dn">${d}</span>${badge}</div>`;
   }
   html += '</div>';
   html += `<div class="cal-legend" style="margin-top:12px">
-    <div class="leg-item"><div class="leg-dot" style="background:var(--success)"></div>Worked (hours shown)</div>
-    <div class="leg-item"><div class="leg-dot" style="background:var(--warning)"></div>Incomplete</div>
-    <div class="leg-item" style="color:var(--text-3);font-size:11px">Switch to List for full punch detail</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--good)"></div>Worked (hours shown)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--warn)"></div>Incomplete</div>
+    <div class="leg-item" style="color:var(--muted);font-size:11px">Switch to List for full punch detail</div>
   </div></div>`;
   return html;
 }
@@ -213,8 +222,8 @@ function renderDayCard(d) {
   let hoursHtml = '';
   if (d.hoursWorked !== null) hoursHtml = `<span class="day-hours">${fmtHrs(d.hoursWorked)}</span>`;
   else if (d.inProgress)      hoursHtml = `<span class="day-hours progress">In progress</span>`;
-  else if (d.isIncomplete)    hoursHtml = `<span class="day-hours incomplete">⚠ Missing punch</span>`;
-  else if (d.isWeekend)       hoursHtml = `<span class="day-hours" style="color:var(--ink-m)">Weekend</span>`;
+  else if (d.isIncomplete)    hoursHtml = `<span class="day-hours incomplete">${icon('warning', 13)}Missing punch</span>`;
+  else if (d.isWeekend)       hoursHtml = `<span class="day-hours" style="color:var(--muted)">Weekend</span>`;
 
   const chips = [];
   if (d.clockIn)  chips.push(ptChip('In',         d.clockIn,  d.adjClockIn));
@@ -222,9 +231,10 @@ function renderDayCard(d) {
   if (d.lunchIn)  chips.push(ptChip('Return',     d.lunchIn,  d.adjLunchIn));
   if (d.clockOut) chips.push(ptChip('Out',        d.clockOut, d.adjClockOut));
 
+  const todayTag = d.isToday ? ' <span class="kicker-pill" data-tone="accent">Today</span>' : '';
   return `<div class="${cls}">
     <div class="day-top">
-      <span class="day-name">${d.dayLabel}${d.isToday ? ' <span style="font-size:10px;color:var(--blue)">TODAY</span>' : ''}</span>
+      <span class="day-name">${d.dayLabel}${todayTag}</span>
       ${hoursHtml}
     </div>
     ${chips.length ? `<div class="punch-times">${chips.join('')}</div>` : ''}
@@ -233,7 +243,7 @@ function renderDayCard(d) {
 
 function ptChip(label, time, adj) {
   const cls = adj ? 'pt-chip adj' : 'pt-chip';
-  const mark = adj ? '<span class="adj-mark">✏️</span>' : '';
+  const mark = adj ? `<span class="adj-mark">${icon('adjust', 11)}</span>` : '';
   return `<div class="${cls}"><span class="pt-lbl">${label}</span>${dispTime(time)}${mark}</div>`;
 }
 </script>
