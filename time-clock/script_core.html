@@ -278,15 +278,17 @@ function esc(s) {
 function showToast(msg, cls) {
   const stack = document.getElementById('toast-stack');
   if (!stack) return;
-  const icon = cls === 'toast-success' ? '✓'
-             : cls === 'toast-error'   ? '✕'
-             : cls === 'toast-warn'    ? '⚠'
-             : '·';
+  // Pick the SVG glyph that matches the variant — checkCircle / xCircle /
+  // warning / info. The .toast-icon CSS tints each per variant.
+  const iconName = cls === 'toast-success' ? 'checkCircle'
+                 : cls === 'toast-error'   ? 'xCircle'
+                 : cls === 'toast-warn'    ? 'warning'
+                 : 'info';
   // Strip leading emoji/icon from msg if caller prepended (legacy callsites)
   const clean = String(msg).replace(/^[\u2705\u274C\u26A0\uFE0F\u2713\u2717\s]+/, '').trim() || String(msg);
   const t = document.createElement('div');
   t.className = `toast ${cls || ''}`.trim();
-  t.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg"></span>`;
+  t.innerHTML = `<span class="toast-icon">${icon(iconName, 16)}</span><span class="toast-msg"></span>`;
   t.querySelector('.toast-msg').textContent = clean;
   stack.appendChild(t);
   setTimeout(() => {
