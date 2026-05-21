@@ -180,6 +180,55 @@ this section before touching the relevant area.
   values without manual scrubbing on every `clasp pull`, since
   Script Properties live on the deployed project and are never
   touched by clasp.
+- **Design tokens are the single source of truth for color,
+  typography, radii, shadows, and motion.** All declared in
+  `time-clock/styles_design_tokens.html` and consumed via CSS
+  variables (`var(--paper)`, `var(--ink)`, `var(--accent)`,
+  `var(--mono)`, etc.). Hardcoded hex/rgba is reserved for the
+  canonical token declarations inside that file; outside it the
+  only acceptable "raw" colors are `rgba(0,0,0,X)` for
+  invariant-across-modes scrims and overlays. Five derived semantic
+  aliases (`--border-strong`, `--success-deep`, `--warning-deep`,
+  `--danger-deep`, `--info-deep`) are also declared in the partial
+  because they appear too often to be worth repeating the
+  underlying `color-mix(in oklch, …)` everywhere.
+- **Dark mode is an attribute overlay, not a separate stylesheet.**
+  A bootstrap script in `index.html` reads
+  `localStorage.umsTimeClockMode` (or falls back to
+  `prefers-color-scheme` on first visit) and sets
+  `data-mode="dark"` on `documentElement` synchronously in `<head>`
+  so the first paint already reflects the persisted mode — no
+  light-mode flash on dark-mode reloads. The dark-mode block in
+  the tokens partial flips `--paper` / `--paper-2` / `--paper-card`
+  / `--ink` / `--muted` / `--line` and the `*-soft` variants;
+  semantic accents, geometry, and motion stay the same.
+  `window.setTimeClockMode('light' | 'dark' | null)` is the
+  programmatic flipper — bound to the sidebar / mobile-header
+  sun/moon toggle and also exposed globally for debugging
+  (`null` clears the stored preference so OS preference takes
+  over again).
+- **Chrome icons are SVG via `icon(name, size)` from
+  `script_icons.html`, never emoji.** Every nav button, action
+  tile, status pill, table action, and toast variant pulls its
+  glyph from the ~30-icon library; SVGs use `stroke="currentColor"`
+  so tone inheritance and dark-mode flips work automatically.
+  Emoji remain only inside `confirm()` browser dialog strings
+  (where SVG can't render) and in the legacy-prefix-strip safety
+  regex inside `showToast()`. Adding a new icon means appending
+  one path-data entry to `ICONS` in `script_icons.html`; new
+  callers should pass the icon name to `icon()` rather than
+  inlining SVG markup.
+- **The two Stage-0 partials are the shared foundation for future
+  tools in this repo.** A new tool dropped into
+  `team-tools/<new-tool>/` can `include('styles_design_tokens')` +
+  `include('script_icons')` (or copy the files in if the new tool
+  is a separate clasp project that can't reach across directories)
+  to inherit the slate-default warm-paper system, the dark-mode
+  bootstrap-readiness, and the icon library. Tool-specific CSS
+  layers on top in the new tool's own `styles.html` and consumes
+  the canonical tokens directly — no per-tool color palette, no
+  per-tool font declarations. The slate palette is the default;
+  future palettes can be added in the tokens partial alongside it.
 
 ## Operator State Checklist
 
@@ -231,7 +280,7 @@ Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correc
 Server:
   time-clock/Code.js, time-clock/appsscript.json, time-clock/.clasp.json
 Client:
-  time-clock/index.html, time-clock/modals.html, time-clock/styles.html, time-clock/script_core.html, time-clock/script_clock.html, time-clock/script_timesheet.html, time-clock/script_timeoff.html, time-clock/script_manager.html
+  time-clock/index.html, time-clock/modals.html, time-clock/styles.html, time-clock/styles_design_tokens.html, time-clock/script_core.html, time-clock/script_icons.html, time-clock/script_clock.html, time-clock/script_timesheet.html, time-clock/script_timeoff.html, time-clock/script_manager.html
 Test Suite:
   time-clock/Tests.js
 
