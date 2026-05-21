@@ -1,29 +1,46 @@
 # UMS Call Notes
 
 Google Workspace Add-on that augments each rep's call-template Google
-Sheet with department-targeted email composers. Surfaces dual UX:
+Sheet with department-targeted email composers. Replaces the legacy
+"CSR Tools" library (script ID `1DCxq0OPsHtGBBuuHAcFlslxJymO_3fAgmPnWQOh2NirFgkLAKIUm01qd`)
+with a single-install Workspace Marketplace deployment — no per-rep
+bound-script shim required.
 
-- **Custom menu** under `Extensions → Call Notes` (legacy UX so reps
-  don't have to relearn anything)
-- **Sidebar card** in the Workspace Add-on panel (newer UX; install-
-  once via internal Marketplace listing)
+## UX
 
-Both surfaces dispatch to the same underlying handlers in `Code.js`.
+Dual surfaces, both invoking the same handler functions:
 
-## Status
+- **Custom menu** at `Extensions → CSR Tools`:
+  - `Update Order` — opens the main form (multi-recipient, conditional
+    Verified Shipping / Repeat Resupply / Close Order / OOP subforms)
+  - `Special → OOP Order` — same form pre-populated for OOP
+- **Sidebar card** in the right-side Workspace Add-on panel:
+  - "Update Order" button (filled)
+  - "Special: OOP Order" button
 
-**Scaffold only.** The handler bodies (`composeForDept_`,
-`readNoteTemplate_`, `promptForExtraDetails_`, `formatEmail*_`,
-`lookupHcpcs_`) are stubs that demonstrate the intended shape — the
-real logic comes in via porting the existing call-template Apps
-Script project. Once the legacy code is pasted into this directory,
-the handler bodies get filled in to match production behavior.
+`onOpen` also auto-navigates to today's column in the current month's
+sheet tab (e.g. `JUL '25`) — matching legacy behavior.
+
+## Behavior
+
+- Reads the highlighted 2×7 cell range (callback / caller / relationship
+  / patient & TRX / issue / transferred to / resolution)
+- Smart "self"-relationship logic prepends the caller's name to the
+  patient cell when it's just a TRX number
+- Missing-TRX prompt blocks the form open if no digits are detected
+- Multi-recipient department selection with "Other" → free-form email(s)
+- State sales-tax calc for OOP orders (hardcoded rates per state) with
+  address-based state auto-detect
+- Sends via `MailApp.sendEmail` from the rep's own account, CC'd to
+  `robin.choudhury@universalmedsupply.com`
+- OOP sends write a generated resolution summary back to cell (7, 2) of
+  the highlighted note
 
 ## One-time setup
 
-The `.clasp.json` in this directory has `"scriptId":
-"REPLACE_ME_AFTER_CLASP_CREATE"` because the Apps Script project
-doesn't exist yet. Two ways to create it:
+The `.clasp.json` in this directory has
+`"scriptId": "REPLACE_ME_AFTER_CLASP_CREATE"` because the Apps Script
+project doesn't exist yet. Two ways to create it:
 
 ### Option 1: `clasp create` (recommended)
 
@@ -41,24 +58,25 @@ clasp push -f
 3. Replace `REPLACE_ME_AFTER_CLASP_CREATE` in `call-notes/.clasp.json`
 4. `cd call-notes && clasp push -f`
 
-## Script Properties to set
+## Script Properties to set (optional)
 
 In Apps Script editor → Project Settings → Script Properties:
 
-- `HCPCS_REF_SS_ID` → spreadsheet ID of the reference sheet that holds
-  HCPCS codes + out-of-pocket costs. Without it, the HCPCS lookup
-  falls back to the inert placeholder in `CN_CONFIG` and fails on
-  first open.
+- `HCPCS_REF_SS_ID` — forward-looking. Spreadsheet ID of the reference
+  sheet that will hold HCPCS codes + out-of-pocket costs. Not wired into
+  any active handler yet; preserved for future expansion.
 
-Add any additional Script Properties (per-department override
-addresses, etc.) as the port surfaces more configuration.
+No Script Properties are required for today's flows — department
+emails, CC address, and the OOP write-back all use values hardcoded in
+`Code.js`. If you want to override the CC recipient or add departments,
+edit the `departmentEmails` dict and `CN_CONFIG.CC_EMAIL` directly.
 
 ## Internal Marketplace deployment
 
 After `clasp push -f` works:
 
 1. Apps Script editor → Deploy → Test deployments → Install for self
-   (sanity-check the menu and sidebar appear)
+   (sanity-check the menu and sidebar appear in a test sheet)
 2. Apps Script editor → Deploy → New deployment → "Add-on" type
 3. Cloud Console → APIs & Services → Workspace Marketplace SDK →
    App Configuration → fill in the listing (private/internal)
@@ -66,18 +84,23 @@ After `clasp push -f` works:
 5. Reps install once via the Marketplace internal listing; the menu
    and sidebar then appear in every Google Sheet they open
 
-See https://developers.google.com/workspace/marketplace/how-to-publish
-for the full publishing flow.
+Once everyone's on the new add-on, the legacy library can be retired.
+During pilot, the two coexist without conflict (different menu name,
+different sidebar entry).
 
-## Local development
+## What was NOT ported from the legacy library
 
-`clasp push -f` deploys the local copy to the Apps Script project.
-There's no separate web-app deployment for this project — it runs
-inside whatever spreadsheet the user has open.
+The legacy library has two flows that are not reachable from its
+current `onOpen` menu and have been left out of the port:
 
-To test against a real spreadsheet without going through Marketplace:
+- **Close Order (standalone)** — `closeOrderEmail.js`,
+  `CloseEmailPreview.html`, `UserInputForm.html`. The Close Order
+  reason flow is already available as a subform inside the Update
+  Order modal, so the standalone version is redundant.
+- **Send Docs Email** — `sendDocsEmail.js` plus 4 HTML files
+  (`DocsEmailForm.html`, `FileUploadForm.html`, `DocsEmailTemplate.html`,
+  `DocsEmailPreview.html`). Includes a PDF/image attachment flow that
+  could be revived later if there's demand.
 
-1. Open a test spreadsheet
-2. `Extensions → Apps Script` → set the project's `Run` deployment
-   to install for current user
-3. Reload the spreadsheet → the "Call Notes" menu should appear
+If either flow needs to come back, the source is preserved in
+`call-notes-legacy/` for reference.
