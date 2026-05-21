@@ -12,6 +12,14 @@ Apps Script project under its own directory, synced via `clasp`.
   `web-app/Code.js`). Additional tool modules register a view in the
   client router (`script_core.html`) and add their server endpoints
   alongside the time-clock ones in `Code.js`.
+- **call-notes/** — Google Workspace Add-on (scaffold). Runs inside
+  each rep's call-template Google Sheet, surfacing a "Call Notes"
+  custom menu and a sidebar card with department-targeted email
+  composers and an HCPCS reference lookup. Deploys via an internal
+  Workspace Marketplace listing (install-once, no per-sheet setup).
+  Handler bodies in `call-notes/Code.js` are stubs; real logic gets
+  ported from the existing call-template Apps Script project. See
+  `call-notes/README.md` for `clasp create` + script-property setup.
 
 ## Development
 

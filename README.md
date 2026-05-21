@@ -10,6 +10,12 @@ Script project synced via [clasp](https://github.com/google/clasp).
   PTO requests, manager dashboard, ADP-format export). Additional tool
   modules register a view in the client router (`script_core.html`)
   and their server endpoints alongside the existing ones in `Code.js`.
+- **call-notes/** — Google Workspace Add-on (scaffold) that augments
+  each rep's call-template Google Sheet with department-targeted email
+  composers (custom menu + sidebar card), and an HCPCS reference
+  lookup. Deploys as an internal Workspace Marketplace listing. See
+  `call-notes/README.md` for setup; handler bodies are stubs until
+  the existing call-template code is ported in.
 
 ## Development
 
