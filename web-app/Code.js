@@ -1,12 +1,10 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  UMS TIME CLOCK  —  Code.gs  (v11)
-//   Phase 7:
-//     • PTO balance tracking (annual + sick)
-//     • Employee notifications on approve/deny
-//     • Manager delete-punch (last 7 days)
-//     • Employee cancel pending request
-//     • Adjustment reason field (required >7 days back)
-//   v11: Added getActiveUserEmail_() test hook (no functional change to prod).
+//  UMS TEAM TOOLS  —  Code.gs
+//   Web app entry point + Time Clock module server logic. Additional tool
+//   modules register more server endpoints in this same project; client-
+//   side, each tool is a view registered with the router in
+//   script_core.html. Shared helpers (auth, audit, sheet access, tz/date
+//   normalization) live alongside the tool-specific endpoints here.
 // ════════════════════════════════════════════════════════════════════════════
 
 const CONFIG = {
@@ -73,7 +71,7 @@ function doGet(e) {
   return HtmlService
     .createTemplateFromFile('index')
     .evaluate()
-    .setTitle('UMS Time Clock')
+    .setTitle('UMS Team Tools')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
