@@ -1,20 +1,24 @@
 # Team Tools — CLAUDE.md
 
-Internal tooling for the UMS CSR team. Each tool ships as a Google
+Internal tooling for the UMS CSR team. Each project ships as a Google
 Apps Script project under its own directory, synced via `clasp`.
 
-## Tools
+## Projects
 
-- **time-clock/** — Cross-timezone time tracking, PTO requests, manager
-  dashboard, and ADP-format export. Backs a shared Google Sheet
-  (`CONFIG.ADP_SS_ID` in `time-clock/Code.js`).
+- **web-app/** — Multi-module browser web app deployed at one Web App
+  URL. Currently hosts the **Time Clock** module (cross-timezone time
+  tracking, PTO requests, manager dashboard, ADP-format export). The
+  Time Clock backs a shared Google Sheet (`CONFIG.ADP_SS_ID` in
+  `web-app/Code.js`). Additional tool modules register a view in the
+  client router (`script_core.html`) and add their server endpoints
+  alongside the time-clock ones in `Code.js`.
 
 ## Development
 
-Each tool is a separate clasp project.
+Each project is a separate clasp project.
 
 ```bash
-cd <tool-name>
+cd <project-name>
 clasp pull         # sync the deployed Apps Script down to disk
 clasp push -f      # push local changes back up
 clasp open         # open the project in the Apps Script editor
@@ -25,7 +29,7 @@ until you cut a new deployment: Apps Script editor → Deploy → Manage
 deployments → Edit → Version: **New version** → Deploy. Web app users
 see the change on next page load.
 
-For Apps Script tests (`Tests.js` in each tool), run them from the
+For Apps Script tests (`Tests.js` in each project), run them from the
 editor: pick a `runSmokeTests` / `runAllTests` function and click ▶.
 
 ## Common Gotchas
@@ -133,7 +137,7 @@ this section before touching the relevant area.
 
 ## Key Design Decisions
 
-- **One `CONFIG` object** in `time-clock/Code.js` holds all
+- **One `CONFIG` object** in `web-app/Code.js` holds all
   tunable values (windows, thresholds, automation hours, feature
   flags). Adjust behavior by editing CONFIG rather than
   parameterizing functions.
@@ -182,7 +186,7 @@ this section before touching the relevant area.
   touched by clasp.
 - **Design tokens are the single source of truth for color,
   typography, radii, shadows, and motion.** All declared in
-  `time-clock/styles_design_tokens.html` and consumed via CSS
+  `web-app/styles_design_tokens.html` and consumed via CSS
   variables (`var(--paper)`, `var(--ink)`, `var(--accent)`,
   `var(--mono)`, etc.). Hardcoded hex/rgba is reserved for the
   canonical token declarations inside that file; outside it the
@@ -268,7 +272,7 @@ truth — update via `/setup-cycle` rather than ad-hoc edits.
 ### Test Command
 manual
 
-Tests live in `time-clock/Tests.js` and run inside the Apps Script
+Tests live in `web-app/Tests.js` and run inside the Apps Script
 editor (no Node test runner). Use the Regression Scenarios below
 as the canonical verification path; `runSmokeTests()` and
 `runAllTests()` automate scenarios S1–S2.
@@ -278,11 +282,11 @@ Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correc
 
 ### Subsystems
 Server:
-  time-clock/Code.js, time-clock/appsscript.json, time-clock/.clasp.json
+  web-app/Code.js, web-app/appsscript.json, web-app/.clasp.json
 Client:
-  time-clock/index.html, time-clock/modals.html, time-clock/styles.html, time-clock/styles_design_tokens.html, time-clock/script_core.html, time-clock/script_icons.html, time-clock/script_clock.html, time-clock/script_timesheet.html, time-clock/script_timeoff.html, time-clock/script_manager.html
+  web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html, web-app/script_clock.html, web-app/script_timesheet.html, web-app/script_timeoff.html, web-app/script_manager.html
 Test Suite:
-  time-clock/Tests.js
+  web-app/Tests.js
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server
@@ -322,7 +326,7 @@ Consecutive cycles: 2
 ### Regression Scenarios
 S1 | Smoke test suite | Subsystem: Test Suite
   Steps:
-    - Open the Apps Script editor for the time-clock project
+    - Open the Apps Script editor for the web-app project
     - In Tests.js, select `runSmokeTests` and click ▶
     - Wait for Logger output
   Expected: `Failed: 0`. Pure-logic tests run with no spreadsheet writes; integration tests show as `SKIP`.
@@ -429,6 +433,6 @@ S16 | Sheet auto-coercion of time strings | Subsystem: Server
   Expected: Both views still render `09:00:00` / `9:00 AM` correctly because `normalizeTime_` reformats the coerced Date back through the spreadsheet's timezone. A regression here surfaces as `Sat Dec 30 1899 …` strings in the UI.
 
 ### Deploy Command
-Server: `cd time-clock && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
+Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
 Client: same single `clasp push -f` ships all HTML files alongside `Code.js`; same deploy step.
 Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end).
