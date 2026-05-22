@@ -2077,7 +2077,12 @@ function installAutomationTriggers() {
     throw new Error('Only managers (per MANAGER_EMAILS) can install triggers. ' +
                     `Current user: ${userEmail || '<unknown>'}`);
   }
-  const TARGETS = ['sendDailyMissedPunchAlerts','runDailyExportCheck'];
+  const TARGETS = [
+    'sendDailyMissedPunchAlerts',
+    'runDailyExportCheck',
+    'sendCallNotesEodDigest',
+    'sendCallNotesWeeklyDigests',
+  ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
@@ -2087,11 +2092,28 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('runDailyExportCheck')
     .timeBased().atHour(CONFIG.AUTO_EXPORT_HOUR_IST).everyDays(1)
     .inTimezone(CONFIG.TIMEZONE).create();
+  // Call Notes EOD warning — runs once at the manager-tz EOD hour; the
+  // handler walks the roster, computes per-rep local time, and only emails
+  // reps whose local time is currently within the EOD window. One trigger
+  // serves all timezones; reps in different zones get their digest as
+  // their local 5pm rolls around (within the wider window).
+  ScriptApp.newTrigger('sendCallNotesEodDigest')
+    .timeBased().atHour(CONFIG.CALL_NOTES.EOD_WARNING_HOUR).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Weekly manager digests for training queue + review candidates
+  ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
+    .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed.');
 }
 
 function removeAutomationTriggers() {
-  const TARGETS = ['sendDailyMissedPunchAlerts','runDailyExportCheck'];
+  const TARGETS = [
+    'sendDailyMissedPunchAlerts',
+    'runDailyExportCheck',
+    'sendCallNotesEodDigest',
+    'sendCallNotesWeeklyDigests',
+  ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
@@ -2288,6 +2310,197 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
 
 // Synthetic "employee" identity for system-initiated audit rows (no real actor).
 const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automation@system' };
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — AUTOMATED EMAIL DIGESTS
+//  ────────────────────────────────────────────────────────────────────────
+//  Two scheduled jobs:
+//
+//    sendCallNotesEodDigest()         — runs daily at the manager-tz EOD
+//      hour. Walks the roster, computes each enrolled rep's *current*
+//      local hour, and emails any rep whose local time is currently
+//      within ± EOD_WARNING_WINDOW_MINUTES of CONFIG.CALL_NOTES.EOD_WARNING_HOUR
+//      AND has unresolved action-flagged notes from today. The same
+//      trigger covers reps across timezones — one shot per day at the
+//      manager's EOD captures everyone whose own EOD lines up roughly.
+//
+//    sendCallNotesWeeklyDigests()    — runs Friday morning. Sends two
+//      separate manager-targeted emails: training queue (rep-flagged
+//      notes wanting clarification) and review candidates (5-star
+//      flagged notes). Both digests cover the current week.
+//
+//  Both are wrapped in try/catch and never throw (INV-14 — automated
+//  emails are best-effort).
+// ════════════════════════════════════════════════════════════════════════════
+
+function sendCallNotesEodDigest() {
+  try {
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const windowMin = CONFIG.CALL_NOTES.EOD_WARNING_WINDOW_MINUTES || 30;
+    const targetHour = CONFIG.CALL_NOTES.EOD_WARNING_HOUR;
+    const now = new Date();
+    const roster = getEmployeeRosterRows_();
+    let sentCount = 0;
+    for (let r = 1; r < roster.length; r++) {
+      const emailAddr = String(roster[r][EMP.EMAIL] || '').trim();
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!emailAddr || !sheetId) continue;
+      const tzRaw = String(roster[r][EMP.TIMEZONE] || '').trim();
+      const tz = tzRaw || CONFIG.TIMEZONE;
+      // Rep's local time-of-day in minutes
+      const hh = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
+      const mm = parseInt(Utilities.formatDate(now, tz, 'm'), 10);
+      const localMins = hh * 60 + mm;
+      const targetMins = targetHour * 60;
+      if (Math.abs(localMins - targetMins) > windowMin) continue;
+
+      const empObj = {
+        id: String(roster[r][EMP.ID]).trim(),
+        name: String(roster[r][EMP.NAME]).trim(),
+        email: emailAddr,
+        callNotesSheetId: String(sheetId).trim(),
+        timezone: tz,
+      };
+      const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+      let unresolved;
+      try {
+        const sheet = getCallNotesSheet_(empObj);
+        const rows = sheet.getDataRange().getValues();
+        unresolved = [];
+        for (let i = 1; i < rows.length; i++) {
+          if (normalizeDate_(rows[i][CN.DATE_LOCAL]) !== today) continue;
+          if (String(rows[i][CN.FLAG_TYPE] || '').toLowerCase() !== 'action') continue;
+          const resStr = String(rows[i][CN.RESOLVED] || '').toLowerCase();
+          if (resStr === 'true' || resStr === 'yes' || resStr === '1') continue;
+          unresolved.push(callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 }));
+        }
+      } catch (e) {
+        Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
+        continue;
+      }
+      if (unresolved.length === 0) continue;
+      try {
+        sendOneRepEodDigest_(empObj, unresolved);
+        sentCount++;
+      } catch (e) {
+        Logger.log(`Failed to email rep ${empObj.email} EOD digest: ${e.message}`);
+      }
+    }
+    Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
+  } catch (err) {
+    Logger.log('sendCallNotesEodDigest failed: ' + err.message);
+  }
+}
+
+function sendOneRepEodDigest_(emp, unresolvedNotes) {
+  const P = CN_EMAIL_PALETTE;
+  const itemsHtml = unresolvedNotes.map(function (n) {
+    const time = n.timestamp.replace(/.*T/, '').substring(0, 5);
+    return `<tr>` +
+      `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;">${esc_(time)}</td>` +
+      `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
+        `<strong>${esc_(n.caller || n.patientAndTrx || '—')}</strong>` +
+        (n.patientAndTrx ? ` <span style="color:${P.muted};font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc_(n.patientAndTrx)}</span>` : '') +
+        `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
+      `</td>` +
+      `</tr>`;
+  }).join('');
+  const itemsText = unresolvedNotes.map(function (n) {
+    const time = n.timestamp.replace(/.*T/, '').substring(0, 5);
+    return `  ${time}  ${n.caller || n.patientAndTrx || '—'} — ${n.issue || ''}`;
+  }).join('\n');
+
+  const htmlBody = (
+    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
+      `<div style="max-width:560px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:22px 24px;">` +
+        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.14em;text-transform:uppercase;">End of day · UMS Call Notes</div>` +
+        `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">Hey ${esc_(emp.name.split(' ')[0])} — quick check</h2>` +
+        `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">You flagged the following notes today for follow-up but haven't marked them resolved yet:</p>` +
+        `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">` +
+          `<tr style="background:${P.warnSoft};"><td colspan="2" style="padding:8px 12px;color:${P.warnDeep};font-weight:600;font-size:13px;">${unresolvedNotes.length} unresolved</td></tr>` +
+          itemsHtml +
+        `</table>` +
+        `<p style="color:${P.muted};font-size:12px;margin:14px 0 0;">Hop into the web app, knock these out, and toggle them resolved when done.</p>` +
+      `</div>` +
+      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
+    `</div>`
+  );
+  const textBody = `Hi ${emp.name.split(' ')[0]},\n\n` +
+    `You have ${unresolvedNotes.length} unresolved action-flagged note(s) from today:\n\n` +
+    itemsText + '\n\nMark them resolved in the web app when done.\n\n— UMS Team Tools';
+  MailApp.sendEmail({
+    to: emp.email,
+    subject: `End of day · ${unresolvedNotes.length} note${unresolvedNotes.length === 1 ? '' : 's'} still flagged`,
+    body: textBody,
+    htmlBody,
+  });
+}
+
+function sendCallNotesWeeklyDigests() {
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping weekly digests.'); return; }
+    const now = new Date();
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    // Look back 7 days
+    const back = new Date(now); back.setDate(back.getDate() - 7);
+    const start = Utilities.formatDate(back, mgrTz, 'yyyy-MM-dd');
+    const end = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
+    const dateRange = { start, end };
+
+    const training = managerAggregateFlagged_('training', dateRange);
+    const review = managerAggregateFlagged_('review', dateRange);
+    if (training.results && training.results.length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results, dateRange);
+    }
+    if (review.results && review.results.length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results, dateRange);
+    }
+    Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
+  } catch (err) {
+    Logger.log('sendCallNotesWeeklyDigests failed: ' + err.message);
+  }
+}
+
+function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
+  const P = CN_EMAIL_PALETTE;
+  const itemsHtml = notes.map(function (n) {
+    return `<tr>` +
+      `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
+      `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
+        `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
+        `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
+        (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
+      `</td>` +
+      `</tr>`;
+  }).join('');
+  const itemsText = notes.map(function (n) {
+    return `  ${n.dateLocal}  ${n.repName} · ${n.caller || n.patientAndTrx || '—'}\n` +
+           `    ${n.issue || ''}` + (n.resolution ? `\n    → ${n.resolution}` : '');
+  }).join('\n\n');
+
+  const htmlBody = (
+    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
+      `<div style="max-width:640px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:22px 24px;">` +
+        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.14em;text-transform:uppercase;">Weekly digest · UMS Call Notes</div>` +
+        `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">${esc_(label)}</h2>` +
+        `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">${esc_(dateRange.start)} → ${esc_(dateRange.end)} · ${notes.length} note${notes.length === 1 ? '' : 's'}</p>` +
+        `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">${itemsHtml}</table>` +
+      `</div>` +
+      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
+    `</div>`
+  );
+  const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}\n\n— UMS Team Tools`;
+  try {
+    MailApp.sendEmail({
+      to: toEmails.join(','),
+      subject: `Call Notes · ${label} (${notes.length})`,
+      body: textBody,
+      htmlBody,
+    });
+  } catch (e) { Logger.log(`sendManagerFlagDigest_(${label}) email failed: ${e.message}`); }
+}
 
 
 // ════════════════════════════════════════════════════════════════════════════
