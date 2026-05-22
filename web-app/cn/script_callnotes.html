@@ -100,6 +100,26 @@
   }
   .cn-flag-more-item:hover { background: var(--paper-2); }
 
+  /* Optimistic-pending card — note is in the stack but not yet server-confirmed.
+     Action buttons are replaced with a "Saving" badge so the rep can't
+     interact with a row that doesn't exist server-side yet. */
+  .cn-card.is-pending { opacity: 0.72; }
+  .cn-pending-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+  }
+  .cn-pending-dot {
+    width: 6px; height: 6px; border-radius: 999px;
+    background: var(--accent);
+    animation: cn-pending-pulse 1s var(--ease) infinite;
+  }
+  @keyframes cn-pending-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .35; }
+  }
+
   /* Training-question line on a saved card */
   .cn-card-training-q {
     display: flex; align-items: flex-start; gap: 6px;
@@ -510,11 +530,13 @@ const CN_STATE = {
   mgrEnrolledReps: null,     // [{id,name}] of reps with a CallNotesSheetId; loaded once for manager Per-Rep view
   mgrRepView: null,          // { repId, date } — current selection in manager Per-Rep view
   lastClearedSnapshot: null, // { values: {...}, flag, trainingQ, at: <ms> } — restored on Ctrl/⌘+Z within the undo window
+  prewarmed: false,          // set true after the first cnPing() so we don't pre-warm twice per page load
 };
 
 const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
 const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved'];
 const CN_CLEAR_UNDO_WINDOW_MS = 30000;  // window during which Ctrl/⌘+Z restores a just-cleared form
+const CN_FORM_STARTED_LS_KEY = 'umsCallNotesFormStartedAt';  // persists across refresh so completion-time stays accurate
 
 // ── View enter handlers (called by the shell router) ────────────────────
 
@@ -522,6 +544,7 @@ function enterCallNotesView(area) {
   stopClock();
   CN_STATE.composer = null;
   CN_STATE.editingNoteId = null;
+  cnPrewarmScript_();
   renderLoading(area, 'Loading call notes…');
   cnFetchDeptConfigIfNeeded_(function () {
     cnLoadToday_(function () {
@@ -529,6 +552,19 @@ function enterCallNotesView(area) {
       cnStartAmbientPolling_();
     });
   });
+}
+
+/** Fire a no-op RPC on view enter to warm the Apps Script context. The cold
+ *  start adds ~500ms to the first real RPC; with the iframe already warm,
+ *  the rep's first submit/flag/email feels snappier. Fires at most once per
+ *  page load. */
+function cnPrewarmScript_() {
+  if (CN_STATE.prewarmed) return;
+  CN_STATE.prewarmed = true;
+  google.script.run
+    .withSuccessHandler(function () { /* noop */ })
+    .withFailureHandler(function () { CN_STATE.prewarmed = false; })
+    .cnPing();
 }
 
 function enterCallNotesHistoryView(area) {
@@ -796,7 +832,9 @@ function cnWireActiveForm_() {
       }
     });
   }
-  // Ctrl/⌘+Enter from any input/textarea submits
+  // Ctrl/⌘+Enter from any input/textarea submits.
+  // First input also starts the form-completion timer (used by the manager
+  // Stats tab's median note-completion-time metric).
   form.querySelectorAll('input, textarea').forEach(function (el) {
     el.addEventListener('keydown', function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -804,6 +842,7 @@ function cnWireActiveForm_() {
         cnSubmitActiveForm_();
       }
     });
+    el.addEventListener('input', cnFormTimerStartIfNeeded_);
   });
   // Ctrl/⌘+Z restores a freshly-cleared form (within CN_CLEAR_UNDO_WINDOW_MS).
   // Bound at the form level so it doesn't fight with the native input undo
@@ -928,37 +967,175 @@ function cnReadActiveForm_() {
   };
 }
 
-function cnSubmitActiveForm_() {
+/** Start the form-completion timer if not already started. Called on the
+ *  first user interaction with the form (input or flag click). Persists to
+ *  localStorage so a mid-form refresh doesn't reset the clock — the rep's
+ *  effort is captured across reloads. */
+function cnFormTimerStartIfNeeded_() {
+  try {
+    if (!localStorage.getItem(CN_FORM_STARTED_LS_KEY)) {
+      localStorage.setItem(CN_FORM_STARTED_LS_KEY, String(Date.now()));
+    }
+  } catch (e) {}
+}
+
+/** Stop the timer and return elapsed seconds. Returns null if no timer was
+ *  running (e.g., rep clicked Save & Copy on a form they didn't type into,
+ *  which shouldn't happen but is defensively handled). */
+function cnFormTimerEndAndGet_() {
+  try {
+    const raw = localStorage.getItem(CN_FORM_STARTED_LS_KEY);
+    if (!raw) return null;
+    const started = parseInt(raw, 10);
+    localStorage.removeItem(CN_FORM_STARTED_LS_KEY);
+    if (!isFinite(started) || started <= 0) return null;
+    const elapsed = Math.max(0, Math.round((Date.now() - started) / 1000));
+    // Cap obvious outliers (rep walked away) — a 12-hour stale timer
+    // shouldn't poison the median. 1800s = 30 min mirrors the manager
+    // stats threshold for "still actively writing".
+    if (elapsed > 1800) return null;
+    return elapsed;
+  } catch (e) { return null; }
+}
+
+function cnFormTimerReset_() {
+  try { localStorage.removeItem(CN_FORM_STARTED_LS_KEY); } catch (e) {}
+}
+
+/** Format `now` as the server's CN canonical timestamp ("yyyy-MM-dd'T'HH:mm:ss")
+ *  in the given timezone. Used to build the pending-note timestamp client-side
+ *  so the optimistic card renders with the right time. Server returns its own
+ *  canonical timestamp; we replace the pending note when the RPC confirms. */
+function cnNowInTz_(tz) {
+  const fmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: tz || 'UTC',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(new Date());
+  const get = function (k) {
+    const p = parts.find(function (x) { return x.type === k; });
+    return p ? p.value : '';
+  };
+  const date = get('year') + '-' + get('month') + '-' + get('day');
+  const time = get('hour') + ':' + get('minute') + ':' + get('second');
+  return { date: date, timestamp: date + 'T' + time };
+}
+
+/** Optimistic submit: build a "pending" note client-side, unshift to the
+ *  rolling stack, auto-copy, clear the form, THEN fire the server RPC. On
+ *  success the pending note is swapped for the server-confirmed one; on
+ *  failure it's removed and the form values are restored to a snapshot so
+ *  the rep doesn't lose what they typed.
+ *
+ *  Why: Apps Script RPC adds ~300–800ms; with optimistic UI the rep sees
+ *  the same speed as pasting into a Sheet. The form is ready for the next
+ *  call before the server has even acknowledged the previous one.
+ *
+ *  opts.onConfirmed(note): called with the server's confirmed note after
+ *  it successfully lands. Used by the Save-Copy-Compose button to open
+ *  the composer with the real noteId once the server has assigned one. */
+function cnSubmitActiveForm_(opts) {
   const payload = cnReadActiveForm_();
   if (!payload.callback && !payload.caller && !payload.patientAndTrx && !payload.issue && !payload.resolution) {
     showToast('Note is empty — fill at least one field', 'toast-warn');
     return;
   }
-  const btn = document.getElementById('cn-form-submit');
-  btn.disabled = true; btn.textContent = 'Saving…';
+
+  // Capture completion-time and fold into subformData for the server. Not
+  // visible to the rep here; the manager Stats tab surfaces the median.
+  const completionSeconds = cnFormTimerEndAndGet_();
+  if (completionSeconds != null) {
+    payload.subformData = payload.subformData || {};
+    payload.subformData.completionSeconds = completionSeconds;
+  }
+
+  // Build the pending note. Uses the rep's tz so the time renders correctly
+  // even before the server responds.
+  const empTz = CN_STATE.empTz || (empState && empState.timezone) || 'UTC';
+  const nowTs = cnNowInTz_(empTz);
+  const pendingId = 'pending_' + Math.random().toString(36).slice(2, 12);
+  const pendingNote = {
+    noteId: pendingId,
+    timestamp: nowTs.timestamp,
+    dateLocal: nowTs.date,
+    callback: payload.callback,
+    caller: payload.caller,
+    relationship: payload.relationship,
+    patientAndTrx: payload.patientAndTrx,
+    issue: payload.issue,
+    transferredTo: payload.transferredTo,
+    resolution: payload.resolution,
+    flagType: payload.flagType || '',
+    resolved: false,
+    emailedAt: '',
+    emailDepartments: '',
+    subform: '',
+    subformData: payload.subformData || null,
+    _pending: true,
+  };
+
+  // Snapshot the form values so we can restore them on server failure
+  // (otherwise the rep loses what they typed when the optimistic clear fires).
+  const restoreSnapshot = {
+    values: {
+      callback: payload.callback, caller: payload.caller, relationship: payload.relationship,
+      patient: payload.patientAndTrx, issue: payload.issue,
+      transferred: payload.transferredTo, resolution: payload.resolution,
+    },
+    flag: payload.flagType || '',
+    trainingQ: (payload.subformData && payload.subformData.trainingQuestion) || '',
+  };
+
+  // Optimistic path — runs synchronously, well under one frame:
+  // 1. Put the note in the stack so it renders immediately
+  CN_STATE.rollingNotes.unshift(pendingNote);
+  // 2. Copy to clipboard NOW so the rep can paste into the CRM without waiting
+  cnAutoCopyNote_(pendingNote);
+  // 3. Clear the form so the rep can start the next call
+  cnClearActiveForm_({ skipSnapshot: true });
+  cnFormTimerReset_();
+  // 4. Re-render and bump the counter
+  cnRenderStack_();
+  cnRenderFilterBar_();
+  cnUpdateNoteCounter_();
+  showToast('Saved · copied to clipboard', 'toast-success');
+
+  // Server sync in background
   google.script.run
     .withSuccessHandler(function (res) {
-      btn.disabled = false;
-      btn.innerHTML = icon('check', 14) + ' Save &amp; Copy';
       if (!res.success) {
-        showToast(res.error || 'Save failed', 'toast-error');
+        cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed — note restored');
         return;
       }
-      // Auto-copy to clipboard for paste-into-CRM
-      cnAutoCopyNote_(res.note);
-      CN_STATE.rollingNotes.unshift(res.note);
-      cnRenderStack_();
-      cnRenderFilterBar_();
-      cnClearActiveForm_({ skipSnapshot: true });
-      cnUpdateNoteCounter_();
-      showToast('Saved · copied to clipboard', 'toast-success');
+      // Replace the pending note with the server's confirmed one (real
+      // noteId + canonical timestamp + resolved/emailedAt defaults).
+      const idx = CN_STATE.rollingNotes.findIndex(function (n) { return n.noteId === pendingId; });
+      if (idx >= 0) {
+        CN_STATE.rollingNotes[idx] = res.note;
+        cnRenderStack_();
+        cnRenderFilterBar_();
+      }
+      if (opts && typeof opts.onConfirmed === 'function') {
+        try { opts.onConfirmed(res.note); } catch (e) {}
+      }
     })
     .withFailureHandler(function (err) {
-      btn.disabled = false;
-      btn.innerHTML = icon('check', 14) + ' Save &amp; Copy';
-      showToast('Save failed: ' + err.message, 'toast-error');
+      cnRevertPendingSubmit_(pendingId, restoreSnapshot, 'Save failed: ' + (err.message || 'unknown') + ' — note restored');
     })
     .submitCallNote(payload);
+}
+
+/** Roll back an optimistic submit: drop the pending card from the stack,
+ *  restore the form to what the rep had typed, and show an error toast. */
+function cnRevertPendingSubmit_(pendingId, snapshot, message) {
+  CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== pendingId; });
+  cnRenderStack_();
+  cnRenderFilterBar_();
+  cnUpdateNoteCounter_();
+  if (snapshot) cnRestoreFromSnapshot_(snapshot);
+  showToast(message, 'toast-error');
 }
 
 function cnAutoCopyNote_(note) {
@@ -1063,6 +1240,7 @@ function cnRenderCardCore_(note, expandable) {
   const flagCls = note.flagType ? ' flag-' + note.flagType : '';
   const isStale = note.flagType === 'action' && !note.resolved && cnNoteIsStale_(note);
   const staleCls = isStale ? ' stale-action' : '';
+  const pendingCls = note._pending ? ' is-pending' : '';
 
   if (isEditing) {
     return `
@@ -1141,7 +1319,7 @@ function cnRenderCardCore_(note, expandable) {
     : '';
 
   return `
-    <div class="cn-card${flagCls}${staleCls}" data-note-id="${esc(note.noteId)}">
+    <div class="cn-card${flagCls}${staleCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
@@ -1150,14 +1328,13 @@ function cnRenderCardCore_(note, expandable) {
           ${trainingQ}
         </div>
         <div class="cn-card-actions">
-          ${flagBtn('action', 'flag', note.flagType === 'action')}
-          ${flagBtn('training', 'bulb', note.flagType === 'training')}
-          ${flagBtn('review', 'star', note.flagType === 'review')}
-          ${resolveBtn}
-          ${priorBtn}
-          ${copyBtn}
-          ${emailBtn}
-          ${editBtn}
+          ${note._pending
+            ? '<span class="cn-pending-badge" title="Saving to server"><span class="cn-pending-dot"></span>Saving</span>'
+            : flagBtn('action', 'flag', note.flagType === 'action') +
+              flagBtn('training', 'bulb', note.flagType === 'training') +
+              flagBtn('review', 'star', note.flagType === 'review') +
+              resolveBtn + priorBtn + copyBtn + emailBtn + editBtn
+          }
         </div>
       </div>
     </div>
@@ -1243,15 +1420,31 @@ function cnDeleteNote_(noteId) {
 function cnToggleFlag_(noteId, kind) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note) return;
+  // Pending notes can't be flagged yet — server doesn't know about them
+  if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
+  const prev = { flagType: note.flagType, resolved: note.resolved };
   const next = (note.flagType === kind) ? '' : kind;
+  // Optimistic: update locally, mirror INV-40 (any transition clears Resolved)
+  note.flagType = next;
+  if (prev.flagType !== next) note.resolved = false;
+  cnRenderStack_();
+  cnRenderFilterBar_();
   google.script.run
     .withSuccessHandler(function (res) {
-      if (!res.success) { showToast(res.error || 'Flag failed', 'toast-error'); return; }
+      if (!res.success) {
+        // Revert
+        note.flagType = prev.flagType; note.resolved = prev.resolved;
+        cnRenderStack_(); cnRenderFilterBar_();
+        showToast(res.error || 'Flag failed', 'toast-error');
+        return;
+      }
+      // Reconcile with server's canonical state (handles edge cases like
+      // concurrent updates by a different tab — rare but possible).
       cnReplaceNoteInState_(res.note);
-      cnRenderStack_();
-      cnRenderFilterBar_();
     })
     .withFailureHandler(function (err) {
+      note.flagType = prev.flagType; note.resolved = prev.resolved;
+      cnRenderStack_(); cnRenderFilterBar_();
       showToast('Flag failed: ' + err.message, 'toast-error');
     })
     .setCallNoteFlag(noteId, next);
@@ -1260,17 +1453,28 @@ function cnToggleFlag_(noteId, kind) {
 function cnToggleResolved_(noteId) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note || note.flagType !== 'action') return;
+  if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
+  const prevResolved = note.resolved;
+  // Optimistic: flip locally
+  note.resolved = !prevResolved;
+  cnRenderStack_();
+  cnRenderFilterBar_();
   google.script.run
     .withSuccessHandler(function (res) {
-      if (!res.success) { showToast(res.error || 'Update failed', 'toast-error'); return; }
+      if (!res.success) {
+        note.resolved = prevResolved;
+        cnRenderStack_(); cnRenderFilterBar_();
+        showToast(res.error || 'Update failed', 'toast-error');
+        return;
+      }
       cnReplaceNoteInState_(res.note);
-      cnRenderStack_();
-      cnRenderFilterBar_();
     })
     .withFailureHandler(function (err) {
+      note.resolved = prevResolved;
+      cnRenderStack_(); cnRenderFilterBar_();
       showToast('Update failed: ' + err.message, 'toast-error');
     })
-    .setCallNoteResolved(noteId, !note.resolved);
+    .setCallNoteResolved(noteId, note.resolved);
 }
 
 // ── Filter bar ─────────────────────────────────────────────────────────

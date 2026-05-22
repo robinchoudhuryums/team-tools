@@ -1111,7 +1111,7 @@ function submitCallNote(payload) {
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
       `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
-    invalidateCnAmbientCache_(emp.id);
+    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
     return {
       success: true,
@@ -1188,7 +1188,7 @@ function setCallNoteFlag(noteId, flagType) {
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
       `noteId=${noteId}; ${t || '<cleared>'}`);
-    invalidateCnAmbientCache_(emp.id);
+    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -1217,7 +1217,7 @@ function setCallNoteResolved(noteId, resolved) {
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteResolve', dateLocal, '', false, 0,
       `noteId=${noteId}; ${resolved ? 'resolved' : 'unresolved'}`);
-    invalidateCnAmbientCache_(emp.id);
+    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -1240,7 +1240,7 @@ function deleteCallNote(noteId) {
     sheet.deleteRow(located.rowIndex);
     writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
       `noteId=${noteId}`);
-    invalidateCnAmbientCache_(emp.id);
+    // (Ambient cache is purely TTL-driven now — see INV-43.)
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -1281,10 +1281,20 @@ function getMyCallNotes(options) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** No-op pre-warm endpoint. Apps Script's first RPC on a cold web app pays
+ *  ~500ms of script-context startup; firing this on Call Notes view enter
+ *  warms the iframe so the rep's first real action (submit / flag / email)
+ *  feels snappier. Cheap to call — the function does no work. */
+function cnPing() {
+  return { ok: true, t: Date.now() };
+}
+
 /** Ambient signal for the sidebar badge + stale-flag indicators.
  *  Returns {enrolled, unresolvedActionCount, staleActionCount, todayTotal,
  *  staleFlagHours} for the calling rep. Cached for CN_AMBIENT_CACHE_TTL
- *  seconds per rep — see invalidateCnAmbientCache_ for the freshness path. */
+ *  seconds per rep. Mutating endpoints no longer eagerly invalidate the
+ *  cache (the TTL doubles as the freshness ceiling, matching the 60s
+ *  sidebar polling interval) — see INV-43. */
 function getCallNotesAmbient() {
   try {
     const emp = getEmployeeInfo_();
@@ -1330,10 +1340,10 @@ function getCallNotesAmbient() {
   } catch (err) { return { error: err.message }; }
 }
 
-/** Drop the per-rep ambient cache. Called by every mutating CN endpoint that
- *  could change the counts the ambient poll surfaces (submit, setFlag,
- *  setResolved, delete). Pure TTL alone would be at most 60s stale; this
- *  shortens that window after user action. */
+/** Drop the per-rep ambient cache. No longer called from the mutation hot
+ *  path (TTL handles freshness within the polling interval). Kept for ops
+ *  to invalidate manually from the editor when needed (e.g., after a manual
+ *  Sheet edit that should reflect in the badge immediately). */
 function invalidateCnAmbientCache_(empId) {
   if (!empId) return;
   try { CacheService.getScriptCache().remove(CN_AMBIENT_CACHE_PREFIX + empId); }
