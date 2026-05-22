@@ -129,6 +129,18 @@
     font-style: italic;
   }
   .cn-card-training-q svg { flex-shrink: 0; margin-top: 2px; }
+  /* Manager's reply to a training question — renders directly below the
+     question with a green check so the rep sees at a glance that they got
+     an answer. Non-italic since it's intentional manager output, not the
+     rep's own question. */
+  .cn-card-training-a {
+    display: flex; align-items: flex-start; gap: 6px;
+    margin-top: 2px;
+    padding-left: 18px;  /* hangs under the question's icon */
+    font-family: var(--ui); font-size: 12px;
+    color: var(--success-deep);
+  }
+  .cn-card-training-a svg { flex-shrink: 0; margin-top: 2px; }
 
   .cn-form-fields {
     display: grid;
@@ -392,6 +404,38 @@
     background: var(--destructive-soft);
     border-color: color-mix(in oklch, var(--destructive), transparent 50%);
   }
+
+  /* Manager training-reply editor — inline below training-flagged cards
+     in the Per-Rep view. Lets the manager answer the rep's question in
+     place without opening a separate modal. */
+  .cn-mgr-reply-row {
+    display: flex; align-items: center; gap: 6px;
+    margin: 10px 0 0 28px;
+    padding-top: 8px;
+    border-top: 1px dashed color-mix(in srgb, var(--accent), transparent 75%);
+  }
+  .cn-mgr-reply-input {
+    flex: 1; min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent), transparent 60%);
+    border-radius: var(--radius);
+    font-family: var(--ui); font-size: 12px;
+    color: var(--ink); background: var(--paper-card);
+    outline: none;
+  }
+  .cn-mgr-reply-input:focus { border-color: var(--accent); box-shadow: var(--ring-focus); }
+  .cn-mgr-reply-save, .cn-mgr-reply-clear {
+    appearance: none; border: 1px solid var(--line);
+    background: transparent;
+    padding: 6px 9px; border-radius: var(--radius);
+    font-family: var(--ui); font-size: 11px; font-weight: 500;
+    color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px;
+    white-space: nowrap;
+    transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-mgr-reply-save:hover { background: var(--accent); color: white; border-color: var(--accent); }
+  .cn-mgr-reply-clear:hover { color: var(--danger-deep); border-color: var(--danger); }
 
   /* ── Stale-flag badge in sidebar nav (count pill) ───────────────── */
   .cn-stale-badge {
@@ -1437,12 +1481,15 @@ function cnRenderCardCore_(note, expandable) {
   const issue = note.issue || '<em>—</em>';
   // Training notes carry a free-text question in subformData; surface it as a
   // distinct sub-line under the issue so the rep (and a manager peeking) can
-  // see what's being asked at a glance.
-  const trainingQ = (note.flagType === 'training'
-                     && note.subformData
-                     && note.subformData.trainingQuestion)
-    ? `<div class="cn-card-training-q">${icon('bulb', 11)}<span>${esc(String(note.subformData.trainingQuestion))}</span></div>`
-    : '';
+  // see what's being asked at a glance. If the manager has written a reply,
+  // it renders directly below the question as an answer line.
+  let trainingQ = '';
+  if (note.flagType === 'training' && note.subformData && note.subformData.trainingQuestion) {
+    trainingQ = `<div class="cn-card-training-q">${icon('bulb', 11)}<span>${esc(String(note.subformData.trainingQuestion))}</span></div>`;
+    if (note.subformData.trainingReply) {
+      trainingQ += `<div class="cn-card-training-a">${icon('checkCircle', 11)}<span>${esc(String(note.subformData.trainingReply))}</span></div>`;
+    }
+  }
 
   const flagBtn = function (kind, name, on) {
     const cls = 'cn-act-btn ' + kind + (on ? ' is-on' : '');
@@ -2739,11 +2786,32 @@ function cnMgrRenderReadonlyCard_(note) {
   const callerLine = note.caller || note.patientAndTrx || '<em style="color:var(--muted)">unnamed</em>';
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
   const issue = note.issue || '<em>—</em>';
-  const trainingQ = (note.flagType === 'training'
-                     && note.subformData
-                     && note.subformData.trainingQuestion)
-    ? `<div class="cn-card-training-q">${icon('bulb', 11)}<span>${esc(String(note.subformData.trainingQuestion))}</span></div>`
-    : '';
+  // Training notes get a question line + (if set) a manager-reply line.
+  let trainingQ = '';
+  let trainingReplyEditor = '';
+  if (note.flagType === 'training' && note.subformData && note.subformData.trainingQuestion) {
+    trainingQ = `<div class="cn-card-training-q">${icon('bulb', 11)}<span>${esc(String(note.subformData.trainingQuestion))}</span></div>`;
+    const existingReply = (note.subformData && note.subformData.trainingReply) || '';
+    if (existingReply) {
+      trainingQ += `<div class="cn-card-training-a">${icon('checkCircle', 11)}<span>${esc(String(existingReply))}</span></div>`;
+    }
+    // Inline reply editor — manager can write/edit/clear the answer right
+    // from the per-rep card. `data-rep="..."` lets the click handler find
+    // the right rep without round-tripping the JS string boundary.
+    const repId = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
+    trainingReplyEditor = `
+      <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
+        <input type="text" class="cn-mgr-reply-input" placeholder="${existingReply ? 'Edit reply…' : 'Reply to this question…'}"
+               value="${esc(existingReply)}">
+        <button type="button" class="cn-mgr-reply-save" onclick="cnMgrSaveTrainingReply_(this)">
+          ${icon('check', 12)}<span>${existingReply ? 'Update' : 'Send'}</span>
+        </button>
+        ${existingReply
+          ? `<button type="button" class="cn-mgr-reply-clear" onclick="cnMgrClearTrainingReply_(this)" title="Clear reply">${icon('x', 12)}</button>`
+          : ''}
+      </div>
+    `;
+  }
   const resolution = note.resolution
     ? `<div class="cn-card-issue" style="color:var(--muted);font-style:italic;margin-top:2px">→ ${esc(note.resolution)}</div>`
     : '';
@@ -2766,8 +2834,60 @@ function cnMgrRenderReadonlyCard_(note) {
           ${sentPill}
         </div>
       </div>
+      ${trainingReplyEditor}
     </div>
   `;
+}
+
+/** Click handler for the manager's training-reply save button. Reads the
+ *  text from the sibling input and fires setCallNoteTrainingReply. On
+ *  success, refreshes the per-rep view so the saved reply renders. */
+function cnMgrSaveTrainingReply_(btn) {
+  const row = btn.closest('.cn-mgr-reply-row');
+  if (!row) return;
+  const noteId = row.dataset.noteId;
+  const repId  = row.dataset.repId;
+  const input  = row.querySelector('.cn-mgr-reply-input');
+  if (!input) return;
+  const reply = input.value.trim();
+  if (!reply) { showToast('Reply is empty', 'toast-warn'); return; }
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      btn.disabled = false;
+      if (!res.success) { showToast(res.error || 'Reply failed', 'toast-error'); return; }
+      showToast('Reply saved', 'toast-success');
+      // Refresh the per-rep view so the reply line shows on the card
+      cnMgrLoadRepNotes_();
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      showToast('Reply failed: ' + err.message, 'toast-error');
+    })
+    .setCallNoteTrainingReply(repId, noteId, reply);
+}
+
+/** Clear an existing training reply (passes empty string to the server,
+ *  which drops the reply keys from subformData). */
+function cnMgrClearTrainingReply_(btn) {
+  const row = btn.closest('.cn-mgr-reply-row');
+  if (!row) return;
+  const noteId = row.dataset.noteId;
+  const repId  = row.dataset.repId;
+  if (!confirm('Clear the reply on this note?')) return;
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      btn.disabled = false;
+      if (!res.success) { showToast(res.error || 'Clear failed', 'toast-error'); return; }
+      showToast('Reply cleared', 'toast-success');
+      cnMgrLoadRepNotes_();
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      showToast('Clear failed: ' + err.message, 'toast-error');
+    })
+    .setCallNoteTrainingReply(repId, noteId, '');
 }
 
 function cnMgrRenderQueue_(host, results) {

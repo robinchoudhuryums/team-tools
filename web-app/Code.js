@@ -1597,6 +1597,66 @@ function exportCallNotesRange(startDate, endDate) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Manager replies to a rep's training-flagged note. The reply is merged
+ *  into the note's subformData JSON blob (alongside trainingQuestion), so
+ *  no schema migration is needed. Stamps the manager's email + timestamp
+ *  for accountability. Pass `reply=''` to clear an existing reply.
+ *
+ *  Manager-gated. Writes a CallNoteTrainingReply audit row.
+ *  Rejects when the target note isn't training-flagged (reply has no
+ *  meaning on action/review/unflagged notes). */
+function setCallNoteTrainingReply(repEmpId, noteId, reply) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const target = lookupEmployeeById_(repEmpId);
+    if (!target) return { success: false, error: 'Employee not found.' };
+    if (!target.callNotesSheetId) return { success: false, error: 'This rep has no call-notes Sheet configured.' };
+
+    const sheet = getCallNotesSheet_(target);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
+    if (flagType !== 'training') {
+      return { success: false, error: 'Only training-flagged notes can carry a reply.' };
+    }
+
+    // Merge into existing subformData (preserves trainingQuestion + anything
+    // else that may live there). On clear, drop the reply keys entirely.
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); }
+      catch (e) { subformData = null; }
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+
+    const trimmed = String(reply || '').trim();
+    const empTz = target.timezone || CONFIG.TIMEZONE;
+    if (trimmed) {
+      subformData.trainingReply = trimmed;
+      subformData.trainingReplyBy = callerEmp.email;
+      subformData.trainingReplyAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    } else {
+      delete subformData.trainingReply;
+      delete subformData.trainingReplyBy;
+      delete subformData.trainingReplyAt;
+    }
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(target, 'CallNoteTrainingReply', dateLocal, '', false, 0,
+      `noteId=${noteId}; ${trimmed ? 'reply set' : 'reply cleared'}`,
+      callerEmp.email);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 /** Manager aggregated training-queue across all enrolled reps. */
 function managerGetTrainingQueue(dateRange) {
   return managerAggregateFlagged_('training', dateRange);
@@ -2832,25 +2892,36 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
     return (n.flagType === 'training' && n.subformData && n.subformData.trainingQuestion)
       ? String(n.subformData.trainingQuestion).trim() : '';
   };
+  // Manager replies (set via setCallNoteTrainingReply) — surface in the
+  // weekly digest so already-answered training notes don't keep nagging
+  // the manager's attention.
+  const tr = function (n) {
+    return (n.flagType === 'training' && n.subformData && n.subformData.trainingReply)
+      ? String(n.subformData.trainingReply).trim() : '';
+  };
   const itemsHtml = notes.map(function (n) {
     const q = tq(n);
+    const reply = tr(n);
     const qLine = q ? `<br><span style="color:${P.accentDeep};font-size:12px;font-style:italic;">Q: ${esc_(q)}</span>` : '';
+    const rLine = reply ? `<br><span style="color:${P.goodDeep};font-size:12px;">A: ${esc_(reply)}</span>` : '';
     return `<tr>` +
       `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
         `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
         (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
-        qLine +
+        qLine + rLine +
       `</td>` +
       `</tr>`;
   }).join('');
   const itemsText = notes.map(function (n) {
     const q = tq(n);
+    const reply = tr(n);
     return `  ${n.dateLocal}  ${n.repName} · ${n.caller || n.patientAndTrx || '—'}\n` +
            `    ${n.issue || ''}` +
            (n.resolution ? `\n    → ${n.resolution}` : '') +
-           (q ? `\n    Q: ${q}` : '');
+           (q ? `\n    Q: ${q}` : '') +
+           (reply ? `\n    A: ${reply}` : '');
   }).join('\n\n');
 
   const htmlBody = (
