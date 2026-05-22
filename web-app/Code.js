@@ -1524,6 +1524,545 @@ function parseTimestampMs_(tsStr, tz) {
 
 
 // ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — EMAIL COMPOSER
+//  ────────────────────────────────────────────────────────────────────────
+//  Two-stage send: previewCallNoteEmail returns the rendered HTML for a
+//  confirm-before-send modal in the client; emailFromCallNote actually
+//  sends via MailApp and stamps the note row's EmailedAt / EmailDepartments.
+//  Subject/body builders port the legacy logic (Verified Shipping /
+//  Repeat Resupply / Close Order / OOP subforms) but the inline-CSS uses
+//  resolved hex equivalents of the design tokens (--accent, --good,
+//  --warn, etc.) since email clients strip <style> blocks and don't honor
+//  CSS variables. The PALETTE constant below is the translation layer;
+//  re-sync if styles_design_tokens.html palette changes.
+// ════════════════════════════════════════════════════════════════════════════
+
+const CN_EMAIL_PALETTE = {
+  paperCard:    '#ffffff',
+  paper:        '#f6f7f9',
+  paper2:       '#eceef2',
+  ink:          '#101418',
+  muted:        '#606872',
+  line:         '#dadde3',
+  accent:       '#3565b8',      // resolved oklch(55% 0.12 240)
+  accentSoft:   '#e6ecf6',      // resolved oklch(93% 0.04 240)
+  accentDeep:   '#1e3a6e',
+  good:         '#3d8c6b',
+  goodSoft:     '#e6f1ec',
+  goodDeep:     '#1f4d3a',
+  warn:         '#c25b1a',
+  warnSoft:     '#fbeede',
+  warnDeep:     '#693012',
+  danger:       '#c0392b',
+  dangerSoft:   '#fae8e6',
+  dangerDeep:   '#6e1f17',
+};
+
+/** Renders the email HTML body + computed subject/recipients for a note +
+ *  composer selections, without sending. The client shows this in a
+ *  confirm modal; user clicks Send → emailFromCallNote actually sends. */
+function previewCallNoteEmail(noteId, emailPayload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { error: 'Note not found.' };
+    const note = callNoteRowToObject_(located);
+
+    const selections = sanitizeEmailSelections_(emailPayload || {});
+    const v = validateEmailSelections_(selections);
+    if (v.error) return { error: v.error };
+
+    const callData = callDataFromNote_(note);
+    const subject = buildEmailSubject_(selections, callData.patientAndTrx);
+    const recipientList = resolveEmailRecipients_(selections);
+    if (recipientList.error) return { error: recipientList.error };
+
+    const htmlBody = buildCallNoteEmailHtml_(callData, selections);
+    const textBody = buildCallNoteEmailText_(callData, selections, subject);
+
+    return {
+      noteId,
+      subject,
+      to: recipientList.to,
+      cc: CONFIG.CALL_NOTES.CC_EMAIL,
+      from: emp.email,
+      htmlBody,
+      textBody,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Actually sends the email composed for a note. Stamps EmailedAt +
+ *  EmailDepartments on the note row, writes a CallNoteEmail audit row. */
+function emailFromCallNote(noteId, emailPayload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+    const note = callNoteRowToObject_(located);
+
+    const selections = sanitizeEmailSelections_(emailPayload || {});
+    const v = validateEmailSelections_(selections);
+    if (v.error) return { success: false, error: v.error };
+
+    const callData = callDataFromNote_(note);
+    const subject = buildEmailSubject_(selections, callData.patientAndTrx);
+    const recipientList = resolveEmailRecipients_(selections);
+    if (recipientList.error) return { success: false, error: recipientList.error };
+
+    const htmlBody = buildCallNoteEmailHtml_(callData, selections);
+    const textBody = buildCallNoteEmailText_(callData, selections, subject);
+
+    MailApp.sendEmail({
+      to: recipientList.to,
+      cc: CONFIG.CALL_NOTES.CC_EMAIL,
+      subject,
+      body: textBody,
+      htmlBody,
+    });
+
+    const empTz = empTz_(emp);
+    const emailedAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    const deptLabel = selections.departments.join(', ');
+    sheet.getRange(located.rowIndex, CN.EMAILED_AT + 1).setValue(emailedAt);
+    sheet.getRange(located.rowIndex, CN.EMAIL_DEPARTMENTS + 1).setValue(deptLabel);
+
+    // Persist subform selection back to the row so the rolling card can
+    // re-open the composer with prior settings if the rep needs to re-send.
+    if (selections.updateInfo) {
+      sheet.getRange(located.rowIndex, CN.SUBFORM + 1).setValue(updateInfoToSubformKey_(selections.updateInfo));
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(selections));
+    }
+
+    writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
+      `noteId=${noteId}; to=${recipientList.to}; subj="${subject}"`);
+
+    return { success: true, emailedAt, recipients: recipientList.to, subject };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+function sanitizeEmailSelections_(payload) {
+  const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+  const arr = (v) => Array.isArray(v) ? v.map(s).filter(x => x.length > 0) : [];
+  return {
+    departments:     arr(payload.departments),
+    individualEmail: s(payload.individualEmail),
+    updateInfo:      s(payload.updateInfo),
+    callbackNeeded:  !!payload.callbackNeeded,
+    overwriteResolution: !!payload.overwriteResolution,
+    shippingDetails: payload.shippingDetails || null,
+    closeDetails:    payload.closeDetails || null,
+    resupplyDetails: payload.resupplyDetails || null,
+    oopDetails:      payload.oopDetails || null,
+  };
+}
+
+function validateEmailSelections_(selections) {
+  if (!selections.departments || selections.departments.length === 0) {
+    return { error: 'Select at least one recipient department.' };
+  }
+  if (selections.departments.indexOf('Other') >= 0) {
+    const email = selections.individualEmail;
+    if (!email) return { error: 'Selected "Other" but no email was provided.' };
+    // Multi-email support — split on commas, validate each
+    const parts = email.split(',').map(p => p.trim()).filter(p => p.length > 0);
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].indexOf('@') < 1 || parts[i].indexOf('.') < 0) {
+        return { error: 'Invalid email format: ' + parts[i] };
+      }
+    }
+  }
+  if (!selections.updateInfo) {
+    return { error: 'Specify an Update type before sending.' };
+  }
+  return { ok: true };
+}
+
+function resolveEmailRecipients_(selections) {
+  const map = CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
+  const out = [];
+  for (let i = 0; i < selections.departments.length; i++) {
+    const dept = selections.departments[i];
+    if (dept === 'Other') {
+      out.push(selections.individualEmail);
+    } else {
+      const addr = map[dept];
+      if (!addr) return { error: 'Unknown department: ' + dept };
+      out.push(addr);
+    }
+  }
+  return { to: out.join(', ') };
+}
+
+function callDataFromNote_(note) {
+  // Smart "self"-relationship logic: when relationship is "self" and the
+  // patient/TRX cell is just a number, prepend the caller's name so
+  // downstream subject lines have a usable identifier.
+  let patientAndTrx = String(note.patientAndTrx || '').trim();
+  const relationship = String(note.relationship || '').trim().toLowerCase();
+  const isOnlyNumber = /^[\d\s#]+$/.test(patientAndTrx);
+  if (relationship === 'self' && isOnlyNumber && note.caller) {
+    patientAndTrx = `${note.caller} ${patientAndTrx}`;
+  }
+  return {
+    callBackNumber: formatPhoneNumber_(note.callback),
+    callerName:     note.caller,
+    relationship:   note.relationship,
+    patientAndTrx,
+    issue:          note.issue,
+    transferredTo:  note.transferredTo,
+    resolution:     note.resolution,
+  };
+}
+
+function buildEmailSubject_(selections, patientName) {
+  let subjectUpdate = selections.updateInfo;
+  if (!subjectUpdate || !subjectUpdate.trim()) subjectUpdate = 'Update';
+
+  const canon = subjectUpdate.toLowerCase();
+  if (canon === 'close order')       subjectUpdate = 'Close Order';
+  if (canon === 'verified shipping') subjectUpdate = 'Verified Shipping';
+  if (canon === 'oop order')         subjectUpdate = 'OOP Order';
+
+  if (canon === 'repeat resupply' && selections.resupplyDetails) {
+    const details = selections.resupplyDetails;
+    const cat = details.itemCategory;
+    const month = details.resupplyMonth;
+    const dob = details.dob;
+    const prefix = (cat === 'Other') ? '' : `${cat} `;
+    const middle = month ? `${month} ` : '';
+    subjectUpdate = `${prefix}${middle}Resupply`.trim();
+    subjectUpdate = subjectUpdate.charAt(0).toUpperCase() + subjectUpdate.slice(1);
+    let fullSubject = `${subjectUpdate}: ${patientName}`;
+    if (dob) fullSubject += `, DOB: ${dob}`;
+    return fullSubject;
+  }
+  return `${subjectUpdate}: ${patientName}`;
+}
+
+function generateOOPResolutionText_(selections) {
+  const oop = selections.oopDetails;
+  const ship = selections.shippingDetails;
+  if (!oop || !ship) return '';
+  let paymentStatus = 'Need to Collect Total';
+  if (ship.patResp === 'Collected') paymentStatus = 'Collected Total';
+  else if (ship.patResp === 'N/A')   paymentStatus = 'Total (N/A)';
+  let text = `OOP Order Processed`;
+  const taxFmt = (String(oop.taxAmt || '').charAt(0) === '$')
+    ? oop.taxAmt : '$' + oop.taxAmt;
+  text += `\n${paymentStatus}: $${oop.totalCost} (Base: $${oop.baseCost} + Est. Sales Tax: ${taxFmt} + Ship: $${oop.shippingCost})`;
+  text += `\nVerified Addr: ${ship.verifiedAddr ? 'Yes' : 'No'}`;
+  if (ship.verifiedAddrText) text += ` (${ship.verifiedAddrText})`;
+  text += ` | Loc: ${ship.patientLoc}`;
+  text += ` | Docs: ${ship.docsTo}`;
+  if (ship.deliveryEmail) text += ` (${ship.deliveryEmail})`;
+  if (ship.specialNote) text += `\nNote: ${ship.specialNote}`;
+  return text;
+}
+
+function buildCallNoteEmailHtml_(callData, selections) {
+  const P = CN_EMAIL_PALETTE;
+  let updateInfo = selections.updateInfo;
+  const canon = updateInfo.toLowerCase();
+  if (canon === 'close order')       updateInfo = 'Close Order';
+  if (canon === 'verified shipping') updateInfo = 'Verified Shipping';
+  if (canon === 'repeat resupply')   updateInfo = 'Repeat Resupply';
+  if (canon === 'oop order')         updateInfo = 'OOP Order';
+
+  const callbackNeeded  = selections.callbackNeeded;
+  const shippingDetails = selections.shippingDetails;
+  const closeDetails    = selections.closeDetails;
+  const resupplyDetails = selections.resupplyDetails;
+  const oopDetails      = selections.oopDetails;
+
+  // ── Update line ─────────────────────────────────────────────────────
+  let updateLineHtml = '';
+  if (updateInfo === 'Close Order' && closeDetails) {
+    updateLineHtml =
+      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
+      `<span style="font-weight:600;color:${P.danger};">Close Order</span>` +
+      `<span style="font-weight:600;color:${P.accentDeep};"> — ${esc_(closeDetails.reason)}</span>`;
+  } else if (updateInfo === 'OOP Order' && oopDetails) {
+    updateLineHtml =
+      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
+      `<span style="font-weight:600;color:${P.warn};">OOP Order</span>` +
+      `<span style="font-weight:600;color:${P.accentDeep};"> — Total: $${esc_(oopDetails.totalCost)}</span>`;
+  } else {
+    updateLineHtml =
+      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
+      `<span style="font-weight:600;color:${P.ink};">${esc_(updateInfo)}</span>`;
+  }
+
+  // ── Callback banner ─────────────────────────────────────────────────
+  const callbackHtml = callbackNeeded
+    ? `<div style="background:${P.warnSoft};color:${P.warnDeep};padding:10px 14px;border-radius:6px;` +
+      `margin:14px 0;font-weight:600;border-left:3px solid ${P.warn};">` +
+      `&#9742; Callback Requested</div>`
+    : '';
+
+  // ── Subform blocks ──────────────────────────────────────────────────
+  let shippingHtml = '', resupplyHtml = '', oopHtml = '';
+  if (shippingDetails) shippingHtml = renderShippingDetailsHtml_(shippingDetails, P);
+  if (resupplyDetails) resupplyHtml = renderResupplyDetailsHtml_(resupplyDetails, P);
+  if (oopDetails)      oopHtml      = renderOopDetailsHtml_(oopDetails, P);
+
+  // ── Resolution overrides ────────────────────────────────────────────
+  let resolutionText = callData.resolution || '';
+  if (updateInfo === 'OOP Order' && oopDetails && shippingDetails) {
+    resolutionText = generateOOPResolutionText_(selections).replace(/\n/g, '<br>');
+  } else {
+    resolutionText = esc_(resolutionText);
+  }
+
+  // ── Body ────────────────────────────────────────────────────────────
+  const updateBox =
+    `<div style="background:${P.accentSoft};border-radius:6px;padding:11px 14px;margin:14px 0;` +
+    `font-size:15px;border-left:3px solid ${P.accent};">${updateLineHtml}</div>`;
+
+  const callDetailsTable =
+    `<table style="width:100%;border-collapse:collapse;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;` +
+    `font-size:14px;border:1px solid ${P.line};border-radius:6px;overflow:hidden;margin-top:6px;">` +
+      `<tr style="background:${P.ink};color:${P.paperCard};">` +
+        `<td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.02em;">Call Details</td>` +
+      `</tr>` +
+      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;width:34%;color:${P.muted};">Callback Number</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.callBackNumber)}</td></tr>` +
+      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Caller Name</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.callerName)}</td></tr>` +
+      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Relationship</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.relationship)}</td></tr>` +
+      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Patient & TRX</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};font-weight:600;">${esc_(callData.patientAndTrx)}</td></tr>` +
+      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Issue</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.issue)}</td></tr>` +
+      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Transferred To</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.transferredTo)}</td></tr>` +
+      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Resolution</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${resolutionText}</td></tr>` +
+    `</table>`;
+
+  return (
+    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
+      `<div style="max-width:680px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:24px 26px;">` +
+        `<h2 style="margin:0 0 6px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;color:${P.ink};">Update for ${esc_(callData.patientAndTrx)}</h2>` +
+        `<p style="margin:0 0 14px;color:${P.muted};font-size:13px;">Hello team — please see the following update for this order.</p>` +
+        callbackHtml +
+        updateBox +
+        oopHtml +
+        shippingHtml +
+        resupplyHtml +
+        callDetailsTable +
+      `</div>` +
+      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools · Call Notes</div>` +
+    `</div>`
+  );
+}
+
+function renderShippingDetailsHtml_(d, P) {
+  const verifiedDisplay = d.verifiedAddr
+    ? `<span style="color:${P.goodDeep};font-weight:600;">&#10003; Yes</span>` +
+      (d.verifiedAddrText ? ` <span style="color:${P.ink};">(${esc_(d.verifiedAddrText)})</span>` : '')
+    : `<span style="color:${P.dangerDeep};font-weight:600;">&#10005; No</span>`;
+  const mapLink = d.verifiedAddrText
+    ? ` <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.verifiedAddrText)}" target="_blank" style="color:${P.accent};text-decoration:none;font-size:.9em;">View Map</a>`
+    : '';
+  const docsToDisplay = (d.docsTo === 'Email' && d.deliveryEmail)
+    ? `Email: <span style="color:${P.ink};">${esc_(d.deliveryEmail)}</span>`
+    : esc_(d.docsTo || '');
+  const noteRow = d.specialNote
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Note</td><td style="padding:5px 8px;font-style:italic;color:${P.ink};">${esc_(d.specialNote)}</td></tr>`
+    : '';
+  return (
+    `<div style="background:${P.goodSoft};border:1px solid color-mix(in srgb,${P.good},transparent 60%);` +
+    `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.good};">` +
+      `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.goodDeep};font-weight:600;">Verified Shipping</h3>` +
+      `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Verified Address</td><td style="padding:5px 8px;">${verifiedDisplay}${mapLink}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Patient Location</td><td style="padding:5px 8px;">${esc_(d.patientLoc || '')}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Docs To</td><td style="padding:5px 8px;">${docsToDisplay}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Pat. Responsibility</td><td style="padding:5px 8px;">${esc_(d.patResp || '')}</td></tr>` +
+        noteRow +
+      `</table>` +
+    `</div>`
+  );
+}
+
+function renderResupplyDetailsHtml_(d, P) {
+  const categoryDisplay = (d.itemCategory === 'Other') ? 'Resupply' : (d.itemCategory || '');
+  const itemsQtyDisplay = d.sameItems
+    ? `<span style="color:${P.goodDeep};">&#10003; Yes</span>`
+    : `<span style="color:${P.dangerDeep};">&#10005; No</span>`;
+  const addrDisplay = (d.addrStatus === 'Different')
+    ? `<span style="color:${P.danger};font-weight:600;">New:</span> ${esc_(d.newAddr || '')}`
+    : `<span style="color:${P.goodDeep};">&#10003; Same as previous</span>`;
+  const insDisplay = (d.insStatus === 'Changed')
+    ? `<span style="color:${P.danger};font-weight:600;">New:</span> ${esc_(d.newIns || '')} (ID: ${esc_(d.newMemId || '')})`
+    : `<span style="color:${P.goodDeep};">&#10003; Same as previous</span>`;
+  const provDisplay = (d.provStatus === 'Changed')
+    ? `<span style="color:${P.danger};font-weight:600;">New:</span> ${esc_(d.newProv || '')} (Ph: ${esc_(formatProviderPhone_(d.newMdoPh || ''))})`
+    : `<span style="color:${P.goodDeep};">&#10003; Same as previous</span>`;
+  const noteRow = d.specialNote
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Note</td><td style="padding:5px 8px;font-style:italic;color:${P.ink};">${esc_(d.specialNote)}</td></tr>`
+    : '';
+  const dobRow = d.dob
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">D.O.B.</td><td style="padding:5px 8px;color:${P.ink};">${esc_(d.dob)}</td></tr>`
+    : '';
+  const monthRow = d.resupplyMonth
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Requesting Month</td><td style="padding:5px 8px;color:${P.ink};">${esc_(d.resupplyMonth)}</td></tr>`
+    : '';
+  return (
+    `<div style="background:${P.goodSoft};border:1px solid color-mix(in srgb,${P.good},transparent 60%);` +
+    `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.good};">` +
+      `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.goodDeep};font-weight:600;">Repeat Resupply</h3>` +
+      `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Item Category</td><td style="padding:5px 8px;">${esc_(categoryDisplay)}</td></tr>` +
+        dobRow + monthRow +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Last Date Scheduled</td><td style="padding:5px 8px;">${esc_(d.lastDate || '')}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Items/Qty Same?</td><td style="padding:5px 8px;">${itemsQtyDisplay}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Verified Address</td><td style="padding:5px 8px;">${addrDisplay}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Verified Insurance</td><td style="padding:5px 8px;">${insDisplay}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Verified Provider</td><td style="padding:5px 8px;">${provDisplay}</td></tr>` +
+        noteRow +
+      `</table>` +
+    `</div>`
+  );
+}
+
+function renderOopDetailsHtml_(d, P) {
+  let taxDisplay = String(d.taxAmt || '');
+  if (taxDisplay && taxDisplay.charAt(0) !== '$' && !isNaN(parseFloat(taxDisplay))) {
+    taxDisplay = '$' + taxDisplay;
+  }
+  return (
+    `<div style="background:${P.warnSoft};border:1px solid color-mix(in srgb,${P.warn},transparent 60%);` +
+    `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.warn};">` +
+      `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.warnDeep};font-weight:600;">OOP Order Breakdown</h3>` +
+      `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Base Cost</td><td style="padding:5px 8px;">$${esc_(d.baseCost || '')}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Est. Sales Tax</td><td style="padding:5px 8px;">${esc_(taxDisplay)}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Shipping</td><td style="padding:5px 8px;">$${esc_(d.shippingCost || '')} <span style="color:${P.muted};font-size:.85em;">(${esc_(d.shippingLabel || '')})</span></td></tr>` +
+        `<tr><td style="padding:7px 8px 5px;font-weight:600;color:${P.muted};border-top:1px solid color-mix(in srgb,${P.warn},transparent 60%);">Total Customer Cost</td><td style="padding:7px 8px 5px;font-weight:700;color:${P.warnDeep};border-top:1px solid color-mix(in srgb,${P.warn},transparent 60%);">$${esc_(d.totalCost || '')}</td></tr>` +
+      `</table>` +
+    `</div>`
+  );
+}
+
+function buildCallNoteEmailText_(callData, selections, subject) {
+  // Plain-text fallback. Email clients that can't render HTML (or readers
+  // who view source) get a clean version of the same information.
+  const lines = [];
+  lines.push(subject);
+  lines.push('');
+  lines.push(`Hello team — please see the following update for this order.`);
+  lines.push('');
+  if (selections.callbackNeeded) {
+    lines.push('** Callback Requested **');
+    lines.push('');
+  }
+  lines.push(`Update: ${selections.updateInfo}`);
+  if (selections.closeDetails && selections.closeDetails.reason) {
+    lines.push(`  Reason: ${selections.closeDetails.reason}`);
+  }
+  if (selections.oopDetails) {
+    const d = selections.oopDetails;
+    lines.push('');
+    lines.push('OOP Order Breakdown:');
+    lines.push(`  Base Cost:   $${d.baseCost}`);
+    lines.push(`  Sales Tax:   ${String(d.taxAmt).charAt(0) === '$' ? d.taxAmt : '$' + d.taxAmt}`);
+    lines.push(`  Shipping:    $${d.shippingCost} (${d.shippingLabel})`);
+    lines.push(`  Total:       $${d.totalCost}`);
+  }
+  if (selections.shippingDetails) {
+    const d = selections.shippingDetails;
+    lines.push('');
+    lines.push('Verified Shipping:');
+    lines.push(`  Verified Address: ${d.verifiedAddr ? 'Yes' : 'No'}${d.verifiedAddrText ? ' (' + d.verifiedAddrText + ')' : ''}`);
+    lines.push(`  Patient Location: ${d.patientLoc || ''}`);
+    lines.push(`  Docs To:          ${d.docsTo || ''}${d.deliveryEmail ? ' (' + d.deliveryEmail + ')' : ''}`);
+    lines.push(`  Pat. Resp:        ${d.patResp || ''}`);
+    if (d.specialNote) lines.push(`  Note:             ${d.specialNote}`);
+  }
+  if (selections.resupplyDetails) {
+    const d = selections.resupplyDetails;
+    lines.push('');
+    lines.push('Repeat Resupply:');
+    lines.push(`  Item Category:    ${d.itemCategory || ''}`);
+    if (d.dob)            lines.push(`  D.O.B.:           ${d.dob}`);
+    if (d.resupplyMonth)  lines.push(`  Requesting Month: ${d.resupplyMonth}`);
+    lines.push(`  Last Date:        ${d.lastDate || ''}`);
+    lines.push(`  Same Items/Qty:   ${d.sameItems ? 'Yes' : 'No'}`);
+    lines.push(`  Verified Addr:    ${d.addrStatus === 'Different' ? 'New: ' + (d.newAddr || '') : 'Same'}`);
+    lines.push(`  Verified Ins:     ${d.insStatus === 'Changed' ? 'New: ' + (d.newIns || '') + ' (ID: ' + (d.newMemId || '') + ')' : 'Same'}`);
+    lines.push(`  Verified Provider:${d.provStatus === 'Changed' ? 'New: ' + (d.newProv || '') + ' (Ph: ' + formatProviderPhone_(d.newMdoPh || '') + ')' : 'Same'}`);
+    if (d.specialNote) lines.push(`  Note:             ${d.specialNote}`);
+  }
+  lines.push('');
+  lines.push('—— Call Details ——');
+  lines.push(`Callback:      ${callData.callBackNumber}`);
+  lines.push(`Caller:        ${callData.callerName}`);
+  lines.push(`Relationship:  ${callData.relationship}`);
+  lines.push(`Patient & TRX: ${callData.patientAndTrx}`);
+  lines.push(`Issue:         ${callData.issue}`);
+  lines.push(`Transferred:   ${callData.transferredTo}`);
+  if (selections.updateInfo && selections.updateInfo.toLowerCase() === 'oop order' && selections.oopDetails && selections.shippingDetails) {
+    lines.push(`Resolution:`);
+    lines.push(generateOOPResolutionText_(selections).split('\n').map(l => '  ' + l).join('\n'));
+  } else {
+    lines.push(`Resolution:    ${callData.resolution}`);
+  }
+  lines.push('');
+  lines.push('— UMS Team Tools · Call Notes');
+  return lines.join('\n');
+}
+
+function updateInfoToSubformKey_(updateInfo) {
+  const t = String(updateInfo || '').toLowerCase();
+  if (t === 'close order')       return 'close';
+  if (t === 'verified shipping') return 'shipping';
+  if (t === 'repeat resupply')   return 'resupply';
+  if (t === 'oop order')         return 'oop';
+  return '';
+}
+
+function formatPhoneNumber_(input) {
+  if (!input) return '';
+  const digits = String(input).replace(/\D/g, '');
+  if (digits.length >= 10) {
+    const main = digits.substring(0, 10);
+    const ext = digits.substring(10);
+    const formattedMain = `(${main.slice(0,3)}) ${main.slice(3,6)}-${main.slice(6)}`;
+    if (ext.length > 0) return `${formattedMain} x${ext}`;
+    return formattedMain;
+  }
+  return String(input);
+}
+
+function formatProviderPhone_(input) {
+  if (!input) return '';
+  let digits = String(input).replace(/\D/g, '');
+  let prefix = '';
+  if (digits.length >= 11 && digits.charAt(0) === '1') {
+    prefix = '1 ';
+    digits = digits.substring(1);
+  }
+  if (digits.length >= 10) {
+    const main = digits.substring(0, 10);
+    const ext = digits.substring(10);
+    const formattedMain = `${main.slice(0,3)}-${main.slice(3,6)}-${main.slice(6)}`;
+    if (ext.length > 0) return `${prefix}${formattedMain} x${ext}`;
+    return `${prefix}${formattedMain}`;
+  }
+  return String(input);
+}
+
+function esc_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
 // ════════════════════════════════════════════════════════════════════════════
 
