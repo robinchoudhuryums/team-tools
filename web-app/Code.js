@@ -149,6 +149,14 @@ const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const ROSTER_CACHE_KEY = 'employee_roster_v5';   // bumped: CallNotesSheetId column
 const ROSTER_CACHE_TTL = 300;
 
+// Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
+// staleActionCount, todayTotal} aggregate so the 60s sidebar polling doesn't
+// re-scan the full per-rep sheet on every tick. TTL matches the polling
+// interval; mutating endpoints (submit/setFlag/setResolved/delete) invalidate
+// to keep the badge fresh after user action.
+const CN_AMBIENT_CACHE_PREFIX = 'cn_ambient_v1_';
+const CN_AMBIENT_CACHE_TTL = 60;
+
 const TZ_ABBR = {
   'Asia/Kolkata':        'IST',
   'Asia/Manila':         'PHT',
@@ -356,8 +364,14 @@ function cancelTimeOffRequest(date, submittedAt) {
           return { success: false, error: 'Only pending requests can be cancelled.' };
         }
         const type = String(rows[i][TO.TYPE]);
+        const reqNotes = String(rows[i][TO.NOTES] || '');
         sheet.deleteRow(i + 1);
-        writeAuditLog_(emp, 'TimeOffCancel', date, '', false, 0, type + ' — self-cancelled');
+        // Audit row carries enough context to reconstruct the cancelled request
+        // from the log alone — the row itself is gone after deleteRow.
+        const auditParts = [type, 'self-cancelled', 'status=' + status];
+        if (reqNotes)   auditParts.push('notes="' + reqNotes + '"');
+        if (submittedAt) auditParts.push('submittedAt=' + submittedAt);
+        writeAuditLog_(emp, 'TimeOffCancel', date, '', false, 0, auditParts.join(' · '));
         return { success: true };
       }
     }
@@ -447,8 +461,25 @@ function getManagerDashboard() {
     liveStatus.sort((a, b) =>
       statusRank[a.status] - statusRank[b.status] || a.name.localeCompare(b.name));
 
-    // Pending time-off (with leave balance context)
+    // Pending time-off (with leave balance context).
+    // Also build a date→[approved/pending requests] index up-front so each
+    // pending entry can carry conflict context (other reps off the same day,
+    // US holiday name) without a per-pending nested scan.
     const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+    const requestsByDate = {};
+    for (let i = 1; i < toRows.length; i++) {
+      const st = String(toRows[i][TO.STATUS]).toLowerCase().trim();
+      if (st !== 'pending' && st !== 'approved') continue;
+      const d = normalizeDate_(toRows[i][TO.DATE]);
+      if (!requestsByDate[d]) requestsByDate[d] = [];
+      requestsByDate[d].push({
+        empId: String(toRows[i][TO.EMP_ID]).trim(),
+        empName: String(toRows[i][TO.EMP_NAME]).trim(),
+        type: String(toRows[i][TO.TYPE]),
+        status: st,
+      });
+    }
+
     const pending = [];
     for (let i = 1; i < toRows.length; i++) {
       if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'pending') continue;
@@ -475,6 +506,27 @@ function getManagerDashboard() {
       });
     }
     pending.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Per-pending conflict context: other reps off the same day + US holiday.
+    // Used by the dashboard to surface "1 other PH rep off this day · US
+    // Independence Day" inline on each pending card, preventing approval
+    // mistakes (double-booking team, approving over holidays).
+    const pendingYears = {};
+    pending.forEach(p => { pendingYears[p.date.substring(0, 4)] = true; });
+    const holidayMap = {};
+    Object.keys(pendingYears).forEach(y => {
+      getUsHolidays_(parseInt(y, 10)).forEach(h => { holidayMap[h.date] = h.name; });
+    });
+    pending.forEach(p => {
+      const sameDate = requestsByDate[p.date] || [];
+      // Exclude every request from this same employee (their own pending
+      // request is in the list, plus any prior approved/pending for that
+      // date which aren't really a "conflict" from the manager's POV).
+      p.conflictsOff = sameDate
+        .filter(r => r.empId !== p.empId)
+        .map(r => ({ name: r.empName, status: r.status, type: r.type }));
+      p.holidayName = holidayMap[p.date] || null;
+    });
 
     // Missed clock-outs (per-emp tz)
     const punchKeyMap = {};
@@ -1053,6 +1105,7 @@ function submitCallNote(payload) {
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
       `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
+    invalidateCnAmbientCache_(emp.id);
 
     return {
       success: true,
@@ -1119,13 +1172,17 @@ function setCallNoteFlag(noteId, flagType) {
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
 
+    // Any flag transition resets Resolved — stale resolved=TRUE from a prior
+    // action-flag cycle would mislead the rep when re-flagging (and would be
+    // hidden from them since the resolve UI only shows for flagType=='action').
+    const oldFlag = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
     sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(t);
-    // Clearing the flag also resets Resolved — fresh state when re-flagging
-    if (!t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
+    if (oldFlag !== t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
       `noteId=${noteId}; ${t || '<cleared>'}`);
+    invalidateCnAmbientCache_(emp.id);
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -1154,6 +1211,7 @@ function setCallNoteResolved(noteId, resolved) {
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteResolve', dateLocal, '', false, 0,
       `noteId=${noteId}; ${resolved ? 'resolved' : 'unresolved'}`);
+    invalidateCnAmbientCache_(emp.id);
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -1176,6 +1234,7 @@ function deleteCallNote(noteId) {
     sheet.deleteRow(located.rowIndex);
     writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
       `noteId=${noteId}`);
+    invalidateCnAmbientCache_(emp.id);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -1216,12 +1275,23 @@ function getMyCallNotes(options) {
   } catch (err) { return { error: err.message }; }
 }
 
-/** Ambient signal for the sidebar badge + stale-flag indicators. */
+/** Ambient signal for the sidebar badge + stale-flag indicators.
+ *  Returns {enrolled, unresolvedActionCount, staleActionCount, todayTotal,
+ *  staleFlagHours} for the calling rep. Cached for CN_AMBIENT_CACHE_TTL
+ *  seconds per rep — see invalidateCnAmbientCache_ for the freshness path. */
 function getCallNotesAmbient() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
     if (!emp.callNotesSheetId) return { enrolled: false };
+
+    const cache = CacheService.getScriptCache();
+    const cacheKey = CN_AMBIENT_CACHE_PREFIX + emp.id;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) { /* fall through to recompute */ }
+    }
+
     const empTz = empTz_(emp);
     const today = Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
 
@@ -1241,14 +1311,27 @@ function getCallNotesAmbient() {
         if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
       }
     }
-    return {
+    const result = {
       enrolled: true,
       unresolvedActionCount,
       staleActionCount,
       todayTotal,
       staleFlagHours: CONFIG.CALL_NOTES.STALE_FLAG_HOURS,
     };
+    try { cache.put(cacheKey, JSON.stringify(result), CN_AMBIENT_CACHE_TTL); }
+    catch (e) { /* cache put failed — return uncached, no behavioral impact */ }
+    return result;
   } catch (err) { return { error: err.message }; }
+}
+
+/** Drop the per-rep ambient cache. Called by every mutating CN endpoint that
+ *  could change the counts the ambient poll surfaces (submit, setFlag,
+ *  setResolved, delete). Pure TTL alone would be at most 60s stale; this
+ *  shortens that window after user action. */
+function invalidateCnAmbientCache_(empId) {
+  if (!empId) return;
+  try { CacheService.getScriptCache().remove(CN_AMBIENT_CACHE_PREFIX + empId); }
+  catch (e) { /* best-effort */ }
 }
 
 /** Returns the department options for the email composer + the dept→type
@@ -1264,8 +1347,11 @@ function getCallNotesDepartments() {
   };
 }
 
-/** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all. */
-function searchMyCallNotes(query, field, dateRange) {
+/** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all.
+ *  If exact=true, matches patientAndTrx exactly (case-insensitive, trimmed) and
+ *  ignores the field parameter — used by the "Find prior calls for this TRX"
+ *  button on note cards to surface repeat-caller history without substring noise. */
+function searchMyCallNotes(query, field, dateRange, exact) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
@@ -1277,28 +1363,55 @@ function searchMyCallNotes(query, field, dateRange) {
     const rows = sheet.getDataRange().getValues();
 
     const qLower = q.toLowerCase();
+    const isExact = exact === true;
     const results = [];
     for (let i = 1; i < rows.length; i++) {
       const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
       if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
       if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
       let hit = false;
-      if (f === 'caller' || f === 'all') {
-        if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
-              .toLowerCase().indexOf(qLower) >= 0) hit = true;
-      }
-      if (!hit && (f === 'issue' || f === 'all')) {
-        if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+      if (isExact) {
+        if (String(note.patientAndTrx || '').toLowerCase().trim() === qLower) hit = true;
+      } else {
+        if (f === 'caller' || f === 'all') {
+          if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                .toLowerCase().indexOf(qLower) >= 0) hit = true;
+        }
+        if (!hit && (f === 'issue' || f === 'all')) {
+          if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+        }
       }
       if (hit) results.push(note);
     }
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 200) results.length = 200;
-    return { results, timezone: empTz };
+    return { results, timezone: empTz, exact: isExact };
   } catch (err) { return { error: err.message }; }
 }
 
 // ── Manager-gated call-notes views ──────────────────────────────────────
+
+/** Lists reps enrolled in Call Notes (have a non-empty CallNotesSheetId in
+ *  column L). Used by the manager Team Notes view's per-rep picker. Returns
+ *  { reps: [{ id, name }] } sorted by name. */
+function getEnrolledCallNotesReps() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const rows = getEmployeeRosterRows_();
+    const reps = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][EMP.EMAIL]) continue;
+      if (!rows[i][EMP.CALL_NOTES_SHEET_ID]) continue;
+      reps.push({
+        id: String(rows[i][EMP.ID]).trim(),
+        name: String(rows[i][EMP.NAME]).trim(),
+      });
+    }
+    reps.sort((a, b) => a.name.localeCompare(b.name));
+    return { reps };
+  } catch (err) { return { error: err.message }; }
+}
 
 /** Manager view of any single rep's notes. */
 function managerGetCallNotes(repEmpId, date, filter) {
@@ -1378,6 +1491,93 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 500) results.length = 500;
     return { results };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Bulk-export every enrolled rep's call notes in a date range to a new
+ *  Google Sheet. Returns { success, url, fileName, noteCount }. Pair with
+ *  the Team Notes "Export Range" modal. Writes a CallNotesExport audit row.
+ *
+ *  Read-only: never touches the per-rep Sheets, only reads. Cross-rep, so
+ *  manager-gated (parallels managerSearchCallNotes / managerAggregateFlagged_). */
+function exportCallNotesRange(startDate, endDate) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate))
+      return { error: 'Invalid start date (expected yyyy-MM-dd).' };
+    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate))
+      return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
+
+    const roster = getEmployeeRosterRows_();
+    const allNotes = [];
+    for (let r = 1; r < roster.length; r++) {
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      const repId = String(roster[r][EMP.ID]).trim();
+      const repName = String(roster[r][EMP.NAME]).trim();
+      try {
+        const sheet = getCallNotesSheet_({
+          id: repId, name: repName, callNotesSheetId: String(sheetId).trim()
+        });
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+          if (note.dateLocal < startDate || note.dateLocal > endDate) continue;
+          allNotes.push({
+            repId, repName, note,
+          });
+        }
+      } catch (e) {
+        // Broken per-rep Sheet shouldn't break the cross-rep export
+        console.warn('exportCallNotesRange skipped rep ' + repId + ': ' + e.message);
+      }
+    }
+
+    if (allNotes.length === 0) {
+      return { error: `No notes found between ${startDate} and ${endDate}.` };
+    }
+    allNotes.sort((a, b) => {
+      if (a.note.dateLocal !== b.note.dateLocal) return a.note.dateLocal.localeCompare(b.note.dateLocal);
+      if (a.repName !== b.repName) return a.repName.localeCompare(b.repName);
+      return String(a.note.timestamp).localeCompare(String(b.note.timestamp));
+    });
+
+    const stamp = fmtDate_(new Date()).replace(/-/g, '') + '_' + fmtTime_(new Date()).replace(/:/g, '');
+    const name = `Call Notes ${startDate} to ${endDate} (${stamp})`;
+    const newSs = SpreadsheetApp.create(name);
+    const sh = newSs.getActiveSheet();
+    sh.setName('CallNotes');
+    const headers = [
+      'RepId', 'RepName', 'DateLocal', 'Timestamp', 'Callback', 'Caller',
+      'Relationship', 'PatientAndTRX', 'Issue', 'TransferredTo', 'Resolution',
+      'FlagType', 'Resolved', 'EmailedAt', 'EmailDepartments',
+    ];
+    const data = allNotes.map(function (a) {
+      const n = a.note;
+      return [
+        a.repId, a.repName, n.dateLocal, n.timestamp,
+        n.callback, n.caller, n.relationship, n.patientAndTrx,
+        n.issue, n.transferredTo, n.resolution,
+        n.flagType, n.resolved ? 'TRUE' : 'FALSE',
+        n.emailedAt, n.emailDepartments,
+      ];
+    });
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sh.getRange(2, 1, data.length, headers.length).setValues(data);
+    sh.setFrozenRows(1);
+    SpreadsheetApp.flush();
+
+    writeAuditLog_(callerEmp, 'CallNotesExport', startDate + '..' + endDate, '', false, 0,
+      `${allNotes.length} notes → ${newSs.getId()}`);
+
+    return {
+      success: true,
+      url: newSs.getUrl(),
+      fileName: name,
+      noteCount: allNotes.length,
+    };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -1560,7 +1760,10 @@ const CN_EMAIL_PALETTE = {
 
 /** Renders the email HTML body + computed subject/recipients for a note +
  *  composer selections, without sending. The client shows this in a
- *  confirm modal; user clicks Send → emailFromCallNote actually sends. */
+ *  confirm modal; user clicks Send → emailFromCallNote actually sends.
+ *  Also returns a bodyHash so emailFromCallNote can refuse to send if the
+ *  note body changed between Preview and Send (avoids "I previewed X, you
+ *  sent Y" trust violation when the rep edits mid-flow). */
 function previewCallNoteEmail(noteId, emailPayload) {
   try {
     const emp = getEmployeeInfo_();
@@ -1590,13 +1793,41 @@ function previewCallNoteEmail(noteId, emailPayload) {
       from: emp.email,
       htmlBody,
       textBody,
+      bodyHash: computeCnEmailHash_(htmlBody, subject, recipientList.to),
     };
   } catch (err) { return { error: err.message }; }
 }
 
+/** Hex SHA-256 over (htmlBody + subject + recipients). The send path
+ *  re-renders and compares; mismatch means the note was edited or the
+ *  composer selections drifted between Preview and Send. */
+function computeCnEmailHash_(htmlBody, subject, to) {
+  const buf = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(htmlBody || '') + '' + String(subject || '') + '' + String(to || '')
+  );
+  let out = '';
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i] < 0 ? buf[i] + 256 : buf[i];
+    out += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return out;
+}
+
 /** Actually sends the email composed for a note. Stamps EmailedAt +
- *  EmailDepartments on the note row, writes a CallNoteEmail audit row. */
-function emailFromCallNote(noteId, emailPayload) {
+ *  EmailDepartments on the note row, writes a CallNoteEmail audit row.
+ *
+ *  `expectedBodyHash` MUST be the bodyHash returned by the most recent
+ *  previewCallNoteEmail call for this note + selections. Server re-renders
+ *  and refuses to send if the hash differs — guards against the rep editing
+ *  the note body between Preview and Send (would otherwise send different
+ *  content than what was confirmed in the preview modal).
+ *
+ *  Ordering: hash check → send → stamp metadata (best-effort, separate
+ *  try/catch). If MailApp succeeds but the metadata write throws, we return
+ *  success rather than failure — failing here would prompt the rep to re-send
+ *  a duplicate. The stamp failure is logged to console for ops to notice. */
+function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -1619,25 +1850,51 @@ function emailFromCallNote(noteId, emailPayload) {
     const htmlBody = buildCallNoteEmailHtml_(callData, selections);
     const textBody = buildCallNoteEmailText_(callData, selections, subject);
 
-    MailApp.sendEmail({
-      to: recipientList.to,
-      cc: CONFIG.CALL_NOTES.CC_EMAIL,
-      subject,
-      body: textBody,
-      htmlBody,
-    });
+    // Preview-snapshot guard — refuse to send if the rep edited the note (or
+    // the composer drifted) between Preview and Send.
+    if (!expectedBodyHash) {
+      return { success: false, error:
+        'Internal: missing preview hash. Open the preview and click Send from there.' };
+    }
+    const actualHash = computeCnEmailHash_(htmlBody, subject, recipientList.to);
+    if (expectedBodyHash !== actualHash) {
+      return { success: false, error:
+        'Note content changed since you previewed. Re-open Preview to confirm the new body before sending.' };
+    }
 
+    // Send first. If MailApp throws, nothing is stamped and the rep sees a clean failure.
+    try {
+      MailApp.sendEmail({
+        to: recipientList.to,
+        cc: CONFIG.CALL_NOTES.CC_EMAIL,
+        subject,
+        body: textBody,
+        htmlBody,
+      });
+    } catch (sendErr) {
+      return { success: false, error: 'Email send failed: ' + sendErr.message };
+    }
+
+    // Email is OUT. Past this point we never return failure — a partial stamp
+    // would otherwise cause the rep to re-send a duplicate. Batch the two
+    // adjacent column writes via setValues to shrink the partial-write window.
     const empTz = empTz_(emp);
     const emailedAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
     const deptLabel = selections.departments.join(', ');
-    sheet.getRange(located.rowIndex, CN.EMAILED_AT + 1).setValue(emailedAt);
-    sheet.getRange(located.rowIndex, CN.EMAIL_DEPARTMENTS + 1).setValue(deptLabel);
-
-    // Persist subform selection back to the row so the rolling card can
-    // re-open the composer with prior settings if the rep needs to re-send.
-    if (selections.updateInfo) {
-      sheet.getRange(located.rowIndex, CN.SUBFORM + 1).setValue(updateInfoToSubformKey_(selections.updateInfo));
-      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(selections));
+    try {
+      sheet.getRange(located.rowIndex, CN.EMAILED_AT + 1, 1, 2)
+        .setValues([[emailedAt, deptLabel]]);
+      // Persist subform selection back to the row so the rolling card can
+      // re-open the composer with prior settings if the rep needs to re-send.
+      if (selections.updateInfo) {
+        sheet.getRange(located.rowIndex, CN.SUBFORM + 1, 1, 2).setValues([[
+          updateInfoToSubformKey_(selections.updateInfo),
+          JSON.stringify(selections),
+        ]]);
+      }
+    } catch (stampErr) {
+      console.warn('emailFromCallNote: stamp failed after successful send (noteId=' +
+        noteId + '): ' + stampErr.message);
     }
 
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
@@ -2104,7 +2361,35 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  Logger.log('Automation triggers installed.');
+  Logger.log('Automation triggers installed by ' + userEmail + '.');
+
+  // Trigger-ownership warning: Apps Script time-triggers are owned by the
+  // installing user, and ScriptApp.getProjectTriggers() only returns triggers
+  // owned by the *current* user. If a different account previously installed
+  // these triggers, they are still firing under that account but invisible
+  // here — leading to duplicate emails / exports. We can't detect that
+  // programmatically, so surface the risk via email instead.
+  try {
+    const recipients = getManagerEmails_();
+    if (recipients.length > 0) {
+      MailApp.sendEmail({
+        to: recipients.join(','),
+        subject: `UMS Team Tools — automation triggers installed by ${userEmail}`,
+        body:
+          `installAutomationTriggers() ran as ${userEmail}.\n\n` +
+          `Triggers installed:\n` +
+          TARGETS.map(function (t) { return '  • ' + t; }).join('\n') + '\n\n' +
+          `Reminder: time-based triggers are owned by the installing user, and ` +
+          `Apps Script's getProjectTriggers() only returns triggers owned by ` +
+          `the current user. If a different account previously installed these ` +
+          `triggers, they are still firing under that account but are invisible ` +
+          `to this script run — leading to duplicate emails / exports. If this ` +
+          `is the first install on this project, no action is needed; otherwise ` +
+          `have the prior installer run removeAutomationTriggers() to dedupe.\n\n` +
+          `— UMS Team Tools (automated)`,
+      });
+    }
+  } catch (e) { Logger.log('Trigger-install warning email failed: ' + e.message); }
 }
 
 function removeAutomationTriggers() {
@@ -2129,6 +2414,12 @@ function clearCaches_() {
 }
 
 function sendDailyMissedPunchAlerts() {
+  // Trigger handlers are top-level (required for time-based triggers) and
+  // therefore reachable via google.script.run. Gate on caller-is-manager so a
+  // logged-in rep can't fire this from the client. In a trigger context,
+  // Session.getActiveUser() returns the installer (always a manager via
+  // installAutomationTriggers' own check), so the gate is a no-op for triggers.
+  assertManagerCaller_('sendDailyMissedPunchAlerts');
   try {
     const empRows = getEmployeeRosterRows_();
     const now = new Date();
@@ -2203,6 +2494,7 @@ function sendDailyMissedPunchAlerts() {
 }
 
 function runDailyExportCheck() {
+  assertManagerCaller_('runDailyExportCheck');  // see sendDailyMissedPunchAlerts note
   try {
     const today = new Date();
     const todayStr = fmtDate_(today);
@@ -2335,6 +2627,7 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // ════════════════════════════════════════════════════════════════════════════
 
 function sendCallNotesEodDigest() {
+  assertManagerCaller_('sendCallNotesEodDigest');  // see sendDailyMissedPunchAlerts note
   try {
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     const windowMin = CONFIG.CALL_NOTES.EOD_WARNING_WINDOW_MINUTES || 30;
@@ -2353,7 +2646,12 @@ function sendCallNotesEodDigest() {
       const mm = parseInt(Utilities.formatDate(now, tz, 'm'), 10);
       const localMins = hh * 60 + mm;
       const targetMins = targetHour * 60;
-      if (Math.abs(localMins - targetMins) > windowMin) continue;
+      // Circular distance so a target near midnight (e.g. EOD_WARNING_HOUR=0)
+      // doesn't reject reps at 23:45 with a 1425-minute "diff". Currently
+      // dormant for the default 17:00 hour, but cheap to be correct.
+      const diff = Math.abs(localMins - targetMins);
+      const circDist = Math.min(diff, 1440 - diff);
+      if (circDist > windowMin) continue;
 
       const empObj = {
         id: String(roster[r][EMP.ID]).trim(),
@@ -2438,6 +2736,7 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
 }
 
 function sendCallNotesWeeklyDigests() {
+  assertManagerCaller_('sendCallNotesWeeklyDigests');  // see sendDailyMissedPunchAlerts note
   try {
     const mgrEmails = getManagerEmails_();
     if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping weekly digests.'); return; }
@@ -2836,6 +3135,19 @@ function getManagerEmails_() {
     e.indexOf('YOUR_EMAIL') !== 0 &&
     e.indexOf('@') > 0
   );
+}
+
+/** Throws if the active user is not in MANAGER_EMAILS. Used by trigger-handler
+ *  endpoints (sendDailyMissedPunchAlerts, runDailyExportCheck,
+ *  sendCallNotesEodDigest, sendCallNotesWeeklyDigests) that must be public
+ *  for time-based triggers and are therefore also reachable via
+ *  google.script.run — without this gate, any logged-in rep could fire them. */
+function assertManagerCaller_(label) {
+  const userEmail = String(getActiveUserEmail_() || '').toLowerCase();
+  const allowed = getManagerEmails_().map(e => String(e).toLowerCase());
+  if (!userEmail || allowed.indexOf(userEmail) < 0) {
+    throw new Error(`${label}: manager access required. Current user: ${userEmail || '<unknown>'}`);
+  }
 }
 
 function tzAbbr_(tz) { return TZ_ABBR[tz] || tz; }
