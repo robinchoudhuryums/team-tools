@@ -28,42 +28,48 @@ const DOW_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','
 // ════════════════════════════════════════════════════════════════════════════
 //  TOOL REGISTRY
 //  ────────────────────────────────────────────────────────────────────────
-//  Each top-level entry is a "tool" (Time Clock, Call Notes, …); each tool
-//  declares its views (= sidebar/nav entries). To add a new tool: append a
-//  new entry to TOOLS, implement the per-view enter handler in the
-//  corresponding script_*.html partial, and include() the partial in
-//  index.html. The shell auto-builds the sidebar / mobile nav from this
-//  registry and the showView() dispatcher routes to the handler. The
-//  sidebar `.sb-brand-sub` swaps to the active tool's label on each
-//  navigation so the user always sees which tool they're in.
+//  Top-level entries are "tools" (Time Clock, Call Notes, …); each tool
+//  exposes a set of TABS rendered as a horizontal tab bar above the view
+//  area. The sidebar shows one button per tool — clicking it opens the
+//  tool with its default tab. The tab bar carries the sub-navigation.
 //
-//  managerOnly: true hides the view from non-managers.
-//  External: enter handlers are defined alongside their view code; the
-//  registry just looks them up by name (window[...]).
+//  The Time Clock "clock" tab is a combined view (clock UI on top, timesheet
+//  below) — handled by enterClockCombinedView in script_clock.html.
+//
+//  managerOnly: true hides the tab from non-managers.
+//  Enter handlers live in the per-tool script_*.html partials; the registry
+//  looks them up by name (window[...]).
 // ════════════════════════════════════════════════════════════════════════════
 const TOOLS = {
   timeClock: {
     label: 'Time Clock',
-    views: {
-      clock:     { label: 'Clock',     icon: 'clock',     enter: 'enterClockView' },
-      timesheet: { label: 'Timesheet', icon: 'timesheet', enter: 'enterTimesheetView' },
-      timeoff:   { label: 'Time Off',  icon: 'timeoff',   enter: 'enterTimeoffView' },
-      manage:    { label: 'Manage',    icon: 'manage',    enter: 'enterManagerView', managerOnly: true },
+    sidebarIcon: 'clock',
+    defaultTab: 'clock',
+    tabs: {
+      clock:    { label: 'Clock',    icon: 'clock',    enter: 'enterClockCombinedView' },
+      timeoff:  { label: 'Time Off', icon: 'timeoff',  enter: 'enterTimeoffView' },
+      manage:   { label: 'Manage',   icon: 'manage',   enter: 'enterManagerView', managerOnly: true },
     },
   },
   callNotes: {
     label: 'Call Notes',
-    views: {
-      callNotes:        { label: 'Notes',         icon: 'phone',  enter: 'enterCallNotesView' },
-      callNotesHistory: { label: 'History',       icon: 'list',   enter: 'enterCallNotesHistoryView' },
-      callNotesSearch:  { label: 'Search',        icon: 'search', enter: 'enterCallNotesSearchView' },
-      callNotesManage:  { label: 'Team Notes',    icon: 'manage', enter: 'enterCallNotesManageView', managerOnly: true },
+    // `adjust` is the pencil glyph — fits the "logging" surface better than `phone`
+    sidebarIcon: 'adjust',
+    defaultTab: 'callNotes',
+    tabs: {
+      callNotes:        { label: 'Log',         icon: 'adjust',  enter: 'enterCallNotesView' },
+      callNotesHistory: { label: 'History',     icon: 'list',    enter: 'enterCallNotesHistoryView' },
+      callNotesSearch:  { label: 'Search',      icon: 'search',  enter: 'enterCallNotesSearchView' },
+      callNotesManage:  { label: 'Team Notes',  icon: 'manage',  enter: 'enterCallNotesManageView', managerOnly: true },
     },
   },
 };
+// tabKey → toolKey lookup. Tab keys are globally unique by convention so
+// existing call sites that compare `currentView === 'callNotes'` continue
+// to work (currentView holds the active tab key).
 const VIEW_TO_TOOL = {};
 Object.keys(TOOLS).forEach(toolKey => {
-  Object.keys(TOOLS[toolKey].views).forEach(viewKey => { VIEW_TO_TOOL[viewKey] = toolKey; });
+  Object.keys(TOOLS[toolKey].tabs).forEach(tabKey => { VIEW_TO_TOOL[tabKey] = toolKey; });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -104,16 +110,16 @@ window.addEventListener('load', () => {
       document.getElementById('adj-days-disp').textContent = adjustWindowDays;
       tsViewMode = (empState.payCycle === 'Biweekly' && empState.payAnchor) ? 'period' : 'month';
       renderShell(state);
-      // Deep-link via ?tool=<viewKey>, falling back to clock. Honors
-      // managerOnly gating: a non-manager landing on a managerOnly link
-      // falls through to clock.
-      let initial = 'clock';
+      // Deep-link via ?tool=<tabKey>, falling back to Time Clock + its default
+      // tab. Honors managerOnly gating: a non-manager landing on a managerOnly
+      // tab is bumped to the tool's default tab inside enterTool.
+      let initialTool = 'timeClock';
+      let initialTab = null;
       if (INITIAL_VIEW_FROM_URL && VIEW_TO_TOOL[INITIAL_VIEW_FROM_URL]) {
-        const toolKey = VIEW_TO_TOOL[INITIAL_VIEW_FROM_URL];
-        const v = TOOLS[toolKey].views[INITIAL_VIEW_FROM_URL];
-        if (!v.managerOnly || state.isManager) initial = INITIAL_VIEW_FROM_URL;
+        initialTool = VIEW_TO_TOOL[INITIAL_VIEW_FROM_URL];
+        initialTab = INITIAL_VIEW_FROM_URL;
       }
-      showView(initial);
+      enterTool(initialTool, initialTab);
     })
     .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
     .getEmployeeState();
@@ -143,26 +149,20 @@ function renderShell(state) {
   const sbIcon = (name) => `<span class="sb-icon">${icon(name, 18)}</span>`;
   const nvIcon = (name) => `<span class="nav-icon">${icon(name, 20)}</span>`;
 
-  // Build sidebar links + mobile nav buttons from the TOOLS registry. Views
-  // with managerOnly:true are filtered for non-managers. Order matches the
-  // declaration order in TOOLS (ES2015+ guarantees insertion order for
-  // string keys, which is what we rely on here).
-  const visibleViews = [];
-  Object.keys(TOOLS).forEach(toolKey => {
-    Object.keys(TOOLS[toolKey].views).forEach(viewKey => {
-      const v = TOOLS[toolKey].views[viewKey];
-      if (v.managerOnly && !state.isManager) return;
-      visibleViews.push({ viewKey, ...v });
-    });
-  });
-  const sbLinks = visibleViews.map(v =>
-    `<button class="sb-link" data-view="${v.viewKey}" onclick="showView('${v.viewKey}')">
-       ${sbIcon(v.icon)}${esc(v.label)}</button>`
-  ).join('');
-  const navBtns = visibleViews.map(v =>
-    `<button class="nav-btn" data-view="${v.viewKey}" onclick="showView('${v.viewKey}')">
-       ${nvIcon(v.icon)}${esc(v.label)}</button>`
-  ).join('');
+  // Sidebar items are TOOLS (Time Clock, Call Notes). The tab bar above the
+  // view-area renders each tool's tabs when a tool is entered. Mobile nav
+  // mirrors the sidebar — two buttons, one per tool.
+  const toolKeys = Object.keys(TOOLS);
+  const sbLinks = toolKeys.map(toolKey => {
+    const t = TOOLS[toolKey];
+    return `<button class="sb-link" data-tool="${toolKey}" onclick="enterTool('${toolKey}')">
+       ${sbIcon(t.sidebarIcon)}${esc(t.label)}</button>`;
+  }).join('');
+  const navBtns = toolKeys.map(toolKey => {
+    const t = TOOLS[toolKey];
+    return `<button class="nav-btn" data-tool="${toolKey}" onclick="enterTool('${toolKey}')">
+       ${nvIcon(t.sidebarIcon)}${esc(t.label)}</button>`;
+  }).join('');
 
   const tzTag = state.timezoneAbbr
     ? `<span class="sb-user-tz">${esc(state.timezoneAbbr)}</span>` : '';
@@ -232,6 +232,8 @@ function renderShell(state) {
           </div>
         </header>
 
+        <div class="tool-tab-bar" id="tool-tab-bar"></div>
+
         <div class="view-area" id="view-area"></div>
 
         <nav class="mobile-nav">
@@ -246,39 +248,70 @@ function renderShell(state) {
   syncThemeToggleState();
 }
 
+/** Open a tool — top-level navigation from the sidebar. Renders the tab bar
+ *  and dispatches to the chosen tab (or the tool's defaultTab if none given,
+ *  or the URL ?tab=<k> on initial boot). Non-manager users skip managerOnly
+ *  tabs and fall through to the default. */
+function enterTool(toolKey, tabKey) {
+  const tool = TOOLS[toolKey];
+  if (!tool) return;
+  // Update sidebar/mobile-nav active state
+  document.querySelectorAll('.sb-link[data-tool], .nav-btn[data-tool]').forEach(b => {
+    b.classList.toggle('active', b.dataset.tool === toolKey);
+  });
+  // Swap the sidebar sub-label
+  const lbl = document.getElementById('sb-tool-label');
+  if (lbl) lbl.textContent = tool.label;
+  // Render the tab bar for this tool
+  renderToolTabBar(toolKey);
+  // Resolve the desired tab — explicit > default. Skip managerOnly for non-managers.
+  let chosen = tabKey && tool.tabs[tabKey] ? tabKey : tool.defaultTab;
+  const tabDef = tool.tabs[chosen];
+  if (tabDef && tabDef.managerOnly && empState && !empState.isManager) {
+    chosen = tool.defaultTab;
+  }
+  showView(chosen);
+}
+
+/** Re-render the tab bar above the view area for the given tool.
+ *  Hides managerOnly tabs from non-managers. */
+function renderToolTabBar(toolKey) {
+  const tool = TOOLS[toolKey];
+  const bar = document.getElementById('tool-tab-bar');
+  if (!bar || !tool) return;
+  const tabs = Object.keys(tool.tabs).filter(k => {
+    const t = tool.tabs[k];
+    return !t.managerOnly || (empState && empState.isManager);
+  });
+  bar.innerHTML = tabs.map(k => {
+    const t = tool.tabs[k];
+    return `<button class="tt-btn" data-tab="${k}" onclick="showView('${k}')">
+      <span class="tt-icon">${icon(t.icon, 14)}</span>${esc(t.label)}
+    </button>`;
+  }).join('');
+}
+
+/** Dispatch to a specific tab's enter handler. The active tab's button gets
+ *  `.active`. Used by both enterTool (initial render) and tab-button clicks. */
 function showView(view) {
   const toolKey = VIEW_TO_TOOL[view];
   if (!toolKey) return;
   currentView = view;
-  // Swap the sidebar tool label (e.g. "Time Clock" ↔ "Call Notes") so the
-  // user always sees which tool they're in. Falls back silently if the
-  // element isn't on the page yet (initial loading state).
-  const lbl = document.getElementById('sb-tool-label');
-  if (lbl) lbl.textContent = TOOLS[toolKey].label;
-  document.querySelectorAll('.nav-btn, .sb-link').forEach(b =>
-    b.classList.toggle('active', b.dataset.view === view));
+  // Tab bar active state
+  document.querySelectorAll('.tt-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === view);
+  });
   const area = document.getElementById('view-area');
   if (!area) return;
-  const enterFn = window[TOOLS[toolKey].views[view].enter];
+  const enterFn = window[TOOLS[toolKey].tabs[view].enter];
   if (typeof enterFn === 'function') enterFn(area);
 }
 
-// ── Time Clock view enter handlers ──────────────────────────────────────
-//  Each handler receives the view-area element and does whatever setup
-//  the view needs (data load, ticker start, etc.). They live here rather
-//  than in their respective script_*.html partials because they wire the
-//  router into the existing render* / load* functions that those
-//  partials own — keeping the cross-cutting glue in one place.
-function enterClockView(area)     { renderClockView(area); startClock(); }
-function enterTimesheetView(area) {
-  stopClock();
-  if (!tsStart) {
-    const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
-    tsStart = range.start; tsEnd = range.end;
-  }
-  renderLoading(area, 'Loading timesheet…');
-  loadTimesheet(tsStart, tsEnd);
-}
+// ── Time Clock tab enter handlers ───────────────────────────────────────
+//  Each tab's enter handler receives the view-area element and does whatever
+//  setup the tab needs (data load, ticker start, etc.). The Clock tab's
+//  combined Clock+Timesheet enter handler (enterClockCombinedView) lives in
+//  tc/script_clock.html since it composes that partial's render functions.
 function enterTimeoffView(area) {
   stopClock();
   if (!calYear) {

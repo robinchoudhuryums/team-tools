@@ -7,6 +7,43 @@
 // in script_core.html's init handler. Default kept as a safety net.
 let SELF_UNDO_WINDOW_SECONDS = 300;
 
+/** Combined Clock+Timesheet enter handler — top section is the clock UI,
+ *  below it is the rep's current timesheet. Replaces the prior separate
+ *  enterClockView + enterTimesheetView tabs. Re-renders of the clock UI
+ *  (after a punch) target `#clk-section` so the timesheet section below
+ *  isn't wiped on each interaction. */
+function enterClockCombinedView(area) {
+  stopClock();
+  // Default timesheet range if not yet set (mirror enterTimesheetView's logic)
+  if (!tsStart) {
+    const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
+    tsStart = range.start; tsEnd = range.end;
+  }
+  area.innerHTML = `
+    <div id="clk-section"></div>
+    <div class="clk-ts-divider">
+      <div class="clk-ts-divider-line"></div>
+      <span class="clk-ts-divider-label">Your Timesheet</span>
+      <div class="clk-ts-divider-line"></div>
+    </div>
+    <div id="clk-ts-section"></div>
+  `;
+  const clkSection = document.getElementById('clk-section');
+  renderClockView(clkSection);
+  startClock();
+  const tsSection = document.getElementById('clk-ts-section');
+  tsSection.innerHTML = '<div class="state-center"><div class="spinner"></div><div class="state-label">Loading timesheet…</div></div>';
+  loadTimesheet(tsStart, tsEnd, tsSection);
+}
+
+/** The clock view's interactive handlers (handlePunch, self-undo, etc.) write
+ *  to a parent container via innerHTML. In the combined view that container
+ *  must be the clock SECTION (#clk-section) — replacing the view-area would
+ *  wipe the timesheet below. Fall back to view-area for any standalone use. */
+function getClockArea_() {
+  return document.getElementById('clk-section') || document.getElementById('view-area');
+}
+
 function renderClockView(area) {
   const s = empState;
   const sp = STATUS_PILL[deriveShiftStatus(s.nextActions, s.punches)];
@@ -120,7 +157,9 @@ function bindSelfUndoBtns() {
           google.script.run
             .withSuccessHandler(state => {
               empState = state;
-              const area = document.getElementById('view-area');
+              // Target #clk-section in the combined view so the timesheet
+              // section below survives the re-render. Falls back to view-area.
+              const area = getClockArea_();
               if (area && currentView === 'clock') renderClockView(area);
               startClock();
             })
@@ -301,7 +340,9 @@ function submitPunch(punchType, custom) {
         .withSuccessHandler(state => {
           empState = state;
           adjustWindowDays = state.adjustWindowDays || 30;
-          const area = document.getElementById('view-area');
+          // Target #clk-section in the combined Clock+Timesheet view so the
+          // timesheet below isn't wiped. Falls back to view-area otherwise.
+          const area = getClockArea_();
           if (area && currentView === 'clock') renderClockView(area);
           startClock();
         })

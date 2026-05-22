@@ -3,13 +3,22 @@
 //  TIMESHEET VIEW
 // ════════════════════════════════════════════════════════════════════════════
 
-function loadTimesheet(startDate, endDate) {
+/** Load the timesheet for the given range and render into either the passed
+ *  targetArea (combined Clock+Timesheet view passes its sub-section) or the
+ *  full view-area otherwise. When the combined view is active the timesheet
+ *  is rendered with `combined: true` so it omits the redundant app-bar (the
+ *  tab already says "Clock"). */
+function loadTimesheet(startDate, endDate, targetArea) {
+  const combined = !!targetArea;
   google.script.run
     .withSuccessHandler(data => {
       if (data.error) { showToast(data.error, 'toast-error'); return; }
       tsData = data; tsStart = data.startDate; tsEnd = data.endDate;
-      const area = document.getElementById('view-area');
-      if (area && currentView === 'timesheet') renderTimesheetView(area, data);
+      // Both standalone-timesheet (legacy) and combined-clock both live under
+      // the 'clock' tab now; gate on currentView === 'clock'.
+      if (currentView !== 'clock') return;
+      const area = targetArea || document.getElementById('view-area');
+      if (area) renderTimesheetView(area, data, { combined });
     })
     .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
     .getTimesheetData(startDate, endDate);
@@ -56,7 +65,8 @@ function parseIso(iso) {
   return { y: parseInt(p[0],10), m: parseInt(p[1],10)-1, d: parseInt(p[2],10) };
 }
 
-function renderTimesheetView(area, data) {
+function renderTimesheetView(area, data, opts) {
+  const combined = !!(opts && opts.combined);
   const tz = empTz();
   const todayIso = isoDateTz(tz);
   const showToggle = empState.payCycle === 'Biweekly' && !!empState.payAnchor;
@@ -102,7 +112,11 @@ function renderTimesheetView(area, data) {
           : visibleDays.map(renderDayCard).join('')}
        </div>`;
 
-  area.innerHTML = `
+  // In the combined Clock+Timesheet view the tab already says "Clock" and the
+  // section is preceded by a "Your Timesheet" divider — the app-bar would
+  // duplicate that. Skip the app-bar in combined mode; show just the layout
+  // toggle inline above the month-nav.
+  const appBarHtml = combined ? '' : `
     <div class="app-bar">
       <div class="app-bar-left">
         <div class="breadcrumb">
@@ -111,7 +125,14 @@ function renderTimesheetView(area, data) {
         <h1 class="display-title">Timesheet</h1>
       </div>
       <div class="app-bar-right">${layoutToggleHtml}</div>
-    </div>
+    </div>`;
+  const inlineLayoutToggleHtml = combined && showLayoutToggle
+    ? `<div style="display:flex;justify-content:flex-end;margin-bottom:8px">${layoutToggleHtml}</div>`
+    : '';
+
+  area.innerHTML = `
+    ${appBarHtml}
+    ${inlineLayoutToggleHtml}
     ${toggleHtml}
     <div class="month-nav">
       <button class="month-nav-btn" id="ts-prev" ${!canPrev?'disabled':''} aria-label="Previous period">${icon('chevronLeft', 16)}</button>
@@ -125,46 +146,51 @@ function renderTimesheetView(area, data) {
     </div>
     ${bodyHtml}`;
 
+  // Target the same area on every re-load so the combined view's timesheet
+  // section refreshes in place (without wiping the clock above it). For the
+  // standalone view targetArea === undefined and loadTimesheet falls back to
+  // #view-area.
+  const targetArea = combined ? area : undefined;
   if (showToggle) {
     document.getElementById('vmt-period').addEventListener('click', () => {
       if (tsViewMode === 'period') return;
       tsViewMode = 'period';
       const range = computeRange('period', todayIso, 0);
       tsStart = range.start; tsEnd = range.end;
-      renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
+      renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd, targetArea);
     });
     document.getElementById('vmt-month').addEventListener('click', () => {
       if (tsViewMode === 'month') return;
       tsViewMode = 'month';
       const range = computeRange('month', todayIso, 0);
       tsStart = range.start; tsEnd = range.end;
-      renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
+      renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd, targetArea);
     });
   }
   if (showLayoutToggle) {
     document.getElementById('lo-list').addEventListener('click', () => {
       if (tsLayout === 'list') return;
       tsLayout = 'list';
-      renderTimesheetView(area, data);
+      renderTimesheetView(area, data, { combined });
     });
     document.getElementById('lo-cal').addEventListener('click', () => {
       if (tsLayout === 'calendar') return;
       tsLayout = 'calendar';
-      renderTimesheetView(area, data);
+      renderTimesheetView(area, data, { combined });
     });
   }
   document.getElementById('ts-prev').addEventListener('click', () => {
     if (!canPrev) return;
     const range = computeRange(tsViewMode, data.startDate, -1);
     tsStart = range.start; tsEnd = range.end;
-    renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
+    renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd, targetArea);
   });
   document.getElementById('ts-next').addEventListener('click', () => {
     if (!canNext) return;
     const refDate = tsViewMode === 'period' ? data.endDate : data.startDate;
     const range = computeRange(tsViewMode, refDate, 1);
     tsStart = range.start; tsEnd = range.end;
-    renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd);
+    renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd, targetArea);
   });
 }
 

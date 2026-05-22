@@ -45,7 +45,13 @@ const CONFIG = {
     SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
     DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
     CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
-    AUTO_COPY_FORMAT:    '{timestamp} | {caller} ({callback}) | {relationship} | {patientAndTrx} | {issue} → {resolution}',
+    AUTO_COPY_FORMAT:
+      'Callback Number: {callback}\n' +
+      'Caller Name: {caller}\n' +
+      'Relationship: {relationship}\n' +
+      'Issue: {issue}\n' +
+      'Transferred To: {transferredTo}\n' +
+      'Resolution: {resolution}',
     STALE_FLAG_HOURS:    1,              // an `action` flag is "stale" if unresolved beyond this
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
@@ -1756,6 +1762,12 @@ const CN_EMAIL_PALETTE = {
   danger:       '#c0392b',
   dangerSoft:   '#fae8e6',
   dangerDeep:   '#6e1f17',
+  // UMS brand navy + pale-blue alternating-row tint. These match the legacy
+  // dept-email aesthetic (closeOrderEmail.js, updateOrderEmail.js) so emails
+  // sent from the new web app look continuous with the prior tooling.
+  brand:        '#223b5d',
+  brandSoft:    '#e6f2ff',
+  logoUrl:      'https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg',
 };
 
 /** Renders the email HTML body + computed subject/recipients for a note +
@@ -1974,7 +1986,10 @@ function callDataFromNote_(note) {
     relationship:   note.relationship,
     patientAndTrx,
     issue:          note.issue,
-    transferredTo:  note.transferredTo,
+    // Transferred To is optional — most calls aren't escalated. Default to
+    // "N/A" so the call-details table doesn't have an awkward empty cell and
+    // the pasted note has a clear "no transfer" signal.
+    transferredTo:  (note.transferredTo && note.transferredTo.trim()) || 'N/A',
     resolution:     note.resolution,
   };
 }
@@ -2039,23 +2054,40 @@ function buildCallNoteEmailHtml_(callData, selections) {
   const resupplyDetails = selections.resupplyDetails;
   const oopDetails      = selections.oopDetails;
 
-  // ── Update line ─────────────────────────────────────────────────────
-  let updateLineHtml = '';
-  if (updateInfo === 'Close Order' && closeDetails) {
-    updateLineHtml =
-      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
-      `<span style="font-weight:600;color:${P.danger};">Close Order</span>` +
-      `<span style="font-weight:600;color:${P.accentDeep};"> — ${esc_(closeDetails.reason)}</span>`;
-  } else if (updateInfo === 'OOP Order' && oopDetails) {
-    updateLineHtml =
-      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
-      `<span style="font-weight:600;color:${P.warn};">OOP Order</span>` +
-      `<span style="font-weight:600;color:${P.accentDeep};"> — Total: $${esc_(oopDetails.totalCost)}</span>`;
-  } else {
-    updateLineHtml =
-      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
-      `<span style="font-weight:600;color:${P.ink};">${esc_(updateInfo)}</span>`;
+  // ── Per-template color theme ────────────────────────────────────────
+  // Each special template gets its own banner color so the recipient
+  // immediately sees what kind of update this is. Default is the brand
+  // navy (matches the Call Details header).
+  let tplColor = P.brand;
+  let tplSoft  = P.brandSoft;
+  let tplDeep  = P.brand;
+  if (updateInfo === 'Close Order') {
+    tplColor = P.danger; tplSoft = P.dangerSoft; tplDeep = P.dangerDeep;
+  } else if (updateInfo === 'OOP Order') {
+    tplColor = P.warn; tplSoft = P.warnSoft; tplDeep = P.warnDeep;
+  } else if (updateInfo === 'Verified Shipping' || updateInfo === 'Repeat Resupply') {
+    tplColor = P.good; tplSoft = P.goodSoft; tplDeep = P.goodDeep;
   }
+
+  // ── Update banner (replaces the old subtle update line) ─────────────
+  let updateBannerInner = '';
+  if (updateInfo === 'Close Order' && closeDetails) {
+    updateBannerInner =
+      `<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:${tplDeep};opacity:.75;">Update</div>` +
+      `<div style="font-size:17px;font-weight:600;color:${tplDeep};margin-top:2px;">Close Order</div>` +
+      `<div style="font-size:14px;color:${tplDeep};margin-top:4px;">Reason: <span style="font-weight:600;">${esc_(closeDetails.reason)}</span></div>`;
+  } else if (updateInfo === 'OOP Order' && oopDetails) {
+    updateBannerInner =
+      `<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:${tplDeep};opacity:.75;">Update</div>` +
+      `<div style="font-size:17px;font-weight:600;color:${tplDeep};margin-top:2px;">OOP Order</div>` +
+      `<div style="font-size:14px;color:${tplDeep};margin-top:4px;">Total: <span style="font-weight:600;">$${esc_(oopDetails.totalCost)}</span></div>`;
+  } else {
+    updateBannerInner =
+      `<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:${tplDeep};opacity:.75;">Update</div>` +
+      `<div style="font-size:17px;font-weight:600;color:${tplDeep};margin-top:2px;">${esc_(updateInfo)}</div>`;
+  }
+  const updateBanner =
+    `<div style="background:${tplSoft};border-left:4px solid ${tplColor};border-radius:6px;padding:14px 16px;margin:14px 0;">${updateBannerInner}</div>`;
 
   // ── Callback banner ─────────────────────────────────────────────────
   const callbackHtml = callbackNeeded
@@ -2078,33 +2110,52 @@ function buildCallNoteEmailHtml_(callData, selections) {
     resolutionText = esc_(resolutionText);
   }
 
-  // ── Body ────────────────────────────────────────────────────────────
-  const updateBox =
-    `<div style="background:${P.accentSoft};border-radius:6px;padding:11px 14px;margin:14px 0;` +
-    `font-size:15px;border-left:3px solid ${P.accent};">${updateLineHtml}</div>`;
-
+  // ── Call Details table — UMS navy header + pale-blue alternating rows
+  //    (legacy aesthetic from closeOrderEmail.js / updateOrderEmail.js) ─
+  const detailsRows = [
+    ['Callback Number', esc_(callData.callBackNumber), false],
+    ['Caller Name',     esc_(callData.callerName), false],
+    ['Relationship',    esc_(callData.relationship), false],
+    ['Patient & TRX',   esc_(callData.patientAndTrx), true],
+    ['Issue',           esc_(callData.issue), false],
+    ['Transferred To',  esc_(callData.transferredTo), false],
+    ['Resolution',      resolutionText, false],
+  ];
+  const detailsBodyHtml = detailsRows.map(function (r, i) {
+    const bg = (i % 2 === 0) ? P.paperCard : P.brandSoft;
+    const weight = r[2] ? 'font-weight:600;' : '';
+    return `<tr style="background:${bg};">` +
+      `<td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;width:34%;color:${P.brand};">${r[0]}</td>` +
+      `<td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};${weight}">${r[1]}</td>` +
+    `</tr>`;
+  }).join('');
   const callDetailsTable =
     `<table style="width:100%;border-collapse:collapse;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;` +
-    `font-size:14px;border:1px solid ${P.line};border-radius:6px;overflow:hidden;margin-top:6px;">` +
-      `<tr style="background:${P.ink};color:${P.paperCard};">` +
-        `<td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.02em;">Call Details</td>` +
+    `font-size:14px;border:1px solid ${P.line};border-radius:6px;overflow:hidden;margin-top:14px;">` +
+      `<tr style="background:${P.brand};color:${P.paperCard};">` +
+        `<td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:12px;">Call Details</td>` +
       `</tr>` +
-      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;width:34%;color:${P.muted};">Callback Number</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.callBackNumber)}</td></tr>` +
-      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Caller Name</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.callerName)}</td></tr>` +
-      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Relationship</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.relationship)}</td></tr>` +
-      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Patient & TRX</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};font-weight:600;">${esc_(callData.patientAndTrx)}</td></tr>` +
-      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Issue</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.issue)}</td></tr>` +
-      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Transferred To</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.transferredTo)}</td></tr>` +
-      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Resolution</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${resolutionText}</td></tr>` +
+      detailsBodyHtml +
+    `</table>`;
+
+  // ── Logo header strip ───────────────────────────────────────────────
+  const logoBar =
+    `<table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">` +
+      `<tr>` +
+        `<td style="padding-bottom:14px;border-bottom:2px solid ${P.brand};">` +
+          `<img src="${P.logoUrl}" alt="UMS" style="height:46px;display:block;border:0;outline:none;">` +
+        `</td>` +
+      `</tr>` +
     `</table>`;
 
   return (
     `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
       `<div style="max-width:680px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:24px 26px;">` +
-        `<h2 style="margin:0 0 6px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;color:${P.ink};">Update for ${esc_(callData.patientAndTrx)}</h2>` +
+        logoBar +
+        `<h2 style="margin:0 0 6px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:600;letter-spacing:-.01em;color:${P.brand};">Update for ${esc_(callData.patientAndTrx)}</h2>` +
         `<p style="margin:0 0 14px;color:${P.muted};font-size:13px;">Hello team — please see the following update for this order.</p>` +
         callbackHtml +
-        updateBox +
+        updateBanner +
         oopHtml +
         shippingHtml +
         resupplyHtml +
@@ -2764,19 +2815,32 @@ function sendCallNotesWeeklyDigests() {
 
 function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
   const P = CN_EMAIL_PALETTE;
+  // Training-flagged notes may carry a free-text question in subformData.trainingQuestion
+  // (set client-side when the rep picks the training flag). Surface it inline so the
+  // manager sees the actual question instead of having to open each note.
+  const tq = function (n) {
+    return (n.flagType === 'training' && n.subformData && n.subformData.trainingQuestion)
+      ? String(n.subformData.trainingQuestion).trim() : '';
+  };
   const itemsHtml = notes.map(function (n) {
+    const q = tq(n);
+    const qLine = q ? `<br><span style="color:${P.accentDeep};font-size:12px;font-style:italic;">Q: ${esc_(q)}</span>` : '';
     return `<tr>` +
       `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
         `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
         (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
+        qLine +
       `</td>` +
       `</tr>`;
   }).join('');
   const itemsText = notes.map(function (n) {
+    const q = tq(n);
     return `  ${n.dateLocal}  ${n.repName} · ${n.caller || n.patientAndTrx || '—'}\n` +
-           `    ${n.issue || ''}` + (n.resolution ? `\n    → ${n.resolution}` : '');
+           `    ${n.issue || ''}` +
+           (n.resolution ? `\n    → ${n.resolution}` : '') +
+           (q ? `\n    Q: ${q}` : '');
   }).join('\n\n');
 
   const htmlBody = (
