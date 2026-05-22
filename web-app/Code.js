@@ -53,6 +53,11 @@ const CONFIG = {
       'Transferred To: {transferredTo}\n' +
       'Resolution: {resolution}',
     STALE_FLAG_HOURS:    1,              // an `action` flag is "stale" if unresolved beyond this
+    // Voice-to-text dictation on Issue / Resolution textareas. OFF by default
+    // because browser speech recognition (Chrome/Edge) routes audio to the
+    // vendor's speech-to-text service, which is not BAA-covered for PHI.
+    // Turn on only after confirming the org's HIPAA stance.
+    VOICE_INPUT_ENABLED: false,
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
     TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
@@ -1246,6 +1251,103 @@ function deleteCallNote(noteId) {
   finally { lock.releaseLock(); }
 }
 
+const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
+
+/** Toggle the "pinned" state on one of the calling rep's notes. Pinned
+ *  notes render in a dedicated tray above the Log view's rolling stack
+ *  so a complex case stays visible across calls without scrolling.
+ *
+ *  Storage: subformData.pinned (boolean) + subformData.pinnedAt (timestamp).
+ *  No schema migration — pinned state lives alongside other subformData
+ *  keys (trainingQuestion, completionSeconds, etc.).
+ *
+ *  Enforces CN_PIN_LIMIT (3): pinning a 4th note returns an error so the
+ *  rep is forced to unpin something first. */
+function setCallNotePinned(noteId, pinned) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const willPin = !!pinned;
+
+    // If pinning, scan all rows for existing pin count and reject if at
+    // limit. Scan happens inside the lock so two parallel pin requests
+    // can't both squeak past the limit.
+    if (willPin) {
+      const allRows = sheet.getDataRange().getValues();
+      let pinnedCount = 0;
+      for (let i = 1; i < allRows.length; i++) {
+        if (String(allRows[i][CN.NOTE_ID]).trim() === noteId) continue;
+        const sfd = allRows[i][CN.SUBFORM_DATA];
+        if (!sfd) continue;
+        try {
+          const parsed = JSON.parse(sfd);
+          if (parsed && parsed.pinned) pinnedCount++;
+        } catch (e) { /* corrupt blob — skip */ }
+      }
+      if (pinnedCount >= CN_PIN_LIMIT) {
+        return { success: false, error:
+          `You already have ${CN_PIN_LIMIT} pinned notes (the max). Unpin one before pinning another.` };
+      }
+    }
+
+    // Merge into existing subformData
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); }
+      catch (e) { subformData = null; }
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+
+    if (willPin) {
+      const empTz = empTz_(emp);
+      subformData.pinned = true;
+      subformData.pinnedAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    } else {
+      delete subformData.pinned;
+      delete subformData.pinnedAt;
+    }
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNotePin', dateLocal, '', false, 0,
+      `noteId=${noteId}; ${willPin ? 'pinned' : 'unpinned'}`);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Returns the calling rep's pinned notes across all dates (not just today).
+ *  Read-only, no lock. Used by the Log view's pinned tray. */
+function getMyPinnedCallNotes() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { notes: [] };
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (note.subformData && note.subformData.pinned) notes.push(note);
+    }
+    // Newest-pinned first
+    notes.sort(function (a, b) {
+      const ap = (a.subformData && a.subformData.pinnedAt) || '';
+      const bp = (b.subformData && b.subformData.pinnedAt) || '';
+      return bp.localeCompare(ap);
+    });
+    return { notes: notes, limit: CN_PIN_LIMIT };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Returns the calling rep's notes for a given date, optionally filtered.
  *  Defaults to today in the rep's tz. Filter options:
  *    'all' (default) | 'action' | 'training' | 'review' | 'unresolved' | 'unsent' */
@@ -1360,6 +1462,7 @@ function getCallNotesDepartments() {
     stateTaxRates: CONFIG.CALL_NOTES.STATE_TAX_RATES,
     stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
     ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
+    voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
   };
 }
 
@@ -1507,6 +1610,86 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 500) results.length = 500;
     return { results };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Per-rep stats for a given date — used by the manager Team Notes "Stats"
+ *  tab to surface end-of-shift summaries. Walks every enrolled rep's Sheet
+ *  once, filters to the requested date, and aggregates:
+ *
+ *    - totalNotes         total notes filed that day
+ *    - flagCounts         { action, training, review } breakdown
+ *    - resolvedCount      action-flagged notes that the rep marked resolved
+ *    - emailsSent         notes with a non-empty EmailedAt for that date
+ *    - medianCompletionS  median of subformData.completionSeconds across
+ *                         today's notes that captured one. Median (not mean)
+ *                         is resistant to outliers (e.g., a rep walked away
+ *                         mid-note for 20 min then submitted).
+ *    - shiftSpan          { first, last } HH:mm of first/last note times
+ *
+ *  Manager-gated. Read-only across all enrolled reps. */
+function managerGetShiftStats(date) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+      return { error: 'Invalid date (expected yyyy-MM-dd).' };
+
+    const roster = getEmployeeRosterRows_();
+    const reps = [];
+    for (let r = 1; r < roster.length; r++) {
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      const repId = String(roster[r][EMP.ID]).trim();
+      const repName = String(roster[r][EMP.NAME]).trim();
+      const stats = {
+        repId: repId, repName: repName,
+        totalNotes: 0,
+        flagCounts: { action: 0, training: 0, review: 0 },
+        resolvedCount: 0,
+        emailsSent: 0,
+        medianCompletionSeconds: null,
+        shiftSpan: null,
+      };
+      const completionTimes = [];
+      const noteTimes = [];
+      try {
+        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+          if (note.dateLocal !== date) continue;
+          stats.totalNotes++;
+          if (note.flagType && stats.flagCounts[note.flagType] !== undefined) {
+            stats.flagCounts[note.flagType]++;
+          }
+          if (note.flagType === 'action' && note.resolved) stats.resolvedCount++;
+          if (note.emailedAt) stats.emailsSent++;
+          if (note.subformData && typeof note.subformData.completionSeconds === 'number') {
+            completionTimes.push(note.subformData.completionSeconds);
+          }
+          // Timestamp tail (HH:mm) for the shift-span calc
+          const m = String(note.timestamp || '').match(/T(\d{2}:\d{2})/);
+          if (m) noteTimes.push(m[1]);
+        }
+      } catch (e) {
+        console.warn('managerGetShiftStats skipped rep ' + repId + ': ' + e.message);
+      }
+      if (completionTimes.length > 0) {
+        completionTimes.sort(function (a, b) { return a - b; });
+        const mid = Math.floor(completionTimes.length / 2);
+        stats.medianCompletionSeconds = (completionTimes.length % 2 === 1)
+          ? completionTimes[mid]
+          : Math.round((completionTimes[mid - 1] + completionTimes[mid]) / 2);
+      }
+      if (noteTimes.length > 0) {
+        noteTimes.sort();
+        stats.shiftSpan = { first: noteTimes[0], last: noteTimes[noteTimes.length - 1] };
+      }
+      reps.push(stats);
+    }
+    reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
+    return { date: date, reps: reps };
   } catch (err) { return { error: err.message }; }
 }
 

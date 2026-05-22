@@ -405,6 +405,44 @@
     border-color: color-mix(in oklch, var(--destructive), transparent 50%);
   }
 
+  /* Voice-to-text mic button — small inline glyph in the field's label.
+     Hidden entirely when CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED is false
+     (cnVoiceMicMarkup_ returns empty string). */
+  .cn-voice-mic {
+    appearance: none; border: none; background: transparent;
+    color: var(--muted); cursor: pointer;
+    padding: 0; margin-left: 4px;
+    vertical-align: middle;
+    transition: color var(--t) var(--ease);
+  }
+  .cn-voice-mic:hover { color: var(--accent); }
+  .cn-voice-mic.listening {
+    color: var(--danger);
+    animation: cn-mic-pulse 0.9s var(--ease) infinite;
+  }
+  @keyframes cn-mic-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .4; }
+  }
+
+  /* Pinned-notes tray — renders above the filter bar in the Log view.
+     Visually distinguished from the rolling stack by a subtle background
+     and a "Pinned" label. Empty state collapses to zero height. */
+  #cn-pinned-tray:empty { display: none; }
+  #cn-pinned-tray {
+    background: color-mix(in srgb, var(--accent-soft), transparent 50%);
+    border: 1px dashed color-mix(in srgb, var(--accent), transparent 60%);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .cn-pinned-label {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--info-deep); letter-spacing: .14em; text-transform: uppercase;
+  }
+
   /* Manager training-reply editor — inline below training-flagged cards
      in the Per-Rep view. Lets the manager answer the rep's question in
      place without opening a separate modal. */
@@ -507,6 +545,58 @@
     outline: none;
   }
 
+  /* Manager Stats tab — per-rep daily summary cards */
+  .cn-stats-grid-outer {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+  .cn-stats-card {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+  }
+  .cn-stats-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px; margin-bottom: 6px;
+  }
+  .cn-stats-name {
+    font-family: var(--ui); font-size: 14px; font-weight: 600;
+    color: var(--ink);
+  }
+  .cn-stats-span {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+    color: var(--muted);
+  }
+  .cn-stats-total {
+    font-family: var(--ui); font-size: 32px; font-weight: 600;
+    color: var(--accent); line-height: 1;
+    margin: 6px 0 12px;
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .cn-stats-total-lbl {
+    font-size: 11px; font-weight: 500; color: var(--muted);
+    letter-spacing: .14em; text-transform: uppercase;
+  }
+  .cn-stats-grid {
+    display: flex; flex-direction: column; gap: 4px;
+    border-top: 1px solid var(--line); padding-top: 10px;
+  }
+  .cn-stats-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px;
+    font-family: var(--ui); font-size: 12px;
+  }
+  .cn-stats-k { color: var(--muted); }
+  .cn-stats-v { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .cn-stats-foot-note {
+    font-family: var(--ui); font-size: 11px; font-style: italic;
+    color: var(--muted);
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+
   /* ── Search results ─────────────────────────────────────────────── */
   .cn-search-bar {
     display: flex; align-items: center; gap: 10px;
@@ -589,6 +679,8 @@ const CN_STATE = {
   mgrRepView: null,          // { repId, date } — current selection in manager Per-Rep view
   lastClearedSnapshot: null, // { values: {...}, flag, trainingQ, at: <ms> } — restored on Ctrl/⌘+Z within the undo window
   prewarmed: false,          // set true after the first cnPing() so we don't pre-warm twice per page load
+  pinnedNotes: [],           // pinned-tray cache; loaded by cnReloadPinnedTray_() on Log view enter
+  mgrStatsDate: null,        // selected date in manager Stats tab (defaults to today in mgr tz)
 };
 
 const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
@@ -736,6 +828,7 @@ function cnRenderNotesView(area) {
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes', 'Log calls fast — Ctrl/⌘+Enter saves & copies to clipboard for the CRM. Send department emails separately.')}
     <div class="cn-rolling">
       ${cnRenderActiveForm_()}
+      <div id="cn-pinned-tray"></div>
       <div class="cn-filter-bar" id="cn-filter-bar"></div>
       <div id="cn-stack"></div>
     </div>
@@ -743,6 +836,7 @@ function cnRenderNotesView(area) {
   cnWireActiveForm_();
   cnRenderFilterBar_();
   cnRenderStack_();
+  cnReloadPinnedTray_();
   // Restore any in-progress draft from a prior session (sticky form). If a
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
@@ -788,7 +882,7 @@ function cnRenderActiveForm_() {
           <input type="text" id="cn-fld-patient" autocomplete="off" placeholder="Patient name TRX# or just TRX#">
         </div>
         <div class="cn-form-field full">
-          <label>Issue</label>
+          <label>Issue${cnVoiceMicMarkup_('cn-fld-issue')}</label>
           <textarea id="cn-fld-issue" rows="2" placeholder="Why did they call?"></textarea>
         </div>
         <div class="cn-form-field">
@@ -796,7 +890,7 @@ function cnRenderActiveForm_() {
           <input type="text" id="cn-fld-transferred" autocomplete="off" placeholder="Agent name, or leave blank / N/A">
         </div>
         <div class="cn-form-field">
-          <label>Resolution</label>
+          <label>Resolution${cnVoiceMicMarkup_('cn-fld-resolution')}</label>
           <textarea id="cn-fld-resolution" rows="1" placeholder="What did you do?"></textarea>
         </div>
       </div>
@@ -1184,6 +1278,78 @@ function cnClearStickyFormDraft_() {
   try { localStorage.removeItem(CN_FORM_STICKY_LS_KEY); } catch (e) {}
 }
 
+/** Voice-to-text mic markup, gated on (a) CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED
+ *  and (b) the browser supporting webkitSpeechRecognition. Hidden entirely
+ *  when off — no DOM element rendered, no surface area for accidents. */
+function cnVoiceMicMarkup_(targetFieldId) {
+  const cfg = CN_STATE.deptConfig || {};
+  if (!cfg.voiceInputEnabled) return '';
+  if (typeof window === 'undefined' || !('webkitSpeechRecognition' in window)) return '';
+  return ` <button type="button" class="cn-voice-mic" data-target="${esc(targetFieldId)}"
+                   onclick="cnVoiceStart_(this)" title="Dictate (beta — audio routed to your browser's speech service)">${icon('mic', 12)}</button>`;
+}
+
+/** Start (or stop, if already listening) voice recognition for the field
+ *  identified by data-target. Click while listening to stop early. Browser
+ *  prompts for mic permission on first use per origin. */
+function cnVoiceStart_(btn) {
+  if (!('webkitSpeechRecognition' in window)) return;
+  const targetId = btn.dataset.target;
+  const target = document.getElementById(targetId);
+  if (!target) return;
+
+  // Stop in-flight recognition if button is clicked again
+  if (btn._recog) {
+    try { btn._recog.stop(); } catch (e) {}
+    return;
+  }
+
+  const recog = new window.webkitSpeechRecognition();
+  recog.continuous = false;
+  recog.interimResults = true;
+  recog.lang = 'en-US';
+  btn._recog = recog;
+  btn.classList.add('listening');
+  // Insert transcription at the cursor; if the field is empty append a
+  // leading space when appropriate so concatenated speech doesn't smush
+  // into existing text.
+  const startPos = target.selectionStart;
+  const before = target.value.slice(0, startPos);
+  const after = target.value.slice(target.selectionEnd);
+  let finalText = '';
+  recog.onresult = function (event) {
+    let interim = '';
+    finalText = '';
+    for (let i = 0; i < event.results.length; i++) {
+      if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
+      else interim += event.results[i][0].transcript;
+    }
+    const insertion = (before && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
+    target.value = before + insertion + finalText + interim + after;
+    // Trigger the form's input listeners so sticky-save + timer fire
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  recog.onend = function () {
+    btn.classList.remove('listening');
+    btn._recog = null;
+    // Position the cursor after the inserted text so the rep can keep typing
+    const insertion = (before && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
+    const newPos = before.length + insertion.length + finalText.length;
+    try { target.setSelectionRange(newPos, newPos); target.focus(); } catch (e) {}
+  };
+  recog.onerror = function (e) {
+    btn.classList.remove('listening');
+    btn._recog = null;
+    showToast('Voice input error: ' + (e.error || 'unknown'), 'toast-error');
+  };
+  try { recog.start(); }
+  catch (e) {
+    btn.classList.remove('listening');
+    btn._recog = null;
+    showToast('Could not start mic: ' + e.message, 'toast-error');
+  }
+}
+
 /** Format a phone number as the rep types — instant visual feedback instead
  *  of the prior format-on-read-only behavior. Mirrors the server's
  *  formatPhoneNumber_ output: "(555) 123-4567" for 10 digits,
@@ -1414,7 +1580,12 @@ function cnFormatTimestampForCopy_(iso) {
 function cnRenderStack_() {
   const stack = document.getElementById('cn-stack');
   if (!stack) return;
+  // Pinned notes render in the dedicated tray above; exclude them from the
+  // rolling stack so they don't appear twice on the page.
+  const pinnedIds = {};
+  (CN_STATE.pinnedNotes || []).forEach(function (n) { pinnedIds[n.noteId] = true; });
   const filtered = CN_STATE.rollingNotes.filter(function (n) {
+    if (pinnedIds[n.noteId]) return false;
     return cnNoteMatchesFilter_(n, CN_STATE.filter);
   });
   if (filtered.length === 0) {
@@ -1525,6 +1696,13 @@ function cnRenderCardCore_(note, expandable) {
                onclick="cnFindPriorCallsForTrx_(this.dataset.trx)">${icon('search', 14)}</button>`
     : '';
 
+  // Pin / unpin — keeps a complex case visible above the rolling stack.
+  // Cap of 3 enforced server-side (UI hint surfaces via error toast).
+  // Bookmark icon (not star — star means the Review flag).
+  const isPinned = !!(note.subformData && note.subformData.pinned);
+  const pinBtn = `<button class="cn-act-btn ${isPinned ? 'is-on' : ''}" title="${isPinned ? 'Unpin note' : 'Pin note (keeps it visible above the stack)'}"
+                          onclick="cnTogglePinned_('${esc(note.noteId)}')">${icon('bookmark', 14)}</button>`;
+
   return `
     <div class="cn-card${flagCls}${staleCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
@@ -1540,7 +1718,7 @@ function cnRenderCardCore_(note, expandable) {
             : flagBtn('action', 'flag', note.flagType === 'action') +
               flagBtn('training', 'bulb', note.flagType === 'training') +
               flagBtn('review', 'star', note.flagType === 'review') +
-              resolveBtn + priorBtn + copyBtn + emailBtn + editBtn
+              resolveBtn + pinBtn + priorBtn + copyBtn + emailBtn + editBtn
           }
         </div>
       </div>
@@ -1612,9 +1790,13 @@ function cnDeleteNote_(noteId) {
     .withSuccessHandler(function (res) {
       if (!res.success) { showToast(res.error || 'Delete failed', 'toast-error'); return; }
       CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== noteId; });
+      // If the deleted note was pinned, drop it from the tray cache too so
+      // the tray doesn't render a phantom card.
+      CN_STATE.pinnedNotes = (CN_STATE.pinnedNotes || []).filter(function (n) { return n.noteId !== noteId; });
       CN_STATE.editingNoteId = null;
       cnRenderStack_();
       cnRenderFilterBar_();
+      cnRenderPinnedTray_();
       cnUpdateNoteCounter_();
       showToast('Deleted', 'toast-success');
     })
@@ -1655,6 +1837,82 @@ function cnToggleFlag_(noteId, kind) {
       showToast('Flag failed: ' + err.message, 'toast-error');
     })
     .setCallNoteFlag(noteId, next);
+}
+
+/** Toggle the pinned state on a note — optimistic. The pinned tray
+ *  re-renders immediately; on server failure we revert. Server enforces
+ *  the 3-pin cap (the error surfaces as a toast). */
+function cnTogglePinned_(noteId) {
+  const note = cnFindNoteAnywhere_(noteId);
+  if (!note) return;
+  if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
+  const wasPinned = !!(note.subformData && note.subformData.pinned);
+  // Optimistic mutate
+  note.subformData = note.subformData || {};
+  note.subformData.pinned = !wasPinned;
+  if (!wasPinned) note.subformData.pinnedAt = new Date().toISOString();
+  else delete note.subformData.pinnedAt;
+  // Mirror into the pinned-tray cache so the tray re-renders right away
+  if (!wasPinned) {
+    CN_STATE.pinnedNotes = (CN_STATE.pinnedNotes || []).filter(function (n) { return n.noteId !== noteId; });
+    CN_STATE.pinnedNotes.unshift(note);
+  } else {
+    CN_STATE.pinnedNotes = (CN_STATE.pinnedNotes || []).filter(function (n) { return n.noteId !== noteId; });
+  }
+  cnRenderPinnedTray_();
+  cnRenderStack_();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) {
+        // Revert
+        note.subformData.pinned = wasPinned;
+        if (wasPinned) note.subformData.pinnedAt = (note.subformData.pinnedAt || new Date().toISOString());
+        else delete note.subformData.pinnedAt;
+        // Refresh pinned tray from authoritative source on failure
+        cnReloadPinnedTray_();
+        cnRenderStack_();
+        showToast(res.error || 'Pin failed', 'toast-error');
+        return;
+      }
+      cnReplaceNoteInState_(res.note);
+      // Keep the tray cache in sync with the server's truth too
+      cnReloadPinnedTray_();
+    })
+    .withFailureHandler(function (err) {
+      note.subformData.pinned = wasPinned;
+      if (wasPinned) note.subformData.pinnedAt = (note.subformData.pinnedAt || new Date().toISOString());
+      else delete note.subformData.pinnedAt;
+      cnReloadPinnedTray_();
+      cnRenderStack_();
+      showToast('Pin failed: ' + err.message, 'toast-error');
+    })
+    .setCallNotePinned(noteId, !wasPinned);
+}
+
+/** Re-fetch the pinned tray from the server. Called on view enter and
+ *  after pin/unpin to keep the tray authoritative (pinned notes can come
+ *  from any past date, so they're not in the today-only rolling stack). */
+function cnReloadPinnedTray_() {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res && !res.error) {
+        CN_STATE.pinnedNotes = res.notes || [];
+        cnRenderPinnedTray_();
+      }
+    })
+    .getMyPinnedCallNotes();
+}
+
+/** Render the pinned-notes tray above the rolling stack. Only renders the
+ *  host div's content; the host is created in cnRenderNotesView. */
+function cnRenderPinnedTray_() {
+  const host = document.getElementById('cn-pinned-tray');
+  if (!host) return;
+  const pinned = CN_STATE.pinnedNotes || [];
+  if (pinned.length === 0) { host.innerHTML = ''; return; }
+  host.innerHTML =
+    `<div class="cn-pinned-label">${icon('bookmark', 11)}<span>Pinned · ${pinned.length}</span></div>` +
+    pinned.map(cnRenderCard_).join('');
 }
 
 function cnToggleResolved_(noteId) {
@@ -2627,6 +2885,7 @@ function cnRenderManageView(area) {
       <button class="toolbar-tab active" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
       <button class="toolbar-tab" data-mqueue="review" onclick="cnMgrLoadQueue_('review')">Review Candidates</button>
       <button class="toolbar-tab" data-mqueue="rep" onclick="cnMgrLoadRepView_()">Per-Rep View</button>
+      <button class="toolbar-tab" data-mqueue="stats" onclick="cnMgrLoadStatsView_()">Stats</button>
     </div>
     <div id="cn-mgr-results"></div>
   `;
@@ -2913,6 +3172,102 @@ function cnMgrRenderQueue_(host, results) {
       </div>
     `;
   }).join('');
+}
+
+// ── Stats tab (manager end-of-shift summary) ──────────────────────────
+
+function cnMgrLoadStatsView_() {
+  document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.mqueue === 'stats');
+  });
+  const host = document.getElementById('cn-mgr-results');
+  if (!host) return;
+  // Default to today in the manager's tz
+  if (!CN_STATE.mgrStatsDate) {
+    CN_STATE.mgrStatsDate = new Intl.DateTimeFormat('en-CA', { timeZone: empTz() }).format(new Date());
+  }
+  host.innerHTML = `
+    <div class="cn-history-picker" style="margin-bottom:14px">
+      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase">Date</label>
+      <input type="date" id="cn-mgr-stats-date" value="${esc(CN_STATE.mgrStatsDate)}" onchange="cnMgrStatsDateChanged_(this.value)">
+    </div>
+    <div id="cn-mgr-stats-body"></div>
+  `;
+  cnMgrLoadStats_();
+}
+
+function cnMgrStatsDateChanged_(d) {
+  if (!d) return;
+  CN_STATE.mgrStatsDate = d;
+  cnMgrLoadStats_();
+}
+
+function cnMgrLoadStats_() {
+  const body = document.getElementById('cn-mgr-stats-body');
+  if (!body) return;
+  body.innerHTML = `<div class="cn-stack-empty">Loading…</div>`;
+  const requestedView = currentView;
+  const requestedDate = CN_STATE.mgrStatsDate;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      if (CN_STATE.mgrStatsDate !== requestedDate) return;
+      const liveBody = document.getElementById('cn-mgr-stats-body');
+      if (!liveBody) return;
+      if (res.error) { liveBody.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+      cnMgrRenderStats_(liveBody, res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      const liveBody = document.getElementById('cn-mgr-stats-body');
+      if (liveBody) liveBody.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+    })
+    .managerGetShiftStats(CN_STATE.mgrStatsDate);
+}
+
+function cnMgrRenderStats_(host, res) {
+  const reps = res.reps || [];
+  if (reps.length === 0) {
+    host.innerHTML = `<div class="cn-stack-empty">No reps enrolled, or no activity on ${esc(res.date)}.</div>`;
+    return;
+  }
+  const fmtDur = function (sec) {
+    if (sec == null) return '—';
+    if (sec < 60) return sec + 's';
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return m + 'm ' + (s ? s + 's' : '00s');
+  };
+  const cards = reps.map(function (r) {
+    const fc = r.flagCounts || { action:0, training:0, review:0 };
+    const span = r.shiftSpan
+      ? `<span class="cn-stats-span">${esc(r.shiftSpan.first)} → ${esc(r.shiftSpan.last)}</span>`
+      : '<span class="cn-stats-span" style="opacity:.5">no activity</span>';
+    const medianRow = (r.medianCompletionSeconds != null)
+      ? `<div class="cn-stats-row"><span class="cn-stats-k">Median note time</span><span class="cn-stats-v">${esc(fmtDur(r.medianCompletionSeconds))}</span></div>`
+      : `<div class="cn-stats-row"><span class="cn-stats-k">Median note time</span><span class="cn-stats-v" style="opacity:.5">no data yet</span></div>`;
+    return `
+      <div class="cn-stats-card">
+        <div class="cn-stats-head">
+          <div class="cn-stats-name">${esc(r.repName)}</div>
+          ${span}
+        </div>
+        <div class="cn-stats-total">${r.totalNotes}<span class="cn-stats-total-lbl">notes</span></div>
+        <div class="cn-stats-grid">
+          <div class="cn-stats-row"><span class="cn-stats-k">Action flagged</span><span class="cn-stats-v">${fc.action || 0}${(r.resolvedCount && fc.action) ? ' <span style="opacity:.6">(' + r.resolvedCount + ' resolved)</span>' : ''}</span></div>
+          <div class="cn-stats-row"><span class="cn-stats-k">Training flagged</span><span class="cn-stats-v">${fc.training || 0}</span></div>
+          <div class="cn-stats-row"><span class="cn-stats-k">Review candidates</span><span class="cn-stats-v">${fc.review || 0}</span></div>
+          <div class="cn-stats-row"><span class="cn-stats-k">Emails sent</span><span class="cn-stats-v">${r.emailsSent}</span></div>
+          ${medianRow}
+        </div>
+      </div>
+    `;
+  }).join('');
+  host.innerHTML = `
+    <div class="cn-stats-foot-note">
+      Median note time = form-start → submit duration. Skips outliers &gt; 30 min (rep walked away mid-note). Older notes don't have this data; the median is computed only over notes that captured one.
+    </div>
+    <div class="cn-stats-grid-outer">${cards}</div>
+  `;
 }
 
 // ── Ambient (sidebar badge) polling ────────────────────────────────────
