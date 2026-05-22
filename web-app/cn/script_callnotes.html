@@ -198,6 +198,20 @@
   }
   .cn-form-submit:disabled { opacity: .5; cursor: not-allowed; }
   .cn-form-submit svg { width: 14px; height: 14px; }
+  /* Secondary submit (Save & Compose) — outlined accent style so it reads
+     as a distinct choice from the primary "Save & Copy" but still part of
+     the same action group. */
+  .cn-form-submit-secondary {
+    flex: 0 1 auto;
+    background: var(--paper-card);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  .cn-form-submit-secondary:hover:not(:disabled) {
+    background: var(--accent-soft);
+    color: var(--info-deep);
+    box-shadow: var(--shadow-sm);
+  }
   .cn-form-clear-btn {
     appearance: none; border: 1px solid var(--line);
     background: transparent;
@@ -537,6 +551,7 @@ const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before 
 const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved'];
 const CN_CLEAR_UNDO_WINDOW_MS = 30000;  // window during which Ctrl/⌘+Z restores a just-cleared form
 const CN_FORM_STARTED_LS_KEY = 'umsCallNotesFormStartedAt';  // persists across refresh so completion-time stays accurate
+const CN_FORM_STICKY_LS_KEY  = 'umsCallNotesActiveFormDraft'; // sticky-form: in-progress draft restored on next load
 
 // ── View enter handlers (called by the shell router) ────────────────────
 
@@ -684,10 +699,15 @@ function cnRenderNotesView(area) {
   cnWireActiveForm_();
   cnRenderFilterBar_();
   cnRenderStack_();
+  // Restore any in-progress draft from a prior session (sticky form). If a
+  // draft was restored, focus the resolution field (most likely where the
+  // rep left off); otherwise focus the callback for a fresh note.
+  const restored = cnRestoreActiveFormDraft_();
   setTimeout(function () {
-    const el = document.getElementById('cn-fld-callback');
+    const el = document.getElementById(restored ? 'cn-fld-resolution' : 'cn-fld-callback');
     if (el) el.focus();
   }, 50);
+  if (restored) showToast('Draft restored', 'toast-success');
 }
 
 function cnRenderActiveForm_() {
@@ -759,6 +779,10 @@ function cnRenderActiveForm_() {
           </div>
         </div>
         <button type="button" class="cn-form-clear-btn" id="cn-form-clear" title="Clear note (⌘/Ctrl+Z to undo)">Clear Note</button>
+        <button type="button" class="cn-form-submit cn-form-submit-secondary" id="cn-form-submit-compose"
+                title="Save the note, copy to clipboard, and open the email composer">
+          ${icon('mail', 14)} Save &amp; Compose
+        </button>
         <button type="button" class="cn-form-submit" id="cn-form-submit">
           ${icon('check', 14)} Save &amp; Copy
         </button>
@@ -834,7 +858,15 @@ function cnWireActiveForm_() {
   }
   // Ctrl/⌘+Enter from any input/textarea submits.
   // First input also starts the form-completion timer (used by the manager
-  // Stats tab's median note-completion-time metric).
+  // Stats tab's median note-completion-time metric) and triggers the sticky-
+  // form auto-save (debounced) so an accidental tab close doesn't lose work.
+  const persistDebounced = (function () {
+    let t = null;
+    return function () {
+      if (t) clearTimeout(t);
+      t = setTimeout(cnPersistActiveFormDraft_, 400);
+    };
+  })();
   form.querySelectorAll('input, textarea').forEach(function (el) {
     el.addEventListener('keydown', function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -842,8 +874,26 @@ function cnWireActiveForm_() {
         cnSubmitActiveForm_();
       }
     });
-    el.addEventListener('input', cnFormTimerStartIfNeeded_);
+    el.addEventListener('input', function () {
+      cnFormTimerStartIfNeeded_();
+      persistDebounced();
+    });
   });
+  // Phone-number auto-format on the Callback field. Runs after the generic
+  // input listener so persistence sees the formatted value.
+  const cb = document.getElementById('cn-fld-callback');
+  if (cb) {
+    cb.addEventListener('input', function () {
+      const formatted = cnFormatPhoneNumberInline_(cb.value);
+      if (formatted !== cb.value) {
+        cb.value = formatted;
+        // Cursor lands at end — natural for forward-typing. (Editing in the
+        // middle of a phone is rare and the formatter would fight any
+        // attempt to preserve mid-string position when adding parens.)
+        cb.setSelectionRange(formatted.length, formatted.length);
+      }
+    });
+  }
   // Ctrl/⌘+Z restores a freshly-cleared form (within CN_CLEAR_UNDO_WINDOW_MS).
   // Bound at the form level so it doesn't fight with the native input undo
   // stack outside of the post-clear state.
@@ -865,8 +915,20 @@ function cnWireActiveForm_() {
       CN_STATE.lastClearedSnapshot = null;
     }
   });
-  document.getElementById('cn-form-submit').addEventListener('click', cnSubmitActiveForm_);
+  document.getElementById('cn-form-submit').addEventListener('click', function () { cnSubmitActiveForm_(); });
   document.getElementById('cn-form-clear').addEventListener('click', cnClearActiveForm_);
+  // Save & Compose: optimistic submit + open the email composer once the
+  // server has assigned a real noteId (preview/send require it). The rep
+  // can paste the note into the CRM during the brief wait — clipboard is
+  // already set by the optimistic submit path.
+  const composeBtn = document.getElementById('cn-form-submit-compose');
+  if (composeBtn) {
+    composeBtn.addEventListener('click', function () {
+      cnSubmitActiveForm_({
+        onConfirmed: function (note) { cnOpenEmailComposer_(note.noteId); },
+      });
+    });
+  }
 }
 
 function cnRestoreFromSnapshot_(snap) {
@@ -942,6 +1004,12 @@ function cnClearActiveForm_(opts) {
   if (trainingRow) trainingRow.style.display = 'none';
   const tq = document.getElementById('cn-fld-training-q');
   if (tq) tq.value = '';
+  // Sticky-form: an explicit Clear Note (or a submit-driven clear) means the
+  // rep is done with this draft. Drop the persisted copy so it doesn't get
+  // restored on next load.
+  cnClearStickyFormDraft_();
+  // Reset completion timer too — Clear is a fresh start.
+  cnFormTimerReset_();
   const cb = document.getElementById('cn-fld-callback');
   if (cb) cb.focus();
 }
@@ -1000,6 +1068,97 @@ function cnFormTimerEndAndGet_() {
 
 function cnFormTimerReset_() {
   try { localStorage.removeItem(CN_FORM_STARTED_LS_KEY); } catch (e) {}
+}
+
+/** Sticky form: persist the in-progress draft to localStorage on every
+ *  input so a tab close / refresh / browser crash doesn't lose what the
+ *  rep typed. Called debounced from the input handler. */
+function cnPersistActiveFormDraft_() {
+  try {
+    const values = {};
+    ['callback','caller','relationship','patient','issue','transferred','resolution'].forEach(function (k) {
+      const el = document.getElementById('cn-fld-' + k);
+      if (el) values[k] = el.value;
+    });
+    const form = document.getElementById('cn-active-form');
+    const tq = document.getElementById('cn-fld-training-q');
+    const data = {
+      values: values,
+      flag: form ? form.dataset.flag : '',
+      trainingQ: tq ? tq.value : '',
+    };
+    const anyContent = Object.keys(values).some(function (k) { return (values[k] || '').trim(); })
+                    || (data.flag) || (data.trainingQ && data.trainingQ.trim());
+    if (anyContent) {
+      localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify(data));
+    } else {
+      localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
+    }
+  } catch (e) { /* localStorage unavailable — accept the loss */ }
+}
+
+/** Sticky form: on view enter (after the form is rendered) restore the
+ *  draft from localStorage. No-op if no draft exists. */
+function cnRestoreActiveFormDraft_() {
+  try {
+    const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    Object.keys(data.values || {}).forEach(function (k) {
+      const el = document.getElementById('cn-fld-' + k);
+      if (el) el.value = data.values[k] || '';
+    });
+    // Re-apply flag state if any (matches cnRestoreFromSnapshot_'s shape)
+    if (data.flag) {
+      const form = document.getElementById('cn-active-form');
+      if (form) {
+        form.dataset.flag = data.flag;
+        form.querySelectorAll('.cn-flag-btn[data-flag]').forEach(function (b) {
+          const isOn = b.dataset.flag === data.flag;
+          b.classList.toggle('active', isOn);
+          b.classList.toggle('action',   b.dataset.flag === 'action' && isOn);
+          b.classList.toggle('training', b.dataset.flag === 'training' && isOn);
+          b.classList.toggle('review',   b.dataset.flag === 'review' && isOn);
+        });
+        const moreBtn = document.getElementById('cn-flag-more-btn');
+        if (moreBtn) {
+          const isOverflow = (data.flag === 'review');
+          moreBtn.classList.toggle('active', isOverflow);
+          moreBtn.classList.toggle('review', isOverflow);
+        }
+        const trainingRow = document.getElementById('cn-training-q-row');
+        if (trainingRow) trainingRow.style.display = data.flag === 'training' ? 'block' : 'none';
+      }
+    }
+    const tq = document.getElementById('cn-fld-training-q');
+    if (tq && data.trainingQ) tq.value = data.trainingQ;
+    return true;
+  } catch (e) { return false; }
+}
+
+function cnClearStickyFormDraft_() {
+  try { localStorage.removeItem(CN_FORM_STICKY_LS_KEY); } catch (e) {}
+}
+
+/** Format a phone number as the rep types — instant visual feedback instead
+ *  of the prior format-on-read-only behavior. Mirrors the server's
+ *  formatPhoneNumber_ output: "(555) 123-4567" for 10 digits,
+ *  "+1 (555) 123-4567" for 11 starting with 1, "(555) 123-4567 x123" for
+ *  extensions. Sub-10-digit inputs are formatted progressively as the rep
+ *  fills in more digits. Cursor jumps to the end after format; for a number
+ *  field this is the natural typing position. */
+function cnFormatPhoneNumberInline_(input) {
+  const raw = String(input == null ? '' : input);
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 0) return '';
+  if (digits.length <= 3) return '(' + digits;
+  if (digits.length <= 6) return '(' + digits.slice(0,3) + ') ' + digits.slice(3);
+  if (digits.length === 11 && digits.charAt(0) === '1') {
+    return '+1 (' + digits.slice(1,4) + ') ' + digits.slice(4,7) + '-' + digits.slice(7);
+  }
+  if (digits.length <= 10) return '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6);
+  // 11+ digits not starting with 1 → treat the tail as an extension
+  return '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6,10) + ' x' + digits.slice(10);
 }
 
 /** Format `now` as the server's CN canonical timestamp ("yyyy-MM-dd'T'HH:mm:ss")
@@ -1096,6 +1255,7 @@ function cnSubmitActiveForm_(opts) {
   // 3. Clear the form so the rep can start the next call
   cnClearActiveForm_({ skipSnapshot: true });
   cnFormTimerReset_();
+  cnClearStickyFormDraft_();
   // 4. Re-render and bump the counter
   cnRenderStack_();
   cnRenderFilterBar_();
