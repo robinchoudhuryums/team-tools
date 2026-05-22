@@ -90,7 +90,7 @@ this section before touching the relevant area.
   `'ClockIn'` will silently miss adjustments. Always go through
   `normalizeType_()`.
 - **Roster cache invalidation + key bump.** Employee data is cached
-  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v4`).
+  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v5`).
   After editing any Employees-sheet column (`adjustLeaveBalance_`,
   manual edits for test setup, etc.) call `invalidateRosterCache_()`
   or subsequent reads will return stale balances for up to 5
@@ -264,6 +264,18 @@ this section before touching the relevant area.
   values without manual scrubbing on every `clasp pull`, since
   Script Properties live on the deployed project and are never
   touched by clasp.
+- **Web app runs as the deployer, restricted to the domain.**
+  `web-app/appsscript.json` declares `webapp.executeAs:
+  "USER_DEPLOYING"` and `webapp.access: "DOMAIN"`. The deployer's
+  account is therefore the one that grants OAuth consent for every
+  Sheet open (ADP roster + per-rep call-notes Sheets), every
+  `MailApp.sendEmail`, and the `UrlFetchApp` calls used by the
+  automated export. That account must have edit access to the ADP
+  spreadsheet AND to every per-rep call-notes Sheet — redeploying
+  as a different account silently fails until those Sheets are
+  reshared. The URL is reachable only by `@umsupply.com` users;
+  flipping `access` to `ANYONE` would expose the rep dashboard
+  publicly.
 - **Design tokens are the single source of truth for color,
   typography, radii, shadows, and motion.** All declared in
   `web-app/styles_design_tokens.html` and consumed via CSS
@@ -349,6 +361,13 @@ this section before touching the relevant area.
   `{resolution}`, `{timestamp}`, etc. tokens — Robin can tune the
   CRM-paste-friendly serialization without code changes. The replacement
   is straight string-replace; no escaping (the clipboard is plain text).
+- **Client-side persistence is two localStorage keys.** Both per-
+  browser, both wrapped in try/catch so a privacy-mode browser
+  doesn't break: `umsTimeClockMode` stores the dark/light preference
+  (read by the boot script in `index.html`); `umsCallNotesLastDept`
+  stores the rep's last email-composer department selection
+  (re-applied as the default on the next compose click). Clearing
+  browser data wipes both — neither is data-loss-risky.
 
 ## Operator State Checklist
 
@@ -369,9 +388,6 @@ manually for a fresh deploy or environment:
   `FALSE` for contractors). `setupTestEnvironment()` auto-writes
   the header on test runs if missing, but production rows still
   need it set manually.
-- **`ROSTER_CACHE_KEY` = `'employee_roster_v4'`** — bumped when
-  PTO_ENABLED column landed. After deploying, run `clearCaches()`
-  once to flush any stale `_v3` cache entries.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
   installer now wires four triggers:
@@ -463,7 +479,7 @@ INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }
 INV-25 | `managerSubmitTimeOff` requires `callerEmp.isManager`; when `autoApprove=true` it skips the Pending stage, applies the PTO deduction in the same call, and emails the employee a decision notice | Subsystem: Server
 INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) go through `normalizeTime_`, which detects Date objects and re-formats via the spreadsheet's timezone | Subsystem: Server
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
-INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v4`) so old cached entries with the wrong column shape are not served | Subsystem: Server
+INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
 INV-31 | Manager-gated Call Notes endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
