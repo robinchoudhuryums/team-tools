@@ -35,21 +35,118 @@ const CONFIG = {
 
   AUTO_MISSED_ALERT_HOUR_IST: 6,
   AUTO_EXPORT_HOUR_IST:       12,
+
+  // ── Call Notes module ────────────────────────────────────────────────
+  // The rolling-note panel; per-rep notes write to the rep's own Sheet
+  // (EMP.CALL_NOTES_SHEET_ID, column L), email composer/preview gate is a
+  // separate action from log-on-submit. See helper getCallNotesSheet_().
+  CALL_NOTES: {
+    NOTES_TAB:           'Notes',
+    SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
+    DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
+    CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
+    AUTO_COPY_FORMAT:    '{timestamp} | {caller} ({callback}) | {relationship} | {patientAndTrx} | {issue} → {resolution}',
+    STALE_FLAG_HOURS:    1,              // an `action` flag is "stale" if unresolved beyond this
+    EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
+    EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
+    TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
+    REVIEW_DIGEST_WEEKDAY:   5,
+    DEPARTMENT_EMAILS: {
+      'Sales':            'sales@universalmedsupply.com',
+      'Eligibility MM&R': 'eligibility@universalmedsupply.com',
+      'Manual Mobility':  'patientintake@universalmedsupply.com',
+      'Resupply':         'resupply@universalmedsupply.com',
+      'Power':            'power@universalmedsupply.com',
+      'Field Ops':        'routing@universalmedsupply.com',
+      'Service':          'service@universalmedsupply.com',
+      'Billing':          'billing@universalmedsupply.com',
+      'Denials':          'denials@universalmedsupply.com',
+      'CSR':              'robin.choudhury@universalmedsupply.com',
+      'Spanish':           'spanishcalls@universalmedsupply.com',
+    },
+    // Dept-specific update-type suggestions for the email composer datalist.
+    UPDATE_SUGGESTIONS_BY_DEPT: {
+      'Sales':            ['Appointment Re-scheduled', 'Insurance Details', 'Duplicate'],
+      'Service':          ['Pictures/Video', 'Additional Issue', 'Pending Validation'],
+      'Eligibility MM&R': ['Close Order', 'OOP Accepted', 'UPG Fee Accepted', 'New Insurance Details', 'Duplicate'],
+      'Manual Mobility':  ['Insurance Change', 'Pending Auth'],
+      'Power':            ['New Appt Needed', 'New Appt Details', 'Insurance Change', 'Appeal Status', 'PAR Response', 'PT Eval', 'PV-PPD'],
+      'Resupply':         ['Repeat Resupply', 'Wrong Item Received', 'Vent Inquiry'],
+      'Field Ops':        ['Verified Shipping', 'Re-schedule', 'Delivery Details'],
+      'Billing':          ['Receipt Request', 'Refund'],
+      'Denials':          ['Appeal Needed', 'Redetermination'],
+      'CSR':              ['General Inquiry', 'Status Check'],
+      'Spanish':          ['Translator Needed'],
+    },
+    // Always offered alongside dept-specific suggestions
+    UPDATE_SUGGESTIONS_DEFAULT: [
+      'Verified Shipping', 'Repeat Resupply', 'Close Order', 'OOP Order', 'Supervisor/Complaint',
+    ],
+    // Hardcoded state tax rates (intentionally conservative); used for OOP tax calc.
+    STATE_TAX_RATES: {
+      'Alabama': 0.03, 'Alaska': 0, 'Arizona': 0.045, 'Arkansas': 0.055,
+      'California': 0.06, 'Colorado': 0.02, 'Connecticut': 0.05, 'Delaware': 0,
+      'District of Columbia': 0.05, 'Florida': 0.05, 'Georgia': 0.03, 'Hawaii': 0.03,
+      'Idaho': 0.05, 'Illinois': 0.05, 'Indiana': 0.06, 'Iowa': 0.05,
+      'Kansas': 0.055, 'Kentucky': 0.05, 'Louisiana': 0.035, 'Maine': 0.045,
+      'Maryland': 0.05, 'Massachusetts': 0.05, 'Michigan': 0.05, 'Minnesota': 0.055,
+      'Mississippi': 0.06, 'Missouri': 0.03, 'Montana': 0, 'Nebraska': 0.045,
+      'Nevada': 0.055, 'New Hampshire': 0, 'New Jersey': 0.055, 'New Mexico': 0.04,
+      'New York': 0.03, 'North Carolina': 0.035, 'North Dakota': 0.04, 'Ohio': 0.045,
+      'Oklahoma': 0.045, 'Oregon': 0, 'Pennsylvania': 0.045, 'Rhode Island': 0.05,
+      'South Carolina': 0.04, 'South Dakota': 0.04, 'Tennessee': 0.05, 'Texas': 0.0625,
+      'Utah': 0.045, 'Vermont': 0.04, 'Virginia': 0.04, 'Washington': 0.055,
+      'West Virginia': 0.04, 'Wisconsin': 0.04, 'Wyoming': 0.03,
+    },
+    STATE_ABBR_TO_NAME: {
+      'AL':'Alabama','AK':'Alaska','AZ':'Arizona','AR':'Arkansas','CA':'California',
+      'CO':'Colorado','CT':'Connecticut','DE':'Delaware','DC':'District of Columbia','FL':'Florida',
+      'GA':'Georgia','HI':'Hawaii','ID':'Idaho','IL':'Illinois','IN':'Indiana',
+      'IA':'Iowa','KS':'Kansas','KY':'Kentucky','LA':'Louisiana','ME':'Maine',
+      'MD':'Maryland','MA':'Massachusetts','MI':'Michigan','MN':'Minnesota','MS':'Mississippi',
+      'MO':'Missouri','MT':'Montana','NE':'Nebraska','NV':'Nevada','NH':'New Hampshire',
+      'NJ':'New Jersey','NM':'New Mexico','NY':'New York','NC':'North Carolina','ND':'North Dakota',
+      'OH':'Ohio','OK':'Oklahoma','OR':'Oregon','PA':'Pennsylvania','RI':'Rhode Island',
+      'SC':'South Carolina','SD':'South Dakota','TN':'Tennessee','TX':'Texas','UT':'Utah',
+      'VT':'Vermont','VA':'Virginia','WA':'Washington','WV':'West Virginia','WI':'Wisconsin',
+      'WY':'Wyoming',
+    },
+  },
 };
 
 const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8 };
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
+// Phase 8 (Call Notes): column L (CALL_NOTES_SHEET_ID) — per-rep Sheet ID
 const EMP = {
   EMAIL:0, ID:1, NAME:2, SHEET_ID:3, PAY_CYCLE:4, PAY_ANCHOR:5, IS_MANAGER:6,
-  TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10,
+  TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10, CALL_NOTES_SHEET_ID:11,
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
+
+// Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
+const CN = {
+  NOTE_ID:0, TIMESTAMP:1, DATE_LOCAL:2,
+  CALLBACK:3, CALLER:4, RELATIONSHIP:5, PATIENT_TRX:6,
+  ISSUE:7, TRANSFERRED_TO:8, RESOLUTION:9,
+  FLAG_TYPE:10, RESOLVED:11,
+  EMAILED_AT:12, EMAIL_DEPARTMENTS:13,
+  SUBFORM:14, SUBFORM_DATA:15,
+};
+const CN_HEADERS = [
+  'NoteId','Timestamp','DateLocal',
+  'Callback','Caller','Relationship','PatientAndTRX',
+  'Issue','TransferredTo','Resolution',
+  'FlagType','Resolved',
+  'EmailedAt','EmailDepartments',
+  'Subform','SubformData',
+];
+const CN_FLAG_TYPES = ['action','training','review'];
 
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v4';   // bumped: PtoEnabled column
+const ROSTER_CACHE_KEY = 'employee_roster_v5';   // bumped: CallNotesSheetId column
 const ROSTER_CACHE_TTL = 300;
 
 const TZ_ABBR = {
@@ -897,6 +994,1075 @@ function exportAdpRange(startDate, endDate) {
 
 
 // ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES MODULE  —  server endpoints
+//  ────────────────────────────────────────────────────────────────────────
+//  Rolling-note interface for CSR call logging. Each rep's notes live in
+//  their own per-rep Sheet (EMP.CALL_NOTES_SHEET_ID, column L), `Notes`
+//  tab. The web app's panel logs notes on submit, then offers a separate
+//  email-composer action (with preview gate) for the ~10% of notes that
+//  also need to fire a department email. Flags come in three flavors:
+//  `action` (needs follow-up; pairs with the Resolved column), `training`
+//  (rep wants clarification — aggregated for the manager), `review`
+//  (5-star review candidate — aggregated for future review-request flow).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Submits a new call note. Logs only — does NOT send any email. Email
+ *  composition is a separate two-stage action (preview → confirm) via
+ *  previewCallNoteEmail / emailFromCallNote. */
+function submitCallNote(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+
+    const cleaned = sanitizeCallNotePayload_(payload || {});
+    const v = validateCallNotePayload_(cleaned);
+    if (v.error) return { success: false, error: v.error };
+
+    const sheet = getCallNotesSheet_(emp);
+    const empTz = empTz_(emp);
+    const now = new Date();
+    const noteId = Utilities.getUuid();
+    const timestamp = Utilities.formatDate(now, empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    const dateLocal = Utilities.formatDate(now, empTz, 'yyyy-MM-dd');
+
+    const flagType = sanitizeFlagType_(cleaned.flagType);
+    const subform = String(cleaned.subform || '').trim();
+    const subformDataJson = cleaned.subformData
+      ? JSON.stringify(cleaned.subformData) : '';
+
+    const row = new Array(CN_HEADERS.length).fill('');
+    row[CN.NOTE_ID]         = noteId;
+    row[CN.TIMESTAMP]       = timestamp;
+    row[CN.DATE_LOCAL]      = dateLocal;
+    row[CN.CALLBACK]        = cleaned.callback;
+    row[CN.CALLER]          = cleaned.caller;
+    row[CN.RELATIONSHIP]    = cleaned.relationship;
+    row[CN.PATIENT_TRX]     = cleaned.patientAndTrx;
+    row[CN.ISSUE]           = cleaned.issue;
+    row[CN.TRANSFERRED_TO]  = cleaned.transferredTo;
+    row[CN.RESOLUTION]      = cleaned.resolution;
+    row[CN.FLAG_TYPE]       = flagType;
+    row[CN.RESOLVED]        = 'FALSE';
+    row[CN.EMAILED_AT]      = '';
+    row[CN.EMAIL_DEPARTMENTS] = '';
+    row[CN.SUBFORM]         = subform;
+    row[CN.SUBFORM_DATA]    = subformDataJson;
+    sheet.appendRow(row);
+
+    writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
+      `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
+
+    return {
+      success: true,
+      note: callNoteRowToObject_({ row, rowIndex: sheet.getLastRow() }),
+    };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Updates an existing call note's content. Inline-edit support for the
+ *  rolling stack. The audit log records the diff for accountability. */
+function updateCallNote(noteId, payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+
+    const cleaned = sanitizeCallNotePayload_(payload || {});
+    const v = validateCallNotePayload_(cleaned);
+    if (v.error) return { success: false, error: v.error };
+
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const oldRow = located.row;
+    sheet.getRange(located.rowIndex, CN.CALLBACK + 1).setValue(cleaned.callback);
+    sheet.getRange(located.rowIndex, CN.CALLER + 1).setValue(cleaned.caller);
+    sheet.getRange(located.rowIndex, CN.RELATIONSHIP + 1).setValue(cleaned.relationship);
+    sheet.getRange(located.rowIndex, CN.PATIENT_TRX + 1).setValue(cleaned.patientAndTrx);
+    sheet.getRange(located.rowIndex, CN.ISSUE + 1).setValue(cleaned.issue);
+    sheet.getRange(located.rowIndex, CN.TRANSFERRED_TO + 1).setValue(cleaned.transferredTo);
+    sheet.getRange(located.rowIndex, CN.RESOLUTION + 1).setValue(cleaned.resolution);
+
+    const diffs = [];
+    [['callback', CN.CALLBACK], ['caller', CN.CALLER], ['relationship', CN.RELATIONSHIP],
+     ['patientAndTRX', CN.PATIENT_TRX], ['issue', CN.ISSUE],
+     ['transferredTo', CN.TRANSFERRED_TO], ['resolution', CN.RESOLUTION]].forEach(([name, idx]) => {
+      const before = String(oldRow[idx] || '').trim();
+      const after  = String(cleaned[name === 'patientAndTRX' ? 'patientAndTrx' : name] || '').trim();
+      if (before !== after) diffs.push(name);
+    });
+
+    const dateLocal = normalizeDate_(oldRow[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNoteEdit', dateLocal, '', false, 0,
+      `noteId=${noteId}; changed: ${diffs.join(', ') || '(no changes)'}`);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Sets (or clears) the flag type on a note. Pass '' to clear. */
+function setCallNoteFlag(noteId, flagType) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const t = sanitizeFlagType_(flagType);
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(t);
+    // Clearing the flag also resets Resolved — fresh state when re-flagging
+    if (!t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
+      `noteId=${noteId}; ${t || '<cleared>'}`);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Marks an action-flagged note as resolved (or un-resolves it). Only
+ *  meaningful when FlagType=action. */
+function setCallNoteResolved(noteId, resolved) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
+    if (flagType !== 'action') {
+      return { success: false, error: 'Only action-flagged notes can be resolved.' };
+    }
+    const val = resolved ? 'TRUE' : 'FALSE';
+    sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue(val);
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNoteResolve', dateLocal, '', false, 0,
+      `noteId=${noteId}; ${resolved ? 'resolved' : 'unresolved'}`);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Deletes a call note. Hard-delete (Sheet row removed); audit row keeps the trail. */
+function deleteCallNote(noteId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    sheet.deleteRow(located.rowIndex);
+    writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
+      `noteId=${noteId}`);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Returns the calling rep's notes for a given date, optionally filtered.
+ *  Defaults to today in the rep's tz. Filter options:
+ *    'all' (default) | 'action' | 'training' | 'review' | 'unresolved' | 'unsent' */
+function getMyCallNotes(options) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const opts = options || {};
+    const empTz = empTz_(emp);
+    const date = opts.date || Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+      return { error: 'Invalid date format (expected yyyy-MM-dd).' };
+    const filter = String(opts.filter || 'all').toLowerCase();
+
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+      if (rowDate !== date) continue;
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (!callNoteMatchesFilter_(note, filter)) continue;
+      notes.push(note);
+    }
+    notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return {
+      date,
+      filter,
+      notes,
+      autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
+      timezone: empTz,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Ambient signal for the sidebar badge + stale-flag indicators. */
+function getCallNotesAmbient() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { enrolled: false };
+    const empTz = empTz_(emp);
+    const today = Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    let unresolvedActionCount = 0;
+    let staleActionCount = 0;
+    let todayTotal = 0;
+    const staleMs = CONFIG.CALL_NOTES.STALE_FLAG_HOURS * 3600 * 1000;
+    const nowMs = Date.now();
+    for (let i = 1; i < rows.length; i++) {
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (note.dateLocal === today) todayTotal++;
+      if (note.flagType === 'action' && !note.resolved) {
+        unresolvedActionCount++;
+        const noteMs = parseTimestampMs_(note.timestamp, empTz);
+        if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
+      }
+    }
+    return {
+      enrolled: true,
+      unresolvedActionCount,
+      staleActionCount,
+      todayTotal,
+      staleFlagHours: CONFIG.CALL_NOTES.STALE_FLAG_HOURS,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Returns the department options for the email composer + the dept→type
+ *  suggestion map (for the dynamic update-type datalist). */
+function getCallNotesDepartments() {
+  return {
+    departments: Object.keys(CONFIG.CALL_NOTES.DEPARTMENT_EMAILS).concat(['Other']),
+    suggestionsByDept: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT,
+    defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
+    stateTaxRates: CONFIG.CALL_NOTES.STATE_TAX_RATES,
+    stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
+    ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
+  };
+}
+
+/** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all. */
+function searchMyCallNotes(query, field, dateRange) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const q = String(query || '').trim();
+    if (!q) return { results: [] };
+    const empTz = empTz_(emp);
+    const f = String(field || 'all').toLowerCase();
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+
+    const qLower = q.toLowerCase();
+    const results = [];
+    for (let i = 1; i < rows.length; i++) {
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+      if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+      let hit = false;
+      if (f === 'caller' || f === 'all') {
+        if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+              .toLowerCase().indexOf(qLower) >= 0) hit = true;
+      }
+      if (!hit && (f === 'issue' || f === 'all')) {
+        if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+      }
+      if (hit) results.push(note);
+    }
+    results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    if (results.length > 200) results.length = 200;
+    return { results, timezone: empTz };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Manager-gated call-notes views ──────────────────────────────────────
+
+/** Manager view of any single rep's notes. */
+function managerGetCallNotes(repEmpId, date, filter) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const target = lookupEmployeeById_(repEmpId);
+    if (!target) return { error: 'Employee not found.' };
+    if (!target.callNotesSheetId) return { error: 'This rep has no call-notes Sheet configured.' };
+
+    const empTz = target.timezone || CONFIG.TIMEZONE;
+    const dateStr = date || Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr))
+      return { error: 'Invalid date format (expected yyyy-MM-dd).' };
+    const flt = String(filter || 'all').toLowerCase();
+
+    const sheet = getCallNotesSheet_(target);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+      if (rowDate !== dateStr) continue;
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (!callNoteMatchesFilter_(note, flt)) continue;
+      notes.push(note);
+    }
+    notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return { date: dateStr, filter: flt, notes, repName: target.name, repId: target.id, timezone: empTz };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager search across all enrolled reps' call-notes Sheets. */
+function managerSearchCallNotes(query, field, repFilter, dateRange) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const q = String(query || '').trim();
+    if (!q) return { results: [] };
+    const qLower = q.toLowerCase();
+    const f = String(field || 'all').toLowerCase();
+
+    const roster = getEmployeeRosterRows_();
+    const results = [];
+    for (let r = 1; r < roster.length; r++) {
+      const repId = String(roster[r][EMP.ID]).trim();
+      if (repFilter && repFilter.length && repFilter.indexOf(repId) < 0) continue;
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      const repName = String(roster[r][EMP.NAME]).trim();
+      let target;
+      try {
+        target = { id: repId, name: repName, callNotesSheetId: String(sheetId).trim() };
+        const sheet = getCallNotesSheet_(target);
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+          if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+          if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+          let hit = false;
+          if (f === 'caller' || f === 'all') {
+            if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                  .toLowerCase().indexOf(qLower) >= 0) hit = true;
+          }
+          if (!hit && (f === 'issue' || f === 'all')) {
+            if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+          }
+          if (hit) {
+            note.repId = repId; note.repName = repName;
+            results.push(note);
+          }
+        }
+      } catch (e) {
+        // A broken per-rep Sheet shouldn't break the cross-rep search
+        console.warn('managerSearchCallNotes skipped rep ' + repId + ': ' + e.message);
+      }
+    }
+    results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    if (results.length > 500) results.length = 500;
+    return { results };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager aggregated training-queue across all enrolled reps. */
+function managerGetTrainingQueue(dateRange) {
+  return managerAggregateFlagged_('training', dateRange);
+}
+
+/** Manager aggregated review-candidate queue across all enrolled reps. */
+function managerGetReviewCandidates(dateRange) {
+  return managerAggregateFlagged_('review', dateRange);
+}
+
+function managerAggregateFlagged_(flagType, dateRange) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const roster = getEmployeeRosterRows_();
+    const results = [];
+    for (let r = 1; r < roster.length; r++) {
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      const repId = String(roster[r][EMP.ID]).trim();
+      const repName = String(roster[r][EMP.NAME]).trim();
+      try {
+        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+          if (note.flagType !== flagType) continue;
+          if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+          if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+          note.repId = repId; note.repName = repName;
+          results.push(note);
+        }
+      } catch (e) {
+        console.warn('managerAggregateFlagged_ skipped rep ' + repId + ': ' + e.message);
+      }
+    }
+    results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return { flagType, results };
+  } catch (err) { return { error: err.message }; }
+}
+
+
+// ── Call Notes helpers (private) ────────────────────────────────────────
+
+function sanitizeCallNotePayload_(p) {
+  const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+  return {
+    callback:       s(p.callback),
+    caller:         s(p.caller),
+    relationship:   s(p.relationship),
+    patientAndTrx:  s(p.patientAndTrx || p.patientAndTRX),
+    issue:          s(p.issue),
+    transferredTo:  s(p.transferredTo),
+    resolution:     s(p.resolution),
+    flagType:       s(p.flagType).toLowerCase(),
+    subform:        s(p.subform).toLowerCase(),
+    subformData:    p.subformData || null,
+  };
+}
+
+function validateCallNotePayload_(cleaned) {
+  // Logging is generous — only require the rep typed *something* meaningful.
+  // Empty notes are useless; everything else is the rep's call.
+  const anyContent = cleaned.callback || cleaned.caller || cleaned.patientAndTrx
+                  || cleaned.issue || cleaned.resolution;
+  if (!anyContent) return { error: 'Note is empty. Fill at least one field before submitting.' };
+  if (cleaned.flagType && CN_FLAG_TYPES.indexOf(cleaned.flagType) < 0) {
+    return { error: 'Invalid flag type. Expected: ' + CN_FLAG_TYPES.join(', ') };
+  }
+  return { ok: true };
+}
+
+function sanitizeFlagType_(t) {
+  const v = String(t || '').trim().toLowerCase();
+  return CN_FLAG_TYPES.indexOf(v) >= 0 ? v : '';
+}
+
+function findCallNoteRow_(sheet, noteId) {
+  if (!noteId) return null;
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][CN.NOTE_ID]).trim() === noteId) {
+      return { rowIndex: i + 1, row: rows[i] };
+    }
+  }
+  return null;
+}
+
+function callNoteRowToObject_(located) {
+  const row = located.row;
+  const resolvedRaw = row[CN.RESOLVED];
+  const resolvedStr = (resolvedRaw === null || resolvedRaw === undefined) ? ''
+    : String(resolvedRaw).trim().toLowerCase();
+  const resolved = (resolvedStr === 'true' || resolvedStr === 'yes' || resolvedStr === '1');
+  let subformData = null;
+  if (row[CN.SUBFORM_DATA]) {
+    try { subformData = JSON.parse(row[CN.SUBFORM_DATA]); }
+    catch (e) { subformData = null; }
+  }
+  return {
+    noteId:           String(row[CN.NOTE_ID] || ''),
+    timestamp:        String(row[CN.TIMESTAMP] || ''),
+    dateLocal:        normalizeDate_(row[CN.DATE_LOCAL]),
+    callback:         String(row[CN.CALLBACK] || ''),
+    caller:           String(row[CN.CALLER] || ''),
+    relationship:     String(row[CN.RELATIONSHIP] || ''),
+    patientAndTrx:    String(row[CN.PATIENT_TRX] || ''),
+    issue:            String(row[CN.ISSUE] || ''),
+    transferredTo:    String(row[CN.TRANSFERRED_TO] || ''),
+    resolution:       String(row[CN.RESOLUTION] || ''),
+    flagType:         String(row[CN.FLAG_TYPE] || '').toLowerCase(),
+    resolved,
+    emailedAt:        String(row[CN.EMAILED_AT] || ''),
+    emailDepartments: String(row[CN.EMAIL_DEPARTMENTS] || ''),
+    subform:          String(row[CN.SUBFORM] || ''),
+    subformData,
+    rowIndex: located.rowIndex,
+  };
+}
+
+function callNoteMatchesFilter_(note, filter) {
+  switch (filter) {
+    case 'action':     return note.flagType === 'action';
+    case 'training':   return note.flagType === 'training';
+    case 'review':     return note.flagType === 'review';
+    case 'unresolved': return note.flagType === 'action' && !note.resolved;
+    case 'unsent':     return !note.emailedAt;
+    case 'all':
+    default:           return true;
+  }
+}
+
+/** Parse a "yyyy-MM-dd'T'HH:mm:ss" timestamp string back to epoch ms in the rep's tz. */
+function parseTimestampMs_(tsStr, tz) {
+  if (!tsStr) return null;
+  try {
+    const d = Utilities.parseDate(tsStr, tz, "yyyy-MM-dd'T'HH:mm:ss");
+    return d.getTime();
+  } catch (e) { return null; }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — EMAIL COMPOSER
+//  ────────────────────────────────────────────────────────────────────────
+//  Two-stage send: previewCallNoteEmail returns the rendered HTML for a
+//  confirm-before-send modal in the client; emailFromCallNote actually
+//  sends via MailApp and stamps the note row's EmailedAt / EmailDepartments.
+//  Subject/body builders port the legacy logic (Verified Shipping /
+//  Repeat Resupply / Close Order / OOP subforms) but the inline-CSS uses
+//  resolved hex equivalents of the design tokens (--accent, --good,
+//  --warn, etc.) since email clients strip <style> blocks and don't honor
+//  CSS variables. The PALETTE constant below is the translation layer;
+//  re-sync if styles_design_tokens.html palette changes.
+// ════════════════════════════════════════════════════════════════════════════
+
+const CN_EMAIL_PALETTE = {
+  paperCard:    '#ffffff',
+  paper:        '#f6f7f9',
+  paper2:       '#eceef2',
+  ink:          '#101418',
+  muted:        '#606872',
+  line:         '#dadde3',
+  accent:       '#3565b8',      // resolved oklch(55% 0.12 240)
+  accentSoft:   '#e6ecf6',      // resolved oklch(93% 0.04 240)
+  accentDeep:   '#1e3a6e',
+  good:         '#3d8c6b',
+  goodSoft:     '#e6f1ec',
+  goodDeep:     '#1f4d3a',
+  warn:         '#c25b1a',
+  warnSoft:     '#fbeede',
+  warnDeep:     '#693012',
+  danger:       '#c0392b',
+  dangerSoft:   '#fae8e6',
+  dangerDeep:   '#6e1f17',
+};
+
+/** Renders the email HTML body + computed subject/recipients for a note +
+ *  composer selections, without sending. The client shows this in a
+ *  confirm modal; user clicks Send → emailFromCallNote actually sends. */
+function previewCallNoteEmail(noteId, emailPayload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { error: 'Note not found.' };
+    const note = callNoteRowToObject_(located);
+
+    const selections = sanitizeEmailSelections_(emailPayload || {});
+    const v = validateEmailSelections_(selections);
+    if (v.error) return { error: v.error };
+
+    const callData = callDataFromNote_(note);
+    const subject = buildEmailSubject_(selections, callData.patientAndTrx);
+    const recipientList = resolveEmailRecipients_(selections);
+    if (recipientList.error) return { error: recipientList.error };
+
+    const htmlBody = buildCallNoteEmailHtml_(callData, selections);
+    const textBody = buildCallNoteEmailText_(callData, selections, subject);
+
+    return {
+      noteId,
+      subject,
+      to: recipientList.to,
+      cc: CONFIG.CALL_NOTES.CC_EMAIL,
+      from: emp.email,
+      htmlBody,
+      textBody,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Actually sends the email composed for a note. Stamps EmailedAt +
+ *  EmailDepartments on the note row, writes a CallNoteEmail audit row. */
+function emailFromCallNote(noteId, emailPayload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+    const note = callNoteRowToObject_(located);
+
+    const selections = sanitizeEmailSelections_(emailPayload || {});
+    const v = validateEmailSelections_(selections);
+    if (v.error) return { success: false, error: v.error };
+
+    const callData = callDataFromNote_(note);
+    const subject = buildEmailSubject_(selections, callData.patientAndTrx);
+    const recipientList = resolveEmailRecipients_(selections);
+    if (recipientList.error) return { success: false, error: recipientList.error };
+
+    const htmlBody = buildCallNoteEmailHtml_(callData, selections);
+    const textBody = buildCallNoteEmailText_(callData, selections, subject);
+
+    MailApp.sendEmail({
+      to: recipientList.to,
+      cc: CONFIG.CALL_NOTES.CC_EMAIL,
+      subject,
+      body: textBody,
+      htmlBody,
+    });
+
+    const empTz = empTz_(emp);
+    const emailedAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    const deptLabel = selections.departments.join(', ');
+    sheet.getRange(located.rowIndex, CN.EMAILED_AT + 1).setValue(emailedAt);
+    sheet.getRange(located.rowIndex, CN.EMAIL_DEPARTMENTS + 1).setValue(deptLabel);
+
+    // Persist subform selection back to the row so the rolling card can
+    // re-open the composer with prior settings if the rep needs to re-send.
+    if (selections.updateInfo) {
+      sheet.getRange(located.rowIndex, CN.SUBFORM + 1).setValue(updateInfoToSubformKey_(selections.updateInfo));
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(selections));
+    }
+
+    writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
+      `noteId=${noteId}; to=${recipientList.to}; subj="${subject}"`);
+
+    return { success: true, emailedAt, recipients: recipientList.to, subject };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+function sanitizeEmailSelections_(payload) {
+  const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+  const arr = (v) => Array.isArray(v) ? v.map(s).filter(x => x.length > 0) : [];
+  return {
+    departments:     arr(payload.departments),
+    individualEmail: s(payload.individualEmail),
+    updateInfo:      s(payload.updateInfo),
+    callbackNeeded:  !!payload.callbackNeeded,
+    overwriteResolution: !!payload.overwriteResolution,
+    shippingDetails: payload.shippingDetails || null,
+    closeDetails:    payload.closeDetails || null,
+    resupplyDetails: payload.resupplyDetails || null,
+    oopDetails:      payload.oopDetails || null,
+  };
+}
+
+function validateEmailSelections_(selections) {
+  if (!selections.departments || selections.departments.length === 0) {
+    return { error: 'Select at least one recipient department.' };
+  }
+  if (selections.departments.indexOf('Other') >= 0) {
+    const email = selections.individualEmail;
+    if (!email) return { error: 'Selected "Other" but no email was provided.' };
+    // Multi-email support — split on commas, validate each
+    const parts = email.split(',').map(p => p.trim()).filter(p => p.length > 0);
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].indexOf('@') < 1 || parts[i].indexOf('.') < 0) {
+        return { error: 'Invalid email format: ' + parts[i] };
+      }
+    }
+  }
+  if (!selections.updateInfo) {
+    return { error: 'Specify an Update type before sending.' };
+  }
+  return { ok: true };
+}
+
+function resolveEmailRecipients_(selections) {
+  const map = CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
+  const out = [];
+  for (let i = 0; i < selections.departments.length; i++) {
+    const dept = selections.departments[i];
+    if (dept === 'Other') {
+      out.push(selections.individualEmail);
+    } else {
+      const addr = map[dept];
+      if (!addr) return { error: 'Unknown department: ' + dept };
+      out.push(addr);
+    }
+  }
+  return { to: out.join(', ') };
+}
+
+function callDataFromNote_(note) {
+  // Smart "self"-relationship logic: when relationship is "self" and the
+  // patient/TRX cell is just a number, prepend the caller's name so
+  // downstream subject lines have a usable identifier.
+  let patientAndTrx = String(note.patientAndTrx || '').trim();
+  const relationship = String(note.relationship || '').trim().toLowerCase();
+  const isOnlyNumber = /^[\d\s#]+$/.test(patientAndTrx);
+  if (relationship === 'self' && isOnlyNumber && note.caller) {
+    patientAndTrx = `${note.caller} ${patientAndTrx}`;
+  }
+  return {
+    callBackNumber: formatPhoneNumber_(note.callback),
+    callerName:     note.caller,
+    relationship:   note.relationship,
+    patientAndTrx,
+    issue:          note.issue,
+    transferredTo:  note.transferredTo,
+    resolution:     note.resolution,
+  };
+}
+
+function buildEmailSubject_(selections, patientName) {
+  let subjectUpdate = selections.updateInfo;
+  if (!subjectUpdate || !subjectUpdate.trim()) subjectUpdate = 'Update';
+
+  const canon = subjectUpdate.toLowerCase();
+  if (canon === 'close order')       subjectUpdate = 'Close Order';
+  if (canon === 'verified shipping') subjectUpdate = 'Verified Shipping';
+  if (canon === 'oop order')         subjectUpdate = 'OOP Order';
+
+  if (canon === 'repeat resupply' && selections.resupplyDetails) {
+    const details = selections.resupplyDetails;
+    const cat = details.itemCategory;
+    const month = details.resupplyMonth;
+    const dob = details.dob;
+    const prefix = (cat === 'Other') ? '' : `${cat} `;
+    const middle = month ? `${month} ` : '';
+    subjectUpdate = `${prefix}${middle}Resupply`.trim();
+    subjectUpdate = subjectUpdate.charAt(0).toUpperCase() + subjectUpdate.slice(1);
+    let fullSubject = `${subjectUpdate}: ${patientName}`;
+    if (dob) fullSubject += `, DOB: ${dob}`;
+    return fullSubject;
+  }
+  return `${subjectUpdate}: ${patientName}`;
+}
+
+function generateOOPResolutionText_(selections) {
+  const oop = selections.oopDetails;
+  const ship = selections.shippingDetails;
+  if (!oop || !ship) return '';
+  let paymentStatus = 'Need to Collect Total';
+  if (ship.patResp === 'Collected') paymentStatus = 'Collected Total';
+  else if (ship.patResp === 'N/A')   paymentStatus = 'Total (N/A)';
+  let text = `OOP Order Processed`;
+  const taxFmt = (String(oop.taxAmt || '').charAt(0) === '$')
+    ? oop.taxAmt : '$' + oop.taxAmt;
+  text += `\n${paymentStatus}: $${oop.totalCost} (Base: $${oop.baseCost} + Est. Sales Tax: ${taxFmt} + Ship: $${oop.shippingCost})`;
+  text += `\nVerified Addr: ${ship.verifiedAddr ? 'Yes' : 'No'}`;
+  if (ship.verifiedAddrText) text += ` (${ship.verifiedAddrText})`;
+  text += ` | Loc: ${ship.patientLoc}`;
+  text += ` | Docs: ${ship.docsTo}`;
+  if (ship.deliveryEmail) text += ` (${ship.deliveryEmail})`;
+  if (ship.specialNote) text += `\nNote: ${ship.specialNote}`;
+  return text;
+}
+
+function buildCallNoteEmailHtml_(callData, selections) {
+  const P = CN_EMAIL_PALETTE;
+  let updateInfo = selections.updateInfo;
+  const canon = updateInfo.toLowerCase();
+  if (canon === 'close order')       updateInfo = 'Close Order';
+  if (canon === 'verified shipping') updateInfo = 'Verified Shipping';
+  if (canon === 'repeat resupply')   updateInfo = 'Repeat Resupply';
+  if (canon === 'oop order')         updateInfo = 'OOP Order';
+
+  const callbackNeeded  = selections.callbackNeeded;
+  const shippingDetails = selections.shippingDetails;
+  const closeDetails    = selections.closeDetails;
+  const resupplyDetails = selections.resupplyDetails;
+  const oopDetails      = selections.oopDetails;
+
+  // ── Update line ─────────────────────────────────────────────────────
+  let updateLineHtml = '';
+  if (updateInfo === 'Close Order' && closeDetails) {
+    updateLineHtml =
+      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
+      `<span style="font-weight:600;color:${P.danger};">Close Order</span>` +
+      `<span style="font-weight:600;color:${P.accentDeep};"> — ${esc_(closeDetails.reason)}</span>`;
+  } else if (updateInfo === 'OOP Order' && oopDetails) {
+    updateLineHtml =
+      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
+      `<span style="font-weight:600;color:${P.warn};">OOP Order</span>` +
+      `<span style="font-weight:600;color:${P.accentDeep};"> — Total: $${esc_(oopDetails.totalCost)}</span>`;
+  } else {
+    updateLineHtml =
+      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
+      `<span style="font-weight:600;color:${P.ink};">${esc_(updateInfo)}</span>`;
+  }
+
+  // ── Callback banner ─────────────────────────────────────────────────
+  const callbackHtml = callbackNeeded
+    ? `<div style="background:${P.warnSoft};color:${P.warnDeep};padding:10px 14px;border-radius:6px;` +
+      `margin:14px 0;font-weight:600;border-left:3px solid ${P.warn};">` +
+      `&#9742; Callback Requested</div>`
+    : '';
+
+  // ── Subform blocks ──────────────────────────────────────────────────
+  let shippingHtml = '', resupplyHtml = '', oopHtml = '';
+  if (shippingDetails) shippingHtml = renderShippingDetailsHtml_(shippingDetails, P);
+  if (resupplyDetails) resupplyHtml = renderResupplyDetailsHtml_(resupplyDetails, P);
+  if (oopDetails)      oopHtml      = renderOopDetailsHtml_(oopDetails, P);
+
+  // ── Resolution overrides ────────────────────────────────────────────
+  let resolutionText = callData.resolution || '';
+  if (updateInfo === 'OOP Order' && oopDetails && shippingDetails) {
+    resolutionText = generateOOPResolutionText_(selections).replace(/\n/g, '<br>');
+  } else {
+    resolutionText = esc_(resolutionText);
+  }
+
+  // ── Body ────────────────────────────────────────────────────────────
+  const updateBox =
+    `<div style="background:${P.accentSoft};border-radius:6px;padding:11px 14px;margin:14px 0;` +
+    `font-size:15px;border-left:3px solid ${P.accent};">${updateLineHtml}</div>`;
+
+  const callDetailsTable =
+    `<table style="width:100%;border-collapse:collapse;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;` +
+    `font-size:14px;border:1px solid ${P.line};border-radius:6px;overflow:hidden;margin-top:6px;">` +
+      `<tr style="background:${P.ink};color:${P.paperCard};">` +
+        `<td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.02em;">Call Details</td>` +
+      `</tr>` +
+      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;width:34%;color:${P.muted};">Callback Number</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.callBackNumber)}</td></tr>` +
+      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Caller Name</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.callerName)}</td></tr>` +
+      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Relationship</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.relationship)}</td></tr>` +
+      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Patient & TRX</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};font-weight:600;">${esc_(callData.patientAndTrx)}</td></tr>` +
+      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Issue</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.issue)}</td></tr>` +
+      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Transferred To</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.transferredTo)}</td></tr>` +
+      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Resolution</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${resolutionText}</td></tr>` +
+    `</table>`;
+
+  return (
+    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
+      `<div style="max-width:680px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:24px 26px;">` +
+        `<h2 style="margin:0 0 6px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;color:${P.ink};">Update for ${esc_(callData.patientAndTrx)}</h2>` +
+        `<p style="margin:0 0 14px;color:${P.muted};font-size:13px;">Hello team — please see the following update for this order.</p>` +
+        callbackHtml +
+        updateBox +
+        oopHtml +
+        shippingHtml +
+        resupplyHtml +
+        callDetailsTable +
+      `</div>` +
+      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools · Call Notes</div>` +
+    `</div>`
+  );
+}
+
+function renderShippingDetailsHtml_(d, P) {
+  const verifiedDisplay = d.verifiedAddr
+    ? `<span style="color:${P.goodDeep};font-weight:600;">&#10003; Yes</span>` +
+      (d.verifiedAddrText ? ` <span style="color:${P.ink};">(${esc_(d.verifiedAddrText)})</span>` : '')
+    : `<span style="color:${P.dangerDeep};font-weight:600;">&#10005; No</span>`;
+  const mapLink = d.verifiedAddrText
+    ? ` <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.verifiedAddrText)}" target="_blank" style="color:${P.accent};text-decoration:none;font-size:.9em;">View Map</a>`
+    : '';
+  const docsToDisplay = (d.docsTo === 'Email' && d.deliveryEmail)
+    ? `Email: <span style="color:${P.ink};">${esc_(d.deliveryEmail)}</span>`
+    : esc_(d.docsTo || '');
+  const noteRow = d.specialNote
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Note</td><td style="padding:5px 8px;font-style:italic;color:${P.ink};">${esc_(d.specialNote)}</td></tr>`
+    : '';
+  return (
+    `<div style="background:${P.goodSoft};border:1px solid color-mix(in srgb,${P.good},transparent 60%);` +
+    `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.good};">` +
+      `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.goodDeep};font-weight:600;">Verified Shipping</h3>` +
+      `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Verified Address</td><td style="padding:5px 8px;">${verifiedDisplay}${mapLink}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Patient Location</td><td style="padding:5px 8px;">${esc_(d.patientLoc || '')}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Docs To</td><td style="padding:5px 8px;">${docsToDisplay}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Pat. Responsibility</td><td style="padding:5px 8px;">${esc_(d.patResp || '')}</td></tr>` +
+        noteRow +
+      `</table>` +
+    `</div>`
+  );
+}
+
+function renderResupplyDetailsHtml_(d, P) {
+  const categoryDisplay = (d.itemCategory === 'Other') ? 'Resupply' : (d.itemCategory || '');
+  const itemsQtyDisplay = d.sameItems
+    ? `<span style="color:${P.goodDeep};">&#10003; Yes</span>`
+    : `<span style="color:${P.dangerDeep};">&#10005; No</span>`;
+  const addrDisplay = (d.addrStatus === 'Different')
+    ? `<span style="color:${P.danger};font-weight:600;">New:</span> ${esc_(d.newAddr || '')}`
+    : `<span style="color:${P.goodDeep};">&#10003; Same as previous</span>`;
+  const insDisplay = (d.insStatus === 'Changed')
+    ? `<span style="color:${P.danger};font-weight:600;">New:</span> ${esc_(d.newIns || '')} (ID: ${esc_(d.newMemId || '')})`
+    : `<span style="color:${P.goodDeep};">&#10003; Same as previous</span>`;
+  const provDisplay = (d.provStatus === 'Changed')
+    ? `<span style="color:${P.danger};font-weight:600;">New:</span> ${esc_(d.newProv || '')} (Ph: ${esc_(formatProviderPhone_(d.newMdoPh || ''))})`
+    : `<span style="color:${P.goodDeep};">&#10003; Same as previous</span>`;
+  const noteRow = d.specialNote
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Note</td><td style="padding:5px 8px;font-style:italic;color:${P.ink};">${esc_(d.specialNote)}</td></tr>`
+    : '';
+  const dobRow = d.dob
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">D.O.B.</td><td style="padding:5px 8px;color:${P.ink};">${esc_(d.dob)}</td></tr>`
+    : '';
+  const monthRow = d.resupplyMonth
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Requesting Month</td><td style="padding:5px 8px;color:${P.ink};">${esc_(d.resupplyMonth)}</td></tr>`
+    : '';
+  return (
+    `<div style="background:${P.goodSoft};border:1px solid color-mix(in srgb,${P.good},transparent 60%);` +
+    `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.good};">` +
+      `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.goodDeep};font-weight:600;">Repeat Resupply</h3>` +
+      `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Item Category</td><td style="padding:5px 8px;">${esc_(categoryDisplay)}</td></tr>` +
+        dobRow + monthRow +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Last Date Scheduled</td><td style="padding:5px 8px;">${esc_(d.lastDate || '')}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Items/Qty Same?</td><td style="padding:5px 8px;">${itemsQtyDisplay}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Verified Address</td><td style="padding:5px 8px;">${addrDisplay}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Verified Insurance</td><td style="padding:5px 8px;">${insDisplay}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Verified Provider</td><td style="padding:5px 8px;">${provDisplay}</td></tr>` +
+        noteRow +
+      `</table>` +
+    `</div>`
+  );
+}
+
+function renderOopDetailsHtml_(d, P) {
+  let taxDisplay = String(d.taxAmt || '');
+  if (taxDisplay && taxDisplay.charAt(0) !== '$' && !isNaN(parseFloat(taxDisplay))) {
+    taxDisplay = '$' + taxDisplay;
+  }
+  return (
+    `<div style="background:${P.warnSoft};border:1px solid color-mix(in srgb,${P.warn},transparent 60%);` +
+    `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.warn};">` +
+      `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.warnDeep};font-weight:600;">OOP Order Breakdown</h3>` +
+      `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Base Cost</td><td style="padding:5px 8px;">$${esc_(d.baseCost || '')}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Est. Sales Tax</td><td style="padding:5px 8px;">${esc_(taxDisplay)}</td></tr>` +
+        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Shipping</td><td style="padding:5px 8px;">$${esc_(d.shippingCost || '')} <span style="color:${P.muted};font-size:.85em;">(${esc_(d.shippingLabel || '')})</span></td></tr>` +
+        `<tr><td style="padding:7px 8px 5px;font-weight:600;color:${P.muted};border-top:1px solid color-mix(in srgb,${P.warn},transparent 60%);">Total Customer Cost</td><td style="padding:7px 8px 5px;font-weight:700;color:${P.warnDeep};border-top:1px solid color-mix(in srgb,${P.warn},transparent 60%);">$${esc_(d.totalCost || '')}</td></tr>` +
+      `</table>` +
+    `</div>`
+  );
+}
+
+function buildCallNoteEmailText_(callData, selections, subject) {
+  // Plain-text fallback. Email clients that can't render HTML (or readers
+  // who view source) get a clean version of the same information.
+  const lines = [];
+  lines.push(subject);
+  lines.push('');
+  lines.push(`Hello team — please see the following update for this order.`);
+  lines.push('');
+  if (selections.callbackNeeded) {
+    lines.push('** Callback Requested **');
+    lines.push('');
+  }
+  lines.push(`Update: ${selections.updateInfo}`);
+  if (selections.closeDetails && selections.closeDetails.reason) {
+    lines.push(`  Reason: ${selections.closeDetails.reason}`);
+  }
+  if (selections.oopDetails) {
+    const d = selections.oopDetails;
+    lines.push('');
+    lines.push('OOP Order Breakdown:');
+    lines.push(`  Base Cost:   $${d.baseCost}`);
+    lines.push(`  Sales Tax:   ${String(d.taxAmt).charAt(0) === '$' ? d.taxAmt : '$' + d.taxAmt}`);
+    lines.push(`  Shipping:    $${d.shippingCost} (${d.shippingLabel})`);
+    lines.push(`  Total:       $${d.totalCost}`);
+  }
+  if (selections.shippingDetails) {
+    const d = selections.shippingDetails;
+    lines.push('');
+    lines.push('Verified Shipping:');
+    lines.push(`  Verified Address: ${d.verifiedAddr ? 'Yes' : 'No'}${d.verifiedAddrText ? ' (' + d.verifiedAddrText + ')' : ''}`);
+    lines.push(`  Patient Location: ${d.patientLoc || ''}`);
+    lines.push(`  Docs To:          ${d.docsTo || ''}${d.deliveryEmail ? ' (' + d.deliveryEmail + ')' : ''}`);
+    lines.push(`  Pat. Resp:        ${d.patResp || ''}`);
+    if (d.specialNote) lines.push(`  Note:             ${d.specialNote}`);
+  }
+  if (selections.resupplyDetails) {
+    const d = selections.resupplyDetails;
+    lines.push('');
+    lines.push('Repeat Resupply:');
+    lines.push(`  Item Category:    ${d.itemCategory || ''}`);
+    if (d.dob)            lines.push(`  D.O.B.:           ${d.dob}`);
+    if (d.resupplyMonth)  lines.push(`  Requesting Month: ${d.resupplyMonth}`);
+    lines.push(`  Last Date:        ${d.lastDate || ''}`);
+    lines.push(`  Same Items/Qty:   ${d.sameItems ? 'Yes' : 'No'}`);
+    lines.push(`  Verified Addr:    ${d.addrStatus === 'Different' ? 'New: ' + (d.newAddr || '') : 'Same'}`);
+    lines.push(`  Verified Ins:     ${d.insStatus === 'Changed' ? 'New: ' + (d.newIns || '') + ' (ID: ' + (d.newMemId || '') + ')' : 'Same'}`);
+    lines.push(`  Verified Provider:${d.provStatus === 'Changed' ? 'New: ' + (d.newProv || '') + ' (Ph: ' + formatProviderPhone_(d.newMdoPh || '') + ')' : 'Same'}`);
+    if (d.specialNote) lines.push(`  Note:             ${d.specialNote}`);
+  }
+  lines.push('');
+  lines.push('—— Call Details ——');
+  lines.push(`Callback:      ${callData.callBackNumber}`);
+  lines.push(`Caller:        ${callData.callerName}`);
+  lines.push(`Relationship:  ${callData.relationship}`);
+  lines.push(`Patient & TRX: ${callData.patientAndTrx}`);
+  lines.push(`Issue:         ${callData.issue}`);
+  lines.push(`Transferred:   ${callData.transferredTo}`);
+  if (selections.updateInfo && selections.updateInfo.toLowerCase() === 'oop order' && selections.oopDetails && selections.shippingDetails) {
+    lines.push(`Resolution:`);
+    lines.push(generateOOPResolutionText_(selections).split('\n').map(l => '  ' + l).join('\n'));
+  } else {
+    lines.push(`Resolution:    ${callData.resolution}`);
+  }
+  lines.push('');
+  lines.push('— UMS Team Tools · Call Notes');
+  return lines.join('\n');
+}
+
+function updateInfoToSubformKey_(updateInfo) {
+  const t = String(updateInfo || '').toLowerCase();
+  if (t === 'close order')       return 'close';
+  if (t === 'verified shipping') return 'shipping';
+  if (t === 'repeat resupply')   return 'resupply';
+  if (t === 'oop order')         return 'oop';
+  return '';
+}
+
+function formatPhoneNumber_(input) {
+  if (!input) return '';
+  const digits = String(input).replace(/\D/g, '');
+  if (digits.length >= 10) {
+    const main = digits.substring(0, 10);
+    const ext = digits.substring(10);
+    const formattedMain = `(${main.slice(0,3)}) ${main.slice(3,6)}-${main.slice(6)}`;
+    if (ext.length > 0) return `${formattedMain} x${ext}`;
+    return formattedMain;
+  }
+  return String(input);
+}
+
+function formatProviderPhone_(input) {
+  if (!input) return '';
+  let digits = String(input).replace(/\D/g, '');
+  let prefix = '';
+  if (digits.length >= 11 && digits.charAt(0) === '1') {
+    prefix = '1 ';
+    digits = digits.substring(1);
+  }
+  if (digits.length >= 10) {
+    const main = digits.substring(0, 10);
+    const ext = digits.substring(10);
+    const formattedMain = `${main.slice(0,3)}-${main.slice(3,6)}-${main.slice(6)}`;
+    if (ext.length > 0) return `${prefix}${formattedMain} x${ext}`;
+    return `${prefix}${formattedMain}`;
+  }
+  return String(input);
+}
+
+function esc_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -911,7 +2077,12 @@ function installAutomationTriggers() {
     throw new Error('Only managers (per MANAGER_EMAILS) can install triggers. ' +
                     `Current user: ${userEmail || '<unknown>'}`);
   }
-  const TARGETS = ['sendDailyMissedPunchAlerts','runDailyExportCheck'];
+  const TARGETS = [
+    'sendDailyMissedPunchAlerts',
+    'runDailyExportCheck',
+    'sendCallNotesEodDigest',
+    'sendCallNotesWeeklyDigests',
+  ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
@@ -921,11 +2092,28 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('runDailyExportCheck')
     .timeBased().atHour(CONFIG.AUTO_EXPORT_HOUR_IST).everyDays(1)
     .inTimezone(CONFIG.TIMEZONE).create();
+  // Call Notes EOD warning — runs once at the manager-tz EOD hour; the
+  // handler walks the roster, computes per-rep local time, and only emails
+  // reps whose local time is currently within the EOD window. One trigger
+  // serves all timezones; reps in different zones get their digest as
+  // their local 5pm rolls around (within the wider window).
+  ScriptApp.newTrigger('sendCallNotesEodDigest')
+    .timeBased().atHour(CONFIG.CALL_NOTES.EOD_WARNING_HOUR).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Weekly manager digests for training queue + review candidates
+  ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
+    .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed.');
 }
 
 function removeAutomationTriggers() {
-  const TARGETS = ['sendDailyMissedPunchAlerts','runDailyExportCheck'];
+  const TARGETS = [
+    'sendDailyMissedPunchAlerts',
+    'runDailyExportCheck',
+    'sendCallNotesEodDigest',
+    'sendCallNotesWeeklyDigests',
+  ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
@@ -1122,6 +2310,197 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
 
 // Synthetic "employee" identity for system-initiated audit rows (no real actor).
 const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automation@system' };
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — AUTOMATED EMAIL DIGESTS
+//  ────────────────────────────────────────────────────────────────────────
+//  Two scheduled jobs:
+//
+//    sendCallNotesEodDigest()         — runs daily at the manager-tz EOD
+//      hour. Walks the roster, computes each enrolled rep's *current*
+//      local hour, and emails any rep whose local time is currently
+//      within ± EOD_WARNING_WINDOW_MINUTES of CONFIG.CALL_NOTES.EOD_WARNING_HOUR
+//      AND has unresolved action-flagged notes from today. The same
+//      trigger covers reps across timezones — one shot per day at the
+//      manager's EOD captures everyone whose own EOD lines up roughly.
+//
+//    sendCallNotesWeeklyDigests()    — runs Friday morning. Sends two
+//      separate manager-targeted emails: training queue (rep-flagged
+//      notes wanting clarification) and review candidates (5-star
+//      flagged notes). Both digests cover the current week.
+//
+//  Both are wrapped in try/catch and never throw (INV-14 — automated
+//  emails are best-effort).
+// ════════════════════════════════════════════════════════════════════════════
+
+function sendCallNotesEodDigest() {
+  try {
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const windowMin = CONFIG.CALL_NOTES.EOD_WARNING_WINDOW_MINUTES || 30;
+    const targetHour = CONFIG.CALL_NOTES.EOD_WARNING_HOUR;
+    const now = new Date();
+    const roster = getEmployeeRosterRows_();
+    let sentCount = 0;
+    for (let r = 1; r < roster.length; r++) {
+      const emailAddr = String(roster[r][EMP.EMAIL] || '').trim();
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!emailAddr || !sheetId) continue;
+      const tzRaw = String(roster[r][EMP.TIMEZONE] || '').trim();
+      const tz = tzRaw || CONFIG.TIMEZONE;
+      // Rep's local time-of-day in minutes
+      const hh = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
+      const mm = parseInt(Utilities.formatDate(now, tz, 'm'), 10);
+      const localMins = hh * 60 + mm;
+      const targetMins = targetHour * 60;
+      if (Math.abs(localMins - targetMins) > windowMin) continue;
+
+      const empObj = {
+        id: String(roster[r][EMP.ID]).trim(),
+        name: String(roster[r][EMP.NAME]).trim(),
+        email: emailAddr,
+        callNotesSheetId: String(sheetId).trim(),
+        timezone: tz,
+      };
+      const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+      let unresolved;
+      try {
+        const sheet = getCallNotesSheet_(empObj);
+        const rows = sheet.getDataRange().getValues();
+        unresolved = [];
+        for (let i = 1; i < rows.length; i++) {
+          if (normalizeDate_(rows[i][CN.DATE_LOCAL]) !== today) continue;
+          if (String(rows[i][CN.FLAG_TYPE] || '').toLowerCase() !== 'action') continue;
+          const resStr = String(rows[i][CN.RESOLVED] || '').toLowerCase();
+          if (resStr === 'true' || resStr === 'yes' || resStr === '1') continue;
+          unresolved.push(callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 }));
+        }
+      } catch (e) {
+        Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
+        continue;
+      }
+      if (unresolved.length === 0) continue;
+      try {
+        sendOneRepEodDigest_(empObj, unresolved);
+        sentCount++;
+      } catch (e) {
+        Logger.log(`Failed to email rep ${empObj.email} EOD digest: ${e.message}`);
+      }
+    }
+    Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
+  } catch (err) {
+    Logger.log('sendCallNotesEodDigest failed: ' + err.message);
+  }
+}
+
+function sendOneRepEodDigest_(emp, unresolvedNotes) {
+  const P = CN_EMAIL_PALETTE;
+  const itemsHtml = unresolvedNotes.map(function (n) {
+    const time = n.timestamp.replace(/.*T/, '').substring(0, 5);
+    return `<tr>` +
+      `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;">${esc_(time)}</td>` +
+      `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
+        `<strong>${esc_(n.caller || n.patientAndTrx || '—')}</strong>` +
+        (n.patientAndTrx ? ` <span style="color:${P.muted};font-family:'IBM Plex Mono',monospace;font-size:11px;">${esc_(n.patientAndTrx)}</span>` : '') +
+        `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
+      `</td>` +
+      `</tr>`;
+  }).join('');
+  const itemsText = unresolvedNotes.map(function (n) {
+    const time = n.timestamp.replace(/.*T/, '').substring(0, 5);
+    return `  ${time}  ${n.caller || n.patientAndTrx || '—'} — ${n.issue || ''}`;
+  }).join('\n');
+
+  const htmlBody = (
+    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
+      `<div style="max-width:560px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:22px 24px;">` +
+        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.14em;text-transform:uppercase;">End of day · UMS Call Notes</div>` +
+        `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">Hey ${esc_(emp.name.split(' ')[0])} — quick check</h2>` +
+        `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">You flagged the following notes today for follow-up but haven't marked them resolved yet:</p>` +
+        `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">` +
+          `<tr style="background:${P.warnSoft};"><td colspan="2" style="padding:8px 12px;color:${P.warnDeep};font-weight:600;font-size:13px;">${unresolvedNotes.length} unresolved</td></tr>` +
+          itemsHtml +
+        `</table>` +
+        `<p style="color:${P.muted};font-size:12px;margin:14px 0 0;">Hop into the web app, knock these out, and toggle them resolved when done.</p>` +
+      `</div>` +
+      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
+    `</div>`
+  );
+  const textBody = `Hi ${emp.name.split(' ')[0]},\n\n` +
+    `You have ${unresolvedNotes.length} unresolved action-flagged note(s) from today:\n\n` +
+    itemsText + '\n\nMark them resolved in the web app when done.\n\n— UMS Team Tools';
+  MailApp.sendEmail({
+    to: emp.email,
+    subject: `End of day · ${unresolvedNotes.length} note${unresolvedNotes.length === 1 ? '' : 's'} still flagged`,
+    body: textBody,
+    htmlBody,
+  });
+}
+
+function sendCallNotesWeeklyDigests() {
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping weekly digests.'); return; }
+    const now = new Date();
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    // Look back 7 days
+    const back = new Date(now); back.setDate(back.getDate() - 7);
+    const start = Utilities.formatDate(back, mgrTz, 'yyyy-MM-dd');
+    const end = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
+    const dateRange = { start, end };
+
+    const training = managerAggregateFlagged_('training', dateRange);
+    const review = managerAggregateFlagged_('review', dateRange);
+    if (training.results && training.results.length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results, dateRange);
+    }
+    if (review.results && review.results.length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results, dateRange);
+    }
+    Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
+  } catch (err) {
+    Logger.log('sendCallNotesWeeklyDigests failed: ' + err.message);
+  }
+}
+
+function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
+  const P = CN_EMAIL_PALETTE;
+  const itemsHtml = notes.map(function (n) {
+    return `<tr>` +
+      `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
+      `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
+        `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
+        `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
+        (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
+      `</td>` +
+      `</tr>`;
+  }).join('');
+  const itemsText = notes.map(function (n) {
+    return `  ${n.dateLocal}  ${n.repName} · ${n.caller || n.patientAndTrx || '—'}\n` +
+           `    ${n.issue || ''}` + (n.resolution ? `\n    → ${n.resolution}` : '');
+  }).join('\n\n');
+
+  const htmlBody = (
+    `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
+      `<div style="max-width:640px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:22px 24px;">` +
+        `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.14em;text-transform:uppercase;">Weekly digest · UMS Call Notes</div>` +
+        `<h2 style="margin:6px 0 4px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;">${esc_(label)}</h2>` +
+        `<p style="color:${P.muted};font-size:13px;margin:0 0 14px;">${esc_(dateRange.start)} → ${esc_(dateRange.end)} · ${notes.length} note${notes.length === 1 ? '' : 's'}</p>` +
+        `<table style="width:100%;border-collapse:collapse;border:1px solid ${P.line};border-radius:6px;overflow:hidden;">${itemsHtml}</table>` +
+      `</div>` +
+      `<div style="text-align:center;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${P.muted};letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>` +
+    `</div>`
+  );
+  const textBody = `${label}\n${dateRange.start} → ${dateRange.end} · ${notes.length} note(s)\n\n${itemsText}\n\n— UMS Team Tools`;
+  try {
+    MailApp.sendEmail({
+      to: toEmails.join(','),
+      subject: `Call Notes · ${label} (${notes.length})`,
+      body: textBody,
+      htmlBody,
+    });
+  } catch (e) { Logger.log(`sendManagerFlagDigest_(${label}) email failed: ${e.message}`); }
+}
 
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1537,6 +2916,8 @@ function getEmployeeInfo_() {
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
         sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
+        callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
+          ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
         payCycle: cycle, payAnchor: anchor, isManager, timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
@@ -1563,6 +2944,8 @@ function lookupEmployeeById_(empId) {
       email: String(rows[i][EMP.EMAIL]).trim(),
       timezone: String(tzRaw).trim() || CONFIG.TIMEZONE,
       sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
+      callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
+        ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
       annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       ptoEnabled,
@@ -1759,6 +3142,29 @@ function getAdpSS_() {
   const id = PropertiesService.getScriptProperties().getProperty('ADP_SS_ID')
           || CONFIG.ADP_SS_ID;
   return SpreadsheetApp.openById(id);
+}
+
+/**
+ * Opens (or creates) the `Notes` tab in a rep's per-rep call-notes Sheet
+ * and returns it. Throws if the rep has no callNotesSheetId mapped (enrollment
+ * is a manual step — manager sets EMP.CALL_NOTES_SHEET_ID in the Employees
+ * sheet). First-touch on any new rep's Sheet provisions the `Notes` tab with
+ * the canonical header row (CN_HEADERS).
+ */
+function getCallNotesSheet_(emp) {
+  if (!emp || !emp.callNotesSheetId) {
+    throw new Error('Your call-notes Sheet is not configured. Ask your manager to enroll you.');
+  }
+  const ss = SpreadsheetApp.openById(emp.callNotesSheetId);
+  let sheet = ss.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.CALL_NOTES.NOTES_TAB);
+    sheet.appendRow(CN_HEADERS);
+    sheet.setFrozenRows(1);
+    // Make timestamp + date columns left-aligned for legibility
+    sheet.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
 }
 function fmtDate_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd'); }
 function fmtTime_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'HH:mm:ss'); }

@@ -1446,6 +1446,138 @@
   }
   .section-divider { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 
+  /* ─── POP-OUT BUTTON ────────────────────────────────────────── */
+  /* Lives next to the theme toggle in both sidebar and mobile-header.
+     Visually paired with the theme pill — same height, same border
+     treatment, accent-tinted icon on hover. */
+  .sb-theme-controls {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .sb-popout-btn {
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper-2);
+    width: 28px; height: 28px;
+    border-radius: 999px; cursor: pointer;
+    color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease), background var(--t) var(--ease);
+    padding: 0;
+  }
+  .sb-popout-btn:hover {
+    color: var(--accent); border-color: var(--border-strong);
+    background: var(--paper-card);
+  }
+  .mobile-header .sb-popout-btn { width: 26px; height: 26px; }
+
+  /* ─── COMPACT MODE ──────────────────────────────────────────────
+     Toggled via the [data-compact="1"] attribute on documentElement,
+     set by script_core.html's URL-param boot read. Collapses the
+     sidebar + mobile-header + mobile-nav chrome to maximize panel
+     space inside a small pop-out window. Tool views are expected to
+     gracefully reflow at ~360px width.
+     ──────────────────────────────────────────────────────────────── */
+  :root[data-compact="1"] .sidebar,
+  :root[data-compact="1"] .mobile-header,
+  :root[data-compact="1"] .mobile-nav { display: none !important; }
+  :root[data-compact="1"] .app-shell { grid-template-columns: 1fr; }
+  :root[data-compact="1"] .view-area {
+    padding: 14px 14px 18px;
+    max-width: 100%;
+  }
+  :root[data-compact="1"] .toast-stack {
+    top: 8px; right: 8px;
+    max-width: 280px;
+  }
+  :root[data-compact="1"] .toast {
+    min-width: 200px; max-width: 280px;
+    font-size: 12px; padding: 9px 12px 9px 14px;
+  }
+  /* Compact-mode mini header — a slim strip at the top of the view-area
+     with the active tool label + close. Each tool view is responsible
+     for rendering its own compact header at the top of view-area when
+     it detects COMPACT_MODE. Shared utility class lives here. */
+  .compact-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 4px 0 12px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 14px;
+  }
+  .compact-header .ch-title {
+    font-family: var(--display);
+    font-size: 15px; font-weight: 600;
+    color: var(--ink); letter-spacing: -.01em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .compact-header .ch-actions {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .compact-header .ch-action-btn {
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper-card);
+    width: 26px; height: 26px;
+    border-radius: 999px; cursor: pointer;
+    color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .compact-header .ch-action-btn:hover {
+    color: var(--ink); border-color: var(--border-strong);
+  }
+  /* Hide the legacy app-bar in compact mode; views use .compact-header instead */
+  :root[data-compact="1"] .app-bar { display: none; }
+
+  /* ─── COMPACT-MODE TUNING FOR TIME CLOCK VIEWS ───────────────────
+     Existing Time Clock views are width-tuned for desktop + mobile-540
+     breakpoints; in the ~360–440px compact pop-out, we also want to:
+     ─ shrink hero-clock typography one more notch
+     ─ stack the 2-col actions grid to single column when very narrow
+     ─ collapse PTO rings to inline 2-col but smaller
+     ─ collapse manager dashboard's 4-col metric grid to 2-col
+     ─ make modals near-full-window so they fit
+     The selectors stack with [data-compact] so they only fire in the
+     pop-out, leaving normal mobile-540 untouched.
+     ──────────────────────────────────────────────────────────────── */
+  :root[data-compact="1"] .view-title    { font-size: 20px; margin-bottom: 2px; }
+  :root[data-compact="1"] .view-subtitle { font-size: 12px; margin-bottom: 16px; }
+  :root[data-compact="1"] .view-title-row { margin-bottom: 14px; }
+  :root[data-compact="1"] .card    { padding: 14px 16px; margin-bottom: 12px; }
+  :root[data-compact="1"] .hero-clock { padding: 18px 18px 16px; margin-bottom: 12px; }
+  :root[data-compact="1"] .hero-clock-time { font-size: 36px; }
+  :root[data-compact="1"] .hero-clock-time .hc-ampm { font-size: 14px; }
+  :root[data-compact="1"] .hero-clock-datestr { font-size: 14px; }
+  :root[data-compact="1"] .metric-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  :root[data-compact="1"] .metric-value { font-size: 22px; }
+  :root[data-compact="1"] .pto-rings { grid-template-columns: 1fr 1fr; gap: 12px; }
+  :root[data-compact="1"] .pto-svg { width: 80px; height: 80px; }
+  :root[data-compact="1"] .actions-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  :root[data-compact="1"] .action-btn { padding: 12px 8px; font-size: 12px; }
+  :root[data-compact="1"] .action-btn .be svg { width: 18px; height: 18px; }
+  :root[data-compact="1"] .modal {
+    max-width: 100%;
+    padding: 18px 18px;
+    border-radius: var(--radius);
+  }
+  :root[data-compact="1"] .overlay { padding: 10px; }
+  :root[data-compact="1"] .field-row { grid-template-columns: 1fr; gap: 8px; }
+  :root[data-compact="1"] .preset-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  :root[data-compact="1"] .emp-grid { grid-template-columns: repeat(2, 1fr); }
+  :root[data-compact="1"] .cal-grid { gap: 2px; }
+  :root[data-compact="1"] .ts-summary { grid-template-columns: 1fr; gap: 6px; }
+  :root[data-compact="1"] .leave-balance-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  :root[data-compact="1"] .timeoff-layout { grid-template-columns: 1fr; }
+  /* Make audit timestamps wrap below the body in compact mode */
+  :root[data-compact="1"] .audit-row { flex-wrap: wrap; }
+  :root[data-compact="1"] .audit-ts {
+    min-width: 100%;
+    margin-bottom: 4px;
+  }
+  /* Manage dashboard rows — let the live-status name+pill stack */
+  :root[data-compact="1"] .mgr-emp-row,
+  :root[data-compact="1"] .rp-row { flex-wrap: wrap; }
+
   /* ─── RESPONSIVE ─────────────────────────────────────────────── */
   @media (min-width: 1024px) {
     .mobile-header, .mobile-nav { display: none !important; }

@@ -6,20 +6,29 @@ Apps Script project under its own directory, synced via `clasp`.
 ## Projects
 
 - **web-app/** — Multi-module browser web app deployed at one Web App
-  URL. Currently hosts the **Time Clock** module (cross-timezone time
-  tracking, PTO requests, manager dashboard, ADP-format export). The
-  Time Clock backs a shared Google Sheet (`CONFIG.ADP_SS_ID` in
-  `web-app/Code.js`). Additional tool modules register a view in the
-  client router (`script_core.html`) and add their server endpoints
-  alongside the time-clock ones in `Code.js`.
-- **call-notes/** — Google Workspace Add-on (scaffold). Runs inside
-  each rep's call-template Google Sheet, surfacing a "Call Notes"
-  custom menu and a sidebar card with department-targeted email
-  composers and an HCPCS reference lookup. Deploys via an internal
-  Workspace Marketplace listing (install-once, no per-sheet setup).
-  Handler bodies in `call-notes/Code.js` are stubs; real logic gets
-  ported from the existing call-template Apps Script project. See
-  `call-notes/README.md` for `clasp create` + script-property setup.
+  URL. Hosts two modules today, registered side-by-side in the
+  `TOOLS` registry in `script_core.html`:
+   - **Time Clock** — cross-timezone time tracking, PTO requests,
+     manager dashboard, ADP-format export. Backs a shared Google
+     Sheet (`CONFIG.ADP_SS_ID` in `web-app/Code.js`).
+   - **Call Notes** — rolling-note panel for CSR call logging. Each
+     rep writes to their own per-rep Google Sheet (`Notes` tab in the
+     spreadsheet whose ID is in `EMP.CALL_NOTES_SHEET_ID`, column L
+     of the Employees roster). Ctrl/⌘+Enter saves + auto-copies a
+     CRM-friendly serialization; email composer is a separate
+     two-stage flow with preview gate. Three flag types
+     (action / training / review) with EOD reminders for unresolved
+     action flags and weekly manager digests for training + review.
+  Adding a new tool: append an entry to `TOOLS`, drop a partial in
+  `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
+  add server endpoints to `Code.js` alongside existing ones.
+- **call-notes/** — Legacy Workspace Add-on scaffold; superseded by
+  the Call Notes module inside `web-app/`. Kept on disk for reference
+  during the transition. New work happens in `web-app/cn/` and the
+  Call-Notes section of `web-app/Code.js`. The Workspace Add-on path
+  is abandoned because admin policy on the org domain prevents
+  install of Marketplace Add-ons without ticket-driven allowlisting;
+  the web-app pattern works today with zero admin involvement.
 
 ## Development
 
@@ -142,6 +151,51 @@ this section before touching the relevant area.
   automated exports are wrapped in try/catch — the API call
   returns success even when the email fails. Failures are logged
   to `Logger.log` / `console.warn` only.
+- **Call Notes Sheet enrollment is manual.** A rep has no Call
+  Notes panel until column L (`CallNotesSheetId`) of the Employees
+  roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
+  throws "Your call-notes Sheet is not configured" if missing; the
+  client renders the enrollment-missing splash. There is intentionally
+  no auto-provision path — Robin still copies the template Sheet and
+  pastes the ID in by hand, matching the existing workflow.
+- **`Notes` tab provisions on first touch.** `getCallNotesSheet_`
+  creates the tab + header row if it doesn't exist, so a freshly
+  enrolled rep's first `submitCallNote` "just works." The header row
+  comes from `CN_HEADERS` — any change there must be paired with a
+  schema migration plan because existing reps' tabs won't auto-rewrite.
+- **`CN_EMAIL_PALETTE` is hand-resolved from design tokens.** Email
+  clients strip `<style>` blocks and don't honor CSS variables, so the
+  call-note email bodies inline literal hex from a CN_EMAIL_PALETTE
+  constant in `Code.js`. If `styles_design_tokens.html` palette values
+  change in a meaningful way (slate → different palette), re-resolve
+  the hex equivalents in CN_EMAIL_PALETTE or the email aesthetic drifts
+  from the in-app aesthetic.
+- **Clipboard API often fails in HtmlService iframes.** The auto-copy
+  feature tries `navigator.clipboard.writeText` first and falls back
+  to a `<textarea>` + `document.execCommand('copy')` shim
+  (`cnFallbackCopy_`). Both fire from the Ctrl/⌘+Enter user gesture so
+  permissions are usually granted, but never assume one path alone
+  works.
+- **Call-notes flag enum vs. blank.** `FlagType` is `''` / `'action'`
+  / `'training'` / `'review'`. `sanitizeFlagType_()` lowercases + range-
+  checks; bad values fall back to `''` rather than throwing, so
+  experimental UI tweaks can't write garbage into the column.
+  `Resolved` is only meaningful when `FlagType=action`; the resolve
+  endpoint rejects calls on other flag types.
+- **EOD trigger is per-manager-tz with a window check, not per-rep tz.**
+  `sendCallNotesEodDigest` runs once at `CONFIG.CALL_NOTES.EOD_WARNING_HOUR`
+  in the manager's tz, then walks the roster. For each enrolled rep it
+  checks whether *their* local clock is currently within
+  ± `EOD_WARNING_WINDOW_MINUTES` of the same hour. Reps in zones far
+  from the manager's tz get no digest on the day their local 5pm
+  doesn't intersect the trigger window — a tradeoff for keeping a
+  single trigger. If you have reps spread across more than ~6h of
+  timezones, switch to per-tz triggers or widen the window.
+- **`SubformData` (column P) is a JSON blob.** Stored as a JSON string
+  on email send (so a "re-send same departments" flow can re-open the
+  composer pre-populated). `callNoteRowToObject_` tries `JSON.parse`
+  and returns `null` on failure rather than throwing — corrupted blobs
+  should never break a read.
 
 ## Key Design Decisions
 
@@ -259,6 +313,42 @@ this section before touching the relevant area.
   the canonical tokens directly — no per-tool color palette, no
   per-tool font declarations. The slate palette is the default;
   future palettes can be added in the tokens partial alongside it.
+- **Compact mode is a shell-level attribute, not per-tool CSS.**
+  `?compact=1` (set by the pop-out button in `script_core.html`)
+  toggles `data-compact="1"` on `documentElement`. Sidebar +
+  mobile-nav + mobile-header all collapse via `:root[data-compact]`
+  selectors in `styles.html`. Tool views are responsible for
+  rendering a `.compact-header` slim strip at the top when they
+  detect `COMPACT_MODE === true` and for ensuring their layouts
+  reflow at ~360px width. The Call Notes view does this; Time
+  Clock views use the same shell so they inherit compact-mode
+  collapse automatically, with per-class compact-mode tuning in
+  the styles partial.
+- **Pop-out uses a named window target.** `popOutCurrentView()` calls
+  `window.open(url, 'umsTeamToolsCompact', ...)`. The named target
+  means subsequent clicks of the pop-out button focus the existing
+  window rather than spawning duplicates — important for the "single
+  always-visible panel" workflow. Closing the pop-out clears the
+  reference and the next click opens a fresh window.
+- **Per-rep call-notes Sheets are the storage substrate.** Same
+  pattern as the time-clock module's `EMP.SHEET_ID` (per-rep month
+  Sheet) — each rep's notes live in a Sheet Robin owns, mapped via
+  `EMP.CALL_NOTES_SHEET_ID`. Robin can pop the rep's Sheet open
+  any time for retrospective; the script-as-Me has full access.
+  No centralized call-log Sheet exists by design — per-rep isolation
+  matches the legacy workflow Robin already maintains.
+- **Two-stage email is the safety mechanism.** Submit logs only,
+  zero risk of accidental send. The envelope icon on each note card
+  is the only way to compose; that opens the form modal, which
+  requires explicit Preview, which then requires explicit Send. The
+  preview shows the actual rendered HTML body + subject + recipients
+  so the rep can catch wrong dept selection, wrong patient TRX, etc.
+  before send.
+- **Auto-copy format is a CONFIG template.** `CONFIG.CALL_NOTES.AUTO_COPY_FORMAT`
+  uses `{caller}`, `{callback}`, `{patientAndTrx}`, `{issue}`,
+  `{resolution}`, `{timestamp}`, etc. tokens — Robin can tune the
+  CRM-paste-friendly serialization without code changes. The replacement
+  is straight string-replace; no escaping (the clipboard is plain text).
 
 ## Operator State Checklist
 
@@ -283,10 +373,37 @@ manually for a fresh deploy or environment:
   PTO_ENABLED column landed. After deploying, run `clearCaches()`
   once to flush any stale `_v3` cache entries.
 - **Daily automation triggers** must be installed by a manager
-  account via `installAutomationTriggers()` from the editor.
+  account via `installAutomationTriggers()` from the editor. The
+  installer now wires four triggers:
+    - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
+    - `runDailyExportCheck` (time-clock, daily IST 12pm)
+    - `sendCallNotesEodDigest` (call-notes, daily manager-tz 5pm)
+    - `sendCallNotesWeeklyDigests` (call-notes, Friday manager-tz 8am)
   Triggers do not survive an Apps Script project re-clone.
 - **`MANAGER_TIMEZONE`** in CONFIG drives manager-dashboard
   display tz; change requires a redeploy.
+- **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
+  call-notes Spreadsheet ID. Robin still copies the template Sheet,
+  renames it for the rep, shares with the script-owner account, and
+  pastes the ID here. Blank means the rep has no Call Notes
+  enrollment yet; their panel renders the enrollment-missing splash.
+  Must be added manually to existing rows (the schema bump in
+  `EMP.CALL_NOTES_SHEET_ID = 11` doesn't auto-fill).
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v5'`** — bumped when
+  CallNotesSheetId column landed. After deploying, run `clearCaches_()`
+  once from the Apps Script editor to flush any stale `_v4` cache
+  entries (or wait 5 min for natural TTL expiry).
+- **Call-notes department list + state tax rates** live in
+  `CONFIG.CALL_NOTES.DEPARTMENT_EMAILS` and
+  `CONFIG.CALL_NOTES.STATE_TAX_RATES` (resp. `STATE_ABBR_TO_NAME`).
+  Adding a new department or rate: edit `web-app/Code.js`, push,
+  cut a new deployment — there is no admin UI for these.
+- **Call-notes EOD + weekly digest knobs** are
+  `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17),
+  `EOD_WARNING_WINDOW_MINUTES` (default 30), and the
+  `installAutomationTriggers()` schedule (Friday 8am for the weekly
+  digest). Changing the hour requires re-running
+  `installAutomationTriggers()` so the trigger picks up the new value.
 
 ## Cycle Workflow Config
 
@@ -313,6 +430,8 @@ Client (shell):
   web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html
 Client (Time Clock views):
   web-app/tc/script_clock.html, web-app/tc/script_timesheet.html, web-app/tc/script_timeoff.html, web-app/tc/script_manager.html
+Client (Call Notes views):
+  web-app/cn/script_callnotes.html
 Test Suite:
   web-app/Tests.js
 
@@ -346,6 +465,16 @@ INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) 
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v4`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
+INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity | Subsystem: Server
+INV-33 | `submitCallNote` does NOT send any email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit) | Subsystem: Server
+INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
+INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configured" when `emp.callNotesSheetId` is missing — call-notes endpoints surface this as the enrollment-missing splash in the client; no auto-provision path exists | Subsystem: Server
+INV-36 | Call-note email sends (`emailFromCallNote`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) are wrapped in try/catch and never block the API result (INV-14 generalized) | Subsystem: Server
+INV-37 | `sanitizeFlagType_` only allows `''` / `'action'` / `'training'` / `'review'` to be written to FlagType; unknown values silently coerce to `''` rather than corrupting the column | Subsystem: Server
+INV-38 | Compact-mode is a shell-level attribute (`data-compact="1"` on `documentElement`); set from the `?compact=1` URL param on boot and consumed via CSS selectors in `styles.html`. Tool views render `.compact-header` instead of `.view-title-row` when `COMPACT_MODE === true` | Subsystem: Client (shell)
+INV-39 | `getCallNotesAmbient` is unauthenticated read-only — returns only `{enrolled, unresolvedActionCount, staleActionCount, todayTotal, staleFlagHours}` for the calling rep. Used by the sidebar badge polling; never leaks cross-rep data | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -459,6 +588,77 @@ S16 | Sheet auto-coercion of time strings | Subsystem: Server
     - Manually edit the Timesheet sheet: pick a row, retype its Time cell as `09:00:00` so Sheets coerces it to a Date object
     - Refresh the manager dashboard and the employee Timesheet view; run `runSmokeTests` (which doesn't cover this) plus an integration test against the edited row
   Expected: Both views still render `09:00:00` / `9:00 AM` correctly because `normalizeTime_` reformats the coerced Date back through the spreadsheet's timezone. A regression here surfaces as `Sat Dec 30 1899 …` strings in the UI.
+
+S17 | Call Notes — enrollment-missing splash | Subsystem: Server, Client (Call Notes)
+  Steps:
+    - Pick an enrolled rep; temporarily blank out their Employees column L (`CallNotesSheetId`)
+    - As that rep, open the web app and navigate to Call Notes
+    - Restore column L afterwards
+  Expected: While unset, the panel renders the enrollment-missing splash ("Not enrolled in Call Notes — ask your manager to set it up") instead of the form. Every Call Notes endpoint returns the same enrollment error. After restoring the ID, a hard refresh shows the active form.
+
+S18 | Call Notes — submit, auto-copy, rolling stack appends | Subsystem: Client (Call Notes), Server
+  Steps:
+    - As an enrolled rep, open Call Notes
+    - Fill all 7 fields, press Ctrl/⌘+Enter
+    - Inspect clipboard, the rolling stack, and the rep's `Notes` tab
+    - Press the copy button on the just-saved card and re-inspect clipboard
+  Expected: A new card appears at the top of the rolling stack with animation; clipboard holds the serialized note matching `CONFIG.CALL_NOTES.AUTO_COPY_FORMAT`; the form cleared and re-focused on Callback; AuditLog has a `CallNoteCreate` row with `noteId=<uuid>`. Manual copy re-renders the same string.
+
+S19 | Call Notes — email composer with preview gate | Subsystem: Client (Call Notes), Server
+  Steps:
+    - As an enrolled rep with at least one note today, click the envelope on a card
+    - Select one or more departments, type "Verified Shipping" into Update Type, fill the shipping subform, click Preview →
+    - Confirm the preview reflects departments + subject + rendered HTML body
+    - Click Send Email
+    - Inspect Mail (or test mailbox), the note row's EmailedAt + EmailDepartments columns, and AuditLog
+  Expected: Preview returns rendered HTML matching the warm-paper aesthetic (no CSS variables — inline hex), correct To/CC/Subject. After Send, the card shows the envelope as filled (is-sent); EmailedAt is populated; AuditLog has a `CallNoteEmail` row. Closing the modal mid-flow at the form step or the preview step does NOT send.
+
+S20 | Call Notes — flag trio + resolved state | Subsystem: Server, Client (Call Notes)
+  Steps:
+    - As a rep, click the flag icon (action) on a note — card gains a warn ring
+    - Click again — flag clears, ring disappears
+    - Re-flag action, then click the lightbulb (training) — flag transitions to training
+    - Re-flag action, wait > `CONFIG.CALL_NOTES.STALE_FLAG_HOURS`, refresh
+    - Click the check (resolve) — card loses the stale pulse
+    - Try to call `setCallNoteResolved` against a training-flagged or unflagged note
+  Expected: Each toggle updates the FlagType column and writes a `CallNoteFlag` audit row. Flag types are mutually exclusive — switching from action to training also clears the Resolved column. Stale-flag pulse renders only on action-flag + unresolved + past STALE_FLAG_HOURS. `setCallNoteResolved` rejects non-action flags with "Only action-flagged notes can be resolved."
+
+S21 | Call Notes — inline-edit-in-place from rolling card | Subsystem: Client (Call Notes), Server
+  Steps:
+    - Click the pencil/edit icon on a saved note
+    - Card expands; modify Issue + Resolution; press Ctrl/⌘+Enter
+    - Inspect the Notes tab + AuditLog
+  Expected: Card collapses to the new content; row in `Notes` reflects the diff; AuditLog has a `CallNoteEdit` row enumerating which fields changed. Cancel button discards edits without writing.
+
+S22 | Call Notes — EOD digest fires for stale action flags | Subsystem: Server
+  Steps:
+    - As a rep, file an action-flagged note with timestamp older than `STALE_FLAG_HOURS` (manually edit the timestamp cell in the Notes tab to a few hours ago)
+    - From the Apps Script editor, run `sendCallNotesEodDigest`
+  Expected: Logger shows the rep was emailed (matches their local-tz EOD window) and unresolved-action count > 0. The email body has the warm-paper aesthetic + lists the unresolved note. A rep with no enrolled Sheet or no unresolved action flags is silently skipped.
+
+S23 | Call Notes — search by caller / issue | Subsystem: Server, Client (Call Notes)
+  Steps:
+    - As a rep, navigate to Call Notes → Search
+    - Type a substring of a known past caller's name → results show by-caller matches
+    - Toggle the field tab to "Issue" → searches Issue + Resolution columns only
+    - Type a 1-character query → no search fires (minimum 2)
+  Expected: Sub-second results for ≤ 10K notes per rep, sorted newest-first. Manager search (`managerSearchCallNotes`) returns cross-rep results with `repName` + `repId` attached per hit.
+
+S24 | Call Notes — manager training-queue + review-candidate digests | Subsystem: Server
+  Steps:
+    - Have several reps file training-flagged + review-flagged notes across the past week
+    - From the Apps Script editor, run `sendCallNotesWeeklyDigests`
+    - Inspect the manager mailbox
+  Expected: Two separate emails arrive (Training Queue, Review Candidates), each listing notes from the past 7 days with rep name + caller + issue + resolution. Empty queues are silently skipped (no email). The function never throws.
+
+S25 | Compact mode + pop-out (cross-tool) | Subsystem: Client (shell)
+  Steps:
+    - From any view, click the pop-out icon (top-right of sidebar or mobile header)
+    - Confirm a new 440x780 chromeless window opens with sidebar + header collapsed
+    - In the pop-out, navigate between views (Call Notes ↔ Time Clock ↔ Manage)
+    - Click the pop-out icon again from the original window
+    - Resize the pop-out down to ~360px width
+  Expected: Pop-out window is named `umsTeamToolsCompact` — second pop-out click focuses the existing window instead of spawning a duplicate. All tool views render without horizontal overflow; modals near-full-window; field-row and ts-summary collapse to single column; action grid (Time Clock) and dept-chip grid (Call Notes) stack 2-col → 1-col gracefully.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
