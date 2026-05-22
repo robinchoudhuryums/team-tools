@@ -1,4 +1,21 @@
-# UMS Call Notes
+# UMS Call Notes (legacy Workspace Add-on scaffold)
+
+> **Superseded.** This directory holds the Workspace Add-on scaffold
+> as originally drafted. The Add-on path was abandoned because admin
+> policy on the org domain blocks Marketplace install without
+> ticket-driven allowlisting. The Call Notes feature is now a module
+> inside the existing `web-app/` web app: see `web-app/cn/script_callnotes.html`
+> for the view and the marked Call Notes section in `web-app/Code.js`
+> for the server endpoints. Files here remain for reference during
+> the transition and will be removed once the web-app module is in
+> production.
+
+The original description below is preserved for context on what the
+Add-on path was meant to do — the feature set ported into the web-app
+module is a superset of this scope (adds rolling-stack UX,
+flag/resolve workflow, EOD digests, manager queues, search).
+
+---
 
 Google Workspace Add-on that augments each rep's call-template Google
 Sheet with department-targeted email composers. Replaces the legacy
