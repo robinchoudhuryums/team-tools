@@ -994,6 +994,536 @@ function exportAdpRange(startDate, endDate) {
 
 
 // ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES MODULE  —  server endpoints
+//  ────────────────────────────────────────────────────────────────────────
+//  Rolling-note interface for CSR call logging. Each rep's notes live in
+//  their own per-rep Sheet (EMP.CALL_NOTES_SHEET_ID, column L), `Notes`
+//  tab. The web app's panel logs notes on submit, then offers a separate
+//  email-composer action (with preview gate) for the ~10% of notes that
+//  also need to fire a department email. Flags come in three flavors:
+//  `action` (needs follow-up; pairs with the Resolved column), `training`
+//  (rep wants clarification — aggregated for the manager), `review`
+//  (5-star review candidate — aggregated for future review-request flow).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Submits a new call note. Logs only — does NOT send any email. Email
+ *  composition is a separate two-stage action (preview → confirm) via
+ *  previewCallNoteEmail / emailFromCallNote. */
+function submitCallNote(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+
+    const cleaned = sanitizeCallNotePayload_(payload || {});
+    const v = validateCallNotePayload_(cleaned);
+    if (v.error) return { success: false, error: v.error };
+
+    const sheet = getCallNotesSheet_(emp);
+    const empTz = empTz_(emp);
+    const now = new Date();
+    const noteId = Utilities.getUuid();
+    const timestamp = Utilities.formatDate(now, empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    const dateLocal = Utilities.formatDate(now, empTz, 'yyyy-MM-dd');
+
+    const flagType = sanitizeFlagType_(cleaned.flagType);
+    const subform = String(cleaned.subform || '').trim();
+    const subformDataJson = cleaned.subformData
+      ? JSON.stringify(cleaned.subformData) : '';
+
+    const row = new Array(CN_HEADERS.length).fill('');
+    row[CN.NOTE_ID]         = noteId;
+    row[CN.TIMESTAMP]       = timestamp;
+    row[CN.DATE_LOCAL]      = dateLocal;
+    row[CN.CALLBACK]        = cleaned.callback;
+    row[CN.CALLER]          = cleaned.caller;
+    row[CN.RELATIONSHIP]    = cleaned.relationship;
+    row[CN.PATIENT_TRX]     = cleaned.patientAndTrx;
+    row[CN.ISSUE]           = cleaned.issue;
+    row[CN.TRANSFERRED_TO]  = cleaned.transferredTo;
+    row[CN.RESOLUTION]      = cleaned.resolution;
+    row[CN.FLAG_TYPE]       = flagType;
+    row[CN.RESOLVED]        = 'FALSE';
+    row[CN.EMAILED_AT]      = '';
+    row[CN.EMAIL_DEPARTMENTS] = '';
+    row[CN.SUBFORM]         = subform;
+    row[CN.SUBFORM_DATA]    = subformDataJson;
+    sheet.appendRow(row);
+
+    writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
+      `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
+
+    return {
+      success: true,
+      note: callNoteRowToObject_({ row, rowIndex: sheet.getLastRow() }),
+    };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Updates an existing call note's content. Inline-edit support for the
+ *  rolling stack. The audit log records the diff for accountability. */
+function updateCallNote(noteId, payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+
+    const cleaned = sanitizeCallNotePayload_(payload || {});
+    const v = validateCallNotePayload_(cleaned);
+    if (v.error) return { success: false, error: v.error };
+
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const oldRow = located.row;
+    sheet.getRange(located.rowIndex, CN.CALLBACK + 1).setValue(cleaned.callback);
+    sheet.getRange(located.rowIndex, CN.CALLER + 1).setValue(cleaned.caller);
+    sheet.getRange(located.rowIndex, CN.RELATIONSHIP + 1).setValue(cleaned.relationship);
+    sheet.getRange(located.rowIndex, CN.PATIENT_TRX + 1).setValue(cleaned.patientAndTrx);
+    sheet.getRange(located.rowIndex, CN.ISSUE + 1).setValue(cleaned.issue);
+    sheet.getRange(located.rowIndex, CN.TRANSFERRED_TO + 1).setValue(cleaned.transferredTo);
+    sheet.getRange(located.rowIndex, CN.RESOLUTION + 1).setValue(cleaned.resolution);
+
+    const diffs = [];
+    [['callback', CN.CALLBACK], ['caller', CN.CALLER], ['relationship', CN.RELATIONSHIP],
+     ['patientAndTRX', CN.PATIENT_TRX], ['issue', CN.ISSUE],
+     ['transferredTo', CN.TRANSFERRED_TO], ['resolution', CN.RESOLUTION]].forEach(([name, idx]) => {
+      const before = String(oldRow[idx] || '').trim();
+      const after  = String(cleaned[name === 'patientAndTRX' ? 'patientAndTrx' : name] || '').trim();
+      if (before !== after) diffs.push(name);
+    });
+
+    const dateLocal = normalizeDate_(oldRow[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNoteEdit', dateLocal, '', false, 0,
+      `noteId=${noteId}; changed: ${diffs.join(', ') || '(no changes)'}`);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Sets (or clears) the flag type on a note. Pass '' to clear. */
+function setCallNoteFlag(noteId, flagType) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const t = sanitizeFlagType_(flagType);
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(t);
+    // Clearing the flag also resets Resolved — fresh state when re-flagging
+    if (!t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
+      `noteId=${noteId}; ${t || '<cleared>'}`);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Marks an action-flagged note as resolved (or un-resolves it). Only
+ *  meaningful when FlagType=action. */
+function setCallNoteResolved(noteId, resolved) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
+    if (flagType !== 'action') {
+      return { success: false, error: 'Only action-flagged notes can be resolved.' };
+    }
+    const val = resolved ? 'TRUE' : 'FALSE';
+    sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue(val);
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNoteResolve', dateLocal, '', false, 0,
+      `noteId=${noteId}; ${resolved ? 'resolved' : 'unresolved'}`);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Deletes a call note. Hard-delete (Sheet row removed); audit row keeps the trail. */
+function deleteCallNote(noteId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    sheet.deleteRow(located.rowIndex);
+    writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
+      `noteId=${noteId}`);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Returns the calling rep's notes for a given date, optionally filtered.
+ *  Defaults to today in the rep's tz. Filter options:
+ *    'all' (default) | 'action' | 'training' | 'review' | 'unresolved' | 'unsent' */
+function getMyCallNotes(options) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const opts = options || {};
+    const empTz = empTz_(emp);
+    const date = opts.date || Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+      return { error: 'Invalid date format (expected yyyy-MM-dd).' };
+    const filter = String(opts.filter || 'all').toLowerCase();
+
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+      if (rowDate !== date) continue;
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (!callNoteMatchesFilter_(note, filter)) continue;
+      notes.push(note);
+    }
+    notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return {
+      date,
+      filter,
+      notes,
+      autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
+      timezone: empTz,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Ambient signal for the sidebar badge + stale-flag indicators. */
+function getCallNotesAmbient() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { enrolled: false };
+    const empTz = empTz_(emp);
+    const today = Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    let unresolvedActionCount = 0;
+    let staleActionCount = 0;
+    let todayTotal = 0;
+    const staleMs = CONFIG.CALL_NOTES.STALE_FLAG_HOURS * 3600 * 1000;
+    const nowMs = Date.now();
+    for (let i = 1; i < rows.length; i++) {
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (note.dateLocal === today) todayTotal++;
+      if (note.flagType === 'action' && !note.resolved) {
+        unresolvedActionCount++;
+        const noteMs = parseTimestampMs_(note.timestamp, empTz);
+        if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
+      }
+    }
+    return {
+      enrolled: true,
+      unresolvedActionCount,
+      staleActionCount,
+      todayTotal,
+      staleFlagHours: CONFIG.CALL_NOTES.STALE_FLAG_HOURS,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Returns the department options for the email composer + the dept→type
+ *  suggestion map (for the dynamic update-type datalist). */
+function getCallNotesDepartments() {
+  return {
+    departments: Object.keys(CONFIG.CALL_NOTES.DEPARTMENT_EMAILS).concat(['Other']),
+    suggestionsByDept: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT,
+    defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
+    stateTaxRates: CONFIG.CALL_NOTES.STATE_TAX_RATES,
+    stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
+    ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
+  };
+}
+
+/** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all. */
+function searchMyCallNotes(query, field, dateRange) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const q = String(query || '').trim();
+    if (!q) return { results: [] };
+    const empTz = empTz_(emp);
+    const f = String(field || 'all').toLowerCase();
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+
+    const qLower = q.toLowerCase();
+    const results = [];
+    for (let i = 1; i < rows.length; i++) {
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+      if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+      let hit = false;
+      if (f === 'caller' || f === 'all') {
+        if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+              .toLowerCase().indexOf(qLower) >= 0) hit = true;
+      }
+      if (!hit && (f === 'issue' || f === 'all')) {
+        if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+      }
+      if (hit) results.push(note);
+    }
+    results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    if (results.length > 200) results.length = 200;
+    return { results, timezone: empTz };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Manager-gated call-notes views ──────────────────────────────────────
+
+/** Manager view of any single rep's notes. */
+function managerGetCallNotes(repEmpId, date, filter) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const target = lookupEmployeeById_(repEmpId);
+    if (!target) return { error: 'Employee not found.' };
+    if (!target.callNotesSheetId) return { error: 'This rep has no call-notes Sheet configured.' };
+
+    const empTz = target.timezone || CONFIG.TIMEZONE;
+    const dateStr = date || Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr))
+      return { error: 'Invalid date format (expected yyyy-MM-dd).' };
+    const flt = String(filter || 'all').toLowerCase();
+
+    const sheet = getCallNotesSheet_(target);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+      if (rowDate !== dateStr) continue;
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (!callNoteMatchesFilter_(note, flt)) continue;
+      notes.push(note);
+    }
+    notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return { date: dateStr, filter: flt, notes, repName: target.name, repId: target.id, timezone: empTz };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager search across all enrolled reps' call-notes Sheets. */
+function managerSearchCallNotes(query, field, repFilter, dateRange) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const q = String(query || '').trim();
+    if (!q) return { results: [] };
+    const qLower = q.toLowerCase();
+    const f = String(field || 'all').toLowerCase();
+
+    const roster = getEmployeeRosterRows_();
+    const results = [];
+    for (let r = 1; r < roster.length; r++) {
+      const repId = String(roster[r][EMP.ID]).trim();
+      if (repFilter && repFilter.length && repFilter.indexOf(repId) < 0) continue;
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      const repName = String(roster[r][EMP.NAME]).trim();
+      let target;
+      try {
+        target = { id: repId, name: repName, callNotesSheetId: String(sheetId).trim() };
+        const sheet = getCallNotesSheet_(target);
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+          if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+          if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+          let hit = false;
+          if (f === 'caller' || f === 'all') {
+            if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                  .toLowerCase().indexOf(qLower) >= 0) hit = true;
+          }
+          if (!hit && (f === 'issue' || f === 'all')) {
+            if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+          }
+          if (hit) {
+            note.repId = repId; note.repName = repName;
+            results.push(note);
+          }
+        }
+      } catch (e) {
+        // A broken per-rep Sheet shouldn't break the cross-rep search
+        console.warn('managerSearchCallNotes skipped rep ' + repId + ': ' + e.message);
+      }
+    }
+    results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    if (results.length > 500) results.length = 500;
+    return { results };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager aggregated training-queue across all enrolled reps. */
+function managerGetTrainingQueue(dateRange) {
+  return managerAggregateFlagged_('training', dateRange);
+}
+
+/** Manager aggregated review-candidate queue across all enrolled reps. */
+function managerGetReviewCandidates(dateRange) {
+  return managerAggregateFlagged_('review', dateRange);
+}
+
+function managerAggregateFlagged_(flagType, dateRange) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const roster = getEmployeeRosterRows_();
+    const results = [];
+    for (let r = 1; r < roster.length; r++) {
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      const repId = String(roster[r][EMP.ID]).trim();
+      const repName = String(roster[r][EMP.NAME]).trim();
+      try {
+        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+          if (note.flagType !== flagType) continue;
+          if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+          if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+          note.repId = repId; note.repName = repName;
+          results.push(note);
+        }
+      } catch (e) {
+        console.warn('managerAggregateFlagged_ skipped rep ' + repId + ': ' + e.message);
+      }
+    }
+    results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return { flagType, results };
+  } catch (err) { return { error: err.message }; }
+}
+
+
+// ── Call Notes helpers (private) ────────────────────────────────────────
+
+function sanitizeCallNotePayload_(p) {
+  const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+  return {
+    callback:       s(p.callback),
+    caller:         s(p.caller),
+    relationship:   s(p.relationship),
+    patientAndTrx:  s(p.patientAndTrx || p.patientAndTRX),
+    issue:          s(p.issue),
+    transferredTo:  s(p.transferredTo),
+    resolution:     s(p.resolution),
+    flagType:       s(p.flagType).toLowerCase(),
+    subform:        s(p.subform).toLowerCase(),
+    subformData:    p.subformData || null,
+  };
+}
+
+function validateCallNotePayload_(cleaned) {
+  // Logging is generous — only require the rep typed *something* meaningful.
+  // Empty notes are useless; everything else is the rep's call.
+  const anyContent = cleaned.callback || cleaned.caller || cleaned.patientAndTrx
+                  || cleaned.issue || cleaned.resolution;
+  if (!anyContent) return { error: 'Note is empty. Fill at least one field before submitting.' };
+  if (cleaned.flagType && CN_FLAG_TYPES.indexOf(cleaned.flagType) < 0) {
+    return { error: 'Invalid flag type. Expected: ' + CN_FLAG_TYPES.join(', ') };
+  }
+  return { ok: true };
+}
+
+function sanitizeFlagType_(t) {
+  const v = String(t || '').trim().toLowerCase();
+  return CN_FLAG_TYPES.indexOf(v) >= 0 ? v : '';
+}
+
+function findCallNoteRow_(sheet, noteId) {
+  if (!noteId) return null;
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][CN.NOTE_ID]).trim() === noteId) {
+      return { rowIndex: i + 1, row: rows[i] };
+    }
+  }
+  return null;
+}
+
+function callNoteRowToObject_(located) {
+  const row = located.row;
+  const resolvedRaw = row[CN.RESOLVED];
+  const resolvedStr = (resolvedRaw === null || resolvedRaw === undefined) ? ''
+    : String(resolvedRaw).trim().toLowerCase();
+  const resolved = (resolvedStr === 'true' || resolvedStr === 'yes' || resolvedStr === '1');
+  let subformData = null;
+  if (row[CN.SUBFORM_DATA]) {
+    try { subformData = JSON.parse(row[CN.SUBFORM_DATA]); }
+    catch (e) { subformData = null; }
+  }
+  return {
+    noteId:           String(row[CN.NOTE_ID] || ''),
+    timestamp:        String(row[CN.TIMESTAMP] || ''),
+    dateLocal:        normalizeDate_(row[CN.DATE_LOCAL]),
+    callback:         String(row[CN.CALLBACK] || ''),
+    caller:           String(row[CN.CALLER] || ''),
+    relationship:     String(row[CN.RELATIONSHIP] || ''),
+    patientAndTrx:    String(row[CN.PATIENT_TRX] || ''),
+    issue:            String(row[CN.ISSUE] || ''),
+    transferredTo:    String(row[CN.TRANSFERRED_TO] || ''),
+    resolution:       String(row[CN.RESOLUTION] || ''),
+    flagType:         String(row[CN.FLAG_TYPE] || '').toLowerCase(),
+    resolved,
+    emailedAt:        String(row[CN.EMAILED_AT] || ''),
+    emailDepartments: String(row[CN.EMAIL_DEPARTMENTS] || ''),
+    subform:          String(row[CN.SUBFORM] || ''),
+    subformData,
+    rowIndex: located.rowIndex,
+  };
+}
+
+function callNoteMatchesFilter_(note, filter) {
+  switch (filter) {
+    case 'action':     return note.flagType === 'action';
+    case 'training':   return note.flagType === 'training';
+    case 'review':     return note.flagType === 'review';
+    case 'unresolved': return note.flagType === 'action' && !note.resolved;
+    case 'unsent':     return !note.emailedAt;
+    case 'all':
+    default:           return true;
+  }
+}
+
+/** Parse a "yyyy-MM-dd'T'HH:mm:ss" timestamp string back to epoch ms in the rep's tz. */
+function parseTimestampMs_(tsStr, tz) {
+  if (!tsStr) return null;
+  try {
+    const d = Utilities.parseDate(tsStr, tz, "yyyy-MM-dd'T'HH:mm:ss");
+    return d.getTime();
+  } catch (e) { return null; }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
 // ════════════════════════════════════════════════════════════════════════════
 
