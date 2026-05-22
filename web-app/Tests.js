@@ -464,6 +464,45 @@ function _runAllTests() {
   _integrationTest('managerSaveDay_nonManagerRejected',        test_managerSaveDay_nonManagerRejected);
   _integrationTest('managerSaveDay_reasonRequiredBeyondWindow',test_managerSaveDay_reasonRequiredBeyondWindow);
   _integrationTest('managerSaveDay_invalidTimeFormatRejected', test_managerSaveDay_invalidTimeFormatRejected);
+
+  // ── Call Notes — pure logic helpers (smoke-safe; no Sheet I/O) ──────────
+  _smokeTest('cn_sanitizeFlagType_valid',          test_cn_sanitizeFlagType_valid);
+  _smokeTest('cn_sanitizeFlagType_invalidCoerces', test_cn_sanitizeFlagType_invalidCoerces);
+  _smokeTest('cn_sanitizeFlagType_caseInsensitive',test_cn_sanitizeFlagType_caseInsensitive);
+  _smokeTest('cn_sanitizeFlagType_nullish',        test_cn_sanitizeFlagType_nullish);
+  _smokeTest('cn_sanitizePayload_trims',           test_cn_sanitizePayload_trims);
+  _smokeTest('cn_sanitizePayload_nullishToEmpty',  test_cn_sanitizePayload_nullishToEmpty);
+  _smokeTest('cn_sanitizePayload_acceptsCamelAlias', test_cn_sanitizePayload_acceptsCamelAlias);
+  _smokeTest('cn_validatePayload_rejectsEmpty',    test_cn_validatePayload_rejectsEmpty);
+  _smokeTest('cn_validatePayload_acceptsAnyField', test_cn_validatePayload_acceptsAnyField);
+  _smokeTest('cn_validatePayload_rejectsBadFlag',  test_cn_validatePayload_rejectsBadFlag);
+  _smokeTest('cn_matchesFilter_all',               test_cn_matchesFilter_all);
+  _smokeTest('cn_matchesFilter_actionTrainingReview', test_cn_matchesFilter_actionTrainingReview);
+  _smokeTest('cn_matchesFilter_unresolved',        test_cn_matchesFilter_unresolved);
+  _smokeTest('cn_matchesFilter_unsent',            test_cn_matchesFilter_unsent);
+  _smokeTest('cn_updateInfoToSubformKey',          test_cn_updateInfoToSubformKey);
+  _smokeTest('cn_formatPhoneNumber_basic',         test_cn_formatPhoneNumber_basic);
+  _smokeTest('cn_formatPhoneNumber_extension',     test_cn_formatPhoneNumber_extension);
+  _smokeTest('cn_formatPhoneNumber_passthroughShort', test_cn_formatPhoneNumber_passthroughShort);
+  _smokeTest('cn_formatPhoneNumber_empty',         test_cn_formatPhoneNumber_empty);
+  _smokeTest('cn_formatProviderPhone_basic',       test_cn_formatProviderPhone_basic);
+  _smokeTest('cn_formatProviderPhone_countryCode', test_cn_formatProviderPhone_countryCode);
+  _smokeTest('cn_buildEmailSubject_basicUpdate',   test_cn_buildEmailSubject_basicUpdate);
+  _smokeTest('cn_buildEmailSubject_titlecasesCanon', test_cn_buildEmailSubject_titlecasesCanon);
+  _smokeTest('cn_buildEmailSubject_repeatResupplyEnriched', test_cn_buildEmailSubject_repeatResupplyEnriched);
+  _smokeTest('cn_buildEmailSubject_repeatResupplyOtherCategory', test_cn_buildEmailSubject_repeatResupplyOtherCategory);
+  _smokeTest('cn_generateOOPResolutionText_collected', test_cn_generateOOPResolutionText_collected);
+  _smokeTest('cn_generateOOPResolutionText_needCollect', test_cn_generateOOPResolutionText_needCollect);
+  _smokeTest('cn_resolveRecipients_simpleDept',    test_cn_resolveRecipients_simpleDept);
+  _smokeTest('cn_resolveRecipients_otherUsesIndividual', test_cn_resolveRecipients_otherUsesIndividual);
+  _smokeTest('cn_resolveRecipients_unknownDeptErrors', test_cn_resolveRecipients_unknownDeptErrors);
+  _smokeTest('cn_validateEmailSelections_requiresDept', test_cn_validateEmailSelections_requiresDept);
+  _smokeTest('cn_validateEmailSelections_otherRequiresEmail', test_cn_validateEmailSelections_otherRequiresEmail);
+  _smokeTest('cn_validateEmailSelections_requiresUpdateInfo', test_cn_validateEmailSelections_requiresUpdateInfo);
+  _smokeTest('cn_callDataFromNote_selfNumberPrepended', test_cn_callDataFromNote_selfNumberPrepended);
+  _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
+  _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
+  _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
 }
 
 
@@ -1700,4 +1739,323 @@ function test_managerSaveDay_invalidTimeFormatRejected() {
   });
   _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, null), 0,
     'No rows written on validation failure');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — PURE LOGIC TESTS
+//  ────────────────────────────────────────────────────────────────────────
+//  Smoke-safe: no Sheet reads, no LockService, no MailApp. Covers the
+//  helper functions called inside submitCallNote / updateCallNote /
+//  emailFromCallNote / previewCallNoteEmail / setCallNoteFlag /
+//  setCallNoteResolved / sanitizeCallNotePayload_ / etc. Integration
+//  coverage for the endpoints themselves (which write to per-rep
+//  Sheets) is a follow-on — would need setupTestEnvironment to
+//  provision a TEST call-notes Sheet and write its ID into the
+//  test employee row.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── sanitizeFlagType_ ──
+
+function test_cn_sanitizeFlagType_valid() {
+  _assertEq(sanitizeFlagType_('action'),   'action');
+  _assertEq(sanitizeFlagType_('training'), 'training');
+  _assertEq(sanitizeFlagType_('review'),   'review');
+}
+function test_cn_sanitizeFlagType_invalidCoerces() {
+  _assertEq(sanitizeFlagType_('escalation'), '', 'unknown coerces to empty');
+  _assertEq(sanitizeFlagType_('foo'),        '');
+  _assertEq(sanitizeFlagType_('action!'),    '', 'punctuation breaks match');
+}
+function test_cn_sanitizeFlagType_caseInsensitive() {
+  _assertEq(sanitizeFlagType_('ACTION'),    'action');
+  _assertEq(sanitizeFlagType_(' Training '),'training');
+  _assertEq(sanitizeFlagType_('ReVieW'),    'review');
+}
+function test_cn_sanitizeFlagType_nullish() {
+  _assertEq(sanitizeFlagType_(''),         '');
+  _assertEq(sanitizeFlagType_(null),       '');
+  _assertEq(sanitizeFlagType_(undefined),  '');
+}
+
+// ── sanitizeCallNotePayload_ ──
+
+function test_cn_sanitizePayload_trims() {
+  const out = sanitizeCallNotePayload_({
+    callback: '  (555) 123-4567  ',
+    caller:   '  Jane Smith  ',
+    issue:    '  outage  ',
+    flagType: '  ACTION  ',
+  });
+  _assertEq(out.callback, '(555) 123-4567');
+  _assertEq(out.caller,   'Jane Smith');
+  _assertEq(out.issue,    'outage');
+  _assertEq(out.flagType, 'action', 'flagType lowercased + trimmed');
+}
+function test_cn_sanitizePayload_nullishToEmpty() {
+  const out = sanitizeCallNotePayload_({});
+  _assertEq(out.callback,       '');
+  _assertEq(out.caller,         '');
+  _assertEq(out.relationship,   '');
+  _assertEq(out.patientAndTrx,  '');
+  _assertEq(out.issue,          '');
+  _assertEq(out.transferredTo,  '');
+  _assertEq(out.resolution,     '');
+  _assertEq(out.flagType,       '');
+  _assertEq(out.subform,        '');
+  _assertNull(out.subformData);
+}
+function test_cn_sanitizePayload_acceptsCamelAlias() {
+  // The client-side helper sends `patientAndTRX` (uppercase TRX) too; the
+  // server should accept either spelling so a client refactor doesn't
+  // silently drop the field.
+  const out = sanitizeCallNotePayload_({ patientAndTRX: 'John 99999' });
+  _assertEq(out.patientAndTrx, 'John 99999');
+}
+
+// ── validateCallNotePayload_ ──
+
+function test_cn_validatePayload_rejectsEmpty() {
+  const result = validateCallNotePayload_(sanitizeCallNotePayload_({}));
+  _assertNotNull(result.error);
+  _assertContains(result.error, 'empty', 'Error message mentions empty');
+}
+function test_cn_validatePayload_acceptsAnyField() {
+  ['callback','caller','patientAndTrx','issue','resolution'].forEach(field => {
+    const payload = {}; payload[field] = 'something';
+    const result = validateCallNotePayload_(sanitizeCallNotePayload_(payload));
+    _assertTrue(result.ok, `Single field "${field}" should pass validation`);
+  });
+}
+function test_cn_validatePayload_rejectsBadFlag() {
+  // Bypass sanitize so we can inject a deliberately bad flag into a
+  // payload that otherwise looks valid.
+  const cleaned = sanitizeCallNotePayload_({ caller: 'Jane' });
+  cleaned.flagType = 'escalation';
+  const result = validateCallNotePayload_(cleaned);
+  _assertNotNull(result.error);
+  _assertContains(result.error, 'Invalid flag type');
+}
+
+// ── callNoteMatchesFilter_ ──
+
+function test_cn_matchesFilter_all() {
+  _assertTrue(callNoteMatchesFilter_({ flagType: 'action', resolved: false }, 'all'));
+  _assertTrue(callNoteMatchesFilter_({ flagType: '',       resolved: true  }, 'all'));
+  _assertTrue(callNoteMatchesFilter_({ flagType: 'review', resolved: false }, 'all'));
+}
+function test_cn_matchesFilter_actionTrainingReview() {
+  _assertTrue (callNoteMatchesFilter_({ flagType: 'action'   }, 'action'));
+  _assertFalse(callNoteMatchesFilter_({ flagType: 'training' }, 'action'));
+  _assertTrue (callNoteMatchesFilter_({ flagType: 'training' }, 'training'));
+  _assertFalse(callNoteMatchesFilter_({ flagType: 'action'   }, 'training'));
+  _assertTrue (callNoteMatchesFilter_({ flagType: 'review'   }, 'review'));
+  _assertFalse(callNoteMatchesFilter_({ flagType: 'action'   }, 'review'));
+}
+function test_cn_matchesFilter_unresolved() {
+  _assertTrue (callNoteMatchesFilter_({ flagType: 'action',   resolved: false }, 'unresolved'));
+  _assertFalse(callNoteMatchesFilter_({ flagType: 'action',   resolved: true  }, 'unresolved'),
+    'resolved action notes do not match unresolved filter');
+  _assertFalse(callNoteMatchesFilter_({ flagType: 'training', resolved: false }, 'unresolved'),
+    'training notes do not match unresolved filter');
+  _assertFalse(callNoteMatchesFilter_({ flagType: '',         resolved: false }, 'unresolved'));
+}
+function test_cn_matchesFilter_unsent() {
+  _assertTrue (callNoteMatchesFilter_({ emailedAt: '' },                          'unsent'));
+  _assertFalse(callNoteMatchesFilter_({ emailedAt: '2026-05-17T09:30:00' },       'unsent'));
+}
+
+// ── updateInfoToSubformKey_ ──
+
+function test_cn_updateInfoToSubformKey() {
+  _assertEq(updateInfoToSubformKey_('Close Order'),       'close');
+  _assertEq(updateInfoToSubformKey_('CLOSE ORDER'),       'close');
+  _assertEq(updateInfoToSubformKey_('Verified Shipping'), 'shipping');
+  _assertEq(updateInfoToSubformKey_('Repeat Resupply'),   'resupply');
+  _assertEq(updateInfoToSubformKey_('OOP Order'),         'oop');
+  _assertEq(updateInfoToSubformKey_('Other Update'),      '', 'unknown update returns empty');
+  _assertEq(updateInfoToSubformKey_(''),                  '');
+  _assertEq(updateInfoToSubformKey_(null),                '');
+}
+
+// ── formatPhoneNumber_ / formatProviderPhone_ ──
+
+function test_cn_formatPhoneNumber_basic() {
+  _assertEq(formatPhoneNumber_('5551234567'),  '(555) 123-4567');
+  _assertEq(formatPhoneNumber_('555-123-4567'),'(555) 123-4567');
+  _assertEq(formatPhoneNumber_('(555) 123 4567'), '(555) 123-4567');
+}
+function test_cn_formatPhoneNumber_extension() {
+  _assertEq(formatPhoneNumber_('5551234567 x123'), '(555) 123-4567 x123');
+  _assertEq(formatPhoneNumber_('5551234567x12345'),'(555) 123-4567 x12345');
+}
+function test_cn_formatPhoneNumber_passthroughShort() {
+  // Sub-10-digit strings are left alone (no good formatting heuristic).
+  _assertEq(formatPhoneNumber_('555-1234'), '555-1234');
+}
+function test_cn_formatPhoneNumber_empty() {
+  _assertEq(formatPhoneNumber_(''),        '');
+  _assertEq(formatPhoneNumber_(null),      '');
+  _assertEq(formatPhoneNumber_(undefined), '');
+}
+function test_cn_formatProviderPhone_basic() {
+  _assertEq(formatProviderPhone_('5551234567'),   '555-123-4567');
+  _assertEq(formatProviderPhone_('555-123-4567'), '555-123-4567');
+  _assertEq(formatProviderPhone_('5551234567 x12'), '555-123-4567 x12');
+}
+function test_cn_formatProviderPhone_countryCode() {
+  // 11-digit numbers starting with 1 get a leading "1 " prefix
+  _assertEq(formatProviderPhone_('15551234567'),  '1 555-123-4567');
+  _assertEq(formatProviderPhone_('1-555-123-4567'),'1 555-123-4567');
+}
+
+// ── buildEmailSubject_ ──
+
+function test_cn_buildEmailSubject_basicUpdate() {
+  _assertEq(
+    buildEmailSubject_({ updateInfo: 'Status Check' }, 'Jane Smith TRX123'),
+    'Status Check: Jane Smith TRX123'
+  );
+}
+function test_cn_buildEmailSubject_titlecasesCanon() {
+  _assertEq(
+    buildEmailSubject_({ updateInfo: 'close order' },       'Patient X'),
+    'Close Order: Patient X'
+  );
+  _assertEq(
+    buildEmailSubject_({ updateInfo: 'verified shipping' }, 'Patient X'),
+    'Verified Shipping: Patient X'
+  );
+  _assertEq(
+    buildEmailSubject_({ updateInfo: 'oop order' },         'Patient X'),
+    'OOP Order: Patient X'
+  );
+}
+function test_cn_buildEmailSubject_repeatResupplyEnriched() {
+  const selections = {
+    updateInfo: 'Repeat Resupply',
+    resupplyDetails: { itemCategory: 'CPAP', resupplyMonth: 'July', dob: '01/15/1970' },
+  };
+  _assertEq(
+    buildEmailSubject_(selections, 'Patient Y'),
+    'CPAP July Resupply: Patient Y, DOB: 01/15/1970'
+  );
+}
+function test_cn_buildEmailSubject_repeatResupplyOtherCategory() {
+  // When itemCategory is 'Other', the category prefix is dropped.
+  const selections = {
+    updateInfo: 'Repeat Resupply',
+    resupplyDetails: { itemCategory: 'Other', resupplyMonth: '', dob: '' },
+  };
+  _assertEq(
+    buildEmailSubject_(selections, 'Patient Z'),
+    'Resupply: Patient Z'
+  );
+}
+
+// ── generateOOPResolutionText_ ──
+
+function test_cn_generateOOPResolutionText_collected() {
+  const sel = {
+    oopDetails:      { baseCost: '100.00', taxAmt: '6.25', shippingCost: '14.99', totalCost: '121.24' },
+    shippingDetails: { patResp: 'Collected', verifiedAddr: true, verifiedAddrText: '1 Main St',
+                       patientLoc: 'Home', docsTo: 'Email', deliveryEmail: 'x@y.com', specialNote: '' },
+  };
+  const text = generateOOPResolutionText_(sel);
+  _assertContains(text, 'Collected Total: $121.24');
+  _assertContains(text, 'Base: $100.00');
+  _assertContains(text, 'Verified Addr: Yes');
+  _assertContains(text, 'Loc: Home');
+  _assertContains(text, 'Docs: Email (x@y.com)');
+}
+function test_cn_generateOOPResolutionText_needCollect() {
+  const sel = {
+    oopDetails:      { baseCost: '50.00', taxAmt: '$2.50', shippingCost: '0.00', totalCost: '52.50' },
+    shippingDetails: { patResp: 'Need to Collect', verifiedAddr: false, verifiedAddrText: '',
+                       patientLoc: 'Facility', docsTo: 'Patient', deliveryEmail: '', specialNote: 'Call before delivery' },
+  };
+  const text = generateOOPResolutionText_(sel);
+  _assertContains(text, 'Need to Collect Total: $52.50');
+  _assertContains(text, 'Verified Addr: No');
+  _assertContains(text, 'Note: Call before delivery');
+}
+
+// ── resolveEmailRecipients_ ──
+
+function test_cn_resolveRecipients_simpleDept() {
+  // 'Sales' resolves via CONFIG.CALL_NOTES.DEPARTMENT_EMAILS. We just
+  // assert it produces a `to:` string containing an @-address — the
+  // exact email is config-driven so testing the value would couple
+  // the test to ops state. Type-of check is too broad on its own;
+  // the contained-@ check tightens it.
+  const res = resolveEmailRecipients_({ departments: ['Sales'] });
+  _assertNull(res.error);
+  _assertContains(res.to, '@');
+}
+function test_cn_resolveRecipients_otherUsesIndividual() {
+  const res = resolveEmailRecipients_({ departments: ['Other'], individualEmail: 'manual@example.com' });
+  _assertEq(res.to, 'manual@example.com');
+}
+function test_cn_resolveRecipients_unknownDeptErrors() {
+  const res = resolveEmailRecipients_({ departments: ['NotARealDept'] });
+  _assertNotNull(res.error);
+  _assertContains(res.error, 'Unknown department');
+}
+
+// ── validateEmailSelections_ ──
+
+function test_cn_validateEmailSelections_requiresDept() {
+  const r = validateEmailSelections_({ departments: [], individualEmail: '', updateInfo: 'Status Check' });
+  _assertNotNull(r.error);
+  _assertContains(r.error, 'recipient');
+}
+function test_cn_validateEmailSelections_otherRequiresEmail() {
+  let r = validateEmailSelections_({ departments: ['Other'], individualEmail: '', updateInfo: 'Status Check' });
+  _assertNotNull(r.error);
+  r = validateEmailSelections_({ departments: ['Other'], individualEmail: 'not-an-email', updateInfo: 'X' });
+  _assertNotNull(r.error);
+  _assertContains(r.error, 'Invalid email');
+  r = validateEmailSelections_({ departments: ['Other'], individualEmail: 'ok@example.com', updateInfo: 'X' });
+  _assertTrue(r.ok);
+}
+function test_cn_validateEmailSelections_requiresUpdateInfo() {
+  const r = validateEmailSelections_({ departments: ['Sales'], individualEmail: '', updateInfo: '' });
+  _assertNotNull(r.error);
+  _assertContains(r.error, 'Update');
+}
+
+// ── callDataFromNote_ — smart "self relationship + only-TRX" prepend ──
+
+function test_cn_callDataFromNote_selfNumberPrepended() {
+  const out = callDataFromNote_({
+    callback: '5551234567', caller: 'Jane Doe', relationship: 'self',
+    patientAndTrx: '99999', issue: 'X', transferredTo: '', resolution: '',
+  });
+  _assertEq(out.patientAndTrx, 'Jane Doe 99999');
+}
+function test_cn_callDataFromNote_selfNamedNoPrepend() {
+  // patientAndTrx already includes a non-numeric word — no prepend
+  const out = callDataFromNote_({
+    callback: '5551234567', caller: 'Jane Doe', relationship: 'self',
+    patientAndTrx: 'Jane Doe 99999', issue: '', transferredTo: '', resolution: '',
+  });
+  _assertEq(out.patientAndTrx, 'Jane Doe 99999');
+}
+function test_cn_callDataFromNote_nonSelfPassthrough() {
+  // Different relationship — no prepend regardless of whether TRX is number-only
+  const out = callDataFromNote_({
+    callback: '5551234567', caller: 'Mom', relationship: 'parent',
+    patientAndTrx: '99999', issue: '', transferredTo: '', resolution: '',
+  });
+  _assertEq(out.patientAndTrx, '99999');
+}
+
+// ── esc_ — HTML entity escape ──
+
+function test_cn_esc_basic() {
+  _assertEq(esc_('A & B'),             'A &amp; B');
+  _assertEq(esc_('<script>'),          '&lt;script&gt;');
+  _assertEq(esc_(`"quoted" 'single'`), '&quot;quoted&quot; &#39;single&#39;');
+  _assertEq(esc_(null),                '');
+  _assertEq(esc_(undefined),           '');
 }
