@@ -35,21 +35,118 @@ const CONFIG = {
 
   AUTO_MISSED_ALERT_HOUR_IST: 6,
   AUTO_EXPORT_HOUR_IST:       12,
+
+  // ── Call Notes module ────────────────────────────────────────────────
+  // The rolling-note panel; per-rep notes write to the rep's own Sheet
+  // (EMP.CALL_NOTES_SHEET_ID, column L), email composer/preview gate is a
+  // separate action from log-on-submit. See helper getCallNotesSheet_().
+  CALL_NOTES: {
+    NOTES_TAB:           'Notes',
+    SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
+    DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
+    CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
+    AUTO_COPY_FORMAT:    '{timestamp} | {caller} ({callback}) | {relationship} | {patientAndTrx} | {issue} → {resolution}',
+    STALE_FLAG_HOURS:    1,              // an `action` flag is "stale" if unresolved beyond this
+    EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
+    EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
+    TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
+    REVIEW_DIGEST_WEEKDAY:   5,
+    DEPARTMENT_EMAILS: {
+      'Sales':            'sales@universalmedsupply.com',
+      'Eligibility MM&R': 'eligibility@universalmedsupply.com',
+      'Manual Mobility':  'patientintake@universalmedsupply.com',
+      'Resupply':         'resupply@universalmedsupply.com',
+      'Power':            'power@universalmedsupply.com',
+      'Field Ops':        'routing@universalmedsupply.com',
+      'Service':          'service@universalmedsupply.com',
+      'Billing':          'billing@universalmedsupply.com',
+      'Denials':          'denials@universalmedsupply.com',
+      'CSR':              'robin.choudhury@universalmedsupply.com',
+      'Spanish':           'spanishcalls@universalmedsupply.com',
+    },
+    // Dept-specific update-type suggestions for the email composer datalist.
+    UPDATE_SUGGESTIONS_BY_DEPT: {
+      'Sales':            ['Appointment Re-scheduled', 'Insurance Details', 'Duplicate'],
+      'Service':          ['Pictures/Video', 'Additional Issue', 'Pending Validation'],
+      'Eligibility MM&R': ['Close Order', 'OOP Accepted', 'UPG Fee Accepted', 'New Insurance Details', 'Duplicate'],
+      'Manual Mobility':  ['Insurance Change', 'Pending Auth'],
+      'Power':            ['New Appt Needed', 'New Appt Details', 'Insurance Change', 'Appeal Status', 'PAR Response', 'PT Eval', 'PV-PPD'],
+      'Resupply':         ['Repeat Resupply', 'Wrong Item Received', 'Vent Inquiry'],
+      'Field Ops':        ['Verified Shipping', 'Re-schedule', 'Delivery Details'],
+      'Billing':          ['Receipt Request', 'Refund'],
+      'Denials':          ['Appeal Needed', 'Redetermination'],
+      'CSR':              ['General Inquiry', 'Status Check'],
+      'Spanish':          ['Translator Needed'],
+    },
+    // Always offered alongside dept-specific suggestions
+    UPDATE_SUGGESTIONS_DEFAULT: [
+      'Verified Shipping', 'Repeat Resupply', 'Close Order', 'OOP Order', 'Supervisor/Complaint',
+    ],
+    // Hardcoded state tax rates (intentionally conservative); used for OOP tax calc.
+    STATE_TAX_RATES: {
+      'Alabama': 0.03, 'Alaska': 0, 'Arizona': 0.045, 'Arkansas': 0.055,
+      'California': 0.06, 'Colorado': 0.02, 'Connecticut': 0.05, 'Delaware': 0,
+      'District of Columbia': 0.05, 'Florida': 0.05, 'Georgia': 0.03, 'Hawaii': 0.03,
+      'Idaho': 0.05, 'Illinois': 0.05, 'Indiana': 0.06, 'Iowa': 0.05,
+      'Kansas': 0.055, 'Kentucky': 0.05, 'Louisiana': 0.035, 'Maine': 0.045,
+      'Maryland': 0.05, 'Massachusetts': 0.05, 'Michigan': 0.05, 'Minnesota': 0.055,
+      'Mississippi': 0.06, 'Missouri': 0.03, 'Montana': 0, 'Nebraska': 0.045,
+      'Nevada': 0.055, 'New Hampshire': 0, 'New Jersey': 0.055, 'New Mexico': 0.04,
+      'New York': 0.03, 'North Carolina': 0.035, 'North Dakota': 0.04, 'Ohio': 0.045,
+      'Oklahoma': 0.045, 'Oregon': 0, 'Pennsylvania': 0.045, 'Rhode Island': 0.05,
+      'South Carolina': 0.04, 'South Dakota': 0.04, 'Tennessee': 0.05, 'Texas': 0.0625,
+      'Utah': 0.045, 'Vermont': 0.04, 'Virginia': 0.04, 'Washington': 0.055,
+      'West Virginia': 0.04, 'Wisconsin': 0.04, 'Wyoming': 0.03,
+    },
+    STATE_ABBR_TO_NAME: {
+      'AL':'Alabama','AK':'Alaska','AZ':'Arizona','AR':'Arkansas','CA':'California',
+      'CO':'Colorado','CT':'Connecticut','DE':'Delaware','DC':'District of Columbia','FL':'Florida',
+      'GA':'Georgia','HI':'Hawaii','ID':'Idaho','IL':'Illinois','IN':'Indiana',
+      'IA':'Iowa','KS':'Kansas','KY':'Kentucky','LA':'Louisiana','ME':'Maine',
+      'MD':'Maryland','MA':'Massachusetts','MI':'Michigan','MN':'Minnesota','MS':'Mississippi',
+      'MO':'Missouri','MT':'Montana','NE':'Nebraska','NV':'Nevada','NH':'New Hampshire',
+      'NJ':'New Jersey','NM':'New Mexico','NY':'New York','NC':'North Carolina','ND':'North Dakota',
+      'OH':'Ohio','OK':'Oklahoma','OR':'Oregon','PA':'Pennsylvania','RI':'Rhode Island',
+      'SC':'South Carolina','SD':'South Dakota','TN':'Tennessee','TX':'Texas','UT':'Utah',
+      'VT':'Vermont','VA':'Virginia','WA':'Washington','WV':'West Virginia','WI':'Wisconsin',
+      'WY':'Wyoming',
+    },
+  },
 };
 
 const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8 };
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
+// Phase 8 (Call Notes): column L (CALL_NOTES_SHEET_ID) — per-rep Sheet ID
 const EMP = {
   EMAIL:0, ID:1, NAME:2, SHEET_ID:3, PAY_CYCLE:4, PAY_ANCHOR:5, IS_MANAGER:6,
-  TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10,
+  TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10, CALL_NOTES_SHEET_ID:11,
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
+
+// Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
+const CN = {
+  NOTE_ID:0, TIMESTAMP:1, DATE_LOCAL:2,
+  CALLBACK:3, CALLER:4, RELATIONSHIP:5, PATIENT_TRX:6,
+  ISSUE:7, TRANSFERRED_TO:8, RESOLUTION:9,
+  FLAG_TYPE:10, RESOLVED:11,
+  EMAILED_AT:12, EMAIL_DEPARTMENTS:13,
+  SUBFORM:14, SUBFORM_DATA:15,
+};
+const CN_HEADERS = [
+  'NoteId','Timestamp','DateLocal',
+  'Callback','Caller','Relationship','PatientAndTRX',
+  'Issue','TransferredTo','Resolution',
+  'FlagType','Resolved',
+  'EmailedAt','EmailDepartments',
+  'Subform','SubformData',
+];
+const CN_FLAG_TYPES = ['action','training','review'];
 
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v4';   // bumped: PtoEnabled column
+const ROSTER_CACHE_KEY = 'employee_roster_v5';   // bumped: CallNotesSheetId column
 const ROSTER_CACHE_TTL = 300;
 
 const TZ_ABBR = {
@@ -1537,6 +1634,8 @@ function getEmployeeInfo_() {
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
         sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
+        callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
+          ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
         payCycle: cycle, payAnchor: anchor, isManager, timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
@@ -1563,6 +1662,8 @@ function lookupEmployeeById_(empId) {
       email: String(rows[i][EMP.EMAIL]).trim(),
       timezone: String(tzRaw).trim() || CONFIG.TIMEZONE,
       sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
+      callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
+        ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
       annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       ptoEnabled,
@@ -1759,6 +1860,29 @@ function getAdpSS_() {
   const id = PropertiesService.getScriptProperties().getProperty('ADP_SS_ID')
           || CONFIG.ADP_SS_ID;
   return SpreadsheetApp.openById(id);
+}
+
+/**
+ * Opens (or creates) the `Notes` tab in a rep's per-rep call-notes Sheet
+ * and returns it. Throws if the rep has no callNotesSheetId mapped (enrollment
+ * is a manual step — manager sets EMP.CALL_NOTES_SHEET_ID in the Employees
+ * sheet). First-touch on any new rep's Sheet provisions the `Notes` tab with
+ * the canonical header row (CN_HEADERS).
+ */
+function getCallNotesSheet_(emp) {
+  if (!emp || !emp.callNotesSheetId) {
+    throw new Error('Your call-notes Sheet is not configured. Ask your manager to enroll you.');
+  }
+  const ss = SpreadsheetApp.openById(emp.callNotesSheetId);
+  let sheet = ss.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.CALL_NOTES.NOTES_TAB);
+    sheet.appendRow(CN_HEADERS);
+    sheet.setFrozenRows(1);
+    // Make timestamp + date columns left-aligned for legibility
+    sheet.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
 }
 function fmtDate_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd'); }
 function fmtTime_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'HH:mm:ss'); }
