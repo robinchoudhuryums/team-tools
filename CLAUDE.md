@@ -114,8 +114,25 @@ this section before touching the relevant area.
   manager-gated endpoint MUST start with the same check used by
   `getManagerDashboard`, `updateTimeOffStatus`, `deletePunch`,
   `managerSaveDay`, `exportAdpRange`, `installAutomationTriggers`,
-  `managerSubmitTimeOff`. Returning a dashboard or accepting writes
+  `managerSubmitTimeOff`, `getEmployeesList`,
+  `getEmployeeTimesheetForManager`, `managerGetCallNotes`,
+  `managerSearchCallNotes`, `managerGetTrainingQueue`,
+  `managerGetReviewCandidates`, `getEnrolledCallNotesReps`,
+  `exportCallNotesRange`. Returning a dashboard or accepting writes
   without this check is a privilege escalation.
+- **Trigger-handler endpoints are reachable via `google.script.run`.**
+  The four time-based trigger handlers — `sendDailyMissedPunchAlerts`,
+  `runDailyExportCheck`, `sendCallNotesEodDigest`,
+  `sendCallNotesWeeklyDigests` — are top-level (required: Apps Script
+  time-based triggers won't bind to underscore-suffix functions), which
+  also means a logged-in rep can fire them from the browser console.
+  Each calls `assertManagerCaller_(label)` at the top — throws if
+  `getActiveUserEmail_()` ∉ `getManagerEmails_()`. In a trigger context
+  the active user is the installer (always a manager via
+  `installAutomationTriggers`'s own check), so the gate is a no-op for
+  triggers. Any new public function that walks the roster, hits Mail,
+  or otherwise has side effects you wouldn't want a rep firing should
+  apply the same gate.
 - **PTO balance transitions.** `updateTimeOffStatus` only changes
   balances on Pending→Approved (deduct) or Approved→non-Approved
   (restore). `managerSubmitTimeOff` with `autoApprove=true` skips
@@ -150,7 +167,12 @@ this section before touching the relevant area.
   (`notifyEmployeeOfDecision_`), missed-punch alerts, and
   automated exports are wrapped in try/catch — the API call
   returns success even when the email fails. Failures are logged
-  to `Logger.log` / `console.warn` only.
+  to `Logger.log` / `console.warn` only. `emailFromCallNote`
+  is more careful: it sends via MailApp first (failure returns
+  `success: false`), then stamps EmailedAt / EmailDepartments /
+  Subform metadata in a separate try/catch. A stamp failure AFTER
+  a successful send is logged to console but the call still returns
+  `success: true` so the rep doesn't re-send a duplicate.
 - **Call Notes Sheet enrollment is manual.** A rep has no Call
   Notes panel until column L (`CallNotesSheetId`) of the Employees
   roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
@@ -181,7 +203,10 @@ this section before touching the relevant area.
   checks; bad values fall back to `''` rather than throwing, so
   experimental UI tweaks can't write garbage into the column.
   `Resolved` is only meaningful when `FlagType=action`; the resolve
-  endpoint rejects calls on other flag types.
+  endpoint rejects calls on other flag types. Switching flag types
+  (e.g. action → training) clears `Resolved` as a side-effect, so
+  stale `resolved=TRUE` from a prior action cycle doesn't resurface
+  if the rep flips back to action.
 - **EOD trigger is per-manager-tz with a window check, not per-rep tz.**
   `sendCallNotesEodDigest` runs once at `CONFIG.CALL_NOTES.EOD_WARNING_HOUR`
   in the manager's tz, then walks the roster. For each enrolled rep it
@@ -190,12 +215,39 @@ this section before touching the relevant area.
   from the manager's tz get no digest on the day their local 5pm
   doesn't intersect the trigger window — a tradeoff for keeping a
   single trigger. If you have reps spread across more than ~6h of
-  timezones, switch to per-tz triggers or widen the window.
+  timezones, switch to per-tz triggers or widen the window. The
+  window check uses circular distance (`Math.min(diff, 1440 - diff)`)
+  so a near-midnight `EOD_WARNING_HOUR` wraps correctly — dormant
+  for the default 17:00 hour, latent otherwise.
 - **`SubformData` (column P) is a JSON blob.** Stored as a JSON string
   on email send (so a "re-send same departments" flow can re-open the
   composer pre-populated). `callNoteRowToObject_` tries `JSON.parse`
   and returns `null` on failure rather than throwing — corrupted blobs
   should never break a read.
+- **Late `google.script.run` successHandlers in Call Notes loaders
+  guard on `currentView`.** Every Call Notes loader (`cnLoadToday_`,
+  `cnLoadDate_`, `cnFireSearch_`, `cnMgrLoadQueue_`,
+  `cnMgrLoadRepNotes_`) captures `const requestedView = currentView;`
+  and skips the render branch on success/failure when
+  `currentView !== requestedView`. Without this guard, a slow-network
+  nav-away clobbers the new view's innerHTML because every view writes
+  into the same `#view-area` node. State updates (CN_STATE.*) still
+  happen unconditionally so the cache stays warm for when the rep
+  returns. Apply the same pattern to any new Call Notes loader.
+- **`cnRenderSubforms_` is shape-keyed via `host.dataset.shapeKey`.**
+  Re-rendering the same shape is a no-op so typing into the Update
+  Type field doesn't wipe in-progress subform values on every
+  keystroke. When the shape changes (e.g. user switches from
+  "Verified Shipping" to "Close Order"), the function first calls
+  `cnGatherComposerSelections_()` in a try/catch to snapshot the
+  prior DOM into state — so flipping back to the original shape
+  restores their values.
+- **`cnToggleComposerDept_` snapshots subform DOM before re-render.**
+  Toggling a dept chip in the email composer re-renders the entire
+  modal innerHTML; without `cnGatherComposerSelections_()` first,
+  whatever the rep typed into a subform field is lost. The gather
+  call is wrapped in try/catch so it's safe to call when the subform
+  isn't yet in the DOM.
 
 ## Key Design Decisions
 
@@ -355,7 +407,13 @@ this section before touching the relevant area.
   requires explicit Preview, which then requires explicit Send. The
   preview shows the actual rendered HTML body + subject + recipients
   so the rep can catch wrong dept selection, wrong patient TRX, etc.
-  before send.
+  before send. The preview→send handoff is body-hash guarded:
+  `previewCallNoteEmail` returns a SHA-256 `bodyHash` over
+  (htmlBody, subject, to); `emailFromCallNote` re-renders, recomputes,
+  and refuses to send when the hash differs. Catches the case where
+  the rep edits the note in another tab between Preview and Send —
+  the previewed body and the sent body always match, or the send is
+  rejected with a clear error.
 - **Auto-copy format is a CONFIG template.** `CONFIG.CALL_NOTES.AUTO_COPY_FORMAT`
   uses `{caller}`, `{callback}`, `{patientAndTrx}`, `{issue}`,
   `{resolution}`, `{timestamp}`, etc. tokens — Robin can tune the
@@ -395,7 +453,14 @@ manually for a fresh deploy or environment:
     - `runDailyExportCheck` (time-clock, daily IST 12pm)
     - `sendCallNotesEodDigest` (call-notes, daily manager-tz 5pm)
     - `sendCallNotesWeeklyDigests` (call-notes, Friday manager-tz 8am)
-  Triggers do not survive an Apps Script project re-clone.
+  Triggers do not survive an Apps Script project re-clone. After
+  install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
+  reminder about the cross-account trigger-ownership pitfall: Apps
+  Script's `ScriptApp.getProjectTriggers()` only returns triggers
+  owned by the current user, so duplicates from a previous installer
+  are invisible to a fresh run. If a different account ever
+  installed these triggers before, have that account run
+  `removeAutomationTriggers()` first.
 - **`MANAGER_TIMEZONE`** in CONFIG drives manager-dashboard
   display tz; change requires a redeploy.
 - **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
@@ -490,7 +555,15 @@ INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configur
 INV-36 | Call-note email sends (`emailFromCallNote`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) are wrapped in try/catch and never block the API result (INV-14 generalized) | Subsystem: Server
 INV-37 | `sanitizeFlagType_` only allows `''` / `'action'` / `'training'` / `'review'` to be written to FlagType; unknown values silently coerce to `''` rather than corrupting the column | Subsystem: Server
 INV-38 | Compact-mode is a shell-level attribute (`data-compact="1"` on `documentElement`); set from the `?compact=1` URL param on boot and consumed via CSS selectors in `styles.html`. Tool views render `.compact-header` instead of `.view-title-row` when `COMPACT_MODE === true` | Subsystem: Client (shell)
-INV-39 | `getCallNotesAmbient` is unauthenticated read-only — returns only `{enrolled, unresolvedActionCount, staleActionCount, todayTotal, staleFlagHours}` for the calling rep. Used by the sidebar badge polling; never leaks cross-rep data | Subsystem: Server
+INV-39 | `getCallNotesAmbient` is authenticated to the caller (requires registered employee), read-only — returns only `{enrolled, unresolvedActionCount, staleActionCount, todayTotal, staleFlagHours}` for the calling rep. Cached for `CN_AMBIENT_CACHE_TTL` (60s) under `CN_AMBIENT_CACHE_PREFIX + emp.id`; invalidated by every mutating CN endpoint. Used by the sidebar badge polling; never leaks cross-rep data | Subsystem: Server
+INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-type transition (`oldFlag !== t`), not only on full clear — so stale `resolved=TRUE` from a prior action-flag cycle doesn't resurface when the rep flips back to action | Subsystem: Server
+INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
+INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
+INV-43 | Every mutating CN endpoint (`submitCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`) calls `invalidateCnAmbientCache_(emp.id)` after its audit-log write so the next sidebar poll sees fresh counts. `updateCallNote` and `emailFromCallNote` don't affect ambient counts and skip the invalidation | Subsystem: Server
+INV-44 | The four trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run` | Subsystem: Server
+INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise substring matching across (caller, callback, patientAndTrx) for `field='caller'|'all'` and (issue, resolution) for `field='issue'|'all'`. Used by the "Find prior calls for this TRX" card button | Subsystem: Server
+INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
+INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -675,6 +748,53 @@ S25 | Compact mode + pop-out (cross-tool) | Subsystem: Client (shell)
     - Click the pop-out icon again from the original window
     - Resize the pop-out down to ~360px width
   Expected: Pop-out window is named `umsTeamToolsCompact` — second pop-out click focuses the existing window instead of spawning a duplicate. All tool views render without horizontal overflow; modals near-full-window; field-row and ts-summary collapse to single column; action grid (Time Clock) and dept-chip grid (Call Notes) stack 2-col → 1-col gracefully.
+
+S26 | Manager per-rep Call Notes view | Subsystem: Server, Client (Call Notes)
+  Steps:
+    - As a manager, open Call Notes → Team Notes
+    - Click the "Per-Rep View" tab
+    - From the rep dropdown, pick an enrolled rep; in the date input, pick a date with known notes
+    - Change the rep; change the date back
+    - Inspect the cards — try clicking the flag / email / edit icons (should be absent)
+  Expected: Rep dropdown lists only reps with a `CallNotesSheetId` set (from `getEnrolledCallNotesReps`). The rep's notes for the chosen date load via `managerGetCallNotes` and render as read-only cards (no flag / email / edit / delete actions — only static flag/sent pills). Switching rep or date re-fires the load with a stale-selection guard that drops late callbacks. A non-manager calling `managerGetCallNotes` directly gets "Manager access required."
+
+S27 | Time-off conflict hint on pending card | Subsystem: Server, Client (Time Clock)
+  Steps:
+    - As an employee, file a Full Day request for a date that's a US holiday (e.g., 2026-07-03 Independence Day observed)
+    - As another employee, file an Approved (or Pending) request for the SAME date
+    - As a manager, open Manage → Pending Time Off
+    - Read the conflict hint on the first rep's pending card
+    - Click Approve and read the confirm dialog
+  Expected: The pending card shows a small mono-font conflict line: `INDEPENDENCE DAY (US HOLIDAY) · 1 APPROVED OFF` (or `1 PENDING` depending on the other rep's status). The Approve confirm dialog echoes the same hint as `⚠ Heads up: ...`. Approving still works; the hint is informational only.
+
+S28 | Patient cross-reference + exact-match search | Subsystem: Server, Client (Call Notes)
+  Steps:
+    - As an enrolled rep with multiple notes for the same `PatientAndTRX`, open Call Notes
+    - Click the search-icon button on any card that has a non-empty patient/TRX
+    - Inspect the Search view's "Exact: <TRX> · clear" badge
+    - Click "clear" — badge disappears, results widen to substring matches
+    - Type something else into the search box; verify exact mode is dropped
+    - Click a field tab (Caller / Issue) while in exact mode
+  Expected: The card button only renders when `patientAndTrx` is non-empty. Clicking it jumps to the Search view with `searchExact=true`, `searchExactTrx=<TRX>`, and results filtered to rows where `patientAndTrx` matches the TRX exactly (case-insensitive, trimmed). Clearing or typing or switching field tab all drop exact mode and re-fire as a substring search with the same query.
+
+S29 | Call Notes bulk export | Subsystem: Server, Client (Call Notes)
+  Steps:
+    - As a manager, open Team Notes → click "Export Range"
+    - Try a preset (This Week / Last Week / Last 7 / Last 30)
+    - Click Generate Export
+    - Inspect the new Sheet that opens
+    - Check the AuditLog tab
+    - Try start > end and confirm it's rejected
+  Expected: Modal opens with default 7-day range. Preset buttons set start/end correctly in the manager's tz. Generate fires `exportCallNotesRange`, opens the new Sheet in a tab; the Sheet has a 15-column schema with one row per note across all enrolled reps in the range, sorted by date → rep → timestamp. AuditLog has a `CallNotesExport` row with note count + new fileId. Empty range returns a friendly error. Non-manager call returns "Manager access required."
+
+S30 | Trigger handlers reject non-manager callers via google.script.run | Subsystem: Server
+  Steps:
+    - As a non-manager rep, open the deployed web app
+    - In the browser DevTools console, call (one at a time):
+      `google.script.run.withFailureHandler(e => console.log('OK rejected:', e.message)).sendDailyMissedPunchAlerts()`
+      and the same for `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`
+    - Repeat as a manager, expecting them to run normally (or no-op for empty queues)
+  Expected: Each non-manager call throws "manager access required" via `assertManagerCaller_`. No emails are sent, no Sheets are created, no roster work is done. Manager calls proceed as the time-based triggers do.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
