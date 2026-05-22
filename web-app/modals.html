@@ -111,6 +111,30 @@
   </div>
 </div>
 
+<!-- CALL NOTES BULK EXPORT MODAL (manager) -->
+<div class="overlay" id="cn-export-overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Export Call Notes Range</div>
+    <div class="modal-sub">Bundles every enrolled rep's call notes in the selected date range into a new Google Sheet.</div>
+    <div class="day-section-label">Quick Presets</div>
+    <div class="preset-grid">
+      <button class="cn-exp-preset-btn" data-cn-preset="this-week">This Week</button>
+      <button class="cn-exp-preset-btn" data-cn-preset="last-week">Last Week</button>
+      <button class="cn-exp-preset-btn" data-cn-preset="last-7">Last 7 Days</button>
+      <button class="cn-exp-preset-btn" data-cn-preset="last-30">Last 30 Days</button>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Start Date</label><input type="date" id="cn-exp-start"></div>
+      <div class="field"><label>End Date</label><input type="date" id="cn-exp-end"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" id="cn-exp-cancel">Cancel</button>
+      <button class="btn-modal-ok" id="cn-exp-submit">Generate Export</button>
+    </div>
+  </div>
+</div>
+
 <!-- MANAGER: ADD TIME OFF FOR EMPLOYEE -->
 <div class="overlay" id="mgr-timeoff-overlay">
   <div class="modal">

@@ -84,11 +84,6 @@ function renderManagerView(area, data) {
         const mo = MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3).toUpperCase();
         const dy = parseInt(parts[2],10);
         const yr = parts[0];
-        const key = JSON.stringify({
-          empId: p.empId, date: p.date, submittedAt: p.submittedAt,
-          empName: p.empName, projectedBalance: p.projectedBalance,
-          leaveBucket: p.leaveBucket,
-        });
 
         let balLine = '';
         if (data.ptoEnabled && p.currentBalance !== null && p.currentBalance !== undefined) {
@@ -101,6 +96,33 @@ function renderManagerView(area, data) {
           </div>`;
         }
 
+        // Conflict hint: surface US holidays + other reps off the same day so
+        // the manager catches double-bookings before clicking Approve. Status
+        // distinguishes Approved (confirmed off) from Pending (will-be-off).
+        let conflictLine = '';
+        const conflictBits = [];
+        if (p.holidayName) conflictBits.push(esc(p.holidayName) + ' (US holiday)');
+        if (p.conflictsOff && p.conflictsOff.length) {
+          const approvedCount = p.conflictsOff.filter(c => c.status === 'approved').length;
+          const pendingCount  = p.conflictsOff.filter(c => c.status === 'pending').length;
+          const otherBits = [];
+          if (approvedCount > 0) otherBits.push(`${approvedCount} approved off`);
+          if (pendingCount > 0)  otherBits.push(`${pendingCount} pending`);
+          if (otherBits.length) conflictBits.push(otherBits.join(', '));
+        }
+        if (conflictBits.length) {
+          conflictLine = `<div style="margin-top:6px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--warning-deep);text-transform:uppercase;display:flex;align-items:center;gap:5px">${icon('info', 11)}${conflictBits.join(' · ')}</div>`;
+        }
+        // Echo conflict bits into the approval confirm dialog via the data-key
+        // payload so handleApprovalAction can show them in the confirm.
+        const conflictForConfirm = conflictBits.length ? conflictBits.join(' · ') : null;
+        const keyWithConflict = JSON.stringify({
+          empId: p.empId, date: p.date, submittedAt: p.submittedAt,
+          empName: p.empName, projectedBalance: p.projectedBalance,
+          leaveBucket: p.leaveBucket,
+          conflictHint: conflictForConfirm,
+        });
+
         return `<div class="pending-card">
           <div class="pending-top">
             <div class="pending-date-block">
@@ -112,11 +134,12 @@ function renderManagerView(area, data) {
               <div class="pending-meta">${esc(p.type)} · ${yr}</div>
               ${p.notes && p.notes !== 'undefined' ? `<div class="pending-notes">"${esc(p.notes)}"</div>` : ''}
               ${balLine}
+              ${conflictLine}
             </div>
           </div>
           <div class="pending-actions">
-            <button class="pending-btn pb-approve" data-key='${esc(key)}' data-status="Approved">${icon('check', 14)}Approve</button>
-            <button class="pending-btn pb-deny"    data-key='${esc(key)}' data-status="Denied">${icon('x', 14)}Deny</button>
+            <button class="pending-btn pb-approve" data-key='${esc(keyWithConflict)}' data-status="Approved">${icon('check', 14)}Approve</button>
+            <button class="pending-btn pb-deny"    data-key='${esc(keyWithConflict)}' data-status="Denied">${icon('x', 14)}Deny</button>
           </div>
         </div>`;
       }).join('');
@@ -278,6 +301,12 @@ function renderManagerView(area, data) {
           && key.projectedBalance < 0) {
         const bucket = key.leaveBucket === 'sick' ? 'sick' : 'annual';
         msg += `\n\n⚠ This will take their ${bucket} leave balance to ${key.projectedBalance} day(s) (negative).`;
+      }
+      // Conflict hint (US holiday / other reps off the same day) — surfaced
+      // inline on the card AND echoed here so the manager can't miss it on the
+      // final approve click. Only shown for Approved (Deny is unblocked).
+      if (newStatus === 'Approved' && key.conflictHint) {
+        msg += `\n\n⚠ Heads up: ${key.conflictHint}.`;
       }
       if (!confirm(msg)) return;
       handleApprovalAction(key.empId, key.date, key.submittedAt, newStatus, btn);

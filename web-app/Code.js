@@ -364,8 +364,14 @@ function cancelTimeOffRequest(date, submittedAt) {
           return { success: false, error: 'Only pending requests can be cancelled.' };
         }
         const type = String(rows[i][TO.TYPE]);
+        const reqNotes = String(rows[i][TO.NOTES] || '');
         sheet.deleteRow(i + 1);
-        writeAuditLog_(emp, 'TimeOffCancel', date, '', false, 0, type + ' — self-cancelled');
+        // Audit row carries enough context to reconstruct the cancelled request
+        // from the log alone — the row itself is gone after deleteRow.
+        const auditParts = [type, 'self-cancelled', 'status=' + status];
+        if (reqNotes)   auditParts.push('notes="' + reqNotes + '"');
+        if (submittedAt) auditParts.push('submittedAt=' + submittedAt);
+        writeAuditLog_(emp, 'TimeOffCancel', date, '', false, 0, auditParts.join(' · '));
         return { success: true };
       }
     }
@@ -455,8 +461,25 @@ function getManagerDashboard() {
     liveStatus.sort((a, b) =>
       statusRank[a.status] - statusRank[b.status] || a.name.localeCompare(b.name));
 
-    // Pending time-off (with leave balance context)
+    // Pending time-off (with leave balance context).
+    // Also build a date→[approved/pending requests] index up-front so each
+    // pending entry can carry conflict context (other reps off the same day,
+    // US holiday name) without a per-pending nested scan.
     const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+    const requestsByDate = {};
+    for (let i = 1; i < toRows.length; i++) {
+      const st = String(toRows[i][TO.STATUS]).toLowerCase().trim();
+      if (st !== 'pending' && st !== 'approved') continue;
+      const d = normalizeDate_(toRows[i][TO.DATE]);
+      if (!requestsByDate[d]) requestsByDate[d] = [];
+      requestsByDate[d].push({
+        empId: String(toRows[i][TO.EMP_ID]).trim(),
+        empName: String(toRows[i][TO.EMP_NAME]).trim(),
+        type: String(toRows[i][TO.TYPE]),
+        status: st,
+      });
+    }
+
     const pending = [];
     for (let i = 1; i < toRows.length; i++) {
       if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'pending') continue;
@@ -483,6 +506,27 @@ function getManagerDashboard() {
       });
     }
     pending.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Per-pending conflict context: other reps off the same day + US holiday.
+    // Used by the dashboard to surface "1 other PH rep off this day · US
+    // Independence Day" inline on each pending card, preventing approval
+    // mistakes (double-booking team, approving over holidays).
+    const pendingYears = {};
+    pending.forEach(p => { pendingYears[p.date.substring(0, 4)] = true; });
+    const holidayMap = {};
+    Object.keys(pendingYears).forEach(y => {
+      getUsHolidays_(parseInt(y, 10)).forEach(h => { holidayMap[h.date] = h.name; });
+    });
+    pending.forEach(p => {
+      const sameDate = requestsByDate[p.date] || [];
+      // Exclude every request from this same employee (their own pending
+      // request is in the list, plus any prior approved/pending for that
+      // date which aren't really a "conflict" from the manager's POV).
+      p.conflictsOff = sameDate
+        .filter(r => r.empId !== p.empId)
+        .map(r => ({ name: r.empName, status: r.status, type: r.type }));
+      p.holidayName = holidayMap[p.date] || null;
+    });
 
     // Missed clock-outs (per-emp tz)
     const punchKeyMap = {};
@@ -1303,8 +1347,11 @@ function getCallNotesDepartments() {
   };
 }
 
-/** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all. */
-function searchMyCallNotes(query, field, dateRange) {
+/** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all.
+ *  If exact=true, matches patientAndTrx exactly (case-insensitive, trimmed) and
+ *  ignores the field parameter — used by the "Find prior calls for this TRX"
+ *  button on note cards to surface repeat-caller history without substring noise. */
+function searchMyCallNotes(query, field, dateRange, exact) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
@@ -1316,24 +1363,29 @@ function searchMyCallNotes(query, field, dateRange) {
     const rows = sheet.getDataRange().getValues();
 
     const qLower = q.toLowerCase();
+    const isExact = exact === true;
     const results = [];
     for (let i = 1; i < rows.length; i++) {
       const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
       if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
       if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
       let hit = false;
-      if (f === 'caller' || f === 'all') {
-        if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
-              .toLowerCase().indexOf(qLower) >= 0) hit = true;
-      }
-      if (!hit && (f === 'issue' || f === 'all')) {
-        if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+      if (isExact) {
+        if (String(note.patientAndTrx || '').toLowerCase().trim() === qLower) hit = true;
+      } else {
+        if (f === 'caller' || f === 'all') {
+          if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                .toLowerCase().indexOf(qLower) >= 0) hit = true;
+        }
+        if (!hit && (f === 'issue' || f === 'all')) {
+          if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+        }
       }
       if (hit) results.push(note);
     }
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 200) results.length = 200;
-    return { results, timezone: empTz };
+    return { results, timezone: empTz, exact: isExact };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -1439,6 +1491,93 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 500) results.length = 500;
     return { results };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Bulk-export every enrolled rep's call notes in a date range to a new
+ *  Google Sheet. Returns { success, url, fileName, noteCount }. Pair with
+ *  the Team Notes "Export Range" modal. Writes a CallNotesExport audit row.
+ *
+ *  Read-only: never touches the per-rep Sheets, only reads. Cross-rep, so
+ *  manager-gated (parallels managerSearchCallNotes / managerAggregateFlagged_). */
+function exportCallNotesRange(startDate, endDate) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate))
+      return { error: 'Invalid start date (expected yyyy-MM-dd).' };
+    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate))
+      return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
+
+    const roster = getEmployeeRosterRows_();
+    const allNotes = [];
+    for (let r = 1; r < roster.length; r++) {
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      const repId = String(roster[r][EMP.ID]).trim();
+      const repName = String(roster[r][EMP.NAME]).trim();
+      try {
+        const sheet = getCallNotesSheet_({
+          id: repId, name: repName, callNotesSheetId: String(sheetId).trim()
+        });
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+          if (note.dateLocal < startDate || note.dateLocal > endDate) continue;
+          allNotes.push({
+            repId, repName, note,
+          });
+        }
+      } catch (e) {
+        // Broken per-rep Sheet shouldn't break the cross-rep export
+        console.warn('exportCallNotesRange skipped rep ' + repId + ': ' + e.message);
+      }
+    }
+
+    if (allNotes.length === 0) {
+      return { error: `No notes found between ${startDate} and ${endDate}.` };
+    }
+    allNotes.sort((a, b) => {
+      if (a.note.dateLocal !== b.note.dateLocal) return a.note.dateLocal.localeCompare(b.note.dateLocal);
+      if (a.repName !== b.repName) return a.repName.localeCompare(b.repName);
+      return String(a.note.timestamp).localeCompare(String(b.note.timestamp));
+    });
+
+    const stamp = fmtDate_(new Date()).replace(/-/g, '') + '_' + fmtTime_(new Date()).replace(/:/g, '');
+    const name = `Call Notes ${startDate} to ${endDate} (${stamp})`;
+    const newSs = SpreadsheetApp.create(name);
+    const sh = newSs.getActiveSheet();
+    sh.setName('CallNotes');
+    const headers = [
+      'RepId', 'RepName', 'DateLocal', 'Timestamp', 'Callback', 'Caller',
+      'Relationship', 'PatientAndTRX', 'Issue', 'TransferredTo', 'Resolution',
+      'FlagType', 'Resolved', 'EmailedAt', 'EmailDepartments',
+    ];
+    const data = allNotes.map(function (a) {
+      const n = a.note;
+      return [
+        a.repId, a.repName, n.dateLocal, n.timestamp,
+        n.callback, n.caller, n.relationship, n.patientAndTrx,
+        n.issue, n.transferredTo, n.resolution,
+        n.flagType, n.resolved ? 'TRUE' : 'FALSE',
+        n.emailedAt, n.emailDepartments,
+      ];
+    });
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sh.getRange(2, 1, data.length, headers.length).setValues(data);
+    sh.setFrozenRows(1);
+    SpreadsheetApp.flush();
+
+    writeAuditLog_(callerEmp, 'CallNotesExport', startDate + '..' + endDate, '', false, 0,
+      `${allNotes.length} notes → ${newSs.getId()}`);
+
+    return {
+      success: true,
+      url: newSs.getUrl(),
+      fileName: name,
+      noteCount: allNotes.length,
+    };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -2222,7 +2361,35 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  Logger.log('Automation triggers installed.');
+  Logger.log('Automation triggers installed by ' + userEmail + '.');
+
+  // Trigger-ownership warning: Apps Script time-triggers are owned by the
+  // installing user, and ScriptApp.getProjectTriggers() only returns triggers
+  // owned by the *current* user. If a different account previously installed
+  // these triggers, they are still firing under that account but invisible
+  // here — leading to duplicate emails / exports. We can't detect that
+  // programmatically, so surface the risk via email instead.
+  try {
+    const recipients = getManagerEmails_();
+    if (recipients.length > 0) {
+      MailApp.sendEmail({
+        to: recipients.join(','),
+        subject: `UMS Team Tools — automation triggers installed by ${userEmail}`,
+        body:
+          `installAutomationTriggers() ran as ${userEmail}.\n\n` +
+          `Triggers installed:\n` +
+          TARGETS.map(function (t) { return '  • ' + t; }).join('\n') + '\n\n' +
+          `Reminder: time-based triggers are owned by the installing user, and ` +
+          `Apps Script's getProjectTriggers() only returns triggers owned by ` +
+          `the current user. If a different account previously installed these ` +
+          `triggers, they are still firing under that account but are invisible ` +
+          `to this script run — leading to duplicate emails / exports. If this ` +
+          `is the first install on this project, no action is needed; otherwise ` +
+          `have the prior installer run removeAutomationTriggers() to dedupe.\n\n` +
+          `— UMS Team Tools (automated)`,
+      });
+    }
+  } catch (e) { Logger.log('Trigger-install warning email failed: ' + e.message); }
 }
 
 function removeAutomationTriggers() {
@@ -2479,7 +2646,12 @@ function sendCallNotesEodDigest() {
       const mm = parseInt(Utilities.formatDate(now, tz, 'm'), 10);
       const localMins = hh * 60 + mm;
       const targetMins = targetHour * 60;
-      if (Math.abs(localMins - targetMins) > windowMin) continue;
+      // Circular distance so a target near midnight (e.g. EOD_WARNING_HOUR=0)
+      // doesn't reject reps at 23:45 with a 1425-minute "diff". Currently
+      // dormant for the default 17:00 hour, but cheap to be correct.
+      const diff = Math.abs(localMins - targetMins);
+      const circDist = Math.min(diff, 1440 - diff);
+      if (circDist > windowMin) continue;
 
       const empObj = {
         id: String(roster[r][EMP.ID]).trim(),

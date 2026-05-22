@@ -425,6 +425,8 @@ const CN_STATE = {
   searchField: 'all',
   searchResults: [],
   searchTimer: null,
+  searchExact: false,        // true when search was launched by "find prior calls for this TRX" — matches patientAndTrx exactly
+  searchExactTrx: '',        // the TRX being matched, for the "Exact match · X · clear" badge
   deptConfig: null,          // cached departments / suggestions / state tax rates
   ambientTimer: null,
   mgrEnrolledReps: null,     // [{id,name}] of reps with a CallNotesSheetId; loaded once for manager Per-Rep view
@@ -493,11 +495,17 @@ function cnFetchDeptConfigIfNeeded_(then) {
 }
 
 function cnLoadToday_(then) {
+  // Capture currentView so the success/failure handlers can skip rendering
+  // if the user navigated away during the round trip (otherwise a late
+  // callback clobbers the new view's innerHTML — they share the view-area
+  // node). State update still happens unconditionally so the cache is warm
+  // for the next time the rep returns.
+  const requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
       if (res.error) {
         if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
-        else showToast(res.error, 'toast-error');
+        else if (currentView === requestedView) showToast(res.error, 'toast-error');
         CN_STATE.rollingNotes = [];
         CN_STATE.autoCopyFormat = '';
       } else {
@@ -506,9 +514,11 @@ function cnLoadToday_(then) {
         CN_STATE.autoCopyFormat = res.autoCopyFormat || '';
         CN_STATE.empTz = res.timezone || '';
       }
+      if (currentView !== requestedView) return;
       if (then) then();
     })
     .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
       showToast('Load failed: ' + err.message, 'toast-error');
       if (then) then();
     })
@@ -516,19 +526,22 @@ function cnLoadToday_(then) {
 }
 
 function cnLoadDate_(date, then) {
+  const requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
       if (res.error) {
         if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
-        else showToast(res.error, 'toast-error');
+        else if (currentView === requestedView) showToast(res.error, 'toast-error');
         CN_STATE.historyNotes = [];
       } else {
         CN_STATE.enrolled = true;
         CN_STATE.historyNotes = res.notes || [];
       }
+      if (currentView !== requestedView) return;
       if (then) then();
     })
     .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
       showToast('Load failed: ' + err.message, 'toast-error');
       if (then) then();
     })
@@ -857,6 +870,15 @@ function cnRenderCardCore_(note, expandable) {
     ? `<button class="cn-act-btn" title="Edit note" onclick="cnBeginEdit_('${esc(note.noteId)}')">${icon('adjust', 14)}</button>`
     : '';
 
+  // "Find prior calls for this TRX" — only shown when there's a TRX to match
+  // against. Click → jumps to Search view with exact patientAndTrx match.
+  // Uses a data-attribute so the TRX (which can contain quotes/backslashes)
+  // doesn't need JS-string-escaping inside an onclick attribute.
+  const priorBtn = (note.patientAndTrx && note.patientAndTrx.trim())
+    ? `<button class="cn-act-btn" title="Find prior calls for this TRX" data-trx="${esc(note.patientAndTrx)}"
+               onclick="cnFindPriorCallsForTrx_(this.dataset.trx)">${icon('search', 14)}</button>`
+    : '';
+
   return `
     <div class="cn-card${flagCls}${staleCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
@@ -870,6 +892,7 @@ function cnRenderCardCore_(note, expandable) {
           ${flagBtn('training', 'bulb', note.flagType === 'training')}
           ${flagBtn('review', 'star', note.flagType === 'review')}
           ${resolveBtn}
+          ${priorBtn}
           ${copyBtn}
           ${emailBtn}
           ${editBtn}
@@ -1224,12 +1247,35 @@ function cnRenderSubforms_() {
   const host = document.getElementById('cnC-subforms');
   if (!host) return;
   const u = String(c.selections.updateInfo || '').toLowerCase().trim();
+  // Compute the "shape" key — which subforms render for this update type.
+  // If the shape hasn't changed since the last render, skip re-rendering to
+  // preserve in-progress typing. cnComposerUpdateInfoChanged_ fires on every
+  // keystroke into the Update Type field; without this guard, every partial
+  // string would rebuild the subform host and wipe whatever the rep typed
+  // into the existing subform fields.
+  const key = cnSubformShapeKey_(u);
+  if (host.dataset.shapeKey === key) return;
+  // Shape is changing — snapshot whatever was in the DOM into state before
+  // wiping. If the rep types "verified shipping", fills the shipping subform,
+  // then backspaces to "verified shippin" and re-types, their shipping values
+  // come back pre-populated from state.
+  try { cnGatherComposerSelections_(); } catch (e) { /* prior subform not in DOM */ }
   let html = '';
   if (u === 'verified shipping' || u === 'oop order') html += cnRenderShippingSubform_();
   if (u === 'close order')                            html += cnRenderCloseSubform_();
   if (u === 'repeat resupply')                        html += cnRenderResupplySubform_();
   if (u === 'oop order')                              html += cnRenderOopSubform_();
   host.innerHTML = html;
+  host.dataset.shapeKey = key;
+}
+
+function cnSubformShapeKey_(u) {
+  const keys = [];
+  if (u === 'verified shipping' || u === 'oop order') keys.push('shipping');
+  if (u === 'close order')                            keys.push('close');
+  if (u === 'repeat resupply')                        keys.push('resupply');
+  if (u === 'oop order')                              keys.push('oop');
+  return keys.join('+');
 }
 
 function cnRenderShippingSubform_() {
@@ -1685,6 +1731,15 @@ function cnRenderSearchView(area) {
     return;
   }
   const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes · Search', 'search') : '';
+  // Exact-mode badge: appears when the rep arrived via "Find prior calls for
+  // this TRX" on a card. Clearing returns to substring search with the same
+  // query so they can widen the net without re-typing.
+  const exactBadge = CN_STATE.searchExact
+    ? `<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--info-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">
+         ${icon('search', 12)} Exact: ${esc(CN_STATE.searchExactTrx || '')}
+         <button onclick="cnClearExactMode_()" style="appearance:none;border:none;background:transparent;color:inherit;cursor:pointer;padding:0;text-transform:uppercase;font-family:inherit;font-size:inherit;letter-spacing:.06em;text-decoration:underline">clear</button>
+       </div>`
+    : '';
   area.innerHTML = `
     ${compactHeader}
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Search', 'Find past interactions by caller name, phone, patient/TRX, or issue.')}
@@ -1697,19 +1752,68 @@ function cnRenderSearchView(area) {
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'issue'}" onclick="cnSetSearchField_('issue')">Issue</button>
       </div>
     </div>
+    ${exactBadge ? `<div style="margin-bottom:10px">${exactBadge}</div>` : ''}
     <div id="cn-search-results"></div>
   `;
   cnRenderSearchResults_();
 }
 
 function cnSearchQueryChanged_(q) {
+  // Manual typing in the search box implies the rep is starting a new search
+  // — drop exact-TRX mode (which was set by clicking "Find prior calls" on a
+  // card) so the substring matcher takes over again.
+  if (CN_STATE.searchExact) {
+    CN_STATE.searchExact = false;
+    CN_STATE.searchExactTrx = '';
+  }
   CN_STATE.searchQuery = q;
   if (CN_STATE.searchTimer) clearTimeout(CN_STATE.searchTimer);
   CN_STATE.searchTimer = setTimeout(cnFireSearch_, 240);
 }
 
+/** Switches to the Search view in exact-TRX mode for the given patientAndTrx.
+ *  Triggered by the search icon on each rolling-stack card. The Search view's
+ *  exact-mode badge gives the rep a one-click "Clear" to fall back to
+ *  substring search if they want a wider net. */
+function cnFindPriorCallsForTrx_(trx) {
+  const t = String(trx || '').trim();
+  if (!t) return;
+  CN_STATE.searchQuery = t;
+  CN_STATE.searchField = 'all';
+  CN_STATE.searchExact = true;
+  CN_STATE.searchExactTrx = t;
+  if (CN_STATE.searchTimer) { clearTimeout(CN_STATE.searchTimer); CN_STATE.searchTimer = null; }
+  showView('callNotesSearch');
+  // showView renders the search view; fire the search after the next tick so
+  // the search-results host exists in the DOM.
+  setTimeout(cnFireSearch_, 0);
+}
+
+/** "Clear exact mode" handler — drops back to substring matching but keeps
+ *  the query so the rep sees a wider result set immediately. */
+function cnClearExactMode_() {
+  CN_STATE.searchExact = false;
+  CN_STATE.searchExactTrx = '';
+  cnFireSearch_();
+  // Re-render the search bar so the badge disappears
+  const area = document.getElementById('view-area');
+  if (area && currentView === 'callNotesSearch') cnRenderSearchView(area);
+}
+
 function cnSetSearchField_(f) {
   CN_STATE.searchField = f;
+  // Switching field tabs is a substring-search interaction; if we're in
+  // exact-TRX mode the field tabs are meaningless — drop exact mode and
+  // re-render the bar so the badge disappears.
+  if (CN_STATE.searchExact) {
+    CN_STATE.searchExact = false;
+    CN_STATE.searchExactTrx = '';
+    const area = document.getElementById('view-area');
+    if (area && currentView === 'callNotesSearch') {
+      cnRenderSearchView(area);
+      return;
+    }
+  }
   document.querySelectorAll('.cn-search-bar .toolbar-tab').forEach(function (b) {
     b.setAttribute('aria-pressed', b.textContent.trim().toLowerCase() === f ? 'true' : 'false');
   });
@@ -1723,16 +1827,24 @@ function cnFireSearch_() {
     cnRenderSearchResults_();
     return;
   }
+  // Capture view + query so late results from a stale typing burst don't
+  // clobber the active search (or worse, render to a different view that's
+  // since reused the view-area).
+  const requestedView = currentView;
+  const requestedQuery = q;
   google.script.run
     .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      if (CN_STATE.searchQuery !== requestedQuery) return;
       if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.searchResults = []; }
       else CN_STATE.searchResults = res.results || [];
       cnRenderSearchResults_();
     })
     .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
       showToast('Search failed: ' + err.message, 'toast-error');
     })
-    .searchMyCallNotes(q, CN_STATE.searchField);
+    .searchMyCallNotes(q, CN_STATE.searchField, null, !!CN_STATE.searchExact);
 }
 
 function cnRenderSearchResults_() {
@@ -1768,9 +1880,18 @@ function cnRenderSearchResults_() {
 
 function cnRenderManageView(area) {
   const compactHeader = COMPACT_MODE ? cnCompactHeader_('Team Notes', 'manage') : '';
+  // "Export Range" button bundles every enrolled rep's notes for a range into
+  // a new Sheet — the only path to a wider-than-flagged aggregate (training /
+  // review digests cover flagged subsets only).
+  const exportBtnRow = COMPACT_MODE
+    ? ''
+    : `<div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+         <button class="refresh-btn" id="cn-mgr-export-btn">${icon('download', 14)}Export Range</button>
+       </div>`;
   area.innerHTML = `
     ${compactHeader}
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Team Notes', 'Manager view: per-rep notes, training queue, review candidates.')}
+    ${exportBtnRow}
     <div class="toolbar-tabs" role="group" aria-label="Manager queue" style="margin-bottom:14px">
       <button class="toolbar-tab active" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
       <button class="toolbar-tab" data-mqueue="review" onclick="cnMgrLoadQueue_('review')">Review Candidates</button>
@@ -1778,7 +1899,25 @@ function cnRenderManageView(area) {
     </div>
     <div id="cn-mgr-results"></div>
   `;
+  const exportBtn = document.getElementById('cn-mgr-export-btn');
+  if (exportBtn) exportBtn.addEventListener('click', cnOpenExportModal_);
   cnMgrLoadQueue_('training');
+}
+
+/** Opens the call-notes bulk export modal. Defaults to "this week" (Mon→today
+ *  in the manager's local tz). Re-runnable — manager dashboard wiring grabs
+ *  the modal by id on every open so it's idempotent. */
+function cnOpenExportModal_() {
+  const tz = empTz();
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+  const todayIso = fmt.format(new Date());
+  // Default range = last 7 days
+  const parts = todayIso.split('-');
+  const today = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+  const start = new Date(today); start.setDate(today.getDate() - 6);
+  document.getElementById('cn-exp-start').value = isoDate(start);
+  document.getElementById('cn-exp-end').value = todayIso;
+  document.getElementById('cn-export-overlay').classList.add('open');
 }
 
 function cnMgrLoadQueue_(kind) {
@@ -1787,14 +1926,20 @@ function cnMgrLoadQueue_(kind) {
   });
   const host = document.getElementById('cn-mgr-results');
   if (host) host.innerHTML = `<div class="cn-stack-empty">Loading…</div>`;
+  const requestedView = currentView;
   const fn = kind === 'training' ? 'managerGetTrainingQueue' : 'managerGetReviewCandidates';
   google.script.run
     .withSuccessHandler(function (res) {
-      if (res.error) { host.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
-      cnMgrRenderQueue_(host, res.results || []);
+      if (currentView !== requestedView) return;
+      const liveHost = document.getElementById('cn-mgr-results');
+      if (!liveHost) return;
+      if (res.error) { liveHost.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+      cnMgrRenderQueue_(liveHost, res.results || []);
     })
     .withFailureHandler(function (err) {
-      if (host) host.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+      if (currentView !== requestedView) return;
+      const liveHost = document.getElementById('cn-mgr-results');
+      if (liveHost) liveHost.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
     })[fn]();
 }
 
@@ -1874,19 +2019,31 @@ function cnMgrLoadRepNotes_() {
   const stack = document.getElementById('cn-mgr-rep-stack');
   if (!stack || !CN_STATE.mgrRepView) return;
   stack.innerHTML = `<div class="cn-stack-empty">Loading…</div>`;
+  const requestedView = currentView;
+  const requestedRepId = CN_STATE.mgrRepView.repId;
+  const requestedDate = CN_STATE.mgrRepView.date;
   google.script.run
     .withSuccessHandler(function (res) {
-      if (res.error) { stack.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+      if (currentView !== requestedView) return;
+      // Selection may have changed during the round trip — drop stale results.
+      if (!CN_STATE.mgrRepView
+          || CN_STATE.mgrRepView.repId !== requestedRepId
+          || CN_STATE.mgrRepView.date !== requestedDate) return;
+      const liveStack = document.getElementById('cn-mgr-rep-stack');
+      if (!liveStack) return;
+      if (res.error) { liveStack.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
       if (!res.notes || res.notes.length === 0) {
-        stack.innerHTML = `<div class="cn-stack-empty">No notes for ${esc(res.repName || '')} on ${esc(res.date || '')}.</div>`;
+        liveStack.innerHTML = `<div class="cn-stack-empty">No notes for ${esc(res.repName || '')} on ${esc(res.date || '')}.</div>`;
         return;
       }
-      stack.innerHTML = res.notes.map(cnMgrRenderReadonlyCard_).join('');
+      liveStack.innerHTML = res.notes.map(cnMgrRenderReadonlyCard_).join('');
     })
     .withFailureHandler(function (err) {
-      stack.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+      if (currentView !== requestedView) return;
+      const liveStack = document.getElementById('cn-mgr-rep-stack');
+      if (liveStack) liveStack.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
     })
-    .managerGetCallNotes(CN_STATE.mgrRepView.repId, CN_STATE.mgrRepView.date, 'all');
+    .managerGetCallNotes(requestedRepId, requestedDate, 'all');
 }
 
 /** Read-only card for the manager per-rep view. Reuses the styled card chrome
@@ -2032,4 +2189,86 @@ function cnReplaceNoteInState_(updated) {
     return n.noteId === updated.noteId ? updated : n;
   });
 }
+
+// ── Bulk Export modal wiring ───────────────────────────────────────────
+// Bound once at module load. The modal's DOM lives in modals.html and is
+// reused across opens (cnOpenExportModal_ just toggles the .open class).
+// Uses cn-exp-preset-btn instead of preset-btn to avoid the time-clock
+// export modal's preset-btn listeners stomping on these clicks.
+
+(function cnWireExportModal_() {
+  const overlay = document.getElementById('cn-export-overlay');
+  if (!overlay) return;
+
+  const cancelBtn = document.getElementById('cn-exp-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', function () {
+    overlay.classList.remove('open');
+  });
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+
+  // Preset buttons set the start/end date inputs based on the manager's tz
+  document.querySelectorAll('.cn-exp-preset-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const tz = empTz();
+      const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+      const todayIso = fmt.format(new Date());
+      const parts = todayIso.split('-');
+      const today = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+      let start, end;
+      const preset = btn.dataset.cnPreset;
+      if (preset === 'this-week') {
+        // Monday of the current week
+        const dow = today.getDay();  // 0=Sun, 1=Mon…
+        const back = dow === 0 ? 6 : dow - 1;
+        start = new Date(today); start.setDate(today.getDate() - back);
+        end = today;
+      } else if (preset === 'last-week') {
+        const dow = today.getDay();
+        const back = dow === 0 ? 6 : dow - 1;
+        end = new Date(today); end.setDate(today.getDate() - back - 1);  // last Sunday
+        start = new Date(end); start.setDate(end.getDate() - 6);          // Monday before
+      } else if (preset === 'last-7') {
+        start = new Date(today); start.setDate(today.getDate() - 6);
+        end = today;
+      } else if (preset === 'last-30') {
+        start = new Date(today); start.setDate(today.getDate() - 29);
+        end = today;
+      }
+      if (start && end) {
+        document.getElementById('cn-exp-start').value = isoDate(start);
+        document.getElementById('cn-exp-end').value = isoDate(end);
+      }
+    });
+  });
+
+  const submitBtn = document.getElementById('cn-exp-submit');
+  if (submitBtn) submitBtn.addEventListener('click', function () {
+    const start = document.getElementById('cn-exp-start').value;
+    const end = document.getElementById('cn-exp-end').value;
+    if (!start || !end) { showToast('Please pick both dates', 'toast-error'); return; }
+    if (start > end) { showToast('Start date must be before end date', 'toast-error'); return; }
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Generating…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Generate Export';
+        if (!res || res.error || !res.success) {
+          showToast((res && res.error) || 'Export failed', 'toast-error');
+          return;
+        }
+        overlay.classList.remove('open');
+        showToast(`Exported ${res.noteCount} notes — opening sheet`, 'toast-success');
+        window.open(res.url, '_blank');
+      })
+      .withFailureHandler(function (err) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Generate Export';
+        showToast((err.message || 'Server error'), 'toast-error');
+      })
+      .exportCallNotesRange(start, end);
+  });
+})();
 </script>
