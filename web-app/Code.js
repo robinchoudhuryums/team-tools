@@ -45,8 +45,19 @@ const CONFIG = {
     SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
     DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
     CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
-    AUTO_COPY_FORMAT:    '{timestamp} | {caller} ({callback}) | {relationship} | {patientAndTrx} | {issue} → {resolution}',
+    AUTO_COPY_FORMAT:
+      'Callback Number: {callback}\n' +
+      'Caller Name: {caller}\n' +
+      'Relationship: {relationship}\n' +
+      'Issue: {issue}\n' +
+      'Transferred To: {transferredTo}\n' +
+      'Resolution: {resolution}',
     STALE_FLAG_HOURS:    1,              // an `action` flag is "stale" if unresolved beyond this
+    // Voice-to-text dictation on Issue / Resolution textareas. OFF by default
+    // because browser speech recognition (Chrome/Edge) routes audio to the
+    // vendor's speech-to-text service, which is not BAA-covered for PHI.
+    // Turn on only after confirming the org's HIPAA stance.
+    VOICE_INPUT_ENABLED: false,
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
     TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
@@ -1105,7 +1116,7 @@ function submitCallNote(payload) {
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
       `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
-    invalidateCnAmbientCache_(emp.id);
+    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
     return {
       success: true,
@@ -1182,7 +1193,7 @@ function setCallNoteFlag(noteId, flagType) {
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
       `noteId=${noteId}; ${t || '<cleared>'}`);
-    invalidateCnAmbientCache_(emp.id);
+    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -1211,7 +1222,7 @@ function setCallNoteResolved(noteId, resolved) {
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteResolve', dateLocal, '', false, 0,
       `noteId=${noteId}; ${resolved ? 'resolved' : 'unresolved'}`);
-    invalidateCnAmbientCache_(emp.id);
+    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -1234,10 +1245,107 @@ function deleteCallNote(noteId) {
     sheet.deleteRow(located.rowIndex);
     writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
       `noteId=${noteId}`);
-    invalidateCnAmbientCache_(emp.id);
+    // (Ambient cache is purely TTL-driven now — see INV-43.)
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
+
+/** Toggle the "pinned" state on one of the calling rep's notes. Pinned
+ *  notes render in a dedicated tray above the Log view's rolling stack
+ *  so a complex case stays visible across calls without scrolling.
+ *
+ *  Storage: subformData.pinned (boolean) + subformData.pinnedAt (timestamp).
+ *  No schema migration — pinned state lives alongside other subformData
+ *  keys (trainingQuestion, completionSeconds, etc.).
+ *
+ *  Enforces CN_PIN_LIMIT (3): pinning a 4th note returns an error so the
+ *  rep is forced to unpin something first. */
+function setCallNotePinned(noteId, pinned) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const willPin = !!pinned;
+
+    // If pinning, scan all rows for existing pin count and reject if at
+    // limit. Scan happens inside the lock so two parallel pin requests
+    // can't both squeak past the limit.
+    if (willPin) {
+      const allRows = sheet.getDataRange().getValues();
+      let pinnedCount = 0;
+      for (let i = 1; i < allRows.length; i++) {
+        if (String(allRows[i][CN.NOTE_ID]).trim() === noteId) continue;
+        const sfd = allRows[i][CN.SUBFORM_DATA];
+        if (!sfd) continue;
+        try {
+          const parsed = JSON.parse(sfd);
+          if (parsed && parsed.pinned) pinnedCount++;
+        } catch (e) { /* corrupt blob — skip */ }
+      }
+      if (pinnedCount >= CN_PIN_LIMIT) {
+        return { success: false, error:
+          `You already have ${CN_PIN_LIMIT} pinned notes (the max). Unpin one before pinning another.` };
+      }
+    }
+
+    // Merge into existing subformData
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); }
+      catch (e) { subformData = null; }
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+
+    if (willPin) {
+      const empTz = empTz_(emp);
+      subformData.pinned = true;
+      subformData.pinnedAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    } else {
+      delete subformData.pinned;
+      delete subformData.pinnedAt;
+    }
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNotePin', dateLocal, '', false, 0,
+      `noteId=${noteId}; ${willPin ? 'pinned' : 'unpinned'}`);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Returns the calling rep's pinned notes across all dates (not just today).
+ *  Read-only, no lock. Used by the Log view's pinned tray. */
+function getMyPinnedCallNotes() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { notes: [] };
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (note.subformData && note.subformData.pinned) notes.push(note);
+    }
+    // Newest-pinned first
+    notes.sort(function (a, b) {
+      const ap = (a.subformData && a.subformData.pinnedAt) || '';
+      const bp = (b.subformData && b.subformData.pinnedAt) || '';
+      return bp.localeCompare(ap);
+    });
+    return { notes: notes, limit: CN_PIN_LIMIT };
+  } catch (err) { return { error: err.message }; }
 }
 
 /** Returns the calling rep's notes for a given date, optionally filtered.
@@ -1275,10 +1383,20 @@ function getMyCallNotes(options) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** No-op pre-warm endpoint. Apps Script's first RPC on a cold web app pays
+ *  ~500ms of script-context startup; firing this on Call Notes view enter
+ *  warms the iframe so the rep's first real action (submit / flag / email)
+ *  feels snappier. Cheap to call — the function does no work. */
+function cnPing() {
+  return { ok: true, t: Date.now() };
+}
+
 /** Ambient signal for the sidebar badge + stale-flag indicators.
  *  Returns {enrolled, unresolvedActionCount, staleActionCount, todayTotal,
  *  staleFlagHours} for the calling rep. Cached for CN_AMBIENT_CACHE_TTL
- *  seconds per rep — see invalidateCnAmbientCache_ for the freshness path. */
+ *  seconds per rep. Mutating endpoints no longer eagerly invalidate the
+ *  cache (the TTL doubles as the freshness ceiling, matching the 60s
+ *  sidebar polling interval) — see INV-43. */
 function getCallNotesAmbient() {
   try {
     const emp = getEmployeeInfo_();
@@ -1324,10 +1442,10 @@ function getCallNotesAmbient() {
   } catch (err) { return { error: err.message }; }
 }
 
-/** Drop the per-rep ambient cache. Called by every mutating CN endpoint that
- *  could change the counts the ambient poll surfaces (submit, setFlag,
- *  setResolved, delete). Pure TTL alone would be at most 60s stale; this
- *  shortens that window after user action. */
+/** Drop the per-rep ambient cache. No longer called from the mutation hot
+ *  path (TTL handles freshness within the polling interval). Kept for ops
+ *  to invalidate manually from the editor when needed (e.g., after a manual
+ *  Sheet edit that should reflect in the badge immediately). */
 function invalidateCnAmbientCache_(empId) {
   if (!empId) return;
   try { CacheService.getScriptCache().remove(CN_AMBIENT_CACHE_PREFIX + empId); }
@@ -1344,6 +1462,7 @@ function getCallNotesDepartments() {
     stateTaxRates: CONFIG.CALL_NOTES.STATE_TAX_RATES,
     stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
     ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
+    voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
   };
 }
 
@@ -1494,6 +1613,86 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Per-rep stats for a given date — used by the manager Team Notes "Stats"
+ *  tab to surface end-of-shift summaries. Walks every enrolled rep's Sheet
+ *  once, filters to the requested date, and aggregates:
+ *
+ *    - totalNotes         total notes filed that day
+ *    - flagCounts         { action, training, review } breakdown
+ *    - resolvedCount      action-flagged notes that the rep marked resolved
+ *    - emailsSent         notes with a non-empty EmailedAt for that date
+ *    - medianCompletionS  median of subformData.completionSeconds across
+ *                         today's notes that captured one. Median (not mean)
+ *                         is resistant to outliers (e.g., a rep walked away
+ *                         mid-note for 20 min then submitted).
+ *    - shiftSpan          { first, last } HH:mm of first/last note times
+ *
+ *  Manager-gated. Read-only across all enrolled reps. */
+function managerGetShiftStats(date) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+      return { error: 'Invalid date (expected yyyy-MM-dd).' };
+
+    const roster = getEmployeeRosterRows_();
+    const reps = [];
+    for (let r = 1; r < roster.length; r++) {
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      const repId = String(roster[r][EMP.ID]).trim();
+      const repName = String(roster[r][EMP.NAME]).trim();
+      const stats = {
+        repId: repId, repName: repName,
+        totalNotes: 0,
+        flagCounts: { action: 0, training: 0, review: 0 },
+        resolvedCount: 0,
+        emailsSent: 0,
+        medianCompletionSeconds: null,
+        shiftSpan: null,
+      };
+      const completionTimes = [];
+      const noteTimes = [];
+      try {
+        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+        const rows = sheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+          if (note.dateLocal !== date) continue;
+          stats.totalNotes++;
+          if (note.flagType && stats.flagCounts[note.flagType] !== undefined) {
+            stats.flagCounts[note.flagType]++;
+          }
+          if (note.flagType === 'action' && note.resolved) stats.resolvedCount++;
+          if (note.emailedAt) stats.emailsSent++;
+          if (note.subformData && typeof note.subformData.completionSeconds === 'number') {
+            completionTimes.push(note.subformData.completionSeconds);
+          }
+          // Timestamp tail (HH:mm) for the shift-span calc
+          const m = String(note.timestamp || '').match(/T(\d{2}:\d{2})/);
+          if (m) noteTimes.push(m[1]);
+        }
+      } catch (e) {
+        console.warn('managerGetShiftStats skipped rep ' + repId + ': ' + e.message);
+      }
+      if (completionTimes.length > 0) {
+        completionTimes.sort(function (a, b) { return a - b; });
+        const mid = Math.floor(completionTimes.length / 2);
+        stats.medianCompletionSeconds = (completionTimes.length % 2 === 1)
+          ? completionTimes[mid]
+          : Math.round((completionTimes[mid - 1] + completionTimes[mid]) / 2);
+      }
+      if (noteTimes.length > 0) {
+        noteTimes.sort();
+        stats.shiftSpan = { first: noteTimes[0], last: noteTimes[noteTimes.length - 1] };
+      }
+      reps.push(stats);
+    }
+    reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
+    return { date: date, reps: reps };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Bulk-export every enrolled rep's call notes in a date range to a new
  *  Google Sheet. Returns { success, url, fileName, noteCount }. Pair with
  *  the Team Notes "Export Range" modal. Writes a CallNotesExport audit row.
@@ -1579,6 +1778,66 @@ function exportCallNotesRange(startDate, endDate) {
       noteCount: allNotes.length,
     };
   } catch (err) { return { error: err.message }; }
+}
+
+/** Manager replies to a rep's training-flagged note. The reply is merged
+ *  into the note's subformData JSON blob (alongside trainingQuestion), so
+ *  no schema migration is needed. Stamps the manager's email + timestamp
+ *  for accountability. Pass `reply=''` to clear an existing reply.
+ *
+ *  Manager-gated. Writes a CallNoteTrainingReply audit row.
+ *  Rejects when the target note isn't training-flagged (reply has no
+ *  meaning on action/review/unflagged notes). */
+function setCallNoteTrainingReply(repEmpId, noteId, reply) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const target = lookupEmployeeById_(repEmpId);
+    if (!target) return { success: false, error: 'Employee not found.' };
+    if (!target.callNotesSheetId) return { success: false, error: 'This rep has no call-notes Sheet configured.' };
+
+    const sheet = getCallNotesSheet_(target);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
+    if (flagType !== 'training') {
+      return { success: false, error: 'Only training-flagged notes can carry a reply.' };
+    }
+
+    // Merge into existing subformData (preserves trainingQuestion + anything
+    // else that may live there). On clear, drop the reply keys entirely.
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); }
+      catch (e) { subformData = null; }
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+
+    const trimmed = String(reply || '').trim();
+    const empTz = target.timezone || CONFIG.TIMEZONE;
+    if (trimmed) {
+      subformData.trainingReply = trimmed;
+      subformData.trainingReplyBy = callerEmp.email;
+      subformData.trainingReplyAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    } else {
+      delete subformData.trainingReply;
+      delete subformData.trainingReplyBy;
+      delete subformData.trainingReplyAt;
+    }
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(target, 'CallNoteTrainingReply', dateLocal, '', false, 0,
+      `noteId=${noteId}; ${trimmed ? 'reply set' : 'reply cleared'}`,
+      callerEmp.email);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 /** Manager aggregated training-queue across all enrolled reps. */
@@ -1756,6 +2015,12 @@ const CN_EMAIL_PALETTE = {
   danger:       '#c0392b',
   dangerSoft:   '#fae8e6',
   dangerDeep:   '#6e1f17',
+  // UMS brand navy + pale-blue alternating-row tint. These match the legacy
+  // dept-email aesthetic (closeOrderEmail.js, updateOrderEmail.js) so emails
+  // sent from the new web app look continuous with the prior tooling.
+  brand:        '#223b5d',
+  brandSoft:    '#e6f2ff',
+  logoUrl:      'https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg',
 };
 
 /** Renders the email HTML body + computed subject/recipients for a note +
@@ -1974,7 +2239,10 @@ function callDataFromNote_(note) {
     relationship:   note.relationship,
     patientAndTrx,
     issue:          note.issue,
-    transferredTo:  note.transferredTo,
+    // Transferred To is optional — most calls aren't escalated. Default to
+    // "N/A" so the call-details table doesn't have an awkward empty cell and
+    // the pasted note has a clear "no transfer" signal.
+    transferredTo:  (note.transferredTo && note.transferredTo.trim()) || 'N/A',
     resolution:     note.resolution,
   };
 }
@@ -2039,23 +2307,40 @@ function buildCallNoteEmailHtml_(callData, selections) {
   const resupplyDetails = selections.resupplyDetails;
   const oopDetails      = selections.oopDetails;
 
-  // ── Update line ─────────────────────────────────────────────────────
-  let updateLineHtml = '';
-  if (updateInfo === 'Close Order' && closeDetails) {
-    updateLineHtml =
-      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
-      `<span style="font-weight:600;color:${P.danger};">Close Order</span>` +
-      `<span style="font-weight:600;color:${P.accentDeep};"> — ${esc_(closeDetails.reason)}</span>`;
-  } else if (updateInfo === 'OOP Order' && oopDetails) {
-    updateLineHtml =
-      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
-      `<span style="font-weight:600;color:${P.warn};">OOP Order</span>` +
-      `<span style="font-weight:600;color:${P.accentDeep};"> — Total: $${esc_(oopDetails.totalCost)}</span>`;
-  } else {
-    updateLineHtml =
-      `<span style="font-weight:600;color:${P.accentDeep};">Update: </span>` +
-      `<span style="font-weight:600;color:${P.ink};">${esc_(updateInfo)}</span>`;
+  // ── Per-template color theme ────────────────────────────────────────
+  // Each special template gets its own banner color so the recipient
+  // immediately sees what kind of update this is. Default is the brand
+  // navy (matches the Call Details header).
+  let tplColor = P.brand;
+  let tplSoft  = P.brandSoft;
+  let tplDeep  = P.brand;
+  if (updateInfo === 'Close Order') {
+    tplColor = P.danger; tplSoft = P.dangerSoft; tplDeep = P.dangerDeep;
+  } else if (updateInfo === 'OOP Order') {
+    tplColor = P.warn; tplSoft = P.warnSoft; tplDeep = P.warnDeep;
+  } else if (updateInfo === 'Verified Shipping' || updateInfo === 'Repeat Resupply') {
+    tplColor = P.good; tplSoft = P.goodSoft; tplDeep = P.goodDeep;
   }
+
+  // ── Update banner (replaces the old subtle update line) ─────────────
+  let updateBannerInner = '';
+  if (updateInfo === 'Close Order' && closeDetails) {
+    updateBannerInner =
+      `<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:${tplDeep};opacity:.75;">Update</div>` +
+      `<div style="font-size:17px;font-weight:600;color:${tplDeep};margin-top:2px;">Close Order</div>` +
+      `<div style="font-size:14px;color:${tplDeep};margin-top:4px;">Reason: <span style="font-weight:600;">${esc_(closeDetails.reason)}</span></div>`;
+  } else if (updateInfo === 'OOP Order' && oopDetails) {
+    updateBannerInner =
+      `<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:${tplDeep};opacity:.75;">Update</div>` +
+      `<div style="font-size:17px;font-weight:600;color:${tplDeep};margin-top:2px;">OOP Order</div>` +
+      `<div style="font-size:14px;color:${tplDeep};margin-top:4px;">Total: <span style="font-weight:600;">$${esc_(oopDetails.totalCost)}</span></div>`;
+  } else {
+    updateBannerInner =
+      `<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:${tplDeep};opacity:.75;">Update</div>` +
+      `<div style="font-size:17px;font-weight:600;color:${tplDeep};margin-top:2px;">${esc_(updateInfo)}</div>`;
+  }
+  const updateBanner =
+    `<div style="background:${tplSoft};border-left:4px solid ${tplColor};border-radius:6px;padding:14px 16px;margin:14px 0;">${updateBannerInner}</div>`;
 
   // ── Callback banner ─────────────────────────────────────────────────
   const callbackHtml = callbackNeeded
@@ -2078,33 +2363,52 @@ function buildCallNoteEmailHtml_(callData, selections) {
     resolutionText = esc_(resolutionText);
   }
 
-  // ── Body ────────────────────────────────────────────────────────────
-  const updateBox =
-    `<div style="background:${P.accentSoft};border-radius:6px;padding:11px 14px;margin:14px 0;` +
-    `font-size:15px;border-left:3px solid ${P.accent};">${updateLineHtml}</div>`;
-
+  // ── Call Details table — UMS navy header + pale-blue alternating rows
+  //    (legacy aesthetic from closeOrderEmail.js / updateOrderEmail.js) ─
+  const detailsRows = [
+    ['Callback Number', esc_(callData.callBackNumber), false],
+    ['Caller Name',     esc_(callData.callerName), false],
+    ['Relationship',    esc_(callData.relationship), false],
+    ['Patient & TRX',   esc_(callData.patientAndTrx), true],
+    ['Issue',           esc_(callData.issue), false],
+    ['Transferred To',  esc_(callData.transferredTo), false],
+    ['Resolution',      resolutionText, false],
+  ];
+  const detailsBodyHtml = detailsRows.map(function (r, i) {
+    const bg = (i % 2 === 0) ? P.paperCard : P.brandSoft;
+    const weight = r[2] ? 'font-weight:600;' : '';
+    return `<tr style="background:${bg};">` +
+      `<td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;width:34%;color:${P.brand};">${r[0]}</td>` +
+      `<td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};${weight}">${r[1]}</td>` +
+    `</tr>`;
+  }).join('');
   const callDetailsTable =
     `<table style="width:100%;border-collapse:collapse;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;` +
-    `font-size:14px;border:1px solid ${P.line};border-radius:6px;overflow:hidden;margin-top:6px;">` +
-      `<tr style="background:${P.ink};color:${P.paperCard};">` +
-        `<td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.02em;">Call Details</td>` +
+    `font-size:14px;border:1px solid ${P.line};border-radius:6px;overflow:hidden;margin-top:14px;">` +
+      `<tr style="background:${P.brand};color:${P.paperCard};">` +
+        `<td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:12px;">Call Details</td>` +
       `</tr>` +
-      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;width:34%;color:${P.muted};">Callback Number</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.callBackNumber)}</td></tr>` +
-      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Caller Name</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.callerName)}</td></tr>` +
-      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Relationship</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.relationship)}</td></tr>` +
-      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Patient & TRX</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};font-weight:600;">${esc_(callData.patientAndTrx)}</td></tr>` +
-      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Issue</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.issue)}</td></tr>` +
-      `<tr style="background:${P.paper};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Transferred To</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${esc_(callData.transferredTo)}</td></tr>` +
-      `<tr style="background:${P.paperCard};"><td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;color:${P.muted};">Resolution</td><td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};">${resolutionText}</td></tr>` +
+      detailsBodyHtml +
+    `</table>`;
+
+  // ── Logo header strip ───────────────────────────────────────────────
+  const logoBar =
+    `<table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">` +
+      `<tr>` +
+        `<td style="padding-bottom:14px;border-bottom:2px solid ${P.brand};">` +
+          `<img src="${P.logoUrl}" alt="UMS" style="height:46px;display:block;border:0;outline:none;">` +
+        `</td>` +
+      `</tr>` +
     `</table>`;
 
   return (
     `<div style="background:${P.paper};padding:24px;font-family:'Inter',-apple-system,Helvetica,Arial,sans-serif;color:${P.ink};">` +
       `<div style="max-width:680px;margin:0 auto;background:${P.paperCard};border:1px solid ${P.line};border-radius:10px;padding:24px 26px;">` +
-        `<h2 style="margin:0 0 6px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:500;letter-spacing:-.01em;color:${P.ink};">Update for ${esc_(callData.patientAndTrx)}</h2>` +
+        logoBar +
+        `<h2 style="margin:0 0 6px;font-family:'Inter Tight','Inter',sans-serif;font-size:20px;font-weight:600;letter-spacing:-.01em;color:${P.brand};">Update for ${esc_(callData.patientAndTrx)}</h2>` +
         `<p style="margin:0 0 14px;color:${P.muted};font-size:13px;">Hello team — please see the following update for this order.</p>` +
         callbackHtml +
-        updateBox +
+        updateBanner +
         oopHtml +
         shippingHtml +
         resupplyHtml +
@@ -2764,19 +3068,43 @@ function sendCallNotesWeeklyDigests() {
 
 function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
   const P = CN_EMAIL_PALETTE;
+  // Training-flagged notes may carry a free-text question in subformData.trainingQuestion
+  // (set client-side when the rep picks the training flag). Surface it inline so the
+  // manager sees the actual question instead of having to open each note.
+  const tq = function (n) {
+    return (n.flagType === 'training' && n.subformData && n.subformData.trainingQuestion)
+      ? String(n.subformData.trainingQuestion).trim() : '';
+  };
+  // Manager replies (set via setCallNoteTrainingReply) — surface in the
+  // weekly digest so already-answered training notes don't keep nagging
+  // the manager's attention.
+  const tr = function (n) {
+    return (n.flagType === 'training' && n.subformData && n.subformData.trainingReply)
+      ? String(n.subformData.trainingReply).trim() : '';
+  };
   const itemsHtml = notes.map(function (n) {
+    const q = tq(n);
+    const reply = tr(n);
+    const qLine = q ? `<br><span style="color:${P.accentDeep};font-size:12px;font-style:italic;">Q: ${esc_(q)}</span>` : '';
+    const rLine = reply ? `<br><span style="color:${P.goodDeep};font-size:12px;">A: ${esc_(reply)}</span>` : '';
     return `<tr>` +
       `<td style="padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:${P.muted};vertical-align:top;white-space:nowrap;">${esc_(n.dateLocal)}</td>` +
       `<td style="padding:7px 10px;color:${P.ink};font-size:13px;">` +
         `<strong>${esc_(n.repName)}</strong> · ${esc_(n.caller || n.patientAndTrx || '—')}` +
         `<br><span style="color:${P.muted};font-size:12px;">${esc_(n.issue || '')}</span>` +
         (n.resolution ? `<br><span style="color:${P.muted};font-size:12px;">→ ${esc_(n.resolution)}</span>` : '') +
+        qLine + rLine +
       `</td>` +
       `</tr>`;
   }).join('');
   const itemsText = notes.map(function (n) {
+    const q = tq(n);
+    const reply = tr(n);
     return `  ${n.dateLocal}  ${n.repName} · ${n.caller || n.patientAndTrx || '—'}\n` +
-           `    ${n.issue || ''}` + (n.resolution ? `\n    → ${n.resolution}` : '');
+           `    ${n.issue || ''}` +
+           (n.resolution ? `\n    → ${n.resolution}` : '') +
+           (q ? `\n    Q: ${q}` : '') +
+           (reply ? `\n    A: ${reply}` : '');
   }).join('\n\n');
 
   const htmlBody = (

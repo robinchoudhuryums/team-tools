@@ -198,6 +198,50 @@
   .mobile-header .sb-theme-toggle { padding: 2px; }
   .mobile-header .sb-theme-btn { width: 24px; height: 22px; }
 
+  /* Tool tab bar — sub-navigation within a tool, rendered above the view area.
+     Replaces the per-view sidebar entries from the prior shell layout.
+     On mobile the tabs scroll horizontally if they overflow. */
+  .tool-tab-bar {
+    display: flex; flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 4px;
+    padding: 12px 40px 0;  /* aligns with .view-area's 40px horizontal padding */
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+  }
+  .tool-tab-bar:empty { display: none; }
+  .tt-btn {
+    appearance: none; border: none; background: transparent;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 14px;
+    margin-bottom: -1px;  /* overlap the bar's bottom border */
+    border-bottom: 2px solid transparent;
+    font-family: var(--ui); font-size: 13px; font-weight: 500;
+    color: var(--muted); cursor: pointer; white-space: nowrap;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .tt-btn:hover { color: var(--ink); }
+  .tt-btn.active {
+    color: var(--ink); border-bottom-color: var(--accent);
+  }
+  .tt-btn .tt-icon { display: inline-flex; align-items: center; color: inherit; }
+
+  /* Clock + Timesheet combined-view divider — visual break between the
+     punch UI and the timesheet that follows it on the same scroll page. */
+  .clk-ts-divider {
+    display: flex; align-items: center; gap: 14px;
+    margin: 36px 0 20px;
+  }
+  .clk-ts-divider-line {
+    flex: 1; height: 1px;
+    background: var(--line);
+  }
+  .clk-ts-divider-label {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted); letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+
   .mobile-nav {
     display: none; position: fixed; bottom: 0; left: 0; right: 0;
     height: var(--mobile-nav-h); background: var(--paper-card);
@@ -1484,6 +1528,10 @@
     padding: 14px 14px 18px;
     max-width: 100%;
   }
+  /* Tool tab bar stays visible in compact mode (only sub-nav available) but
+     trims padding to match the compact view-area. */
+  :root[data-compact="1"] .tool-tab-bar { padding: 8px 14px 0; }
+  :root[data-compact="1"] .tt-btn { padding: 8px 10px; font-size: 12px; }
   :root[data-compact="1"] .toast-stack {
     top: 8px; right: 8px;
     max-width: 280px;
