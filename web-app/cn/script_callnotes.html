@@ -1,0 +1,1897 @@
+<style>
+  /* ═══════════════════════════════════════════════════════════════════════
+     CALL NOTES — view-scoped styles
+     ───────────────────────────────────────────────────────────────────────
+     Layered on top of styles.html + design tokens. Owns the rolling
+     note stack, the email composer modal (cn-compose-*), the flag
+     icon trio, and the filter chips. Sized to gracefully reflow into
+     compact-mode (~360–440px) widths.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* ── Rolling note panel ─────────────────────────────────────────── */
+  .cn-rolling {
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .cn-active-form {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 18px 20px;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+  }
+  .cn-active-form-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 14px;
+  }
+  .cn-active-form-title {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--muted); letter-spacing: .14em; text-transform: uppercase;
+  }
+  .cn-active-form-hint {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--muted); letter-spacing: .04em;
+  }
+  .cn-active-form-hint kbd {
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 1px 5px;
+    font-family: var(--mono); font-size: 9px;
+    color: var(--ink);
+  }
+
+  .cn-form-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+  .cn-form-field { display: flex; flex-direction: column; }
+  .cn-form-field.full { grid-column: span 2; }
+  .cn-form-field label {
+    font-family: var(--mono);
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .cn-form-field input,
+  .cn-form-field textarea {
+    width: 100%; padding: 9px 11px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    font-family: var(--ui);
+    font-size: 13px; color: var(--ink); background: var(--paper-card);
+    appearance: auto; outline: none;
+    transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
+  }
+  .cn-form-field textarea { resize: vertical; min-height: 56px; line-height: 1.4; }
+  .cn-form-field input:focus,
+  .cn-form-field textarea:focus {
+    border-color: var(--accent); box-shadow: var(--ring-focus);
+  }
+  .cn-form-actions {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .cn-form-flag-trio {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+  }
+  .cn-flag-btn {
+    appearance: none; border: none; background: transparent;
+    width: 28px; height: 28px; border-radius: 999px;
+    cursor: pointer; color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color var(--t) var(--ease), background var(--t) var(--ease);
+    padding: 0;
+  }
+  .cn-flag-btn:hover { color: var(--ink); }
+  .cn-flag-btn.active.action   { color: var(--warn);        background: var(--warn-soft); }
+  .cn-flag-btn.active.training { color: var(--accent);      background: var(--accent-soft); }
+  .cn-flag-btn.active.review   { color: var(--success-deep); background: var(--good-soft); }
+  .cn-form-submit {
+    flex: 1; min-width: 0;
+    padding: 10px 14px;
+    background: var(--ink); color: var(--paper-card);
+    border: none; border-radius: var(--radius);
+    font-family: var(--ui);
+    font-size: 13px; font-weight: 500; letter-spacing: .02em;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+  }
+  .cn-form-submit:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--ink), var(--accent) 18%);
+    box-shadow: var(--shadow-sm);
+  }
+  .cn-form-submit:disabled { opacity: .5; cursor: not-allowed; }
+  .cn-form-submit svg { width: 14px; height: 14px; }
+  .cn-form-clear-btn {
+    appearance: none; border: 1px solid var(--line);
+    background: transparent;
+    padding: 9px 12px; border-radius: var(--radius);
+    font-family: var(--ui);
+    font-size: 12px; font-weight: 500;
+    color: var(--muted); cursor: pointer;
+    transition: border-color var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .cn-form-clear-btn:hover {
+    border-color: var(--border-strong); color: var(--ink);
+  }
+
+  /* ── Filter chips bar ───────────────────────────────────────────── */
+  .cn-filter-bar {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding-bottom: 4px;
+  }
+  .cn-filter-label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .14em; text-transform: uppercase;
+    margin-right: 4px;
+  }
+  .cn-filter-chip {
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper-card);
+    padding: 4px 10px; border-radius: 999px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-filter-chip:hover { color: var(--ink); border-color: var(--border-strong); }
+  .cn-filter-chip[aria-pressed="true"] {
+    background: var(--ink); color: var(--paper-card);
+    border-color: var(--ink);
+  }
+  .cn-filter-chip .chip-count {
+    background: rgba(255,255,255,.18);
+    padding: 1px 5px; border-radius: 999px;
+    font-size: 9px;
+  }
+  .cn-filter-chip:not([aria-pressed="true"]) .chip-count {
+    background: var(--paper-2); color: var(--muted);
+  }
+
+  /* ── Rolling stack — saved note cards ───────────────────────────── */
+  .cn-stack-empty {
+    text-align: center; color: var(--muted);
+    font-size: 12px; padding: 18px 8px;
+    font-family: var(--ui);
+  }
+  .cn-card {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    transition: box-shadow var(--t) var(--ease), border-color var(--t) var(--ease);
+    animation: cn-card-in .25s var(--ease);
+  }
+  @keyframes cn-card-in {
+    from { transform: translateY(-6px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .cn-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+  .cn-card.flag-action   { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--warn); }
+  .cn-card.flag-training { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--accent); }
+  .cn-card.flag-review   { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--good); }
+  .cn-card.stale-action {
+    animation: cn-card-in .25s var(--ease), cn-stale-pulse 2.4s var(--ease) infinite 1s;
+  }
+  @keyframes cn-stale-pulse {
+    0%,100% { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--warn); }
+    50%     { box-shadow: 0 0 0 3px var(--warn-soft), inset 3px 0 0 var(--warn); }
+  }
+  .cn-card-row {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .cn-card-time {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted); flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    min-width: 50px;
+  }
+  .cn-card-main {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .cn-card-caller {
+    font-family: var(--ui); font-size: 13px; font-weight: 600;
+    color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cn-card-caller .cn-trx {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    color: var(--muted);
+    margin-left: 6px;
+  }
+  .cn-card-issue {
+    font-family: var(--ui); font-size: 12px;
+    color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cn-card-actions {
+    display: inline-flex; align-items: center; gap: 2px;
+    flex-shrink: 0;
+  }
+  .cn-card-actions .cn-act-btn {
+    appearance: none; border: none; background: transparent;
+    width: 28px; height: 28px;
+    border-radius: 999px;
+    cursor: pointer; color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-card-actions .cn-act-btn:hover {
+    background: var(--paper-2); color: var(--ink);
+  }
+  .cn-card-actions .cn-act-btn.is-on {
+    background: var(--good-soft); color: var(--success-deep);
+  }
+  .cn-card-actions .cn-act-btn.is-sent {
+    background: var(--accent-soft); color: var(--info-deep);
+  }
+  .cn-card-actions .cn-act-btn.action.is-on   { background: var(--warn-soft);   color: var(--warning-deep); }
+  .cn-card-actions .cn-act-btn.training.is-on { background: var(--accent-soft); color: var(--info-deep);    }
+  .cn-card-actions .cn-act-btn.review.is-on   { background: var(--good-soft);   color: var(--success-deep); }
+
+  /* Expanded edit-in-place inside a card */
+  .cn-card.editing { padding: 14px; }
+  .cn-card .cn-edit-fields {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px;
+    margin-top: 10px;
+  }
+  .cn-card .cn-edit-fields .full { grid-column: span 2; }
+  .cn-card .cn-edit-fields input,
+  .cn-card .cn-edit-fields textarea {
+    width: 100%; padding: 7px 10px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    font-family: var(--ui); font-size: 12px;
+    background: var(--paper-card); color: var(--ink); outline: none;
+  }
+  .cn-card .cn-edit-fields textarea { min-height: 44px; resize: vertical; line-height: 1.35; }
+  .cn-card .cn-edit-footer {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 10px;
+  }
+  .cn-card .cn-edit-footer button {
+    appearance: none; border: 1px solid var(--line);
+    background: transparent; padding: 7px 12px;
+    border-radius: var(--radius);
+    font-family: var(--ui); font-size: 12px; font-weight: 500;
+    color: var(--muted); cursor: pointer;
+    transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-card .cn-edit-footer button:hover { border-color: var(--border-strong); color: var(--ink); }
+  .cn-card .cn-edit-footer .cn-save-btn {
+    background: var(--ink); color: var(--paper-card); border-color: var(--ink);
+  }
+  .cn-card .cn-edit-footer .cn-save-btn:hover {
+    background: color-mix(in oklch, var(--ink), var(--accent) 18%);
+    border-color: color-mix(in oklch, var(--ink), var(--accent) 18%);
+    color: var(--paper-card);
+  }
+  .cn-card .cn-edit-footer .cn-del-btn {
+    margin-left: auto;
+    color: var(--danger-deep); border-color: var(--line);
+  }
+  .cn-card .cn-edit-footer .cn-del-btn:hover {
+    background: var(--destructive-soft);
+    border-color: color-mix(in oklch, var(--destructive), transparent 50%);
+  }
+
+  /* ── Stale-flag badge in sidebar nav (count pill) ───────────────── */
+  .cn-stale-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--warn); color: white;
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    min-width: 16px; height: 16px; padding: 0 4px;
+    border-radius: 999px;
+    margin-left: 6px;
+  }
+
+  /* ── Email composer modal ───────────────────────────────────────── */
+  .cn-compose-section {
+    border-top: 1px solid var(--line);
+    padding-top: 14px; margin-top: 14px;
+  }
+  .cn-compose-section:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .cn-compose-section-title {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .cn-compose-dept-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .cn-dept-chip {
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper-card);
+    padding: 6px 10px; border-radius: var(--radius);
+    font-family: var(--ui); font-size: 12px;
+    color: var(--ink); cursor: pointer;
+    text-align: left;
+    transition: border-color var(--t) var(--ease), background var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .cn-dept-chip:hover { border-color: var(--border-strong); }
+  .cn-dept-chip[aria-pressed="true"] {
+    background: var(--accent-soft); color: var(--info-deep);
+    border-color: transparent;
+    font-weight: 600;
+  }
+  .cn-compose-preview {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    max-height: 50vh; overflow-y: auto;
+    margin-top: 8px;
+  }
+  .cn-compose-preview-meta {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .cn-compose-preview-meta strong { color: var(--ink); }
+
+  /* ── History date picker + section ──────────────────────────────── */
+  .cn-history-picker {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px;
+  }
+  .cn-history-picker input[type="date"] {
+    padding: 7px 10px; border: 1px solid var(--line);
+    border-radius: var(--radius); font-family: var(--ui);
+    font-size: 13px; background: var(--paper-card); color: var(--ink);
+    outline: none;
+  }
+
+  /* ── Search results ─────────────────────────────────────────────── */
+  .cn-search-bar {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .cn-search-bar input {
+    flex: 1; min-width: 200px;
+    padding: 9px 12px; border: 1px solid var(--line);
+    border-radius: var(--radius); font-family: var(--ui);
+    font-size: 13px; background: var(--paper-card); color: var(--ink);
+    outline: none;
+  }
+  .cn-search-bar input:focus { border-color: var(--accent); box-shadow: var(--ring-focus); }
+  .cn-search-result-card {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 11px 13px;
+    margin-bottom: 8px;
+  }
+  .cn-search-result-meta {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    letter-spacing: .04em;
+  }
+  .cn-search-result-body {
+    font-family: var(--ui); font-size: 12px;
+    color: var(--ink); line-height: 1.5;
+  }
+
+  /* ── Responsive sweep — compact / narrow widths ─────────────────── */
+  @media (max-width: 640px) {
+    .cn-form-fields { grid-template-columns: 1fr; }
+    .cn-form-field.full { grid-column: span 1; }
+    .cn-compose-dept-grid { grid-template-columns: 1fr; }
+    .cn-card .cn-edit-fields { grid-template-columns: 1fr; }
+    .cn-card .cn-edit-fields .full { grid-column: span 1; }
+  }
+  :root[data-compact="1"] .cn-form-fields { grid-template-columns: 1fr; }
+  :root[data-compact="1"] .cn-form-field.full { grid-column: span 1; }
+  :root[data-compact="1"] .cn-compose-dept-grid { grid-template-columns: 1fr; }
+  :root[data-compact="1"] .cn-card .cn-edit-fields { grid-template-columns: 1fr; }
+  :root[data-compact="1"] .cn-card .cn-edit-fields .full { grid-column: span 1; }
+  :root[data-compact="1"] .cn-card-time { min-width: 44px; }
+</style>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — view module
+//  ────────────────────────────────────────────────────────────────────────
+//  Surface for the CSR rolling-note workflow. Submit logs only (no email
+//  by default); the email composer is a separate two-stage action with
+//  preview gate. Ctrl/Cmd+Enter from any field submits the active form
+//  and auto-copies a CRM-friendly serialization to the clipboard.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Module state — separate from the time-clock locals to avoid collision.
+const CN_STATE = {
+  rollingNotes: [],          // last N saved notes for the rolling stack (newest first)
+  filter: 'all',
+  filterCounts: {},          // updated on every render
+  staleFlagHours: 1,
+  enrolled: true,            // false when emp has no callNotesSheetId
+  autoCopyFormat: '',
+  empTz: '',
+  composer: null,            // open email composer state, or null
+  editingNoteId: null,       // noteId of card currently in inline-edit mode
+  historyDate: null,         // selected date in History view (yyyy-MM-dd)
+  historyNotes: [],
+  searchQuery: '',
+  searchField: 'all',
+  searchResults: [],
+  searchTimer: null,
+  deptConfig: null,          // cached departments / suggestions / state tax rates
+  ambientTimer: null,
+};
+
+const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
+const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','unsent'];
+
+// ── View enter handlers (called by the shell router) ────────────────────
+
+function enterCallNotesView(area) {
+  stopClock();
+  CN_STATE.composer = null;
+  CN_STATE.editingNoteId = null;
+  renderLoading(area, 'Loading call notes…');
+  cnFetchDeptConfigIfNeeded_(function () {
+    cnLoadToday_(function () {
+      cnRenderNotesView(area);
+      cnStartAmbientPolling_();
+    });
+  });
+}
+
+function enterCallNotesHistoryView(area) {
+  stopClock();
+  if (!CN_STATE.historyDate) {
+    // Default to "today minus 1" so a freshly-opened History view shows
+    // yesterday rather than re-rendering today's rolling stack.
+    const tz = (empState && empState.timezone) || 'UTC';
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+    const d = new Date(today + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1);
+    CN_STATE.historyDate = `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+  }
+  renderLoading(area, 'Loading history…');
+  cnLoadDate_(CN_STATE.historyDate, function () {
+    cnRenderHistoryView(area);
+  });
+}
+
+function enterCallNotesSearchView(area) {
+  stopClock();
+  cnFetchDeptConfigIfNeeded_(function () {
+    cnRenderSearchView(area);
+  });
+}
+
+function enterCallNotesManageView(area) {
+  stopClock();
+  renderLoading(area, 'Loading team queues…');
+  cnRenderManageView(area);
+}
+
+// ── Server I/O helpers ─────────────────────────────────────────────────
+
+function cnFetchDeptConfigIfNeeded_(then) {
+  if (CN_STATE.deptConfig) { then(); return; }
+  google.script.run
+    .withSuccessHandler(function (cfg) { CN_STATE.deptConfig = cfg; then(); })
+    .withFailureHandler(function (err) {
+      showToast('Failed to load department config: ' + err.message, 'toast-error');
+      CN_STATE.deptConfig = { departments: [], suggestionsByDept: {}, defaultSuggestions: [] };
+      then();
+    })
+    .getCallNotesDepartments();
+}
+
+function cnLoadToday_(then) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res.error) {
+        if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
+        else showToast(res.error, 'toast-error');
+        CN_STATE.rollingNotes = [];
+        CN_STATE.autoCopyFormat = '';
+      } else {
+        CN_STATE.enrolled = true;
+        CN_STATE.rollingNotes = res.notes || [];
+        CN_STATE.autoCopyFormat = res.autoCopyFormat || '';
+        CN_STATE.empTz = res.timezone || '';
+      }
+      if (then) then();
+    })
+    .withFailureHandler(function (err) {
+      showToast('Load failed: ' + err.message, 'toast-error');
+      if (then) then();
+    })
+    .getMyCallNotes({ filter: 'all' });
+}
+
+function cnLoadDate_(date, then) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res.error) {
+        if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
+        else showToast(res.error, 'toast-error');
+        CN_STATE.historyNotes = [];
+      } else {
+        CN_STATE.enrolled = true;
+        CN_STATE.historyNotes = res.notes || [];
+      }
+      if (then) then();
+    })
+    .withFailureHandler(function (err) {
+      showToast('Load failed: ' + err.message, 'toast-error');
+      if (then) then();
+    })
+    .getMyCallNotes({ filter: 'all', date });
+}
+
+// ── Notes view (the rolling-form primary surface) ──────────────────────
+
+function cnRenderNotesView(area) {
+  if (!CN_STATE.enrolled) {
+    area.innerHTML = cnEnrollmentMissingHtml_();
+    return;
+  }
+  const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes', 'phone') : '';
+  area.innerHTML = `
+    ${compactHeader}
+    ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes', 'Log calls fast — Ctrl/⌘+Enter saves & copies to clipboard for the CRM. Send department emails separately.')}
+    <div class="cn-rolling">
+      ${cnRenderActiveForm_()}
+      <div class="cn-filter-bar" id="cn-filter-bar"></div>
+      <div id="cn-stack"></div>
+    </div>
+  `;
+  cnWireActiveForm_();
+  cnRenderFilterBar_();
+  cnRenderStack_();
+  setTimeout(function () {
+    const el = document.getElementById('cn-fld-callback');
+    if (el) el.focus();
+  }, 50);
+}
+
+function cnRenderActiveForm_() {
+  return `
+    <div class="cn-active-form" id="cn-active-form">
+      <div class="cn-active-form-header">
+        <span class="cn-active-form-title">New Note</span>
+        <span class="cn-active-form-hint">
+          <kbd>${cnIsMac_() ? '⌘' : 'Ctrl'}+Enter</kbd> save &amp; copy
+        </span>
+      </div>
+      <div class="cn-form-fields">
+        <div class="cn-form-field">
+          <label>Callback</label>
+          <input type="text" id="cn-fld-callback" autocomplete="off" placeholder="(555) 123-4567">
+        </div>
+        <div class="cn-form-field">
+          <label>Caller</label>
+          <input type="text" id="cn-fld-caller" autocomplete="off" placeholder="Caller name">
+        </div>
+        <div class="cn-form-field">
+          <label>Relationship</label>
+          <input type="text" id="cn-fld-relationship" autocomplete="off" placeholder="self / spouse / parent / …">
+        </div>
+        <div class="cn-form-field">
+          <label>Patient &amp; TRX</label>
+          <input type="text" id="cn-fld-patient" autocomplete="off" placeholder="Patient name TRX# or just TRX#">
+        </div>
+        <div class="cn-form-field full">
+          <label>Issue</label>
+          <textarea id="cn-fld-issue" rows="2" placeholder="Why did they call?"></textarea>
+        </div>
+        <div class="cn-form-field">
+          <label>Transferred To</label>
+          <input type="text" id="cn-fld-transferred" autocomplete="off" placeholder="(if escalated)">
+        </div>
+        <div class="cn-form-field">
+          <label>Resolution</label>
+          <textarea id="cn-fld-resolution" rows="1" placeholder="What did you do?"></textarea>
+        </div>
+      </div>
+      <div class="cn-form-actions">
+        <div class="cn-form-flag-trio" role="group" aria-label="Flag this note">
+          <button type="button" class="cn-flag-btn action" data-flag="action"
+                  title="Flag for action (follow-up)" aria-label="Flag for action">
+            ${icon('flag', 14)}
+          </button>
+          <button type="button" class="cn-flag-btn training" data-flag="training"
+                  title="Flag for training (need clarification)" aria-label="Flag for training">
+            ${icon('bulb', 14)}
+          </button>
+          <button type="button" class="cn-flag-btn review" data-flag="review"
+                  title="Flag as review candidate (5-star)" aria-label="Flag as review candidate">
+            ${icon('star', 14)}
+          </button>
+        </div>
+        <button type="button" class="cn-form-clear-btn" id="cn-form-clear">Clear</button>
+        <button type="button" class="cn-form-submit" id="cn-form-submit">
+          ${icon('check', 14)} Save &amp; Copy
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function cnWireActiveForm_() {
+  const form = document.getElementById('cn-active-form');
+  if (!form) return;
+  // Track flag-type selection via dataset on the form root
+  form.dataset.flag = '';
+  form.querySelectorAll('.cn-flag-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const target = btn.dataset.flag;
+      const next = (form.dataset.flag === target) ? '' : target;
+      form.dataset.flag = next;
+      form.querySelectorAll('.cn-flag-btn').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.flag === next);
+        b.classList.toggle('action',   b.dataset.flag === 'action');
+        b.classList.toggle('training', b.dataset.flag === 'training');
+        b.classList.toggle('review',   b.dataset.flag === 'review');
+      });
+    });
+  });
+  // Ctrl/⌘+Enter from any input/textarea submits
+  form.querySelectorAll('input, textarea').forEach(function (el) {
+    el.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        cnSubmitActiveForm_();
+      }
+    });
+  });
+  document.getElementById('cn-form-submit').addEventListener('click', cnSubmitActiveForm_);
+  document.getElementById('cn-form-clear').addEventListener('click', cnClearActiveForm_);
+}
+
+function cnClearActiveForm_() {
+  ['callback','caller','relationship','patient','issue','transferred','resolution'].forEach(function (k) {
+    const el = document.getElementById('cn-fld-' + k);
+    if (el) el.value = '';
+  });
+  const form = document.getElementById('cn-active-form');
+  if (form) {
+    form.dataset.flag = '';
+    form.querySelectorAll('.cn-flag-btn').forEach(function (b) { b.classList.remove('active'); });
+  }
+  const cb = document.getElementById('cn-fld-callback');
+  if (cb) cb.focus();
+}
+
+function cnReadActiveForm_() {
+  const form = document.getElementById('cn-active-form');
+  return {
+    callback:      document.getElementById('cn-fld-callback').value,
+    caller:        document.getElementById('cn-fld-caller').value,
+    relationship:  document.getElementById('cn-fld-relationship').value,
+    patientAndTrx: document.getElementById('cn-fld-patient').value,
+    issue:         document.getElementById('cn-fld-issue').value,
+    transferredTo: document.getElementById('cn-fld-transferred').value,
+    resolution:    document.getElementById('cn-fld-resolution').value,
+    flagType:      (form && form.dataset.flag) || '',
+  };
+}
+
+function cnSubmitActiveForm_() {
+  const payload = cnReadActiveForm_();
+  if (!payload.callback && !payload.caller && !payload.patientAndTrx && !payload.issue && !payload.resolution) {
+    showToast('Note is empty — fill at least one field', 'toast-warn');
+    return;
+  }
+  const btn = document.getElementById('cn-form-submit');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      btn.disabled = false;
+      btn.innerHTML = icon('check', 14) + ' Save &amp; Copy';
+      if (!res.success) {
+        showToast(res.error || 'Save failed', 'toast-error');
+        return;
+      }
+      // Auto-copy to clipboard for paste-into-CRM
+      cnAutoCopyNote_(res.note);
+      CN_STATE.rollingNotes.unshift(res.note);
+      cnRenderStack_();
+      cnRenderFilterBar_();
+      cnClearActiveForm_();
+      showToast('Saved · copied to clipboard', 'toast-success');
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      btn.innerHTML = icon('check', 14) + ' Save &amp; Copy';
+      showToast('Save failed: ' + err.message, 'toast-error');
+    })
+    .submitCallNote(payload);
+}
+
+function cnAutoCopyNote_(note) {
+  const text = cnFormatNoteForCopy_(note);
+  // Try the modern clipboard API first; fall back to textarea+execCommand
+  // since HtmlService iframes sometimes deny clipboard permissions.
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(function () { cnFallbackCopy_(text); });
+  } else {
+    cnFallbackCopy_(text);
+  }
+}
+
+function cnFallbackCopy_(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  } catch (e) { /* clipboard truly unavailable; toast is the only signal */ }
+}
+
+function cnFormatNoteForCopy_(note) {
+  const fmt = CN_STATE.autoCopyFormat || '{timestamp} | {caller} | {issue} → {resolution}';
+  return fmt
+    .replace(/\{timestamp\}/g,     cnFormatTimestampForCopy_(note.timestamp))
+    .replace(/\{callback\}/g,      note.callback || '')
+    .replace(/\{caller\}/g,        note.caller || '')
+    .replace(/\{relationship\}/g,  note.relationship || '')
+    .replace(/\{patientAndTrx\}/g, note.patientAndTrx || '')
+    .replace(/\{issue\}/g,         note.issue || '')
+    .replace(/\{transferredTo\}/g, note.transferredTo || '')
+    .replace(/\{resolution\}/g,    note.resolution || '');
+}
+
+function cnFormatTimestampForCopy_(iso) {
+  if (!iso) return '';
+  // iso is "yyyy-MM-dd'T'HH:mm:ss" in the rep's tz; show "h:mm AM/PM"
+  const m = iso.match(/T(\d{2}):(\d{2})/);
+  if (!m) return iso;
+  let h = parseInt(m[1], 10);
+  const min = m[2];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  if (h === 0) h = 12; else if (h > 12) h -= 12;
+  return `${h}:${min} ${ampm}`;
+}
+
+// ── Rolling stack render ───────────────────────────────────────────────
+
+function cnRenderStack_() {
+  const stack = document.getElementById('cn-stack');
+  if (!stack) return;
+  const filtered = CN_STATE.rollingNotes.filter(function (n) {
+    return cnNoteMatchesFilter_(n, CN_STATE.filter);
+  });
+  if (filtered.length === 0) {
+    stack.innerHTML = `<div class="cn-stack-empty">No notes match this filter for today.</div>`;
+    return;
+  }
+  const head = filtered.slice(0, CN_ROLLING_STACK_MAX);
+  let html = head.map(cnRenderCard_).join('');
+  if (filtered.length > CN_ROLLING_STACK_MAX) {
+    html += `<div class="cn-stack-empty">
+      ${filtered.length - CN_ROLLING_STACK_MAX} more from earlier today —
+      <a href="#" onclick="event.preventDefault(); showView('callNotesHistory');" style="color:var(--accent);text-decoration:none;font-weight:500;">view in History</a>
+    </div>`;
+  }
+  stack.innerHTML = html;
+  cnWireCards_(stack);
+}
+
+function cnRenderCard_(note) {
+  return cnRenderCardCore_(note, /*expandable*/ true);
+}
+
+function cnRenderCardCore_(note, expandable) {
+  const isEditing = expandable && CN_STATE.editingNoteId === note.noteId;
+  const time = cnFormatTimestampForCopy_(note.timestamp);
+  const flagCls = note.flagType ? ' flag-' + note.flagType : '';
+  const isStale = note.flagType === 'action' && !note.resolved && cnNoteIsStale_(note);
+  const staleCls = isStale ? ' stale-action' : '';
+
+  if (isEditing) {
+    return `
+      <div class="cn-card editing${flagCls}" data-note-id="${esc(note.noteId)}">
+        <div class="cn-card-row" style="margin-bottom:6px">
+          <span class="cn-card-time tabular">${esc(time)}</span>
+          <div class="cn-card-main">
+            <span class="cn-card-caller" style="opacity:.65">Editing — Ctrl/⌘+Enter saves</span>
+          </div>
+          <div class="cn-card-actions">
+            <button class="cn-act-btn" title="Discard edits" onclick="cnCancelEdit_('${esc(note.noteId)}')">${icon('x', 14)}</button>
+          </div>
+        </div>
+        <div class="cn-edit-fields">
+          <div><input type="text" placeholder="Callback" id="cnE-callback-${esc(note.noteId)}" value="${esc(note.callback || '')}"></div>
+          <div><input type="text" placeholder="Caller" id="cnE-caller-${esc(note.noteId)}" value="${esc(note.caller || '')}"></div>
+          <div><input type="text" placeholder="Relationship" id="cnE-relationship-${esc(note.noteId)}" value="${esc(note.relationship || '')}"></div>
+          <div><input type="text" placeholder="Patient & TRX" id="cnE-patient-${esc(note.noteId)}" value="${esc(note.patientAndTrx || '')}"></div>
+          <div class="full"><textarea placeholder="Issue" id="cnE-issue-${esc(note.noteId)}" rows="2">${esc(note.issue || '')}</textarea></div>
+          <div><input type="text" placeholder="Transferred To" id="cnE-transferred-${esc(note.noteId)}" value="${esc(note.transferredTo || '')}"></div>
+          <div><textarea placeholder="Resolution" id="cnE-resolution-${esc(note.noteId)}" rows="1">${esc(note.resolution || '')}</textarea></div>
+        </div>
+        <div class="cn-edit-footer">
+          <button class="cn-save-btn" onclick="cnSaveEdit_('${esc(note.noteId)}')">${icon('check', 12)} Save</button>
+          <button onclick="cnCancelEdit_('${esc(note.noteId)}')">Cancel</button>
+          <button class="cn-del-btn" onclick="cnDeleteNote_('${esc(note.noteId)}')">${icon('trash', 12)} Delete</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const callerLine = note.caller || note.patientAndTrx || '<em style="color:var(--muted)">unnamed</em>';
+  const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
+  const issue = note.issue || '<em>—</em>';
+
+  const flagBtn = function (kind, name, on) {
+    const cls = 'cn-act-btn ' + kind + (on ? ' is-on' : '');
+    const lbl = kind === 'action' ? 'Flag for action'
+              : kind === 'training' ? 'Flag for training'
+              : 'Flag as review candidate';
+    return `<button class="${cls}" title="${lbl}" onclick="cnToggleFlag_('${esc(note.noteId)}','${kind}')">${icon(name, 14)}</button>`;
+  };
+
+  const emailBtn = note.emailedAt
+    ? `<button class="cn-act-btn is-sent" title="Email sent at ${esc(cnFormatTimestampForCopy_(note.emailedAt))} — click to send again"
+               onclick="cnOpenEmailComposer_('${esc(note.noteId)}')">${icon('mail', 14)}</button>`
+    : `<button class="cn-act-btn" title="Compose email from this note"
+               onclick="cnOpenEmailComposer_('${esc(note.noteId)}')">${icon('mail', 14)}</button>`;
+
+  const copyBtn = `<button class="cn-act-btn" title="Copy formatted note to clipboard" onclick="cnCopyNoteAgain_('${esc(note.noteId)}')">${icon('copy', 14)}</button>`;
+
+  const resolveBtn = (note.flagType === 'action')
+    ? `<button class="cn-act-btn ${note.resolved ? 'is-on' : ''}" title="${note.resolved ? 'Unresolve' : 'Mark resolved'}"
+               onclick="cnToggleResolved_('${esc(note.noteId)}')">${icon('check', 14)}</button>`
+    : '';
+
+  const editBtn = expandable
+    ? `<button class="cn-act-btn" title="Edit note" onclick="cnBeginEdit_('${esc(note.noteId)}')">${icon('adjust', 14)}</button>`
+    : '';
+
+  return `
+    <div class="cn-card${flagCls}${staleCls}" data-note-id="${esc(note.noteId)}">
+      <div class="cn-card-row">
+        <span class="cn-card-time tabular">${esc(time)}</span>
+        <div class="cn-card-main">
+          <div class="cn-card-caller">${callerLine}${trxBit}</div>
+          <div class="cn-card-issue">${esc(issue)}</div>
+        </div>
+        <div class="cn-card-actions">
+          ${flagBtn('action', 'flag', note.flagType === 'action')}
+          ${flagBtn('training', 'bulb', note.flagType === 'training')}
+          ${flagBtn('review', 'star', note.flagType === 'review')}
+          ${resolveBtn}
+          ${copyBtn}
+          ${emailBtn}
+          ${editBtn}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function cnWireCards_(_root) { /* no-op — using onclick attrs */ }
+
+function cnCopyNoteAgain_(noteId) {
+  const note = cnFindNoteAnywhere_(noteId);
+  if (!note) return;
+  cnAutoCopyNote_(note);
+  showToast('Copied to clipboard', 'toast-success');
+}
+
+function cnBeginEdit_(noteId) {
+  CN_STATE.editingNoteId = noteId;
+  cnRenderStack_();
+  setTimeout(function () {
+    const el = document.getElementById('cnE-resolution-' + noteId);
+    if (el) {
+      el.focus();
+      el.addEventListener('keydown', function (e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          e.preventDefault();
+          cnSaveEdit_(noteId);
+        }
+      });
+    }
+  }, 30);
+}
+
+function cnCancelEdit_(noteId) {
+  CN_STATE.editingNoteId = null;
+  cnRenderStack_();
+}
+
+function cnSaveEdit_(noteId) {
+  const payload = {
+    callback:      document.getElementById('cnE-callback-' + noteId).value,
+    caller:        document.getElementById('cnE-caller-' + noteId).value,
+    relationship:  document.getElementById('cnE-relationship-' + noteId).value,
+    patientAndTrx: document.getElementById('cnE-patient-' + noteId).value,
+    issue:         document.getElementById('cnE-issue-' + noteId).value,
+    transferredTo: document.getElementById('cnE-transferred-' + noteId).value,
+    resolution:    document.getElementById('cnE-resolution-' + noteId).value,
+  };
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
+      CN_STATE.rollingNotes = CN_STATE.rollingNotes.map(function (n) {
+        return n.noteId === noteId ? res.note : n;
+      });
+      CN_STATE.editingNoteId = null;
+      cnRenderStack_();
+      cnRenderFilterBar_();
+      showToast('Saved', 'toast-success');
+    })
+    .withFailureHandler(function (err) {
+      showToast('Save failed: ' + err.message, 'toast-error');
+    })
+    .updateCallNote(noteId, payload);
+}
+
+function cnDeleteNote_(noteId) {
+  if (!confirm('Delete this note? This cannot be undone.')) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) { showToast(res.error || 'Delete failed', 'toast-error'); return; }
+      CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== noteId; });
+      CN_STATE.editingNoteId = null;
+      cnRenderStack_();
+      cnRenderFilterBar_();
+      showToast('Deleted', 'toast-success');
+    })
+    .withFailureHandler(function (err) {
+      showToast('Delete failed: ' + err.message, 'toast-error');
+    })
+    .deleteCallNote(noteId);
+}
+
+function cnToggleFlag_(noteId, kind) {
+  const note = cnFindNoteAnywhere_(noteId);
+  if (!note) return;
+  const next = (note.flagType === kind) ? '' : kind;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) { showToast(res.error || 'Flag failed', 'toast-error'); return; }
+      cnReplaceNoteInState_(res.note);
+      cnRenderStack_();
+      cnRenderFilterBar_();
+    })
+    .withFailureHandler(function (err) {
+      showToast('Flag failed: ' + err.message, 'toast-error');
+    })
+    .setCallNoteFlag(noteId, next);
+}
+
+function cnToggleResolved_(noteId) {
+  const note = cnFindNoteAnywhere_(noteId);
+  if (!note || note.flagType !== 'action') return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) { showToast(res.error || 'Update failed', 'toast-error'); return; }
+      cnReplaceNoteInState_(res.note);
+      cnRenderStack_();
+      cnRenderFilterBar_();
+    })
+    .withFailureHandler(function (err) {
+      showToast('Update failed: ' + err.message, 'toast-error');
+    })
+    .setCallNoteResolved(noteId, !note.resolved);
+}
+
+// ── Filter bar ─────────────────────────────────────────────────────────
+
+function cnRenderFilterBar_() {
+  const bar = document.getElementById('cn-filter-bar');
+  if (!bar) return;
+  CN_STATE.filterCounts = cnComputeFilterCounts_(CN_STATE.rollingNotes);
+  const labelFor = { all: 'All', action: 'Action', training: 'Training',
+                     review: 'Review', unresolved: 'Unresolved', unsent: 'Not Emailed' };
+  bar.innerHTML = '<span class="cn-filter-label">Filter</span>' +
+    CN_DEFAULT_FILTERS.map(function (f) {
+      const count = CN_STATE.filterCounts[f] || 0;
+      const pressed = CN_STATE.filter === f;
+      return `<button class="cn-filter-chip" aria-pressed="${pressed}" onclick="cnSetFilter_('${f}')">
+                ${labelFor[f] || f} <span class="chip-count">${count}</span>
+              </button>`;
+    }).join('');
+}
+
+function cnSetFilter_(f) {
+  CN_STATE.filter = f;
+  cnRenderStack_();
+  cnRenderFilterBar_();
+}
+
+function cnComputeFilterCounts_(notes) {
+  const counts = { all: notes.length };
+  CN_DEFAULT_FILTERS.forEach(function (f) {
+    if (f === 'all') return;
+    counts[f] = notes.filter(function (n) { return cnNoteMatchesFilter_(n, f); }).length;
+  });
+  return counts;
+}
+
+function cnNoteMatchesFilter_(note, filter) {
+  switch (filter) {
+    case 'action':     return note.flagType === 'action';
+    case 'training':   return note.flagType === 'training';
+    case 'review':     return note.flagType === 'review';
+    case 'unresolved': return note.flagType === 'action' && !note.resolved;
+    case 'unsent':     return !note.emailedAt;
+    case 'all':
+    default:           return true;
+  }
+}
+
+function cnNoteIsStale_(note) {
+  if (!note.timestamp) return false;
+  // Parse iso "yyyy-MM-dd'T'HH:mm:ss" — assume same tz as the rep, compare
+  // naively to "now" (since both clocks are in the rep's tz, the offset
+  // cancels for the elapsed-time delta).
+  const t = note.timestamp.replace(' ', 'T');
+  const parts = t.split('T');
+  if (parts.length < 2) return false;
+  const d = parts[0].split('-').map(function (x) { return parseInt(x,10); });
+  const h = parts[1].split(':').map(function (x) { return parseInt(x,10); });
+  if (d.length < 3 || h.length < 2) return false;
+  const noteMs = new Date(d[0], d[1]-1, d[2], h[0], h[1], h[2] || 0).getTime();
+  // Same calculation for "now" so the local-vs-tz mismatch cancels
+  const nowLocal = new Date();
+  const tz = CN_STATE.empTz || empState.timezone || 'UTC';
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(nowLocal);
+  const get = function (k) { const p = fmt.find(function(x){return x.type===k;}); return p ? parseInt(p.value,10) : 0; };
+  const nowMs = new Date(get('year'), get('month')-1, get('day'), get('hour'), get('minute'), get('second')).getTime();
+  const staleMs = (CN_STATE.staleFlagHours || 1) * 3600 * 1000;
+  return (nowMs - noteMs) >= staleMs;
+}
+
+// ── Email composer modal ───────────────────────────────────────────────
+
+function cnOpenEmailComposer_(noteId) {
+  const note = cnFindNoteAnywhere_(noteId);
+  if (!note) return;
+  CN_STATE.composer = {
+    noteId,
+    note,
+    step: 'form',  // 'form' | 'preview' | 'sending'
+    selections: cnLoadComposerDefaults_(note),
+    previewHtml: '',
+  };
+  cnRenderComposerModal_();
+}
+
+function cnLoadComposerDefaults_(note) {
+  // Restore prior selections if the rep is re-sending; otherwise empty.
+  if (note.subformData && typeof note.subformData === 'object') {
+    return Object.assign({
+      departments: [], individualEmail: '', updateInfo: '',
+      callbackNeeded: false,
+    }, note.subformData);
+  }
+  const lsKey = 'umsCallNotesLastDept';
+  let lastDept = [];
+  try { lastDept = JSON.parse(localStorage.getItem(lsKey) || '[]'); } catch (e) {}
+  return {
+    departments: Array.isArray(lastDept) ? lastDept : [],
+    individualEmail: '',
+    updateInfo: '',
+    callbackNeeded: false,
+    overwriteResolution: false,
+    shippingDetails: null,
+    closeDetails: null,
+    resupplyDetails: null,
+    oopDetails: null,
+  };
+}
+
+function cnCloseComposerModal_() {
+  CN_STATE.composer = null;
+  const overlay = document.getElementById('cn-compose-overlay');
+  if (overlay) overlay.remove();
+}
+
+function cnRenderComposerModal_() {
+  let overlay = document.getElementById('cn-compose-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cn-compose-overlay';
+    overlay.className = 'overlay open';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) cnCloseComposerModal_();
+    });
+  }
+  const c = CN_STATE.composer;
+  if (!c) { overlay.remove(); return; }
+  if (c.step === 'form')    overlay.innerHTML = cnRenderComposerFormStep_();
+  if (c.step === 'preview') overlay.innerHTML = cnRenderComposerPreviewStep_();
+  if (c.step === 'form')    cnWireComposerForm_();
+}
+
+function cnRenderComposerFormStep_() {
+  const c = CN_STATE.composer;
+  const cfg = CN_STATE.deptConfig || { departments: [], suggestionsByDept: {}, defaultSuggestions: [] };
+  const depts = cfg.departments;
+  const selected = c.selections.departments || [];
+
+  const deptChips = depts.map(function (d) {
+    const on = selected.indexOf(d) >= 0;
+    return `<button type="button" class="cn-dept-chip" aria-pressed="${on}"
+                    onclick="cnToggleComposerDept_('${esc(d)}')">${esc(d)}</button>`;
+  }).join('');
+
+  const otherEmailRow = selected.indexOf('Other') >= 0 ? `
+    <div class="field" style="margin-top:8px">
+      <label>"Other" email addresses (comma-separated)</label>
+      <input type="text" id="cnC-individual-email" value="${esc(c.selections.individualEmail || '')}"
+             placeholder="name@example.com, other@example.com">
+    </div>` : '';
+
+  const updateOptions = (function () {
+    const set = new Set();
+    selected.forEach(function (d) { (cfg.suggestionsByDept[d] || []).forEach(function (s) { set.add(s); }); });
+    (cfg.defaultSuggestions || []).forEach(function (s) { set.add(s); });
+    return Array.from(set);
+  })();
+  const updateDatalist = updateOptions.map(function (o) { return `<option value="${esc(o)}">`; }).join('');
+
+  return `
+    <div class="modal" style="max-width:560px">
+      <div class="modal-title">Compose email</div>
+      <div class="modal-sub">
+        For: <strong>${esc(c.note.caller || c.note.patientAndTrx || 'this call')}</strong> · ${esc(c.note.patientAndTrx || '')}
+      </div>
+
+      <div class="cn-compose-section">
+        <div class="cn-compose-section-title">Recipients</div>
+        <div class="cn-compose-dept-grid">${deptChips}</div>
+        ${otherEmailRow}
+      </div>
+
+      <div class="cn-compose-section">
+        <div class="cn-compose-section-title">Update Type</div>
+        <div class="field" style="margin:0">
+          <input type="text" id="cnC-update-info" list="cnC-update-options"
+                 placeholder="Type or pick…" value="${esc(c.selections.updateInfo || '')}"
+                 oninput="cnComposerUpdateInfoChanged_()" onchange="cnComposerUpdateInfoChanged_()">
+          <datalist id="cnC-update-options">${updateDatalist}</datalist>
+        </div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
+          <input type="checkbox" id="cnC-callback-needed" ${c.selections.callbackNeeded ? 'checked' : ''}
+                 style="width:auto;margin:0" onchange="cnComposerCallbackChanged_(this.checked)">
+          <label for="cnC-callback-needed" style="margin:0;letter-spacing:0;text-transform:none;font-family:var(--ui);font-weight:400;color:var(--ink);font-size:12px">
+            Callback Requested
+          </label>
+        </div>
+      </div>
+
+      <div id="cnC-subforms"></div>
+
+      <div class="modal-footer">
+        <button class="btn-modal-cancel" onclick="cnCloseComposerModal_()">Cancel</button>
+        <button class="btn-modal-ok" onclick="cnComposerGoToPreview_()">Preview →</button>
+      </div>
+    </div>
+  `;
+}
+
+function cnWireComposerForm_() {
+  cnRenderSubforms_();
+}
+
+function cnToggleComposerDept_(dept) {
+  const c = CN_STATE.composer; if (!c) return;
+  const idx = c.selections.departments.indexOf(dept);
+  if (idx >= 0) c.selections.departments.splice(idx, 1);
+  else c.selections.departments.push(dept);
+  // Persist a "last dept selection" for the next compose call
+  try { localStorage.setItem('umsCallNotesLastDept', JSON.stringify(c.selections.departments)); } catch (e) {}
+  cnRenderComposerModal_();
+}
+
+function cnComposerUpdateInfoChanged_() {
+  const c = CN_STATE.composer; if (!c) return;
+  const v = document.getElementById('cnC-update-info').value;
+  c.selections.updateInfo = v;
+  cnRenderSubforms_();
+}
+
+function cnComposerCallbackChanged_(checked) {
+  const c = CN_STATE.composer; if (!c) return;
+  c.selections.callbackNeeded = !!checked;
+}
+
+function cnRenderSubforms_() {
+  const c = CN_STATE.composer; if (!c) return;
+  const host = document.getElementById('cnC-subforms');
+  if (!host) return;
+  const u = String(c.selections.updateInfo || '').toLowerCase().trim();
+  let html = '';
+  if (u === 'verified shipping' || u === 'oop order') html += cnRenderShippingSubform_();
+  if (u === 'close order')                            html += cnRenderCloseSubform_();
+  if (u === 'repeat resupply')                        html += cnRenderResupplySubform_();
+  if (u === 'oop order')                              html += cnRenderOopSubform_();
+  host.innerHTML = html;
+}
+
+function cnRenderShippingSubform_() {
+  const sd = CN_STATE.composer.selections.shippingDetails || {};
+  return `
+    <div class="cn-compose-section">
+      <div class="cn-compose-section-title">Verified Shipping</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <input type="checkbox" id="cnS-verified" ${sd.verifiedAddr ? 'checked' : ''} style="width:auto;margin:0">
+        <label for="cnS-verified" style="margin:0;letter-spacing:0;text-transform:none;font-family:var(--ui);font-weight:400;color:var(--ink);font-size:12px">Address verified</label>
+      </div>
+      <div class="field"><label>Verified Address (text + state auto-detect)</label>
+        <input type="text" id="cnS-addr" value="${esc(sd.verifiedAddrText || '')}" placeholder="123 Main St, Austin, TX 78701" oninput="cnAutoDetectState_(this.value)">
+      </div>
+      <div class="field-row">
+        <div class="field"><label>State</label>
+          <select id="cnS-state"><option value="">— —</option>${cnStateOptionsHtml_(sd.state)}</select>
+        </div>
+        <div class="field"><label>Patient Location</label>
+          <select id="cnS-patient-loc">
+            ${cnSelectOpts_(['Home','Facility','Mailing Only','Other'], sd.patientLoc)}
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Docs To</label>
+          <select id="cnS-docs-to" onchange="cnShippingDocsToChanged_(this.value)">
+            ${cnSelectOpts_(['Patient','Provider','Facility','Email','Other'], sd.docsTo)}
+          </select>
+        </div>
+        <div class="field"><label>Pat. Resp.</label>
+          <select id="cnS-pat-resp">
+            ${cnSelectOpts_(['Collected','Need to Collect','N/A'], sd.patResp)}
+          </select>
+        </div>
+      </div>
+      <div id="cnS-delivery-email-row" style="display:${sd.docsTo === 'Email' ? 'block' : 'none'}">
+        <div class="field"><label>Delivery Email</label>
+          <input type="email" id="cnS-delivery-email" value="${esc(sd.deliveryEmail || '')}" placeholder="recipient@example.com">
+        </div>
+      </div>
+      <div class="field"><label>Note (optional)</label>
+        <input type="text" id="cnS-note" value="${esc(sd.specialNote || '')}" placeholder="Anything else">
+      </div>
+    </div>
+  `;
+}
+
+function cnRenderCloseSubform_() {
+  const cd = CN_STATE.composer.selections.closeDetails || {};
+  return `
+    <div class="cn-compose-section">
+      <div class="cn-compose-section-title">Close Order — Reason</div>
+      <div class="field" style="margin:0">
+        <input type="text" id="cnCD-reason" value="${esc(cd.reason || '')}" placeholder="Why are we closing it?">
+      </div>
+    </div>
+  `;
+}
+
+function cnRenderResupplySubform_() {
+  const rd = CN_STATE.composer.selections.resupplyDetails || {};
+  return `
+    <div class="cn-compose-section">
+      <div class="cn-compose-section-title">Repeat Resupply</div>
+      <div class="field-row">
+        <div class="field"><label>Item Category</label>
+          <input type="text" id="cnRR-cat" value="${esc(rd.itemCategory || '')}" placeholder="CPAP / O2 / NIV / …">
+        </div>
+        <div class="field"><label>D.O.B. (optional)</label>
+          <input type="text" id="cnRR-dob" value="${esc(rd.dob || '')}" placeholder="MM/DD/YYYY">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Requesting Month</label>
+          <select id="cnRR-month">
+            ${cnSelectOpts_(['January','February','March','April','May','June','July','August','September','October','November','December'], rd.resupplyMonth)}
+          </select>
+        </div>
+        <div class="field"><label>Last Scheduled Date</label>
+          <input type="date" id="cnRR-last-date" value="${esc(rd.lastDate || '')}">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin:8px 0">
+        <input type="checkbox" id="cnRR-same-items" ${rd.sameItems ? 'checked' : ''} style="width:auto;margin:0">
+        <label for="cnRR-same-items" style="margin:0;letter-spacing:0;text-transform:none;font-family:var(--ui);font-weight:400;color:var(--ink);font-size:12px">Same items &amp; quantity as previous</label>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Address Status</label>
+          <select id="cnRR-addr-status" onchange="cnResupplyAddrChanged_(this.value)">
+            ${cnSelectOpts_(['Same','Different'], rd.addrStatus)}
+          </select>
+        </div>
+        <div class="field"><label>Insurance Status</label>
+          <select id="cnRR-ins-status" onchange="cnResupplyInsChanged_(this.value)">
+            ${cnSelectOpts_(['Same','Changed'], rd.insStatus)}
+          </select>
+        </div>
+      </div>
+      <div id="cnRR-new-addr-row" style="display:${rd.addrStatus === 'Different' ? 'block' : 'none'}">
+        <div class="field"><label>New Address</label>
+          <input type="text" id="cnRR-new-addr" value="${esc(rd.newAddr || '')}">
+        </div>
+      </div>
+      <div id="cnRR-new-ins-row" style="display:${rd.insStatus === 'Changed' ? 'block' : 'none'}">
+        <div class="field-row">
+          <div class="field"><label>New Insurance</label>
+            <input type="text" id="cnRR-new-ins" value="${esc(rd.newIns || '')}">
+          </div>
+          <div class="field"><label>New Member ID</label>
+            <input type="text" id="cnRR-new-memid" value="${esc(rd.newMemId || '')}">
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Provider Status</label>
+          <select id="cnRR-prov-status" onchange="cnResupplyProvChanged_(this.value)">
+            ${cnSelectOpts_(['Same','Changed'], rd.provStatus)}
+          </select>
+        </div>
+        <div class="field"><label>Note (optional)</label>
+          <input type="text" id="cnRR-note" value="${esc(rd.specialNote || '')}" placeholder="Extra context">
+        </div>
+      </div>
+      <div id="cnRR-new-prov-row" style="display:${rd.provStatus === 'Changed' ? 'block' : 'none'}">
+        <div class="field-row">
+          <div class="field"><label>New Provider</label>
+            <input type="text" id="cnRR-new-prov" value="${esc(rd.newProv || '')}">
+          </div>
+          <div class="field"><label>New Provider Phone</label>
+            <input type="text" id="cnRR-new-mdo-ph" value="${esc(rd.newMdoPh || '')}">
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function cnRenderOopSubform_() {
+  const od = CN_STATE.composer.selections.oopDetails || {};
+  return `
+    <div class="cn-compose-section">
+      <div class="cn-compose-section-title">OOP Order Breakdown</div>
+      <div class="field-row">
+        <div class="field"><label>Base Cost ($)</label>
+          <input type="number" id="cnO-base" step="0.01" value="${esc(od.baseCost || '')}" placeholder="0.00" oninput="cnRecalcOop_()">
+        </div>
+        <div class="field"><label>Shipping ($)</label>
+          <input type="text" id="cnO-shipping" value="${esc(od.shippingCost || '')}" placeholder="$14.99 / custom" oninput="cnRecalcOop_()">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Rx Tax-Exempt?</label>
+          <select id="cnO-rx" onchange="cnRecalcOop_()">
+            ${cnSelectOpts_(['No','Yes'], od.rxPresent)}
+          </select>
+        </div>
+        <div class="field"><label>Tax Display</label>
+          <div id="cnO-tax-disp" class="tabular" style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2);color:var(--ink);font-family:var(--mono);font-size:12px;">Pick state in shipping</div>
+        </div>
+      </div>
+      <div class="field" style="margin:0">
+        <label>Total (auto)</label>
+        <div id="cnO-total-disp" class="tabular" style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2);color:var(--ink);font-family:var(--mono);font-size:13px;font-weight:600;">$0.00</div>
+      </div>
+    </div>
+  `;
+}
+
+function cnSelectOpts_(values, selected) {
+  return '<option value="">— —</option>' + values.map(function (v) {
+    return `<option value="${esc(v)}" ${v === selected ? 'selected' : ''}>${esc(v)}</option>`;
+  }).join('');
+}
+
+function cnStateOptionsHtml_(selected) {
+  const rates = (CN_STATE.deptConfig && CN_STATE.deptConfig.stateTaxRates) || {};
+  return Object.keys(rates).sort().map(function (s) {
+    return `<option value="${esc(s)}" ${s === selected ? 'selected' : ''}>${esc(s)}</option>`;
+  }).join('');
+}
+
+function cnAutoDetectState_(addrText) {
+  const cfg = CN_STATE.deptConfig || {};
+  const abbrMap = cfg.stateAbbrToName || {};
+  const rates = cfg.stateTaxRates || {};
+  if (!addrText) return;
+  const val = addrText.toUpperCase();
+  const words = val.replace(/[^A-Z\s]/g, ' ').split(/\s+/);
+  let detected = null;
+  for (let i = words.length - 1; i >= 0; i--) {
+    if (abbrMap[words[i]]) { detected = abbrMap[words[i]]; break; }
+  }
+  if (!detected) {
+    for (const full of Object.keys(rates)) {
+      if (val.indexOf(full.toUpperCase()) >= 0) { detected = full; break; }
+    }
+  }
+  if (detected) {
+    const sel = document.getElementById('cnS-state');
+    if (sel) { sel.value = detected; cnRecalcOop_(); }
+  }
+}
+
+function cnShippingDocsToChanged_(v) {
+  const row = document.getElementById('cnS-delivery-email-row');
+  if (row) row.style.display = v === 'Email' ? 'block' : 'none';
+}
+
+function cnResupplyAddrChanged_(v) {
+  const row = document.getElementById('cnRR-new-addr-row');
+  if (row) row.style.display = v === 'Different' ? 'block' : 'none';
+}
+
+function cnResupplyInsChanged_(v) {
+  const row = document.getElementById('cnRR-new-ins-row');
+  if (row) row.style.display = v === 'Changed' ? 'block' : 'none';
+}
+
+function cnResupplyProvChanged_(v) {
+  const row = document.getElementById('cnRR-new-prov-row');
+  if (row) row.style.display = v === 'Changed' ? 'block' : 'none';
+}
+
+function cnRecalcOop_() {
+  const baseEl = document.getElementById('cnO-base');
+  const shipEl = document.getElementById('cnO-shipping');
+  const stateEl = document.getElementById('cnS-state');
+  const rxEl = document.getElementById('cnO-rx');
+  if (!baseEl) return;
+  const base = parseFloat(baseEl.value) || 0;
+  const shipStr = (shipEl && shipEl.value) || '';
+  let shipping = 0;
+  let shippingLabel = 'Custom';
+  if (/\$14\.99/.test(shipStr))      { shipping = 14.99; shippingLabel = 'Category 1'; }
+  else if (/\$19\.99/.test(shipStr)) { shipping = 19.99; shippingLabel = 'Category 2'; }
+  else {
+    const n = parseFloat(String(shipStr).replace(/[^0-9.]/g, ''));
+    shipping = isNaN(n) ? 0 : n;
+    shippingLabel = 'Custom Amount';
+  }
+  const state = (stateEl && stateEl.value) || '';
+  const rxYes = rxEl && rxEl.value === 'Yes';
+  const rates = (CN_STATE.deptConfig && CN_STATE.deptConfig.stateTaxRates) || {};
+  const rate = rxYes ? 0 : (rates[state] || 0);
+  const tax = base * rate;
+  const total = base + shipping + tax;
+  const taxDispEl = document.getElementById('cnO-tax-disp');
+  if (taxDispEl) {
+    if (rxYes) taxDispEl.textContent = '$0.00 (Rx exempt)';
+    else if (!state) taxDispEl.textContent = 'Pick state in shipping';
+    else taxDispEl.textContent = '$' + tax.toFixed(2) + ' (' + (rate * 100).toFixed(2) + '% ' + state + ')';
+  }
+  const totalEl = document.getElementById('cnO-total-disp');
+  if (totalEl) totalEl.textContent = '$' + total.toFixed(2);
+}
+
+function cnGatherComposerSelections_() {
+  const c = CN_STATE.composer;
+  const s = c.selections;
+  if (document.getElementById('cnC-individual-email')) {
+    s.individualEmail = document.getElementById('cnC-individual-email').value;
+  }
+  const u = String(s.updateInfo || '').toLowerCase().trim();
+  if (u === 'verified shipping' || u === 'oop order') {
+    s.shippingDetails = {
+      verifiedAddr:     document.getElementById('cnS-verified').checked,
+      verifiedAddrText: document.getElementById('cnS-addr').value.trim(),
+      state:            document.getElementById('cnS-state').value,
+      patientLoc:       document.getElementById('cnS-patient-loc').value,
+      docsTo:           document.getElementById('cnS-docs-to').value,
+      deliveryEmail:    (document.getElementById('cnS-delivery-email') || {}).value || '',
+      patResp:          document.getElementById('cnS-pat-resp').value,
+      specialNote:      document.getElementById('cnS-note').value.trim(),
+    };
+  } else { s.shippingDetails = null; }
+  if (u === 'close order') {
+    s.closeDetails = { reason: document.getElementById('cnCD-reason').value.trim() };
+  } else { s.closeDetails = null; }
+  if (u === 'repeat resupply') {
+    s.resupplyDetails = {
+      itemCategory:  document.getElementById('cnRR-cat').value.trim(),
+      dob:           document.getElementById('cnRR-dob').value.trim(),
+      resupplyMonth: document.getElementById('cnRR-month').value,
+      lastDate:      document.getElementById('cnRR-last-date').value,
+      sameItems:     document.getElementById('cnRR-same-items').checked,
+      addrStatus:    document.getElementById('cnRR-addr-status').value,
+      newAddr:       (document.getElementById('cnRR-new-addr') || {}).value || '',
+      insStatus:     document.getElementById('cnRR-ins-status').value,
+      newIns:        (document.getElementById('cnRR-new-ins') || {}).value || '',
+      newMemId:      (document.getElementById('cnRR-new-memid') || {}).value || '',
+      provStatus:    document.getElementById('cnRR-prov-status').value,
+      newProv:       (document.getElementById('cnRR-new-prov') || {}).value || '',
+      newMdoPh:      (document.getElementById('cnRR-new-mdo-ph') || {}).value || '',
+      specialNote:   document.getElementById('cnRR-note').value.trim(),
+    };
+  } else { s.resupplyDetails = null; }
+  if (u === 'oop order') {
+    cnRecalcOop_();
+    const baseEl = document.getElementById('cnO-base');
+    const shipEl = document.getElementById('cnO-shipping');
+    const rxEl   = document.getElementById('cnO-rx');
+    const stateEl = document.getElementById('cnS-state');
+    const base = parseFloat(baseEl.value) || 0;
+    const shipStr = (shipEl && shipEl.value) || '';
+    let shipping = 0; let shippingLabel = 'Custom';
+    if (/\$14\.99/.test(shipStr))      { shipping = 14.99; shippingLabel = 'Category 1'; }
+    else if (/\$19\.99/.test(shipStr)) { shipping = 19.99; shippingLabel = 'Category 2'; }
+    else {
+      const n = parseFloat(String(shipStr).replace(/[^0-9.]/g, ''));
+      shipping = isNaN(n) ? 0 : n; shippingLabel = 'Custom Amount';
+    }
+    const rxYes = rxEl && rxEl.value === 'Yes';
+    const rates = (CN_STATE.deptConfig && CN_STATE.deptConfig.stateTaxRates) || {};
+    const state = stateEl && stateEl.value;
+    const rate = rxYes ? 0 : (rates[state] || 0);
+    const tax = base * rate;
+    s.oopDetails = {
+      baseCost:     base.toFixed(2),
+      shippingCost: shipping.toFixed(2),
+      shippingLabel,
+      taxAmt:       rxYes ? '0.00 (Rx Exempt)' : tax.toFixed(2),
+      totalCost:    (base + shipping + tax).toFixed(2),
+      rxPresent:    rxYes ? 'Yes' : 'No',
+    };
+  } else { s.oopDetails = null; }
+}
+
+function cnComposerGoToPreview_() {
+  const c = CN_STATE.composer; if (!c) return;
+  cnGatherComposerSelections_();
+  if (c.selections.departments.length === 0) {
+    showToast('Pick at least one recipient first', 'toast-warn'); return;
+  }
+  if (!c.selections.updateInfo) {
+    showToast('Pick or type an Update type first', 'toast-warn'); return;
+  }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res.error) { showToast(res.error, 'toast-error'); return; }
+      c.preview = res;
+      c.step = 'preview';
+      cnRenderComposerModal_();
+    })
+    .withFailureHandler(function (err) {
+      showToast('Preview failed: ' + err.message, 'toast-error');
+    })
+    .previewCallNoteEmail(c.noteId, c.selections);
+}
+
+function cnRenderComposerPreviewStep_() {
+  const c = CN_STATE.composer;
+  const p = c.preview;
+  return `
+    <div class="modal" style="max-width:780px">
+      <div class="modal-title">Preview before sending</div>
+      <div class="modal-sub">Confirm this is what you want to send — once you click Send, it goes out.</div>
+      <div class="cn-compose-preview-meta">
+        <div><strong>From:</strong> ${esc(p.from)}</div>
+        <div><strong>To:</strong> ${esc(p.to)}</div>
+        <div><strong>CC:</strong> ${esc(p.cc)}</div>
+        <div><strong>Subject:</strong> ${esc(p.subject)}</div>
+      </div>
+      <div class="cn-compose-preview">${p.htmlBody}</div>
+      <div class="modal-footer">
+        <button class="btn-modal-cancel" onclick="cnComposerBackToForm_()">← Back to edit</button>
+        <button class="btn-modal-ok" id="cnC-send-btn" onclick="cnComposerSend_()">${icon('mail', 14)} Send Email</button>
+      </div>
+    </div>
+  `;
+}
+
+function cnComposerBackToForm_() {
+  const c = CN_STATE.composer; if (!c) return;
+  c.step = 'form';
+  cnRenderComposerModal_();
+}
+
+function cnComposerSend_() {
+  const c = CN_STATE.composer; if (!c) return;
+  const btn = document.getElementById('cnC-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) {
+        if (btn) { btn.disabled = false; btn.innerHTML = icon('mail', 14) + ' Send Email'; }
+        showToast(res.error || 'Send failed', 'toast-error'); return;
+      }
+      // Stamp emailedAt on the cached note
+      const idx = CN_STATE.rollingNotes.findIndex(function (n) { return n.noteId === c.noteId; });
+      if (idx >= 0) {
+        CN_STATE.rollingNotes[idx].emailedAt = res.emailedAt;
+        CN_STATE.rollingNotes[idx].emailDepartments = c.selections.departments.join(', ');
+        CN_STATE.rollingNotes[idx].subformData = c.selections;
+      }
+      cnCloseComposerModal_();
+      cnRenderStack_();
+      cnRenderFilterBar_();
+      showToast('Email sent', 'toast-success');
+    })
+    .withFailureHandler(function (err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = icon('mail', 14) + ' Send Email'; }
+      showToast('Send failed: ' + err.message, 'toast-error');
+    })
+    .emailFromCallNote(c.noteId, c.selections);
+}
+
+// ── History view ───────────────────────────────────────────────────────
+
+function cnRenderHistoryView(area) {
+  if (!CN_STATE.enrolled) {
+    area.innerHTML = cnEnrollmentMissingHtml_();
+    return;
+  }
+  const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes · History', 'list') : '';
+  area.innerHTML = `
+    ${compactHeader}
+    ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · History', 'Past days — pick a date to view & edit prior notes, or send a forgotten email.')}
+    <div class="cn-history-picker">
+      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase">Date</label>
+      <input type="date" id="cn-history-date" value="${esc(CN_STATE.historyDate || '')}" onchange="cnHistoryDateChanged_(this.value)">
+    </div>
+    <div id="cn-history-stack"></div>
+  `;
+  cnRenderHistoryStack_();
+}
+
+function cnHistoryDateChanged_(d) {
+  if (!d) return;
+  CN_STATE.historyDate = d;
+  cnLoadDate_(d, cnRenderHistoryStack_);
+}
+
+function cnRenderHistoryStack_() {
+  const stack = document.getElementById('cn-history-stack');
+  if (!stack) return;
+  if (!CN_STATE.historyNotes || CN_STATE.historyNotes.length === 0) {
+    stack.innerHTML = `<div class="cn-stack-empty">No notes for this date.</div>`;
+    return;
+  }
+  stack.innerHTML = CN_STATE.historyNotes.map(cnRenderCard_).join('');
+}
+
+// ── Search view ────────────────────────────────────────────────────────
+
+function cnRenderSearchView(area) {
+  if (!CN_STATE.enrolled) {
+    area.innerHTML = cnEnrollmentMissingHtml_();
+    return;
+  }
+  const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes · Search', 'search') : '';
+  area.innerHTML = `
+    ${compactHeader}
+    ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Search', 'Find past interactions by caller name, phone, patient/TRX, or issue.')}
+    <div class="cn-search-bar">
+      <input type="text" id="cn-search-q" placeholder="Type a caller name, phone, TRX, or issue keyword…"
+             value="${esc(CN_STATE.searchQuery || '')}" oninput="cnSearchQueryChanged_(this.value)">
+      <div class="toolbar-tabs" role="group" aria-label="Search field">
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'all'}" onclick="cnSetSearchField_('all')">All</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'caller'}" onclick="cnSetSearchField_('caller')">Caller</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'issue'}" onclick="cnSetSearchField_('issue')">Issue</button>
+      </div>
+    </div>
+    <div id="cn-search-results"></div>
+  `;
+  cnRenderSearchResults_();
+}
+
+function cnSearchQueryChanged_(q) {
+  CN_STATE.searchQuery = q;
+  if (CN_STATE.searchTimer) clearTimeout(CN_STATE.searchTimer);
+  CN_STATE.searchTimer = setTimeout(cnFireSearch_, 240);
+}
+
+function cnSetSearchField_(f) {
+  CN_STATE.searchField = f;
+  document.querySelectorAll('.cn-search-bar .toolbar-tab').forEach(function (b) {
+    b.setAttribute('aria-pressed', b.textContent.trim().toLowerCase() === f ? 'true' : 'false');
+  });
+  cnFireSearch_();
+}
+
+function cnFireSearch_() {
+  const q = String(CN_STATE.searchQuery || '').trim();
+  if (q.length < 2) {
+    CN_STATE.searchResults = [];
+    cnRenderSearchResults_();
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.searchResults = []; }
+      else CN_STATE.searchResults = res.results || [];
+      cnRenderSearchResults_();
+    })
+    .withFailureHandler(function (err) {
+      showToast('Search failed: ' + err.message, 'toast-error');
+    })
+    .searchMyCallNotes(q, CN_STATE.searchField);
+}
+
+function cnRenderSearchResults_() {
+  const host = document.getElementById('cn-search-results');
+  if (!host) return;
+  if (!CN_STATE.searchQuery || CN_STATE.searchQuery.length < 2) {
+    host.innerHTML = `<div class="cn-stack-empty">Type at least 2 characters to search.</div>`;
+    return;
+  }
+  if (CN_STATE.searchResults.length === 0) {
+    host.innerHTML = `<div class="cn-stack-empty">No matches.</div>`;
+    return;
+  }
+  host.innerHTML = CN_STATE.searchResults.map(function (n) {
+    return `
+      <div class="cn-search-result-card">
+        <div class="cn-search-result-meta">
+          ${esc(n.dateLocal)} · ${esc(cnFormatTimestampForCopy_(n.timestamp))}
+          ${n.flagType ? ' · <span style="color:var(--ink)">' + esc(n.flagType.toUpperCase()) + '</span>' : ''}
+          ${n.emailedAt ? ' · sent ' + esc(cnFormatTimestampForCopy_(n.emailedAt)) : ''}
+        </div>
+        <div class="cn-search-result-body">
+          <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
+          <br>${esc(n.issue || '')}
+          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Manage (manager-only) view ─────────────────────────────────────────
+
+function cnRenderManageView(area) {
+  const compactHeader = COMPACT_MODE ? cnCompactHeader_('Team Notes', 'manage') : '';
+  area.innerHTML = `
+    ${compactHeader}
+    ${COMPACT_MODE ? '' : cnViewTitleBar_('Team Notes', 'Manager view: per-rep notes, training queue, review candidates.')}
+    <div class="toolbar-tabs" role="group" aria-label="Manager queue" style="margin-bottom:14px">
+      <button class="toolbar-tab active" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
+      <button class="toolbar-tab" data-mqueue="review" onclick="cnMgrLoadQueue_('review')">Review Candidates</button>
+    </div>
+    <div id="cn-mgr-results"></div>
+  `;
+  cnMgrLoadQueue_('training');
+}
+
+function cnMgrLoadQueue_(kind) {
+  document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.mqueue === kind);
+  });
+  const host = document.getElementById('cn-mgr-results');
+  if (host) host.innerHTML = `<div class="cn-stack-empty">Loading…</div>`;
+  const fn = kind === 'training' ? 'managerGetTrainingQueue' : 'managerGetReviewCandidates';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res.error) { host.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+      cnMgrRenderQueue_(host, res.results || []);
+    })
+    .withFailureHandler(function (err) {
+      if (host) host.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+    })[fn]();
+}
+
+function cnMgrRenderQueue_(host, results) {
+  if (!host) return;
+  if (results.length === 0) {
+    host.innerHTML = `<div class="cn-stack-empty">No notes match this queue.</div>`;
+    return;
+  }
+  host.innerHTML = results.map(function (n) {
+    return `
+      <div class="cn-search-result-card">
+        <div class="cn-search-result-meta">
+          ${esc(n.dateLocal)} · ${esc(cnFormatTimestampForCopy_(n.timestamp))}
+          · <strong style="color:var(--ink)">${esc(n.repName)}</strong> (${esc(n.repId)})
+          ${n.flagType ? ' · <span style="color:var(--ink)">' + esc(n.flagType.toUpperCase()) + '</span>' : ''}
+          ${n.emailedAt ? ' · sent ' + esc(cnFormatTimestampForCopy_(n.emailedAt)) : ''}
+        </div>
+        <div class="cn-search-result-body">
+          <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
+          <br>${esc(n.issue || '')}
+          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Ambient (sidebar badge) polling ────────────────────────────────────
+
+function cnStartAmbientPolling_() {
+  if (CN_STATE.ambientTimer) clearInterval(CN_STATE.ambientTimer);
+  cnPollAmbient_();
+  CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
+}
+
+function cnPollAmbient_() {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) return;
+      if (res.enrolled === false) return;
+      CN_STATE.staleFlagHours = res.staleFlagHours || 1;
+      // Update sidebar badge on the Call Notes nav link
+      const link = document.querySelector('.sb-link[data-view="callNotes"]')
+                || document.querySelector('.nav-btn[data-view="callNotes"]');
+      if (!link) return;
+      let badge = link.querySelector('.cn-stale-badge');
+      const count = res.staleActionCount || 0;
+      if (count <= 0) { if (badge) badge.remove(); return; }
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'cn-stale-badge';
+        link.appendChild(badge);
+      }
+      badge.textContent = String(count);
+    })
+    .getCallNotesAmbient();
+}
+
+// ── Misc helpers ───────────────────────────────────────────────────────
+
+function cnViewTitleBar_(title, subtitle) {
+  return `
+    <div class="view-title-row">
+      <div>
+        <h1 class="view-title">${esc(title)}</h1>
+        <div class="view-subtitle">${esc(subtitle)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function cnCompactHeader_(title, iconName) {
+  return `
+    <div class="compact-header">
+      <div class="ch-title">${icon(iconName, 16)} ${esc(title)}</div>
+      <div class="ch-actions">
+        <button class="ch-action-btn" title="Close window" onclick="window.close()">${icon('x', 14)}</button>
+      </div>
+    </div>
+  `;
+}
+
+function cnEnrollmentMissingHtml_() {
+  return `
+    <div class="state-center">
+      <div class="state-icon" style="color:var(--accent)">${icon('phone', 44)}</div>
+      <div class="state-title">Not enrolled in Call Notes</div>
+      <div class="state-detail">Your account isn't linked to a per-rep call-notes spreadsheet yet.
+        Ask your manager to set it up — they'll paste the Sheet ID into column L of the Employees roster.</div>
+    </div>
+  `;
+}
+
+function cnIsMac_() {
+  return /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+}
+
+function cnFindNoteAnywhere_(noteId) {
+  return CN_STATE.rollingNotes.find(function (n) { return n.noteId === noteId; })
+      || CN_STATE.historyNotes.find(function (n) { return n.noteId === noteId; });
+}
+
+function cnReplaceNoteInState_(updated) {
+  if (!updated || !updated.noteId) return;
+  CN_STATE.rollingNotes = CN_STATE.rollingNotes.map(function (n) {
+    return n.noteId === updated.noteId ? updated : n;
+  });
+  CN_STATE.historyNotes = CN_STATE.historyNotes.map(function (n) {
+    return n.noteId === updated.noteId ? updated : n;
+  });
+}
+</script>
