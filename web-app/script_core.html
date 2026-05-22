@@ -51,6 +51,15 @@ const TOOLS = {
       manage:    { label: 'Manage',    icon: 'manage',    enter: 'enterManagerView', managerOnly: true },
     },
   },
+  callNotes: {
+    label: 'Call Notes',
+    views: {
+      callNotes:        { label: 'Notes',         icon: 'phone',  enter: 'enterCallNotesView' },
+      callNotesHistory: { label: 'History',       icon: 'list',   enter: 'enterCallNotesHistoryView' },
+      callNotesSearch:  { label: 'Search',        icon: 'search', enter: 'enterCallNotesSearchView' },
+      callNotesManage:  { label: 'Team Notes',    icon: 'manage', enter: 'enterCallNotesManageView', managerOnly: true },
+    },
+  },
 };
 const VIEW_TO_TOOL = {};
 Object.keys(TOOLS).forEach(toolKey => {
@@ -70,6 +79,18 @@ let dayModalDate = null;
 let clockInterval = null;
 let adjustWindowDays = 30;
 
+// Compact mode: ?compact=1 collapses sidebar/header chrome to fit a small
+// pop-out window. ?tool=<viewKey> deep-links straight into a specific tool.
+// Read from URL params on boot, persisted to documentElement so CSS can
+// react. Compact mode is also re-emitted on the pop-out window URL.
+const __URL_PARAMS = (function () {
+  try { return new URLSearchParams(window.location.search); }
+  catch (e) { return new URLSearchParams(''); }
+})();
+const COMPACT_MODE = __URL_PARAMS.get('compact') === '1';
+const INITIAL_VIEW_FROM_URL = __URL_PARAMS.get('tool');
+if (COMPACT_MODE) document.documentElement.setAttribute('data-compact', '1');
+
 // ════════════════════════════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════════════════════════════
@@ -83,11 +104,32 @@ window.addEventListener('load', () => {
       document.getElementById('adj-days-disp').textContent = adjustWindowDays;
       tsViewMode = (empState.payCycle === 'Biweekly' && empState.payAnchor) ? 'period' : 'month';
       renderShell(state);
-      showView('clock');
+      // Deep-link via ?tool=<viewKey>, falling back to clock. Honors
+      // managerOnly gating: a non-manager landing on a managerOnly link
+      // falls through to clock.
+      let initial = 'clock';
+      if (INITIAL_VIEW_FROM_URL && VIEW_TO_TOOL[INITIAL_VIEW_FROM_URL]) {
+        const toolKey = VIEW_TO_TOOL[INITIAL_VIEW_FROM_URL];
+        const v = TOOLS[toolKey].views[INITIAL_VIEW_FROM_URL];
+        if (!v.managerOnly || state.isManager) initial = INITIAL_VIEW_FROM_URL;
+      }
+      showView(initial);
     })
     .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
     .getEmployeeState();
 });
+
+/** Opens the current view in a chromeless pop-out window in compact mode.
+ *  Re-uses the named target so subsequent clicks bring the same window
+ *  to the front instead of spawning duplicates. */
+function popOutCurrentView() {
+  try {
+    const url = window.location.origin + window.location.pathname +
+      '?compact=1&tool=' + encodeURIComponent(currentView);
+    window.open(url, 'umsTeamToolsCompact',
+      'width=440,height=780,menubar=no,toolbar=no,location=no,status=no,resizable=yes');
+  } catch (e) { showToast('Pop-out blocked by browser', 'toast-warn'); }
+}
 
 function renderError(msg) {
   document.getElementById('app').innerHTML = `
@@ -138,6 +180,14 @@ function renderShell(state) {
               onclick="setTimeClockMode('dark')">${icon('moon', 14)}</button>
     </div>`;
 
+  // Pop-out button — only shown in normal (full) mode. Compact mode is the
+  // pop-out target, so hiding the button there keeps the chrome quiet.
+  const popOutBtn = COMPACT_MODE ? '' : `
+    <button type="button" class="sb-popout-btn" title="Pop out to small window"
+            aria-label="Pop out to small window" onclick="popOutCurrentView()">
+      ${icon('popOut', 14)}
+    </button>`;
+
   document.getElementById('app').innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
@@ -152,7 +202,10 @@ function renderShell(state) {
         ${sbLinks}
         <div class="sb-theme">
           <span class="sb-theme-label">Theme</span>
-          ${themeToggle}
+          <div class="sb-theme-controls">
+            ${themeToggle}
+            ${popOutBtn}
+          </div>
         </div>
         <div class="sb-user">
           <div class="sb-user-avatar">${esc(initials)}</div>
@@ -174,6 +227,7 @@ function renderShell(state) {
           </div>
           <div class="hdr-right">
             ${themeToggle}
+            ${popOutBtn}
             <div class="hdr-id">${esc(state.id)}</div>
           </div>
         </header>
