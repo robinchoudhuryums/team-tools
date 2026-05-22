@@ -427,6 +427,8 @@ const CN_STATE = {
   searchTimer: null,
   deptConfig: null,          // cached departments / suggestions / state tax rates
   ambientTimer: null,
+  mgrEnrolledReps: null,     // [{id,name}] of reps with a CallNotesSheetId; loaded once for manager Per-Rep view
+  mgrRepView: null,          // { repId, date } — current selection in manager Per-Rep view
 };
 
 const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
@@ -1191,6 +1193,12 @@ function cnWireComposerForm_() {
 
 function cnToggleComposerDept_(dept) {
   const c = CN_STATE.composer; if (!c) return;
+  // Snapshot any in-progress subform values into state BEFORE re-render wipes
+  // the DOM. Without this, typing into a subform and then toggling a dept
+  // chip throws away the typed values (the subform fields are only read into
+  // selections at Preview-time otherwise). Safe to call early: gather is a
+  // no-op for branches whose subform isn't currently rendered.
+  try { cnGatherComposerSelections_(); } catch (e) { /* subform not in DOM yet — ignore */ }
   const idx = c.selections.departments.indexOf(dept);
   if (idx >= 0) c.selections.departments.splice(idx, 1);
   else c.selections.departments.push(dept);
@@ -1604,6 +1612,10 @@ function cnComposerSend_() {
   const c = CN_STATE.composer; if (!c) return;
   const btn = document.getElementById('cnC-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  // Pass the previewed bodyHash so the server can refuse to send if the note
+  // body changed since Preview (rep edited the note in a different tab).
+  // Without this, the email body could differ from what the rep just confirmed.
+  const expectedHash = c.preview && c.preview.bodyHash;
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res.success) {
@@ -1626,7 +1638,7 @@ function cnComposerSend_() {
       if (btn) { btn.disabled = false; btn.innerHTML = icon('mail', 14) + ' Send Email'; }
       showToast('Send failed: ' + err.message, 'toast-error');
     })
-    .emailFromCallNote(c.noteId, c.selections);
+    .emailFromCallNote(c.noteId, c.selections, expectedHash);
 }
 
 // ── History view ───────────────────────────────────────────────────────
@@ -1762,6 +1774,7 @@ function cnRenderManageView(area) {
     <div class="toolbar-tabs" role="group" aria-label="Manager queue" style="margin-bottom:14px">
       <button class="toolbar-tab active" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
       <button class="toolbar-tab" data-mqueue="review" onclick="cnMgrLoadQueue_('review')">Review Candidates</button>
+      <button class="toolbar-tab" data-mqueue="rep" onclick="cnMgrLoadRepView_()">Per-Rep View</button>
     </div>
     <div id="cn-mgr-results"></div>
   `;
@@ -1783,6 +1796,131 @@ function cnMgrLoadQueue_(kind) {
     .withFailureHandler(function (err) {
       if (host) host.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
     })[fn]();
+}
+
+// ── Per-Rep view (manager — single rep, single date) ──
+// Surfaces the server-side managerGetCallNotes endpoint that previously had
+// no UI. Read-only cards (no flag/email/edit/delete actions) — the manager is
+// looking at someone else's sheet and those endpoints scope to caller's sheet.
+
+function cnMgrLoadRepView_() {
+  document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.mqueue === 'rep');
+  });
+  const host = document.getElementById('cn-mgr-results');
+  if (!host) return;
+  // Load enrolled rep list once per session
+  if (!CN_STATE.mgrEnrolledReps) {
+    host.innerHTML = `<div class="cn-stack-empty">Loading reps…</div>`;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (res.error) { host.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+        CN_STATE.mgrEnrolledReps = res.reps || [];
+        cnMgrRenderRepViewControls_(host);
+      })
+      .withFailureHandler(function (err) {
+        host.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+      })
+      .getEnrolledCallNotesReps();
+  } else {
+    cnMgrRenderRepViewControls_(host);
+  }
+}
+
+function cnMgrRenderRepViewControls_(host) {
+  const reps = CN_STATE.mgrEnrolledReps || [];
+  if (reps.length === 0) {
+    host.innerHTML = `<div class="cn-stack-empty">No reps are enrolled in Call Notes yet (column L of Employees roster is empty for everyone).</div>`;
+    return;
+  }
+  if (!CN_STATE.mgrRepView) {
+    CN_STATE.mgrRepView = {
+      repId: reps[0].id,
+      date: new Intl.DateTimeFormat('en-CA', { timeZone: empTz() }).format(new Date()),
+    };
+  }
+  const repOpts = reps.map(function (r) {
+    const sel = r.id === CN_STATE.mgrRepView.repId ? ' selected' : '';
+    return `<option value="${esc(r.id)}"${sel}>${esc(r.name)}</option>`;
+  }).join('');
+  host.innerHTML = `
+    <div class="cn-history-picker" style="margin-bottom:14px">
+      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase">Rep</label>
+      <select id="cn-mgr-rep-pick" onchange="cnMgrRepChanged_(this.value)"
+              style="padding:7px 10px;border:1px solid var(--line);border-radius:var(--radius);font-family:var(--ui);font-size:13px;background:var(--paper-card);color:var(--ink);outline:none">
+        ${repOpts}
+      </select>
+      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase">Date</label>
+      <input type="date" id="cn-mgr-rep-date" value="${esc(CN_STATE.mgrRepView.date)}" onchange="cnMgrRepDateChanged_(this.value)">
+    </div>
+    <div id="cn-mgr-rep-stack"></div>
+  `;
+  cnMgrLoadRepNotes_();
+}
+
+function cnMgrRepChanged_(repId) {
+  if (!CN_STATE.mgrRepView) return;
+  CN_STATE.mgrRepView.repId = repId;
+  cnMgrLoadRepNotes_();
+}
+
+function cnMgrRepDateChanged_(d) {
+  if (!CN_STATE.mgrRepView || !d) return;
+  CN_STATE.mgrRepView.date = d;
+  cnMgrLoadRepNotes_();
+}
+
+function cnMgrLoadRepNotes_() {
+  const stack = document.getElementById('cn-mgr-rep-stack');
+  if (!stack || !CN_STATE.mgrRepView) return;
+  stack.innerHTML = `<div class="cn-stack-empty">Loading…</div>`;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res.error) { stack.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+      if (!res.notes || res.notes.length === 0) {
+        stack.innerHTML = `<div class="cn-stack-empty">No notes for ${esc(res.repName || '')} on ${esc(res.date || '')}.</div>`;
+        return;
+      }
+      stack.innerHTML = res.notes.map(cnMgrRenderReadonlyCard_).join('');
+    })
+    .withFailureHandler(function (err) {
+      stack.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+    })
+    .managerGetCallNotes(CN_STATE.mgrRepView.repId, CN_STATE.mgrRepView.date, 'all');
+}
+
+/** Read-only card for the manager per-rep view. Reuses the styled card chrome
+ *  but omits flag/copy/email/edit/delete actions — those endpoints scope to
+ *  the caller's own sheet and would fail silently if invoked here. */
+function cnMgrRenderReadonlyCard_(note) {
+  const time = cnFormatTimestampForCopy_(note.timestamp);
+  const flagCls = note.flagType ? ' flag-' + note.flagType : '';
+  const callerLine = note.caller || note.patientAndTrx || '<em style="color:var(--muted)">unnamed</em>';
+  const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
+  const issue = note.issue || '<em>—</em>';
+  const resolution = note.resolution
+    ? `<div class="cn-card-issue" style="color:var(--muted);font-style:italic;margin-top:2px">→ ${esc(note.resolution)}</div>`
+    : '';
+  const flagPill = note.flagType
+    ? `<span class="adj-pill" style="text-transform:uppercase;font-size:10px;letter-spacing:.06em">${esc(note.flagType)}${note.flagType === 'action' && note.resolved ? ' · resolved' : ''}</span>`
+    : '';
+  const sentPill = note.emailedAt ? `<span class="adj-pill">sent</span>` : '';
+  return `
+    <div class="cn-card${flagCls}" data-note-id="${esc(note.noteId)}">
+      <div class="cn-card-row">
+        <span class="cn-card-time tabular">${esc(time)}</span>
+        <div class="cn-card-main">
+          <div class="cn-card-caller">${callerLine}${trxBit}</div>
+          <div class="cn-card-issue">${esc(issue)}</div>
+          ${resolution}
+        </div>
+        <div class="cn-card-actions">
+          ${flagPill}
+          ${sentPill}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function cnMgrRenderQueue_(host, results) {
