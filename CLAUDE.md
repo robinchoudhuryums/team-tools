@@ -118,7 +118,8 @@ this section before touching the relevant area.
   `getEmployeeTimesheetForManager`, `managerGetCallNotes`,
   `managerSearchCallNotes`, `managerGetTrainingQueue`,
   `managerGetReviewCandidates`, `getEnrolledCallNotesReps`,
-  `exportCallNotesRange`. Returning a dashboard or accepting writes
+  `exportCallNotesRange`, `setCallNoteTrainingReply`,
+  `managerGetShiftStats`. Returning a dashboard or accepting writes
   without this check is a privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
   The four time-based trigger handlers — `sendDailyMissedPunchAlerts`,
@@ -191,7 +192,12 @@ this section before touching the relevant area.
   constant in `Code.js`. If `styles_design_tokens.html` palette values
   change in a meaningful way (slate → different palette), re-resolve
   the hex equivalents in CN_EMAIL_PALETTE or the email aesthetic drifts
-  from the in-app aesthetic.
+  from the in-app aesthetic. Plus three UMS-brand entries (`brand` =
+  navy `#223b5d`, `brandSoft` = pale blue `#e6f2ff`, `logoUrl` = the
+  UMS Presentation Logo) — these are NOT design-token-derived; they're
+  the legacy `closeOrderEmail.js` / `updateOrderEmail.js` identity
+  carried forward into the new web-app emails (Call Details table
+  header, alternating row tint, top-of-email logo bar).
 - **Clipboard API often fails in HtmlService iframes.** The auto-copy
   feature tries `navigator.clipboard.writeText` first and falls back
   to a `<textarea>` + `document.execCommand('copy')` shim
@@ -219,11 +225,20 @@ this section before touching the relevant area.
   window check uses circular distance (`Math.min(diff, 1440 - diff)`)
   so a near-midnight `EOD_WARNING_HOUR` wraps correctly — dormant
   for the default 17:00 hour, latent otherwise.
-- **`SubformData` (column P) is a JSON blob.** Stored as a JSON string
-  on email send (so a "re-send same departments" flow can re-open the
-  composer pre-populated). `callNoteRowToObject_` tries `JSON.parse`
-  and returns `null` on failure rather than throwing — corrupted blobs
-  should never break a read.
+- **`SubformData` (column P) is a generic per-note metadata JSON blob.**
+  Originally introduced to persist email-composer subform selections
+  (so a "re-send same departments" flow can re-open the composer
+  pre-populated), the blob now also stores: `trainingQuestion`
+  (set on submit when training flag is selected),
+  `trainingReply` / `trainingReplyBy` / `trainingReplyAt`
+  (set by `setCallNoteTrainingReply` when a manager answers),
+  `pinned` / `pinnedAt` (set by `setCallNotePinned`), and
+  `completionSeconds` (form-start-to-submit duration captured on
+  submit, used by `managerGetShiftStats`'s median calc). Future
+  per-note metadata should also live here rather than spawning new
+  columns. `callNoteRowToObject_` tries `JSON.parse` and returns
+  `null` on failure rather than throwing — corrupted blobs should
+  never break a read.
 - **Late `google.script.run` successHandlers in Call Notes loaders
   guard on `currentView`.** Every Call Notes loader (`cnLoadToday_`,
   `cnLoadDate_`, `cnFireSearch_`, `cnMgrLoadQueue_`,
@@ -242,25 +257,82 @@ this section before touching the relevant area.
   `cnGatherComposerSelections_()` in a try/catch to snapshot the
   prior DOM into state — so flipping back to the original shape
   restores their values.
-- **`cnToggleComposerDept_` snapshots subform DOM before re-render.**
-  Toggling a dept chip in the email composer re-renders the entire
-  modal innerHTML; without `cnGatherComposerSelections_()` first,
-  whatever the rep typed into a subform field is lost. The gather
-  call is wrapped in try/catch so it's safe to call when the subform
-  isn't yet in the DOM.
+- **`cnToggleComposerDept_` updates the modal in place, no full re-render.**
+  Earlier versions re-rendered the entire modal innerHTML on every
+  chip click, which flashed visibly. The current implementation calls
+  `cnUpdateComposerDeptUI_` which mutates only the parts that depend
+  on dept selection: chip `aria-pressed` states, the conditional
+  "Other" email row, and the update-type datalist's option set. The
+  `cnGatherComposerSelections_()` call up front is still defensive —
+  it snapshots any in-progress subform values into state so a future
+  re-render (e.g., subform shape-key change) doesn't lose typing. Any
+  new dept-dependent UI must be added inside `cnUpdateComposerDeptUI_`,
+  not in `cnRenderComposerFormStep_` alone, or it won't track toggles.
+- **Optimistic UI for submit / flag / resolve on Call Notes.**
+  Submitting, flagging, and resolving notes are optimistic — the
+  client mutates `CN_STATE.rollingNotes` and calls render BEFORE the
+  server RPC fires. Pending notes carry `_pending: true` and render
+  with reduced opacity + a "Saving" badge in place of action buttons.
+  Server failure triggers `cnRevertPendingSubmit_` (for submit) or
+  restores the prior flag/resolved state (for toggles), and surfaces
+  a clear toast. Flag/resolve attempts on a pending note show
+  "Just a moment — still saving" since the server has no record of
+  it yet. Edits and emails remain pessimistic — they require a
+  server-issued noteId.
+- **Form-completion timer is persisted to localStorage.**
+  `cnFormTimerStartIfNeeded_` writes the start ms to
+  `localStorage['umsCallNotesFormStartedAt']` on the first form
+  input event; survives reloads (refresh mid-note shouldn't reset
+  the clock). On submit, `cnFormTimerEndAndGet_` returns the elapsed
+  seconds — capped at 30 min as null (rep walked away mid-note,
+  shouldn't pollute the median). The value rides into the server
+  payload as `subformData.completionSeconds`; the manager Stats tab
+  medians over notes that captured one. Any new form-clearing path
+  must call `cnFormTimerReset_` or the next note will inherit the
+  prior session's elapsed time.
+- **Sticky form draft is auto-saved on every input.**
+  `cnPersistActiveFormDraft_` writes the active form contents to
+  `localStorage['umsCallNotesActiveFormDraft']` debounced 400ms.
+  `cnRestoreActiveFormDraft_` runs on Log view enter and surfaces a
+  "Draft restored" toast when a draft was present. Both the
+  successful-submit path and the explicit Clear Note button call
+  `cnClearStickyFormDraft_`. **If you add a new form-clearing code
+  path, call it there too** or the draft will resurrect on next load
+  even though the rep meant to start fresh.
+- **Voice dictation routes audio outside the BAA boundary.**
+  `CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED` is off by default. When on,
+  the mic button uses `webkitSpeechRecognition`, which in Chrome
+  routes the audio to Google's speech-to-text service — and the Web
+  Speech API is NOT covered by a typical Google Workspace BAA. The
+  operator must confirm the org's HIPAA stance before flipping the
+  flag; patient names, device types, and addresses dictated into the
+  mic leave the browser. The flag is surfaced via
+  `getCallNotesDepartments` → `CN_STATE.deptConfig.voiceInputEnabled`,
+  so the UI never renders the mic when the flag is false.
 
 ## Key Design Decisions
 
-- **Multi-tool registry in `script_core.html`.** The `TOOLS` object
-  at the top of `script_core.html` is the single source of truth for
-  which tools/views exist, their sidebar label, icon, and the name of
-  their `enter*` handler. `renderShell` builds the sidebar links and
-  mobile-nav buttons by iterating `TOOLS`; `showView` dispatches to
-  the handler by name via `window[...]`. Adding a new view means
-  appending one entry to `TOOLS` and defining one `enter*` function
-  — the shell auto-rebuilds. The active tool's `label` is mirrored
-  into `#sb-tool-label` (the sidebar `.sb-brand-sub`) on every
-  navigation so the user always sees which tool they're in.
+- **Multi-tool registry with tab sub-navigation.** The `TOOLS` object
+  at the top of `script_core.html` is the single source of truth. Each
+  top-level entry is a TOOL (Time Clock, Call Notes); each tool
+  declares a `sidebarIcon`, a `defaultTab`, and a `tabs` map whose
+  keys are globally unique tab identifiers. The sidebar + mobile-nav
+  show ONE button per tool. Sub-navigation is a horizontal tab bar
+  (`#tool-tab-bar`) rendered above the view area, populated by
+  `renderToolTabBar(toolKey)` whenever a tool is opened.
+  `enterTool(toolKey, tabKey)` is the entry point — it sets the
+  sidebar active state, swaps the sidebar sub-label, renders the tab
+  bar, and dispatches to the chosen tab (or `defaultTab` if none
+  given, or the URL `?tool=<tabKey>` deep-link if present).
+  `showView(tabKey)` dispatches to the specific tab's enter handler
+  via `window[TOOLS[toolKey].tabs[tabKey].enter]`. `currentView` holds
+  the active tab key, so existing guards like
+  `if (currentView === 'callNotes') ...` continue to work — tab keys
+  are deliberately globally unique across tools.
+  Adding a new tab: append it to its tool's `tabs` map + implement
+  the `enter*` handler in the tool's partial. Adding a new tool:
+  add a TOOLS entry + drop tab partials + `include()` them from
+  `index.html`. The shell auto-rebuilds either way.
 - **Tool view partials live in their own subfolder.** Time Clock's
   four views (`script_clock.html`, `script_timesheet.html`,
   `script_timeoff.html`, `script_manager.html`) are under `web-app/tc/`
@@ -416,16 +488,88 @@ this section before touching the relevant area.
   rejected with a clear error.
 - **Auto-copy format is a CONFIG template.** `CONFIG.CALL_NOTES.AUTO_COPY_FORMAT`
   uses `{caller}`, `{callback}`, `{patientAndTrx}`, `{issue}`,
-  `{resolution}`, `{timestamp}`, etc. tokens — Robin can tune the
-  CRM-paste-friendly serialization without code changes. The replacement
-  is straight string-replace; no escaping (the clipboard is plain text).
-- **Client-side persistence is two localStorage keys.** Both per-
-  browser, both wrapped in try/catch so a privacy-mode browser
-  doesn't break: `umsTimeClockMode` stores the dark/light preference
-  (read by the boot script in `index.html`); `umsCallNotesLastDept`
-  stores the rep's last email-composer department selection
-  (re-applied as the default on the next compose click). Clearing
-  browser data wipes both — neither is data-loss-risky.
+  `{resolution}`, `{timestamp}`, `{transferredTo}`, etc. tokens —
+  Robin can tune the CRM-paste-friendly serialization without code
+  changes. The replacement is straight string-replace; no escaping
+  (the clipboard is plain text). The default is now multi-line
+  labeled (`Callback Number: ... \n Caller Name: ... \n ...`); the
+  prior single-line pipe-separated format was retired in commit
+  b87a1fe. `{transferredTo}` substitutes "N/A" when blank — mirrors
+  the email body's defaulting so paste + email line up.
+- **Client-side persistence is four localStorage keys.** All per-
+  browser, all wrapped in try/catch so a privacy-mode browser
+  doesn't break:
+  - `umsTimeClockMode` — dark/light preference (read by the boot
+    script in `index.html`).
+  - `umsCallNotesLastDept` — the rep's last email-composer department
+    selection (re-applied as the default on the next compose click).
+  - `umsCallNotesActiveFormDraft` — the in-progress Call Notes form
+    auto-saved on every input (debounced 400ms); restored on next
+    Log view enter with a "Draft restored" toast. Cleared on
+    successful submit or explicit Clear Note.
+  - `umsCallNotesFormStartedAt` — start-ms of the active form's
+    completion timer; persists across refresh so a mid-form reload
+    doesn't reset the clock. Captured into `subformData.completionSeconds`
+    on submit.
+  Clearing browser data wipes all four; only the form-draft loss is
+  user-visible (and only if the rep had a draft mid-call).
+- **Optimistic UI is the perceived-speed mechanism for the Call Notes
+  hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
+  most-frequent actions (submit a note, toggle a flag, toggle resolved)
+  the client mutates `CN_STATE.rollingNotes` and re-renders BEFORE
+  firing the RPC. The rep sees zero perceived latency — same speed as
+  pasting into a Sheet. Server sync happens in the background; failures
+  trigger an explicit revert (`cnRevertPendingSubmit_` for submit;
+  in-place state restore for flag/resolve) with a clear toast. Auto-copy
+  to clipboard also runs in the optimistic path so the rep can paste
+  into the CRM before the network has acknowledged anything. Email
+  and edit actions stay pessimistic — they need a server-issued noteId
+  and can't easily undo.
+- **Combined Clock+Timesheet is one tab, two sections.**
+  `enterClockCombinedView` (in `tc/script_clock.html`) creates two
+  sibling sections inside `#view-area`: `#clk-section` (clock UI) and
+  `#clk-ts-section` (the rep's current timesheet). Punch handlers and
+  self-undo re-renders target `getClockArea_()` — which returns
+  `#clk-section` when the combined view is mounted, else `#view-area`
+  — so the timesheet section below isn't wiped on each clock-side
+  interaction. `loadTimesheet(start, end, targetArea)` accepts an
+  optional 3rd arg that scopes its re-render to the combined view's
+  sub-section; without it the function falls back to `#view-area`.
+  `renderTimesheetView(area, data, { combined: true })` suppresses the
+  redundant breadcrumb / h1 since the tab bar already says "Clock".
+- **Personal pin is per-rep, capped at 3, stored in `subformData`.**
+  Rep toggles the pin via the bookmark icon on a card. State lives in
+  `subformData.pinned` + `subformData.pinnedAt` — no schema migration.
+  The 3-pin cap is enforced server-side inside the same `ScriptLock`
+  as the toggle so two parallel pin requests can't both squeak past it.
+  Pinned notes render in `#cn-pinned-tray` above the rolling stack on
+  the Log view; `cnRenderStack_` deduplicates so the same noteId never
+  appears in both the tray and the stack. `getMyPinnedCallNotes`
+  returns the rep's pinned notes across ALL dates (not just today) so
+  a complex case pinned last week stays visible.
+- **Manager Q&A reply on training-flagged notes.** Training-flagged
+  notes can carry a free-text question (`subformData.trainingQuestion`,
+  set client-side when the rep picks the training flag) and a manager
+  reply (`subformData.trainingReply` + `trainingReplyBy` +
+  `trainingReplyAt`, set by `setCallNoteTrainingReply`). Rep's Log
+  view renders the answer line directly below their question (green
+  check icon vs the question's blue bulb); manager Per-Rep view shows
+  an inline reply input on each training card; weekly training digest
+  renders Q: and A: side-by-side. Reply is only meaningful on
+  training-flagged notes — server rejects calls on other flag types
+  (parallels the resolve-only-on-action invariant). Audit row
+  `CallNoteTrainingReply` carries the manager's email as actor.
+- **Email body restored to the UMS legacy aesthetic.** Call-note
+  emails sent from the new web app now match the prior
+  `closeOrderEmail.js` / `updateOrderEmail.js` identity: UMS logo bar
+  at the top, navy `#223b5d` Call Details table header, pale-blue
+  `#e6f2ff` alternating rows, and a template-specific update banner
+  (Close Order = red, OOP Order = orange, Verified Shipping / Repeat
+  Resupply = green, default = navy). The brand colors live in
+  `CN_EMAIL_PALETTE.brand` / `brandSoft` / `logoUrl` — see the gotcha
+  about that constant for the maintenance rule. Email-client
+  compatibility is preserved by inlining the hex (no CSS variables;
+  email clients strip `<style>` blocks).
 
 ## Operator State Checklist
 
@@ -485,6 +629,14 @@ manually for a fresh deploy or environment:
   `installAutomationTriggers()` schedule (Friday 8am for the weekly
   digest). Changing the hour requires re-running
   `installAutomationTriggers()` so the trigger picks up the new value.
+- **`CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED`** controls the
+  voice-to-text mic on Issue / Resolution fields. Default `false`.
+  Flip to `true` only after confirming the org's stance on audio
+  routed to the browser vendor's speech-to-text service (Chrome →
+  Google, NOT covered by typical Google Workspace BAA — PHI in the
+  rep's spoken note leaves the browser). Requires a redeploy to
+  propagate to clients. When false, the UI never renders the mic
+  button (no surface area for accidents).
 
 ## Cycle Workflow Config
 
@@ -546,24 +698,32 @@ INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) 
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
-INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
-INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity | Subsystem: Server
+INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply) carry the manager's email as actor via the actorEmail parameter | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send any email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
 INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configured" when `emp.callNotesSheetId` is missing — call-notes endpoints surface this as the enrollment-missing splash in the client; no auto-provision path exists | Subsystem: Server
 INV-36 | Call-note email sends (`emailFromCallNote`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) are wrapped in try/catch and never block the API result (INV-14 generalized) | Subsystem: Server
 INV-37 | `sanitizeFlagType_` only allows `''` / `'action'` / `'training'` / `'review'` to be written to FlagType; unknown values silently coerce to `''` rather than corrupting the column | Subsystem: Server
 INV-38 | Compact-mode is a shell-level attribute (`data-compact="1"` on `documentElement`); set from the `?compact=1` URL param on boot and consumed via CSS selectors in `styles.html`. Tool views render `.compact-header` instead of `.view-title-row` when `COMPACT_MODE === true` | Subsystem: Client (shell)
-INV-39 | `getCallNotesAmbient` is authenticated to the caller (requires registered employee), read-only — returns only `{enrolled, unresolvedActionCount, staleActionCount, todayTotal, staleFlagHours}` for the calling rep. Cached for `CN_AMBIENT_CACHE_TTL` (60s) under `CN_AMBIENT_CACHE_PREFIX + emp.id`; invalidated by every mutating CN endpoint. Used by the sidebar badge polling; never leaks cross-rep data | Subsystem: Server
+INV-39 | `getCallNotesAmbient` is authenticated to the caller (requires registered employee), read-only — returns only `{enrolled, unresolvedActionCount, staleActionCount, todayTotal, staleFlagHours}` for the calling rep. Cached for `CN_AMBIENT_CACHE_TTL` (60s) under `CN_AMBIENT_CACHE_PREFIX + emp.id`. The cache is purely TTL-driven; mutating endpoints do NOT eagerly invalidate (the 60s ceiling matches the sidebar polling interval). Used by the sidebar badge polling; never leaks cross-rep data | Subsystem: Server
 INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-type transition (`oldFlag !== t`), not only on full clear — so stale `resolved=TRUE` from a prior action-flag cycle doesn't resurface when the rep flips back to action | Subsystem: Server
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
-INV-43 | Every mutating CN endpoint (`submitCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`) calls `invalidateCnAmbientCache_(emp.id)` after its audit-log write so the next sidebar poll sees fresh counts. `updateCallNote` and `emailFromCallNote` don't affect ambient counts and skip the invalidation | Subsystem: Server
+INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
 INV-44 | The four trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run` | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise substring matching across (caller, callback, patientAndTrx) for `field='caller'|'all'` and (issue, resolution) for `field='issue'|'all'`. Used by the "Find prior calls for this TRX" card button | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
+INV-48 | Optimistic UI on the Call Notes hot path: `cnSubmitActiveForm_`, `cnToggleFlag_`, and `cnToggleResolved_` mutate `CN_STATE.rollingNotes` and re-render BEFORE the server RPC fires. Pending notes carry `_pending: true` and render with reduced opacity + a "Saving" badge in place of action buttons. Server failure triggers `cnRevertPendingSubmit_` (for submit) or restores the prior flag/resolved state (for toggles), and surfaces a clear toast. Auto-copy also runs in the optimistic path so the rep can paste into the CRM before the network acknowledges anything | Subsystem: Client (Call Notes views)
+INV-49 | `setCallNoteTrainingReply(repId, noteId, reply)` is manager-gated, locked, and rejects calls on non-training-flagged notes (parallels INV-34's resolve-only-on-action rule). Merges the reply + author email + reply timestamp into the target rep's `subformData.trainingReply` / `trainingReplyBy` / `trainingReplyAt` keys (no schema migration). Empty reply clears the keys. Writes a `CallNoteTrainingReply` audit row with the manager's email as actor | Subsystem: Server
+INV-50 | `setCallNotePinned(noteId, pinned)` is caller-scoped (operates on the caller's own per-rep Sheet), locked, and enforces `CN_PIN_LIMIT` (currently 3) inside the lock so two parallel pin requests can't both squeak past the cap. Pin state lives in `subformData.pinned` (boolean) + `subformData.pinnedAt` (timestamp). Writes a `CallNotePin` audit row | Subsystem: Server
+INV-51 | `getMyPinnedCallNotes` returns the caller's pinned notes across ALL dates (no date filter), sorted newest-pinned first. The Log view's pinned tray spans the rep's entire pin history — a complex case pinned last week is still visible today | Subsystem: Server
+INV-52 | `managerGetShiftStats(date)` is manager-gated, read-only across all enrolled reps' Sheets. Per-rep aggregates: `totalNotes`, `flagCounts {action, training, review}`, `resolvedCount`, `emailsSent`, `medianCompletionSeconds`, `shiftSpan {first, last}`. Median (not mean) is used for completion seconds; outliers > 30 min are stored as null in `subformData.completionSeconds` upstream so they never enter the dataset. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
+INV-53 | Voice-to-text dictation is opt-in via `CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED` (default false). When true, `cnVoiceMicMarkup_` renders mic buttons next to Issue and Resolution; clicking uses `webkitSpeechRecognition`, which in Chrome routes audio to Google's speech-to-text service — NOT covered by a typical Google Workspace BAA. The flag must stay false until the operator confirms the org's HIPAA stance. When false, the UI never renders the mic (no DOM surface for accidents) | Subsystem: Server + Client (Call Notes views)
+INV-54 | Form-completion timer captures duration from the first input event in the active form to the submit. Start time persists to `localStorage['umsCallNotesFormStartedAt']` so a mid-form reload doesn't reset the clock. On submit, `cnFormTimerEndAndGet_` returns elapsed seconds (capped at 30 min as null — rep walked away mid-note). The value rides into the server payload as `payload.subformData.completionSeconds`; the manager Stats tab medians over notes that captured one | Subsystem: Client (Call Notes views)
+INV-55 | Sticky form auto-saves the active draft to `localStorage['umsCallNotesActiveFormDraft']` on every input (debounced 400ms via `cnPersistActiveFormDraft_`). On Log view enter, `cnRestoreActiveFormDraft_` restores values + flag + training-question if a draft is present, with a "Draft restored" toast. Successful submit and explicit Clear Note both clear the draft via `cnClearStickyFormDraft_` — any new form-clearing path must call it too or the draft will resurrect on next load | Subsystem: Client (Call Notes views)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -795,6 +955,98 @@ S30 | Trigger handlers reject non-manager callers via google.script.run | Subsys
       and the same for `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`
     - Repeat as a manager, expecting them to run normally (or no-op for empty queues)
   Expected: Each non-manager call throws "manager access required" via `assertManagerCaller_`. No emails are sent, no Sheets are created, no roster work is done. Manager calls proceed as the time-based triggers do.
+
+S31 | Optimistic submit + failure revert | Subsystem: Client (Call Notes views), Server
+  Steps:
+    - Open Chrome DevTools → Network → throttle to "Slow 3G"
+    - As an enrolled rep, fill out a note and press Ctrl/⌘+Enter
+    - Observe the rolling stack DURING the in-flight request
+    - Wait for the server response
+    - Repeat with the spreadsheet ID temporarily wrong (force an RPC failure)
+  Expected: The new card appears in the stack IMMEDIATELY with reduced opacity + a "Saving" badge in place of action buttons. Form is cleared at the same time; clipboard already holds the formatted note (paste works before the network returns). Once the server confirms, the card swaps to its confirmed state with full action buttons. On forced failure, the pending card disappears, the form values are restored from the snapshot, and a "Save failed — note restored" toast appears. AuditLog has `CallNoteCreate` only on success.
+
+S32 | Sticky form auto-save + restore | Subsystem: Client (Call Notes views)
+  Steps:
+    - As an enrolled rep, partially fill the Call Notes form (e.g., Callback + Caller + Issue) but do NOT submit
+    - Close the browser tab (or refresh the page)
+    - Re-open the web app and navigate to Call Notes
+  Expected: A "Draft restored" toast appears on Log view enter and the form is pre-populated with the prior values, the prior flag selection, and the training question (if training was selected). The completion timer continues from the original start time (so a refresh doesn't reset the clock). Pressing Clear Note clears the draft from localStorage; the next view enter starts fresh.
+
+S33 | Phone-number auto-format on Callback field | Subsystem: Client (Call Notes views)
+  Steps:
+    - Open Call Notes → New Note → focus the Callback field
+    - Type `5551234567` digit by digit
+    - Erase and type `15551234567`
+    - Erase and type `5551234567 x12345`
+  Expected: As digits arrive the field shows `(5`, `(55`, `(555`, `(555) 1`, … through `(555) 123-4567`. 11-digit number starting with 1 → `+1 (555) 123-4567`. 11+ digit non-1-leading number → extension format `(555) 123-4567 x12345`. Cursor stays at end (forward typing isn't fought).
+
+S34 | Save & Compose combo button | Subsystem: Client (Call Notes views), Server
+  Steps:
+    - Fill a Call Notes form completely
+    - Click "Save & Compose" (the secondary submit button, not "Save & Copy")
+    - Observe the rolling stack, the clipboard, and the compose modal
+  Expected: Same optimistic behavior as Save & Copy (card appears immediately, clipboard set, form cleared). Once the server confirms with a real noteId, the email composer opens automatically for that note. The composer's noteId matches the server-confirmed one (not the temp `pending_*`). Closing the composer leaves the saved note in the stack as normal.
+
+S35 | Manager Q&A reply on training-flagged notes | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - As a rep, submit a note with the Training flag and a question typed in
+    - As a manager, open Call Notes → Team Notes → Per-Rep View → pick the rep + the right date
+    - Type a reply in the inline reply input on that card, click Send
+    - As the rep, navigate to History (or Log if today) and look at the same note
+    - As the manager, click the Clear (x) button on the reply
+  Expected: Reply input shows the existing reply (or empty placeholder if none). After Send, the per-rep view refreshes with a green-check answer line under the question. Rep's card shows the same answer line. Weekly training digest emails render `Q:` + `A:` lines for the same note. AuditLog has a `CallNoteTrainingReply` row with the manager's email as actor. Clearing the reply removes the answer line; AuditLog has a second `CallNoteTrainingReply` row noting `reply cleared`. Attempting `setCallNoteTrainingReply` on a non-training-flagged note returns "Only training-flagged notes can carry a reply."
+
+S36 | Personal pin — toggle, 3-cap, tray, dedupe | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - As an enrolled rep with several notes, click the bookmark icon on three different cards (across the today / history mix)
+    - Confirm the pinned tray appears above the rolling stack with "Pinned · 3"
+    - Try to pin a 4th note
+    - Open History (a different date) — is the pinned-from-today note still in the tray?
+    - Unpin one; pin a different one
+    - Delete a currently-pinned note from the Log view
+  Expected: Each pin triggers an optimistic tray update (card moves up immediately, before server response); on failure the tray reverts. The 4th pin returns "You already have 3 pinned notes (the max). Unpin one before pinning another." Pinned-from-today does NOT also appear in the rolling stack (cnRenderStack_ dedupes by noteId). The pinned tray spans all dates so a pin from another day stays visible. Deleting a pinned note removes it from both the tray cache and the audit log shows `CallNoteDelete` (not `CallNotePin`).
+
+S37 | End-of-shift Stats tab with median completion time | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - As a manager, open Call Notes → Team Notes → Stats tab
+    - Confirm the default date is today (in manager tz)
+    - Inspect the per-rep cards
+    - Pick a prior date that had activity
+    - Submit a note as a rep (with optimistic UI tracking completion time), then re-open Stats for today
+  Expected: One card per enrolled rep. Each shows total notes, flag breakdown (action/training/review), resolved count, emails sent, median note completion time, shift span. Median is in `Xm Ys` format; outliers > 30 min are excluded from the median (stored as null upstream). Reps with no `completionSeconds` data (notes filed before the timer was instrumented) show "no data yet" for median. Stats refresh on date-picker change.
+
+S38 | Voice-to-text dictation (manual, behind flag) | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - In Apps Script editor, set `CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED = true` and redeploy
+    - As an enrolled rep using Chrome, open Call Notes
+    - Notice the mic icon next to the Issue and Resolution labels
+    - Click the Issue mic → grant browser mic permission → speak a short sentence
+    - Click the mic again to stop early (or pause speaking and let it auto-stop)
+    - Disable the flag, redeploy, reload
+  Expected: With the flag on, mic icons appear; clicking starts speech recognition (browser-handled), transcription appears at the cursor with a leading space if needed; mic icon pulses red while listening; clicking again stops. With the flag off (default), no mic icons render anywhere. Reps on non-Chrome browsers (Firefox) never see the mic because `webkitSpeechRecognition` isn't defined.
+
+S39 | Combined Clock+Timesheet view behavior | Subsystem: Client (Time Clock views)
+  Steps:
+    - Open Time Clock → Clock tab (default landing)
+    - Verify the clock UI shows on top and a "Your Timesheet" divider followed by the full timesheet below
+    - Click Clock In / Lunch Out / etc.
+    - Click Previous / Next on the timesheet section
+    - Toggle Pay Period vs Month view (if biweekly)
+  Expected: Punch interactions re-render only `#clk-section` (timesheet below stays intact). Timesheet navigation re-renders only `#clk-ts-section` (clock above stays intact). The timesheet block omits its own breadcrumb / h1 (the tab bar already says "Clock"). Compact-mode pop-out renders both stacked vertically without horizontal overflow.
+
+S40 | Multi-line auto-copy format + N/A defaulting on Transferred To | Subsystem: Client (Call Notes views), Server
+  Steps:
+    - Submit a note with Transferred To LEFT BLANK
+    - Open a text editor and paste from clipboard
+    - Open the call-note email composer for the same note and send (preview will be enough — don't actually email)
+  Expected: Clipboard contents are multi-line labeled:
+    Callback Number: ...
+    Caller Name: ...
+    Relationship: ...
+    Issue: ...
+    Transferred To: N/A
+    Resolution: ...
+  Empty Transferred To renders as literal `N/A` in both the paste and the email body's Call Details table. AUTO_COPY_FORMAT is overridable in CONFIG; changing it requires a redeploy but no code change.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.

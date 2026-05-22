@@ -17,10 +17,12 @@ Script project synced via [clasp](https://github.com/google/clasp).
     types (action / training / review) with EOD reminders for
     unresolved action flags and weekly manager digests.
 
-  Adding a new module: append an entry to `TOOLS` in
-  `script_core.html`, drop a partial in `web-app/<tool>/script_*.html`,
-  `include()` it from `index.html`, and add server endpoints to
-  `Code.js` alongside the existing ones.
+  Adding a new tool: append a new entry to `TOOLS` (with its tabs)
+  in `script_core.html`, drop tab partials in
+  `web-app/<tool>/script_*.html`, `include()` them from
+  `index.html`, and add server endpoints to `Code.js` alongside the
+  existing ones. The sidebar shows one button per tool; sub-navigation
+  is a horizontal tab bar above the view area.
 - **call-notes/** — Legacy Workspace Add-on scaffold; superseded by
   the Call Notes module inside `web-app/`. Kept on disk for reference
   during the transition. The Add-on path was abandoned because admin
