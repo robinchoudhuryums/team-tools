@@ -1526,6 +1526,58 @@
   /* Hide the legacy app-bar in compact mode; views use .compact-header instead */
   :root[data-compact="1"] .app-bar { display: none; }
 
+  /* ─── COMPACT-MODE TUNING FOR TIME CLOCK VIEWS ───────────────────
+     Existing Time Clock views are width-tuned for desktop + mobile-540
+     breakpoints; in the ~360–440px compact pop-out, we also want to:
+     ─ shrink hero-clock typography one more notch
+     ─ stack the 2-col actions grid to single column when very narrow
+     ─ collapse PTO rings to inline 2-col but smaller
+     ─ collapse manager dashboard's 4-col metric grid to 2-col
+     ─ make modals near-full-window so they fit
+     The selectors stack with [data-compact] so they only fire in the
+     pop-out, leaving normal mobile-540 untouched.
+     ──────────────────────────────────────────────────────────────── */
+  :root[data-compact="1"] .view-title    { font-size: 20px; margin-bottom: 2px; }
+  :root[data-compact="1"] .view-subtitle { font-size: 12px; margin-bottom: 16px; }
+  :root[data-compact="1"] .view-title-row { margin-bottom: 14px; }
+  :root[data-compact="1"] .card    { padding: 14px 16px; margin-bottom: 12px; }
+  :root[data-compact="1"] .hero-clock { padding: 18px 18px 16px; margin-bottom: 12px; }
+  :root[data-compact="1"] .hero-clock-time { font-size: 36px; }
+  :root[data-compact="1"] .hero-clock-time .hc-ampm { font-size: 14px; }
+  :root[data-compact="1"] .hero-clock-datestr { font-size: 14px; }
+  :root[data-compact="1"] .metric-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  :root[data-compact="1"] .metric-value { font-size: 22px; }
+  :root[data-compact="1"] .pto-rings { grid-template-columns: 1fr 1fr; gap: 12px; }
+  :root[data-compact="1"] .pto-svg { width: 80px; height: 80px; }
+  :root[data-compact="1"] .actions-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  :root[data-compact="1"] .action-btn { padding: 12px 8px; font-size: 12px; }
+  :root[data-compact="1"] .action-btn .be svg { width: 18px; height: 18px; }
+  :root[data-compact="1"] .modal {
+    max-width: 100%;
+    padding: 18px 18px;
+    border-radius: var(--radius);
+  }
+  :root[data-compact="1"] .overlay { padding: 10px; }
+  :root[data-compact="1"] .field-row { grid-template-columns: 1fr; gap: 8px; }
+  :root[data-compact="1"] .preset-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  :root[data-compact="1"] .emp-grid { grid-template-columns: repeat(2, 1fr); }
+  :root[data-compact="1"] .cal-grid { gap: 2px; }
+  :root[data-compact="1"] .ts-summary { grid-template-columns: 1fr; gap: 6px; }
+  :root[data-compact="1"] .leave-balance-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  :root[data-compact="1"] .timeoff-layout { grid-template-columns: 1fr; }
+  /* Make audit timestamps wrap below the body in compact mode */
+  :root[data-compact="1"] .audit-row { flex-wrap: wrap; }
+  :root[data-compact="1"] .audit-ts {
+    min-width: 100%;
+    margin-bottom: 4px;
+  }
+  /* Manage dashboard rows — let the live-status name+pill stack */
+  :root[data-compact="1"] .mgr-emp-row,
+  :root[data-compact="1"] .rp-row { flex-wrap: wrap; }
+
   /* ─── RESPONSIVE ─────────────────────────────────────────────── */
   @media (min-width: 1024px) {
     .mobile-header, .mobile-nav { display: none !important; }
