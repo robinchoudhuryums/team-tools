@@ -1864,7 +1864,7 @@ function cnTogglePinned_(noteId) {
   if (note._flagInFlight) return;
   note._flagInFlight = true;
   const wasPinned = !!(note.subformData && note.subformData.pinned);
-  // Optimistic mutate
+  var prevPinnedAt = (note.subformData && note.subformData.pinnedAt) || null;
   note.subformData = note.subformData || {};
   note.subformData.pinned = !wasPinned;
   if (!wasPinned) note.subformData.pinnedAt = new Date().toISOString();
@@ -1883,7 +1883,7 @@ function cnTogglePinned_(noteId) {
       note._flagInFlight = false;
       if (!res.success) {
         note.subformData.pinned = wasPinned;
-        if (wasPinned) note.subformData.pinnedAt = (note.subformData.pinnedAt || new Date().toISOString());
+        if (prevPinnedAt) note.subformData.pinnedAt = prevPinnedAt;
         else delete note.subformData.pinnedAt;
         cnReloadPinnedTray_();
         cnRenderStack_();
@@ -1896,7 +1896,7 @@ function cnTogglePinned_(noteId) {
     .withFailureHandler(function (err) {
       note._flagInFlight = false;
       note.subformData.pinned = wasPinned;
-      if (wasPinned) note.subformData.pinnedAt = (note.subformData.pinnedAt || new Date().toISOString());
+      if (prevPinnedAt) note.subformData.pinnedAt = prevPinnedAt;
       else delete note.subformData.pinnedAt;
       cnReloadPinnedTray_();
       cnRenderStack_();
@@ -3469,4 +3469,128 @@ function cnReplaceNoteInState_(updated) {
       .exportCallNotesRange(start, end);
   });
 })();
+
+// ── Admin view (manager-only) ─────────────────────────────────────────
+
+function enterCallNotesAdminView(area) {
+  var compactHeader = COMPACT_MODE ? cnCompactHeader_('Admin', 'settings') : '';
+  area.innerHTML =
+    compactHeader +
+    (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'Edit department email mappings and state tax rates. Changes take effect immediately (no redeploy needed).')) +
+    '<div id="cn-admin-body" style="max-width:640px"><div class="spinner" style="margin:24px auto"></div></div>';
+  google.script.run
+    .withSuccessHandler(function (cfg) {
+      if (currentView !== 'callNotesAdmin') return;
+      if (cfg.error) { area.innerHTML = '<div class="no-data">' + esc(cfg.error) + '</div>'; return; }
+      cnRenderAdminBody_(cfg);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== 'callNotesAdmin') return;
+      area.innerHTML = '<div class="no-data">' + esc(err.message || 'Failed to load config') + '</div>';
+    })
+    .getAdminConfig();
+}
+
+function cnRenderAdminBody_(cfg) {
+  var body = document.getElementById('cn-admin-body');
+  if (!body) return;
+
+  var deptRows = Object.keys(cfg.departmentEmails).map(function (dept) {
+    return '<div class="field-row" style="gap:8px;margin-bottom:6px">' +
+      '<div class="field" style="flex:1"><input type="text" class="cn-admin-dept-name" value="' + esc(dept) + '" placeholder="Department name"></div>' +
+      '<div class="field" style="flex:1.5"><input type="email" class="cn-admin-dept-email" value="' + esc(cfg.departmentEmails[dept]) + '" placeholder="email@example.com"></div>' +
+      '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.field-row\').remove()">' + icon('x', 14) + '</button>' +
+      '</div>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="day-section-label" style="margin-bottom:8px">Department Email Mappings</div>' +
+    '<div id="cn-admin-dept-list">' + deptRows + '</div>' +
+    '<div style="margin:8px 0 20px"><button class="refresh-btn" id="cn-admin-add-dept">' + icon('plus', 12) + ' Add Department</button></div>' +
+    '<div class="modal-footer" style="justify-content:flex-start;padding:0;border:none;margin-bottom:24px">' +
+      '<button class="btn-modal-ok" id="cn-admin-save-depts">Save Departments</button>' +
+    '</div>' +
+
+    '<div class="day-section-label" style="margin-bottom:8px">State Tax Rates</div>' +
+    '<div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase">' +
+      'Rate is a decimal (e.g. 0.05 = 5%). Used for OOP tax calculations.' +
+    '</div>' +
+    '<div id="cn-admin-rate-list" style="max-height:320px;overflow-y:auto">' +
+      cnRenderRateRows_(cfg.stateTaxRates) +
+    '</div>' +
+    '<div class="modal-footer" style="justify-content:flex-start;padding:0;border:none;margin-top:12px">' +
+      '<button class="btn-modal-ok" id="cn-admin-save-rates">Save Tax Rates</button>' +
+    '</div>';
+
+  document.getElementById('cn-admin-add-dept').addEventListener('click', function () {
+    var list = document.getElementById('cn-admin-dept-list');
+    var row = document.createElement('div');
+    row.className = 'field-row';
+    row.style.cssText = 'gap:8px;margin-bottom:6px';
+    row.innerHTML =
+      '<div class="field" style="flex:1"><input type="text" class="cn-admin-dept-name" placeholder="Department name"></div>' +
+      '<div class="field" style="flex:1.5"><input type="email" class="cn-admin-dept-email" placeholder="email@example.com"></div>' +
+      '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.field-row\').remove()">' + icon('x', 14) + '</button>';
+    list.appendChild(row);
+  });
+
+  document.getElementById('cn-admin-save-depts').addEventListener('click', function () {
+    var btn = this;
+    var names = document.querySelectorAll('.cn-admin-dept-name');
+    var emails = document.querySelectorAll('.cn-admin-dept-email');
+    var map = {};
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i].value.trim(), e = emails[i].value.trim();
+      if (!n || !e) continue;
+      map[n] = e;
+    }
+    if (Object.keys(map).length === 0) { showToast('Add at least one department', 'toast-warn'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save Departments';
+        if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
+        showToast('Departments saved', 'toast-success');
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save Departments';
+        showToast(err.message || 'Save failed', 'toast-error');
+      })
+      .saveDepartmentEmails(map);
+  });
+
+  document.getElementById('cn-admin-save-rates').addEventListener('click', function () {
+    var btn = this;
+    var nameEls = document.querySelectorAll('.cn-admin-rate-state');
+    var rateEls = document.querySelectorAll('.cn-admin-rate-value');
+    var map = {};
+    for (var i = 0; i < nameEls.length; i++) {
+      var st = nameEls[i].textContent.trim();
+      var rv = rateEls[i].value.trim();
+      if (!st || rv === '') continue;
+      map[st] = parseFloat(rv);
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save Tax Rates';
+        if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
+        showToast('Tax rates saved', 'toast-success');
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save Tax Rates';
+        showToast(err.message || 'Save failed', 'toast-error');
+      })
+      .saveStateTaxRates(map);
+  });
+}
+
+function cnRenderRateRows_(rates) {
+  return Object.keys(rates).sort().map(function (st) {
+    return '<div class="field-row" style="gap:8px;margin-bottom:4px;align-items:center">' +
+      '<span class="cn-admin-rate-state" style="flex:1;font-size:13px">' + esc(st) + '</span>' +
+      '<div class="field" style="flex:0 0 80px;margin:0"><input type="number" step="0.001" min="0" max="1" class="cn-admin-rate-value" value="' + rates[st] + '" style="text-align:right"></div>' +
+      '</div>';
+  }).join('');
+}
 </script>

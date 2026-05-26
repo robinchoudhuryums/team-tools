@@ -1459,10 +1459,10 @@ function invalidateCnAmbientCache_(empId) {
  *  suggestion map (for the dynamic update-type datalist). */
 function getCallNotesDepartments() {
   return {
-    departments: Object.keys(CONFIG.CALL_NOTES.DEPARTMENT_EMAILS).concat(['Other']),
+    departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
     suggestionsByDept: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT,
     defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
-    stateTaxRates: CONFIG.CALL_NOTES.STATE_TAX_RATES,
+    stateTaxRates: getStateTaxRates_(),
     stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
     ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
     voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
@@ -1721,6 +1721,51 @@ function managerGetUnresolvedActionCount() {
     }
     return { count: total };
   } catch (err) { return { error: err.message }; }
+}
+
+function getAdminConfig() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    return {
+      departmentEmails: getDepartmentEmails_(),
+      stateTaxRates: getStateTaxRates_(),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+function saveDepartmentEmails(deptJson) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!deptJson || typeof deptJson !== 'object') return { success: false, error: 'Invalid department map.' };
+    var keys = Object.keys(deptJson);
+    for (var i = 0; i < keys.length; i++) {
+      var email = String(deptJson[keys[i]] || '').trim();
+      if (!email || email.indexOf('@') < 1) return { success: false, error: 'Invalid email for ' + keys[i] + ': ' + email };
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_DEPARTMENT_EMAILS', JSON.stringify(deptJson));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated department emails (' + keys.length + ' depts)', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+function saveStateTaxRates(ratesJson) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!ratesJson || typeof ratesJson !== 'object') return { success: false, error: 'Invalid rates map.' };
+    var keys = Object.keys(ratesJson);
+    for (var i = 0; i < keys.length; i++) {
+      var rate = parseFloat(ratesJson[keys[i]]);
+      if (isNaN(rate) || rate < 0 || rate > 1) return { success: false, error: 'Invalid rate for ' + keys[i] + ': must be 0–1.' };
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_STATE_TAX_RATES', JSON.stringify(ratesJson));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated state tax rates (' + keys.length + ' states)', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
 }
 
 /** Bulk-export every enrolled rep's call notes in a date range to a new
@@ -2250,7 +2295,7 @@ function validateEmailSelections_(selections) {
 }
 
 function resolveEmailRecipients_(selections) {
-  const map = CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
+  const map = getDepartmentEmails_();
   const out = [];
   for (let i = 0; i < selections.departments.length; i++) {
     const dept = selections.departments[i];
@@ -3491,6 +3536,22 @@ function getEmployeeRosterRows_() {
 
 function invalidateRosterCache_() {
   CacheService.getScriptCache().remove(ROSTER_CACHE_KEY);
+}
+
+function getDepartmentEmails_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_DEPARTMENT_EMAILS');
+  if (prop) {
+    try { return JSON.parse(prop); } catch (_) {}
+  }
+  return CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
+}
+
+function getStateTaxRates_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_STATE_TAX_RATES');
+  if (prop) {
+    try { return JSON.parse(prop); } catch (_) {}
+  }
+  return CONFIG.CALL_NOTES.STATE_TAX_RATES;
 }
 
 function getManagerEmails_() {

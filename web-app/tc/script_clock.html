@@ -259,7 +259,10 @@ function liveTimeHmsTz(tz) {
   }).format(new Date());
 }
 
-/** Client mirror of server's timeDiffSeconds_. Returns -1 if either string malformed. */
+/** Client mirror of server's timeDiffSeconds_. Returns -1 if either string
+ *  is malformed or the result wraps past midnight (punch at 23:58, now at
+ *  00:02 → negative raw diff but really 4 minutes). Midnight wrap is capped
+ *  at the undo window so a punch from yesterday doesn't look eligible. */
 function timeDiffSecondsClient(earlier, later) {
   const toSec = (t) => {
     const p = String(t).split(':');
@@ -268,7 +271,10 @@ function timeDiffSecondsClient(earlier, later) {
   };
   const a = toSec(earlier), b = toSec(later);
   if (isNaN(a) || isNaN(b)) return -1;
-  return b - a;
+  const diff = b - a;
+  if (diff >= 0) return diff;
+  const wrapped = 86400 + diff;
+  return wrapped <= SELF_UNDO_WINDOW_SECONDS ? wrapped : -1;
 }
 
 function renderActions(actions) {
