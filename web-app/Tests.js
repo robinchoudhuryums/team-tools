@@ -418,6 +418,9 @@ function _runAllTests() {
   _smokeTest('timeDiffSeconds_invalidInput',       test_timeDiffSeconds_invalidInput);
   _smokeTest('normalizeTime_passthroughString',    test_normalizeTime_passthroughString);
   _smokeTest('normalizeTime_DateObject',           test_normalizeTime_DateObject);
+  _smokeTest('normalizeTime_1899DateCoercion',     test_normalizeTime_1899DateCoercion);
+  _smokeTest('safeTimezone_validPassthrough',      test_safeTimezone_validPassthrough);
+  _smokeTest('safeTimezone_invalidFallback',       test_safeTimezone_invalidFallback);
 
   _smokeTest('holidays_2026_dates',                test_holidays_2026_dates);
   _smokeTest('holidays_independenceDay_weekendShift', test_holidays_independenceDay_weekendShift);
@@ -550,6 +553,16 @@ function _runAllTests() {
   _integrationTest('cn_setCallNotePinned_capAt3',            test_cn_setCallNotePinned_capAt3);
   _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
   _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
+
+  // ── Automation trigger gates (INV-44) ──────────────────────────────────
+  _integrationTest('triggerGate_eodDigest_nonManagerThrows',    test_triggerGate_eodDigest_nonManagerThrows);
+  _integrationTest('triggerGate_weeklyDigests_nonManagerThrows',test_triggerGate_weeklyDigests_nonManagerThrows);
+  _integrationTest('triggerGate_missedPunch_nonManagerThrows',  test_triggerGate_missedPunch_nonManagerThrows);
+  _integrationTest('triggerGate_dailyExport_nonManagerThrows',  test_triggerGate_dailyExport_nonManagerThrows);
+
+  // ── Audit row assertions ───────────────────────────────────────────────
+  _integrationTest('auditRow_recordPunchAdjustment',            test_auditRow_recordPunchAdjustment);
+  _integrationTest('auditRow_deletePunch_hasActorEmail',        test_auditRow_deletePunch_hasActorEmail);
 }
 
 
@@ -2306,4 +2319,100 @@ function test_cn_managerGetCallNotes_nonManagerRejected() {
   });
   _assertNotNull(r.error, 'Non-manager should be rejected');
   _assertContains(r.error, 'Manager access');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  NORMALTIME 1899 COERCION + SAFE TIMEZONE (smoke-safe)
+// ════════════════════════════════════════════════════════════════════════════
+
+function test_normalizeTime_1899DateCoercion() {
+  // Sheets coerces "09:30:00" into a Date with base date 1899-12-30T09:30:00.
+  // normalizeTime_ must detect the Date and re-format to HH:mm:ss.
+  const d = new Date(1899, 11, 30, 9, 30, 0);
+  const result = normalizeTime_(d);
+  _assertTrue(/^\d{2}:\d{2}:\d{2}$/.test(result),
+    'Should return HH:mm:ss for 1899 coerced Date, got "' + result + '"');
+  _assertTrue(result.indexOf('1899') < 0, 'Must not contain year string');
+}
+
+function test_safeTimezone_validPassthrough() {
+  _assertEq(safeTimezone_('Asia/Kolkata'), 'Asia/Kolkata');
+  _assertEq(safeTimezone_('America/Chicago'), 'America/Chicago');
+}
+
+function test_safeTimezone_invalidFallback() {
+  _assertEq(safeTimezone_('NotATimezone'), CONFIG.TIMEZONE, 'Invalid tz falls back to CONFIG');
+  _assertEq(safeTimezone_(''), CONFIG.TIMEZONE, 'Empty string falls back');
+  _assertEq(safeTimezone_(null), CONFIG.TIMEZONE, 'Null falls back');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  AUTOMATION TRIGGER GATES (INV-44)
+// ════════════════════════════════════════════════════════════════════════════
+
+function test_triggerGate_eodDigest_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesEodDigest(); });
+  }, 'manager access required', 'Non-manager should be rejected');
+}
+
+function test_triggerGate_weeklyDigests_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesWeeklyDigests(); });
+  }, 'manager access required');
+}
+
+function test_triggerGate_missedPunch_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendDailyMissedPunchAlerts(); });
+  }, 'manager access required');
+}
+
+function test_triggerGate_dailyExport_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { runDailyExportCheck(); });
+  }, 'manager access required');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  AUDIT ROW ASSERTIONS (INV-08)
+// ════════════════════════════════════════════════════════════════════════════
+
+function _findAuditRow(empId, actionType) {
+  const sheet = getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB);
+  if (!sheet) return null;
+  const rows = sheet.getDataRange().getValues();
+  for (var i = rows.length - 1; i >= 1; i--) {
+    if (String(rows[i][1] || '').trim() === empId &&
+        String(rows[i][2] || '').trim() === actionType) {
+      return rows[i];
+    }
+  }
+  return null;
+}
+
+function test_auditRow_recordPunchAdjustment() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '08:00', reason: 'test audit' });
+  });
+  var row = _findAuditRow(_TEST_INDIA_ID, 'ClockIn');
+  _assertNotNull(row, 'Audit row should exist for recordPunch');
+}
+
+function test_auditRow_deletePunch_hasActorEmail() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '09:00', reason: 'setup' });
+  });
+  _asUser(_TEST_MGR_EMAIL, function () {
+    deletePunch(_TEST_INDIA_ID, _TEST_DATE_RECENT, '09:00:00', 'ClockIn');
+  });
+  var row = _findAuditRow(_TEST_INDIA_ID, 'PunchDelete');
+  _assertNotNull(row, 'Audit row should exist for PunchDelete');
+  var notes = String(row[6] || '');
+  _assertContains(notes, 'removed by manager', 'Audit notes should mention manager delete');
 }

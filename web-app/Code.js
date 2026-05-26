@@ -1116,12 +1116,15 @@ function submitCallNote(payload) {
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
       `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
-    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
-    return {
-      success: true,
-      note: callNoteRowToObject_({ row, rowIndex: sheet.getLastRow() }),
-    };
+    const createdNote = callNoteRowToObject_({ row, rowIndex: sheet.getLastRow() });
+
+    if (flagType === 'training' && cleaned.subformData && cleaned.subformData.trainingQuestion) {
+      try { notifyManagerTrainingQuestion_(emp, cleaned.subformData.trainingQuestion, dateLocal); }
+      catch (_) {}
+    }
+
+    return { success: true, note: createdNote };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -1690,6 +1693,33 @@ function managerGetShiftStats(date) {
     }
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
     return { date: date, reps: reps };
+  } catch (err) { return { error: err.message }; }
+}
+
+function managerGetUnresolvedActionCount() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const roster = getEmployeeRosterRows_();
+    let total = 0;
+    for (let r = 1; r < roster.length; r++) {
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      try {
+        const sheet = getCallNotesSheet_({
+          id: String(roster[r][EMP.ID]).trim(),
+          name: String(roster[r][EMP.NAME]).trim(),
+          callNotesSheetId: String(sheetId).trim(),
+        });
+        const flagCol = sheet.getRange(2, CN.FLAG_TYPE + 1, Math.max(sheet.getLastRow() - 1, 1), 2).getValues();
+        for (let i = 0; i < flagCol.length; i++) {
+          const ft = String(flagCol[i][0] || '').trim().toLowerCase();
+          const res = String(flagCol[i][1] || '').trim().toLowerCase();
+          if (ft === 'action' && res !== 'true' && res !== 'yes' && res !== '1') total++;
+        }
+      } catch (_) {}
+    }
+    return { count: total };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -2744,7 +2774,7 @@ function sendDailyMissedPunchAlerts() {
       if (!empRows[i][EMP.EMAIL]) continue;
       let tzRaw = empRows[i][EMP.TIMEZONE];
       if (tzRaw === null || tzRaw === undefined) tzRaw = '';
-      const tz = String(tzRaw).trim() || CONFIG.TIMEZONE;
+      const tz = safeTimezone_(String(tzRaw).trim());
       const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
       const id = String(empRows[i][EMP.ID]).trim();
       employees[id] = {
@@ -2958,7 +2988,7 @@ function sendCallNotesEodDigest() {
       const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
       if (!emailAddr || !sheetId) continue;
       const tzRaw = String(roster[r][EMP.TIMEZONE] || '').trim();
-      const tz = tzRaw || CONFIG.TIMEZONE;
+      const tz = safeTimezone_(tzRaw);
       // Rep's local time-of-day in minutes
       const hh = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
       const mm = parseInt(Utilities.formatDate(now, tz, 'm'), 10);
@@ -3496,6 +3526,11 @@ function tzAbbr_(tz) { return TZ_ABBR[tz] || tz; }
 function empTz_(emp) { return (emp && emp.timezone) ? emp.timezone : CONFIG.TIMEZONE; }
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
+function safeTimezone_(tz) {
+  if (!tz) return CONFIG.TIMEZONE;
+  try { Utilities.formatDate(new Date(), tz, 'z'); return tz; }
+  catch (_) { Logger.log('Invalid timezone "' + tz + '" — falling back to ' + CONFIG.TIMEZONE); return CONFIG.TIMEZONE; }
+}
 
 function convertDateTime_(dateStr, timeStr, fromTz, toTz) {
   if (!dateStr || !timeStr) return { date: '', time: '', displayTime: '' };
@@ -3749,6 +3784,22 @@ function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reaso
       `Audit log:\nhttps://docs.google.com/spreadsheets/d/${CONFIG.ADP_SS_ID}/edit\n`;
     MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body });
   } catch (e) { console.warn('Manager alert email failed: ' + e.message); }
+}
+
+function notifyManagerTrainingQuestion_(emp, question, dateLocal) {
+  const recipients = getManagerEmails_();
+  if (recipients.length === 0) return;
+  try {
+    MailApp.sendEmail({
+      to: recipients.join(','),
+      subject: `Training Q from ${emp.name}: ${String(question).substring(0, 60)}`,
+      body:
+        `${emp.name} (${emp.id}) submitted a training-flagged call note with a question:\n\n` +
+        `Q: ${question}\n\n` +
+        `Date: ${dateLocal}\n\n` +
+        `Reply in the web app → Call Notes → Team Notes → Per-Rep View.\n`,
+    });
+  } catch (e) { console.warn('Training question notification failed: ' + e.message); }
 }
 
 function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {

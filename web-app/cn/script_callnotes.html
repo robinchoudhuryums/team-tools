@@ -834,6 +834,7 @@ function cnRenderNotesView(area) {
     </div>
   `;
   cnWireActiveForm_();
+  cnInstallCardDelegation_(area);
   cnRenderFilterBar_();
   cnRenderStack_();
   cnReloadPinnedTray_();
@@ -1606,6 +1607,28 @@ function cnRenderStack_() {
   cnUpdateNoteCounter_();
 }
 
+function cnInstallCardDelegation_(area) {
+  area.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-cn-action]');
+    if (!btn) return;
+    var card = btn.closest('[data-note-id]');
+    if (!card) return;
+    var noteId = card.dataset.noteId;
+    switch (btn.dataset.cnAction) {
+      case 'flag':        cnToggleFlag_(noteId, btn.dataset.flagKind); break;
+      case 'resolve':     cnToggleResolved_(noteId); break;
+      case 'pin':         cnTogglePinned_(noteId); break;
+      case 'copy':        cnCopyNoteAgain_(noteId); break;
+      case 'email':       cnOpenEmailComposer_(noteId); break;
+      case 'edit':        cnBeginEdit_(noteId); break;
+      case 'save-edit':   cnSaveEdit_(noteId); break;
+      case 'cancel-edit': cnCancelEdit_(noteId); break;
+      case 'delete':      cnDeleteNote_(noteId); break;
+      case 'find-trx':    cnFindPriorCallsForTrx_(btn.dataset.trx); break;
+    }
+  });
+}
+
 function cnRenderCard_(note) {
   return cnRenderCardCore_(note, /*expandable*/ true);
 }
@@ -1627,7 +1650,7 @@ function cnRenderCardCore_(note, expandable) {
             <span class="cn-card-caller" style="opacity:.65">Editing — Ctrl/⌘+Enter saves</span>
           </div>
           <div class="cn-card-actions">
-            <button class="cn-act-btn" title="Discard edits" onclick="cnCancelEdit_('${esc(note.noteId)}')">${icon('x', 14)}</button>
+            <button class="cn-act-btn" title="Discard edits" data-cn-action="cancel-edit">${icon('x', 14)}</button>
           </div>
         </div>
         <div class="cn-edit-fields">
@@ -1640,9 +1663,9 @@ function cnRenderCardCore_(note, expandable) {
           <div><textarea placeholder="Resolution" id="cnE-resolution-${esc(note.noteId)}" rows="1">${esc(note.resolution || '')}</textarea></div>
         </div>
         <div class="cn-edit-footer">
-          <button class="cn-save-btn" onclick="cnSaveEdit_('${esc(note.noteId)}')">${icon('check', 12)} Save</button>
-          <button onclick="cnCancelEdit_('${esc(note.noteId)}')">Cancel</button>
-          <button class="cn-del-btn" onclick="cnDeleteNote_('${esc(note.noteId)}')">${icon('trash', 12)} Delete</button>
+          <button class="cn-save-btn" data-cn-action="save-edit">${icon('check', 12)} Save</button>
+          <button data-cn-action="cancel-edit">Cancel</button>
+          <button class="cn-del-btn" data-cn-action="delete">${icon('trash', 12)} Delete</button>
         </div>
       </div>
     `;
@@ -1668,41 +1691,33 @@ function cnRenderCardCore_(note, expandable) {
     const lbl = kind === 'action' ? 'Flag for action'
               : kind === 'training' ? 'Flag for training'
               : 'Flag as review candidate';
-    return `<button class="${cls}" title="${lbl}" onclick="cnToggleFlag_('${esc(note.noteId)}','${kind}')">${icon(name, 14)}</button>`;
+    return `<button class="${cls}" title="${lbl}" data-cn-action="flag" data-flag-kind="${kind}">${icon(name, 14)}</button>`;
   };
 
   const emailBtn = note.emailedAt
     ? `<button class="cn-act-btn is-sent" title="Email sent at ${esc(cnFormatTimestampForCopy_(note.emailedAt))} — click to send again"
-               onclick="cnOpenEmailComposer_('${esc(note.noteId)}')">${icon('mail', 14)}</button>`
+               data-cn-action="email">${icon('mail', 14)}</button>`
     : `<button class="cn-act-btn" title="Compose email from this note"
-               onclick="cnOpenEmailComposer_('${esc(note.noteId)}')">${icon('mail', 14)}</button>`;
+               data-cn-action="email">${icon('mail', 14)}</button>`;
 
-  const copyBtn = `<button class="cn-act-btn" title="Copy formatted note to clipboard" onclick="cnCopyNoteAgain_('${esc(note.noteId)}')">${icon('copy', 14)}</button>`;
+  const copyBtn = `<button class="cn-act-btn" title="Copy formatted note to clipboard" data-cn-action="copy">${icon('copy', 14)}</button>`;
 
   const resolveBtn = (note.flagType === 'action')
     ? `<button class="cn-act-btn ${note.resolved ? 'is-on' : ''}" title="${note.resolved ? 'Unresolve' : 'Mark resolved'}"
-               onclick="cnToggleResolved_('${esc(note.noteId)}')">${icon('check', 14)}</button>`
+               data-cn-action="resolve">${icon('check', 14)}</button>`
     : '';
 
   const editBtn = expandable
-    ? `<button class="cn-act-btn" title="Edit note" onclick="cnBeginEdit_('${esc(note.noteId)}')">${icon('adjust', 14)}</button>`
+    ? `<button class="cn-act-btn" title="Edit note" data-cn-action="edit">${icon('adjust', 14)}</button>`
     : '';
 
-  // "Find prior calls for this TRX" — only shown when there's a TRX to match
-  // against. Click → jumps to Search view with exact patientAndTrx match.
-  // Uses a data-attribute so the TRX (which can contain quotes/backslashes)
-  // doesn't need JS-string-escaping inside an onclick attribute.
   const priorBtn = (note.patientAndTrx && note.patientAndTrx.trim())
-    ? `<button class="cn-act-btn" title="Find prior calls for this TRX" data-trx="${esc(note.patientAndTrx)}"
-               onclick="cnFindPriorCallsForTrx_(this.dataset.trx)">${icon('search', 14)}</button>`
+    ? `<button class="cn-act-btn" title="Find prior calls for this TRX" data-cn-action="find-trx" data-trx="${esc(note.patientAndTrx)}">${icon('search', 14)}</button>`
     : '';
 
-  // Pin / unpin — keeps a complex case visible above the rolling stack.
-  // Cap of 3 enforced server-side (UI hint surfaces via error toast).
-  // Bookmark icon (not star — star means the Review flag).
   const isPinned = !!(note.subformData && note.subformData.pinned);
   const pinBtn = `<button class="cn-act-btn ${isPinned ? 'is-on' : ''}" title="${isPinned ? 'Unpin note' : 'Pin note (keeps it visible above the stack)'}"
-                          onclick="cnTogglePinned_('${esc(note.noteId)}')">${icon('bookmark', 14)}</button>`;
+                          data-cn-action="pin">${icon('bookmark', 14)}</button>`;
 
   return `
     <div class="cn-card${flagCls}${staleCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
@@ -1810,29 +1825,28 @@ function cnDeleteNote_(noteId) {
 function cnToggleFlag_(noteId, kind) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note) return;
-  // Pending notes can't be flagged yet — server doesn't know about them
   if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
+  if (note._flagInFlight) return;
+  note._flagInFlight = true;
   const prev = { flagType: note.flagType, resolved: note.resolved };
   const next = (note.flagType === kind) ? '' : kind;
-  // Optimistic: update locally, mirror INV-40 (any transition clears Resolved)
   note.flagType = next;
   if (prev.flagType !== next) note.resolved = false;
   cnRenderStack_();
   cnRenderFilterBar_();
   google.script.run
     .withSuccessHandler(function (res) {
+      note._flagInFlight = false;
       if (!res.success) {
-        // Revert
         note.flagType = prev.flagType; note.resolved = prev.resolved;
         cnRenderStack_(); cnRenderFilterBar_();
         showToast(res.error || 'Flag failed', 'toast-error');
         return;
       }
-      // Reconcile with server's canonical state (handles edge cases like
-      // concurrent updates by a different tab — rare but possible).
       cnReplaceNoteInState_(res.note);
     })
     .withFailureHandler(function (err) {
+      note._flagInFlight = false;
       note.flagType = prev.flagType; note.resolved = prev.resolved;
       cnRenderStack_(); cnRenderFilterBar_();
       showToast('Flag failed: ' + err.message, 'toast-error');
@@ -1847,6 +1861,8 @@ function cnTogglePinned_(noteId) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note) return;
   if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
+  if (note._flagInFlight) return;
+  note._flagInFlight = true;
   const wasPinned = !!(note.subformData && note.subformData.pinned);
   // Optimistic mutate
   note.subformData = note.subformData || {};
@@ -1864,22 +1880,21 @@ function cnTogglePinned_(noteId) {
   cnRenderStack_();
   google.script.run
     .withSuccessHandler(function (res) {
+      note._flagInFlight = false;
       if (!res.success) {
-        // Revert
         note.subformData.pinned = wasPinned;
         if (wasPinned) note.subformData.pinnedAt = (note.subformData.pinnedAt || new Date().toISOString());
         else delete note.subformData.pinnedAt;
-        // Refresh pinned tray from authoritative source on failure
         cnReloadPinnedTray_();
         cnRenderStack_();
         showToast(res.error || 'Pin failed', 'toast-error');
         return;
       }
       cnReplaceNoteInState_(res.note);
-      // Keep the tray cache in sync with the server's truth too
       cnReloadPinnedTray_();
     })
     .withFailureHandler(function (err) {
+      note._flagInFlight = false;
       note.subformData.pinned = wasPinned;
       if (wasPinned) note.subformData.pinnedAt = (note.subformData.pinnedAt || new Date().toISOString());
       else delete note.subformData.pinnedAt;
@@ -1920,13 +1935,15 @@ function cnToggleResolved_(noteId) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note || note.flagType !== 'action') return;
   if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
+  if (note._flagInFlight) return;
+  note._flagInFlight = true;
   const prevResolved = note.resolved;
-  // Optimistic: flip locally
   note.resolved = !prevResolved;
   cnRenderStack_();
   cnRenderFilterBar_();
   google.script.run
     .withSuccessHandler(function (res) {
+      note._flagInFlight = false;
       if (!res.success) {
         note.resolved = prevResolved;
         cnRenderStack_(); cnRenderFilterBar_();
@@ -1936,6 +1953,7 @@ function cnToggleResolved_(noteId) {
       cnReplaceNoteInState_(res.note);
     })
     .withFailureHandler(function (err) {
+      note._flagInFlight = false;
       note.resolved = prevResolved;
       cnRenderStack_(); cnRenderFilterBar_();
       showToast('Update failed: ' + err.message, 'toast-error');
@@ -2694,6 +2712,7 @@ function cnRenderHistoryView(area) {
     </div>
     <div id="cn-history-stack"></div>
   `;
+  cnInstallCardDelegation_(area);
   cnRenderHistoryStack_();
 }
 
@@ -2745,6 +2764,7 @@ function cnRenderSearchView(area) {
     ${exactBadge ? `<div style="margin-bottom:10px">${exactBadge}</div>` : ''}
     <div id="cn-search-results"></div>
   `;
+  cnInstallCardDelegation_(area);
   cnRenderSearchResults_();
 }
 
@@ -2881,6 +2901,7 @@ function cnRenderManageView(area) {
   area.innerHTML = `
     ${compactHeader}
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Team Notes', 'Manager view: per-rep notes, training queue, review candidates.')}
+    <div id="cn-mgr-action-badge" style="margin-bottom:10px"></div>
     ${exportBtnRow}
     <div class="toolbar-tabs" role="group" aria-label="Manager queue" style="margin-bottom:14px">
       <button class="toolbar-tab active" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
@@ -2892,6 +2913,17 @@ function cnRenderManageView(area) {
   `;
   const exportBtn = document.getElementById('cn-mgr-export-btn');
   if (exportBtn) exportBtn.addEventListener('click', cnOpenExportModal_);
+  google.script.run
+    .withSuccessHandler(function (res) {
+      var el = document.getElementById('cn-mgr-action-badge');
+      if (!el || !res || res.error) return;
+      if (res.count > 0) {
+        el.innerHTML = '<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;' +
+          'background:var(--warn-soft);color:var(--warning-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">' +
+          icon('flag', 12) + ' ' + res.count + ' unresolved action flag' + (res.count === 1 ? '' : 's') + ' across all reps</div>';
+      }
+    })
+    .managerGetUnresolvedActionCount();
   cnMgrLoadQueue_('training');
 }
 
