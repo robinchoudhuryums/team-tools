@@ -225,16 +225,16 @@
     box-shadow: var(--shadow-sm);
   }
   .cn-form-clear-btn {
-    appearance: none; border: 1px solid var(--line);
+    appearance: none; border: 1px solid var(--danger-deep);
     background: transparent;
     padding: 9px 12px; border-radius: var(--radius);
     font-family: var(--ui);
     font-size: 12px; font-weight: 500;
-    color: var(--muted); cursor: pointer;
-    transition: border-color var(--t) var(--ease), color var(--t) var(--ease);
+    color: var(--danger-deep); cursor: pointer;
+    transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background var(--t) var(--ease);
   }
   .cn-form-clear-btn:hover {
-    border-color: var(--border-strong); color: var(--ink);
+    background: var(--danger-soft); border-color: var(--danger-deep); color: var(--danger-deep);
   }
 
   /* ── Filter chips bar ───────────────────────────────────────────── */
@@ -501,6 +501,19 @@
     color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
     margin-bottom: 10px;
   }
+  .cn-compose-section.sf-shipping { border-left: 3px solid var(--success-deep); padding-left: 14px; }
+  .cn-compose-section.sf-close    { border-left: 3px solid var(--danger-deep);  padding-left: 14px; }
+  .cn-compose-section.sf-resupply { border-left: 3px solid var(--success-deep); padding-left: 14px; }
+  .cn-compose-section.sf-oop      { border-left: 3px solid #e67e22;             padding-left: 14px; }
+  .cn-compose-note-ref {
+    font-size: 12px; color: var(--muted); line-height: 1.5;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--paper-2); padding: 12px 14px; margin-top: 14px;
+  }
+  .cn-compose-note-ref dt { font-weight: 600; color: var(--ink); display: inline; }
+  .cn-compose-note-ref dt::after { content: ': '; }
+  .cn-compose-note-ref dd { display: inline; margin: 0; }
+  .cn-compose-note-ref dd::after { content: '\A'; white-space: pre; }
   .cn-compose-dept-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1703,6 +1716,14 @@ function cnRenderCardCore_(note, expandable) {
   // distinct sub-line under the issue so the rep (and a manager peeking) can
   // see what's being asked at a glance. If the manager has written a reply,
   // it renders directly below the question as an answer line.
+  const detailParts = [];
+  if (note.callback) detailParts.push(esc(note.callback));
+  if (note.relationship) detailParts.push(esc(note.relationship));
+  if (note.transferredTo) detailParts.push('→ ' + esc(note.transferredTo));
+  const detailLine = detailParts.length > 0
+    ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">${detailParts.join(' · ')}</div>` : '';
+  const resolutionLine = note.resolution
+    ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${esc(note.resolution)}</div>` : '';
   let trainingQ = '';
   if (note.flagType === 'training' && note.subformData && note.subformData.trainingQuestion) {
     trainingQ = `<div class="cn-card-training-q">${icon('bulb', 11)}<span>${esc(String(note.subformData.trainingQuestion))}</span></div>`;
@@ -1750,7 +1771,9 @@ function cnRenderCardCore_(note, expandable) {
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
           <div class="cn-card-caller">${callerLine}${trxBit}</div>
+          ${detailLine}
           <div class="cn-card-issue">${esc(issue)}</div>
+          ${resolutionLine}
           ${trainingQ}
         </div>
         <div class="cn-card-actions">
@@ -2159,8 +2182,8 @@ function cnRenderComposerFormStep_() {
   const updateDatalist = updateOptions.map(function (o) { return `<option value="${esc(o)}">`; }).join('');
 
   return `
-    <div class="modal" style="max-width:560px">
-      <div class="modal-title">Compose email</div>
+    <div class="modal" style="max-width:560px;resize:both;overflow:auto" id="cnC-modal">
+      <div class="modal-title" style="cursor:move" onmousedown="cnStartDragModal_(event)">Compose email</div>
       <div class="modal-sub">
         For: <strong>${esc(c.note.caller || c.note.patientAndTrx || 'this call')}</strong> · ${esc(c.note.patientAndTrx || '')}
       </div>
@@ -2189,6 +2212,19 @@ function cnRenderComposerFormStep_() {
       </div>
 
       <div id="cnC-subforms" style="margin-top:14px"></div>
+
+      <div class="cn-compose-note-ref">
+        <div style="font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Note Reference</div>
+        <dl style="margin:0">
+          ${c.note.callback   ? '<dt>Callback</dt><dd>' + esc(c.note.callback) + '</dd>' : ''}
+          ${c.note.caller     ? '<dt>Caller</dt><dd>' + esc(c.note.caller) + '</dd>' : ''}
+          ${c.note.relationship ? '<dt>Relationship</dt><dd>' + esc(c.note.relationship) + '</dd>' : ''}
+          ${c.note.patientAndTrx ? '<dt>Patient / TRX</dt><dd>' + esc(c.note.patientAndTrx) + '</dd>' : ''}
+          ${c.note.issue      ? '<dt>Issue</dt><dd>' + esc(c.note.issue) + '</dd>' : ''}
+          ${c.note.transferredTo ? '<dt>Transferred To</dt><dd>' + esc(c.note.transferredTo) + '</dd>' : ''}
+          ${c.note.resolution ? '<dt>Resolution</dt><dd>' + esc(c.note.resolution) + '</dd>' : ''}
+        </dl>
+      </div>
 
       <div class="modal-footer">
         <button class="btn-modal-cancel" onclick="cnCloseComposerModal_()">Cancel</button>
@@ -2319,7 +2355,7 @@ function cnSubformShapeKey_(u) {
 function cnRenderShippingSubform_() {
   const sd = CN_STATE.composer.selections.shippingDetails || {};
   return `
-    <div class="cn-compose-section">
+    <div class="cn-compose-section sf-shipping">
       <div class="cn-compose-section-title">Verified Shipping</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <input type="checkbox" id="cnS-verified" ${sd.verifiedAddr ? 'checked' : ''} style="width:auto;margin:0">
@@ -2365,7 +2401,7 @@ function cnRenderShippingSubform_() {
 function cnRenderCloseSubform_() {
   const cd = CN_STATE.composer.selections.closeDetails || {};
   return `
-    <div class="cn-compose-section">
+    <div class="cn-compose-section sf-close">
       <div class="cn-compose-section-title">Close Order — Reason</div>
       <div class="field" style="margin:0">
         <input type="text" id="cnCD-reason" value="${esc(cd.reason || '')}" placeholder="Why are we closing it?">
@@ -2377,7 +2413,7 @@ function cnRenderCloseSubform_() {
 function cnRenderResupplySubform_() {
   const rd = CN_STATE.composer.selections.resupplyDetails || {};
   return `
-    <div class="cn-compose-section">
+    <div class="cn-compose-section sf-resupply">
       <div class="cn-compose-section-title">Repeat Resupply</div>
       <div class="field-row">
         <div class="field"><label>Item Category</label>
@@ -2455,7 +2491,7 @@ function cnRenderResupplySubform_() {
 function cnRenderOopSubform_() {
   const od = CN_STATE.composer.selections.oopDetails || {};
   return `
-    <div class="cn-compose-section">
+    <div class="cn-compose-section sf-oop">
       <div class="cn-compose-section-title">OOP Order Breakdown</div>
       <div class="field-row">
         <div class="field"><label>Base Cost ($)</label>
@@ -3500,6 +3536,29 @@ function cnReplaceNoteInState_(updated) {
   });
 })();
 
+function cnStartDragModal_(e) {
+  var modal = document.getElementById('cnC-modal');
+  if (!modal) return;
+  var startX = e.clientX, startY = e.clientY;
+  var rect = modal.getBoundingClientRect();
+  var origLeft = rect.left, origTop = rect.top;
+  modal.style.position = 'fixed';
+  modal.style.left = origLeft + 'px';
+  modal.style.top = origTop + 'px';
+  modal.style.margin = '0';
+  function onMove(ev) {
+    modal.style.left = (origLeft + ev.clientX - startX) + 'px';
+    modal.style.top = (origTop + ev.clientY - startY) + 'px';
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  e.preventDefault();
+}
+
 // ── Admin view (manager-only) ─────────────────────────────────────────
 
 function enterCallNotesAdminView(area) {
@@ -3534,22 +3593,23 @@ function cnRenderAdminBody_(cfg) {
   }).join('');
 
   body.innerHTML =
-    '<div class="day-section-label" style="margin-bottom:8px">Department Email Mappings</div>' +
-    '<div id="cn-admin-dept-list">' + deptRows + '</div>' +
-    '<div style="margin:8px 0 20px"><button class="refresh-btn" id="cn-admin-add-dept">' + icon('plus', 12) + ' Add Department</button></div>' +
-    '<div class="modal-footer" style="justify-content:flex-start;padding:0;border:none;margin-bottom:24px">' +
-      '<button class="btn-modal-ok" id="cn-admin-save-depts">Save Departments</button>' +
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Department Email Mappings</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Map each department name to the email address that receives call-note emails when reps select that department.</div>' +
+      '<div id="cn-admin-dept-list">' + deptRows + '</div>' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
+        '<button class="refresh-btn" id="cn-admin-add-dept">' + icon('plus', 12) + ' Add Department</button>' +
+        '<button class="btn-modal-ok" id="cn-admin-save-depts" style="margin:0">Save Departments</button>' +
+      '</div>' +
     '</div>' +
 
-    '<div class="day-section-label" style="margin-bottom:8px">State Tax Rates</div>' +
-    '<div style="margin-bottom:6px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase">' +
-      'Rate is a decimal (e.g. 0.05 = 5%). Used for OOP tax calculations.' +
-    '</div>' +
-    '<div id="cn-admin-rate-list" style="max-height:320px;overflow-y:auto">' +
-      cnRenderRateRows_(cfg.stateTaxRates) +
-    '</div>' +
-    '<div class="modal-footer" style="justify-content:flex-start;padding:0;border:none;margin-top:12px">' +
-      '<button class="btn-modal-ok" id="cn-admin-save-rates">Save Tax Rates</button>' +
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' State Tax Rates</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Decimal rates used for OOP tax calculations (e.g. 0.05 = 5%). Changes take effect immediately.</div>' +
+      '<div id="cn-admin-rate-list" style="max-height:320px;overflow-y:auto;margin-bottom:10px">' +
+        cnRenderRateRows_(cfg.stateTaxRates) +
+      '</div>' +
+      '<button class="btn-modal-ok" id="cn-admin-save-rates" style="margin:0">Save Tax Rates</button>' +
     '</div>';
 
   document.getElementById('cn-admin-add-dept').addEventListener('click', function () {
