@@ -359,6 +359,11 @@
   .cn-card-actions .cn-act-btn.action.is-on   { background: var(--warn-soft);   color: var(--warning-deep); }
   .cn-card-actions .cn-act-btn.training.is-on { background: var(--accent-soft); color: var(--info-deep);    }
   .cn-card-actions .cn-act-btn.review.is-on   { background: var(--good-soft);   color: var(--success-deep); }
+  .cn-more-menu {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: var(--paper-card); border: 1px solid var(--line); border-radius: 6px;
+    padding: 2px; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
 
   /* Expanded edit-in-place inside a card */
   .cn-card.editing { padding: 14px; }
@@ -1608,6 +1613,8 @@ function cnRenderStack_() {
 }
 
 function cnInstallCardDelegation_(area) {
+  if (area._cnDelegationInstalled) return;
+  area._cnDelegationInstalled = true;
   area.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-cn-action]');
     if (!btn) return;
@@ -1625,8 +1632,26 @@ function cnInstallCardDelegation_(area) {
       case 'cancel-edit': cnCancelEdit_(noteId); break;
       case 'delete':      cnDeleteNote_(noteId); break;
       case 'find-trx':    cnFindPriorCallsForTrx_(btn.dataset.trx); break;
+      case 'more':        cnToggleMoreMenu_(btn); break;
     }
   });
+}
+
+function cnReRenderActiveView_() {
+  if (currentView === 'callNotes') {
+    cnRenderStack_();
+  } else if (currentView === 'callNotesHistory') {
+    cnRenderHistoryStack_();
+  }
+}
+
+function cnToggleMoreMenu_(btn) {
+  var card = btn.closest('[data-note-id]');
+  if (!card) return;
+  var menu = card.querySelector('.cn-more-menu');
+  if (!menu) return;
+  var open = menu.style.display !== 'none';
+  menu.style.display = open ? 'none' : 'inline-flex';
 }
 
 function cnRenderCard_(note) {
@@ -1733,8 +1758,13 @@ function cnRenderCardCore_(note, expandable) {
             ? '<span class="cn-pending-badge" title="Saving to server"><span class="cn-pending-dot"></span>Saving</span>'
             : flagBtn('action', 'flag', note.flagType === 'action') +
               flagBtn('training', 'bulb', note.flagType === 'training') +
-              flagBtn('review', 'star', note.flagType === 'review') +
-              resolveBtn + pinBtn + priorBtn + copyBtn + emailBtn + editBtn
+              pinBtn + copyBtn + emailBtn +
+              (function () {
+                var sec = flagBtn('review', 'star', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
+                if (!sec) return '';
+                return '<button class="cn-act-btn" title="More actions" data-cn-action="more">' + icon('chevronDown', 14) + '</button>' +
+                  '<span class="cn-more-menu" style="display:none">' + sec + '</span>';
+              })()
           }
         </div>
       </div>
@@ -1753,7 +1783,7 @@ function cnCopyNoteAgain_(noteId) {
 
 function cnBeginEdit_(noteId) {
   CN_STATE.editingNoteId = noteId;
-  cnRenderStack_();
+  cnReRenderActiveView_();
   setTimeout(function () {
     const el = document.getElementById('cnE-resolution-' + noteId);
     if (el) {
@@ -1770,7 +1800,7 @@ function cnBeginEdit_(noteId) {
 
 function cnCancelEdit_(noteId) {
   CN_STATE.editingNoteId = null;
-  cnRenderStack_();
+  cnReRenderActiveView_();
 }
 
 function cnSaveEdit_(noteId) {
@@ -1786,11 +1816,9 @@ function cnSaveEdit_(noteId) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
-      CN_STATE.rollingNotes = CN_STATE.rollingNotes.map(function (n) {
-        return n.noteId === noteId ? res.note : n;
-      });
+      cnReplaceNoteInState_(res.note);
       CN_STATE.editingNoteId = null;
-      cnRenderStack_();
+      cnReRenderActiveView_();
       cnRenderFilterBar_();
       showToast('Saved', 'toast-success');
     })
@@ -1806,11 +1834,10 @@ function cnDeleteNote_(noteId) {
     .withSuccessHandler(function (res) {
       if (!res.success) { showToast(res.error || 'Delete failed', 'toast-error'); return; }
       CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== noteId; });
-      // If the deleted note was pinned, drop it from the tray cache too so
-      // the tray doesn't render a phantom card.
+      CN_STATE.historyNotes = CN_STATE.historyNotes.filter(function (n) { return n.noteId !== noteId; });
       CN_STATE.pinnedNotes = (CN_STATE.pinnedNotes || []).filter(function (n) { return n.noteId !== noteId; });
       CN_STATE.editingNoteId = null;
-      cnRenderStack_();
+      cnReRenderActiveView_();
       cnRenderFilterBar_();
       cnRenderPinnedTray_();
       cnUpdateNoteCounter_();
@@ -1832,23 +1859,24 @@ function cnToggleFlag_(noteId, kind) {
   const next = (note.flagType === kind) ? '' : kind;
   note.flagType = next;
   if (prev.flagType !== next) note.resolved = false;
-  cnRenderStack_();
+  cnReRenderActiveView_();
   cnRenderFilterBar_();
   google.script.run
     .withSuccessHandler(function (res) {
       note._flagInFlight = false;
       if (!res.success) {
         note.flagType = prev.flagType; note.resolved = prev.resolved;
-        cnRenderStack_(); cnRenderFilterBar_();
+        cnReRenderActiveView_(); cnRenderFilterBar_();
         showToast(res.error || 'Flag failed', 'toast-error');
         return;
       }
       cnReplaceNoteInState_(res.note);
+      cnReRenderActiveView_();
     })
     .withFailureHandler(function (err) {
       note._flagInFlight = false;
       note.flagType = prev.flagType; note.resolved = prev.resolved;
-      cnRenderStack_(); cnRenderFilterBar_();
+      cnReRenderActiveView_(); cnRenderFilterBar_();
       showToast('Flag failed: ' + err.message, 'toast-error');
     })
     .setCallNoteFlag(noteId, next);
@@ -1877,7 +1905,7 @@ function cnTogglePinned_(noteId) {
     CN_STATE.pinnedNotes = (CN_STATE.pinnedNotes || []).filter(function (n) { return n.noteId !== noteId; });
   }
   cnRenderPinnedTray_();
-  cnRenderStack_();
+  cnReRenderActiveView_();
   google.script.run
     .withSuccessHandler(function (res) {
       note._flagInFlight = false;
@@ -1886,12 +1914,13 @@ function cnTogglePinned_(noteId) {
         if (prevPinnedAt) note.subformData.pinnedAt = prevPinnedAt;
         else delete note.subformData.pinnedAt;
         cnReloadPinnedTray_();
-        cnRenderStack_();
+        cnReRenderActiveView_();
         showToast(res.error || 'Pin failed', 'toast-error');
         return;
       }
       cnReplaceNoteInState_(res.note);
       cnReloadPinnedTray_();
+      cnReRenderActiveView_();
     })
     .withFailureHandler(function (err) {
       note._flagInFlight = false;
@@ -1899,7 +1928,7 @@ function cnTogglePinned_(noteId) {
       if (prevPinnedAt) note.subformData.pinnedAt = prevPinnedAt;
       else delete note.subformData.pinnedAt;
       cnReloadPinnedTray_();
-      cnRenderStack_();
+      cnReRenderActiveView_();
       showToast('Pin failed: ' + err.message, 'toast-error');
     })
     .setCallNotePinned(noteId, !wasPinned);
@@ -1939,23 +1968,24 @@ function cnToggleResolved_(noteId) {
   note._flagInFlight = true;
   const prevResolved = note.resolved;
   note.resolved = !prevResolved;
-  cnRenderStack_();
+  cnReRenderActiveView_();
   cnRenderFilterBar_();
   google.script.run
     .withSuccessHandler(function (res) {
       note._flagInFlight = false;
       if (!res.success) {
         note.resolved = prevResolved;
-        cnRenderStack_(); cnRenderFilterBar_();
+        cnReRenderActiveView_(); cnRenderFilterBar_();
         showToast(res.error || 'Update failed', 'toast-error');
         return;
       }
       cnReplaceNoteInState_(res.note);
+      cnReRenderActiveView_();
     })
     .withFailureHandler(function (err) {
       note._flagInFlight = false;
       note.resolved = prevResolved;
-      cnRenderStack_(); cnRenderFilterBar_();
+      cnReRenderActiveView_(); cnRenderFilterBar_();
       showToast('Update failed: ' + err.message, 'toast-error');
     })
     .setCallNoteResolved(noteId, note.resolved);
@@ -2684,7 +2714,7 @@ function cnComposerSend_() {
         CN_STATE.rollingNotes[idx].subformData = c.selections;
       }
       cnCloseComposerModal_();
-      cnRenderStack_();
+      cnReRenderActiveView_();
       cnRenderFilterBar_();
       showToast('Email sent', 'toast-success');
     })
