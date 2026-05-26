@@ -55,12 +55,15 @@ These accumulate as audits surface real production hazards. Treat
 each entry as something that has bitten the project before — read
 this section before touching the relevant area.
 
-- **Secrets via Script Properties, not CONFIG.** `getAdpSS_()` and
-  `getManagerEmails_()` read `ADP_SS_ID` and `MANAGER_EMAILS` from
-  Script Properties first, falling back to the CONFIG placeholders.
+- **Secrets via Script Properties, not CONFIG.** `getAdpSS_()`,
+  `getManagerEmails_()`, `getDepartmentEmails_()`, and
+  `getStateTaxRates_()` read `ADP_SS_ID`, `MANAGER_EMAILS`,
+  `CN_DEPARTMENT_EMAILS`, and `CN_STATE_TAX_RATES` from Script
+  Properties first, falling back to the CONFIG placeholders.
   Set the real values once in Apps Script editor → Project Settings
-  → Script Properties; clasp pull/push leaves Script Properties
-  untouched, so the committed `Code.js` never has to be scrubbed.
+  → Script Properties (or use the Admin tab for dept/rate config);
+  clasp pull/push leaves Script Properties untouched, so the
+  committed `Code.js` never has to be scrubbed.
   Projects that haven't migrated can still set CONFIG values directly,
   but then every clasp pull will pull real values and require a scrub
   before commit.
@@ -119,8 +122,10 @@ this section before touching the relevant area.
   `managerSearchCallNotes`, `managerGetTrainingQueue`,
   `managerGetReviewCandidates`, `getEnrolledCallNotesReps`,
   `exportCallNotesRange`, `setCallNoteTrainingReply`,
-  `managerGetShiftStats`. Returning a dashboard or accepting writes
-  without this check is a privilege escalation.
+  `managerGetShiftStats`, `managerGetUnresolvedActionCount`,
+  `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`.
+  Returning a dashboard or accepting writes without this check is a
+  privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
   The four time-based trigger handlers — `sendDailyMissedPunchAlerts`,
   `runDailyExportCheck`, `sendCallNotesEodDigest`,
@@ -275,10 +280,12 @@ this section before touching the relevant area.
   with reduced opacity + a "Saving" badge in place of action buttons.
   Server failure triggers `cnRevertPendingSubmit_` (for submit) or
   restores the prior flag/resolved state (for toggles), and surfaces
-  a clear toast. Flag/resolve attempts on a pending note show
+  a clear toast. Flag/resolve/pin attempts on a pending note show
   "Just a moment — still saving" since the server has no record of
-  it yet. Edits and emails remain pessimistic — they require a
-  server-issued noteId.
+  it yet. A per-note `_flagInFlight` guard drops rapid double-clicks
+  on flag / resolve / pin toggles — the second click is silently
+  ignored while the first RPC is in flight. Edits and emails remain
+  pessimistic — they require a server-issued noteId.
 - **Form-completion timer is persisted to localStorage.**
   `cnFormTimerStartIfNeeded_` writes the start ms to
   `localStorage['umsCallNotesFormStartedAt']` on the first form
@@ -309,6 +316,33 @@ this section before touching the relevant area.
   mic leave the browser. The flag is surfaced via
   `getCallNotesDepartments` → `CN_STATE.deptConfig.voiceInputEnabled`,
   so the UI never renders the mic when the flag is false.
+- **`safeTimezone_` validates roster timezone strings.**
+  `safeTimezone_(tz)` tries `Utilities.formatDate(new Date(), tz, 'z')`
+  and falls back to `CONFIG.TIMEZONE` with a `Logger.log` warning on
+  failure. Used by `sendCallNotesEodDigest` and
+  `sendDailyMissedPunchAlerts`. New code reading timezone values from
+  the roster for trigger/automation contexts should route through this
+  helper rather than raw `|| CONFIG.TIMEZONE` fallback.
+- **Personal-sheet sync failures log to the audit trail.**
+  `writeToEmployeeSheet_` and `clearFromEmployeeSheet_` write a
+  `PersonalSheetSyncFail` audit row on failure. Monitor AuditLog for
+  this action type — it means a rep's personal Sheet is inaccessible
+  and drifting from the ADP source of truth.
+- **CN card buttons use `data-cn-action` delegation, not inline onclick.**
+  `cnInstallCardDelegation_(area)` installs a single click listener on
+  the view container that dispatches to `cnToggleFlag_`,
+  `cnToggleResolved_`, `cnTogglePinned_`, `cnCopyNoteAgain_`,
+  `cnOpenEmailComposer_`, `cnBeginEdit_`, `cnSaveEdit_`,
+  `cnCancelEdit_`, `cnDeleteNote_`, and `cnFindPriorCallsForTrx_` via
+  the button's `data-cn-action` attribute. The note's ID is read from
+  the closest `[data-note-id]` ancestor. Any new CN view that renders
+  interactive cards must call `cnInstallCardDelegation_(area)` after
+  setting innerHTML.
+- **Training questions email managers immediately.**
+  `submitCallNote` calls `notifyManagerTrainingQuestion_()` (best-
+  effort, try/catch) when `flagType=training` and
+  `subformData.trainingQuestion` is non-empty. Previously, managers
+  only saw training questions in the weekly digest.
 
 ## Key Design Decisions
 
@@ -344,7 +378,11 @@ this section before touching the relevant area.
 - **One `CONFIG` object** in `web-app/Code.js` holds all
   tunable values (windows, thresholds, automation hours, feature
   flags). Adjust behavior by editing CONFIG rather than
-  parameterizing functions.
+  parameterizing functions. Exception: `DEPARTMENT_EMAILS` and
+  `STATE_TAX_RATES` are now read through getter helpers
+  (`getDepartmentEmails_()`, `getStateTaxRates_()`) that check
+  Script Properties first, so they can be edited via the Admin tab
+  without a redeploy.
 - **Audit log is append-only**, one row per state-changing action,
   with the actor email recorded for manager operations. Dashboard
   reads are bounded to the last ~20 rows to stay within Apps
@@ -356,7 +394,9 @@ this section before touching the relevant area.
   on the production spreadsheet (pure logic only — no writes).
   `runAllTests()` writes `TEST_` rows to the live spreadsheet and
   cleans up at the end; prefer a TEST copy of `CONFIG.ADP_SS_ID`
-  for full runs.
+  for full runs. `setupTestEnvironment` provisions a test call-notes
+  Sheet for the India test employee (creates or reuses, stores the
+  ID in column L); `cleanupTestData` wipes its Notes tab.
 - **PTO bucket state lives in the Employees sheet** (columns
   I/J = AnnualLeaveBalance / SickLeaveBalance; column K =
   PtoEnabled per-employee toggle). Time-off rows in
@@ -381,13 +421,14 @@ this section before touching the relevant area.
   tz (e.g. IST/PHT) and the manager's tz (CST). All conversions
   go through `convertDateTime_`; abbreviations come from
   `TZ_ABBR` with passthrough for unknown zones.
-- **Secrets via Script Properties.** `ADP_SS_ID` and `MANAGER_EMAILS`
-  are read from Script Properties first (set in Apps Script editor →
-  Project Settings → Script Properties), falling back to the
-  placeholders in CONFIG. This lets the repo stay clean of real
-  values without manual scrubbing on every `clasp pull`, since
-  Script Properties live on the deployed project and are never
-  touched by clasp.
+- **Secrets via Script Properties.** `ADP_SS_ID`, `MANAGER_EMAILS`,
+  `CN_DEPARTMENT_EMAILS`, and `CN_STATE_TAX_RATES` are read from
+  Script Properties first (set in Apps Script editor → Project
+  Settings → Script Properties, or via the Admin tab for the latter
+  two), falling back to the placeholders in CONFIG. This lets the
+  repo stay clean of real values without manual scrubbing on every
+  `clasp pull`, since Script Properties live on the deployed project
+  and are never touched by clasp.
 - **Web app runs as the deployer, restricted to the domain.**
   `web-app/appsscript.json` declares `webapp.executeAs:
   "USER_DEPLOYING"` and `webapp.access: "DOMAIN"`. The deployer's
@@ -570,6 +611,25 @@ this section before touching the relevant area.
   about that constant for the maintenance rule. Email-client
   compatibility is preserved by inlining the hex (no CSS variables;
   email clients strip `<style>` blocks).
+- **Department emails and state tax rates are editable via the Admin
+  tab.** Call Notes → Admin (manager-only) reads the current config
+  from `getDepartmentEmails_()` / `getStateTaxRates_()` and writes
+  changes to Script Properties (`CN_DEPARTMENT_EMAILS`,
+  `CN_STATE_TAX_RATES`) via `saveDepartmentEmails` /
+  `saveStateTaxRates`. Both save endpoints are manager-gated and
+  write an `AdminConfigChange` audit row. Changes take effect
+  immediately — no redeploy needed. CONFIG values in `Code.js` serve
+  as the fallback when no Script Property is set.
+- **Stale-flag badge on the manager CN landing.**
+  `managerGetUnresolvedActionCount` scans the flag + resolved columns
+  (2 cols only, not full rows) across all enrolled reps' Sheets and
+  returns `{ count }`. The Team Notes view renders the count as a
+  badge on page load.
+- **Client-side undo window handles midnight wrap.**
+  `timeDiffSecondsClient` computes `86400 + diff` when the raw diff
+  is negative (punch at 23:58, now at 00:02), capping at
+  `SELF_UNDO_WINDOW_SECONDS` so yesterday's punches don't falsely
+  appear eligible. The server re-validates independently.
 
 ## Operator State Checklist
 
@@ -618,11 +678,16 @@ manually for a fresh deploy or environment:
   CallNotesSheetId column landed. After deploying, run `clearCaches_()`
   once from the Apps Script editor to flush any stale `_v4` cache
   entries (or wait 5 min for natural TTL expiry).
-- **Call-notes department list + state tax rates** live in
-  `CONFIG.CALL_NOTES.DEPARTMENT_EMAILS` and
-  `CONFIG.CALL_NOTES.STATE_TAX_RATES` (resp. `STATE_ABBR_TO_NAME`).
-  Adding a new department or rate: edit `web-app/Code.js`, push,
-  cut a new deployment — there is no admin UI for these.
+- **Call-notes department list + state tax rates** are read by
+  `getDepartmentEmails_()` and `getStateTaxRates_()`, which check
+  Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`)
+  first, then fall back to `CONFIG.CALL_NOTES.DEPARTMENT_EMAILS` /
+  `STATE_TAX_RATES`. Adding or changing a department or rate: use the
+  **Admin tab** in Call Notes (manager-only), which writes to Script
+  Properties and takes effect immediately. Alternatively, set the
+  Script Properties directly or edit CONFIG and redeploy.
+  `STATE_ABBR_TO_NAME` remains CONFIG-only (no admin UI — rarely
+  changes).
 - **Call-notes EOD + weekly digest knobs** are
   `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17),
   `EOD_WARNING_WINDOW_MINUTES` (default 30), and the
@@ -684,7 +749,7 @@ INV-12 | `tzAbbr_` passes unknown timezone strings through unchanged; it never t
 INV-13 | `getManagerDashboard` reads the audit sheet via a bounded range (last ~20 rows), never the full sheet | Subsystem: Server
 INV-14 | Email sends (`notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts`, `sendAutomatedExport_`) are wrapped in try/catch and never block the API result | Subsystem: Server
 INV-15 | Automation triggers can only be installed by emails in `MANAGER_EMAILS` (Script Properties or CONFIG, via `getManagerEmails_()`); `installAutomationTriggers` throws otherwise | Subsystem: Server
-INV-16 | Empty timezone strings fall back to `CONFIG.TIMEZONE`; empty leave-balance cells parse as 0 | Subsystem: Server
+INV-16 | Empty timezone strings fall back to `CONFIG.TIMEZONE`; empty leave-balance cells parse as 0. Trigger handlers route roster timezone values through `safeTimezone_()`, which validates via `Utilities.formatDate` and logs invalid values before falling back | Subsystem: Server
 INV-17 | `getLeaveDeduction_` is case-insensitive and trims whitespace; unknown types default to `{ bucket: 'annual', days: 1.0 }`; `'Unpaid Leave'` returns `{ bucket: null, days: 0 }` | Subsystem: Server
 INV-18 | Bi-weekly period boundaries are computed from the FIRST `'biweekly'` anchor row in the Employees sheet via the anchor-floor formula in `getCurrentBiweeklyRange_` | Subsystem: Server
 INV-19 | US holiday observance shift: Saturday → previous Friday, Sunday → following Monday (handled by `fixedHoliday_`) | Subsystem: Server
@@ -699,9 +764,9 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply) carry the manager's email as actor via the actorEmail parameter | Subsystem: Server
-INV-33 | `submitCallNote` does NOT send any email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit) | Subsystem: Server
+INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
 INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configured" when `emp.callNotesSheetId` is missing — call-notes endpoints surface this as the enrollment-missing splash in the client; no auto-provision path exists | Subsystem: Server
 INV-36 | Call-note email sends (`emailFromCallNote`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) are wrapped in try/catch and never block the API result (INV-14 generalized) | Subsystem: Server
@@ -724,6 +789,10 @@ INV-52 | `managerGetShiftStats(date)` is manager-gated, read-only across all enr
 INV-53 | Voice-to-text dictation is opt-in via `CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED` (default false). When true, `cnVoiceMicMarkup_` renders mic buttons next to Issue and Resolution; clicking uses `webkitSpeechRecognition`, which in Chrome routes audio to Google's speech-to-text service — NOT covered by a typical Google Workspace BAA. The flag must stay false until the operator confirms the org's HIPAA stance. When false, the UI never renders the mic (no DOM surface for accidents) | Subsystem: Server + Client (Call Notes views)
 INV-54 | Form-completion timer captures duration from the first input event in the active form to the submit. Start time persists to `localStorage['umsCallNotesFormStartedAt']` so a mid-form reload doesn't reset the clock. On submit, `cnFormTimerEndAndGet_` returns elapsed seconds (capped at 30 min as null — rep walked away mid-note). The value rides into the server payload as `payload.subformData.completionSeconds`; the manager Stats tab medians over notes that captured one | Subsystem: Client (Call Notes views)
 INV-55 | Sticky form auto-saves the active draft to `localStorage['umsCallNotesActiveFormDraft']` on every input (debounced 400ms via `cnPersistActiveFormDraft_`). On Log view enter, `cnRestoreActiveFormDraft_` restores values + flag + training-question if a draft is present, with a "Draft restored" toast. Successful submit and explicit Clear Note both clear the draft via `cnClearStickyFormDraft_` — any new form-clearing path must call it too or the draft will resurrect on next load | Subsystem: Client (Call Notes views)
+INV-56 | `cnToggleFlag_`, `cnToggleResolved_`, and `cnTogglePinned_` set `note._flagInFlight = true` before firing the RPC and clear it in both success and failure handlers. A second click while the first RPC is in flight is silently dropped. Prevents the double-click race where two concurrent RPCs capture the same snapshot and clobber each other's revert | Subsystem: Client (Call Notes views)
+INV-57 | `getAdminConfig`, `saveDepartmentEmails`, and `saveStateTaxRates` are manager-gated. Save endpoints validate input (email format for depts, rate range 0–1 for taxes) and write an `AdminConfigChange` audit row with the manager's email. Config is persisted to Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`); `getDepartmentEmails_()` / `getStateTaxRates_()` read Script Properties first, falling back to CONFIG | Subsystem: Server
+INV-58 | `submitCallNote` calls `notifyManagerTrainingQuestion_()` (best-effort, try/catch) when `flagType === 'training'` and `subformData.trainingQuestion` is non-empty. The notification is a plain-text email to `getManagerEmails_()` with the rep's name, question, and date. Failure does not block the submit response (INV-14 pattern) | Subsystem: Server
+INV-59 | `writeToEmployeeSheet_` and `clearFromEmployeeSheet_` write a `PersonalSheetSyncFail` audit row on failure (nested try/catch so the audit write itself can't throw). The audit row records the punch type and error message. Personal-sheet failures are never surfaced to the user — the ADP Sheet (source of truth) was already written successfully | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10
