@@ -1406,6 +1406,7 @@ function cnNowInTz_(tz) {
  *  it successfully lands. Used by the Save-Copy-Compose button to open
  *  the composer with the real noteId once the server has assigned one. */
 function cnSubmitActiveForm_(opts) {
+  const requestedView = currentView;
   const payload = cnReadActiveForm_();
   if (!payload.callback && !payload.caller && !payload.patientAndTrx && !payload.issue && !payload.resolution) {
     showToast('Note is empty — fill at least one field', 'toast-warn');
@@ -1479,15 +1480,15 @@ function cnSubmitActiveForm_(opts) {
         cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed — note restored');
         return;
       }
-      // Replace the pending note with the server's confirmed one (real
-      // noteId + canonical timestamp + resolved/emailedAt defaults).
       const idx = CN_STATE.rollingNotes.findIndex(function (n) { return n.noteId === pendingId; });
       if (idx >= 0) {
         CN_STATE.rollingNotes[idx] = res.note;
-        cnRenderStack_();
-        cnRenderFilterBar_();
+        if (currentView === requestedView) {
+          cnRenderStack_();
+          cnRenderFilterBar_();
+        }
       }
-      if (opts && typeof opts.onConfirmed === 'function') {
+      if (opts && typeof opts.onConfirmed === 'function' && currentView === requestedView) {
         try { opts.onConfirmed(res.note); } catch (e) {}
       }
     })

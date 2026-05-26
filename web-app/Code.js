@@ -1720,16 +1720,28 @@ function exportCallNotesRange(startDate, endDate) {
         const sheet = getCallNotesSheet_({
           id: repId, name: repName, callNotesSheetId: String(sheetId).trim()
         });
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+        const lastRow = sheet.getLastRow();
+        if (lastRow <= 1) continue;
+        const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
+        let firstMatch = -1, lastMatch = -1;
+        for (let d = 0; d < dateCol.length; d++) {
+          const dl = normalizeDate_(dateCol[d][0]);
+          if (dl >= startDate && dl <= endDate) {
+            if (firstMatch < 0) firstMatch = d;
+            lastMatch = d;
+          }
+        }
+        if (firstMatch < 0) continue;
+        const matchCount = lastMatch - firstMatch + 1;
+        const rows = sheet.getRange(firstMatch + 2, 1, matchCount, CN_HEADERS.length).getValues();
+        for (let i = 0; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: firstMatch + i + 2 });
           if (note.dateLocal < startDate || note.dateLocal > endDate) continue;
           allNotes.push({
             repId, repName, note,
           });
         }
       } catch (e) {
-        // Broken per-rep Sheet shouldn't break the cross-rep export
         console.warn('exportCallNotesRange skipped rep ' + repId + ': ' + e.message);
       }
     }
@@ -2783,14 +2795,16 @@ function sendDailyMissedPunchAlerts() {
     if (recipients.length > 0) {
       const list = missed.map(e =>
         `• ${e.name} (${e.id}) — ${e.email} — missed ${e.yesterdayStr} ${tzAbbr_(e.timezone)}`).join('\n');
-      MailApp.sendEmail({
-        to: recipients.join(','),
-        subject: `⏰ Missed Clock-Outs — ${missed.length} employee(s)`,
-        body:
-          `The following employees clocked in but did not clock out:\n\n${list}\n\n` +
-          `Each has been emailed a reminder to fix it via the Adjust feature.\n\n` +
-          `Audit log:\nhttps://docs.google.com/spreadsheets/d/${CONFIG.ADP_SS_ID}/edit`,
-      });
+      try {
+        MailApp.sendEmail({
+          to: recipients.join(','),
+          subject: `⏰ Missed Clock-Outs — ${missed.length} employee(s)`,
+          body:
+            `The following employees clocked in but did not clock out:\n\n${list}\n\n` +
+            `Each has been emailed a reminder to fix it via the Adjust feature.\n\n` +
+            `Audit log:\nhttps://docs.google.com/spreadsheets/d/${CONFIG.ADP_SS_ID}/edit`,
+        });
+      } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
     }
   } catch (err) {
     Logger.log('sendDailyMissedPunchAlerts failed: ' + err.message);
@@ -3638,7 +3652,11 @@ function writeToEmployeeSheet_(emp, date, time, dir, punchType) {
     const rowIdx = data.findIndex(r => String(r[0]).trim() === ROW_LABEL_MAP[punchType]);
     const colIdx = data[0].findIndex(h => Number(h) === dayNum);
     if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue(time);
-  } catch (e) { console.warn('writeToEmployeeSheet_ skipped: ' + e.message); }
+  } catch (e) {
+    console.warn('writeToEmployeeSheet_ skipped: ' + e.message);
+    try { writeAuditLog_(emp, 'PersonalSheetSyncFail', date, time, false, 0,
+      `writeToEmployeeSheet_ failed for ${punchType}: ${e.message}`); } catch (_) {}
+  }
 }
 
 function clearFromEmployeeSheet_(emp, date, punchType) {
@@ -3656,7 +3674,11 @@ function clearFromEmployeeSheet_(emp, date, punchType) {
     const rowIdx = data.findIndex(r => String(r[0]).trim() === ROW_LABEL_MAP[punchType]);
     const colIdx = data[0].findIndex(h => Number(h) === dayNum);
     if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue('');
-  } catch (e) { console.warn('clearFromEmployeeSheet_ skipped: ' + e.message); }
+  } catch (e) {
+    console.warn('clearFromEmployeeSheet_ skipped: ' + e.message);
+    try { writeAuditLog_(emp, 'PersonalSheetSyncFail', date, '', false, 0,
+      `clearFromEmployeeSheet_ failed for ${punchType}: ${e.message}`); } catch (_) {}
+  }
 }
 
 function getOrCreateTimeOffSheet_() {
