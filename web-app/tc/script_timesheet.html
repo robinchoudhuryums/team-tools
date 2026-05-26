@@ -17,7 +17,7 @@ function loadTimesheet(startDate, endDate, targetArea) {
       // Both standalone-timesheet (legacy) and combined-clock both live under
       // the 'clock' tab now; gate on currentView === 'clock'.
       if (currentView !== 'clock') return;
-      const area = targetArea || document.getElementById('view-area');
+      const area = targetArea && targetArea.isConnected ? targetArea : document.getElementById('view-area');
       if (area) renderTimesheetView(area, data, { combined });
     })
     .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))

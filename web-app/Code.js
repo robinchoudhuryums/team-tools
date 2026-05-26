@@ -615,6 +615,33 @@ function getManagerDashboard() {
       }
     }
 
+    // Analytics: daily punch counts (last 7 days) + time-off status summary
+    const analyticsDays = 7;
+    const punchCountsByDate = {};
+    const analyticsLookback = new Date(now);
+    analyticsLookback.setDate(analyticsLookback.getDate() - analyticsDays);
+    const analyticsStart = fmtDateTz_(analyticsLookback, mgrTz);
+    for (let i = 2; i < adpRows.length; i++) {
+      const d = normalizeDate_(adpRows[i][ADP.DATE]);
+      if (d >= analyticsStart && d <= todayStr) {
+        punchCountsByDate[d] = (punchCountsByDate[d] || 0) + 1;
+      }
+    }
+    const punchTrend = [];
+    for (let off = analyticsDays; off >= 0; off--) {
+      const dd = new Date(now); dd.setDate(dd.getDate() - off);
+      const ds = fmtDateTz_(dd, mgrTz);
+      punchTrend.push({ date: ds, count: punchCountsByDate[ds] || 0 });
+    }
+    const toSummary = { approved: 0, pending: 0, denied: 0 };
+    const monthStr = todayStr.substring(0, 7);
+    for (let i = 1; i < toRows.length; i++) {
+      const d = normalizeDate_(toRows[i][TO.DATE]);
+      if (d.substring(0, 7) !== monthStr) continue;
+      const st = String(toRows[i][TO.STATUS]).toLowerCase().trim();
+      if (toSummary[st] !== undefined) toSummary[st]++;
+    }
+
     return {
       today: todayStr,
       liveStatus, pending, missedPunches, recentPunches, recentAudits,
@@ -622,6 +649,7 @@ function getManagerDashboard() {
       mgrDeleteWindowDays: CONFIG.MGR_DELETE_WINDOW_DAYS,
       ptoEnabled:          !!CONFIG.ENABLE_PTO_TRACKING,
       mgrTzAbbr,
+      punchTrend, toSummary,
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -1460,7 +1488,7 @@ function invalidateCnAmbientCache_(empId) {
 function getCallNotesDepartments() {
   return {
     departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
-    suggestionsByDept: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT,
+    suggestionsByDept: getUpdateSuggestions_(),
     defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
     stateTaxRates: getStateTaxRates_(),
     stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
@@ -1730,8 +1758,22 @@ function getAdminConfig() {
     return {
       departmentEmails: getDepartmentEmails_(),
       stateTaxRates: getStateTaxRates_(),
+      updateSuggestions: getUpdateSuggestions_(),
+      defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
     };
   } catch (err) { return { error: err.message }; }
+}
+
+function saveUpdateSuggestions(suggestionsJson) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!suggestionsJson || typeof suggestionsJson !== 'object') return { success: false, error: 'Invalid suggestions map.' };
+    PropertiesService.getScriptProperties().setProperty('CN_UPDATE_SUGGESTIONS', JSON.stringify(suggestionsJson));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated update-type suggestions', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
 }
 
 function saveDepartmentEmails(deptJson) {
@@ -2283,7 +2325,7 @@ function validateEmailSelections_(selections) {
     // Multi-email support — split on commas, validate each
     const parts = email.split(',').map(p => p.trim()).filter(p => p.length > 0);
     for (let i = 0; i < parts.length; i++) {
-      if (parts[i].indexOf('@') < 1 || parts[i].indexOf('.') < 0) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parts[i])) {
         return { error: 'Invalid email format: ' + parts[i] };
       }
     }
@@ -3552,6 +3594,14 @@ function getStateTaxRates_() {
     try { return JSON.parse(prop); } catch (_) {}
   }
   return CONFIG.CALL_NOTES.STATE_TAX_RATES;
+}
+
+function getUpdateSuggestions_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_UPDATE_SUGGESTIONS');
+  if (prop) {
+    try { return JSON.parse(prop); } catch (_) {}
+  }
+  return CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT;
 }
 
 function getManagerEmails_() {

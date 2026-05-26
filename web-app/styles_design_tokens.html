@@ -60,13 +60,21 @@
        darker shades that appear often enough across the views that
        it's worth giving them a name. The dark-mode block below
        inverts them so they read as lighter shades against the dark
-       canvas. */
-    --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
-
-    --success-deep: color-mix(in oklch, var(--good), var(--ink) 45%);
-    --warning-deep: color-mix(in oklch, var(--warn), var(--ink) 45%);
-    --danger-deep:  color-mix(in oklch, var(--destructive), var(--ink) 45%);
-    --info-deep:    color-mix(in oklch, var(--accent), var(--ink) 45%);
+       canvas. Fallbacks for browsers without color-mix support. */
+    --border-strong: #b8bcc4;
+    --success-deep:  #2d6a4f;
+    --warning-deep:  #8a4500;
+    --danger-deep:   #8a2000;
+    --info-deep:     #2a5494;
+  }
+  @supports (color: color-mix(in oklch, red, blue)) {
+    :root {
+      --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
+      --success-deep: color-mix(in oklch, var(--good), var(--ink) 45%);
+      --warning-deep: color-mix(in oklch, var(--warn), var(--ink) 45%);
+      --danger-deep:  color-mix(in oklch, var(--destructive), var(--ink) 45%);
+      --info-deep:    color-mix(in oklch, var(--accent), var(--ink) 45%);
+    }
   }
 
   /* ── Dark mode overlay ───────────────────────────────────────────
@@ -91,17 +99,24 @@
     --shadow:    0 1px 3px rgba(0,0,0,.30);
     --shadow-md: 0 2px 8px rgba(0,0,0,.35);
     --shadow-lg: 0 10px 28px rgba(0,0,0,.45);
-    --ring-focus: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 70%);
+    --ring-focus: 0 0 0 3px rgba(90,130,200,.3);
 
-    /* The "-deep" tones lean lighter (toward paper-card) in dark mode
-       so foreground text on the soft-bg pills stays legible. */
-    --success-deep: color-mix(in oklch, var(--good), var(--paper-card) 25%);
-    --warning-deep: color-mix(in oklch, var(--warn), var(--paper-card) 25%);
-    --danger-deep:  color-mix(in oklch, var(--destructive), var(--paper-card) 25%);
-    --info-deep:    color-mix(in oklch, var(--accent), var(--paper-card) 25%);
-
-    /* `--border-strong` still wants more contrast in dark mode */
-    --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
+    --success-deep:  #6bcb9b;
+    --warning-deep:  #e0a050;
+    --danger-deep:   #e06050;
+    --info-deep:     #7aaae0;
+    --border-strong: #4a5260;
+  }
+  @supports (color: color-mix(in oklch, red, blue)) {
+    :root[data-mode="dark"],
+    body[data-mode="dark"] {
+      --ring-focus: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 70%);
+      --success-deep: color-mix(in oklch, var(--good), var(--paper-card) 25%);
+      --warning-deep: color-mix(in oklch, var(--warn), var(--paper-card) 25%);
+      --danger-deep:  color-mix(in oklch, var(--destructive), var(--paper-card) 25%);
+      --info-deep:    color-mix(in oklch, var(--accent), var(--paper-card) 25%);
+      --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
+    }
   }
 
   /* ═══════════════════════════════════════════════════════════════════
