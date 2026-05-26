@@ -223,6 +223,7 @@ function formatLeaveDays(n) {
 // ── DAY DETAILS MODAL ─────────────────────────────────────────────────────
 function openDayModal(dateStr) {
   if (!calData) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
   dayModalDate = dateStr;
   const todayIso = calData.today || isoDateTz(empTz());
   const parts = dateStr.split('-');

@@ -3606,10 +3606,19 @@ function cnRenderAdminBody_(cfg) {
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' State Tax Rates</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Decimal rates used for OOP tax calculations (e.g. 0.05 = 5%). Changes take effect immediately.</div>' +
+      '<div class="field" style="margin:0 0 8px"><input type="text" id="cn-admin-rate-filter" placeholder="Filter states…" oninput="cnFilterRateRows_(this.value)"></div>' +
       '<div id="cn-admin-rate-list" style="max-height:320px;overflow-y:auto;margin-bottom:10px">' +
         cnRenderRateRows_(cfg.stateTaxRates) +
       '</div>' +
       '<button class="btn-modal-ok" id="cn-admin-save-rates" style="margin:0">Save Tax Rates</button>' +
+    '</div>' +
+
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Update-Type Suggestions</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Per-department datalist suggestions shown in the email composer. Comma-separated. "Always shown" entries appear for every department.</div>' +
+      '<div style="margin-bottom:8px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase">Always shown: ' + esc((cfg.defaultSuggestions || []).join(', ')) + '</div>' +
+      '<div id="cn-admin-sug-list">' + cnRenderSuggestionRows_(cfg.updateSuggestions || {}) + '</div>' +
+      '<button class="btn-modal-ok" id="cn-admin-save-sugs" style="margin:0;margin-top:10px">Save Suggestions</button>' +
     '</div>';
 
   document.getElementById('cn-admin-add-dept').addEventListener('click', function () {
@@ -3673,6 +3682,30 @@ function cnRenderAdminBody_(cfg) {
       })
       .saveStateTaxRates(map);
   });
+
+  document.getElementById('cn-admin-save-sugs').addEventListener('click', function () {
+    var btn = this;
+    var deptEls = document.querySelectorAll('.cn-admin-sug-dept');
+    var valEls = document.querySelectorAll('.cn-admin-sug-values');
+    var map = {};
+    for (var i = 0; i < deptEls.length; i++) {
+      var dept = deptEls[i].textContent.trim();
+      var vals = valEls[i].value.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+      if (dept && vals.length > 0) map[dept] = vals;
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save Suggestions';
+        if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
+        showToast('Suggestions saved', 'toast-success');
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save Suggestions';
+        showToast(err.message || 'Save failed', 'toast-error');
+      })
+      .saveUpdateSuggestions(map);
+  });
 }
 
 function cnRenderRateRows_(rates) {
@@ -3680,6 +3713,25 @@ function cnRenderRateRows_(rates) {
     return '<div class="field-row" style="gap:8px;margin-bottom:4px;align-items:center">' +
       '<span class="cn-admin-rate-state" style="flex:1;font-size:13px">' + esc(st) + '</span>' +
       '<div class="field" style="flex:0 0 80px;margin:0"><input type="number" step="0.001" min="0" max="1" class="cn-admin-rate-value" value="' + rates[st] + '" style="text-align:right"></div>' +
+      '</div>';
+  }).join('');
+}
+
+function cnFilterRateRows_(query) {
+  var q = query.toLowerCase();
+  var rows = document.querySelectorAll('#cn-admin-rate-list .field-row');
+  rows.forEach(function (row) {
+    var name = row.querySelector('.cn-admin-rate-state');
+    row.style.display = (!q || (name && name.textContent.toLowerCase().indexOf(q) >= 0)) ? '' : 'none';
+  });
+}
+
+function cnRenderSuggestionRows_(suggestions) {
+  return Object.keys(suggestions).sort().map(function (dept) {
+    var vals = (suggestions[dept] || []).join(', ');
+    return '<div class="field-row" style="gap:8px;margin-bottom:6px;align-items:center">' +
+      '<span class="cn-admin-sug-dept" style="flex:0 0 140px;font-size:13px;font-weight:500">' + esc(dept) + '</span>' +
+      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-sug-values" value="' + esc(vals) + '" placeholder="Comma-separated suggestions"></div>' +
       '</div>';
   }).join('');
 }

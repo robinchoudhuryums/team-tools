@@ -1460,7 +1460,7 @@ function invalidateCnAmbientCache_(empId) {
 function getCallNotesDepartments() {
   return {
     departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
-    suggestionsByDept: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT,
+    suggestionsByDept: getUpdateSuggestions_(),
     defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
     stateTaxRates: getStateTaxRates_(),
     stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
@@ -1730,8 +1730,22 @@ function getAdminConfig() {
     return {
       departmentEmails: getDepartmentEmails_(),
       stateTaxRates: getStateTaxRates_(),
+      updateSuggestions: getUpdateSuggestions_(),
+      defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
     };
   } catch (err) { return { error: err.message }; }
+}
+
+function saveUpdateSuggestions(suggestionsJson) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!suggestionsJson || typeof suggestionsJson !== 'object') return { success: false, error: 'Invalid suggestions map.' };
+    PropertiesService.getScriptProperties().setProperty('CN_UPDATE_SUGGESTIONS', JSON.stringify(suggestionsJson));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated update-type suggestions', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
 }
 
 function saveDepartmentEmails(deptJson) {
@@ -2283,7 +2297,7 @@ function validateEmailSelections_(selections) {
     // Multi-email support — split on commas, validate each
     const parts = email.split(',').map(p => p.trim()).filter(p => p.length > 0);
     for (let i = 0; i < parts.length; i++) {
-      if (parts[i].indexOf('@') < 1 || parts[i].indexOf('.') < 0) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parts[i])) {
         return { error: 'Invalid email format: ' + parts[i] };
       }
     }
@@ -3552,6 +3566,14 @@ function getStateTaxRates_() {
     try { return JSON.parse(prop); } catch (_) {}
   }
   return CONFIG.CALL_NOTES.STATE_TAX_RATES;
+}
+
+function getUpdateSuggestions_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_UPDATE_SUGGESTIONS');
+  if (prop) {
+    try { return JSON.parse(prop); } catch (_) {}
+  }
+  return CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT;
 }
 
 function getManagerEmails_() {
