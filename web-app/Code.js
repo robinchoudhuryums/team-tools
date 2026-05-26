@@ -1116,12 +1116,15 @@ function submitCallNote(payload) {
 
     writeAuditLog_(emp, 'CallNoteCreate', dateLocal, '', false, 0,
       `noteId=${noteId}${flagType ? ', flag=' + flagType : ''}`);
-    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
-    return {
-      success: true,
-      note: callNoteRowToObject_({ row, rowIndex: sheet.getLastRow() }),
-    };
+    const createdNote = callNoteRowToObject_({ row, rowIndex: sheet.getLastRow() });
+
+    if (flagType === 'training' && cleaned.subformData && cleaned.subformData.trainingQuestion) {
+      try { notifyManagerTrainingQuestion_(emp, cleaned.subformData.trainingQuestion, dateLocal); }
+      catch (_) {}
+    }
+
+    return { success: true, note: createdNote };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -1456,10 +1459,10 @@ function invalidateCnAmbientCache_(empId) {
  *  suggestion map (for the dynamic update-type datalist). */
 function getCallNotesDepartments() {
   return {
-    departments: Object.keys(CONFIG.CALL_NOTES.DEPARTMENT_EMAILS).concat(['Other']),
+    departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
     suggestionsByDept: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT,
     defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
-    stateTaxRates: CONFIG.CALL_NOTES.STATE_TAX_RATES,
+    stateTaxRates: getStateTaxRates_(),
     stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
     ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
     voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
@@ -1693,6 +1696,78 @@ function managerGetShiftStats(date) {
   } catch (err) { return { error: err.message }; }
 }
 
+function managerGetUnresolvedActionCount() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const roster = getEmployeeRosterRows_();
+    let total = 0;
+    for (let r = 1; r < roster.length; r++) {
+      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      try {
+        const sheet = getCallNotesSheet_({
+          id: String(roster[r][EMP.ID]).trim(),
+          name: String(roster[r][EMP.NAME]).trim(),
+          callNotesSheetId: String(sheetId).trim(),
+        });
+        const flagCol = sheet.getRange(2, CN.FLAG_TYPE + 1, Math.max(sheet.getLastRow() - 1, 1), 2).getValues();
+        for (let i = 0; i < flagCol.length; i++) {
+          const ft = String(flagCol[i][0] || '').trim().toLowerCase();
+          const res = String(flagCol[i][1] || '').trim().toLowerCase();
+          if (ft === 'action' && res !== 'true' && res !== 'yes' && res !== '1') total++;
+        }
+      } catch (_) {}
+    }
+    return { count: total };
+  } catch (err) { return { error: err.message }; }
+}
+
+function getAdminConfig() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    return {
+      departmentEmails: getDepartmentEmails_(),
+      stateTaxRates: getStateTaxRates_(),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+function saveDepartmentEmails(deptJson) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!deptJson || typeof deptJson !== 'object') return { success: false, error: 'Invalid department map.' };
+    var keys = Object.keys(deptJson);
+    for (var i = 0; i < keys.length; i++) {
+      var email = String(deptJson[keys[i]] || '').trim();
+      if (!email || email.indexOf('@') < 1) return { success: false, error: 'Invalid email for ' + keys[i] + ': ' + email };
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_DEPARTMENT_EMAILS', JSON.stringify(deptJson));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated department emails (' + keys.length + ' depts)', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+function saveStateTaxRates(ratesJson) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!ratesJson || typeof ratesJson !== 'object') return { success: false, error: 'Invalid rates map.' };
+    var keys = Object.keys(ratesJson);
+    for (var i = 0; i < keys.length; i++) {
+      var rate = parseFloat(ratesJson[keys[i]]);
+      if (isNaN(rate) || rate < 0 || rate > 1) return { success: false, error: 'Invalid rate for ' + keys[i] + ': must be 0–1.' };
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_STATE_TAX_RATES', JSON.stringify(ratesJson));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated state tax rates (' + keys.length + ' states)', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
 /** Bulk-export every enrolled rep's call notes in a date range to a new
  *  Google Sheet. Returns { success, url, fileName, noteCount }. Pair with
  *  the Team Notes "Export Range" modal. Writes a CallNotesExport audit row.
@@ -1720,16 +1795,28 @@ function exportCallNotesRange(startDate, endDate) {
         const sheet = getCallNotesSheet_({
           id: repId, name: repName, callNotesSheetId: String(sheetId).trim()
         });
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+        const lastRow = sheet.getLastRow();
+        if (lastRow <= 1) continue;
+        const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
+        let firstMatch = -1, lastMatch = -1;
+        for (let d = 0; d < dateCol.length; d++) {
+          const dl = normalizeDate_(dateCol[d][0]);
+          if (dl >= startDate && dl <= endDate) {
+            if (firstMatch < 0) firstMatch = d;
+            lastMatch = d;
+          }
+        }
+        if (firstMatch < 0) continue;
+        const matchCount = lastMatch - firstMatch + 1;
+        const rows = sheet.getRange(firstMatch + 2, 1, matchCount, CN_HEADERS.length).getValues();
+        for (let i = 0; i < rows.length; i++) {
+          const note = callNoteRowToObject_({ row: rows[i], rowIndex: firstMatch + i + 2 });
           if (note.dateLocal < startDate || note.dateLocal > endDate) continue;
           allNotes.push({
             repId, repName, note,
           });
         }
       } catch (e) {
-        // Broken per-rep Sheet shouldn't break the cross-rep export
         console.warn('exportCallNotesRange skipped rep ' + repId + ': ' + e.message);
       }
     }
@@ -2208,7 +2295,7 @@ function validateEmailSelections_(selections) {
 }
 
 function resolveEmailRecipients_(selections) {
-  const map = CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
+  const map = getDepartmentEmails_();
   const out = [];
   for (let i = 0; i < selections.departments.length; i++) {
     const dept = selections.departments[i];
@@ -2732,7 +2819,7 @@ function sendDailyMissedPunchAlerts() {
       if (!empRows[i][EMP.EMAIL]) continue;
       let tzRaw = empRows[i][EMP.TIMEZONE];
       if (tzRaw === null || tzRaw === undefined) tzRaw = '';
-      const tz = String(tzRaw).trim() || CONFIG.TIMEZONE;
+      const tz = safeTimezone_(String(tzRaw).trim());
       const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
       const id = String(empRows[i][EMP.ID]).trim();
       employees[id] = {
@@ -2783,14 +2870,16 @@ function sendDailyMissedPunchAlerts() {
     if (recipients.length > 0) {
       const list = missed.map(e =>
         `• ${e.name} (${e.id}) — ${e.email} — missed ${e.yesterdayStr} ${tzAbbr_(e.timezone)}`).join('\n');
-      MailApp.sendEmail({
-        to: recipients.join(','),
-        subject: `⏰ Missed Clock-Outs — ${missed.length} employee(s)`,
-        body:
-          `The following employees clocked in but did not clock out:\n\n${list}\n\n` +
-          `Each has been emailed a reminder to fix it via the Adjust feature.\n\n` +
-          `Audit log:\nhttps://docs.google.com/spreadsheets/d/${CONFIG.ADP_SS_ID}/edit`,
-      });
+      try {
+        MailApp.sendEmail({
+          to: recipients.join(','),
+          subject: `⏰ Missed Clock-Outs — ${missed.length} employee(s)`,
+          body:
+            `The following employees clocked in but did not clock out:\n\n${list}\n\n` +
+            `Each has been emailed a reminder to fix it via the Adjust feature.\n\n` +
+            `Audit log:\nhttps://docs.google.com/spreadsheets/d/${CONFIG.ADP_SS_ID}/edit`,
+        });
+      } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
     }
   } catch (err) {
     Logger.log('sendDailyMissedPunchAlerts failed: ' + err.message);
@@ -2944,7 +3033,7 @@ function sendCallNotesEodDigest() {
       const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
       if (!emailAddr || !sheetId) continue;
       const tzRaw = String(roster[r][EMP.TIMEZONE] || '').trim();
-      const tz = tzRaw || CONFIG.TIMEZONE;
+      const tz = safeTimezone_(tzRaw);
       // Rep's local time-of-day in minutes
       const hh = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
       const mm = parseInt(Utilities.formatDate(now, tz, 'm'), 10);
@@ -3449,6 +3538,22 @@ function invalidateRosterCache_() {
   CacheService.getScriptCache().remove(ROSTER_CACHE_KEY);
 }
 
+function getDepartmentEmails_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_DEPARTMENT_EMAILS');
+  if (prop) {
+    try { return JSON.parse(prop); } catch (_) {}
+  }
+  return CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
+}
+
+function getStateTaxRates_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_STATE_TAX_RATES');
+  if (prop) {
+    try { return JSON.parse(prop); } catch (_) {}
+  }
+  return CONFIG.CALL_NOTES.STATE_TAX_RATES;
+}
+
 function getManagerEmails_() {
   // Script Properties takes precedence: set MANAGER_EMAILS = a comma-separated
   // list in Apps Script editor → Project Settings → Script Properties. Same
@@ -3482,6 +3587,11 @@ function tzAbbr_(tz) { return TZ_ABBR[tz] || tz; }
 function empTz_(emp) { return (emp && emp.timezone) ? emp.timezone : CONFIG.TIMEZONE; }
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
+function safeTimezone_(tz) {
+  if (!tz) return CONFIG.TIMEZONE;
+  try { Utilities.formatDate(new Date(), tz, 'z'); return tz; }
+  catch (_) { Logger.log('Invalid timezone "' + tz + '" — falling back to ' + CONFIG.TIMEZONE); return CONFIG.TIMEZONE; }
+}
 
 function convertDateTime_(dateStr, timeStr, fromTz, toTz) {
   if (!dateStr || !timeStr) return { date: '', time: '', displayTime: '' };
@@ -3638,7 +3748,11 @@ function writeToEmployeeSheet_(emp, date, time, dir, punchType) {
     const rowIdx = data.findIndex(r => String(r[0]).trim() === ROW_LABEL_MAP[punchType]);
     const colIdx = data[0].findIndex(h => Number(h) === dayNum);
     if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue(time);
-  } catch (e) { console.warn('writeToEmployeeSheet_ skipped: ' + e.message); }
+  } catch (e) {
+    console.warn('writeToEmployeeSheet_ skipped: ' + e.message);
+    try { writeAuditLog_(emp, 'PersonalSheetSyncFail', date, time, false, 0,
+      `writeToEmployeeSheet_ failed for ${punchType}: ${e.message}`); } catch (_) {}
+  }
 }
 
 function clearFromEmployeeSheet_(emp, date, punchType) {
@@ -3656,7 +3770,11 @@ function clearFromEmployeeSheet_(emp, date, punchType) {
     const rowIdx = data.findIndex(r => String(r[0]).trim() === ROW_LABEL_MAP[punchType]);
     const colIdx = data[0].findIndex(h => Number(h) === dayNum);
     if (rowIdx !== -1 && colIdx !== -1) sheet.getRange(rowIdx + 1, colIdx + 1).setValue('');
-  } catch (e) { console.warn('clearFromEmployeeSheet_ skipped: ' + e.message); }
+  } catch (e) {
+    console.warn('clearFromEmployeeSheet_ skipped: ' + e.message);
+    try { writeAuditLog_(emp, 'PersonalSheetSyncFail', date, '', false, 0,
+      `clearFromEmployeeSheet_ failed for ${punchType}: ${e.message}`); } catch (_) {}
+  }
 }
 
 function getOrCreateTimeOffSheet_() {
@@ -3727,6 +3845,22 @@ function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reaso
       `Audit log:\nhttps://docs.google.com/spreadsheets/d/${CONFIG.ADP_SS_ID}/edit\n`;
     MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body });
   } catch (e) { console.warn('Manager alert email failed: ' + e.message); }
+}
+
+function notifyManagerTrainingQuestion_(emp, question, dateLocal) {
+  const recipients = getManagerEmails_();
+  if (recipients.length === 0) return;
+  try {
+    MailApp.sendEmail({
+      to: recipients.join(','),
+      subject: `Training Q from ${emp.name}: ${String(question).substring(0, 60)}`,
+      body:
+        `${emp.name} (${emp.id}) submitted a training-flagged call note with a question:\n\n` +
+        `Q: ${question}\n\n` +
+        `Date: ${dateLocal}\n\n` +
+        `Reply in the web app → Call Notes → Team Notes → Per-Rep View.\n`,
+    });
+  } catch (e) { console.warn('Training question notification failed: ' + e.message); }
 }
 
 function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {

@@ -1,8 +1,8 @@
 <!-- ADJUST PUNCH MODAL -->
-<div class="overlay" id="adjust-overlay">
+<div class="overlay" id="adjust-overlay" role="dialog" aria-modal="true" aria-labelledby="adjust-title">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title">Adjust Punch</div>
+    <div class="modal-title" id="adjust-title">Adjust Punch</div>
     <div class="modal-hint">
       Use this to record missed punches or fix mistakes within the last <span id="adj-days-disp">30</span>
       days. Adjustments more than 7 days back require a reason and notify your manager.
@@ -29,7 +29,7 @@
 </div>
 
 <!-- DAY DETAILS MODAL -->
-<div class="overlay" id="day-overlay">
+<div class="overlay" id="day-overlay" role="dialog" aria-modal="true" aria-labelledby="day-title">
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title" id="day-title">—</div>
@@ -59,10 +59,10 @@
 </div>
 
 <!-- DAY EDIT MODAL (manager) -->
-<div class="overlay" id="day-edit-overlay">
+<div class="overlay" id="day-edit-overlay" role="dialog" aria-modal="true" aria-labelledby="day-edit-title">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title">Edit Day</div>
+    <div class="modal-title" id="day-edit-title">Edit Day</div>
     <div class="modal-sub" id="day-edit-subtitle">—</div>
     <div class="modal-hint">
       Set each punch's time in 24-hour format. Leave a field blank to remove that punch.
@@ -88,10 +88,10 @@
 </div>
 
 <!-- ADP EXPORT MODAL -->
-<div class="overlay" id="export-overlay">
+<div class="overlay" id="export-overlay" role="dialog" aria-modal="true" aria-labelledby="export-title">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title">Export ADP Upload File</div>
+    <div class="modal-title" id="export-title">Export ADP Upload File</div>
     <div class="modal-sub">Generates an upload-ready Google Sheet — open it and use File → Download → Excel (.xlsx)</div>
     <div class="day-section-label">Quick Presets</div>
     <div class="preset-grid">
@@ -112,10 +112,10 @@
 </div>
 
 <!-- CALL NOTES BULK EXPORT MODAL (manager) -->
-<div class="overlay" id="cn-export-overlay">
+<div class="overlay" id="cn-export-overlay" role="dialog" aria-modal="true" aria-labelledby="cn-export-title">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title">Export Call Notes Range</div>
+    <div class="modal-title" id="cn-export-title">Export Call Notes Range</div>
     <div class="modal-sub">Bundles every enrolled rep's call notes in the selected date range into a new Google Sheet.</div>
     <div class="day-section-label">Quick Presets</div>
     <div class="preset-grid">
@@ -136,10 +136,10 @@
 </div>
 
 <!-- MANAGER: ADD TIME OFF FOR EMPLOYEE -->
-<div class="overlay" id="mgr-timeoff-overlay">
+<div class="overlay" id="mgr-timeoff-overlay" role="dialog" aria-modal="true" aria-labelledby="mgr-timeoff-title">
   <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-title">Add Time Off (Manager)</div>
+    <div class="modal-title" id="mgr-timeoff-title">Add Time Off (Manager)</div>
     <div class="modal-sub">File a time-off entry on behalf of an employee.</div>
     <div class="field">
       <label>Employee</label>

@@ -25,6 +25,8 @@ const _TEST_MGR_EMAIL   = 'do-not-send-mgr@example.invalid';
 const _TEST_INITIAL_ANNUAL = 15;
 const _TEST_INITIAL_SICK   = 10;
 
+var _TEST_CN_SS_ID = null;  // populated by setupTestEnvironment; the per-rep CN Sheet for _TEST_INDIA
+
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
   const d = new Date(); d.setDate(d.getDate() - 3);
@@ -202,8 +204,29 @@ function setupTestEnvironment() {
   testEmps.forEach(row => {
     if (!existingIds.has(row[EMP.ID])) { sheet.appendRow(row); added++; }
   });
+
+  // Provision a test call-notes Sheet for the India test employee. Creates
+  // a new spreadsheet on first run; reuses the existing one on subsequent
+  // runs by reading the ID already stored in column L.
+  const empRows = sheet.getDataRange().getValues();
+  for (let i = 1; i < empRows.length; i++) {
+    if (String(empRows[i][EMP.ID]).trim() === _TEST_INDIA_ID) {
+      const existingCnId = empRows[i][EMP.CALL_NOTES_SHEET_ID]
+        ? String(empRows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : '';
+      if (existingCnId) {
+        _TEST_CN_SS_ID = existingCnId;
+      } else {
+        const cnSs = SpreadsheetApp.create('TEST_CallNotes_' + _TEST_INDIA_ID);
+        _TEST_CN_SS_ID = cnSs.getId();
+        sheet.getRange(i + 1, EMP.CALL_NOTES_SHEET_ID + 1).setValue(_TEST_CN_SS_ID);
+      }
+      break;
+    }
+  }
+
   invalidateRosterCache_();
   Logger.log(`setupTestEnvironment: ${added} test employee row(s) added (existing left unchanged).`);
+  if (_TEST_CN_SS_ID) Logger.log('  Call-notes test Sheet ID: ' + _TEST_CN_SS_ID);
 }
 
 function cleanupTestData() {
@@ -226,6 +249,17 @@ function cleanupTestData() {
       empSheet.getRange(i + 1, EMP.SICK_LEAVE + 1).setValue(_TEST_INITIAL_SICK);
     }
   }
+  // Clear the test call-notes Sheet's Notes tab (if provisioned).
+  if (_TEST_CN_SS_ID) {
+    try {
+      const cnSs = SpreadsheetApp.openById(_TEST_CN_SS_ID);
+      const notesTab = cnSs.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
+      if (notesTab && notesTab.getLastRow() > 1) {
+        notesTab.deleteRows(2, notesTab.getLastRow() - 1);
+      }
+    } catch (e) { Logger.log('cleanupTestData: CN sheet cleanup skipped: ' + e.message); }
+  }
+
   invalidateRosterCache_();
   Logger.log('cleanupTestData: TEST_* rows removed, balances reset.');
 }
@@ -384,6 +418,9 @@ function _runAllTests() {
   _smokeTest('timeDiffSeconds_invalidInput',       test_timeDiffSeconds_invalidInput);
   _smokeTest('normalizeTime_passthroughString',    test_normalizeTime_passthroughString);
   _smokeTest('normalizeTime_DateObject',           test_normalizeTime_DateObject);
+  _smokeTest('normalizeTime_1899DateCoercion',     test_normalizeTime_1899DateCoercion);
+  _smokeTest('safeTimezone_validPassthrough',      test_safeTimezone_validPassthrough);
+  _smokeTest('safeTimezone_invalidFallback',       test_safeTimezone_invalidFallback);
 
   _smokeTest('holidays_2026_dates',                test_holidays_2026_dates);
   _smokeTest('holidays_independenceDay_weekendShift', test_holidays_independenceDay_weekendShift);
@@ -503,6 +540,29 @@ function _runAllTests() {
   _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
   _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
   _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
+
+  // ── Call Notes — integration (sheet-touching) ──────────────────────────
+  _integrationTest('cn_submitCallNote_basic',                test_cn_submitCallNote_basic);
+  _integrationTest('cn_submitCallNote_withFlag',             test_cn_submitCallNote_withFlag);
+  _integrationTest('cn_submitCallNote_unenrolledRepFails',   test_cn_submitCallNote_unenrolledRepFails);
+  _integrationTest('cn_setCallNoteFlag_toggleAction',        test_cn_setCallNoteFlag_toggleAction);
+  _integrationTest('cn_setCallNoteFlag_transitionClearsResolved', test_cn_setCallNoteFlag_transitionClearsResolved);
+  _integrationTest('cn_setCallNoteResolved_actionOnly',      test_cn_setCallNoteResolved_actionOnly);
+  _integrationTest('cn_setCallNoteResolved_rejectsNonAction',test_cn_setCallNoteResolved_rejectsNonAction);
+  _integrationTest('cn_deleteCallNote_basic',                test_cn_deleteCallNote_basic);
+  _integrationTest('cn_setCallNotePinned_capAt3',            test_cn_setCallNotePinned_capAt3);
+  _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
+  _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
+
+  // ── Automation trigger gates (INV-44) ──────────────────────────────────
+  _integrationTest('triggerGate_eodDigest_nonManagerThrows',    test_triggerGate_eodDigest_nonManagerThrows);
+  _integrationTest('triggerGate_weeklyDigests_nonManagerThrows',test_triggerGate_weeklyDigests_nonManagerThrows);
+  _integrationTest('triggerGate_missedPunch_nonManagerThrows',  test_triggerGate_missedPunch_nonManagerThrows);
+  _integrationTest('triggerGate_dailyExport_nonManagerThrows',  test_triggerGate_dailyExport_nonManagerThrows);
+
+  // ── Audit row assertions ───────────────────────────────────────────────
+  _integrationTest('auditRow_recordPunchAdjustment',            test_auditRow_recordPunchAdjustment);
+  _integrationTest('auditRow_deletePunch_hasActorEmail',        test_auditRow_deletePunch_hasActorEmail);
 }
 
 
@@ -2058,4 +2118,301 @@ function test_cn_esc_basic() {
   _assertEq(esc_(`"quoted" 'single'`), '&quot;quoted&quot; &#39;single&#39;');
   _assertEq(esc_(null),                '');
   _assertEq(esc_(undefined),           '');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — INTEGRATION TESTS
+//  ────────────────────────────────────────────────────────────────────────
+//  These tests write to the test call-notes Sheet provisioned by
+//  setupTestEnvironment (the India test employee's per-rep Sheet).
+//  Cleanup happens in cleanupTestData (deletes all Notes-tab rows).
+// ════════════════════════════════════════════════════════════════════════════
+
+function _clearTestCallNotes() {
+  if (!_TEST_CN_SS_ID) return;
+  try {
+    const cnSs = SpreadsheetApp.openById(_TEST_CN_SS_ID);
+    const notesTab = cnSs.getSheetByName(CONFIG.CALL_NOTES.NOTES_TAB);
+    if (notesTab && notesTab.getLastRow() > 1) {
+      notesTab.deleteRows(2, notesTab.getLastRow() - 1);
+    }
+  } catch (e) {}
+}
+
+function _cnTestPayload(overrides) {
+  return Object.assign({
+    callback: '5551234567', caller: 'Test Caller', relationship: 'self',
+    patientAndTrx: 'Patient 99999', issue: 'Test issue',
+    transferredTo: '', resolution: 'Test resolution', flagType: '',
+  }, overrides || {});
+}
+
+// ── submitCallNote ──
+
+function test_cn_submitCallNote_basic() {
+  _clearTestCallNotes();
+  const r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return submitCallNote(_cnTestPayload());
+  });
+  _assertSuccess(r, 'submitCallNote should succeed');
+  _assertNotNull(r.note, 'Should return the created note');
+  _assertNotNull(r.note.noteId, 'Note should have a noteId');
+  _assertEq(r.note.caller, 'Test Caller', 'Caller round-trips');
+  _assertEq(r.note.resolved, false, 'New note is unresolved');
+  _assertEq(r.note.flagType, '', 'No flag by default');
+}
+
+function test_cn_submitCallNote_withFlag() {
+  _clearTestCallNotes();
+  const r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return submitCallNote(_cnTestPayload({ flagType: 'training' }));
+  });
+  _assertSuccess(r);
+  _assertEq(r.note.flagType, 'training', 'Flag type round-trips');
+}
+
+function test_cn_submitCallNote_unenrolledRepFails() {
+  const r = _asUser(_TEST_PH_EMAIL, function () {
+    return submitCallNote(_cnTestPayload());
+  });
+  _assertFailure(r, 'not configured', 'Unenrolled rep should fail');
+}
+
+// ── setCallNoteFlag ──
+
+function test_cn_setCallNoteFlag_toggleAction() {
+  _clearTestCallNotes();
+  var noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload()).note.noteId;
+  });
+  var r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return setCallNoteFlag(noteId, 'action');
+  });
+  _assertSuccess(r, 'Flag to action');
+  _assertEq(r.note.flagType, 'action');
+
+  r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return setCallNoteFlag(noteId, '');
+  });
+  _assertSuccess(r, 'Clear flag');
+  _assertEq(r.note.flagType, '');
+}
+
+function test_cn_setCallNoteFlag_transitionClearsResolved() {
+  _clearTestCallNotes();
+  var noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload()).note.noteId;
+    setCallNoteFlag(noteId, 'action');
+    setCallNoteResolved(noteId, true);
+  });
+  var r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return setCallNoteFlag(noteId, 'training');
+  });
+  _assertSuccess(r);
+  _assertEq(r.note.flagType, 'training', 'Transitioned to training');
+  _assertEq(r.note.resolved, false, 'Resolved cleared on flag transition (INV-40)');
+}
+
+// ── setCallNoteResolved ──
+
+function test_cn_setCallNoteResolved_actionOnly() {
+  _clearTestCallNotes();
+  var noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload({ flagType: 'action' })).note.noteId;
+  });
+  var r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return setCallNoteResolved(noteId, true);
+  });
+  _assertSuccess(r, 'Resolve action flag');
+  _assertEq(r.note.resolved, true, 'Note is resolved');
+
+  r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return setCallNoteResolved(noteId, false);
+  });
+  _assertSuccess(r, 'Un-resolve');
+  _assertEq(r.note.resolved, false);
+}
+
+function test_cn_setCallNoteResolved_rejectsNonAction() {
+  _clearTestCallNotes();
+  var noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload({ flagType: 'training' })).note.noteId;
+  });
+  var r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return setCallNoteResolved(noteId, true);
+  });
+  _assertFailure(r, 'action-flagged', 'Resolve rejects non-action (INV-34)');
+}
+
+// ── deleteCallNote ──
+
+function test_cn_deleteCallNote_basic() {
+  _clearTestCallNotes();
+  var noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload()).note.noteId;
+  });
+  var r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return deleteCallNote(noteId);
+  });
+  _assertSuccess(r, 'Delete should succeed');
+
+  r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return deleteCallNote(noteId);
+  });
+  _assertFailure(r, 'not found', 'Double-delete should fail');
+}
+
+// ── setCallNotePinned (cap enforcement) ──
+
+function test_cn_setCallNotePinned_capAt3() {
+  _clearTestCallNotes();
+  var ids = [];
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    for (var j = 0; j < 4; j++) {
+      ids.push(submitCallNote(_cnTestPayload({ caller: 'Caller ' + j })).note.noteId);
+    }
+  });
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertSuccess(setCallNotePinned(ids[0], true), 'Pin 1');
+    _assertSuccess(setCallNotePinned(ids[1], true), 'Pin 2');
+    _assertSuccess(setCallNotePinned(ids[2], true), 'Pin 3');
+  });
+  var r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return setCallNotePinned(ids[3], true);
+  });
+  _assertFailure(r, 'max', '4th pin should be rejected (INV-50)');
+
+  r = _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertSuccess(setCallNotePinned(ids[0], false), 'Unpin 1');
+    return setCallNotePinned(ids[3], true);
+  });
+  _assertSuccess(r, 'After unpin, 4th pin should succeed');
+}
+
+// ── updateCallNote ──
+
+function test_cn_updateCallNote_basic() {
+  _clearTestCallNotes();
+  var noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload()).note.noteId;
+  });
+  var r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return updateCallNote(noteId, _cnTestPayload({ issue: 'Updated issue' }));
+  });
+  _assertSuccess(r, 'Update should succeed');
+  _assertEq(r.note.issue, 'Updated issue', 'Issue round-trips after edit');
+  _assertEq(r.note.caller, 'Test Caller', 'Unchanged field preserved');
+}
+
+// ── manager gate on managerGetCallNotes ──
+
+function test_cn_managerGetCallNotes_nonManagerRejected() {
+  var r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return managerGetCallNotes(_TEST_INDIA_ID, fmtDate_(new Date()));
+  });
+  _assertNotNull(r.error, 'Non-manager should be rejected');
+  _assertContains(r.error, 'Manager access');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  NORMALTIME 1899 COERCION + SAFE TIMEZONE (smoke-safe)
+// ════════════════════════════════════════════════════════════════════════════
+
+function test_normalizeTime_1899DateCoercion() {
+  // Sheets coerces "09:30:00" into a Date with base date 1899-12-30T09:30:00.
+  // normalizeTime_ must detect the Date and re-format to HH:mm:ss.
+  const d = new Date(1899, 11, 30, 9, 30, 0);
+  const result = normalizeTime_(d);
+  _assertTrue(/^\d{2}:\d{2}:\d{2}$/.test(result),
+    'Should return HH:mm:ss for 1899 coerced Date, got "' + result + '"');
+  _assertTrue(result.indexOf('1899') < 0, 'Must not contain year string');
+}
+
+function test_safeTimezone_validPassthrough() {
+  _assertEq(safeTimezone_('Asia/Kolkata'), 'Asia/Kolkata');
+  _assertEq(safeTimezone_('America/Chicago'), 'America/Chicago');
+}
+
+function test_safeTimezone_invalidFallback() {
+  _assertEq(safeTimezone_('NotATimezone'), CONFIG.TIMEZONE, 'Invalid tz falls back to CONFIG');
+  _assertEq(safeTimezone_(''), CONFIG.TIMEZONE, 'Empty string falls back');
+  _assertEq(safeTimezone_(null), CONFIG.TIMEZONE, 'Null falls back');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  AUTOMATION TRIGGER GATES (INV-44)
+// ════════════════════════════════════════════════════════════════════════════
+
+function test_triggerGate_eodDigest_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesEodDigest(); });
+  }, 'manager access required', 'Non-manager should be rejected');
+}
+
+function test_triggerGate_weeklyDigests_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesWeeklyDigests(); });
+  }, 'manager access required');
+}
+
+function test_triggerGate_missedPunch_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendDailyMissedPunchAlerts(); });
+  }, 'manager access required');
+}
+
+function test_triggerGate_dailyExport_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { runDailyExportCheck(); });
+  }, 'manager access required');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  AUDIT ROW ASSERTIONS (INV-08)
+// ════════════════════════════════════════════════════════════════════════════
+
+function _findAuditRow(empId, actionType) {
+  const sheet = getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB);
+  if (!sheet) return null;
+  const rows = sheet.getDataRange().getValues();
+  for (var i = rows.length - 1; i >= 1; i--) {
+    if (String(rows[i][1] || '').trim() === empId &&
+        String(rows[i][2] || '').trim() === actionType) {
+      return rows[i];
+    }
+  }
+  return null;
+}
+
+function test_auditRow_recordPunchAdjustment() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '08:00', reason: 'test audit' });
+  });
+  var row = _findAuditRow(_TEST_INDIA_ID, 'ClockIn');
+  _assertNotNull(row, 'Audit row should exist for recordPunch');
+}
+
+function test_auditRow_deletePunch_hasActorEmail() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '09:00', reason: 'setup' });
+  });
+  _asUser(_TEST_MGR_EMAIL, function () {
+    deletePunch(_TEST_INDIA_ID, _TEST_DATE_RECENT, '09:00:00', 'ClockIn');
+  });
+  var row = _findAuditRow(_TEST_INDIA_ID, 'PunchDelete');
+  _assertNotNull(row, 'Audit row should exist for PunchDelete');
+  var notes = String(row[6] || '');
+  _assertContains(notes, 'removed by manager', 'Audit notes should mention manager delete');
 }

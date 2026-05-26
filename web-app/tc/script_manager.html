@@ -113,15 +113,7 @@ function renderManagerView(area, data) {
         if (conflictBits.length) {
           conflictLine = `<div style="margin-top:6px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--warning-deep);text-transform:uppercase;display:flex;align-items:center;gap:5px">${icon('info', 11)}${conflictBits.join(' · ')}</div>`;
         }
-        // Echo conflict bits into the approval confirm dialog via the data-key
-        // payload so handleApprovalAction can show them in the confirm.
-        const conflictForConfirm = conflictBits.length ? conflictBits.join(' · ') : null;
-        const keyWithConflict = JSON.stringify({
-          empId: p.empId, date: p.date, submittedAt: p.submittedAt,
-          empName: p.empName, projectedBalance: p.projectedBalance,
-          leaveBucket: p.leaveBucket,
-          conflictHint: conflictForConfirm,
-        });
+        const conflictForConfirm = conflictBits.length ? conflictBits.join(' · ') : '';
 
         return `<div class="pending-card">
           <div class="pending-top">
@@ -138,8 +130,13 @@ function renderManagerView(area, data) {
             </div>
           </div>
           <div class="pending-actions">
-            <button class="pending-btn pb-approve" data-key='${esc(keyWithConflict)}' data-status="Approved">${icon('check', 14)}Approve</button>
-            <button class="pending-btn pb-deny"    data-key='${esc(keyWithConflict)}' data-status="Denied">${icon('x', 14)}Deny</button>
+            <button class="pending-btn pb-approve" data-status="Approved"
+              data-emp-id="${esc(p.empId)}" data-date="${esc(p.date)}" data-submitted-at="${esc(p.submittedAt)}"
+              data-emp-name="${esc(p.empName)}" data-projected-balance="${p.projectedBalance != null ? p.projectedBalance : ''}"
+              data-leave-bucket="${esc(p.leaveBucket || '')}" data-conflict-hint="${esc(conflictForConfirm)}">${icon('check', 14)}Approve</button>
+            <button class="pending-btn pb-deny" data-status="Denied"
+              data-emp-id="${esc(p.empId)}" data-date="${esc(p.date)}" data-submitted-at="${esc(p.submittedAt)}"
+              data-emp-name="${esc(p.empName)}">${icon('x', 14)}Deny</button>
           </div>
         </div>`;
       }).join('');
@@ -292,24 +289,19 @@ function renderManagerView(area, data) {
   // Approve / Deny buttons
   document.querySelectorAll('.pending-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const key = JSON.parse(btn.dataset.key);
-      const newStatus = btn.dataset.status;
+      const d = btn.dataset;
+      const newStatus = d.status;
       const verb = newStatus === 'Approved' ? 'Approve' : 'Deny';
-      let msg = `${verb} time off request from ${key.empName}?`;
-      if (newStatus === 'Approved'
-          && key.projectedBalance !== null && key.projectedBalance !== undefined
-          && key.projectedBalance < 0) {
-        const bucket = key.leaveBucket === 'sick' ? 'sick' : 'annual';
-        msg += `\n\n⚠ This will take their ${bucket} leave balance to ${key.projectedBalance} day(s) (negative).`;
+      let msg = `${verb} time off request from ${d.empName}?`;
+      if (newStatus === 'Approved' && d.projectedBalance !== '' && parseFloat(d.projectedBalance) < 0) {
+        const bucket = d.leaveBucket === 'sick' ? 'sick' : 'annual';
+        msg += `\n\n⚠ This will take their ${bucket} leave balance to ${d.projectedBalance} day(s) (negative).`;
       }
-      // Conflict hint (US holiday / other reps off the same day) — surfaced
-      // inline on the card AND echoed here so the manager can't miss it on the
-      // final approve click. Only shown for Approved (Deny is unblocked).
-      if (newStatus === 'Approved' && key.conflictHint) {
-        msg += `\n\n⚠ Heads up: ${key.conflictHint}.`;
+      if (newStatus === 'Approved' && d.conflictHint) {
+        msg += `\n\n⚠ Heads up: ${d.conflictHint}.`;
       }
       if (!confirm(msg)) return;
-      handleApprovalAction(key.empId, key.date, key.submittedAt, newStatus, btn);
+      handleApprovalAction(d.empId, d.date, d.submittedAt, newStatus, btn);
     });
   });
 
