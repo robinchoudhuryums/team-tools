@@ -615,6 +615,33 @@ function getManagerDashboard() {
       }
     }
 
+    // Analytics: daily punch counts (last 7 days) + time-off status summary
+    const analyticsDays = 7;
+    const punchCountsByDate = {};
+    const analyticsLookback = new Date(now);
+    analyticsLookback.setDate(analyticsLookback.getDate() - analyticsDays);
+    const analyticsStart = fmtDateTz_(analyticsLookback, mgrTz);
+    for (let i = 2; i < adpRows.length; i++) {
+      const d = normalizeDate_(adpRows[i][ADP.DATE]);
+      if (d >= analyticsStart && d <= todayStr) {
+        punchCountsByDate[d] = (punchCountsByDate[d] || 0) + 1;
+      }
+    }
+    const punchTrend = [];
+    for (let off = analyticsDays; off >= 0; off--) {
+      const dd = new Date(now); dd.setDate(dd.getDate() - off);
+      const ds = fmtDateTz_(dd, mgrTz);
+      punchTrend.push({ date: ds, count: punchCountsByDate[ds] || 0 });
+    }
+    const toSummary = { approved: 0, pending: 0, denied: 0 };
+    const monthStr = todayStr.substring(0, 7);
+    for (let i = 1; i < toRows.length; i++) {
+      const d = normalizeDate_(toRows[i][TO.DATE]);
+      if (d.substring(0, 7) !== monthStr) continue;
+      const st = String(toRows[i][TO.STATUS]).toLowerCase().trim();
+      if (toSummary[st] !== undefined) toSummary[st]++;
+    }
+
     return {
       today: todayStr,
       liveStatus, pending, missedPunches, recentPunches, recentAudits,
@@ -622,6 +649,7 @@ function getManagerDashboard() {
       mgrDeleteWindowDays: CONFIG.MGR_DELETE_WINDOW_DAYS,
       ptoEnabled:          !!CONFIG.ENABLE_PTO_TRACKING,
       mgrTzAbbr,
+      punchTrend, toSummary,
     };
   } catch (err) { return { error: err.message }; }
 }
