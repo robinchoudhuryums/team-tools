@@ -854,6 +854,13 @@ function cnRenderNotesView(area) {
   `;
   cnWireActiveForm_();
   cnInstallCardDelegation_(area);
+  // Render the cached pinned tray synchronously BEFORE the rolling stack so
+  // the stack's pinned-note deduplication is consistent with what the tray
+  // shows. Without this, on second+ visits the stack filters out pinned notes
+  // (using CN_STATE.pinnedNotes populated by the prior visit's async reload)
+  // but the tray is still empty — pinned notes vanish from both places until
+  // the async reload completes.
+  cnRenderPinnedTray_();
   cnRenderFilterBar_();
   cnRenderStack_();
   cnReloadPinnedTray_();
@@ -1977,11 +1984,24 @@ function cnTogglePinned_(noteId) {
  *  after pin/unpin to keep the tray authoritative (pinned notes can come
  *  from any past date, so they're not in the today-only rolling stack). */
 function cnReloadPinnedTray_() {
+  var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
+      // State update is unconditional (cache stays warm for next visit)
       if (res && !res.error) {
         CN_STATE.pinnedNotes = res.notes || [];
+      }
+      // DOM updates only if still on the same view
+      if (currentView !== requestedView) return;
+      if (res && !res.error) {
         cnRenderPinnedTray_();
+        // Re-render the rolling stack so pinned-note deduplication stays in
+        // sync with the freshly loaded tray. Without this, a first-visit
+        // stack shows pinned notes as duplicates (they were rendered before
+        // pinnedNotes was populated), and a second-visit stack may filter
+        // notes that the tray hasn't rendered yet.
+        cnRenderStack_();
+        cnRenderFilterBar_();
       }
     })
     .getMyPinnedCallNotes();
