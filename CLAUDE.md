@@ -353,6 +353,17 @@ this section before touching the relevant area.
   effort, try/catch) when `flagType=training` and
   `subformData.trainingQuestion` is non-empty. Previously, managers
   only saw training questions in the weekly digest.
+- **`setCallNoteFlag` accepts an optional `trainingQuestion`.**
+  When flagging an existing note as `training` from a card button,
+  the client prompts for a question and passes it as the third arg.
+  The server merges it into `subformData.trainingQuestion` inside
+  the same lock. This parallels the active-form path where the
+  question is set during `submitCallNote`.
+- **`getMyCallNotesRange` caps at 90 days.** The date-range History
+  endpoint validates both dates and rejects spans > 90 days. The
+  client presets (Last 7, Last 30) stay within this cap; custom
+  ranges could hit it. Returns notes sorted newest-first with the
+  same response shape as `getMyCallNotes`.
 - **Call-note delete window.** `deleteCallNote` enforces
   `CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS` (5 min). Reps can only
   delete notes within 5 minutes of creation — older notes must be
@@ -632,7 +643,10 @@ this section before touching the relevant area.
   the Log view; `cnRenderStack_` deduplicates so the same noteId never
   appears in both the tray and the stack. `getMyPinnedCallNotes`
   returns the rep's pinned notes across ALL dates (not just today) so
-  a complex case pinned last week stays visible.
+  a complex case pinned last week stays visible. The pinned tray
+  header shows `X/3` capacity; at 3/3 the count goes warn-colored
+  and un-pinned cards' bookmark buttons are dimmed with a
+  "Unpin a note first" tooltip.
 - **Manager Q&A reply on training-flagged notes.** Training-flagged
   notes can carry a free-text question (`subformData.trainingQuestion`,
   set client-side when the rep picks the training flag) and a manager
@@ -705,6 +719,40 @@ this section before touching the relevant area.
   (`cnStartDragModal_`) that repositions the modal via
   `position: fixed`. The modal also has `resize: both` for the
   browser's native resize grip.
+- **Keyboard shortcuts accelerate the Call Notes hot path.**
+  Ctrl/⌘+Enter saves & copies (existing). Ctrl/⌘+Shift+Enter
+  saves & opens the email composer. Ctrl/⌘+1/2/3 toggle
+  action/training/review flags on the active form. Ctrl/⌘+Backspace
+  clears the form. Ctrl/⌘+/ or bare ? opens a shortcuts help
+  overlay. Shortcuts only bind in the Log view's active form; the
+  ? handler skips when focus is in an input/textarea. The help
+  overlay uses the shared `.overlay` pattern (Escape closes it).
+- **Training Q&A tray surfaces manager answers on the Log view.**
+  A collapsible "Training Answers" section renders between the
+  pinned tray and the filter bar, showing the rep's last 5
+  training-flagged notes that have a manager reply (from
+  `getMyTrainingQA`). An "Answered" filter chip also appears in
+  the filter bar. Both give the rep visibility into manager
+  feedback without navigating to History.
+- **History view supports date ranges.** The History tab defaults
+  to "Last 7 Days" with From/To date inputs and presets (Yesterday,
+  Last 7 Days, Last 30 Days, This Week, Last Week). Multi-date
+  results render with date-separator headers grouping notes by day.
+  Single-date mode (start === end) uses the original `getMyCallNotes`
+  endpoint; ranges use `getMyCallNotesRange` (90-day cap). The
+  client stores both `CN_STATE.historyDate` (start) and
+  `CN_STATE.historyEndDate`.
+- **Manager cross-rep search in Team Notes.** A Search tab in the
+  Team Notes view calls `managerSearchCallNotes` with the same
+  All/Caller/Issue field tabs as the rep search. Results show
+  `repName` on each card. 500-result cap.
+- **Stats drill-down links to Per-Rep View.** Rep names in the
+  Stats tab are clickable — clicking one navigates to the Per-Rep
+  View for that rep and the same date.
+- **Email department display on note cards.** Note cards show which
+  departments an email was sent to (from `emailDepartments`) next
+  to the sent timestamp. The `title` attribute includes the full
+  list for overflow.
 
 ## Operator State Checklist
 
@@ -873,6 +921,7 @@ INV-59 | `writeToEmployeeSheet_` and `clearFromEmployeeSheet_` write a `Personal
 INV-60 | `deleteCallNote` rejects deletion when the note is older than `CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS` (300s). The elapsed-time check uses `parseTimestampMs_` against the note's `TIMESTAMP` column. Notes without a parseable timestamp bypass the check (fail-open for legacy data) | Subsystem: Server
 INV-61 | `removeAutomationTriggers` calls `assertManagerCaller_` — non-manager reps cannot disable automation triggers via `google.script.run` | Subsystem: Server
 INV-62 | `cnFindNoteAnywhere_` searches `CN_STATE.rollingNotes`, `historyNotes`, and `pinnedNotes`. `cnReplaceNoteInState_` updates all three. Actions on pinned notes from past dates no longer silently fail, and flag/resolve changes propagate to the pinned tray | Subsystem: Client (Call Notes views)
+INV-63 | `getMyCallNotesRange(startDate, endDate)` is caller-scoped via `getEmployeeInfo_()`, validates both dates with regex, rejects `startDate > endDate`, and caps the span at 90 days. Returns notes sorted newest-first. Used by the History view for multi-day queries; single-date queries still use `getMyCallNotes` | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10
