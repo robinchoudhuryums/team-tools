@@ -130,9 +130,53 @@
   margin-bottom: var(--space-sm);
 }
 
+/* ── Sparkline ──────────────────────────────────────────────────── */
+.m-sparkline-wrap {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+}
+.m-sparkline-wrap h3 {
+  font-family: var(--font-tight);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-xs) 0;
+}
+.m-sparkline-svg { display: block; width: 100%; height: 60px; }
+.m-sparkline-svg line { stroke: var(--line); stroke-width: 0.5; }
+.m-sparkline-svg polyline {
+  fill: none; stroke: var(--accent); stroke-width: 1.5;
+  stroke-linejoin: round; stroke-linecap: round;
+}
+.m-sparkline-svg circle { fill: var(--accent); }
+.m-sparkline-labels {
+  display: flex; justify-content: space-between;
+  font-size: 0.65rem; color: var(--muted); margin-top: 2px;
+}
+
+/* ── Preset chips ──────────────────────────────────────────────── */
+.m-preset-chip {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.m-preset-chip:hover { background: var(--accent-soft); color: var(--accent); }
+
 /* ── Compact mode ───────────────────────────────────────────────── */
 :root[data-compact] .m-kpi-grid { grid-template-columns: repeat(3, 1fr); }
 :root[data-compact] .m-kpi-value { font-size: 1.2rem; }
+:root[data-compact] .m-sparkline-svg { height: 40px; }
 </style>
 
 <script>
@@ -140,18 +184,56 @@
 //  METRICS — My Stats + Team Metrics views
 // ════════════════════════════════════════════════════════════════════════════
 
-var M_STATE = { myDate: null, teamDate: null };
+var M_STATE = { myDate: null, teamFrom: null, teamTo: null };
 
 function mTodayIso_() {
-  // Use manager TZ for "today" to align with CDR pipeline dates
   try {
     var d = new Date();
-    // Approximate — CDR dates are CST (America/Chicago). JS doesn't have
-    // native tz formatting, so we rely on the server for accuracy.
     return d.getFullYear() + '-' +
       String(d.getMonth() + 1).padStart(2, '0') + '-' +
       String(d.getDate()).padStart(2, '0');
   } catch (_) { return ''; }
+}
+
+function mDaysAgo_(n) {
+  var d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function mBuildSparkline_(trend, metric) {
+  if (!trend || trend.length === 0) return '';
+  metric = metric || 'pctAnswered';
+  var pts = [];
+  for (var i = 0; i < trend.length; i++) {
+    var v = trend[i][metric];
+    if (v != null) pts.push({ i: i, v: v });
+  }
+  if (pts.length < 2) return '';
+  var maxV = 0;
+  for (var j = 0; j < pts.length; j++) { if (pts[j].v > maxV) maxV = pts[j].v; }
+  if (maxV === 0) maxV = 1;
+  var w = 300, h = 50, pad = 4;
+  var xScale = (w - pad * 2) / (trend.length - 1);
+  var yScale = (h - pad * 2) / maxV;
+  var coords = pts.map(function (p) {
+    return (pad + p.i * xScale).toFixed(1) + ',' + (h - pad - p.v * yScale).toFixed(1);
+  });
+  var last = pts[pts.length - 1];
+  var lx = (pad + last.i * xScale).toFixed(1);
+  var ly = (h - pad - last.v * yScale).toFixed(1);
+  var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
+  var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
+  return '<div class="m-sparkline-wrap">' +
+    '<h3>30-Day % Answered Trend</h3>' +
+    '<svg class="m-sparkline-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<polyline points="' + coords.join(' ') + '"/>' +
+    '<circle cx="' + lx + '" cy="' + ly + '" r="2.5"/>' +
+    '</svg>' +
+    '<div class="m-sparkline-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>' +
+    '</div>';
 }
 
 function mCoverageBadge_(pct) {
@@ -257,6 +339,11 @@ function mRenderMyStats_(data) {
     }
   }
 
+  // 30-day trend sparkline
+  if (data.trend) {
+    html += mBuildSparkline_(data.trend, 'pctAnswered');
+  }
+
   el.innerHTML = html;
 }
 
@@ -265,7 +352,9 @@ function mRenderMyStats_(data) {
 function enterMetricsTeamView() {
   var area = document.getElementById('view-area');
   if (!area) return;
-  M_STATE.teamDate = M_STATE.teamDate || mTodayIso_();
+  var today = mTodayIso_();
+  M_STATE.teamFrom = M_STATE.teamFrom || today;
+  M_STATE.teamTo = M_STATE.teamTo || today;
 
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('chart', 16) + ' Team Metrics</div>' : '') +
@@ -273,23 +362,57 @@ function enterMetricsTeamView() {
       '<h2>Team Call Metrics</h2>' +
     '</div>' +
     '<div class="m-controls">' +
-      '<label style="font-size:0.85rem;color:var(--muted)">Date</label>' +
-      '<input type="date" id="m-team-date" value="' + M_STATE.teamDate + '">' +
+      '<label style="font-size:0.85rem;color:var(--muted)">From</label>' +
+      '<input type="date" id="m-team-from" value="' + M_STATE.teamFrom + '">' +
+      '<label style="font-size:0.85rem;color:var(--muted)">To</label>' +
+      '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">' +
       '<button class="btn btn-sm" onclick="mLoadTeamMetrics_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
+    '</div>' +
+    '<div class="m-controls" style="margin-top:calc(-1 * var(--space-xs))">' +
+      '<span class="m-preset-chip" onclick="mTeamPreset_(\'today\')">Today</span>' +
+      '<span class="m-preset-chip" onclick="mTeamPreset_(\'yesterday\')">Yesterday</span>' +
+      '<span class="m-preset-chip" onclick="mTeamPreset_(\'week\')">Last 7 Days</span>' +
+      '<span class="m-preset-chip" onclick="mTeamPreset_(\'month\')">Last 30 Days</span>' +
     '</div>' +
     '<div id="m-team-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
 
-  document.getElementById('m-team-date').addEventListener('change', function () {
-    M_STATE.teamDate = this.value;
+  document.getElementById('m-team-from').addEventListener('change', function () {
+    M_STATE.teamFrom = this.value;
+    if (M_STATE.teamFrom > M_STATE.teamTo) {
+      M_STATE.teamTo = M_STATE.teamFrom;
+      document.getElementById('m-team-to').value = M_STATE.teamTo;
+    }
+    mLoadTeamMetrics_();
+  });
+  document.getElementById('m-team-to').addEventListener('change', function () {
+    M_STATE.teamTo = this.value;
+    if (M_STATE.teamTo < M_STATE.teamFrom) {
+      M_STATE.teamFrom = M_STATE.teamTo;
+      document.getElementById('m-team-from').value = M_STATE.teamFrom;
+    }
     mLoadTeamMetrics_();
   });
 
   mLoadTeamMetrics_();
 }
 
+function mTeamPreset_(key) {
+  var today = mTodayIso_();
+  if (key === 'today')     { M_STATE.teamFrom = today; M_STATE.teamTo = today; }
+  if (key === 'yesterday') { M_STATE.teamFrom = mDaysAgo_(1); M_STATE.teamTo = mDaysAgo_(1); }
+  if (key === 'week')      { M_STATE.teamFrom = mDaysAgo_(6); M_STATE.teamTo = today; }
+  if (key === 'month')     { M_STATE.teamFrom = mDaysAgo_(29); M_STATE.teamTo = today; }
+  var fromEl = document.getElementById('m-team-from');
+  var toEl = document.getElementById('m-team-to');
+  if (fromEl) fromEl.value = M_STATE.teamFrom;
+  if (toEl)   toEl.value = M_STATE.teamTo;
+  mLoadTeamMetrics_();
+}
+
 function mLoadTeamMetrics_() {
-  var date = M_STATE.teamDate;
-  if (!date) return;
+  var from = M_STATE.teamFrom;
+  var to = M_STATE.teamTo;
+  if (!from) return;
   var requestedView = currentView;
 
   document.getElementById('m-team-content').innerHTML =
@@ -305,7 +428,7 @@ function mLoadTeamMetrics_() {
       document.getElementById('m-team-content').innerHTML =
         '<div class="m-empty">Failed to load metrics: ' + (err.message || err) + '</div>';
     })
-    .getTeamMetrics(date);
+    .getTeamMetrics(from, to);
 }
 
 function mRenderTeamMetrics_(data) {
@@ -333,6 +456,16 @@ function mRenderTeamMetrics_(data) {
   if (t.noteCoverage != null) {
     html += '<div style="margin-bottom:var(--space-md)">' + mCoverageBadge_(t.noteCoverage) +
       ' <span class="m-hint" style="margin:0">team-wide note-to-call ratio</span></div>';
+  }
+
+  // 30-day trend sparkline (only shown on single-day view)
+  if (data.trend) {
+    html += mBuildSparkline_(data.trend, 'pctAnswered');
+  }
+
+  // Date range label
+  if (data.from && data.to && data.from !== data.to) {
+    html += '<div class="m-hint">' + data.from + ' to ' + data.to + '</div>';
   }
 
   // Per-rep table

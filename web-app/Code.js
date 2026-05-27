@@ -5072,11 +5072,88 @@ function getCdrForAgent_(agentName, date) {
   return result.agents[agentName] || null;
 }
 
+/**
+ * Returns per-day CDR data for a date range and optional agent filter.
+ * Used by the 30-day trend sparkline and date-range team view.
+ * Returns { daily: { 'YYYY-MM-DD': { rung, answered, missed, pctAnswered } }, agents: {...} }
+ */
+function getCdrDailyBreakdown_(from, to, rosterNames) {
+  var ss = getCdrSS_();
+  var sheet = ss.getSheetByName('DQE Historical Data');
+  if (!sheet) return { daily: {}, agents: {} };
+
+  var tz = ss.getSpreadsheetTimeZone();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { daily: {}, agents: {} };
+
+  var range = sheet.getRange(2, 1, lastRow - 1, 34);
+  var values = range.getValues();
+  var displays = range.getDisplayValues();
+
+  var nameSet = {};
+  if (rosterNames) {
+    for (var n = 0; n < rosterNames.length; n++) nameSet[rosterNames[n]] = true;
+  }
+  var useRoster = rosterNames && rosterNames.length > 0;
+
+  var daily = {};
+  var agents = {};
+
+  for (var i = 0; i < values.length; i++) {
+    var agent = String(values[i][CDR.AGENT - 1] || '').trim();
+    if (!agent) continue;
+    if (/^A_Q_/.test(agent) || agent === 'Backup CSR') continue;
+    if (useRoster && !nameSet[agent]) continue;
+
+    var dateIso = cdrRowDateIso_(values[i][CDR.DATE - 1], tz);
+    if (!dateIso || dateIso < from || dateIso > to) continue;
+
+    var rung    = Number(values[i][CDR.TOTAL_RUNG - 1]) || 0;
+    var ans     = Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
+    var missed  = Number(values[i][CDR.TOTAL_MISSED - 1]) || 0;
+    var attSec  = cdrParseHms_(displays[i][CDR.ATT - 1]);
+
+    if (!daily[dateIso]) daily[dateIso] = { rung: 0, answered: 0, missed: 0 };
+    daily[dateIso].rung += rung;
+    daily[dateIso].answered += ans;
+    daily[dateIso].missed += missed;
+
+    if (!agents[agent]) {
+      agents[agent] = {
+        agent: agent, totalRung: 0, totalAnswered: 0, totalMissed: 0,
+        tttSeconds: 0, attSum: 0, attCount: 0, daysActive: 0, _dates: {},
+      };
+    }
+    var a = agents[agent];
+    a.totalRung += rung; a.totalAnswered += ans; a.totalMissed += missed;
+    a.tttSeconds += cdrParseHms_(displays[i][CDR.TTT - 1]);
+    if (attSec > 0) { a.attSum += attSec; a.attCount++; }
+    if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
+  }
+
+  Object.keys(daily).forEach(function (d) {
+    daily[d].pctAnswered = daily[d].rung > 0
+      ? Math.round((daily[d].answered / daily[d].rung) * 1000) / 10 : 0;
+  });
+  Object.keys(agents).forEach(function (k) {
+    var a = agents[k];
+    a.attSeconds = a.attCount > 0 ? Math.round(a.attSum / a.attCount) : 0;
+    a.pctAnswered = a.totalRung > 0
+      ? Math.round((a.totalAnswered / a.totalRung) * 1000) / 10 : 0;
+    a.tttFormatted = cdrFmtHms_(a.tttSeconds);
+    a.attFormatted = cdrFmtHms_(a.attSeconds);
+    delete a._dates; delete a.attSum; delete a.attCount;
+  });
+
+  return { daily: daily, agents: agents };
+}
+
 // ── Metrics public endpoints ──────────────────────────────────────────
 
 /**
  * Self-view: the calling rep's own call metrics for a date, plus their
  * call-notes count for the same day (notes-vs-calls correlation).
+ * Also returns a 30-day % Answered trend ending on the given date.
  */
 function getMyMetrics(date) {
   try {
@@ -5085,7 +5162,35 @@ function getMyMetrics(date) {
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { error: 'Invalid date (expected yyyy-MM-dd).' };
 
-    var cdr = getCdrForAgent_(emp.name, date);
+    // Compute 30-day window ending on `date`
+    var endD = new Date(date + 'T12:00:00Z');
+    var startD = new Date(endD.getTime() - 29 * 86400000);
+    var trendFrom = isoFromUtc_(startD);
+    var trendTo = date;
+
+    var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, [emp.name]);
+    var cdr = breakdown.agents[emp.name] || null;
+    var todayCdr = null;
+    var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
+    todayCdr = todayResult.agents[emp.name] || null;
+
+    // Build 30-day trend array (one entry per day, null if no data)
+    var trend = [];
+    for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+      var iso = isoFromUtc_(d);
+      var day = breakdown.daily[iso];
+      var agentDay = null;
+      // For per-agent trend, we need per-agent-per-day data — use the daily
+      // breakdown filtered to this agent. Since getCdrDailyBreakdown_ already
+      // filtered by rosterNames=[emp.name], daily totals ARE the agent's data.
+      trend.push({
+        date: iso,
+        pctAnswered: day ? day.pctAnswered : null,
+        rung: day ? day.rung : 0,
+        answered: day ? day.answered : 0,
+        missed: day ? day.missed : 0,
+      });
+    }
 
     var noteCount = 0;
     try {
@@ -5101,33 +5206,50 @@ function getMyMetrics(date) {
     return {
       date: date,
       repName: emp.name,
-      cdr: cdr ? {
-        totalRung:    cdr.totalRung,
-        totalAnswered: cdr.totalAnswered,
-        totalMissed:  cdr.totalMissed,
-        pctAnswered:  cdr.pctAnswered,
-        tttFormatted: cdr.tttFormatted,
-        attFormatted: cdr.attFormatted,
-        tttSeconds:   cdr.tttSeconds,
-        attSeconds:   cdr.attSeconds,
+      cdr: todayCdr ? {
+        totalRung:    todayCdr.totalRung,
+        totalAnswered: todayCdr.totalAnswered,
+        totalMissed:  todayCdr.totalMissed,
+        pctAnswered:  todayCdr.pctAnswered,
+        tttFormatted: todayCdr.tttFormatted,
+        attFormatted: todayCdr.attFormatted,
+        tttSeconds:   todayCdr.tttSeconds,
+        attSeconds:   todayCdr.attSeconds,
       } : null,
       noteCount: noteCount,
-      noteCoverage: (cdr && cdr.totalAnswered > 0)
-        ? Math.round((noteCount / cdr.totalAnswered) * 100) : null,
+      noteCoverage: (todayCdr && todayCdr.totalAnswered > 0)
+        ? Math.round((noteCount / todayCdr.totalAnswered) * 100) : null,
+      trend: trend,
     };
   } catch (err) { return { error: err.message }; }
 }
 
 /**
- * Manager view: per-rep CDR metrics + note counts for a date.
- * Includes note-to-call coverage ratio per rep.
+ * Manager view: per-rep CDR metrics + note counts for a date range.
+ * Accepts either a single date or from/to. Also returns a 30-day team
+ * % Answered trend when viewing a single date.
  */
-function getTeamMetrics(date) {
+function getTeamMetrics(dateOrFrom, to) {
   try {
     var callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+
+    var dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    var from, toDate;
+    if (to && dateRegex.test(to)) {
+      from = dateOrFrom;
+      toDate = to;
+    } else {
+      from = dateOrFrom;
+      toDate = dateOrFrom;
+    }
+    if (!from || !dateRegex.test(from))
       return { error: 'Invalid date (expected yyyy-MM-dd).' };
+    if (!toDate || !dateRegex.test(toDate))
+      return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (from > toDate) return { error: 'Start date must be on or before end date.' };
+
+    var isSingleDay = (from === toDate);
 
     var roster = getEmployeeRosterRows_();
     var rosterNames = [];
@@ -5145,7 +5267,28 @@ function getTeamMetrics(date) {
       }
     }
 
-    var cdrResult = getCdrAgentMetrics_(date, date, rosterNames);
+    // For single-day, also compute 30-day trend
+    var trendData = null;
+    if (isSingleDay) {
+      var endD = new Date(from + 'T12:00:00Z');
+      var startD = new Date(endD.getTime() - 29 * 86400000);
+      var trendFrom = isoFromUtc_(startD);
+      var trendBreakdown = getCdrDailyBreakdown_(trendFrom, from, rosterNames);
+      trendData = [];
+      for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+        var iso = isoFromUtc_(d);
+        var day = trendBreakdown.daily[iso];
+        trendData.push({
+          date: iso,
+          pctAnswered: day ? day.pctAnswered : null,
+          rung: day ? day.rung : 0,
+          answered: day ? day.answered : 0,
+          missed: day ? day.missed : 0,
+        });
+      }
+    }
+
+    var cdrResult = getCdrAgentMetrics_(from, toDate, rosterNames);
     var reps = [];
     var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0 };
     var unmatchedAgents = [];
@@ -5159,7 +5302,8 @@ function getTeamMetrics(date) {
           var sheet = getCallNotesSheet_({ id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId });
           var rows = sheet.getDataRange().getValues();
           for (var i = 1; i < rows.length; i++) {
-            if (String(rows[i][CN.DATE_LOCAL]) === date) noteCount++;
+            var nd = String(rows[i][CN.DATE_LOCAL]);
+            if (nd >= from && nd <= toDate) noteCount++;
           }
         }
       } catch (_) {}
@@ -5203,10 +5347,13 @@ function getTeamMetrics(date) {
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
 
     return {
-      date: date,
+      from: from,
+      to: toDate,
+      date: from,
       reps: reps,
       teamTotals: teamTotals,
       unmatchedAgents: unmatchedAgents,
+      trend: trendData,
       meta: cdrResult.meta,
     };
   } catch (err) { return { error: err.message }; }
