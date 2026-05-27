@@ -64,6 +64,15 @@ const TOOLS = {
       callNotesAdmin:   { label: 'Admin',       icon: 'settings', enter: 'enterCallNotesAdminView',  managerOnly: true },
     },
   },
+  metrics: {
+    label: 'Metrics',
+    sidebarIcon: 'chart',
+    defaultTab: 'metricsMyStats',
+    tabs: {
+      metricsMyStats:  { label: 'My Stats',      icon: 'chart',  enter: 'enterMetricsMyStatsView' },
+      metricsTeam:     { label: 'Team Metrics',   icon: 'manage', enter: 'enterMetricsTeamView', managerOnly: true },
+    },
+  },
 };
 // tabKey → toolKey lookup. Tab keys are globally unique by convention so
 // existing call sites that compare `currentView === 'callNotes'` continue

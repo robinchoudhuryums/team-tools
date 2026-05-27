@@ -3997,6 +3997,15 @@ function cnMgrRenderStats_(host, res) {
           <div class="cn-stats-row"><span class="cn-stats-k">Review candidates</span><span class="cn-stats-v">${fc.review || 0}</span></div>
           <div class="cn-stats-row"><span class="cn-stats-k">Emails sent</span><span class="cn-stats-v">${r.emailsSent}</span></div>
           ${medianRow}
+          ${r.cdr ? `
+          <div class="cn-stats-row" style="border-top:1px solid var(--line);padding-top:6px;margin-top:4px"><span class="cn-stats-k" style="color:var(--accent)">Calls answered</span><span class="cn-stats-v">${r.cdr.totalAnswered}</span></div>
+          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">Calls missed</span><span class="cn-stats-v">${r.cdr.totalMissed > 0 ? '<span style="color:var(--warn)">' + r.cdr.totalMissed + '</span>' : '0'}</span></div>
+          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">% Answered</span><span class="cn-stats-v">${r.cdr.pctAnswered}%</span></div>
+          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">Avg Talk Time</span><span class="cn-stats-v">${esc(r.cdr.attFormatted)}</span></div>
+          ` : ''}
+          ${r.noteCoverage != null ? `
+          <div class="cn-stats-row"><span class="cn-stats-k">Note coverage</span><span class="cn-stats-v">${r.noteCoverage}%</span></div>
+          ` : ''}
         </div>
       </div>
     `;
