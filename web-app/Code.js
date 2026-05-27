@@ -41,6 +41,16 @@ const CONFIG = {
   AUTO_MISSED_ALERT_HOUR_IST: 6,
   AUTO_EXPORT_HOUR_IST:       12,
 
+  // ── Metrics module (CDR integration) ──────────────────────────────────
+  // Reads the CDR Report spreadsheet (same one backing the Department
+  // Dashboard in call-data-reporting) to surface call-volume metrics
+  // inside team-tools. The deployer account must have view access to
+  // the CDR Report spreadsheet.
+  CDR_SS_ID:         'YOUR_CDR_SPREADSHEET_ID',
+  CDR_DEPARTMENT:    'CSR',
+  CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
+  CDR_CACHE_KEY:     'cdr_metrics_v1',
+
   // ── Call Notes module ────────────────────────────────────────────────
   // The rolling-note panel; per-rep notes write to the rep's own Sheet
   // (EMP.CALL_NOTES_SHEET_ID, column L), email composer/preview gate is a
@@ -166,6 +176,17 @@ const CN_HEADERS = [
   'Subform','SubformData',
 ];
 const CN_FLAG_TYPES = ['action','training','review'];
+
+// CDR / DQE Historical Data column positions (1-indexed, matching Config.gs
+// in call-data-reporting). Duration columns (TTT, ATT, AVG_ABD_WAIT,
+// CSR_AVG_ABD_WAIT) MUST be read via getDisplayValues() — see the
+// "Spreadsheet TZ ≠ script TZ" gotcha in call-data-reporting/CLAUDE.md.
+const CDR = {
+  DATE: 2, AGENT: 3, QUEUE_EXT: 4,
+  TOTAL_UNIQUE: 5, TOTAL_RUNG: 6, TOTAL_MISSED: 7, TOTAL_ANSWERED: 8,
+  TTT: 9, ATT: 10,
+  AVG_ABD_WAIT: 33, CSR_AVG_ABD_WAIT: 34,
+};
 
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
@@ -1849,6 +1870,31 @@ function managerGetShiftStats(date) {
       }
       reps.push(stats);
     }
+
+    // ── CDR enrichment (best-effort) ──────────────────────────────────
+    // Overlay call-volume metrics from DQE Historical Data onto each rep.
+    // Failure here must not break the core shift-stats response.
+    try {
+      const repNames = reps.map(function (r) { return r.repName; });
+      const cdrResult = getCdrAgentMetrics_(date, date, repNames);
+      for (let ri = 0; ri < reps.length; ri++) {
+        const cdr = cdrResult.agents[reps[ri].repName] || null;
+        reps[ri].cdr = cdr ? {
+          totalRung:     cdr.totalRung,
+          totalAnswered: cdr.totalAnswered,
+          totalMissed:   cdr.totalMissed,
+          pctAnswered:   cdr.pctAnswered,
+          tttFormatted:  cdr.tttFormatted,
+          attFormatted:  cdr.attFormatted,
+        } : null;
+        reps[ri].noteCoverage = (cdr && cdr.totalAnswered > 0)
+          ? Math.round((reps[ri].totalNotes / cdr.totalAnswered) * 100)
+          : null;
+      }
+    } catch (cdrErr) {
+      console.warn('managerGetShiftStats CDR enrichment failed: ' + cdrErr.message);
+    }
+
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
     return { date: date, reps: reps };
   } catch (err) { return { error: err.message }; }
@@ -4891,4 +4937,424 @@ function isoFromUtc_(d) {
 function toDisplayTime_(t) {
   const p = String(t).split(':'), h = parseInt(p[0],10);
   return `${h%12||12}:${p[1]} ${h>=12?'PM':'AM'}`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  METRICS MODULE — CDR Integration
+//  ────────────────────────────────────────────────────────────────────────
+//  Reads the CDR Report spreadsheet's DQE Historical Data sheet to surface
+//  call-volume metrics for the CSR team inside team-tools. Option A (direct
+//  spreadsheet read); designed for a future swap to Neon Postgres (Option C).
+// ════════════════════════════════════════════════════════════════════════════
+
+function getCdrSS_() {
+  const id = PropertiesService.getScriptProperties().getProperty('CDR_SS_ID')
+          || CONFIG.CDR_SS_ID;
+  return SpreadsheetApp.openById(id);
+}
+
+function cdrParseHms_(s) {
+  if (s == null || s === '') return 0;
+  var str = String(s).trim();
+  if (!str) return 0;
+  if (str.indexOf(':') === -1) return Number(str) || 0;
+  var parts = str.split(':');
+  var nums = [];
+  for (var i = 0; i < parts.length; i++) nums.push(Number(parts[i]) || 0);
+  if (nums.length === 3) return nums[0] * 3600 + nums[1] * 60 + nums[2];
+  if (nums.length === 2) return nums[0] * 60 + nums[1];
+  return 0;
+}
+
+function cdrFmtHms_(totalSec) {
+  if (!totalSec || totalSec <= 0) return '0:00:00';
+  var h = Math.floor(totalSec / 3600);
+  var m = Math.floor((totalSec % 3600) / 60);
+  var s = totalSec % 60;
+  return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+function cdrRowDateIso_(val, tz) {
+  if (val instanceof Date) return Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+  var s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) {
+    var yr = m[3].length === 2 ? (parseInt(m[3], 10) < 70 ? '20' + m[3] : '19' + m[3]) : m[3];
+    return yr + '-' + String(m[1]).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0');
+  }
+  return '';
+}
+
+/**
+ * Core CDR data reader. Fetches per-agent DQE metrics for a date range,
+ * filtered to CONFIG.CDR_DEPARTMENT's roster. Returns raw per-agent stats.
+ * Isolated so a future Neon swap replaces only this function.
+ */
+function getCdrAgentMetrics_(from, to, rosterNames) {
+  var cacheKey = CONFIG.CDR_CACHE_KEY + ':' + from + ':' + to;
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (_) {}
+  }
+
+  var ss = getCdrSS_();
+  var sheet = ss.getSheetByName('DQE Historical Data');
+  if (!sheet) return { agents: {}, meta: { error: 'DQE Historical Data sheet not found' } };
+
+  var tz = ss.getSpreadsheetTimeZone();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { agents: {}, meta: { rowsScanned: 0 } };
+
+  var range = sheet.getRange(2, 1, lastRow - 1, 34);
+  var values = range.getValues();
+  var displays = range.getDisplayValues();
+
+  var nameSet = {};
+  if (rosterNames) {
+    for (var n = 0; n < rosterNames.length; n++) nameSet[rosterNames[n]] = true;
+  }
+  var useRoster = rosterNames && rosterNames.length > 0;
+
+  var agents = {};
+  var rowsMatched = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var agent = String(values[i][CDR.AGENT - 1] || '').trim();
+    if (!agent) continue;
+    if (/^A_Q_/.test(agent) || agent === 'Backup CSR') continue;
+    if (useRoster && !nameSet[agent]) continue;
+
+    var dateIso = cdrRowDateIso_(values[i][CDR.DATE - 1], tz);
+    if (!dateIso || dateIso < from || dateIso > to) continue;
+
+    rowsMatched++;
+    if (!agents[agent]) {
+      agents[agent] = {
+        agent: agent, totalUnique: 0, totalRung: 0, totalMissed: 0,
+        totalAnswered: 0, tttSeconds: 0, attSum: 0, attCount: 0,
+        daysActive: 0, _dates: {},
+      };
+    }
+    var a = agents[agent];
+    a.totalUnique  += Number(values[i][CDR.TOTAL_UNIQUE - 1]) || 0;
+    a.totalRung    += Number(values[i][CDR.TOTAL_RUNG - 1]) || 0;
+    a.totalMissed  += Number(values[i][CDR.TOTAL_MISSED - 1]) || 0;
+    a.totalAnswered += Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
+    a.tttSeconds   += cdrParseHms_(displays[i][CDR.TTT - 1]);
+    var att = cdrParseHms_(displays[i][CDR.ATT - 1]);
+    if (att > 0) { a.attSum += att; a.attCount++; }
+    if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
+  }
+
+  Object.keys(agents).forEach(function (k) {
+    var a = agents[k];
+    a.attSeconds = a.attCount > 0 ? Math.round(a.attSum / a.attCount) : 0;
+    a.pctAnswered = a.totalRung > 0
+      ? Math.round((a.totalAnswered / a.totalRung) * 1000) / 10 : 0;
+    a.tttFormatted = cdrFmtHms_(a.tttSeconds);
+    a.attFormatted = cdrFmtHms_(a.attSeconds);
+    delete a._dates; delete a.attSum; delete a.attCount;
+  });
+
+  var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched } };
+  try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+  return result;
+}
+
+/**
+ * Returns a single agent's CDR metrics for a date. Used by the Metrics
+ * self-view and the shift-stats enrichment.
+ */
+function getCdrForAgent_(agentName, date) {
+  var result = getCdrAgentMetrics_(date, date, null);
+  return result.agents[agentName] || null;
+}
+
+/**
+ * Returns per-day CDR data for a date range and optional agent filter.
+ * Used by the 30-day trend sparkline and date-range team view.
+ * Returns { daily: { 'YYYY-MM-DD': { rung, answered, missed, pctAnswered } }, agents: {...} }
+ */
+function getCdrDailyBreakdown_(from, to, rosterNames) {
+  var ss = getCdrSS_();
+  var sheet = ss.getSheetByName('DQE Historical Data');
+  if (!sheet) return { daily: {}, agents: {} };
+
+  var tz = ss.getSpreadsheetTimeZone();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { daily: {}, agents: {} };
+
+  var range = sheet.getRange(2, 1, lastRow - 1, 34);
+  var values = range.getValues();
+  var displays = range.getDisplayValues();
+
+  var nameSet = {};
+  if (rosterNames) {
+    for (var n = 0; n < rosterNames.length; n++) nameSet[rosterNames[n]] = true;
+  }
+  var useRoster = rosterNames && rosterNames.length > 0;
+
+  var daily = {};
+  var agents = {};
+
+  for (var i = 0; i < values.length; i++) {
+    var agent = String(values[i][CDR.AGENT - 1] || '').trim();
+    if (!agent) continue;
+    if (/^A_Q_/.test(agent) || agent === 'Backup CSR') continue;
+    if (useRoster && !nameSet[agent]) continue;
+
+    var dateIso = cdrRowDateIso_(values[i][CDR.DATE - 1], tz);
+    if (!dateIso || dateIso < from || dateIso > to) continue;
+
+    var rung    = Number(values[i][CDR.TOTAL_RUNG - 1]) || 0;
+    var ans     = Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
+    var missed  = Number(values[i][CDR.TOTAL_MISSED - 1]) || 0;
+    var attSec  = cdrParseHms_(displays[i][CDR.ATT - 1]);
+
+    if (!daily[dateIso]) daily[dateIso] = { rung: 0, answered: 0, missed: 0 };
+    daily[dateIso].rung += rung;
+    daily[dateIso].answered += ans;
+    daily[dateIso].missed += missed;
+
+    if (!agents[agent]) {
+      agents[agent] = {
+        agent: agent, totalRung: 0, totalAnswered: 0, totalMissed: 0,
+        tttSeconds: 0, attSum: 0, attCount: 0, daysActive: 0, _dates: {},
+      };
+    }
+    var a = agents[agent];
+    a.totalRung += rung; a.totalAnswered += ans; a.totalMissed += missed;
+    a.tttSeconds += cdrParseHms_(displays[i][CDR.TTT - 1]);
+    if (attSec > 0) { a.attSum += attSec; a.attCount++; }
+    if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
+  }
+
+  Object.keys(daily).forEach(function (d) {
+    daily[d].pctAnswered = daily[d].rung > 0
+      ? Math.round((daily[d].answered / daily[d].rung) * 1000) / 10 : 0;
+  });
+  Object.keys(agents).forEach(function (k) {
+    var a = agents[k];
+    a.attSeconds = a.attCount > 0 ? Math.round(a.attSum / a.attCount) : 0;
+    a.pctAnswered = a.totalRung > 0
+      ? Math.round((a.totalAnswered / a.totalRung) * 1000) / 10 : 0;
+    a.tttFormatted = cdrFmtHms_(a.tttSeconds);
+    a.attFormatted = cdrFmtHms_(a.attSeconds);
+    delete a._dates; delete a.attSum; delete a.attCount;
+  });
+
+  return { daily: daily, agents: agents };
+}
+
+// ── Metrics public endpoints ──────────────────────────────────────────
+
+/**
+ * Self-view: the calling rep's own call metrics for a date, plus their
+ * call-notes count for the same day (notes-vs-calls correlation).
+ * Also returns a 30-day % Answered trend ending on the given date.
+ */
+function getMyMetrics(date) {
+  try {
+    var emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Account not registered.' };
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+      return { error: 'Invalid date (expected yyyy-MM-dd).' };
+
+    // Compute 30-day window ending on `date`
+    var endD = new Date(date + 'T12:00:00Z');
+    var startD = new Date(endD.getTime() - 29 * 86400000);
+    var trendFrom = isoFromUtc_(startD);
+    var trendTo = date;
+
+    var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, [emp.name]);
+    var cdr = breakdown.agents[emp.name] || null;
+    var todayCdr = null;
+    var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
+    todayCdr = todayResult.agents[emp.name] || null;
+
+    // Build 30-day trend array (one entry per day, null if no data)
+    var trend = [];
+    for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+      var iso = isoFromUtc_(d);
+      var day = breakdown.daily[iso];
+      var agentDay = null;
+      // For per-agent trend, we need per-agent-per-day data — use the daily
+      // breakdown filtered to this agent. Since getCdrDailyBreakdown_ already
+      // filtered by rosterNames=[emp.name], daily totals ARE the agent's data.
+      trend.push({
+        date: iso,
+        pctAnswered: day ? day.pctAnswered : null,
+        rung: day ? day.rung : 0,
+        answered: day ? day.answered : 0,
+        missed: day ? day.missed : 0,
+      });
+    }
+
+    var noteCount = 0;
+    try {
+      if (emp.callNotesSheetId) {
+        var sheet = getCallNotesSheet_(emp);
+        var rows = sheet.getDataRange().getValues();
+        for (var i = 1; i < rows.length; i++) {
+          if (String(rows[i][CN.DATE_LOCAL]) === date) noteCount++;
+        }
+      }
+    } catch (_) {}
+
+    return {
+      date: date,
+      repName: emp.name,
+      cdr: todayCdr ? {
+        totalRung:    todayCdr.totalRung,
+        totalAnswered: todayCdr.totalAnswered,
+        totalMissed:  todayCdr.totalMissed,
+        pctAnswered:  todayCdr.pctAnswered,
+        tttFormatted: todayCdr.tttFormatted,
+        attFormatted: todayCdr.attFormatted,
+        tttSeconds:   todayCdr.tttSeconds,
+        attSeconds:   todayCdr.attSeconds,
+      } : null,
+      noteCount: noteCount,
+      noteCoverage: (todayCdr && todayCdr.totalAnswered > 0)
+        ? Math.round((noteCount / todayCdr.totalAnswered) * 100) : null,
+      trend: trend,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/**
+ * Manager view: per-rep CDR metrics + note counts for a date range.
+ * Accepts either a single date or from/to. Also returns a 30-day team
+ * % Answered trend when viewing a single date.
+ */
+function getTeamMetrics(dateOrFrom, to) {
+  try {
+    var callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+
+    var dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    var from, toDate;
+    if (to && dateRegex.test(to)) {
+      from = dateOrFrom;
+      toDate = to;
+    } else {
+      from = dateOrFrom;
+      toDate = dateOrFrom;
+    }
+    if (!from || !dateRegex.test(from))
+      return { error: 'Invalid date (expected yyyy-MM-dd).' };
+    if (!toDate || !dateRegex.test(toDate))
+      return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (from > toDate) return { error: 'Start date must be on or before end date.' };
+
+    var isSingleDay = (from === toDate);
+
+    var roster = getEmployeeRosterRows_();
+    var rosterNames = [];
+    var repMap = {};
+    for (var r = 1; r < roster.length; r++) {
+      var name = String(roster[r][EMP.NAME]).trim();
+      var cnSheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (name) {
+        rosterNames.push(name);
+        repMap[name] = {
+          repId: String(roster[r][EMP.ID]).trim(),
+          repName: name,
+          cnSheetId: cnSheetId ? String(cnSheetId).trim() : null,
+        };
+      }
+    }
+
+    // For single-day, also compute 30-day trend
+    var trendData = null;
+    if (isSingleDay) {
+      var endD = new Date(from + 'T12:00:00Z');
+      var startD = new Date(endD.getTime() - 29 * 86400000);
+      var trendFrom = isoFromUtc_(startD);
+      var trendBreakdown = getCdrDailyBreakdown_(trendFrom, from, rosterNames);
+      trendData = [];
+      for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+        var iso = isoFromUtc_(d);
+        var day = trendBreakdown.daily[iso];
+        trendData.push({
+          date: iso,
+          pctAnswered: day ? day.pctAnswered : null,
+          rung: day ? day.rung : 0,
+          answered: day ? day.answered : 0,
+          missed: day ? day.missed : 0,
+        });
+      }
+    }
+
+    var cdrResult = getCdrAgentMetrics_(from, toDate, rosterNames);
+    var reps = [];
+    var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0 };
+    var unmatchedAgents = [];
+
+    Object.keys(repMap).forEach(function (name) {
+      var rm = repMap[name];
+      var cdr = cdrResult.agents[name] || null;
+      var noteCount = 0;
+      try {
+        if (rm.cnSheetId) {
+          var sheet = getCallNotesSheet_({ id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId });
+          var rows = sheet.getDataRange().getValues();
+          for (var i = 1; i < rows.length; i++) {
+            var nd = String(rows[i][CN.DATE_LOCAL]);
+            if (nd >= from && nd <= toDate) noteCount++;
+          }
+        }
+      } catch (_) {}
+
+      var rep = {
+        repId: rm.repId, repName: rm.repName,
+        totalRung:    cdr ? cdr.totalRung    : 0,
+        totalAnswered: cdr ? cdr.totalAnswered : 0,
+        totalMissed:  cdr ? cdr.totalMissed  : 0,
+        pctAnswered:  cdr ? cdr.pctAnswered  : 0,
+        tttFormatted: cdr ? cdr.tttFormatted : '0:00:00',
+        attFormatted: cdr ? cdr.attFormatted : '0:00:00',
+        tttSeconds:   cdr ? cdr.tttSeconds   : 0,
+        attSeconds:   cdr ? cdr.attSeconds   : 0,
+        noteCount: noteCount,
+        noteCoverage: (cdr && cdr.totalAnswered > 0)
+          ? Math.round((noteCount / cdr.totalAnswered) * 100) : null,
+        hasCdrData: !!cdr,
+      };
+      if (cdr || noteCount > 0) {
+        reps.push(rep);
+        teamTotals.rung += rep.totalRung;
+        teamTotals.answered += rep.totalAnswered;
+        teamTotals.missed += rep.totalMissed;
+        teamTotals.tttSeconds += rep.tttSeconds;
+        teamTotals.noteCount += noteCount;
+      }
+    });
+
+    // Check for CDR agents NOT on the team-tools roster
+    Object.keys(cdrResult.agents).forEach(function (name) {
+      if (!repMap[name]) unmatchedAgents.push(name);
+    });
+
+    teamTotals.pctAnswered = teamTotals.rung > 0
+      ? Math.round((teamTotals.answered / teamTotals.rung) * 1000) / 10 : 0;
+    teamTotals.tttFormatted = cdrFmtHms_(teamTotals.tttSeconds);
+    teamTotals.noteCoverage = teamTotals.answered > 0
+      ? Math.round((teamTotals.noteCount / teamTotals.answered) * 100) : null;
+
+    reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
+
+    return {
+      from: from,
+      to: toDate,
+      date: from,
+      reps: reps,
+      teamTotals: teamTotals,
+      unmatchedAgents: unmatchedAgents,
+      trend: trendData,
+      meta: cdrResult.meta,
+    };
+  } catch (err) { return { error: err.message }; }
 }

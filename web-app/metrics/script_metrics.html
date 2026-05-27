@@ -1,0 +1,515 @@
+<style>
+/* ═══════════════════════════════════════════════════════════════════════
+   METRICS — view-scoped styles
+   ───────────────────────────────────────────────────────────────────────
+   Layered on top of styles.html + design tokens. Owns the KPI tiles,
+   per-rep metrics table, and note-coverage badges. Reflows gracefully
+   into compact-mode (~360–440px) widths.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── KPI tiles ──────────────────────────────────────────────────── */
+.m-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+.m-kpi {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  text-align: center;
+}
+.m-kpi-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-family: var(--font-tight);
+  color: var(--ink);
+  line-height: 1.2;
+}
+.m-kpi-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+.m-kpi--accent .m-kpi-value { color: var(--accent); }
+.m-kpi--warn .m-kpi-value   { color: var(--warn); }
+.m-kpi--good .m-kpi-value   { color: var(--good); }
+
+/* ── Coverage badge ─────────────────────────────────────────────── */
+.m-coverage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+.m-coverage--high { background: var(--good-soft); color: var(--good); }
+.m-coverage--mid  { background: var(--warn-soft); color: var(--warn); }
+.m-coverage--low  { background: var(--danger-soft); color: var(--danger); }
+
+/* ── Date picker row ────────────────────────────────────────────── */
+.m-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+}
+.m-controls input[type="date"] {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  color: var(--ink);
+}
+
+/* ── Team table ─────────────────────────────────────────────────── */
+.m-table-wrap {
+  overflow-x: auto;
+  margin-top: var(--space-sm);
+}
+.m-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.m-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--line);
+  white-space: nowrap;
+  cursor: default;
+}
+.m-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.m-table tr:hover td { background: var(--paper-2); }
+.m-table .m-num { text-align: right; font-family: var(--font-mono); }
+.m-table .m-name { font-weight: 500; }
+
+/* ── Empty / loading states ─────────────────────────────────────── */
+.m-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: var(--space-lg) var(--space-md);
+  font-size: 0.9rem;
+}
+.m-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  color: var(--muted);
+}
+.m-section-title {
+  font-family: var(--font-tight);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: var(--space-md) 0 var(--space-sm) 0;
+}
+.m-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: var(--space-sm);
+}
+
+/* ── Sparkline ──────────────────────────────────────────────────── */
+.m-sparkline-wrap {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+}
+.m-sparkline-wrap h3 {
+  font-family: var(--font-tight);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-xs) 0;
+}
+.m-sparkline-svg { display: block; width: 100%; height: 60px; }
+.m-sparkline-svg line { stroke: var(--line); stroke-width: 0.5; }
+.m-sparkline-svg polyline {
+  fill: none; stroke: var(--accent); stroke-width: 1.5;
+  stroke-linejoin: round; stroke-linecap: round;
+}
+.m-sparkline-svg circle { fill: var(--accent); }
+.m-sparkline-labels {
+  display: flex; justify-content: space-between;
+  font-size: 0.65rem; color: var(--muted); margin-top: 2px;
+}
+
+/* ── Preset chips ──────────────────────────────────────────────── */
+.m-preset-chip {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.m-preset-chip:hover { background: var(--accent-soft); color: var(--accent); }
+
+/* ── Compact mode ───────────────────────────────────────────────── */
+:root[data-compact] .m-kpi-grid { grid-template-columns: repeat(3, 1fr); }
+:root[data-compact] .m-kpi-value { font-size: 1.2rem; }
+:root[data-compact] .m-sparkline-svg { height: 40px; }
+</style>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  METRICS — My Stats + Team Metrics views
+// ════════════════════════════════════════════════════════════════════════════
+
+var M_STATE = { myDate: null, teamFrom: null, teamTo: null };
+
+function mTodayIso_() {
+  try {
+    var d = new Date();
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  } catch (_) { return ''; }
+}
+
+function mDaysAgo_(n) {
+  var d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function mBuildSparkline_(trend, metric) {
+  if (!trend || trend.length === 0) return '';
+  metric = metric || 'pctAnswered';
+  var pts = [];
+  for (var i = 0; i < trend.length; i++) {
+    var v = trend[i][metric];
+    if (v != null) pts.push({ i: i, v: v });
+  }
+  if (pts.length < 2) return '';
+  var maxV = 0;
+  for (var j = 0; j < pts.length; j++) { if (pts[j].v > maxV) maxV = pts[j].v; }
+  if (maxV === 0) maxV = 1;
+  var w = 300, h = 50, pad = 4;
+  var xScale = (w - pad * 2) / (trend.length - 1);
+  var yScale = (h - pad * 2) / maxV;
+  var coords = pts.map(function (p) {
+    return (pad + p.i * xScale).toFixed(1) + ',' + (h - pad - p.v * yScale).toFixed(1);
+  });
+  var last = pts[pts.length - 1];
+  var lx = (pad + last.i * xScale).toFixed(1);
+  var ly = (h - pad - last.v * yScale).toFixed(1);
+  var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
+  var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
+  return '<div class="m-sparkline-wrap">' +
+    '<h3>30-Day % Answered Trend</h3>' +
+    '<svg class="m-sparkline-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<polyline points="' + coords.join(' ') + '"/>' +
+    '<circle cx="' + lx + '" cy="' + ly + '" r="2.5"/>' +
+    '</svg>' +
+    '<div class="m-sparkline-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>' +
+    '</div>';
+}
+
+function mCoverageBadge_(pct) {
+  if (pct == null) return '';
+  var cls = pct >= 80 ? 'm-coverage--high' : pct >= 50 ? 'm-coverage--mid' : 'm-coverage--low';
+  return '<span class="m-coverage ' + cls + '">' + pct + '% coverage</span>';
+}
+
+// ── My Stats view ─────────────────────────────────────────────────────
+
+function enterMetricsMyStatsView() {
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  M_STATE.myDate = M_STATE.myDate || mTodayIso_();
+
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('chart', 16) + ' My Stats</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
+      '<h2>My Call Metrics</h2>' +
+    '</div>' +
+    '<div class="m-controls">' +
+      '<label style="font-size:0.85rem;color:var(--muted)">Date</label>' +
+      '<input type="date" id="m-my-date" value="' + M_STATE.myDate + '">' +
+      '<button class="btn btn-sm" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
+    '</div>' +
+    '<div id="m-my-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
+
+  document.getElementById('m-my-date').addEventListener('change', function () {
+    M_STATE.myDate = this.value;
+    mLoadMyStats_();
+  });
+
+  mLoadMyStats_();
+}
+
+function mLoadMyStats_() {
+  var date = M_STATE.myDate;
+  if (!date) return;
+  var requestedView = currentView;
+
+  document.getElementById('m-my-content').innerHTML =
+    '<div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div>';
+
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (currentView !== requestedView) return;
+      mRenderMyStats_(data);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      document.getElementById('m-my-content').innerHTML =
+        '<div class="m-empty">Failed to load metrics: ' + (err.message || err) + '</div>';
+    })
+    .getMyMetrics(date);
+}
+
+function mRenderMyStats_(data) {
+  var el = document.getElementById('m-my-content');
+  if (!el) return;
+
+  if (data.error) {
+    el.innerHTML = '<div class="m-empty">' + data.error + '</div>';
+    return;
+  }
+
+  var c = data.cdr;
+  var html = '';
+
+  if (!c) {
+    html += '<div class="m-empty">No call data found for ' + data.date +
+      '. This may be a non-working day, or the CDR spreadsheet is not yet configured.</div>';
+    html += '<div class="m-section-title">Call Notes</div>';
+    html += '<div class="m-kpi-grid"><div class="m-kpi"><div class="m-kpi-value">' +
+      data.noteCount + '</div><div class="m-kpi-label">Notes Filed</div></div></div>';
+    el.innerHTML = html;
+    return;
+  }
+
+  // KPI tiles
+  html += '<div class="m-kpi-grid">';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' + c.totalRung + '</div><div class="m-kpi-label">Rung</div></div>';
+  html += '<div class="m-kpi m-kpi--good"><div class="m-kpi-value">' + c.totalAnswered + '</div><div class="m-kpi-label">Answered</div></div>';
+  html += '<div class="m-kpi' + (c.totalMissed > 0 ? ' m-kpi--warn' : '') + '"><div class="m-kpi-value">' + c.totalMissed + '</div><div class="m-kpi-label">Missed</div></div>';
+  html += '<div class="m-kpi m-kpi--accent"><div class="m-kpi-value">' + c.pctAnswered + '%</div><div class="m-kpi-label">% Answered</div></div>';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' + c.tttFormatted + '</div><div class="m-kpi-label">Total Talk</div></div>';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' + c.attFormatted + '</div><div class="m-kpi-label">Avg Talk</div></div>';
+  html += '</div>';
+
+  // Notes correlation
+  html += '<div class="m-section-title">Call Notes Correlation</div>';
+  html += '<div class="m-kpi-grid">';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' + data.noteCount + '</div><div class="m-kpi-label">Notes Filed</div></div>';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' + c.totalAnswered + '</div><div class="m-kpi-label">Calls Answered</div></div>';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' +
+    (data.noteCoverage != null ? data.noteCoverage + '%' : '—') +
+    '</div><div class="m-kpi-label">Note Coverage</div></div>';
+  html += '</div>';
+
+  if (data.noteCoverage != null) {
+    html += '<div style="margin-top:var(--space-xs)">' + mCoverageBadge_(data.noteCoverage) + '</div>';
+    if (data.noteCoverage < 80) {
+      html += '<div class="m-hint">Coverage below 80% — some answered calls may not have a corresponding note.</div>';
+    }
+  }
+
+  // 30-day trend sparkline
+  if (data.trend) {
+    html += mBuildSparkline_(data.trend, 'pctAnswered');
+  }
+
+  el.innerHTML = html;
+}
+
+// ── Team Metrics view (manager-only) ──────────────────────────────────
+
+function enterMetricsTeamView() {
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  var today = mTodayIso_();
+  M_STATE.teamFrom = M_STATE.teamFrom || today;
+  M_STATE.teamTo = M_STATE.teamTo || today;
+
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('chart', 16) + ' Team Metrics</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
+      '<h2>Team Call Metrics</h2>' +
+    '</div>' +
+    '<div class="m-controls">' +
+      '<label style="font-size:0.85rem;color:var(--muted)">From</label>' +
+      '<input type="date" id="m-team-from" value="' + M_STATE.teamFrom + '">' +
+      '<label style="font-size:0.85rem;color:var(--muted)">To</label>' +
+      '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">' +
+      '<button class="btn btn-sm" onclick="mLoadTeamMetrics_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
+    '</div>' +
+    '<div class="m-controls" style="margin-top:calc(-1 * var(--space-xs))">' +
+      '<span class="m-preset-chip" onclick="mTeamPreset_(\'today\')">Today</span>' +
+      '<span class="m-preset-chip" onclick="mTeamPreset_(\'yesterday\')">Yesterday</span>' +
+      '<span class="m-preset-chip" onclick="mTeamPreset_(\'week\')">Last 7 Days</span>' +
+      '<span class="m-preset-chip" onclick="mTeamPreset_(\'month\')">Last 30 Days</span>' +
+    '</div>' +
+    '<div id="m-team-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
+
+  document.getElementById('m-team-from').addEventListener('change', function () {
+    M_STATE.teamFrom = this.value;
+    if (M_STATE.teamFrom > M_STATE.teamTo) {
+      M_STATE.teamTo = M_STATE.teamFrom;
+      document.getElementById('m-team-to').value = M_STATE.teamTo;
+    }
+    mLoadTeamMetrics_();
+  });
+  document.getElementById('m-team-to').addEventListener('change', function () {
+    M_STATE.teamTo = this.value;
+    if (M_STATE.teamTo < M_STATE.teamFrom) {
+      M_STATE.teamFrom = M_STATE.teamTo;
+      document.getElementById('m-team-from').value = M_STATE.teamFrom;
+    }
+    mLoadTeamMetrics_();
+  });
+
+  mLoadTeamMetrics_();
+}
+
+function mTeamPreset_(key) {
+  var today = mTodayIso_();
+  if (key === 'today')     { M_STATE.teamFrom = today; M_STATE.teamTo = today; }
+  if (key === 'yesterday') { M_STATE.teamFrom = mDaysAgo_(1); M_STATE.teamTo = mDaysAgo_(1); }
+  if (key === 'week')      { M_STATE.teamFrom = mDaysAgo_(6); M_STATE.teamTo = today; }
+  if (key === 'month')     { M_STATE.teamFrom = mDaysAgo_(29); M_STATE.teamTo = today; }
+  var fromEl = document.getElementById('m-team-from');
+  var toEl = document.getElementById('m-team-to');
+  if (fromEl) fromEl.value = M_STATE.teamFrom;
+  if (toEl)   toEl.value = M_STATE.teamTo;
+  mLoadTeamMetrics_();
+}
+
+function mLoadTeamMetrics_() {
+  var from = M_STATE.teamFrom;
+  var to = M_STATE.teamTo;
+  if (!from) return;
+  var requestedView = currentView;
+
+  document.getElementById('m-team-content').innerHTML =
+    '<div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div>';
+
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (currentView !== requestedView) return;
+      mRenderTeamMetrics_(data);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      document.getElementById('m-team-content').innerHTML =
+        '<div class="m-empty">Failed to load metrics: ' + (err.message || err) + '</div>';
+    })
+    .getTeamMetrics(from, to);
+}
+
+function mRenderTeamMetrics_(data) {
+  var el = document.getElementById('m-team-content');
+  if (!el) return;
+
+  if (data.error) {
+    el.innerHTML = '<div class="m-empty">' + data.error + '</div>';
+    return;
+  }
+
+  var t = data.teamTotals;
+  var html = '';
+
+  // Team KPI tiles
+  html += '<div class="m-kpi-grid">';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' + t.rung + '</div><div class="m-kpi-label">Team Rung</div></div>';
+  html += '<div class="m-kpi m-kpi--good"><div class="m-kpi-value">' + t.answered + '</div><div class="m-kpi-label">Team Answered</div></div>';
+  html += '<div class="m-kpi' + (t.missed > 0 ? ' m-kpi--warn' : '') + '"><div class="m-kpi-value">' + t.missed + '</div><div class="m-kpi-label">Team Missed</div></div>';
+  html += '<div class="m-kpi m-kpi--accent"><div class="m-kpi-value">' + t.pctAnswered + '%</div><div class="m-kpi-label">% Answered</div></div>';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' + t.tttFormatted + '</div><div class="m-kpi-label">Total Talk</div></div>';
+  html += '<div class="m-kpi"><div class="m-kpi-value">' + t.noteCount + '</div><div class="m-kpi-label">Notes Filed</div></div>';
+  html += '</div>';
+
+  if (t.noteCoverage != null) {
+    html += '<div style="margin-bottom:var(--space-md)">' + mCoverageBadge_(t.noteCoverage) +
+      ' <span class="m-hint" style="margin:0">team-wide note-to-call ratio</span></div>';
+  }
+
+  // 30-day trend sparkline (only shown on single-day view)
+  if (data.trend) {
+    html += mBuildSparkline_(data.trend, 'pctAnswered');
+  }
+
+  // Date range label
+  if (data.from && data.to && data.from !== data.to) {
+    html += '<div class="m-hint">' + data.from + ' to ' + data.to + '</div>';
+  }
+
+  // Per-rep table
+  if (data.reps.length === 0) {
+    html += '<div class="m-empty">No activity data for ' + data.date + '.</div>';
+  } else {
+    html += '<div class="m-section-title">Per-Rep Breakdown</div>';
+    html += '<div class="m-table-wrap"><table class="m-table">';
+    html += '<thead><tr>' +
+      '<th>Rep</th>' +
+      '<th class="m-num">Rung</th>' +
+      '<th class="m-num">Answered</th>' +
+      '<th class="m-num">Missed</th>' +
+      '<th class="m-num">% Ans</th>' +
+      '<th class="m-num">ATT</th>' +
+      '<th class="m-num">Notes</th>' +
+      '<th class="m-num">Coverage</th>' +
+      '</tr></thead><tbody>';
+
+    for (var i = 0; i < data.reps.length; i++) {
+      var r = data.reps[i];
+      html += '<tr>';
+      html += '<td class="m-name">' + r.repName + '</td>';
+      html += '<td class="m-num">' + r.totalRung + '</td>';
+      html += '<td class="m-num">' + r.totalAnswered + '</td>';
+      html += '<td class="m-num">' + (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + r.totalMissed + '</span>' : '0') + '</td>';
+      html += '<td class="m-num">' + r.pctAnswered + '%</td>';
+      html += '<td class="m-num">' + r.attFormatted + '</td>';
+      html += '<td class="m-num">' + r.noteCount + '</td>';
+      html += '<td class="m-num">' + (r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>') + '</td>';
+      html += '</tr>';
+    }
+
+    html += '</tbody></table></div>';
+  }
+
+  // Unmatched agents warning
+  if (data.unmatchedAgents && data.unmatchedAgents.length > 0) {
+    html += '<div class="m-hint" style="margin-top:var(--space-md)">' +
+      icon('warning', 14) + ' ' + data.unmatchedAgents.length +
+      ' CDR agent(s) not matched to roster: ' +
+      data.unmatchedAgents.join(', ') + '</div>';
+  }
+
+  el.innerHTML = html;
+}
+</script>
