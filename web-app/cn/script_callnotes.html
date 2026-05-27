@@ -356,6 +356,13 @@
   .cn-card-actions .cn-act-btn.is-sent {
     background: var(--accent-soft); color: var(--info-deep);
   }
+  .cn-email-depts {
+    font-family: var(--mono); font-size: 9px; letter-spacing: .04em;
+    color: var(--info-deep);
+    max-width: 120px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: inline-block; vertical-align: middle;
+  }
   .cn-card-actions .cn-act-btn.action.is-on   { background: var(--warn-soft);   color: var(--warning-deep); }
   .cn-card-actions .cn-act-btn.training.is-on { background: var(--accent-soft); color: var(--info-deep);    }
   .cn-card-actions .cn-act-btn.review.is-on   { background: var(--good-soft);   color: var(--success-deep); }
@@ -699,6 +706,11 @@ const CN_STATE = {
   prewarmed: false,          // set true after the first cnPing() so we don't pre-warm twice per page load
   pinnedNotes: [],           // pinned-tray cache; loaded by cnReloadPinnedTray_() on Log view enter
   mgrStatsDate: null,        // selected date in manager Stats tab (defaults to today in mgr tz)
+  mgrSearchQuery: '',        // manager cross-rep search query
+  mgrSearchField: 'all',     // 'all' | 'caller' | 'issue'
+  mgrSearchResults: [],      // results from managerSearchCallNotes
+  mgrSearchTimer: null,      // debounce timer for manager search
+  trainingQA: [],            // rep's recent training Q&A notes (loaded once per Log view enter)
 };
 
 const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
@@ -1749,8 +1761,8 @@ function cnRenderCardCore_(note, expandable) {
   };
 
   const emailBtn = note.emailedAt
-    ? `<button class="cn-act-btn is-sent" title="Email sent at ${esc(cnFormatTimestampForCopy_(note.emailedAt))} — click to send again"
-               data-cn-action="email">${icon('mail', 14)}</button>`
+    ? `<button class="cn-act-btn is-sent" title="Email sent at ${esc(cnFormatTimestampForCopy_(note.emailedAt))}${note.emailDepartments ? ' to ' + esc(note.emailDepartments) : ''} — click to send again"
+               data-cn-action="email">${icon('mail', 14)}${note.emailDepartments ? '<span class="cn-email-depts">' + esc(note.emailDepartments) + '</span>' : ''}</button>`
     : `<button class="cn-act-btn" title="Compose email from this note"
                data-cn-action="email">${icon('mail', 14)}</button>`;
 
@@ -3010,6 +3022,7 @@ function cnRenderManageView(area) {
       <button class="toolbar-tab" data-mqueue="review" onclick="cnMgrLoadQueue_('review')">Review Candidates</button>
       <button class="toolbar-tab" data-mqueue="rep" onclick="cnMgrLoadRepView_()">Per-Rep View</button>
       <button class="toolbar-tab" data-mqueue="stats" onclick="cnMgrLoadStatsView_()">Stats</button>
+      <button class="toolbar-tab" data-mqueue="search" onclick="cnMgrLoadSearchView_()">Search</button>
     </div>
     <div id="cn-mgr-results"></div>
   `;
@@ -3212,7 +3225,9 @@ function cnMgrRenderReadonlyCard_(note) {
   const flagPill = note.flagType
     ? `<span class="adj-pill" style="text-transform:uppercase;font-size:10px;letter-spacing:.06em">${esc(note.flagType)}${note.flagType === 'action' && note.resolved ? ' · resolved' : ''}</span>`
     : '';
-  const sentPill = note.emailedAt ? `<span class="adj-pill">sent</span>` : '';
+  const sentPill = note.emailedAt
+    ? `<span class="adj-pill" title="${note.emailDepartments ? 'Sent to: ' + esc(note.emailDepartments) : 'Sent'}">sent${note.emailDepartments ? ' <span class="cn-email-depts">' + esc(note.emailDepartments) + '</span>' : ''}</span>`
+    : '';
   return `
     <div class="cn-card${flagCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
