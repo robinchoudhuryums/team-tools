@@ -2487,7 +2487,7 @@ function buildCallNoteEmailHtml_(callData, selections) {
   // ── Resolution overrides ────────────────────────────────────────────
   let resolutionText = callData.resolution || '';
   if (updateInfo === 'OOP Order' && oopDetails && shippingDetails) {
-    resolutionText = generateOOPResolutionText_(selections).replace(/\n/g, '<br>');
+    resolutionText = esc_(generateOOPResolutionText_(selections)).replace(/\n/g, '<br>');
   } else {
     resolutionText = esc_(resolutionText);
   }
@@ -2563,7 +2563,7 @@ function renderShippingDetailsHtml_(d, P) {
     ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Note</td><td style="padding:5px 8px;font-style:italic;color:${P.ink};">${esc_(d.specialNote)}</td></tr>`
     : '';
   return (
-    `<div style="background:${P.goodSoft};border:1px solid color-mix(in srgb,${P.good},transparent 60%);` +
+    `<div style="background:${P.goodSoft};border:1px solid #b1d1c4;` +
     `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.good};">` +
       `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.goodDeep};font-weight:600;">Verified Shipping</h3>` +
       `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
@@ -2601,7 +2601,7 @@ function renderResupplyDetailsHtml_(d, P) {
     ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Requesting Month</td><td style="padding:5px 8px;color:${P.ink};">${esc_(d.resupplyMonth)}</td></tr>`
     : '';
   return (
-    `<div style="background:${P.goodSoft};border:1px solid color-mix(in srgb,${P.good},transparent 60%);` +
+    `<div style="background:${P.goodSoft};border:1px solid #b1d1c4;` +
     `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.good};">` +
       `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.goodDeep};font-weight:600;">Repeat Resupply</h3>` +
       `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
@@ -2624,14 +2624,14 @@ function renderOopDetailsHtml_(d, P) {
     taxDisplay = '$' + taxDisplay;
   }
   return (
-    `<div style="background:${P.warnSoft};border:1px solid color-mix(in srgb,${P.warn},transparent 60%);` +
+    `<div style="background:${P.warnSoft};border:1px solid #e7bda3;` +
     `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.warn};">` +
       `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.warnDeep};font-weight:600;">OOP Order Breakdown</h3>` +
       `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
         `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Base Cost</td><td style="padding:5px 8px;">$${esc_(d.baseCost || '')}</td></tr>` +
         `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Est. Sales Tax</td><td style="padding:5px 8px;">${esc_(taxDisplay)}</td></tr>` +
         `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Shipping</td><td style="padding:5px 8px;">$${esc_(d.shippingCost || '')} <span style="color:${P.muted};font-size:.85em;">(${esc_(d.shippingLabel || '')})</span></td></tr>` +
-        `<tr><td style="padding:7px 8px 5px;font-weight:600;color:${P.muted};border-top:1px solid color-mix(in srgb,${P.warn},transparent 60%);">Total Customer Cost</td><td style="padding:7px 8px 5px;font-weight:700;color:${P.warnDeep};border-top:1px solid color-mix(in srgb,${P.warn},transparent 60%);">$${esc_(d.totalCost || '')}</td></tr>` +
+        `<tr><td style="padding:7px 8px 5px;font-weight:600;color:${P.muted};border-top:1px solid #e7bda3;">Total Customer Cost</td><td style="padding:7px 8px 5px;font-weight:700;color:${P.warnDeep};border-top:1px solid #e7bda3;">$${esc_(d.totalCost || '')}</td></tr>` +
       `</table>` +
     `</div>`
   );
@@ -2826,6 +2826,7 @@ function installAutomationTriggers() {
 }
 
 function removeAutomationTriggers() {
+  assertManagerCaller_('removeAutomationTriggers');
   const TARGETS = [
     'sendDailyMissedPunchAlerts',
     'runDailyExportCheck',

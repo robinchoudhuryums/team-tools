@@ -71,6 +71,7 @@ function renderManagerView(area, data) {
           <div class="emp-card-top">
             <div class="emp-avatar ${meta.avCls}">${initials}</div>
             <div class="emp-name">${esc(e.name)}</div>
+            <button class="de-open-btn" title="Edit day" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
           </div>
           <div class="emp-status-line">${line}</div>
         </div>`;
@@ -384,6 +385,13 @@ function renderManagerView(area, data) {
       handleDeletePunch(empId, date, time, type, btn);
     });
   });
+
+  // Edit Day buttons on employee cards
+  document.querySelectorAll('.de-open-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      openDayEditModal(btn.dataset.empId, btn.dataset.empName);
+    });
+  });
 }
 
 function prettyType(type) {
@@ -558,6 +566,90 @@ document.getElementById('mto-submit').addEventListener('click', () => {
       showToast((err.message||'Server error'),'toast-error');
     })
     .managerSubmitTimeOff(empId, date, type, notes, auto);
+});
+
+// ─── MANAGER: EDIT DAY MODAL ──────────────────────────────────────────────
+var _deEmpId = null, _deEmpName = null, _deDate = null;
+
+function openDayEditModal(empId, empName) {
+  _deEmpId = empId;
+  _deEmpName = empName;
+  var tz = empTz();
+  var today = isoDateTz(tz);
+  _deDate = today;
+  document.getElementById('day-edit-subtitle').textContent = empName;
+  document.getElementById('de-date').value = today;
+  document.getElementById('de-clockin').value = '';
+  document.getElementById('de-lunchout').value = '';
+  document.getElementById('de-lunchin').value = '';
+  document.getElementById('de-clockout').value = '';
+  document.getElementById('de-reason').value = '';
+  document.getElementById('day-edit-overlay').classList.add('open');
+  loadDayEditPunches(empId, today, today);
+}
+
+function loadDayEditPunches(empId, start, end) {
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (data.error) return;
+      var day = (data.days || []).find(function (d) { return d.date === _deDate; });
+      if (!day) return;
+      document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : '';
+      document.getElementById('de-lunchout').value = day.lunchOut ? day.lunchOut.substring(0, 5) : '';
+      document.getElementById('de-lunchin').value  = day.lunchIn  ? day.lunchIn.substring(0, 5) : '';
+      document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : '';
+    })
+    .withFailureHandler(function () {})
+    .getEmployeeTimesheetForManager(empId, start, end);
+}
+
+document.getElementById('de-cancel').addEventListener('click', function () {
+  document.getElementById('day-edit-overlay').classList.remove('open');
+});
+document.getElementById('day-edit-overlay').addEventListener('click', function (e) {
+  if (e.target === document.getElementById('day-edit-overlay'))
+    document.getElementById('day-edit-overlay').classList.remove('open');
+});
+
+document.getElementById('de-date').addEventListener('change', function () {
+  var d = this.value;
+  if (!d || !_deEmpId) return;
+  _deDate = d;
+  document.getElementById('de-clockin').value = '';
+  document.getElementById('de-lunchout').value = '';
+  document.getElementById('de-lunchin').value = '';
+  document.getElementById('de-clockout').value = '';
+  loadDayEditPunches(_deEmpId, d, d);
+});
+
+document.getElementById('de-save').addEventListener('click', function () {
+  if (!_deEmpId || !_deDate) return;
+  var slots = {
+    ClockIn:  document.getElementById('de-clockin').value || '',
+    LunchOut: document.getElementById('de-lunchout').value || '',
+    LunchIn:  document.getElementById('de-lunchin').value || '',
+    ClockOut: document.getElementById('de-clockout').value || '',
+  };
+  var reason = document.getElementById('de-reason').value.trim();
+  var btn = document.getElementById('de-save');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  google.script.run
+    .withSuccessHandler(function (result) {
+      btn.disabled = false;
+      btn.textContent = 'Save Changes';
+      if (!result.success) { showToast((result.error || 'Error'), 'toast-error'); return; }
+      document.getElementById('day-edit-overlay').classList.remove('open');
+      showToast(result.changes > 0 ? result.summary : 'No changes needed', 'toast-success');
+      renderLoading(document.getElementById('view-area'), 'Refreshing…');
+      loadManagerDashboard();
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      btn.textContent = 'Save Changes';
+      showToast((err.message || 'Server error'), 'toast-error');
+    })
+    .managerSaveDay(_deEmpId, _deDate, slots, reason);
 });
 
 function renderAnalyticsSection(data) {
