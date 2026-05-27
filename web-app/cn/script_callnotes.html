@@ -841,6 +841,125 @@
     color: var(--muted); letter-spacing: .04em;
     margin-bottom: 10px;
   }
+
+  /* ── External email button (form header) ───────────────────────── */
+  .cn-ext-email-btn {
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper-2);
+    width: 22px; height: 22px; border-radius: 999px;
+    color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-ext-email-btn:hover {
+    color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+  }
+
+  /* ── External email indicator pill on note cards ─────────────────── */
+  .cn-ext-email-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px;
+    background: var(--good-soft); color: var(--success-deep);
+    border-radius: 999px;
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: .04em;
+    vertical-align: middle;
+    cursor: default;
+  }
+  .cn-ext-email-pill svg { flex-shrink: 0; }
+
+  /* ── External email modal ───────────────────────────────────────── */
+  .cn-ext-section {
+    border-top: 1px solid var(--line);
+    padding-top: 14px; margin-top: 14px;
+  }
+  .cn-ext-section:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+  .cn-ext-section-title {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .cn-ext-type-radios {
+    display: flex; gap: 8px; margin-bottom: 12px;
+  }
+  .cn-ext-type-radio {
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper-card);
+    padding: 8px 16px; border-radius: var(--radius);
+    font-family: var(--ui); font-size: 13px; font-weight: 500;
+    color: var(--muted); cursor: pointer;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-ext-type-radio:hover { color: var(--ink); border-color: var(--border-strong); }
+  .cn-ext-type-radio[aria-pressed="true"] {
+    background: var(--ink); color: var(--paper-card); border-color: var(--ink);
+  }
+  .cn-ext-form-list {
+    display: flex; flex-direction: column; gap: 6px;
+    margin-bottom: 6px;
+  }
+  .cn-ext-form-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-ext-form-item:hover { border-color: var(--border-strong); }
+  .cn-ext-form-item input[type="checkbox"] {
+    width: auto; margin: 0; flex-shrink: 0;
+  }
+  .cn-ext-form-name {
+    flex: 1; min-width: 0;
+    font-family: var(--ui); font-size: 13px; color: var(--ink);
+  }
+  .cn-ext-form-cat {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 999px;
+  }
+  .cn-ext-form-cat.customer {
+    background: var(--accent-soft); color: var(--info-deep);
+  }
+  .cn-ext-form-cat.provider {
+    background: var(--good-soft); color: var(--success-deep);
+  }
+  .cn-ext-note-link {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted);
+    margin-top: 8px;
+  }
+  .cn-ext-note-link select {
+    flex: 1; min-width: 0;
+    padding: 7px 10px; border: 1px solid var(--line);
+    border-radius: var(--radius); font-family: var(--ui);
+    font-size: 12px; background: var(--paper-card); color: var(--ink);
+    outline: none;
+  }
+  .cn-ext-note-link select:focus {
+    border-color: var(--accent); box-shadow: var(--ring-focus);
+  }
+  .cn-ext-summary {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-family: var(--ui); font-size: 13px;
+    color: var(--ink);
+    margin-top: 14px;
+  }
+  .cn-ext-summary dt {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .1em; text-transform: uppercase;
+    margin-top: 8px;
+  }
+  .cn-ext-summary dt:first-child { margin-top: 0; }
+  .cn-ext-summary dd {
+    margin: 2px 0 0 0; font-size: 13px; color: var(--ink);
+  }
 </style>
 
 <script>
@@ -887,6 +1006,8 @@ const CN_STATE = {
   mgrSearchResults: [],      // results from managerSearchCallNotes
   mgrSearchTimer: null,      // debounce timer for manager search
   trainingQA: [],            // rep's recent training Q&A notes (loaded once per Log view enter)
+  formCatalog: null,         // cached from getFormCatalog() — [{id, name, category}]
+  extComposer: null,         // open external email composer state, or null
 };
 
 const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
@@ -1114,6 +1235,8 @@ function cnRenderActiveForm_() {
           <span class="cn-active-form-hint">
             <kbd>${cnIsMac_() ? '⌘' : 'Ctrl'}+Enter</kbd> save &amp; copy
           </span>
+          <button type="button" class="cn-ext-email-btn" id="cn-ext-email-btn"
+                  title="Send form or email to customer/provider">${icon('send', 14)}</button>
           <button type="button" class="cn-help-btn" id="cn-help-btn" title="Keyboard shortcuts (${cnIsMac_() ? '⌘' : 'Ctrl'}+/)">?</button>
         </div>
       </div>
@@ -1336,6 +1459,8 @@ function cnWireActiveForm_() {
   }
   var helpBtn = document.getElementById('cn-help-btn');
   if (helpBtn) helpBtn.addEventListener('click', cnOpenShortcutsOverlay_);
+  var extBtn = document.getElementById('cn-ext-email-btn');
+  if (extBtn) extBtn.addEventListener('click', function () { cnOpenExternalEmailModal_(); });
 }
 
 function cnRestoreFromSnapshot_(snap) {
@@ -2020,6 +2145,17 @@ function cnRenderCardCore_(note, expandable) {
   const pinBtn = `<button class="cn-act-btn ${pinCls}" title="${esc(pinTitle)}"
                           data-cn-action="pin">${icon('bookmark', 14)}</button>`;
 
+  // External email indicator — shows when note has external emails sent
+  const extEmails = (note.subformData && Array.isArray(note.subformData.externalEmails))
+    ? note.subformData.externalEmails : [];
+  const extIndicator = extEmails.length > 0
+    ? (function () {
+        const labels = extEmails.map(function (e) { return e.type + ': ' + e.to; }).join(', ');
+        return '<span class="cn-ext-email-pill" title="External: ' + esc(labels) + '">' +
+          icon('send', 11) + '<span>' + extEmails.length + '</span></span>';
+      })()
+    : '';
+
   return `
     <div class="cn-card${flagCls}${staleCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
@@ -2036,7 +2172,7 @@ function cnRenderCardCore_(note, expandable) {
             ? '<span class="cn-pending-badge" title="Saving to server"><span class="cn-pending-dot"></span>Saving</span>'
             : flagBtn('action', 'flag', note.flagType === 'action') +
               flagBtn('training', 'bulb', note.flagType === 'training') +
-              pinBtn + copyBtn + emailBtn +
+              pinBtn + copyBtn + emailBtn + extIndicator +
               (function () {
                 var sec = flagBtn('review', 'star', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
                 if (!sec) return '';
@@ -4322,4 +4458,325 @@ function cnRenderSuggestionRows_(suggestions) {
       '</div>';
   }).join('');
 }
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  EXTERNAL EMAIL MODAL — customer / provider email with form attachments
+//  ────────────────────────────────────────────────────────────────────────
+//  Separate from the internal department email composer. Opens from the
+//  "Send External" button in the form header. Single-page modal layout:
+//  recipient info + form selection + message + send.
+// ════════════════════════════════════════════════════════════════════════════
+
+function cnOpenExternalEmailModal_(presetNoteId) {
+  CN_STATE.extComposer = {
+    recipientType: 'customer',
+    recipientEmail: '',
+    recipientName: '',
+    subject: '',
+    message: '',
+    formIds: [],
+    noteId: presetNoteId || null,
+    sending: false,
+  };
+  // Fetch catalog on first open, then render
+  if (CN_STATE.formCatalog) {
+    cnRenderExternalEmailModal_();
+  } else {
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (res.error) {
+          showToast(res.error, 'toast-error');
+          CN_STATE.formCatalog = [];
+        } else {
+          CN_STATE.formCatalog = res.forms || [];
+        }
+        cnRenderExternalEmailModal_();
+      })
+      .withFailureHandler(function (err) {
+        showToast('Failed to load form catalog: ' + err.message, 'toast-error');
+        CN_STATE.formCatalog = [];
+        cnRenderExternalEmailModal_();
+      })
+      .getFormCatalog();
+  }
+}
+
+function cnCloseExternalEmailModal_() {
+  CN_STATE.extComposer = null;
+  var overlay = document.getElementById('cn-ext-overlay');
+  if (overlay) overlay.remove();
+}
+
+function cnRenderExternalEmailModal_() {
+  var overlay = document.getElementById('cn-ext-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cn-ext-overlay';
+    overlay.className = 'overlay open';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) cnCloseExternalEmailModal_();
+    });
+  }
+  var c = CN_STATE.extComposer;
+  if (!c) { overlay.remove(); return; }
+  overlay.innerHTML = cnBuildExternalEmailHtml_();
+  cnWireExternalEmailModal_();
+}
+
+function cnBuildExternalEmailHtml_() {
+  var c = CN_STATE.extComposer;
+  var catalog = CN_STATE.formCatalog || [];
+
+  // Recipient type radios
+  var typeRadios =
+    '<button type="button" class="cn-ext-type-radio" aria-pressed="' + (c.recipientType === 'customer' ? 'true' : 'false') + '" data-ext-type="customer">' +
+      icon('user', 14) + ' Customer</button>' +
+    '<button type="button" class="cn-ext-type-radio" aria-pressed="' + (c.recipientType === 'provider' ? 'true' : 'false') + '" data-ext-type="provider">' +
+      icon('checkCircle', 14) + ' Provider</button>';
+
+  // Form checkboxes
+  var formItems = catalog.map(function (f) {
+    var checked = c.formIds.indexOf(f.id) >= 0 ? 'checked' : '';
+    var catCls = f.category === 'customer' ? 'customer' : 'provider';
+    return '<label class="cn-ext-form-item">' +
+      '<input type="checkbox" data-form-id="' + esc(f.id) + '" ' + checked + '>' +
+      '<span class="cn-ext-form-name">' + esc(f.name) + '</span>' +
+      '<span class="cn-ext-form-cat ' + catCls + '">' + esc(f.category) + '</span>' +
+    '</label>';
+  }).join('');
+  if (catalog.length === 0) {
+    formItems = '<div style="font-size:12px;color:var(--muted);padding:8px 0">No forms configured.</div>';
+  }
+
+  // Note reference dropdown
+  var noteOptions = '<option value="">None (standalone email)</option>';
+  var notes = CN_STATE.rollingNotes || [];
+  notes.forEach(function (n) {
+    if (n._pending) return;
+    var label = (n.caller || n.patientAndTrx || 'Note') + ' — ' + cnFormatTimestampForCopy_(n.timestamp);
+    var sel = (c.noteId === n.noteId) ? ' selected' : '';
+    noteOptions += '<option value="' + esc(n.noteId) + '"' + sel + '>' + esc(label) + '</option>';
+  });
+
+  // Auto-generate subject
+  var autoSubject = c.subject;
+  if (!autoSubject) {
+    var nameForSubj = c.recipientName || 'Patient';
+    autoSubject = c.recipientType === 'provider'
+      ? 'UMS — Form Request for ' + nameForSubj
+      : 'UMS — Documents for ' + nameForSubj;
+  }
+
+  return '<div class="modal" style="max-width:540px;resize:both;overflow:auto" id="cnX-modal">' +
+    '<div class="modal-title" style="cursor:move" onmousedown="cnStartDragExtModal_(event)">' +
+      icon('send', 18) + ' Send External Email</div>' +
+    '<div class="modal-sub">Send forms or messages directly to a customer or provider.</div>' +
+
+    '<div class="cn-ext-section">' +
+      '<div class="cn-ext-section-title">Recipient</div>' +
+      '<div class="cn-ext-type-radios">' + typeRadios + '</div>' +
+      '<div class="field-row" style="gap:10px">' +
+        '<div class="field" style="flex:1.2">' +
+          '<label>Email Address</label>' +
+          '<input type="email" id="cnX-email" value="' + esc(c.recipientEmail) + '" placeholder="name@example.com">' +
+        '</div>' +
+        '<div class="field" style="flex:1">' +
+          '<label>Name (optional)</label>' +
+          '<input type="text" id="cnX-name" value="' + esc(c.recipientName) + '" placeholder="John Smith">' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="cn-ext-section">' +
+      '<div class="cn-ext-section-title">' + icon('paperclip', 12) + ' Attach Forms</div>' +
+      '<div class="cn-ext-form-list" id="cnX-form-list">' + formItems + '</div>' +
+    '</div>' +
+
+    '<div class="cn-ext-section">' +
+      '<div class="cn-ext-section-title">Message</div>' +
+      '<div class="field" style="margin-bottom:10px">' +
+        '<label>Subject</label>' +
+        '<input type="text" id="cnX-subject" value="' + esc(autoSubject) + '">' +
+      '</div>' +
+      '<div class="field" style="margin-bottom:0">' +
+        '<label>Custom Message (optional)</label>' +
+        '<textarea id="cnX-message" rows="3" placeholder="Add a personal message…">' + esc(c.message) + '</textarea>' +
+      '</div>' +
+      '<div class="cn-ext-note-link">' +
+        '<label style="margin:0;font-family:var(--mono);font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap">Link to note</label>' +
+        '<select id="cnX-note-ref">' + noteOptions + '</select>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="modal-footer">' +
+      '<button class="btn-modal-cancel" onclick="cnCloseExternalEmailModal_()">Cancel</button>' +
+      '<button class="btn-modal-ok" id="cnX-send-btn">' + icon('send', 14) + ' Send</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function cnWireExternalEmailModal_() {
+  var c = CN_STATE.extComposer;
+  if (!c) return;
+
+  // Recipient type toggle
+  document.querySelectorAll('.cn-ext-type-radio').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      c.recipientType = btn.dataset.extType;
+      document.querySelectorAll('.cn-ext-type-radio').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.dataset.extType === c.recipientType ? 'true' : 'false');
+      });
+      // Update subject if it still has the auto-generated pattern
+      cnExtAutoUpdateSubject_();
+    });
+  });
+
+  // Form checkbox sync
+  document.querySelectorAll('#cnX-form-list input[type="checkbox"]').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var fid = cb.dataset.formId;
+      var idx = c.formIds.indexOf(fid);
+      if (cb.checked && idx < 0) c.formIds.push(fid);
+      else if (!cb.checked && idx >= 0) c.formIds.splice(idx, 1);
+    });
+  });
+
+  // Name change => subject auto-update
+  var nameInput = document.getElementById('cnX-name');
+  if (nameInput) {
+    nameInput.addEventListener('input', function () {
+      c.recipientName = nameInput.value;
+      cnExtAutoUpdateSubject_();
+    });
+  }
+
+  // Send button
+  var sendBtn = document.getElementById('cnX-send-btn');
+  if (sendBtn) {
+    sendBtn.addEventListener('click', cnSendExternalEmail_);
+  }
+}
+
+/** Auto-update the subject when the recipient type or name changes, but only
+ *  if the subject still matches an auto-generated pattern. */
+function cnExtAutoUpdateSubject_() {
+  var c = CN_STATE.extComposer;
+  if (!c) return;
+  var subjectEl = document.getElementById('cnX-subject');
+  if (!subjectEl) return;
+  var current = subjectEl.value.trim();
+  // Only overwrite if it matches a known auto-pattern
+  if (/^UMS\s*—\s*(Documents for|Form Request for)\s/i.test(current) || !current) {
+    var nameForSubj = (document.getElementById('cnX-name') || {}).value || 'Patient';
+    subjectEl.value = c.recipientType === 'provider'
+      ? 'UMS — Form Request for ' + nameForSubj
+      : 'UMS — Documents for ' + nameForSubj;
+  }
+}
+
+function cnSendExternalEmail_() {
+  var c = CN_STATE.extComposer;
+  if (!c || c.sending) return;
+
+  // Gather values from DOM
+  var email = (document.getElementById('cnX-email') || {}).value || '';
+  var name = (document.getElementById('cnX-name') || {}).value || '';
+  var subject = (document.getElementById('cnX-subject') || {}).value || '';
+  var message = (document.getElementById('cnX-message') || {}).value || '';
+  var noteRef = (document.getElementById('cnX-note-ref') || {}).value || null;
+
+  // Client-side validation
+  email = email.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showToast('Please enter a valid email address.', 'toast-error');
+    var emailEl = document.getElementById('cnX-email');
+    if (emailEl) emailEl.focus();
+    return;
+  }
+  subject = subject.trim();
+  if (!subject) {
+    showToast('Subject line is required.', 'toast-error');
+    var subjEl = document.getElementById('cnX-subject');
+    if (subjEl) subjEl.focus();
+    return;
+  }
+
+  c.sending = true;
+  var sendBtn = document.getElementById('cnX-send-btn');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.innerHTML = icon('send', 14) + ' Sending…'; }
+
+  var payload = {
+    recipientEmail: email,
+    recipientName: name.trim(),
+    recipientType: c.recipientType,
+    subject: subject,
+    message: message.trim(),
+    formIds: c.formIds,
+    noteId: noteRef || null,
+  };
+
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      c.sending = false;
+      if (!res.success) {
+        if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = icon('send', 14) + ' Send'; }
+        showToast(res.error || 'Send failed', 'toast-error');
+        return;
+      }
+      cnCloseExternalEmailModal_();
+      var formsList = (res.formsAttached || []).length > 0
+        ? ' with ' + res.formsAttached.length + ' form(s)'
+        : '';
+      showToast('Sent to ' + esc(res.recipientEmail) + formsList, 'toast-success');
+
+      // If a note was linked, update the local state so the card pill appears
+      if (noteRef) {
+        var note = cnFindNoteAnywhere_(noteRef);
+        if (note) {
+          if (!note.subformData || typeof note.subformData !== 'object') note.subformData = {};
+          if (!Array.isArray(note.subformData.externalEmails)) note.subformData.externalEmails = [];
+          note.subformData.externalEmails.push({
+            to: email,
+            type: c.recipientType,
+            forms: c.formIds,
+            sentAt: res.sentAt,
+          });
+          if (currentView === requestedView) cnReRenderActiveView_();
+        }
+      }
+    })
+    .withFailureHandler(function (err) {
+      c.sending = false;
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = icon('send', 14) + ' Send'; }
+      showToast('Send failed: ' + (err.message || 'Server error'), 'toast-error');
+    })
+    .sendExternalEmail(payload);
+}
+
+function cnStartDragExtModal_(e) {
+  var modal = document.getElementById('cnX-modal');
+  if (!modal) return;
+  var startX = e.clientX, startY = e.clientY;
+  var rect = modal.getBoundingClientRect();
+  var origLeft = rect.left, origTop = rect.top;
+  modal.style.position = 'fixed';
+  modal.style.left = origLeft + 'px';
+  modal.style.top = origTop + 'px';
+  modal.style.margin = '0';
+  function onMove(ev) {
+    modal.style.left = (origLeft + ev.clientX - startX) + 'px';
+    modal.style.top = (origTop + ev.clientY - startY) + 'px';
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  e.preventDefault();
+}
+
 </script>

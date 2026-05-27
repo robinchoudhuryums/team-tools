@@ -58,6 +58,15 @@ const CONFIG = {
     // vendor's speech-to-text service, which is not BAA-covered for PHI.
     // Turn on only after confirming the org's HIPAA stance.
     VOICE_INPUT_ENABLED: false,
+    // ── External email (customer / provider) ──────────────────────────
+    // Form catalog for PDF attachments fetched from a public GitHub repo.
+    // Adding a new form: append an entry here + upload the PDF to /forms/.
+    FORM_CATALOG: [
+      { id: 'eaa',          name: 'Economic Assistance Application', fileName: 'EAA (Economic Assistance Application) Form.pdf', category: 'customer' },
+      { id: 'pt-ot-rx',     name: 'PT/OT Prescription',              fileName: 'Sample PT OT Rx.pdf',                            category: 'provider' },
+      { id: 'seating-eval', name: 'Seating Evaluation Form',         fileName: 'Seating_Evaluation_Form (blank sample).pdf',      category: 'provider' },
+    ],
+    FORM_BASE_URL: 'https://raw.githubusercontent.com/robinchoudhuryums/team-tools/main/forms/',
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
     TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
@@ -2847,6 +2856,280 @@ function esc_(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — EXTERNAL EMAIL (CUSTOMER / PROVIDER)
+//  ────────────────────────────────────────────────────────────────────────
+//  Separate flow from the internal department email. Sends directly to a
+//  customer or provider address with optional PDF form attachments from the
+//  GitHub-hosted form catalog. No preview gate — the modal shows a summary
+//  before send. If a noteId is linked, stamps subformData.externalEmails[]
+//  on the note for tracking.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Returns the form catalog for the external-email modal. No secrets — just
+ *  {id, name, category} tuples. Requires a registered employee. */
+function getFormCatalog() {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Employee not found.' };
+  const catalog = (CONFIG.CALL_NOTES.FORM_CATALOG || []).map(function (f) {
+    return { id: f.id, name: f.name, category: f.category };
+  });
+  return { forms: catalog };
+}
+
+/** Sends an external email to a customer or provider, optionally attaching
+ *  PDF forms from the catalog. If noteId is provided, appends a tracking
+ *  entry to subformData.externalEmails[] on the linked note. */
+function sendExternalEmail(payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
+
+  const p = payload || {};
+  const recipientEmail = String(p.recipientEmail || '').trim();
+  const recipientName  = String(p.recipientName || '').trim();
+  const recipientType  = String(p.recipientType || '').trim().toLowerCase();
+  const subject        = String(p.subject || '').trim();
+  const message        = String(p.message || '').trim();
+  const formIds        = Array.isArray(p.formIds) ? p.formIds : [];
+  const noteId         = p.noteId || null;
+
+  // ── Validate ──────────────────────────────────────────────────────
+  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    return { success: false, error: 'Please enter a valid email address.' };
+  }
+  if (recipientType !== 'customer' && recipientType !== 'provider') {
+    return { success: false, error: 'Recipient type must be "customer" or "provider".' };
+  }
+  if (!subject) {
+    return { success: false, error: 'Subject line is required.' };
+  }
+
+  // ── Resolve form catalog entries ──────────────────────────────────
+  const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+  const catalogById = {};
+  catalog.forEach(function (f) { catalogById[f.id] = f; });
+  const selectedForms = [];
+  for (let i = 0; i < formIds.length; i++) {
+    const id = String(formIds[i]).trim();
+    if (!catalogById[id]) {
+      return { success: false, error: 'Unknown form ID: ' + id };
+    }
+    selectedForms.push(catalogById[id]);
+  }
+
+  // ── Fetch PDF blobs from GitHub raw URLs ──────────────────────────
+  const attachments = [];
+  const baseUrl = CONFIG.CALL_NOTES.FORM_BASE_URL || '';
+  for (let i = 0; i < selectedForms.length; i++) {
+    const form = selectedForms[i];
+    const url = baseUrl + encodeURIComponent(form.fileName);
+    try {
+      const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      if (resp.getResponseCode() !== 200) {
+        return { success: false, error: 'Failed to fetch form "' + form.name + '" (HTTP ' + resp.getResponseCode() + ').' };
+      }
+      attachments.push(resp.getBlob().setName(form.fileName));
+    } catch (fetchErr) {
+      return { success: false, error: 'Failed to download form "' + form.name + '": ' + fetchErr.message };
+    }
+  }
+
+  // ── Build email body ──────────────────────────────────────────────
+  const formNames = selectedForms.map(function (f) { return f.name; });
+  const htmlBody = recipientType === 'customer'
+    ? buildCustomerEmailHtml_(recipientName, message, formNames)
+    : buildProviderEmailHtml_(recipientName, message, formNames);
+  const textBody = recipientType === 'customer'
+    ? buildCustomerEmailText_(recipientName, message, formNames)
+    : buildProviderEmailText_(recipientName, message, formNames);
+
+  // ── Send ──────────────────────────────────────────────────────────
+  try {
+    const emailOpts = {
+      to: recipientEmail,
+      subject: subject,
+      body: textBody,
+      htmlBody: htmlBody,
+    };
+    if (attachments.length > 0) emailOpts.attachments = attachments;
+    MailApp.sendEmail(emailOpts);
+  } catch (sendErr) {
+    return { success: false, error: 'Email send failed: ' + sendErr.message };
+  }
+
+  // ── Stamp linked note (best-effort, under lock) ───────────────────
+  const empTz = empTz_(emp);
+  const sentAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+  if (noteId) {
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(15000);
+      const sheet = getCallNotesSheet_(emp);
+      const located = findCallNoteRow_(sheet, noteId);
+      if (located) {
+        let subformData = null;
+        try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (_) {}
+        if (!subformData || typeof subformData !== 'object') subformData = {};
+        if (!Array.isArray(subformData.externalEmails)) subformData.externalEmails = [];
+        subformData.externalEmails.push({
+          to: recipientEmail,
+          type: recipientType,
+          forms: formIds,
+          sentAt: sentAt,
+        });
+        sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      }
+    } catch (stampErr) {
+      console.warn('sendExternalEmail: note stamp failed (noteId=' + noteId + '): ' + stampErr.message);
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  // ── Audit ─────────────────────────────────────────────────────────
+  const formsList = formIds.length > 0 ? formIds.join(',') : 'none';
+  writeAuditLog_(emp, 'ExternalEmailSent', '', '', false, 0,
+    'to=' + recipientEmail + '; type=' + recipientType +
+    '; forms=' + formsList +
+    (noteId ? '; noteId=' + noteId : ''));
+
+  return {
+    success: true,
+    sentAt: sentAt,
+    recipientEmail: recipientEmail,
+    formsAttached: formNames,
+  };
+}
+
+/** Customer-facing HTML email — friendly, warm tone. */
+function buildCustomerEmailHtml_(recipientName, message, formNames) {
+  const P = CN_EMAIL_PALETTE;
+  const greeting = recipientName
+    ? 'Dear ' + esc_(recipientName) + ','
+    : 'Hello,';
+  const messageBlock = message
+    ? '<p style="margin:14px 0;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + esc_(message).replace(/\n/g, '<br>') + '</p>'
+    : '';
+  let formsBlock = '';
+  if (formNames.length > 0) {
+    const items = formNames.map(function (n) {
+      return '<li style="padding:4px 0;">' + esc_(n) + '</li>';
+    }).join('');
+    formsBlock =
+      '<div style="background:' + P.accentSoft + ';border-left:3px solid ' + P.accent + ';border-radius:6px;padding:14px 16px;margin:14px 0;">' +
+        '<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:' + P.accentDeep + ';opacity:.75;margin-bottom:6px;">Attached Documents</div>' +
+        '<ul style="margin:0;padding-left:18px;color:' + P.ink + ';font-size:14px;">' + items + '</ul>' +
+      '</div>';
+  }
+  const logoBar =
+    '<table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">' +
+      '<tr>' +
+        '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';">' +
+          '<img src="' + P.logoUrl + '" alt="UMS" style="height:46px;display:block;border:0;outline:none;">' +
+        '</td>' +
+      '</tr>' +
+    '</table>';
+  return (
+    '<div style="background:' + P.paper + ';padding:24px;font-family:\'Inter\',-apple-system,Helvetica,Arial,sans-serif;color:' + P.ink + ';">' +
+      '<div style="max-width:680px;margin:0 auto;background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;padding:24px 26px;">' +
+        logoBar +
+        '<p style="margin:0 0 6px;font-size:16px;color:' + P.ink + ';">' + greeting + '</p>' +
+        '<p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:' + P.muted + ';">Thank you for reaching out to Universal Medical Supply. We appreciate the opportunity to assist you.</p>' +
+        messageBlock +
+        formsBlock +
+        '<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:' + P.muted + ';">If you have any questions regarding the attached documents or need further assistance, please do not hesitate to contact us.</p>' +
+        '<p style="margin:14px 0 0;font-size:14px;color:' + P.ink + ';">Warm regards,<br><strong>Universal Medical Supply</strong></p>' +
+      '</div>' +
+      '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>' +
+    '</div>'
+  );
+}
+
+/** Provider-facing HTML email — clinical, professional tone. */
+function buildProviderEmailHtml_(recipientName, message, formNames) {
+  const P = CN_EMAIL_PALETTE;
+  const greeting = recipientName
+    ? 'Dear ' + esc_(recipientName) + ','
+    : 'To Whom It May Concern,';
+  const messageBlock = message
+    ? '<p style="margin:14px 0;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + esc_(message).replace(/\n/g, '<br>') + '</p>'
+    : '';
+  let formsBlock = '';
+  if (formNames.length > 0) {
+    const items = formNames.map(function (n) {
+      return '<li style="padding:4px 0;">' + esc_(n) + '</li>';
+    }).join('');
+    formsBlock =
+      '<div style="background:' + P.goodSoft + ';border-left:3px solid ' + P.good + ';border-radius:6px;padding:14px 16px;margin:14px 0;">' +
+        '<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:' + P.goodDeep + ';opacity:.75;margin-bottom:6px;">Attached Documents</div>' +
+        '<ul style="margin:0;padding-left:18px;color:' + P.ink + ';font-size:14px;">' + items + '</ul>' +
+      '</div>';
+  }
+  const logoBar =
+    '<table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">' +
+      '<tr>' +
+        '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';">' +
+          '<img src="' + P.logoUrl + '" alt="UMS" style="height:46px;display:block;border:0;outline:none;">' +
+        '</td>' +
+      '</tr>' +
+    '</table>';
+  return (
+    '<div style="background:' + P.paper + ';padding:24px;font-family:\'Inter\',-apple-system,Helvetica,Arial,sans-serif;color:' + P.ink + ';">' +
+      '<div style="max-width:680px;margin:0 auto;background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;padding:24px 26px;">' +
+        logoBar +
+        '<p style="margin:0 0 6px;font-size:16px;color:' + P.ink + ';">' + greeting + '</p>' +
+        '<p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:' + P.muted + ';">Please find the requested documentation attached to this correspondence. We are writing on behalf of our patient as part of their ongoing care coordination with Universal Medical Supply.</p>' +
+        messageBlock +
+        formsBlock +
+        '<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:' + P.muted + ';">Should you require any additional information or have questions regarding the enclosed materials, please contact our office at your earliest convenience.</p>' +
+        '<p style="margin:14px 0 0;font-size:14px;color:' + P.ink + ';">Respectfully,<br><strong>Universal Medical Supply</strong></p>' +
+      '</div>' +
+      '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>' +
+    '</div>'
+  );
+}
+
+/** Customer-facing plain-text fallback. */
+function buildCustomerEmailText_(recipientName, message, formNames) {
+  const lines = [];
+  lines.push(recipientName ? 'Dear ' + recipientName + ',' : 'Hello,');
+  lines.push('');
+  lines.push('Thank you for reaching out to Universal Medical Supply. We appreciate the opportunity to assist you.');
+  if (message) { lines.push(''); lines.push(message); }
+  if (formNames.length > 0) {
+    lines.push('');
+    lines.push('Attached Documents:');
+    formNames.forEach(function (n) { lines.push('  - ' + n); });
+  }
+  lines.push('');
+  lines.push('If you have any questions regarding the attached documents or need further assistance, please do not hesitate to contact us.');
+  lines.push('');
+  lines.push('Warm regards,');
+  lines.push('Universal Medical Supply');
+  return lines.join('\n');
+}
+
+/** Provider-facing plain-text fallback. */
+function buildProviderEmailText_(recipientName, message, formNames) {
+  const lines = [];
+  lines.push(recipientName ? 'Dear ' + recipientName + ',' : 'To Whom It May Concern,');
+  lines.push('');
+  lines.push('Please find the requested documentation attached to this correspondence. We are writing on behalf of our patient as part of their ongoing care coordination with Universal Medical Supply.');
+  if (message) { lines.push(''); lines.push(message); }
+  if (formNames.length > 0) {
+    lines.push('');
+    lines.push('Attached Documents:');
+    formNames.forEach(function (n) { lines.push('  - ' + n); });
+  }
+  lines.push('');
+  lines.push('Should you require any additional information or have questions regarding the enclosed materials, please contact our office at your earliest convenience.');
+  lines.push('');
+  lines.push('Respectfully,');
+  lines.push('Universal Medical Supply');
+  return lines.join('\n');
 }
 
 
