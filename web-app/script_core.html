@@ -297,6 +297,7 @@ function renderToolTabBar(toolKey) {
 function showView(view) {
   const toolKey = VIEW_TO_TOOL[view];
   if (!toolKey) return;
+  if (toolKey !== 'callNotes' && typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
   currentView = view;
   // Tab bar active state
   document.querySelectorAll('.tt-btn').forEach(b => {
@@ -436,4 +437,23 @@ function showToast(msg, cls) {
   // Cap the stack at 5
   while (stack.children.length > 5) stack.firstChild.remove();
 }
+
+// ── Modal accessibility: Escape-to-close + focus trap ─────────────────────
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  var open = document.querySelector('.overlay.open');
+  if (!open) return;
+  e.preventDefault();
+  open.classList.remove('open');
+});
+
+document.addEventListener('focusin', function (e) {
+  var open = document.querySelector('.overlay.open');
+  if (!open) return;
+  var modal = open.querySelector('.modal') || open.querySelector('.cn-compose-modal');
+  if (!modal) return;
+  if (modal.contains(e.target)) return;
+  var focusable = modal.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])');
+  if (focusable.length > 0) focusable[0].focus();
+});
 </script>

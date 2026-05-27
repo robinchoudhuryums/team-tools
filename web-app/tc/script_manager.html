@@ -223,17 +223,9 @@ function renderManagerView(area, data) {
     : '';
 
   area.innerHTML = `
-    <div class="app-bar">
-      <div class="app-bar-left">
-        <div class="breadcrumb">
-          <span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Manager Dashboard</span>
-        </div>
-        <h1 class="display-title">Manager Dashboard</h1>
-      </div>
-      <div class="app-bar-right">
-        <button class="refresh-btn" id="mgr-refresh">${icon('refresh', 14)}Refresh</button>
-      </div>
-    </div>
+    ${COMPACT_MODE
+      ? `<div class="compact-header"><div class="ch-title">${icon('manage', 16)} Manager</div><div class="ch-actions"><button class="refresh-btn" id="mgr-refresh">${icon('refresh', 14)}</button><button class="ch-action-btn" title="Close window" onclick="window.close()">${icon('x', 14)}</button></div></div>`
+      : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Manager Dashboard</span></div><h1 class="display-title">Manager Dashboard</h1></div><div class="app-bar-right"><button class="refresh-btn" id="mgr-refresh">${icon('refresh', 14)}Refresh</button></div></div>`}
 
     ${heroHtml}
     ${renderAnalyticsSection(data)}
@@ -397,7 +389,7 @@ function renderManagerView(area, data) {
 function prettyType(type) {
   return ({
     ClockIn: 'Clock In', LunchOut: 'Lunch Out', LunchIn: 'Lunch Return', ClockOut: 'Clock Out',
-  })[type] || type;
+  })[type] || esc(type);
 }
 
 function handleApprovalAction(empId, date, submittedAt, newStatus, btn) {

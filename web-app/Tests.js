@@ -2387,7 +2387,7 @@ function _findAuditRow(empId, actionType) {
   const rows = sheet.getDataRange().getValues();
   for (var i = rows.length - 1; i >= 1; i--) {
     if (String(rows[i][1] || '').trim() === empId &&
-        String(rows[i][2] || '').trim() === actionType) {
+        String(rows[i][4] || '').trim() === actionType) {
       return rows[i];
     }
   }
@@ -2413,6 +2413,6 @@ function test_auditRow_deletePunch_hasActorEmail() {
   });
   var row = _findAuditRow(_TEST_INDIA_ID, 'PunchDelete');
   _assertNotNull(row, 'Audit row should exist for PunchDelete');
-  var notes = String(row[6] || '');
+  var notes = String(row[9] || '');
   _assertContains(notes, 'removed by manager', 'Audit notes should mention manager delete');
 }

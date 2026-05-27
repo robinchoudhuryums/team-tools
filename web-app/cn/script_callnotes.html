@@ -3377,6 +3377,10 @@ function cnStartAmbientPolling_() {
   CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
 }
 
+function cnStopAmbientPolling_() {
+  if (CN_STATE.ambientTimer) { clearInterval(CN_STATE.ambientTimer); CN_STATE.ambientTimer = null; }
+}
+
 function cnPollAmbient_() {
   google.script.run
     .withSuccessHandler(function (res) {

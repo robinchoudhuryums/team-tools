@@ -769,14 +769,17 @@ function deletePunch(empId, date, time, punchType) {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
 
-    const today = fmtDate_(new Date());
+    if (!PUNCH_LABELS_.includes(punchType))
+      return { success: false, error: 'Invalid punch type.' };
+
+    const targetEmp = lookupEmployeeById_(empId);
+    const targetTz = targetEmp ? empTz_(targetEmp) : CONFIG.TIMEZONE;
+    const today = fmtDateTz_(new Date(), targetTz);
     const daysBack = Math.abs(daysBetween_(date, today));
     if (daysBack > CONFIG.MGR_DELETE_WINDOW_DAYS) {
       return { success: false, error:
         `Cannot delete punches older than ${CONFIG.MGR_DELETE_WINDOW_DAYS} days.` };
     }
-    if (!PUNCH_LABELS_.includes(punchType))
-      return { success: false, error: 'Invalid punch type.' };
 
     const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
     const rows = sheet.getDataRange().getValues();
@@ -787,8 +790,6 @@ function deletePunch(empId, date, time, punchType) {
       if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== punchType) continue;
 
       sheet.deleteRow(i + 1);
-      // Mirror clear to personal sheet if any
-      const targetEmp = lookupEmployeeById_(empId);
       if (targetEmp && targetEmp.sheetId) {
         try { clearFromEmployeeSheet_(targetEmp, date, punchType); }
         catch (e) { console.warn('clearFromEmployeeSheet_ failed: ' + e.message); }
@@ -1261,7 +1262,10 @@ function setCallNoteResolved(noteId, resolved) {
   finally { lock.releaseLock(); }
 }
 
-/** Deletes a call note. Hard-delete (Sheet row removed); audit row keeps the trail. */
+/** Deletes a call note within the delete window. Hard-delete (Sheet row
+ *  removed); audit row keeps the trail. Notes older than
+ *  CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS cannot be self-deleted — they
+ *  must be addressed through the manager or left in place. */
 function deleteCallNote(noteId) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -1271,6 +1275,17 @@ function deleteCallNote(noteId) {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
+
+    const empTz = empTz_(emp);
+    const noteMs = parseTimestampMs_(String(located.row[CN.TIMESTAMP] || ''), empTz);
+    if (noteMs) {
+      const elapsed = (Date.now() - noteMs) / 1000;
+      if (elapsed > CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS) {
+        const mins = Math.round(CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS / 60);
+        return { success: false, error:
+          `Notes can only be deleted within ${mins} minutes of creation. Edit the note instead, or ask your manager.` };
+      }
+    }
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     sheet.deleteRow(located.rowIndex);
@@ -1486,6 +1501,8 @@ function invalidateCnAmbientCache_(empId) {
 /** Returns the department options for the email composer + the dept→type
  *  suggestion map (for the dynamic update-type datalist). */
 function getCallNotesDepartments() {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Employee not found.' };
   return {
     departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
     suggestionsByDept: getUpdateSuggestions_(),
@@ -1769,6 +1786,10 @@ function saveUpdateSuggestions(suggestionsJson) {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     if (!suggestionsJson || typeof suggestionsJson !== 'object') return { success: false, error: 'Invalid suggestions map.' };
+    var keys = Object.keys(suggestionsJson);
+    for (var i = 0; i < keys.length; i++) {
+      if (!Array.isArray(suggestionsJson[keys[i]])) return { success: false, error: 'Each department must map to an array of suggestions.' };
+    }
     PropertiesService.getScriptProperties().setProperty('CN_UPDATE_SUGGESTIONS', JSON.stringify(suggestionsJson));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated update-type suggestions', callerEmp.email);
@@ -2920,7 +2941,7 @@ function sendDailyMissedPunchAlerts() {
           body:
             `The following employees clocked in but did not clock out:\n\n${list}\n\n` +
             `Each has been emailed a reminder to fix it via the Adjust feature.\n\n` +
-            `Audit log:\nhttps://docs.google.com/spreadsheets/d/${CONFIG.ADP_SS_ID}/edit`,
+            `Audit log:\nhttps://docs.google.com/spreadsheets/d/${getAdpSS_().getId()}/edit`,
         });
       } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
     }
@@ -3893,7 +3914,7 @@ function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reaso
       `Submitted:   ${fmtDate_(new Date())} ${fmtTime_(new Date())} ${tzAbbr_(CONFIG.TIMEZONE)}\n\n` +
       `Threshold:   > ${CONFIG.OLD_ADJUST_ALERT_DAYS} days\n` +
       `Window:      ${CONFIG.ADJUST_WINDOW_DAYS} days\n\n` +
-      `Audit log:\nhttps://docs.google.com/spreadsheets/d/${CONFIG.ADP_SS_ID}/edit\n`;
+      `Audit log:\nhttps://docs.google.com/spreadsheets/d/${getAdpSS_().getId()}/edit\n`;
     MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body });
   } catch (e) { console.warn('Manager alert email failed: ' + e.message); }
 }
