@@ -653,6 +653,57 @@
     color: var(--ink); line-height: 1.5;
   }
 
+  /* ── Training Q&A tray — recent answered training questions ──── */
+  #cn-training-qa-tray:empty { display: none; }
+  #cn-training-qa-tray {
+    background: color-mix(in srgb, var(--good-soft), transparent 50%);
+    border: 1px dashed color-mix(in srgb, var(--good), transparent 60%);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .cn-qa-label {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--success-deep); letter-spacing: .14em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .cn-qa-card {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font-family: var(--ui); font-size: 12px;
+  }
+  .cn-qa-card-meta {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--muted); margin-bottom: 4px;
+    letter-spacing: .04em;
+  }
+  .cn-qa-card-q {
+    color: var(--info-deep); font-style: italic;
+    display: flex; align-items: flex-start; gap: 5px;
+    margin-bottom: 2px;
+  }
+  .cn-qa-card-q svg { flex-shrink: 0; margin-top: 2px; }
+  .cn-qa-card-a {
+    color: var(--success-deep);
+    display: flex; align-items: flex-start; gap: 5px;
+    padding-left: 16px;
+  }
+  .cn-qa-card-a svg { flex-shrink: 0; margin-top: 2px; }
+  #cn-training-qa-tray.collapsed .cn-qa-cards { display: none; }
+  #cn-training-qa-tray.collapsed { padding-bottom: 10px; }
+
+  /* Stats drill-down — clickable rep name */
+  .cn-stats-name-link {
+    color: var(--accent); cursor: pointer;
+    text-decoration: none; border-bottom: 1px dashed color-mix(in srgb, var(--accent), transparent 60%);
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .cn-stats-name-link:hover { color: var(--info-deep); border-color: var(--info-deep); }
+
   /* ── Responsive sweep — compact / narrow widths ─────────────────── */
   @media (max-width: 640px) {
     .cn-form-fields { grid-template-columns: 1fr; }
@@ -714,7 +765,7 @@ const CN_STATE = {
 };
 
 const CN_ROLLING_STACK_MAX = 12;  // how many recent cards stay rendered before "see all" kicks in
-const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved'];
+const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','answered'];
 const CN_CLEAR_UNDO_WINDOW_MS = 30000;  // window during which Ctrl/⌘+Z restores a just-cleared form
 const CN_FORM_STARTED_LS_KEY = 'umsCallNotesFormStartedAt';  // persists across refresh so completion-time stays accurate
 const CN_FORM_STICKY_LS_KEY  = 'umsCallNotesActiveFormDraft'; // sticky-form: in-progress draft restored on next load
@@ -860,6 +911,7 @@ function cnRenderNotesView(area) {
     <div class="cn-rolling">
       ${cnRenderActiveForm_()}
       <div id="cn-pinned-tray"></div>
+      <div id="cn-training-qa-tray"></div>
       <div class="cn-filter-bar" id="cn-filter-bar"></div>
       <div id="cn-stack"></div>
     </div>
@@ -873,9 +925,11 @@ function cnRenderNotesView(area) {
   // but the tray is still empty — pinned notes vanish from both places until
   // the async reload completes.
   cnRenderPinnedTray_();
+  cnRenderTrainingQATray_();
   cnRenderFilterBar_();
   cnRenderStack_();
   cnReloadPinnedTray_();
+  cnLoadTrainingQA_();
   // Restore any in-progress draft from a prior session (sticky form). If a
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
@@ -2031,6 +2085,52 @@ function cnRenderPinnedTray_() {
     pinned.map(cnRenderCard_).join('');
 }
 
+// ── Training Q&A tray (recent answered training questions) ────────────
+
+/** Fetch the rep's most recent training Q&A pairs from the server and render
+ *  a collapsible section in the Log view. Similar to the pinned tray but for
+ *  training notes with manager replies. */
+function cnLoadTrainingQA_() {
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res && !res.error) {
+        CN_STATE.trainingQA = res.notes || [];
+      }
+      if (currentView !== requestedView) return;
+      cnRenderTrainingQATray_();
+    })
+    .withFailureHandler(function () {
+      // Silent failure — tray stays empty
+    })
+    .getMyTrainingQA();
+}
+
+/** Render the training Q&A tray above the filter bar. Only shows when the
+ *  rep has at least one answered training note. Collapsible to save space. */
+function cnRenderTrainingQATray_() {
+  const host = document.getElementById('cn-training-qa-tray');
+  if (!host) return;
+  const qa = CN_STATE.trainingQA || [];
+  if (qa.length === 0) { host.innerHTML = ''; return; }
+  const cards = qa.map(function (n) {
+    const time = cnFormatTimestampForCopy_(n.timestamp);
+    const question = (n.subformData && n.subformData.trainingQuestion) || '';
+    const reply = (n.subformData && n.subformData.trainingReply) || '';
+    const replyBy = (n.subformData && n.subformData.trainingReplyBy) || '';
+    return `
+      <div class="cn-qa-card">
+        <div class="cn-qa-card-meta">${esc(n.dateLocal)} · ${esc(time)}${n.caller ? ' · ' + esc(n.caller) : ''}</div>
+        <div class="cn-qa-card-q">${icon('bulb', 11)}<span>${esc(question)}</span></div>
+        <div class="cn-qa-card-a">${icon('checkCircle', 11)}<span>${esc(reply)}${replyBy ? ' <span style="opacity:.6">— ' + esc(replyBy) + '</span>' : ''}</span></div>
+      </div>
+    `;
+  }).join('');
+  host.innerHTML =
+    `<div class="cn-qa-label" onclick="this.parentElement.classList.toggle('collapsed')">${icon('bulb', 11)}<span>Training Answers · ${qa.length}</span> ${icon('chevronDown', 10)}</div>` +
+    `<div class="cn-qa-cards">${cards}</div>`;
+}
+
 function cnToggleResolved_(noteId) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note || note.flagType !== 'action') return;
@@ -2069,7 +2169,7 @@ function cnRenderFilterBar_() {
   if (!bar) return;
   CN_STATE.filterCounts = cnComputeFilterCounts_(CN_STATE.rollingNotes);
   const labelFor = { all: 'All', action: 'Action', training: 'Training',
-                     review: 'Review', unresolved: 'Unresolved' };
+                     review: 'Review', unresolved: 'Unresolved', answered: 'Q&A' };
   bar.innerHTML = '<span class="cn-filter-label">Filter</span>' +
     CN_DEFAULT_FILTERS.map(function (f) {
       const count = CN_STATE.filterCounts[f] || 0;
@@ -2078,6 +2178,7 @@ function cnRenderFilterBar_() {
       const tone = (f === 'action' || f === 'unresolved') ? ' cn-fc-action'
                  : (f === 'training') ? ' cn-fc-training'
                  : (f === 'review') ? ' cn-fc-review'
+                 : (f === 'answered') ? ' cn-fc-review'
                  : '';
       return `<button class="cn-filter-chip${tone}" aria-pressed="${pressed}" onclick="cnSetFilter_('${f}')">
                 ${labelFor[f] || f} <span class="chip-count">${count}</span>
@@ -2107,6 +2208,7 @@ function cnNoteMatchesFilter_(note, filter) {
     case 'review':     return note.flagType === 'review';
     case 'unresolved': return note.flagType === 'action' && !note.resolved;
     case 'unsent':     return !note.emailedAt;
+    case 'answered':   return note.flagType === 'training' && note.subformData && !!note.subformData.trainingReply;
     case 'all':
     default:           return true;
   }
@@ -3398,7 +3500,7 @@ function cnMgrRenderStats_(host, res) {
     return `
       <div class="cn-stats-card">
         <div class="cn-stats-head">
-          <div class="cn-stats-name">${esc(r.repName)}</div>
+          <div class="cn-stats-name"><a class="cn-stats-name-link" href="#" data-stats-rep-id="${esc(r.repId)}" onclick="event.preventDefault(); cnStatsDrillDown_(this.dataset.statsRepId)">${esc(r.repName)}</a></div>
           ${span}
         </div>
         <div class="cn-stats-total">${r.totalNotes}<span class="cn-stats-total-lbl">notes</span></div>
@@ -3418,6 +3520,108 @@ function cnMgrRenderStats_(host, res) {
     </div>
     <div class="cn-stats-grid-outer">${cards}</div>
   `;
+}
+
+/** Stats drill-down: clicking a rep name in the Stats tab navigates to
+ *  the Per-Rep View with that rep + date pre-selected. */
+function cnStatsDrillDown_(repId) {
+  CN_STATE.mgrRepView = {
+    repId: repId,
+    date: CN_STATE.mgrStatsDate || new Intl.DateTimeFormat('en-CA', { timeZone: empTz() }).format(new Date()),
+  };
+  cnMgrLoadRepView_();
+}
+
+// ── Manager Search tab (cross-rep search) ─────────────────────────────
+
+function cnMgrLoadSearchView_() {
+  document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.mqueue === 'search');
+  });
+  const host = document.getElementById('cn-mgr-results');
+  if (!host) return;
+  host.innerHTML = `
+    <div class="cn-search-bar">
+      <input type="text" id="cn-mgr-search-q" placeholder="Search across all reps — caller, phone, TRX, or issue keyword…"
+             value="${esc(CN_STATE.mgrSearchQuery || '')}" oninput="cnMgrSearchQueryChanged_(this.value)">
+      <div class="toolbar-tabs" role="group" aria-label="Search field">
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'all'}" onclick="cnMgrSetSearchField_('all')">All</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'caller'}" onclick="cnMgrSetSearchField_('caller')">Caller</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'issue'}" onclick="cnMgrSetSearchField_('issue')">Issue</button>
+      </div>
+    </div>
+    <div id="cn-mgr-search-results"></div>
+  `;
+  cnMgrRenderSearchResults_();
+}
+
+function cnMgrSearchQueryChanged_(q) {
+  CN_STATE.mgrSearchQuery = q;
+  if (CN_STATE.mgrSearchTimer) clearTimeout(CN_STATE.mgrSearchTimer);
+  CN_STATE.mgrSearchTimer = setTimeout(cnMgrFireSearch_, 300);
+}
+
+function cnMgrSetSearchField_(f) {
+  CN_STATE.mgrSearchField = f;
+  document.querySelectorAll('.cn-search-bar .toolbar-tab').forEach(function (b) {
+    b.setAttribute('aria-pressed', b.textContent.trim().toLowerCase() === f ? 'true' : 'false');
+  });
+  cnMgrFireSearch_();
+}
+
+function cnMgrFireSearch_() {
+  const q = String(CN_STATE.mgrSearchQuery || '').trim();
+  if (q.length < 2) {
+    CN_STATE.mgrSearchResults = [];
+    cnMgrRenderSearchResults_();
+    return;
+  }
+  const requestedView = currentView;
+  const requestedQuery = q;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      if (CN_STATE.mgrSearchQuery !== requestedQuery) return;
+      if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.mgrSearchResults = []; }
+      else CN_STATE.mgrSearchResults = res.results || [];
+      cnMgrRenderSearchResults_();
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      showToast('Search failed: ' + err.message, 'toast-error');
+    })
+    .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null, null);
+}
+
+function cnMgrRenderSearchResults_() {
+  const host = document.getElementById('cn-mgr-search-results');
+  if (!host) return;
+  if (!CN_STATE.mgrSearchQuery || CN_STATE.mgrSearchQuery.length < 2) {
+    host.innerHTML = '<div class="cn-stack-empty">Type at least 2 characters to search across all reps.</div>';
+    return;
+  }
+  if (CN_STATE.mgrSearchResults.length === 0) {
+    host.innerHTML = '<div class="cn-stack-empty">No matches.</div>';
+    return;
+  }
+  host.innerHTML = CN_STATE.mgrSearchResults.map(function (n) {
+    return `
+      <div class="cn-search-result-card">
+        <div class="cn-search-result-meta">
+          ${esc(n.dateLocal)} · ${esc(cnFormatTimestampForCopy_(n.timestamp))}
+          · <strong style="color:var(--ink)">${esc(n.repName)}</strong> (${esc(n.repId)})
+          ${n.flagType ? ' · <span style="color:var(--ink)">' + esc(n.flagType.toUpperCase()) + '</span>' : ''}
+          ${n.emailedAt ? ' · sent ' + esc(cnFormatTimestampForCopy_(n.emailedAt)) : ''}
+          ${n.emailDepartments ? ' · ' + esc(n.emailDepartments) : ''}
+        </div>
+        <div class="cn-search-result-body">
+          <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
+          <br>${esc(n.issue || '')}
+          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // ── Ambient (sidebar badge) polling ────────────────────────────────────

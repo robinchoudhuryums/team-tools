@@ -1406,6 +1406,32 @@ function getMyPinnedCallNotes() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Returns the calling rep's most recent training-flagged notes that have a
+ *  manager reply (non-empty subformData.trainingReply). Spans ALL dates
+ *  (not just today) so the rep can see historical Q&A. Limited to 5,
+ *  newest first. Read-only, caller-scoped. */
+function getMyTrainingQA() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { notes: [] };
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (note.flagType === 'training'
+          && note.subformData
+          && note.subformData.trainingReply) {
+        notes.push(note);
+      }
+    }
+    notes.sort(function (a, b) { return b.timestamp.localeCompare(a.timestamp); });
+    if (notes.length > 5) notes.length = 5;
+    return { notes: notes };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Returns the calling rep's notes for a given date, optionally filtered.
  *  Defaults to today in the rep's tz. Filter options:
  *    'all' (default) | 'action' | 'training' | 'review' | 'unresolved' | 'unsent' */
