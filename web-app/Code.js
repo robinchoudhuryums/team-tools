@@ -1203,8 +1203,10 @@ function updateCallNote(noteId, payload) {
   finally { lock.releaseLock(); }
 }
 
-/** Sets (or clears) the flag type on a note. Pass '' to clear. */
-function setCallNoteFlag(noteId, flagType) {
+/** Sets (or clears) the flag type on a note. Pass '' to clear.
+ *  Optional trainingQuestion: when flagging as 'training', merges
+ *  the question into subformData so it appears in digests/Q&A. */
+function setCallNoteFlag(noteId, flagType, trainingQuestion) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -1221,6 +1223,16 @@ function setCallNoteFlag(noteId, flagType) {
     const oldFlag = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
     sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(t);
     if (oldFlag !== t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
+
+    if (t === 'training' && trainingQuestion) {
+      let subformData = null;
+      if (located.row[CN.SUBFORM_DATA]) {
+        try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (e) {}
+      }
+      if (!subformData || typeof subformData !== 'object') subformData = {};
+      subformData.trainingQuestion = String(trainingQuestion).trim();
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    }
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,

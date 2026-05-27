@@ -226,7 +226,7 @@
   }
   .cn-form-clear-btn {
     appearance: none; border: 1px solid var(--danger-deep);
-    background: transparent;
+    background: var(--danger-soft);
     padding: 9px 12px; border-radius: var(--radius);
     font-family: var(--ui);
     font-size: 12px; font-weight: 500;
@@ -234,7 +234,7 @@
     transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background var(--t) var(--ease);
   }
   .cn-form-clear-btn:hover {
-    background: var(--danger-soft); border-color: var(--danger-deep); color: var(--danger-deep);
+    background: var(--danger-deep); border-color: var(--danger-deep); color: white;
   }
 
   /* ── Filter chips bar ───────────────────────────────────────────── */
@@ -351,7 +351,7 @@
     background: var(--paper-2); color: var(--ink);
   }
   .cn-card-actions .cn-act-btn.is-on {
-    background: var(--good-soft); color: var(--success-deep);
+    background: #fef3cd; color: #856404;
   }
   .cn-card-actions .cn-act-btn.is-sent {
     background: var(--accent-soft); color: var(--info-deep);
@@ -713,6 +713,7 @@ function enterCallNotesView(area) {
   stopClock();
   CN_STATE.composer = null;
   CN_STATE.editingNoteId = null;
+  CN_STATE.filter = 'all';
   cnPrewarmScript_();
   renderLoading(area, 'Loading call notes…');
   cnFetchDeptConfigIfNeeded_(function () {
@@ -1836,9 +1837,14 @@ function cnSaveEdit_(noteId) {
     transferredTo: document.getElementById('cnE-transferred-' + noteId).value,
     resolution:    document.getElementById('cnE-resolution-' + noteId).value,
   };
+  var saveBtn = document.querySelector('[data-note-id="' + noteId + '"] [data-cn-action="save"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
   google.script.run
     .withSuccessHandler(function (res) {
-      if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
+      if (!res.success) {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+        showToast(res.error || 'Save failed', 'toast-error'); return;
+      }
       cnReplaceNoteInState_(res.note);
       CN_STATE.editingNoteId = null;
       cnReRenderActiveView_();
@@ -1846,6 +1852,7 @@ function cnSaveEdit_(noteId) {
       showToast('Saved', 'toast-success');
     })
     .withFailureHandler(function (err) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
       showToast('Save failed: ' + err.message, 'toast-error');
     })
     .updateCallNote(noteId, payload);
@@ -1877,9 +1884,18 @@ function cnToggleFlag_(noteId, kind) {
   if (!note) return;
   if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
   if (note._flagInFlight) return;
-  note._flagInFlight = true;
+
   const prev = { flagType: note.flagType, resolved: note.resolved };
   const next = (note.flagType === kind) ? '' : kind;
+
+  var trainingQ = null;
+  if (next === 'training') {
+    trainingQ = prompt('What question or concern would you like to flag for training?\n(Leave blank to skip)');
+    if (trainingQ === null) return;
+    trainingQ = trainingQ.trim() || null;
+  }
+
+  note._flagInFlight = true;
   note.flagType = next;
   if (prev.flagType !== next) note.resolved = false;
   cnReRenderActiveView_();
@@ -1902,7 +1918,7 @@ function cnToggleFlag_(noteId, kind) {
       cnReRenderActiveView_(); cnRenderFilterBar_();
       showToast('Flag failed: ' + err.message, 'toast-error');
     })
-    .setCallNoteFlag(noteId, next);
+    .setCallNoteFlag(noteId, next, trainingQ);
 }
 
 /** Toggle the pinned state on a note — optimistic. The pinned tray
@@ -3574,7 +3590,7 @@ function enterCallNotesAdminView(area) {
   area.innerHTML =
     compactHeader +
     (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'Edit department email mappings and state tax rates. Changes take effect immediately (no redeploy needed).')) +
-    '<div id="cn-admin-body" style="max-width:640px"><div class="spinner" style="margin:24px auto"></div></div>';
+    '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
       if (currentView !== 'callNotesAdmin') return;
