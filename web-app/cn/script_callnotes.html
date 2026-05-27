@@ -960,6 +960,50 @@
   .cn-ext-summary dd {
     margin: 2px 0 0 0; font-size: 13px; color: var(--ink);
   }
+
+  /* ── Fillable form toggle + pre-fill ───────────────────────────── */
+  .cn-ext-form-mode-toggle {
+    display: flex; align-items: center; gap: 6px;
+    margin-left: auto;
+  }
+  .cn-ext-form-mode-toggle .toggle-label {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    cursor: pointer; user-select: none;
+  }
+  .cn-ext-form-mode-toggle .toggle-label.active {
+    color: var(--accent);
+  }
+  .cn-ext-form-mode-switch {
+    position: relative; width: 32px; height: 18px;
+    background: var(--line); border-radius: 9px; cursor: pointer;
+    transition: background .2s;
+  }
+  .cn-ext-form-mode-switch.on { background: var(--accent); }
+  .cn-ext-form-mode-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; background: #fff;
+    border-radius: 50%; transition: left .2s;
+  }
+  .cn-ext-form-mode-switch.on::after { left: 16px; }
+  .cn-ext-prefill-section {
+    margin-top: 10px; padding: 10px 12px;
+    background: var(--good-soft); border: 1px solid var(--good);
+    border-radius: var(--radius);
+  }
+  .cn-ext-prefill-title {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--success-deep); letter-spacing: .1em; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .cn-ext-prefill-section .field { margin-bottom: 8px; }
+  .cn-ext-prefill-section .field:last-child { margin-bottom: 0; }
+  .cn-ext-prefill-section .field label {
+    font-size: 11px; margin-bottom: 2px;
+  }
+  .cn-ext-prefill-section .field input {
+    padding: 6px 8px; font-size: 12px;
+  }
 </style>
 
 <script>
@@ -4475,7 +4519,10 @@ function cnOpenExternalEmailModal_(presetNoteId) {
     recipientName: '',
     subject: '',
     message: '',
-    formIds: [],
+    formIds: [],              // PDF attachment form IDs
+    interactiveForms: [],     // fillable interactive form IDs
+    prefillData: {},           // keyed by form ID: { formId: { field: value } }
+    formModes: {},             // keyed by form ID: 'pdf' | 'fillable'
     noteId: presetNoteId || null,
     sending: false,
   };
@@ -4525,6 +4572,40 @@ function cnRenderExternalEmailModal_() {
   cnWireExternalEmailModal_();
 }
 
+/** IDs of forms that support interactive/fillable mode. Must match
+ *  INTERACTIVE_FORM_TYPES on the server side. */
+var CN_INTERACTIVE_FORM_IDS = ['eaa', 'pt-ot-rx', 'seating-eval'];
+
+/** Returns the pre-fill fields HTML for a given form type. */
+function cnPrefillFieldsForForm_(formId) {
+  var c = CN_STATE.extComposer;
+  var pf = (c.prefillData && c.prefillData[formId]) || {};
+  switch (formId) {
+    case 'eaa':
+      return '<div class="cn-ext-prefill-title">Pre-fill fields (optional)</div>' +
+        '<div class="field"><label>Patient First Name</label>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="firstName" value="' + esc(pf.firstName || '') + '"></div>' +
+        '<div class="field"><label>Patient Last Name</label>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="lastName" value="' + esc(pf.lastName || '') + '"></div>';
+    case 'pt-ot-rx':
+      return '<div class="cn-ext-prefill-title">Pre-fill fields (optional)</div>' +
+        '<div class="field"><label>Patient Name</label>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="patientName" value="' + esc(pf.patientName || '') + '"></div>' +
+        '<div class="field"><label>Item for Order</label>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="itemForOrder" value="' + esc(pf.itemForOrder || '') + '"></div>' +
+        '<div class="field"><label>Order Date</label>' +
+          '<input type="date" data-prefill-form="' + formId + '" data-prefill-key="orderDate" value="' + esc(pf.orderDate || '') + '"></div>';
+    case 'seating-eval':
+      return '<div class="cn-ext-prefill-title">Pre-fill fields (optional)</div>' +
+        '<div class="field"><label>Patient Name</label>' +
+          '<input type="text" data-prefill-form="' + formId + '" data-prefill-key="patientName" value="' + esc(pf.patientName || '') + '"></div>' +
+        '<div class="field"><label>Date</label>' +
+          '<input type="date" data-prefill-form="' + formId + '" data-prefill-key="evalDate" value="' + esc(pf.evalDate || '') + '"></div>';
+    default:
+      return '';
+  }
+}
+
 function cnBuildExternalEmailHtml_() {
   var c = CN_STATE.extComposer;
   var catalog = CN_STATE.formCatalog || [];
@@ -4536,15 +4617,40 @@ function cnBuildExternalEmailHtml_() {
     '<button type="button" class="cn-ext-type-radio" aria-pressed="' + (c.recipientType === 'provider' ? 'true' : 'false') + '" data-ext-type="provider">' +
       icon('checkCircle', 14) + ' Provider</button>';
 
-  // Form checkboxes
+  // Form checkboxes with fillable toggle
   var formItems = catalog.map(function (f) {
-    var checked = c.formIds.indexOf(f.id) >= 0 ? 'checked' : '';
+    var isChecked = c.formIds.indexOf(f.id) >= 0 || c.interactiveForms.indexOf(f.id) >= 0;
+    var checked = isChecked ? 'checked' : '';
     var catCls = f.category === 'customer' ? 'customer' : 'provider';
-    return '<label class="cn-ext-form-item">' +
-      '<input type="checkbox" data-form-id="' + esc(f.id) + '" ' + checked + '>' +
-      '<span class="cn-ext-form-name">' + esc(f.name) + '</span>' +
-      '<span class="cn-ext-form-cat ' + catCls + '">' + esc(f.category) + '</span>' +
-    '</label>';
+    var isInteractive = CN_INTERACTIVE_FORM_IDS.indexOf(f.id) >= 0;
+    var mode = c.formModes[f.id] || 'pdf';
+    var isFillable = mode === 'fillable';
+
+    var modeToggle = '';
+    if (isInteractive) {
+      modeToggle =
+        '<div class="cn-ext-form-mode-toggle" data-mode-form-id="' + esc(f.id) + '">' +
+          '<span class="toggle-label ' + (!isFillable ? 'active' : '') + '" data-mode-val="pdf">PDF</span>' +
+          '<div class="cn-ext-form-mode-switch' + (isFillable ? ' on' : '') + '" data-mode-switch="' + esc(f.id) + '"></div>' +
+          '<span class="toggle-label ' + (isFillable ? 'active' : '') + '" data-mode-val="fillable">Fillable</span>' +
+        '</div>';
+    }
+
+    var prefillSection = '';
+    if (isInteractive && isFillable && isChecked) {
+      prefillSection = '<div class="cn-ext-prefill-section" data-prefill-for="' + esc(f.id) + '">' +
+        cnPrefillFieldsForForm_(f.id) + '</div>';
+    }
+
+    return '<div class="cn-ext-form-item-wrap" data-form-wrap="' + esc(f.id) + '">' +
+      '<label class="cn-ext-form-item">' +
+        '<input type="checkbox" data-form-id="' + esc(f.id) + '" ' + checked + '>' +
+        '<span class="cn-ext-form-name">' + esc(f.name) + '</span>' +
+        '<span class="cn-ext-form-cat ' + catCls + '">' + esc(f.category) + '</span>' +
+        modeToggle +
+      '</label>' +
+      prefillSection +
+    '</div>';
   }).join('');
   if (catalog.length === 0) {
     formItems = '<div style="font-size:12px;color:var(--muted);padding:8px 0">No forms configured.</div>';
@@ -4633,13 +4739,53 @@ function cnWireExternalEmailModal_() {
     });
   });
 
-  // Form checkbox sync
+  // Form checkbox sync — updated for fillable mode awareness
   document.querySelectorAll('#cnX-form-list input[type="checkbox"]').forEach(function (cb) {
     cb.addEventListener('change', function () {
       var fid = cb.dataset.formId;
-      var idx = c.formIds.indexOf(fid);
-      if (cb.checked && idx < 0) c.formIds.push(fid);
-      else if (!cb.checked && idx >= 0) c.formIds.splice(idx, 1);
+      cnExtSyncFormSelection_(fid, cb.checked);
+    });
+  });
+
+  // Mode toggle switches (PDF <=> Fillable)
+  document.querySelectorAll('.cn-ext-form-mode-switch').forEach(function (sw) {
+    sw.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var fid = sw.dataset.modeSwitch;
+      var currentMode = c.formModes[fid] || 'pdf';
+      var newMode = currentMode === 'pdf' ? 'fillable' : 'pdf';
+      c.formModes[fid] = newMode;
+      // Snapshot prefill inputs before re-render
+      cnExtSnapshotPrefill_();
+      cnExtSyncFormSelection_(fid, true); // re-sync into correct list
+      cnRenderExternalEmailModal_();
+    });
+  });
+  // Also wire the toggle labels
+  document.querySelectorAll('.cn-ext-form-mode-toggle .toggle-label').forEach(function (lbl) {
+    lbl.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var wrap = lbl.closest('.cn-ext-form-mode-toggle');
+      if (!wrap) return;
+      var fid = wrap.dataset.modeFormId;
+      var targetMode = lbl.dataset.modeVal;
+      if (c.formModes[fid] === targetMode) return;
+      c.formModes[fid] = targetMode;
+      cnExtSnapshotPrefill_();
+      cnExtSyncFormSelection_(fid, true);
+      cnRenderExternalEmailModal_();
+    });
+  });
+
+  // Prefill input sync — snapshot on any change
+  document.querySelectorAll('[data-prefill-form]').forEach(function (inp) {
+    inp.addEventListener('input', function () {
+      var fid = inp.dataset.prefillForm;
+      var key = inp.dataset.prefillKey;
+      if (!c.prefillData[fid]) c.prefillData[fid] = {};
+      c.prefillData[fid][key] = inp.value;
     });
   });
 
@@ -4657,6 +4803,38 @@ function cnWireExternalEmailModal_() {
   if (sendBtn) {
     sendBtn.addEventListener('click', cnSendExternalEmail_);
   }
+}
+
+/** Sync a form's checked state into the correct list (formIds or interactiveForms). */
+function cnExtSyncFormSelection_(fid, checked) {
+  var c = CN_STATE.extComposer;
+  if (!c) return;
+  var mode = c.formModes[fid] || 'pdf';
+  // Remove from both lists first
+  var pdfIdx = c.formIds.indexOf(fid);
+  if (pdfIdx >= 0) c.formIds.splice(pdfIdx, 1);
+  var intIdx = c.interactiveForms.indexOf(fid);
+  if (intIdx >= 0) c.interactiveForms.splice(intIdx, 1);
+  // Add to the right list if checked
+  if (checked) {
+    if (mode === 'fillable' && CN_INTERACTIVE_FORM_IDS.indexOf(fid) >= 0) {
+      c.interactiveForms.push(fid);
+    } else {
+      c.formIds.push(fid);
+    }
+  }
+}
+
+/** Snapshot in-progress prefill input values before a re-render. */
+function cnExtSnapshotPrefill_() {
+  var c = CN_STATE.extComposer;
+  if (!c) return;
+  document.querySelectorAll('[data-prefill-form]').forEach(function (inp) {
+    var fid = inp.dataset.prefillForm;
+    var key = inp.dataset.prefillKey;
+    if (!c.prefillData[fid]) c.prefillData[fid] = {};
+    c.prefillData[fid][key] = inp.value;
+  });
 }
 
 /** Auto-update the subject when the recipient type or name changes, but only
@@ -4679,6 +4857,9 @@ function cnExtAutoUpdateSubject_() {
 function cnSendExternalEmail_() {
   var c = CN_STATE.extComposer;
   if (!c || c.sending) return;
+
+  // Snapshot prefill before reading
+  cnExtSnapshotPrefill_();
 
   // Gather values from DOM
   var email = (document.getElementById('cnX-email') || {}).value || '';
@@ -4714,6 +4895,8 @@ function cnSendExternalEmail_() {
     subject: subject,
     message: message.trim(),
     formIds: c.formIds,
+    interactiveForms: c.interactiveForms,
+    prefillData: c.prefillData,
     noteId: noteRef || null,
   };
 
@@ -4727,10 +4910,15 @@ function cnSendExternalEmail_() {
         return;
       }
       cnCloseExternalEmailModal_();
-      var formsList = (res.formsAttached || []).length > 0
-        ? ' with ' + res.formsAttached.length + ' form(s)'
-        : '';
-      showToast('Sent to ' + esc(res.recipientEmail) + formsList, 'toast-success');
+      var parts = [];
+      if ((res.formsAttached || []).length > 0) {
+        parts.push(res.formsAttached.length + ' PDF(s)');
+      }
+      if ((res.formLinks || []).length > 0) {
+        parts.push(res.formLinks.length + ' fillable form(s)');
+      }
+      var suffix = parts.length > 0 ? ' with ' + parts.join(' + ') : '';
+      showToast('Sent to ' + esc(res.recipientEmail) + suffix, 'toast-success');
 
       // If a note was linked, update the local state so the card pill appears
       if (noteRef) {
@@ -4738,12 +4926,16 @@ function cnSendExternalEmail_() {
         if (note) {
           if (!note.subformData || typeof note.subformData !== 'object') note.subformData = {};
           if (!Array.isArray(note.subformData.externalEmails)) note.subformData.externalEmails = [];
-          note.subformData.externalEmails.push({
+          var stampEntry = {
             to: email,
             type: c.recipientType,
             forms: c.formIds,
             sentAt: res.sentAt,
-          });
+          };
+          if (c.interactiveForms.length > 0) {
+            stampEntry.interactiveForms = c.interactiveForms.map(function (fid) { return { formType: fid }; });
+          }
+          note.subformData.externalEmails.push(stampEntry);
           if (currentView === requestedView) cnReRenderActiveView_();
         }
       }

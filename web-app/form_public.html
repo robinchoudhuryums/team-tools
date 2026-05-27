@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UMS — Complete Your Form</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset + base ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: #f6f7f9; color: #101418; line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── Palette (hardcoded hex from CN_EMAIL_PALETTE) ─────────────── */
+    :root {
+      --paper: #f6f7f9; --paper-card: #ffffff; --ink: #101418;
+      --muted: #606872; --line: #dadde3;
+      --accent: #3565b8; --accent-soft: #e6ecf6; --accent-deep: #1e3a6e;
+      --good: #3d8c6b; --good-soft: #e6f1ec; --good-deep: #1f4d3a;
+      --warn: #c25b1a; --warn-soft: #fbeede;
+      --danger: #c0392b; --danger-soft: #fae8e6;
+      --brand: #223b5d; --brand-soft: #e6f2ff;
+      --radius: 8px; --radius-sm: 6px;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────── */
+    .page-wrapper {
+      max-width: 720px; margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    .logo-bar {
+      text-align: center; padding-bottom: 18px;
+      border-bottom: 2px solid var(--brand); margin-bottom: 24px;
+    }
+    .logo-bar img { height: 46px; display: inline-block; }
+    .form-card {
+      background: var(--paper-card); border: 1px solid var(--line);
+      border-radius: 10px; padding: 28px 26px;
+    }
+    .form-title {
+      font-size: 20px; font-weight: 700; color: var(--ink); margin-bottom: 4px;
+    }
+    .form-subtitle {
+      font-size: 13px; color: var(--muted); margin-bottom: 20px;
+    }
+    .footer-note {
+      text-align: center; margin-top: 18px;
+      font-size: 10px; color: var(--muted); letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    /* ── State screens ─────────────────────────────────────────────── */
+    .state-screen {
+      text-align: center; padding: 40px 20px;
+    }
+    .state-screen h2 { font-size: 18px; margin-bottom: 10px; }
+    .state-screen p { font-size: 14px; color: var(--muted); max-width: 400px; margin: 0 auto; }
+    .spinner {
+      width: 32px; height: 32px; margin: 0 auto 16px;
+      border: 3px solid var(--line); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .state-success h2 { color: var(--good); }
+    .state-error h2 { color: var(--danger); }
+    .state-expired h2 { color: var(--warn); }
+
+    /* ── Privacy consent ───────────────────────────────────────────── */
+    .consent-block {
+      background: var(--accent-soft); border: 1px solid var(--accent);
+      border-radius: var(--radius); padding: 16px 18px; margin-bottom: 20px;
+    }
+    .consent-block h3 {
+      font-size: 13px; font-weight: 700; color: var(--accent-deep);
+      text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px;
+    }
+    .consent-block p { font-size: 12px; color: var(--ink); line-height: 1.6; margin-bottom: 10px; }
+    .consent-check { display: flex; align-items: flex-start; gap: 8px; }
+    .consent-check input { margin-top: 3px; flex-shrink: 0; }
+    .consent-check label { font-size: 13px; color: var(--ink); cursor: pointer; }
+
+    /* ── Form fields ───────────────────────────────────────────────── */
+    .form-section {
+      border-top: 1px solid var(--line); padding-top: 18px; margin-top: 18px;
+    }
+    .form-section:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+    .section-title {
+      font-size: 11px; font-weight: 700; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--accent-deep); margin-bottom: 14px;
+    }
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block; font-size: 12px; font-weight: 600;
+      color: var(--muted); margin-bottom: 4px;
+    }
+    .field label .required { color: var(--danger); }
+    .field input[type="text"],
+    .field input[type="email"],
+    .field input[type="tel"],
+    .field input[type="date"],
+    .field input[type="number"],
+    .field textarea,
+    .field select {
+      width: 100%; padding: 10px 12px;
+      border: 1px solid var(--line); border-radius: var(--radius-sm);
+      font-family: inherit; font-size: 14px; color: var(--ink);
+      background: var(--paper-card);
+      transition: border-color .15s;
+    }
+    .field input:focus, .field textarea:focus, .field select:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .field textarea { resize: vertical; min-height: 60px; }
+    .field-row {
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+    .field-row .field { flex: 1; min-width: 140px; }
+    .field-hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+    /* ── Radio + checkbox groups ────────────────────────────────────── */
+    .radio-group, .checkbox-group {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;
+    }
+    .radio-group label, .checkbox-group label {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 13px; font-weight: 400; color: var(--ink); cursor: pointer;
+      padding: 6px 12px; border: 1px solid var(--line);
+      border-radius: var(--radius-sm); background: var(--paper);
+      transition: border-color .15s, background .15s;
+    }
+    .radio-group label:hover, .checkbox-group label:hover {
+      border-color: var(--accent); background: var(--accent-soft);
+    }
+    .radio-group input, .checkbox-group input { margin: 0; flex-shrink: 0; }
+
+    /* ── Income/expense table ──────────────────────────────────────── */
+    .money-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .money-table th, .money-table td {
+      padding: 6px 8px; border: 1px solid var(--line);
+      font-size: 13px; text-align: left;
+    }
+    .money-table th {
+      background: var(--brand); color: #fff;
+      font-size: 11px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .money-table td:first-child { font-weight: 500; min-width: 120px; }
+    .money-table input {
+      width: 100%; border: none; background: transparent;
+      font-family: inherit; font-size: 13px; padding: 2px;
+    }
+    .money-table input:focus { outline: none; background: var(--accent-soft); }
+    .money-table .total-row td { font-weight: 700; background: var(--brand-soft); }
+
+    /* ── Accordion ─────────────────────────────────────────────────── */
+    .accordion-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; padding: 10px 14px;
+      background: var(--paper); border: 1px solid var(--line);
+      border-radius: var(--radius-sm); cursor: pointer;
+      font-family: inherit; font-size: 12px; font-weight: 600;
+      color: var(--accent-deep); letter-spacing: .08em;
+      text-transform: uppercase; margin-bottom: 2px;
+      transition: background .15s;
+    }
+    .accordion-toggle:hover { background: var(--accent-soft); }
+    .accordion-toggle .chevron { transition: transform .2s; }
+    .accordion-toggle.open .chevron { transform: rotate(180deg); }
+    .accordion-body {
+      display: none; padding: 14px 0 0;
+    }
+    .accordion-body.open { display: block; }
+
+    /* ── Signature pad ─────────────────────────────────────────────── */
+    .sig-section { margin-top: 18px; }
+    .sig-section .section-title { margin-bottom: 8px; }
+    .sig-canvas-wrap {
+      border: 2px dashed var(--line); border-radius: var(--radius);
+      background: #fff; position: relative; touch-action: none;
+    }
+    .sig-canvas {
+      display: block; width: 100%; height: 140px;
+      cursor: crosshair;
+    }
+    .sig-clear {
+      position: absolute; top: 6px; right: 8px;
+      background: var(--danger-soft); color: var(--danger);
+      border: 1px solid var(--danger); border-radius: var(--radius-sm);
+      padding: 3px 10px; font-size: 11px; font-weight: 600;
+      cursor: pointer; letter-spacing: .06em; text-transform: uppercase;
+    }
+    .sig-clear:hover { background: var(--danger); color: #fff; }
+    .sig-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Submit button ─────────────────────────────────────────────── */
+    .submit-row {
+      margin-top: 24px; display: flex; justify-content: flex-end;
+    }
+    .btn-submit {
+      background: var(--brand); color: #fff;
+      border: none; border-radius: var(--radius);
+      padding: 12px 32px; font-family: inherit; font-size: 15px;
+      font-weight: 600; cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    .btn-submit:hover { background: var(--accent-deep); }
+    .btn-submit:active { transform: scale(.98); }
+    .btn-submit:disabled {
+      background: var(--line); color: var(--muted); cursor: not-allowed;
+    }
+    .form-error-msg {
+      color: var(--danger); font-size: 13px; margin-top: 8px;
+    }
+
+    /* ── Responsive ────────────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      .page-wrapper { padding: 12px 10px 32px; }
+      .form-card { padding: 18px 14px; }
+      .form-title { font-size: 17px; }
+      .field-row { flex-direction: column; gap: 0; }
+      .money-table th, .money-table td { padding: 5px 4px; font-size: 12px; }
+    }
+
+    /* ── Scale section grid (seating eval) ─────────────────────────── */
+    .scale-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    }
+    .scale-row .scale-label {
+      flex: 1; min-width: 80px; font-size: 13px; color: var(--ink);
+    }
+    .scale-row .scale-options {
+      display: flex; gap: 4px;
+    }
+    .scale-row .scale-options label {
+      display: flex; flex-direction: column; align-items: center;
+      font-size: 10px; color: var(--muted); cursor: pointer;
+      padding: 4px 6px; border: 1px solid var(--line);
+      border-radius: 4px; min-width: 28px; text-align: center;
+      transition: background .15s, border-color .15s;
+    }
+    .scale-row .scale-options label:hover {
+      background: var(--accent-soft); border-color: var(--accent);
+    }
+    .scale-row .scale-options input { margin: 0 0 2px; }
+  </style>
+</head>
+<body>
+  <div class="page-wrapper">
+    <div class="logo-bar">
+      <img src="https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg" alt="Universal Medical Supply">
+    </div>
+
+    <!-- Loading state -->
+    <div class="form-card" id="state-loading">
+      <div class="state-screen">
+        <div class="spinner"></div>
+        <h2>Loading your form...</h2>
+        <p>Please wait while we verify your form link.</p>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <div class="form-card" id="state-error" style="display:none">
+      <div class="state-screen state-error">
+        <h2 id="error-title">Unable to Load Form</h2>
+        <p id="error-message">An error occurred.</p>
+      </div>
+    </div>
+
+    <!-- Success state -->
+    <div class="form-card" id="state-success" style="display:none">
+      <div class="state-screen state-success">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3d8c6b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:12px"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        <h2>Form Submitted Successfully</h2>
+        <p>Thank you! Your response has been received. You may close this page.</p>
+      </div>
+    </div>
+
+    <!-- Main form area -->
+    <div class="form-card" id="state-form" style="display:none">
+      <h1 class="form-title" id="form-title"></h1>
+      <div class="form-subtitle" id="form-subtitle"></div>
+
+      <!-- Consent block -->
+      <div class="consent-block" id="consent-block">
+        <h3>Privacy Notice</h3>
+        <p>This form is provided by Universal Medical Supply for the purpose of healthcare documentation.
+           The information you provide will be used solely for your medical supply needs and will be
+           handled in accordance with applicable privacy regulations. By checking the box below, you
+           acknowledge that you are the intended recipient and consent to provide the requested information.</p>
+        <div class="consent-check">
+          <input type="checkbox" id="consent-checkbox">
+          <label for="consent-checkbox">I acknowledge and consent to provide the requested information.</label>
+        </div>
+      </div>
+
+      <!-- Form fields (rendered dynamically by JS) -->
+      <div id="form-fields" style="display:none"></div>
+
+      <!-- Signature pad -->
+      <div class="sig-section" id="sig-section" style="display:none">
+        <div class="section-title">Signature <span class="required">*</span></div>
+        <div class="sig-canvas-wrap">
+          <canvas id="sig-canvas" class="sig-canvas"></canvas>
+          <button type="button" class="sig-clear" id="sig-clear">Clear</button>
+        </div>
+        <div class="sig-hint">Draw your signature above using your mouse or finger.</div>
+        <div class="field" style="margin-top:10px">
+          <label>Date Signed</label>
+          <input type="date" id="sig-date" readonly>
+        </div>
+      </div>
+
+      <div id="form-error" class="form-error-msg" style="display:none"></div>
+
+      <div class="submit-row">
+        <button type="button" class="btn-submit" id="btn-submit" disabled>Submit Form</button>
+      </div>
+    </div>
+
+    <div class="footer-note">Universal Medical Supply &mdash; UMS Team Tools</div>
+  </div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// PUBLIC FORM CLIENT — self-contained, no dependencies on internal app code
+// ════════════════════════════════════════════════════════════════════════════
+
+var FORM_TOKEN = <?= JSON.stringify(formToken) ?>;
+var FORM_DATA = null;   // populated by getFormByToken
+var SIG_PAD = null;     // signature pad instance
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+(function boot() {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res.error) {
+        showError(res.error);
+        return;
+      }
+      FORM_DATA = res;
+      renderForm();
+    })
+    .withFailureHandler(function (err) {
+      showError('Failed to load form: ' + (err.message || 'Unknown error'));
+    })
+    .getFormByToken(FORM_TOKEN);
+})();
+
+function showError(msg) {
+  document.getElementById('state-loading').style.display = 'none';
+  document.getElementById('state-error').style.display = '';
+  var isExpired = msg.indexOf('expired') >= 0;
+  var isSubmitted = msg.indexOf('already been submitted') >= 0;
+  document.getElementById('error-title').textContent =
+    isExpired ? 'Form Link Expired' :
+    isSubmitted ? 'Already Submitted' : 'Unable to Load Form';
+  document.getElementById('error-message').textContent = msg;
+  if (isExpired) {
+    document.querySelector('#state-error .state-screen').className = 'state-screen state-expired';
+  }
+}
+
+function showSuccess() {
+  document.getElementById('state-form').style.display = 'none';
+  document.getElementById('state-success').style.display = '';
+}
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+// ── Render form ───────────────────────────────────────────────────────────
+function renderForm() {
+  document.getElementById('state-loading').style.display = 'none';
+  document.getElementById('state-form').style.display = '';
+
+  document.getElementById('form-title').textContent = FORM_DATA.formName || 'Complete Form';
+  var subtitleParts = [];
+  if (FORM_DATA.recipientName) subtitleParts.push('For: ' + FORM_DATA.recipientName);
+  if (FORM_DATA.expiresAt) {
+    try {
+      var exp = new Date(FORM_DATA.expiresAt.replace("'", ''));
+      subtitleParts.push('Expires: ' + exp.toLocaleDateString());
+    } catch(_) {}
+  }
+  document.getElementById('form-subtitle').textContent = subtitleParts.join('  |  ');
+
+  // Wire consent checkbox
+  var consent = document.getElementById('consent-checkbox');
+  var fieldsArea = document.getElementById('form-fields');
+  var sigSection = document.getElementById('sig-section');
+  var submitBtn = document.getElementById('btn-submit');
+
+  consent.addEventListener('change', function () {
+    if (consent.checked) {
+      fieldsArea.style.display = '';
+      sigSection.style.display = '';
+      submitBtn.disabled = false;
+    } else {
+      fieldsArea.style.display = 'none';
+      sigSection.style.display = 'none';
+      submitBtn.disabled = true;
+    }
+  });
+
+  // Render form-type-specific fields
+  var html = '';
+  switch (FORM_DATA.formType) {
+    case 'eaa':          html = renderEaaForm(); break;
+    case 'pt-ot-rx':     html = renderPtOtRxForm(); break;
+    case 'seating-eval': html = renderSeatingEvalForm(); break;
+    default:             html = '<p>Unknown form type.</p>';
+  }
+  fieldsArea.innerHTML = html;
+
+  // Apply prefill values
+  applyPrefill(FORM_DATA.prefillData || {});
+
+  // Init signature pad
+  initSignaturePad();
+
+  // Set signature date to today
+  document.getElementById('sig-date').value = new Date().toISOString().split('T')[0];
+
+  // Submit handler
+  submitBtn.addEventListener('click', handleSubmit);
+
+  // Wire money table auto-totals (EAA)
+  wireMoneyTotals();
+
+  // Wire accordion toggles
+  wireAccordions();
+}
+
+// ── EAA Form ──────────────────────────────────────────────────────────────
+function renderEaaForm() {
+  return (
+    '<div class="form-section">' +
+      '<div class="section-title">Patient Information</div>' +
+      '<div class="field-row">' +
+        '<div class="field"><label>First Name <span class="required">*</span></label>' +
+          '<input type="text" id="f-firstName" required></div>' +
+        '<div class="field"><label>Last Name <span class="required">*</span></label>' +
+          '<input type="text" id="f-lastName" required></div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="form-section">' +
+      '<div class="section-title">Signer Information</div>' +
+      '<div class="field">' +
+        '<label>Are you the patient?</label>' +
+        '<div class="radio-group">' +
+          '<label><input type="radio" name="isPatient" value="yes" checked> Yes</label>' +
+          '<label><input type="radio" name="isPatient" value="no"> No</label>' +
+        '</div>' +
+      '</div>' +
+      '<div id="signer-fields" style="display:none">' +
+        '<div class="field"><label>Your Name <span class="required">*</span></label>' +
+          '<input type="text" id="f-signerName"></div>' +
+        '<div class="field"><label>Relationship to Patient <span class="required">*</span></label>' +
+          '<input type="text" id="f-signerRelationship" placeholder="e.g., Spouse, Parent, Legal Guardian"></div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="form-section">' +
+      '<div class="section-title">Intake Questions</div>' +
+
+      '<div class="field">' +
+        '<label>1. How many people live in your household? <span class="required">*</span></label>' +
+        '<input type="number" id="f-householdSize" min="1" max="20">' +
+      '</div>' +
+      '<div class="field">' +
+        '<label>What is your Federal Poverty Guideline (FPG) amount?</label>' +
+        '<input type="text" id="f-fpgAmount" placeholder="e.g., $15,060">' +
+      '</div>' +
+
+      '<div class="field">' +
+        '<label>2. Do you receive government assistance?</label>' +
+        '<div class="radio-group">' +
+          '<label><input type="radio" name="govAssist" value="yes"> Yes</label>' +
+          '<label><input type="radio" name="govAssist" value="no" checked> No</label>' +
+        '</div>' +
+      '</div>' +
+      '<div class="field" id="govAssist-desc-wrap" style="display:none">' +
+        '<label>Please describe</label>' +
+        '<textarea id="f-govAssistDesc" rows="2" placeholder="Type of assistance received"></textarea>' +
+      '</div>' +
+
+      '<div class="field">' +
+        '<label>3. Is there a guardian responsible for the patient\'s medical bills?</label>' +
+        '<div class="radio-group">' +
+          '<label><input type="radio" name="guardian" value="yes"> Yes</label>' +
+          '<label><input type="radio" name="guardian" value="no" checked> No</label>' +
+        '</div>' +
+      '</div>' +
+      '<div id="guardian-fields" style="display:none">' +
+        '<div class="field-row">' +
+          '<div class="field"><label>Guardian Name</label>' +
+            '<input type="text" id="f-guardianName"></div>' +
+          '<div class="field"><label>Guardian Phone</label>' +
+            '<input type="tel" id="f-guardianPhone"></div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="field">' +
+        '<label>4. How much do you have in savings?</label>' +
+        '<input type="text" id="f-savingsAmount" placeholder="$0.00">' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="form-section">' +
+      '<div class="section-title">5. Monthly Income</div>' +
+      '<table class="money-table" id="income-table">' +
+        '<tr><th>Source</th><th>Amount ($)</th></tr>' +
+        '<tr><td>Employment</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incEmployment"></td></tr>' +
+        '<tr><td>Social Security</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incSocialSecurity"></td></tr>' +
+        '<tr><td>Child Support</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incChildSupport"></td></tr>' +
+        '<tr><td>Retirement</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incRetirement"></td></tr>' +
+        '<tr><td>Investments</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incInvestments"></td></tr>' +
+        '<tr><td>Spouse Income</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incSpouse"></td></tr>' +
+        '<tr><td>Disability</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incDisability"></td></tr>' +
+        '<tr><td>Other</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incOther1"></td></tr>' +
+        '<tr><td>Other</td><td><input type="number" step="0.01" min="0" data-total="income" id="f-incOther2"></td></tr>' +
+        '<tr class="total-row"><td>Total Monthly Income</td><td id="income-total">$0.00</td></tr>' +
+      '</table>' +
+    '</div>' +
+
+    '<div class="form-section">' +
+      '<div class="section-title">6. Monthly Expenses</div>' +
+      '<table class="money-table" id="expense-table">' +
+        '<tr><th>Category</th><th>Amount ($)</th></tr>' +
+        '<tr><td>Rent / Mortgage</td><td><input type="number" step="0.01" min="0" data-total="expense" id="f-expRent"></td></tr>' +
+        '<tr><td>Prescriptions</td><td><input type="number" step="0.01" min="0" data-total="expense" id="f-expPrescriptions"></td></tr>' +
+        '<tr><td>Insurance</td><td><input type="number" step="0.01" min="0" data-total="expense" id="f-expInsurance"></td></tr>' +
+        '<tr><td>Food</td><td><input type="number" step="0.01" min="0" data-total="expense" id="f-expFood"></td></tr>' +
+        '<tr><td>Transportation</td><td><input type="number" step="0.01" min="0" data-total="expense" id="f-expTransportation"></td></tr>' +
+        '<tr><td>Utilities</td><td><input type="number" step="0.01" min="0" data-total="expense" id="f-expUtilities"></td></tr>' +
+        '<tr><td>Other</td><td><input type="number" step="0.01" min="0" data-total="expense" id="f-expOther1"></td></tr>' +
+        '<tr><td>Other</td><td><input type="number" step="0.01" min="0" data-total="expense" id="f-expOther2"></td></tr>' +
+        '<tr class="total-row"><td>Total Monthly Expenses</td><td id="expense-total">$0.00</td></tr>' +
+      '</table>' +
+    '</div>'
+  );
+}
+
+// ── PT/OT Rx Form ─────────────────────────────────────────────────────────
+function renderPtOtRxForm() {
+  return (
+    '<div class="form-section">' +
+      '<div class="section-title">Prescription Details</div>' +
+      '<div class="field"><label>Order Date <span class="required">*</span></label>' +
+        '<input type="date" id="f-orderDate"></div>' +
+      '<div class="field"><label>Patient Name <span class="required">*</span></label>' +
+        '<input type="text" id="f-patientName"></div>' +
+      '<div class="field"><label>Item for Order <span class="required">*</span></label>' +
+        '<input type="text" id="f-itemForOrder" placeholder="e.g., PT/OT Mobility Evaluation"></div>' +
+    '</div>' +
+
+    '<div class="form-section">' +
+      '<div class="section-title">Practitioner Information</div>' +
+      '<div class="field"><label>Practitioner Name <span class="required">*</span></label>' +
+        '<input type="text" id="f-practitionerName"></div>' +
+    '</div>'
+  );
+}
+
+// ── Seating Evaluation Form ───────────────────────────────────────────────
+function renderSeatingEvalForm() {
+  var purposeChecks = ['Initial Evaluation', 'Re-evaluation', 'Equipment Change', 'Growth/Weight Change', 'Change in Medical Status'].map(function(p) {
+    return '<label><input type="checkbox" data-group="purpose" value="' + esc(p) + '"> ' + esc(p) + '</label>';
+  }).join('');
+
+  var mradlChecks = ['Bathing', 'Dressing', 'Feeding', 'Grooming', 'Toileting', 'Transfers', 'Mobility in Home', 'Mobility in Community'].map(function(m) {
+    return '<label><input type="checkbox" data-group="mradl" value="' + esc(m) + '"> ' + esc(m) + '</label>';
+  }).join('');
+
+  function scaleRow(id, label, max) {
+    var opts = '';
+    for (var i = 0; i <= max; i++) {
+      var lbl = i === 0 ? 'None' : i === max ? (max === 5 ? 'Severe' : 'Max') : String(i);
+      opts += '<label><input type="radio" name="' + id + '" value="' + i + '"><span>' + lbl + '</span></label>';
+    }
+    return '<div class="scale-row"><span class="scale-label">' + esc(label) + '</span><div class="scale-options">' + opts + '</div></div>';
+  }
+
+  var featureChecks = ['Tilt', 'Recline', 'Elevating Legrests', 'Seat Elevator', 'Standing', 'Alternative Drive Controls'].map(function(f) {
+    return '<label><input type="checkbox" data-group="features" value="' + esc(f) + '"> ' + esc(f) + '</label>';
+  }).join('');
+
+  return (
+    '<div class="form-section">' +
+      '<div class="section-title">Patient Data</div>' +
+      '<div class="field"><label>Patient Name <span class="required">*</span></label>' +
+        '<input type="text" id="f-patientName"></div>' +
+      '<div class="field"><label>Date <span class="required">*</span></label>' +
+        '<input type="date" id="f-evalDate"></div>' +
+      '<div class="field"><label>Purpose of Evaluation</label>' +
+        '<div class="checkbox-group">' + purposeChecks + '</div></div>' +
+      '<div class="field-row">' +
+        '<div class="field"><label>Height</label><input type="text" id="f-height" placeholder="e.g., 5\'10&quot;"></div>' +
+        '<div class="field"><label>Weight (lbs)</label><input type="number" id="f-weight" min="0"></div>' +
+      '</div>' +
+      '<div class="field"><label>Diagnoses / Conditions</label>' +
+        '<textarea id="f-diagnoses" rows="3" placeholder="List primary and secondary diagnoses"></textarea></div>' +
+    '</div>' +
+
+    '<button type="button" class="accordion-toggle" data-accordion="mradl">' +
+      'Compromised MRADLs <span class="chevron">&#9660;</span></button>' +
+    '<div class="accordion-body" data-accordion-body="mradl">' +
+      '<div class="field"><div class="checkbox-group">' + mradlChecks + '</div></div>' +
+    '</div>' +
+
+    '<button type="button" class="accordion-toggle" data-accordion="functional">' +
+      'Functional Limitations <span class="chevron">&#9660;</span></button>' +
+    '<div class="accordion-body" data-accordion-body="functional">' +
+      scaleRow('upperStrength', 'Upper Extremity Strength', 5) +
+      scaleRow('lowerStrength', 'Lower Extremity Strength', 5) +
+      scaleRow('rom', 'Range of Motion Limitation', 5) +
+      scaleRow('endurance', 'Endurance Limitation', 5) +
+      scaleRow('fallRisk', 'Fall Risk', 5) +
+      scaleRow('pain', 'Pain Level', 10) +
+      '<div class="field" style="margin-top:10px"><label>Additional Notes</label>' +
+        '<textarea id="f-functionalNotes" rows="2"></textarea></div>' +
+    '</div>' +
+
+    '<button type="button" class="accordion-toggle" data-accordion="features">' +
+      'Power / Multi-Power Features <span class="chevron">&#9660;</span></button>' +
+    '<div class="accordion-body" data-accordion-body="features">' +
+      '<div class="field"><div class="checkbox-group">' + featureChecks + '</div></div>' +
+    '</div>' +
+
+    '<button type="button" class="accordion-toggle" data-accordion="cushion">' +
+      'Seat / Back Cushion <span class="chevron">&#9660;</span></button>' +
+    '<div class="accordion-body" data-accordion-body="cushion">' +
+      '<div class="field"><label>History of pressure ulcers?</label>' +
+        '<div class="radio-group">' +
+          '<label><input type="radio" name="pressureUlcer" value="yes"> Yes</label>' +
+          '<label><input type="radio" name="pressureUlcer" value="no" checked> No</label>' +
+        '</div></div>' +
+      '<div class="field"><label>Amputation?</label>' +
+        '<div class="radio-group">' +
+          '<label><input type="radio" name="amputation" value="yes"> Yes</label>' +
+          '<label><input type="radio" name="amputation" value="no" checked> No</label>' +
+        '</div></div>' +
+      '<div class="field"><label>Pelvic / spinal asymmetries?</label>' +
+        '<div class="radio-group">' +
+          '<label><input type="radio" name="asymmetries" value="yes"> Yes</label>' +
+          '<label><input type="radio" name="asymmetries" value="no" checked> No</label>' +
+        '</div></div>' +
+      '<div class="field"><label>Additional cushion notes</label>' +
+        '<textarea id="f-cushionNotes" rows="2"></textarea></div>' +
+    '</div>' +
+
+    '<button type="button" class="accordion-toggle" data-accordion="utilization">' +
+      'Utilization <span class="chevron">&#9660;</span></button>' +
+    '<div class="accordion-body" data-accordion-body="utilization">' +
+      '<div class="field"><label>Management needs (positioning, spasticity, skin protection, etc.)</label>' +
+        '<textarea id="f-managementNeeds" rows="2"></textarea></div>' +
+      '<div class="field"><label>How will equipment improve MRADLs?</label>' +
+        '<textarea id="f-mradlImprovement" rows="2"></textarea></div>' +
+      '<div class="field"><label>Safety considerations</label>' +
+        '<textarea id="f-safetyConsiderations" rows="2"></textarea></div>' +
+      '<div class="field"><label>Expected hours/day of use</label>' +
+        '<input type="number" id="f-hoursPerDay" min="0" max="24" step="0.5"></div>' +
+    '</div>'
+  );
+}
+
+// ── Apply prefill ─────────────────────────────────────────────────────────
+function applyPrefill(data) {
+  if (!data || typeof data !== 'object') return;
+  Object.keys(data).forEach(function(key) {
+    var el = document.getElementById('f-' + key);
+    if (el) el.value = data[key];
+  });
+}
+
+// ── Wire money table auto-totals ──────────────────────────────────────────
+function wireMoneyTotals() {
+  function updateTotal(group) {
+    var inputs = document.querySelectorAll('[data-total="' + group + '"]');
+    var sum = 0;
+    for (var i = 0; i < inputs.length; i++) {
+      sum += parseFloat(inputs[i].value) || 0;
+    }
+    var el = document.getElementById(group + '-total');
+    if (el) el.textContent = '$' + sum.toFixed(2);
+  }
+  document.querySelectorAll('[data-total]').forEach(function(inp) {
+    inp.addEventListener('input', function() {
+      updateTotal(inp.dataset.total);
+    });
+  });
+
+  // Wire isPatient radio toggle
+  var radios = document.querySelectorAll('input[name="isPatient"]');
+  radios.forEach(function(r) {
+    r.addEventListener('change', function() {
+      var signerFields = document.getElementById('signer-fields');
+      if (signerFields) signerFields.style.display = r.value === 'no' ? '' : 'none';
+    });
+  });
+
+  // Wire govAssist radio toggle
+  var govRadios = document.querySelectorAll('input[name="govAssist"]');
+  govRadios.forEach(function(r) {
+    r.addEventListener('change', function() {
+      var wrap = document.getElementById('govAssist-desc-wrap');
+      if (wrap) wrap.style.display = r.value === 'yes' ? '' : 'none';
+    });
+  });
+
+  // Wire guardian radio toggle
+  var guardianRadios = document.querySelectorAll('input[name="guardian"]');
+  guardianRadios.forEach(function(r) {
+    r.addEventListener('change', function() {
+      var wrap = document.getElementById('guardian-fields');
+      if (wrap) wrap.style.display = r.value === 'yes' ? '' : 'none';
+    });
+  });
+}
+
+// ── Wire accordion toggles ────────────────────────────────────────────────
+function wireAccordions() {
+  document.querySelectorAll('.accordion-toggle').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var key = btn.dataset.accordion;
+      var body = document.querySelector('[data-accordion-body="' + key + '"]');
+      if (!body) return;
+      var isOpen = body.classList.contains('open');
+      body.classList.toggle('open', !isOpen);
+      btn.classList.toggle('open', !isOpen);
+    });
+  });
+}
+
+// ── Signature Pad ─────────────────────────────────────────────────────────
+function initSignaturePad() {
+  var canvas = document.getElementById('sig-canvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var drawing = false;
+  var hasDrawn = false;
+
+  function resizeCanvas() {
+    var rect = canvas.parentElement.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = 140 * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = '140px';
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#101418';
+  }
+  resizeCanvas();
+  window.addEventListener('resize', function() {
+    if (!hasDrawn) resizeCanvas();
+  });
+
+  function getPos(e) {
+    var rect = canvas.getBoundingClientRect();
+    var touch = e.touches ? e.touches[0] : e;
+    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+  }
+
+  function start(e) {
+    drawing = true;
+    var pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    e.preventDefault();
+  }
+  function move(e) {
+    if (!drawing) return;
+    hasDrawn = true;
+    var pos = getPos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    e.preventDefault();
+  }
+  function end() { drawing = false; }
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  canvas.addEventListener('mouseup', end);
+  canvas.addEventListener('mouseleave', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  canvas.addEventListener('touchend', end);
+
+  document.getElementById('sig-clear').addEventListener('click', function() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hasDrawn = false;
+    resizeCanvas();
+  });
+
+  SIG_PAD = {
+    isEmpty: function() { return !hasDrawn; },
+    toDataURL: function() { return canvas.toDataURL('image/png'); },
+    clear: function() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      hasDrawn = false;
+      resizeCanvas();
+    },
+  };
+}
+
+// ── Gather form data ──────────────────────────────────────────────────────
+function gatherFormData() {
+  var data = {};
+  // Gather all f- prefixed inputs
+  var inputs = document.querySelectorAll('[id^="f-"]');
+  for (var i = 0; i < inputs.length; i++) {
+    var el = inputs[i];
+    var key = el.id.substring(2); // strip "f-"
+    if (el.tagName === 'TEXTAREA') {
+      data[key] = el.value;
+    } else if (el.type === 'number') {
+      data[key] = el.value ? parseFloat(el.value) : null;
+    } else {
+      data[key] = el.value;
+    }
+  }
+
+  // Gather radio groups
+  var radioGroups = {};
+  document.querySelectorAll('#form-fields input[type="radio"]:checked').forEach(function(r) {
+    radioGroups[r.name] = r.value;
+  });
+  Object.keys(radioGroups).forEach(function(k) { data['radio_' + k] = radioGroups[k]; });
+
+  // Gather checkbox groups
+  var checkGroups = {};
+  document.querySelectorAll('#form-fields input[type="checkbox"][data-group]:checked').forEach(function(cb) {
+    var g = cb.dataset.group;
+    if (!checkGroups[g]) checkGroups[g] = [];
+    checkGroups[g].push(cb.value);
+  });
+  Object.keys(checkGroups).forEach(function(k) { data['check_' + k] = checkGroups[k]; });
+
+  // Scale values (radio buttons with name= pattern)
+  document.querySelectorAll('.scale-row input[type="radio"]:checked').forEach(function(r) {
+    data['scale_' + r.name] = parseInt(r.value, 10);
+  });
+
+  // Signature
+  if (SIG_PAD && !SIG_PAD.isEmpty()) {
+    data.signature = SIG_PAD.toDataURL();
+  }
+
+  // Signature date
+  var sigDate = document.getElementById('sig-date');
+  if (sigDate) data.signatureDate = sigDate.value;
+
+  // Totals (computed)
+  var incTotal = document.getElementById('income-total');
+  if (incTotal) data.incomeTotal = incTotal.textContent;
+  var expTotal = document.getElementById('expense-total');
+  if (expTotal) data.expenseTotal = expTotal.textContent;
+
+  return data;
+}
+
+// ── Validate ──────────────────────────────────────────────────────────────
+function validateForm() {
+  var errors = [];
+  var ft = FORM_DATA.formType;
+
+  if (ft === 'eaa') {
+    if (!val('f-firstName')) errors.push('Patient first name is required.');
+    if (!val('f-lastName')) errors.push('Patient last name is required.');
+    if (!val('f-householdSize')) errors.push('Household size is required.');
+    var isPatient = getRadio('isPatient');
+    if (isPatient === 'no') {
+      if (!val('f-signerName')) errors.push('Signer name is required when signing on behalf of patient.');
+      if (!val('f-signerRelationship')) errors.push('Relationship to patient is required.');
+    }
+  } else if (ft === 'pt-ot-rx') {
+    if (!val('f-orderDate')) errors.push('Order date is required.');
+    if (!val('f-patientName')) errors.push('Patient name is required.');
+    if (!val('f-itemForOrder')) errors.push('Item for order is required.');
+    if (!val('f-practitionerName')) errors.push('Practitioner name is required.');
+  } else if (ft === 'seating-eval') {
+    if (!val('f-patientName')) errors.push('Patient name is required.');
+    if (!val('f-evalDate')) errors.push('Evaluation date is required.');
+  }
+
+  // Signature required for all
+  if (!SIG_PAD || SIG_PAD.isEmpty()) {
+    errors.push('Signature is required.');
+  }
+
+  return errors;
+}
+
+function val(id) {
+  var el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+function getRadio(name) {
+  var checked = document.querySelector('input[name="' + name + '"]:checked');
+  return checked ? checked.value : '';
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────
+function handleSubmit() {
+  var errorDiv = document.getElementById('form-error');
+  errorDiv.style.display = 'none';
+
+  // Check consent
+  if (!document.getElementById('consent-checkbox').checked) {
+    errorDiv.textContent = 'Please acknowledge the privacy notice before submitting.';
+    errorDiv.style.display = '';
+    return;
+  }
+
+  var errors = validateForm();
+  if (errors.length > 0) {
+    errorDiv.innerHTML = errors.map(function(e) { return esc(e); }).join('<br>');
+    errorDiv.style.display = '';
+    // Scroll to first error
+    errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  var data = gatherFormData();
+  var btn = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  errorDiv.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res.success) {
+        btn.disabled = false;
+        btn.textContent = 'Submit Form';
+        errorDiv.textContent = res.error || 'Submission failed.';
+        errorDiv.style.display = '';
+        return;
+      }
+      showSuccess();
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.textContent = 'Submit Form';
+      errorDiv.textContent = 'Submission failed: ' + (err.message || 'Server error');
+      errorDiv.style.display = '';
+    })
+    .submitFormByToken(FORM_TOKEN, data);
+}
+</script>
+</body>
+</html>
