@@ -1709,9 +1709,9 @@ function cnRenderCardCore_(note, expandable) {
     `;
   }
 
-  const callerLine = note.caller || note.patientAndTrx || '<em style="color:var(--muted)">unnamed</em>';
+  const callerLine = note.caller ? esc(note.caller) : (note.patientAndTrx ? esc(note.patientAndTrx) : '<em style="color:var(--muted)">unnamed</em>');
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
-  const issue = note.issue || '<em>—</em>';
+  const issue = note.issue ? esc(note.issue) : '<em>—</em>';
   // Training notes carry a free-text question in subformData; surface it as a
   // distinct sub-line under the issue so the rep (and a manager peeking) can
   // see what's being asked at a glance. If the manager has written a reply,
@@ -1772,7 +1772,7 @@ function cnRenderCardCore_(note, expandable) {
         <div class="cn-card-main">
           <div class="cn-card-caller">${callerLine}${trxBit}</div>
           ${detailLine}
-          <div class="cn-card-issue">${esc(issue)}</div>
+          <div class="cn-card-issue">${issue}</div>
           ${resolutionLine}
           ${trainingQ}
         </div>
@@ -3141,9 +3141,9 @@ function cnMgrLoadRepNotes_() {
 function cnMgrRenderReadonlyCard_(note) {
   const time = cnFormatTimestampForCopy_(note.timestamp);
   const flagCls = note.flagType ? ' flag-' + note.flagType : '';
-  const callerLine = note.caller || note.patientAndTrx || '<em style="color:var(--muted)">unnamed</em>';
+  const callerLine = note.caller ? esc(note.caller) : (note.patientAndTrx ? esc(note.patientAndTrx) : '<em style="color:var(--muted)">unnamed</em>');
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
-  const issue = note.issue || '<em>—</em>';
+  const issue = note.issue ? esc(note.issue) : '<em>—</em>';
   // Training notes get a question line + (if set) a manager-reply line.
   let trainingQ = '';
   let trainingReplyEditor = '';
@@ -3183,7 +3183,7 @@ function cnMgrRenderReadonlyCard_(note) {
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
           <div class="cn-card-caller">${callerLine}${trxBit}</div>
-          <div class="cn-card-issue">${esc(issue)}</div>
+          <div class="cn-card-issue">${issue}</div>
           ${trainingQ}
           ${resolution}
         </div>
@@ -3377,6 +3377,10 @@ function cnStartAmbientPolling_() {
   CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
 }
 
+function cnStopAmbientPolling_() {
+  if (CN_STATE.ambientTimer) { clearInterval(CN_STATE.ambientTimer); CN_STATE.ambientTimer = null; }
+}
+
 function cnPollAmbient_() {
   google.script.run
     .withSuccessHandler(function (res) {
@@ -3441,7 +3445,8 @@ function cnIsMac_() {
 
 function cnFindNoteAnywhere_(noteId) {
   return CN_STATE.rollingNotes.find(function (n) { return n.noteId === noteId; })
-      || CN_STATE.historyNotes.find(function (n) { return n.noteId === noteId; });
+      || CN_STATE.historyNotes.find(function (n) { return n.noteId === noteId; })
+      || (CN_STATE.pinnedNotes || []).find(function (n) { return n.noteId === noteId; });
 }
 
 function cnReplaceNoteInState_(updated) {
@@ -3450,6 +3455,9 @@ function cnReplaceNoteInState_(updated) {
     return n.noteId === updated.noteId ? updated : n;
   });
   CN_STATE.historyNotes = CN_STATE.historyNotes.map(function (n) {
+    return n.noteId === updated.noteId ? updated : n;
+  });
+  CN_STATE.pinnedNotes = (CN_STATE.pinnedNotes || []).map(function (n) {
     return n.noteId === updated.noteId ? updated : n;
   });
 }

@@ -137,7 +137,7 @@ function renderTimeOffView(area, data) {
           <div class="req-info"><div class="req-type">${esc(r.type)}</div>
             ${r.notes && r.notes !== 'undefined' ? `<div class="req-notes">${esc(r.notes)}</div>` : ''}</div>
           <div class="req-side">
-            <div class="req-badge ${bCls}">${r.status}</div>
+            <div class="req-badge ${bCls}">${esc(r.status)}</div>
             ${cancelBtn}
           </div>
         </div>`;
@@ -145,14 +145,9 @@ function renderTimeOffView(area, data) {
   }
 
   area.innerHTML = `
-    <div class="app-bar">
-      <div class="app-bar-left">
-        <div class="breadcrumb">
-          <span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Time Off</span>
-        </div>
-        <h1 class="display-title">Time Off</h1>
-      </div>
-    </div>
+    ${COMPACT_MODE
+      ? `<div class="compact-header"><div class="ch-title">${icon('timeoff', 16)} Time Off</div><div class="ch-actions"><button class="ch-action-btn" title="Close window" onclick="window.close()">${icon('x', 14)}</button></div></div>`
+      : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Time Off</span></div><h1 class="display-title">Time Off</h1></div></div>`}
     <div class="month-nav">
       <button class="month-nav-btn" id="cal-prev" ${!canPrev?'disabled':''} aria-label="Previous month">${icon('chevronLeft', 16)}</button>
       <span class="month-label">${data.monthName}</span>

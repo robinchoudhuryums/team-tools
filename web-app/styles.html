@@ -1202,6 +1202,16 @@
   .rp-del:disabled { opacity: .4; cursor: not-allowed; }
   .rp-del svg { width: 14px; height: 14px; }
   .rp-del-spacer { width: 30px; flex-shrink: 0; }
+  .de-open-btn {
+    width: 26px; height: 26px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line); background: transparent;
+    color: var(--muted); cursor: pointer; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0; margin-left: auto;
+    transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .de-open-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .de-open-btn svg { width: 13px; height: 13px; }
 
   .audit-row {
     display: flex; align-items: flex-start; gap: 14px;

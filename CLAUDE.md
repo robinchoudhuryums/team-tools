@@ -124,7 +124,7 @@ this section before touching the relevant area.
   `exportCallNotesRange`, `setCallNoteTrainingReply`,
   `managerGetShiftStats`, `managerGetUnresolvedActionCount`,
   `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`,
-  `saveUpdateSuggestions`.
+  `saveUpdateSuggestions`, `removeAutomationTriggers`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -139,7 +139,9 @@ this section before touching the relevant area.
   `installAutomationTriggers`'s own check), so the gate is a no-op for
   triggers. Any new public function that walks the roster, hits Mail,
   or otherwise has side effects you wouldn't want a rep firing should
-  apply the same gate.
+  apply the same gate. `removeAutomationTriggers` also uses this
+  gate — without it, a non-manager rep could silently disable all
+  automation triggers.
 - **PTO balance transitions.** `updateTimeOffStatus` only changes
   balances on Pending→Approved (deduct) or Approved→non-Approved
   (restore). `managerSubmitTimeOff` with `autoApprove=true` skips
@@ -203,7 +205,9 @@ this section before touching the relevant area.
   UMS Presentation Logo) — these are NOT design-token-derived; they're
   the legacy `closeOrderEmail.js` / `updateOrderEmail.js` identity
   carried forward into the new web-app emails (Call Details table
-  header, alternating row tint, top-of-email logo bar).
+  header, alternating row tint, top-of-email logo bar). Subform
+  detail borders (shipping, resupply, OOP) also use resolved hex —
+  `#b1d1c4` for good-transparent and `#e7bda3` for warn-transparent.
 - **Clipboard API often fails in HtmlService iframes.** The auto-copy
   feature tries `navigator.clipboard.writeText` first and falls back
   to a `<textarea>` + `document.execCommand('copy')` shim
@@ -349,6 +353,27 @@ this section before touching the relevant area.
   effort, try/catch) when `flagType=training` and
   `subformData.trainingQuestion` is non-empty. Previously, managers
   only saw training questions in the weekly digest.
+- **Call-note delete window.** `deleteCallNote` enforces
+  `CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS` (5 min). Reps can only
+  delete notes within 5 minutes of creation — older notes must be
+  edited in place. The window matches the time-clock `selfDeletePunch`
+  pattern. The client's delete button (via `cnDeleteNote_`) shows the
+  server's error if the window has passed.
+- **`getCallNotesDepartments` requires an enrolled employee.** Added
+  an auth check so unregistered domain users can't read internal
+  department email addresses. The CN client calls this after employee
+  state loads, so the auth is always present.
+- **Call Notes ambient polling stops on tool switch.** `showView()`
+  calls `cnStopAmbientPolling_()` when navigating to a non-Call Notes
+  tool. Without this, the 60-second `getCallNotesAmbient` interval
+  fired continuously even in Time Clock views.
+  `cnStartAmbientPolling_()` restarts it on return to any CN tab.
+- **Modals close on Escape and trap focus.** A shared keydown handler
+  in `script_core.html` closes any `.overlay.open` on Escape. A
+  `focusin` handler returns focus to the modal's first focusable
+  element if focus escapes. Both are generic — they cover the Adjust,
+  Day Detail, Day Edit, Export, Manager Time-Off, and Call Notes
+  Export modals.
 
 ## Key Design Decisions
 
@@ -509,9 +534,10 @@ this section before touching the relevant area.
   rendering a `.compact-header` slim strip at the top when they
   detect `COMPACT_MODE === true` and for ensuring their layouts
   reflow at ~360px width. The Call Notes view does this; Time
-  Clock views use the same shell so they inherit compact-mode
-  collapse automatically, with per-class compact-mode tuning in
-  the styles partial.
+  Clock's Time Off and Manager views also render `.compact-header`
+  when `COMPACT_MODE === true`. The Clock tab's hero layout needs
+  no explicit header. Per-class compact-mode tuning lives in the
+  styles partial.
 - **Pop-out uses a named window target.** `popOutCurrentView()` calls
   `window.open(url, 'umsTeamToolsCompact', ...)`. The named target
   means subsequent clicks of the pop-out button focus the existing
@@ -589,6 +615,14 @@ this section before touching the relevant area.
   sub-section; without it the function falls back to `#view-area`.
   `renderTimesheetView(area, data, { combined: true })` suppresses the
   redundant breadcrumb / h1 since the tab bar already says "Clock".
+- **Day Edit modal on Live Status cards.** Each employee card in the
+  manager Live Status grid has a pencil button that opens the Day
+  Edit modal. The modal has a date picker (defaults to today),
+  pre-populates existing punch times via
+  `getEmployeeTimesheetForManager`, and submits via `managerSaveDay`.
+  The manager can add, edit, or remove individual punch slots and
+  must provide a reason for edits older than
+  `CONFIG.OLD_ADJUST_ALERT_DAYS`.
 - **Personal pin is per-rep, capped at 3, stored in `subformData`.**
   Rep toggles the pin via the bookmark icon on a card. State lives in
   `subformData.pinned` + `subformData.pinnedAt` — no schema migration.
@@ -783,7 +817,7 @@ INV-03 | PTO balance changes in `updateTimeOffStatus` fire only on Pending→App
 INV-04 | Date inputs match `/^\d{4}-\d{2}-\d{2}$/` and time inputs match `/^([01]\d|2[0-3]):[0-5]\d$/` (enforces 24-hour validity, not just `HH:mm` shape) before any sheet write | Subsystem: Server
 INV-05 | Future-dated punches are rejected: both `date > todayStr` and same-day `time > nowTime` | Subsystem: Server
 INV-06 | Employee adjustments beyond `CONFIG.ADJUST_WINDOW_DAYS` are rejected; beyond `CONFIG.OLD_ADJUST_ALERT_DAYS` a non-empty reason is required | Subsystem: Server
-INV-07 | Manager punch deletes are rejected when older than `CONFIG.MGR_DELETE_WINDOW_DAYS` | Subsystem: Server
+INV-07 | Manager punch deletes are rejected when older than `CONFIG.MGR_DELETE_WINDOW_DAYS` (daysBack computed in the target employee's timezone) | Subsystem: Server
 INV-08 | Every state-changing manager action writes an audit row via `writeAuditLog_` before returning success, with the caller's email recorded | Subsystem: Server
 INV-09 | Adjustments are stored as `ADJ-{punchType}` in the COMMENTS column; `normalizeType_` strips the prefix consistently on read | Subsystem: Server
 INV-10 | Roster cache (`ROSTER_CACHE_KEY`) is invalidated after any write that mutates employee-sheet columns (`adjustLeaveBalance_`, test setup, etc.) | Subsystem: Server
@@ -833,9 +867,12 @@ INV-53 | Voice-to-text dictation is opt-in via `CONFIG.CALL_NOTES.VOICE_INPUT_EN
 INV-54 | Form-completion timer captures duration from the first input event in the active form to the submit. Start time persists to `localStorage['umsCallNotesFormStartedAt']` so a mid-form reload doesn't reset the clock. On submit, `cnFormTimerEndAndGet_` returns elapsed seconds (capped at 30 min as null — rep walked away mid-note). The value rides into the server payload as `payload.subformData.completionSeconds`; the manager Stats tab medians over notes that captured one | Subsystem: Client (Call Notes views)
 INV-55 | Sticky form auto-saves the active draft to `localStorage['umsCallNotesActiveFormDraft']` on every input (debounced 400ms via `cnPersistActiveFormDraft_`). On Log view enter, `cnRestoreActiveFormDraft_` restores values + flag + training-question if a draft is present, with a "Draft restored" toast. Successful submit and explicit Clear Note both clear the draft via `cnClearStickyFormDraft_` — any new form-clearing path must call it too or the draft will resurrect on next load | Subsystem: Client (Call Notes views)
 INV-56 | `cnToggleFlag_`, `cnToggleResolved_`, and `cnTogglePinned_` set `note._flagInFlight = true` before firing the RPC and clear it in both success and failure handlers. A second click while the first RPC is in flight is silently dropped. Prevents the double-click race where two concurrent RPCs capture the same snapshot and clobber each other's revert | Subsystem: Client (Call Notes views)
-INV-57 | `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, and `saveUpdateSuggestions` are manager-gated. Save endpoints validate input (email format for depts, rate range 0–1 for taxes) and write an `AdminConfigChange` audit row with the manager's email. Config is persisted to Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`, `CN_UPDATE_SUGGESTIONS`); `getDepartmentEmails_()` / `getStateTaxRates_()` / `getUpdateSuggestions_()` read Script Properties first, falling back to CONFIG | Subsystem: Server
+INV-57 | `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, and `saveUpdateSuggestions` are manager-gated. Save endpoints validate input (email format for depts, rate range 0–1 for taxes, array-of-strings structure for suggestions) and write an `AdminConfigChange` audit row with the manager's email. Config is persisted to Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`, `CN_UPDATE_SUGGESTIONS`); `getDepartmentEmails_()` / `getStateTaxRates_()` / `getUpdateSuggestions_()` read Script Properties first, falling back to CONFIG | Subsystem: Server
 INV-58 | `submitCallNote` calls `notifyManagerTrainingQuestion_()` (best-effort, try/catch) when `flagType === 'training'` and `subformData.trainingQuestion` is non-empty. The notification is a plain-text email to `getManagerEmails_()` with the rep's name, question, and date. Failure does not block the submit response (INV-14 pattern) | Subsystem: Server
 INV-59 | `writeToEmployeeSheet_` and `clearFromEmployeeSheet_` write a `PersonalSheetSyncFail` audit row on failure (nested try/catch so the audit write itself can't throw). The audit row records the punch type and error message. Personal-sheet failures are never surfaced to the user — the ADP Sheet (source of truth) was already written successfully | Subsystem: Server
+INV-60 | `deleteCallNote` rejects deletion when the note is older than `CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS` (300s). The elapsed-time check uses `parseTimestampMs_` against the note's `TIMESTAMP` column. Notes without a parseable timestamp bypass the check (fail-open for legacy data) | Subsystem: Server
+INV-61 | `removeAutomationTriggers` calls `assertManagerCaller_` — non-manager reps cannot disable automation triggers via `google.script.run` | Subsystem: Server
+INV-62 | `cnFindNoteAnywhere_` searches `CN_STATE.rollingNotes`, `historyNotes`, and `pinnedNotes`. `cnReplaceNoteInState_` updates all three. Actions on pinned notes from past dates no longer silently fail, and flag/resolve changes propagate to the pinned tray | Subsystem: Client (Call Notes views)
 
 ### Policy Configuration
 Policy threshold: 4/10
