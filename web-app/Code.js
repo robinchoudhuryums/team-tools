@@ -13,6 +13,11 @@ const CONFIG = {
   ADP_TAB:      'Timesheet',
   TIMEOFF_TAB:  'TimeOffRequests',
   AUDIT_TAB:    'AuditLog',
+  FORM_TOKENS_TAB:      'FormTokens',
+  FORM_SUBMISSIONS_TAB: 'FormSubmissions',
+
+  // ── Interactive form tokens ──────────────────────────────────────
+  FORM_TOKEN_EXPIRY_HOURS: 72, // tokens expire after 72 hours
 
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
@@ -58,6 +63,15 @@ const CONFIG = {
     // vendor's speech-to-text service, which is not BAA-covered for PHI.
     // Turn on only after confirming the org's HIPAA stance.
     VOICE_INPUT_ENABLED: false,
+    // ── External email (customer / provider) ──────────────────────────
+    // Form catalog for PDF attachments fetched from a public GitHub repo.
+    // Adding a new form: append an entry here + upload the PDF to /forms/.
+    FORM_CATALOG: [
+      { id: 'eaa',          name: 'Economic Assistance Application', fileName: 'EAA (Economic Assistance Application) Form.pdf', category: 'customer' },
+      { id: 'pt-ot-rx',     name: 'PT/OT Prescription',              fileName: 'Sample PT OT Rx.pdf',                            category: 'provider' },
+      { id: 'seating-eval', name: 'Seating Evaluation Form',         fileName: 'Seating_Evaluation_Form (blank sample).pdf',      category: 'provider' },
+    ],
+    FORM_BASE_URL: 'https://raw.githubusercontent.com/robinchoudhuryums/team-tools/main/forms/',
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
     TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
@@ -183,7 +197,30 @@ const PUNCH_LABELS_ = ['ClockIn','LunchOut','LunchIn','ClockOut'];
 
 
 // ── WEB APP ENTRY ───────────────────────────────────────────────────────────
+// Security model: appsscript.json sets access: "ANYONE_ANONYMOUS" so external
+// form recipients can reach the ?form=<token> route. The internal app route
+// gates on @umsupply.com domain check via Session.getActiveUser().getEmail() —
+// with executeAs: "USER_DEPLOYING", this returns the visitor's email when
+// they're in the same Workspace domain as the deployer, or empty string for
+// external users. All google.script.run endpoints independently require
+// getEmployeeInfo_() which returns null for non-employees, so even if an
+// external user somehow loads the internal HTML, no server calls will work.
+// The only public-facing endpoints are getFormByToken and submitFormByToken,
+// which validate via token (no employee auth).
 function doGet(e) {
+  // ── Public form route ──────────────────────────────────────────────
+  if (e && e.parameter && e.parameter.form) {
+    return serveExternalForm_(e.parameter.form);
+  }
+  // ── Internal app — verify domain user ─────────────────────────────
+  var email = '';
+  try { email = Session.getActiveUser().getEmail(); } catch(_) {}
+  if (!email || email.indexOf('@umsupply.com') < 0) {
+    return HtmlService.createHtmlOutput(
+      '<h2 style="font-family:Inter,sans-serif;color:#333">Access Restricted</h2>' +
+      '<p style="font-family:Inter,sans-serif;color:#666">This application is restricted to UMS employees.</p>'
+    ).setTitle('UMS Team Tools — Access Denied');
+  }
   return HtmlService
     .createTemplateFromFile('index')
     .evaluate()
@@ -1203,8 +1240,10 @@ function updateCallNote(noteId, payload) {
   finally { lock.releaseLock(); }
 }
 
-/** Sets (or clears) the flag type on a note. Pass '' to clear. */
-function setCallNoteFlag(noteId, flagType) {
+/** Sets (or clears) the flag type on a note. Pass '' to clear.
+ *  Optional trainingQuestion: when flagging as 'training', merges
+ *  the question into subformData so it appears in digests/Q&A. */
+function setCallNoteFlag(noteId, flagType, trainingQuestion) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -1221,6 +1260,16 @@ function setCallNoteFlag(noteId, flagType) {
     const oldFlag = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
     sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(t);
     if (oldFlag !== t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
+
+    if (t === 'training' && trainingQuestion) {
+      let subformData = null;
+      if (located.row[CN.SUBFORM_DATA]) {
+        try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (e) {}
+      }
+      if (!subformData || typeof subformData !== 'object') subformData = {};
+      subformData.trainingQuestion = String(trainingQuestion).trim();
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    }
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
@@ -1394,6 +1443,32 @@ function getMyPinnedCallNotes() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Returns the calling rep's most recent training-flagged notes that have a
+ *  manager reply (non-empty subformData.trainingReply). Spans ALL dates
+ *  (not just today) so the rep can see historical Q&A. Limited to 5,
+ *  newest first. Read-only, caller-scoped. */
+function getMyTrainingQA() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { notes: [] };
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      if (note.flagType === 'training'
+          && note.subformData
+          && note.subformData.trainingReply) {
+        notes.push(note);
+      }
+    }
+    notes.sort(function (a, b) { return b.timestamp.localeCompare(a.timestamp); });
+    if (notes.length > 5) notes.length = 5;
+    return { notes: notes };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Returns the calling rep's notes for a given date, optionally filtered.
  *  Defaults to today in the rep's tz. Filter options:
  *    'all' (default) | 'action' | 'training' | 'review' | 'unresolved' | 'unsent' */
@@ -1422,6 +1497,45 @@ function getMyCallNotes(options) {
     return {
       date,
       filter,
+      notes,
+      autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
+      timezone: empTz,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Returns the calling rep's notes across a date range (startDate to endDate,
+ *  inclusive). Caller-scoped via getEmployeeInfo_. Range capped at 90 days to
+ *  prevent abuse. Returns notes sorted newest-first, with the same shape as
+ *  getMyCallNotes so the client can render them identically. */
+function getMyCallNotesRange(startDate, endDate) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate))
+      return { error: 'Invalid start date (expected yyyy-MM-dd).' };
+    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate))
+      return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
+    const daySpan = Math.round(
+      (new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000
+    );
+    if (daySpan > 90) return { error: 'Date range cannot exceed 90 days.' };
+
+    const empTz = empTz_(emp);
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+      if (rowDate < startDate || rowDate > endDate) continue;
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      notes.push(note);
+    }
+    notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return {
+      startDate,
+      endDate,
       notes,
       autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
       timezone: empTz,
@@ -2770,6 +2884,734 @@ function esc_(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CALL NOTES — EXTERNAL EMAIL (CUSTOMER / PROVIDER)
+//  ────────────────────────────────────────────────────────────────────────
+//  Separate flow from the internal department email. Sends directly to a
+//  customer or provider address with optional PDF form attachments from the
+//  GitHub-hosted form catalog. No preview gate — the modal shows a summary
+//  before send. If a noteId is linked, stamps subformData.externalEmails[]
+//  on the note for tracking.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Returns the form catalog for the external-email modal. No secrets — just
+ *  {id, name, category} tuples. Requires a registered employee. */
+function getFormCatalog() {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Employee not found.' };
+  const catalog = (CONFIG.CALL_NOTES.FORM_CATALOG || []).map(function (f) {
+    return {
+      id: f.id, name: f.name, category: f.category,
+      interactive: INTERACTIVE_FORM_TYPES.indexOf(f.id) >= 0,
+    };
+  });
+  return { forms: catalog };
+}
+
+/** Sends an external email to a customer or provider, optionally attaching
+ *  PDF forms and/or including interactive fillable form links. If noteId is
+ *  provided, appends a tracking entry to subformData.externalEmails[] on
+ *  the linked note.
+ *
+ *  Phase 2: `interactiveForms` (array of form-type IDs) creates tokens and
+ *  embeds "Complete this form" buttons in the email body. `prefillData`
+ *  (object keyed by form-type ID) carries pre-fill values for each
+ *  interactive form. */
+function sendExternalEmail(payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
+
+  const p = payload || {};
+  const recipientEmail = String(p.recipientEmail || '').trim();
+  const recipientName  = String(p.recipientName || '').trim();
+  const recipientType  = String(p.recipientType || '').trim().toLowerCase();
+  const subject        = String(p.subject || '').trim();
+  const message        = String(p.message || '').trim();
+  const formIds        = Array.isArray(p.formIds) ? p.formIds : [];
+  const interactiveForms = Array.isArray(p.interactiveForms) ? p.interactiveForms : [];
+  const prefillData    = (p.prefillData && typeof p.prefillData === 'object') ? p.prefillData : {};
+  const noteId         = p.noteId || null;
+
+  // ── Validate ──────────────────────────────────────────────────────
+  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    return { success: false, error: 'Please enter a valid email address.' };
+  }
+  if (recipientType !== 'customer' && recipientType !== 'provider') {
+    return { success: false, error: 'Recipient type must be "customer" or "provider".' };
+  }
+  if (!subject) {
+    return { success: false, error: 'Subject line is required.' };
+  }
+
+  // ── Resolve form catalog entries (PDF attachments) ────────────────
+  const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+  const catalogById = {};
+  catalog.forEach(function (f) { catalogById[f.id] = f; });
+  const selectedForms = [];
+  for (let i = 0; i < formIds.length; i++) {
+    const id = String(formIds[i]).trim();
+    if (!catalogById[id]) {
+      return { success: false, error: 'Unknown form ID: ' + id };
+    }
+    selectedForms.push(catalogById[id]);
+  }
+
+  // ── Validate interactive form IDs ─────────────────────────────────
+  for (let i = 0; i < interactiveForms.length; i++) {
+    const id = String(interactiveForms[i]).trim();
+    if (!catalogById[id]) {
+      return { success: false, error: 'Unknown interactive form ID: ' + id };
+    }
+    if (INTERACTIVE_FORM_TYPES.indexOf(id) < 0) {
+      return { success: false, error: 'Form "' + id + '" does not support interactive mode.' };
+    }
+  }
+
+  // ── Create tokens for interactive forms ───────────────────────────
+  const formLinks = []; // { name, url, formType }
+  for (let i = 0; i < interactiveForms.length; i++) {
+    const fid = String(interactiveForms[i]).trim();
+    const pfData = prefillData[fid] || {};
+    const tokenResult = createFormToken({
+      formType: fid,
+      recipientEmail: recipientEmail,
+      recipientName: recipientName,
+      prefillData: pfData,
+      noteId: noteId,
+    });
+    if (!tokenResult.success) {
+      return { success: false, error: 'Failed to create form link for "' + catalogById[fid].name + '": ' + tokenResult.error };
+    }
+    formLinks.push({
+      name: catalogById[fid].name,
+      url: tokenResult.formUrl,
+      formType: fid,
+      token: tokenResult.token,
+    });
+  }
+
+  // ── Fetch PDF blobs from GitHub raw URLs ──────────────────────────
+  const attachments = [];
+  const baseUrl = CONFIG.CALL_NOTES.FORM_BASE_URL || '';
+  for (let i = 0; i < selectedForms.length; i++) {
+    const form = selectedForms[i];
+    const url = baseUrl + encodeURIComponent(form.fileName);
+    try {
+      const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      if (resp.getResponseCode() !== 200) {
+        return { success: false, error: 'Failed to fetch form "' + form.name + '" (HTTP ' + resp.getResponseCode() + ').' };
+      }
+      attachments.push(resp.getBlob().setName(form.fileName));
+    } catch (fetchErr) {
+      return { success: false, error: 'Failed to download form "' + form.name + '": ' + fetchErr.message };
+    }
+  }
+
+  // ── Build email body ──────────────────────────────────────────────
+  const formNames = selectedForms.map(function (f) { return f.name; });
+  const htmlBody = recipientType === 'customer'
+    ? buildCustomerEmailHtml_(recipientName, message, formNames, formLinks)
+    : buildProviderEmailHtml_(recipientName, message, formNames, formLinks);
+  const textBody = recipientType === 'customer'
+    ? buildCustomerEmailText_(recipientName, message, formNames, formLinks)
+    : buildProviderEmailText_(recipientName, message, formNames, formLinks);
+
+  // ── Send ──────────────────────────────────────────────────────────
+  try {
+    const emailOpts = {
+      to: recipientEmail,
+      subject: subject,
+      body: textBody,
+      htmlBody: htmlBody,
+    };
+    if (attachments.length > 0) emailOpts.attachments = attachments;
+    MailApp.sendEmail(emailOpts);
+  } catch (sendErr) {
+    return { success: false, error: 'Email send failed: ' + sendErr.message };
+  }
+
+  // ── Stamp linked note (best-effort, under lock) ───────────────────
+  const empTz = empTz_(emp);
+  const sentAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+  if (noteId) {
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(15000);
+      const sheet = getCallNotesSheet_(emp);
+      const located = findCallNoteRow_(sheet, noteId);
+      if (located) {
+        let subformData = null;
+        try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (_) {}
+        if (!subformData || typeof subformData !== 'object') subformData = {};
+        if (!Array.isArray(subformData.externalEmails)) subformData.externalEmails = [];
+        const stampEntry = {
+          to: recipientEmail,
+          type: recipientType,
+          forms: formIds,
+          sentAt: sentAt,
+        };
+        if (formLinks.length > 0) {
+          stampEntry.interactiveForms = formLinks.map(function(fl) {
+            return { formType: fl.formType, token: fl.token };
+          });
+        }
+        subformData.externalEmails.push(stampEntry);
+        sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      }
+    } catch (stampErr) {
+      console.warn('sendExternalEmail: note stamp failed (noteId=' + noteId + '): ' + stampErr.message);
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  // ── Audit ─────────────────────────────────────────────────────────
+  const formsList = formIds.length > 0 ? formIds.join(',') : 'none';
+  const interactiveList = interactiveForms.length > 0 ? interactiveForms.join(',') : 'none';
+  writeAuditLog_(emp, 'ExternalEmailSent', '', '', false, 0,
+    'to=' + recipientEmail + '; type=' + recipientType +
+    '; pdfForms=' + formsList +
+    '; interactiveForms=' + interactiveList +
+    (noteId ? '; noteId=' + noteId : ''));
+
+  return {
+    success: true,
+    sentAt: sentAt,
+    recipientEmail: recipientEmail,
+    formsAttached: formNames,
+    formLinks: formLinks.map(function(fl) { return { name: fl.name, url: fl.url, formType: fl.formType }; }),
+  };
+}
+
+/** Builds an HTML block for interactive form link buttons in email bodies. */
+function buildFormLinksBlock_(formLinks, palette) {
+  if (!formLinks || formLinks.length === 0) return '';
+  const P = palette;
+  const buttons = formLinks.map(function (fl) {
+    return '<a href="' + esc_(fl.url) + '" ' +
+      'style="display:inline-block;background:' + P.brand + ';color:#ffffff;' +
+      'padding:12px 24px;border-radius:6px;text-decoration:none;font-size:14px;' +
+      'font-weight:600;margin:6px 8px 6px 0;" target="_blank">' +
+      'Complete: ' + esc_(fl.name) + '</a>';
+  }).join('');
+  return (
+    '<div style="background:' + P.goodSoft + ';border-left:3px solid ' + P.good + ';' +
+      'border-radius:6px;padding:14px 16px;margin:14px 0;">' +
+      '<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;' +
+        'color:' + P.goodDeep + ';opacity:.75;margin-bottom:10px;">Interactive Forms</div>' +
+      '<p style="margin:0 0 10px;font-size:13px;color:' + P.muted + ';">' +
+        'Please click the button(s) below to complete the required form(s) online:</p>' +
+      '<div>' + buttons + '</div>' +
+      '<p style="margin:8px 0 0;font-size:11px;color:' + P.muted + ';">' +
+        'These links expire in 72 hours. No account or login is required.</p>' +
+    '</div>'
+  );
+}
+
+/** Customer-facing HTML email — friendly, warm tone. */
+function buildCustomerEmailHtml_(recipientName, message, formNames, formLinks) {
+  const P = CN_EMAIL_PALETTE;
+  const greeting = recipientName
+    ? 'Dear ' + esc_(recipientName) + ','
+    : 'Hello,';
+  const messageBlock = message
+    ? '<p style="margin:14px 0;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + esc_(message).replace(/\n/g, '<br>') + '</p>'
+    : '';
+  let formsBlock = '';
+  if (formNames.length > 0) {
+    const items = formNames.map(function (n) {
+      return '<li style="padding:4px 0;">' + esc_(n) + '</li>';
+    }).join('');
+    formsBlock =
+      '<div style="background:' + P.accentSoft + ';border-left:3px solid ' + P.accent + ';border-radius:6px;padding:14px 16px;margin:14px 0;">' +
+        '<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:' + P.accentDeep + ';opacity:.75;margin-bottom:6px;">Attached Documents</div>' +
+        '<ul style="margin:0;padding-left:18px;color:' + P.ink + ';font-size:14px;">' + items + '</ul>' +
+      '</div>';
+  }
+  const interactiveBlock = buildFormLinksBlock_(formLinks, P);
+  const logoBar =
+    '<table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">' +
+      '<tr>' +
+        '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';">' +
+          '<img src="' + P.logoUrl + '" alt="UMS" style="height:46px;display:block;border:0;outline:none;">' +
+        '</td>' +
+      '</tr>' +
+    '</table>';
+  return (
+    '<div style="background:' + P.paper + ';padding:24px;font-family:\'Inter\',-apple-system,Helvetica,Arial,sans-serif;color:' + P.ink + ';">' +
+      '<div style="max-width:680px;margin:0 auto;background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;padding:24px 26px;">' +
+        logoBar +
+        '<p style="margin:0 0 6px;font-size:16px;color:' + P.ink + ';">' + greeting + '</p>' +
+        '<p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:' + P.muted + ';">Thank you for reaching out to Universal Medical Supply. We appreciate the opportunity to assist you.</p>' +
+        messageBlock +
+        interactiveBlock +
+        formsBlock +
+        '<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:' + P.muted + ';">If you have any questions regarding the attached documents or need further assistance, please do not hesitate to contact us.</p>' +
+        '<p style="margin:14px 0 0;font-size:14px;color:' + P.ink + ';">Warm regards,<br><strong>Universal Medical Supply</strong></p>' +
+      '</div>' +
+      '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>' +
+    '</div>'
+  );
+}
+
+/** Provider-facing HTML email — clinical, professional tone. */
+function buildProviderEmailHtml_(recipientName, message, formNames, formLinks) {
+  const P = CN_EMAIL_PALETTE;
+  const greeting = recipientName
+    ? 'Dear ' + esc_(recipientName) + ','
+    : 'To Whom It May Concern,';
+  const messageBlock = message
+    ? '<p style="margin:14px 0;font-size:14px;line-height:1.6;color:' + P.ink + ';">' + esc_(message).replace(/\n/g, '<br>') + '</p>'
+    : '';
+  let formsBlock = '';
+  if (formNames.length > 0) {
+    const items = formNames.map(function (n) {
+      return '<li style="padding:4px 0;">' + esc_(n) + '</li>';
+    }).join('');
+    formsBlock =
+      '<div style="background:' + P.goodSoft + ';border-left:3px solid ' + P.good + ';border-radius:6px;padding:14px 16px;margin:14px 0;">' +
+        '<div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:' + P.goodDeep + ';opacity:.75;margin-bottom:6px;">Attached Documents</div>' +
+        '<ul style="margin:0;padding-left:18px;color:' + P.ink + ';font-size:14px;">' + items + '</ul>' +
+      '</div>';
+  }
+  const interactiveBlock = buildFormLinksBlock_(formLinks, P);
+  const logoBar =
+    '<table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;">' +
+      '<tr>' +
+        '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';">' +
+          '<img src="' + P.logoUrl + '" alt="UMS" style="height:46px;display:block;border:0;outline:none;">' +
+        '</td>' +
+      '</tr>' +
+    '</table>';
+  return (
+    '<div style="background:' + P.paper + ';padding:24px;font-family:\'Inter\',-apple-system,Helvetica,Arial,sans-serif;color:' + P.ink + ';">' +
+      '<div style="max-width:680px;margin:0 auto;background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;padding:24px 26px;">' +
+        logoBar +
+        '<p style="margin:0 0 6px;font-size:16px;color:' + P.ink + ';">' + greeting + '</p>' +
+        '<p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:' + P.muted + ';">Please find the requested documentation attached to this correspondence. We are writing on behalf of our patient as part of their ongoing care coordination with Universal Medical Supply.</p>' +
+        messageBlock +
+        interactiveBlock +
+        formsBlock +
+        '<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:' + P.muted + ';">Should you require any additional information or have questions regarding the enclosed materials, please contact our office at your earliest convenience.</p>' +
+        '<p style="margin:14px 0 0;font-size:14px;color:' + P.ink + ';">Respectfully,<br><strong>Universal Medical Supply</strong></p>' +
+      '</div>' +
+      '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools</div>' +
+    '</div>'
+  );
+}
+
+/** Customer-facing plain-text fallback. */
+function buildCustomerEmailText_(recipientName, message, formNames, formLinks) {
+  const lines = [];
+  lines.push(recipientName ? 'Dear ' + recipientName + ',' : 'Hello,');
+  lines.push('');
+  lines.push('Thank you for reaching out to Universal Medical Supply. We appreciate the opportunity to assist you.');
+  if (message) { lines.push(''); lines.push(message); }
+  if (formLinks && formLinks.length > 0) {
+    lines.push('');
+    lines.push('Please complete the following form(s) online:');
+    formLinks.forEach(function (fl) { lines.push('  - ' + fl.name + ': ' + fl.url); });
+    lines.push('(These links expire in 72 hours. No account or login required.)');
+  }
+  if (formNames.length > 0) {
+    lines.push('');
+    lines.push('Attached Documents:');
+    formNames.forEach(function (n) { lines.push('  - ' + n); });
+  }
+  lines.push('');
+  lines.push('If you have any questions regarding the attached documents or need further assistance, please do not hesitate to contact us.');
+  lines.push('');
+  lines.push('Warm regards,');
+  lines.push('Universal Medical Supply');
+  return lines.join('\n');
+}
+
+/** Provider-facing plain-text fallback. */
+function buildProviderEmailText_(recipientName, message, formNames, formLinks) {
+  const lines = [];
+  lines.push(recipientName ? 'Dear ' + recipientName + ',' : 'To Whom It May Concern,');
+  lines.push('');
+  lines.push('Please find the requested documentation attached to this correspondence. We are writing on behalf of our patient as part of their ongoing care coordination with Universal Medical Supply.');
+  if (message) { lines.push(''); lines.push(message); }
+  if (formLinks && formLinks.length > 0) {
+    lines.push('');
+    lines.push('Please complete the following form(s) online:');
+    formLinks.forEach(function (fl) { lines.push('  - ' + fl.name + ': ' + fl.url); });
+    lines.push('(These links expire in 72 hours. No account or login required.)');
+  }
+  if (formNames.length > 0) {
+    lines.push('');
+    lines.push('Attached Documents:');
+    formNames.forEach(function (n) { lines.push('  - ' + n); });
+  }
+  lines.push('');
+  lines.push('Should you require any additional information or have questions regarding the enclosed materials, please contact our office at your earliest convenience.');
+  lines.push('');
+  lines.push('Respectfully,');
+  lines.push('Universal Medical Supply');
+  return lines.join('\n');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INTERACTIVE FORM TOKENS — PUBLIC FILLABLE FORMS
+//  ────────────────────────────────────────────────────────────────────────
+//  Phase 2 of the customer/provider form feature. Reps can send fillable
+//  form links (instead of / alongside PDF attachments) via the external
+//  email modal. Each link carries a UUID token that maps to a FormTokens
+//  row in the ADP spreadsheet. External recipients open the link without
+//  Google auth — the token IS the auth. Submissions land in FormSubmissions.
+//
+//  Token lifecycle: pending → submitted (one-time) or pending → expired
+//  (after CONFIG.FORM_TOKEN_EXPIRY_HOURS). Expired/submitted tokens show
+//  an error page when the recipient tries to open them.
+//
+//  Security: getFormByToken and submitFormByToken are the ONLY public-
+//  facing endpoints — they do NOT call getEmployeeInfo_() and do NOT
+//  require a logged-in user. All other server functions still require
+//  employee auth via getEmployeeInfo_().
+// ════════════════════════════════════════════════════════════════════════════
+
+// FormTokens tab schema
+const FT = {
+  TOKEN:0, FORM_TYPE:1, RECIPIENT_EMAIL:2, RECIPIENT_NAME:3,
+  CREATED_AT:4, EXPIRES_AT:5, STATUS:6, PREFILL_DATA:7,
+  CREATED_BY:8, NOTE_ID:9,
+};
+const FT_HEADERS = [
+  'Token','FormType','RecipientEmail','RecipientName',
+  'CreatedAt','ExpiresAt','Status','PrefillData',
+  'CreatedBy','NoteId',
+];
+
+// FormSubmissions tab schema
+const FS = {
+  TOKEN:0, FORM_TYPE:1, RECIPIENT_EMAIL:2, SUBMITTED_AT:3,
+  FORM_DATA:4, SIGNATURE_DATA:5,
+};
+const FS_HEADERS = [
+  'Token','FormType','RecipientEmail','SubmittedAt',
+  'FormData','SignatureData',
+];
+
+// ── Valid interactive form type IDs (subset of FORM_CATALOG) ─────────
+const INTERACTIVE_FORM_TYPES = ['eaa', 'pt-ot-rx', 'seating-eval'];
+
+/** Returns or creates the FormTokens tab in the ADP spreadsheet. */
+function getOrCreateFormTokensSheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(CONFIG.FORM_TOKENS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.FORM_TOKENS_TAB);
+    sheet.appendRow(FT_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, FT_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** Returns or creates the FormSubmissions tab in the ADP spreadsheet. */
+function getOrCreateFormSubmissionsSheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(CONFIG.FORM_SUBMISSIONS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.FORM_SUBMISSIONS_TAB);
+    sheet.appendRow(FS_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, FS_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** Generates a UUID v4 token. */
+function generateFormToken_() {
+  return Utilities.getUuid();
+}
+
+/** Build the public form URL for a token. Uses ScriptApp.getService().getUrl()
+ *  which returns the deployed web app URL. */
+function buildFormUrl_(token) {
+  return ScriptApp.getService().getUrl() + '?form=' + encodeURIComponent(token);
+}
+
+/** Creates a form token. Called by the external email flow when "fillable"
+ *  is selected for a form. Requires a registered employee. */
+function createFormToken(payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
+
+  const p = payload || {};
+  const formType      = String(p.formType || '').trim();
+  const recipientEmail = String(p.recipientEmail || '').trim();
+  const recipientName = String(p.recipientName || '').trim();
+  const prefillData   = p.prefillData || {};
+  const noteId        = p.noteId || null;
+
+  // Validate form type
+  if (INTERACTIVE_FORM_TYPES.indexOf(formType) < 0) {
+    return { success: false, error: 'Unknown interactive form type: ' + formType };
+  }
+  // Validate recipient email
+  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    return { success: false, error: 'Valid recipient email required for interactive form.' };
+  }
+
+  const token = generateFormToken_();
+  const now = new Date();
+  const empTz = empTz_(emp);
+  const createdAt = Utilities.formatDate(now, empTz, "yyyy-MM-dd'T'HH:mm:ss");
+  const expiresDate = new Date(now.getTime() + (CONFIG.FORM_TOKEN_EXPIRY_HOURS || 72) * 3600000);
+  const expiresAt = Utilities.formatDate(expiresDate, empTz, "yyyy-MM-dd'T'HH:mm:ss");
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getOrCreateFormTokensSheet_();
+    sheet.appendRow([
+      token, formType, recipientEmail, recipientName,
+      createdAt, expiresAt, 'pending',
+      JSON.stringify(prefillData),
+      emp.email, noteId || '',
+    ]);
+  } finally {
+    lock.releaseLock();
+  }
+
+  const formUrl = buildFormUrl_(token);
+
+  writeAuditLog_(emp, 'FormTokenCreated', '', '', false, 0,
+    'token=' + token + '; formType=' + formType + '; to=' + recipientEmail +
+    (noteId ? '; noteId=' + noteId : ''));
+
+  return { success: true, token: token, formUrl: formUrl };
+}
+
+/** Look up a FormTokens row by token string. Returns { rowIndex, row } or null. */
+function findFormTokenRow_(sheet, token) {
+  if (!token) return null;
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][FT.TOKEN]).trim() === token) {
+      return { rowIndex: i + 1, row: rows[i] };
+    }
+  }
+  return null;
+}
+
+/** Public endpoint — NO auth required. Validates the token and returns the
+ *  form definition + prefill data. Called by google.script.run from the
+ *  public form page. */
+function getFormByToken(token) {
+  token = String(token || '').trim();
+  if (!token) return { error: 'No form token provided.' };
+
+  try {
+    const sheet = getOrCreateFormTokensSheet_();
+    const located = findFormTokenRow_(sheet, token);
+    if (!located) return { error: 'Form not found. This link may be invalid.' };
+
+    const row = located.row;
+    const status = String(row[FT.STATUS]).trim().toLowerCase();
+
+    if (status === 'submitted') {
+      return { error: 'This form has already been submitted. Thank you!' };
+    }
+
+    // Check expiration — compare stored expiresAt with current time.
+    // ExpiresAt is in the creating rep's tz, but for comparison we parse
+    // it generously — if it's in the past by any reading, it's expired.
+    const expiresAtStr = String(row[FT.EXPIRES_AT] || '');
+    if (expiresAtStr) {
+      try {
+        const expMs = Utilities.parseDate(expiresAtStr, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
+        if (Date.now() > expMs) {
+          // Mark as expired in the sheet (best-effort)
+          try {
+            sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
+          } catch(_) {}
+          return { error: 'This form link has expired. Please contact UMS to request a new one.' };
+        }
+      } catch(_) { /* unparseable — allow access rather than lock out */ }
+    }
+
+    if (status === 'expired') {
+      return { error: 'This form link has expired. Please contact UMS to request a new one.' };
+    }
+
+    // Parse prefill data
+    let prefillData = {};
+    try { prefillData = JSON.parse(row[FT.PREFILL_DATA]) || {}; } catch(_) {}
+
+    // Resolve form catalog entry for display name
+    const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+    const formType = String(row[FT.FORM_TYPE]).trim();
+    let formName = formType;
+    for (let i = 0; i < catalog.length; i++) {
+      if (catalog[i].id === formType) { formName = catalog[i].name; break; }
+    }
+
+    return {
+      formType: formType,
+      formName: formName,
+      recipientName: String(row[FT.RECIPIENT_NAME] || ''),
+      recipientEmail: String(row[FT.RECIPIENT_EMAIL] || ''),
+      prefillData: prefillData,
+      expiresAt: expiresAtStr,
+    };
+  } catch (err) {
+    return { error: 'An error occurred loading this form. Please try again.' };
+  }
+}
+
+/** Public endpoint — NO auth required. Submits a completed form.
+ *  Validates token, saves data, marks token submitted, notifies rep. */
+function submitFormByToken(token, formData) {
+  token = String(token || '').trim();
+  if (!token) return { success: false, error: 'No form token provided.' };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const tokenSheet = getOrCreateFormTokensSheet_();
+    const located = findFormTokenRow_(tokenSheet, token);
+    if (!located) return { success: false, error: 'Form not found.' };
+
+    const row = located.row;
+    const status = String(row[FT.STATUS]).trim().toLowerCase();
+
+    if (status !== 'pending') {
+      return { success: false, error: status === 'submitted'
+        ? 'This form has already been submitted.'
+        : 'This form link has expired.' };
+    }
+
+    // Check expiration
+    const expiresAtStr = String(row[FT.EXPIRES_AT] || '');
+    if (expiresAtStr) {
+      try {
+        const expMs = Utilities.parseDate(expiresAtStr, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
+        if (Date.now() > expMs) {
+          tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
+          return { success: false, error: 'This form link has expired.' };
+        }
+      } catch(_) {}
+    }
+
+    const formType = String(row[FT.FORM_TYPE]).trim();
+    const recipientEmail = String(row[FT.RECIPIENT_EMAIL]).trim();
+    const recipientName = String(row[FT.RECIPIENT_NAME] || '').trim();
+    const createdBy = String(row[FT.CREATED_BY] || '').trim();
+    const noteId = String(row[FT.NOTE_ID] || '').trim();
+
+    // Validate form data (basic shape check)
+    const data = formData || {};
+    const sanitizedData = {};
+    Object.keys(data).forEach(function(k) {
+      if (k === 'signature') return; // signature handled separately
+      sanitizedData[k] = data[k];
+    });
+    const signatureData = String(data.signature || '');
+
+    // Save submission
+    const now = new Date();
+    const submittedAt = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
+    const submissionsSheet = getOrCreateFormSubmissionsSheet_();
+    submissionsSheet.appendRow([
+      token, formType, recipientEmail, submittedAt,
+      JSON.stringify(sanitizedData),
+      signatureData,
+    ]);
+
+    // Mark token as submitted
+    tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('submitted');
+
+    // Stamp linked note (best-effort)
+    if (noteId) {
+      try {
+        // Look up the creating rep to access their call-notes sheet
+        const empRows = getEmployeeRosterRows_();
+        let creatorEmp = null;
+        for (let i = 1; i < empRows.length; i++) {
+          if (String(empRows[i][EMP.EMAIL]).toLowerCase().trim() === createdBy.toLowerCase()) {
+            creatorEmp = {
+              email: createdBy,
+              id: String(empRows[i][EMP.ID]).trim(),
+              name: String(empRows[i][EMP.NAME]).trim(),
+              callNotesSheetId: empRows[i][EMP.CALL_NOTES_SHEET_ID]
+                ? String(empRows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
+            };
+            break;
+          }
+        }
+        if (creatorEmp && creatorEmp.callNotesSheetId) {
+          const cnSheet = getCallNotesSheet_(creatorEmp);
+          const noteLocated = findCallNoteRow_(cnSheet, noteId);
+          if (noteLocated) {
+            let subformData = null;
+            try { subformData = JSON.parse(noteLocated.row[CN.SUBFORM_DATA]); } catch(_) {}
+            if (!subformData || typeof subformData !== 'object') subformData = {};
+            subformData.formSubmission = {
+              token: token, formType: formType, submittedAt: submittedAt,
+              recipientEmail: recipientEmail,
+            };
+            cnSheet.getRange(noteLocated.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+          }
+        }
+      } catch (stampErr) {
+        console.warn('submitFormByToken: note stamp failed: ' + stampErr.message);
+      }
+    }
+
+    // Notify the rep who created the token (best-effort)
+    try {
+      if (createdBy) {
+        const formCat = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+        let formName = formType;
+        for (let i = 0; i < formCat.length; i++) {
+          if (formCat[i].id === formType) { formName = formCat[i].name; break; }
+        }
+        MailApp.sendEmail({
+          to: createdBy,
+          subject: 'Form Submission Received: ' + formName + ' from ' + (recipientName || recipientEmail),
+          body:
+            'A form submission was received.\n\n' +
+            'Form:      ' + formName + '\n' +
+            'From:      ' + (recipientName ? recipientName + ' (' + recipientEmail + ')' : recipientEmail) + '\n' +
+            'Submitted: ' + submittedAt + '\n\n' +
+            'You can view the submission in the FormSubmissions tab of the ADP spreadsheet.\n\n' +
+            '— UMS Team Tools (automated)\n',
+        });
+      }
+    } catch (emailErr) {
+      console.warn('submitFormByToken: notification email failed: ' + emailErr.message);
+    }
+
+    // Audit log (use a synthetic emp object since this is a public endpoint)
+    try {
+      const auditEmp = { id: 'EXTERNAL', name: recipientName || recipientEmail, email: recipientEmail };
+      writeAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
+        'token=' + token + '; formType=' + formType + '; from=' + recipientEmail +
+        (noteId ? '; noteId=' + noteId : ''));
+    } catch(_) {}
+
+    return { success: true, message: 'Your form has been submitted successfully. Thank you!' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Serves the public form HTML page for a given token. Called by doGet when
+ *  ?form=<token> is present. Returns a self-contained HTML page. */
+function serveExternalForm_(token) {
+  const tpl = HtmlService.createTemplateFromFile('form_public');
+  tpl.formToken = String(token || '');
+  return tpl.evaluate()
+    .setTitle('UMS — Complete Your Form')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
 

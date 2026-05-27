@@ -440,11 +440,27 @@ function showToast(msg, cls) {
 
 // ── Modal accessibility: Escape-to-close + focus trap ─────────────────────
 document.addEventListener('keydown', function (e) {
-  if (e.key !== 'Escape') return;
-  var open = document.querySelector('.overlay.open');
-  if (!open) return;
-  e.preventDefault();
-  open.classList.remove('open');
+  // Escape closes any open overlay
+  if (e.key === 'Escape') {
+    var open = document.querySelector('.overlay.open');
+    if (!open) return;
+    e.preventDefault();
+    open.classList.remove('open');
+    return;
+  }
+  // Ctrl/Cmd + / opens the Call Notes shortcuts overlay (if present)
+  if ((e.metaKey || e.ctrlKey) && e.key === '/' && !e.shiftKey && !e.altKey) {
+    var so = document.getElementById('cn-shortcuts-overlay');
+    if (so) { e.preventDefault(); so.classList.add('open'); }
+    return;
+  }
+  // ? key (no modifier, no input focused) opens the shortcuts overlay
+  if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    var tag = (document.activeElement || {}).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    var so2 = document.getElementById('cn-shortcuts-overlay');
+    if (so2) { e.preventDefault(); so2.classList.add('open'); }
+  }
 });
 
 document.addEventListener('focusin', function (e) {

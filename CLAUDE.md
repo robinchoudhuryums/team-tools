@@ -353,6 +353,17 @@ this section before touching the relevant area.
   effort, try/catch) when `flagType=training` and
   `subformData.trainingQuestion` is non-empty. Previously, managers
   only saw training questions in the weekly digest.
+- **`setCallNoteFlag` accepts an optional `trainingQuestion`.**
+  When flagging an existing note as `training` from a card button,
+  the client prompts for a question and passes it as the third arg.
+  The server merges it into `subformData.trainingQuestion` inside
+  the same lock. This parallels the active-form path where the
+  question is set during `submitCallNote`.
+- **`getMyCallNotesRange` caps at 90 days.** The date-range History
+  endpoint validates both dates and rejects spans > 90 days. The
+  client presets (Last 7, Last 30) stay within this cap; custom
+  ranges could hit it. Returns notes sorted newest-first with the
+  same response shape as `getMyCallNotes`.
 - **Call-note delete window.** `deleteCallNote` enforces
   `CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS` (5 min). Reps can only
   delete notes within 5 minutes of creation — older notes must be
@@ -374,6 +385,17 @@ this section before touching the relevant area.
   element if focus escapes. Both are generic — they cover the Adjust,
   Day Detail, Day Edit, Export, Manager Time-Off, and Call Notes
   Export modals.
+- **Public form endpoints have no employee auth — token is the
+  credential.** `getFormByToken` and `submitFormByToken` are the
+  only server functions accessible without `getEmployeeInfo_()`
+  auth. They validate via UUID token (checked against the
+  `FormTokens` sheet tab). Never add PHI-returning logic to these
+  endpoints beyond what the token already authorizes. The token
+  contains the form type and prefill data — it does NOT grant
+  access to the rep's call notes, employee roster, or any other
+  internal data. `serveExternalForm_` serves `form_public.html`
+  which is a standalone page with no `include()` of internal
+  partials.
 
 ## Key Design Decisions
 
@@ -462,18 +484,25 @@ this section before touching the relevant area.
   values without manual scrubbing on every `clasp pull`, since
   Script Properties live on the deployed project and are never
   touched by clasp.
-- **Web app runs as the deployer, restricted to the domain.**
+- **Web app runs as the deployer, open to ANYONE_ANONYMOUS.**
   `web-app/appsscript.json` declares `webapp.executeAs:
-  "USER_DEPLOYING"` and `webapp.access: "DOMAIN"`. The deployer's
-  account is therefore the one that grants OAuth consent for every
-  Sheet open (ADP roster + per-rep call-notes Sheets), every
-  `MailApp.sendEmail`, and the `UrlFetchApp` calls used by the
-  automated export. That account must have edit access to the ADP
-  spreadsheet AND to every per-rep call-notes Sheet — redeploying
-  as a different account silently fails until those Sheets are
-  reshared. The URL is reachable only by `@umsupply.com` users;
-  flipping `access` to `ANYONE` would expose the rep dashboard
-  publicly.
+  "USER_DEPLOYING"` and `webapp.access: "ANYONE_ANONYMOUS"`.
+  The deployer's account is therefore the one that grants OAuth
+  consent for every Sheet open (ADP roster + per-rep call-notes
+  Sheets), every `MailApp.sendEmail`, and the `UrlFetchApp` calls
+  used by the automated export and form PDF downloads. That
+  account must have edit access to the ADP spreadsheet AND to
+  every per-rep call-notes Sheet — redeploying as a different
+  account silently fails until those Sheets are reshared.
+  `ANYONE_ANONYMOUS` is required for the external fillable-forms
+  feature (the `?form=<token>` route). The internal app is
+  protected by a domain gate in `doGet()`: only `@umsupply.com`
+  users see the internal tool; all others get "Access Restricted".
+  All `google.script.run` endpoints still require
+  `getEmployeeInfo_()` (returns null for non-employees), so the
+  internal API surface is inaccessible to external visitors. The
+  only public endpoints are `getFormByToken` and
+  `submitFormByToken`, which validate via UUID token.
 - **Design tokens are the single source of truth for color,
   typography, radii, shadows, and motion.** All declared in
   `web-app/styles_design_tokens.html` and consumed via CSS
@@ -632,7 +661,10 @@ this section before touching the relevant area.
   the Log view; `cnRenderStack_` deduplicates so the same noteId never
   appears in both the tray and the stack. `getMyPinnedCallNotes`
   returns the rep's pinned notes across ALL dates (not just today) so
-  a complex case pinned last week stays visible.
+  a complex case pinned last week stays visible. The pinned tray
+  header shows `X/3` capacity; at 3/3 the count goes warn-colored
+  and un-pinned cards' bookmark buttons are dimmed with a
+  "Unpin a note first" tooltip.
 - **Manager Q&A reply on training-flagged notes.** Training-flagged
   notes can carry a free-text question (`subformData.trainingQuestion`,
   set client-side when the rep picks the training flag) and a manager
@@ -705,6 +737,72 @@ this section before touching the relevant area.
   (`cnStartDragModal_`) that repositions the modal via
   `position: fixed`. The modal also has `resize: both` for the
   browser's native resize grip.
+- **Keyboard shortcuts accelerate the Call Notes hot path.**
+  Ctrl/⌘+Enter saves & copies (existing). Ctrl/⌘+Shift+Enter
+  saves & opens the email composer. Ctrl/⌘+1/2/3 toggle
+  action/training/review flags on the active form. Ctrl/⌘+Backspace
+  clears the form. Ctrl/⌘+/ or bare ? opens a shortcuts help
+  overlay. Shortcuts only bind in the Log view's active form; the
+  ? handler skips when focus is in an input/textarea. The help
+  overlay uses the shared `.overlay` pattern (Escape closes it).
+- **Training Q&A tray surfaces manager answers on the Log view.**
+  A collapsible "Training Answers" section renders between the
+  pinned tray and the filter bar, showing the rep's last 5
+  training-flagged notes that have a manager reply (from
+  `getMyTrainingQA`). An "Answered" filter chip also appears in
+  the filter bar. Both give the rep visibility into manager
+  feedback without navigating to History.
+- **History view supports date ranges.** The History tab defaults
+  to "Last 7 Days" with From/To date inputs and presets (Yesterday,
+  Last 7 Days, Last 30 Days, This Week, Last Week). Multi-date
+  results render with date-separator headers grouping notes by day.
+  Single-date mode (start === end) uses the original `getMyCallNotes`
+  endpoint; ranges use `getMyCallNotesRange` (90-day cap). The
+  client stores both `CN_STATE.historyDate` (start) and
+  `CN_STATE.historyEndDate`.
+- **Manager cross-rep search in Team Notes.** A Search tab in the
+  Team Notes view calls `managerSearchCallNotes` with the same
+  All/Caller/Issue field tabs as the rep search. Results show
+  `repName` on each card. 500-result cap.
+- **Stats drill-down links to Per-Rep View.** Rep names in the
+  Stats tab are clickable — clicking one navigates to the Per-Rep
+  View for that rep and the same date.
+- **Email department display on note cards.** Note cards show which
+  departments an email was sent to (from `emailDepartments`) next
+  to the sent timestamp. The `title` attribute includes the full
+  list for overflow.
+- **External email for customers and providers.** A standalone
+  "Send External" button on the Call Notes Log view opens a modal
+  for sending branded emails to customers or providers — not tied
+  to a specific note (though optionally linkable). The modal offers
+  recipient type (customer/provider), email + name, form attachment
+  checkboxes from `CONFIG.CALL_NOTES.FORM_CATALOG`, and an optional
+  message. PDFs are fetched from the repo's `/forms/` folder via
+  `UrlFetchApp` from `CONFIG.CALL_NOTES.FORM_BASE_URL` (raw GitHub
+  URL). Customer emails use a warm tone; provider emails use a
+  clinical tone. Both use `CN_EMAIL_PALETTE` brand colors. The
+  `sendExternalEmail` endpoint stamps `subformData.externalEmails[]`
+  on the linked note (if any) and writes an `ExternalEmailSent`
+  audit row. Adding a form: upload the PDF to `/forms/` in the repo,
+  add an entry to `FORM_CATALOG`, redeploy.
+- **Interactive fillable web forms via token-gated public route.**
+  The `?form=<token>` route in `doGet` serves `form_public.html` —
+  a standalone, UMS-branded, mobile-responsive page where external
+  recipients fill out forms digitally. Tokens are UUID-based, stored
+  in the `FormTokens` sheet tab, and expire after
+  `CONFIG.FORM_TOKEN_EXPIRY_HOURS` (72h). Each token is one-time-use
+  (status transitions: pending → submitted or expired). Three form
+  templates: EAA (Economic Assistance Application), PT/OT Rx, and
+  Seating Evaluation — each with a canvas-based signature pad
+  (mouse + touch). A HIPAA privacy notice with consent checkbox
+  gates form field visibility. Submissions are stored in the
+  `FormSubmissions` sheet tab, the creating rep is notified via
+  email, and the linked call note (if any) gets a
+  `subformData.formSubmission` stamp. The external email modal
+  offers a per-form toggle: "Attach PDF" vs "Send as fillable form"
+  — fillable forms generate tokens and embed "Complete this form"
+  CTA buttons in the email body. Reps can pre-fill key fields
+  (patient name, dates) before sending.
 
 ## Operator State Checklist
 
@@ -779,6 +877,22 @@ manually for a fresh deploy or environment:
   rep's spoken note leaves the browser). Requires a redeploy to
   propagate to clients. When false, the UI never renders the mic
   button (no surface area for accidents).
+- **`FormTokens` and `FormSubmissions` sheet tabs** are auto-created
+  in the ADP spreadsheet on first use of the external forms feature.
+  `FormTokens` tracks pending/submitted/expired form links (token,
+  formType, recipientEmail, expiresAt, status, prefillData, noteId).
+  `FormSubmissions` stores completed form data + signature base64.
+  Both are append-only. No manual setup needed — the
+  `getOrCreateFormTokensSheet_()` / `getOrCreateFormSubmissionsSheet_()`
+  helpers provision them with headers on first call.
+- **Form catalog** is configured in
+  `CONFIG.CALL_NOTES.FORM_CATALOG` — each entry maps an ID to a
+  filename in the repo's `/forms/` folder. Adding a form: upload
+  the PDF to `/forms/`, add an entry to FORM_CATALOG with
+  `{id, name, fileName, category}`, and redeploy. PDFs are fetched
+  via `UrlFetchApp` from the raw GitHub URL
+  (`CONFIG.CALL_NOTES.FORM_BASE_URL`). Interactive (fillable) forms
+  must also have a rendering function in `form_public.html`.
 
 ## Cycle Workflow Config
 
@@ -807,6 +921,8 @@ Client (Time Clock views):
   web-app/tc/script_clock.html, web-app/tc/script_timesheet.html, web-app/tc/script_timeoff.html, web-app/tc/script_manager.html
 Client (Call Notes views):
   web-app/cn/script_callnotes.html
+Client (public forms):
+  web-app/form_public.html
 Test Suite:
   web-app/Tests.js
 
@@ -873,6 +989,7 @@ INV-59 | `writeToEmployeeSheet_` and `clearFromEmployeeSheet_` write a `Personal
 INV-60 | `deleteCallNote` rejects deletion when the note is older than `CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS` (300s). The elapsed-time check uses `parseTimestampMs_` against the note's `TIMESTAMP` column. Notes without a parseable timestamp bypass the check (fail-open for legacy data) | Subsystem: Server
 INV-61 | `removeAutomationTriggers` calls `assertManagerCaller_` — non-manager reps cannot disable automation triggers via `google.script.run` | Subsystem: Server
 INV-62 | `cnFindNoteAnywhere_` searches `CN_STATE.rollingNotes`, `historyNotes`, and `pinnedNotes`. `cnReplaceNoteInState_` updates all three. Actions on pinned notes from past dates no longer silently fail, and flag/resolve changes propagate to the pinned tray | Subsystem: Client (Call Notes views)
+INV-63 | `getMyCallNotesRange(startDate, endDate)` is caller-scoped via `getEmployeeInfo_()`, validates both dates with regex, rejects `startDate > endDate`, and caps the span at 90 days. Returns notes sorted newest-first. Used by the History view for multi-day queries; single-date queries still use `getMyCallNotes` | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10
