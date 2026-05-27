@@ -6,7 +6,7 @@ Apps Script project under its own directory, synced via `clasp`.
 ## Projects
 
 - **web-app/** — Multi-module browser web app deployed at one Web App
-  URL. Hosts two modules today, registered side-by-side in the
+  URL. Hosts three modules today, registered side-by-side in the
   `TOOLS` registry in `script_core.html`:
    - **Time Clock** — cross-timezone time tracking, PTO requests,
      manager dashboard, ADP-format export. Backs a shared Google
@@ -19,6 +19,19 @@ Apps Script project under its own directory, synced via `clasp`.
      two-stage flow with preview gate. Three flag types
      (action / training / review) with EOD reminders for unresolved
      action flags and weekly manager digests for training + review.
+   - **Metrics** — CDR integration module that reads DQE Historical
+     Data from the CDR Report spreadsheet (the same sheet backing the
+     `call-data-reporting` repo's Department Dashboard). Two tabs:
+     "My Stats" (self-view for all reps — today's KPIs, 30-day
+     % Answered trend sparkline, note-to-call coverage ratio) and
+     "Team Metrics" (manager-only — per-rep table with date-range
+     support and preset chips). The CDR data layer (`getCdrSS_()`,
+     `getCdrAgentMetrics_()`, `getCdrDailyBreakdown_()`) is isolated
+     behind helpers so a future swap to Neon Postgres (Option C)
+     replaces only those functions. CDR metrics also enrich the
+     Call Notes Stats tab (`managerGetShiftStats`) via a best-effort
+     try/catch overlay — CDR failure never breaks existing stats.
+     Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -55,10 +68,28 @@ These accumulate as audits surface real production hazards. Treat
 each entry as something that has bitten the project before — read
 this section before touching the relevant area.
 
+- **CDR duration columns MUST use `getDisplayValues()`.** The CDR
+  Report spreadsheet has a timezone mismatch (spreadsheet TZ
+  `America/Mexico_City` vs script TZ `America/Chicago`). Duration
+  columns (TTT col I, ATT col J, AvgAbdWait col AG,
+  CsrAvgAbdWait col AH) get a phantom offset if read via
+  `getValue()`. `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()`
+  both read the full range with `getDisplayValues()` and parse the
+  H:MM:SS strings via `cdrParseHms_()`. Never use `getValue()` for
+  these columns. Same gotcha exists in `call-data-reporting`'s
+  `Data.gs` — see that repo's CLAUDE.md for the full explanation.
+- **CDR enrichment in `managerGetShiftStats` is best-effort.**
+  The CDR overlay that adds `cdr` and `noteCoverage` fields to each
+  rep's shift-stats card is wrapped in a try/catch. If the CDR
+  spreadsheet is unreachable (missing `CDR_SS_ID` Script Property,
+  deployer account lost access, etc.) the existing call-notes stats
+  still return normally — the `cdr` field is simply absent. Client
+  rendering checks `r.cdr` before showing CDR rows.
 - **Secrets via Script Properties, not CONFIG.** `getAdpSS_()`,
-  `getManagerEmails_()`, `getDepartmentEmails_()`, and
-  `getStateTaxRates_()` read `ADP_SS_ID`, `MANAGER_EMAILS`,
-  `CN_DEPARTMENT_EMAILS`, and `CN_STATE_TAX_RATES` from Script
+  `getCdrSS_()`, `getManagerEmails_()`, `getDepartmentEmails_()`, and
+  `getStateTaxRates_()` read `ADP_SS_ID`, `CDR_SS_ID`,
+  `MANAGER_EMAILS`, `CN_DEPARTMENT_EMAILS`, and
+  `CN_STATE_TAX_RATES` from Script
   Properties first, falling back to the CONFIG placeholders.
   Set the real values once in Apps Script editor → Project Settings
   → Script Properties (or use the Admin tab for dept/rate config);
@@ -123,6 +154,7 @@ this section before touching the relevant area.
   `managerGetReviewCandidates`, `getEnrolledCallNotesReps`,
   `exportCallNotesRange`, `setCallNoteTrainingReply`,
   `managerGetShiftStats`, `managerGetUnresolvedActionCount`,
+  `getTeamMetrics`,
   `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`,
   `saveUpdateSuggestions`, `removeAutomationTriggers`.
   Returning a dashboard or accepting writes without this check is a
@@ -401,7 +433,7 @@ this section before touching the relevant area.
 
 - **Multi-tool registry with tab sub-navigation.** The `TOOLS` object
   at the top of `script_core.html` is the single source of truth. Each
-  top-level entry is a TOOL (Time Clock, Call Notes); each tool
+  top-level entry is a TOOL (Time Clock, Call Notes, Metrics); each tool
   declares a `sidebarIcon`, a `defaultTab`, and a `tabs` map whose
   keys are globally unique tab identifiers. The sidebar + mobile-nav
   show ONE button per tool. Sub-navigation is a horizontal tab bar
@@ -813,6 +845,13 @@ manually for a fresh deploy or environment:
   Apps Script editor → Project Settings → Script Properties. Without
   it, `getAdpSS_()` falls back to the inert `'YOUR_ADP_SPREADSHEET_ID'`
   placeholder in CONFIG and fails on first sheet open.
+- **Set Script Property `CDR_SS_ID`** to the CDR Report spreadsheet
+  ID (the same spreadsheet backing the `call-data-reporting`
+  Department Dashboard). `getCdrSS_()` reads this before CONFIG.
+  Without it, the Metrics tool and the shift-stats CDR enrichment
+  will show "No call data found" or gracefully degrade (the CDR
+  overlay in `managerGetShiftStats` is best-effort). The deployer
+  account must have at least Viewer access to this spreadsheet.
 - **Set Script Property `MANAGER_EMAILS`** to a comma-separated list
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
   reads this before CONFIG; without it, no one passes the
@@ -921,6 +960,8 @@ Client (Time Clock views):
   web-app/tc/script_clock.html, web-app/tc/script_timesheet.html, web-app/tc/script_timeoff.html, web-app/tc/script_manager.html
 Client (Call Notes views):
   web-app/cn/script_callnotes.html
+Client (Metrics views):
+  web-app/metrics/script_metrics.html
 Client (public forms):
   web-app/form_public.html
 Test Suite:
@@ -990,6 +1031,11 @@ INV-60 | `deleteCallNote` rejects deletion when the note is older than `CONFIG.C
 INV-61 | `removeAutomationTriggers` calls `assertManagerCaller_` — non-manager reps cannot disable automation triggers via `google.script.run` | Subsystem: Server
 INV-62 | `cnFindNoteAnywhere_` searches `CN_STATE.rollingNotes`, `historyNotes`, and `pinnedNotes`. `cnReplaceNoteInState_` updates all three. Actions on pinned notes from past dates no longer silently fail, and flag/resolve changes propagate to the pinned tray | Subsystem: Client (Call Notes views)
 INV-63 | `getMyCallNotesRange(startDate, endDate)` is caller-scoped via `getEmployeeInfo_()`, validates both dates with regex, rejects `startDate > endDate`, and caps the span at 90 days. Returns notes sorted newest-first. Used by the History view for multi-day queries; single-date queries still use `getMyCallNotes` | Subsystem: Server
+INV-64 | CDR data reading uses `getDisplayValues()` for duration columns (TTT, ATT, AvgAbdWait, CsrAvgAbdWait) and `cdrParseHms_()` to convert H:MM:SS strings to seconds. Never use `getValue()` for these columns — the CDR Report spreadsheet has a timezone mismatch that adds a phantom offset. Same constraint as `call-data-reporting/Data.gs::parseHmsDisplay_` | Subsystem: Server
+INV-65 | `getMyMetrics(date)` is caller-scoped via `getEmployeeInfo_()`, read-only. Returns the rep's own CDR metrics for the given date + a 30-day trend array + note-to-call coverage ratio. CDR data is fetched via `getCdrDailyBreakdown_()` (single-agent filter). The trend window is the 30 days ending on the given date. Returns `cdr: null` if the agent has no DQE data (not an error) | Subsystem: Server
+INV-66 | `getTeamMetrics(from, to)` is manager-gated (INV-02). Accepts a date range; single date collapses to `from === to`. CDR aggregation uses `getCdrAgentMetrics_()` for the range, note counts scan each enrolled rep's call-notes Sheet across the full range. Returns a 30-day team trend in single-day mode only (`trend` field is null for multi-day ranges). `unmatchedAgents` lists CDR agent names not on the team-tools roster | Subsystem: Server
+INV-67 | CDR enrichment in `managerGetShiftStats` is wrapped in a try/catch after the core call-notes aggregation loop. Failure does not break the existing response — `reps[i].cdr` is simply absent. CDR cache (`CDR_CACHE_KEY`, 5-min TTL) is shared across `getCdrAgentMetrics_()` calls but NOT across `getCdrDailyBreakdown_()` (the latter is uncached since it returns per-day granularity needed only for trend rendering) | Subsystem: Server
+INV-68 | `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` are the isolated CDR data layer. Both open the CDR Report spreadsheet via `getCdrSS_()`, read `DQE Historical Data`, filter by date range + optional roster names, skip queue-sentinel rows (`A_Q_*`, `Backup CSR`). Designed as the Option A (direct spreadsheet read) implementation — a future swap to Neon Postgres (Option C) replaces only these two functions + `getCdrSS_()` | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -1313,6 +1359,39 @@ S40 | Multi-line auto-copy format + N/A defaulting on Transferred To | Subsystem
     Transferred To: N/A
     Resolution: ...
   Empty Transferred To renders as literal `N/A` in both the paste and the email body's Call Details table. AUTO_COPY_FORMAT is overridable in CONFIG; changing it requires a redeploy but no code change.
+
+S41 | Metrics — My Stats self-view with sparkline | Subsystem: Server, Client (Metrics views)
+  Steps:
+    - As an enrolled rep, open Metrics → My Stats
+    - Confirm the default date is today; KPI tiles render if CDR data exists for today
+    - Change the date to a prior working day with known CDR activity
+    - Inspect the 30-day trend sparkline below the notes correlation section
+  Expected: KPI tiles show Rung, Answered, Missed, % Answered, Total Talk, Avg Talk for the selected date. Notes Correlation section shows Notes Filed, Calls Answered, Note Coverage with a color-coded badge (green ≥80%, yellow ≥50%, red <50%). Sparkline renders a 30-day % Answered polyline with the most recent data point highlighted. If CDR_SS_ID is not configured, shows a friendly "No call data found" message + notes count.
+
+S42 | Metrics — Team Metrics date-range + presets | Subsystem: Server, Client (Metrics views)
+  Steps:
+    - As a manager, open Metrics → Team Metrics
+    - Confirm default is today with From=To; KPI tiles + per-rep table render
+    - Click the "Last 7 Days" preset chip
+    - Confirm From/To inputs update and the table re-fetches with aggregated data
+    - Click "Last 30 Days"; confirm the table includes more data
+    - Set From > To manually in the inputs
+  Expected: Preset chips set both date inputs and trigger a fresh load. Per-rep table shows aggregate totals for the range: Rung, Answered, Missed, % Answered, ATT, Notes, Coverage. Single-day view also shows the 30-day team trend sparkline; multi-day range hides the sparkline. From > To auto-corrects (the input that changed drags the other to match). Non-manager calling `getTeamMetrics` directly gets "Manager access required."
+
+S43 | Metrics — CDR unavailable fallback | Subsystem: Server, Client (Metrics views)
+  Steps:
+    - Temporarily remove the CDR_SS_ID Script Property (or set it to an invalid ID)
+    - As a rep, open Metrics → My Stats
+    - As a manager, open Metrics → Team Metrics
+    - Open Call Notes → Team Notes → Stats tab
+  Expected: My Stats shows "No call data found for <date>." with notes count still visible. Team Metrics shows an error or empty table. Stats tab still renders all note-based stats (total notes, flags, median, shift span); CDR rows (calls answered, % answered, ATT) are absent — no error, no broken cards.
+
+S44 | Metrics — shift stats CDR enrichment | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - With CDR_SS_ID configured, open Call Notes → Team Notes → Stats tab
+    - Pick a date with known CDR + call-notes activity
+    - Inspect a rep card that has both notes and CDR data
+  Expected: Below the existing note stats (flag breakdown, emails sent, median note time), a CDR section appears with a thin separator showing Calls answered, Calls missed (warn-colored if > 0), % Answered, Avg Talk Time. A "Note coverage" row shows the notes-to-calls ratio. All CDR values sourced from DQE Historical Data for that rep + date.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
