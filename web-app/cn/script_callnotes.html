@@ -718,6 +718,129 @@
   :root[data-compact="1"] .cn-card .cn-edit-fields { grid-template-columns: 1fr; }
   :root[data-compact="1"] .cn-card .cn-edit-fields .full { grid-column: span 1; }
   :root[data-compact="1"] .cn-card-time { min-width: 44px; }
+
+  /* ── Feature 1: Pin-full indicator ─────────────────────────────── */
+  .cn-pinned-full .cn-pinned-label span {
+    color: var(--warning-deep);
+  }
+  .cn-act-btn.pin-full {
+    opacity: .35;
+    cursor: default;
+  }
+  .cn-act-btn.pin-full:hover {
+    background: transparent;
+    color: var(--muted);
+  }
+
+  /* ── Feature 2: Keyboard shortcuts help overlay ────────────────── */
+  .cn-shortcuts-modal {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg, 0 8px 32px rgba(0,0,0,.18));
+    padding: 24px 28px;
+    max-width: 400px; width: 92vw;
+  }
+  .cn-shortcuts-title {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .cn-shortcuts-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .cn-shortcuts-table tr {
+    border-bottom: 1px solid var(--line);
+  }
+  .cn-shortcuts-table tr:last-child { border-bottom: none; }
+  .cn-shortcuts-table td {
+    padding: 7px 0;
+    font-family: var(--ui); font-size: 13px;
+    color: var(--ink);
+  }
+  .cn-shortcuts-table td:last-child {
+    text-align: right;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .04em;
+  }
+  .cn-shortcuts-table kbd {
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 2px 6px;
+    font-family: var(--mono); font-size: 10px;
+    color: var(--ink);
+  }
+  .cn-shortcuts-close {
+    appearance: none; border: none; background: transparent;
+    color: var(--muted); cursor: pointer; padding: 0;
+    float: right;
+    transition: color var(--t) var(--ease);
+  }
+  .cn-shortcuts-close:hover { color: var(--ink); }
+  .cn-help-btn {
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper-2);
+    width: 20px; height: 20px; border-radius: 999px;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .cn-help-btn:hover { color: var(--ink); border-color: var(--border-strong); }
+
+  /* ── Feature 3: Date-range history + date separators ───────────── */
+  .cn-history-range {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .cn-history-range label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .14em; color: var(--muted); text-transform: uppercase;
+  }
+  .cn-history-range input[type="date"] {
+    padding: 7px 10px; border: 1px solid var(--line);
+    border-radius: var(--radius); font-family: var(--ui);
+    font-size: 13px; background: var(--paper-card); color: var(--ink);
+    outline: none;
+  }
+  .cn-history-range input[type="date"]:focus {
+    border-color: var(--accent); box-shadow: var(--ring-focus);
+  }
+  .cn-history-presets {
+    display: flex; gap: 4px; flex-wrap: wrap;
+  }
+  .cn-history-preset-btn {
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper-card);
+    padding: 5px 10px; border-radius: var(--radius);
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .06em; text-transform: uppercase;
+    cursor: pointer;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-history-preset-btn:hover {
+    color: var(--ink); border-color: var(--border-strong);
+  }
+  .cn-history-preset-btn.active {
+    background: var(--ink); color: var(--paper-card); border-color: var(--ink);
+  }
+  .cn-date-separator {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted);
+    padding: 12px 0 6px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 8px;
+  }
+  .cn-date-separator:first-child { padding-top: 4px; }
+  .cn-history-summary {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted); letter-spacing: .04em;
+    margin-bottom: 10px;
+  }
 </style>
 
 <script>
@@ -741,8 +864,10 @@ const CN_STATE = {
   empTz: '',
   composer: null,            // open email composer state, or null
   editingNoteId: null,       // noteId of card currently in inline-edit mode
-  historyDate: null,         // selected date in History view (yyyy-MM-dd)
+  historyDate: null,         // selected date in History view (yyyy-MM-dd) — also serves as start date for range queries
+  historyEndDate: null,      // end date for History range queries; when null or === historyDate, single-date mode
   historyNotes: [],
+  pinLimit: 3,               // server-authoritative cap from getMyPinnedCallNotes
   searchQuery: '',
   searchField: 'all',
   searchResults: [],
@@ -803,15 +928,16 @@ function cnPrewarmScript_() {
 function enterCallNotesHistoryView(area) {
   stopClock();
   if (!CN_STATE.historyDate) {
-    // Default to "today minus 1" so a freshly-opened History view shows
-    // yesterday rather than re-rendering today's rolling stack.
+    // Default to "last 7 days" so a freshly-opened History view shows a
+    // useful range rather than a single yesterday.
     const tz = (empState && empState.timezone) || 'UTC';
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
-    const d = new Date(today + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1);
-    CN_STATE.historyDate = `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+    const d7 = new Date(today + 'T12:00:00Z'); d7.setUTCDate(d7.getUTCDate() - 6);
+    CN_STATE.historyDate = `${d7.getUTCFullYear()}-${pad(d7.getUTCMonth()+1)}-${pad(d7.getUTCDate())}`;
+    CN_STATE.historyEndDate = today;
   }
   renderLoading(area, 'Loading history…');
-  cnLoadDate_(CN_STATE.historyDate, function () {
+  cnLoadDateRange_(CN_STATE.historyDate, CN_STATE.historyEndDate || CN_STATE.historyDate, function () {
     cnRenderHistoryView(area);
   });
 }
@@ -875,9 +1001,26 @@ function cnLoadToday_(then) {
 }
 
 function cnLoadDate_(date, then) {
+  cnLoadDateRange_(date, date, then);
+}
+
+function cnLoadDateRange_(startDate, endDate, then) {
   const requestedView = currentView;
-  google.script.run
-    .withSuccessHandler(function (res) {
+  const isSingleDate = startDate === endDate;
+  var rpc;
+  if (isSingleDate) {
+    rpc = function (ok, fail) {
+      google.script.run.withSuccessHandler(ok).withFailureHandler(fail)
+        .getMyCallNotes({ filter: 'all', date: startDate });
+    };
+  } else {
+    rpc = function (ok, fail) {
+      google.script.run.withSuccessHandler(ok).withFailureHandler(fail)
+        .getMyCallNotesRange(startDate, endDate);
+    };
+  }
+  rpc(
+    function (res) {
       if (res.error) {
         if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
         else if (currentView === requestedView) showToast(res.error, 'toast-error');
@@ -888,13 +1031,13 @@ function cnLoadDate_(date, then) {
       }
       if (currentView !== requestedView) return;
       if (then) then();
-    })
-    .withFailureHandler(function (err) {
+    },
+    function (err) {
       if (currentView !== requestedView) return;
       showToast('Load failed: ' + err.message, 'toast-error');
       if (then) then();
-    })
-    .getMyCallNotes({ filter: 'all', date });
+    }
+  );
 }
 
 // ── Notes view (the rolling-form primary surface) ──────────────────────
@@ -905,6 +1048,7 @@ function cnRenderNotesView(area) {
     return;
   }
   const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes', 'phone') : '';
+  const mod = cnIsMac_() ? '⌘' : 'Ctrl';
   area.innerHTML = `
     ${compactHeader}
     ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes', 'Log calls fast — Ctrl/⌘+Enter saves & copies to clipboard for the CRM. Send department emails separately.')}
@@ -914,6 +1058,21 @@ function cnRenderNotesView(area) {
       <div id="cn-training-qa-tray"></div>
       <div class="cn-filter-bar" id="cn-filter-bar"></div>
       <div id="cn-stack"></div>
+    </div>
+    <div id="cn-shortcuts-overlay" class="overlay">
+      <div class="cn-shortcuts-modal">
+        <button class="cn-shortcuts-close" onclick="document.getElementById('cn-shortcuts-overlay').classList.remove('open')">${icon('x', 16)}</button>
+        <div class="cn-shortcuts-title">Keyboard Shortcuts</div>
+        <table class="cn-shortcuts-table">
+          <tr><td>Save &amp; Copy</td><td><kbd>${esc(mod)}</kbd> + <kbd>Enter</kbd></td></tr>
+          <tr><td>Save &amp; Compose</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
+          <tr><td>Flag: Action</td><td><kbd>${esc(mod)}</kbd> + <kbd>1</kbd></td></tr>
+          <tr><td>Flag: Training</td><td><kbd>${esc(mod)}</kbd> + <kbd>2</kbd></td></tr>
+          <tr><td>Flag: Review</td><td><kbd>${esc(mod)}</kbd> + <kbd>3</kbd></td></tr>
+          <tr><td>Clear Note</td><td><kbd>${esc(mod)}</kbd> + <kbd>Backspace</kbd></td></tr>
+          <tr><td>Show Shortcuts</td><td><kbd>${esc(mod)}</kbd> + <kbd>/</kbd>&nbsp; or &nbsp;<kbd>?</kbd></td></tr>
+        </table>
+      </div>
     </div>
   `;
   cnWireActiveForm_();
@@ -955,6 +1114,7 @@ function cnRenderActiveForm_() {
           <span class="cn-active-form-hint">
             <kbd>${cnIsMac_() ? '⌘' : 'Ctrl'}+Enter</kbd> save &amp; copy
           </span>
+          <button type="button" class="cn-help-btn" id="cn-help-btn" title="Keyboard shortcuts (${cnIsMac_() ? '⌘' : 'Ctrl'}+/)">?</button>
         </div>
       </div>
       <div class="cn-form-fields">
@@ -1102,7 +1262,21 @@ function cnWireActiveForm_() {
     el.addEventListener('keydown', function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        cnSubmitActiveForm_();
+        if (e.shiftKey) {
+          cnSubmitActiveForm_({
+            onConfirmed: function (note) { cnOpenEmailComposer_(note.noteId); },
+          });
+        } else {
+          cnSubmitActiveForm_();
+        }
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        if (e.key === '1') { e.preventDefault(); cnFormToggleFlag_('action'); return; }
+        if (e.key === '2') { e.preventDefault(); cnFormToggleFlag_('training'); return; }
+        if (e.key === '3') { e.preventDefault(); cnFormToggleFlag_('review'); return; }
+        if (e.key === 'Backspace') { e.preventDefault(); cnClearActiveForm_(); return; }
+        if (e.key === '/') { e.preventDefault(); cnOpenShortcutsOverlay_(); return; }
       }
     });
     el.addEventListener('input', function () {
@@ -1160,6 +1334,8 @@ function cnWireActiveForm_() {
       });
     });
   }
+  var helpBtn = document.getElementById('cn-help-btn');
+  if (helpBtn) helpBtn.addEventListener('click', cnOpenShortcutsOverlay_);
 }
 
 function cnRestoreFromSnapshot_(snap) {
@@ -1836,7 +2012,12 @@ function cnRenderCardCore_(note, expandable) {
     : '';
 
   const isPinned = !!(note.subformData && note.subformData.pinned);
-  const pinBtn = `<button class="cn-act-btn ${isPinned ? 'is-on' : ''}" title="${isPinned ? 'Unpin note' : 'Pin note (keeps it visible above the stack)'}"
+  const pinAtCapacity = !isPinned && (CN_STATE.pinnedNotes || []).length >= (CN_STATE.pinLimit || 3);
+  const pinCls = isPinned ? 'is-on' : (pinAtCapacity ? 'pin-full' : '');
+  const pinTitle = isPinned ? 'Unpin note'
+                 : pinAtCapacity ? 'Unpin a note first (' + (CN_STATE.pinnedNotes || []).length + '/' + (CN_STATE.pinLimit || 3) + ')'
+                 : 'Pin note (keeps it visible above the stack)';
+  const pinBtn = `<button class="cn-act-btn ${pinCls}" title="${esc(pinTitle)}"
                           data-cn-action="pin">${icon('bookmark', 14)}</button>`;
 
   return `
@@ -2056,6 +2237,7 @@ function cnReloadPinnedTray_() {
       // State update is unconditional (cache stays warm for next visit)
       if (res && !res.error) {
         CN_STATE.pinnedNotes = res.notes || [];
+        if (res.limit != null) CN_STATE.pinLimit = res.limit;
       }
       // DOM updates only if still on the same view
       if (currentView !== requestedView) return;
@@ -2079,9 +2261,12 @@ function cnRenderPinnedTray_() {
   const host = document.getElementById('cn-pinned-tray');
   if (!host) return;
   const pinned = CN_STATE.pinnedNotes || [];
-  if (pinned.length === 0) { host.innerHTML = ''; return; }
+  if (pinned.length === 0) { host.innerHTML = ''; host.classList.remove('cn-pinned-full'); return; }
+  const limit = CN_STATE.pinLimit || 3;
+  const isFull = pinned.length >= limit;
+  host.classList.toggle('cn-pinned-full', isFull);
   host.innerHTML =
-    `<div class="cn-pinned-label">${icon('bookmark', 11)}<span>Pinned · ${pinned.length}</span></div>` +
+    `<div class="cn-pinned-label">${icon('bookmark', 11)}<span>Pinned · ${pinned.length}/${limit}</span></div>` +
     pinned.map(cnRenderCard_).join('');
 }
 
@@ -2919,33 +3104,155 @@ function cnRenderHistoryView(area) {
     return;
   }
   const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes · History', 'list') : '';
+  const startVal = CN_STATE.historyDate || '';
+  const endVal = CN_STATE.historyEndDate || CN_STATE.historyDate || '';
   area.innerHTML = `
     ${compactHeader}
-    ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · History', 'Past days — pick a date to view & edit prior notes, or send a forgotten email.')}
-    <div class="cn-history-picker">
-      <label style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase">Date</label>
-      <input type="date" id="cn-history-date" value="${esc(CN_STATE.historyDate || '')}" onchange="cnHistoryDateChanged_(this.value)">
+    ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · History', 'Past days — pick a date or range to view & edit prior notes, or send a forgotten email.')}
+    <div class="cn-history-range">
+      <label>From</label>
+      <input type="date" id="cn-history-start" value="${esc(startVal)}">
+      <label>To</label>
+      <input type="date" id="cn-history-end" value="${esc(endVal)}">
+      <div class="cn-history-presets">
+        <button type="button" class="cn-history-preset-btn" data-preset="yesterday">Yesterday</button>
+        <button type="button" class="cn-history-preset-btn" data-preset="last7">Last 7 Days</button>
+        <button type="button" class="cn-history-preset-btn" data-preset="last30">Last 30 Days</button>
+        <button type="button" class="cn-history-preset-btn" data-preset="thisWeek">This Week</button>
+        <button type="button" class="cn-history-preset-btn" data-preset="lastWeek">Last Week</button>
+      </div>
     </div>
+    <div id="cn-history-summary"></div>
     <div id="cn-history-stack"></div>
   `;
   cnInstallCardDelegation_(area);
+  cnWireHistoryRange_();
   cnRenderHistoryStack_();
 }
 
-function cnHistoryDateChanged_(d) {
-  if (!d) return;
-  CN_STATE.historyDate = d;
-  cnLoadDate_(d, cnRenderHistoryStack_);
+function cnWireHistoryRange_() {
+  var startInput = document.getElementById('cn-history-start');
+  var endInput = document.getElementById('cn-history-end');
+  if (startInput) startInput.addEventListener('change', function () {
+    CN_STATE.historyDate = startInput.value;
+    if (!CN_STATE.historyEndDate || CN_STATE.historyEndDate < startInput.value) {
+      CN_STATE.historyEndDate = startInput.value;
+      if (endInput) endInput.value = startInput.value;
+    }
+    cnHistoryRangeChanged_();
+  });
+  if (endInput) endInput.addEventListener('change', function () {
+    CN_STATE.historyEndDate = endInput.value;
+    if (!CN_STATE.historyDate || CN_STATE.historyDate > endInput.value) {
+      CN_STATE.historyDate = endInput.value;
+      if (startInput) startInput.value = endInput.value;
+    }
+    cnHistoryRangeChanged_();
+  });
+  document.querySelectorAll('.cn-history-preset-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var range = cnHistoryPresetRange_(btn.dataset.preset);
+      if (!range) return;
+      CN_STATE.historyDate = range.start;
+      CN_STATE.historyEndDate = range.end;
+      if (startInput) startInput.value = range.start;
+      if (endInput) endInput.value = range.end;
+      cnHistoryRangeChanged_();
+    });
+  });
+}
+
+function cnHistoryPresetRange_(preset) {
+  var tz = (empState && empState.timezone) || 'UTC';
+  var today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+  var toDate = function (iso) { return new Date(iso + 'T12:00:00Z'); };
+  var fmt = function (d) { return d.getUTCFullYear() + '-' + pad(d.getUTCMonth()+1) + '-' + pad(d.getUTCDate()); };
+  var todayD = toDate(today);
+  switch (preset) {
+    case 'yesterday': {
+      var y = toDate(today); y.setUTCDate(y.getUTCDate() - 1);
+      return { start: fmt(y), end: fmt(y) };
+    }
+    case 'last7': {
+      var d7 = toDate(today); d7.setUTCDate(d7.getUTCDate() - 6);
+      return { start: fmt(d7), end: today };
+    }
+    case 'last30': {
+      var d30 = toDate(today); d30.setUTCDate(d30.getUTCDate() - 29);
+      return { start: fmt(d30), end: today };
+    }
+    case 'thisWeek': {
+      var dow = todayD.getUTCDay();
+      var mon = toDate(today); mon.setUTCDate(mon.getUTCDate() - ((dow + 6) % 7));
+      return { start: fmt(mon), end: today };
+    }
+    case 'lastWeek': {
+      var dow2 = todayD.getUTCDay();
+      var thisMon = toDate(today); thisMon.setUTCDate(thisMon.getUTCDate() - ((dow2 + 6) % 7));
+      var prevMon = new Date(thisMon); prevMon.setUTCDate(prevMon.getUTCDate() - 7);
+      var prevSun = new Date(prevMon); prevSun.setUTCDate(prevSun.getUTCDate() + 6);
+      return { start: fmt(prevMon), end: fmt(prevSun) };
+    }
+    default: return null;
+  }
+}
+
+function cnHistoryRangeChanged_() {
+  var s = CN_STATE.historyDate;
+  var e = CN_STATE.historyEndDate || s;
+  if (!s) return;
+  var stack = document.getElementById('cn-history-stack');
+  if (stack) stack.innerHTML = '<div class="cn-stack-empty">Loading…</div>';
+  cnLoadDateRange_(s, e, cnRenderHistoryStack_);
 }
 
 function cnRenderHistoryStack_() {
   const stack = document.getElementById('cn-history-stack');
   if (!stack) return;
-  if (!CN_STATE.historyNotes || CN_STATE.historyNotes.length === 0) {
-    stack.innerHTML = `<div class="cn-stack-empty">No notes for this date.</div>`;
+  const summary = document.getElementById('cn-history-summary');
+  const notes = CN_STATE.historyNotes || [];
+  const isRange = CN_STATE.historyEndDate && CN_STATE.historyEndDate !== CN_STATE.historyDate;
+
+  if (notes.length === 0) {
+    if (summary) summary.innerHTML = '';
+    stack.innerHTML = '<div class="cn-stack-empty">No notes for ' + (isRange ? 'this range' : 'this date') + '.</div>';
     return;
   }
-  stack.innerHTML = CN_STATE.historyNotes.map(cnRenderCard_).join('');
+
+  if (isRange) {
+    var startLabel = cnFormatDateLabel_(CN_STATE.historyDate);
+    var endLabel = cnFormatDateLabel_(CN_STATE.historyEndDate);
+    if (summary) summary.innerHTML = '<div class="cn-history-summary">' +
+      esc(startLabel) + ' – ' + esc(endLabel) + ' · ' + notes.length + ' note' + (notes.length !== 1 ? 's' : '') + '</div>';
+
+    // Group by dateLocal, newest dates first
+    var groups = [];
+    var groupMap = {};
+    notes.forEach(function (n) {
+      var d = n.dateLocal || 'Unknown';
+      if (!groupMap[d]) { groupMap[d] = []; groups.push(d); }
+      groupMap[d].push(n);
+    });
+    groups.sort(function (a, b) { return b.localeCompare(a); });
+    var html = '';
+    groups.forEach(function (d) {
+      html += '<div class="cn-date-separator">' + esc(cnFormatDateLabel_(d)) + '</div>';
+      html += groupMap[d].map(cnRenderCard_).join('');
+    });
+    stack.innerHTML = html;
+  } else {
+    if (summary) summary.innerHTML = '';
+    stack.innerHTML = notes.map(cnRenderCard_).join('');
+  }
+}
+
+function cnFormatDateLabel_(isoDate) {
+  if (!isoDate) return '';
+  try {
+    var parts = isoDate.split('-');
+    var d = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+    return DOW_NAMES[d.getDay()] + ', ' + MONTH_NAMES[d.getMonth()] + ' ' + d.getDate();
+  } catch (e) { return isoDate; }
 }
 
 // ── Search view ────────────────────────────────────────────────────────
@@ -3696,6 +4003,23 @@ function cnEnrollmentMissingHtml_() {
 
 function cnIsMac_() {
   return /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+}
+
+function cnOpenShortcutsOverlay_() {
+  var overlay = document.getElementById('cn-shortcuts-overlay');
+  if (overlay) overlay.classList.add('open');
+}
+
+function cnFormToggleFlag_(kind) {
+  var form = document.getElementById('cn-active-form');
+  if (!form) return;
+  var btn = form.querySelector('.cn-flag-btn[data-flag="' + kind + '"]');
+  if (!btn) {
+    var item = form.querySelector('.cn-flag-more-item[data-flag="' + kind + '"]');
+    if (item) item.click();
+    return;
+  }
+  btn.click();
 }
 
 function cnFindNoteAnywhere_(noteId) {

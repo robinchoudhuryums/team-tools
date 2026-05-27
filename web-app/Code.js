@@ -1467,6 +1467,45 @@ function getMyCallNotes(options) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Returns the calling rep's notes across a date range (startDate to endDate,
+ *  inclusive). Caller-scoped via getEmployeeInfo_. Range capped at 90 days to
+ *  prevent abuse. Returns notes sorted newest-first, with the same shape as
+ *  getMyCallNotes so the client can render them identically. */
+function getMyCallNotesRange(startDate, endDate) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate))
+      return { error: 'Invalid start date (expected yyyy-MM-dd).' };
+    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate))
+      return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
+    const daySpan = Math.round(
+      (new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000
+    );
+    if (daySpan > 90) return { error: 'Date range cannot exceed 90 days.' };
+
+    const empTz = empTz_(emp);
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    const notes = [];
+    for (let i = 1; i < rows.length; i++) {
+      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+      if (rowDate < startDate || rowDate > endDate) continue;
+      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      notes.push(note);
+    }
+    notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return {
+      startDate,
+      endDate,
+      notes,
+      autoCopyFormat: CONFIG.CALL_NOTES.AUTO_COPY_FORMAT,
+      timezone: empTz,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** No-op pre-warm endpoint. Apps Script's first RPC on a cold web app pays
  *  ~500ms of script-context startup; firing this on Call Notes view enter
  *  warms the iframe so the rep's first real action (submit / flag / email)
