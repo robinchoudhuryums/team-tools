@@ -209,18 +209,17 @@ const PUNCH_LABELS_ = ['ClockIn','LunchOut','LunchIn','ClockOut'];
 // which validate via token (no employee auth).
 function doGet(e) {
   // ── Public form route ──────────────────────────────────────────────
+  // External recipients reach ?form=<token> to fill out interactive forms.
+  // No auth needed — the token validates the request.
   if (e && e.parameter && e.parameter.form) {
     return serveExternalForm_(e.parameter.form);
   }
-  // ── Internal app — verify domain user ─────────────────────────────
-  var email = '';
-  try { email = Session.getActiveUser().getEmail(); } catch(_) {}
-  if (!email || email.indexOf('@umsupply.com') < 0) {
-    return HtmlService.createHtmlOutput(
-      '<h2 style="font-family:Inter,sans-serif;color:#333">Access Restricted</h2>' +
-      '<p style="font-family:Inter,sans-serif;color:#666">This application is restricted to UMS employees.</p>'
-    ).setTitle('UMS Team Tools — Access Denied');
-  }
+  // ── Internal app ───────────────────────────────────────────────────
+  // The HTML shell loads for anyone, but every google.script.run endpoint
+  // requires getEmployeeInfo_() (returns null for non-employees), so
+  // non-employees see the shell but can't load any data or perform any
+  // actions. This is intentional — Session.getActiveUser().getEmail()
+  // is unreliable with executeAs: USER_DEPLOYING + ANYONE_ANONYMOUS.
   return HtmlService
     .createTemplateFromFile('index')
     .evaluate()
