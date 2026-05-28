@@ -728,6 +728,104 @@
   }
   .cov-cta.muted:hover { background: var(--paper-3); color: var(--ink); }
 
+  /* ─── DAY RIBBON (V4·E1) ──────────────────────────────────────────
+     Horizontal time ribbon spanning 06:00–22:00. Renders the rep's
+     scheduled shift as a dashed band (default 8a–5p CST per C3, or
+     anchored to first ClockIn + 9h when the rep has actually clocked
+     in), and their actual work + lunch intervals as filled segments.
+     Punch markers are vertical bars with a small mono-uppercase label
+     above. A pulsing 2px now-cursor renders only while the rep is
+     mid-shift; .r-now's left position is refreshed by a 60s interval
+     in script_clock.html. Compact-mode reduces to a 24px-tall strip
+     (segments + now-cursor only, no labels/axis/legend). */
+  .ribbon-wrap {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 18px 12px; margin-bottom: 14px;
+  }
+  .ribbon-axis-row {
+    position: relative; height: 14px;
+    margin-bottom: 6px;
+  }
+  .ribbon-axis-row span {
+    position: absolute; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted-2); letter-spacing: .08em;
+  }
+  .ribbon {
+    position: relative; height: 60px;
+  }
+  .ribbon-track {
+    position: absolute; left: 0; right: 0; top: 18px;
+    height: 28px; background: var(--paper-2);
+    border-radius: var(--radius-sm);
+  }
+  .r-sched {
+    position: absolute; top: -3px; bottom: -3px;
+    background: transparent;
+    border: 1.5px dashed var(--muted-3);
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+  }
+  .r-seg {
+    position: absolute; top: 0; bottom: 0;
+    border-radius: var(--radius-sm);
+    transition: width 200ms var(--ease);
+  }
+  .r-seg.work {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+  }
+  .r-seg.lunch {
+    background: var(--warn-soft);
+    border: 1px dashed var(--warn);
+  }
+  .r-punch {
+    position: absolute; top: -18px; height: 50px;
+    pointer-events: none;
+  }
+  .r-punch .bar {
+    position: absolute; top: 18px; bottom: 0; left: -1px;
+    width: 2px; background: var(--ink); opacity: 0.45;
+  }
+  .r-punch .lbl {
+    position: absolute; top: 0; left: 0; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--ink); letter-spacing: .04em;
+    background: var(--paper-card); padding: 1px 4px;
+    border: 1px solid var(--line); border-radius: 3px;
+    white-space: nowrap;
+  }
+  .r-now {
+    position: absolute; top: 12px; bottom: -6px;
+    width: 2px; background: var(--accent);
+    pointer-events: none; z-index: 2;
+    transition: left 600ms var(--ease);
+  }
+  .r-now::before {
+    content: ''; position: absolute; top: -5px; left: -3px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-glow);
+    animation: pulse 2s infinite;
+  }
+  .ribbon-legend {
+    display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+  }
+  .r-leg-item { display: inline-flex; align-items: center; gap: 6px; }
+  .r-leg-item .swatch {
+    display: inline-block; width: 14px; height: 4px;
+    border-radius: 1px; background: var(--accent);
+  }
+  .r-leg-item .swatch.lunch { background: var(--warn); }
+  .r-leg-item .swatch.sched { background: transparent; border: 1px dashed var(--muted-3); height: 8px; }
+  .r-leg-item .swatch.now {
+    width: 2px; height: 10px; background: var(--accent);
+  }
+
   /* ─── LEDGER STRIP (V1·E1) ────────────────────────────────────────
      4-cell stat row beneath the action area. Single bordered container
      with cell separators rather than gutters between separate tiles —
@@ -965,6 +1063,33 @@
   .emp-time {
     font-family: var(--mono);
     color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── EMPLOYEE 7-DAY SPARKLINE (V4·E3) ────────────────────────────
+     7-bar daily-hours sparkline inside each live-status card. Driven
+     by getManagerDashboard's recentHours[] array (server-computed
+     in-memory, no extra Sheet reads — INV-13 honored). Bars are
+     color-coded by hours: short (<6h) warn-toned, normal (≥6h) accent,
+     zero days dimmed. Total/days-worked label below. */
+  .emp-spark-wrap {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px;
+  }
+  .emp-spark {
+    flex: 1; display: flex; align-items: flex-end; gap: 2px;
+    height: 18px;
+  }
+  .emp-spark .bar {
+    flex: 1; background: var(--accent-soft); border-radius: 1px;
+    min-height: 2px;
+  }
+  .emp-spark .bar.zero  { background: var(--paper-2); min-height: 1px; }
+  .emp-spark .bar.short { background: var(--warn-soft); }
+  .emp-spark-total {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .04em;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
   }
 
   /* Manager doc-row variant — same disc treatment as above */
@@ -1715,6 +1840,54 @@
   .day-info-row.own-pending  { background: var(--warn-soft);        color: var(--warning-deep); font-weight: 500; }
   .day-info-row.own-approved { background: var(--accent-soft);      color: var(--info-deep);    font-weight: 500; }
   .day-info-row.own-denied   { background: var(--destructive-soft); color: var(--danger-deep);  font-weight: 500; }
+
+  /* ─── PTO DAY MODAL — HEADS-UP CONFLICT BANNERS (V1·E2) ──────────
+     Stacked banners above the request form: holiday (info), teammates
+     already off (warn), all-clear (ok). Tonal soft-bg matches the
+     pattern in .day-info-row but with slightly tighter padding and an
+     emphasized leading glyph so the banners scan as a unit. */
+  .conflict {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; border-radius: var(--radius);
+    font-family: var(--ui); font-size: 13px; font-weight: 500;
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }
+  .conflict:last-child { margin-bottom: 0; }
+  .conflict svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; }
+  .conflict.info { background: var(--info-soft); color: var(--info-deep); }
+  .conflict.warn { background: var(--warn-soft); color: var(--warning-deep); }
+  .conflict.ok   { background: var(--good-soft); color: var(--success-deep); }
+  .conflict.crit { background: var(--destructive-soft); color: var(--danger-deep); }
+  .conflict .conflict-sub {
+    display: block; font-weight: 400; font-size: 12px;
+    opacity: 0.85; margin-top: 2px;
+  }
+
+  /* Balance-after preview row inside the request form. Updates live
+     when the rep changes Type — leave-deduction map mirrors the
+     server's getLeaveDeduction_ (sick vs annual, 1.0 vs 0.5 days). */
+  .balance-after {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border-radius: var(--radius);
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    margin: 12px 0 6px;
+    font-family: var(--ui); font-size: 13px;
+    gap: 10px; flex-wrap: wrap;
+  }
+  .balance-after .ba-label {
+    color: var(--muted); font-family: var(--mono);
+    font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .balance-after .ba-val {
+    color: var(--ink);
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
+  }
+  .balance-after .ba-val strong { font-weight: 600; }
+  .balance-after .ba-val strong.neg { color: var(--destructive); }
+
   .day-info-row .di-icon {
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0; color: inherit;
@@ -1971,6 +2144,17 @@
   :root[data-compact="1"] .telemetry .tel-cell:nth-child(2) { border-bottom: 1px solid var(--line); }
   :root[data-compact="1"] .telemetry .tel-cell { padding: 10px 12px; }
   :root[data-compact="1"] .telemetry .tel-value { font-size: 20px; }
+  /* Day ribbon — stripped-down 24px mini-strip: keep segments + now,
+     drop labels/axis/legend to save vertical space in the pop-out. */
+  :root[data-compact="1"] .ribbon-wrap { padding: 8px 10px 6px; margin-bottom: 10px; }
+  :root[data-compact="1"] .ribbon-axis-row { display: none; }
+  :root[data-compact="1"] .ribbon { height: 24px; }
+  :root[data-compact="1"] .ribbon-track { top: 0; height: 24px; }
+  :root[data-compact="1"] .r-punch .lbl { display: none; }
+  :root[data-compact="1"] .r-punch { top: 0; height: 24px; }
+  :root[data-compact="1"] .r-punch .bar { top: 0; bottom: 0; }
+  :root[data-compact="1"] .r-now { top: -2px; bottom: -2px; }
+  :root[data-compact="1"] .ribbon-legend { display: none; }
   :root[data-compact="1"] .modal {
     max-width: 100%;
     padding: 18px 18px;

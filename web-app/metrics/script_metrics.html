@@ -173,10 +173,106 @@
 }
 .m-preset-chip:hover { background: var(--accent-soft); color: var(--accent); }
 
+/* ── Hero + Rail layout (V4·E4) ────────────────────────────────────
+   Replaces the prior 6-tile KPI grid with a hero answer-rate +
+   side rail of supporting metrics. Hero carries the big tabular
+   number + "vs avg" delta + 30-day sparkline; the rail stacks
+   .m-row cards each with their own value + comparison. */
+.m-layout {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+.m-hero {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: flex; flex-direction: column;
+  min-width: 0;
+}
+.m-hero-label {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.m-hero-value {
+  font-family: var(--mono); font-size: 56px; font-weight: 500;
+  line-height: 1; letter-spacing: -.02em; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum', 'ss01';
+  display: flex; align-items: baseline; gap: 6px;
+}
+.m-hero-value .unit {
+  font-size: 24px; font-weight: 400; color: var(--muted);
+  letter-spacing: 0;
+}
+.m-hero-delta {
+  font-family: var(--ui); font-size: 13px;
+  color: var(--muted); margin-top: 8px;
+}
+.m-hero-delta .pos { color: var(--success-deep); font-weight: 600; }
+.m-hero-delta .neg { color: var(--danger-deep); font-weight: 600; }
+.m-hero-delta .neu { color: var(--muted); font-weight: 600; }
+.m-hero-spark {
+  margin-top: auto; padding-top: var(--space-sm);
+}
+.m-hero-spark svg { display: block; width: 100%; height: 60px; }
+.m-hero-spark line { stroke: var(--line); stroke-width: 0.5; }
+.m-hero-spark polyline {
+  fill: none; stroke: var(--accent); stroke-width: 1.5;
+  stroke-linejoin: round; stroke-linecap: round;
+}
+.m-hero-spark circle { fill: var(--accent); }
+.m-hero-spark .baseline {
+  stroke: var(--muted-3); stroke-width: 0.5; stroke-dasharray: 2 3;
+}
+.m-hero-spark-labels {
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--muted); margin-top: 2px;
+  font-family: var(--mono); letter-spacing: .04em;
+}
+
+.m-rail {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.m-row {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 6px; align-items: center;
+}
+.m-row-label {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+}
+.m-row-value {
+  font-family: var(--mono); font-size: 18px; font-weight: 500;
+  color: var(--ink); line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum', 'ss01';
+  text-align: right;
+}
+.m-row-value.warn  { color: var(--warning-deep); }
+.m-row-value.good  { color: var(--success-deep); }
+.m-row-value.crit  { color: var(--danger-deep); }
+.m-row-sub {
+  grid-column: 1 / -1;
+  font-family: var(--ui); font-size: 11px; color: var(--muted);
+  margin-top: 2px;
+}
+
 /* ── Compact mode ───────────────────────────────────────────────── */
 :root[data-compact] .m-kpi-grid { grid-template-columns: repeat(3, 1fr); }
 :root[data-compact] .m-kpi-value { font-size: 1.2rem; }
 :root[data-compact] .m-sparkline-svg { height: 40px; }
+:root[data-compact] .m-layout { grid-template-columns: 1fr; gap: var(--space-sm); }
+:root[data-compact] .m-hero-value { font-size: 42px; }
+:root[data-compact] .m-hero-value .unit { font-size: 18px; }
+:root[data-compact] .m-hero-spark svg { height: 40px; }
 </style>
 
 <script>
@@ -302,49 +398,127 @@ function mRenderMyStats_(data) {
   var c = data.cdr;
   var html = '';
 
+  // No CDR data → minimal fallback (per S43)
   if (!c) {
     html += '<div class="m-empty">No call data found for ' + data.date +
       '. This may be a non-working day, or the CDR spreadsheet is not yet configured.</div>';
-    html += '<div class="m-section-title">Call Notes</div>';
-    html += '<div class="m-kpi-grid"><div class="m-kpi"><div class="m-kpi-value">' +
-      data.noteCount + '</div><div class="m-kpi-label">Notes Filed</div></div></div>';
+    html += '<div class="m-row" style="margin-top:var(--space-sm)">' +
+      '<span class="m-row-label">Notes Filed</span>' +
+      '<span class="m-row-value">' + data.noteCount + '</span></div>';
     el.innerHTML = html;
     return;
   }
 
-  // KPI tiles
-  html += '<div class="m-kpi-grid">';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' + c.totalRung + '</div><div class="m-kpi-label">Rung</div></div>';
-  html += '<div class="m-kpi m-kpi--good"><div class="m-kpi-value">' + c.totalAnswered + '</div><div class="m-kpi-label">Answered</div></div>';
-  html += '<div class="m-kpi' + (c.totalMissed > 0 ? ' m-kpi--warn' : '') + '"><div class="m-kpi-value">' + c.totalMissed + '</div><div class="m-kpi-label">Missed</div></div>';
-  html += '<div class="m-kpi m-kpi--accent"><div class="m-kpi-value">' + c.pctAnswered + '%</div><div class="m-kpi-label">% Answered</div></div>';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' + c.tttFormatted + '</div><div class="m-kpi-label">Total Talk</div></div>';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' + c.attFormatted + '</div><div class="m-kpi-label">Avg Talk</div></div>';
-  html += '</div>';
-
-  // Notes correlation
-  html += '<div class="m-section-title">Call Notes Correlation</div>';
-  html += '<div class="m-kpi-grid">';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' + data.noteCount + '</div><div class="m-kpi-label">Notes Filed</div></div>';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' + c.totalAnswered + '</div><div class="m-kpi-label">Calls Answered</div></div>';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' +
-    (data.noteCoverage != null ? data.noteCoverage + '%' : '—') +
-    '</div><div class="m-kpi-label">Note Coverage</div></div>';
-  html += '</div>';
-
-  if (data.noteCoverage != null) {
-    html += '<div style="margin-top:var(--space-xs)">' + mCoverageBadge_(data.noteCoverage) + '</div>';
-    if (data.noteCoverage < 80) {
-      html += '<div class="m-hint">Coverage below 80% — some answered calls may not have a corresponding note.</div>';
-    }
+  // V4·E4 — Hero + Rail layout. Hero = % answered + vs-avg + 30-day
+  // sparkline. Rail = notes filed, coverage, missed, avg/total talk.
+  var avg = mTrendAvg_(data.trend, 'pctAnswered');
+  var deltaHtml = '';
+  if (avg != null && c.pctAnswered != null) {
+    var d = c.pctAnswered - avg;
+    var sign = d > 0.05 ? 'pos' : (d < -0.05 ? 'neg' : 'neu');
+    var label = d > 0.05 ? '+' + Math.abs(d).toFixed(1)
+              : d < -0.05 ? '−' + Math.abs(d).toFixed(1)
+              : '±0';
+    deltaHtml = '<div class="m-hero-delta">' +
+      '<span class="' + sign + '">' + label + ' pts</span> vs 30-day average (' + avg.toFixed(1) + '%)</div>';
   }
 
-  // 30-day trend sparkline
-  if (data.trend) {
-    html += mBuildSparkline_(data.trend, 'pctAnswered');
+  html += '<div class="m-layout">';
+  html += '<div class="m-hero">';
+  html += '<div class="m-hero-label">Today · % Answered</div>';
+  html += '<div class="m-hero-value">' + c.pctAnswered + '<span class="unit">%</span></div>';
+  html += deltaHtml;
+  if (data.trend && data.trend.length > 1) {
+    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg) + '</div>';
+    var firstLabel = data.trend[0].date ? data.trend[0].date.substring(5) : '';
+    var lastLabel = data.trend[data.trend.length - 1].date ? data.trend[data.trend.length - 1].date.substring(5) : '';
+    html += '<div class="m-hero-spark-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>';
+  }
+  html += '</div>';
+
+  // Side rail
+  html += '<div class="m-rail">';
+  html += mRailRow_('Notes filed', data.noteCount,
+    data.noteCoverage != null ? data.noteCoverage + '% coverage' : null);
+  html += mRailRow_('Calls answered', c.totalAnswered, 'good');
+  html += mRailRow_('Missed', c.totalMissed, c.totalMissed > 0 ? 'warn' : 'good',
+    c.totalMissed > 0 ? c.totalMissed + ' calls unanswered' : 'no missed calls');
+  html += mRailRow_('Avg talk', c.attFormatted);
+  html += mRailRow_('Total talk', c.tttFormatted);
+  html += '</div>';
+  html += '</div>';
+
+  if (data.noteCoverage != null && data.noteCoverage < 80) {
+    html += '<div class="m-hint">' + mCoverageBadge_(data.noteCoverage) +
+      ' &nbsp; Coverage below 80% — some answered calls may not have a corresponding note.</div>';
   }
 
   el.innerHTML = html;
+}
+
+/** Average a metric across the trend array, skipping null/missing values. */
+function mTrendAvg_(trend, metric) {
+  if (!trend || !trend.length) return null;
+  var sum = 0, n = 0;
+  for (var i = 0; i < trend.length; i++) {
+    var v = trend[i][metric];
+    if (v != null && !isNaN(v)) { sum += v; n++; }
+  }
+  return n > 0 ? sum / n : null;
+}
+
+/** Hero sparkline — same data shape as mBuildSparkline_ but inlined with
+ *  a dashed baseline at the trend average (visual anchor for the
+ *  "vs avg" comparison in the hero delta line). */
+function mBuildHeroSparkSvg_(trend, metric, avg) {
+  metric = metric || 'pctAnswered';
+  var pts = [];
+  for (var i = 0; i < trend.length; i++) {
+    var v = trend[i][metric];
+    if (v != null) pts.push({ i: i, v: v });
+  }
+  if (pts.length < 2) return '';
+  var maxV = 0;
+  for (var j = 0; j < pts.length; j++) { if (pts[j].v > maxV) maxV = pts[j].v; }
+  if (maxV === 0) maxV = 1;
+  var w = 300, h = 60, pad = 4;
+  var xScale = (w - pad * 2) / (trend.length - 1);
+  var yScale = (h - pad * 2) / maxV;
+  var coords = pts.map(function (p) {
+    return (pad + p.i * xScale).toFixed(1) + ',' + (h - pad - p.v * yScale).toFixed(1);
+  });
+  var last = pts[pts.length - 1];
+  var lx = (pad + last.i * xScale).toFixed(1);
+  var ly = (h - pad - last.v * yScale).toFixed(1);
+  var baselineHtml = '';
+  if (avg != null) {
+    var by = (h - pad - avg * yScale).toFixed(1);
+    baselineHtml = '<line class="baseline" x1="' + pad + '" y1="' + by + '" x2="' + (w - pad) + '" y2="' + by + '"/>';
+  }
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    baselineHtml +
+    '<polyline points="' + coords.join(' ') + '"/>' +
+    '<circle cx="' + lx + '" cy="' + ly + '" r="2.5"/>' +
+    '</svg>';
+}
+
+/** Single rail row. Value is rendered with the optional tone class
+ *  (warn/good/crit); a sub-line below is optional. */
+function mRailRow_(label, value, toneOrSub, sub) {
+  var tone = '';
+  var subLine = '';
+  // Polymorphic 3rd arg: 'good'/'warn'/'crit' → tone class; anything else → sub line.
+  if (toneOrSub === 'good' || toneOrSub === 'warn' || toneOrSub === 'crit') {
+    tone = toneOrSub;
+    if (sub) subLine = '<div class="m-row-sub">' + sub + '</div>';
+  } else if (toneOrSub) {
+    subLine = '<div class="m-row-sub">' + toneOrSub + '</div>';
+  }
+  return '<div class="m-row">' +
+    '<span class="m-row-label">' + label + '</span>' +
+    '<span class="m-row-value' + (tone ? ' ' + tone : '') + '">' + value + '</span>' +
+    subLine +
+    '</div>';
 }
 
 // ── Team Metrics view (manager-only) ──────────────────────────────────
@@ -443,29 +617,50 @@ function mRenderTeamMetrics_(data) {
   var t = data.teamTotals;
   var html = '';
 
-  // Team KPI tiles
-  html += '<div class="m-kpi-grid">';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' + t.rung + '</div><div class="m-kpi-label">Team Rung</div></div>';
-  html += '<div class="m-kpi m-kpi--good"><div class="m-kpi-value">' + t.answered + '</div><div class="m-kpi-label">Team Answered</div></div>';
-  html += '<div class="m-kpi' + (t.missed > 0 ? ' m-kpi--warn' : '') + '"><div class="m-kpi-value">' + t.missed + '</div><div class="m-kpi-label">Team Missed</div></div>';
-  html += '<div class="m-kpi m-kpi--accent"><div class="m-kpi-value">' + t.pctAnswered + '%</div><div class="m-kpi-label">% Answered</div></div>';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' + t.tttFormatted + '</div><div class="m-kpi-label">Total Talk</div></div>';
-  html += '<div class="m-kpi"><div class="m-kpi-value">' + t.noteCount + '</div><div class="m-kpi-label">Notes Filed</div></div>';
+  // V4·E4 — Hero + Rail. Hero = team % Answered + 30-day trend (single-day
+  // only — multi-day ranges hide the sparkline since trend isn't meaningful).
+  var avg = data.trend ? mTrendAvg_(data.trend, 'pctAnswered') : null;
+  var deltaHtml = '';
+  if (avg != null && t.pctAnswered != null) {
+    var d = t.pctAnswered - avg;
+    var sign = d > 0.05 ? 'pos' : (d < -0.05 ? 'neg' : 'neu');
+    var label = d > 0.05 ? '+' + Math.abs(d).toFixed(1)
+              : d < -0.05 ? '−' + Math.abs(d).toFixed(1)
+              : '±0';
+    deltaHtml = '<div class="m-hero-delta">' +
+      '<span class="' + sign + '">' + label + ' pts</span> vs 30-day team average (' + avg.toFixed(1) + '%)</div>';
+  }
+  var heroLabel = (data.from && data.to && data.from !== data.to)
+    ? data.from + ' → ' + data.to + ' · Team % Answered'
+    : 'Team · % Answered';
+
+  html += '<div class="m-layout">';
+  html += '<div class="m-hero">';
+  html += '<div class="m-hero-label">' + heroLabel + '</div>';
+  html += '<div class="m-hero-value">' + t.pctAnswered + '<span class="unit">%</span></div>';
+  html += deltaHtml;
+  if (data.trend && data.trend.length > 1) {
+    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg) + '</div>';
+    var firstLabel = data.trend[0].date ? data.trend[0].date.substring(5) : '';
+    var lastLabel = data.trend[data.trend.length - 1].date ? data.trend[data.trend.length - 1].date.substring(5) : '';
+    html += '<div class="m-hero-spark-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>';
+  }
   html += '</div>';
 
-  if (t.noteCoverage != null) {
-    html += '<div style="margin-bottom:var(--space-md)">' + mCoverageBadge_(t.noteCoverage) +
-      ' <span class="m-hint" style="margin:0">team-wide note-to-call ratio</span></div>';
-  }
+  // Side rail
+  html += '<div class="m-rail">';
+  html += mRailRow_('Rung', t.rung);
+  html += mRailRow_('Answered', t.answered, 'good');
+  html += mRailRow_('Missed', t.missed, t.missed > 0 ? 'warn' : 'good');
+  html += mRailRow_('Total talk', t.tttFormatted);
+  html += mRailRow_('Notes filed', t.noteCount,
+    t.noteCoverage != null ? t.noteCoverage + '% coverage' : null);
+  html += '</div>';
+  html += '</div>';
 
-  // 30-day trend sparkline (only shown on single-day view)
-  if (data.trend) {
-    html += mBuildSparkline_(data.trend, 'pctAnswered');
-  }
-
-  // Date range label
-  if (data.from && data.to && data.from !== data.to) {
-    html += '<div class="m-hint">' + data.from + ' to ' + data.to + '</div>';
+  if (t.noteCoverage != null && t.noteCoverage < 80) {
+    html += '<div class="m-hint">' + mCoverageBadge_(t.noteCoverage) +
+      ' &nbsp; Team-wide coverage below 80%.</div>';
   }
 
   // Per-rep table

@@ -73,6 +73,8 @@ function renderClockView(area) {
 
     ${renderActions(s.nextActions)}
 
+    ${renderDayRibbon_(s.punches, stats, tz)}
+
     <div id="clk-cov-slot"></div>
 
     ${renderLedger_(s, stats)}
@@ -221,6 +223,150 @@ function lazyUpdatePayPeriodCell_() {
   val.textContent = fmtHrs(tsData.totalHours);
   val.classList.remove('muted');
   sub.textContent = `${tsData.daysWorked || 0} days worked`;
+}
+
+// ── DAY RIBBON (V4·E1) ─────────────────────────────────────────────────
+// Horizontal time-of-day ribbon spanning 06:00–22:00. Renders the rep's
+// scheduled shift (dashed band, default 8a–5p CST per C3 or anchored to
+// first ClockIn + 9h once they've clocked in) and their actual work +
+// lunch segments. Punch markers + a pulsing now-cursor complete the
+// picture. The now-cursor is refreshed every 60s by RIBBON_NOW_INTERVAL.
+const RIBBON_START_MIN = 6 * 60;    // 06:00 → 360
+const RIBBON_END_MIN   = 22 * 60;   // 22:00 → 1320
+const RIBBON_SPAN_MIN  = RIBBON_END_MIN - RIBBON_START_MIN;  // 960
+const RIBBON_DEFAULT_SHIFT_START = 8 * 60;   // 08:00 — default CST shift start (C3)
+const RIBBON_DEFAULT_SHIFT_LEN   = 9 * 60;   // 9h
+
+function ribbonPct_(min) {
+  if (typeof min !== 'number' || isNaN(min)) return 0;
+  return Math.max(0, Math.min(100, ((min - RIBBON_START_MIN) / RIBBON_SPAN_MIN) * 100));
+}
+function ribbonTimeToMin_(hms) {
+  const p = String(hms || '').split(':');
+  if (p.length < 2) return NaN;
+  return (parseInt(p[0],10)||0) * 60 + (parseInt(p[1],10)||0) + (parseInt(p[2],10)||0)/60;
+}
+function ribbonFormatHm_(min) {
+  const total = ((min % 1440) + 1440) % 1440;
+  const h24 = Math.floor(total / 60), mm = Math.floor(total % 60);
+  const h12 = h24 % 12 || 12;
+  const ampm = h24 >= 12 ? 'p' : 'a';
+  return `${h12}:${String(mm).padStart(2,'0')}${ampm}`;
+}
+const RIBBON_PUNCH_LABELS = { ClockIn: 'IN', LunchOut: 'LO', LunchIn: 'LI', ClockOut: 'OUT' };
+
+function renderDayRibbon_(punches, stats, tz) {
+  // Determine the scheduled band. If the rep has clocked in, anchor to
+  // their actual first ClockIn + 9h (better matches non-standard shifts).
+  // Otherwise use the 8a–5p CST default per C3.
+  let schedStart = RIBBON_DEFAULT_SHIFT_START;
+  let schedEnd   = RIBBON_DEFAULT_SHIFT_START + RIBBON_DEFAULT_SHIFT_LEN;
+  if (punches && punches.length) {
+    const firstIn = punches.find(p => p.type === 'ClockIn');
+    if (firstIn) {
+      const firstInMin = ribbonTimeToMin_(firstIn.time);
+      if (!isNaN(firstInMin)) {
+        schedStart = firstInMin;
+        schedEnd   = firstInMin + RIBBON_DEFAULT_SHIFT_LEN;
+      }
+    }
+  }
+
+  // Build the segment list by walking punches; an open trailing session
+  // (rep still working / on lunch) extends to "now".
+  const segments = [];
+  let curState = 'out', curStart = null;
+  (punches || []).forEach(p => {
+    const t = ribbonTimeToMin_(p.time);
+    if (isNaN(t)) return;
+    if (curState === 'working' && curStart !== null) {
+      segments.push({ type: 'work', startMin: curStart, endMin: t });
+    } else if (curState === 'lunch' && curStart !== null) {
+      segments.push({ type: 'lunch', startMin: curStart, endMin: t });
+    }
+    if (p.type === 'ClockIn' || p.type === 'LunchIn') { curState = 'working'; curStart = t; }
+    else if (p.type === 'LunchOut') { curState = 'lunch'; curStart = t; }
+    else if (p.type === 'ClockOut') { curState = 'out'; curStart = null; }
+  });
+  const isActive = (curState === 'working' || curState === 'lunch') && curStart !== null;
+  if (isActive) {
+    const nowMin = ribbonTimeToMin_(liveTimeHmsTz(tz));
+    segments.push({ type: curState === 'lunch' ? 'lunch' : 'work', startMin: curStart, endMin: nowMin });
+  }
+
+  // Compose markup.
+  const schedLeft = ribbonPct_(schedStart);
+  const schedWidth = Math.max(0, ribbonPct_(schedEnd) - ribbonPct_(schedStart));
+  const segHtml = segments.map(s => {
+    const l = ribbonPct_(s.startMin);
+    const w = Math.max(0, ribbonPct_(s.endMin) - ribbonPct_(s.startMin));
+    if (w <= 0) return '';
+    return `<div class="r-seg ${s.type}" style="left:${l.toFixed(2)}%;width:${w.toFixed(2)}%"
+      title="${RIBBON_PUNCH_LABELS[s.type === 'lunch' ? 'LunchOut' : 'ClockIn'] || ''} ${ribbonFormatHm_(s.startMin)}–${ribbonFormatHm_(s.endMin)}"></div>`;
+  }).join('');
+
+  const punchHtml = (punches || []).map(p => {
+    const m = ribbonTimeToMin_(p.time);
+    if (isNaN(m)) return '';
+    if (m < RIBBON_START_MIN || m > RIBBON_END_MIN) return '';
+    const lbl = RIBBON_PUNCH_LABELS[p.type] || '';
+    return `<div class="r-punch" style="left:${ribbonPct_(m).toFixed(2)}%">
+      <span class="lbl">${esc(lbl)} ${esc(ribbonFormatHm_(m))}</span>
+      <span class="bar"></span>
+    </div>`;
+  }).join('');
+
+  const nowMin = ribbonTimeToMin_(liveTimeHmsTz(tz));
+  const nowHtml = isActive && !isNaN(nowMin)
+    ? `<div class="r-now" id="r-now-cursor" style="left:${ribbonPct_(nowMin).toFixed(2)}%"></div>`
+    : '';
+
+  // Hour axis labels at 06, 09, 12, 15, 18, 21.
+  const axisHours = [6, 9, 12, 15, 18, 21];
+  const axisHtml = axisHours.map(h => {
+    const pct = ribbonPct_(h * 60);
+    const label = h === 12 ? '12p' : (h < 12 ? `${h}a` : `${h - 12}p`);
+    return `<span style="left:${pct.toFixed(2)}%">${label}</span>`;
+  }).join('');
+
+  return `<div class="ribbon-wrap">
+    <div class="ribbon-axis-row">${axisHtml}</div>
+    <div class="ribbon">
+      <div class="ribbon-track">
+        <div class="r-sched" style="left:${schedLeft.toFixed(2)}%;width:${schedWidth.toFixed(2)}%"
+          title="Scheduled ${ribbonFormatHm_(schedStart)}–${ribbonFormatHm_(schedEnd)}"></div>
+        ${segHtml}
+        ${punchHtml}
+        ${nowHtml}
+      </div>
+    </div>
+    <div class="ribbon-legend">
+      <span class="r-leg-item"><span class="swatch"></span>Worked</span>
+      <span class="r-leg-item"><span class="swatch lunch"></span>Lunch</span>
+      <span class="r-leg-item"><span class="swatch sched"></span>Scheduled</span>
+      ${isActive ? `<span class="r-leg-item"><span class="swatch now"></span>Now</span>` : ''}
+    </div>
+  </div>`;
+}
+
+let _ribbonNowInterval = null;
+/** Refreshes the .r-now cursor's left position every 60s. Called from
+ *  startClock(); cleared by stopClock(). Cursor element is rendered
+ *  inside renderClockView; if it's not in the DOM (rep not currently
+ *  active or nav'd away), the interval no-ops. */
+function startRibbonNowCursor_() {
+  stopRibbonNowCursor_();
+  const tz = empTz();
+  const tick = () => {
+    const cursor = document.getElementById('r-now-cursor');
+    if (!cursor) return;
+    const nowMin = ribbonTimeToMin_(liveTimeHmsTz(tz));
+    cursor.style.left = ribbonPct_(nowMin).toFixed(2) + '%';
+  };
+  _ribbonNowInterval = setInterval(tick, 60000);
+}
+function stopRibbonNowCursor_() {
+  if (_ribbonNowInterval) { clearInterval(_ribbonNowInterval); _ribbonNowInterval = null; }
 }
 
 /** Note-coverage strip (V1·E3). Fetches via getMyMetrics(today). Renders
@@ -551,8 +697,12 @@ function startClock() {
     }
   };
   tick(); clockInterval = setInterval(tick, 1000);
+  startRibbonNowCursor_();
 }
-function stopClock() { if (clockInterval) { clearInterval(clockInterval); clockInterval = null; } }
+function stopClock() {
+  if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+  stopRibbonNowCursor_();
+}
 
 function handlePunch(punchType) {
   const tz = empTz();

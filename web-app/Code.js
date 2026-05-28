@@ -529,6 +529,48 @@ function getManagerDashboard() {
     liveStatus.sort((a, b) =>
       statusRank[a.status] - statusRank[b.status] || a.name.localeCompare(b.name));
 
+    // ── Per-employee 7-day sparkline (V4·E3) ─────────────────────────
+    // Builds a 7-element recentHours[] (oldest→newest, excludes today
+    // since reps still mid-shift would always register as 0 hours)
+    // for each liveStatus entry. Reuses already-loaded adpRows; one
+    // extra in-memory pass — no Sheet reads, INV-13 honored.
+    const sparkDays = 7;
+    const sparkStart = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - sparkDays);
+      return fmtDateTz_(d, mgrTz);
+    })();
+    const sparkEnd = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - 1);
+      return fmtDateTz_(d, mgrTz);
+    })();
+    const sparkPunchMap = {}; // {empId}|{date} → { ClockIn, LunchOut, LunchIn, ClockOut }
+    for (let i = 2; i < adpRows.length; i++) {
+      const id = String(adpRows[i][ADP.EMP_ID]).trim();
+      if (!empById[id]) continue;
+      const rowDate = normalizeDate_(adpRows[i][ADP.DATE]);
+      if (rowDate < sparkStart || rowDate > sparkEnd) continue;
+      const key = `${id}|${rowDate}`;
+      if (!sparkPunchMap[key]) sparkPunchMap[key] = {};
+      const ptype = normalizeType_(String(adpRows[i][ADP.COMMENTS]));
+      sparkPunchMap[key][ptype] = normalizeTime_(adpRows[i][ADP.TIME]);
+    }
+    const sparkHoursMap = {};
+    Object.keys(sparkPunchMap).forEach(key => {
+      const p = sparkPunchMap[key];
+      if (p.ClockIn && p.ClockOut) {
+        sparkHoursMap[key] = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+      }
+    });
+    liveStatus.forEach(ls => {
+      const arr = [];
+      for (let off = sparkDays; off >= 1; off--) {
+        const dd = new Date(now); dd.setDate(dd.getDate() - off);
+        const ds = fmtDateTz_(dd, mgrTz);
+        arr.push({ date: ds, hours: sparkHoursMap[`${ls.id}|${ds}`] || 0 });
+      }
+      ls.recentHours = arr;
+    });
+
     // Pending time-off (with leave balance context).
     // Also build a date→[approved/pending requests] index up-front so each
     // pending entry can carry conflict context (other reps off the same day,
