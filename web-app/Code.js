@@ -176,6 +176,68 @@ const CN_HEADERS = [
   'Subform','SubformData',
 ];
 const CN_FLAG_TYPES = ['action','training','review'];
+// Round 2 · 8e — extended flag set for the multi-select toolbar. 'urgent'
+// is new; pin lives separately in subformData.pinned (subject to its own
+// 3-cap, INV-50). Order matters — it drives deriveFlagType_'s priority.
+const CN_FLAG_TYPES_EXTENDED = ['action','training','review','urgent'];
+const CN_FLAG_PRIORITY = ['action','training','review','urgent'];
+
+/** Round 2 · 8e — derives the single FlagType column value from a
+ *  multi-select flags array. Maintains backward compat with existing
+ *  manager digests (managerGetReviewCandidates, weekly digest, EOD
+ *  digest, INV-37 sanitizeFlagType_) by picking the highest-priority
+ *  flag that the legacy infrastructure understands. 'urgent' (new in
+ *  Round 2) only becomes FlagType when no higher-priority flag is set;
+ *  otherwise it lives in subformData.flags only. */
+function deriveFlagType_(flagsArray) {
+  if (!Array.isArray(flagsArray) || flagsArray.length === 0) return '';
+  const set = {};
+  flagsArray.forEach(function (f) { set[String(f || '').toLowerCase()] = true; });
+  for (var i = 0; i < CN_FLAG_PRIORITY.length; i++) {
+    if (set[CN_FLAG_PRIORITY[i]]) {
+      // For the legacy FlagType column, only return values that existing
+      // infrastructure understands (CN_FLAG_TYPES). 'urgent' falls through
+      // since none of the existing digests/queues look for it.
+      if (CN_FLAG_TYPES.indexOf(CN_FLAG_PRIORITY[i]) >= 0) return CN_FLAG_PRIORITY[i];
+    }
+  }
+  return '';
+}
+
+/** Round 2 · 8e — normalize the multi-flag array. Lowercases, dedupes,
+ *  rejects unknowns, drops empty strings. */
+function sanitizeFlagsArray_(arr) {
+  if (!Array.isArray(arr)) return [];
+  const seen = {};
+  const out = [];
+  for (var i = 0; i < arr.length; i++) {
+    const f = String(arr[i] || '').trim().toLowerCase();
+    if (!f) continue;
+    if (CN_FLAG_TYPES_EXTENDED.indexOf(f) < 0) continue;
+    if (seen[f]) continue;
+    seen[f] = true;
+    out.push(f);
+  }
+  return out;
+}
+
+/** Round 2 · 8e — normalize the free-text tag array. Each tag is forced
+ *  to lowercase kebab-case (a–z, 0–9, hyphen), length 2–24, max 8 tags.
+ *  Matches the client-side validation in cnNormalizeTag_. */
+function sanitizeTagsArray_(arr) {
+  if (!Array.isArray(arr)) return [];
+  const seen = {};
+  const out = [];
+  for (var i = 0; i < arr.length && out.length < 8; i++) {
+    const raw = String(arr[i] || '').trim().toLowerCase();
+    const tag = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (tag.length < 2 || tag.length > 24) continue;
+    if (seen[tag]) continue;
+    seen[tag] = true;
+    out.push(tag);
+  }
+  return out;
+}
 
 // CDR / DQE Historical Data column positions (1-indexed, matching Config.gs
 // in call-data-reporting). Duration columns (TTT, ATT, AVG_ABD_WAIT,
@@ -1849,6 +1911,53 @@ function getEnrolledCallNotesReps() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every
+ *  enrolled rep's call-notes Sheet for subformData.tags[] entries and
+ *  returns unique tags with usage counts. Manager-gated; read-only.
+ *  Returns: { tags: [{ tag, count, lastSeen }], totalNotes, repsScanned }. */
+function getCallNotesTagTaxonomy() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const roster = getEmployeeRosterRows_();
+    const counts = {};       // tag → { tag, count, lastSeen }
+    let totalNotes = 0;
+    let repsScanned = 0;
+    for (let i = 1; i < roster.length; i++) {
+      const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      try {
+        const repEmp = {
+          id: String(roster[i][EMP.ID]).trim(),
+          callNotesSheetId: String(sheetId).trim(),
+        };
+        const sheet = getCallNotesSheet_(repEmp);
+        const rows = sheet.getDataRange().getValues();
+        repsScanned++;
+        for (let j = 1; j < rows.length; j++) {
+          totalNotes++;
+          const subRaw = rows[j][CN.SUBFORM_DATA];
+          if (!subRaw) continue;
+          let sub = null;
+          try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+          if (!sub || !Array.isArray(sub.tags)) continue;
+          const dateLocal = normalizeDate_(rows[j][CN.DATE_LOCAL]);
+          sub.tags.forEach(function (t) {
+            const tag = String(t || '').trim().toLowerCase();
+            if (!tag) return;
+            if (!counts[tag]) counts[tag] = { tag: tag, count: 0, lastSeen: '' };
+            counts[tag].count++;
+            if (dateLocal > counts[tag].lastSeen) counts[tag].lastSeen = dateLocal;
+          });
+        }
+      } catch (e) { /* skip unreachable rep sheet */ }
+    }
+    const tags = Object.keys(counts).map(function (k) { return counts[k]; });
+    tags.sort(function (a, b) { return b.count - a.count || a.tag.localeCompare(b.tag); });
+    return { tags: tags, totalNotes: totalNotes, repsScanned: repsScanned };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Manager view of any single rep's notes. */
 function managerGetCallNotes(repEmpId, date, filter) {
   try {
@@ -2262,10 +2371,22 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
 
     const trimmed = String(reply || '').trim();
     const empTz = target.timezone || CONFIG.TIMEZONE;
+    const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
     if (trimmed) {
       subformData.trainingReply = trimmed;
       subformData.trainingReplyBy = callerEmp.email;
-      subformData.trainingReplyAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+      subformData.trainingReplyAt = nowIso;
+      // Round 2 · 8g — also append to feedback[] so multi-turn threads can
+      // build on top. Legacy clients still see trainingReply; new clients
+      // walk the feedback array. trainingQuestion stays as the seed entry.
+      subformData.feedback = Array.isArray(subformData.feedback) ? subformData.feedback : [];
+      subformData.feedback.push({
+        role: 'manager',
+        message: trimmed,
+        at: nowIso,
+        by: callerEmp.email,
+        kind: 'reply',
+      });
     } else {
       delete subformData.trainingReply;
       delete subformData.trainingReplyBy;
@@ -2277,6 +2398,63 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
     writeAuditLog_(target, 'CallNoteTrainingReply', dateLocal, '', false, 0,
       `noteId=${noteId}; ${trimmed ? 'reply set' : 'reply cleared'}`,
       callerEmp.email);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Round 2 · 8g — Agent responds to a manager's training feedback. Appends
+ *  to subformData.feedback[] with the agent's role + kind ('ack' for the
+ *  thumbs-up acknowledgment, 'clarification' for a follow-up question).
+ *  Rep-callable (operates on the caller's own per-rep Sheet); locked.
+ *  Writes a CallNoteFeedback audit row. */
+function appendCallNoteFeedback(noteId, message, kind) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { success: false, error: 'Your call-notes Sheet is not configured.' };
+
+    const kindV = (kind === 'ack' || kind === 'clarification') ? kind : 'clarification';
+    const trimmed = String(message || '').trim();
+    if (kindV === 'clarification' && !trimmed) {
+      return { success: false, error: 'Please type a question before sending.' };
+    }
+
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
+    if (flagType !== 'training') {
+      return { success: false, error: 'Feedback applies only to training-flagged notes.' };
+    }
+
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); }
+      catch (e) { subformData = null; }
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+    if (!Array.isArray(subformData.feedback)) subformData.feedback = [];
+
+    const empTz = empTz_(emp);
+    const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    subformData.feedback.push({
+      role: 'agent',
+      message: kindV === 'ack' ? '' : trimmed,
+      at: nowIso,
+      by: emp.email,
+      kind: kindV,
+    });
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNoteFeedback', dateLocal, '', false, 0,
+      `noteId=${noteId}; kind=${kindV}`);
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -2330,6 +2508,23 @@ function managerAggregateFlagged_(flagType, dateRange) {
 
 function sanitizeCallNotePayload_(p) {
   const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+  // Round 2 · 8e — accept multi-flag array (p.flags) + tags (p.tags) in
+  // addition to the legacy single-select p.flagType. When p.flags is
+  // present, derive FlagType from it (priority order); fall back to
+  // p.flagType otherwise so old clients still work.
+  const flagsArr = sanitizeFlagsArray_(p.flags);
+  const derivedFromArr = flagsArr.length > 0 ? deriveFlagType_(flagsArr) : '';
+  const flagType = derivedFromArr || s(p.flagType).toLowerCase();
+  const tagsArr = sanitizeTagsArray_(p.tags);
+  // Merge tags/flags into subformData so the schema stays in one column
+  // (per X5 — no new sheet column). Pin stays in subformData.pinned with
+  // its 3-cap, separate from this array.
+  let subformData = p.subformData || null;
+  if (flagsArr.length > 0 || tagsArr.length > 0) {
+    subformData = subformData || {};
+    if (flagsArr.length > 0) subformData.flags = flagsArr;
+    if (tagsArr.length > 0) subformData.tags = tagsArr;
+  }
   return {
     callback:       s(p.callback),
     caller:         s(p.caller),
@@ -2338,9 +2533,9 @@ function sanitizeCallNotePayload_(p) {
     issue:          s(p.issue),
     transferredTo:  s(p.transferredTo),
     resolution:     s(p.resolution),
-    flagType:       s(p.flagType).toLowerCase(),
+    flagType:       flagType,
     subform:        s(p.subform).toLowerCase(),
-    subformData:    p.subformData || null,
+    subformData:    subformData,
   };
 }
 
