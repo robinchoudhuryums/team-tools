@@ -188,10 +188,31 @@ function renderTimeOffView(area, data) {
       }).join('') + '</div>';
   }
 
+  // Round 2 · 8b — Time / PTO merge. Mode toggle picks the side rail
+  // emphasis: Time Off (default) shows the PTO tile + upcoming-request
+  // context; Timesheet shows the rep's pay-period totals + recent days.
+  // Persisted to localStorage.umsMergeMode. The calendar itself is
+  // unchanged in both modes — it carries worked-hours AND PTO badges.
+  const mergeMode = (function () {
+    try {
+      const v = localStorage.getItem('umsMergeMode');
+      return v === 'timesheet' ? 'timesheet' : 'timeoff';
+    } catch (e) { return 'timeoff'; }
+  })();
+  const modeBar = `
+    <div class="mp-modes" role="tablist" aria-label="Time / PTO mode">
+      <button type="button" role="tab" class="mp-mode${mergeMode==='timeoff'?' on':''}" data-mode="timeoff" aria-selected="${mergeMode==='timeoff'}">${icon('timeoff', 13)} Time Off</button>
+      <button type="button" role="tab" class="mp-mode${mergeMode==='timesheet'?' on':''}" data-mode="timesheet" aria-selected="${mergeMode==='timesheet'}">${icon('timesheet', 13)} Timesheet</button>
+    </div>`;
+  const sideRailHtml = mergeMode === 'timesheet'
+    ? `<div id="ts-side-rail">${renderTimesheetSideRailPlaceholder_()}</div>`
+    : balanceCardHtml;
+
   area.innerHTML = `
     ${COMPACT_MODE
-      ? `<div class="compact-header"><div class="ch-title">${icon('timeoff', 16)} Time Off</div><div class="ch-actions"><button class="ch-action-btn" title="Close window" onclick="window.close()">${icon('x', 14)}</button></div></div>`
-      : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Time Off</span></div><h1 class="display-title">Time Off</h1></div></div>`}
+      ? `<div class="compact-header"><div class="ch-title">${icon('timeoff', 16)} Time / PTO</div><div class="ch-actions"><button class="ch-action-btn" title="Close window" onclick="window.close()">${icon('x', 14)}</button></div></div>`
+      : `<div class="app-bar"><div class="app-bar-left"><div class="breadcrumb"><span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Time / PTO</span></div><h1 class="display-title">Time / PTO</h1></div><div class="app-bar-right">${modeBar}</div></div>`}
+    ${COMPACT_MODE ? modeBar : ''}
     <div class="month-nav">
       <button class="month-nav-btn" id="cal-prev" ${!canPrev?'disabled':''} aria-label="Previous month">${icon('chevronLeft', 16)}</button>
       <span class="month-label">${data.monthName}</span>
@@ -202,7 +223,7 @@ function renderTimeOffView(area, data) {
         <div class="card cal-card">${calHtml}${legendHtml}</div>
       </div>
       <div class="timeoff-side">
-        ${balanceCardHtml}
+        ${sideRailHtml}
       </div>
     </div>
     ${reqHtml}`;
@@ -224,6 +245,27 @@ function renderTimeOffView(area, data) {
 
   // Round 2 · 8c — wire hover (or tap-only on touch) for the day modal.
   bindCalHover_();
+
+  // Round 2 · 8b — mode toggle wiring. Persists to localStorage and
+  // re-renders the entire view (calendar + side rail) so the new mode's
+  // chrome shows up cleanly.
+  document.querySelectorAll('.mp-mode').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const next = btn.dataset.mode;
+      if (next === mergeMode) return;
+      try { localStorage.setItem('umsMergeMode', next); } catch (e) {}
+      // Re-render via the existing calendar render path
+      renderTimeOffView(area, data);
+    });
+  });
+
+  // Round 2 · 8b — if we're in Timesheet mode, fetch the rep's current
+  // pay-period data to populate the side rail. tsData lives at module
+  // scope so it stays warm across renders; the lazy fetch ensures the
+  // tile shows real numbers within a second or two of entering the tab.
+  if (mergeMode === 'timesheet') {
+    loadTimesheetSideRail_();
+  }
 
   // Cancel button wiring
   document.querySelectorAll('.req-cancel-btn').forEach(btn => {
@@ -260,6 +302,110 @@ function formatLeaveDays(n) {
   if (n === null || n === undefined) return '—';
   // Show as integer if whole, else 1 decimal
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+// ── ROUND 2 · 8b — TIMESHEET-MODE SIDE RAIL ────────────────────────────
+// In Timesheet mode the side rail shows the rep's current pay-period
+// totals (mirror of the .pto-tile layout, tuned for hours) plus a
+// recent-activity list (last 5 days with data). tsData is the source
+// of truth — fetched via the existing getTimesheetData endpoint.
+
+/** Placeholder rendered into #ts-side-rail before tsData arrives. */
+function renderTimesheetSideRailPlaceholder_() {
+  return `
+    <div class="pto-tile">
+      <div class="head"><span class="lbl">Pay period</span><span class="meta">LOADING</span></div>
+      <div class="v-row"><span class="v num">—</span><span class="denom">/ — hours</span></div>
+      <div class="bar"><i style="width:0%"></i></div>
+      <div class="ftr"><span>—</span><span>—</span></div>
+    </div>`;
+}
+
+/** Fires getTimesheetData for the rep's current pay period (biweekly if
+ *  configured, else current calendar month) and updates the side rail
+ *  with the resulting totals + recent days list. */
+function loadTimesheetSideRail_() {
+  // Compute range. Mirrors enterClockCombinedView's prior logic: use
+  // existing tsViewMode + computeRange so cached tsData (if present from
+  // a previous load) reflects the rep's payCycle.
+  const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
+  google.script.run
+    .withSuccessHandler(data => {
+      if (!data || data.error) return;
+      tsData = data; tsStart = data.startDate; tsEnd = data.endDate;
+      if (currentView !== 'timeoff') return;
+      const slot = document.getElementById('ts-side-rail');
+      if (slot) slot.innerHTML = renderTimesheetSideRail_(data);
+    })
+    .withFailureHandler(() => {})
+    .getTimesheetData(range.start, range.end);
+}
+
+/** Renders the populated Timesheet side rail: pay-period tile + recent
+ *  activity list. Target hours derived from payCycle (80 for biweekly,
+ *  8 × working-days for monthly fallback). */
+function renderTimesheetSideRail_(d) {
+  const totalHours = Number(d.totalHours) || 0;
+  const daysWorked = Number(d.daysWorked) || 0;
+  // Target: biweekly = 80h; monthly = 8h × business days in the range.
+  let targetHours;
+  if (d.payCycle === 'Biweekly') {
+    targetHours = 80;
+  } else {
+    // Count weekdays in days[]
+    const weekdayCount = (d.days || []).filter(x => !x.isWeekend).length;
+    targetHours = weekdayCount * 8;
+  }
+  const pct = targetHours > 0 ? Math.min(100, Math.max(0, (totalHours / targetHours) * 100)) : 0;
+  const rangeLabel = (() => {
+    if (!d.startDate || !d.endDate) return '';
+    const s = d.startDate.split('-'), e = d.endDate.split('-');
+    const sm = MONTH_NAMES[parseInt(s[1],10)-1].slice(0,3).toUpperCase();
+    const em = MONTH_NAMES[parseInt(e[1],10)-1].slice(0,3).toUpperCase();
+    return `${sm} ${parseInt(s[2],10)} – ${em} ${parseInt(e[2],10)}`;
+  })();
+  const incompleteHtml = d.incompleteCount > 0
+    ? `<span style="color:var(--warning-deep)">${d.incompleteCount} incomplete</span>`
+    : 'all complete';
+
+  // Recent activity list — last 5 days with data, newest first.
+  const recent = (d.days || []).filter(x => x.hasData).slice(-5).reverse();
+  const recentHtml = recent.length === 0
+    ? '<div class="no-data" style="padding:14px 0">No recent activity in this period</div>'
+    : `<div class="ts-recent-list">${recent.map(x => {
+        const dateParts = x.date.split('-');
+        const dlabel = `${MONTH_NAMES[parseInt(dateParts[1],10)-1].slice(0,3)} ${parseInt(dateParts[2],10)}`;
+        const hrs = (typeof x.hoursWorked === 'number') ? fmtHrs(x.hoursWorked) : (x.inProgress ? '·' : '—');
+        const inOut = (x.clockIn && x.clockOut)
+          ? `${dispTime(x.clockIn)} – ${dispTime(x.clockOut)}`
+          : (x.clockIn ? `${dispTime(x.clockIn)} – —` : '—');
+        const incomp = x.isIncomplete
+          ? '<span class="ts-recent-warn">incomplete</span>'
+          : '';
+        return `<div class="ts-recent-row">
+          <div class="ts-recent-d">${esc(dlabel)}</div>
+          <div class="ts-recent-mid">${esc(inOut)} ${incomp}</div>
+          <div class="ts-recent-h">${esc(hrs)}</div>
+        </div>`;
+      }).join('')}</div>`;
+
+  return `
+    <div class="pto-tile">
+      <div class="head"><span class="lbl">Pay period</span><span class="meta">${esc(rangeLabel)}</span></div>
+      <div class="v-row">
+        <span class="v num">${fmtHrs(totalHours)}</span>
+        <span class="denom">/ ${targetHours}h target</span>
+      </div>
+      <div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+      <div class="ftr">
+        <span>${daysWorked}d worked</span>
+        <span>${incompleteHtml}</span>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="card-label">Recent activity</div>
+      ${recentHtml}
+    </div>`;
 }
 
 // ── DAY DETAILS MODAL ─────────────────────────────────────────────────────

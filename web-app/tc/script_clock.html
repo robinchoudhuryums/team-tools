@@ -7,41 +7,24 @@
 // in script_core.html's init handler. Default kept as a safety net.
 let SELF_UNDO_WINDOW_SECONDS = 300;
 
-/** Combined Clock+Timesheet enter handler — top section is the clock UI,
- *  below it is the rep's current timesheet. Replaces the prior separate
- *  enterClockView + enterTimesheetView tabs. Re-renders of the clock UI
- *  (after a punch) target `#clk-section` so the timesheet section below
- *  isn't wiped on each interaction. */
+/** Clock view enter handler. Round 2 · 8b moved the rep's timesheet
+ *  section out of this view into the Time / PTO tab, so the Clock tab
+ *  is now punches + actions + ribbon + cov + ledger + teammate only —
+ *  no timesheet rail below. enterClockCombinedView is kept as the entry
+ *  name (TOOLS registry still references it) but the body is now a
+ *  thin wrapper around renderClockView. */
 function enterClockCombinedView(area) {
   stopClock();
-  // Default timesheet range if not yet set (mirror enterTimesheetView's logic)
-  if (!tsStart) {
-    const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
-    tsStart = range.start; tsEnd = range.end;
-  }
-  area.innerHTML = `
-    <div id="clk-section"></div>
-    <div class="clk-ts-divider">
-      <div class="clk-ts-divider-line"></div>
-      <span class="clk-ts-divider-label">Your Timesheet</span>
-      <div class="clk-ts-divider-line"></div>
-    </div>
-    <div id="clk-ts-section"></div>
-  `;
-  const clkSection = document.getElementById('clk-section');
-  renderClockView(clkSection);
+  renderClockView(area);
   startClock();
-  const tsSection = document.getElementById('clk-ts-section');
-  tsSection.innerHTML = '<div class="state-center"><div class="spinner"></div><div class="state-label">Loading timesheet…</div></div>';
-  loadTimesheet(tsStart, tsEnd, tsSection);
 }
 
-/** The clock view's interactive handlers (handlePunch, self-undo, etc.) write
- *  to a parent container via innerHTML. In the combined view that container
- *  must be the clock SECTION (#clk-section) — replacing the view-area would
- *  wipe the timesheet below. Fall back to view-area for any standalone use. */
+/** Returns the container the clock view renders into. Pre-8b this had
+ *  to distinguish a #clk-section nested under the combined view; now
+ *  it's just the view-area. Kept as a wrapper so handlePunch /
+ *  selfDeletePunch handlers don't have to change. */
 function getClockArea_() {
-  return document.getElementById('clk-section') || document.getElementById('view-area');
+  return document.getElementById('view-area');
 }
 
 function renderClockView(area) {
@@ -187,6 +170,10 @@ function buildStatusSentence_(stats, nextActions, tzAbbr) {
  *  timesheet load completes. Annual/Sick cells gracefully hide via
  *  muted text when ptoEnabled is false (contractor reps). */
 function renderLedger_(s, stats) {
+  // 3-cell ledger after Round 2 · 8b moved timesheet out of the Clock
+  // view. Pay-period stats now live in the Time / PTO tab's Timesheet-
+  // mode side rail. The remaining cells stay glanceable: Annual / Sick
+  // / Hours today.
   const annualVal = s.ptoEnabled
     ? `<div class="cell-value">${formatLeaveDays(s.annualLeave || 0)}</div><div class="cell-sub">of ${formatLeaveDays(s.annualLeaveMax || 15)} days</div>`
     : `<div class="cell-value muted">—</div><div class="cell-sub">not tracked</div>`;
@@ -196,34 +183,17 @@ function renderLedger_(s, stats) {
   const hoursToday = stats
     ? `<div class="cell-value">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m</div><div class="cell-sub">${stats.lunchMinutes ? stats.lunchMinutes + 'm lunch' : 'no lunch yet'}</div>`
     : `<div class="cell-value muted">0h</div><div class="cell-sub">not in yet</div>`;
-  // Pay-period cell — lazy-populated from tsData when the combined view's
-  // timesheet section finishes loading. See lazyUpdatePayPeriodCell_.
-  const ppLabel = s.payCycle === 'Biweekly' ? 'Pay period' : 'This month';
-  let ppVal;
-  if (tsData && typeof tsData.totalHours === 'number') {
-    ppVal = `<div class="cell-value">${fmtHrs(tsData.totalHours)}</div><div class="cell-sub">${tsData.daysWorked || 0} days worked</div>`;
-  } else {
-    ppVal = `<div class="cell-value muted" id="clk-pp-val">—</div><div class="cell-sub" id="clk-pp-sub">loading…</div>`;
-  }
-  return `<div class="ledger">
+  return `<div class="ledger ledger-3">
     <div class="cell"><div class="cell-label">Annual</div>${annualVal}</div>
     <div class="cell"><div class="cell-label">Sick</div>${sickVal}</div>
     <div class="cell"><div class="cell-label">Hours today</div>${hoursToday}</div>
-    <div class="cell"><div class="cell-label">${ppLabel}</div>${ppVal}</div>
   </div>`;
 }
 
-/** Update the pay-period ledger cell once tsData arrives. Called by
- *  loadTimesheet's success path (via the global hook). Silently no-ops
- *  if the cell isn't in the DOM (rep navigated away). */
-function lazyUpdatePayPeriodCell_() {
-  const val = document.getElementById('clk-pp-val');
-  const sub = document.getElementById('clk-pp-sub');
-  if (!val || !sub || !tsData || typeof tsData.totalHours !== 'number') return;
-  val.textContent = fmtHrs(tsData.totalHours);
-  val.classList.remove('muted');
-  sub.textContent = `${tsData.daysWorked || 0} days worked`;
-}
+// lazyUpdatePayPeriodCell_ removed in Round 2 · 8b — the pay-period
+// ledger cell was deleted along with the Clock view's timesheet section.
+// The guard `typeof === 'function'` in loadTimesheet's success handler
+// (tc/script_timesheet.html) makes the now-missing call a safe no-op.
 
 // ── DAY RIBBON (V4·E1) ─────────────────────────────────────────────────
 // Horizontal time-of-day ribbon spanning 06:00–22:00. Renders the rep's
@@ -523,8 +493,9 @@ function bindSelfUndoBtns() {
           google.script.run
             .withSuccessHandler(state => {
               empState = state;
-              // Target #clk-section in the combined view so the timesheet
-              // section below survives the re-render. Falls back to view-area.
+              // Round 2 · 8b — re-renders target view-area directly now
+              // that the Clock view no longer hosts a timesheet section
+              // below. getClockArea_ still resolves to view-area.
               const area = getClockArea_();
               if (area && currentView === 'clock') renderClockView(area);
               startClock();
@@ -683,8 +654,8 @@ function submitPunch(punchType, custom) {
         .withSuccessHandler(state => {
           empState = state;
           adjustWindowDays = state.adjustWindowDays || 30;
-          // Target #clk-section in the combined Clock+Timesheet view so the
-          // timesheet below isn't wiped. Falls back to view-area otherwise.
+          // Round 2 · 8b — re-renders target view-area directly now that
+          // the Clock view no longer hosts a timesheet section below.
           const area = getClockArea_();
           if (area && currentView === 'clock') renderClockView(area);
           startClock();
