@@ -38,24 +38,65 @@ function renderTimeOffView(area, data) {
   const holidayMap = {};
   data.holidays.forEach(h => { holidayMap[h.date] = h; });
 
-  // ── Leave balance (right rail beside calendar, PTO ring) ─────────────────
-  // Only annual leave shown — most UMS staff don't have a separate sick bucket.
+  // ── Leave balance (right rail beside calendar, Round 2 · 8d tile) ──────
+  // Rectangular tile replaces the prior PTO ring donut. Shows current annual
+  // balance, a progress bar against the annual max, and a footer with
+  // planned upcoming days + projected balance after those plans land.
   // Per-employee ptoEnabled flag hides this entirely for contractors.
   let balanceCardHtml = '';
   if (data.ptoEnabled && data.annualLeave !== undefined) {
-    const annualMax = Math.max(data.annualLeaveMax || 15, data.annualLeave || 0, 1);
-    const ring = ptoRingSvg(data.annualLeave, annualMax, 'annual');
+    const annual = data.annualLeave || 0;
+    const annualMax = Math.max(data.annualLeaveMax || 15, annual, 1);
+    const pct = Math.min(100, Math.max(0, (annual / annualMax) * 100));
+    // Sum planned days: upcoming requests (today and future) that are
+    // pending or approved, using the same LEAVE_DEDUCTION_CLIENT map as
+    // the day-modal balance preview (INV-72: client mirror of server's
+    // getLeaveDeduction_; stays in sync).
+    const todayIsoLocal = data.today || isoDateTz(empTz());
+    const upcomingReqs = (data.allRequests || [])
+      .filter(r => r.date >= todayIsoLocal)
+      .filter(r => {
+        const s = String(r.status || '').toLowerCase();
+        return s === 'pending' || s === 'approved';
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+    let plannedDays = 0;
+    upcomingReqs.forEach(r => {
+      const ded = (typeof getLeaveDeductionClient_ === 'function')
+        ? getLeaveDeductionClient_(r.type)
+        : { bucket: 'annual', days: 1.0 };
+      if (ded.bucket === 'annual') plannedDays += ded.days || 0;
+    });
+    plannedDays = Math.round(plannedDays * 10) / 10;
+    const remaining = Math.round((annual - plannedDays) * 10) / 10;
+    // Months left in the current calendar year (proxy for "FY left").
+    // getMonth() is 0-indexed, so for January (0) → 12 months left,
+    // for December (11) → 1 month left. Current month counts as remaining.
+    const now = new Date();
+    const monthsLeft = 12 - now.getMonth();
+    // Next-request label: first upcoming request's date as "MMM D", or empty.
+    let nextLabel = '';
+    if (upcomingReqs.length > 0) {
+      const p = upcomingReqs[0].date.split('-');
+      nextLabel = `${MONTH_NAMES[parseInt(p[1],10)-1].slice(0,3).toUpperCase()} ${parseInt(p[2],10)}`;
+    }
+    const ftrRight = upcomingReqs.length > 0
+      ? `${formatLeaveDays(remaining)}d after ${nextLabel}`
+      : 'nothing planned';
     balanceCardHtml = `
-      <div class="card pto-card-side">
-        <div class="card-label">Annual Leave</div>
-        <div class="pto-ring">
-          <div class="pto-svg">${ring.svg}
-            <div class="pto-ring-center">
-              <div class="pto-ring-val">${ring.label}</div>
-              <div class="pto-ring-of">of ${ring.maxLabel}</div>
-            </div>
-          </div>
-          <div class="pto-ring-label">days remaining</div>
+      <div class="pto-tile">
+        <div class="head">
+          <span class="lbl">Annual leave</span>
+          <span class="meta">${now.getFullYear()} · ${monthsLeft}MO LEFT</span>
+        </div>
+        <div class="v-row">
+          <span class="v num">${formatLeaveDays(annual)}</span>
+          <span class="denom">/ ${formatLeaveDays(annualMax)} days</span>
+        </div>
+        <div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+        <div class="ftr">
+          <span>${formatLeaveDays(plannedDays)}d planned</span>
+          <span>${esc(ftrRight)}</span>
         </div>
       </div>`;
   }
@@ -84,7 +125,10 @@ function renderTimeOffView(area, data) {
       cls += st==='approved'?' has-approved':st==='denied'?' has-denied':' has-pending';
     }
     if (hasContent) cls += ' clickable';
-    const click = hasContent ? `onclick="openDayModal('${dateStr}')"` : '';
+    // Round 2 · 8c — hover-triggered day modal. Use data-date so
+    // bindCalHover_ can install mouseenter/leave/click handlers via
+    // event delegation; the legacy inline onclick path is replaced.
+    const dataAttr = hasContent ? `data-date="${dateStr}"` : '';
     let dot = '';
     if (hasWork && !own) dot = '<div class="cal-dot worked"></div>';
     if (own) {
@@ -102,7 +146,7 @@ function renderTimeOffView(area, data) {
     } else if (tms && tms.length) {
       cornerMark = `<div class="cal-tm">+${tms.length}</div>`;
     }
-    calHtml += `<div class="${cls}" ${click}>${holidayMark}<span class="cal-dn">${d}</span>${dot}${cornerMark}</div>`;
+    calHtml += `<div class="${cls}" ${dataAttr}>${holidayMark}<span class="cal-dn">${d}</span>${dot}${cornerMark}</div>`;
   }
   calHtml += '</div>';
 
@@ -177,6 +221,9 @@ function renderTimeOffView(area, data) {
     calYear = ny; calMonth = nm;
     renderLoading(area, 'Loading calendar…'); loadCalendar(ny, nm);
   });
+
+  // Round 2 · 8c — wire hover (or tap-only on touch) for the day modal.
+  bindCalHover_();
 
   // Cancel button wiring
   document.querySelectorAll('.req-cancel-btn').forEach(btn => {
@@ -365,12 +412,121 @@ function updateDayBalancePreview_() {
   </div>`;
 }
 
-document.getElementById('day-cancel').addEventListener('click', () =>
-  document.getElementById('day-overlay').classList.remove('open'));
-document.getElementById('day-overlay').addEventListener('click', e => {
-  if (e.target === document.getElementById('day-overlay'))
-    document.getElementById('day-overlay').classList.remove('open');
+document.getElementById('day-cancel').addEventListener('click', () => {
+  dayPopoverPinned = false;
+  closeDayPopover_();
 });
+document.getElementById('day-overlay').addEventListener('click', e => {
+  // Clicking outside the modal closes + unpins. In hover-mode the overlay
+  // backdrop is transparent + non-interactive (pointer-events:none), so this
+  // path only fires when the modal is pinned (regular centered modal).
+  if (e.target === document.getElementById('day-overlay')) {
+    dayPopoverPinned = false;
+    closeDayPopover_();
+  }
+});
+
+// ── ROUND 2 · 8c — HOVER-TRIGGERED DAY MODAL ───────────────────────────
+// Cells with [data-date] open the day modal on mouseenter (120ms grace),
+// schedule close on mouseleave (200ms grace — cancelled if the cursor
+// enters the modal). Click pins the modal until click-outside or Esc.
+// On touch devices (matchMedia '(hover: none)') hover is skipped and only
+// tap pins. The shell-level Escape handler in script_core.html closes any
+// open .overlay; my listener below piggybacks to reset the pin flag.
+let dayHoverTimer = null, dayCloseTimer = null, dayPopoverPinned = false;
+
+function bindCalHover_() {
+  const overlay = document.getElementById('day-overlay');
+  if (!overlay) return;
+  const isTouchOnly = (typeof window.matchMedia === 'function')
+    && window.matchMedia('(hover: none)').matches;
+  document.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
+    // Click always pins the modal (works on hover AND touch devices).
+    cell.addEventListener('click', () => {
+      clearTimeout(dayHoverTimer); clearTimeout(dayCloseTimer);
+      openDayPopover_(cell, /* pin */ true);
+    });
+    // Hover-open only on hover-capable input devices.
+    if (isTouchOnly) return;
+    cell.addEventListener('mouseenter', () => {
+      clearTimeout(dayCloseTimer);
+      if (dayPopoverPinned) return;
+      clearTimeout(dayHoverTimer);
+      dayHoverTimer = setTimeout(() => openDayPopover_(cell, false), 120);
+    });
+    cell.addEventListener('mouseleave', () => {
+      clearTimeout(dayHoverTimer);
+      if (dayPopoverPinned) return;
+      dayCloseTimer = setTimeout(closeDayPopover_, 200);
+    });
+  });
+  // Modal itself cancels close on enter, schedules on leave
+  if (!overlay._cnHoverBound) {
+    overlay._cnHoverBound = true;
+    overlay.addEventListener('mouseenter', () => clearTimeout(dayCloseTimer));
+    overlay.addEventListener('mouseleave', () => {
+      if (dayPopoverPinned) return;
+      dayCloseTimer = setTimeout(closeDayPopover_, 200);
+    });
+    // Reset pin flag whenever Esc fires (the shell-level handler at
+    // script_core.html closes the overlay; we just reset the flag).
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') dayPopoverPinned = false;
+    });
+  }
+}
+
+function openDayPopover_(cell, pin) {
+  const dateStr = cell.dataset.date;
+  if (!dateStr) return;
+  dayPopoverPinned = !!pin;
+  const overlay = document.getElementById('day-overlay');
+  // Hover-mode (not pinned) → tethered popover, transparent backdrop.
+  // Pinned → centered modal with backdrop (default styling).
+  overlay.classList.toggle('hover-mode', !pin);
+  // Populate the modal's contents via the existing helper.
+  openDayModal(dateStr);
+  if (!pin) positionDayPopover_(cell);
+  else {
+    // Clear any tethered positioning so the centered modal CSS takes over.
+    const modal = overlay.querySelector('.modal');
+    if (modal) { modal.style.top = ''; modal.style.left = ''; }
+  }
+}
+
+function closeDayPopover_() {
+  const overlay = document.getElementById('day-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  overlay.classList.remove('hover-mode');
+  const modal = overlay.querySelector('.modal');
+  if (modal) { modal.style.top = ''; modal.style.left = ''; }
+}
+
+/** Tether the day modal to the hovered cell. Places to the right of the
+ *  cell by default; flips to the left if right would overflow the viewport.
+ *  Vertically clamps to keep the modal fully on-screen. */
+function positionDayPopover_(cell) {
+  const overlay = document.getElementById('day-overlay');
+  const modal = overlay.querySelector('.modal');
+  if (!modal) return;
+  // Force layout so we can read modal width/height before positioning
+  modal.style.visibility = 'hidden';
+  modal.style.top = '0px'; modal.style.left = '0px';
+  const r = cell.getBoundingClientRect();
+  const mw = modal.offsetWidth, mh = modal.offsetHeight;
+  const gap = 14;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let left = r.right + gap;
+  if (left + mw > vw - 8) left = r.left - mw - gap;
+  if (left < 8) left = 8;
+  let top = r.top + (r.height / 2) - (mh / 2);
+  if (top < 8) top = 8;
+  if (top + mh > vh - 8) top = vh - mh - 8;
+  modal.style.left = left + 'px';
+  modal.style.top = top + 'px';
+  modal.style.visibility = '';
+}
 // Live balance preview when Type changes (V1·E2).
 document.getElementById('day-type').addEventListener('change', updateDayBalancePreview_);
 document.getElementById('day-submit').addEventListener('click', () => {

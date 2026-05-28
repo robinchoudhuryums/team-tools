@@ -162,11 +162,13 @@ function renderShell(state) {
   // Sidebar items are TOOLS (Time Clock, Call Notes). The tab bar above the
   // view-area renders each tool's tabs when a tool is entered. Mobile nav
   // mirrors the sidebar — two buttons, one per tool.
+  // Labels are wrapped in .sb-lbl so the resizable sidebar (Round 2 · 8a)
+  // can collapse to icon-only by hiding the labels via .sidebar.collapsed.
   const toolKeys = Object.keys(TOOLS);
   const sbLinks = toolKeys.map(toolKey => {
     const t = TOOLS[toolKey];
     return `<button class="sb-link" data-tool="${toolKey}" onclick="enterTool('${toolKey}')">
-       ${sbIcon(t.sidebarIcon)}${esc(t.label)}</button>`;
+       ${sbIcon(t.sidebarIcon)}<span class="sb-lbl">${esc(t.label)}</span></button>`;
   }).join('');
   const navBtns = toolKeys.map(toolKey => {
     const t = TOOLS[toolKey];
@@ -224,6 +226,8 @@ function renderShell(state) {
             <div class="sb-user-meta">${esc(state.id)} ${tzTag}</div>
           </div>
         </div>
+        <!-- Round 2 · 8a — drag handle on the right edge. Double-click snaps. -->
+        <div class="sidebar-grip" id="sidebar-grip" title="Drag to resize · double-click to snap" aria-hidden="true"></div>
       </aside>
 
       <div style="display:flex;flex-direction:column;min-height:100vh">
@@ -256,6 +260,66 @@ function renderShell(state) {
 
   // Reflect current theme in both toggle pills
   syncThemeToggleState();
+  // Round 2 · 8a — restore + wire resizable sidebar (drag-to-resize, dbl-click
+  // to snap, persistence via localStorage.umsSidebarW).
+  initResizableSidebar_();
+}
+
+/** Round 2 · 8a — Restorable, drag-resizable sidebar. Snaps between
+ *  icon-only (56px) and labeled (168px) widths; drag freely in between.
+ *  Persisted to localStorage.umsSidebarW so the rep's chosen width
+ *  survives reload. */
+const SIDEBAR_MIN = 56, SIDEBAR_MAX = 280, SIDEBAR_SNAP_THRESHOLD = 100, SIDEBAR_DEFAULT = 168, SIDEBAR_ICON_ONLY = 56;
+function initResizableSidebar_() {
+  const sb = document.querySelector('.sidebar');
+  const grip = document.getElementById('sidebar-grip');
+  if (!sb || !grip) return;
+  // Restore persisted width on boot
+  try {
+    const stored = parseInt(localStorage.getItem('umsSidebarW'), 10);
+    if (stored && stored >= SIDEBAR_MIN && stored <= SIDEBAR_MAX) {
+      applySidebarWidth_(sb, stored);
+    }
+  } catch (e) { /* localStorage unavailable — stay default */ }
+
+  let dragging = false, startX = 0, startW = 0;
+  grip.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startW = sb.getBoundingClientRect().width;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + (e.clientX - startX)));
+    applySidebarWidth_(sb, w);
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    try { localStorage.setItem('umsSidebarW', String(Math.round(sb.getBoundingClientRect().width))); }
+    catch (e) {}
+  });
+  grip.addEventListener('dblclick', () => {
+    const cur = sb.getBoundingClientRect().width;
+    // Snap to the OTHER preset — below the threshold goes to labeled, at/above goes to icon-only
+    const next = cur < SIDEBAR_SNAP_THRESHOLD ? SIDEBAR_DEFAULT : SIDEBAR_ICON_ONLY;
+    applySidebarWidth_(sb, next);
+    try { localStorage.setItem('umsSidebarW', String(next)); } catch (e) {}
+  });
+}
+
+function applySidebarWidth_(sb, w) {
+  sb.style.setProperty('--sidebar-w', w + 'px');
+  // Also set on documentElement so the .app-shell grid (which reads --sidebar-w)
+  // picks up the new column width — the sb element's --sidebar-w is for any
+  // descendants that need it, but the grid container is a sibling.
+  document.documentElement.style.setProperty('--sidebar-w', w + 'px');
+  sb.classList.toggle('collapsed', w < SIDEBAR_SNAP_THRESHOLD);
 }
 
 /** Open a tool — top-level navigation from the sidebar. Renders the tab bar

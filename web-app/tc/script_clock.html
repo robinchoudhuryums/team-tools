@@ -541,29 +541,13 @@ function bindSelfUndoBtns() {
   });
 }
 
-// renderPtoRings — removed in Round 2 (Phase 8y). The two-ring PTO donut
-// it produced was orphaned after Phase 2 swapped the Clock view to the
-// hero/actions/ledger layout (Annual + Sick balances now render as ledger
-// cells). ptoRingSvg() below is still used by the Time Off side rail
-// (tc/script_timeoff.html); it stays until Round 2 sub-phase 8d replaces
-// that rail with the rectangular PTO tile.
-
-function ptoRingSvg(value, max, cls) {
-  const v = Math.max(0, Number(value) || 0);
-  const m = Math.max(1, Number(max)   || 1);
-  const pct = Math.min(1, v / m);
-  const r = 48, c = 2 * Math.PI * r;
-  const dashOffset = c * (1 - pct);
-  const fgCls = v <= 0 ? 'depleted' : cls;
-  const svg = `<svg viewBox="0 0 120 120" width="120" height="120">
-      <circle class="pto-svg-bg" cx="60" cy="60" r="${r}" stroke-width="10"/>
-      <circle class="pto-svg-fg ${fgCls}" cx="60" cy="60" r="${r}" stroke-width="10"
-        stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${dashOffset.toFixed(2)}"/>
-    </svg>`;
-  // Format: integer if whole, .5 if half
-  const fmt = n => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
-  return { svg, label: fmt(v), maxLabel: fmt(m) };
-}
+// renderPtoRings + ptoRingSvg — removed in Round 2 (Phase 8d). The Clock
+// view's renderPtoRings was orphaned after Phase 2's hero/ledger swap;
+// ptoRingSvg was the last surviving helper from that era (still consumed
+// by the Time Off side rail until Round 2 · 8d replaced that rail with
+// the rectangular .pto-tile). With no remaining callers, both are gone
+// along with the .pto-card / .pto-rings / .pto-ring / .pto-svg* CSS that
+// fed them.
 
 function renderPunchHistory(punches) {
   if (!punches || punches.length === 0)

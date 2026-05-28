@@ -35,6 +35,48 @@
     position: sticky; top: 0; height: 100vh; overflow-y: auto;
     border-right: 1px solid var(--line);
   }
+  /* Round 2 · 8a — drag handle anchored to the sidebar's right edge.
+     6px wide; becomes accent-toned on hover/drag. Stays inside the
+     sidebar bounds so the existing overflow-y: auto doesn't clip it.
+     The accent stripe inside is 2px wide and inset for a refined feel. */
+  .sidebar-grip {
+    position: absolute; top: 0; right: 0;
+    width: 6px; height: 100%; cursor: col-resize;
+    z-index: 10;
+  }
+  .sidebar-grip::after {
+    content: ''; position: absolute; top: 0; bottom: 0; right: 1px; width: 2px;
+    background: transparent;
+    transition: background var(--t) var(--ease);
+  }
+  .sidebar-grip:hover::after,
+  .sidebar-grip:active::after { background: var(--accent); }
+  /* Round 2 · 8a — collapsed (icon-only) state. Hides labels, brand sub-name,
+     user info text, theme label, and the section "Navigate" label so the
+     56px-ish rail shows only icons. Brand mark dot + sb-icons + user avatar
+     stay visible. */
+  .sidebar.collapsed { padding: 22px 6px 18px; }
+  .sidebar.collapsed .sb-lbl,
+  .sidebar.collapsed .sb-brand-title > span:not(.sb-brand-mark),
+  .sidebar.collapsed .sb-brand-sub,
+  .sidebar.collapsed .sb-section-label,
+  .sidebar.collapsed .sb-theme-label,
+  .sidebar.collapsed .sb-user-info,
+  .sidebar.collapsed .sb-user-tz { display: none; }
+  .sidebar.collapsed .sb-link {
+    justify-content: center; padding: 9px 4px; gap: 0;
+  }
+  .sidebar.collapsed .sb-brand { padding: 4px 4px 14px; }
+  .sidebar.collapsed .sb-brand-title { justify-content: center; }
+  .sidebar.collapsed .sb-theme { padding: 14px 4px 0; }
+  .sidebar.collapsed .sb-theme-controls { justify-content: center; flex-wrap: wrap; gap: 4px; }
+  .sidebar.collapsed .sb-user { justify-content: center; padding: 14px 4px; }
+  /* Make sure the sb-link label transition is smooth — labels do an instant
+     show/hide but the link layout itself shouldn't jerk. */
+  .sb-lbl {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
+  }
   .sb-brand {
     padding: 4px 10px 18px;
     border-bottom: 1px solid var(--line);
@@ -865,44 +907,56 @@
     margin-top: 4px; letter-spacing: .04em;
   }
 
-  /* ─── PTO RING ───────────────────────────────────────────────── */
-  .pto-rings {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 24px; align-items: center; padding: 8px 0;
+  /* ─── PTO TILE (Round 2 · 8d) ───────────────────────────────────
+     Rectangular leave-balance tile in the Time Off side rail. Replaces
+     the prior PTO donut. Big tabular value with progress bar; footer
+     shows planned upcoming PTO + projected balance after those plans. */
+  .pto-tile {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
   }
-  .pto-ring {
-    display: flex; flex-direction: column;
-    align-items: center; gap: 10px;
+  .pto-tile .head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    margin-bottom: 10px;
   }
-  .pto-svg { width: 120px; height: 120px; position: relative; }
-  .pto-svg svg { display: block; transform: rotate(-90deg); }
-  .pto-svg-bg  { stroke: var(--paper-2); fill: none; }
-  .pto-svg-fg  { fill: none; stroke-linecap: round; transition: stroke-dashoffset 600ms var(--ease); }
-  .pto-svg-fg.annual    { stroke: var(--accent); }
-  .pto-svg-fg.sick      { stroke: var(--warn);   }
-  .pto-svg-fg.depleted  { stroke: var(--destructive); }
-  .pto-ring-center {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    pointer-events: none;
+  .pto-tile .head .lbl {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
   }
-  .pto-ring-val {
-    font-family: var(--display);
-    font-size: 26px; font-weight: 500; line-height: 1;
-    letter-spacing: -.02em; color: var(--ink);
+  .pto-tile .head .meta {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted-2); letter-spacing: .08em;
+  }
+  .pto-tile .v-row {
+    display: flex; align-items: baseline; gap: 6px;
+    margin-bottom: 8px;
+  }
+  .pto-tile .v {
+    font-family: var(--display); font-size: 34px; font-weight: 600;
+    color: var(--ink); line-height: 1; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
+  }
+  .pto-tile .denom {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
     font-variant-numeric: tabular-nums;
   }
-  .pto-ring-of {
-    font-family: var(--mono);
-    font-size: 10px; color: var(--muted); margin-top: 3px;
-    font-variant-numeric: tabular-nums; letter-spacing: .04em;
+  .pto-tile .bar {
+    width: 100%; height: 6px; background: var(--paper-2);
+    border-radius: 3px; overflow: hidden; margin-bottom: 10px;
   }
-  .pto-ring-label {
-    font-family: var(--mono);
-    font-size: 10px; font-weight: 600;
-    color: var(--muted);
-    letter-spacing: .12em; text-transform: uppercase;
+  .pto-tile .bar i {
+    display: block; height: 100%; background: var(--accent);
+    border-radius: 3px;
+    transition: width 400ms var(--ease);
+  }
+  .pto-tile .ftr {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    letter-spacing: .04em; font-variant-numeric: tabular-nums;
   }
 
   /* ─── MANAGER HERO METRICS ───────────────────────────────────── */
@@ -1487,22 +1541,10 @@
   }
   .timeoff-main { min-width: 0; }
   .timeoff-side { min-width: 0; }
-  .pto-card-side {
-    background: var(--paper-card);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 18px 16px;
-    box-shadow: var(--shadow-sm);
-  }
-  .pto-card-side .pto-ring { gap: 12px; padding-top: 4px; }
-  .pto-card-side .pto-svg { width: 140px; height: 140px; }
-  .pto-card-side .pto-ring-val { font-size: 30px; }
-  .pto-card-side .pto-ring-of { font-size: 11px; }
-  .pto-card-side .pto-ring-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .pto-card-side.empty { display: none; }
+  /* .pto-card-side ring rules removed in Round 2 · 8d — the rectangular
+     .pto-tile replaces it. See the PTO TILE block earlier in this file. */
   @media (max-width: 900px) {
     .timeoff-layout { grid-template-columns: 1fr; }
-    .pto-card-side .pto-svg { width: 110px; height: 110px; }
   }
 
   /* ─── PUNCH UNDO BUTTON (×) on Today's Punches ───────────────────────── */
@@ -1731,6 +1773,22 @@
     align-items: center; justify-content: center; padding: 20px;
   }
   .overlay.open { display: flex; animation: fadein .18s var(--ease); }
+  /* Round 2 · 8c — hover-mode tethered popover. The backdrop becomes
+     transparent + non-interactive so the rep can sweep across other
+     calendar cells without dismissing; the modal itself catches pointer
+     events. positionDayPopover_ in tc/script_timeoff.html sets top/left
+     inline. */
+  .overlay.hover-mode {
+    background: transparent; backdrop-filter: none;
+    pointer-events: none;
+    padding: 0;
+  }
+  .overlay.hover-mode .modal {
+    position: absolute;
+    width: 340px; max-width: calc(100vw - 16px);
+    pointer-events: auto;
+    box-shadow: var(--shadow-lg);
+  }
   @keyframes fadein { from { opacity: 0 } to { opacity: 1 } }
   .modal {
     background: var(--paper-card);
@@ -2101,8 +2159,7 @@
     gap: 8px;
   }
   :root[data-compact="1"] .metric-value { font-size: 22px; }
-  :root[data-compact="1"] .pto-rings { grid-template-columns: 1fr 1fr; gap: 12px; }
-  :root[data-compact="1"] .pto-svg { width: 80px; height: 80px; }
+  /* .pto-rings / .pto-svg compact overrides removed in Round 2 · 8d. */
   :root[data-compact="1"] .actions-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   :root[data-compact="1"] .action-btn { padding: 12px 8px; font-size: 12px; }
   :root[data-compact="1"] .action-btn .be svg { width: 18px; height: 18px; }
@@ -2193,8 +2250,7 @@
     .hero-clock-time { font-size: 48px; }
     .hero-clock-time .hc-ampm { font-size: 18px; }
     .audit-ts { min-width: 90px; }
-    .pto-rings { grid-template-columns: 1fr 1fr; gap: 16px; }
-    .pto-svg { width: 100px; height: 100px; }
+    /* .pto-rings / .pto-svg media-query overrides removed in Round 2 · 8d. */
   }
   @media (max-width: 540px) {
     .view-area { padding: 12px 12px calc(var(--mobile-nav-h) + 16px); }
