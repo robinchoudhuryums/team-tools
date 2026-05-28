@@ -59,11 +59,15 @@ function renderManagerView(area, data) {
         let line;
         if (e.lastPunchType) {
           const showMgr = e.lastPunchTimeMgr && e.empTzAbbr !== e.mgrTzAbbr;
-          const empTime = `<span class="emp-time">${dispTime(e.lastPunchTime)}</span> <span class="tz-tag">${esc(e.empTzAbbr)}</span>`;
-          const mgrTime = showMgr
-            ? ` · <span class="emp-time">${dispTime(e.lastPunchTimeMgr)}</span> <span class="tz-tag mgr-tz">${esc(e.mgrTzAbbr)}</span>`
-            : '';
-          line = `${prettyType(e.lastPunchType)} · ${empTime}${mgrTime}`;
+          // Paired-timezone chip (V4·E5): local time emphasized, manager time
+          // secondary; the second segment is omitted when both tzs match.
+          const tzChip = `<span class="tz-chip">`
+            + `<span class="seg local"><span class="t">${dispTime(e.lastPunchTime)}</span><span class="z">${esc(e.empTzAbbr)}</span></span>`
+            + (showMgr
+                ? `<span class="seg"><span class="t">${dispTime(e.lastPunchTimeMgr)}</span><span class="z">${esc(e.mgrTzAbbr)}</span></span>`
+                : '')
+            + `</span>`;
+          line = `${prettyType(e.lastPunchType)} · ${tzChip}`;
         } else {
           line = '<span style="color:var(--muted);font-style:italic">No punches today</span>';
         }
@@ -86,35 +90,39 @@ function renderManagerView(area, data) {
         const dy = parseInt(parts[2],10);
         const yr = parts[0];
 
-        let balLine = '';
+        // Approval-queue signal chips (V1·E5): surface US holidays, teammates
+        // already off the same day, and the projected balance after deduction
+        // as discrete chips. Holiday + team conflicts are also echoed (plain
+        // text) into the Approve confirm dialog via the data-conflict-hint
+        // attribute below so the manager can't dismiss the warning by reflex.
+        const holidayRaw = p.holidayName || '';
+        const conflictsApproved = p.conflictsOff ? p.conflictsOff.filter(c => c.status === 'approved').length : 0;
+        const conflictsPending  = p.conflictsOff ? p.conflictsOff.filter(c => c.status === 'pending').length  : 0;
+
+        const sigChips = [];
+        if (holidayRaw) {
+          sigChips.push(`<span class="sig hol">${icon('star', 11)}${esc(holidayRaw).toUpperCase()}</span>`);
+        }
+        if (conflictsApproved + conflictsPending > 0) {
+          const teamBits = [];
+          if (conflictsApproved > 0) teamBits.push(`${conflictsApproved} off`);
+          if (conflictsPending > 0)  teamBits.push(`${conflictsPending} pending`);
+          sigChips.push(`<span class="sig team">${icon('info', 11)}${teamBits.join(', ')}</span>`);
+        }
         if (data.ptoEnabled && p.currentBalance !== null && p.currentBalance !== undefined) {
           const bucketLabel = p.leaveBucket === 'sick' ? 'Sick' : 'Annual';
-          const projCls = p.projectedBalance < 0 ? 'neg' : '';
-          balLine = `<div class="pending-balance">
-            ${bucketLabel}: ${formatLeaveDays(p.currentBalance)}
-            → <span class="${projCls}">${formatLeaveDays(p.projectedBalance)}</span>
-            <span class="pending-balance-unit">days</span>
-          </div>`;
+          const negCls = p.projectedBalance < 0 ? ' neg' : '';
+          sigChips.push(`<span class="sig bal${negCls}">${bucketLabel} ${formatLeaveDays(p.currentBalance)} → ${formatLeaveDays(p.projectedBalance)} d</span>`);
         }
+        const signalsHtml = sigChips.length ? `<div class="signals">${sigChips.join('')}</div>` : '';
 
-        // Conflict hint: surface US holidays + other reps off the same day so
-        // the manager catches double-bookings before clicking Approve. Status
-        // distinguishes Approved (confirmed off) from Pending (will-be-off).
-        let conflictLine = '';
-        const conflictBits = [];
-        if (p.holidayName) conflictBits.push(esc(p.holidayName) + ' (US holiday)');
-        if (p.conflictsOff && p.conflictsOff.length) {
-          const approvedCount = p.conflictsOff.filter(c => c.status === 'approved').length;
-          const pendingCount  = p.conflictsOff.filter(c => c.status === 'pending').length;
-          const otherBits = [];
-          if (approvedCount > 0) otherBits.push(`${approvedCount} approved off`);
-          if (pendingCount > 0)  otherBits.push(`${pendingCount} pending`);
-          if (otherBits.length) conflictBits.push(otherBits.join(', '));
-        }
-        if (conflictBits.length) {
-          conflictLine = `<div style="margin-top:6px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--warning-deep);text-transform:uppercase;display:flex;align-items:center;gap:5px">${icon('info', 11)}${conflictBits.join(' · ')}</div>`;
-        }
-        const conflictForConfirm = conflictBits.length ? conflictBits.join(' · ') : '';
+        const confirmBits = [];
+        if (holidayRaw) confirmBits.push(`${holidayRaw} (US holiday)`);
+        const otherBits = [];
+        if (conflictsApproved > 0) otherBits.push(`${conflictsApproved} approved off`);
+        if (conflictsPending > 0)  otherBits.push(`${conflictsPending} pending`);
+        if (otherBits.length) confirmBits.push(otherBits.join(', '));
+        const conflictForConfirm = confirmBits.join(' · ');
 
         return `<div class="pending-card">
           <div class="pending-top">
@@ -129,8 +137,7 @@ function renderManagerView(area, data) {
               <div class="pending-emp">${esc(p.empName)}</div>
               <div class="pending-meta">${esc(p.type)} · ${yr}</div>
               ${p.notes && p.notes !== 'undefined' ? `<div class="pending-notes">"${esc(p.notes)}"</div>` : ''}
-              ${balLine}
-              ${conflictLine}
+              ${signalsHtml}
             </div>
           </div>
           <div class="pending-actions">

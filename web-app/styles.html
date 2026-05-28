@@ -419,6 +419,40 @@
     text-transform: uppercase; vertical-align: 1px;
   }
   .tz-tag.mgr-tz { color: var(--info-deep); background: var(--accent-soft); border-color: transparent; }
+
+  /* ─── PAIRED-TIMEZONE CHIP (V4·E5) ───────────────────────────────
+     Two-segment chip pairing the rep's local time + manager-tz time.
+     First .seg.local is the emphasized segment (paper-2 fill); the
+     second .seg is secondary text-only. Callers render the second
+     segment only when local tz != manager tz, so same-tz reps see a
+     single-segment chip and no redundant tz comparison.
+     Structure:
+       <span class="tz-chip">
+         <span class="seg local"><span class="t">5:30 PM</span><span class="z">IST</span></span>
+         <span class="seg"><span class="t">7:00 AM</span><span class="z">CST</span></span>
+       </span>                                                                    */
+  .tz-chip {
+    display: inline-flex; align-items: stretch;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    overflow: hidden; vertical-align: -1px;
+    background: var(--paper-card);
+  }
+  .tz-chip .seg {
+    display: inline-flex; align-items: baseline; gap: 5px;
+    padding: 2px 7px;
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+  }
+  .tz-chip .seg + .seg { border-left: 1px solid var(--line); }
+  .tz-chip .seg.local { background: var(--paper-2); }
+  .tz-chip .seg .t {
+    font-size: 11px; font-weight: 600; color: var(--ink);
+    letter-spacing: 0;
+  }
+  .tz-chip .seg:not(.local) .t { color: var(--muted); font-weight: 500; }
+  .tz-chip .seg .z {
+    font-size: 9px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+  }
   .status-pill {
     display: inline-flex; align-items: center; gap: 7px;
     padding: 5px 11px; border-radius: 999px;
@@ -755,6 +789,32 @@
   }
   .pending-balance .neg { color: var(--destructive); font-weight: 600; }
   .pending-balance-unit { color: var(--muted); font-size: 10px; margin-left: 2px; }
+
+  /* ─── APPROVAL-QUEUE SIGNAL CHIPS (V1·E5) ────────────────────────
+     Row of small chips that surface the three actionable signals a
+     manager needs before approving a PTO request: holiday (.sig.hol),
+     teammates already off the same day (.sig.team), and projected
+     balance after the deduction (.sig.bal, with .neg modifier when
+     the projection goes negative). Replaces the prior balLine +
+     conflictLine inline-text rows. Chips wrap if the card is narrow. */
+  .signals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .sig {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: 3px 7px; border-radius: 4px;
+    border: 1px solid transparent;
+    font-variant-numeric: tabular-nums;
+  }
+  .sig svg { width: 11px; height: 11px; }
+  .sig.hol  { background: var(--info-soft); color: var(--info-deep); }
+  .sig.team { background: var(--warn-soft); color: var(--warning-deep); }
+  .sig.bal  { background: var(--paper-2);   color: var(--muted); border-color: var(--line); }
+  .sig.bal.neg {
+    background: var(--destructive-soft); color: var(--danger-deep);
+    border-color: transparent;
+  }
+
   .pending-actions { display: flex; gap: 8px; margin-top: 8px; }
   .pending-btn {
     flex: 1; border-radius: var(--radius);
