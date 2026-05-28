@@ -6,7 +6,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
 ## Projects
 
 - **web-app/** — Multi-module browser app deployed at one Web App URL.
-  Hosts two modules today, registered side-by-side in the `TOOLS`
+  Hosts three modules today, registered side-by-side in the `TOOLS`
   registry in `script_core.html`:
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export.
@@ -16,13 +16,25 @@ Script project synced via [clasp](https://github.com/google/clasp).
     are a separate two-stage flow with preview gate. Three flag
     types (action / training / review) with EOD reminders for
     unresolved action flags and weekly manager digests.
+  - **Metrics** — CDR integration reading DQE Historical Data from
+    the CDR Report spreadsheet. Two tabs: "My Stats" (self-view —
+    today's KPIs, 30-day % Answered trend, note-to-call coverage)
+    and "Team Metrics" (manager-only — per-rep table with date-range
+    and preset chips). CDR metrics also enrich the Call Notes Stats
+    tab via a best-effort overlay.
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in
   `web-app/<tool>/script_*.html`, `include()` them from
   `index.html`, and add server endpoints to `Code.js` alongside the
   existing ones. The sidebar shows one button per tool; sub-navigation
-  is a horizontal tab bar above the view area.
+  is a horizontal tab bar above the view area. Shared chrome
+  vocabulary (`.hero`, `.actions`, `.ledger`, `.telemetry`,
+  `.tz-chip`, `.signals`/`.sig`, `.conflict`, `.balance-after`,
+  `.ribbon-wrap`, `.cov`, `.m-hero`/`.m-rail`/`.m-row`) lives in
+  `styles.html` and consumes the canonical design tokens directly —
+  new tools should reach for these before adding tool-local
+  variants.
 - **call-notes/** — Legacy Workspace Add-on scaffold; superseded by
   the Call Notes module inside `web-app/`. Kept on disk for reference
   during the transition. The Add-on path was abandoned because admin
