@@ -5068,8 +5068,8 @@ function cnPollAmbient_() {
       cnUpdateStatsMini_(res);
       cnUpdateQuickChipRow_(res);
       // Update sidebar badge on the Call Notes nav link
-      const link = document.querySelector('.sb-link[data-view="callNotes"]')
-                || document.querySelector('.nav-btn[data-view="callNotes"]');
+      const link = document.querySelector('.sb-link[data-tool="callNotes"]')
+                || document.querySelector('.nav-btn[data-tool="callNotes"]');
       if (!link) return;
       let badge = link.querySelector('.cn-stale-badge');
       const count = res.staleActionCount || 0;

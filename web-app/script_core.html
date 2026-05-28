@@ -144,6 +144,8 @@ window.addEventListener('load', () => {
         initialTab = INITIAL_VIEW_FROM_URL;
       }
       enterTool(initialTool, initialTab);
+      // Start ambient pollers — badges update regardless of active tool
+      if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
     })
     .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
     .getEmployeeState();
