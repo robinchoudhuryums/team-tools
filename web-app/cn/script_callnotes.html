@@ -1530,6 +1530,11 @@ function cnRenderNotesView(area) {
   // contract from the Clock view's coverage strip CTA, future-ready even
   // though the strip doesn't pass prefill today — no per-call CDR data).
   cnApplyPrefillFromUrl_();
+  // Round 2 · 8z — consume the in-memory nav hint from the Clock view's
+  // coverage-strip CTA. Today: just a toast acknowledging the source.
+  // When per-call CDR data lands: prefill the form from hint.calls[0]
+  // or auto-filter the rolling stack to unmatched-only.
+  cnConsumeNavHint_();
   // Restore any in-progress draft from a prior session (sticky form). If a
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
@@ -4415,6 +4420,25 @@ function cnPollAmbient_() {
       badge.textContent = String(count);
     })
     .getCallNotesAmbient();
+}
+
+/** Round 2 · 8z — Consumes window.CLK_NAV_HINT (set by the Clock view's
+ *  coverage-strip CTA, fileMissingCalls_). Today: surfaces a toast so the
+ *  rep sees the source context. Future-ready for when per-call CDR data
+ *  exists: extend hint.calls[] to carry call IDs, then prefill the form
+ *  or auto-filter the rolling stack here. Always nulls the hint after
+ *  read so subsequent CN view enters don't re-fire the same toast. */
+function cnConsumeNavHint_() {
+  const hint = window.CLK_NAV_HINT;
+  if (!hint || hint.source !== 'coverageStrip') return;
+  window.CLK_NAV_HINT = null;
+  if (typeof showToast !== 'function') return;
+  const n = hint.missingCount || 0;
+  const dateLabel = hint.date ? ' for ' + hint.date : ' for today';
+  const msg = n > 0
+    ? `Filing ${n} missing note${n > 1 ? 's' : ''}${dateLabel}`
+    : `Note coverage${dateLabel}`;
+  showToast(msg, 'toast-success');
 }
 
 /** V4 Phase 4 — document-level Ctrl/⌘+K handler that navigates to the

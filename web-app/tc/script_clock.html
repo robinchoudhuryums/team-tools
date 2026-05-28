@@ -195,6 +195,30 @@ function renderLedger_(s, stats) {
 // The guard `typeof === 'function'` in loadTimesheet's success handler
 // (tc/script_timesheet.html) makes the now-missing call a safe no-op.
 
+/** Round 2 · 8z — Coverage-strip CTA handler. Sets an in-memory nav hint
+ *  with the source date + missing count before navigating to Call Notes.
+ *  The Log view's enter handler consumes the hint and (when per-call CDR
+ *  data eventually lands) can populate the Log with the specific unmatched
+ *  call IDs. Today the hint just carries the date so the Log view can
+ *  acknowledge the deep-link with a toast.
+ *
+ *  The original V1·E3 spec called for a URL deep-link with
+ *  ?tool=callNotes&filter=unmatched&date=YYYY-MM-DD, but two constraints
+ *  prevent the URL approach: (a) CDR data is per-(agent, date) aggregated,
+ *  so "unmatched call IDs" don't exist server-side; (b) Apps Script's
+ *  HtmlService iframe sandboxes window.location.search away from the user-
+ *  facing URL (see 8x). The in-memory hint is the practical equivalent
+ *  until a per-call CDR source materialises. */
+window.CLK_NAV_HINT = null;
+function fileMissingCalls_(date, missingCount) {
+  window.CLK_NAV_HINT = {
+    source: 'coverageStrip',
+    date: date || '',
+    missingCount: Number(missingCount) || 0,
+  };
+  if (typeof enterTool === 'function') enterTool('callNotes');
+}
+
 // ── DAY RIBBON (V4·E1) ─────────────────────────────────────────────────
 // Horizontal time-of-day ribbon spanning 06:00–22:00. Renders the rep's
 // scheduled shift (dashed band, default 8a–5p CST per C3 or anchored to
@@ -408,7 +432,13 @@ function renderCoverageStrip_(slot, data) {
 
   let ctaHtml = '';
   if (missing > 0) {
-    ctaHtml = `<button class="cov-cta" onclick="enterTool('callNotes')">${icon('adjust', 12)}File ${missing} missing</button>`;
+    // Round 2 · 8z — pass the date through fileMissingCalls_ as an in-memory
+    // navigation hint. The Log view consumes the hint and (when per-call
+    // CDR data eventually exists) can pre-filter to unmatched calls. Today,
+    // CDR is per-(agent, date) aggregated only — no per-call records — so
+    // the hint just carries the date for context.
+    const today = isoDateTz(empTz());
+    ctaHtml = `<button class="cov-cta" onclick="fileMissingCalls_('${esc(today)}', ${missing})">${icon('adjust', 12)}File ${missing} missing</button>`;
   } else if (noteCount > 0 && answered > 0 && covPct >= 100) {
     ctaHtml = `<button class="cov-cta muted" onclick="enterTool('callNotes')">${icon('check', 12)}All covered</button>`;
   }

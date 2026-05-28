@@ -97,10 +97,24 @@ let adjustWindowDays = 30;
 
 // Compact mode: ?compact=1 collapses sidebar/header chrome to fit a small
 // pop-out window. ?tool=<viewKey> deep-links straight into a specific tool.
-// Read from URL params on boot, persisted to documentElement so CSS can
-// react. Compact mode is also re-emitted on the pop-out window URL.
+// Round 2 · 8x — read query params via SERVER_QUERY_PARAMS (injected by
+// doGet's template eval) since Apps Script's HtmlService iframe doesn't
+// expose the deploy URL's search string through window.location. Fall back
+// to window.location.search for any non-Apps-Script context (e.g. local
+// dev / a future static-hosted variant). data-compact is also set in
+// <head> by index.html for first-paint correctness; setting again here is
+// idempotent.
 const __URL_PARAMS = (function () {
-  try { return new URLSearchParams(window.location.search); }
+  try {
+    if (window.SERVER_QUERY_PARAMS && Object.keys(window.SERVER_QUERY_PARAMS).length > 0) {
+      const usp = new URLSearchParams();
+      Object.keys(window.SERVER_QUERY_PARAMS).forEach(function (k) {
+        usp.set(k, String(window.SERVER_QUERY_PARAMS[k]));
+      });
+      return usp;
+    }
+    return new URLSearchParams(window.location.search);
+  }
   catch (e) { return new URLSearchParams(''); }
 })();
 const COMPACT_MODE = __URL_PARAMS.get('compact') === '1';

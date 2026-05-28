@@ -241,8 +241,16 @@ function doGet(e) {
   // non-employees see the shell but can't load any data or perform any
   // actions. This is intentional — Session.getActiveUser().getEmail()
   // is unreliable with executeAs: USER_DEPLOYING + ANYONE_ANONYMOUS.
-  return HtmlService
-    .createTemplateFromFile('index')
+  //
+  // Round 2 · 8x — pass the URL query params through the template eval.
+  // Apps Script's HtmlService iframe (script.googleusercontent.com) doesn't
+  // expose the parent deploy URL's query string via window.location.search,
+  // so reading ?compact=1 / ?tool=X / ?prefill=… directly from the iframe
+  // silently returns empty. The template injects serverQueryParams into
+  // window.SERVER_QUERY_PARAMS so client code can read them reliably.
+  const tpl = HtmlService.createTemplateFromFile('index');
+  tpl.serverQueryParams = (e && e.parameter) || {};
+  return tpl
     .evaluate()
     .setTitle('UMS Team Tools')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
