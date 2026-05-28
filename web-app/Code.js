@@ -2308,22 +2308,22 @@ function parseTimestampMs_(tsStr, tz) {
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
   paper:        '#f6f7f9',
-  paper2:       '#eceef2',
-  ink:          '#101418',
-  muted:        '#606872',
-  line:         '#dadde3',
-  accent:       '#3565b8',      // resolved oklch(55% 0.12 240)
-  accentSoft:   '#e6ecf6',      // resolved oklch(93% 0.04 240)
-  accentDeep:   '#1e3a6e',
-  good:         '#3d8c6b',
-  goodSoft:     '#e6f1ec',
-  goodDeep:     '#1f4d3a',
-  warn:         '#c25b1a',
-  warnSoft:     '#fbeede',
-  warnDeep:     '#693012',
-  danger:       '#c0392b',
-  dangerSoft:   '#fae8e6',
-  dangerDeep:   '#6e1f17',
+  paper2:       '#f0f2f6',
+  ink:          '#0f1623',
+  muted:        '#3e4756',
+  line:         '#dce0e7',
+  accent:       '#0f8a52',      // console-redesign primary green
+  accentSoft:   '#e4f5ec',
+  accentDeep:   '#0b6e40',
+  good:         '#0f8a52',      // aliased to accent (one editorial green)
+  goodSoft:     '#e4f5ec',
+  goodDeep:     '#0b6e40',
+  warn:         '#b7791f',
+  warnSoft:     '#fbf1d9',
+  warnDeep:     '#8a4500',
+  danger:       '#c13030',
+  dangerSoft:   '#fce5e5',
+  dangerDeep:   '#8a1f1f',
   // UMS brand navy + pale-blue alternating-row tint. These match the legacy
   // dept-email aesthetic (closeOrderEmail.js, updateOrderEmail.js) so emails
   // sent from the new web app look continuous with the prior tooling.

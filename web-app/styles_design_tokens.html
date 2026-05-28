@@ -2,38 +2,61 @@
   /* ═══════════════════════════════════════════════════════════════════════
      UMS TEAM TOOLS — SHARED DESIGN TOKENS
      ───────────────────────────────────────────────────────────────────────
-     Warm-paper editorial system. Slate palette (default), with dark-mode
-     overlay applied via [data-mode="dark"]. New tools should `include`
-     this partial FIRST in their `<head>`, then layer their tool-specific
-     view styles on top — the partial declares the canonical tokens
-     (colors, type families, radii, shadows, motion, layout vars) plus
-     the additive utility classes (`.app-bar`, `.panel`, `.doc-row`,
-     `.kicker-pill`, `.toolbar-tabs`, etc.) every tool can consume.
+     Console-redesign palette. Editorial green-as-primary (`--accent` is
+     green; `--info` is a separate blue token for info-only surfaces).
+     Dark mode is applied via [data-mode="dark"] from the bootstrap script
+     in index.html. New tools should `include` this partial FIRST in their
+     `<head>`, then layer their tool-specific view styles on top — the
+     partial declares the canonical tokens (colors, type families, radii,
+     shadows, motion, layout vars) plus the additive utility classes
+     (`.app-bar`, `.panel`, `.doc-row`, `.kicker-pill`, `.toolbar-tabs`,
+     etc.) every tool can consume.
      ═══════════════════════════════════════════════════════════════════════ */
 
   :root {
     /* ── Type families ─────────────────────────────────────────────── */
-    --display: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
-    --ui:      'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    --mono:    'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    /* Inter Tight is the single sans family — used for both UI and
+       display sites. Stylistic sets ss01/cv11/cv05 + a small negative
+       letter-spacing tighten the editorial feel; applied on html/body
+       in styles.html so every text node inherits. */
+    --display: 'Inter Tight', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --ui:      'Inter Tight', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono:    'JetBrains Mono', ui-monospace, Menlo, monospace;
 
-    /* ── Slate palette (light, default) ────────────────────────────── */
+    /* ── Console palette (light, default) ──────────────────────────── */
     --paper:        #f6f7f9;
-    --paper-2:      #eceef2;
+    --paper-2:      #f0f2f6;
+    --paper-3:      #e5e8ee;
     --paper-card:   #ffffff;
-    --ink:          #101418;
-    --muted:        #606872;
-    --line:         #dadde3;
+    --ink:          #0f1623;
+    --muted:        #3e4756;
+    --muted-2:      #737c8c;
+    --muted-3:      #a5acb8;
+    --line:         #dce0e7;
+    --line-2:       #c3c9d3;
 
-    --accent:       oklch(55% 0.12 240);
-    --accent-soft:  oklch(93% 0.04 240);
+    /* Primary accent is green (the redesign's editorial signature). */
+    --accent:       #0f8a52;
+    --accent-2:     #0b6e40;
+    --accent-soft:  #e4f5ec;
+    --accent-glow:  rgba(15, 138, 82, 0.16);
 
-    --good:         oklch(58% 0.10 160);
-    --good-soft:    oklch(94% 0.04 160);
-    --warn:         oklch(60% 0.16 30);
-    --warn-soft:    oklch(94% 0.05 60);
-    --destructive:      oklch(58% 0.18 25);
-    --destructive-soft: oklch(94% 0.04 25);
+    /* `--good` is intentionally aliased to `--accent` — the redesign
+       collapses primary and success into one green. Future code that
+       needs to distinguish them can layer on top. */
+    --good:         #0f8a52;
+    --good-soft:    #e4f5ec;
+
+    --warn:         #b7791f;
+    --warn-soft:    #fbf1d9;
+    --destructive:      #c13030;
+    --destructive-soft: #fce5e5;
+
+    /* Info = blue. Separate from the primary green so info-only surfaces
+       (US-holiday signal chip, manager-tz tag, "heads up" banners) read
+       distinct from the primary accent. */
+    --info:         #1e63b8;
+    --info-soft:    #e1ecfa;
 
     /* ── Depth (warm-paper aesthetic uses minimal shadow) ──────────── */
     --shadow-sm: 0 1px 2px rgba(15,23,42,.04);
@@ -62,18 +85,32 @@
        inverts them so they read as lighter shades against the dark
        canvas. Fallbacks for browsers without color-mix support. */
     --border-strong: #b8bcc4;
-    --success-deep:  #2d6a4f;
+    --success-deep:  #0b6e40;
     --warning-deep:  #8a4500;
-    --danger-deep:   #8a2000;
-    --info-deep:     #2a5494;
+    --danger-deep:   #8a1f1f;
+    --info-deep:     #154980;
+
+    /* ── Metrics-module aliases ─────────────────────────────────────
+       metrics/script_metrics.html (and possibly future tools) reference
+       these names. Mapping them to the canonical tokens here keeps the
+       Metrics view consistent with the rest of the design system without
+       a per-file rewrite. */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --font-mono:  var(--mono);
+    --font-tight: var(--display);
+    --danger:      var(--destructive);
+    --danger-soft: var(--destructive-soft);
   }
   @supports (color: color-mix(in oklch, red, blue)) {
     :root {
       --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
-      --success-deep: color-mix(in oklch, var(--good), var(--ink) 45%);
-      --warning-deep: color-mix(in oklch, var(--warn), var(--ink) 45%);
+      --success-deep: color-mix(in oklch, var(--good),        var(--ink) 45%);
+      --warning-deep: color-mix(in oklch, var(--warn),        var(--ink) 45%);
       --danger-deep:  color-mix(in oklch, var(--destructive), var(--ink) 45%);
-      --info-deep:    color-mix(in oklch, var(--accent), var(--ink) 45%);
+      --info-deep:    color-mix(in oklch, var(--info),        var(--ink) 45%);
     }
   }
 
@@ -83,38 +120,53 @@
      reflects the persisted mode — no light-mode flash on load. */
   :root[data-mode="dark"],
   body[data-mode="dark"] {
-    --paper:        #0c0f14;
-    --paper-2:      #151a22;
-    --paper-card:   #13171e;
-    --ink:          #ecf0f6;
-    --muted:        #7d8694;
-    --line:         #242a34;
+    --paper:        #0a0d14;
+    --paper-2:      #161b26;
+    --paper-3:      #1e2532;
+    --paper-card:   #10141d;
+    --ink:          #e8e6e0;
+    --muted:        #a6adbc;
+    --muted-2:      #6c7587;
+    --muted-3:      #454e60;
+    --line:         #262d3b;
+    --line-2:       #3f4a60;
 
-    --accent-soft:      oklch(28% 0.05 240);
-    --good-soft:        oklch(28% 0.05 160);
-    --warn-soft:        oklch(28% 0.06 30);
-    --destructive-soft: oklch(28% 0.06 25);
+    --accent:       #7af2a1;
+    --accent-2:     #4fd683;
+    --accent-soft:  rgba(122, 242, 161, 0.12);
+    --accent-glow:  rgba(122, 242, 161, 0.22);
+
+    --good:         #7af2a1;
+    --good-soft:    rgba(122, 242, 161, 0.12);
+
+    --warn:         #ffb547;
+    --warn-soft:    rgba(255, 181, 71, 0.14);
+    --destructive:  #ff6679;
+    --destructive-soft: rgba(255, 102, 121, 0.14);
+
+    --info:         #74c7ff;
+    --info-soft:    rgba(116, 199, 255, 0.14);
 
     --shadow-sm: 0 1px 2px rgba(0,0,0,.25);
     --shadow:    0 1px 3px rgba(0,0,0,.30);
     --shadow-md: 0 2px 8px rgba(0,0,0,.35);
     --shadow-lg: 0 10px 28px rgba(0,0,0,.45);
-    --ring-focus: 0 0 0 3px rgba(90,130,200,.3);
+    --ring-focus: 0 0 0 3px rgba(122,242,161,.3);
 
-    --success-deep:  #6bcb9b;
-    --warning-deep:  #e0a050;
-    --danger-deep:   #e06050;
-    --info-deep:     #7aaae0;
+    --success-deep:  #b8fbc8;
+    --warning-deep:  #ffcb80;
+    --danger-deep:   #ffa0a8;
+    --info-deep:     #b0ddff;
     --border-strong: #4a5260;
   }
   @supports (color: color-mix(in oklch, red, blue)) {
     :root[data-mode="dark"],
     body[data-mode="dark"] {
       --ring-focus: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 70%);
-      --success-deep: color-mix(in oklch, var(--good), var(--paper-card) 25%);
-      --warning-deep: color-mix(in oklch, var(--warn), var(--paper-card) 25%);
+      --success-deep: color-mix(in oklch, var(--good),        var(--paper-card) 25%);
+      --warning-deep: color-mix(in oklch, var(--warn),        var(--paper-card) 25%);
       --danger-deep:  color-mix(in oklch, var(--destructive), var(--paper-card) 25%);
-      --info-deep:    color-mix(in oklch, var(--accent), var(--paper-card) 25%);
+      --info-deep:    color-mix(in oklch, var(--info),        var(--paper-card) 25%);
       --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
     }
   }
@@ -199,15 +251,17 @@
     background: var(--paper-2); color: var(--muted);
     border: 1px solid var(--line);
   }
-  .kicker-pill[data-tone="accent"]      { background: var(--accent-soft);      color: var(--info-deep);    border-color: transparent; }
+  .kicker-pill[data-tone="accent"]      { background: var(--accent-soft);      color: var(--success-deep); border-color: transparent; }
   .kicker-pill[data-tone="sage"]        { background: var(--good-soft);        color: var(--success-deep); border-color: transparent; }
   .kicker-pill[data-tone="warn"]        { background: var(--warn-soft);        color: var(--warning-deep); border-color: transparent; }
   .kicker-pill[data-tone="destructive"] { background: var(--destructive-soft); color: var(--danger-deep);  border-color: transparent; }
+  .kicker-pill[data-tone="info"]        { background: var(--info-soft);        color: var(--info-deep);    border-color: transparent; }
 
   /* Tabular numerics — applied to anything that stacks numbers */
   .tabular {
     font-family: var(--mono);
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
   }
 
   /* Toolbar tab — mono-uppercase button row (used in place of segmented controls) */
