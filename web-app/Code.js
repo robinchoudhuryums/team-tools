@@ -699,6 +699,69 @@ function getManagerDashboard() {
       if (toSummary[st] !== undefined) toSummary[st]++;
     }
 
+    // ── 14-day trends for the V4·E2 manager telemetry strip ─────────
+    // pendingTrend = new pending submissions per day (includes today).
+    // missedTrend  = missed-clock-out instances per day (excludes today,
+    //                since reps still mid-shift would always count as "missed").
+    // Both reuse already-loaded sheet data (toRows, adpRows) — in-memory
+    // iteration only, no extra Sheet reads.
+    const trendDays = 14;
+    const pendingTrendStart = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - (trendDays - 1));
+      return fmtDateTz_(d, mgrTz);
+    })();
+    const missedTrendStart = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - trendDays);
+      return fmtDateTz_(d, mgrTz);
+    })();
+    const missedTrendEnd = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - 1);
+      return fmtDateTz_(d, mgrTz);
+    })();
+
+    const pendingByDate = {};
+    for (let i = 1; i < toRows.length; i++) {
+      if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'pending') continue;
+      const submitted = String(toRows[i][TO.SUBMITTED_AT]).trim();
+      const subDate = submitted ? submitted.substring(0, 10) : '';
+      if (subDate >= pendingTrendStart && subDate <= todayStr) {
+        pendingByDate[subDate] = (pendingByDate[subDate] || 0) + 1;
+      }
+    }
+
+    const trendPunchKey = {};
+    for (let i = 2; i < adpRows.length; i++) {
+      const id = String(adpRows[i][ADP.EMP_ID]).trim();
+      const e = empById[id];
+      if (!e) continue;
+      const rowDate = normalizeDate_(adpRows[i][ADP.DATE]);
+      if (rowDate < missedTrendStart || rowDate > missedTrendEnd) continue;
+      const key = `${id}|${rowDate}`;
+      if (!trendPunchKey[key]) trendPunchKey[key] = new Set();
+      trendPunchKey[key].add(normalizeType_(String(adpRows[i][ADP.COMMENTS])));
+    }
+    const missedByDate = {};
+    for (const key in trendPunchKey) {
+      const types = trendPunchKey[key];
+      if (types.has('ClockIn') && !types.has('ClockOut')) {
+        const d = key.split('|')[1];
+        missedByDate[d] = (missedByDate[d] || 0) + 1;
+      }
+    }
+
+    const pendingTrend = [];
+    for (let off = trendDays - 1; off >= 0; off--) {
+      const dd = new Date(now); dd.setDate(dd.getDate() - off);
+      const ds = fmtDateTz_(dd, mgrTz);
+      pendingTrend.push({ date: ds, count: pendingByDate[ds] || 0 });
+    }
+    const missedTrend = [];
+    for (let off = trendDays; off >= 1; off--) {
+      const dd = new Date(now); dd.setDate(dd.getDate() - off);
+      const ds = fmtDateTz_(dd, mgrTz);
+      missedTrend.push({ date: ds, count: missedByDate[ds] || 0 });
+    }
+
     return {
       today: todayStr,
       liveStatus, pending, missedPunches, recentPunches, recentAudits,
@@ -707,6 +770,7 @@ function getManagerDashboard() {
       ptoEnabled:          !!CONFIG.ENABLE_PTO_TRACKING,
       mgrTzAbbr,
       punchTrend, toSummary,
+      pendingTrend, missedTrend,
     };
   } catch (err) { return { error: err.message }; }
 }

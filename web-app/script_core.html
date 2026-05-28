@@ -143,7 +143,7 @@ function popOutCurrentView() {
     const url = window.location.origin + window.location.pathname +
       '?compact=1&tool=' + encodeURIComponent(currentView);
     window.open(url, 'umsTeamToolsCompact',
-      'width=440,height=780,menubar=no,toolbar=no,location=no,status=no,resizable=yes');
+      'width=380,height=780,menubar=no,toolbar=no,location=no,status=no,resizable=yes');
   } catch (e) { showToast('Pop-out blocked by browser', 'toast-warn'); }
 }
 

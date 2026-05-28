@@ -23,30 +23,50 @@ function renderManagerView(area, data) {
   const pendingCount = data.pending.length;
   const missedCount = data.missedPunches.length;
 
-  // ── Hero metrics row ────────────────────────────────────────────────────
-  // .metric-icon spans dropped — the colored inset left-stripe + value
-  // tone carry the semantic without an extra decorative bullet.
+  // ── Hero telemetry strip (V4·E2) ────────────────────────────────────────
+  // 4-cell horizontal strip with mono-tabular values. Missed + Pending carry
+  // 14-day sparklines (data.missedTrend / data.pendingTrend); Active + On
+  // Lunch are static counts per the C6 decision. The sub-line surfaces the
+  // most actionable specific (first missed rep + day, oldest pending rep).
+  const missedSub = data.missedPunches.length > 0
+    ? (() => {
+        const m = data.missedPunches[0];
+        const parts = m.date.split('-');
+        const dlabel = `${MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3)} ${parseInt(parts[2],10)}`;
+        const extra = data.missedPunches.length > 1 ? ` +${data.missedPunches.length - 1}` : '';
+        return `${esc(m.empName.split(' ')[0])} ${dlabel}${extra}`;
+      })()
+    : `last ${data.missedLookbackDays} days · clean`;
+  const pendingSub = data.pending.length > 0
+    ? (() => {
+        const p = data.pending[0];
+        return `oldest: ${esc(p.empName.split(' ')[0])} ${p.date.slice(5)}`;
+      })()
+    : 'queue empty';
+
   const heroHtml = `
-    <div class="metric-grid">
-      <div class="metric-card success">
-        <div class="metric-label">Active</div>
-        <div class="metric-value success">${counts.clocked_in}</div>
-        <div class="metric-sub">of ${totalEmp} team members</div>
+    <div class="telemetry">
+      <div class="tel-cell">
+        <div class="tel-label">Active</div>
+        <div class="tel-value ${counts.clocked_in > 0 ? 'success' : ''}">${counts.clocked_in}</div>
+        <div class="tel-sub">of ${totalEmp} team members</div>
       </div>
-      <div class="metric-card warning">
-        <div class="metric-label">On Lunch</div>
-        <div class="metric-value warning">${counts.on_lunch}</div>
-        <div class="metric-sub">currently away</div>
+      <div class="tel-cell">
+        <div class="tel-label">On Lunch</div>
+        <div class="tel-value">${counts.on_lunch}</div>
+        <div class="tel-sub">currently away</div>
       </div>
-      <div class="metric-card ${missedCount > 0 ? 'danger' : ''}">
-        <div class="metric-label">Missed Punches</div>
-        <div class="metric-value ${missedCount > 0 ? 'danger' : ''}">${missedCount}</div>
-        <div class="metric-sub">last ${data.missedLookbackDays} days</div>
+      <div class="tel-cell">
+        <div class="tel-label">Missed · ${data.missedLookbackDays}d</div>
+        <div class="tel-value ${missedCount > 0 ? 'crit' : ''}">${missedCount}</div>
+        ${renderTelSparkline_(data.missedTrend, missedCount > 0 ? 'crit' : null)}
+        <div class="tel-sub">${missedSub}</div>
       </div>
-      <div class="metric-card ${pendingCount > 0 ? 'accent' : ''}">
-        <div class="metric-label">Pending Requests</div>
-        <div class="metric-value ${pendingCount > 0 ? 'info' : ''}">${pendingCount}</div>
-        <div class="metric-sub">awaiting approval</div>
+      <div class="tel-cell">
+        <div class="tel-label">Pending</div>
+        <div class="tel-value ${pendingCount > 0 ? 'warn' : ''}">${pendingCount}</div>
+        ${renderTelSparkline_(data.pendingTrend, pendingCount > 0 ? 'warn' : null)}
+        <div class="tel-sub">${pendingSub}</div>
       </div>
     </div>`;
 
@@ -650,6 +670,26 @@ document.getElementById('de-save').addEventListener('click', function () {
     })
     .managerSaveDay(_deEmpId, _deDate, slots, reason);
 });
+
+/** 14-bar sparkline for the manager telemetry strip (V4·E2). Tone is
+ *  applied to the latest bar so the eye lands on "right now"; empty
+ *  trends collapse to nothing rather than render a row of zero-height
+ *  placeholders. */
+function renderTelSparkline_(trend, tone) {
+  if (!trend || trend.length === 0) return '';
+  const max = Math.max(1, ...trend.map(d => d.count || 0));
+  const bars = trend.map((d, i) => {
+    const c = d.count || 0;
+    const h = c === 0 ? 0 : Math.max(2, Math.round((c / max) * 18));
+    const isLast = i === trend.length - 1;
+    const cls = ['bar'];
+    if (c === 0) cls.push('zero');
+    if (isLast && tone && c > 0) cls.push(tone);
+    const title = `${d.date}: ${c}`;
+    return `<div class="${cls.join(' ')}" title="${esc(title)}" style="height:${h}px"></div>`;
+  }).join('');
+  return `<div class="tel-spark">${bars}</div>`;
+}
 
 function renderAnalyticsSection(data) {
   const trend = data.punchTrend || [];
