@@ -46,46 +46,412 @@ function getClockArea_() {
 
 function renderClockView(area) {
   const s = empState;
-  const sp = STATUS_PILL[deriveShiftStatus(s.nextActions, s.punches)];
   const tzAbbr = s.timezoneAbbr || '';
   const tz = empTz();
-  // Split the prior single-line "Saturday, May 17" into kicker + display:
-  // kicker line carries the weekday in mono-uppercase; the meta row carries
-  // the date in display-font next to tz + status pill.
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' }).format(new Date());
   const dateStr = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'long', day: 'numeric' }).format(new Date());
   const kicker = `Today · ${weekday}`;
-  const ptoBlock = renderPtoRings(s);
+  const greetName = (s.name || '').split(' ')[0] || 'there';
+  const stats = computeShiftStats_(s.punches, tz);
+  const statusSentence = buildStatusSentence_(stats, s.nextActions, tzAbbr);
+
   area.innerHTML = `
-    <div class="hero-clock">
-      <div class="hero-clock-content">
-        <div class="hero-clock-kicker">${esc(kicker)}</div>
-        <div class="hero-clock-time tabular" id="live-time">--:--:--<span class="hc-ampm"></span></div>
-        <div class="hero-clock-meta">
-          <span class="hero-clock-datestr">${esc(dateStr)}</span>
-          ${tzAbbr ? `<span class="hero-clock-sep">·</span><span class="hero-clock-tz">${esc(tzAbbr)}</span>` : ''}
-          <span class="hero-clock-sep">·</span>
-          <span class="hero-clock-status ${sp.cls}"><span class="dot"></span>${sp.label}</span>
+    <div class="hero">
+      <div class="greet">
+        <div class="greet-kicker">${esc(kicker)}</div>
+        <div class="greet-name">Hi, ${esc(greetName)}</div>
+        <div class="status-sentence">${statusSentence}</div>
+      </div>
+      <div class="clk">
+        <div class="clk-time tabular" id="live-time">--:--:--<span class="ampm"></span></div>
+        <div class="clk-meta">
+          <span>${esc(dateStr)}</span>
+          ${tzAbbr ? `<span class="sep">·</span><span>${esc(tzAbbr)}</span>` : ''}
         </div>
       </div>
     </div>
 
-    ${ptoBlock}
+    ${renderActions(s.nextActions)}
+
+    ${renderDayRibbon_(s.punches, stats, tz)}
+
+    <div id="clk-cov-slot"></div>
+
+    ${renderLedger_(s, stats)}
 
     <div class="card">
       <div class="card-label">Today's Punches</div>
       ${renderPunchHistory(s.punches)}
     </div>
 
-    <div class="card">
-      <div class="card-label">Actions</div>
-      ${renderActions(s.nextActions)}
-    </div>
-
     <div id="teammate-card-slot"></div>`;
   bindClockBtns();
   bindSelfUndoBtns();
   loadTeammateStatus();
+  loadCoverageStrip_();
+}
+
+/** Computes "worked", "lunch", "since" stats from today's punches.
+ *  Returns null if no punches yet. State machine walks ClockIn/LunchOut/
+ *  LunchIn/ClockOut transitions and sums in-state durations, with the
+ *  final open session extending to "now". Shift-end is anchored to the
+ *  first ClockIn + 9h (per C3 — no per-rep schedule data exists yet,
+ *  and CSR agents are nearly all 8a–5p CST). */
+function computeShiftStats_(punches, tz) {
+  if (!punches || punches.length === 0) return null;
+  const toMin = (hms) => {
+    const p = String(hms).split(':');
+    return (parseInt(p[0],10)||0) * 60 + (parseInt(p[1],10)||0) + (parseInt(p[2],10)||0)/60;
+  };
+  const firstClockIn = punches.find(p => p.type === 'ClockIn');
+  if (!firstClockIn) return null;
+  const nowMin = toMin(liveTimeHmsTz(tz));
+
+  let workedMin = 0, lunchMin = 0;
+  let state = 'out';
+  let stateSince = null;
+
+  for (const p of punches) {
+    const t = toMin(p.time);
+    if (stateSince !== null) {
+      const dur = Math.max(0, t - stateSince);
+      if (state === 'working') workedMin += dur;
+      else if (state === 'lunch') lunchMin += dur;
+    }
+    if (p.type === 'ClockIn' || p.type === 'LunchIn') { state = 'working'; stateSince = t; }
+    else if (p.type === 'LunchOut') { state = 'lunch'; stateSince = t; }
+    else if (p.type === 'ClockOut') { state = 'out'; stateSince = null; }
+  }
+  if (stateSince !== null) {
+    const dur = Math.max(0, nowMin - stateSince);
+    if (state === 'working') workedMin += dur;
+    else if (state === 'lunch') lunchMin += dur;
+  }
+
+  let clockedInSince = null;
+  if (state === 'working' || state === 'lunch') {
+    const ins = punches.filter(p => p.type === 'ClockIn' || p.type === 'LunchIn');
+    clockedInSince = ins.length ? ins[ins.length - 1].time : firstClockIn.time;
+  }
+
+  const firstInMin = toMin(firstClockIn.time);
+  const shiftEndMin = firstInMin + 9 * 60;
+  const fmtClk = (mm) => {
+    const total = ((mm % 1440) + 1440) % 1440;
+    const h = Math.floor(total / 60), m = Math.floor(total % 60);
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  };
+
+  return {
+    state,
+    clockedInSince,
+    workedHM: { h: Math.floor(workedMin / 60), m: Math.floor(workedMin % 60) },
+    workedHours: workedMin / 60,
+    lunchMinutes: Math.round(lunchMin),
+    shiftEndTime: fmtClk(shiftEndMin),
+    minutesUntilShiftEnd: shiftEndMin - nowMin,
+  };
+}
+
+function buildStatusSentence_(stats, nextActions, tzAbbr) {
+  if (!stats) {
+    return `You haven't clocked in yet — tap <strong>Clock In</strong> to start your day.`;
+  }
+  const tzSuffix = tzAbbr ? ` ${esc(tzAbbr)}` : '';
+  const workedStr = `<strong>${stats.workedHM.h}h ${stats.workedHM.m}m</strong> worked today`;
+  const lunchStr = stats.lunchMinutes > 0 ? ` · <strong>${stats.lunchMinutes}m</strong> lunch` : '';
+
+  if (stats.state === 'out') {
+    return `Shift complete · ${workedStr}${lunchStr}.`;
+  }
+  const stateLabel = stats.state === 'lunch' ? 'on lunch since' : 'clocked in since';
+  const since = stats.clockedInSince ? `<strong>${dispTime(stats.clockedInSince)}${tzSuffix}</strong>` : '—';
+
+  let endStr = '';
+  if (stats.minutesUntilShiftEnd > 0) {
+    const eh = Math.floor(stats.minutesUntilShiftEnd / 60);
+    const em = Math.floor(stats.minutesUntilShiftEnd % 60);
+    endStr = ` · <strong>${eh}h ${em}m</strong> until end of shift`;
+  } else if (stats.minutesUntilShiftEnd < 0) {
+    const over = Math.abs(stats.minutesUntilShiftEnd);
+    const oh = Math.floor(over / 60), om = Math.floor(over % 60);
+    endStr = ` · <strong>${oh}h ${om}m</strong> past end of shift`;
+  }
+  return `You're ${stateLabel} ${since}. ${workedStr}${lunchStr}${endStr}.`;
+}
+
+/** 4-cell ledger strip: Annual / Sick / Hours Today / Pay-period.
+ *  Hours Today is computed from punches client-side. Pay-period hours
+ *  comes from tsData if loaded (combined Clock+Timesheet view auto-
+ *  loads the timesheet section below); otherwise shows "—" until the
+ *  timesheet load completes. Annual/Sick cells gracefully hide via
+ *  muted text when ptoEnabled is false (contractor reps). */
+function renderLedger_(s, stats) {
+  const annualVal = s.ptoEnabled
+    ? `<div class="cell-value">${formatLeaveDays(s.annualLeave || 0)}</div><div class="cell-sub">of ${formatLeaveDays(s.annualLeaveMax || 15)} days</div>`
+    : `<div class="cell-value muted">—</div><div class="cell-sub">not tracked</div>`;
+  const sickVal = s.ptoEnabled
+    ? `<div class="cell-value">${formatLeaveDays(s.sickLeave || 0)}</div><div class="cell-sub">of ${formatLeaveDays(s.sickLeaveMax || 10)} days</div>`
+    : `<div class="cell-value muted">—</div><div class="cell-sub">not tracked</div>`;
+  const hoursToday = stats
+    ? `<div class="cell-value">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m</div><div class="cell-sub">${stats.lunchMinutes ? stats.lunchMinutes + 'm lunch' : 'no lunch yet'}</div>`
+    : `<div class="cell-value muted">0h</div><div class="cell-sub">not in yet</div>`;
+  // Pay-period cell — lazy-populated from tsData when the combined view's
+  // timesheet section finishes loading. See lazyUpdatePayPeriodCell_.
+  const ppLabel = s.payCycle === 'Biweekly' ? 'Pay period' : 'This month';
+  let ppVal;
+  if (tsData && typeof tsData.totalHours === 'number') {
+    ppVal = `<div class="cell-value">${fmtHrs(tsData.totalHours)}</div><div class="cell-sub">${tsData.daysWorked || 0} days worked</div>`;
+  } else {
+    ppVal = `<div class="cell-value muted" id="clk-pp-val">—</div><div class="cell-sub" id="clk-pp-sub">loading…</div>`;
+  }
+  return `<div class="ledger">
+    <div class="cell"><div class="cell-label">Annual</div>${annualVal}</div>
+    <div class="cell"><div class="cell-label">Sick</div>${sickVal}</div>
+    <div class="cell"><div class="cell-label">Hours today</div>${hoursToday}</div>
+    <div class="cell"><div class="cell-label">${ppLabel}</div>${ppVal}</div>
+  </div>`;
+}
+
+/** Update the pay-period ledger cell once tsData arrives. Called by
+ *  loadTimesheet's success path (via the global hook). Silently no-ops
+ *  if the cell isn't in the DOM (rep navigated away). */
+function lazyUpdatePayPeriodCell_() {
+  const val = document.getElementById('clk-pp-val');
+  const sub = document.getElementById('clk-pp-sub');
+  if (!val || !sub || !tsData || typeof tsData.totalHours !== 'number') return;
+  val.textContent = fmtHrs(tsData.totalHours);
+  val.classList.remove('muted');
+  sub.textContent = `${tsData.daysWorked || 0} days worked`;
+}
+
+// ── DAY RIBBON (V4·E1) ─────────────────────────────────────────────────
+// Horizontal time-of-day ribbon spanning 06:00–22:00. Renders the rep's
+// scheduled shift (dashed band, default 8a–5p CST per C3 or anchored to
+// first ClockIn + 9h once they've clocked in) and their actual work +
+// lunch segments. Punch markers + a pulsing now-cursor complete the
+// picture. The now-cursor is refreshed every 60s by RIBBON_NOW_INTERVAL.
+const RIBBON_START_MIN = 6 * 60;    // 06:00 → 360
+const RIBBON_END_MIN   = 22 * 60;   // 22:00 → 1320
+const RIBBON_SPAN_MIN  = RIBBON_END_MIN - RIBBON_START_MIN;  // 960
+const RIBBON_DEFAULT_SHIFT_START = 8 * 60;   // 08:00 — default CST shift start (C3)
+const RIBBON_DEFAULT_SHIFT_LEN   = 9 * 60;   // 9h
+
+function ribbonPct_(min) {
+  if (typeof min !== 'number' || isNaN(min)) return 0;
+  return Math.max(0, Math.min(100, ((min - RIBBON_START_MIN) / RIBBON_SPAN_MIN) * 100));
+}
+function ribbonTimeToMin_(hms) {
+  const p = String(hms || '').split(':');
+  if (p.length < 2) return NaN;
+  return (parseInt(p[0],10)||0) * 60 + (parseInt(p[1],10)||0) + (parseInt(p[2],10)||0)/60;
+}
+function ribbonFormatHm_(min) {
+  const total = ((min % 1440) + 1440) % 1440;
+  const h24 = Math.floor(total / 60), mm = Math.floor(total % 60);
+  const h12 = h24 % 12 || 12;
+  const ampm = h24 >= 12 ? 'p' : 'a';
+  return `${h12}:${String(mm).padStart(2,'0')}${ampm}`;
+}
+const RIBBON_PUNCH_LABELS = { ClockIn: 'IN', LunchOut: 'LO', LunchIn: 'LI', ClockOut: 'OUT' };
+
+function renderDayRibbon_(punches, stats, tz) {
+  // Determine the scheduled band. If the rep has clocked in, anchor to
+  // their actual first ClockIn + 9h (better matches non-standard shifts).
+  // Otherwise use the 8a–5p CST default per C3.
+  let schedStart = RIBBON_DEFAULT_SHIFT_START;
+  let schedEnd   = RIBBON_DEFAULT_SHIFT_START + RIBBON_DEFAULT_SHIFT_LEN;
+  if (punches && punches.length) {
+    const firstIn = punches.find(p => p.type === 'ClockIn');
+    if (firstIn) {
+      const firstInMin = ribbonTimeToMin_(firstIn.time);
+      if (!isNaN(firstInMin)) {
+        schedStart = firstInMin;
+        schedEnd   = firstInMin + RIBBON_DEFAULT_SHIFT_LEN;
+      }
+    }
+  }
+
+  // Build the segment list by walking punches; an open trailing session
+  // (rep still working / on lunch) extends to "now".
+  const segments = [];
+  let curState = 'out', curStart = null;
+  (punches || []).forEach(p => {
+    const t = ribbonTimeToMin_(p.time);
+    if (isNaN(t)) return;
+    if (curState === 'working' && curStart !== null) {
+      segments.push({ type: 'work', startMin: curStart, endMin: t });
+    } else if (curState === 'lunch' && curStart !== null) {
+      segments.push({ type: 'lunch', startMin: curStart, endMin: t });
+    }
+    if (p.type === 'ClockIn' || p.type === 'LunchIn') { curState = 'working'; curStart = t; }
+    else if (p.type === 'LunchOut') { curState = 'lunch'; curStart = t; }
+    else if (p.type === 'ClockOut') { curState = 'out'; curStart = null; }
+  });
+  const isActive = (curState === 'working' || curState === 'lunch') && curStart !== null;
+  if (isActive) {
+    const nowMin = ribbonTimeToMin_(liveTimeHmsTz(tz));
+    segments.push({ type: curState === 'lunch' ? 'lunch' : 'work', startMin: curStart, endMin: nowMin });
+  }
+
+  // Compose markup.
+  const schedLeft = ribbonPct_(schedStart);
+  const schedWidth = Math.max(0, ribbonPct_(schedEnd) - ribbonPct_(schedStart));
+  const segHtml = segments.map(s => {
+    const l = ribbonPct_(s.startMin);
+    const w = Math.max(0, ribbonPct_(s.endMin) - ribbonPct_(s.startMin));
+    if (w <= 0) return '';
+    return `<div class="r-seg ${s.type}" style="left:${l.toFixed(2)}%;width:${w.toFixed(2)}%"
+      title="${RIBBON_PUNCH_LABELS[s.type === 'lunch' ? 'LunchOut' : 'ClockIn'] || ''} ${ribbonFormatHm_(s.startMin)}–${ribbonFormatHm_(s.endMin)}"></div>`;
+  }).join('');
+
+  const punchHtml = (punches || []).map(p => {
+    const m = ribbonTimeToMin_(p.time);
+    if (isNaN(m)) return '';
+    if (m < RIBBON_START_MIN || m > RIBBON_END_MIN) return '';
+    const lbl = RIBBON_PUNCH_LABELS[p.type] || '';
+    return `<div class="r-punch" style="left:${ribbonPct_(m).toFixed(2)}%">
+      <span class="lbl">${esc(lbl)} ${esc(ribbonFormatHm_(m))}</span>
+      <span class="bar"></span>
+    </div>`;
+  }).join('');
+
+  const nowMin = ribbonTimeToMin_(liveTimeHmsTz(tz));
+  const nowHtml = isActive && !isNaN(nowMin)
+    ? `<div class="r-now" id="r-now-cursor" style="left:${ribbonPct_(nowMin).toFixed(2)}%"></div>`
+    : '';
+
+  // Hour axis labels at 06, 09, 12, 15, 18, 21.
+  const axisHours = [6, 9, 12, 15, 18, 21];
+  const axisHtml = axisHours.map(h => {
+    const pct = ribbonPct_(h * 60);
+    const label = h === 12 ? '12p' : (h < 12 ? `${h}a` : `${h - 12}p`);
+    return `<span style="left:${pct.toFixed(2)}%">${label}</span>`;
+  }).join('');
+
+  return `<div class="ribbon-wrap">
+    <div class="ribbon-axis-row">${axisHtml}</div>
+    <div class="ribbon">
+      <div class="ribbon-track">
+        <div class="r-sched" style="left:${schedLeft.toFixed(2)}%;width:${schedWidth.toFixed(2)}%"
+          title="Scheduled ${ribbonFormatHm_(schedStart)}–${ribbonFormatHm_(schedEnd)}"></div>
+        ${segHtml}
+        ${punchHtml}
+        ${nowHtml}
+      </div>
+    </div>
+    <div class="ribbon-legend">
+      <span class="r-leg-item"><span class="swatch"></span>Worked</span>
+      <span class="r-leg-item"><span class="swatch lunch"></span>Lunch</span>
+      <span class="r-leg-item"><span class="swatch sched"></span>Scheduled</span>
+      ${isActive ? `<span class="r-leg-item"><span class="swatch now"></span>Now</span>` : ''}
+    </div>
+  </div>`;
+}
+
+let _ribbonNowInterval = null;
+/** Refreshes the .r-now cursor's left position every 60s. Called from
+ *  startClock(); cleared by stopClock(). Cursor element is rendered
+ *  inside renderClockView; if it's not in the DOM (rep not currently
+ *  active or nav'd away), the interval no-ops. */
+function startRibbonNowCursor_() {
+  stopRibbonNowCursor_();
+  const tz = empTz();
+  const tick = () => {
+    const cursor = document.getElementById('r-now-cursor');
+    if (!cursor) return;
+    const nowMin = ribbonTimeToMin_(liveTimeHmsTz(tz));
+    cursor.style.left = ribbonPct_(nowMin).toFixed(2) + '%';
+  };
+  _ribbonNowInterval = setInterval(tick, 60000);
+}
+function stopRibbonNowCursor_() {
+  if (_ribbonNowInterval) { clearInterval(_ribbonNowInterval); _ribbonNowInterval = null; }
+}
+
+/** Note-coverage strip (V1·E3). Fetches via getMyMetrics(today). Renders
+ *  a donut gauge for note coverage + 30-day mini-bar trend + "File N
+ *  missing" CTA when answered > notes. Hides entirely when the rep had
+ *  no call activity today (no notes AND no CDR rows). Cached in
+ *  CLK_COVERAGE_CACHE to avoid re-fetching on every re-render. */
+var CLK_COVERAGE_CACHE = { date: null, data: null };
+
+function loadCoverageStrip_() {
+  const slot = document.getElementById('clk-cov-slot');
+  if (!slot) return;
+  const today = isoDateTz(empTz());
+  if (CLK_COVERAGE_CACHE.date === today && CLK_COVERAGE_CACHE.data) {
+    renderCoverageStrip_(slot, CLK_COVERAGE_CACHE.data);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (!data || data.error) { slot.innerHTML = ''; return; }
+      CLK_COVERAGE_CACHE = { date: today, data };
+      // Only render if we're still on the clock view (rep didn't nav away)
+      if (currentView === 'clock') renderCoverageStrip_(slot, data);
+    })
+    .withFailureHandler(function () { slot.innerHTML = ''; })
+    .getMyMetrics(today);
+}
+
+function renderCoverageStrip_(slot, data) {
+  const cdr = data.cdr;
+  const noteCount = data.noteCount || 0;
+  const answered = cdr ? (cdr.totalAnswered || 0) : 0;
+  // Hide entirely if no call activity today (avoids noise for non-CSR reps)
+  if (noteCount === 0 && answered === 0) { slot.innerHTML = ''; return; }
+
+  const covPct = data.noteCoverage != null ? data.noteCoverage : null;
+  const missing = answered - noteCount;
+  const toneCls = covPct == null ? '' : (covPct >= 80 ? '' : (covPct >= 50 ? 'warn' : 'crit'));
+
+  // Donut gauge — coverage ratio expressed on a 0–100 scale, clipped at 100.
+  const r = 22, c = 2 * Math.PI * r;
+  const pctClipped = Math.max(0, Math.min(100, covPct == null ? 0 : covPct));
+  const dashOffset = c * (1 - pctClipped / 100);
+  const gauge = `<div class="cov-gauge">
+    <svg width="56" height="56" viewBox="0 0 56 56">
+      <circle class="bg" cx="28" cy="28" r="${r}"/>
+      <circle class="fg ${toneCls}" cx="28" cy="28" r="${r}" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${dashOffset.toFixed(2)}" transform="rotate(-90 28 28)"/>
+    </svg>
+    <div class="num">${covPct != null ? covPct + '%' : '—'}</div>
+  </div>`;
+
+  // 30-day mini-bar trend (from data.trend, %answered per day)
+  let trendBars = '';
+  if (data.trend && data.trend.length > 0) {
+    const max = Math.max(1, ...data.trend.map(d => d.pctAnswered || 0));
+    trendBars = '<div class="cov-trend">' + data.trend.map((d, i) => {
+      const v = d.pctAnswered || 0;
+      const h = v === 0 ? 0 : Math.max(2, Math.round((v / max) * 22));
+      const cls = ['bar'];
+      if (v === 0) cls.push('zero');
+      if (i === data.trend.length - 1) cls.push('today');
+      return `<div class="${cls.join(' ')}" title="${esc(d.date + ': ' + v + '%')}" style="height:${h}px"></div>`;
+    }).join('') + '</div>';
+  }
+
+  const detailLine = answered > 0
+    ? `<strong>${noteCount}</strong> notes for <strong>${answered}</strong> calls today`
+    : `<strong>${noteCount}</strong> notes today`;
+
+  let ctaHtml = '';
+  if (missing > 0) {
+    ctaHtml = `<button class="cov-cta" onclick="enterTool('callNotes')">${icon('adjust', 12)}File ${missing} missing</button>`;
+  } else if (noteCount > 0 && answered > 0 && covPct >= 100) {
+    ctaHtml = `<button class="cov-cta muted" onclick="enterTool('callNotes')">${icon('check', 12)}All covered</button>`;
+  }
+
+  slot.innerHTML = `<div class="cov">
+    ${gauge}
+    <div class="cov-meta">
+      <div class="cov-label">Note coverage · today</div>
+      <div class="cov-detail">${detailLine}</div>
+      ${trendBars}
+    </div>
+    ${ctaHtml}
+  </div>`;
 }
 
 /** Load teammate status into the slot below Actions (best-effort, silent on failure). */
@@ -280,25 +646,34 @@ function timeDiffSecondsClient(earlier, later) {
 function renderActions(actions) {
   if (!actions || actions.length === 0) return '<div class="no-data">No actions available</div>';
   const onlyAdjust = actions.length === 1 && actions[0] === 'Adjust';
-  const main = actions.filter(a => a !== 'Adjust');
-  const isSingle = main.length === 1;
-  let html = '';
-  if (onlyAdjust) html += `<div class="shift-done-msg">${icon('checkCircle', 16)}Shift complete for today</div>`;
-  html += `<div class="actions-grid${(isSingle || onlyAdjust) ? ' fw' : ''}">`;
-  main.forEach(a => { html += actionBtnHtml(a); });
-  html += actionBtnHtml('Adjust');
-  html += '</div>';
+  if (onlyAdjust) {
+    return `<div class="shift-done-msg">${icon('checkCircle', 16)}Shift complete for today</div>`
+      + `<div class="actions"><button class="sec" data-action="Adjust">${icon('adjust', 18)}Adjust</button></div>`;
+  }
+  // Pick the primary CTA by state per redesign: prefer ClockIn (start of day) →
+  // LunchIn (returning from lunch) → ClockOut (end of day) → first remaining.
+  // Adjust is always rendered last as a secondary.
+  const order = ['ClockIn', 'LunchIn', 'ClockOut'];
+  let primary = order.find(a => actions.indexOf(a) >= 0)
+    || actions.find(a => a !== 'Adjust')
+    || 'Adjust';
+  const secondaries = actions.filter(a => a !== primary && a !== 'Adjust');
+
+  const pm = PUNCH_META[primary];
+  const primeCls = primary === 'ClockOut' ? 'prime clockout' : 'prime';
+  let html = `<div class="actions">`;
+  html += `<button class="${primeCls}" data-action="${primary}">${icon(pm.icon, 18)}${pm.label}</button>`;
+  secondaries.forEach(a => {
+    const m = PUNCH_META[a];
+    html += `<button class="sec" data-action="${a}">${icon(m.icon, 18)}${m.label}</button>`;
+  });
+  html += `<button class="sec" data-action="Adjust">${icon('adjust', 18)}Adjust</button>`;
+  html += `</div>`;
   return html;
 }
 
-function actionBtnHtml(type) {
-  const m = PUNCH_META[type];
-  return `<button class="action-btn ${m.cls}" data-action="${type}">
-    <span class="be">${icon(m.icon, 22)}</span>${m.label}</button>`;
-}
-
 function bindClockBtns() {
-  document.querySelectorAll('.action-btn').forEach(btn => {
+  document.querySelectorAll('.actions .prime, .actions .sec').forEach(btn => {
     btn.addEventListener('click', () => {
       const a = btn.dataset.action;
       if (a === 'Adjust') { openAdjustModal(); return; }
@@ -316,14 +691,18 @@ function startClock() {
     const raw = liveTimeTz(tz);   // e.g. "9:34:22 AM"
     const m = raw.match(/^(.*?)\s*(AM|PM)$/i);
     if (m) {
-      el.innerHTML = esc(m[1]) + '<span class="hc-ampm">' + esc(m[2]) + '</span>';
+      el.innerHTML = esc(m[1]) + '<span class="ampm">' + esc(m[2]) + '</span>';
     } else {
       el.textContent = raw;
     }
   };
   tick(); clockInterval = setInterval(tick, 1000);
+  startRibbonNowCursor_();
 }
-function stopClock() { if (clockInterval) { clearInterval(clockInterval); clockInterval = null; } }
+function stopClock() {
+  if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+  stopRibbonNowCursor_();
+}
 
 function handlePunch(punchType) {
   const tz = empTz();
@@ -362,7 +741,7 @@ function submitPunch(punchType, custom) {
     .recordPunch(punchType, custom);
 }
 
-function setClockBtnsDisabled(v) { document.querySelectorAll('.action-btn').forEach(b => { b.disabled = v; }); }
+function setClockBtnsDisabled(v) { document.querySelectorAll('.actions .prime, .actions .sec').forEach(b => { b.disabled = v; }); }
 
 // ── ADJUST MODAL ──────────────────────────────────────────────────────────
 function openAdjustModal() {

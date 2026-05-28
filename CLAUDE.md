@@ -230,9 +230,10 @@ this section before touching the relevant area.
   clients strip `<style>` blocks and don't honor CSS variables, so the
   call-note email bodies inline literal hex from a CN_EMAIL_PALETTE
   constant in `Code.js`. If `styles_design_tokens.html` palette values
-  change in a meaningful way (slate → different palette), re-resolve
-  the hex equivalents in CN_EMAIL_PALETTE or the email aesthetic drifts
-  from the in-app aesthetic. Plus three UMS-brand entries (`brand` =
+  change in a meaningful way (e.g., the Console → next palette swap),
+  re-resolve the hex equivalents in CN_EMAIL_PALETTE or the email
+  aesthetic drifts from the in-app aesthetic. Plus three UMS-brand
+  entries (`brand` =
   navy `#223b5d`, `brandSoft` = pale blue `#e6f2ff`, `logoUrl` = the
   UMS Presentation Logo) — these are NOT design-token-derived; they're
   the legacy `closeOrderEmail.js` / `updateOrderEmail.js` identity
@@ -428,6 +429,31 @@ this section before touching the relevant area.
   internal data. `serveExternalForm_` serves `form_public.html`
   which is a standalone page with no `include()` of internal
   partials.
+- **`LEAVE_DEDUCTION_CLIENT` mirrors the server's `getLeaveDeduction_`
+  exactly.** Powers the live balance-after preview in the PTO day
+  modal (`tc/script_timeoff.html`). Adding a new leave type means
+  updating BOTH maps; the server still does the actual balance
+  deduction on submit, so a drift causes the UI to mis-preview
+  without corrupting state, but the rep sees a wrong projected
+  number on hover/select. Same maintenance discipline as the
+  `CN_EMAIL_PALETTE` constant.
+- **Clock view coverage strip uses a per-day client cache.** The
+  Clock view fires `getMyMetrics(today)` once per Clock-view enter
+  and caches the response in `CLK_COVERAGE_CACHE` per date key.
+  Mutations elsewhere (a newly filed call note, fresh CDR data)
+  won't refresh the donut/trend until the rep navigates away and
+  back, or the day rolls over. Acceptable for the use case; if
+  real-time-ish freshness is ever required, invalidate the cache
+  from `submitCallNote`'s success handler.
+- **Metrics enters don't call `stopClock` — interval leak.**
+  `enterMetricsMyStatsView` and `enterMetricsTeamView` don't call
+  `stopClock`, so the 1Hz live-time + 60s ribbon-now-cursor
+  intervals keep firing in the background after navigating from
+  Clock to Metrics. Both tick functions early-return when their
+  target elements aren't in the DOM, so the leak is bounded —
+  wasted timer fires, no functional bug. Cleanup is to call
+  `stopClock()` at the top of each metrics enter, matching the
+  Time Off / Manager / Call Notes enters.
 
 ## Key Design Decisions
 
@@ -581,12 +607,14 @@ this section before touching the relevant area.
   `team-tools/<new-tool>/` can `include('styles_design_tokens')` +
   `include('script_icons')` (or copy the files in if the new tool
   is a separate clasp project that can't reach across directories)
-  to inherit the slate-default warm-paper system, the dark-mode
+  to inherit the Console-redesign warm-paper system, the dark-mode
   bootstrap-readiness, and the icon library. Tool-specific CSS
   layers on top in the new tool's own `styles.html` and consumes
   the canonical tokens directly — no per-tool color palette, no
-  per-tool font declarations. The slate palette is the default;
-  future palettes can be added in the tokens partial alongside it.
+  per-tool font declarations. The Console palette is the default —
+  editorial green-as-primary (`--accent` green), separate `--info`
+  blue for info-only surfaces; future palettes can be added in the
+  tokens partial alongside it.
 - **Compact mode is a shell-level attribute, not per-tool CSS.**
   `?compact=1` (set by the pop-out button in `script_core.html`)
   toggles `data-compact="1"` on `documentElement`. Sidebar +
@@ -835,6 +863,80 @@ this section before touching the relevant area.
   — fillable forms generate tokens and embed "Complete this form"
   CTA buttons in the email body. Reps can pre-fill key fields
   (patient name, dates) before sending.
+- **Paired-timezone chip + signal chip vocabulary.** `.tz-chip` pairs
+  the rep's local-tz and manager-tz time into a single two-segment
+  chip (the second `.seg` auto-omits when the rep's tz matches the
+  manager's). `.signals` is a wrapping row of `.sig` chips with
+  `.hol` (info-toned holiday), `.team` (warn-toned teammates-off),
+  and `.bal` / `.bal.neg` (neutral / destructive-toned projected
+  balance) variants — surfaces the three actionable signals a
+  manager needs before approving a PTO request, replacing the prior
+  inline mono text rows. Both components live in `styles.html` and
+  are consumed today by the manager dashboard's live-status cards
+  and pending PTO queue.
+- **Clock view: hero + actions + cov + ledger architecture.** The
+  Clock tab's `renderClockView` emits, in order: a `.hero` block
+  (greet kicker + name + live status sentence on the left, live
+  clock + tz + date on the right), an `.actions` row (one `.prime`
+  CTA — ClockIn → LunchIn → ClockOut by state, with `.clockout`
+  variant in destructive tone; Adjust always last as a `.sec`), a
+  `.cov` note-coverage strip (donut gauge + 30-day mini-bar trend +
+  "File N missing" CTA, hidden entirely when the rep had no call
+  activity today), and a 4-cell `.ledger` strip
+  (Annual / Sick / Hours today / Pay-period). The pay-period cell
+  is backfilled from `tsData` once the combined view's timesheet
+  section finishes loading (via `lazyUpdatePayPeriodCell_`).
+  Today's Punches and teammate status render below the ledger as
+  the existing cards.
+- **Day ribbon (Clock view).** Horizontal 06:00–22:00 time ribbon
+  rendered between the actions row and the coverage strip. Shows a
+  dashed scheduled band, filled accent-green work segments + dashed
+  warn-toned lunch segment, vertical punch markers with mono
+  labels, and a pulsing accent-green now-cursor while the rep is
+  mid-shift. The scheduled band anchors to first-ClockIn + 9h once
+  the rep has clocked in; before that it shows the 8:00 AM – 5:00
+  PM CST default per the C3 decision (most UMS CSR agents work that
+  shift, with 1–2 exceptions). Per-rep schedule data does not exist
+  server-side — this is the placeholder until a schedule editor
+  lands. The now-cursor is refreshed every 60s by
+  `startRibbonNowCursor_` / `stopRibbonNowCursor_`, which are
+  bound to the existing `startClock` / `stopClock` lifecycle so
+  the interval cleans up on tab nav-away.
+- **Manager telemetry strip with sparklines.** The manager
+  dashboard's hero is a 4-cell `.telemetry` strip (Active / On Lunch
+  / Missed / Pending). Missed + Pending carry 14-day sparklines
+  built from `missedTrend` + `pendingTrend` arrays returned by
+  `getManagerDashboard` (missed excludes today since reps still
+  mid-shift always register as 0 missed; pending includes today).
+  Per the C6 decision, Active + On Lunch stay as static counts —
+  no trend data for them. Each cell's sub-line surfaces the most
+  actionable specific (first missed rep + day, oldest pending rep).
+  Sparkline data is computed in-memory from already-loaded `toRows`
+  / `adpRows` — no extra Sheet reads (INV-13 honored).
+- **Live-status sparkline.** Each live-status emp-card on the
+  manager dashboard carries a 7-bar daily-hours sparkline + a
+  `Xh·Nd` total/days-worked label. Driven by `recentHours[]` on
+  each `liveStatus` entry (7 entries, oldest→newest, excludes today),
+  computed via one extra in-memory pass over already-loaded
+  `adpRows`. Bars are color-coded: zero days (`var(--paper-2)`),
+  short days <6h (`var(--warn-soft)`), normal days (`var(--accent-soft)`).
+  The total label uses `formatHoursShort` for compactness.
+- **Metrics hero + rail layout.** Both My Stats and Team Metrics
+  use a 1.4fr / 1fr hero+rail layout. Hero = big tabular % Answered
+  + "vs 30-day avg" delta line (sign-toned green / red / neutral) +
+  30-day sparkline with a dashed baseline at the trend average.
+  Side rail = 5 `.m-row` entries (Notes / Answered / Missed /
+  Avg Talk / Total Talk) with optional tonal value variants
+  (`good` / `warn` / `crit`). Per-rep table preserved at the
+  bottom of Team Metrics. Shared helpers: `mTrendAvg_`,
+  `mBuildHeroSparkSvg_`, `mRailRow_`.
+- **Compact pop-out is 380px wide.** `popOutCurrentView()` opens
+  the named `umsTeamToolsCompact` window at 380×780 (narrowed from
+  the prior 440 in the Console redesign — sized to fit the rep's
+  live clock + actions + ribbon + ledger comfortably without
+  horizontal overflow at the new density). The named target means
+  subsequent clicks focus the existing window rather than spawning
+  duplicates.
 
 ## Operator State Checklist
 
@@ -1036,6 +1138,12 @@ INV-65 | `getMyMetrics(date)` is caller-scoped via `getEmployeeInfo_()`, read-on
 INV-66 | `getTeamMetrics(from, to)` is manager-gated (INV-02). Accepts a date range; single date collapses to `from === to`. CDR aggregation uses `getCdrAgentMetrics_()` for the range, note counts scan each enrolled rep's call-notes Sheet across the full range. Returns a 30-day team trend in single-day mode only (`trend` field is null for multi-day ranges). `unmatchedAgents` lists CDR agent names not on the team-tools roster | Subsystem: Server
 INV-67 | CDR enrichment in `managerGetShiftStats` is wrapped in a try/catch after the core call-notes aggregation loop. Failure does not break the existing response — `reps[i].cdr` is simply absent. CDR cache (`CDR_CACHE_KEY`, 5-min TTL) is shared across `getCdrAgentMetrics_()` calls but NOT across `getCdrDailyBreakdown_()` (the latter is uncached since it returns per-day granularity needed only for trend rendering) | Subsystem: Server
 INV-68 | `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` are the isolated CDR data layer. Both open the CDR Report spreadsheet via `getCdrSS_()`, read `DQE Historical Data`, filter by date range + optional roster names, skip queue-sentinel rows (`A_Q_*`, `Backup CSR`). Designed as the Option A (direct spreadsheet read) implementation — a future swap to Neon Postgres (Option C) replaces only these two functions + `getCdrSS_()` | Subsystem: Server
+INV-69 | `getManagerDashboard` returns `pendingTrend` (14 days, new pending submissions per day, INCLUDES today) + `missedTrend` (14 days, missed-clockout instances per day, EXCLUDES today since reps still mid-shift would always register as missed). Both computed in-memory from already-loaded `toRows` / `adpRows` (INV-13 honored — no extra Sheet reads). Used by the V4·E2 telemetry-strip sparklines on Missed + Pending cells | Subsystem: Server
+INV-70 | `getManagerDashboard` attaches `recentHours[]` (7 entries `{date, hours}`, oldest→newest, excludes today) to each `liveStatus` entry. Computed via one extra in-memory pass over already-loaded `adpRows` and `calcHours_`; days without both a `ClockIn` and a `ClockOut` are recorded as 0 hours. Used by the V4·E3 per-rep sparkline on the manager dashboard's live-status cards | Subsystem: Server
+INV-71 | Clock view's "until end of shift" countdown (in `buildStatusSentence_`) and the day ribbon's scheduled band (in `renderDayRibbon_`) both anchor to the rep's first `ClockIn` + 9h once they've clocked in; before that, both fall back to the 8:00–17:00 CST default per the C3 decision. Per-rep schedule data does not yet exist server-side — both paths will swap to the actual schedule when a schedule editor lands | Subsystem: Client (Time Clock views)
+INV-72 | `LEAVE_DEDUCTION_CLIENT` in `tc/script_timeoff.html` must mirror server's `getLeaveDeduction_` (Code.js) for the PTO day modal's balance-after preview to compute correctly. The server still performs the actual deduction on submit (via `updateTimeOffStatus`'s Pending→Approved transition), so a drift causes UI mis-preview but not balance corruption. Adding a new leave type requires updating BOTH maps | Subsystem: Client (Time Clock views) + Server
+INV-73 | Day-ribbon now-cursor refresh interval (`_ribbonNowInterval`, 60s) is bound to the `startClock` / `stopClock` lifecycle via `startRibbonNowCursor_` / `stopRibbonNowCursor_`. When the Clock view is exited via tab navigation (Time Off / Manager / Call Notes enters all call `stopClock` at the top), the interval clears alongside the 1Hz live-time interval. Metrics enters do not call `stopClock` — pre-existing leak, bounded since the cursor element isn't in their DOM | Subsystem: Client (Time Clock views)
+INV-74 | `loadTimesheet`'s success handler calls `lazyUpdatePayPeriodCell_()` (guarded by `typeof === 'function'`) which backfills the Clock view's pay-period ledger cell from `tsData` once it arrives. Standalone-timesheet callers are unaffected (the guard makes the call a no-op when the helper isn't loaded; the cell isn't in the DOM there anyway) | Subsystem: Client (Time Clock views)
 
 ### Policy Configuration
 Policy threshold: 4/10

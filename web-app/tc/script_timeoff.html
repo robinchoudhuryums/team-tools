@@ -216,6 +216,23 @@ function formatLeaveDays(n) {
 }
 
 // ── DAY DETAILS MODAL ─────────────────────────────────────────────────────
+// Client-side leave-deduction map. Mirrors server's getLeaveDeduction_
+// (Code.js) — keep in sync if the server map changes. Used for the
+// V1·E2 balance-after preview row that updates live as the rep selects
+// a Type. Unknown types default to { annual, 1.0 } matching the server.
+const LEAVE_DEDUCTION_CLIENT = {
+  'Full Day':              { bucket: 'annual', days: 1.0 },
+  'Half Day - Morning':    { bucket: 'annual', days: 0.5 },
+  'Half Day - Afternoon':  { bucket: 'annual', days: 0.5 },
+  'Sick Leave':            { bucket: 'sick',   days: 1.0 },
+  'Personal Day':          { bucket: 'annual', days: 1.0 },
+  'Unpaid Leave':          { bucket: null,     days: 0   },
+};
+function getLeaveDeductionClient_(type) {
+  return LEAVE_DEDUCTION_CLIENT[String(type || '').trim()]
+    || { bucket: 'annual', days: 1.0 };
+}
+
 function openDayModal(dateStr) {
   if (!calData) return;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
@@ -236,23 +253,61 @@ function openDayModal(dateStr) {
   document.getElementById('day-subtitle').textContent = parts[0];
 
   let body = '';
-  if (holiday) body += `<div class="day-section"><div class="day-info-row holiday">
-    <span class="di-icon">${icon('star', 16)}</span><span class="di-text">US Holiday: ${esc(holiday.name)}</span></div></div>`;
-  let yourStatusHtml = '';
+
+  // Your-status row first when applicable (already-requested or already-worked)
   if (own) {
     const st = (own.status||'pending').toLowerCase();
     const cls = st==='approved'?'own-approved':st==='denied'?'own-denied':'own-pending';
-    yourStatusHtml = `<div class="day-info-row ${cls}">
+    body += `<div class="day-section"><div class="day-info-row ${cls}">
       <span class="di-icon">${icon('info', 16)}</span>
       <span class="di-text">Your time off request: ${esc(own.type)}${own.notes && own.notes !== 'undefined' ? ' — ' + esc(own.notes) : ''}</span>
-      <span class="di-tag">${esc(own.status)}</span></div>`;
+      <span class="di-tag">${esc(own.status)}</span>
+    </div></div>`;
   } else if (hasWork) {
-    yourStatusHtml = `<div class="day-info-row worked">
-      <span class="di-icon">${icon('checkCircle', 16)}</span><span class="di-text">You worked this day</span></div>`;
+    body += `<div class="day-section"><div class="day-info-row worked">
+      <span class="di-icon">${icon('checkCircle', 16)}</span><span class="di-text">You worked this day</span>
+    </div></div>`;
   }
-  if (yourStatusHtml) body += `<div class="day-section">${yourStatusHtml}</div>`;
+
+  // V1·E2 — Heads-up conflict banners (holiday + teammates). Stacked
+  // .conflict rows with info/warn tones so the rep sees the actionable
+  // signals before they pick a type.
+  const headsUpBanners = [];
+  if (holiday) {
+    headsUpBanners.push(
+      `<div class="conflict info">${icon('star', 14)}<span><strong>${esc(holiday.name)}</strong> — US holiday<span class="conflict-sub">Federal observance; offices may be closed.</span></span></div>`
+    );
+  }
   if (teammates.length > 0) {
-    let tmHtml = `<div class="day-section"><div class="day-section-label">Teammates Off (${teammates.length})</div>`;
+    const apprCount = teammates.filter(t => (t.status||'').toLowerCase() === 'approved').length;
+    const pendCount = teammates.filter(t => (t.status||'').toLowerCase() === 'pending').length;
+    const breakdownParts = [];
+    if (apprCount > 0) breakdownParts.push(`${apprCount} approved off`);
+    if (pendCount > 0) breakdownParts.push(`${pendCount} pending`);
+    const names = teammates.slice(0, 3).map(t => esc(t.name)).join(', ')
+      + (teammates.length > 3 ? `, +${teammates.length - 3} more` : '');
+    headsUpBanners.push(
+      `<div class="conflict warn">${icon('info', 14)}<span><strong>${teammates.length} teammate${teammates.length>1?'s':''} off</strong> · ${breakdownParts.join(', ')}<span class="conflict-sub">${names}</span></span></div>`
+    );
+  }
+  // "Day is clear" banner — only when the rep COULD request (not weekend,
+  // future-or-today, not already requested) and there are no conflicts.
+  const canRequest = !isWeekend && dateStr >= todayIso && !own;
+  if (canRequest && headsUpBanners.length === 0) {
+    headsUpBanners.push(
+      `<div class="conflict ok">${icon('checkCircle', 14)}<span>No conflicts — clear day on the calendar.</span></div>`
+    );
+  }
+  if (headsUpBanners.length > 0) {
+    body += `<div class="day-section">
+      <div class="day-section-label">Heads up</div>
+      ${headsUpBanners.join('')}
+    </div>`;
+  }
+
+  // Teammates roster (kept as a section so the rep can scan WHO is off).
+  if (teammates.length > 0) {
+    let tmHtml = `<div class="day-section"><div class="day-section-label">Teammates off (${teammates.length})</div>`;
     teammates.forEach(t => {
       const st = (t.status||'pending').toLowerCase();
       tmHtml += `<div class="tm-row">
@@ -263,23 +318,51 @@ function openDayModal(dateStr) {
     tmHtml += `</div>`;
     body += tmHtml;
   }
+
+  // Past-day no-op fallback.
   if (!body && !isWeekend && dateStr >= todayIso) {
     body = `<div class="day-section"><div class="day-info-row">
       <span class="di-icon">${icon('timeoff', 16)}</span><span class="di-text">No activity recorded for this day yet.</span></div></div>`;
   }
   document.getElementById('day-body').innerHTML = body;
 
-  const canRequest = !isWeekend && dateStr >= todayIso && !own;
   const formSec = document.getElementById('day-form-section');
   const submitBtn = document.getElementById('day-submit');
   if (canRequest) {
     formSec.style.display = ''; submitBtn.style.display = '';
     document.getElementById('day-type').value = 'Full Day';
     document.getElementById('day-notes').value = '';
+    updateDayBalancePreview_();
   } else {
     formSec.style.display = 'none'; submitBtn.style.display = 'none';
   }
   document.getElementById('day-overlay').classList.add('open');
+}
+
+/** Live-updates the "Annual leave after" preview row when the rep
+ *  picks a Type. Skipped entirely when PTO tracking is off or the
+ *  selected type deducts from no bucket (Unpaid Leave). */
+function updateDayBalancePreview_() {
+  const previewEl = document.getElementById('day-balance-preview');
+  if (!previewEl) return;
+  if (!calData || !calData.ptoEnabled) { previewEl.innerHTML = ''; return; }
+  const type = document.getElementById('day-type').value;
+  const ded = getLeaveDeductionClient_(type);
+  if (!ded.bucket) {
+    previewEl.innerHTML = `<div class="balance-after">
+      <span class="ba-label">Balance impact</span>
+      <span class="ba-val">No deduction (unpaid)</span>
+    </div>`;
+    return;
+  }
+  const cur = ded.bucket === 'sick' ? (calData.sickLeave || 0) : (calData.annualLeave || 0);
+  const proj = +(cur - ded.days).toFixed(2);
+  const bucketLabel = ded.bucket === 'sick' ? 'Sick leave after' : 'Annual leave after';
+  const projCls = proj < 0 ? 'neg' : '';
+  previewEl.innerHTML = `<div class="balance-after">
+    <span class="ba-label">${bucketLabel}</span>
+    <span class="ba-val">${formatLeaveDays(cur)} → <strong class="${projCls}">${formatLeaveDays(proj)}</strong> days</span>
+  </div>`;
 }
 
 document.getElementById('day-cancel').addEventListener('click', () =>
@@ -288,6 +371,8 @@ document.getElementById('day-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('day-overlay'))
     document.getElementById('day-overlay').classList.remove('open');
 });
+// Live balance preview when Type changes (V1·E2).
+document.getElementById('day-type').addEventListener('change', updateDayBalancePreview_);
 document.getElementById('day-submit').addEventListener('click', () => {
   const type = document.getElementById('day-type').value;
   const notes = document.getElementById('day-notes').value.trim();

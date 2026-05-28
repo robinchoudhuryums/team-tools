@@ -23,30 +23,50 @@ function renderManagerView(area, data) {
   const pendingCount = data.pending.length;
   const missedCount = data.missedPunches.length;
 
-  // ── Hero metrics row ────────────────────────────────────────────────────
-  // .metric-icon spans dropped — the colored inset left-stripe + value
-  // tone carry the semantic without an extra decorative bullet.
+  // ── Hero telemetry strip (V4·E2) ────────────────────────────────────────
+  // 4-cell horizontal strip with mono-tabular values. Missed + Pending carry
+  // 14-day sparklines (data.missedTrend / data.pendingTrend); Active + On
+  // Lunch are static counts per the C6 decision. The sub-line surfaces the
+  // most actionable specific (first missed rep + day, oldest pending rep).
+  const missedSub = data.missedPunches.length > 0
+    ? (() => {
+        const m = data.missedPunches[0];
+        const parts = m.date.split('-');
+        const dlabel = `${MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3)} ${parseInt(parts[2],10)}`;
+        const extra = data.missedPunches.length > 1 ? ` +${data.missedPunches.length - 1}` : '';
+        return `${esc(m.empName.split(' ')[0])} ${dlabel}${extra}`;
+      })()
+    : `last ${data.missedLookbackDays} days · clean`;
+  const pendingSub = data.pending.length > 0
+    ? (() => {
+        const p = data.pending[0];
+        return `oldest: ${esc(p.empName.split(' ')[0])} ${p.date.slice(5)}`;
+      })()
+    : 'queue empty';
+
   const heroHtml = `
-    <div class="metric-grid">
-      <div class="metric-card success">
-        <div class="metric-label">Active</div>
-        <div class="metric-value success">${counts.clocked_in}</div>
-        <div class="metric-sub">of ${totalEmp} team members</div>
+    <div class="telemetry">
+      <div class="tel-cell">
+        <div class="tel-label">Active</div>
+        <div class="tel-value ${counts.clocked_in > 0 ? 'success' : ''}">${counts.clocked_in}</div>
+        <div class="tel-sub">of ${totalEmp} team members</div>
       </div>
-      <div class="metric-card warning">
-        <div class="metric-label">On Lunch</div>
-        <div class="metric-value warning">${counts.on_lunch}</div>
-        <div class="metric-sub">currently away</div>
+      <div class="tel-cell">
+        <div class="tel-label">On Lunch</div>
+        <div class="tel-value">${counts.on_lunch}</div>
+        <div class="tel-sub">currently away</div>
       </div>
-      <div class="metric-card ${missedCount > 0 ? 'danger' : ''}">
-        <div class="metric-label">Missed Punches</div>
-        <div class="metric-value ${missedCount > 0 ? 'danger' : ''}">${missedCount}</div>
-        <div class="metric-sub">last ${data.missedLookbackDays} days</div>
+      <div class="tel-cell">
+        <div class="tel-label">Missed · ${data.missedLookbackDays}d</div>
+        <div class="tel-value ${missedCount > 0 ? 'crit' : ''}">${missedCount}</div>
+        ${renderTelSparkline_(data.missedTrend, missedCount > 0 ? 'crit' : null)}
+        <div class="tel-sub">${missedSub}</div>
       </div>
-      <div class="metric-card ${pendingCount > 0 ? 'accent' : ''}">
-        <div class="metric-label">Pending Requests</div>
-        <div class="metric-value ${pendingCount > 0 ? 'info' : ''}">${pendingCount}</div>
-        <div class="metric-sub">awaiting approval</div>
+      <div class="tel-cell">
+        <div class="tel-label">Pending</div>
+        <div class="tel-value ${pendingCount > 0 ? 'warn' : ''}">${pendingCount}</div>
+        ${renderTelSparkline_(data.pendingTrend, pendingCount > 0 ? 'warn' : null)}
+        <div class="tel-sub">${pendingSub}</div>
       </div>
     </div>`;
 
@@ -59,14 +79,20 @@ function renderManagerView(area, data) {
         let line;
         if (e.lastPunchType) {
           const showMgr = e.lastPunchTimeMgr && e.empTzAbbr !== e.mgrTzAbbr;
-          const empTime = `<span class="emp-time">${dispTime(e.lastPunchTime)}</span> <span class="tz-tag">${esc(e.empTzAbbr)}</span>`;
-          const mgrTime = showMgr
-            ? ` · <span class="emp-time">${dispTime(e.lastPunchTimeMgr)}</span> <span class="tz-tag mgr-tz">${esc(e.mgrTzAbbr)}</span>`
-            : '';
-          line = `${prettyType(e.lastPunchType)} · ${empTime}${mgrTime}`;
+          // Paired-timezone chip (V4·E5): local time emphasized, manager time
+          // secondary; the second segment is omitted when both tzs match.
+          const tzChip = `<span class="tz-chip">`
+            + `<span class="seg local"><span class="t">${dispTime(e.lastPunchTime)}</span><span class="z">${esc(e.empTzAbbr)}</span></span>`
+            + (showMgr
+                ? `<span class="seg"><span class="t">${dispTime(e.lastPunchTimeMgr)}</span><span class="z">${esc(e.mgrTzAbbr)}</span></span>`
+                : '')
+            + `</span>`;
+          line = `${prettyType(e.lastPunchType)} · ${tzChip}`;
         } else {
           line = '<span style="color:var(--muted);font-style:italic">No punches today</span>';
         }
+        // V4·E3 — 7-day daily-hours sparkline under the status line.
+        const sparkSection = renderEmpSparkline_(e.recentHours);
         return `<div class="emp-card">
           <div class="emp-card-top">
             <div class="emp-avatar ${meta.avCls}">${initials}</div>
@@ -74,6 +100,7 @@ function renderManagerView(area, data) {
             <button class="de-open-btn" title="Edit day" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
           </div>
           <div class="emp-status-line">${line}</div>
+          ${sparkSection}
         </div>`;
       }).join('') + '</div>';
 
@@ -86,35 +113,39 @@ function renderManagerView(area, data) {
         const dy = parseInt(parts[2],10);
         const yr = parts[0];
 
-        let balLine = '';
+        // Approval-queue signal chips (V1·E5): surface US holidays, teammates
+        // already off the same day, and the projected balance after deduction
+        // as discrete chips. Holiday + team conflicts are also echoed (plain
+        // text) into the Approve confirm dialog via the data-conflict-hint
+        // attribute below so the manager can't dismiss the warning by reflex.
+        const holidayRaw = p.holidayName || '';
+        const conflictsApproved = p.conflictsOff ? p.conflictsOff.filter(c => c.status === 'approved').length : 0;
+        const conflictsPending  = p.conflictsOff ? p.conflictsOff.filter(c => c.status === 'pending').length  : 0;
+
+        const sigChips = [];
+        if (holidayRaw) {
+          sigChips.push(`<span class="sig hol">${icon('star', 11)}${esc(holidayRaw).toUpperCase()}</span>`);
+        }
+        if (conflictsApproved + conflictsPending > 0) {
+          const teamBits = [];
+          if (conflictsApproved > 0) teamBits.push(`${conflictsApproved} off`);
+          if (conflictsPending > 0)  teamBits.push(`${conflictsPending} pending`);
+          sigChips.push(`<span class="sig team">${icon('info', 11)}${teamBits.join(', ')}</span>`);
+        }
         if (data.ptoEnabled && p.currentBalance !== null && p.currentBalance !== undefined) {
           const bucketLabel = p.leaveBucket === 'sick' ? 'Sick' : 'Annual';
-          const projCls = p.projectedBalance < 0 ? 'neg' : '';
-          balLine = `<div class="pending-balance">
-            ${bucketLabel}: ${formatLeaveDays(p.currentBalance)}
-            → <span class="${projCls}">${formatLeaveDays(p.projectedBalance)}</span>
-            <span class="pending-balance-unit">days</span>
-          </div>`;
+          const negCls = p.projectedBalance < 0 ? ' neg' : '';
+          sigChips.push(`<span class="sig bal${negCls}">${bucketLabel} ${formatLeaveDays(p.currentBalance)} → ${formatLeaveDays(p.projectedBalance)} d</span>`);
         }
+        const signalsHtml = sigChips.length ? `<div class="signals">${sigChips.join('')}</div>` : '';
 
-        // Conflict hint: surface US holidays + other reps off the same day so
-        // the manager catches double-bookings before clicking Approve. Status
-        // distinguishes Approved (confirmed off) from Pending (will-be-off).
-        let conflictLine = '';
-        const conflictBits = [];
-        if (p.holidayName) conflictBits.push(esc(p.holidayName) + ' (US holiday)');
-        if (p.conflictsOff && p.conflictsOff.length) {
-          const approvedCount = p.conflictsOff.filter(c => c.status === 'approved').length;
-          const pendingCount  = p.conflictsOff.filter(c => c.status === 'pending').length;
-          const otherBits = [];
-          if (approvedCount > 0) otherBits.push(`${approvedCount} approved off`);
-          if (pendingCount > 0)  otherBits.push(`${pendingCount} pending`);
-          if (otherBits.length) conflictBits.push(otherBits.join(', '));
-        }
-        if (conflictBits.length) {
-          conflictLine = `<div style="margin-top:6px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--warning-deep);text-transform:uppercase;display:flex;align-items:center;gap:5px">${icon('info', 11)}${conflictBits.join(' · ')}</div>`;
-        }
-        const conflictForConfirm = conflictBits.length ? conflictBits.join(' · ') : '';
+        const confirmBits = [];
+        if (holidayRaw) confirmBits.push(`${holidayRaw} (US holiday)`);
+        const otherBits = [];
+        if (conflictsApproved > 0) otherBits.push(`${conflictsApproved} approved off`);
+        if (conflictsPending > 0)  otherBits.push(`${conflictsPending} pending`);
+        if (otherBits.length) confirmBits.push(otherBits.join(', '));
+        const conflictForConfirm = confirmBits.join(' · ');
 
         return `<div class="pending-card">
           <div class="pending-top">
@@ -129,8 +160,7 @@ function renderManagerView(area, data) {
               <div class="pending-emp">${esc(p.empName)}</div>
               <div class="pending-meta">${esc(p.type)} · ${yr}</div>
               ${p.notes && p.notes !== 'undefined' ? `<div class="pending-notes">"${esc(p.notes)}"</div>` : ''}
-              ${balLine}
-              ${conflictLine}
+              ${signalsHtml}
             </div>
           </div>
           <div class="pending-actions">
@@ -643,6 +673,52 @@ document.getElementById('de-save').addEventListener('click', function () {
     })
     .managerSaveDay(_deEmpId, _deDate, slots, reason);
 });
+
+/** 7-bar daily-hours sparkline inside each live-status card (V4·E3).
+ *  Bars are flex-sized; hours-mapped heights scale within the row.
+ *  Bars colored: zero (dim), short (<6h warn-toned), normal accent.
+ *  Returns '' for missing/empty arrays so non-tracking reps don't see
+ *  a placeholder. */
+function renderEmpSparkline_(recentHours) {
+  if (!recentHours || recentHours.length === 0) return '';
+  const max = Math.max(8, ...recentHours.map(d => d.hours || 0));
+  const totalHrs = recentHours.reduce((s, d) => s + (d.hours || 0), 0);
+  const daysWorked = recentHours.filter(d => (d.hours || 0) > 0).length;
+  if (totalHrs === 0) return '';
+  const bars = recentHours.map(d => {
+    const h = d.hours || 0;
+    const px = h === 0 ? 0 : Math.max(2, Math.round((h / max) * 18));
+    const cls = ['bar'];
+    if (h === 0) cls.push('zero');
+    else if (h < 6) cls.push('short');
+    const dlabel = d.date ? d.date.slice(5) : '';
+    return `<div class="${cls.join(' ')}" title="${esc(dlabel + ': ' + (h ? h.toFixed(1) + 'h' : 'off'))}" style="height:${px}px"></div>`;
+  }).join('');
+  return `<div class="emp-spark-wrap">
+    <div class="emp-spark">${bars}</div>
+    <span class="emp-spark-total">${formatHoursShort(totalHrs)}·${daysWorked}d</span>
+  </div>`;
+}
+
+/** 14-bar sparkline for the manager telemetry strip (V4·E2). Tone is
+ *  applied to the latest bar so the eye lands on "right now"; empty
+ *  trends collapse to nothing rather than render a row of zero-height
+ *  placeholders. */
+function renderTelSparkline_(trend, tone) {
+  if (!trend || trend.length === 0) return '';
+  const max = Math.max(1, ...trend.map(d => d.count || 0));
+  const bars = trend.map((d, i) => {
+    const c = d.count || 0;
+    const h = c === 0 ? 0 : Math.max(2, Math.round((c / max) * 18));
+    const isLast = i === trend.length - 1;
+    const cls = ['bar'];
+    if (c === 0) cls.push('zero');
+    if (isLast && tone && c > 0) cls.push(tone);
+    const title = `${d.date}: ${c}`;
+    return `<div class="${cls.join(' ')}" title="${esc(title)}" style="height:${h}px"></div>`;
+  }).join('');
+  return `<div class="tel-spark">${bars}</div>`;
+}
 
 function renderAnalyticsSection(data) {
   const trend = data.punchTrend || [];

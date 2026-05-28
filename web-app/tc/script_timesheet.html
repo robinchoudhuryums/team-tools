@@ -19,6 +19,9 @@ function loadTimesheet(startDate, endDate, targetArea) {
       if (currentView !== 'clock') return;
       const area = targetArea && targetArea.isConnected ? targetArea : document.getElementById('view-area');
       if (area) renderTimesheetView(area, data, { combined });
+      // Combined-view ledger pay-period cell renders "—" until tsData arrives;
+      // backfill it now. No-op when the cell isn't in the DOM (rep nav'd away).
+      if (typeof lazyUpdatePayPeriodCell_ === 'function') lazyUpdatePayPeriodCell_();
     })
     .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
     .getTimesheetData(startDate, endDate);

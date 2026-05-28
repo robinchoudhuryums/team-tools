@@ -529,6 +529,48 @@ function getManagerDashboard() {
     liveStatus.sort((a, b) =>
       statusRank[a.status] - statusRank[b.status] || a.name.localeCompare(b.name));
 
+    // ── Per-employee 7-day sparkline (V4·E3) ─────────────────────────
+    // Builds a 7-element recentHours[] (oldest→newest, excludes today
+    // since reps still mid-shift would always register as 0 hours)
+    // for each liveStatus entry. Reuses already-loaded adpRows; one
+    // extra in-memory pass — no Sheet reads, INV-13 honored.
+    const sparkDays = 7;
+    const sparkStart = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - sparkDays);
+      return fmtDateTz_(d, mgrTz);
+    })();
+    const sparkEnd = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - 1);
+      return fmtDateTz_(d, mgrTz);
+    })();
+    const sparkPunchMap = {}; // {empId}|{date} → { ClockIn, LunchOut, LunchIn, ClockOut }
+    for (let i = 2; i < adpRows.length; i++) {
+      const id = String(adpRows[i][ADP.EMP_ID]).trim();
+      if (!empById[id]) continue;
+      const rowDate = normalizeDate_(adpRows[i][ADP.DATE]);
+      if (rowDate < sparkStart || rowDate > sparkEnd) continue;
+      const key = `${id}|${rowDate}`;
+      if (!sparkPunchMap[key]) sparkPunchMap[key] = {};
+      const ptype = normalizeType_(String(adpRows[i][ADP.COMMENTS]));
+      sparkPunchMap[key][ptype] = normalizeTime_(adpRows[i][ADP.TIME]);
+    }
+    const sparkHoursMap = {};
+    Object.keys(sparkPunchMap).forEach(key => {
+      const p = sparkPunchMap[key];
+      if (p.ClockIn && p.ClockOut) {
+        sparkHoursMap[key] = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+      }
+    });
+    liveStatus.forEach(ls => {
+      const arr = [];
+      for (let off = sparkDays; off >= 1; off--) {
+        const dd = new Date(now); dd.setDate(dd.getDate() - off);
+        const ds = fmtDateTz_(dd, mgrTz);
+        arr.push({ date: ds, hours: sparkHoursMap[`${ls.id}|${ds}`] || 0 });
+      }
+      ls.recentHours = arr;
+    });
+
     // Pending time-off (with leave balance context).
     // Also build a date→[approved/pending requests] index up-front so each
     // pending entry can carry conflict context (other reps off the same day,
@@ -699,6 +741,69 @@ function getManagerDashboard() {
       if (toSummary[st] !== undefined) toSummary[st]++;
     }
 
+    // ── 14-day trends for the V4·E2 manager telemetry strip ─────────
+    // pendingTrend = new pending submissions per day (includes today).
+    // missedTrend  = missed-clock-out instances per day (excludes today,
+    //                since reps still mid-shift would always count as "missed").
+    // Both reuse already-loaded sheet data (toRows, adpRows) — in-memory
+    // iteration only, no extra Sheet reads.
+    const trendDays = 14;
+    const pendingTrendStart = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - (trendDays - 1));
+      return fmtDateTz_(d, mgrTz);
+    })();
+    const missedTrendStart = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - trendDays);
+      return fmtDateTz_(d, mgrTz);
+    })();
+    const missedTrendEnd = (() => {
+      const d = new Date(now); d.setDate(d.getDate() - 1);
+      return fmtDateTz_(d, mgrTz);
+    })();
+
+    const pendingByDate = {};
+    for (let i = 1; i < toRows.length; i++) {
+      if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'pending') continue;
+      const submitted = String(toRows[i][TO.SUBMITTED_AT]).trim();
+      const subDate = submitted ? submitted.substring(0, 10) : '';
+      if (subDate >= pendingTrendStart && subDate <= todayStr) {
+        pendingByDate[subDate] = (pendingByDate[subDate] || 0) + 1;
+      }
+    }
+
+    const trendPunchKey = {};
+    for (let i = 2; i < adpRows.length; i++) {
+      const id = String(adpRows[i][ADP.EMP_ID]).trim();
+      const e = empById[id];
+      if (!e) continue;
+      const rowDate = normalizeDate_(adpRows[i][ADP.DATE]);
+      if (rowDate < missedTrendStart || rowDate > missedTrendEnd) continue;
+      const key = `${id}|${rowDate}`;
+      if (!trendPunchKey[key]) trendPunchKey[key] = new Set();
+      trendPunchKey[key].add(normalizeType_(String(adpRows[i][ADP.COMMENTS])));
+    }
+    const missedByDate = {};
+    for (const key in trendPunchKey) {
+      const types = trendPunchKey[key];
+      if (types.has('ClockIn') && !types.has('ClockOut')) {
+        const d = key.split('|')[1];
+        missedByDate[d] = (missedByDate[d] || 0) + 1;
+      }
+    }
+
+    const pendingTrend = [];
+    for (let off = trendDays - 1; off >= 0; off--) {
+      const dd = new Date(now); dd.setDate(dd.getDate() - off);
+      const ds = fmtDateTz_(dd, mgrTz);
+      pendingTrend.push({ date: ds, count: pendingByDate[ds] || 0 });
+    }
+    const missedTrend = [];
+    for (let off = trendDays; off >= 1; off--) {
+      const dd = new Date(now); dd.setDate(dd.getDate() - off);
+      const ds = fmtDateTz_(dd, mgrTz);
+      missedTrend.push({ date: ds, count: missedByDate[ds] || 0 });
+    }
+
     return {
       today: todayStr,
       liveStatus, pending, missedPunches, recentPunches, recentAudits,
@@ -707,6 +812,7 @@ function getManagerDashboard() {
       ptoEnabled:          !!CONFIG.ENABLE_PTO_TRACKING,
       mgrTzAbbr,
       punchTrend, toSummary,
+      pendingTrend, missedTrend,
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -2308,22 +2414,22 @@ function parseTimestampMs_(tsStr, tz) {
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
   paper:        '#f6f7f9',
-  paper2:       '#eceef2',
-  ink:          '#101418',
-  muted:        '#606872',
-  line:         '#dadde3',
-  accent:       '#3565b8',      // resolved oklch(55% 0.12 240)
-  accentSoft:   '#e6ecf6',      // resolved oklch(93% 0.04 240)
-  accentDeep:   '#1e3a6e',
-  good:         '#3d8c6b',
-  goodSoft:     '#e6f1ec',
-  goodDeep:     '#1f4d3a',
-  warn:         '#c25b1a',
-  warnSoft:     '#fbeede',
-  warnDeep:     '#693012',
-  danger:       '#c0392b',
-  dangerSoft:   '#fae8e6',
-  dangerDeep:   '#6e1f17',
+  paper2:       '#f0f2f6',
+  ink:          '#0f1623',
+  muted:        '#3e4756',
+  line:         '#dce0e7',
+  accent:       '#0f8a52',      // console-redesign primary green
+  accentSoft:   '#e4f5ec',
+  accentDeep:   '#0b6e40',
+  good:         '#0f8a52',      // aliased to accent (one editorial green)
+  goodSoft:     '#e4f5ec',
+  goodDeep:     '#0b6e40',
+  warn:         '#b7791f',
+  warnSoft:     '#fbf1d9',
+  warnDeep:     '#8a4500',
+  danger:       '#c13030',
+  dangerSoft:   '#fce5e5',
+  dangerDeep:   '#8a1f1f',
   // UMS brand navy + pale-blue alternating-row tint. These match the legacy
   // dept-email aesthetic (closeOrderEmail.js, updateOrderEmail.js) so emails
   // sent from the new web app look continuous with the prior tooling.

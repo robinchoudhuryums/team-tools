@@ -14,6 +14,8 @@
   html, body {
     height: 100%; background: var(--paper); color: var(--ink);
     font-family: var(--ui);
+    font-feature-settings: 'ss01', 'cv11', 'cv05';
+    letter-spacing: -0.01em;
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   }
   button, input, select, textarea { font-family: inherit; font-size: inherit; }
@@ -417,6 +419,40 @@
     text-transform: uppercase; vertical-align: 1px;
   }
   .tz-tag.mgr-tz { color: var(--info-deep); background: var(--accent-soft); border-color: transparent; }
+
+  /* ─── PAIRED-TIMEZONE CHIP (V4·E5) ───────────────────────────────
+     Two-segment chip pairing the rep's local time + manager-tz time.
+     First .seg.local is the emphasized segment (paper-2 fill); the
+     second .seg is secondary text-only. Callers render the second
+     segment only when local tz != manager tz, so same-tz reps see a
+     single-segment chip and no redundant tz comparison.
+     Structure:
+       <span class="tz-chip">
+         <span class="seg local"><span class="t">5:30 PM</span><span class="z">IST</span></span>
+         <span class="seg"><span class="t">7:00 AM</span><span class="z">CST</span></span>
+       </span>                                                                    */
+  .tz-chip {
+    display: inline-flex; align-items: stretch;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    overflow: hidden; vertical-align: -1px;
+    background: var(--paper-card);
+  }
+  .tz-chip .seg {
+    display: inline-flex; align-items: baseline; gap: 5px;
+    padding: 2px 7px;
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+  }
+  .tz-chip .seg + .seg { border-left: 1px solid var(--line); }
+  .tz-chip .seg.local { background: var(--paper-2); }
+  .tz-chip .seg .t {
+    font-size: 11px; font-weight: 600; color: var(--ink);
+    letter-spacing: 0;
+  }
+  .tz-chip .seg:not(.local) .t { color: var(--muted); font-weight: 500; }
+  .tz-chip .seg .z {
+    font-size: 9px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+  }
   .status-pill {
     display: inline-flex; align-items: center; gap: 7px;
     padding: 5px 11px; border-radius: 999px;
@@ -527,6 +563,308 @@
   }
   .shift-done-msg svg { width: 16px; height: 16px; }
 
+  /* ─── CLOCK HERO (V1·E1) ─────────────────────────────────────────
+     Above-the-fold masthead replacing the centered .hero-clock block.
+     Two-column grid: greeting + status sentence on the left, the live
+     clock on the right. Collapses to stacked in compact-mode (see the
+     :root[data-compact] block far below). The status sentence is built
+     client-side from empState.punches + empState.timezoneAbbr; <strong>
+     wrappers tabularise the worked-hours / time-until-shift-end values
+     against the surrounding prose. */
+  .hero {
+    display: grid; grid-template-columns: 1.5fr 1fr;
+    gap: 28px; align-items: center;
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 28px 32px; margin-bottom: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .hero .greet { min-width: 0; }
+  .hero .greet-kicker {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--muted); letter-spacing: .16em; text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .hero .greet-name {
+    font-family: var(--display); font-size: 24px; font-weight: 500;
+    color: var(--ink); letter-spacing: -.01em; line-height: 1.2;
+    margin-bottom: 10px;
+  }
+  .hero .status-sentence {
+    font-family: var(--ui); font-size: 13px; line-height: 1.5;
+    color: var(--muted);
+  }
+  .hero .status-sentence strong {
+    font-family: var(--mono); color: var(--ink); font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
+    letter-spacing: 0;
+  }
+  .hero .clk { text-align: right; min-width: 0; }
+  .hero .clk-time {
+    font-family: var(--mono); font-size: 56px; font-weight: 500;
+    line-height: 1; letter-spacing: -.02em; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
+  }
+  .hero .clk-time .ampm {
+    font-size: 20px; font-weight: 400; color: var(--muted);
+    margin-left: 6px; letter-spacing: 0;
+  }
+  .hero .clk-meta {
+    display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+    margin-top: 8px;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  .hero .clk-meta .sep { opacity: .5; }
+
+  /* ─── PRIMARY/SECONDARY ACTION ROW (V1·E1) ────────────────────────
+     Replaces the prior .actions-grid + .action-btn 2x2 tile grid. One
+     primary button (Clock In if not in / Clock Out if in / Lunch Return
+     if on lunch) takes the wide slot; remaining valid actions fill
+     secondary slots; Adjust always appears at the end as a secondary. */
+  .actions {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    gap: 10px; margin-bottom: 14px;
+  }
+  .actions .prime,
+  .actions .sec {
+    appearance: none; border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px; cursor: pointer;
+    font-family: var(--ui); font-size: 13px; font-weight: 500;
+    color: var(--ink); background: var(--paper-card);
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .actions .prime svg, .actions .sec svg { width: 18px; height: 18px; }
+  .actions .prime {
+    background: var(--accent); color: var(--paper-card);
+    border-color: var(--accent); font-weight: 600;
+  }
+  .actions .prime:hover:not(:disabled) {
+    background: var(--accent-2); border-color: var(--accent-2);
+  }
+  .actions .prime.clockout {
+    background: var(--destructive); border-color: var(--destructive);
+  }
+  .actions .prime.clockout:hover:not(:disabled) {
+    background: var(--danger-deep); border-color: var(--danger-deep);
+  }
+  .actions .sec:hover:not(:disabled) {
+    background: var(--paper-2); border-color: var(--border-strong);
+  }
+  .actions .prime:disabled,
+  .actions .sec:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ─── NOTE COVERAGE STRIP (V1·E3) ─────────────────────────────────
+     Renders between the action row and the ledger when the rep has any
+     call activity today (CDR answered > 0 OR notes > 0). Donut on the
+     left, micro-bar 30-day trend in the middle, "File N missing" CTA on
+     the right when answered > notes. Hidden entirely when neither today
+     nor recent data is meaningful. Data via getMyMetrics(date) — falls
+     back gracefully when CDR_SS_ID isn't set (no donut/CTA, label only). */
+  .cov {
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    gap: 16px; align-items: center;
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .cov-gauge { position: relative; width: 56px; height: 56px; }
+  .cov-gauge svg { display: block; }
+  .cov-gauge .bg { fill: none; stroke: var(--line); stroke-width: 6; }
+  .cov-gauge .fg { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset 400ms var(--ease); }
+  .cov-gauge .fg.warn { stroke: var(--warn); }
+  .cov-gauge .fg.crit { stroke: var(--destructive); }
+  .cov-gauge .num {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .cov-meta { min-width: 0; }
+  .cov-label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .cov-detail {
+    font-family: var(--ui); font-size: 12px; color: var(--muted);
+  }
+  .cov-detail strong {
+    font-family: var(--mono); color: var(--ink); font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .cov-trend {
+    display: flex; align-items: flex-end; gap: 2px;
+    height: 22px; margin-top: 6px;
+  }
+  .cov-trend .bar {
+    flex: 1; background: var(--accent-soft); border-radius: 1px;
+    min-height: 2px;
+  }
+  .cov-trend .bar.today { background: var(--accent); }
+  .cov-trend .bar.zero  { background: var(--paper-2); min-height: 1px; }
+  .cov-cta {
+    appearance: none; cursor: pointer;
+    border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warning-deep);
+    font-family: var(--ui); font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border-radius: var(--radius);
+    display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+    transition: background var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .cov-cta:hover { background: var(--warn); color: var(--paper-card); }
+  .cov-cta svg { width: 12px; height: 12px; }
+  .cov-cta.muted {
+    background: var(--paper-2); color: var(--muted); border-color: var(--line);
+  }
+  .cov-cta.muted:hover { background: var(--paper-3); color: var(--ink); }
+
+  /* ─── DAY RIBBON (V4·E1) ──────────────────────────────────────────
+     Horizontal time ribbon spanning 06:00–22:00. Renders the rep's
+     scheduled shift as a dashed band (default 8a–5p CST per C3, or
+     anchored to first ClockIn + 9h when the rep has actually clocked
+     in), and their actual work + lunch intervals as filled segments.
+     Punch markers are vertical bars with a small mono-uppercase label
+     above. A pulsing 2px now-cursor renders only while the rep is
+     mid-shift; .r-now's left position is refreshed by a 60s interval
+     in script_clock.html. Compact-mode reduces to a 24px-tall strip
+     (segments + now-cursor only, no labels/axis/legend). */
+  .ribbon-wrap {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 18px 12px; margin-bottom: 14px;
+  }
+  .ribbon-axis-row {
+    position: relative; height: 14px;
+    margin-bottom: 6px;
+  }
+  .ribbon-axis-row span {
+    position: absolute; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted-2); letter-spacing: .08em;
+  }
+  .ribbon {
+    position: relative; height: 60px;
+  }
+  .ribbon-track {
+    position: absolute; left: 0; right: 0; top: 18px;
+    height: 28px; background: var(--paper-2);
+    border-radius: var(--radius-sm);
+  }
+  .r-sched {
+    position: absolute; top: -3px; bottom: -3px;
+    background: transparent;
+    border: 1.5px dashed var(--muted-3);
+    border-radius: var(--radius-sm);
+    pointer-events: none;
+  }
+  .r-seg {
+    position: absolute; top: 0; bottom: 0;
+    border-radius: var(--radius-sm);
+    transition: width 200ms var(--ease);
+  }
+  .r-seg.work {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+  }
+  .r-seg.lunch {
+    background: var(--warn-soft);
+    border: 1px dashed var(--warn);
+  }
+  .r-punch {
+    position: absolute; top: -18px; height: 50px;
+    pointer-events: none;
+  }
+  .r-punch .bar {
+    position: absolute; top: 18px; bottom: 0; left: -1px;
+    width: 2px; background: var(--ink); opacity: 0.45;
+  }
+  .r-punch .lbl {
+    position: absolute; top: 0; left: 0; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--ink); letter-spacing: .04em;
+    background: var(--paper-card); padding: 1px 4px;
+    border: 1px solid var(--line); border-radius: 3px;
+    white-space: nowrap;
+  }
+  .r-now {
+    position: absolute; top: 12px; bottom: -6px;
+    width: 2px; background: var(--accent);
+    pointer-events: none; z-index: 2;
+    transition: left 600ms var(--ease);
+  }
+  .r-now::before {
+    content: ''; position: absolute; top: -5px; left: -3px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-glow);
+    animation: pulse 2s infinite;
+  }
+  .ribbon-legend {
+    display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+  }
+  .r-leg-item { display: inline-flex; align-items: center; gap: 6px; }
+  .r-leg-item .swatch {
+    display: inline-block; width: 14px; height: 4px;
+    border-radius: 1px; background: var(--accent);
+  }
+  .r-leg-item .swatch.lunch { background: var(--warn); }
+  .r-leg-item .swatch.sched { background: transparent; border: 1px dashed var(--muted-3); height: 8px; }
+  .r-leg-item .swatch.now {
+    width: 2px; height: 10px; background: var(--accent);
+  }
+
+  /* ─── LEDGER STRIP (V1·E1) ────────────────────────────────────────
+     4-cell stat row beneath the action area. Single bordered container
+     with cell separators rather than gutters between separate tiles —
+     the lower visual noise lets the rep absorb 4 numbers at once. Pay-
+     period cell is populated lazily from tsData (the combined view's
+     timesheet section) once it arrives. */
+  .ledger {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .ledger .cell {
+    padding: 14px 16px;
+    border-right: 1px solid var(--line);
+    min-width: 0;
+  }
+  .ledger .cell:last-child { border-right: none; }
+  .ledger .cell-label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .ledger .cell-value {
+    font-family: var(--mono); font-size: 24px; font-weight: 500;
+    color: var(--ink); line-height: 1;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
+    letter-spacing: -.01em;
+  }
+  .ledger .cell-value.muted { color: var(--muted); }
+  .ledger .cell-value.warn  { color: var(--warning-deep); }
+  .ledger .cell-sub {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    margin-top: 4px; letter-spacing: .04em;
+  }
+
   /* ─── PTO RING ───────────────────────────────────────────────── */
   .pto-rings {
     display: grid; grid-template-columns: 1fr 1fr;
@@ -617,6 +955,60 @@
     font-size: 12px; color: var(--muted); font-weight: 500;
   }
 
+  /* ─── MANAGER TELEMETRY STRIP (V4·E2) ─────────────────────────────
+     4-cell horizontal strip replacing the prior .metric-grid hero.
+     Single bordered container with cell separators rather than gutters,
+     mono numerals. Two cells (Missed / Pending) carry a 14-day
+     sparkline beneath the value; Active + On Lunch are static counts
+     (per C6 — no trend data for those). The sub-line carries the most
+     actionable specific (which rep, which day). */
+  .telemetry {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .telemetry .tel-cell {
+    padding: 14px 18px;
+    border-right: 1px solid var(--line);
+    min-width: 0;
+  }
+  .telemetry .tel-cell:last-child { border-right: none; }
+  .tel-label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 6px;
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  .tel-value {
+    font-family: var(--mono); font-size: 28px; font-weight: 500;
+    color: var(--ink); line-height: 1;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
+    letter-spacing: -.01em;
+  }
+  .tel-value.success { color: var(--good); }
+  .tel-value.warn    { color: var(--warning-deep); }
+  .tel-value.crit    { color: var(--danger-deep); }
+  .tel-spark {
+    display: flex; align-items: flex-end; gap: 2px;
+    height: 20px; margin-top: 8px;
+  }
+  .tel-spark .bar {
+    flex: 1; background: var(--accent-soft); border-radius: 1px;
+    min-height: 2px;
+  }
+  .tel-spark .bar.zero { background: var(--paper-2); min-height: 1px; }
+  .tel-spark .bar.warn { background: var(--warn); }
+  .tel-spark .bar.crit { background: var(--destructive); }
+  .tel-sub {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    margin-top: 6px; letter-spacing: .04em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
   /* ─── EMPLOYEE GRID ──────────────────────────────────────────── */
   .emp-grid {
     display: grid;
@@ -671,6 +1063,33 @@
   .emp-time {
     font-family: var(--mono);
     color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── EMPLOYEE 7-DAY SPARKLINE (V4·E3) ────────────────────────────
+     7-bar daily-hours sparkline inside each live-status card. Driven
+     by getManagerDashboard's recentHours[] array (server-computed
+     in-memory, no extra Sheet reads — INV-13 honored). Bars are
+     color-coded by hours: short (<6h) warn-toned, normal (≥6h) accent,
+     zero days dimmed. Total/days-worked label below. */
+  .emp-spark-wrap {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px;
+  }
+  .emp-spark {
+    flex: 1; display: flex; align-items: flex-end; gap: 2px;
+    height: 18px;
+  }
+  .emp-spark .bar {
+    flex: 1; background: var(--accent-soft); border-radius: 1px;
+    min-height: 2px;
+  }
+  .emp-spark .bar.zero  { background: var(--paper-2); min-height: 1px; }
+  .emp-spark .bar.short { background: var(--warn-soft); }
+  .emp-spark-total {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .04em;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
   }
 
   /* Manager doc-row variant — same disc treatment as above */
@@ -753,6 +1172,32 @@
   }
   .pending-balance .neg { color: var(--destructive); font-weight: 600; }
   .pending-balance-unit { color: var(--muted); font-size: 10px; margin-left: 2px; }
+
+  /* ─── APPROVAL-QUEUE SIGNAL CHIPS (V1·E5) ────────────────────────
+     Row of small chips that surface the three actionable signals a
+     manager needs before approving a PTO request: holiday (.sig.hol),
+     teammates already off the same day (.sig.team), and projected
+     balance after the deduction (.sig.bal, with .neg modifier when
+     the projection goes negative). Replaces the prior balLine +
+     conflictLine inline-text rows. Chips wrap if the card is narrow. */
+  .signals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .sig {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: 3px 7px; border-radius: 4px;
+    border: 1px solid transparent;
+    font-variant-numeric: tabular-nums;
+  }
+  .sig svg { width: 11px; height: 11px; }
+  .sig.hol  { background: var(--info-soft); color: var(--info-deep); }
+  .sig.team { background: var(--warn-soft); color: var(--warning-deep); }
+  .sig.bal  { background: var(--paper-2);   color: var(--muted); border-color: var(--line); }
+  .sig.bal.neg {
+    background: var(--destructive-soft); color: var(--danger-deep);
+    border-color: transparent;
+  }
+
   .pending-actions { display: flex; gap: 8px; margin-top: 8px; }
   .pending-btn {
     flex: 1; border-radius: var(--radius);
@@ -1395,6 +1840,54 @@
   .day-info-row.own-pending  { background: var(--warn-soft);        color: var(--warning-deep); font-weight: 500; }
   .day-info-row.own-approved { background: var(--accent-soft);      color: var(--info-deep);    font-weight: 500; }
   .day-info-row.own-denied   { background: var(--destructive-soft); color: var(--danger-deep);  font-weight: 500; }
+
+  /* ─── PTO DAY MODAL — HEADS-UP CONFLICT BANNERS (V1·E2) ──────────
+     Stacked banners above the request form: holiday (info), teammates
+     already off (warn), all-clear (ok). Tonal soft-bg matches the
+     pattern in .day-info-row but with slightly tighter padding and an
+     emphasized leading glyph so the banners scan as a unit. */
+  .conflict {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; border-radius: var(--radius);
+    font-family: var(--ui); font-size: 13px; font-weight: 500;
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }
+  .conflict:last-child { margin-bottom: 0; }
+  .conflict svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; }
+  .conflict.info { background: var(--info-soft); color: var(--info-deep); }
+  .conflict.warn { background: var(--warn-soft); color: var(--warning-deep); }
+  .conflict.ok   { background: var(--good-soft); color: var(--success-deep); }
+  .conflict.crit { background: var(--destructive-soft); color: var(--danger-deep); }
+  .conflict .conflict-sub {
+    display: block; font-weight: 400; font-size: 12px;
+    opacity: 0.85; margin-top: 2px;
+  }
+
+  /* Balance-after preview row inside the request form. Updates live
+     when the rep changes Type — leave-deduction map mirrors the
+     server's getLeaveDeduction_ (sick vs annual, 1.0 vs 0.5 days). */
+  .balance-after {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border-radius: var(--radius);
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    margin: 12px 0 6px;
+    font-family: var(--ui); font-size: 13px;
+    gap: 10px; flex-wrap: wrap;
+  }
+  .balance-after .ba-label {
+    color: var(--muted); font-family: var(--mono);
+    font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .balance-after .ba-val {
+    color: var(--ink);
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
+  }
+  .balance-after .ba-val strong { font-weight: 600; }
+  .balance-after .ba-val strong.neg { color: var(--destructive); }
+
   .day-info-row .di-icon {
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0; color: inherit;
@@ -1613,6 +2106,55 @@
   :root[data-compact="1"] .actions-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   :root[data-compact="1"] .action-btn { padding: 12px 8px; font-size: 12px; }
   :root[data-compact="1"] .action-btn .be svg { width: 18px; height: 18px; }
+  /* Console-redesign components — compact reflow (V1·E4) */
+  :root[data-compact="1"] .hero {
+    grid-template-columns: 1fr; gap: 14px; padding: 18px 18px 16px; margin-bottom: 12px;
+  }
+  :root[data-compact="1"] .hero .clk { text-align: left; }
+  :root[data-compact="1"] .hero .clk-time { font-size: 40px; }
+  :root[data-compact="1"] .hero .clk-time .ampm { font-size: 16px; }
+  :root[data-compact="1"] .hero .clk-meta { justify-content: flex-start; }
+  :root[data-compact="1"] .hero .greet-name { font-size: 18px; }
+  :root[data-compact="1"] .actions {
+    grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  :root[data-compact="1"] .actions .prime { grid-column: span 2; }
+  :root[data-compact="1"] .cov {
+    grid-template-columns: 48px 1fr;
+    gap: 12px; padding: 10px 12px;
+  }
+  :root[data-compact="1"] .cov-gauge { width: 44px; height: 44px; }
+  :root[data-compact="1"] .cov-cta {
+    grid-column: 1 / -1; justify-self: stretch; justify-content: center;
+  }
+  :root[data-compact="1"] .ledger {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  /* Drop the 4th (pay-period) ledger cell in compact — keep the 3 most
+     glanceable: Annual / Sick / Hours Today. */
+  :root[data-compact="1"] .ledger .cell:nth-child(4) { display: none; }
+  :root[data-compact="1"] .ledger .cell { padding: 10px 12px; }
+  :root[data-compact="1"] .ledger .cell-value { font-size: 18px; }
+  :root[data-compact="1"] .telemetry {
+    grid-template-columns: 1fr 1fr;
+  }
+  :root[data-compact="1"] .telemetry .tel-cell:nth-child(2),
+  :root[data-compact="1"] .telemetry .tel-cell:nth-child(4) { border-right: none; }
+  :root[data-compact="1"] .telemetry .tel-cell:nth-child(1),
+  :root[data-compact="1"] .telemetry .tel-cell:nth-child(2) { border-bottom: 1px solid var(--line); }
+  :root[data-compact="1"] .telemetry .tel-cell { padding: 10px 12px; }
+  :root[data-compact="1"] .telemetry .tel-value { font-size: 20px; }
+  /* Day ribbon — stripped-down 24px mini-strip: keep segments + now,
+     drop labels/axis/legend to save vertical space in the pop-out. */
+  :root[data-compact="1"] .ribbon-wrap { padding: 8px 10px 6px; margin-bottom: 10px; }
+  :root[data-compact="1"] .ribbon-axis-row { display: none; }
+  :root[data-compact="1"] .ribbon { height: 24px; }
+  :root[data-compact="1"] .ribbon-track { top: 0; height: 24px; }
+  :root[data-compact="1"] .r-punch .lbl { display: none; }
+  :root[data-compact="1"] .r-punch { top: 0; height: 24px; }
+  :root[data-compact="1"] .r-punch .bar { top: 0; bottom: 0; }
+  :root[data-compact="1"] .r-now { top: -2px; bottom: -2px; }
+  :root[data-compact="1"] .ribbon-legend { display: none; }
   :root[data-compact="1"] .modal {
     max-width: 100%;
     padding: 18px 18px;
