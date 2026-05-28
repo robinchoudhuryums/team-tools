@@ -541,38 +541,12 @@ function bindSelfUndoBtns() {
   });
 }
 
-/** Two-ring PTO donut (annual + sick) shown beneath the hero clock. */
-function renderPtoRings(s) {
-  if (!s.ptoEnabled) return '';
-  const annualMax = Math.max(s.annualLeaveMax || 15, s.annualLeave || 0, 1);
-  const sickMax   = Math.max(s.sickLeaveMax   || 10, s.sickLeave   || 0, 1);
-  const annual = ptoRingSvg(s.annualLeave, annualMax, 'annual');
-  const sick   = ptoRingSvg(s.sickLeave,   sickMax,   'sick');
-  return `
-    <div class="card pto-card">
-      <div class="card-label">Leave Balance</div>
-      <div class="pto-rings">
-        <div class="pto-ring">
-          <div class="pto-svg">${annual.svg}
-            <div class="pto-ring-center">
-              <div class="pto-ring-val">${annual.label}</div>
-              <div class="pto-ring-of">of ${annual.maxLabel}</div>
-            </div>
-          </div>
-          <div class="pto-ring-label">Annual</div>
-        </div>
-        <div class="pto-ring">
-          <div class="pto-svg">${sick.svg}
-            <div class="pto-ring-center">
-              <div class="pto-ring-val">${sick.label}</div>
-              <div class="pto-ring-of">of ${sick.maxLabel}</div>
-            </div>
-          </div>
-          <div class="pto-ring-label">Sick</div>
-        </div>
-      </div>
-    </div>`;
-}
+// renderPtoRings — removed in Round 2 (Phase 8y). The two-ring PTO donut
+// it produced was orphaned after Phase 2 swapped the Clock view to the
+// hero/actions/ledger layout (Annual + Sick balances now render as ledger
+// cells). ptoRingSvg() below is still used by the Time Off side rail
+// (tc/script_timeoff.html); it stays until Round 2 sub-phase 8d replaces
+// that rail with the rectangular PTO tile.
 
 function ptoRingSvg(value, max, cls) {
   const v = Math.max(0, Number(value) || 0);
