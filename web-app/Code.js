@@ -1698,21 +1698,40 @@ function getCallNotesAmbient() {
 
     const empTz = empTz_(emp);
     const today = Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+    // 7-day inclusive window for weekTotal (today and the 6 prior days).
+    const weekStartDate = new Date();
+    weekStartDate.setDate(weekStartDate.getDate() - 6);
+    const weekStart = Utilities.formatDate(weekStartDate, empTz, 'yyyy-MM-dd');
 
     const sheet = getCallNotesSheet_(emp);
     const rows = sheet.getDataRange().getValues();
     let unresolvedActionCount = 0;
     let staleActionCount = 0;
     let todayTotal = 0;
+    let weekTotal = 0;
+    // V4 Phase 4 — per-flag counts for the bottom quick-chip strip on the
+    // Log view. `qa` counts training-flagged notes that received a manager
+    // reply (non-empty subformData.trainingReply). Counts span the rep's
+    // entire Sheet so the strip shows historical totals, not just today.
+    const flagCounts = { all: 0, action: 0, training: 0, review: 0, unresolved: 0, qa: 0 };
     const staleMs = CONFIG.CALL_NOTES.STALE_FLAG_HOURS * 3600 * 1000;
     const nowMs = Date.now();
     for (let i = 1; i < rows.length; i++) {
       const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
       if (note.dateLocal === today) todayTotal++;
+      if (note.dateLocal && note.dateLocal >= weekStart && note.dateLocal <= today) weekTotal++;
+      flagCounts.all++;
+      if (note.flagType === 'action')   flagCounts.action++;
+      if (note.flagType === 'training') flagCounts.training++;
+      if (note.flagType === 'review')   flagCounts.review++;
       if (note.flagType === 'action' && !note.resolved) {
         unresolvedActionCount++;
+        flagCounts.unresolved++;
         const noteMs = parseTimestampMs_(note.timestamp, empTz);
         if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
+      }
+      if (note.flagType === 'training' && note.subformData && note.subformData.trainingReply) {
+        flagCounts.qa++;
       }
     }
     const result = {
@@ -1720,6 +1739,8 @@ function getCallNotesAmbient() {
       unresolvedActionCount,
       staleActionCount,
       todayTotal,
+      weekTotal,
+      flagCounts,
       staleFlagHours: CONFIG.CALL_NOTES.STALE_FLAG_HOURS,
     };
     try { cache.put(cacheKey, JSON.stringify(result), CN_AMBIENT_CACHE_TTL); }

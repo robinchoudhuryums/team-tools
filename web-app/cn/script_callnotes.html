@@ -12,6 +12,234 @@
   .cn-rolling {
     display: flex; flex-direction: column; gap: 14px;
   }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     CALL NOTES — V4 LOG REDESIGN (Phase 4)
+     ───────────────────────────────────────────────────────────────────
+     Compact 4-column form canvas that fits an entire call note above the
+     viewport fold on a 13" laptop. Replaces the prior vertical-stack
+     .cn-active-form-header + .cn-form-fields + .cn-form-actions
+     vocabulary. The form root still carries `id="cn-active-form"` so
+     existing handlers (cnSubmitActiveForm_, cnReadActiveForm_, sticky
+     drafts, optimistic UI) keep working; only the surface layout changes.
+     ═══════════════════════════════════════════════════════════════════ */
+
+  /* cn-head — eyebrow + h2 + stats-mini header. Replaces .cn-active-form-header
+     + the view-title-row when in the Log view. */
+  .cn-head {
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 16px; align-items: end;
+    margin-bottom: 14px;
+  }
+  .cn-head-eyebrow {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .14em; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .cn-head-title {
+    font-family: var(--display); font-size: 28px; font-weight: 500;
+    letter-spacing: -.02em; color: var(--ink); line-height: 1.1; margin: 0;
+  }
+  .cn-stats-mini {
+    display: flex; gap: 0;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--paper-card); overflow: hidden;
+  }
+  .cn-stat-cell {
+    padding: 8px 14px; border-right: 1px solid var(--line);
+    text-align: center; min-width: 64px;
+  }
+  .cn-stat-cell:last-child { border-right: none; }
+  .cn-stat-num {
+    font-family: var(--mono); font-size: 18px; font-weight: 600;
+    color: var(--ink); line-height: 1;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'ss01';
+  }
+  .cn-stat-num.warn { color: var(--warning-deep); }
+  .cn-stat-num.crit { color: var(--danger-deep); }
+  .cn-stat-lbl {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* 4-column form canvas. Each .cn-field is a self-contained card with a
+     hairline border and an in-card label; focus state expands the border
+     to accent with a soft glow ring. Issue + Resolution span 2x2 cells
+     to balance the row of narrow inputs above and below. */
+  .cn-form-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 10px; margin-bottom: 14px;
+  }
+  .cn-form-grid.cn-active-form {
+    /* override the prior .cn-active-form card styling — the grid is the
+       container; individual .cn-field cells carry the border + bg now. */
+    background: transparent; border: none; padding: 0;
+    box-shadow: none;
+  }
+  .cn-field {
+    background: var(--paper-card); border: 1px solid var(--line);
+    border-radius: var(--radius);
+    display: flex; flex-direction: column;
+    min-width: 0; min-height: 0;
+    padding: 8px 10px 6px;
+    transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-field.span-2 { grid-column: span 2; }
+  .cn-field.span-4 { grid-column: span 4; }
+  .cn-field.row-2  { grid-row: span 2; }
+  .cn-field:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .cn-field.prefilled {
+    border-left: 3px solid var(--accent);
+    background: color-mix(in oklch, var(--accent-soft), var(--paper-card) 50%);
+  }
+  .cn-field label {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 4px; margin-bottom: 4px;
+  }
+  .cn-field-num {
+    color: var(--muted-3); font-weight: 500;
+  }
+  .cn-field input,
+  .cn-field textarea {
+    appearance: none; border: none; background: transparent;
+    font-family: var(--ui); font-size: 13px; color: var(--ink);
+    padding: 0; margin: 0; width: 100%;
+    outline: none; resize: none;
+    min-height: 0;
+    font-feature-settings: 'ss01', 'cv11', 'cv05';
+    letter-spacing: -0.01em;
+  }
+  .cn-field textarea {
+    min-height: 80px; flex: 1; line-height: 1.4;
+  }
+
+  /* Tag picker — Field 08. 4 buttons (None/Action/Training/Review) inline.
+     Selected button uses the tonal soft-bg matching its existing flag tone
+     (warn/info/accent). data-flag attribute on each button is reused by
+     cnWireActiveForm_'s setFlag()/cnRestoreFromSnapshot_ logic so all
+     existing flag handling continues to work. */
+  .cn-tag-picker {
+    display: flex; gap: 4px; flex-wrap: wrap; align-items: center;
+  }
+  .cn-tag-btn {
+    appearance: none; cursor: pointer;
+    font-family: var(--ui); font-size: 11px; font-weight: 500;
+    padding: 5px 10px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line); background: var(--paper-card);
+    color: var(--muted);
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .cn-tag-btn:hover { background: var(--paper-2); color: var(--ink); }
+  /* Specificity bumped via .cn-tag-picker ancestor selector so these
+     override the legacy .cn-flag-btn.active.action/.training/.review
+     rules further down in the file (the new tag buttons retain the
+     .cn-flag-btn class so cnWireActiveForm_'s setFlag() finds them). */
+  .cn-tag-picker .cn-tag-btn.active[data-flag=""]         { background: var(--paper-3);          color: var(--ink);          border-color: transparent; }
+  .cn-tag-picker .cn-tag-btn.active[data-flag="action"]   { background: var(--warn-soft);        color: var(--warning-deep); border-color: transparent; }
+  .cn-tag-picker .cn-tag-btn.active[data-flag="training"] { background: var(--info-soft);        color: var(--info-deep);    border-color: transparent; }
+  .cn-tag-picker .cn-tag-btn.active[data-flag="review"]   { background: var(--accent-soft);      color: var(--success-deep); border-color: transparent; }
+  .cn-tag-btn svg { width: 12px; height: 12px; }
+
+  /* Action row — Flag/Tip + Clear on the left, Save & Compose + Save & Copy
+     (primary) on the right. Primary CTA carries the ⌘↵ kbd-chip inline. */
+  .cn-actions {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px;
+  }
+  .cn-actions-spacer { flex: 1; }
+  .cn-action-sec,
+  .cn-action-prime {
+    appearance: none; cursor: pointer;
+    font-family: var(--ui); font-size: 13px; font-weight: 500;
+    padding: 9px 14px; border-radius: var(--radius);
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .cn-action-sec {
+    border: 1px solid var(--line); background: var(--paper-card); color: var(--ink);
+  }
+  .cn-action-sec:hover { background: var(--paper-2); border-color: var(--border-strong); }
+  .cn-action-sec.danger { color: var(--danger-deep); }
+  .cn-action-sec.danger:hover { background: var(--destructive-soft); border-color: var(--destructive); }
+  .cn-action-prime {
+    border: 1px solid var(--accent); background: var(--accent); color: var(--paper-card);
+    font-weight: 600;
+  }
+  .cn-action-prime:hover { background: var(--accent-2); border-color: var(--accent-2); }
+  .cn-action-sec svg, .cn-action-prime svg { width: 14px; height: 14px; }
+  .cn-action-prime .kbd-chip,
+  .cn-action-sec  .kbd-chip {
+    display: inline-flex; align-items: center;
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    padding: 2px 6px; border-radius: 3px;
+    letter-spacing: 0; margin-left: 4px;
+  }
+  .cn-action-prime .kbd-chip { background: rgba(255,255,255,0.22); color: inherit; }
+  .cn-action-sec  .kbd-chip {
+    background: var(--paper-2); color: var(--muted);
+    border: 1px solid var(--line);
+  }
+
+  /* Bottom-of-Log quick chip strip — taps a tag count to jump to History
+     filtered by that tag. Counts come from getCallNotesAmbient's flagCounts. */
+  .cn-quick-chip-row {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 6px;
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .cn-quick-chip-row-label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin-right: 6px;
+  }
+  .cn-quick-chip {
+    appearance: none; cursor: pointer;
+    font-family: var(--ui); font-size: 12px; font-weight: 500;
+    padding: 5px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--paper-card); color: var(--muted);
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .cn-quick-chip:hover { background: var(--paper-2); color: var(--ink); }
+  .cn-quick-chip .count {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-size: 11px; font-weight: 600;
+    padding: 1px 5px; border-radius: 999px;
+    background: var(--paper-2); color: var(--muted);
+  }
+  .cn-quick-chip[data-flag="action"]   .count { background: var(--warn-soft); color: var(--warning-deep); }
+  .cn-quick-chip[data-flag="training"] .count { background: var(--info-soft); color: var(--info-deep); }
+  .cn-quick-chip[data-flag="review"]   .count { background: var(--accent-soft); color: var(--success-deep); }
+  .cn-quick-chip[data-flag="unresolved"] .count { background: var(--destructive-soft); color: var(--danger-deep); }
+
+  /* Compact mode reflows */
+  :root[data-compact] .cn-head { grid-template-columns: 1fr; gap: 10px; }
+  :root[data-compact] .cn-head-title { font-size: 22px; }
+  :root[data-compact] .cn-stats-mini { width: 100%; }
+  :root[data-compact] .cn-form-grid { grid-template-columns: repeat(2, 1fr); }
+  :root[data-compact] .cn-field.span-2 { grid-column: span 2; }
+  :root[data-compact] .cn-field.span-4 { grid-column: span 2; }
+  :root[data-compact] .cn-field.row-2 { grid-row: span 1; }
+  :root[data-compact] .cn-field textarea { min-height: 60px; }
+  :root[data-compact] .cn-actions { flex-wrap: wrap; }
+  :root[data-compact] .cn-actions-spacer { display: none; }
+  :root[data-compact] .cn-action-prime { flex: 1; justify-content: center; }
+  :root[data-compact] .cn-action-prime .kbd-chip { display: none; }
+  @media (max-width: 720px) {
+    .cn-form-grid { grid-template-columns: repeat(2, 1fr); }
+    .cn-field.span-4 { grid-column: span 2; }
+    .cn-head { grid-template-columns: 1fr; }
+  }
+
   .cn-active-form {
     background: var(--paper-card);
     border: 1px solid var(--line);
@@ -1214,15 +1442,50 @@ function cnRenderNotesView(area) {
   }
   const compactHeader = COMPACT_MODE ? cnCompactHeader_('Call Notes', 'phone') : '';
   const mod = cnIsMac_() ? '⌘' : 'Ctrl';
+  // V4 Phase 4 — Log view restructure. cn-head replaces the prior
+  // view-title-row + .cn-active-form-header chrome; carries the eyebrow,
+  // big title, and a stats-mini row (today/week/unresolved). cn-actions
+  // sits beneath the form with primary Save & Copy carrying the ⌘↵ chip.
+  // cn-quick-chip-row at the bottom navigates to History filtered by tag.
+  // Existing pinned tray, Q&A tray, filter bar, and rolling stack are
+  // preserved beneath the new structure so reps still see their work.
+  const eyebrow = `Log a call · all fields visible · ${mod}+↵ saves &amp; copies for CRM`;
   area.innerHTML = `
     ${compactHeader}
-    ${COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes', 'Log calls fast — Ctrl/⌘+Enter saves & copies to clipboard for the CRM. Send department emails separately.')}
+    ${COMPACT_MODE ? '' : `
+      <div class="cn-head">
+        <div>
+          <div class="cn-head-eyebrow">${eyebrow}</div>
+          <h2 class="cn-head-title">Call Notes</h2>
+        </div>
+        <div class="cn-stats-mini" id="cn-stats-mini">
+          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-today">0</div><div class="cn-stat-lbl">Today</div></div>
+          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-week">0</div><div class="cn-stat-lbl">Week</div></div>
+          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-flag">0</div><div class="cn-stat-lbl">Unresolved</div></div>
+        </div>
+      </div>
+    `}
     <div class="cn-rolling">
       ${cnRenderActiveForm_()}
+      <div class="cn-actions" id="cn-actions">
+        <button type="button" class="cn-action-sec" id="cn-form-clear" title="Clear note (${mod}+Z to undo)">${icon('x', 14)} Clear</button>
+        <button type="button" class="cn-action-sec" id="cn-ext-email-btn" title="Send form or external email">${icon('send', 14)} External</button>
+        <button type="button" class="cn-action-sec" id="cn-help-btn" title="Keyboard shortcuts (${mod}+/)">?</button>
+        <div class="cn-actions-spacer"></div>
+        <button type="button" class="cn-action-sec" id="cn-form-submit-compose" title="Save, copy, and open the email composer">
+          ${icon('mail', 14)} Save &amp; Compose
+          <span class="kbd-chip">${esc(mod)}⇧↵</span>
+        </button>
+        <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM">
+          Save &amp; Copy
+          <span class="kbd-chip">${esc(mod)}↵</span>
+        </button>
+      </div>
       <div id="cn-pinned-tray"></div>
       <div id="cn-training-qa-tray"></div>
       <div class="cn-filter-bar" id="cn-filter-bar"></div>
       <div id="cn-stack"></div>
+      <div class="cn-quick-chip-row" id="cn-quick-chip-row"></div>
     </div>
     <div id="cn-shortcuts-overlay" class="overlay">
       <div class="cn-shortcuts-modal">
@@ -1231,10 +1494,12 @@ function cnRenderNotesView(area) {
         <table class="cn-shortcuts-table">
           <tr><td>Save &amp; Copy</td><td><kbd>${esc(mod)}</kbd> + <kbd>Enter</kbd></td></tr>
           <tr><td>Save &amp; Compose</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
+          <tr><td>Jump to Search</td><td><kbd>${esc(mod)}</kbd> + <kbd>K</kbd></td></tr>
           <tr><td>Flag: Action</td><td><kbd>${esc(mod)}</kbd> + <kbd>1</kbd></td></tr>
           <tr><td>Flag: Training</td><td><kbd>${esc(mod)}</kbd> + <kbd>2</kbd></td></tr>
           <tr><td>Flag: Review</td><td><kbd>${esc(mod)}</kbd> + <kbd>3</kbd></td></tr>
           <tr><td>Clear Note</td><td><kbd>${esc(mod)}</kbd> + <kbd>Backspace</kbd></td></tr>
+          <tr><td>Restore Cleared</td><td><kbd>${esc(mod)}</kbd> + <kbd>Z</kbd></td></tr>
           <tr><td>Show Shortcuts</td><td><kbd>${esc(mod)}</kbd> + <kbd>/</kbd>&nbsp; or &nbsp;<kbd>?</kbd></td></tr>
         </table>
       </div>
@@ -1254,6 +1519,17 @@ function cnRenderNotesView(area) {
   cnRenderStack_();
   cnReloadPinnedTray_();
   cnLoadTrainingQA_();
+  // V4 Phase 4 — populate stats-mini + quick-chip-row on first paint. The
+  // 60s ambient poller (cnStartAmbientPolling_) keeps them fresh after that.
+  cnPollAmbient_();
+  // V4 Phase 4 — install document-level Ctrl/⌘+K to jump to the Search tab.
+  // Sentinel-guarded so repeated renders don't stack handlers; the handler
+  // self-gates on currentView starting with "callNotes".
+  cnInstallSearchJumpKeybind_();
+  // V4 Phase 4 — apply any ?prefill=... query params from the URL (deep-link
+  // contract from the Clock view's coverage strip CTA, future-ready even
+  // though the strip doesn't pass prefill today — no per-call CDR data).
+  cnApplyPrefillFromUrl_();
   // Restore any in-progress draft from a prior session (sticky form). If a
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
@@ -1266,86 +1542,54 @@ function cnRenderNotesView(area) {
 }
 
 function cnRenderActiveForm_() {
-  const todayCount = (CN_STATE.rollingNotes || []).length;
+  // V4 Phase 4 — 4-column grid form with field badges 01–08. Inputs keep
+  // their existing IDs (cn-fld-callback, cn-fld-caller, etc.) so all
+  // downstream handlers (cnSubmitActiveForm_, cnReadActiveForm_, sticky-
+  // draft auto-save, optimistic UI, Ctrl/⌘+Enter binding, phone formatter)
+  // continue to work without modification. Tag picker (Field 08) replaces
+  // the prior flag-trio + kebab menu but reuses the same data-flag
+  // attribute + form.dataset.flag source-of-truth pattern so setFlag /
+  // cnRestoreFromSnapshot / cnFormToggleFlag_ all see the same buttons.
   return `
-    <div class="cn-active-form" id="cn-active-form">
-      <div class="cn-active-form-header">
-        <span class="cn-active-form-title">New Note</span>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span class="cn-note-counter" id="cn-note-counter" title="Calls logged today">
-            <span id="cn-note-counter-num">${todayCount}</span>
-            <span class="cn-note-counter-lbl">today</span>
-          </span>
-          <span class="cn-active-form-hint">
-            <kbd>${cnIsMac_() ? '⌘' : 'Ctrl'}+Enter</kbd> save &amp; copy
-          </span>
-          <button type="button" class="cn-ext-email-btn" id="cn-ext-email-btn"
-                  title="Send form or email to customer/provider">${icon('send', 14)}</button>
-          <button type="button" class="cn-help-btn" id="cn-help-btn" title="Keyboard shortcuts (${cnIsMac_() ? '⌘' : 'Ctrl'}+/)">?</button>
+    <div class="cn-form-grid cn-active-form" id="cn-active-form">
+      <div class="cn-field" data-field="01">
+        <label>Callback <span class="cn-field-num">01</span></label>
+        <input type="text" id="cn-fld-callback" autocomplete="off" placeholder="(555) 123-4567">
+      </div>
+      <div class="cn-field" data-field="02">
+        <label>Caller <span class="cn-field-num">02</span></label>
+        <input type="text" id="cn-fld-caller" autocomplete="off" placeholder="Caller name">
+      </div>
+      <div class="cn-field" data-field="03">
+        <label>Relationship <span class="cn-field-num">03</span></label>
+        <input type="text" id="cn-fld-relationship" autocomplete="off" placeholder="self / spouse / parent / …">
+      </div>
+      <div class="cn-field" data-field="04">
+        <label>Patient &amp; TRX <span class="cn-field-num">04</span></label>
+        <input type="text" id="cn-fld-patient" autocomplete="off" placeholder="Patient name TRX# or just TRX#">
+      </div>
+      <div class="cn-field span-2 row-2" data-field="05">
+        <label>Issue${cnVoiceMicMarkup_('cn-fld-issue')} <span class="cn-field-num">05</span></label>
+        <textarea id="cn-fld-issue" placeholder="Why did they call?"></textarea>
+      </div>
+      <div class="cn-field span-2 row-2" data-field="06">
+        <label>Resolution${cnVoiceMicMarkup_('cn-fld-resolution')} <span class="cn-field-num">06</span></label>
+        <textarea id="cn-fld-resolution" placeholder="What did you do?"></textarea>
+      </div>
+      <div class="cn-field span-2" data-field="07">
+        <label>Transferred to <span class="cn-field-num">07</span></label>
+        <input type="text" id="cn-fld-transferred" autocomplete="off" placeholder="Agent name, or leave blank / N/A">
+      </div>
+      <div class="cn-field span-2" data-field="08">
+        <label>Tag <span class="cn-field-num">08</span></label>
+        <div class="cn-tag-picker" role="group" aria-label="Flag this note">
+          <button type="button" class="cn-tag-btn cn-flag-btn active" data-flag="" data-tag="">None</button>
+          <button type="button" class="cn-tag-btn cn-flag-btn" data-flag="action" data-tag="action" title="Flag for action (follow-up)">${icon('flag', 12)}Action</button>
+          <button type="button" class="cn-tag-btn cn-flag-btn" data-flag="training" data-tag="training" title="Flag for training (need clarification)">${icon('bulb', 12)}Training</button>
+          <button type="button" class="cn-tag-btn cn-flag-btn" data-flag="review" data-tag="review" title="Review candidate (5-star)">${icon('star', 12)}Review</button>
         </div>
       </div>
-      <div class="cn-form-fields">
-        <div class="cn-form-field">
-          <label>Callback</label>
-          <input type="text" id="cn-fld-callback" autocomplete="off" placeholder="(555) 123-4567">
-        </div>
-        <div class="cn-form-field">
-          <label>Caller</label>
-          <input type="text" id="cn-fld-caller" autocomplete="off" placeholder="Caller name">
-        </div>
-        <div class="cn-form-field">
-          <label>Relationship</label>
-          <input type="text" id="cn-fld-relationship" autocomplete="off" placeholder="self / spouse / parent / …">
-        </div>
-        <div class="cn-form-field">
-          <label>Patient &amp; TRX</label>
-          <input type="text" id="cn-fld-patient" autocomplete="off" placeholder="Patient name TRX# or just TRX#">
-        </div>
-        <div class="cn-form-field full">
-          <label>Issue${cnVoiceMicMarkup_('cn-fld-issue')}</label>
-          <textarea id="cn-fld-issue" rows="2" placeholder="Why did they call?"></textarea>
-        </div>
-        <div class="cn-form-field">
-          <label>Transferred To</label>
-          <input type="text" id="cn-fld-transferred" autocomplete="off" placeholder="Agent name, or leave blank / N/A">
-        </div>
-        <div class="cn-form-field">
-          <label>Resolution${cnVoiceMicMarkup_('cn-fld-resolution')}</label>
-          <textarea id="cn-fld-resolution" rows="1" placeholder="What did you do?"></textarea>
-        </div>
-      </div>
-      <div class="cn-form-actions">
-        <div class="cn-form-flag-trio" role="group" aria-label="Flag this note">
-          <button type="button" class="cn-flag-btn action" data-flag="action"
-                  title="Flag for action (follow-up)" aria-label="Flag for action">
-            ${icon('flag', 14)}
-          </button>
-          <button type="button" class="cn-flag-btn training" data-flag="training"
-                  title="Flag for training (need clarification)" aria-label="Flag for training">
-            ${icon('bulb', 14)}
-          </button>
-          <div class="cn-flag-more-wrap">
-            <button type="button" class="cn-flag-btn cn-flag-more-btn" id="cn-flag-more-btn"
-                    title="More flag options" aria-label="More flag options" aria-haspopup="true" aria-expanded="false">
-              ${icon('kebab', 14)}
-            </button>
-            <div class="cn-flag-more-menu" id="cn-flag-more-menu" role="menu" hidden>
-              <button type="button" class="cn-flag-more-item" data-flag="review" role="menuitem">
-                ${icon('star', 14)}<span>Review candidate (5-star)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-        <button type="button" class="cn-form-clear-btn" id="cn-form-clear" title="Clear note (⌘/Ctrl+Z to undo)">Clear Note</button>
-        <button type="button" class="cn-form-submit cn-form-submit-secondary" id="cn-form-submit-compose"
-                title="Save the note, copy to clipboard, and open the email composer">
-          ${icon('mail', 14)} Save &amp; Compose
-        </button>
-        <button type="button" class="cn-form-submit" id="cn-form-submit">
-          ${icon('check', 14)} Save &amp; Copy
-        </button>
-      </div>
-      <div class="cn-training-q-row" id="cn-training-q-row" style="display:none">
+      <div class="cn-training-q-row cn-field span-4" id="cn-training-q-row" data-field="*" style="display:none">
         <label>Training Question</label>
         <input type="text" id="cn-fld-training-q" placeholder="What's the question? (short — manager sees this in the weekly digest)">
       </div>
@@ -1444,6 +1688,15 @@ function cnWireActiveForm_() {
         if (e.key === '3') { e.preventDefault(); cnFormToggleFlag_('review'); return; }
         if (e.key === 'Backspace') { e.preventDefault(); cnClearActiveForm_(); return; }
         if (e.key === '/') { e.preventDefault(); cnOpenShortcutsOverlay_(); return; }
+      }
+      // V4 Phase 4 — Esc clears the form (existing Ctrl/⌘+Z restores).
+      // Self-gate to avoid double-firing with the shell's Esc-close-overlay
+      // handler: if the shell already prevented default (an overlay was
+      // open and got closed), skip; otherwise clear.
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        if (document.querySelector('.overlay.open')) return; // shell handler will close it first
+        e.preventDefault();
+        cnClearActiveForm_();
       }
     });
     el.addEventListener('input', function () {
@@ -1575,6 +1828,10 @@ function cnClearActiveForm_(opts) {
     form.querySelectorAll('.cn-flag-btn').forEach(function (b) {
       b.classList.remove('active', 'action', 'training', 'review');
     });
+    // V4 Phase 4 — "None" tag button (data-flag="") is the default-active
+    // state; the clear sweep above wiped it, so re-apply here.
+    const noneBtn = form.querySelector('.cn-flag-btn[data-flag=""]');
+    if (noneBtn) noneBtn.classList.add('active');
   }
   const trainingRow = document.getElementById('cn-training-q-row');
   if (trainingRow) trainingRow.style.display = 'none';
@@ -4138,6 +4395,11 @@ function cnPollAmbient_() {
       if (!res || res.error) return;
       if (res.enrolled === false) return;
       CN_STATE.staleFlagHours = res.staleFlagHours || 1;
+      // V4 Phase 4 — update stats-mini and quick-chip-row if they're mounted
+      // on the current Log view. Both are no-ops when the elements aren't in
+      // the DOM (rep is on a different view).
+      cnUpdateStatsMini_(res);
+      cnUpdateQuickChipRow_(res);
       // Update sidebar badge on the Call Notes nav link
       const link = document.querySelector('.sb-link[data-view="callNotes"]')
                 || document.querySelector('.nav-btn[data-view="callNotes"]');
@@ -4153,6 +4415,104 @@ function cnPollAmbient_() {
       badge.textContent = String(count);
     })
     .getCallNotesAmbient();
+}
+
+/** V4 Phase 4 — document-level Ctrl/⌘+K handler that navigates to the
+ *  Call Notes Search tab. Installed once (sentinel-guarded) and self-gates
+ *  on currentView so other tools don't intercept the shortcut. */
+function cnInstallSearchJumpKeybind_() {
+  if (window._cnSearchJumpInstalled) return;
+  window._cnSearchJumpInstalled = true;
+  document.addEventListener('keydown', function (e) {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    if (e.shiftKey || e.altKey) return;
+    if (e.key !== 'k' && e.key !== 'K') return;
+    // Only fire on Call Notes views; lets browsers handle ⌘K elsewhere
+    if (typeof currentView !== 'string' || currentView.indexOf('callNotes') !== 0) return;
+    e.preventDefault();
+    if (typeof showView === 'function') showView('callNotesSearch');
+  });
+}
+
+/** V4 Phase 4 — parse ?prefill=key:value;key:value... query params and
+ *  populate the matching cn-fld-* inputs. Pre-filled fields are tagged
+ *  with .cn-field.prefilled so the rep can see what was auto-set.
+ *  Currently dormant (the Clock coverage strip CTA doesn't pass prefill
+ *  because there's no per-call CDR data) but future-ready: when per-call
+ *  data lands, the CTA can construct a prefill string and this handler
+ *  picks it up. */
+function cnApplyPrefillFromUrl_() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('prefill');
+    if (!raw) return;
+    const pairs = raw.split(';').map(s => s.trim()).filter(Boolean);
+    const supported = { callback: 'cn-fld-callback', caller: 'cn-fld-caller', patient: 'cn-fld-patient', date: null };
+    pairs.forEach(pair => {
+      const idx = pair.indexOf(':');
+      if (idx < 0) return;
+      const key = pair.substring(0, idx).trim();
+      const value = pair.substring(idx + 1).trim();
+      const targetId = supported[key];
+      if (!targetId) return; // unknown key — ignore (date is informational only)
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      el.value = value;
+      const fieldCell = el.closest('.cn-field');
+      if (fieldCell) fieldCell.classList.add('prefilled');
+      // Fire input event so the callback-formatter + persistence hooks pick it up
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  } catch (e) { /* malformed prefill — ignore */ }
+}
+
+/** V4 Phase 4 — populate the Log view's stats-mini header from the
+ *  getCallNotesAmbient response. Cells: Today / Week / Unresolved.
+ *  Unresolved-cell tone goes warn-toned when >0, crit when >3.
+ *  Silent no-op when the Log view isn't mounted. */
+function cnUpdateStatsMini_(res) {
+  const today = document.getElementById('cn-stat-today');
+  const week  = document.getElementById('cn-stat-week');
+  const flag  = document.getElementById('cn-stat-flag');
+  if (!today || !week || !flag) return;
+  today.textContent = String(res.todayTotal || 0);
+  week.textContent  = String(res.weekTotal  || 0);
+  const unresolved = res.unresolvedActionCount || 0;
+  flag.textContent  = String(unresolved);
+  flag.classList.remove('warn', 'crit');
+  if (unresolved >= 3)      flag.classList.add('crit');
+  else if (unresolved >= 1) flag.classList.add('warn');
+}
+
+/** V4 Phase 4 — render the bottom quick-chip-row from getCallNotesAmbient's
+ *  flagCounts. Each chip taps through to the History view filtered by tag
+ *  (existing CN_STATE.filter mechanism + tab nav). Counts are read-only;
+ *  the chips never mutate state. */
+function cnUpdateQuickChipRow_(res) {
+  const row = document.getElementById('cn-quick-chip-row');
+  if (!row) return;
+  const counts = res.flagCounts || {};
+  const chips = [
+    { flag: 'all',        label: 'All',         count: counts.all || 0 },
+    { flag: 'action',     label: 'Action',      count: counts.action || 0 },
+    { flag: 'training',   label: 'Training',    count: counts.training || 0 },
+    { flag: 'review',     label: 'Review',      count: counts.review || 0 },
+    { flag: 'unresolved', label: 'Unresolved',  count: counts.unresolved || 0 },
+    { flag: 'qa',         label: 'Q&A',         count: counts.qa || 0 },
+  ];
+  row.innerHTML = '<span class="cn-quick-chip-row-label">Jump to history</span>'
+    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}">${esc(c.label)} <span class="count">${c.count}</span></button>`).join('');
+  // Wire chip clicks: navigate to History view with the filter pre-selected.
+  // Maps the chip's flag → CN_STATE.filter, then shows the history tab.
+  row.querySelectorAll('.cn-quick-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const f = btn.dataset.flag || 'all';
+      // Map "qa" → "answered" (existing CN filter name for training Q&A)
+      const filterName = f === 'qa' ? 'answered' : f;
+      CN_STATE.filter = filterName;
+      if (typeof showView === 'function') showView('callNotesHistory');
+    });
+  });
 }
 
 // ── Misc helpers ───────────────────────────────────────────────────────
