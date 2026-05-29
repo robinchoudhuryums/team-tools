@@ -2419,9 +2419,7 @@ function managerGetShiftStats(date) {
           tttFormatted:  cdr.tttFormatted,
           attFormatted:  cdr.attFormatted,
         } : null;
-        reps[ri].noteCoverage = (cdr && cdr.totalAnswered > 0)
-          ? Math.round((reps[ri].totalNotes / cdr.totalAnswered) * 100)
-          : null;
+        reps[ri].noteCoverage = cnNoteCoverage_(reps[ri].totalNotes, cdr ? cdr.totalAnswered : 0);
       }
     } catch (cdrErr) {
       console.warn('managerGetShiftStats CDR enrichment failed: ' + cdrErr.message);
@@ -5861,6 +5859,36 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
 
 // ── Metrics public endpoints ──────────────────────────────────────────
 
+/** Single source of truth for the note-to-call coverage ratio shown in
+ *  My Stats, Team Metrics, and the shift-stats overlay. Returns a
+ *  whole-number percent, or null when there's no answered-call
+ *  denominator. Extracted so the three callsites can't drift apart. */
+function cnNoteCoverage_(noteCount, answeredCalls) {
+  return (answeredCalls && answeredCalls > 0)
+    ? Math.round((noteCount / answeredCalls) * 100) : null;
+}
+
+/** Counts a rep's call notes whose DateLocal falls in [from, to] inclusive.
+ *  Centralizes the normalizeDate_ read so the Metrics note-count can never
+ *  diverge again (see the CN.DATE_LOCAL gotcha — a raw String() read silently
+ *  misses every row because Sheets coerces the column to a Date). Returns 0
+ *  when the rep has no Sheet configured or it's unreachable. The `emp` arg
+ *  only needs { id, name, callNotesSheetId } for getCallNotesSheet_. */
+function countCallNotesInRange_(emp, from, to) {
+  if (!emp || !emp.callNotesSheetId) return 0;
+  try {
+    const sheet = getCallNotesSheet_(emp);
+    const rows = sheet.getDataRange().getValues();
+    let n = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const d = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+      if (d >= from && d <= to) n++;
+    }
+    return n;
+  } catch (e) { return 0; }
+}
+
+
 /**
  * Self-view: the calling rep's own call metrics for a date, plus their
  * call-notes count for the same day (notes-vs-calls correlation).
@@ -5903,19 +5931,7 @@ function getMyMetrics(date) {
       });
     }
 
-    var noteCount = 0;
-    try {
-      if (emp.callNotesSheetId) {
-        var sheet = getCallNotesSheet_(emp);
-        var rows = sheet.getDataRange().getValues();
-        for (var i = 1; i < rows.length; i++) {
-          // CN.DATE_LOCAL is stored as a 'yyyy-MM-dd' string but Sheets
-          // auto-coerces it to a Date on read — must normalize, or the
-          // comparison silently never matches (note coverage shows 0).
-          if (normalizeDate_(rows[i][CN.DATE_LOCAL]) === date) noteCount++;
-        }
-      }
-    } catch (_) {}
+    var noteCount = countCallNotesInRange_(emp, date, date);
 
     return {
       date: date,
@@ -5931,8 +5947,7 @@ function getMyMetrics(date) {
         attSeconds:   todayCdr.attSeconds,
       } : null,
       noteCount: noteCount,
-      noteCoverage: (todayCdr && todayCdr.totalAnswered > 0)
-        ? Math.round((noteCount / todayCdr.totalAnswered) * 100) : null,
+      noteCoverage: cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
       trend: trend,
     };
   } catch (err) { return { error: err.message }; }
@@ -6011,20 +6026,8 @@ function getTeamMetrics(dateOrFrom, to) {
     Object.keys(repMap).forEach(function (name) {
       var rm = repMap[name];
       var cdr = cdrResult.agents[name] || null;
-      var noteCount = 0;
-      try {
-        if (rm.cnSheetId) {
-          var sheet = getCallNotesSheet_({ id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId });
-          var rows = sheet.getDataRange().getValues();
-          for (var i = 1; i < rows.length; i++) {
-            // Normalize: Sheets coerces the 'yyyy-MM-dd' DateLocal string to a
-            // Date on read, so raw String() never matches the range (note
-            // coverage silently reports 0). Mirror every other DATE_LOCAL read.
-            var nd = normalizeDate_(rows[i][CN.DATE_LOCAL]);
-            if (nd >= from && nd <= toDate) noteCount++;
-          }
-        }
-      } catch (_) {}
+      var noteCount = countCallNotesInRange_(
+        { id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId }, from, toDate);
 
       var rep = {
         repId: rm.repId, repName: rm.repName,
@@ -6037,8 +6040,7 @@ function getTeamMetrics(dateOrFrom, to) {
         tttSeconds:   cdr ? cdr.tttSeconds   : 0,
         attSeconds:   cdr ? cdr.attSeconds   : 0,
         noteCount: noteCount,
-        noteCoverage: (cdr && cdr.totalAnswered > 0)
-          ? Math.round((noteCount / cdr.totalAnswered) * 100) : null,
+        noteCoverage: cnNoteCoverage_(noteCount, cdr ? cdr.totalAnswered : 0),
         hasCdrData: !!cdr,
       };
       if (cdr || noteCount > 0) {
@@ -6064,8 +6066,7 @@ function getTeamMetrics(dateOrFrom, to) {
     teamTotals.pctAnswered = teamTotals.rung > 0
       ? Math.round((teamTotals.answered / teamTotals.rung) * 1000) / 10 : 0;
     teamTotals.tttFormatted = cdrFmtHms_(teamTotals.tttSeconds);
-    teamTotals.noteCoverage = teamTotals.answered > 0
-      ? Math.round((teamTotals.noteCount / teamTotals.answered) * 100) : null;
+    teamTotals.noteCoverage = cnNoteCoverage_(teamTotals.noteCount, teamTotals.answered);
 
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
 

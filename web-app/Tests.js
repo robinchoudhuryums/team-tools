@@ -554,6 +554,23 @@ function _runAllTests() {
   _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
   _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
 
+  // ── Metrics / CDR module (G1 backfill) ─────────────────────────────────
+  _smokeTest('metrics_cnNoteCoverage_basic',            test_metrics_cnNoteCoverage_basic);
+  _smokeTest('metrics_cnNoteCoverage_zeroNotes',        test_metrics_cnNoteCoverage_zeroNotes);
+  _smokeTest('metrics_cnNoteCoverage_noDenominator',    test_metrics_cnNoteCoverage_noDenominator);
+  _smokeTest('metrics_cdrParseHms_hms',                 test_metrics_cdrParseHms_hms);
+  _smokeTest('metrics_cdrParseHms_mmAndBare',           test_metrics_cdrParseHms_mmAndBare);
+  _smokeTest('metrics_cdrParseHms_emptyAndNull',        test_metrics_cdrParseHms_emptyAndNull);
+  _smokeTest('metrics_cdrFmtHms_roundTrip',             test_metrics_cdrFmtHms_roundTrip);
+  _smokeTest('metrics_cdrRowDateIso_isoString',         test_metrics_cdrRowDateIso_isoString);
+  _smokeTest('metrics_cdrRowDateIso_usFormat',          test_metrics_cdrRowDateIso_usFormat);
+  _smokeTest('metrics_isCdrQueueSentinel',              test_metrics_isCdrQueueSentinel);
+  _smokeTest('metrics_cdrRosterHash_orderInsensitive',  test_metrics_cdrRosterHash_orderInsensitive);
+  _smokeTest('metrics_cdrRosterHash_distinctSetsDiffer', test_metrics_cdrRosterHash_distinctSetsDiffer);
+  _smokeTest('metrics_cdrRosterHash_emptyIsAll',        test_metrics_cdrRosterHash_emptyIsAll);
+  _smokeTest('metrics_countCallNotesInRange_noSheetReturnsZero', test_metrics_countCallNotesInRange_noSheetReturnsZero);
+  _integrationTest('metrics_countCallNotesInRange_countsToday',  test_metrics_countCallNotesInRange_countsToday);
+
   // ── Automation trigger gates (INV-44) ──────────────────────────────────
   _integrationTest('triggerGate_eodDigest_nonManagerThrows',    test_triggerGate_eodDigest_nonManagerThrows);
   _integrationTest('triggerGate_weeklyDigests_nonManagerThrows',test_triggerGate_weeklyDigests_nonManagerThrows);
@@ -2415,4 +2432,118 @@ function test_auditRow_deletePunch_hasActorEmail() {
   _assertNotNull(row, 'Audit row should exist for PunchDelete');
   var notes = String(row[9] || '');
   _assertContains(notes, 'removed by manager', 'Audit notes should mention manager delete');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  METRICS / CDR MODULE (G1 — backfill; the only major subsystem with no tests)
+//  ────────────────────────────────────────────────────────────────────────
+//  Pure-logic coverage for the CDR data-layer helpers + the shared note-
+//  coverage helper (S1). One integration test guards the F1 regression class:
+//  countCallNotesInRange_ must read CN.DATE_LOCAL through normalizeDate_ so a
+//  Sheets-coerced Date doesn't silently zero the count. CDR endpoints
+//  (getMyMetrics / getTeamMetrics) aren't integration-tested here because they
+//  require the external CDR Report spreadsheet (CDR_SS_ID), which isn't part
+//  of the test fixture — the data-layer parsers below are the testable seam.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── cnNoteCoverage_ (S1 shared helper) ──
+
+function test_metrics_cnNoteCoverage_basic() {
+  _assertEq(cnNoteCoverage_(5, 10), 50, '5/10 → 50%');
+  _assertEq(cnNoteCoverage_(3, 4),  75, '3/4 → 75%');
+  _assertEq(cnNoteCoverage_(7, 7),  100, '7/7 → 100%');
+  _assertEq(cnNoteCoverage_(1, 3),  33, '1/3 rounds to 33%');
+}
+function test_metrics_cnNoteCoverage_zeroNotes() {
+  _assertEq(cnNoteCoverage_(0, 10), 0, '0 notes over answered calls → 0%, not null');
+}
+function test_metrics_cnNoteCoverage_noDenominator() {
+  _assertNull(cnNoteCoverage_(5, 0),    'No answered calls → null');
+  _assertNull(cnNoteCoverage_(5, null), 'Null denominator → null');
+  _assertNull(cnNoteCoverage_(0, 0),    'Zero over zero → null');
+}
+
+// ── cdrParseHms_ / cdrFmtHms_ (duration parsing — INV-64) ──
+
+function test_metrics_cdrParseHms_hms() {
+  _assertEq(cdrParseHms_('1:30:00'), 5400, 'H:MM:SS → seconds');
+  _assertEq(cdrParseHms_('0:01:05'), 65,   'small H:MM:SS');
+}
+function test_metrics_cdrParseHms_mmAndBare() {
+  _assertEq(cdrParseHms_('2:00'), 120, 'MM:SS → seconds');
+  _assertEq(cdrParseHms_('45'),   45,  'bare number passes through');
+}
+function test_metrics_cdrParseHms_emptyAndNull() {
+  _assertEq(cdrParseHms_(''),    0, 'empty → 0');
+  _assertEq(cdrParseHms_(null),  0, 'null → 0');
+}
+function test_metrics_cdrFmtHms_roundTrip() {
+  _assertEq(cdrFmtHms_(5400), '1:30:00', 'seconds → H:MM:SS');
+  _assertEq(cdrFmtHms_(65),   '0:01:05', 'pads minutes + seconds');
+  _assertEq(cdrFmtHms_(0),    '0:00:00', 'zero → 0:00:00');
+}
+
+// ── cdrRowDateIso_ (date normalization for CDR rows) ──
+
+function test_metrics_cdrRowDateIso_isoString() {
+  _assertEq(cdrRowDateIso_('2026-05-28', CONFIG.TIMEZONE), '2026-05-28', 'ISO passthrough');
+  _assertEq(cdrRowDateIso_('2026-05-28T10:00:00', CONFIG.TIMEZONE), '2026-05-28', 'ISO datetime → date');
+}
+function test_metrics_cdrRowDateIso_usFormat() {
+  _assertEq(cdrRowDateIso_('5/28/26', CONFIG.TIMEZONE),   '2026-05-28', 'M/D/YY → ISO');
+  _assertEq(cdrRowDateIso_('12/3/2026', CONFIG.TIMEZONE), '2026-12-03', 'M/D/YYYY → ISO, zero-padded');
+}
+
+// ── isCdrQueueSentinel_ (queue rows excluded from agent stats) ──
+
+function test_metrics_isCdrQueueSentinel() {
+  _assertTrue(isCdrQueueSentinel_('A_Q_Sales'),  'A_Q_ prefix is a queue sentinel');
+  _assertTrue(isCdrQueueSentinel_('Backup CSR'), 'Backup CSR is a sentinel');
+  _assertFalse(isCdrQueueSentinel_('Jane Doe'),  'A real agent name is not a sentinel');
+}
+
+// ── cdrRosterHash_ (cache-key roster fingerprint — INV-85) ──
+
+function test_metrics_cdrRosterHash_orderInsensitive() {
+  var a = cdrRosterHash_(['Alice', 'Bob', 'Carol']);
+  var b = cdrRosterHash_(['Carol', 'Alice', 'Bob']);
+  _assertEq(a, b, 'Hash is order-insensitive (sorts before hashing)');
+}
+function test_metrics_cdrRosterHash_distinctSetsDiffer() {
+  var a = cdrRosterHash_(['Alice', 'Bob']);
+  var c = cdrRosterHash_(['Alice', 'Carol']);
+  _assertTrue(a !== c, 'Different roster sets produce different hashes');
+}
+function test_metrics_cdrRosterHash_emptyIsAll() {
+  _assertEq(cdrRosterHash_([]),   'all', 'empty roster → "all"');
+  _assertEq(cdrRosterHash_(null), 'all', 'null roster → "all"');
+}
+
+// ── countCallNotesInRange_ (S1 shared count helper) — pure guards ──
+
+function test_metrics_countCallNotesInRange_noSheetReturnsZero() {
+  _assertEq(countCallNotesInRange_({ id: 'X', name: 'Y', callNotesSheetId: null }, '2026-01-01', '2026-12-31'), 0,
+    'Rep with no call-notes Sheet → 0');
+  _assertEq(countCallNotesInRange_(null, '2026-01-01', '2026-12-31'), 0, 'Null emp → 0');
+}
+
+// ── countCallNotesInRange_ (integration) — guards the F1 regression class ──
+
+function test_metrics_countCallNotesInRange_countsToday() {
+  _clearTestCallNotes();
+  const ctx = _asUser(_TEST_INDIA_EMAIL, function () {
+    const emp = getEmployeeInfo_();
+    const t = Utilities.formatDate(new Date(), empTz_(emp), 'yyyy-MM-dd');
+    submitCallNote(_cnTestPayload());
+    submitCallNote(_cnTestPayload({ caller: 'Second Caller' }));
+    return { emp: emp, today: t };
+  });
+  // The note date is stored as a 'yyyy-MM-dd' string that Sheets coerces to a
+  // Date on read. If the helper ever drops normalizeDate_, this count goes to 0.
+  _assertEq(countCallNotesInRange_(ctx.emp, ctx.today, ctx.today), 2,
+    'Counts both of today\'s notes (regression guard for the CN.DATE_LOCAL coercion bug)');
+  _assertEq(countCallNotesInRange_(ctx.emp, '2000-01-01', '2000-01-02'), 0,
+    'Out-of-range window counts 0');
+  _clearTestCallNotes();
 }
