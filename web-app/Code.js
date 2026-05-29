@@ -948,6 +948,7 @@ function getManagerDashboard() {
       liveStatus, pending, missedPunches, recentPunches, recentAudits,
       missedLookbackDays:  CONFIG.MISSED_PUNCH_LOOKBACK_DAYS,
       mgrDeleteWindowDays: CONFIG.MGR_DELETE_WINDOW_DAYS,
+      adjustWindowDays:    CONFIG.ADJUST_WINDOW_DAYS,
       ptoEnabled:          !!CONFIG.ENABLE_PTO_TRACKING,
       mgrTzAbbr,
       punchTrend, toSummary,
@@ -5829,6 +5830,12 @@ function toDisplayTime_(t) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function getCdrSS_() {
+  // Tests may point the CDR reader at a fixture spreadsheet via the in-memory
+  // _TEST_OVERRIDE_CDR_SS_ID global (mirrors _TEST_OVERRIDE_EMAIL). Per-
+  // invocation only, so real users are unaffected.
+  if (typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_CDR_SS_ID);
+  }
   const id = PropertiesService.getScriptProperties().getProperty('CDR_SS_ID')
           || CONFIG.CDR_SS_ID;
   return SpreadsheetApp.openById(id);
