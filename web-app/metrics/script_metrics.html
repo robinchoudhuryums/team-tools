@@ -351,6 +351,10 @@ function mCoverageBadge_(pct) {
 // ── My Stats view ─────────────────────────────────────────────────────
 
 function enterMetricsMyStatsView() {
+  // Stop the Clock view's 1Hz live-time + 60s ribbon-now-cursor intervals so
+  // they don't keep firing in the background after navigating here (INV-73 —
+  // matches the Time Off / Manager / Call Notes enters).
+  if (typeof stopClock === 'function') stopClock();
   var area = document.getElementById('view-area');
   if (!area) return;
   M_STATE.myDate = M_STATE.myDate || mTodayIso_();
@@ -534,6 +538,8 @@ function mRailRow_(label, value, toneOrSub, sub) {
 // ── Team Metrics view (manager-only) ──────────────────────────────────
 
 function enterMetricsTeamView() {
+  // Stop the Clock view's intervals (INV-73 — see enterMetricsMyStatsView).
+  if (typeof stopClock === 'function') stopClock();
   var area = document.getElementById('view-area');
   if (!area) return;
   var today = mTodayIso_();

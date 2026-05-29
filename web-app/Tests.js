@@ -25,7 +25,21 @@ const _TEST_MGR_EMAIL   = 'do-not-send-mgr@example.invalid';
 const _TEST_INITIAL_ANNUAL = 15;
 const _TEST_INITIAL_SICK   = 10;
 
+// Roster NAME of the India test employee — must match the name written in
+// setupTestEnvironment (CDR rows match agents by name, not id).
+const _TEST_INDIA_NAME = 'Test India User';
+const _TEST_PH_NAME    = 'Test PH User';
+
 var _TEST_CN_SS_ID = null;  // populated by setupTestEnvironment; the per-rep CN Sheet for _TEST_INDIA
+
+// CDR fixture (Metrics integration tests). _TEST_CDR_SS_ID points at a test
+// "DQE Historical Data" spreadsheet provisioned by setupTestEnvironment;
+// _TEST_OVERRIDE_CDR_SS_ID redirects getCdrSS_ at it (consumed in Code.js).
+// _TEST_CDR_DATE is a fixed past weekday so the fixture rows never collide
+// with "today" (note counts) or the real dashboard.
+var _TEST_CDR_SS_ID = null;
+var _TEST_OVERRIDE_CDR_SS_ID = null;
+const _TEST_CDR_DATE = '2026-05-15';  // a Friday, in the past relative to test runs
 
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
@@ -94,6 +108,52 @@ function _asUser(email, fn) {
     _TEST_OVERRIDE_EMAIL = null;
     invalidateRosterCache_();
   }
+}
+
+/** Runs `fn` with getCdrSS_ redirected at the test CDR fixture, with the CDR
+ *  in-memory caches reset and the CacheService entries for _TEST_CDR_DATE
+ *  cleared so a warm cache (from a prior run or the real dashboard) can't leak
+ *  stale data into the assertions. */
+function _withTestCdr_(fn) {
+  _TEST_OVERRIDE_CDR_SS_ID = _TEST_CDR_SS_ID;
+  _resetCdrCaches_();
+  _clearCdrCacheForDate_(_TEST_CDR_DATE);
+  try { return fn(); }
+  finally {
+    _TEST_OVERRIDE_CDR_SS_ID = null;
+    _resetCdrCaches_();
+  }
+}
+
+/** Resets the session-level CDR in-memory caches (name-map + column-validation
+ *  flags) so they re-read whichever sheet getCdrSS_ currently points at. */
+function _resetCdrCaches_() {
+  try {
+    _cdrNameMapCache = null;
+    _cdrNameMapExpiry = 0;
+    _cdrColumnsValidated = false;
+    _cdrColumnWarning = null;
+  } catch (e) {}
+}
+
+/** Removes the CacheService CDR-metrics entries for a date (both the
+ *  single-agent India key and the full-roster team key), since
+ *  getCdrAgentMetrics_ caches whole results keyed by roster-hash + date. */
+function _clearCdrCacheForDate_(date) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const keys = [
+      CONFIG.CDR_CACHE_KEY + ':' + cdrRosterHash_([_TEST_INDIA_NAME]) + ':' + date + ':' + date,
+    ];
+    const roster = getEmployeeRosterRows_();
+    const names = [];
+    for (let r = 1; r < roster.length; r++) {
+      const n = String(roster[r][EMP.NAME]).trim();
+      if (n) names.push(n);
+    }
+    keys.push(CONFIG.CDR_CACHE_KEY + ':' + cdrRosterHash_(names) + ':' + date + ':' + date);
+    cache.removeAll(keys);
+  } catch (e) {}
 }
 
 // ── Assertions ────────────────────────────────────────────────────────────
@@ -224,9 +284,67 @@ function setupTestEnvironment() {
     }
   }
 
+  // Provision the CDR fixture (best-effort — a hiccup here shouldn't block the
+  // rest of the suite; the CDR tests guard on _TEST_CDR_SS_ID).
+  try { _setupTestCdrFixture_(); }
+  catch (e) { Logger.log('  CDR fixture setup skipped: ' + e.message); }
+
   invalidateRosterCache_();
   Logger.log(`setupTestEnvironment: ${added} test employee row(s) added (existing left unchanged).`);
   if (_TEST_CN_SS_ID) Logger.log('  Call-notes test Sheet ID: ' + _TEST_CN_SS_ID);
+  if (_TEST_CDR_SS_ID) Logger.log('  CDR fixture Sheet ID: ' + _TEST_CDR_SS_ID);
+}
+
+/** Creates (or reuses, via Script Property TEST_CDR_SS_ID) a fixture
+ *  spreadsheet with a deterministic "DQE Historical Data" sheet for the
+ *  Metrics integration tests. Rows are rebuilt on every setup so the data is
+ *  idempotent (cache hits return identical values). All cells are written as
+ *  plain text to avoid Sheets' date/duration coercion. */
+function _setupTestCdrFixture_() {
+  const props = PropertiesService.getScriptProperties();
+  const existing = props.getProperty('TEST_CDR_SS_ID');
+  let ss = null;
+  if (existing) { try { ss = SpreadsheetApp.openById(existing); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = SpreadsheetApp.create('TEST_CDR_Fixture');
+    props.setProperty('TEST_CDR_SS_ID', ss.getId());
+  }
+  _TEST_CDR_SS_ID = ss.getId();
+
+  let sheet = ss.getSheetByName('DQE Historical Data');
+  if (!sheet) sheet = ss.insertSheet('DQE Historical Data');
+  sheet.clear();
+  if (sheet.getMaxColumns() < 34) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), 34 - sheet.getMaxColumns());
+  }
+
+  const mkRow = function (agent, uniq, rung, missed, ans, ttt, att) {
+    const r = new Array(34).fill('');
+    r[CDR.DATE - 1]           = _TEST_CDR_DATE;
+    r[CDR.AGENT - 1]          = agent;
+    r[CDR.TOTAL_UNIQUE - 1]   = uniq;
+    r[CDR.TOTAL_RUNG - 1]     = rung;
+    r[CDR.TOTAL_MISSED - 1]   = missed;
+    r[CDR.TOTAL_ANSWERED - 1] = ans;
+    r[CDR.TTT - 1]            = ttt;  // seconds as bare number → display parses via cdrParseHms_
+    r[CDR.ATT - 1]            = att;
+    return r;
+  };
+  const header = new Array(34).fill('');
+  header[CDR.DATE - 1] = 'Date'; header[CDR.AGENT - 1] = 'Agent';
+  header[CDR.TOTAL_UNIQUE - 1] = 'Unique'; header[CDR.TOTAL_RUNG - 1] = 'Rung';
+  header[CDR.TOTAL_MISSED - 1] = 'Missed'; header[CDR.TOTAL_ANSWERED - 1] = 'Answered';
+  header[CDR.TTT - 1] = 'TTT'; header[CDR.ATT - 1] = 'ATT';
+  const rows = [
+    header,
+    mkRow(_TEST_INDIA_NAME, 10, 10, 2, 8, 300, 150),
+    mkRow(_TEST_PH_NAME,     5,  5, 0, 5, 100,  50),
+    mkRow('A_Q_Sales',      99, 99, 0, 99,  0,   0),  // queue sentinel — must be excluded
+  ];
+  const range = sheet.getRange(1, 1, rows.length, 34);
+  range.setNumberFormat('@');   // plain text — defeats date/duration coercion
+  range.setValues(rows);
+  SpreadsheetApp.flush();
 }
 
 function cleanupTestData() {
@@ -539,6 +657,7 @@ function _runAllTests() {
   _smokeTest('cn_callDataFromNote_selfNumberPrepended', test_cn_callDataFromNote_selfNumberPrepended);
   _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
   _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
+  _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
   _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
 
   // ── Call Notes — integration (sheet-touching) ──────────────────────────
@@ -553,6 +672,31 @@ function _runAllTests() {
   _integrationTest('cn_setCallNotePinned_capAt3',            test_cn_setCallNotePinned_capAt3);
   _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
   _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
+  _integrationTest('cn_getFormSubmission_callerScoped',      test_cn_getFormSubmission_callerScoped);
+  _integrationTest('cn_managerGetFormSubmission_gatedAndScoped', test_cn_managerGetFormSubmission_gatedAndScoped);
+
+  // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
+  _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
+  _integrationTest('metrics_getTeamMetrics_cdrIntegration',     test_metrics_getTeamMetrics_cdrIntegration);
+  _integrationTest('metrics_getTeamMetrics_nonManagerRejected', test_metrics_getTeamMetrics_nonManagerRejected);
+  _integrationTest('metrics_getMyMetrics_cdrUnavailableErrors', test_metrics_getMyMetrics_cdrUnavailableErrors);
+
+  // ── Metrics / CDR module (G1 backfill) ─────────────────────────────────
+  _smokeTest('metrics_cnNoteCoverage_basic',            test_metrics_cnNoteCoverage_basic);
+  _smokeTest('metrics_cnNoteCoverage_zeroNotes',        test_metrics_cnNoteCoverage_zeroNotes);
+  _smokeTest('metrics_cnNoteCoverage_noDenominator',    test_metrics_cnNoteCoverage_noDenominator);
+  _smokeTest('metrics_cdrParseHms_hms',                 test_metrics_cdrParseHms_hms);
+  _smokeTest('metrics_cdrParseHms_mmAndBare',           test_metrics_cdrParseHms_mmAndBare);
+  _smokeTest('metrics_cdrParseHms_emptyAndNull',        test_metrics_cdrParseHms_emptyAndNull);
+  _smokeTest('metrics_cdrFmtHms_roundTrip',             test_metrics_cdrFmtHms_roundTrip);
+  _smokeTest('metrics_cdrRowDateIso_isoString',         test_metrics_cdrRowDateIso_isoString);
+  _smokeTest('metrics_cdrRowDateIso_usFormat',          test_metrics_cdrRowDateIso_usFormat);
+  _smokeTest('metrics_isCdrQueueSentinel',              test_metrics_isCdrQueueSentinel);
+  _smokeTest('metrics_cdrRosterHash_orderInsensitive',  test_metrics_cdrRosterHash_orderInsensitive);
+  _smokeTest('metrics_cdrRosterHash_distinctSetsDiffer', test_metrics_cdrRosterHash_distinctSetsDiffer);
+  _smokeTest('metrics_cdrRosterHash_emptyIsAll',        test_metrics_cdrRosterHash_emptyIsAll);
+  _smokeTest('metrics_countCallNotesInRange_noSheetReturnsZero', test_metrics_countCallNotesInRange_noSheetReturnsZero);
+  _integrationTest('metrics_countCallNotesInRange_countsToday',  test_metrics_countCallNotesInRange_countsToday);
 
   // ── Automation trigger gates (INV-44) ──────────────────────────────────
   _integrationTest('triggerGate_eodDigest_nonManagerThrows',    test_triggerGate_eodDigest_nonManagerThrows);
@@ -2110,6 +2254,28 @@ function test_cn_callDataFromNote_nonSelfPassthrough() {
   _assertEq(out.patientAndTrx, '99999');
 }
 
+// ── buildCallNoteEmailHtml_ — XSS escape invariant (F8) ──
+// The email-preview modal injects this HTML raw via innerHTML; it is safe
+// ONLY because every user-supplied note field is escaped here. This test
+// pins that invariant — if a future field is added without esc_, it fails.
+
+function test_cn_buildEmailHtml_escapesUserFields() {
+  const callData = {
+    callBackNumber: '(555) 123-4567',
+    callerName:     '<script>alert(1)</script>',
+    relationship:   'self',
+    patientAndTrx:  '<img src=x onerror=alert(2)>',
+    issue:          'a & b < c',
+    transferredTo:  'N/A',
+    resolution:     'plain resolution',
+  };
+  const html = buildCallNoteEmailHtml_(callData, { updateInfo: 'Status Check', departments: ['CSR'] });
+  _assertFalse(html.indexOf('<script>alert(1)</script>') >= 0, 'raw caller script tag must NOT appear');
+  _assertFalse(html.indexOf('<img src=x onerror=alert(2)>') >= 0, 'raw patient img payload must NOT appear');
+  _assertContains(html, '&lt;script&gt;alert(1)&lt;/script&gt;', 'caller rendered escaped');
+  _assertContains(html, 'a &amp; b &lt; c', 'issue ampersand/angle-bracket escaped');
+}
+
 // ── esc_ — HTML entity escape ──
 
 function test_cn_esc_basic() {
@@ -2415,4 +2581,265 @@ function test_auditRow_deletePunch_hasActorEmail() {
   _assertNotNull(row, 'Audit row should exist for PunchDelete');
   var notes = String(row[9] || '');
   _assertContains(notes, 'removed by manager', 'Audit notes should mention manager delete');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  METRICS / CDR MODULE (G1 — backfill; the only major subsystem with no tests)
+//  ────────────────────────────────────────────────────────────────────────
+//  Pure-logic coverage for the CDR data-layer helpers + the shared note-
+//  coverage helper (S1). One integration test guards the F1 regression class:
+//  countCallNotesInRange_ must read CN.DATE_LOCAL through normalizeDate_ so a
+//  Sheets-coerced Date doesn't silently zero the count. CDR endpoints
+//  (getMyMetrics / getTeamMetrics) aren't integration-tested here because they
+//  require the external CDR Report spreadsheet (CDR_SS_ID), which isn't part
+//  of the test fixture — the data-layer parsers below are the testable seam.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── cnNoteCoverage_ (S1 shared helper) ──
+
+function test_metrics_cnNoteCoverage_basic() {
+  _assertEq(cnNoteCoverage_(5, 10), 50, '5/10 → 50%');
+  _assertEq(cnNoteCoverage_(3, 4),  75, '3/4 → 75%');
+  _assertEq(cnNoteCoverage_(7, 7),  100, '7/7 → 100%');
+  _assertEq(cnNoteCoverage_(1, 3),  33, '1/3 rounds to 33%');
+}
+function test_metrics_cnNoteCoverage_zeroNotes() {
+  _assertEq(cnNoteCoverage_(0, 10), 0, '0 notes over answered calls → 0%, not null');
+}
+function test_metrics_cnNoteCoverage_noDenominator() {
+  _assertNull(cnNoteCoverage_(5, 0),    'No answered calls → null');
+  _assertNull(cnNoteCoverage_(5, null), 'Null denominator → null');
+  _assertNull(cnNoteCoverage_(0, 0),    'Zero over zero → null');
+}
+
+// ── cdrParseHms_ / cdrFmtHms_ (duration parsing — INV-64) ──
+
+function test_metrics_cdrParseHms_hms() {
+  _assertEq(cdrParseHms_('1:30:00'), 5400, 'H:MM:SS → seconds');
+  _assertEq(cdrParseHms_('0:01:05'), 65,   'small H:MM:SS');
+}
+function test_metrics_cdrParseHms_mmAndBare() {
+  _assertEq(cdrParseHms_('2:00'), 120, 'MM:SS → seconds');
+  _assertEq(cdrParseHms_('45'),   45,  'bare number passes through');
+}
+function test_metrics_cdrParseHms_emptyAndNull() {
+  _assertEq(cdrParseHms_(''),    0, 'empty → 0');
+  _assertEq(cdrParseHms_(null),  0, 'null → 0');
+}
+function test_metrics_cdrFmtHms_roundTrip() {
+  _assertEq(cdrFmtHms_(5400), '1:30:00', 'seconds → H:MM:SS');
+  _assertEq(cdrFmtHms_(65),   '0:01:05', 'pads minutes + seconds');
+  _assertEq(cdrFmtHms_(0),    '0:00:00', 'zero → 0:00:00');
+}
+
+// ── cdrRowDateIso_ (date normalization for CDR rows) ──
+
+function test_metrics_cdrRowDateIso_isoString() {
+  _assertEq(cdrRowDateIso_('2026-05-28', CONFIG.TIMEZONE), '2026-05-28', 'ISO passthrough');
+  _assertEq(cdrRowDateIso_('2026-05-28T10:00:00', CONFIG.TIMEZONE), '2026-05-28', 'ISO datetime → date');
+}
+function test_metrics_cdrRowDateIso_usFormat() {
+  _assertEq(cdrRowDateIso_('5/28/26', CONFIG.TIMEZONE),   '2026-05-28', 'M/D/YY → ISO');
+  _assertEq(cdrRowDateIso_('12/3/2026', CONFIG.TIMEZONE), '2026-12-03', 'M/D/YYYY → ISO, zero-padded');
+}
+
+// ── isCdrQueueSentinel_ (queue rows excluded from agent stats) ──
+
+function test_metrics_isCdrQueueSentinel() {
+  _assertTrue(isCdrQueueSentinel_('A_Q_Sales'),  'A_Q_ prefix is a queue sentinel');
+  _assertTrue(isCdrQueueSentinel_('Backup CSR'), 'Backup CSR is a sentinel');
+  _assertFalse(isCdrQueueSentinel_('Jane Doe'),  'A real agent name is not a sentinel');
+}
+
+// ── cdrRosterHash_ (cache-key roster fingerprint — INV-85) ──
+
+function test_metrics_cdrRosterHash_orderInsensitive() {
+  var a = cdrRosterHash_(['Alice', 'Bob', 'Carol']);
+  var b = cdrRosterHash_(['Carol', 'Alice', 'Bob']);
+  _assertEq(a, b, 'Hash is order-insensitive (sorts before hashing)');
+}
+function test_metrics_cdrRosterHash_distinctSetsDiffer() {
+  var a = cdrRosterHash_(['Alice', 'Bob']);
+  var c = cdrRosterHash_(['Alice', 'Carol']);
+  _assertTrue(a !== c, 'Different roster sets produce different hashes');
+}
+function test_metrics_cdrRosterHash_emptyIsAll() {
+  _assertEq(cdrRosterHash_([]),   'all', 'empty roster → "all"');
+  _assertEq(cdrRosterHash_(null), 'all', 'null roster → "all"');
+}
+
+// ── countCallNotesInRange_ (S1 shared count helper) — pure guards ──
+
+function test_metrics_countCallNotesInRange_noSheetReturnsZero() {
+  _assertEq(countCallNotesInRange_({ id: 'X', name: 'Y', callNotesSheetId: null }, '2026-01-01', '2026-12-31'), 0,
+    'Rep with no call-notes Sheet → 0');
+  _assertEq(countCallNotesInRange_(null, '2026-01-01', '2026-12-31'), 0, 'Null emp → 0');
+}
+
+// ── countCallNotesInRange_ (integration) — guards the F1 regression class ──
+
+function test_metrics_countCallNotesInRange_countsToday() {
+  _clearTestCallNotes();
+  const ctx = _asUser(_TEST_INDIA_EMAIL, function () {
+    const emp = getEmployeeInfo_();
+    const t = Utilities.formatDate(new Date(), empTz_(emp), 'yyyy-MM-dd');
+    submitCallNote(_cnTestPayload());
+    submitCallNote(_cnTestPayload({ caller: 'Second Caller' }));
+    return { emp: emp, today: t };
+  });
+  // The note date is stored as a 'yyyy-MM-dd' string that Sheets coerces to a
+  // Date on read. If the helper ever drops normalizeDate_, this count goes to 0.
+  _assertEq(countCallNotesInRange_(ctx.emp, ctx.today, ctx.today), 2,
+    'Counts both of today\'s notes (regression guard for the CN.DATE_LOCAL coercion bug)');
+  _assertEq(countCallNotesInRange_(ctx.emp, '2000-01-01', '2000-01-02'), 0,
+    'Out-of-range window counts 0');
+  _clearTestCallNotes();
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  FILLABLE FORMS — IN-APP SUBMISSION VIEWER (G3)
+// ════════════════════════════════════════════════════════════════════════════
+
+// getFormSubmission is caller-scoped (INV-90): only the rep who created the
+// token may read the submission. This guards against a rep reading another
+// rep's form data via google.script.run.
+function test_cn_getFormSubmission_callerScoped() {
+  // India (enrolled) creates a fillable-form token.
+  const token = _asUser(_TEST_INDIA_EMAIL, function () {
+    const r = createFormToken({
+      formType: 'eaa',
+      recipientEmail: 'do-not-send-recipient@example.invalid',
+      recipientName: 'Test Recipient',
+      prefillData: {},
+    });
+    _assertTrue(r.success, 'createFormToken should succeed for an enrolled rep');
+    return r.token;
+  });
+  _assertNotNull(token, 'A token should have been created');
+
+  try {
+    // Creator can read it — pending (no submission yet), NOT an auth error.
+    const asCreator = _asUser(_TEST_INDIA_EMAIL, function () { return getFormSubmission(token); });
+    _assertNull(asCreator.error, 'Creator should not get an auth error');
+    _assertEq(asCreator.submitted, false, 'No submission yet → submitted=false');
+
+    // A different registered rep is rejected by the ownership check.
+    const asOther = _asUser(_TEST_PH_EMAIL, function () { return getFormSubmission(token); });
+    _assertNotNull(asOther.error, 'Non-creator should be rejected');
+    _assertContains(asOther.error, 'forms you sent', 'Rejection mentions ownership');
+  } finally {
+    // Remove the test token row (FormTokens isn't covered by the TEST_-prefix
+    // cleanup; the FormTokenCreated audit row is, via the India empId).
+    try {
+      const ts = getOrCreateFormTokensSheet_();
+      const loc = findFormTokenRow_(ts, token);
+      if (loc) ts.deleteRow(loc.rowIndex);
+    } catch (e) {}
+  }
+}
+
+// managerGetFormSubmission is manager-gated and scoped to the rep being viewed:
+// the token must have been created by that rep.
+function test_cn_managerGetFormSubmission_gatedAndScoped() {
+  const token = _asUser(_TEST_INDIA_EMAIL, function () {
+    return createFormToken({
+      formType: 'eaa',
+      recipientEmail: 'do-not-send-recipient@example.invalid',
+      recipientName: 'Test Recipient',
+      prefillData: {},
+    }).token;
+  });
+  _assertNotNull(token, 'A token should have been created');
+
+  try {
+    // Non-manager is rejected.
+    const asRep = _asUser(_TEST_PH_EMAIL, function () {
+      return managerGetFormSubmission(_TEST_INDIA_ID, token);
+    });
+    _assertNotNull(asRep.error, 'Non-manager should be rejected');
+    _assertContains(asRep.error, 'Manager access required', 'Manager gate message');
+
+    // Manager viewing the creating rep: allowed (pending, no submission yet).
+    const asMgrRightRep = _asUser(_TEST_MGR_EMAIL, function () {
+      return managerGetFormSubmission(_TEST_INDIA_ID, token);
+    });
+    _assertNull(asMgrRightRep.error, 'Manager + correct rep should not error');
+    _assertEq(asMgrRightRep.submitted, false, 'No submission yet → submitted=false');
+
+    // Manager viewing the WRONG rep: scoped out (token not created by PH rep).
+    const asMgrWrongRep = _asUser(_TEST_MGR_EMAIL, function () {
+      return managerGetFormSubmission(_TEST_PH_ID, token);
+    });
+    _assertNotNull(asMgrWrongRep.error, 'Token not created by the selected rep should be rejected');
+    _assertContains(asMgrWrongRep.error, 'selected rep', 'Rejection mentions rep scoping');
+  } finally {
+    try {
+      const ts = getOrCreateFormTokensSheet_();
+      const loc = findFormTokenRow_(ts, token);
+      if (loc) ts.deleteRow(loc.rowIndex);
+    } catch (e) {}
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  METRICS / CDR ENDPOINT INTEGRATION (uses the _setupTestCdrFixture_ sheet)
+// ════════════════════════════════════════════════════════════════════════════
+
+function test_metrics_getMyMetrics_cdrIntegration() {
+  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  const r = _withTestCdr_(function () {
+    return _asUser(_TEST_INDIA_EMAIL, function () { return getMyMetrics(_TEST_CDR_DATE); });
+  });
+  _assertNull(r.error, "getMyMetrics should not error with the CDR fixture present");
+  _assertNotNull(r.cdr, "India agent has a CDR row for the fixture date");
+  _assertEq(r.cdr.totalRung, 10, "totalRung from fixture");
+  _assertEq(r.cdr.totalAnswered, 8, "totalAnswered from fixture");
+  _assertEq(r.cdr.totalMissed, 2, "totalMissed from fixture");
+  _assertEq(r.cdr.pctAnswered, 80, "pctAnswered = 8/10 = 80%");
+  _assertEq(r.cdr.tttSeconds, 300, "tttSeconds parsed from the bare-number fixture cell");
+  // No notes were filed on the sentinel date, but answered>0, so coverage is 0 (not null).
+  _assertEq(r.noteCoverage, 0, "0 notes / 8 answered → 0% coverage");
+}
+
+function test_metrics_getTeamMetrics_cdrIntegration() {
+  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  const r = _withTestCdr_(function () {
+    return _asUser(_TEST_MGR_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
+  });
+  _assertNull(r.error, "getTeamMetrics should not error with the CDR fixture present");
+  // Only the two test agents have CDR rows in the fixture (queue sentinel excluded).
+  _assertEq(r.teamTotals.rung, 15, "team rung = 10 + 5");
+  _assertEq(r.teamTotals.answered, 13, "team answered = 8 + 5");
+  let india = null;
+  for (let i = 0; i < r.reps.length; i++) { if (r.reps[i].repName === _TEST_INDIA_NAME) india = r.reps[i]; }
+  _assertNotNull(india, "India rep present in team metrics");
+  _assertEq(india.totalRung, 10, "India totalRung");
+  _assertEq(india.pctAnswered, 80, "India pctAnswered");
+  // The A_Q_ queue sentinel must never surface as an unmatched agent.
+  _assertFalse((r.unmatchedAgents || []).indexOf("A_Q_Sales") >= 0, "queue sentinel excluded from unmatchedAgents");
+}
+
+function test_metrics_getTeamMetrics_nonManagerRejected() {
+  const r = _withTestCdr_(function () {
+    return _asUser(_TEST_INDIA_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
+  });
+  _assertNotNull(r.error, "non-manager should be rejected");
+  _assertContains(r.error, "Manager access required", "manager gate message");
+}
+
+function test_metrics_getMyMetrics_cdrUnavailableErrors() {
+  // Point the reader at a bogus spreadsheet id → getCdrSS_ openById throws →
+  // getMyMetrics returns an {error} the client renders as "No call data".
+  const prev = _TEST_OVERRIDE_CDR_SS_ID;
+  _TEST_OVERRIDE_CDR_SS_ID = "this-is-not-a-real-spreadsheet-id";
+  _resetCdrCaches_();
+  try {
+    const r = _asUser(_TEST_INDIA_EMAIL, function () { return getMyMetrics(_TEST_CDR_DATE); });
+    _assertNotNull(r.error, "unreachable CDR sheet should surface an error, not crash");
+  } finally {
+    _TEST_OVERRIDE_CDR_SS_ID = prev;
+    _resetCdrCaches_();
+  }
 }

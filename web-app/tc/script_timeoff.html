@@ -430,8 +430,15 @@ const LEAVE_DEDUCTION_CLIENT = {
   'Unpaid Leave':          { bucket: null,     days: 0   },
 };
 function getLeaveDeductionClient_(type) {
-  return LEAVE_DEDUCTION_CLIENT[String(type || '').trim()]
-    || { bucket: 'annual', days: 1.0 };
+  // Case-insensitive + trimmed lookup to mirror the server's
+  // getLeaveDeduction_ (which lowercases + trims) — INV-72. The map above
+  // stays the source of truth for the type list; this just matches the
+  // server's matching semantics so a casing difference can't mis-preview.
+  const key = String(type || '').trim().toLowerCase();
+  for (const k in LEAVE_DEDUCTION_CLIENT) {
+    if (k.toLowerCase() === key) return LEAVE_DEDUCTION_CLIENT[k];
+  }
+  return { bucket: 'annual', days: 1.0 };
 }
 
 function openDayModal(dateStr) {

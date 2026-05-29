@@ -1421,6 +1421,29 @@
   }
   .cn-ext-email-pill svg { flex-shrink: 0; }
 
+  /* ── Form-submission pill (clickable) + read-only viewer (G3) ────── */
+  .cn-form-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px;
+    background: var(--info-soft); color: var(--info-deep);
+    border: none; border-radius: 999px;
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: .04em; vertical-align: middle; cursor: pointer;
+  }
+  .cn-form-pill svg { flex-shrink: 0; }
+  .cn-form-sub-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .cn-fs-row {
+    display: grid; grid-template-columns: 38% 1fr; gap: 10px;
+    padding: 7px 0; border-top: 1px solid var(--line);
+  }
+  .cn-fs-label { font-weight: 600; color: var(--muted); font-size: 12px; }
+  .cn-fs-value { color: var(--ink); font-size: 13px; word-break: break-word; }
+  .cn-fs-sig { margin-top: 10px; }
+  .cn-fs-sig-img {
+    display: block; margin-top: 6px; max-width: 100%; height: auto;
+    background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  }
+
   /* ── External email modal ───────────────────────────────────────── */
   .cn-ext-section {
     border-top: 1px solid var(--line);
@@ -2752,6 +2775,7 @@ function cnFormatNoteForCopy_(note) {
     || ('Callback Number: {callback}\n' +
         'Caller Name: {caller}\n' +
         'Relationship: {relationship}\n' +
+        'Patient & TRX: {patientAndTrx}\n' +
         'Issue: {issue}\n' +
         'Transferred To: {transferredTo}\n' +
         'Resolution: {resolution}');
@@ -2856,8 +2880,24 @@ function cnInstallCardDelegation_(area) {
       case 'cancel-edit': cnCancelEdit_(noteId); break;
       case 'delete':      cnDeleteNote_(noteId); break;
       case 'find-trx':    cnFindPriorCallsForTrx_(btn.dataset.trx); break;
+      case 'view-form':   cnViewFormSubmission_(btn.dataset.token); break;
       case 'more':        cnToggleMoreMenu_(btn); break;
     }
+  });
+
+  // Cmd/Ctrl+Enter saves an in-progress inline edit. Delegated on the
+  // persistent view container (not the edit field itself) so it survives a
+  // re-render mid-edit — an optimistic flag toggle or ambient refresh
+  // recreates the edit field, which would otherwise lose a per-element
+  // listener and drop the shortcut.
+  area.addEventListener('keydown', function (e) {
+    if (!((e.metaKey || e.ctrlKey) && e.key === 'Enter')) return;
+    if (!e.target.closest) return;
+    if (!e.target.closest('[id^="cnE-"]')) return;
+    var card = e.target.closest('[data-note-id]');
+    if (!card) return;
+    e.preventDefault();
+    cnSaveEdit_(card.dataset.noteId);
   });
 }
 
@@ -3039,6 +3079,16 @@ function cnRenderCardCore_(note, expandable) {
       })()
     : '';
 
+  // G3 — when a fillable form linked to this note has been submitted, show a
+  // clickable pill that opens the submitted form data in a read-only modal
+  // (so the rep doesn't have to open the FormSubmissions sheet).
+  const formSub = (note.subformData && note.subformData.formSubmission) ? note.subformData.formSubmission : null;
+  const formIndicator = (formSub && formSub.token)
+    ? '<button class="cn-form-pill" title="Form received — click to view submission" ' +
+      'data-cn-action="view-form" data-token="' + esc(formSub.token) + '">' +
+      icon('paperclip', 11) + '<span>form</span></button>'
+    : '';
+
   return `
     <div class="cn-card${flagCls}${staleCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
@@ -3055,7 +3105,7 @@ function cnRenderCardCore_(note, expandable) {
             ? '<span class="cn-pending-badge" title="Saving to server"><span class="cn-pending-dot"></span>Saving</span>'
             : flagBtn('action', 'flag', note.flagType === 'action') +
               flagBtn('training', 'bulb', note.flagType === 'training') +
-              pinBtn + copyBtn + emailBtn + extIndicator +
+              pinBtn + copyBtn + emailBtn + extIndicator + formIndicator +
               (function () {
                 var sec = flagBtn('review', 'star', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
                 if (!sec) return '';
@@ -3071,6 +3121,109 @@ function cnRenderCardCore_(note, expandable) {
 
 function cnWireCards_(_root) { /* no-op — using onclick attrs */ }
 
+// ── G3: read-only viewer for a submitted fillable form ──────────────────────
+// Fetches the submission (caller-scoped: server verifies the calling rep
+// created the token) and shows the entered fields + signature in a modal, so
+// the rep doesn't have to open the FormSubmissions sheet.
+function cnViewFormSubmission_(token) {
+  token = String(token || '').trim();
+  if (!token) return;
+  cnRenderFormSubOverlay_(
+    '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
+      '<div class="state-center"><div class="spinner"></div>' +
+      '<div class="state-label">Loading submission…</div></div></div>');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) {
+        cnCloseFormSubOverlay_();
+        if (typeof showToast === 'function') showToast((res && res.error) || 'Could not load submission', 'toast-error');
+        return;
+      }
+      cnRenderFormSubOverlay_(cnBuildFormSubModalHtml_(res));
+    })
+    .withFailureHandler(function (err) {
+      cnCloseFormSubOverlay_();
+      if (typeof showToast === 'function') showToast('Could not load submission: ' + (err && err.message || err), 'toast-error');
+    })
+    .getFormSubmission(token);
+}
+
+function cnRenderFormSubOverlay_(html) {
+  var overlay = document.getElementById('cn-form-sub-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'cn-form-sub-overlay';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) cnCloseFormSubOverlay_();
+    });
+  }
+  overlay.className = 'overlay open';
+  overlay.innerHTML = html;
+}
+
+function cnCloseFormSubOverlay_() {
+  var overlay = document.getElementById('cn-form-sub-overlay');
+  if (overlay) overlay.remove();
+}
+
+// Manager-side form-submission viewer (Team Notes Per-Rep view). Reuses the
+// same read-only modal as the rep viewer; the server endpoint is manager-gated
+// and scoped to the rep whose notes are on screen.
+function cnMgrViewFormSubmission_(btn) {
+  var token = btn && btn.dataset ? btn.dataset.token : '';
+  var repId = btn && btn.dataset ? btn.dataset.repId : '';
+  if (!token || !repId) return;
+  cnRenderFormSubOverlay_(
+    '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
+      '<div class="state-center"><div class="spinner"></div>' +
+      '<div class="state-label">Loading submission…</div></div></div>');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) {
+        cnCloseFormSubOverlay_();
+        if (typeof showToast === 'function') showToast((res && res.error) || 'Could not load submission', 'toast-error');
+        return;
+      }
+      cnRenderFormSubOverlay_(cnBuildFormSubModalHtml_(res));
+    })
+    .withFailureHandler(function (err) {
+      cnCloseFormSubOverlay_();
+      if (typeof showToast === 'function') showToast('Could not load submission: ' + (err && err.message || err), 'toast-error');
+    })
+    .managerGetFormSubmission(repId, token);
+}
+
+function cnBuildFormSubModalHtml_(res) {
+  var head = esc(res.formName || 'Form submission');
+  if (!res.submitted) {
+    return '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
+      '<div class="modal-title">' + head + '</div>' +
+      '<div class="modal-sub">Not submitted yet' + (res.status ? ' (' + esc(res.status) + ')' : '') + '.</div>' +
+      '<div class="modal-footer"><button class="btn-modal-ok" onclick="cnCloseFormSubOverlay_()">Close</button></div>' +
+      '</div>';
+  }
+  var who = esc(res.recipientName || res.recipientEmail || '');
+  var when = res.submittedAt ? esc(cnFormatTimestampForCopy_(res.submittedAt)) : '';
+  var rows = (res.fields || []).map(function (f) {
+    var v = f.value;
+    var vStr = (v && typeof v === 'object') ? JSON.stringify(v) : String(v == null ? '' : v);
+    return '<div class="cn-fs-row"><div class="cn-fs-label">' + esc(f.label) + '</div>' +
+           '<div class="cn-fs-value">' + esc(vStr).replace(/\n/g, '<br>') + '</div></div>';
+  }).join('');
+  if (!rows) rows = '<div class="modal-sub" style="margin-top:6px">No field data captured.</div>';
+  var sig = res.hasSignature
+    ? '<div class="cn-fs-sig"><div class="cn-fs-label">Signature</div>' +
+      '<img class="cn-fs-sig-img" src="' + esc(res.signature) + '" alt="signature"></div>'
+    : '';
+  return '<div class="modal cn-form-sub-modal" style="max-width:560px;max-height:80vh;overflow:auto">' +
+    '<div class="modal-title">' + head + '</div>' +
+    '<div class="modal-sub">' + (who ? 'From ' + who : '') + (when ? ' · ' + when : '') + '</div>' +
+    '<div class="cn-form-sub-fields">' + rows + sig + '</div>' +
+    '<div class="modal-footer"><button class="btn-modal-ok" onclick="cnCloseFormSubOverlay_()">Close</button></div>' +
+    '</div>';
+}
+
 function cnCopyNoteAgain_(noteId) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note) return;
@@ -3081,17 +3234,12 @@ function cnCopyNoteAgain_(noteId) {
 function cnBeginEdit_(noteId) {
   CN_STATE.editingNoteId = noteId;
   cnReRenderActiveView_();
+  // Just focus the field — Cmd/Ctrl+Enter is handled by the delegated keydown
+  // listener in cnInstallCardDelegation_ (survives mid-edit re-renders; a
+  // per-element listener here would be lost on re-render and could double-fire).
   setTimeout(function () {
     const el = document.getElementById('cnE-resolution-' + noteId);
-    if (el) {
-      el.focus();
-      el.addEventListener('keydown', function (e) {
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-          e.preventDefault();
-          cnSaveEdit_(noteId);
-        }
-      });
-    }
+    if (el) el.focus();
   }, 30);
 }
 
@@ -3110,7 +3258,7 @@ function cnSaveEdit_(noteId) {
     transferredTo: document.getElementById('cnE-transferred-' + noteId).value,
     resolution:    document.getElementById('cnE-resolution-' + noteId).value,
   };
-  var saveBtn = document.querySelector('[data-note-id="' + noteId + '"] [data-cn-action="save"]');
+  var saveBtn = document.querySelector('[data-note-id="' + noteId + '"] [data-cn-action="save-edit"]');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
   google.script.run
     .withSuccessHandler(function (res) {
@@ -4145,6 +4293,13 @@ function cnRenderComposerPreviewStep_() {
         <div><strong>CC:</strong> ${esc(p.cc)}</div>
         <div><strong>Subject:</strong> ${esc(p.subject)}</div>
       </div>
+      <!-- SECURITY (F8): p.htmlBody is injected raw because it IS the rendered
+           email — this is intentional, not a bug. It is safe ONLY because the
+           server's buildCallNoteEmailHtml_ routes every user-supplied note
+           field through esc_() before assembling the HTML. That escaping is
+           the load-bearing invariant: if any new note field is ever added to
+           the email builder WITHOUT esc_, it becomes stored XSS here. Pinned
+           by test_cn_buildEmailHtml_escapesUserFields in Tests.js. -->
       <div class="cn-compose-preview">${p.htmlBody}</div>
       <div class="modal-footer">
         <button class="btn-modal-cancel" onclick="cnComposerBackToForm_()">← Back to edit</button>
@@ -4734,6 +4889,13 @@ function cnMgrRenderReadonlyCard_(note) {
   const sentPill = note.emailedAt
     ? `<span class="adj-pill" title="${note.emailDepartments ? 'Sent to: ' + esc(note.emailDepartments) : 'Sent'}">sent${note.emailDepartments ? ' <span class="cn-email-depts">' + esc(note.emailDepartments) + '</span>' : ''}</span>`
     : '';
+  // Manager-side form-submission viewer: clickable pill when the rep's note
+  // carries a submitted fillable form (parallels the rep's cn-form-pill).
+  const mgrFormSub = (note.subformData && note.subformData.formSubmission) ? note.subformData.formSubmission : null;
+  const mgrRepIdForForm = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
+  const formPill = (mgrFormSub && mgrFormSub.token)
+    ? `<button class="cn-form-pill" title="Form received — view submission" data-token="${esc(mgrFormSub.token)}" data-rep-id="${esc(mgrRepIdForForm)}" onclick="cnMgrViewFormSubmission_(this)">${icon('paperclip', 11)}<span>form</span></button>`
+    : '';
   return `
     <div class="cn-card${flagCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
@@ -4747,6 +4909,7 @@ function cnMgrRenderReadonlyCard_(note) {
         <div class="cn-card-actions">
           ${flagPill}
           ${sentPill}
+          ${formPill}
         </div>
       </div>
       ${trainingReplyEditor}

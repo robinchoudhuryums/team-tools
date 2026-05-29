@@ -41,6 +41,18 @@ const CONFIG = {
   AUTO_MISSED_ALERT_HOUR_IST: 6,
   AUTO_EXPORT_HOUR_IST:       12,
 
+  // ── Clock-view shift schedule ─────────────────────────────────────────
+  // Drives the day-ribbon scheduled band + the "until end of shift"
+  // countdown BEFORE a rep clocks in (once they clock in, both re-anchor to
+  // their actual ClockIn + the scheduled length — see INV-71). DEFAULT is the
+  // 8:00 AM–5:00 PM CST shift most agents work (C3); BY_TIMEZONE holds the
+  // handful of exceptions (PH agents start 8:30). Resolved by
+  // getShiftSchedule_ and shipped to the client via getEmployeeState.
+  SHIFT_SCHEDULE: {
+    DEFAULT:     { start: '08:00', end: '17:00' },
+    BY_TIMEZONE: { 'Asia/Manila': { start: '08:30', end: '17:00' } },
+  },
+
   // ── Metrics module (CDR integration) ──────────────────────────────────
   // Reads the CDR Report spreadsheet (same one backing the Department
   // Dashboard in call-data-reporting) to surface call-volume metrics
@@ -65,6 +77,7 @@ const CONFIG = {
       'Callback Number: {callback}\n' +
       'Caller Name: {caller}\n' +
       'Relationship: {relationship}\n' +
+      'Patient & TRX: {patientAndTrx}\n' +
       'Issue: {issue}\n' +
       'Transferred To: {transferredTo}\n' +
       'Resolution: {resolution}',
@@ -273,6 +286,18 @@ const ROSTER_CACHE_TTL = 300;
 const CN_AMBIENT_CACHE_PREFIX = 'cn_ambient_v1_';
 const CN_AMBIENT_CACHE_TTL = 60;
 
+// S2 cached-summary layer: whole-result caches for the two parameterless
+// cross-rep manager aggregates that otherwise re-scan every enrolled rep's
+// Sheet on each call. (Open-ended substring search is NOT cached — it needs
+// the full text, i.e. a real index, which is out of scope.) The taxonomy
+// cache is eagerly invalidated by the tag-admin endpoints so the Admin table
+// reflects a rename/merge/archive immediately; both otherwise rely on the TTL
+// as the freshness ceiling (same philosophy as the ambient cache, INV-43).
+const CN_TAXONOMY_CACHE_KEY = 'cn_tag_taxonomy_v1';
+const CN_TAXONOMY_CACHE_TTL = 300;   // 5 min — Admin tab is opened infrequently
+const CN_UNRESOLVED_CACHE_KEY = 'cn_unresolved_action_v1';
+const CN_UNRESOLVED_CACHE_TTL = 120; // 2 min — backs the Team Notes stale-flag badge
+
 const TZ_ABBR = {
   'Asia/Kolkata':        'IST',
   'Asia/Manila':         'PHT',
@@ -305,12 +330,37 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.form) {
     return serveExternalForm_(e.parameter.form);
   }
-  // ── Internal app ───────────────────────────────────────────────────
-  // The HTML shell loads for anyone, but every google.script.run endpoint
-  // requires getEmployeeInfo_() (returns null for non-employees), so
-  // non-employees see the shell but can't load any data or perform any
-  // actions. This is intentional — Session.getActiveUser().getEmail()
-  // is unreliable with executeAs: USER_DEPLOYING + ANYONE_ANONYMOUS.
+  // ── Internal app — access gate ─────────────────────────────────────
+  // Defense in depth on top of the per-endpoint getEmployeeInfo_() check.
+  // We render an "Access Restricted" page only for a visitor we can
+  // POSITIVELY identify as outside the org: a non-empty Google email that
+  // is neither @umsupply.com NOR a registered employee. Two deliberate
+  // carve-outs:
+  //   • Empty email — anonymous / the executeAs:USER_DEPLOYING +
+  //     ANYONE_ANONYMOUS "unreliable" case — is fail-open: the shell loads
+  //     but every google.script.run endpoint returns null, so no data leaks.
+  //   • Registered employees on a non-@umsupply.com login (contractors,
+  //     e.g. PH/India reps) are never blocked — gating on domain alone
+  //     would lock them out, which is why the prior code skipped the gate.
+  const viewerEmail = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  if (viewerEmail && !/@umsupply\.com$/.test(viewerEmail) && !getEmployeeInfo_()) {
+    return HtmlService.createHtmlOutput(
+      '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>UMS Team Tools — Access Restricted</title>' +
+      '<style>body{margin:0;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;' +
+      'background:#f6f7f9;color:#0f1623;display:flex;align-items:center;justify-content:center;' +
+      'min-height:100vh}.card{max-width:420px;background:#fff;border:1px solid #dce0e7;' +
+      'border-radius:12px;padding:32px 34px;text-align:center}h1{font-size:20px;margin:0 0 10px}' +
+      'p{color:#3e4756;font-size:14px;line-height:1.6;margin:0}</style></head><body>' +
+      '<div class="card"><h1>Access Restricted</h1>' +
+      '<p>This tool is available only to Universal Medical Supply team members. ' +
+      'If you believe you should have access, contact your manager.</p></div></body></html>')
+      .setTitle('UMS Team Tools — Access Restricted')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  // The HTML shell otherwise loads; every google.script.run endpoint still
+  // independently requires getEmployeeInfo_() (returns null for non-employees).
   //
   // Round 2 · 8x — pass the URL query params through the template eval.
   // Apps Script's HtmlService iframe (script.googleusercontent.com) doesn't
@@ -351,6 +401,7 @@ function getEmployeeState() {
       isManager: emp.isManager,
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
+      schedule: getShiftSchedule_(empTz),
       ptoEnabled: !!(CONFIG.ENABLE_PTO_TRACKING && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
@@ -843,8 +894,18 @@ function getManagerDashboard() {
     for (let i = 1; i < toRows.length; i++) {
       if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'pending') continue;
       const submitted = String(toRows[i][TO.SUBMITTED_AT]).trim();
-      const subDate = submitted ? submitted.substring(0, 10) : '';
-      if (subDate >= pendingTrendStart && subDate <= todayStr) {
+      // SUBMITTED_AT is written in CONFIG.TIMEZONE ("yyyy-MM-dd HH:mm:ss").
+      // The trend day-keys below are in mgrTz, so convert the submission
+      // instant to the manager-tz calendar day before bucketing — otherwise
+      // submissions near local midnight land in the adjacent day's bar.
+      let subDate = '';
+      if (submitted) {
+        try {
+          const subInstant = Utilities.parseDate(submitted, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+          subDate = fmtDateTz_(subInstant, mgrTz);
+        } catch (e) { subDate = submitted.substring(0, 10); }
+      }
+      if (subDate && subDate >= pendingTrendStart && subDate <= todayStr) {
         pendingByDate[subDate] = (pendingByDate[subDate] || 0) + 1;
       }
     }
@@ -887,6 +948,7 @@ function getManagerDashboard() {
       liveStatus, pending, missedPunches, recentPunches, recentAudits,
       missedLookbackDays:  CONFIG.MISSED_PUNCH_LOOKBACK_DAYS,
       mgrDeleteWindowDays: CONFIG.MGR_DELETE_WINDOW_DAYS,
+      adjustWindowDays:    CONFIG.ADJUST_WINDOW_DAYS,
       ptoEnabled:          !!CONFIG.ENABLE_PTO_TRACKING,
       mgrTzAbbr,
       punchTrend, toSummary,
@@ -1967,6 +2029,11 @@ function getCallNotesTagTaxonomy() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    // S2: serve the whole aggregate from cache when warm — avoids re-scanning
+    // every rep's Sheet on each Admin-tab load. Invalidated by tag-admin ops.
+    const taxCache = CacheService.getScriptCache();
+    const taxCached = taxCache.get(CN_TAXONOMY_CACHE_KEY);
+    if (taxCached) { try { return JSON.parse(taxCached); } catch (e) { /* recompute */ } }
     const archivedSet = getArchivedTagsSet_();
     const roster = getEmployeeRosterRows_();
     const counts = {};       // tag → { tag, count, lastSeen, archived }
@@ -1981,23 +2048,31 @@ function getCallNotesTagTaxonomy() {
           callNotesSheetId: String(sheetId).trim(),
         };
         const sheet = getCallNotesSheet_(repEmp);
-        const rows = sheet.getDataRange().getValues();
         repsScanned++;
-        for (let j = 1; j < rows.length; j++) {
-          totalNotes++;
-          const subRaw = rows[j][CN.SUBFORM_DATA];
-          if (!subRaw) continue;
-          let sub = null;
-          try { sub = JSON.parse(subRaw); } catch (e) { continue; }
-          if (!sub || !Array.isArray(sub.tags)) continue;
-          const dateLocal = normalizeDate_(rows[j][CN.DATE_LOCAL]);
-          sub.tags.forEach(function (t) {
+        // S2: the taxonomy only needs the SubformData (tags) + DateLocal
+        // (lastSeen) columns — read those 2 columns instead of every note's
+        // full 16-column row (~8x fewer cells across all reps' history).
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          const rowN = lastRow - 1;
+          const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, rowN, 1).getValues();
+          const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, rowN, 1).getValues();
+          for (let j = 0; j < rowN; j++) {
+            totalNotes++;
+            const subRaw = subCol[j][0];
+            if (!subRaw) continue;
+            let sub = null;
+            try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+            if (!sub || !Array.isArray(sub.tags)) continue;
+            const dateLocal = normalizeDate_(dateCol[j][0]);
+            sub.tags.forEach(function (t) {
             const tag = String(t || '').trim().toLowerCase();
             if (!tag) return;
             if (!counts[tag]) counts[tag] = { tag: tag, count: 0, lastSeen: '', archived: !!archivedSet[tag] };
             counts[tag].count++;
             if (dateLocal > counts[tag].lastSeen) counts[tag].lastSeen = dateLocal;
-          });
+            });
+          }
         }
       } catch (e) { /* skip unreachable rep sheet */ }
     }
@@ -2010,8 +2085,22 @@ function getCallNotesTagTaxonomy() {
     archivedOnlyTags.sort(function (a, b) { return a.tag.localeCompare(b.tag); });
     const tags = Object.keys(counts).map(function (k) { return counts[k]; });
     tags.sort(function (a, b) { return b.count - a.count || a.tag.localeCompare(b.tag); });
-    return { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned };
+    const taxResult = { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned };
+    try {
+      const payload = JSON.stringify(taxResult);
+      if (payload.length <= 90000) taxCache.put(CN_TAXONOMY_CACHE_KEY, payload, CN_TAXONOMY_CACHE_TTL);
+      else console.warn('Tag taxonomy too large to cache (' + payload.length + ' bytes)');
+    } catch (e) { /* cache put failed — return uncached, no behavioral impact */ }
+    return taxResult;
   } catch (err) { return { error: err.message }; }
+}
+
+/** Drops the tag-taxonomy whole-result cache so the next Admin-tab load
+ *  recomputes. Called by the tag-admin endpoints (rename/merge/archive) so a
+ *  manager sees their change reflected immediately rather than after the TTL. */
+function invalidateCnTaxonomyCache_() {
+  try { CacheService.getScriptCache().remove(CN_TAXONOMY_CACHE_KEY); }
+  catch (e) { /* best-effort */ }
 }
 
 // ── Round 2 follow-on (Tag taxonomy actions) — Admin tag mutations ────────
@@ -2137,6 +2226,7 @@ function renameCallNoteTag(oldTag, newTag) {
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
       `rename ${oldT} → ${newT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
       callerEmp.email);
+    invalidateCnTaxonomyCache_();
     return { success: true, action: 'rename', oldTag: oldT, newTag: newT,
              repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2172,6 +2262,7 @@ function mergeCallNoteTags(sourceTag, targetTag) {
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
       `merge ${srcT} → ${tgtT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
       callerEmp.email);
+    invalidateCnTaxonomyCache_();
     return { success: true, action: 'merge', sourceTag: srcT, targetTag: tgtT,
              repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2206,6 +2297,7 @@ function archiveCallNoteTag(tag, archived) {
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
       `${wantArchived ? 'archive' : 'unarchive'} ${t}`,
       callerEmp.email);
+    invalidateCnTaxonomyCache_();
     return { success: true, action: wantArchived ? 'archive' : 'unarchive', tag: t };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -2242,6 +2334,40 @@ function managerGetCallNotes(repEmpId, date, filter) {
 }
 
 /** Manager search across all enrolled reps' call-notes Sheets. */
+/** S2: reads a per-rep call-notes sheet's data rows (full CN_HEADERS width)
+ *  as located {row, rowIndex} objects, bounded to [start, end] inclusive when
+ *  BOTH bounds are provided. Notes are appended in DateLocal order, so a date
+ *  range maps to a contiguous row slice (same assumption as
+ *  exportCallNotesRange / INV-46) — the bounded path scans only the 1-column
+ *  date range to find the slice, then reads just that block instead of every
+ *  rep's full history. When either bound is missing, returns ALL data rows
+ *  (callers that need the whole history — open-ended search — pass no range).
+ *  Callers still re-check each row's date defensively. */
+function readCallNoteRowsInRange_(sheet, start, end) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const n = lastRow - 1;
+  const out = [];
+  if (!start || !end) {
+    const vals = sheet.getRange(2, 1, n, CN_HEADERS.length).getValues();
+    for (let i = 0; i < vals.length; i++) out.push({ row: vals[i], rowIndex: i + 2 });
+    return out;
+  }
+  const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, n, 1).getValues();
+  let firstMatch = -1, lastMatch = -1;
+  for (let d = 0; d < dateCol.length; d++) {
+    const dl = normalizeDate_(dateCol[d][0]);
+    if (dl >= start && dl <= end) {
+      if (firstMatch < 0) firstMatch = d;
+      lastMatch = d;
+    }
+  }
+  if (firstMatch < 0) return [];
+  const block = sheet.getRange(firstMatch + 2, 1, lastMatch - firstMatch + 1, CN_HEADERS.length).getValues();
+  for (let i = 0; i < block.length; i++) out.push({ row: block[i], rowIndex: firstMatch + i + 2 });
+  return out;
+}
+
 function managerSearchCallNotes(query, field, repFilter, dateRange) {
   try {
     const callerEmp = getEmployeeInfo_();
@@ -2263,9 +2389,13 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
       try {
         target = { id: repId, name: repName, callNotesSheetId: String(sheetId).trim() };
         const sheet = getCallNotesSheet_(target);
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+        // Bounded read when a full date range is supplied; full scan for
+        // open-ended search. Per-note date re-checks below stay as defensive
+        // guards (and handle the partial-range case).
+        const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
+        const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
+        for (let i = 0; i < located.length; i++) {
+          const note = callNoteRowToObject_(located[i]);
           if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
           if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
           let hit = false;
@@ -2334,22 +2464,41 @@ function managerGetShiftStats(date) {
       const noteTimes = [];
       try {
         const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
-          if (note.dateLocal !== date) continue;
-          stats.totalNotes++;
-          if (note.flagType && stats.flagCounts[note.flagType] !== undefined) {
-            stats.flagCounts[note.flagType]++;
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          // S2: notes are appended in DateLocal order, so a single date maps to
+          // a contiguous row slice. Scan only the date column (1 col) to find
+          // the slice bounds, then read just that block of full rows — instead
+          // of pulling every rep's entire history. Same pattern as
+          // exportCallNotesRange. The per-note date re-check below stays as a
+          // defensive guard against any out-of-order row.
+          const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
+          let firstMatch = -1, lastMatch = -1;
+          for (let d = 0; d < dateCol.length; d++) {
+            if (normalizeDate_(dateCol[d][0]) === date) {
+              if (firstMatch < 0) firstMatch = d;
+              lastMatch = d;
+            }
           }
-          if (note.flagType === 'action' && note.resolved) stats.resolvedCount++;
-          if (note.emailedAt) stats.emailsSent++;
-          if (note.subformData && typeof note.subformData.completionSeconds === 'number') {
-            completionTimes.push(note.subformData.completionSeconds);
+          if (firstMatch >= 0) {
+            const block = sheet.getRange(firstMatch + 2, 1, lastMatch - firstMatch + 1, CN_HEADERS.length).getValues();
+            for (let i = 0; i < block.length; i++) {
+              const note = callNoteRowToObject_({ row: block[i], rowIndex: firstMatch + i + 2 });
+              if (note.dateLocal !== date) continue;
+              stats.totalNotes++;
+              if (note.flagType && stats.flagCounts[note.flagType] !== undefined) {
+                stats.flagCounts[note.flagType]++;
+              }
+              if (note.flagType === 'action' && note.resolved) stats.resolvedCount++;
+              if (note.emailedAt) stats.emailsSent++;
+              if (note.subformData && typeof note.subformData.completionSeconds === 'number') {
+                completionTimes.push(note.subformData.completionSeconds);
+              }
+              // Timestamp tail (HH:mm) for the shift-span calc
+              const m = String(note.timestamp || '').match(/T(\d{2}:\d{2})/);
+              if (m) noteTimes.push(m[1]);
+            }
           }
-          // Timestamp tail (HH:mm) for the shift-span calc
-          const m = String(note.timestamp || '').match(/T(\d{2}:\d{2})/);
-          if (m) noteTimes.push(m[1]);
         }
       } catch (e) {
         console.warn('managerGetShiftStats skipped rep ' + repId + ': ' + e.message);
@@ -2384,9 +2533,7 @@ function managerGetShiftStats(date) {
           tttFormatted:  cdr.tttFormatted,
           attFormatted:  cdr.attFormatted,
         } : null;
-        reps[ri].noteCoverage = (cdr && cdr.totalAnswered > 0)
-          ? Math.round((reps[ri].totalNotes / cdr.totalAnswered) * 100)
-          : null;
+        reps[ri].noteCoverage = cnNoteCoverage_(reps[ri].totalNotes, cdr ? cdr.totalAnswered : 0);
       }
     } catch (cdrErr) {
       console.warn('managerGetShiftStats CDR enrichment failed: ' + cdrErr.message);
@@ -2401,6 +2548,12 @@ function managerGetUnresolvedActionCount() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    // S2: serve the badge count from cache when warm (TTL-only freshness, like
+    // the ambient cache — at most CN_UNRESOLVED_CACHE_TTL stale). Avoids a
+    // full 2-column scan of every rep's Sheet on each Team Notes landing.
+    const uCache = CacheService.getScriptCache();
+    const uCached = uCache.get(CN_UNRESOLVED_CACHE_KEY);
+    if (uCached) { try { return JSON.parse(uCached); } catch (e) { /* recompute */ } }
     const roster = getEmployeeRosterRows_();
     let total = 0;
     for (let r = 1; r < roster.length; r++) {
@@ -2420,7 +2573,10 @@ function managerGetUnresolvedActionCount() {
         }
       } catch (_) {}
     }
-    return { count: total };
+    const uResult = { count: total };
+    try { uCache.put(CN_UNRESOLVED_CACHE_KEY, JSON.stringify(uResult), CN_UNRESOLVED_CACHE_TTL); }
+    catch (e) { /* best-effort */ }
+    return uResult;
   } catch (err) { return { error: err.message }; }
 }
 
@@ -2738,9 +2894,13 @@ function managerAggregateFlagged_(flagType, dateRange) {
       const repName = String(roster[r][EMP.NAME]).trim();
       try {
         const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+        // Bounded read when a full date range is supplied (the weekly digest
+        // passes a 7-day range — big win vs. scanning each rep's full
+        // history); full scan otherwise. Per-note re-checks stay defensive.
+        const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
+        const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
+        for (let i = 0; i < located.length; i++) {
+          const note = callNoteRowToObject_(located[i]);
           if (note.flagType !== flagType) continue;
           if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
           if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
@@ -3054,8 +3214,13 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         noteId + '): ' + stampErr.message);
     }
 
+    // Audit note is intentionally PHI-free: the email subject embeds the
+    // patient name / TRX and the recipient list can include external
+    // addresses, neither of which belongs in the shared AuditLog. Record
+    // the noteId (an investigator can open the note for full detail), the
+    // department label, and the recipient count instead.
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
-      `noteId=${noteId}; to=${recipientList.to}; subj="${subject}"`);
+      `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}`);
 
     return { success: true, emailedAt, recipients: recipientList.to, subject };
   } catch (err) { return { success: false, error: err.message }; }
@@ -3697,10 +3862,17 @@ function sendExternalEmail(payload) {
   }
 
   // ── Audit ─────────────────────────────────────────────────────────
+  // Keep the shared AuditLog free of the raw recipient address (a customer's
+  // personal email is PII; for a patient it can be PHI-adjacent). Log only the
+  // recipient domain — enough to tell where it went without storing the
+  // address. The full recipient is on the linked note's
+  // subformData.externalEmails[] for the sending rep's own reference.
   const formsList = formIds.length > 0 ? formIds.join(',') : 'none';
   const interactiveList = interactiveForms.length > 0 ? interactiveForms.join(',') : 'none';
+  const recipientDomain = recipientEmail.indexOf('@') >= 0
+    ? recipientEmail.slice(recipientEmail.indexOf('@') + 1) : '(none)';
   writeAuditLog_(emp, 'ExternalEmailSent', '', '', false, 0,
-    'to=' + recipientEmail + '; type=' + recipientType +
+    'recipientDomain=' + recipientDomain + '; type=' + recipientType +
     '; pdfForms=' + formsList +
     '; interactiveForms=' + interactiveList +
     (noteId ? '; noteId=' + noteId : ''));
@@ -4226,6 +4398,13 @@ function submitFormByToken(token, formData) {
     } catch(_) {}
 
     return { success: true, message: 'Your form has been submitted successfully. Thank you!' };
+  } catch (err) {
+    // Public endpoint — never surface a raw exception to an external
+    // recipient. The token is only marked 'submitted' after a successful
+    // write, so a failure here leaves it 'pending' and the recipient can
+    // retry. Log for ops to investigate (e.g. oversized signature payload).
+    console.warn('submitFormByToken failed (token=' + token + '): ' + err.message);
+    return { success: false, error: 'We could not submit your form. Please try again, or contact UMS if the problem persists.' };
   } finally {
     lock.releaseLock();
   }
@@ -4240,6 +4419,110 @@ function serveExternalForm_(token) {
     .setTitle('UMS — Complete Your Form')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+}
+
+/** G3: returns a completed fillable-form submission for in-app display, so the
+ *  rep who sent the form can review what the recipient entered without opening
+ *  the FormSubmissions sheet. Caller-scoped: the calling employee must be the
+ *  rep who created the token (FormTokens.CreatedBy) — a rep can't read another
+ *  rep's submissions. Read-only, no lock. Returns `{ submitted: false, status }`
+ *  when the linked token hasn't been completed yet. */
+function getFormSubmission(token) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    token = String(token || '').trim();
+    if (!token) return { error: 'No form token provided.' };
+
+    const tokenSheet = getOrCreateFormTokensSheet_();
+    const tLocated = findFormTokenRow_(tokenSheet, token);
+    if (!tLocated) return { error: 'Form not found.' };
+
+    const createdBy = String(tLocated.row[FT.CREATED_BY] || '').trim().toLowerCase();
+    if (createdBy !== String(emp.email || '').toLowerCase()) {
+      return { error: 'You can only view submissions for forms you sent.' };
+    }
+    return buildFormSubmissionResult_(tLocated, token);
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-side companion to getFormSubmission: lets a manager review a
+ *  submitted form from the Team Notes Per-Rep view. Manager-gated (INV-02),
+ *  read-only. Scoped to the rep being viewed — the token must have been
+ *  created by `repEmpId` (the manager can only pull submissions for forms the
+ *  selected rep sent), mirroring the per-rep view's read-only contract. */
+function managerGetFormSubmission(repEmpId, token) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    token = String(token || '').trim();
+    if (!token) return { error: 'No form token provided.' };
+    const target = lookupEmployeeById_(repEmpId);
+    if (!target) return { error: 'Employee not found.' };
+
+    const tokenSheet = getOrCreateFormTokensSheet_();
+    const tLocated = findFormTokenRow_(tokenSheet, token);
+    if (!tLocated) return { error: 'Form not found.' };
+    const createdBy = String(tLocated.row[FT.CREATED_BY] || '').trim().toLowerCase();
+    if (createdBy !== String(target.email || '').toLowerCase()) {
+      return { error: 'This form was not created by the selected rep.' };
+    }
+    return buildFormSubmissionResult_(tLocated, token);
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Shared submission-result builder for getFormSubmission /
+ *  managerGetFormSubmission. Assumes the caller has already authorized access
+ *  to `tLocated` (the FormTokens row). Returns `{ submitted: false, status }`
+ *  until the form is completed, else the humanized fields + signature. */
+function buildFormSubmissionResult_(tLocated, token) {
+  const formType = String(tLocated.row[FT.FORM_TYPE] || '').trim();
+  let formName = formType;
+  const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+  for (let i = 0; i < catalog.length; i++) {
+    if (catalog[i].id === formType) { formName = catalog[i].name; break; }
+  }
+  const recipientName  = String(tLocated.row[FT.RECIPIENT_NAME] || '');
+  const recipientEmail = String(tLocated.row[FT.RECIPIENT_EMAIL] || '');
+  const status = String(tLocated.row[FT.STATUS] || '').trim().toLowerCase();
+
+  if (status !== 'submitted') {
+    return { submitted: false, status, formType, formName, recipientName, recipientEmail };
+  }
+
+  const subSheet = getOrCreateFormSubmissionsSheet_();
+  const rows = subSheet.getDataRange().getValues();
+  for (let i = rows.length - 1; i >= 1; i--) {
+    if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
+    let formData = {};
+    try { formData = JSON.parse(rows[i][FS.FORM_DATA]) || {}; } catch (_) {}
+    const fields = Object.keys(formData).map(function (k) {
+      return { key: k, label: humanizeFormFieldKey_(k), value: formData[k] };
+    });
+    const signature = String(rows[i][FS.SIGNATURE_DATA] || '');
+    return {
+      submitted: true,
+      formType, formName, recipientName,
+      recipientEmail: String(rows[i][FS.RECIPIENT_EMAIL] || recipientEmail),
+      submittedAt: String(rows[i][FS.SUBMITTED_AT] || ''),
+      fields,
+      hasSignature: !!signature,
+      signature,
+    };
+  }
+  // Token says submitted but no row found — treat as not-yet-available.
+  return { submitted: false, status, formType, formName, recipientName, recipientEmail };
+}
+
+/** Humanizes a form-field key (id) into a display label: splits snake/kebab/
+ *  camelCase and title-cases. Used by the in-app form-submission viewers. */
+function humanizeFormFieldKey_(k) {
+  return String(k || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
 
@@ -4273,14 +4556,16 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('runDailyExportCheck')
     .timeBased().atHour(CONFIG.AUTO_EXPORT_HOUR_IST).everyDays(1)
     .inTimezone(CONFIG.TIMEZONE).create();
-  // Call Notes EOD warning — runs once at the manager-tz EOD hour; the
-  // handler walks the roster, computes per-rep local time, and only emails
-  // reps whose local time is currently within the EOD window. One trigger
-  // serves all timezones; reps in different zones get their digest as
-  // their local 5pm rolls around (within the wider window).
+  // Call Notes EOD warning — G4: runs HOURLY. The handler walks the roster
+  // and emails each enrolled rep only during the run that lands in their
+  // LOCAL EOD hour (CONFIG.CALL_NOTES.EOD_WARNING_HOUR). An hourly cadence +
+  // per-rep local-hour match means a single trigger reliably reaches reps in
+  // every timezone — the prior once-at-manager-5pm trigger silently skipped
+  // offshore reps (IST/PHT) whose local 5pm never coincided with the
+  // manager's. Most hourly runs send nothing (no reps at their EOD hour with
+  // unresolved flags), so the cost is just a cached roster walk.
   ScriptApp.newTrigger('sendCallNotesEodDigest')
-    .timeBased().atHour(CONFIG.CALL_NOTES.EOD_WARNING_HOUR).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    .timeBased().everyHours(1).create();
   // Weekly manager digests for training queue + review candidates
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
@@ -4556,8 +4841,6 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 function sendCallNotesEodDigest() {
   assertManagerCaller_('sendCallNotesEodDigest');  // see sendDailyMissedPunchAlerts note
   try {
-    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
-    const windowMin = CONFIG.CALL_NOTES.EOD_WARNING_WINDOW_MINUTES || 30;
     const targetHour = CONFIG.CALL_NOTES.EOD_WARNING_HOUR;
     const now = new Date();
     const roster = getEmployeeRosterRows_();
@@ -4568,17 +4851,16 @@ function sendCallNotesEodDigest() {
       if (!emailAddr || !sheetId) continue;
       const tzRaw = String(roster[r][EMP.TIMEZONE] || '').trim();
       const tz = safeTimezone_(tzRaw);
-      // Rep's local time-of-day in minutes
+      // G4: this handler runs HOURLY (see installAutomationTriggers). Email a
+      // rep only during the single run that coincides with their LOCAL EOD
+      // hour — hour-equality (not a ±minute window) guarantees exactly one
+      // match per rep per day regardless of timezone. The prior once-at-
+      // manager-5pm window silently skipped offshore reps (IST/PHT) whose
+      // local 5pm never lined up with the manager's. A rep far enough off the
+      // hour could in rare trigger-jitter cases match two consecutive hourly
+      // runs — a benign duplicate reminder, not a miss.
       const hh = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
-      const mm = parseInt(Utilities.formatDate(now, tz, 'm'), 10);
-      const localMins = hh * 60 + mm;
-      const targetMins = targetHour * 60;
-      // Circular distance so a target near midnight (e.g. EOD_WARNING_HOUR=0)
-      // doesn't reject reps at 23:45 with a 1425-minute "diff". Currently
-      // dormant for the default 17:00 hour, but cheap to be correct.
-      const diff = Math.abs(localMins - targetMins);
-      const circDist = Math.min(diff, 1440 - diff);
-      if (circDist > windowMin) continue;
+      if (hh !== targetHour) continue;
 
       const empObj = {
         id: String(roster[r][EMP.ID]).trim(),
@@ -5127,6 +5409,23 @@ function assertManagerCaller_(label) {
 
 function tzAbbr_(tz) { return TZ_ABBR[tz] || tz; }
 function empTz_(emp) { return (emp && emp.timezone) ? emp.timezone : CONFIG.TIMEZONE; }
+
+/** Resolves the Clock-view shift schedule for a rep's timezone from
+ *  CONFIG.SHIFT_SCHEDULE (per-tz override, else default). Returns
+ *  { startMin, lengthMin } in minutes-from-midnight for the client ribbon +
+ *  countdown. Falls back to 08:00 + 9h if config is missing/malformed. */
+function getShiftSchedule_(timezone) {
+  const cfg = CONFIG.SHIFT_SCHEDULE || {};
+  const sched = (cfg.BY_TIMEZONE && cfg.BY_TIMEZONE[timezone]) || cfg.DEFAULT || { start: '08:00', end: '17:00' };
+  const toMin = function (hm) {
+    const p = String(hm || '').split(':');
+    return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+  };
+  const startMin = toMin(sched.start);
+  let endMin = toMin(sched.end);
+  if (!(endMin > startMin)) endMin = startMin + 540; // guard → 9h
+  return { startMin: startMin, lengthMin: endMin - startMin };
+}
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
 function safeTimezone_(tz) {
@@ -5531,6 +5830,12 @@ function toDisplayTime_(t) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function getCdrSS_() {
+  // Tests may point the CDR reader at a fixture spreadsheet via the in-memory
+  // _TEST_OVERRIDE_CDR_SS_ID global (mirrors _TEST_OVERRIDE_EMAIL). Per-
+  // invocation only, so real users are unaffected.
+  if (typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_CDR_SS_ID);
+  }
   const id = PropertiesService.getScriptProperties().getProperty('CDR_SS_ID')
           || CONFIG.CDR_SS_ID;
   return SpreadsheetApp.openById(id);
@@ -5819,6 +6124,41 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
 
 // ── Metrics public endpoints ──────────────────────────────────────────
 
+/** Single source of truth for the note-to-call coverage ratio shown in
+ *  My Stats, Team Metrics, and the shift-stats overlay. Returns a
+ *  whole-number percent, or null when there's no answered-call
+ *  denominator. Extracted so the three callsites can't drift apart. */
+function cnNoteCoverage_(noteCount, answeredCalls) {
+  return (answeredCalls && answeredCalls > 0)
+    ? Math.round((noteCount / answeredCalls) * 100) : null;
+}
+
+/** Counts a rep's call notes whose DateLocal falls in [from, to] inclusive.
+ *  Centralizes the normalizeDate_ read so the Metrics note-count can never
+ *  diverge again (see the CN.DATE_LOCAL gotcha — a raw String() read silently
+ *  misses every row because Sheets coerces the column to a Date). Returns 0
+ *  when the rep has no Sheet configured or it's unreachable. The `emp` arg
+ *  only needs { id, name, callNotesSheetId } for getCallNotesSheet_. */
+function countCallNotesInRange_(emp, from, to) {
+  if (!emp || !emp.callNotesSheetId) return 0;
+  try {
+    const sheet = getCallNotesSheet_(emp);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 0;
+    // S2: counting only needs the DateLocal column — read 1 column instead
+    // of the full 16-column row range (~16x fewer cells off the wire). Still
+    // normalize each value (CN.DATE_LOCAL coercion gotcha).
+    const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
+    let n = 0;
+    for (let i = 0; i < dateCol.length; i++) {
+      const d = normalizeDate_(dateCol[i][0]);
+      if (d >= from && d <= to) n++;
+    }
+    return n;
+  } catch (e) { return 0; }
+}
+
+
 /**
  * Self-view: the calling rep's own call metrics for a date, plus their
  * call-notes count for the same day (notes-vs-calls correlation).
@@ -5861,16 +6201,7 @@ function getMyMetrics(date) {
       });
     }
 
-    var noteCount = 0;
-    try {
-      if (emp.callNotesSheetId) {
-        var sheet = getCallNotesSheet_(emp);
-        var rows = sheet.getDataRange().getValues();
-        for (var i = 1; i < rows.length; i++) {
-          if (String(rows[i][CN.DATE_LOCAL]) === date) noteCount++;
-        }
-      }
-    } catch (_) {}
+    var noteCount = countCallNotesInRange_(emp, date, date);
 
     return {
       date: date,
@@ -5886,8 +6217,7 @@ function getMyMetrics(date) {
         attSeconds:   todayCdr.attSeconds,
       } : null,
       noteCount: noteCount,
-      noteCoverage: (todayCdr && todayCdr.totalAnswered > 0)
-        ? Math.round((noteCount / todayCdr.totalAnswered) * 100) : null,
+      noteCoverage: cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
       trend: trend,
     };
   } catch (err) { return { error: err.message }; }
@@ -5966,17 +6296,8 @@ function getTeamMetrics(dateOrFrom, to) {
     Object.keys(repMap).forEach(function (name) {
       var rm = repMap[name];
       var cdr = cdrResult.agents[name] || null;
-      var noteCount = 0;
-      try {
-        if (rm.cnSheetId) {
-          var sheet = getCallNotesSheet_({ id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId });
-          var rows = sheet.getDataRange().getValues();
-          for (var i = 1; i < rows.length; i++) {
-            var nd = String(rows[i][CN.DATE_LOCAL]);
-            if (nd >= from && nd <= toDate) noteCount++;
-          }
-        }
-      } catch (_) {}
+      var noteCount = countCallNotesInRange_(
+        { id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId }, from, toDate);
 
       var rep = {
         repId: rm.repId, repName: rm.repName,
@@ -5989,8 +6310,7 @@ function getTeamMetrics(dateOrFrom, to) {
         tttSeconds:   cdr ? cdr.tttSeconds   : 0,
         attSeconds:   cdr ? cdr.attSeconds   : 0,
         noteCount: noteCount,
-        noteCoverage: (cdr && cdr.totalAnswered > 0)
-          ? Math.round((noteCount / cdr.totalAnswered) * 100) : null,
+        noteCoverage: cnNoteCoverage_(noteCount, cdr ? cdr.totalAnswered : 0),
         hasCdrData: !!cdr,
       };
       if (cdr || noteCount > 0) {
@@ -6016,8 +6336,7 @@ function getTeamMetrics(dateOrFrom, to) {
     teamTotals.pctAnswered = teamTotals.rung > 0
       ? Math.round((teamTotals.answered / teamTotals.rung) * 1000) / 10 : 0;
     teamTotals.tttFormatted = cdrFmtHms_(teamTotals.tttSeconds);
-    teamTotals.noteCoverage = teamTotals.answered > 0
-      ? Math.round((teamTotals.noteCount / teamTotals.answered) * 100) : null;
+    teamTotals.noteCoverage = cnNoteCoverage_(teamTotals.noteCount, teamTotals.answered);
 
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
 
@@ -6050,11 +6369,19 @@ function getMetricsAmbient() {
     var cached = cache.get(ck);
     if (cached) { try { return JSON.parse(cached); } catch (_) {} }
 
+    // Compute "yesterday" in the manager's timezone (not the script's), so the
+    // badge date + weekend check don't drift near midnight / DST when the
+    // script tz differs from the manager tz. Derive the manager-tz calendar
+    // date string, step back one day via UTC math, and read the weekday off
+    // that tz-neutral date.
     var now = new Date();
-    var yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    var dow = yesterday.getDay();
+    var mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    var todayMgr = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
+    var yDate = new Date(todayMgr + 'T00:00:00Z');
+    yDate.setUTCDate(yDate.getUTCDate() - 1);
+    var yIso = isoFromUtc_(yDate);
+    var dow = yDate.getUTCDay();
     if (dow === 0 || dow === 6) return { badge: null };
-    var yIso = Utilities.formatDate(yesterday, CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
 
     var roster = getEmployeeRosterRows_();
     var names = [];
