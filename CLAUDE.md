@@ -490,15 +490,15 @@ this section before touching the relevant area.
   back, or the day rolls over. Acceptable for the use case; if
   real-time-ish freshness is ever required, invalidate the cache
   from `submitCallNote`'s success handler.
-- **Metrics enters don't call `stopClock` — interval leak.**
-  `enterMetricsMyStatsView` and `enterMetricsTeamView` don't call
-  `stopClock`, so the 1Hz live-time + 60s ribbon-now-cursor
-  intervals keep firing in the background after navigating from
-  Clock to Metrics. Both tick functions early-return when their
-  target elements aren't in the DOM, so the leak is bounded —
-  wasted timer fires, no functional bug. Cleanup is to call
-  `stopClock()` at the top of each metrics enter, matching the
-  Time Off / Manager / Call Notes enters.
+- **Metrics enters call `stopClock` to avoid an interval leak.**
+  `enterMetricsMyStatsView` and `enterMetricsTeamView` call
+  `stopClock()` at the top (guarded by `typeof`) so the Clock view's
+  1Hz live-time + 60s ribbon-now-cursor intervals don't keep firing
+  in the background after navigating from Clock to Metrics — matching
+  the Time Off / Manager / Call Notes enters. (Before this they didn't,
+  a bounded leak: both tick functions early-return when their target
+  elements aren't in the DOM, so it was wasted timer fires, no
+  functional bug.)
 - **Apps Script's HtmlService iframe sandboxes `window.location.search`.**
   The user-facing deploy URL's query string (`?compact=1`, `?tool=X`,
   `?prefill=...`) is invisible to client JS via `window.location.search`
@@ -1051,6 +1051,25 @@ this section before touching the relevant area.
   `managerGetShiftStats` reads just the requested date's contiguous
   row slice — both rely on notes being appended in DateLocal order,
   the same contiguity assumption as `exportCallNotesRange` (INV-46).
+- **Cross-rep call-note reads are bounded too.** `readCallNoteRowsInRange_`
+  is the shared bounded reader: given a full `{start, end}` it scans
+  only the 1-column date range to find the contiguous slice (INV-46
+  append-order assumption) and reads just that block, else it returns
+  all data rows. `managerSearchCallNotes` and `managerAggregateFlagged_`
+  (e.g. the weekly digest's 7-day window) route through it — bounded
+  when a date range is supplied, full scan for open-ended search.
+  `getCallNotesTagTaxonomy` instead column-bounds: it reads only the
+  `SubformData` + `DateLocal` columns (~8x fewer cells) since it has no
+  date filter. A future per-rep cached summary could bound the truly
+  open-ended scans further, but the column/date bounds already cut the
+  cell volume materially.
+- **Manager day-edit date picker is bounded `[today-30, today]`.**
+  `openDayEditModal` sets `#de-date` min/max so a manager can't pick a
+  future date (server rejects `daysBack<0`) or one past the adjust
+  window — matching the Adjust modal. The `30` is the
+  `CONFIG.ADJUST_WINDOW_DAYS` default hardcoded client-side (the value
+  isn't shipped to the manager client); the server stays authoritative,
+  so if that CONFIG is ever raised the picker is merely over-restrictive.
 - **Compact pop-out is 380px wide.** `popOutCurrentView()` opens
   the named `umsTeamToolsCompact` window at 380×780 (narrowed from
   the prior 440 in the Console redesign — sized to fit the rep's
@@ -1456,7 +1475,7 @@ INV-69 | `getManagerDashboard` returns `pendingTrend` (14 days, new pending subm
 INV-70 | `getManagerDashboard` attaches `recentHours[]` (7 entries `{date, hours}`, oldest→newest, excludes today) to each `liveStatus` entry. Computed via one extra in-memory pass over already-loaded `adpRows` and `calcHours_`; days without both a `ClockIn` and a `ClockOut` are recorded as 0 hours. Used by the V4·E3 per-rep sparkline on the manager dashboard's live-status cards | Subsystem: Server
 INV-71 | Clock view's "until end of shift" countdown (in `buildStatusSentence_`) and the day ribbon's scheduled band (in `renderDayRibbon_`) both anchor to the rep's first `ClockIn` + 9h once they've clocked in; before that, both fall back to the 8:00–17:00 CST default per the C3 decision. Per-rep schedule data does not yet exist server-side — both paths will swap to the actual schedule when a schedule editor lands | Subsystem: Client (Time Clock views)
 INV-72 | `LEAVE_DEDUCTION_CLIENT` in `tc/script_timeoff.html` must mirror server's `getLeaveDeduction_` (Code.js) for the PTO day modal's balance-after preview to compute correctly. The server still performs the actual deduction on submit (via `updateTimeOffStatus`'s Pending→Approved transition), so a drift causes UI mis-preview but not balance corruption. Adding a new leave type requires updating BOTH maps | Subsystem: Client (Time Clock views) + Server
-INV-73 | Day-ribbon now-cursor refresh interval (`_ribbonNowInterval`, 60s) is bound to the `startClock` / `stopClock` lifecycle via `startRibbonNowCursor_` / `stopRibbonNowCursor_`. When the Clock view is exited via tab navigation (Time Off / Manager / Call Notes enters all call `stopClock` at the top), the interval clears alongside the 1Hz live-time interval. Metrics enters do not call `stopClock` — pre-existing leak, bounded since the cursor element isn't in their DOM | Subsystem: Client (Time Clock views)
+INV-73 | Day-ribbon now-cursor refresh interval (`_ribbonNowInterval`, 60s) is bound to the `startClock` / `stopClock` lifecycle via `startRibbonNowCursor_` / `stopRibbonNowCursor_`. When the Clock view is exited via tab navigation (Time Off / Manager / Call Notes / Metrics enters all call `stopClock` at the top), the interval clears alongside the 1Hz live-time interval | Subsystem: Client (Time Clock views)
 INV-74 | (Removed in Round 2 · 8b.) The Clock view's pay-period ledger cell + the `lazyUpdatePayPeriodCell_` lazy hook were both removed when the timesheet section moved to the Time / PTO tab. `loadTimesheet`'s success handler retains a `typeof === 'function'` guarded call as a defensive no-op | Subsystem: Client (Time Clock views)
 INV-75 | `submitCallNote` accepts `payload.flags[]` (multi-select via `sanitizeFlagsArray_`) and `payload.tags[]` (free-text kebab-case via `sanitizeTagsArray_`) in addition to the legacy `payload.flagType` single string. Server folds both into `subformData` (no new Sheet column required) and derives the `FlagType` column from `flags[]` via priority order (`action` > `training` > `review` > `urgent`). `urgent` never enters the `FlagType` column (INV-37 preserved — `sanitizeFlagType_` still rejects it); it lives in `subformData.flags` only so existing manager digests / queues are unaffected. Pin stays in `subformData.pinned` with its 3-cap (INV-50) — not in flags[] | Subsystem: Server
 INV-76 | `appendCallNoteFeedback(noteId, message, kind)` (Round 2 · 8g) is rep-callable (operates on caller's own per-rep Sheet), locked, and rejects calls on non-training-flagged notes (parallels INV-34 + INV-49). Appends `{role:'agent', kind:'ack'\|'clarification', message, at, by}` to `subformData.feedback[]`. `kind='ack'` with empty message renders as 👍 Got it; `kind='clarification'` requires a non-empty message. Writes a `CallNoteFeedback` audit row | Subsystem: Server
