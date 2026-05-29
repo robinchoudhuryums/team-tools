@@ -53,6 +53,16 @@
 .m-coverage--mid  { background: var(--warn-soft); color: var(--warn); }
 .m-coverage--low  { background: var(--danger-soft); color: var(--danger); }
 
+/* ── Sidebar alert badge ────────────────────────────────────────── */
+.m-alert-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--danger); color: white;
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  min-width: 28px; height: 16px; padding: 0 4px;
+  border-radius: 999px;
+  margin-left: 6px;
+}
+
 /* ── Date picker row ────────────────────────────────────────────── */
 .m-controls {
   display: flex;
@@ -705,6 +715,54 @@ function mRenderTeamMetrics_(data) {
       data.unmatchedAgents.join(', ') + '</div>';
   }
 
+  // Reverse-mismatch: roster reps with no CDR data
+  if (data.rosterWithNoCdr && data.rosterWithNoCdr.length > 0) {
+    html += '<div class="m-hint" style="margin-top:var(--space-xs)">' +
+      icon('info', 14) + ' ' + data.rosterWithNoCdr.length +
+      ' roster rep(s) with no CDR match: ' +
+      data.rosterWithNoCdr.join(', ') +
+      '. Check name spelling in Employees sheet vs CDR roster.</div>';
+  }
+
   el.innerHTML = html;
+}
+
+// ── Ambient polling: answer-rate alert badge on Metrics sidebar icon ──
+
+var M_AMBIENT_TIMER = null;
+
+function mStartAmbientPolling_() {
+  if (M_AMBIENT_TIMER) clearInterval(M_AMBIENT_TIMER);
+  mPollAmbient_();
+  M_AMBIENT_TIMER = setInterval(mPollAmbient_, 300000);
+}
+
+function mPollAmbient_() {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res) { mClearBadge_(); return; }
+      if (!res.badge) { mClearBadge_(); return; }
+      var link = document.querySelector('.sb-link[data-tool="metrics"]')
+              || document.querySelector('.nav-btn[data-tool="metrics"]');
+      if (!link) return;
+      var badge = link.querySelector('.m-alert-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'm-alert-badge';
+        link.appendChild(badge);
+      }
+      badge.textContent = res.badge.label;
+      badge.title = 'Yesterday (' + res.badge.date + '): ' + res.badge.label + ' answered — below ' + (typeof CONFIG !== 'undefined' ? CONFIG.CDR_ALERT_THRESHOLD : 85) + '% threshold';
+    })
+    .withFailureHandler(function () { mClearBadge_(); })
+    .getMetricsAmbient();
+}
+
+function mClearBadge_() {
+  var links = document.querySelectorAll('.sb-link[data-tool="metrics"], .nav-btn[data-tool="metrics"]');
+  for (var i = 0; i < links.length; i++) {
+    var badge = links[i].querySelector('.m-alert-badge');
+    if (badge) badge.remove();
+  }
 }
 </script>

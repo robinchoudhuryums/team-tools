@@ -49,7 +49,8 @@ const CONFIG = {
   CDR_SS_ID:         'YOUR_CDR_SPREADSHEET_ID',
   CDR_DEPARTMENT:    'CSR',
   CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
-  CDR_CACHE_KEY:     'cdr_metrics_v1',
+  CDR_CACHE_KEY:     'cdr_metrics_v2',
+  CDR_ALERT_THRESHOLD: 85,  // % Answered below this → warn badge on Metrics sidebar
 
   // ── Call Notes module ────────────────────────────────────────────────
   // The rolling-note panel; per-rep notes write to the rep's own Sheet
@@ -239,15 +240,22 @@ function sanitizeTagsArray_(arr) {
   return out;
 }
 
-// CDR / DQE Historical Data column positions (1-indexed, matching Config.gs
-// in call-data-reporting). Duration columns (TTT, ATT, AVG_ABD_WAIT,
-// CSR_AVG_ABD_WAIT) MUST be read via getDisplayValues() — see the
-// "Spreadsheet TZ ≠ script TZ" gotcha in call-data-reporting/CLAUDE.md.
+// COUPLING ALERT: These positions MUST match HISTORICAL_COLS in
+// call-data-reporting/apps-script/department-dashboard/Config.gs.
+// validateCdrColumns_() checks at runtime. On mismatch, update
+// here AND bump CDR_CACHE_KEY. Last verified: 2026-05-28.
+// Duration columns (TTT, ATT, AVG_ABD_WAIT, CSR_AVG_ABD_WAIT) MUST
+// be read via getDisplayValues() — see the "Spreadsheet TZ ≠ script TZ"
+// gotcha in call-data-reporting/CLAUDE.md.
 const CDR = {
   DATE: 2, AGENT: 3, QUEUE_EXT: 4,
   TOTAL_UNIQUE: 5, TOTAL_RUNG: 6, TOTAL_MISSED: 7, TOTAL_ANSWERED: 8,
   TTT: 9, ATT: 10,
   AVG_ABD_WAIT: 33, CSR_AVG_ABD_WAIT: 34,
+};
+const CDR_EXPECTED_HEADERS = {
+  2: 'Date', 3: 'Agent', 5: 'Unique', 6: 'Rung', 7: 'Missed',
+  8: 'Answered', 9: 'TTT', 10: 'ATT',
 };
 
 const MONTH_NAMES = ['January','February','March','April','May','June',
@@ -5561,13 +5569,81 @@ function cdrRowDateIso_(val, tz) {
   return '';
 }
 
+function isCdrQueueSentinel_(agent) {
+  return /^A_Q_/.test(agent) || agent === 'Backup CSR';
+}
+
+var _cdrColumnsValidated = false;
+var _cdrColumnWarning = null;
+function validateCdrColumns_(sheet) {
+  if (_cdrColumnsValidated) return _cdrColumnWarning;
+  _cdrColumnsValidated = true;
+  try {
+    var headers = sheet.getRange(1, 1, 1, 34).getValues()[0];
+    var mismatches = [];
+    Object.keys(CDR_EXPECTED_HEADERS).forEach(function (colStr) {
+      var col = Number(colStr);
+      var expected = CDR_EXPECTED_HEADERS[col].toLowerCase();
+      var actual = String(headers[col - 1] || '').toLowerCase().trim();
+      if (actual.indexOf(expected) === -1) {
+        mismatches.push('col ' + col + ': expected "' + CDR_EXPECTED_HEADERS[col] + '", got "' + headers[col - 1] + '"');
+      }
+    });
+    if (mismatches.length > 0) {
+      _cdrColumnWarning = mismatches.join('; ');
+      Logger.log('CDR column validation WARNING: ' + _cdrColumnWarning);
+    }
+  } catch (e) {
+    Logger.log('CDR column validation skipped: ' + e.message);
+  }
+  return _cdrColumnWarning;
+}
+
+var _cdrNameMapCache = null;
+var _cdrNameMapExpiry = 0;
+function getCdrNameMap_() {
+  var now = Date.now();
+  if (_cdrNameMapCache && now < _cdrNameMapExpiry) return _cdrNameMapCache;
+  var map = {};
+  try {
+    var ss = getCdrSS_();
+    var sheet = ss.getSheetByName('Agent Alias Overrides');
+    if (!sheet) return map;
+    var rows = sheet.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      var oldName = String(rows[i][0] || '').trim();
+      var canonical = String(rows[i][1] || '').trim();
+      var active = rows[i][2];
+      if (!oldName || !canonical) continue;
+      if (active === false || String(active).toLowerCase() === 'false') continue;
+      map[oldName] = canonical;
+    }
+  } catch (e) {
+    Logger.log('getCdrNameMap_ skipped: ' + e.message);
+  }
+  _cdrNameMapCache = map;
+  _cdrNameMapExpiry = now + (CONFIG.CDR_CACHE_TTL * 1000);
+  return map;
+}
+
+function cdrRosterHash_(rosterNames) {
+  if (!rosterNames || rosterNames.length === 0) return 'all';
+  var digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.MD5,
+    rosterNames.slice().sort().join('|'));
+  return digest.map(function (b) {
+    return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0');
+  }).join('');
+}
+
 /**
  * Core CDR data reader. Fetches per-agent DQE metrics for a date range,
  * filtered to CONFIG.CDR_DEPARTMENT's roster. Returns raw per-agent stats.
  * Isolated so a future Neon swap replaces only this function.
  */
 function getCdrAgentMetrics_(from, to, rosterNames) {
-  var cacheKey = CONFIG.CDR_CACHE_KEY + ':' + from + ':' + to;
+  var rHash = cdrRosterHash_(rosterNames);
+  var cacheKey = CONFIG.CDR_CACHE_KEY + ':' + rHash + ':' + from + ':' + to;
   var cache = CacheService.getScriptCache();
   var cached = cache.get(cacheKey);
   if (cached) {
@@ -5578,14 +5654,17 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var sheet = ss.getSheetByName('DQE Historical Data');
   if (!sheet) return { agents: {}, meta: { error: 'DQE Historical Data sheet not found' } };
 
+  var colWarning = validateCdrColumns_(sheet);
+
   var tz = ss.getSpreadsheetTimeZone();
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { agents: {}, meta: { rowsScanned: 0 } };
+  if (lastRow < 2) return { agents: {}, meta: { rowsScanned: 0, columnWarning: colWarning } };
 
   var range = sheet.getRange(2, 1, lastRow - 1, 34);
   var values = range.getValues();
   var displays = range.getDisplayValues();
 
+  var aliasMap = getCdrNameMap_();
   var nameSet = {};
   if (rosterNames) {
     for (var n = 0; n < rosterNames.length; n++) nameSet[rosterNames[n]] = true;
@@ -5596,9 +5675,11 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var rowsMatched = 0;
 
   for (var i = 0; i < values.length; i++) {
-    var agent = String(values[i][CDR.AGENT - 1] || '').trim();
-    if (!agent) continue;
-    if (/^A_Q_/.test(agent) || agent === 'Backup CSR') continue;
+    var rawAgent = String(values[i][CDR.AGENT - 1] || '').trim();
+    if (!rawAgent) continue;
+    if (isCdrQueueSentinel_(rawAgent)) continue;
+    var agent = (aliasMap[rawAgent] && useRoster && nameSet[aliasMap[rawAgent]])
+      ? aliasMap[rawAgent] : rawAgent;
     if (useRoster && !nameSet[agent]) continue;
 
     var dateIso = cdrRowDateIso_(values[i][CDR.DATE - 1], tz);
@@ -5633,8 +5714,16 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     delete a._dates; delete a.attSum; delete a.attCount;
   });
 
-  var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched } };
-  try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+  var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched, columnWarning: colWarning } };
+  try {
+    var payload = JSON.stringify(result);
+    if (payload.length > 90000) {
+      console.warn('CDR cache payload near 100KB limit: ' + payload.length + ' bytes for ' + cacheKey);
+    }
+    cache.put(cacheKey, payload, CONFIG.CDR_CACHE_TTL);
+  } catch (e) {
+    console.warn('CDR cache put failed: ' + (e.message || e));
+  }
   return result;
 }
 
@@ -5657,6 +5746,8 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   var sheet = ss.getSheetByName('DQE Historical Data');
   if (!sheet) return { daily: {}, agents: {} };
 
+  validateCdrColumns_(sheet);
+
   var tz = ss.getSpreadsheetTimeZone();
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { daily: {}, agents: {} };
@@ -5665,6 +5756,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   var values = range.getValues();
   var displays = range.getDisplayValues();
 
+  var aliasMap = getCdrNameMap_();
   var nameSet = {};
   if (rosterNames) {
     for (var n = 0; n < rosterNames.length; n++) nameSet[rosterNames[n]] = true;
@@ -5675,9 +5767,11 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   var agents = {};
 
   for (var i = 0; i < values.length; i++) {
-    var agent = String(values[i][CDR.AGENT - 1] || '').trim();
-    if (!agent) continue;
-    if (/^A_Q_/.test(agent) || agent === 'Backup CSR') continue;
+    var rawAgent = String(values[i][CDR.AGENT - 1] || '').trim();
+    if (!rawAgent) continue;
+    if (isCdrQueueSentinel_(rawAgent)) continue;
+    var agent = (aliasMap[rawAgent] && useRoster && nameSet[aliasMap[rawAgent]])
+      ? aliasMap[rawAgent] : rawAgent;
     if (useRoster && !nameSet[agent]) continue;
 
     var dateIso = cdrRowDateIso_(values[i][CDR.DATE - 1], tz);
@@ -5806,6 +5900,7 @@ function getMyMetrics(date) {
  */
 function getTeamMetrics(dateOrFrom, to) {
   try {
+    var t0 = Date.now();
     var callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
 
@@ -5908,9 +6003,14 @@ function getTeamMetrics(dateOrFrom, to) {
       }
     });
 
-    // Check for CDR agents NOT on the team-tools roster
+    // Direction 1: CDR agents NOT on the team-tools roster
     Object.keys(cdrResult.agents).forEach(function (name) {
       if (!repMap[name]) unmatchedAgents.push(name);
+    });
+    // Direction 2: team-tools reps with zero CDR match
+    var rosterWithNoCdr = [];
+    Object.keys(repMap).forEach(function (name) {
+      if (!cdrResult.agents[name]) rosterWithNoCdr.push(name);
     });
 
     teamTotals.pctAnswered = teamTotals.rung > 0
@@ -5928,8 +6028,53 @@ function getTeamMetrics(dateOrFrom, to) {
       reps: reps,
       teamTotals: teamTotals,
       unmatchedAgents: unmatchedAgents,
+      rosterWithNoCdr: rosterWithNoCdr,
       trend: trendData,
-      meta: cdrResult.meta,
+      meta: { rowsScanned: cdrResult.meta.rowsScanned, rowsMatched: cdrResult.meta.rowsMatched,
+              columnWarning: cdrResult.meta.columnWarning, computeMs: Date.now() - t0 },
     };
   } catch (err) { return { error: err.message }; }
+}
+
+/**
+ * Lightweight ambient check: yesterday's team answer rate for the sidebar
+ * badge. Manager-only. Returns { badge: { type, label, date } | null }.
+ */
+function getMetricsAmbient() {
+  try {
+    var emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { badge: null };
+
+    var cache = CacheService.getScriptCache();
+    var ck = 'metrics_ambient_v1';
+    var cached = cache.get(ck);
+    if (cached) { try { return JSON.parse(cached); } catch (_) {} }
+
+    var now = new Date();
+    var yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    var dow = yesterday.getDay();
+    if (dow === 0 || dow === 6) return { badge: null };
+    var yIso = Utilities.formatDate(yesterday, CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
+
+    var roster = getEmployeeRosterRows_();
+    var names = [];
+    for (var r = 1; r < roster.length; r++) {
+      var n = String(roster[r][EMP.NAME]).trim();
+      if (n) names.push(n);
+    }
+
+    var result = getCdrAgentMetrics_(yIso, yIso, names);
+    var totalRung = 0, totalAns = 0;
+    Object.keys(result.agents).forEach(function (k) {
+      totalRung += result.agents[k].totalRung;
+      totalAns += result.agents[k].totalAnswered;
+    });
+    var pct = totalRung > 0 ? Math.round((totalAns / totalRung) * 1000) / 10 : null;
+    var threshold = CONFIG.CDR_ALERT_THRESHOLD || 85;
+    var badge = (pct !== null && pct < threshold)
+      ? { type: 'warn', label: pct + '%', date: yIso } : null;
+    var out = { badge: badge, pctAnswered: pct, date: yIso };
+    try { cache.put(ck, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    return out;
+  } catch (_) { return { badge: null }; }
 }
