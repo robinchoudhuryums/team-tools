@@ -232,6 +232,13 @@ this section before touching the relevant area.
   lets an investigator open the rep's own Sheet for full detail
   (INV-32 still holds — the row keeps `noteId`). Don't "helpfully"
   re-add the subject / recipients to this audit row.
+- **ExternalEmailSent audit row logs only the recipient domain.**
+  `sendExternalEmail` writes `recipientDomain=<domain>; type=...;
+  pdfForms=...; interactiveForms=...; noteId=...` — NOT the raw
+  recipient address (a customer's personal email is PII; for a patient
+  it can be PHI-adjacent). The full recipient lives on the linked note's
+  `subformData.externalEmails[]` for the sending rep's own reference.
+  Same discipline as the PHI-free `CallNoteEmail` row above.
 - **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.**
   The email-preview modal injects the server-rendered body raw via
   `innerHTML` (`cn/script_callnotes.html` `cnRenderComposerPreviewStep_`,
@@ -281,18 +288,18 @@ this section before touching the relevant area.
   (e.g. action → training) clears `Resolved` as a side-effect, so
   stale `resolved=TRUE` from a prior action cycle doesn't resurface
   if the rep flips back to action.
-- **EOD trigger is per-manager-tz with a window check, not per-rep tz.**
-  `sendCallNotesEodDigest` runs once at `CONFIG.CALL_NOTES.EOD_WARNING_HOUR`
-  in the manager's tz, then walks the roster. For each enrolled rep it
-  checks whether *their* local clock is currently within
-  ± `EOD_WARNING_WINDOW_MINUTES` of the same hour. Reps in zones far
-  from the manager's tz get no digest on the day their local 5pm
-  doesn't intersect the trigger window — a tradeoff for keeping a
-  single trigger. If you have reps spread across more than ~6h of
-  timezones, switch to per-tz triggers or widen the window. The
-  window check uses circular distance (`Math.min(diff, 1440 - diff)`)
-  so a near-midnight `EOD_WARNING_HOUR` wraps correctly — dormant
-  for the default 17:00 hour, latent otherwise.
+- **EOD digest runs hourly and matches each rep's local EOD hour.**
+  `sendCallNotesEodDigest` is triggered `everyHours(1)`; on each run it
+  walks the roster and emails a rep only when their local hour equals
+  `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (hour-equality, not a ±minute
+  window). This reliably reaches reps in every timezone — the prior
+  once-at-manager-5pm window silently skipped offshore reps (IST/PHT)
+  whose local 5pm never coincided with the manager's. Most hourly runs
+  send nothing (no reps at their EOD hour with unresolved flags), so the
+  cost is just a cached roster walk. `EOD_WARNING_WINDOW_MINUTES` is
+  retained in CONFIG but is no longer used by the gate. A rare
+  trigger-jitter could double-match a rep within the same local hour — a
+  benign duplicate reminder, not a miss.
 - **`SubformData` (column P) is a generic per-note metadata JSON blob.**
   Originally introduced to persist email-composer subform selections
   (so a "re-send same departments" flow can re-open the composer
@@ -420,6 +427,13 @@ this section before touching the relevant area.
   `cnRenderStack_()` directly — the dispatcher routes to
   `cnRenderStack_` in Log and `cnRenderHistoryStack_` in History so
   flag/pin/edit/delete updates render correctly in both views.
+  `cnInstallCardDelegation_` also installs a delegated `keydown` on the
+  same container: Cmd/Ctrl+Enter inside any `[id^="cnE-"]` inline-edit
+  field saves that note (`cnSaveEdit_`). It's delegated (not a
+  per-element listener) so it survives a mid-edit re-render — an
+  optimistic flag toggle or ambient refresh recreates the edit field,
+  which would otherwise drop a per-element listener; `cnBeginEdit_` only
+  focuses the field.
 - **Training questions email managers immediately.**
   `submitCallNote` calls `notifyManagerTrainingQuestion_()` (best-
   effort, try/catch) when `flagType=training` and
@@ -763,7 +777,12 @@ this section before touching the relevant area.
   labeled (`Callback Number: ... \n Caller Name: ... \n ...`); the
   prior single-line pipe-separated format was retired in commit
   b87a1fe. `{transferredTo}` substitutes "N/A" when blank — mirrors
-  the email body's defaulting so paste + email line up.
+  the email body's defaulting so paste + email line up. The default
+  template includes a `Patient & TRX:` line (the `{patientAndTrx}` token
+  was always supported but was missing from the default template until
+  it was added — it now mirrors the email Call Details field order). Both
+  the server CONFIG default and the client fallback in
+  `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is four localStorage keys.** All per-
   browser, all wrapped in try/catch so a privacy-mode browser
   doesn't break:
@@ -1308,7 +1327,7 @@ manually for a fresh deploy or environment:
   installer now wires four triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm)
-    - `sendCallNotesEodDigest` (call-notes, daily manager-tz 5pm)
+    - `sendCallNotesEodDigest` (call-notes, hourly — emails each rep at their local EOD hour)
     - `sendCallNotesWeeklyDigests` (call-notes, Friday manager-tz 8am)
   Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
@@ -1352,11 +1371,14 @@ manually for a fresh deploy or environment:
   `archiveCallNoteTag`. Archive does NOT modify any notes; tags
   remain on every existing note's `subformData.tags[]`.
 - **Call-notes EOD + weekly digest knobs** are
-  `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17),
-  `EOD_WARNING_WINDOW_MINUTES` (default 30), and the
+  `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17 — the local hour at
+  which each rep gets the EOD digest) and the
   `installAutomationTriggers()` schedule (Friday 8am for the weekly
-  digest). Changing the hour requires re-running
-  `installAutomationTriggers()` so the trigger picks up the new value.
+  digest; the EOD digest is an hourly trigger). `EOD_WARNING_WINDOW_MINUTES`
+  is legacy — no longer consulted by the EOD gate (which is now
+  local-hour-equality). The EOD trigger is hourly, so deploying the
+  hourly change OR changing `EOD_WARNING_HOUR` requires re-running
+  `installAutomationTriggers()` for the new schedule/value to take effect.
 - **`CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED`** controls the
   voice-to-text mic on Issue / Resolution fields. Default `false`.
   Flip to `true` only after confirming the org's stance on audio
@@ -1665,8 +1687,8 @@ S21 | Call Notes — inline-edit-in-place from rolling card | Subsystem: Client 
 S22 | Call Notes — EOD digest fires for stale action flags | Subsystem: Server
   Steps:
     - As a rep, file an action-flagged note with timestamp older than `STALE_FLAG_HOURS` (manually edit the timestamp cell in the Notes tab to a few hours ago)
-    - From the Apps Script editor, run `sendCallNotesEodDigest`
-  Expected: Logger shows the rep was emailed (matches their local-tz EOD window) and unresolved-action count > 0. The email body has the warm-paper aesthetic + lists the unresolved note. A rep with no enrolled Sheet or no unresolved action flags is silently skipped.
+    - From the Apps Script editor, run `sendCallNotesEodDigest` while the rep's local time is within their EOD hour (`EOD_WARNING_HOUR`); in production an hourly trigger fires this automatically
+  Expected: Logger shows the rep was emailed (their local hour equals the EOD hour) and unresolved-action count > 0. The email body has the warm-paper aesthetic + lists the unresolved note. A rep whose local hour isn't the EOD hour, or with no enrolled Sheet or no unresolved action flags, is silently skipped.
 
 S23 | Call Notes — search by caller / issue | Subsystem: Server, Client (Call Notes)
   Steps:
@@ -1826,6 +1848,7 @@ S40 | Multi-line auto-copy format + N/A defaulting on Transferred To | Subsystem
     Callback Number: ...
     Caller Name: ...
     Relationship: ...
+    Patient & TRX: ...
     Issue: ...
     Transferred To: N/A
     Resolution: ...
