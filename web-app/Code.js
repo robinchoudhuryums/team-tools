@@ -4356,6 +4356,78 @@ function serveExternalForm_(token) {
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
 }
 
+/** G3: returns a completed fillable-form submission for in-app display, so the
+ *  rep who sent the form can review what the recipient entered without opening
+ *  the FormSubmissions sheet. Caller-scoped: the calling employee must be the
+ *  rep who created the token (FormTokens.CreatedBy) — a rep can't read another
+ *  rep's submissions. Read-only, no lock. Returns `{ submitted: false, status }`
+ *  when the linked token hasn't been completed yet. */
+function getFormSubmission(token) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    token = String(token || '').trim();
+    if (!token) return { error: 'No form token provided.' };
+
+    const tokenSheet = getOrCreateFormTokensSheet_();
+    const tLocated = findFormTokenRow_(tokenSheet, token);
+    if (!tLocated) return { error: 'Form not found.' };
+
+    const createdBy = String(tLocated.row[FT.CREATED_BY] || '').trim().toLowerCase();
+    if (createdBy !== String(emp.email || '').toLowerCase()) {
+      return { error: 'You can only view submissions for forms you sent.' };
+    }
+
+    const formType = String(tLocated.row[FT.FORM_TYPE] || '').trim();
+    let formName = formType;
+    const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+    for (let i = 0; i < catalog.length; i++) {
+      if (catalog[i].id === formType) { formName = catalog[i].name; break; }
+    }
+    const recipientName  = String(tLocated.row[FT.RECIPIENT_NAME] || '');
+    const recipientEmail = String(tLocated.row[FT.RECIPIENT_EMAIL] || '');
+    const status = String(tLocated.row[FT.STATUS] || '').trim().toLowerCase();
+
+    if (status !== 'submitted') {
+      return { submitted: false, status, formType, formName, recipientName, recipientEmail };
+    }
+
+    const subSheet = getOrCreateFormSubmissionsSheet_();
+    const rows = subSheet.getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
+      let formData = {};
+      try { formData = JSON.parse(rows[i][FS.FORM_DATA]) || {}; } catch (_) {}
+      const fields = Object.keys(formData).map(function (k) {
+        return { key: k, label: humanizeFormFieldKey_(k), value: formData[k] };
+      });
+      const signature = String(rows[i][FS.SIGNATURE_DATA] || '');
+      return {
+        submitted: true,
+        formType, formName, recipientName,
+        recipientEmail: String(rows[i][FS.RECIPIENT_EMAIL] || recipientEmail),
+        submittedAt: String(rows[i][FS.SUBMITTED_AT] || ''),
+        fields,
+        hasSignature: !!signature,
+        signature,
+      };
+    }
+    // Token says submitted but no row found — treat as not-yet-available.
+    return { submitted: false, status, formType, formName, recipientName, recipientEmail };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Humanizes a form-field key (id) into a display label: splits snake/kebab/
+ *  camelCase and title-cases. Used by getFormSubmission for the in-app viewer. */
+function humanizeFormFieldKey_(k) {
+  return String(k || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
