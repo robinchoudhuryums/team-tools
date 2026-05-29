@@ -305,12 +305,37 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.form) {
     return serveExternalForm_(e.parameter.form);
   }
-  // ── Internal app ───────────────────────────────────────────────────
-  // The HTML shell loads for anyone, but every google.script.run endpoint
-  // requires getEmployeeInfo_() (returns null for non-employees), so
-  // non-employees see the shell but can't load any data or perform any
-  // actions. This is intentional — Session.getActiveUser().getEmail()
-  // is unreliable with executeAs: USER_DEPLOYING + ANYONE_ANONYMOUS.
+  // ── Internal app — access gate ─────────────────────────────────────
+  // Defense in depth on top of the per-endpoint getEmployeeInfo_() check.
+  // We render an "Access Restricted" page only for a visitor we can
+  // POSITIVELY identify as outside the org: a non-empty Google email that
+  // is neither @umsupply.com NOR a registered employee. Two deliberate
+  // carve-outs:
+  //   • Empty email — anonymous / the executeAs:USER_DEPLOYING +
+  //     ANYONE_ANONYMOUS "unreliable" case — is fail-open: the shell loads
+  //     but every google.script.run endpoint returns null, so no data leaks.
+  //   • Registered employees on a non-@umsupply.com login (contractors,
+  //     e.g. PH/India reps) are never blocked — gating on domain alone
+  //     would lock them out, which is why the prior code skipped the gate.
+  const viewerEmail = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  if (viewerEmail && !/@umsupply\.com$/.test(viewerEmail) && !getEmployeeInfo_()) {
+    return HtmlService.createHtmlOutput(
+      '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>UMS Team Tools — Access Restricted</title>' +
+      '<style>body{margin:0;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;' +
+      'background:#f6f7f9;color:#0f1623;display:flex;align-items:center;justify-content:center;' +
+      'min-height:100vh}.card{max-width:420px;background:#fff;border:1px solid #dce0e7;' +
+      'border-radius:12px;padding:32px 34px;text-align:center}h1{font-size:20px;margin:0 0 10px}' +
+      'p{color:#3e4756;font-size:14px;line-height:1.6;margin:0}</style></head><body>' +
+      '<div class="card"><h1>Access Restricted</h1>' +
+      '<p>This tool is available only to Universal Medical Supply team members. ' +
+      'If you believe you should have access, contact your manager.</p></div></body></html>')
+      .setTitle('UMS Team Tools — Access Restricted')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+  // The HTML shell otherwise loads; every google.script.run endpoint still
+  // independently requires getEmployeeInfo_() (returns null for non-employees).
   //
   // Round 2 · 8x — pass the URL query params through the template eval.
   // Apps Script's HtmlService iframe (script.googleusercontent.com) doesn't
@@ -843,8 +868,18 @@ function getManagerDashboard() {
     for (let i = 1; i < toRows.length; i++) {
       if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'pending') continue;
       const submitted = String(toRows[i][TO.SUBMITTED_AT]).trim();
-      const subDate = submitted ? submitted.substring(0, 10) : '';
-      if (subDate >= pendingTrendStart && subDate <= todayStr) {
+      // SUBMITTED_AT is written in CONFIG.TIMEZONE ("yyyy-MM-dd HH:mm:ss").
+      // The trend day-keys below are in mgrTz, so convert the submission
+      // instant to the manager-tz calendar day before bucketing — otherwise
+      // submissions near local midnight land in the adjacent day's bar.
+      let subDate = '';
+      if (submitted) {
+        try {
+          const subInstant = Utilities.parseDate(submitted, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+          subDate = fmtDateTz_(subInstant, mgrTz);
+        } catch (e) { subDate = submitted.substring(0, 10); }
+      }
+      if (subDate && subDate >= pendingTrendStart && subDate <= todayStr) {
         pendingByDate[subDate] = (pendingByDate[subDate] || 0) + 1;
       }
     }
@@ -4226,6 +4261,13 @@ function submitFormByToken(token, formData) {
     } catch(_) {}
 
     return { success: true, message: 'Your form has been submitted successfully. Thank you!' };
+  } catch (err) {
+    // Public endpoint — never surface a raw exception to an external
+    // recipient. The token is only marked 'submitted' after a successful
+    // write, so a failure here leaves it 'pending' and the recipient can
+    // retry. Log for ops to investigate (e.g. oversized signature payload).
+    console.warn('submitFormByToken failed (token=' + token + '): ' + err.message);
+    return { success: false, error: 'We could not submit your form. Please try again, or contact UMS if the problem persists.' };
   } finally {
     lock.releaseLock();
   }
@@ -5867,7 +5909,10 @@ function getMyMetrics(date) {
         var sheet = getCallNotesSheet_(emp);
         var rows = sheet.getDataRange().getValues();
         for (var i = 1; i < rows.length; i++) {
-          if (String(rows[i][CN.DATE_LOCAL]) === date) noteCount++;
+          // CN.DATE_LOCAL is stored as a 'yyyy-MM-dd' string but Sheets
+          // auto-coerces it to a Date on read — must normalize, or the
+          // comparison silently never matches (note coverage shows 0).
+          if (normalizeDate_(rows[i][CN.DATE_LOCAL]) === date) noteCount++;
         }
       }
     } catch (_) {}
@@ -5972,7 +6017,10 @@ function getTeamMetrics(dateOrFrom, to) {
           var sheet = getCallNotesSheet_({ id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId });
           var rows = sheet.getDataRange().getValues();
           for (var i = 1; i < rows.length; i++) {
-            var nd = String(rows[i][CN.DATE_LOCAL]);
+            // Normalize: Sheets coerces the 'yyyy-MM-dd' DateLocal string to a
+            // Date on read, so raw String() never matches the range (note
+            // coverage silently reports 0). Mirror every other DATE_LOCAL read.
+            var nd = normalizeDate_(rows[i][CN.DATE_LOCAL]);
             if (nd >= from && nd <= toDate) noteCount++;
           }
         }
@@ -6050,11 +6098,19 @@ function getMetricsAmbient() {
     var cached = cache.get(ck);
     if (cached) { try { return JSON.parse(cached); } catch (_) {} }
 
+    // Compute "yesterday" in the manager's timezone (not the script's), so the
+    // badge date + weekend check don't drift near midnight / DST when the
+    // script tz differs from the manager tz. Derive the manager-tz calendar
+    // date string, step back one day via UTC math, and read the weekday off
+    // that tz-neutral date.
     var now = new Date();
-    var yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    var dow = yesterday.getDay();
+    var mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    var todayMgr = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
+    var yDate = new Date(todayMgr + 'T00:00:00Z');
+    yDate.setUTCDate(yDate.getUTCDate() - 1);
+    var yIso = isoFromUtc_(yDate);
+    var dow = yDate.getUTCDay();
     if (dow === 0 || dow === 6) return { badge: null };
-    var yIso = Utilities.formatDate(yesterday, CONFIG.MANAGER_TIMEZONE, 'yyyy-MM-dd');
 
     var roster = getEmployeeRosterRows_();
     var names = [];

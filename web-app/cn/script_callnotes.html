@@ -3110,7 +3110,7 @@ function cnSaveEdit_(noteId) {
     transferredTo: document.getElementById('cnE-transferred-' + noteId).value,
     resolution:    document.getElementById('cnE-resolution-' + noteId).value,
   };
-  var saveBtn = document.querySelector('[data-note-id="' + noteId + '"] [data-cn-action="save"]');
+  var saveBtn = document.querySelector('[data-note-id="' + noteId + '"] [data-cn-action="save-edit"]');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
   google.script.run
     .withSuccessHandler(function (res) {
