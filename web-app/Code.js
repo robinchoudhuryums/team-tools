@@ -2016,23 +2016,31 @@ function getCallNotesTagTaxonomy() {
           callNotesSheetId: String(sheetId).trim(),
         };
         const sheet = getCallNotesSheet_(repEmp);
-        const rows = sheet.getDataRange().getValues();
         repsScanned++;
-        for (let j = 1; j < rows.length; j++) {
-          totalNotes++;
-          const subRaw = rows[j][CN.SUBFORM_DATA];
-          if (!subRaw) continue;
-          let sub = null;
-          try { sub = JSON.parse(subRaw); } catch (e) { continue; }
-          if (!sub || !Array.isArray(sub.tags)) continue;
-          const dateLocal = normalizeDate_(rows[j][CN.DATE_LOCAL]);
-          sub.tags.forEach(function (t) {
+        // S2: the taxonomy only needs the SubformData (tags) + DateLocal
+        // (lastSeen) columns — read those 2 columns instead of every note's
+        // full 16-column row (~8x fewer cells across all reps' history).
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          const rowN = lastRow - 1;
+          const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, rowN, 1).getValues();
+          const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, rowN, 1).getValues();
+          for (let j = 0; j < rowN; j++) {
+            totalNotes++;
+            const subRaw = subCol[j][0];
+            if (!subRaw) continue;
+            let sub = null;
+            try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+            if (!sub || !Array.isArray(sub.tags)) continue;
+            const dateLocal = normalizeDate_(dateCol[j][0]);
+            sub.tags.forEach(function (t) {
             const tag = String(t || '').trim().toLowerCase();
             if (!tag) return;
             if (!counts[tag]) counts[tag] = { tag: tag, count: 0, lastSeen: '', archived: !!archivedSet[tag] };
             counts[tag].count++;
             if (dateLocal > counts[tag].lastSeen) counts[tag].lastSeen = dateLocal;
-          });
+            });
+          }
         }
       } catch (e) { /* skip unreachable rep sheet */ }
     }
@@ -2277,6 +2285,40 @@ function managerGetCallNotes(repEmpId, date, filter) {
 }
 
 /** Manager search across all enrolled reps' call-notes Sheets. */
+/** S2: reads a per-rep call-notes sheet's data rows (full CN_HEADERS width)
+ *  as located {row, rowIndex} objects, bounded to [start, end] inclusive when
+ *  BOTH bounds are provided. Notes are appended in DateLocal order, so a date
+ *  range maps to a contiguous row slice (same assumption as
+ *  exportCallNotesRange / INV-46) — the bounded path scans only the 1-column
+ *  date range to find the slice, then reads just that block instead of every
+ *  rep's full history. When either bound is missing, returns ALL data rows
+ *  (callers that need the whole history — open-ended search — pass no range).
+ *  Callers still re-check each row's date defensively. */
+function readCallNoteRowsInRange_(sheet, start, end) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const n = lastRow - 1;
+  const out = [];
+  if (!start || !end) {
+    const vals = sheet.getRange(2, 1, n, CN_HEADERS.length).getValues();
+    for (let i = 0; i < vals.length; i++) out.push({ row: vals[i], rowIndex: i + 2 });
+    return out;
+  }
+  const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, n, 1).getValues();
+  let firstMatch = -1, lastMatch = -1;
+  for (let d = 0; d < dateCol.length; d++) {
+    const dl = normalizeDate_(dateCol[d][0]);
+    if (dl >= start && dl <= end) {
+      if (firstMatch < 0) firstMatch = d;
+      lastMatch = d;
+    }
+  }
+  if (firstMatch < 0) return [];
+  const block = sheet.getRange(firstMatch + 2, 1, lastMatch - firstMatch + 1, CN_HEADERS.length).getValues();
+  for (let i = 0; i < block.length; i++) out.push({ row: block[i], rowIndex: firstMatch + i + 2 });
+  return out;
+}
+
 function managerSearchCallNotes(query, field, repFilter, dateRange) {
   try {
     const callerEmp = getEmployeeInfo_();
@@ -2298,9 +2340,13 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
       try {
         target = { id: repId, name: repName, callNotesSheetId: String(sheetId).trim() };
         const sheet = getCallNotesSheet_(target);
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+        // Bounded read when a full date range is supplied; full scan for
+        // open-ended search. Per-note date re-checks below stay as defensive
+        // guards (and handle the partial-range case).
+        const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
+        const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
+        for (let i = 0; i < located.length; i++) {
+          const note = callNoteRowToObject_(located[i]);
           if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
           if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
           let hit = false;
@@ -2790,9 +2836,13 @@ function managerAggregateFlagged_(flagType, dateRange) {
       const repName = String(roster[r][EMP.NAME]).trim();
       try {
         const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+        // Bounded read when a full date range is supplied (the weekly digest
+        // passes a 7-day range — big win vs. scanning each rep's full
+        // history); full scan otherwise. Per-note re-checks stay defensive.
+        const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
+        const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
+        for (let i = 0; i < located.length; i++) {
+          const note = callNoteRowToObject_(located[i]);
           if (note.flagType !== flagType) continue;
           if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
           if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;

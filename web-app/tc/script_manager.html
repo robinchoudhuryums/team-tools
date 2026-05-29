@@ -624,7 +624,16 @@ function openDayEditModal(empId, empName) {
   var today = isoDateTz(tz);
   _deDate = today;
   document.getElementById('day-edit-subtitle').textContent = empName;
-  document.getElementById('de-date').value = today;
+  var deDateEl = document.getElementById('de-date');
+  deDateEl.value = today;
+  // Match the Adjust modal: no future edits (server rejects daysBack<0) and
+  // no edits older than the adjust window (CONFIG.ADJUST_WINDOW_DAYS, default
+  // 30 — server still enforces the real limit). Bound the picker so the
+  // manager gets UI prevention instead of a server rejection.
+  deDateEl.max = today;
+  var deMin = new Date(today + 'T00:00:00Z');
+  deMin.setUTCDate(deMin.getUTCDate() - 30);
+  deDateEl.min = deMin.toISOString().substring(0, 10);
   document.getElementById('de-clockin').value = '';
   document.getElementById('de-lunchout').value = '';
   document.getElementById('de-lunchin').value = '';
