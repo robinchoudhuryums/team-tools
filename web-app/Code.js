@@ -318,16 +318,12 @@ function doGet(e) {
   // so reading ?compact=1 / ?tool=X / ?prefill=… directly from the iframe
   // silently returns empty. The template injects serverQueryParams into
   // window.SERVER_QUERY_PARAMS so client code can read them reliably.
-  var params = {};
-  if (e && e.parameter) {
-    params = e.parameter;
-  }
-  var tpl = HtmlService.createTemplateFromFile('index');
-  tpl.serverQueryParams = params;
-  var html = tpl.evaluate();
-  html.setTitle('UMS Team Tools');
-  html.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  return html;
+  const tpl = HtmlService.createTemplateFromFile('index');
+  tpl.serverQueryParams = (e && e.parameter) || {};
+  return tpl
+    .evaluate()
+    .setTitle('UMS Team Tools')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function include(filename) {
