@@ -29,6 +29,10 @@ function getClockArea_() {
 
 function renderClockView(area) {
   const s = empState;
+  // Resolved shift schedule from the server (per-tz; PH agents 8:30, others
+  // 8:00 — see CONFIG.SHIFT_SCHEDULE / getShiftSchedule_). Drives the ribbon
+  // band + countdown before clock-in; both re-anchor to actual ClockIn after.
+  CLK_SCHEDULE = (s && s.schedule) ? s.schedule : null;
   const tzAbbr = s.timezoneAbbr || '';
   const tz = empTz();
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' }).format(new Date());
@@ -118,7 +122,7 @@ function computeShiftStats_(punches, tz) {
   }
 
   const firstInMin = toMin(firstClockIn.time);
-  const shiftEndMin = firstInMin + 9 * 60;
+  const shiftEndMin = firstInMin + clkSchedLenMin_();
   const fmtClk = (mm) => {
     const total = ((mm % 1440) + 1440) % 1440;
     const h = Math.floor(total / 60), m = Math.floor(total % 60);
@@ -231,6 +235,13 @@ const RIBBON_SPAN_MIN  = RIBBON_END_MIN - RIBBON_START_MIN;  // 960
 const RIBBON_DEFAULT_SHIFT_START = 8 * 60;   // 08:00 — default CST shift start (C3)
 const RIBBON_DEFAULT_SHIFT_LEN   = 9 * 60;   // 9h
 
+// Resolved shift schedule { startMin, lengthMin } from getEmployeeState
+// (CONFIG.SHIFT_SCHEDULE, per-tz). Set by renderClockView; null until then,
+// in which case the RIBBON_DEFAULT_* constants apply.
+let CLK_SCHEDULE = null;
+function clkSchedStartMin_() { return (CLK_SCHEDULE && typeof CLK_SCHEDULE.startMin === 'number') ? CLK_SCHEDULE.startMin : RIBBON_DEFAULT_SHIFT_START; }
+function clkSchedLenMin_()   { return (CLK_SCHEDULE && typeof CLK_SCHEDULE.lengthMin === 'number') ? CLK_SCHEDULE.lengthMin : RIBBON_DEFAULT_SHIFT_LEN; }
+
 function ribbonPct_(min) {
   if (typeof min !== 'number' || isNaN(min)) return 0;
   return Math.max(0, Math.min(100, ((min - RIBBON_START_MIN) / RIBBON_SPAN_MIN) * 100));
@@ -253,15 +264,15 @@ function renderDayRibbon_(punches, stats, tz) {
   // Determine the scheduled band. If the rep has clocked in, anchor to
   // their actual first ClockIn + 9h (better matches non-standard shifts).
   // Otherwise use the 8a–5p CST default per C3.
-  let schedStart = RIBBON_DEFAULT_SHIFT_START;
-  let schedEnd   = RIBBON_DEFAULT_SHIFT_START + RIBBON_DEFAULT_SHIFT_LEN;
+  let schedStart = clkSchedStartMin_();
+  let schedEnd   = clkSchedStartMin_() + clkSchedLenMin_();
   if (punches && punches.length) {
     const firstIn = punches.find(p => p.type === 'ClockIn');
     if (firstIn) {
       const firstInMin = ribbonTimeToMin_(firstIn.time);
       if (!isNaN(firstInMin)) {
         schedStart = firstInMin;
-        schedEnd   = firstInMin + RIBBON_DEFAULT_SHIFT_LEN;
+        schedEnd   = firstInMin + clkSchedLenMin_();
       }
     }
   }

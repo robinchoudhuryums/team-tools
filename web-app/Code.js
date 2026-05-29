@@ -41,6 +41,18 @@ const CONFIG = {
   AUTO_MISSED_ALERT_HOUR_IST: 6,
   AUTO_EXPORT_HOUR_IST:       12,
 
+  // ── Clock-view shift schedule ─────────────────────────────────────────
+  // Drives the day-ribbon scheduled band + the "until end of shift"
+  // countdown BEFORE a rep clocks in (once they clock in, both re-anchor to
+  // their actual ClockIn + the scheduled length — see INV-71). DEFAULT is the
+  // 8:00 AM–5:00 PM CST shift most agents work (C3); BY_TIMEZONE holds the
+  // handful of exceptions (PH agents start 8:30). Resolved by
+  // getShiftSchedule_ and shipped to the client via getEmployeeState.
+  SHIFT_SCHEDULE: {
+    DEFAULT:     { start: '08:00', end: '17:00' },
+    BY_TIMEZONE: { 'Asia/Manila': { start: '08:30', end: '17:00' } },
+  },
+
   // ── Metrics module (CDR integration) ──────────────────────────────────
   // Reads the CDR Report spreadsheet (same one backing the Department
   // Dashboard in call-data-reporting) to surface call-volume metrics
@@ -389,6 +401,7 @@ function getEmployeeState() {
       isManager: emp.isManager,
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
+      schedule: getShiftSchedule_(empTz),
       ptoEnabled: !!(CONFIG.ENABLE_PTO_TRACKING && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
@@ -5395,6 +5408,23 @@ function assertManagerCaller_(label) {
 
 function tzAbbr_(tz) { return TZ_ABBR[tz] || tz; }
 function empTz_(emp) { return (emp && emp.timezone) ? emp.timezone : CONFIG.TIMEZONE; }
+
+/** Resolves the Clock-view shift schedule for a rep's timezone from
+ *  CONFIG.SHIFT_SCHEDULE (per-tz override, else default). Returns
+ *  { startMin, lengthMin } in minutes-from-midnight for the client ribbon +
+ *  countdown. Falls back to 08:00 + 9h if config is missing/malformed. */
+function getShiftSchedule_(timezone) {
+  const cfg = CONFIG.SHIFT_SCHEDULE || {};
+  const sched = (cfg.BY_TIMEZONE && cfg.BY_TIMEZONE[timezone]) || cfg.DEFAULT || { start: '08:00', end: '17:00' };
+  const toMin = function (hm) {
+    const p = String(hm || '').split(':');
+    return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
+  };
+  const startMin = toMin(sched.start);
+  let endMin = toMin(sched.end);
+  if (!(endMin > startMin)) endMin = startMin + 540; // guard → 9h
+  return { startMin: startMin, lengthMin: endMin - startMin };
+}
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
 function safeTimezone_(tz) {
