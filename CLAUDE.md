@@ -1018,6 +1018,19 @@ this section before touching the relevant area.
   (`good` / `warn` / `crit`). Per-rep table preserved at the
   bottom of Team Metrics. Shared helpers: `mTrendAvg_`,
   `mBuildHeroSparkSvg_`, `mRailRow_`.
+- **Note coverage + count have a single source of truth.**
+  `cnNoteCoverage_(noteCount, answeredCalls)` (whole-number percent,
+  or null when there's no answered-call denominator) and
+  `countCallNotesInRange_(emp, from, to)` (date-normalized note count)
+  are used by `getMyMetrics`, `getTeamMetrics` (per-rep + team
+  totals), and `managerGetShiftStats`. They exist so the three
+  callsites can't drift apart — the F1 regression (raw
+  `String(CN.DATE_LOCAL)` reads silently returning 0 coverage)
+  happened because the count was duplicated inline. New Metrics /
+  Stats surfaces must reuse these helpers rather than re-deriving the
+  ratio; `countCallNotesInRange_` honors the `CN.DATE_LOCAL`
+  normalize gotcha. Same maintenance discipline as `CN_EMAIL_PALETTE`
+  and `LEAVE_DEDUCTION_CLIENT`.
 - **Compact pop-out is 380px wide.** `popOutCurrentView()` opens
   the named `umsTeamToolsCompact` window at 380×780 (narrowed from
   the prior 440 in the Console redesign — sized to fit the rep's
