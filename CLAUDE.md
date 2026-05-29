@@ -1029,12 +1029,18 @@ this section before touching the relevant area.
   dashed scheduled band, filled accent-green work segments + dashed
   warn-toned lunch segment, vertical punch markers with mono
   labels, and a pulsing accent-green now-cursor while the rep is
-  mid-shift. The scheduled band anchors to first-ClockIn + 9h once
-  the rep has clocked in; before that it shows the 8:00 AM – 5:00
-  PM CST default per the C3 decision (most UMS CSR agents work that
-  shift, with 1–2 exceptions). Per-rep schedule data does not exist
-  server-side — this is the placeholder until a schedule editor
-  lands. The now-cursor is refreshed every 60s by
+  mid-shift. The scheduled band anchors to first-ClockIn + the
+  scheduled length once the rep has clocked in; before that it shows
+  the rep's configured shift from `CONFIG.SHIFT_SCHEDULE` — a default
+  of 8:00 AM – 5:00 PM CST (9h, the shift most UMS CSR agents work,
+  per C3) plus per-timezone overrides (PH agents `Asia/Manila` =
+  8:30 AM – 5:00 PM = 8.5h). `getShiftSchedule_` resolves it
+  server-side by the rep's timezone and ships `{startMin, lengthMin}`
+  via `getEmployeeState`; the client reads it through `CLK_SCHEDULE`
+  (helpers `clkSchedStartMin_` / `clkSchedLenMin_`), falling back to
+  the `RIBBON_DEFAULT_*` constants if absent. There is still no
+  per-rep (vs. per-tz) schedule UI — add a `BY_TIMEZONE` entry for
+  any new exception. The now-cursor is refreshed every 60s by
   `startRibbonNowCursor_` / `stopRibbonNowCursor_`, which are
   bound to the existing `startClock` / `stopClock` lifecycle so
   the interval cleans up on tab nav-away.
@@ -1339,6 +1345,12 @@ manually for a fresh deploy or environment:
   `removeAutomationTriggers()` first.
 - **`MANAGER_TIMEZONE`** in CONFIG drives manager-dashboard
   display tz; change requires a redeploy.
+- **`CONFIG.SHIFT_SCHEDULE`** sets the Clock-view ribbon/countdown
+  shift: `DEFAULT` 8:00–17:00 CST + `BY_TIMEZONE` overrides (PH
+  `Asia/Manila` 8:30–17:00). Resolved per the rep's roster timezone
+  by `getShiftSchedule_`; add a `BY_TIMEZONE` entry for any new
+  shift exception. Change requires a redeploy (CONFIG, no Script
+  Property override).
 - **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
   call-notes Spreadsheet ID. Robin still copies the template Sheet,
   renames it for the rep, shares with the script-owner account, and
@@ -1509,7 +1521,7 @@ INV-67 | CDR enrichment in `managerGetShiftStats` is wrapped in a try/catch afte
 INV-68 | `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` are the isolated CDR data layer. Both open the CDR Report spreadsheet via `getCdrSS_()`, read `DQE Historical Data`, filter by date range + optional roster names, skip queue-sentinel rows via `isCdrQueueSentinel_()`. Both call `validateCdrColumns_()` on first access to check header positions against `CDR_EXPECTED_HEADERS` and `getCdrNameMap_()` to resolve Agent Alias Overrides before roster matching. Designed as the Option A (direct spreadsheet read) implementation — a future swap to Neon Postgres (Option C) replaces only these two functions + `getCdrSS_()` | Subsystem: Server
 INV-69 | `getManagerDashboard` returns `pendingTrend` (14 days, new pending submissions per day, INCLUDES today) + `missedTrend` (14 days, missed-clockout instances per day, EXCLUDES today since reps still mid-shift would always register as missed). Both computed in-memory from already-loaded `toRows` / `adpRows` (INV-13 honored — no extra Sheet reads). Used by the V4·E2 telemetry-strip sparklines on Missed + Pending cells | Subsystem: Server
 INV-70 | `getManagerDashboard` attaches `recentHours[]` (7 entries `{date, hours}`, oldest→newest, excludes today) to each `liveStatus` entry. Computed via one extra in-memory pass over already-loaded `adpRows` and `calcHours_`; days without both a `ClockIn` and a `ClockOut` are recorded as 0 hours. Used by the V4·E3 per-rep sparkline on the manager dashboard's live-status cards | Subsystem: Server
-INV-71 | Clock view's "until end of shift" countdown (in `buildStatusSentence_`) and the day ribbon's scheduled band (in `renderDayRibbon_`) both anchor to the rep's first `ClockIn` + 9h once they've clocked in; before that, both fall back to the 8:00–17:00 CST default per the C3 decision. Per-rep schedule data does not yet exist server-side — both paths will swap to the actual schedule when a schedule editor lands | Subsystem: Client (Time Clock views)
+INV-71 | Clock view's "until end of shift" countdown (in `buildStatusSentence_`) and the day ribbon's scheduled band (in `renderDayRibbon_`) both anchor to the rep's first `ClockIn` + the scheduled length once they've clocked in; before that, both fall back to the rep's configured shift from `CONFIG.SHIFT_SCHEDULE` (default 8:00–17:00 CST, per-timezone overrides — e.g. PH `Asia/Manila` 8:30–17:00). The schedule is resolved server-side by `getShiftSchedule_(timezone)` → `{startMin, lengthMin}`, shipped on `getEmployeeState`, and read client-side via `CLK_SCHEDULE` (`clkSchedStartMin_` / `clkSchedLenMin_`, falling back to `RIBBON_DEFAULT_*` if absent). Per-rep (vs. per-tz) schedules still aren't supported | Subsystem: Server + Client (Time Clock views)
 INV-72 | `LEAVE_DEDUCTION_CLIENT` in `tc/script_timeoff.html` must mirror server's `getLeaveDeduction_` (Code.js) for the PTO day modal's balance-after preview to compute correctly. The server still performs the actual deduction on submit (via `updateTimeOffStatus`'s Pending→Approved transition), so a drift causes UI mis-preview but not balance corruption. Adding a new leave type requires updating BOTH maps | Subsystem: Client (Time Clock views) + Server
 INV-73 | Day-ribbon now-cursor refresh interval (`_ribbonNowInterval`, 60s) is bound to the `startClock` / `stopClock` lifecycle via `startRibbonNowCursor_` / `stopRibbonNowCursor_`. When the Clock view is exited via tab navigation (Time Off / Manager / Call Notes / Metrics enters all call `stopClock` at the top), the interval clears alongside the 1Hz live-time interval | Subsystem: Client (Time Clock views)
 INV-74 | (Removed in Round 2 · 8b.) The Clock view's pay-period ledger cell + the `lazyUpdatePayPeriodCell_` lazy hook were both removed when the timesheet section moved to the Time / PTO tab. `loadTimesheet`'s success handler retains a `typeof === 'function'` guarded call as a defensive no-op | Subsystem: Client (Time Clock views)
