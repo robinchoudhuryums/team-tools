@@ -333,7 +333,12 @@
 // PUBLIC FORM CLIENT — self-contained, no dependencies on internal app code
 // ════════════════════════════════════════════════════════════════════════════
 
-var FORM_TOKEN = <?= JSON.stringify(formToken) ?>;
+// Unescaped print (<?!=) — the escaping <?= variant turns JSON.stringify's
+// double-quotes into &quot;, which is invalid JS and mangles the token (the
+// "Form not found" bug). JSON.stringify already escapes the string contents;
+// the <-replace neutralizes any </script> breakout, matching index.html's
+// SERVER_QUERY_PARAMS injection (INV-78).
+var FORM_TOKEN = <?!= JSON.stringify(formToken || '').replace(/</g, '\\u003c') ?>;
 var FORM_DATA = null;   // populated by getFormByToken
 var SIG_PAD = null;     // signature pad instance
 
