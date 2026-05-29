@@ -275,25 +275,33 @@ function renderTimeOffView(area, data) {
       const submittedAt = btn.dataset.submitted;
       const parts = date.split('-');
       const human = `${MONTH_NAMES[parseInt(parts[1],10)-1].slice(0,3)} ${parseInt(parts[2],10)}, ${parts[0]}`;
-      if (!confirm(`Cancel your time off request for ${human}?`)) return;
-      btn.disabled = true;
-      btn.textContent = '...';
-      google.script.run
-        .withSuccessHandler(r => {
-          if (!r.success) {
+      uiConfirm({
+        title: 'Cancel time off',
+        message: `Cancel your time off request for ${human}?`,
+        confirmLabel: 'Cancel request',
+        cancelLabel: 'Keep it',
+        tone: 'danger',
+      }).then(ok => {
+        if (!ok) return;
+        btn.disabled = true;
+        btn.textContent = '...';
+        google.script.run
+          .withSuccessHandler(r => {
+            if (!r.success) {
+              btn.disabled = false; btn.textContent = 'Cancel';
+              showToast((r.error||'Error'), 'toast-error');
+              return;
+            }
+            showToast('Request cancelled', 'toast-success');
+            renderLoading(area, 'Loading calendar…');
+            loadCalendar(calYear, calMonth);
+          })
+          .withFailureHandler(err => {
             btn.disabled = false; btn.textContent = 'Cancel';
-            showToast((r.error||'Error'), 'toast-error');
-            return;
-          }
-          showToast('Request cancelled', 'toast-success');
-          renderLoading(area, 'Loading calendar…');
-          loadCalendar(calYear, calMonth);
-        })
-        .withFailureHandler(err => {
-          btn.disabled = false; btn.textContent = 'Cancel';
-          showToast((err.message||'Server error'), 'toast-error');
-        })
-        .cancelTimeOffRequest(date, submittedAt);
+            showToast((err.message||'Server error'), 'toast-error');
+          })
+          .cancelTimeOffRequest(date, submittedAt);
+      });
     });
   });
 }

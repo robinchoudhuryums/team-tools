@@ -525,6 +525,127 @@ function showToast(msg, cls) {
   while (stack.children.length > 5) stack.firstChild.remove();
 }
 
+// ── Custom modal-styled confirm / prompt ──────────────────────────────────
+// Round 2 follow-on — Promise-returning replacements for window.confirm()
+// and window.prompt(). Use the app's existing .overlay / .modal vocabulary
+// so dialogs match dark mode + the Console redesign aesthetic. Returns:
+//   uiConfirm({ ...opts }) → Promise<boolean>
+//   uiPrompt({ ...opts })  → Promise<string|null> (null on cancel)
+//
+// Callsite pattern — replace:
+//   if (!confirm('msg')) return;
+//   // continue
+// with:
+//   uiConfirm({ message: 'msg' }).then(function (ok) {
+//     if (!ok) return;
+//     // continue
+//   });
+//
+// Esc cancels; Enter on a confirm fires OK; Enter inside a prompt input
+// also fires OK (submit). Click-outside the modal cancels. The dialog
+// auto-focuses (OK button for confirm; the text input for prompt).
+
+function uiConfirm(opts) {
+  opts = opts || {};
+  return new Promise(function (resolve) {
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay open ui-dialog';
+    const isDanger = opts.tone === 'danger';
+    const titleHtml = '<div class="modal-title">' + esc(opts.title || 'Confirm') + '</div>';
+    const bodyHtml = opts.message
+      ? '<div class="ui-dialog-body">' + esc(opts.message).replace(/\n/g, '<br>') + '</div>'
+      : '';
+    overlay.innerHTML =
+      '<div class="modal ui-dialog-modal">'
+        + titleHtml
+        + bodyHtml
+        + '<div class="modal-footer">'
+          + '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>'
+          + '<button type="button" class="btn-modal-ok ui-dialog-ok' + (isDanger ? ' is-danger' : '') + '">' + esc(opts.confirmLabel || 'Confirm') + '</button>'
+        + '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    let resolved = false;
+    const cleanup = function (result) {
+      if (resolved) return;
+      resolved = true;
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      resolve(result);
+    };
+    const onKey = function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(false); }
+      else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); cleanup(true); }
+    };
+    overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(false); });
+    overlay.querySelector('.ui-dialog-ok').addEventListener('click', function () { cleanup(true); });
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) cleanup(false); });
+    document.addEventListener('keydown', onKey, true);
+    setTimeout(function () {
+      const ok = overlay.querySelector('.ui-dialog-ok');
+      if (ok) ok.focus();
+    }, 30);
+  });
+}
+
+function uiPrompt(opts) {
+  opts = opts || {};
+  return new Promise(function (resolve) {
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay open ui-dialog';
+    const titleHtml = '<div class="modal-title">' + esc(opts.title || 'Enter value') + '</div>';
+    const messageHtml = opts.message
+      ? '<div class="ui-dialog-body">' + esc(opts.message).replace(/\n/g, '<br>') + '</div>'
+      : '';
+    overlay.innerHTML =
+      '<div class="modal ui-dialog-modal">'
+        + titleHtml
+        + messageHtml
+        + '<div class="field" style="margin-top:8px">'
+          + '<input type="text" class="ui-dialog-input" value="' + esc(opts.initialValue || '') + '" placeholder="' + esc(opts.placeholder || '') + '">'
+        + '</div>'
+        + '<div class="ui-dialog-err" style="display:none"></div>'
+        + '<div class="modal-footer">'
+          + '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>'
+          + '<button type="button" class="btn-modal-ok ui-dialog-ok">' + esc(opts.confirmLabel || 'OK') + '</button>'
+        + '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('.ui-dialog-input');
+    const errEl = overlay.querySelector('.ui-dialog-err');
+    let resolved = false;
+    const cleanup = function (result) {
+      if (resolved) return;
+      resolved = true;
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      resolve(result);
+    };
+    const submit = function () {
+      const val = input.value;
+      if (typeof opts.validator === 'function') {
+        const err = opts.validator(val);
+        if (err) {
+          errEl.textContent = err;
+          errEl.style.display = '';
+          input.focus();
+          return;
+        }
+      }
+      cleanup(val);
+    };
+    const onKey = function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(null); }
+      else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); submit(); }
+    };
+    overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(null); });
+    overlay.querySelector('.ui-dialog-ok').addEventListener('click', submit);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) cleanup(null); });
+    document.addEventListener('keydown', onKey, true);
+    setTimeout(function () { input.focus(); input.select(); }, 30);
+  });
+}
+
 // ── Modal accessibility: Escape-to-close + focus trap ─────────────────────
 document.addEventListener('keydown', function (e) {
   // Escape closes any open overlay

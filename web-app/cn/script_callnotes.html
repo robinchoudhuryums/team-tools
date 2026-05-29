@@ -3132,7 +3132,17 @@ function cnSaveEdit_(noteId) {
 }
 
 function cnDeleteNote_(noteId) {
-  if (!confirm('Delete this note? This cannot be undone.')) return;
+  uiConfirm({
+    title: 'Delete note',
+    message: 'Delete this note? This cannot be undone.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    cnDoDeleteNote_(noteId);
+  });
+}
+function cnDoDeleteNote_(noteId) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res.success) { showToast(res.error || 'Delete failed', 'toast-error'); return; }
@@ -3161,13 +3171,25 @@ function cnToggleFlag_(noteId, kind) {
   const prev = { flagType: note.flagType, resolved: note.resolved };
   const next = (note.flagType === kind) ? '' : kind;
 
-  var trainingQ = null;
   if (next === 'training') {
-    trainingQ = prompt('What question or concern would you like to flag for training?\n(Leave blank to skip)');
-    if (trainingQ === null) return;
-    trainingQ = trainingQ.trim() || null;
+    // uiPrompt is async — wrap the rest of the flow in the .then.
+    uiPrompt({
+      title: 'Flag for training',
+      message: 'What question or concern would you like to flag for training?\n(Leave blank to skip)',
+      initialValue: '',
+      placeholder: 'Optional training question',
+      confirmLabel: 'Flag',
+    }).then(function (raw) {
+      if (raw === null) return;
+      const trimmed = String(raw).trim() || null;
+      cnDoToggleFlag_(noteId, note, prev, next, trimmed);
+    });
+    return;
   }
+  cnDoToggleFlag_(noteId, note, prev, next, null);
+}
 
+function cnDoToggleFlag_(noteId, note, prev, next, trainingQ) {
   note._flagInFlight = true;
   note.flagType = next;
   if (prev.flagType !== next) note.resolved = false;
@@ -4767,20 +4789,27 @@ function cnMgrClearTrainingReply_(btn) {
   if (!row) return;
   const noteId = row.dataset.noteId;
   const repId  = row.dataset.repId;
-  if (!confirm('Clear the reply on this note?')) return;
-  btn.disabled = true;
-  google.script.run
-    .withSuccessHandler(function (res) {
-      btn.disabled = false;
-      if (!res.success) { showToast(res.error || 'Clear failed', 'toast-error'); return; }
-      showToast('Reply cleared', 'toast-success');
-      cnMgrLoadRepNotes_();
-    })
-    .withFailureHandler(function (err) {
-      btn.disabled = false;
-      showToast('Clear failed: ' + err.message, 'toast-error');
-    })
-    .setCallNoteTrainingReply(repId, noteId, '');
+  uiConfirm({
+    title: 'Clear reply',
+    message: 'Clear the reply on this note?',
+    confirmLabel: 'Clear',
+    tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false;
+        if (!res.success) { showToast(res.error || 'Clear failed', 'toast-error'); return; }
+        showToast('Reply cleared', 'toast-success');
+        cnMgrLoadRepNotes_();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false;
+        showToast('Clear failed: ' + err.message, 'toast-error');
+      })
+      .setCallNoteTrainingReply(repId, noteId, '');
+  });
 }
 
 function cnMgrRenderQueue_(host, results) {
@@ -5609,70 +5638,109 @@ function cnWireAdminTagActions_() {
 }
 
 function cnPromptRenameTag_(oldTag) {
-  const newTag = window.prompt(
-    'Rename tag "' + oldTag + '" to (lowercase kebab-case, 2–24 chars):',
-    oldTag);
-  if (newTag == null) return;
-  const trimmed = String(newTag).trim().toLowerCase();
-  if (!trimmed || trimmed === oldTag) return;
-  if (!window.confirm('Rename "' + oldTag + '" → "' + trimmed
-      + '" across all enrolled reps\' notes? This batch-edits every note that carries the old tag.')) return;
-  google.script.run
-    .withSuccessHandler(function (res) {
-      if (!res || !res.success) {
-        showToast((res && res.error) || 'Rename failed', 'toast-error');
-        return;
-      }
-      showToast('Renamed: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
-      cnLoadAdminAugment_();
-    })
-    .withFailureHandler(function (err) {
-      showToast((err && err.message) || 'Server error', 'toast-error');
-    })
-    .renameCallNoteTag(oldTag, trimmed);
+  uiPrompt({
+    title: 'Rename tag',
+    message: 'Rename "' + oldTag + '" to (lowercase kebab-case, 2–24 chars):',
+    initialValue: oldTag,
+    placeholder: 'new-tag-name',
+    validator: function (v) {
+      const t = String(v || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!t) return 'Tag is empty.';
+      if (t.length < 2 || t.length > 24) return 'Tag must be 2–24 characters.';
+      if (t === oldTag) return 'New name is the same as the current name.';
+      return '';
+    },
+  }).then(function (newTag) {
+    if (newTag == null) return;
+    const trimmed = String(newTag).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!trimmed || trimmed === oldTag) return;
+    uiConfirm({
+      title: 'Confirm rename',
+      message: 'Rename "' + oldTag + '" → "' + trimmed + '" across all enrolled reps\' notes? This batch-edits every note that carries the old tag.',
+      confirmLabel: 'Rename',
+    }).then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success) {
+            showToast((res && res.error) || 'Rename failed', 'toast-error');
+            return;
+          }
+          showToast('Renamed: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+          cnLoadAdminAugment_();
+        })
+        .withFailureHandler(function (err) {
+          showToast((err && err.message) || 'Server error', 'toast-error');
+        })
+        .renameCallNoteTag(oldTag, trimmed);
+    });
+  });
 }
 
 function cnPromptMergeTag_(sourceTag) {
-  const targetTag = window.prompt(
-    'Merge "' + sourceTag + '" INTO which existing tag? (lowercase kebab-case)',
-    '');
-  if (targetTag == null) return;
-  const trimmed = String(targetTag).trim().toLowerCase();
-  if (!trimmed || trimmed === sourceTag) return;
-  if (!window.confirm('Merge "' + sourceTag + '" → "' + trimmed
-      + '" across all enrolled reps\' notes? Source tag is removed; target tag stays or is added; notes carrying both keep only the target.')) return;
-  google.script.run
-    .withSuccessHandler(function (res) {
-      if (!res || !res.success) {
-        showToast((res && res.error) || 'Merge failed', 'toast-error');
-        return;
-      }
-      showToast('Merged: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
-      cnLoadAdminAugment_();
-    })
-    .withFailureHandler(function (err) {
-      showToast((err && err.message) || 'Server error', 'toast-error');
-    })
-    .mergeCallNoteTags(sourceTag, trimmed);
+  uiPrompt({
+    title: 'Merge tag',
+    message: 'Merge "' + sourceTag + '" INTO which existing tag? (lowercase kebab-case)',
+    initialValue: '',
+    placeholder: 'target-tag',
+    validator: function (v) {
+      const t = String(v || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!t) return 'Tag is empty.';
+      if (t.length < 2 || t.length > 24) return 'Tag must be 2–24 characters.';
+      if (t === sourceTag) return 'Target is the same as the source.';
+      return '';
+    },
+  }).then(function (targetTag) {
+    if (targetTag == null) return;
+    const trimmed = String(targetTag).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!trimmed || trimmed === sourceTag) return;
+    uiConfirm({
+      title: 'Confirm merge',
+      message: 'Merge "' + sourceTag + '" → "' + trimmed + '" across all enrolled reps\' notes? Source tag is removed; target tag stays or is added; notes carrying both keep only the target.',
+      confirmLabel: 'Merge',
+    }).then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success) {
+            showToast((res && res.error) || 'Merge failed', 'toast-error');
+            return;
+          }
+          showToast('Merged: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+          cnLoadAdminAugment_();
+        })
+        .withFailureHandler(function (err) {
+          showToast((err && err.message) || 'Server error', 'toast-error');
+        })
+        .mergeCallNoteTags(sourceTag, trimmed);
+    });
+  });
 }
 
 function cnDoArchiveTag_(tag, archived) {
   const verb = archived ? 'Archive' : 'Restore';
-  if (!window.confirm(verb + ' tag "' + tag + '"?' +
-      (archived ? ' Notes keep the tag; the Admin table will section it under Archived.' : ''))) return;
-  google.script.run
-    .withSuccessHandler(function (res) {
-      if (!res || !res.success) {
-        showToast((res && res.error) || (verb + ' failed'), 'toast-error');
-        return;
-      }
-      showToast(verb + 'd: ' + tag, 'toast-success');
-      cnLoadAdminAugment_();
-    })
-    .withFailureHandler(function (err) {
-      showToast((err && err.message) || 'Server error', 'toast-error');
-    })
-    .archiveCallNoteTag(tag, archived);
+  uiConfirm({
+    title: verb + ' tag',
+    message: verb + ' tag "' + tag + '"?' +
+      (archived ? '\n\nNotes keep the tag; the Admin table will section it under Archived.' : ''),
+    confirmLabel: verb,
+    tone: archived ? 'danger' : undefined,
+  }).then(function (ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) {
+          showToast((res && res.error) || (verb + ' failed'), 'toast-error');
+          return;
+        }
+        showToast(verb + 'd: ' + tag, 'toast-success');
+        cnLoadAdminAugment_();
+      })
+      .withFailureHandler(function (err) {
+        showToast((err && err.message) || 'Server error', 'toast-error');
+      })
+      .archiveCallNoteTag(tag, archived);
+  });
 }
 
 function cnRenderAdminBody_(cfg) {

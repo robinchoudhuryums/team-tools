@@ -510,8 +510,21 @@ function bindSelfUndoBtns() {
       const time = btn.dataset.time;
       const type = btn.dataset.type;
       const label = btn.dataset.label || type;
-      if (!confirm(`Undo your "${label}" punch at ${dispTime(time)}?\n\nThis only works within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)} min of the punch.`)) return;
-      btn.disabled = true;
+      uiConfirm({
+        title: 'Undo punch',
+        message: `Undo your "${label}" punch at ${dispTime(time)}?\n\nThis only works within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)} min of the punch.`,
+        confirmLabel: 'Undo',
+        tone: 'danger',
+      }).then(ok => {
+        if (!ok) return;
+        cnDoSelfUndo_(btn, date, time, type);
+      });
+    });
+  });
+}
+
+function cnDoSelfUndo_(btn, date, time, type) {
+  btn.disabled = true;
       google.script.run
         .withSuccessHandler(result => {
           if (!result.success) {
@@ -538,8 +551,6 @@ function bindSelfUndoBtns() {
           showToast((err.message||'Server error'), 'toast-error');
         })
         .selfDeletePunch(date, time, type);
-    });
-  });
 }
 
 // renderPtoRings + ptoRingSvg — removed in Round 2 (Phase 8d). The Clock
@@ -668,8 +679,14 @@ function handlePunch(punchType) {
   const nowStr = new Intl.DateTimeFormat('en-US', {
     timeZone: tz, hour: 'numeric', minute: '2-digit',
   }).format(new Date());
-  if (!confirm(`Record "${PUNCH_META[punchType].label}" at ${nowStr}?`)) return;
-  submitPunch(punchType, null);
+  uiConfirm({
+    title: 'Record punch',
+    message: `Record "${PUNCH_META[punchType].label}" at ${nowStr}?`,
+    confirmLabel: PUNCH_META[punchType].label,
+  }).then(ok => {
+    if (!ok) return;
+    submitPunch(punchType, null);
+  });
 }
 
 function submitPunch(punchType, custom) {
