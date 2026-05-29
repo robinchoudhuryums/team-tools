@@ -223,11 +223,13 @@
   }
   .cn-composer-tab svg { width: 13px; height: 13px; flex-shrink: 0; }
 
-  /* ─── ADMIN TAG TAXONOMY TABLE (Round 2 · 8h) ──────────────────── */
+  /* ─── ADMIN TAG TAXONOMY TABLE (Round 2 · 8h + follow-on actions) ── */
   .cn-tax-head,
   .cn-tax-row {
     display: grid;
-    grid-template-columns: 160px 1fr 60px 100px;
+    /* Round 2 follow-on — added Actions column; rebalanced for the row
+       buttons (Rename / Merge / Archive). */
+    grid-template-columns: 160px 1fr 50px 90px auto;
     gap: 12px; align-items: center;
     padding: 6px 0;
     font-family: var(--ui); font-size: 12px;
@@ -240,8 +242,16 @@
   }
   .cn-tax-row { border-bottom: 1px dashed var(--line); }
   .cn-tax-row:last-child { border-bottom: none; }
+  .cn-tax-row.is-archived { opacity: 0.7; }
   .cn-tax-tag {
     font-family: var(--mono); font-weight: 600; color: var(--ink);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .cn-tax-archived-pill {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 999px;
+    background: var(--paper-2); border: 1px solid var(--line);
   }
   .cn-tax-bar {
     height: 6px; background: var(--paper-2); border-radius: 3px;
@@ -257,6 +267,27 @@
   .cn-tax-last {
     font-family: var(--mono); font-size: 11px; color: var(--muted-2);
     font-variant-numeric: tabular-nums;
+  }
+  .cn-tax-actions {
+    display: inline-flex; gap: 4px; flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .cn-tax-act {
+    appearance: none; cursor: pointer;
+    font-family: var(--ui); font-size: 11px; font-weight: 500;
+    padding: 4px 8px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line); background: var(--paper-card); color: var(--ink);
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .cn-tax-act:hover { background: var(--paper-2); border-color: var(--border-strong); }
+  .cn-tax-act svg { width: 11px; height: 11px; }
+  .cn-tax-act.danger { color: var(--danger-deep); }
+  .cn-tax-act.danger:hover { background: var(--destructive-soft); border-color: var(--destructive); }
+  @media (max-width: 720px) {
+    .cn-tax-head,
+    .cn-tax-row { grid-template-columns: 1fr; }
+    .cn-tax-actions { justify-content: flex-start; }
   }
 
   /* ─── Q&A THREAD (Round 2 · 8g) ──────────────────────────────────── */
@@ -5450,6 +5481,9 @@ function cnLoadAdminAugment_() {
     if (done < 2) return;
     if (currentView !== 'callNotesAdmin') return;
     slot.innerHTML = cnRenderAdminAugmentHtml_(kpi, tax);
+    // Round 2 follow-on — wire the tag-row action buttons. Sentinel-guarded
+    // so repeated renders don't stack handlers.
+    cnWireAdminTagActions_();
   }
   google.script.run
     .withSuccessHandler(function (r) { kpi = r || null; done++; maybeRender(); })
@@ -5477,25 +5511,34 @@ function cnRenderAdminAugmentHtml_(kpi, tax) {
     + '<div class="tel-cell"><div class="tel-label">Reps</div><div class="tel-value">' + esc(String(repsCount)) + '</div><div class="tel-sub">enrolled scanned</div></div>'
     + '</div>';
 
-  // Tag taxonomy table
+  // Tag taxonomy table — Round 2 follow-on extends each row with
+  // Rename / Merge / Archive action buttons. Archived tags render with
+  // an "archived" pill + a Restore button instead.
   let taxHtml = '';
-  if (tax && Array.isArray(tax.tags) && tax.tags.length > 0) {
-    const max = Math.max.apply(null, tax.tags.map(function (t) { return t.count || 0; }));
-    const rowsHtml = tax.tags.slice(0, 50).map(function (t) {
-      const pct = max > 0 ? Math.round((t.count / max) * 100) : 0;
-      return '<div class="cn-tax-row">'
-        + '<div class="cn-tax-tag">' + esc(t.tag) + '</div>'
-        + '<div class="cn-tax-bar"><i style="width:' + pct + '%"></i></div>'
-        + '<div class="cn-tax-count">' + t.count + '</div>'
-        + '<div class="cn-tax-last">' + esc(t.lastSeen || '') + '</div>'
-      + '</div>';
+  const inUse = (tax && Array.isArray(tax.tags)) ? tax.tags : [];
+  const archivedOnly = (tax && Array.isArray(tax.archivedOnlyTags)) ? tax.archivedOnlyTags : [];
+  if (tax && (inUse.length > 0 || archivedOnly.length > 0)) {
+    const max = inUse.length > 0 ? Math.max.apply(null, inUse.map(function (t) { return t.count || 0; })) : 0;
+    const inUseRowsHtml = inUse.slice(0, 50).map(function (t) {
+      return cnRenderTagRow_(t, max);
     }).join('');
+    let archivedSection = '';
+    if (archivedOnly.length > 0) {
+      const archRowsHtml = archivedOnly.slice(0, 50).map(function (t) {
+        return cnRenderTagRow_(t, 0);  // 0-bar; rows are archived-only
+      }).join('');
+      archivedSection =
+        '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px">Archived (not in any current note)</div>'
+        + archRowsHtml;
+    }
     taxHtml =
       '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">'
         + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy</div>'
-        + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Free-text tags reps applied across all enrolled per-rep Sheets. Read-only for now; rename / merge / archive actions land in a follow-up.</div>'
-        + '<div class="cn-tax-head"><div class="cn-tax-tag">Tag</div><div class="cn-tax-bar">Usage</div><div class="cn-tax-count">Notes</div><div class="cn-tax-last">Last seen</div></div>'
-        + rowsHtml
+        + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Free-text tags reps applied across all enrolled per-rep Sheets. Rename to merge a typo; Merge to consolidate; Archive to deprecate (notes keep their tags; future-suggestion surfaces hide it).</div>'
+        + (inUse.length > 0
+            ? '<div class="cn-tax-head"><div class="cn-tax-tag">Tag</div><div class="cn-tax-bar">Usage</div><div class="cn-tax-count">Notes</div><div class="cn-tax-last">Last seen</div><div class="cn-tax-actions">Actions</div></div>' + inUseRowsHtml
+            : '<div style="font-size:12px;color:var(--muted)">No tags in active use.</div>')
+        + archivedSection
       + '</div>';
   } else if (tax) {
     taxHtml =
@@ -5506,6 +5549,130 @@ function cnRenderAdminAugmentHtml_(kpi, tax) {
   }
 
   return kpiHtml + taxHtml;
+}
+
+/** Round 2 follow-on — one tag-table row with usage bar + Rename / Merge
+ *  / Archive action buttons. Archived tags render with an archived pill
+ *  in place of the rename/merge buttons and a Restore button instead of
+ *  Archive. data-tag attributes drive the click delegation in
+ *  cnWireAdminTagActions_. */
+function cnRenderTagRow_(t, maxCount) {
+  const pct = (maxCount > 0 && t.count) ? Math.round((t.count / maxCount) * 100) : 0;
+  const tagAttr = esc(t.tag);
+  const archived = !!t.archived;
+  const archivedBadge = archived
+    ? ' <span class="cn-tax-archived-pill">archived</span>'
+    : '';
+  let actionsHtml;
+  if (archived) {
+    actionsHtml =
+      '<button class="cn-tax-act" data-tax-action="unarchive" data-tax-tag="' + tagAttr + '" title="Restore tag from archive">'
+        + icon('undo', 12) + ' Restore</button>';
+  } else {
+    actionsHtml =
+      '<button class="cn-tax-act" data-tax-action="rename" data-tax-tag="' + tagAttr + '" title="Rename across all notes">'
+        + icon('adjust', 12) + ' Rename</button>'
+      + '<button class="cn-tax-act" data-tax-action="merge" data-tax-tag="' + tagAttr + '" title="Merge into another tag">'
+        + icon('plus', 12) + ' Merge</button>'
+      + '<button class="cn-tax-act danger" data-tax-action="archive" data-tax-tag="' + tagAttr + '" title="Archive (hides from future suggestions; notes keep the tag)">'
+        + icon('trash', 12) + ' Archive</button>';
+  }
+  return '<div class="cn-tax-row' + (archived ? ' is-archived' : '') + '">'
+    + '<div class="cn-tax-tag">' + esc(t.tag) + archivedBadge + '</div>'
+    + '<div class="cn-tax-bar"><i style="width:' + pct + '%"></i></div>'
+    + '<div class="cn-tax-count">' + (t.count || 0) + '</div>'
+    + '<div class="cn-tax-last">' + esc(t.lastSeen || '—') + '</div>'
+    + '<div class="cn-tax-actions">' + actionsHtml + '</div>'
+  + '</div>';
+}
+
+/** Round 2 follow-on — wires click delegation for the tag-table action
+ *  buttons. Installed once per Admin view enter via a sentinel on the
+ *  augment slot to avoid duplicate handlers across re-renders. Each
+ *  action confirms with the manager before firing the server endpoint;
+ *  on success, reloads the taxonomy via cnLoadAdminAugment_. */
+function cnWireAdminTagActions_() {
+  const slot = document.getElementById('cn-admin-augment');
+  if (!slot || slot._taxActionsBound) return;
+  slot._taxActionsBound = true;
+  slot.addEventListener('click', function (e) {
+    const btn = e.target.closest('[data-tax-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-tax-action');
+    const tag = btn.getAttribute('data-tax-tag');
+    if (!tag) return;
+    if (action === 'rename') cnPromptRenameTag_(tag);
+    else if (action === 'merge') cnPromptMergeTag_(tag);
+    else if (action === 'archive') cnDoArchiveTag_(tag, true);
+    else if (action === 'unarchive') cnDoArchiveTag_(tag, false);
+  });
+}
+
+function cnPromptRenameTag_(oldTag) {
+  const newTag = window.prompt(
+    'Rename tag "' + oldTag + '" to (lowercase kebab-case, 2–24 chars):',
+    oldTag);
+  if (newTag == null) return;
+  const trimmed = String(newTag).trim().toLowerCase();
+  if (!trimmed || trimmed === oldTag) return;
+  if (!window.confirm('Rename "' + oldTag + '" → "' + trimmed
+      + '" across all enrolled reps\' notes? This batch-edits every note that carries the old tag.')) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        showToast((res && res.error) || 'Rename failed', 'toast-error');
+        return;
+      }
+      showToast('Renamed: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+      cnLoadAdminAugment_();
+    })
+    .withFailureHandler(function (err) {
+      showToast((err && err.message) || 'Server error', 'toast-error');
+    })
+    .renameCallNoteTag(oldTag, trimmed);
+}
+
+function cnPromptMergeTag_(sourceTag) {
+  const targetTag = window.prompt(
+    'Merge "' + sourceTag + '" INTO which existing tag? (lowercase kebab-case)',
+    '');
+  if (targetTag == null) return;
+  const trimmed = String(targetTag).trim().toLowerCase();
+  if (!trimmed || trimmed === sourceTag) return;
+  if (!window.confirm('Merge "' + sourceTag + '" → "' + trimmed
+      + '" across all enrolled reps\' notes? Source tag is removed; target tag stays or is added; notes carrying both keep only the target.')) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        showToast((res && res.error) || 'Merge failed', 'toast-error');
+        return;
+      }
+      showToast('Merged: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+      cnLoadAdminAugment_();
+    })
+    .withFailureHandler(function (err) {
+      showToast((err && err.message) || 'Server error', 'toast-error');
+    })
+    .mergeCallNoteTags(sourceTag, trimmed);
+}
+
+function cnDoArchiveTag_(tag, archived) {
+  const verb = archived ? 'Archive' : 'Restore';
+  if (!window.confirm(verb + ' tag "' + tag + '"?' +
+      (archived ? ' Notes keep the tag; the Admin table will section it under Archived.' : ''))) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        showToast((res && res.error) || (verb + ' failed'), 'toast-error');
+        return;
+      }
+      showToast(verb + 'd: ' + tag, 'toast-success');
+      cnLoadAdminAugment_();
+    })
+    .withFailureHandler(function (err) {
+      showToast((err && err.message) || 'Server error', 'toast-error');
+    })
+    .archiveCallNoteTag(tag, archived);
 }
 
 function cnRenderAdminBody_(cfg) {

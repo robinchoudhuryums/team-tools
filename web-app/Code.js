@@ -1950,13 +1950,18 @@ function getEnrolledCallNotesReps() {
 /** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every
  *  enrolled rep's call-notes Sheet for subformData.tags[] entries and
  *  returns unique tags with usage counts. Manager-gated; read-only.
- *  Returns: { tags: [{ tag, count, lastSeen }], totalNotes, repsScanned }. */
+ *  Returns: { tags: [{ tag, count, lastSeen, archived }], archivedOnlyTags,
+ *  totalNotes, repsScanned }. Archived tags (from CN_ARCHIVED_TAGS Script
+ *  Property) are marked but kept in the response so the admin UI can show
+ *  them with a "Restore" action. archivedOnlyTags carries tags that are
+ *  archived but no longer in use (count=0). */
 function getCallNotesTagTaxonomy() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const archivedSet = getArchivedTagsSet_();
     const roster = getEmployeeRosterRows_();
-    const counts = {};       // tag → { tag, count, lastSeen }
+    const counts = {};       // tag → { tag, count, lastSeen, archived }
     let totalNotes = 0;
     let repsScanned = 0;
     for (let i = 1; i < roster.length; i++) {
@@ -1981,17 +1986,221 @@ function getCallNotesTagTaxonomy() {
           sub.tags.forEach(function (t) {
             const tag = String(t || '').trim().toLowerCase();
             if (!tag) return;
-            if (!counts[tag]) counts[tag] = { tag: tag, count: 0, lastSeen: '' };
+            if (!counts[tag]) counts[tag] = { tag: tag, count: 0, lastSeen: '', archived: !!archivedSet[tag] };
             counts[tag].count++;
             if (dateLocal > counts[tag].lastSeen) counts[tag].lastSeen = dateLocal;
           });
         }
       } catch (e) { /* skip unreachable rep sheet */ }
     }
+    // Archived-but-unused tags — admins may want to keep them visible to
+    // restore later, so emit them as a separate list.
+    const archivedOnlyTags = [];
+    Object.keys(archivedSet).forEach(function (tag) {
+      if (!counts[tag]) archivedOnlyTags.push({ tag: tag, count: 0, lastSeen: '', archived: true });
+    });
+    archivedOnlyTags.sort(function (a, b) { return a.tag.localeCompare(b.tag); });
     const tags = Object.keys(counts).map(function (k) { return counts[k]; });
     tags.sort(function (a, b) { return b.count - a.count || a.tag.localeCompare(b.tag); });
-    return { tags: tags, totalNotes: totalNotes, repsScanned: repsScanned };
+    return { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned };
   } catch (err) { return { error: err.message }; }
+}
+
+// ── Round 2 follow-on (Tag taxonomy actions) — Admin tag mutations ────────
+// rename / merge / archive operate across every enrolled rep's per-rep Sheet.
+// Manager-gated, locked at the project level (LockService.getScriptLock).
+// Each writes a CallNoteTagAdmin audit row on the calling manager's home
+// audit sheet recording the action + the affected tag(s) + counts touched.
+
+const CN_ARCHIVED_TAGS_PROP = 'CN_ARCHIVED_TAGS';
+
+/** Returns { tag: true } for each archived tag stored in Script Properties.
+ *  The property is a JSON-encoded array of lowercase tag strings; missing
+ *  or malformed values return an empty set (defensive). */
+function getArchivedTagsSet_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(CN_ARCHIVED_TAGS_PROP);
+    if (!raw) return {};
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return {};
+    const out = {};
+    arr.forEach(function (t) {
+      const tag = String(t || '').trim().toLowerCase();
+      if (tag) out[tag] = true;
+    });
+    return out;
+  } catch (e) { return {}; }
+}
+
+/** Writes the archived-tags set back to Script Properties as a JSON array
+ *  of lowercase tag strings. Empty set removes the property. */
+function setArchivedTagsSet_(setObj) {
+  const props = PropertiesService.getScriptProperties();
+  const arr = Object.keys(setObj || {}).filter(function (k) { return !!setObj[k]; }).sort();
+  if (arr.length === 0) {
+    props.deleteProperty(CN_ARCHIVED_TAGS_PROP);
+  } else {
+    props.setProperty(CN_ARCHIVED_TAGS_PROP, JSON.stringify(arr));
+  }
+}
+
+/** Validates + normalizes a tag string. Mirrors sanitizeTagsArray_'s
+ *  per-tag rule: lowercase kebab-case, 2–24 chars. Returns '' on invalid. */
+function normalizeTagForAdmin_(raw) {
+  const lower = String(raw || '').trim().toLowerCase();
+  const tag = lower.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (tag.length < 2 || tag.length > 24) return '';
+  return tag;
+}
+
+/** Walks every enrolled rep's Sheet; for each note whose subformData.tags
+ *  contains `oldTag`, applies `transform(tags)` to the array and writes
+ *  the new subformData JSON back. Returns aggregate { repsTouched,
+ *  notesUpdated }. Wrapped in caller's lock — DO NOT call without the
+ *  caller holding LockService.getScriptLock. */
+function applyTagTransformAcrossReps_(oldTag, transform) {
+  const roster = getEmployeeRosterRows_();
+  let repsTouched = 0, notesUpdated = 0;
+  for (let i = 1; i < roster.length; i++) {
+    const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+    if (!sheetId) continue;
+    try {
+      const repEmp = {
+        id: String(roster[i][EMP.ID]).trim(),
+        callNotesSheetId: String(sheetId).trim(),
+      };
+      const sheet = getCallNotesSheet_(repEmp);
+      const rows = sheet.getDataRange().getValues();
+      let repHadUpdate = false;
+      for (let j = 1; j < rows.length; j++) {
+        const subRaw = rows[j][CN.SUBFORM_DATA];
+        if (!subRaw) continue;
+        let sub = null;
+        try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+        if (!sub || !Array.isArray(sub.tags)) continue;
+        if (sub.tags.indexOf(oldTag) < 0) continue;
+        const next = transform(sub.tags.slice());
+        if (!arraysEqual_(next, sub.tags)) {
+          sub.tags = next;
+          sheet.getRange(j + 1, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(sub));
+          notesUpdated++;
+          repHadUpdate = true;
+        }
+      }
+      if (repHadUpdate) repsTouched++;
+    } catch (e) { /* skip unreachable rep sheet */ }
+  }
+  return { repsTouched: repsTouched, notesUpdated: notesUpdated };
+}
+
+function arraysEqual_(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Round 2 follow-on (8h Admin tag actions) — Renames a tag across every
+ *  enrolled rep's notes. Manager-gated, locked at the project level so
+ *  concurrent submits / other tag mutations can't interleave. If the new
+ *  tag already exists on a note, the rename collapses (dedupes) by
+ *  dropping the old tag from those rows. Audit row records old+new+counts. */
+function renameCallNoteTag(oldTag, newTag) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const oldT = normalizeTagForAdmin_(oldTag);
+    const newT = normalizeTagForAdmin_(newTag);
+    if (!oldT) return { success: false, error: 'Invalid source tag.' };
+    if (!newT) return { success: false, error: 'Invalid target tag (lowercase kebab-case, 2–24 chars).' };
+    if (oldT === newT) return { success: false, error: 'Source and target are the same tag.' };
+    const result = applyTagTransformAcrossReps_(oldT, function (tags) {
+      // Replace oldT with newT; dedupe so the same tag never appears twice.
+      const seen = {};
+      const out = [];
+      tags.forEach(function (t) {
+        const next = (t === oldT) ? newT : t;
+        if (!seen[next]) { seen[next] = true; out.push(next); }
+      });
+      return out;
+    });
+    writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
+      `rename ${oldT} → ${newT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
+      callerEmp.email);
+    return { success: true, action: 'rename', oldTag: oldT, newTag: newT,
+             repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Round 2 follow-on (8h Admin tag actions) — Merges sourceTag into
+ *  targetTag across every enrolled rep's notes. Identical to rename for
+ *  the row-level operation (the dedupe in the transform handles the case
+ *  where the note already has the target). The distinction from rename is
+ *  primarily UX: the manager confirmed they expect targetTag to already
+ *  exist on some notes. Audit row labels it 'merge' for trail clarity. */
+function mergeCallNoteTags(sourceTag, targetTag) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const srcT = normalizeTagForAdmin_(sourceTag);
+    const tgtT = normalizeTagForAdmin_(targetTag);
+    if (!srcT) return { success: false, error: 'Invalid source tag.' };
+    if (!tgtT) return { success: false, error: 'Invalid target tag (lowercase kebab-case, 2–24 chars).' };
+    if (srcT === tgtT) return { success: false, error: 'Source and target are the same tag.' };
+    const result = applyTagTransformAcrossReps_(srcT, function (tags) {
+      const seen = {};
+      const out = [];
+      tags.forEach(function (t) {
+        const next = (t === srcT) ? tgtT : t;
+        if (!seen[next]) { seen[next] = true; out.push(next); }
+      });
+      return out;
+    });
+    writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
+      `merge ${srcT} → ${tgtT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
+      callerEmp.email);
+    return { success: true, action: 'merge', sourceTag: srcT, targetTag: tgtT,
+             repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Round 2 follow-on (8h Admin tag actions) — Archives or unarchives a
+ *  tag. Archive does NOT remove the tag from existing notes — they
+ *  continue to render their tag chips. Archive only hides the tag from
+ *  future tag-suggestion surfaces (when those land — none exist today)
+ *  and visually flags it in the Admin taxonomy table so managers see it
+ *  as a deprecated category. Stored in Script Property CN_ARCHIVED_TAGS
+ *  (JSON array of lowercase tag strings). */
+function archiveCallNoteTag(tag, archived) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const t = normalizeTagForAdmin_(tag);
+    if (!t) return { success: false, error: 'Invalid tag.' };
+    const set = getArchivedTagsSet_();
+    const wasArchived = !!set[t];
+    const wantArchived = !!archived;
+    if (wasArchived === wantArchived) {
+      return { success: true, action: wantArchived ? 'archive' : 'unarchive',
+               tag: t, alreadyInState: true };
+    }
+    if (wantArchived) set[t] = true;
+    else delete set[t];
+    setArchivedTagsSet_(set);
+    writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
+      `${wantArchived ? 'archive' : 'unarchive'} ${t}`,
+      callerEmp.email);
+    return { success: true, action: wantArchived ? 'archive' : 'unarchive', tag: t };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 /** Manager view of any single rep's notes. */
