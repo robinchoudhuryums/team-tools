@@ -65,6 +65,7 @@ const CONFIG = {
       'Callback Number: {callback}\n' +
       'Caller Name: {caller}\n' +
       'Relationship: {relationship}\n' +
+      'Patient & TRX: {patientAndTrx}\n' +
       'Issue: {issue}\n' +
       'Transferred To: {transferredTo}\n' +
       'Resolution: {resolution}',
@@ -3804,10 +3805,17 @@ function sendExternalEmail(payload) {
   }
 
   // ── Audit ─────────────────────────────────────────────────────────
+  // Keep the shared AuditLog free of the raw recipient address (a customer's
+  // personal email is PII; for a patient it can be PHI-adjacent). Log only the
+  // recipient domain — enough to tell where it went without storing the
+  // address. The full recipient is on the linked note's
+  // subformData.externalEmails[] for the sending rep's own reference.
   const formsList = formIds.length > 0 ? formIds.join(',') : 'none';
   const interactiveList = interactiveForms.length > 0 ? interactiveForms.join(',') : 'none';
+  const recipientDomain = recipientEmail.indexOf('@') >= 0
+    ? recipientEmail.slice(recipientEmail.indexOf('@') + 1) : '(none)';
   writeAuditLog_(emp, 'ExternalEmailSent', '', '', false, 0,
-    'to=' + recipientEmail + '; type=' + recipientType +
+    'recipientDomain=' + recipientDomain + '; type=' + recipientType +
     '; pdfForms=' + formsList +
     '; interactiveForms=' + interactiveList +
     (noteId ? '; noteId=' + noteId : ''));
@@ -4459,14 +4467,16 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('runDailyExportCheck')
     .timeBased().atHour(CONFIG.AUTO_EXPORT_HOUR_IST).everyDays(1)
     .inTimezone(CONFIG.TIMEZONE).create();
-  // Call Notes EOD warning — runs once at the manager-tz EOD hour; the
-  // handler walks the roster, computes per-rep local time, and only emails
-  // reps whose local time is currently within the EOD window. One trigger
-  // serves all timezones; reps in different zones get their digest as
-  // their local 5pm rolls around (within the wider window).
+  // Call Notes EOD warning — G4: runs HOURLY. The handler walks the roster
+  // and emails each enrolled rep only during the run that lands in their
+  // LOCAL EOD hour (CONFIG.CALL_NOTES.EOD_WARNING_HOUR). An hourly cadence +
+  // per-rep local-hour match means a single trigger reliably reaches reps in
+  // every timezone — the prior once-at-manager-5pm trigger silently skipped
+  // offshore reps (IST/PHT) whose local 5pm never coincided with the
+  // manager's. Most hourly runs send nothing (no reps at their EOD hour with
+  // unresolved flags), so the cost is just a cached roster walk.
   ScriptApp.newTrigger('sendCallNotesEodDigest')
-    .timeBased().atHour(CONFIG.CALL_NOTES.EOD_WARNING_HOUR).everyDays(1)
-    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+    .timeBased().everyHours(1).create();
   // Weekly manager digests for training queue + review candidates
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
@@ -4742,8 +4752,6 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 function sendCallNotesEodDigest() {
   assertManagerCaller_('sendCallNotesEodDigest');  // see sendDailyMissedPunchAlerts note
   try {
-    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
-    const windowMin = CONFIG.CALL_NOTES.EOD_WARNING_WINDOW_MINUTES || 30;
     const targetHour = CONFIG.CALL_NOTES.EOD_WARNING_HOUR;
     const now = new Date();
     const roster = getEmployeeRosterRows_();
@@ -4754,17 +4762,16 @@ function sendCallNotesEodDigest() {
       if (!emailAddr || !sheetId) continue;
       const tzRaw = String(roster[r][EMP.TIMEZONE] || '').trim();
       const tz = safeTimezone_(tzRaw);
-      // Rep's local time-of-day in minutes
+      // G4: this handler runs HOURLY (see installAutomationTriggers). Email a
+      // rep only during the single run that coincides with their LOCAL EOD
+      // hour — hour-equality (not a ±minute window) guarantees exactly one
+      // match per rep per day regardless of timezone. The prior once-at-
+      // manager-5pm window silently skipped offshore reps (IST/PHT) whose
+      // local 5pm never lined up with the manager's. A rep far enough off the
+      // hour could in rare trigger-jitter cases match two consecutive hourly
+      // runs — a benign duplicate reminder, not a miss.
       const hh = parseInt(Utilities.formatDate(now, tz, 'H'), 10);
-      const mm = parseInt(Utilities.formatDate(now, tz, 'm'), 10);
-      const localMins = hh * 60 + mm;
-      const targetMins = targetHour * 60;
-      // Circular distance so a target near midnight (e.g. EOD_WARNING_HOUR=0)
-      // doesn't reject reps at 23:45 with a 1425-minute "diff". Currently
-      // dormant for the default 17:00 hour, but cheap to be correct.
-      const diff = Math.abs(localMins - targetMins);
-      const circDist = Math.min(diff, 1440 - diff);
-      if (circDist > windowMin) continue;
+      if (hh !== targetHour) continue;
 
       const empObj = {
         id: String(roster[r][EMP.ID]).trim(),

@@ -2775,6 +2775,7 @@ function cnFormatNoteForCopy_(note) {
     || ('Callback Number: {callback}\n' +
         'Caller Name: {caller}\n' +
         'Relationship: {relationship}\n' +
+        'Patient & TRX: {patientAndTrx}\n' +
         'Issue: {issue}\n' +
         'Transferred To: {transferredTo}\n' +
         'Resolution: {resolution}');
@@ -2882,6 +2883,21 @@ function cnInstallCardDelegation_(area) {
       case 'view-form':   cnViewFormSubmission_(btn.dataset.token); break;
       case 'more':        cnToggleMoreMenu_(btn); break;
     }
+  });
+
+  // Cmd/Ctrl+Enter saves an in-progress inline edit. Delegated on the
+  // persistent view container (not the edit field itself) so it survives a
+  // re-render mid-edit — an optimistic flag toggle or ambient refresh
+  // recreates the edit field, which would otherwise lose a per-element
+  // listener and drop the shortcut.
+  area.addEventListener('keydown', function (e) {
+    if (!((e.metaKey || e.ctrlKey) && e.key === 'Enter')) return;
+    if (!e.target.closest) return;
+    if (!e.target.closest('[id^="cnE-"]')) return;
+    var card = e.target.closest('[data-note-id]');
+    if (!card) return;
+    e.preventDefault();
+    cnSaveEdit_(card.dataset.noteId);
   });
 }
 
@@ -3191,17 +3207,12 @@ function cnCopyNoteAgain_(noteId) {
 function cnBeginEdit_(noteId) {
   CN_STATE.editingNoteId = noteId;
   cnReRenderActiveView_();
+  // Just focus the field — Cmd/Ctrl+Enter is handled by the delegated keydown
+  // listener in cnInstallCardDelegation_ (survives mid-edit re-renders; a
+  // per-element listener here would be lost on re-render and could double-fire).
   setTimeout(function () {
     const el = document.getElementById('cnE-resolution-' + noteId);
-    if (el) {
-      el.focus();
-      el.addEventListener('keydown', function (e) {
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-          e.preventDefault();
-          cnSaveEdit_(noteId);
-        }
-      });
-    }
+    if (el) el.focus();
   }, 30);
 }
 
