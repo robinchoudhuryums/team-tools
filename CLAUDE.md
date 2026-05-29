@@ -967,6 +967,20 @@ this section before touching the relevant area.
   — fillable forms generate tokens and embed "Complete this form"
   CTA buttons in the email body. Reps can pre-fill key fields
   (patient name, dates) before sending.
+- **In-app form-submission viewer.** Once a recipient submits a
+  fillable form, the rep who sent it can review the entered data
+  without opening the `FormSubmissions` sheet. Note cards carrying a
+  `subformData.formSubmission` stamp render a clickable `.cn-form-pill`
+  ("form") — present in every `cnRenderCard_` view (Log / History /
+  pinned tray). Clicking calls `getFormSubmission(token)`, which is
+  caller-scoped: the server verifies the calling employee created the
+  token (`FormTokens.CreatedBy`) before returning the humanized
+  field/value pairs + signature image, rendered in a read-only modal
+  (`cn-form-sub-overlay`). It is NOT a public endpoint (requires
+  `getEmployeeInfo_`), and a manager can't pull another rep's
+  submission through it — surfacing a manager-side viewer would need a
+  separate manager-gated variant. Pinned by
+  `test_cn_getFormSubmission_callerScoped`.
 - **Paired-timezone chip + signal chip vocabulary.** `.tz-chip` pairs
   the rep's local-tz and manager-tz time into a single two-segment
   chip (the second `.seg` auto-omits when the rep's tz matches the
@@ -1492,6 +1506,7 @@ INV-86 | `getCdrNameMap_()` reads the `Agent Alias Overrides` sheet from the CDR
 INV-87 | `validateCdrColumns_()` reads row 1 of `DQE Historical Data` on first CDR access per script session and asserts that expected column names (from `CDR_EXPECTED_HEADERS`) appear at the expected 1-indexed positions. Mismatches are logged via `Logger.log` and surfaced in `meta.columnWarning` on the response — non-blocking. Column names are matched case-insensitively via `indexOf`. Validation runs at most once per session (`_cdrColumnsValidated` flag) | Subsystem: Server
 INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cached under `metrics_ambient_v1`. Returns `{ badge: { type: 'warn', label: 'XX.X%', date } }` when yesterday's (weekday only) team answer rate is below `CONFIG.CDR_ALERT_THRESHOLD` (default 85%), else `{ badge: null }`. The client polls every 5 minutes via `mStartAmbientPolling_()` (started on shell render regardless of active tool) and renders an `.m-alert-badge` pill on the Metrics sidebar icon | Subsystem: Server + Client (Metrics views)
 INV-89 | `buildCallNoteEmailHtml_` HTML-escapes every user-supplied note field via `esc_` before assembling the email body. The email-preview modal injects that body raw via `innerHTML` (the `${p.htmlBody}` slot in `cnRenderComposerPreviewStep_`), so the escaping is load-bearing — a new field added to the builder without `esc_` is stored XSS in the preview and the sent email. Pinned by `test_cn_buildEmailHtml_escapesUserFields` | Subsystem: Server + Client (Call Notes views)
+INV-90 | `getFormSubmission(token)` is caller-scoped, read-only: it requires `getEmployeeInfo_()` (NOT a public endpoint) and returns submission data only when the calling employee's email matches the token's `FormTokens.CreatedBy` — a rep cannot read another rep's form submissions, and there is no manager override. Returns `{ submitted: false, status }` when the token isn't completed yet. Pinned by `test_cn_getFormSubmission_callerScoped` | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10

@@ -554,6 +554,7 @@ function _runAllTests() {
   _integrationTest('cn_setCallNotePinned_capAt3',            test_cn_setCallNotePinned_capAt3);
   _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
   _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
+  _integrationTest('cn_getFormSubmission_callerScoped',      test_cn_getFormSubmission_callerScoped);
 
   // ── Metrics / CDR module (G1 backfill) ─────────────────────────────────
   _smokeTest('metrics_cnNoteCoverage_basic',            test_metrics_cnNoteCoverage_basic);
@@ -2569,4 +2570,47 @@ function test_metrics_countCallNotesInRange_countsToday() {
   _assertEq(countCallNotesInRange_(ctx.emp, '2000-01-01', '2000-01-02'), 0,
     'Out-of-range window counts 0');
   _clearTestCallNotes();
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  FILLABLE FORMS — IN-APP SUBMISSION VIEWER (G3)
+// ════════════════════════════════════════════════════════════════════════════
+
+// getFormSubmission is caller-scoped (INV-90): only the rep who created the
+// token may read the submission. This guards against a rep reading another
+// rep's form data via google.script.run.
+function test_cn_getFormSubmission_callerScoped() {
+  // India (enrolled) creates a fillable-form token.
+  const token = _asUser(_TEST_INDIA_EMAIL, function () {
+    const r = createFormToken({
+      formType: 'eaa',
+      recipientEmail: 'do-not-send-recipient@example.invalid',
+      recipientName: 'Test Recipient',
+      prefillData: {},
+    });
+    _assertTrue(r.success, 'createFormToken should succeed for an enrolled rep');
+    return r.token;
+  });
+  _assertNotNull(token, 'A token should have been created');
+
+  try {
+    // Creator can read it — pending (no submission yet), NOT an auth error.
+    const asCreator = _asUser(_TEST_INDIA_EMAIL, function () { return getFormSubmission(token); });
+    _assertNull(asCreator.error, 'Creator should not get an auth error');
+    _assertEq(asCreator.submitted, false, 'No submission yet → submitted=false');
+
+    // A different registered rep is rejected by the ownership check.
+    const asOther = _asUser(_TEST_PH_EMAIL, function () { return getFormSubmission(token); });
+    _assertNotNull(asOther.error, 'Non-creator should be rejected');
+    _assertContains(asOther.error, 'forms you sent', 'Rejection mentions ownership');
+  } finally {
+    // Remove the test token row (FormTokens isn't covered by the TEST_-prefix
+    // cleanup; the FormTokenCreated audit row is, via the India empId).
+    try {
+      const ts = getOrCreateFormTokensSheet_();
+      const loc = findFormTokenRow_(ts, token);
+      if (loc) ts.deleteRow(loc.rowIndex);
+    } catch (e) {}
+  }
 }
