@@ -4145,6 +4145,13 @@ function cnRenderComposerPreviewStep_() {
         <div><strong>CC:</strong> ${esc(p.cc)}</div>
         <div><strong>Subject:</strong> ${esc(p.subject)}</div>
       </div>
+      <!-- SECURITY (F8): p.htmlBody is injected raw because it IS the rendered
+           email — this is intentional, not a bug. It is safe ONLY because the
+           server's buildCallNoteEmailHtml_ routes every user-supplied note
+           field through esc_() before assembling the HTML. That escaping is
+           the load-bearing invariant: if any new note field is ever added to
+           the email builder WITHOUT esc_, it becomes stored XSS here. Pinned
+           by test_cn_buildEmailHtml_escapesUserFields in Tests.js. -->
       <div class="cn-compose-preview">${p.htmlBody}</div>
       <div class="modal-footer">
         <button class="btn-modal-cancel" onclick="cnComposerBackToForm_()">← Back to edit</button>

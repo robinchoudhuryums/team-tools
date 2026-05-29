@@ -2369,22 +2369,41 @@ function managerGetShiftStats(date) {
       const noteTimes = [];
       try {
         const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
-        const rows = sheet.getDataRange().getValues();
-        for (let i = 1; i < rows.length; i++) {
-          const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
-          if (note.dateLocal !== date) continue;
-          stats.totalNotes++;
-          if (note.flagType && stats.flagCounts[note.flagType] !== undefined) {
-            stats.flagCounts[note.flagType]++;
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          // S2: notes are appended in DateLocal order, so a single date maps to
+          // a contiguous row slice. Scan only the date column (1 col) to find
+          // the slice bounds, then read just that block of full rows — instead
+          // of pulling every rep's entire history. Same pattern as
+          // exportCallNotesRange. The per-note date re-check below stays as a
+          // defensive guard against any out-of-order row.
+          const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
+          let firstMatch = -1, lastMatch = -1;
+          for (let d = 0; d < dateCol.length; d++) {
+            if (normalizeDate_(dateCol[d][0]) === date) {
+              if (firstMatch < 0) firstMatch = d;
+              lastMatch = d;
+            }
           }
-          if (note.flagType === 'action' && note.resolved) stats.resolvedCount++;
-          if (note.emailedAt) stats.emailsSent++;
-          if (note.subformData && typeof note.subformData.completionSeconds === 'number') {
-            completionTimes.push(note.subformData.completionSeconds);
+          if (firstMatch >= 0) {
+            const block = sheet.getRange(firstMatch + 2, 1, lastMatch - firstMatch + 1, CN_HEADERS.length).getValues();
+            for (let i = 0; i < block.length; i++) {
+              const note = callNoteRowToObject_({ row: block[i], rowIndex: firstMatch + i + 2 });
+              if (note.dateLocal !== date) continue;
+              stats.totalNotes++;
+              if (note.flagType && stats.flagCounts[note.flagType] !== undefined) {
+                stats.flagCounts[note.flagType]++;
+              }
+              if (note.flagType === 'action' && note.resolved) stats.resolvedCount++;
+              if (note.emailedAt) stats.emailsSent++;
+              if (note.subformData && typeof note.subformData.completionSeconds === 'number') {
+                completionTimes.push(note.subformData.completionSeconds);
+              }
+              // Timestamp tail (HH:mm) for the shift-span calc
+              const m = String(note.timestamp || '').match(/T(\d{2}:\d{2})/);
+              if (m) noteTimes.push(m[1]);
+            }
           }
-          // Timestamp tail (HH:mm) for the shift-span calc
-          const m = String(note.timestamp || '').match(/T(\d{2}:\d{2})/);
-          if (m) noteTimes.push(m[1]);
         }
       } catch (e) {
         console.warn('managerGetShiftStats skipped rep ' + repId + ': ' + e.message);
@@ -3087,8 +3106,13 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         noteId + '): ' + stampErr.message);
     }
 
+    // Audit note is intentionally PHI-free: the email subject embeds the
+    // patient name / TRX and the recipient list can include external
+    // addresses, neither of which belongs in the shared AuditLog. Record
+    // the noteId (an investigator can open the note for full detail), the
+    // department label, and the recipient count instead.
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
-      `noteId=${noteId}; to=${recipientList.to}; subj="${subject}"`);
+      `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}`);
 
     return { success: true, emailedAt, recipients: recipientList.to, subject };
   } catch (err) { return { success: false, error: err.message }; }
@@ -5878,10 +5902,15 @@ function countCallNotesInRange_(emp, from, to) {
   if (!emp || !emp.callNotesSheetId) return 0;
   try {
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 0;
+    // S2: counting only needs the DateLocal column — read 1 column instead
+    // of the full 16-column row range (~16x fewer cells off the wire). Still
+    // normalize each value (CN.DATE_LOCAL coercion gotcha).
+    const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
     let n = 0;
-    for (let i = 1; i < rows.length; i++) {
-      const d = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+    for (let i = 0; i < dateCol.length; i++) {
+      const d = normalizeDate_(dateCol[i][0]);
       if (d >= from && d <= to) n++;
     }
     return n;

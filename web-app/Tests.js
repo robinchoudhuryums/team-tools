@@ -539,6 +539,7 @@ function _runAllTests() {
   _smokeTest('cn_callDataFromNote_selfNumberPrepended', test_cn_callDataFromNote_selfNumberPrepended);
   _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
   _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
+  _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
   _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
 
   // ── Call Notes — integration (sheet-touching) ──────────────────────────
@@ -2125,6 +2126,28 @@ function test_cn_callDataFromNote_nonSelfPassthrough() {
     patientAndTrx: '99999', issue: '', transferredTo: '', resolution: '',
   });
   _assertEq(out.patientAndTrx, '99999');
+}
+
+// ── buildCallNoteEmailHtml_ — XSS escape invariant (F8) ──
+// The email-preview modal injects this HTML raw via innerHTML; it is safe
+// ONLY because every user-supplied note field is escaped here. This test
+// pins that invariant — if a future field is added without esc_, it fails.
+
+function test_cn_buildEmailHtml_escapesUserFields() {
+  const callData = {
+    callBackNumber: '(555) 123-4567',
+    callerName:     '<script>alert(1)</script>',
+    relationship:   'self',
+    patientAndTrx:  '<img src=x onerror=alert(2)>',
+    issue:          'a & b < c',
+    transferredTo:  'N/A',
+    resolution:     'plain resolution',
+  };
+  const html = buildCallNoteEmailHtml_(callData, { updateInfo: 'Status Check', departments: ['CSR'] });
+  _assertFalse(html.indexOf('<script>alert(1)</script>') >= 0, 'raw caller script tag must NOT appear');
+  _assertFalse(html.indexOf('<img src=x onerror=alert(2)>') >= 0, 'raw patient img payload must NOT appear');
+  _assertContains(html, '&lt;script&gt;alert(1)&lt;/script&gt;', 'caller rendered escaped');
+  _assertContains(html, 'a &amp; b &lt; c', 'issue ampersand/angle-bracket escaped');
 }
 
 // ── esc_ — HTML entity escape ──
