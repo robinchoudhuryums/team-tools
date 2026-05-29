@@ -224,6 +224,21 @@ this section before touching the relevant area.
   Subform metadata in a separate try/catch. A stamp failure AFTER
   a successful send is logged to console but the call still returns
   `success: true` so the rep doesn't re-send a duplicate.
+- **CallNoteEmail audit row is deliberately PHI-free.**
+  `emailFromCallNote` writes its audit row as
+  `noteId=<uuid>; depts=<label>; recipients=<count>` — NOT the email
+  subject (which embeds the patient name / TRX) or the raw recipient
+  addresses. The shared AuditLog tab must not carry PHI; the `noteId`
+  lets an investigator open the rep's own Sheet for full detail
+  (INV-32 still holds — the row keeps `noteId`). Don't "helpfully"
+  re-add the subject / recipients to this audit row.
+- **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.**
+  The email-preview modal injects the server-rendered body raw via
+  `innerHTML` (`cn/script_callnotes.html` `cnRenderComposerPreviewStep_`,
+  the `${p.htmlBody}` slot). That's safe ONLY because every note field
+  is HTML-escaped in the builder. Adding a new field to the email
+  builder without `esc_` is stored XSS in the preview (and the sent
+  email). Pinned by `test_cn_buildEmailHtml_escapesUserFields`.
 - **Call Notes Sheet enrollment is manual.** A rep has no Call
   Notes panel until column L (`CallNotesSheetId`) of the Employees
   roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
@@ -1030,7 +1045,12 @@ this section before touching the relevant area.
   Stats surfaces must reuse these helpers rather than re-deriving the
   ratio; `countCallNotesInRange_` honors the `CN.DATE_LOCAL`
   normalize gotcha. Same maintenance discipline as `CN_EMAIL_PALETTE`
-  and `LEAVE_DEDUCTION_CLIENT`.
+  and `LEAVE_DEDUCTION_CLIENT`. Both helpers use bounded reads instead
+  of pulling each rep's full history: `countCallNotesInRange_` reads
+  only the DateLocal column (~16x fewer cells), and
+  `managerGetShiftStats` reads just the requested date's contiguous
+  row slice — both rely on notes being appended in DateLocal order,
+  the same contiguity assumption as `exportCallNotesRange` (INV-46).
 - **Compact pop-out is 380px wide.** `popOutCurrentView()` opens
   the named `umsTeamToolsCompact` window at 380×780 (narrowed from
   the prior 440 in the Console redesign — sized to fit the rep's
@@ -1452,6 +1472,7 @@ INV-85 | `getCdrAgentMetrics_()` cache key includes an MD5 hash of the sorted ro
 INV-86 | `getCdrNameMap_()` reads the `Agent Alias Overrides` sheet from the CDR Report spreadsheet (same sheet written by `call-data-reporting`'s `OrphanFix.gs`). Returns `{ oldName → canonicalName }` for active aliases. Cached in-memory for `CDR_CACHE_TTL` seconds. Used by both `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` to resolve CDR agent names that don't directly match the team-tools roster. Missing or empty sheet degrades gracefully (empty map) | Subsystem: Server
 INV-87 | `validateCdrColumns_()` reads row 1 of `DQE Historical Data` on first CDR access per script session and asserts that expected column names (from `CDR_EXPECTED_HEADERS`) appear at the expected 1-indexed positions. Mismatches are logged via `Logger.log` and surfaced in `meta.columnWarning` on the response — non-blocking. Column names are matched case-insensitively via `indexOf`. Validation runs at most once per session (`_cdrColumnsValidated` flag) | Subsystem: Server
 INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cached under `metrics_ambient_v1`. Returns `{ badge: { type: 'warn', label: 'XX.X%', date } }` when yesterday's (weekday only) team answer rate is below `CONFIG.CDR_ALERT_THRESHOLD` (default 85%), else `{ badge: null }`. The client polls every 5 minutes via `mStartAmbientPolling_()` (started on shell render regardless of active tool) and renders an `.m-alert-badge` pill on the Metrics sidebar icon | Subsystem: Server + Client (Metrics views)
+INV-89 | `buildCallNoteEmailHtml_` HTML-escapes every user-supplied note field via `esc_` before assembling the email body. The email-preview modal injects that body raw via `innerHTML` (the `${p.htmlBody}` slot in `cnRenderComposerPreviewStep_`), so the escaping is load-bearing — a new field added to the builder without `esc_` is stored XSS in the preview and the sent email. Pinned by `test_cn_buildEmailHtml_escapesUserFields` | Subsystem: Server + Client (Call Notes views)
 
 ### Policy Configuration
 Policy threshold: 4/10
