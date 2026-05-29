@@ -274,6 +274,18 @@ const ROSTER_CACHE_TTL = 300;
 const CN_AMBIENT_CACHE_PREFIX = 'cn_ambient_v1_';
 const CN_AMBIENT_CACHE_TTL = 60;
 
+// S2 cached-summary layer: whole-result caches for the two parameterless
+// cross-rep manager aggregates that otherwise re-scan every enrolled rep's
+// Sheet on each call. (Open-ended substring search is NOT cached — it needs
+// the full text, i.e. a real index, which is out of scope.) The taxonomy
+// cache is eagerly invalidated by the tag-admin endpoints so the Admin table
+// reflects a rename/merge/archive immediately; both otherwise rely on the TTL
+// as the freshness ceiling (same philosophy as the ambient cache, INV-43).
+const CN_TAXONOMY_CACHE_KEY = 'cn_tag_taxonomy_v1';
+const CN_TAXONOMY_CACHE_TTL = 300;   // 5 min — Admin tab is opened infrequently
+const CN_UNRESOLVED_CACHE_KEY = 'cn_unresolved_action_v1';
+const CN_UNRESOLVED_CACHE_TTL = 120; // 2 min — backs the Team Notes stale-flag badge
+
 const TZ_ABBR = {
   'Asia/Kolkata':        'IST',
   'Asia/Manila':         'PHT',
@@ -2003,6 +2015,11 @@ function getCallNotesTagTaxonomy() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    // S2: serve the whole aggregate from cache when warm — avoids re-scanning
+    // every rep's Sheet on each Admin-tab load. Invalidated by tag-admin ops.
+    const taxCache = CacheService.getScriptCache();
+    const taxCached = taxCache.get(CN_TAXONOMY_CACHE_KEY);
+    if (taxCached) { try { return JSON.parse(taxCached); } catch (e) { /* recompute */ } }
     const archivedSet = getArchivedTagsSet_();
     const roster = getEmployeeRosterRows_();
     const counts = {};       // tag → { tag, count, lastSeen, archived }
@@ -2054,8 +2071,22 @@ function getCallNotesTagTaxonomy() {
     archivedOnlyTags.sort(function (a, b) { return a.tag.localeCompare(b.tag); });
     const tags = Object.keys(counts).map(function (k) { return counts[k]; });
     tags.sort(function (a, b) { return b.count - a.count || a.tag.localeCompare(b.tag); });
-    return { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned };
+    const taxResult = { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned };
+    try {
+      const payload = JSON.stringify(taxResult);
+      if (payload.length <= 90000) taxCache.put(CN_TAXONOMY_CACHE_KEY, payload, CN_TAXONOMY_CACHE_TTL);
+      else console.warn('Tag taxonomy too large to cache (' + payload.length + ' bytes)');
+    } catch (e) { /* cache put failed — return uncached, no behavioral impact */ }
+    return taxResult;
   } catch (err) { return { error: err.message }; }
+}
+
+/** Drops the tag-taxonomy whole-result cache so the next Admin-tab load
+ *  recomputes. Called by the tag-admin endpoints (rename/merge/archive) so a
+ *  manager sees their change reflected immediately rather than after the TTL. */
+function invalidateCnTaxonomyCache_() {
+  try { CacheService.getScriptCache().remove(CN_TAXONOMY_CACHE_KEY); }
+  catch (e) { /* best-effort */ }
 }
 
 // ── Round 2 follow-on (Tag taxonomy actions) — Admin tag mutations ────────
@@ -2181,6 +2212,7 @@ function renameCallNoteTag(oldTag, newTag) {
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
       `rename ${oldT} → ${newT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
       callerEmp.email);
+    invalidateCnTaxonomyCache_();
     return { success: true, action: 'rename', oldTag: oldT, newTag: newT,
              repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2216,6 +2248,7 @@ function mergeCallNoteTags(sourceTag, targetTag) {
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
       `merge ${srcT} → ${tgtT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
       callerEmp.email);
+    invalidateCnTaxonomyCache_();
     return { success: true, action: 'merge', sourceTag: srcT, targetTag: tgtT,
              repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
   } catch (err) { return { success: false, error: err.message }; }
@@ -2250,6 +2283,7 @@ function archiveCallNoteTag(tag, archived) {
     writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
       `${wantArchived ? 'archive' : 'unarchive'} ${t}`,
       callerEmp.email);
+    invalidateCnTaxonomyCache_();
     return { success: true, action: wantArchived ? 'archive' : 'unarchive', tag: t };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -2500,6 +2534,12 @@ function managerGetUnresolvedActionCount() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    // S2: serve the badge count from cache when warm (TTL-only freshness, like
+    // the ambient cache — at most CN_UNRESOLVED_CACHE_TTL stale). Avoids a
+    // full 2-column scan of every rep's Sheet on each Team Notes landing.
+    const uCache = CacheService.getScriptCache();
+    const uCached = uCache.get(CN_UNRESOLVED_CACHE_KEY);
+    if (uCached) { try { return JSON.parse(uCached); } catch (e) { /* recompute */ } }
     const roster = getEmployeeRosterRows_();
     let total = 0;
     for (let r = 1; r < roster.length; r++) {
@@ -2519,7 +2559,10 @@ function managerGetUnresolvedActionCount() {
         }
       } catch (_) {}
     }
-    return { count: total };
+    const uResult = { count: total };
+    try { uCache.put(CN_UNRESOLVED_CACHE_KEY, JSON.stringify(uResult), CN_UNRESOLVED_CACHE_TTL); }
+    catch (e) { /* best-effort */ }
+    return uResult;
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4385,48 +4428,80 @@ function getFormSubmission(token) {
     if (createdBy !== String(emp.email || '').toLowerCase()) {
       return { error: 'You can only view submissions for forms you sent.' };
     }
-
-    const formType = String(tLocated.row[FT.FORM_TYPE] || '').trim();
-    let formName = formType;
-    const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
-    for (let i = 0; i < catalog.length; i++) {
-      if (catalog[i].id === formType) { formName = catalog[i].name; break; }
-    }
-    const recipientName  = String(tLocated.row[FT.RECIPIENT_NAME] || '');
-    const recipientEmail = String(tLocated.row[FT.RECIPIENT_EMAIL] || '');
-    const status = String(tLocated.row[FT.STATUS] || '').trim().toLowerCase();
-
-    if (status !== 'submitted') {
-      return { submitted: false, status, formType, formName, recipientName, recipientEmail };
-    }
-
-    const subSheet = getOrCreateFormSubmissionsSheet_();
-    const rows = subSheet.getDataRange().getValues();
-    for (let i = rows.length - 1; i >= 1; i--) {
-      if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
-      let formData = {};
-      try { formData = JSON.parse(rows[i][FS.FORM_DATA]) || {}; } catch (_) {}
-      const fields = Object.keys(formData).map(function (k) {
-        return { key: k, label: humanizeFormFieldKey_(k), value: formData[k] };
-      });
-      const signature = String(rows[i][FS.SIGNATURE_DATA] || '');
-      return {
-        submitted: true,
-        formType, formName, recipientName,
-        recipientEmail: String(rows[i][FS.RECIPIENT_EMAIL] || recipientEmail),
-        submittedAt: String(rows[i][FS.SUBMITTED_AT] || ''),
-        fields,
-        hasSignature: !!signature,
-        signature,
-      };
-    }
-    // Token says submitted but no row found — treat as not-yet-available.
-    return { submitted: false, status, formType, formName, recipientName, recipientEmail };
+    return buildFormSubmissionResult_(tLocated, token);
   } catch (err) { return { error: err.message }; }
 }
 
+/** Manager-side companion to getFormSubmission: lets a manager review a
+ *  submitted form from the Team Notes Per-Rep view. Manager-gated (INV-02),
+ *  read-only. Scoped to the rep being viewed — the token must have been
+ *  created by `repEmpId` (the manager can only pull submissions for forms the
+ *  selected rep sent), mirroring the per-rep view's read-only contract. */
+function managerGetFormSubmission(repEmpId, token) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    token = String(token || '').trim();
+    if (!token) return { error: 'No form token provided.' };
+    const target = lookupEmployeeById_(repEmpId);
+    if (!target) return { error: 'Employee not found.' };
+
+    const tokenSheet = getOrCreateFormTokensSheet_();
+    const tLocated = findFormTokenRow_(tokenSheet, token);
+    if (!tLocated) return { error: 'Form not found.' };
+    const createdBy = String(tLocated.row[FT.CREATED_BY] || '').trim().toLowerCase();
+    if (createdBy !== String(target.email || '').toLowerCase()) {
+      return { error: 'This form was not created by the selected rep.' };
+    }
+    return buildFormSubmissionResult_(tLocated, token);
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Shared submission-result builder for getFormSubmission /
+ *  managerGetFormSubmission. Assumes the caller has already authorized access
+ *  to `tLocated` (the FormTokens row). Returns `{ submitted: false, status }`
+ *  until the form is completed, else the humanized fields + signature. */
+function buildFormSubmissionResult_(tLocated, token) {
+  const formType = String(tLocated.row[FT.FORM_TYPE] || '').trim();
+  let formName = formType;
+  const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+  for (let i = 0; i < catalog.length; i++) {
+    if (catalog[i].id === formType) { formName = catalog[i].name; break; }
+  }
+  const recipientName  = String(tLocated.row[FT.RECIPIENT_NAME] || '');
+  const recipientEmail = String(tLocated.row[FT.RECIPIENT_EMAIL] || '');
+  const status = String(tLocated.row[FT.STATUS] || '').trim().toLowerCase();
+
+  if (status !== 'submitted') {
+    return { submitted: false, status, formType, formName, recipientName, recipientEmail };
+  }
+
+  const subSheet = getOrCreateFormSubmissionsSheet_();
+  const rows = subSheet.getDataRange().getValues();
+  for (let i = rows.length - 1; i >= 1; i--) {
+    if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
+    let formData = {};
+    try { formData = JSON.parse(rows[i][FS.FORM_DATA]) || {}; } catch (_) {}
+    const fields = Object.keys(formData).map(function (k) {
+      return { key: k, label: humanizeFormFieldKey_(k), value: formData[k] };
+    });
+    const signature = String(rows[i][FS.SIGNATURE_DATA] || '');
+    return {
+      submitted: true,
+      formType, formName, recipientName,
+      recipientEmail: String(rows[i][FS.RECIPIENT_EMAIL] || recipientEmail),
+      submittedAt: String(rows[i][FS.SUBMITTED_AT] || ''),
+      fields,
+      hasSignature: !!signature,
+      signature,
+    };
+  }
+  // Token says submitted but no row found — treat as not-yet-available.
+  return { submitted: false, status, formType, formName, recipientName, recipientEmail };
+}
+
 /** Humanizes a form-field key (id) into a display label: splits snake/kebab/
- *  camelCase and title-cases. Used by getFormSubmission for the in-app viewer. */
+ *  camelCase and title-cases. Used by the in-app form-submission viewers. */
 function humanizeFormFieldKey_(k) {
   return String(k || '')
     .replace(/[_-]+/g, ' ')

@@ -555,6 +555,7 @@ function _runAllTests() {
   _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
   _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
   _integrationTest('cn_getFormSubmission_callerScoped',      test_cn_getFormSubmission_callerScoped);
+  _integrationTest('cn_managerGetFormSubmission_gatedAndScoped', test_cn_managerGetFormSubmission_gatedAndScoped);
 
   // ── Metrics / CDR module (G1 backfill) ─────────────────────────────────
   _smokeTest('metrics_cnNoteCoverage_basic',            test_metrics_cnNoteCoverage_basic);
@@ -2607,6 +2608,49 @@ function test_cn_getFormSubmission_callerScoped() {
   } finally {
     // Remove the test token row (FormTokens isn't covered by the TEST_-prefix
     // cleanup; the FormTokenCreated audit row is, via the India empId).
+    try {
+      const ts = getOrCreateFormTokensSheet_();
+      const loc = findFormTokenRow_(ts, token);
+      if (loc) ts.deleteRow(loc.rowIndex);
+    } catch (e) {}
+  }
+}
+
+// managerGetFormSubmission is manager-gated and scoped to the rep being viewed:
+// the token must have been created by that rep.
+function test_cn_managerGetFormSubmission_gatedAndScoped() {
+  const token = _asUser(_TEST_INDIA_EMAIL, function () {
+    return createFormToken({
+      formType: 'eaa',
+      recipientEmail: 'do-not-send-recipient@example.invalid',
+      recipientName: 'Test Recipient',
+      prefillData: {},
+    }).token;
+  });
+  _assertNotNull(token, 'A token should have been created');
+
+  try {
+    // Non-manager is rejected.
+    const asRep = _asUser(_TEST_PH_EMAIL, function () {
+      return managerGetFormSubmission(_TEST_INDIA_ID, token);
+    });
+    _assertNotNull(asRep.error, 'Non-manager should be rejected');
+    _assertContains(asRep.error, 'Manager access required', 'Manager gate message');
+
+    // Manager viewing the creating rep: allowed (pending, no submission yet).
+    const asMgrRightRep = _asUser(_TEST_MGR_EMAIL, function () {
+      return managerGetFormSubmission(_TEST_INDIA_ID, token);
+    });
+    _assertNull(asMgrRightRep.error, 'Manager + correct rep should not error');
+    _assertEq(asMgrRightRep.submitted, false, 'No submission yet → submitted=false');
+
+    // Manager viewing the WRONG rep: scoped out (token not created by PH rep).
+    const asMgrWrongRep = _asUser(_TEST_MGR_EMAIL, function () {
+      return managerGetFormSubmission(_TEST_PH_ID, token);
+    });
+    _assertNotNull(asMgrWrongRep.error, 'Token not created by the selected rep should be rejected');
+    _assertContains(asMgrWrongRep.error, 'selected rep', 'Rejection mentions rep scoping');
+  } finally {
     try {
       const ts = getOrCreateFormTokensSheet_();
       const loc = findFormTokenRow_(ts, token);

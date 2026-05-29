@@ -3167,6 +3167,33 @@ function cnCloseFormSubOverlay_() {
   if (overlay) overlay.remove();
 }
 
+// Manager-side form-submission viewer (Team Notes Per-Rep view). Reuses the
+// same read-only modal as the rep viewer; the server endpoint is manager-gated
+// and scoped to the rep whose notes are on screen.
+function cnMgrViewFormSubmission_(btn) {
+  var token = btn && btn.dataset ? btn.dataset.token : '';
+  var repId = btn && btn.dataset ? btn.dataset.repId : '';
+  if (!token || !repId) return;
+  cnRenderFormSubOverlay_(
+    '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
+      '<div class="state-center"><div class="spinner"></div>' +
+      '<div class="state-label">Loading submission…</div></div></div>');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) {
+        cnCloseFormSubOverlay_();
+        if (typeof showToast === 'function') showToast((res && res.error) || 'Could not load submission', 'toast-error');
+        return;
+      }
+      cnRenderFormSubOverlay_(cnBuildFormSubModalHtml_(res));
+    })
+    .withFailureHandler(function (err) {
+      cnCloseFormSubOverlay_();
+      if (typeof showToast === 'function') showToast('Could not load submission: ' + (err && err.message || err), 'toast-error');
+    })
+    .managerGetFormSubmission(repId, token);
+}
+
 function cnBuildFormSubModalHtml_(res) {
   var head = esc(res.formName || 'Form submission');
   if (!res.submitted) {
@@ -4862,6 +4889,13 @@ function cnMgrRenderReadonlyCard_(note) {
   const sentPill = note.emailedAt
     ? `<span class="adj-pill" title="${note.emailDepartments ? 'Sent to: ' + esc(note.emailDepartments) : 'Sent'}">sent${note.emailDepartments ? ' <span class="cn-email-depts">' + esc(note.emailDepartments) + '</span>' : ''}</span>`
     : '';
+  // Manager-side form-submission viewer: clickable pill when the rep's note
+  // carries a submitted fillable form (parallels the rep's cn-form-pill).
+  const mgrFormSub = (note.subformData && note.subformData.formSubmission) ? note.subformData.formSubmission : null;
+  const mgrRepIdForForm = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
+  const formPill = (mgrFormSub && mgrFormSub.token)
+    ? `<button class="cn-form-pill" title="Form received — view submission" data-token="${esc(mgrFormSub.token)}" data-rep-id="${esc(mgrRepIdForForm)}" onclick="cnMgrViewFormSubmission_(this)">${icon('paperclip', 11)}<span>form</span></button>`
+    : '';
   return `
     <div class="cn-card${flagCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
@@ -4875,6 +4909,7 @@ function cnMgrRenderReadonlyCard_(note) {
         <div class="cn-card-actions">
           ${flagPill}
           ${sentPill}
+          ${formPill}
         </div>
       </div>
       ${trainingReplyEditor}
