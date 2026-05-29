@@ -196,6 +196,33 @@
   :root[data-compact] .cnv-layout { grid-template-columns: 1fr; gap: 10px; }
   :root[data-compact] .rail-flags { grid-template-columns: 1fr; }
 
+  /* ─── EMAIL COMPOSER TAB STRIP (Round 2 modal-tab merge) ──────────
+     Shared segmented control rendered at the top of BOTH the department
+     composer (#cnC-modal) and the external composer (#cnX-modal). Click
+     transitions the modal via cnSwitchComposerTab_, preserving the
+     noteId context. Department tab is disabled when no noteId is in
+     scope (the rep clicked "Open Email" from an unsaved form). */
+  .cn-composer-tabs {
+    display: inline-flex; align-items: center; gap: 0;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px; background: var(--paper-card);
+    margin: 8px 0 4px;
+  }
+  .cn-composer-tab {
+    appearance: none; cursor: pointer; border: none; background: transparent;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    padding: 6px 14px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-composer-tab:hover:not(.disabled) { color: var(--ink); }
+  .cn-composer-tab.on { background: var(--ink); color: var(--paper); }
+  .cn-composer-tab.disabled {
+    cursor: not-allowed; opacity: 0.45;
+  }
+  .cn-composer-tab svg { width: 13px; height: 13px; flex-shrink: 0; }
+
   /* ─── ADMIN TAG TAXONOMY TABLE (Round 2 · 8h) ──────────────────── */
   .cn-tax-head,
   .cn-tax-row {
@@ -3387,6 +3414,60 @@ function cnNoteIsStale_(note) {
 
 // ── Email composer modal ───────────────────────────────────────────────
 
+/** Round 2 follow-on (modal-tab merge) — shared tab strip prepended to BOTH
+ *  the department composer (CN_STATE.composer) and the external composer
+ *  (CN_STATE.extComposer). One button per tab; clicking the inactive tab
+ *  switches between modals via cnSwitchComposerTab_, preserving noteId
+ *  context. Department tab is disabled when no noteId is available — a
+ *  dept email needs a saved note to attach EmailedAt + EmailDepartments to.
+ *  CSS in styles.html: `.cn-composer-tabs` + `.cn-composer-tab(.on,.disabled)`. */
+function cnRenderComposerTabStrip_(active, noteId) {
+  const hasNote = !!noteId;
+  const deptDisabled = !hasNote;
+  const deptCls = 'cn-composer-tab' + (active === 'department' ? ' on' : '')
+    + (deptDisabled ? ' disabled' : '');
+  const extCls = 'cn-composer-tab' + (active === 'external' ? ' on' : '');
+  const deptTitle = deptDisabled
+    ? 'Save the note first to send a department email'
+    : 'Send to internal department(s)';
+  const deptOnclick = deptDisabled
+    ? ''
+    : ' onclick="cnSwitchComposerTab_(\'department\')"';
+  return `<div class="cn-composer-tabs" role="tablist" aria-label="Email composer mode">
+    <button type="button" role="tab" class="${deptCls}" aria-selected="${active === 'department'}"${deptOnclick} title="${esc(deptTitle)}">
+      ${icon('mail', 13)} Department
+    </button>
+    <button type="button" role="tab" class="${extCls}" aria-selected="${active === 'external'}" onclick="cnSwitchComposerTab_('external')" title="Send to a customer or provider">
+      ${icon('send', 13)} External
+    </button>
+  </div>`;
+}
+
+/** Round 2 follow-on (modal-tab merge) — Switch between the dept + external
+ *  composer modals. Preserves the noteId across the transition so the rep
+ *  doesn't lose context. Switching TO Department without a noteId is a
+ *  no-op (the inactive tab is disabled in the strip; this guard is
+ *  defensive in case the strip's disabled state was bypassed). */
+function cnSwitchComposerTab_(target) {
+  // Capture noteId from whichever composer is currently active
+  let noteId = '';
+  if (CN_STATE.composer && CN_STATE.composer.noteId) noteId = CN_STATE.composer.noteId;
+  else if (CN_STATE.extComposer && CN_STATE.extComposer.noteId) noteId = CN_STATE.extComposer.noteId;
+
+  if (target === 'department') {
+    if (!noteId) {
+      showToast('Save the note first to send a department email', 'toast-warn');
+      return;
+    }
+    // Close ext first (clear state), then open dept
+    if (CN_STATE.extComposer) cnCloseExternalEmailModal_();
+    cnOpenEmailComposer_(noteId);
+  } else if (target === 'external') {
+    if (CN_STATE.composer) cnCloseComposerModal_();
+    cnOpenExternalEmailModal_(noteId || null);
+  }
+}
+
 function cnOpenEmailComposer_(noteId) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note) return;
@@ -3480,6 +3561,7 @@ function cnRenderComposerFormStep_() {
   return `
     <div class="modal" style="max-width:560px;resize:both;overflow:auto" id="cnC-modal">
       <div class="modal-title" style="cursor:move" onmousedown="cnStartDragModal_(event)">Compose email</div>
+      ${cnRenderComposerTabStrip_('department', c.noteId)}
       <div class="modal-sub">
         For: <strong>${esc(c.note.caller || c.note.patientAndTrx || 'this call')}</strong> · ${esc(c.note.patientAndTrx || '')}
       </div>
@@ -4002,6 +4084,7 @@ function cnRenderComposerPreviewStep_() {
   return `
     <div class="modal" style="max-width:780px">
       <div class="modal-title">Preview before sending</div>
+      ${cnRenderComposerTabStrip_('department', c.noteId)}
       <div class="modal-sub">Confirm this is what you want to send — once you click Send, it goes out.</div>
       <div class="cn-compose-preview-meta">
         <div><strong>From:</strong> ${esc(p.from)}</div>
@@ -5756,6 +5839,9 @@ function cnBuildExternalEmailHtml_() {
   return '<div class="modal" style="max-width:540px;resize:both;overflow:auto" id="cnX-modal">' +
     '<div class="modal-title" style="cursor:move" onmousedown="cnStartDragExtModal_(event)">' +
       icon('send', 18) + ' Send External Email</div>' +
+    // Round 2 follow-on (modal-tab merge) — shared tab strip; clicking
+    // Department switches to the dept composer (preserving noteId).
+    cnRenderComposerTabStrip_('external', c.noteId) +
     '<div class="modal-sub">Send forms or messages directly to a customer or provider.</div>' +
 
     '<div class="cn-ext-section">' +
