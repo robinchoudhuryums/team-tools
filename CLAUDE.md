@@ -111,6 +111,14 @@ this section before touching the relevant area.
   downstream display logic. Always read times through
   `normalizeTime_()`, which detects Dates and re-formats them via
   the spreadsheet's timezone.
+- **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** The
+  `DateLocal` column is written as a `yyyy-MM-dd` string but Sheets
+  coerces it to a Date object on read, so `String(row[CN.DATE_LOCAL])`
+  produces a JS Date `toString` that never matches a `yyyy-MM-dd`
+  comparison. Always read it via `normalizeDate_`. The Metrics module
+  (`getMyMetrics` / `getTeamMetrics`) regressed on this — note
+  coverage silently reported 0 — fixed in cc58d53. 18 of 20
+  `CN.DATE_LOCAL` reads already normalize; keep new ones consistent.
 - **ScriptLock around every mutating op.** Every server function
   that writes to a sheet (`recordPunch`, `submitTimeOffRequest`,
   `updateTimeOffStatus`, `deletePunch`, `managerSaveDay`,
@@ -623,14 +631,20 @@ this section before touching the relevant area.
   every per-rep call-notes Sheet — redeploying as a different
   account silently fails until those Sheets are reshared.
   `ANYONE_ANONYMOUS` is required for the external fillable-forms
-  feature (the `?form=<token>` route). The internal app is
-  protected by a domain gate in `doGet()`: only `@umsupply.com`
-  users see the internal tool; all others get "Access Restricted".
-  All `google.script.run` endpoints still require
+  feature (the `?form=<token>` route). `doGet()` renders an
+  "Access Restricted" page only for a visitor it can positively
+  identify as external — a non-empty Google login email that is
+  neither `@umsupply.com` nor a registered employee. This is
+  fail-open by design: anonymous / empty-email visitors (the
+  `executeAs:USER_DEPLOYING` + `ANYONE_ANONYMOUS` "unreliable email"
+  case) and registered non-`@umsupply.com` contractor logins still
+  receive the inert shell. The load-bearing protection is therefore
+  per-endpoint: all `google.script.run` endpoints still require
   `getEmployeeInfo_()` (returns null for non-employees), so the
-  internal API surface is inaccessible to external visitors. The
-  only public endpoints are `getFormByToken` and
-  `submitFormByToken`, which validate via UUID token.
+  internal API surface is inaccessible to external visitors
+  regardless of whether they reach the shell. The only public
+  endpoints are `getFormByToken` and `submitFormByToken`, which
+  validate via UUID token.
 - **Design tokens are the single source of truth for color,
   typography, radii, shadows, and motion.** All declared in
   `web-app/styles_design_tokens.html` and consumed via CSS
