@@ -20,10 +20,11 @@
     // visible flash of the full sidebar before the JS runs).
     //
     // Security: the JSON below contains user-controlled query-string values.
-    // <?!= ?> emits without HTML escape; we replace `<` with `<` to
-    // prevent an attacker-controlled `</script>` from breaking out of this
-    // script block. The escape is JSON-valid (unicode escape sequence) and
-    // round-trips through JSON.parse to the original character.
+    // The scriptlet emits without HTML escape; we replace each `<` with
+    // its JSON unicode escape (<) so an attacker-controlled query
+    // value containing the closing-script sequence can't break out of
+    // this script block. The escape is JSON-valid and round-trips
+    // through JSON.parse to the original `<` character.
     window.SERVER_QUERY_PARAMS = <?!= JSON.stringify(serverQueryParams || {}).replace(/</g, '\\u003c') ?>;
     (function () {
       try {
