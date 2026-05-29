@@ -59,7 +59,8 @@
     display: flex; align-items: center; gap: 6px;
   }
   .cnv-row input,
-  .cnv-row textarea {
+  .cnv-row textarea,
+  .cnv-row .ce {
     appearance: none; border: 1px solid transparent;
     background: transparent;
     font-family: var(--ui); font-size: 13px; color: var(--ink);
@@ -68,15 +69,47 @@
     transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
     font-feature-settings: 'ss01', 'cv11', 'cv05';
     letter-spacing: -0.01em;
+    min-height: 22px;
   }
   .cnv-row input:focus,
-  .cnv-row textarea:focus {
+  .cnv-row textarea:focus,
+  .cnv-row .ce:focus {
     border-color: var(--accent);
     background: var(--accent-soft);
     box-shadow: 0 0 0 3px var(--accent-glow);
   }
-  .cnv-row textarea { min-height: 60px; line-height: 1.4; }
-  .cnv-row.full textarea { min-height: 80px; }
+  .cnv-row textarea,
+  .cnv-row .ce.ce-tall { min-height: 60px; line-height: 1.4; }
+  .cnv-row.full textarea,
+  .cnv-row.full .ce.ce-tall { min-height: 80px; }
+  /* Round 2 deferred 8e — contenteditable empty-state placeholder. The
+     `.empty` class is toggled by cnSetFieldValue_ / blur / input handlers
+     based on whether textContent.trim() is empty. */
+  .cnv-row .ce {
+    cursor: text; white-space: pre-wrap; word-break: break-word;
+  }
+  .cnv-row .ce.empty::before {
+    content: attr(data-placeholder);
+    color: var(--muted-2);
+    pointer-events: none;
+  }
+  /* below-doc copy hint sits just under the frame */
+  .below-doc {
+    font-family: var(--mono); font-size: 9px; font-weight: 500;
+    color: var(--muted-2); letter-spacing: .04em;
+    padding: 8px 4px 0;
+    line-height: 1.4;
+  }
+  .below-doc b { color: var(--ink); font-weight: 700; }
+  /* Round 2 deferred 8e — prefill accent: highlight rows populated by
+     cnApplyPrefillFromUrl_ (deep-link from the Clock coverage strip
+     CTA / future caller). */
+  .cnv-row.prefilled {
+    background: color-mix(in oklch, var(--accent-soft), var(--paper-card) 50%);
+    border-left: 3px solid var(--accent);
+    padding-left: 8px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
 
   /* ─── RAIL (right 1/3) ──────────────────────────────────────────── */
   .cnv-rail {
@@ -1782,42 +1815,62 @@ function cnRenderActiveForm_() {
   const mod = cnIsMac_() ? '⌘' : 'Ctrl';
   return `
     <div class="cnv-layout" id="cn-active-form">
-      <!-- LEFT 2/3 — note template -->
+      <!-- LEFT 2/3 — note template as a contenteditable document.
+           Round 2 deferred follow-on: the fields are <div contenteditable>
+           spans instead of <input>/<textarea> so the whole frame becomes
+           one selectable region. A `copy` event listener on the frame
+           intercepts ⌘C anywhere inside and writes the FULL formatted
+           template via cnFormatNoteForCopy_ — same output the Save & Copy
+           button produces. Paste is sanitized to plain text. -->
       <div class="cnv-doc">
         <div class="cnv-doc-frame" id="cn-frame">
           <div class="frame-stamp">
             <span>NOTE TEMPLATE</span>
             <span class="meta">· EDIT INLINE</span>
-            <span class="copyhint">${esc(mod)}+↵ SAVES &amp; COPIES</span>
+            <span class="copyhint">SELECTABLE — ${esc(mod)}C ANYWHERE INSIDE</span>
           </div>
           <div class="cnv-row">
             <div class="lbl">Callback</div>
-            <input type="text" id="cn-fld-callback" autocomplete="off" placeholder="(555) 123-4567" tabindex="1">
+            <div class="ce empty" contenteditable="true" id="cn-fld-callback"
+                 data-field="callback" data-placeholder="(555) 123-4567"
+                 autocapitalize="off" autocorrect="off" spellcheck="false"
+                 tabindex="1"></div>
           </div>
           <div class="cnv-row">
             <div class="lbl">Caller</div>
-            <input type="text" id="cn-fld-caller" autocomplete="off" placeholder="Caller name" tabindex="2">
+            <div class="ce empty" contenteditable="true" id="cn-fld-caller"
+                 data-field="caller" data-placeholder="Caller name" tabindex="2"></div>
           </div>
           <div class="cnv-row">
             <div class="lbl">Relationship</div>
-            <input type="text" id="cn-fld-relationship" autocomplete="off" placeholder="self / spouse / parent / …" tabindex="3">
+            <div class="ce empty" contenteditable="true" id="cn-fld-relationship"
+                 data-field="relationship" data-placeholder="self / spouse / parent / …" tabindex="3"></div>
           </div>
           <div class="cnv-row">
             <div class="lbl">Patient &amp; TRX</div>
-            <input type="text" id="cn-fld-patient" autocomplete="off" placeholder="Patient name TRX# or just TRX#" tabindex="4">
+            <div class="ce empty" contenteditable="true" id="cn-fld-patient"
+                 data-field="patient" data-placeholder="Patient name TRX# or just TRX#"
+                 autocapitalize="off" autocorrect="off" spellcheck="false"
+                 tabindex="4"></div>
           </div>
           <div class="cnv-row full">
             <div class="lbl">Issue${cnVoiceMicMarkup_('cn-fld-issue')}</div>
-            <textarea id="cn-fld-issue" placeholder="Why did they call?" tabindex="5"></textarea>
+            <div class="ce ce-tall empty" contenteditable="true" id="cn-fld-issue"
+                 data-field="issue" data-placeholder="Why did they call?" tabindex="5"></div>
           </div>
           <div class="cnv-row full">
             <div class="lbl">Resolution${cnVoiceMicMarkup_('cn-fld-resolution')}</div>
-            <textarea id="cn-fld-resolution" placeholder="What did you do?" tabindex="6"></textarea>
+            <div class="ce ce-tall empty" contenteditable="true" id="cn-fld-resolution"
+                 data-field="resolution" data-placeholder="What did you do?" tabindex="6"></div>
           </div>
           <div class="cnv-row">
             <div class="lbl">Transferred to</div>
-            <input type="text" id="cn-fld-transferred" autocomplete="off" placeholder="Agent name, or leave blank / N/A" tabindex="7">
+            <div class="ce empty" contenteditable="true" id="cn-fld-transferred"
+                 data-field="transferredTo" data-placeholder="Agent name, or leave blank / N/A" tabindex="7"></div>
           </div>
+        </div>
+        <div class="below-doc">
+          <span class="copyhint">Highlight any text inside the box above and press <b>${esc(mod)}C</b> — the labels + values copy as plain text matching your CRM template.</span>
         </div>
       </div>
 
@@ -1946,7 +1999,12 @@ function cnWireActiveForm_() {
       t = setTimeout(cnPersistActiveFormDraft_, 400);
     };
   })();
-  form.querySelectorAll('input, textarea').forEach(function (el) {
+  // Round 2 deferred 8e — bind input + keydown handlers on BOTH the
+  // contenteditable .ce divs (post-deferred-8e form fields) AND the
+  // legacy <input>/<textarea> for cn-fld-training-q. The handler logic
+  // is the same; only the value-read shape differs (textContent vs value).
+  const editables = Array.prototype.slice.call(form.querySelectorAll('.ce[contenteditable], input, textarea'));
+  editables.forEach(function (el) {
     el.addEventListener('keydown', function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
@@ -1966,12 +2024,8 @@ function cnWireActiveForm_() {
         if (e.key === 'Backspace') { e.preventDefault(); cnClearActiveForm_(); return; }
         if (e.key === '/') { e.preventDefault(); cnOpenShortcutsOverlay_(); return; }
       }
-      // V4 Phase 4 — Esc clears the form (existing Ctrl/⌘+Z restores).
-      // Self-gate to avoid double-firing with the shell's Esc-close-overlay
-      // handler: if the shell already prevented default (an overlay was
-      // open and got closed), skip; otherwise clear.
       if (e.key === 'Escape' && !e.defaultPrevented) {
-        if (document.querySelector('.overlay.open')) return; // shell handler will close it first
+        if (document.querySelector('.overlay.open')) return;
         e.preventDefault();
         cnClearActiveForm_();
       }
@@ -1979,21 +2033,63 @@ function cnWireActiveForm_() {
     el.addEventListener('input', function () {
       cnFormTimerStartIfNeeded_();
       persistDebounced();
+      // Sync .empty class on contenteditable so the data-placeholder pseudo
+      // shows/hides correctly. No-op for input/textarea.
+      if (el.isContentEditable) {
+        el.classList.toggle('empty', !el.textContent.trim());
+      }
     });
+    // Paste sanitisation — strip HTML, insert plain text only. Stops formatted
+    // pastes from leaking <span style="..."> nodes into the contenteditable.
+    if (el.isContentEditable) {
+      el.addEventListener('paste', function (e) {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain') || '';
+        document.execCommand('insertText', false, text);
+      });
+      // blur sync — handles cases where input event didn't fire (e.g., IME)
+      el.addEventListener('blur', function () {
+        el.classList.toggle('empty', !el.textContent.trim());
+      });
+    }
   });
-  // Phone-number auto-format on the Callback field. Runs after the generic
-  // input listener so persistence sees the formatted value.
+  // Phone-number auto-format on the Callback field. Now reads textContent
+  // and uses the Selection API to put the cursor at end (cnSetCursorToEnd_).
   const cb = document.getElementById('cn-fld-callback');
   if (cb) {
     cb.addEventListener('input', function () {
-      const formatted = cnFormatPhoneNumberInline_(cb.value);
-      if (formatted !== cb.value) {
-        cb.value = formatted;
-        // Cursor lands at end — natural for forward-typing. (Editing in the
-        // middle of a phone is rare and the formatter would fight any
-        // attempt to preserve mid-string position when adding parens.)
-        cb.setSelectionRange(formatted.length, formatted.length);
+      const raw = cb.isContentEditable ? cb.textContent : cb.value;
+      const formatted = cnFormatPhoneNumberInline_(raw);
+      if (formatted !== raw) {
+        if (cb.isContentEditable) {
+          cb.textContent = formatted;
+          cnSetCursorToEnd_(cb);
+          cb.classList.toggle('empty', !cb.textContent.trim());
+        } else {
+          cb.value = formatted;
+          cb.setSelectionRange(formatted.length, formatted.length);
+        }
       }
+    });
+  }
+  // Round 2 deferred 8e — Manual-copy failover. ⌘C anywhere inside the
+  // frame intercepts the copy event, preventDefaults the browser's
+  // default selection-text copy, and writes the FULL formatted note
+  // template (cnFormatNoteForCopy_, same helper Save & Copy uses) to
+  // the clipboard. So drag-highlighting any subset of the frame still
+  // pastes a complete, CRM-ready note. */
+  const frame = document.getElementById('cn-frame');
+  if (frame) {
+    frame.addEventListener('copy', function (e) {
+      try {
+        const payload = cnReadActiveForm_();
+        const fmt = cnFormatNoteForCopy_(payload);
+        if (e.clipboardData) {
+          e.clipboardData.setData('text/plain', fmt);
+          e.preventDefault();
+          showToast('Copied (full note template)', 'toast-success');
+        }
+      } catch (err) { /* fall through to browser default copy */ }
     });
   }
   // Ctrl/⌘+Z restores a freshly-cleared form (within CN_CLEAR_UNDO_WINDOW_MS).
@@ -2005,12 +2101,13 @@ function cnWireActiveForm_() {
       if (!snap) return;
       if (Date.now() - snap.at > CN_CLEAR_UNDO_WINDOW_MS) return;
       // Only restore if the form is currently empty (= still in cleared state).
-      // Once the rep starts typing, native input-level undo takes over.
-      const allEmpty = !document.getElementById('cn-fld-callback').value
-        && !document.getElementById('cn-fld-caller').value
-        && !document.getElementById('cn-fld-patient').value
-        && !document.getElementById('cn-fld-issue').value
-        && !document.getElementById('cn-fld-resolution').value;
+      // Round 2 deferred 8e — read via cnGetFieldValue_ so the check works
+      // for both contenteditable .ce divs and legacy input/textarea elements.
+      const allEmpty = !cnGetFieldValue_('cn-fld-callback').trim()
+        && !cnGetFieldValue_('cn-fld-caller').trim()
+        && !cnGetFieldValue_('cn-fld-patient').trim()
+        && !cnGetFieldValue_('cn-fld-issue').trim()
+        && !cnGetFieldValue_('cn-fld-resolution').trim();
       if (!allEmpty) return;
       e.preventDefault();
       cnRestoreFromSnapshot_(snap);
@@ -2040,14 +2137,10 @@ function cnWireActiveForm_() {
 function cnRestoreFromSnapshot_(snap) {
   if (!snap) return;
   Object.keys(snap.values || {}).forEach(function (k) {
-    const el = document.getElementById('cn-fld-' + k);
-    if (el) el.value = snap.values[k];
+    cnSetFieldValue_('cn-fld-' + k, snap.values[k]);
   });
   const form = document.getElementById('cn-active-form');
   if (form) {
-    // Round 2 · 8e — restore multi-select flags + tags. snap.flags is the
-    // new shape; snap.flag (legacy single string) is migrated to a one-elt
-    // array if no snap.flags is present.
     if (Array.isArray(snap.flags)) {
       cnSetFormFlags_(form, snap.flags);
     } else if (snap.flag) {
@@ -2057,8 +2150,7 @@ function cnRestoreFromSnapshot_(snap) {
     }
     if (Array.isArray(snap.tags)) cnSetFormTags_(form, snap.tags);
   }
-  const tq = document.getElementById('cn-fld-training-q');
-  if (tq) tq.value = snap.trainingQ || '';
+  cnSetFieldValue_('cn-fld-training-q', snap.trainingQ || '');
   showToast('Restored', 'toast-success');
 }
 
@@ -2069,14 +2161,13 @@ function cnClearActiveForm_(opts) {
   if (!skipSnap) {
     const values = {};
     fields.forEach(function (k) {
-      const el = document.getElementById('cn-fld-' + k);
-      if (el) values[k] = el.value;
+      values[k] = cnGetFieldValue_('cn-fld-' + k);
     });
-    const tq0 = document.getElementById('cn-fld-training-q');
+    const tqVal = cnGetFieldValue_('cn-fld-training-q');
     const flags0 = cnGetFormFlags_(form0);
     const tags0 = cnGetFormTags_(form0);
     const anyContent = fields.some(function (k) { return (values[k] || '').trim().length > 0; })
-                     || (tq0 && tq0.value.trim())
+                     || (tqVal && tqVal.trim())
                      || flags0.length > 0
                      || tags0.length > 0;
     if (anyContent) {
@@ -2085,24 +2176,20 @@ function cnClearActiveForm_(opts) {
         flags: flags0,
         tags: tags0,
         flag: form0 ? form0.dataset.flag : '',  // legacy field retained
-        trainingQ: tq0 ? tq0.value : '',
+        trainingQ: tqVal,
         at: Date.now(),
       };
       showToast('Cleared · ' + (cnIsMac_() ? '⌘' : 'Ctrl') + '+Z to undo', 'toast-warn');
     }
   }
   fields.forEach(function (k) {
-    const el = document.getElementById('cn-fld-' + k);
-    if (el) el.value = '';
+    cnSetFieldValue_('cn-fld-' + k, '');
   });
   if (form0) {
-    // Round 2 · 8e — clear multi-select flags + tags via the setters so
-    // button .on classes, training-q visibility, chip row all stay in sync.
     cnSetFormFlags_(form0, []);
     cnSetFormTags_(form0, []);
   }
-  const tq = document.getElementById('cn-fld-training-q');
-  if (tq) tq.value = '';
+  cnSetFieldValue_('cn-fld-training-q', '');
   const tagIn = document.getElementById('cn-tag-input');
   if (tagIn) tagIn.value = '';
   cnClearStickyFormDraft_();
@@ -2176,27 +2263,62 @@ function cnNormalizeTag_(raw) {
   return tag;
 }
 
+/** Round 2 deferred 8e — Put the caret at end of a contenteditable
+ *  element. Used by the phone formatter after writing the formatted
+ *  string back; native input.setSelectionRange doesn't exist on .ce divs. */
+function cnSetCursorToEnd_(el) {
+  if (!el) return;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+  } catch (e) { /* selection unavailable — cursor stays where it was */ }
+}
+
+/** Round 2 deferred 8e — Field accessors that work transparently with
+ *  contenteditable divs (the new form fields, post-deferred-8e) AND
+ *  legacy input/textarea elements (cn-tag-input, cn-fld-training-q,
+ *  email modal fields). The check is `el.isContentEditable` which is
+ *  a built-in DOM property. */
+function cnGetFieldValue_(id) {
+  const el = document.getElementById(id);
+  if (!el) return '';
+  if (el.isContentEditable) return el.textContent || '';
+  return el.value || '';
+}
+function cnSetFieldValue_(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const v = value || '';
+  if (el.isContentEditable) {
+    el.textContent = v;
+    el.classList.toggle('empty', !el.textContent.trim());
+    // Fire input event so persistence + timer + format-on-type listeners
+    // react the same way as user typing
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    el.value = v;
+  }
+}
+
 function cnReadActiveForm_() {
   const form = document.getElementById('cn-active-form');
   const flags = cnGetFormFlags_(form);
   const tags = cnGetFormTags_(form);
   const flag = (form && form.dataset.flag) || '';
-  const trainingEl = document.getElementById('cn-fld-training-q');
-  // When training is selected, capture the rep's question into subformData.
-  // Other flag types don't add a question prompt.
-  const trainingQ = (flags.indexOf('training') >= 0 && trainingEl) ? trainingEl.value.trim() : '';
-  // subformData merges trainingQuestion + (server-side will merge flags/tags
-  // via sanitizeCallNotePayload_). Sending flags + tags as TOP-LEVEL fields
-  // on the payload — sanitizer reads them and folds into subformData server-
-  // side so the on-disk JSON shape stays consistent.
+  // training-q input is still an <input> (lives below the doc frame, not
+  // contenteditable) — cnGetFieldValue_ falls through to .value transparently.
+  const trainingQ = (flags.indexOf('training') >= 0) ? cnGetFieldValue_('cn-fld-training-q').trim() : '';
   return {
-    callback:      document.getElementById('cn-fld-callback').value,
-    caller:        document.getElementById('cn-fld-caller').value,
-    relationship:  document.getElementById('cn-fld-relationship').value,
-    patientAndTrx: document.getElementById('cn-fld-patient').value,
-    issue:         document.getElementById('cn-fld-issue').value,
-    transferredTo: document.getElementById('cn-fld-transferred').value,
-    resolution:    document.getElementById('cn-fld-resolution').value,
+    callback:      cnGetFieldValue_('cn-fld-callback'),
+    caller:        cnGetFieldValue_('cn-fld-caller'),
+    relationship:  cnGetFieldValue_('cn-fld-relationship'),
+    patientAndTrx: cnGetFieldValue_('cn-fld-patient'),
+    issue:         cnGetFieldValue_('cn-fld-issue'),
+    transferredTo: cnGetFieldValue_('cn-fld-transferred'),
+    resolution:    cnGetFieldValue_('cn-fld-resolution'),
     flagType:      flag,
     flags:         flags,
     tags:          tags,
@@ -2246,20 +2368,18 @@ function cnPersistActiveFormDraft_() {
   try {
     const values = {};
     ['callback','caller','relationship','patient','issue','transferred','resolution'].forEach(function (k) {
-      const el = document.getElementById('cn-fld-' + k);
-      if (el) values[k] = el.value;
+      values[k] = cnGetFieldValue_('cn-fld-' + k);
     });
     const form = document.getElementById('cn-active-form');
-    const tq = document.getElementById('cn-fld-training-q');
-    // Round 2 · 8e — include multi-flag + tags state in the persisted draft.
+    const tqVal = cnGetFieldValue_('cn-fld-training-q');
     const flags = cnGetFormFlags_(form);
     const tags = cnGetFormTags_(form);
     const data = {
       values: values,
       flags: flags,
       tags: tags,
-      flag: form ? form.dataset.flag : '',  // legacy field retained
-      trainingQ: tq ? tq.value : '',
+      flag: form ? form.dataset.flag : '',
+      trainingQ: tqVal,
     };
     const anyContent = Object.keys(values).some(function (k) { return (values[k] || '').trim(); })
                     || flags.length > 0 || tags.length > 0
@@ -2280,24 +2400,20 @@ function cnRestoreActiveFormDraft_() {
     if (!raw) return false;
     const data = JSON.parse(raw);
     Object.keys(data.values || {}).forEach(function (k) {
-      const el = document.getElementById('cn-fld-' + k);
-      if (el) el.value = data.values[k] || '';
+      cnSetFieldValue_('cn-fld-' + k, data.values[k] || '');
     });
     const form = document.getElementById('cn-active-form');
     if (form) {
-      // Round 2 · 8e — restore multi-flag + tags via the setters
       if (Array.isArray(data.flags) && data.flags.length > 0) {
         cnSetFormFlags_(form, data.flags);
       } else if (data.flag) {
-        // Migrate legacy single-flag drafts
         cnSetFormFlags_(form, [data.flag]);
       }
       if (Array.isArray(data.tags) && data.tags.length > 0) {
         cnSetFormTags_(form, data.tags);
       }
     }
-    const tq = document.getElementById('cn-fld-training-q');
-    if (tq && data.trainingQ) tq.value = data.trainingQ;
+    if (data.trainingQ) cnSetFieldValue_('cn-fld-training-q', data.trainingQ);
     return true;
   } catch (e) { return false; }
 }
@@ -2338,12 +2454,15 @@ function cnVoiceStart_(btn) {
   recog.lang = 'en-US';
   btn._recog = recog;
   btn.classList.add('listening');
-  // Insert transcription at the cursor; if the field is empty append a
-  // leading space when appropriate so concatenated speech doesn't smush
-  // into existing text.
-  const startPos = target.selectionStart;
-  const before = target.value.slice(0, startPos);
-  const after = target.value.slice(target.selectionEnd);
+  // Round 2 deferred 8e — handle both input/textarea (selectionStart-based
+  // cursor) AND contenteditable .ce divs (textContent-append fallback —
+  // simpler than full Selection API range handling for this off-by-default
+  // feature, INV-53).
+  const isCE = target.isContentEditable;
+  const baseText = isCE ? (target.textContent || '') : (target.value || '');
+  const startPos = isCE ? baseText.length : (target.selectionStart || 0);
+  const before = isCE ? baseText : baseText.slice(0, startPos);
+  const after = isCE ? '' : baseText.slice(target.selectionEnd);
   let finalText = '';
   recog.onresult = function (event) {
     let interim = '';
@@ -2353,17 +2472,25 @@ function cnVoiceStart_(btn) {
       else interim += event.results[i][0].transcript;
     }
     const insertion = (before && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
-    target.value = before + insertion + finalText + interim + after;
-    // Trigger the form's input listeners so sticky-save + timer fire
+    const next = before + insertion + finalText + interim + after;
+    if (isCE) {
+      target.textContent = next;
+      target.classList.toggle('empty', !target.textContent.trim());
+    } else {
+      target.value = next;
+    }
     target.dispatchEvent(new Event('input', { bubbles: true }));
   };
   recog.onend = function () {
     btn.classList.remove('listening');
     btn._recog = null;
-    // Position the cursor after the inserted text so the rep can keep typing
     const insertion = (before && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
-    const newPos = before.length + insertion.length + finalText.length;
-    try { target.setSelectionRange(newPos, newPos); target.focus(); } catch (e) {}
+    if (isCE) {
+      try { cnSetCursorToEnd_(target); target.focus(); } catch (e) {}
+    } else {
+      const newPos = before.length + insertion.length + finalText.length;
+      try { target.setSelectionRange(newPos, newPos); target.focus(); } catch (e) {}
+    }
   };
   recog.onerror = function (e) {
     btn.classList.remove('listening');
@@ -2799,11 +2926,17 @@ function cnRenderCardCore_(note, expandable) {
   // trainingQuestion + trainingReply pair for older notes.
   const trainingQ = cnRenderQAThread_(note);
 
+  // Round 2 deferred 8e — card-level flag buttons recognise 'urgent' too.
+  // FlagType column still holds only action/training/review (server-side
+  // sanitizeFlagType_ unchanged); 'urgent' lives in subformData.flags so
+  // toggling it via the card still goes through cnToggleFlag_ → server.
   const flagBtn = function (kind, name, on) {
     const cls = 'cn-act-btn ' + kind + (on ? ' is-on' : '');
     const lbl = kind === 'action' ? 'Flag for action'
               : kind === 'training' ? 'Flag for training'
-              : 'Flag as review candidate';
+              : kind === 'review' ? 'Flag as review candidate'
+              : kind === 'urgent' ? 'Mark urgent'
+              : 'Flag';
     return `<button class="${cls}" title="${lbl}" data-cn-action="flag" data-flag-kind="${kind}">${icon(name, 14)}</button>`;
   };
 
@@ -4949,13 +5082,15 @@ function cnApplyPrefillFromUrl_() {
       const value = pair.substring(idx + 1).trim();
       const targetId = supported[key];
       if (!targetId) return; // unknown key — ignore (date is informational only)
+      // Round 2 deferred 8e — use cnSetFieldValue_ so contenteditable .ce
+      // divs and legacy input/textarea both work transparently. Input event
+      // is dispatched inside the setter for callback-formatter + persistence.
+      cnSetFieldValue_(targetId, value);
       const el = document.getElementById(targetId);
       if (!el) return;
-      el.value = value;
-      const fieldCell = el.closest('.cn-field');
+      // Tag prefilled row (covers both old .cn-field and new .cnv-row markup)
+      const fieldCell = el.closest('.cn-field') || el.closest('.cnv-row');
       if (fieldCell) fieldCell.classList.add('prefilled');
-      // Fire input event so the callback-formatter + persistence hooks pick it up
-      el.dispatchEvent(new Event('input', { bubbles: true }));
     });
   } catch (e) { /* malformed prefill — ignore */ }
 }

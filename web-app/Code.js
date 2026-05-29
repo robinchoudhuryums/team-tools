@@ -1445,32 +1445,68 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Employee not found.' };
-    const t = sanitizeFlagType_(flagType);
+    // Round 2 deferred 8e — accept 'urgent' as a card-level toggle. Urgent
+    // never enters the FlagType column (sanitizeFlagType_ still rejects it,
+    // INV-37 preserved), but it does flip in subformData.flags so the form
+    // toolbar + admin queries see consistent state. action/training/review
+    // continue to flow through FlagType as before.
+    const raw = String(flagType || '').trim().toLowerCase();
+    const isUrgent = (raw === 'urgent');
+    const t = isUrgent ? '' : sanitizeFlagType_(flagType);
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
 
-    // Any flag transition resets Resolved — stale resolved=TRUE from a prior
-    // action-flag cycle would mislead the rep when re-flagging (and would be
-    // hidden from them since the resolve UI only shows for flagType=='action').
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (e) {}
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+
+    if (isUrgent) {
+      // Toggle urgent in subformData.flags without touching FlagType column.
+      const cur = Array.isArray(subformData.flags) ? subformData.flags.slice() : [];
+      const idx = cur.indexOf('urgent');
+      if (idx >= 0) cur.splice(idx, 1);
+      else cur.push('urgent');
+      subformData.flags = cur;
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+      writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
+        `noteId=${noteId}; urgent=${idx >= 0 ? 'off' : 'on'}`);
+      const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+      return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+    }
+
+    // Standard FlagType (action/training/review/'') path
     const oldFlag = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
     sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(t);
     if (oldFlag !== t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
 
     if (t === 'training' && trainingQuestion) {
-      let subformData = null;
-      if (located.row[CN.SUBFORM_DATA]) {
-        try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (e) {}
-      }
-      if (!subformData || typeof subformData !== 'object') subformData = {};
       subformData.trainingQuestion = String(trainingQuestion).trim();
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    }
+    // Mirror the primary flag into subformData.flags so the form toolbar
+    // + tag taxonomy stay in sync with the FlagType column.
+    if (t) {
+      const cur = Array.isArray(subformData.flags) ? subformData.flags.slice() : [];
+      // Drop any conflicting prior primary flag (CN_FLAG_TYPES only — urgent stays)
+      const pruned = cur.filter(function (f) {
+        return CN_FLAG_TYPES.indexOf(f) < 0 || f === t;
+      });
+      if (pruned.indexOf(t) < 0) pruned.push(t);
+      subformData.flags = pruned;
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    } else if (Array.isArray(subformData.flags) && subformData.flags.length > 0) {
+      // Cleared primary — drop CN_FLAG_TYPES entries (keep urgent)
+      subformData.flags = subformData.flags.filter(function (f) { return CN_FLAG_TYPES.indexOf(f) < 0; });
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
     }
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
       `noteId=${noteId}; ${t || '<cleared>'}`);
-    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
