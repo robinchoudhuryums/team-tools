@@ -74,7 +74,7 @@
     --t: 180ms;
 
     /* ── Layout ────────────────────────────────────────────────────── */
-    --sidebar-w:     240px;
+    --sidebar-w:     168px;
     --content-max:   1280px;
     --mobile-nav-h:  60px;
 
@@ -206,10 +206,11 @@
     display: inline-flex; align-items: center; gap: 8px;
   }
 
-  /* Display title — Inter Tight, lighter weight than legacy view-title */
+  /* Display title — Inter Tight semibold (600). Bumped from 500 in
+     Round 2 to match the mockup density across Clock/Time/Manage/Metrics. */
   .display-title {
     font-family: var(--display);
-    font-size: 28px; font-weight: 500;
+    font-size: 28px; font-weight: 600;
     letter-spacing: -.02em; line-height: 1.15;
     color: var(--ink); margin: 0;
   }

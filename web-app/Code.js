@@ -176,6 +176,68 @@ const CN_HEADERS = [
   'Subform','SubformData',
 ];
 const CN_FLAG_TYPES = ['action','training','review'];
+// Round 2 · 8e — extended flag set for the multi-select toolbar. 'urgent'
+// is new; pin lives separately in subformData.pinned (subject to its own
+// 3-cap, INV-50). Order matters — it drives deriveFlagType_'s priority.
+const CN_FLAG_TYPES_EXTENDED = ['action','training','review','urgent'];
+const CN_FLAG_PRIORITY = ['action','training','review','urgent'];
+
+/** Round 2 · 8e — derives the single FlagType column value from a
+ *  multi-select flags array. Maintains backward compat with existing
+ *  manager digests (managerGetReviewCandidates, weekly digest, EOD
+ *  digest, INV-37 sanitizeFlagType_) by picking the highest-priority
+ *  flag that the legacy infrastructure understands. 'urgent' (new in
+ *  Round 2) only becomes FlagType when no higher-priority flag is set;
+ *  otherwise it lives in subformData.flags only. */
+function deriveFlagType_(flagsArray) {
+  if (!Array.isArray(flagsArray) || flagsArray.length === 0) return '';
+  const set = {};
+  flagsArray.forEach(function (f) { set[String(f || '').toLowerCase()] = true; });
+  for (var i = 0; i < CN_FLAG_PRIORITY.length; i++) {
+    if (set[CN_FLAG_PRIORITY[i]]) {
+      // For the legacy FlagType column, only return values that existing
+      // infrastructure understands (CN_FLAG_TYPES). 'urgent' falls through
+      // since none of the existing digests/queues look for it.
+      if (CN_FLAG_TYPES.indexOf(CN_FLAG_PRIORITY[i]) >= 0) return CN_FLAG_PRIORITY[i];
+    }
+  }
+  return '';
+}
+
+/** Round 2 · 8e — normalize the multi-flag array. Lowercases, dedupes,
+ *  rejects unknowns, drops empty strings. */
+function sanitizeFlagsArray_(arr) {
+  if (!Array.isArray(arr)) return [];
+  const seen = {};
+  const out = [];
+  for (var i = 0; i < arr.length; i++) {
+    const f = String(arr[i] || '').trim().toLowerCase();
+    if (!f) continue;
+    if (CN_FLAG_TYPES_EXTENDED.indexOf(f) < 0) continue;
+    if (seen[f]) continue;
+    seen[f] = true;
+    out.push(f);
+  }
+  return out;
+}
+
+/** Round 2 · 8e — normalize the free-text tag array. Each tag is forced
+ *  to lowercase kebab-case (a–z, 0–9, hyphen), length 2–24, max 8 tags.
+ *  Matches the client-side validation in cnNormalizeTag_. */
+function sanitizeTagsArray_(arr) {
+  if (!Array.isArray(arr)) return [];
+  const seen = {};
+  const out = [];
+  for (var i = 0; i < arr.length && out.length < 8; i++) {
+    const raw = String(arr[i] || '').trim().toLowerCase();
+    const tag = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (tag.length < 2 || tag.length > 24) continue;
+    if (seen[tag]) continue;
+    seen[tag] = true;
+    out.push(tag);
+  }
+  return out;
+}
 
 // CDR / DQE Historical Data column positions (1-indexed, matching Config.gs
 // in call-data-reporting). Duration columns (TTT, ATT, AVG_ABD_WAIT,
@@ -241,8 +303,16 @@ function doGet(e) {
   // non-employees see the shell but can't load any data or perform any
   // actions. This is intentional — Session.getActiveUser().getEmail()
   // is unreliable with executeAs: USER_DEPLOYING + ANYONE_ANONYMOUS.
-  return HtmlService
-    .createTemplateFromFile('index')
+  //
+  // Round 2 · 8x — pass the URL query params through the template eval.
+  // Apps Script's HtmlService iframe (script.googleusercontent.com) doesn't
+  // expose the parent deploy URL's query string via window.location.search,
+  // so reading ?compact=1 / ?tool=X / ?prefill=… directly from the iframe
+  // silently returns empty. The template injects serverQueryParams into
+  // window.SERVER_QUERY_PARAMS so client code can read them reliably.
+  const tpl = HtmlService.createTemplateFromFile('index');
+  tpl.serverQueryParams = (e && e.parameter) || {};
+  return tpl
     .evaluate()
     .setTitle('UMS Team Tools')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -1375,32 +1445,68 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Employee not found.' };
-    const t = sanitizeFlagType_(flagType);
+    // Round 2 deferred 8e — accept 'urgent' as a card-level toggle. Urgent
+    // never enters the FlagType column (sanitizeFlagType_ still rejects it,
+    // INV-37 preserved), but it does flip in subformData.flags so the form
+    // toolbar + admin queries see consistent state. action/training/review
+    // continue to flow through FlagType as before.
+    const raw = String(flagType || '').trim().toLowerCase();
+    const isUrgent = (raw === 'urgent');
+    const t = isUrgent ? '' : sanitizeFlagType_(flagType);
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
 
-    // Any flag transition resets Resolved — stale resolved=TRUE from a prior
-    // action-flag cycle would mislead the rep when re-flagging (and would be
-    // hidden from them since the resolve UI only shows for flagType=='action').
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (e) {}
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+
+    if (isUrgent) {
+      // Toggle urgent in subformData.flags without touching FlagType column.
+      const cur = Array.isArray(subformData.flags) ? subformData.flags.slice() : [];
+      const idx = cur.indexOf('urgent');
+      if (idx >= 0) cur.splice(idx, 1);
+      else cur.push('urgent');
+      subformData.flags = cur;
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+      const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+      writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
+        `noteId=${noteId}; urgent=${idx >= 0 ? 'off' : 'on'}`);
+      const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+      return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+    }
+
+    // Standard FlagType (action/training/review/'') path
     const oldFlag = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
     sheet.getRange(located.rowIndex, CN.FLAG_TYPE + 1).setValue(t);
     if (oldFlag !== t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
 
     if (t === 'training' && trainingQuestion) {
-      let subformData = null;
-      if (located.row[CN.SUBFORM_DATA]) {
-        try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (e) {}
-      }
-      if (!subformData || typeof subformData !== 'object') subformData = {};
       subformData.trainingQuestion = String(trainingQuestion).trim();
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    }
+    // Mirror the primary flag into subformData.flags so the form toolbar
+    // + tag taxonomy stay in sync with the FlagType column.
+    if (t) {
+      const cur = Array.isArray(subformData.flags) ? subformData.flags.slice() : [];
+      // Drop any conflicting prior primary flag (CN_FLAG_TYPES only — urgent stays)
+      const pruned = cur.filter(function (f) {
+        return CN_FLAG_TYPES.indexOf(f) < 0 || f === t;
+      });
+      if (pruned.indexOf(t) < 0) pruned.push(t);
+      subformData.flags = pruned;
+      sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+    } else if (Array.isArray(subformData.flags) && subformData.flags.length > 0) {
+      // Cleared primary — drop CN_FLAG_TYPES entries (keep urgent)
+      subformData.flags = subformData.flags.filter(function (f) { return CN_FLAG_TYPES.indexOf(f) < 0; });
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
     }
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
     writeAuditLog_(emp, 'CallNoteFlag', dateLocal, '', false, 0,
       `noteId=${noteId}; ${t || '<cleared>'}`);
-    // (Ambient cache is purely TTL-driven now — see INV-43.)
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -1841,6 +1947,262 @@ function getEnrolledCallNotesReps() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every
+ *  enrolled rep's call-notes Sheet for subformData.tags[] entries and
+ *  returns unique tags with usage counts. Manager-gated; read-only.
+ *  Returns: { tags: [{ tag, count, lastSeen, archived }], archivedOnlyTags,
+ *  totalNotes, repsScanned }. Archived tags (from CN_ARCHIVED_TAGS Script
+ *  Property) are marked but kept in the response so the admin UI can show
+ *  them with a "Restore" action. archivedOnlyTags carries tags that are
+ *  archived but no longer in use (count=0). */
+function getCallNotesTagTaxonomy() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const archivedSet = getArchivedTagsSet_();
+    const roster = getEmployeeRosterRows_();
+    const counts = {};       // tag → { tag, count, lastSeen, archived }
+    let totalNotes = 0;
+    let repsScanned = 0;
+    for (let i = 1; i < roster.length; i++) {
+      const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      try {
+        const repEmp = {
+          id: String(roster[i][EMP.ID]).trim(),
+          callNotesSheetId: String(sheetId).trim(),
+        };
+        const sheet = getCallNotesSheet_(repEmp);
+        const rows = sheet.getDataRange().getValues();
+        repsScanned++;
+        for (let j = 1; j < rows.length; j++) {
+          totalNotes++;
+          const subRaw = rows[j][CN.SUBFORM_DATA];
+          if (!subRaw) continue;
+          let sub = null;
+          try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+          if (!sub || !Array.isArray(sub.tags)) continue;
+          const dateLocal = normalizeDate_(rows[j][CN.DATE_LOCAL]);
+          sub.tags.forEach(function (t) {
+            const tag = String(t || '').trim().toLowerCase();
+            if (!tag) return;
+            if (!counts[tag]) counts[tag] = { tag: tag, count: 0, lastSeen: '', archived: !!archivedSet[tag] };
+            counts[tag].count++;
+            if (dateLocal > counts[tag].lastSeen) counts[tag].lastSeen = dateLocal;
+          });
+        }
+      } catch (e) { /* skip unreachable rep sheet */ }
+    }
+    // Archived-but-unused tags — admins may want to keep them visible to
+    // restore later, so emit them as a separate list.
+    const archivedOnlyTags = [];
+    Object.keys(archivedSet).forEach(function (tag) {
+      if (!counts[tag]) archivedOnlyTags.push({ tag: tag, count: 0, lastSeen: '', archived: true });
+    });
+    archivedOnlyTags.sort(function (a, b) { return a.tag.localeCompare(b.tag); });
+    const tags = Object.keys(counts).map(function (k) { return counts[k]; });
+    tags.sort(function (a, b) { return b.count - a.count || a.tag.localeCompare(b.tag); });
+    return { tags: tags, archivedOnlyTags: archivedOnlyTags, totalNotes: totalNotes, repsScanned: repsScanned };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Round 2 follow-on (Tag taxonomy actions) — Admin tag mutations ────────
+// rename / merge / archive operate across every enrolled rep's per-rep Sheet.
+// Manager-gated, locked at the project level (LockService.getScriptLock).
+// Each writes a CallNoteTagAdmin audit row on the calling manager's home
+// audit sheet recording the action + the affected tag(s) + counts touched.
+
+const CN_ARCHIVED_TAGS_PROP = 'CN_ARCHIVED_TAGS';
+
+/** Returns { tag: true } for each archived tag stored in Script Properties.
+ *  The property is a JSON-encoded array of lowercase tag strings; missing
+ *  or malformed values return an empty set (defensive). */
+function getArchivedTagsSet_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(CN_ARCHIVED_TAGS_PROP);
+    if (!raw) return {};
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return {};
+    const out = {};
+    arr.forEach(function (t) {
+      const tag = String(t || '').trim().toLowerCase();
+      if (tag) out[tag] = true;
+    });
+    return out;
+  } catch (e) { return {}; }
+}
+
+/** Writes the archived-tags set back to Script Properties as a JSON array
+ *  of lowercase tag strings. Empty set removes the property. */
+function setArchivedTagsSet_(setObj) {
+  const props = PropertiesService.getScriptProperties();
+  const arr = Object.keys(setObj || {}).filter(function (k) { return !!setObj[k]; }).sort();
+  if (arr.length === 0) {
+    props.deleteProperty(CN_ARCHIVED_TAGS_PROP);
+  } else {
+    props.setProperty(CN_ARCHIVED_TAGS_PROP, JSON.stringify(arr));
+  }
+}
+
+/** Validates + normalizes a tag string. Mirrors sanitizeTagsArray_'s
+ *  per-tag rule: lowercase kebab-case, 2–24 chars. Returns '' on invalid. */
+function normalizeTagForAdmin_(raw) {
+  const lower = String(raw || '').trim().toLowerCase();
+  const tag = lower.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (tag.length < 2 || tag.length > 24) return '';
+  return tag;
+}
+
+/** Walks every enrolled rep's Sheet; for each note whose subformData.tags
+ *  contains `oldTag`, applies `transform(tags)` to the array and writes
+ *  the new subformData JSON back. Returns aggregate { repsTouched,
+ *  notesUpdated }. Wrapped in caller's lock — DO NOT call without the
+ *  caller holding LockService.getScriptLock. */
+function applyTagTransformAcrossReps_(oldTag, transform) {
+  const roster = getEmployeeRosterRows_();
+  let repsTouched = 0, notesUpdated = 0;
+  for (let i = 1; i < roster.length; i++) {
+    const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+    if (!sheetId) continue;
+    try {
+      const repEmp = {
+        id: String(roster[i][EMP.ID]).trim(),
+        callNotesSheetId: String(sheetId).trim(),
+      };
+      const sheet = getCallNotesSheet_(repEmp);
+      const rows = sheet.getDataRange().getValues();
+      let repHadUpdate = false;
+      for (let j = 1; j < rows.length; j++) {
+        const subRaw = rows[j][CN.SUBFORM_DATA];
+        if (!subRaw) continue;
+        let sub = null;
+        try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+        if (!sub || !Array.isArray(sub.tags)) continue;
+        if (sub.tags.indexOf(oldTag) < 0) continue;
+        const next = transform(sub.tags.slice());
+        if (!arraysEqual_(next, sub.tags)) {
+          sub.tags = next;
+          sheet.getRange(j + 1, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(sub));
+          notesUpdated++;
+          repHadUpdate = true;
+        }
+      }
+      if (repHadUpdate) repsTouched++;
+    } catch (e) { /* skip unreachable rep sheet */ }
+  }
+  return { repsTouched: repsTouched, notesUpdated: notesUpdated };
+}
+
+function arraysEqual_(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Round 2 follow-on (8h Admin tag actions) — Renames a tag across every
+ *  enrolled rep's notes. Manager-gated, locked at the project level so
+ *  concurrent submits / other tag mutations can't interleave. If the new
+ *  tag already exists on a note, the rename collapses (dedupes) by
+ *  dropping the old tag from those rows. Audit row records old+new+counts. */
+function renameCallNoteTag(oldTag, newTag) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const oldT = normalizeTagForAdmin_(oldTag);
+    const newT = normalizeTagForAdmin_(newTag);
+    if (!oldT) return { success: false, error: 'Invalid source tag.' };
+    if (!newT) return { success: false, error: 'Invalid target tag (lowercase kebab-case, 2–24 chars).' };
+    if (oldT === newT) return { success: false, error: 'Source and target are the same tag.' };
+    const result = applyTagTransformAcrossReps_(oldT, function (tags) {
+      // Replace oldT with newT; dedupe so the same tag never appears twice.
+      const seen = {};
+      const out = [];
+      tags.forEach(function (t) {
+        const next = (t === oldT) ? newT : t;
+        if (!seen[next]) { seen[next] = true; out.push(next); }
+      });
+      return out;
+    });
+    writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
+      `rename ${oldT} → ${newT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
+      callerEmp.email);
+    return { success: true, action: 'rename', oldTag: oldT, newTag: newT,
+             repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Round 2 follow-on (8h Admin tag actions) — Merges sourceTag into
+ *  targetTag across every enrolled rep's notes. Identical to rename for
+ *  the row-level operation (the dedupe in the transform handles the case
+ *  where the note already has the target). The distinction from rename is
+ *  primarily UX: the manager confirmed they expect targetTag to already
+ *  exist on some notes. Audit row labels it 'merge' for trail clarity. */
+function mergeCallNoteTags(sourceTag, targetTag) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const srcT = normalizeTagForAdmin_(sourceTag);
+    const tgtT = normalizeTagForAdmin_(targetTag);
+    if (!srcT) return { success: false, error: 'Invalid source tag.' };
+    if (!tgtT) return { success: false, error: 'Invalid target tag (lowercase kebab-case, 2–24 chars).' };
+    if (srcT === tgtT) return { success: false, error: 'Source and target are the same tag.' };
+    const result = applyTagTransformAcrossReps_(srcT, function (tags) {
+      const seen = {};
+      const out = [];
+      tags.forEach(function (t) {
+        const next = (t === srcT) ? tgtT : t;
+        if (!seen[next]) { seen[next] = true; out.push(next); }
+      });
+      return out;
+    });
+    writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
+      `merge ${srcT} → ${tgtT}; reps=${result.repsTouched}, notes=${result.notesUpdated}`,
+      callerEmp.email);
+    return { success: true, action: 'merge', sourceTag: srcT, targetTag: tgtT,
+             repsTouched: result.repsTouched, notesUpdated: result.notesUpdated };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Round 2 follow-on (8h Admin tag actions) — Archives or unarchives a
+ *  tag. Archive does NOT remove the tag from existing notes — they
+ *  continue to render their tag chips. Archive only hides the tag from
+ *  future tag-suggestion surfaces (when those land — none exist today)
+ *  and visually flags it in the Admin taxonomy table so managers see it
+ *  as a deprecated category. Stored in Script Property CN_ARCHIVED_TAGS
+ *  (JSON array of lowercase tag strings). */
+function archiveCallNoteTag(tag, archived) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const t = normalizeTagForAdmin_(tag);
+    if (!t) return { success: false, error: 'Invalid tag.' };
+    const set = getArchivedTagsSet_();
+    const wasArchived = !!set[t];
+    const wantArchived = !!archived;
+    if (wasArchived === wantArchived) {
+      return { success: true, action: wantArchived ? 'archive' : 'unarchive',
+               tag: t, alreadyInState: true };
+    }
+    if (wantArchived) set[t] = true;
+    else delete set[t];
+    setArchivedTagsSet_(set);
+    writeAuditLog_(callerEmp, 'CallNoteTagAdmin', '', '', false, 0,
+      `${wantArchived ? 'archive' : 'unarchive'} ${t}`,
+      callerEmp.email);
+    return { success: true, action: wantArchived ? 'archive' : 'unarchive', tag: t };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 /** Manager view of any single rep's notes. */
 function managerGetCallNotes(repEmpId, date, filter) {
   try {
@@ -2254,10 +2616,22 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
 
     const trimmed = String(reply || '').trim();
     const empTz = target.timezone || CONFIG.TIMEZONE;
+    const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
     if (trimmed) {
       subformData.trainingReply = trimmed;
       subformData.trainingReplyBy = callerEmp.email;
-      subformData.trainingReplyAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+      subformData.trainingReplyAt = nowIso;
+      // Round 2 · 8g — also append to feedback[] so multi-turn threads can
+      // build on top. Legacy clients still see trainingReply; new clients
+      // walk the feedback array. trainingQuestion stays as the seed entry.
+      subformData.feedback = Array.isArray(subformData.feedback) ? subformData.feedback : [];
+      subformData.feedback.push({
+        role: 'manager',
+        message: trimmed,
+        at: nowIso,
+        by: callerEmp.email,
+        kind: 'reply',
+      });
     } else {
       delete subformData.trainingReply;
       delete subformData.trainingReplyBy;
@@ -2269,6 +2643,63 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
     writeAuditLog_(target, 'CallNoteTrainingReply', dateLocal, '', false, 0,
       `noteId=${noteId}; ${trimmed ? 'reply set' : 'reply cleared'}`,
       callerEmp.email);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Round 2 · 8g — Agent responds to a manager's training feedback. Appends
+ *  to subformData.feedback[] with the agent's role + kind ('ack' for the
+ *  thumbs-up acknowledgment, 'clarification' for a follow-up question).
+ *  Rep-callable (operates on the caller's own per-rep Sheet); locked.
+ *  Writes a CallNoteFeedback audit row. */
+function appendCallNoteFeedback(noteId, message, kind) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { success: false, error: 'Your call-notes Sheet is not configured.' };
+
+    const kindV = (kind === 'ack' || kind === 'clarification') ? kind : 'clarification';
+    const trimmed = String(message || '').trim();
+    if (kindV === 'clarification' && !trimmed) {
+      return { success: false, error: 'Please type a question before sending.' };
+    }
+
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
+    if (flagType !== 'training') {
+      return { success: false, error: 'Feedback applies only to training-flagged notes.' };
+    }
+
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); }
+      catch (e) { subformData = null; }
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+    if (!Array.isArray(subformData.feedback)) subformData.feedback = [];
+
+    const empTz = empTz_(emp);
+    const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
+    subformData.feedback.push({
+      role: 'agent',
+      message: kindV === 'ack' ? '' : trimmed,
+      at: nowIso,
+      by: emp.email,
+      kind: kindV,
+    });
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(emp, 'CallNoteFeedback', dateLocal, '', false, 0,
+      `noteId=${noteId}; kind=${kindV}`);
 
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
@@ -2322,6 +2753,23 @@ function managerAggregateFlagged_(flagType, dateRange) {
 
 function sanitizeCallNotePayload_(p) {
   const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+  // Round 2 · 8e — accept multi-flag array (p.flags) + tags (p.tags) in
+  // addition to the legacy single-select p.flagType. When p.flags is
+  // present, derive FlagType from it (priority order); fall back to
+  // p.flagType otherwise so old clients still work.
+  const flagsArr = sanitizeFlagsArray_(p.flags);
+  const derivedFromArr = flagsArr.length > 0 ? deriveFlagType_(flagsArr) : '';
+  const flagType = derivedFromArr || s(p.flagType).toLowerCase();
+  const tagsArr = sanitizeTagsArray_(p.tags);
+  // Merge tags/flags into subformData so the schema stays in one column
+  // (per X5 — no new sheet column). Pin stays in subformData.pinned with
+  // its 3-cap, separate from this array.
+  let subformData = p.subformData || null;
+  if (flagsArr.length > 0 || tagsArr.length > 0) {
+    subformData = subformData || {};
+    if (flagsArr.length > 0) subformData.flags = flagsArr;
+    if (tagsArr.length > 0) subformData.tags = tagsArr;
+  }
   return {
     callback:       s(p.callback),
     caller:         s(p.caller),
@@ -2330,9 +2778,9 @@ function sanitizeCallNotePayload_(p) {
     issue:          s(p.issue),
     transferredTo:  s(p.transferredTo),
     resolution:     s(p.resolution),
-    flagType:       s(p.flagType).toLowerCase(),
+    flagType:       flagType,
     subform:        s(p.subform).toLowerCase(),
-    subformData:    p.subformData || null,
+    subformData:    subformData,
   };
 }
 

@@ -10,6 +10,30 @@
   <?!= include('styles_design_tokens') ?>
   <?!= include('styles') ?>
   <script>
+    // Round 2 · 8x — Apps Script's HtmlService iframe sandboxes
+    // window.location.search to the iframe's own URL, not the user-facing
+    // deploy URL. doGet evaluates this template with serverQueryParams set
+    // from e.parameter so the client can read the real query string
+    // reliably. SERVER_QUERY_PARAMS is consumed by __URL_PARAMS in
+    // script_core.html. Set the data-compact attribute here in <head>
+    // so the first paint already reflects the compact-mode shell (no
+    // visible flash of the full sidebar before the JS runs).
+    //
+    // Security: the JSON below contains user-controlled query-string values.
+    // <?!= ?> emits without HTML escape; we replace `<` with `<` to
+    // prevent an attacker-controlled `</script>` from breaking out of this
+    // script block. The escape is JSON-valid (unicode escape sequence) and
+    // round-trips through JSON.parse to the original character.
+    window.SERVER_QUERY_PARAMS = <?!= JSON.stringify(serverQueryParams || {}).replace(/</g, '\\u003c') ?>;
+    (function () {
+      try {
+        if (window.SERVER_QUERY_PARAMS && window.SERVER_QUERY_PARAMS.compact === '1') {
+          document.documentElement.setAttribute('data-compact', '1');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <script>
     // Dark-mode bootstrap — runs in <head> so the first paint already
     // reflects the persisted mode (no light-mode flash). Setting on
     // documentElement makes :root[data-mode="dark"] match from frame 0;

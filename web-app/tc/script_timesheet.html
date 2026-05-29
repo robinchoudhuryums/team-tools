@@ -14,14 +14,14 @@ function loadTimesheet(startDate, endDate, targetArea) {
     .withSuccessHandler(data => {
       if (data.error) { showToast(data.error, 'toast-error'); return; }
       tsData = data; tsStart = data.startDate; tsEnd = data.endDate;
-      // Both standalone-timesheet (legacy) and combined-clock both live under
-      // the 'clock' tab now; gate on currentView === 'clock'.
+      // Round 2 · 8b note: loadTimesheet + renderTimesheetView are
+      // orphaned after the Clock view dropped its timesheet section.
+      // Kept on disk because computeRange (defined below) is still used
+      // by the new Time / PTO Timesheet-mode side rail. Reachable only
+      // if a future caller is added — gate stays as a defensive no-op.
       if (currentView !== 'clock') return;
       const area = targetArea && targetArea.isConnected ? targetArea : document.getElementById('view-area');
       if (area) renderTimesheetView(area, data, { combined });
-      // Combined-view ledger pay-period cell renders "—" until tsData arrives;
-      // backfill it now. No-op when the cell isn't in the DOM (rep nav'd away).
-      if (typeof lazyUpdatePayPeriodCell_ === 'function') lazyUpdatePayPeriodCell_();
     })
     .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
     .getTimesheetData(startDate, endDate);

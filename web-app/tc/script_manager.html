@@ -335,8 +335,15 @@ function renderManagerView(area, data) {
       if (newStatus === 'Approved' && d.conflictHint) {
         msg += `\n\n⚠ Heads up: ${d.conflictHint}.`;
       }
-      if (!confirm(msg)) return;
-      handleApprovalAction(d.empId, d.date, d.submittedAt, newStatus, btn);
+      uiConfirm({
+        title: verb + ' time off',
+        message: msg,
+        confirmLabel: verb,
+        tone: newStatus === 'Denied' ? 'danger' : undefined,
+      }).then(ok => {
+        if (!ok) return;
+        handleApprovalAction(d.empId, d.date, d.submittedAt, newStatus, btn);
+      });
     });
   });
 
@@ -362,7 +369,18 @@ function renderManagerView(area, data) {
     const checked = Array.from(document.querySelectorAll('.mgr-pending-chk:checked'));
     if (checked.length === 0) return;
     const names = checked.map(c => c.dataset.empName).join(', ');
-    if (!confirm(`${status === 'Approved' ? 'Approve' : 'Deny'} ${checked.length} request(s) for: ${names}?`)) return;
+    const verb = status === 'Approved' ? 'Approve' : 'Deny';
+    uiConfirm({
+      title: 'Bulk ' + verb.toLowerCase(),
+      message: `${verb} ${checked.length} request(s) for: ${names}?`,
+      confirmLabel: verb + ' all',
+      tone: status === 'Denied' ? 'danger' : undefined,
+    }).then(ok => {
+      if (!ok) return;
+      handleBulkActionConfirmed_(status, checked);
+    });
+  }
+  function handleBulkActionConfirmed_(status, checked) {
     if (bulkApprove) bulkApprove.disabled = true;
     if (bulkDeny) bulkDeny.disabled = true;
     let done = 0, errors = 0;
@@ -400,11 +418,17 @@ function renderManagerView(area, data) {
       const time = btn.dataset.time;
       const type = btn.dataset.type;
       const empName = btn.dataset.name;
-      if (!confirm(
-        `Delete ${prettyType(type)} for ${empName} on ${date} at ${dispTime(time)}?\n\n` +
-        `This permanently removes the punch and cannot be undone.`
-      )) return;
-      handleDeletePunch(empId, date, time, type, btn);
+      uiConfirm({
+        title: 'Delete punch',
+        message:
+          `Delete ${prettyType(type)} for ${empName} on ${date} at ${dispTime(time)}?\n\n` +
+          `This permanently removes the punch and cannot be undone.`,
+        confirmLabel: 'Delete',
+        tone: 'danger',
+      }).then(ok => {
+        if (!ok) return;
+        handleDeletePunch(empId, date, time, type, btn);
+      });
     });
   });
 

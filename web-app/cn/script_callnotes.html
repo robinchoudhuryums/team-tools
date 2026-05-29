@@ -14,14 +14,338 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════════
-     CALL NOTES — V4 LOG REDESIGN (Phase 4)
+     CALL NOTES — ROUND 2 · 8e VERTICAL LAYOUT
      ───────────────────────────────────────────────────────────────────
-     Compact 4-column form canvas that fits an entire call note above the
-     viewport fold on a 13" laptop. Replaces the prior vertical-stack
-     .cn-active-form-header + .cn-form-fields + .cn-form-actions
-     vocabulary. The form root still carries `id="cn-active-form"` so
-     existing handlers (cnSubmitActiveForm_, cnReadActiveForm_, sticky
-     drafts, optimistic UI) keep working; only the surface layout changes.
+     2/3 left = note template (input/textarea fields, vertical stack with
+     hairline rows). 1/3 right = controls rail (flag toolbar, tag chips,
+     primary actions). Replaces the Phase 4 .cn-form-grid 4-column layout.
+     Form root keeps id="cn-active-form" so cnReadActiveForm_, sticky
+     drafts, optimistic UI etc. continue to work. Contenteditable +
+     manual-copy failover deferred — see broad-implement Phase 8efgh
+     summary for context.
+     ═══════════════════════════════════════════════════════════════════ */
+  .cnv-layout {
+    display: grid; grid-template-columns: 2fr 1fr; gap: 14px;
+    margin-bottom: 14px;
+  }
+  .cnv-doc { min-width: 0; }
+  .cnv-doc-frame {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 14px 16px 8px;
+    box-shadow: var(--shadow-sm);
+  }
+  .frame-stamp {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted-2); letter-spacing: .14em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 6px;
+    padding-bottom: 8px; margin-bottom: 6px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .frame-stamp .meta { color: var(--muted-3); }
+  .frame-stamp .copyhint { margin-left: auto; color: var(--accent-2); }
+  .cnv-row {
+    display: grid; grid-template-columns: 130px 1fr; gap: 12px;
+    align-items: start; padding: 8px 0;
+    border-bottom: 1px solid color-mix(in oklch, var(--line), transparent 60%);
+  }
+  .cnv-row:last-child { border-bottom: none; }
+  .cnv-row.full { grid-template-columns: 130px 1fr; }
+  .cnv-row .lbl {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    padding-top: 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .cnv-row input,
+  .cnv-row textarea,
+  .cnv-row .ce {
+    appearance: none; border: 1px solid transparent;
+    background: transparent;
+    font-family: var(--ui); font-size: 13px; color: var(--ink);
+    padding: 5px 8px; margin: 0; width: 100%;
+    border-radius: var(--radius-sm); outline: none; resize: none;
+    transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+    font-feature-settings: 'ss01', 'cv11', 'cv05';
+    letter-spacing: -0.01em;
+    min-height: 22px;
+  }
+  .cnv-row input:focus,
+  .cnv-row textarea:focus,
+  .cnv-row .ce:focus {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .cnv-row textarea,
+  .cnv-row .ce.ce-tall { min-height: 60px; line-height: 1.4; }
+  .cnv-row.full textarea,
+  .cnv-row.full .ce.ce-tall { min-height: 80px; }
+  /* Round 2 deferred 8e — contenteditable empty-state placeholder. The
+     `.empty` class is toggled by cnSetFieldValue_ / blur / input handlers
+     based on whether textContent.trim() is empty. */
+  .cnv-row .ce {
+    cursor: text; white-space: pre-wrap; word-break: break-word;
+  }
+  .cnv-row .ce.empty::before {
+    content: attr(data-placeholder);
+    color: var(--muted-2);
+    pointer-events: none;
+  }
+  /* below-doc copy hint sits just under the frame */
+  .below-doc {
+    font-family: var(--mono); font-size: 9px; font-weight: 500;
+    color: var(--muted-2); letter-spacing: .04em;
+    padding: 8px 4px 0;
+    line-height: 1.4;
+  }
+  .below-doc b { color: var(--ink); font-weight: 700; }
+  /* Round 2 deferred 8e — prefill accent: highlight rows populated by
+     cnApplyPrefillFromUrl_ (deep-link from the Clock coverage strip
+     CTA / future caller). */
+  .cnv-row.prefilled {
+    background: color-mix(in oklch, var(--accent-soft), var(--paper-card) 50%);
+    border-left: 3px solid var(--accent);
+    padding-left: 8px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+
+  /* ─── RAIL (right 1/3) ──────────────────────────────────────────── */
+  .cnv-rail {
+    display: flex; flex-direction: column; gap: 10px;
+    min-width: 0;
+  }
+  .rail-card {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+  .rail-card h4 {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin: 0 0 8px;
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  .rail-card h4 .sub { color: var(--muted-3); font-weight: 500; }
+
+  /* Flag toolbar — multi-select. .on means the flag is active. */
+  .rail-flags {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+  }
+  .flag-btn {
+    appearance: none; cursor: pointer;
+    font-family: var(--ui); font-size: 11px; font-weight: 500;
+    padding: 6px 10px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line); background: var(--paper-card);
+    color: var(--muted);
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .flag-btn:hover { background: var(--paper-2); color: var(--ink); }
+  .flag-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+  .flag-btn.on { border-color: transparent; }
+  .flag-btn.action.on   { background: var(--warn-soft);        color: var(--warning-deep); }
+  .flag-btn.training.on { background: var(--info-soft);        color: var(--info-deep); }
+  .flag-btn.review.on   { background: var(--accent-soft);      color: var(--success-deep); }
+  .flag-btn.urgent.on   { background: var(--destructive-soft); color: var(--danger-deep); }
+
+  /* Tags */
+  .rail-tags {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin-bottom: 6px; min-height: 4px;
+  }
+  .rail-tag-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    background: var(--paper-2); border: 1px solid var(--line);
+    color: var(--ink); padding: 2px 6px 2px 8px; border-radius: 999px;
+    letter-spacing: .02em;
+  }
+  .rail-tag-x {
+    appearance: none; cursor: pointer; border: none; background: transparent;
+    color: var(--muted-2); font-size: 13px; line-height: 1;
+    padding: 0 2px; border-radius: 4px;
+  }
+  .rail-tag-x:hover { color: var(--destructive); }
+  .rail-tag-input {
+    appearance: none; width: 100%;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    background: var(--paper-card);
+    padding: 6px 8px; font-family: var(--ui); font-size: 12px;
+    color: var(--ink); outline: none;
+    transition: border-color var(--t) var(--ease);
+  }
+  .rail-tag-input:focus { border-color: var(--accent); }
+
+  /* Action buttons in the rail */
+  .rail-actions {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .rail-actions .cn-action-prime,
+  .rail-actions .cn-action-sec {
+    width: 100%; justify-content: space-between; padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  /* Compact reflow */
+  @media (max-width: 880px) {
+    .cnv-layout { grid-template-columns: 1fr; }
+  }
+  :root[data-compact] .cnv-layout { grid-template-columns: 1fr; gap: 10px; }
+  :root[data-compact] .rail-flags { grid-template-columns: 1fr; }
+
+  /* ─── EMAIL COMPOSER TAB STRIP (Round 2 modal-tab merge) ──────────
+     Shared segmented control rendered at the top of BOTH the department
+     composer (#cnC-modal) and the external composer (#cnX-modal). Click
+     transitions the modal via cnSwitchComposerTab_, preserving the
+     noteId context. Department tab is disabled when no noteId is in
+     scope (the rep clicked "Open Email" from an unsaved form). */
+  .cn-composer-tabs {
+    display: inline-flex; align-items: center; gap: 0;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px; background: var(--paper-card);
+    margin: 8px 0 4px;
+  }
+  .cn-composer-tab {
+    appearance: none; cursor: pointer; border: none; background: transparent;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    padding: 6px 14px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cn-composer-tab:hover:not(.disabled) { color: var(--ink); }
+  .cn-composer-tab.on { background: var(--ink); color: var(--paper); }
+  .cn-composer-tab.disabled {
+    cursor: not-allowed; opacity: 0.45;
+  }
+  .cn-composer-tab svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+  /* ─── ADMIN TAG TAXONOMY TABLE (Round 2 · 8h + follow-on actions) ── */
+  .cn-tax-head,
+  .cn-tax-row {
+    display: grid;
+    /* Round 2 follow-on — added Actions column; rebalanced for the row
+       buttons (Rename / Merge / Archive). */
+    grid-template-columns: 160px 1fr 50px 90px auto;
+    gap: 12px; align-items: center;
+    padding: 6px 0;
+    font-family: var(--ui); font-size: 12px;
+  }
+  .cn-tax-head {
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 4px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+  }
+  .cn-tax-row { border-bottom: 1px dashed var(--line); }
+  .cn-tax-row:last-child { border-bottom: none; }
+  .cn-tax-row.is-archived { opacity: 0.7; }
+  .cn-tax-tag {
+    font-family: var(--mono); font-weight: 600; color: var(--ink);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .cn-tax-archived-pill {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 999px;
+    background: var(--paper-2); border: 1px solid var(--line);
+  }
+  .cn-tax-bar {
+    height: 6px; background: var(--paper-2); border-radius: 3px;
+    overflow: hidden;
+  }
+  .cn-tax-bar i {
+    display: block; height: 100%; background: var(--accent);
+  }
+  .cn-tax-count {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    text-align: right; color: var(--ink);
+  }
+  .cn-tax-last {
+    font-family: var(--mono); font-size: 11px; color: var(--muted-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .cn-tax-actions {
+    display: inline-flex; gap: 4px; flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .cn-tax-act {
+    appearance: none; cursor: pointer;
+    font-family: var(--ui); font-size: 11px; font-weight: 500;
+    padding: 4px 8px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line); background: var(--paper-card); color: var(--ink);
+    display: inline-flex; align-items: center; gap: 4px;
+    transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
+  }
+  .cn-tax-act:hover { background: var(--paper-2); border-color: var(--border-strong); }
+  .cn-tax-act svg { width: 11px; height: 11px; }
+  .cn-tax-act.danger { color: var(--danger-deep); }
+  .cn-tax-act.danger:hover { background: var(--destructive-soft); border-color: var(--destructive); }
+  @media (max-width: 720px) {
+    .cn-tax-head,
+    .cn-tax-row { grid-template-columns: 1fr; }
+    .cn-tax-actions { justify-content: flex-start; }
+  }
+
+  /* ─── Q&A THREAD (Round 2 · 8g) ──────────────────────────────────── */
+  .qa-thread {
+    margin-top: 8px; padding: 8px 10px;
+    background: var(--info-soft);
+    border-left: 2px solid var(--info);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .qa-row {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 8px;
+    font-size: 12px; line-height: 1.4;
+  }
+  .qa-role {
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
+    padding-top: 2px;
+  }
+  .qa-msg { color: var(--ink); }
+  .qa-ts {
+    font-family: var(--mono); font-size: 10px; color: var(--muted-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .qa-row.qa-mgr   .qa-role { color: var(--info-deep); }
+  .qa-row.qa-agent .qa-role { color: var(--success-deep); }
+  .qa-actions {
+    display: flex; gap: 6px; margin-top: 4px;
+  }
+  .qa-ack-btn,
+  .qa-clarify-btn,
+  .qa-clarify-submit {
+    appearance: none; cursor: pointer;
+    border: 1px solid var(--line); background: var(--paper-card); color: var(--ink);
+    font-family: var(--ui); font-size: 11px; font-weight: 500;
+    padding: 4px 10px; border-radius: var(--radius-sm);
+  }
+  .qa-ack-btn:hover { background: var(--good-soft); border-color: var(--good); }
+  .qa-clarify-btn:hover { background: var(--info-soft); border-color: var(--info); }
+  .qa-clarify-row {
+    display: flex; gap: 6px; margin-top: 4px;
+  }
+  .qa-clarify-input {
+    flex: 1; min-width: 0;
+    appearance: none; resize: vertical; min-height: 36px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    padding: 6px 8px; background: var(--paper-card); color: var(--ink);
+    font-family: var(--ui); font-size: 12px;
+  }
+  .qa-clarify-submit { background: var(--accent); color: var(--paper-card); border-color: var(--accent); }
+  .qa-clarify-submit:hover { background: var(--accent-2); border-color: var(--accent-2); }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     CALL NOTES — V4 LOG REDESIGN (Phase 4) [retained for fallback CSS]
+     ───────────────────────────────────────────────────────────────────
+     The 4-column grid is no longer emitted by cnRenderActiveForm_ but
+     several supporting selectors (cn-head / cn-stats-mini / cn-actions /
+     cn-quick-chip-row) below are still active.
      ═══════════════════════════════════════════════════════════════════ */
 
   /* cn-head — eyebrow + h2 + stats-mini header. Replaces .cn-active-form-header
@@ -1467,20 +1791,11 @@ function cnRenderNotesView(area) {
     `}
     <div class="cn-rolling">
       ${cnRenderActiveForm_()}
-      <div class="cn-actions" id="cn-actions">
-        <button type="button" class="cn-action-sec" id="cn-form-clear" title="Clear note (${mod}+Z to undo)">${icon('x', 14)} Clear</button>
-        <button type="button" class="cn-action-sec" id="cn-ext-email-btn" title="Send form or external email">${icon('send', 14)} External</button>
-        <button type="button" class="cn-action-sec" id="cn-help-btn" title="Keyboard shortcuts (${mod}+/)">?</button>
-        <div class="cn-actions-spacer"></div>
-        <button type="button" class="cn-action-sec" id="cn-form-submit-compose" title="Save, copy, and open the email composer">
-          ${icon('mail', 14)} Save &amp; Compose
-          <span class="kbd-chip">${esc(mod)}⇧↵</span>
-        </button>
-        <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM">
-          Save &amp; Copy
-          <span class="kbd-chip">${esc(mod)}↵</span>
-        </button>
-      </div>
+      <!-- Round 2 · 8e — action buttons moved INSIDE the form's right rail
+           (rail-actions block). The old cn-actions row is no longer rendered;
+           button IDs (cn-form-submit, cn-form-submit-compose, cn-form-clear,
+           cn-help-btn, cn-ext-email-btn) preserved so existing handlers
+           wire to the same elements without modification. -->
       <div id="cn-pinned-tray"></div>
       <div id="cn-training-qa-tray"></div>
       <div class="cn-filter-bar" id="cn-filter-bar"></div>
@@ -1530,6 +1845,11 @@ function cnRenderNotesView(area) {
   // contract from the Clock view's coverage strip CTA, future-ready even
   // though the strip doesn't pass prefill today — no per-call CDR data).
   cnApplyPrefillFromUrl_();
+  // Round 2 · 8z — consume the in-memory nav hint from the Clock view's
+  // coverage-strip CTA. Today: just a toast acknowledging the source.
+  // When per-call CDR data lands: prefill the form from hint.calls[0]
+  // or auto-filter the rolling stack to unmatched-only.
+  cnConsumeNavHint_();
   // Restore any in-progress draft from a prior session (sticky form). If a
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
@@ -1542,54 +1862,118 @@ function cnRenderNotesView(area) {
 }
 
 function cnRenderActiveForm_() {
-  // V4 Phase 4 — 4-column grid form with field badges 01–08. Inputs keep
-  // their existing IDs (cn-fld-callback, cn-fld-caller, etc.) so all
-  // downstream handlers (cnSubmitActiveForm_, cnReadActiveForm_, sticky-
-  // draft auto-save, optimistic UI, Ctrl/⌘+Enter binding, phone formatter)
-  // continue to work without modification. Tag picker (Field 08) replaces
-  // the prior flag-trio + kebab menu but reuses the same data-flag
-  // attribute + form.dataset.flag source-of-truth pattern so setFlag /
-  // cnRestoreFromSnapshot / cnFormToggleFlag_ all see the same buttons.
+  // Round 2 · 8e — vertical 2/3 + 1/3 layout. Left panel = the call-note
+  // template as a document (input/textarea fields kept — contenteditable
+  // + manual-copy failover deferred as a follow-on, see broad-implement
+  // summary). Right panel = controls: multi-select flag toolbar (Action /
+  // Training / Review / Urgent), free-text tags (subformData.tags), three
+  // primary actions (Save & Copy / Save & Compose / Open Email). Field
+  // IDs preserved so cnReadActiveForm_, cnClearActiveForm_, sticky drafts,
+  // phone formatter, completion timer all keep working untouched.
+  const mod = cnIsMac_() ? '⌘' : 'Ctrl';
   return `
-    <div class="cn-form-grid cn-active-form" id="cn-active-form">
-      <div class="cn-field" data-field="01">
-        <label>Callback <span class="cn-field-num">01</span></label>
-        <input type="text" id="cn-fld-callback" autocomplete="off" placeholder="(555) 123-4567">
-      </div>
-      <div class="cn-field" data-field="02">
-        <label>Caller <span class="cn-field-num">02</span></label>
-        <input type="text" id="cn-fld-caller" autocomplete="off" placeholder="Caller name">
-      </div>
-      <div class="cn-field" data-field="03">
-        <label>Relationship <span class="cn-field-num">03</span></label>
-        <input type="text" id="cn-fld-relationship" autocomplete="off" placeholder="self / spouse / parent / …">
-      </div>
-      <div class="cn-field" data-field="04">
-        <label>Patient &amp; TRX <span class="cn-field-num">04</span></label>
-        <input type="text" id="cn-fld-patient" autocomplete="off" placeholder="Patient name TRX# or just TRX#">
-      </div>
-      <div class="cn-field span-2 row-2" data-field="05">
-        <label>Issue${cnVoiceMicMarkup_('cn-fld-issue')} <span class="cn-field-num">05</span></label>
-        <textarea id="cn-fld-issue" placeholder="Why did they call?"></textarea>
-      </div>
-      <div class="cn-field span-2 row-2" data-field="06">
-        <label>Resolution${cnVoiceMicMarkup_('cn-fld-resolution')} <span class="cn-field-num">06</span></label>
-        <textarea id="cn-fld-resolution" placeholder="What did you do?"></textarea>
-      </div>
-      <div class="cn-field span-2" data-field="07">
-        <label>Transferred to <span class="cn-field-num">07</span></label>
-        <input type="text" id="cn-fld-transferred" autocomplete="off" placeholder="Agent name, or leave blank / N/A">
-      </div>
-      <div class="cn-field span-2" data-field="08">
-        <label>Tag <span class="cn-field-num">08</span></label>
-        <div class="cn-tag-picker" role="group" aria-label="Flag this note">
-          <button type="button" class="cn-tag-btn cn-flag-btn active" data-flag="" data-tag="">None</button>
-          <button type="button" class="cn-tag-btn cn-flag-btn" data-flag="action" data-tag="action" title="Flag for action (follow-up)">${icon('flag', 12)}Action</button>
-          <button type="button" class="cn-tag-btn cn-flag-btn" data-flag="training" data-tag="training" title="Flag for training (need clarification)">${icon('bulb', 12)}Training</button>
-          <button type="button" class="cn-tag-btn cn-flag-btn" data-flag="review" data-tag="review" title="Review candidate (5-star)">${icon('star', 12)}Review</button>
+    <div class="cnv-layout" id="cn-active-form">
+      <!-- LEFT 2/3 — note template as a contenteditable document.
+           Round 2 deferred follow-on: the fields are <div contenteditable>
+           spans instead of <input>/<textarea> so the whole frame becomes
+           one selectable region. A `copy` event listener on the frame
+           intercepts ⌘C anywhere inside and writes the FULL formatted
+           template via cnFormatNoteForCopy_ — same output the Save & Copy
+           button produces. Paste is sanitized to plain text. -->
+      <div class="cnv-doc">
+        <div class="cnv-doc-frame" id="cn-frame">
+          <div class="frame-stamp">
+            <span>NOTE TEMPLATE</span>
+            <span class="meta">· EDIT INLINE</span>
+            <span class="copyhint">SELECTABLE — ${esc(mod)}C ANYWHERE INSIDE</span>
+          </div>
+          <div class="cnv-row">
+            <div class="lbl">Callback</div>
+            <div class="ce empty" contenteditable="true" id="cn-fld-callback"
+                 data-field="callback" data-placeholder="(555) 123-4567"
+                 autocapitalize="off" autocorrect="off" spellcheck="false"
+                 tabindex="1"></div>
+          </div>
+          <div class="cnv-row">
+            <div class="lbl">Caller</div>
+            <div class="ce empty" contenteditable="true" id="cn-fld-caller"
+                 data-field="caller" data-placeholder="Caller name" tabindex="2"></div>
+          </div>
+          <div class="cnv-row">
+            <div class="lbl">Relationship</div>
+            <div class="ce empty" contenteditable="true" id="cn-fld-relationship"
+                 data-field="relationship" data-placeholder="self / spouse / parent / …" tabindex="3"></div>
+          </div>
+          <div class="cnv-row">
+            <div class="lbl">Patient &amp; TRX</div>
+            <div class="ce empty" contenteditable="true" id="cn-fld-patient"
+                 data-field="patient" data-placeholder="Patient name TRX# or just TRX#"
+                 autocapitalize="off" autocorrect="off" spellcheck="false"
+                 tabindex="4"></div>
+          </div>
+          <div class="cnv-row full">
+            <div class="lbl">Issue${cnVoiceMicMarkup_('cn-fld-issue')}</div>
+            <div class="ce ce-tall empty" contenteditable="true" id="cn-fld-issue"
+                 data-field="issue" data-placeholder="Why did they call?" tabindex="5"></div>
+          </div>
+          <div class="cnv-row full">
+            <div class="lbl">Resolution${cnVoiceMicMarkup_('cn-fld-resolution')}</div>
+            <div class="ce ce-tall empty" contenteditable="true" id="cn-fld-resolution"
+                 data-field="resolution" data-placeholder="What did you do?" tabindex="6"></div>
+          </div>
+          <div class="cnv-row">
+            <div class="lbl">Transferred to</div>
+            <div class="ce empty" contenteditable="true" id="cn-fld-transferred"
+                 data-field="transferredTo" data-placeholder="Agent name, or leave blank / N/A" tabindex="7"></div>
+          </div>
+        </div>
+        <div class="below-doc">
+          <span class="copyhint">Highlight any text inside the box above and press <b>${esc(mod)}C</b> — the labels + values copy as plain text matching your CRM template.</span>
         </div>
       </div>
-      <div class="cn-training-q-row cn-field span-4" id="cn-training-q-row" data-field="*" style="display:none">
+
+      <!-- RIGHT 1/3 — controls -->
+      <div class="cnv-rail">
+        <div class="rail-card">
+          <h4><span>Flags</span><span class="sub">categorize</span></h4>
+          <div class="rail-flags" role="group" aria-label="Flag this note">
+            <button type="button" class="flag-btn action"   data-flag="action"   title="Flag for action (follow-up)">${icon('flag', 12)} Action</button>
+            <button type="button" class="flag-btn training" data-flag="training" title="Flag for training (need clarification)">${icon('bulb', 12)} Training</button>
+            <button type="button" class="flag-btn review"   data-flag="review"   title="Review candidate (5-star)">${icon('star', 12)} Review</button>
+            <button type="button" class="flag-btn urgent"   data-flag="urgent"   title="Mark urgent">${icon('warning', 12)} Urgent</button>
+          </div>
+        </div>
+
+        <div class="rail-card">
+          <h4><span>Tags · freeform</span><span class="sub">⏎ to add</span></h4>
+          <div class="rail-tags" id="cn-tag-chips" aria-label="Tag chips"></div>
+          <input class="rail-tag-input" id="cn-tag-input" type="text"
+                 placeholder="type a tag and press ⏎" tabindex="8"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        </div>
+
+        <div class="rail-card">
+          <h4><span>Save the note</span><span class="sub">${esc(mod)}↵ default</span></h4>
+          <div class="rail-actions">
+            <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM">
+              <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}↵</span>
+            </button>
+            <button type="button" class="cn-action-sec" id="cn-form-submit-compose" title="Save, copy, and open the email composer">
+              <span>${icon('mail', 13)}Save &amp; Compose</span><span class="kbd-chip">${esc(mod)}⇧↵</span>
+            </button>
+            <button type="button" class="cn-action-sec" id="cn-ext-email-btn" title="Open the email composer without saving (for customer / provider emails)">
+              <span>${icon('send', 13)}Open Email</span>
+            </button>
+            <button type="button" class="cn-action-sec" id="cn-form-clear" title="Clear note (${esc(mod)}+Z to undo)">
+              <span>${icon('x', 13)}Clear</span><span class="kbd-chip">Esc</span>
+            </button>
+            <button type="button" class="cn-action-sec" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/)" style="flex:0 0 auto;min-width:42px">?</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Training question row — full width below the layout when training flag is on -->
+      <div class="cn-training-q-row" id="cn-training-q-row" style="display:none">
         <label>Training Question</label>
         <input type="text" id="cn-fld-training-q" placeholder="What's the question? (short — manager sees this in the weekly digest)">
       </div>
@@ -1600,62 +1984,66 @@ function cnRenderActiveForm_() {
 function cnWireActiveForm_() {
   const form = document.getElementById('cn-active-form');
   if (!form) return;
-  // Track flag-type selection via dataset on the form root. The primary flags
-  // (action, training) are visible chips; less-common flags (review, future)
-  // live behind the kebab overflow menu so the chip strip stays uncluttered.
+  // Round 2 · 8e — multi-select flag state via form.dataset.flags
+  // (comma-separated). form.dataset.flag is also maintained as the
+  // highest-priority flag for backward compat with legacy code paths
+  // (sticky-draft restore, cnFormToggleFlag_ keybinds). Tags state lives
+  // in form.dataset.tags (also comma-separated).
+  form.dataset.flags = '';
   form.dataset.flag = '';
-  const setFlag = function (next) {
-    form.dataset.flag = next;
-    // Primary chips reflect their own active state
-    form.querySelectorAll('.cn-flag-btn[data-flag]').forEach(function (b) {
-      const isOn = b.dataset.flag === next;
-      b.classList.toggle('active', isOn);
-      // Apply the kind class only when on, so dropping the flag removes the tint.
-      b.classList.toggle('action',   b.dataset.flag === 'action' && isOn);
-      b.classList.toggle('training', b.dataset.flag === 'training' && isOn);
-      b.classList.toggle('review',   b.dataset.flag === 'review' && isOn);
-    });
-    // Kebab button lights up when an overflow-only flag (currently: review) is active
-    const moreBtn = document.getElementById('cn-flag-more-btn');
-    if (moreBtn) {
-      const isOverflowActive = (next === 'review');
-      moreBtn.classList.toggle('active', isOverflowActive);
-      moreBtn.classList.toggle('review', isOverflowActive);
-    }
-    // Training-question row visibility — only shown when training is selected
-    const trainingRow = document.getElementById('cn-training-q-row');
-    if (trainingRow) trainingRow.style.display = next === 'training' ? 'block' : 'none';
-  };
-  form.querySelectorAll('.cn-flag-btn[data-flag]').forEach(function (btn) {
+  form.dataset.tags = '';
+
+  // Click on a multi-select flag button: toggle membership in the flags set.
+  form.querySelectorAll('.flag-btn[data-flag]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      const target = btn.dataset.flag;
-      setFlag(form.dataset.flag === target ? '' : target);
+      const flag = btn.dataset.flag;
+      const cur = cnGetFormFlags_(form);
+      const idx = cur.indexOf(flag);
+      if (idx >= 0) cur.splice(idx, 1);
+      else cur.push(flag);
+      cnSetFormFlags_(form, cur);
+      // Persist immediately so a tab close right after a flag toggle doesn't
+      // lose the categorization
+      cnPersistActiveFormDraft_();
     });
   });
-  // Kebab overflow menu — open/close + item handlers
-  const moreBtn = document.getElementById('cn-flag-more-btn');
-  const moreMenu = document.getElementById('cn-flag-more-menu');
-  if (moreBtn && moreMenu) {
-    moreBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      const willOpen = moreMenu.hidden;
-      moreMenu.hidden = !willOpen;
-      moreBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-    });
-    moreMenu.querySelectorAll('.cn-flag-more-item').forEach(function (item) {
-      item.addEventListener('click', function () {
-        const target = item.dataset.flag;
-        setFlag(form.dataset.flag === target ? '' : target);
-        moreMenu.hidden = true;
-        moreBtn.setAttribute('aria-expanded', 'false');
-      });
-    });
-    // Click outside closes the menu
-    document.addEventListener('click', function (e) {
-      if (!moreMenu.hidden && !moreMenu.contains(e.target) && e.target !== moreBtn) {
-        moreMenu.hidden = true;
-        moreBtn.setAttribute('aria-expanded', 'false');
+
+  // Tag input — ⏎ to add. Backspace on empty input removes the last tag chip.
+  const tagInput = document.getElementById('cn-tag-input');
+  if (tagInput) {
+    tagInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const raw = tagInput.value.trim();
+        const tag = cnNormalizeTag_(raw);
+        if (!tag) return;
+        const cur = cnGetFormTags_(form);
+        if (cur.indexOf(tag) < 0 && cur.length < 8) {
+          cur.push(tag);
+          cnSetFormTags_(form, cur);
+          cnPersistActiveFormDraft_();
+        }
+        tagInput.value = '';
+      } else if (e.key === 'Backspace' && !tagInput.value) {
+        const cur = cnGetFormTags_(form);
+        if (cur.length > 0) {
+          cur.pop();
+          cnSetFormTags_(form, cur);
+          cnPersistActiveFormDraft_();
+        }
       }
+    });
+  }
+  // Tag chip clicks (× removal) — event delegation on the chip container.
+  const tagChips = document.getElementById('cn-tag-chips');
+  if (tagChips) {
+    tagChips.addEventListener('click', function (e) {
+      const btn = e.target.closest('[data-remove-tag]');
+      if (!btn) return;
+      const t = btn.getAttribute('data-remove-tag');
+      const cur = cnGetFormTags_(form).filter(function (x) { return x !== t; });
+      cnSetFormTags_(form, cur);
+      cnPersistActiveFormDraft_();
     });
   }
   // Ctrl/⌘+Enter from any input/textarea submits.
@@ -1669,7 +2057,12 @@ function cnWireActiveForm_() {
       t = setTimeout(cnPersistActiveFormDraft_, 400);
     };
   })();
-  form.querySelectorAll('input, textarea').forEach(function (el) {
+  // Round 2 deferred 8e — bind input + keydown handlers on BOTH the
+  // contenteditable .ce divs (post-deferred-8e form fields) AND the
+  // legacy <input>/<textarea> for cn-fld-training-q. The handler logic
+  // is the same; only the value-read shape differs (textContent vs value).
+  const editables = Array.prototype.slice.call(form.querySelectorAll('.ce[contenteditable], input, textarea'));
+  editables.forEach(function (el) {
     el.addEventListener('keydown', function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
@@ -1689,12 +2082,8 @@ function cnWireActiveForm_() {
         if (e.key === 'Backspace') { e.preventDefault(); cnClearActiveForm_(); return; }
         if (e.key === '/') { e.preventDefault(); cnOpenShortcutsOverlay_(); return; }
       }
-      // V4 Phase 4 — Esc clears the form (existing Ctrl/⌘+Z restores).
-      // Self-gate to avoid double-firing with the shell's Esc-close-overlay
-      // handler: if the shell already prevented default (an overlay was
-      // open and got closed), skip; otherwise clear.
       if (e.key === 'Escape' && !e.defaultPrevented) {
-        if (document.querySelector('.overlay.open')) return; // shell handler will close it first
+        if (document.querySelector('.overlay.open')) return;
         e.preventDefault();
         cnClearActiveForm_();
       }
@@ -1702,21 +2091,63 @@ function cnWireActiveForm_() {
     el.addEventListener('input', function () {
       cnFormTimerStartIfNeeded_();
       persistDebounced();
+      // Sync .empty class on contenteditable so the data-placeholder pseudo
+      // shows/hides correctly. No-op for input/textarea.
+      if (el.isContentEditable) {
+        el.classList.toggle('empty', !el.textContent.trim());
+      }
     });
+    // Paste sanitisation — strip HTML, insert plain text only. Stops formatted
+    // pastes from leaking <span style="..."> nodes into the contenteditable.
+    if (el.isContentEditable) {
+      el.addEventListener('paste', function (e) {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain') || '';
+        document.execCommand('insertText', false, text);
+      });
+      // blur sync — handles cases where input event didn't fire (e.g., IME)
+      el.addEventListener('blur', function () {
+        el.classList.toggle('empty', !el.textContent.trim());
+      });
+    }
   });
-  // Phone-number auto-format on the Callback field. Runs after the generic
-  // input listener so persistence sees the formatted value.
+  // Phone-number auto-format on the Callback field. Now reads textContent
+  // and uses the Selection API to put the cursor at end (cnSetCursorToEnd_).
   const cb = document.getElementById('cn-fld-callback');
   if (cb) {
     cb.addEventListener('input', function () {
-      const formatted = cnFormatPhoneNumberInline_(cb.value);
-      if (formatted !== cb.value) {
-        cb.value = formatted;
-        // Cursor lands at end — natural for forward-typing. (Editing in the
-        // middle of a phone is rare and the formatter would fight any
-        // attempt to preserve mid-string position when adding parens.)
-        cb.setSelectionRange(formatted.length, formatted.length);
+      const raw = cb.isContentEditable ? cb.textContent : cb.value;
+      const formatted = cnFormatPhoneNumberInline_(raw);
+      if (formatted !== raw) {
+        if (cb.isContentEditable) {
+          cb.textContent = formatted;
+          cnSetCursorToEnd_(cb);
+          cb.classList.toggle('empty', !cb.textContent.trim());
+        } else {
+          cb.value = formatted;
+          cb.setSelectionRange(formatted.length, formatted.length);
+        }
       }
+    });
+  }
+  // Round 2 deferred 8e — Manual-copy failover. ⌘C anywhere inside the
+  // frame intercepts the copy event, preventDefaults the browser's
+  // default selection-text copy, and writes the FULL formatted note
+  // template (cnFormatNoteForCopy_, same helper Save & Copy uses) to
+  // the clipboard. So drag-highlighting any subset of the frame still
+  // pastes a complete, CRM-ready note. */
+  const frame = document.getElementById('cn-frame');
+  if (frame) {
+    frame.addEventListener('copy', function (e) {
+      try {
+        const payload = cnReadActiveForm_();
+        const fmt = cnFormatNoteForCopy_(payload);
+        if (e.clipboardData) {
+          e.clipboardData.setData('text/plain', fmt);
+          e.preventDefault();
+          showToast('Copied (full note template)', 'toast-success');
+        }
+      } catch (err) { /* fall through to browser default copy */ }
     });
   }
   // Ctrl/⌘+Z restores a freshly-cleared form (within CN_CLEAR_UNDO_WINDOW_MS).
@@ -1728,12 +2159,13 @@ function cnWireActiveForm_() {
       if (!snap) return;
       if (Date.now() - snap.at > CN_CLEAR_UNDO_WINDOW_MS) return;
       // Only restore if the form is currently empty (= still in cleared state).
-      // Once the rep starts typing, native input-level undo takes over.
-      const allEmpty = !document.getElementById('cn-fld-callback').value
-        && !document.getElementById('cn-fld-caller').value
-        && !document.getElementById('cn-fld-patient').value
-        && !document.getElementById('cn-fld-issue').value
-        && !document.getElementById('cn-fld-resolution').value;
+      // Round 2 deferred 8e — read via cnGetFieldValue_ so the check works
+      // for both contenteditable .ce divs and legacy input/textarea elements.
+      const allEmpty = !cnGetFieldValue_('cn-fld-callback').trim()
+        && !cnGetFieldValue_('cn-fld-caller').trim()
+        && !cnGetFieldValue_('cn-fld-patient').trim()
+        && !cnGetFieldValue_('cn-fld-issue').trim()
+        && !cnGetFieldValue_('cn-fld-resolution').trim();
       if (!allEmpty) return;
       e.preventDefault();
       cnRestoreFromSnapshot_(snap);
@@ -1763,107 +2195,191 @@ function cnWireActiveForm_() {
 function cnRestoreFromSnapshot_(snap) {
   if (!snap) return;
   Object.keys(snap.values || {}).forEach(function (k) {
-    const el = document.getElementById('cn-fld-' + k);
-    if (el) el.value = snap.values[k];
+    cnSetFieldValue_('cn-fld-' + k, snap.values[k]);
   });
   const form = document.getElementById('cn-active-form');
-  if (form && snap.flag !== undefined) {
-    // Re-apply flag state by simulating the click semantics
-    form.dataset.flag = snap.flag;
-    form.querySelectorAll('.cn-flag-btn[data-flag]').forEach(function (b) {
-      const isOn = b.dataset.flag === snap.flag;
-      b.classList.toggle('active', isOn);
-      b.classList.toggle('action',   b.dataset.flag === 'action' && isOn);
-      b.classList.toggle('training', b.dataset.flag === 'training' && isOn);
-      b.classList.toggle('review',   b.dataset.flag === 'review' && isOn);
-    });
-    const moreBtn = document.getElementById('cn-flag-more-btn');
-    if (moreBtn) {
-      const isOverflowActive = (snap.flag === 'review');
-      moreBtn.classList.toggle('active', isOverflowActive);
-      moreBtn.classList.toggle('review', isOverflowActive);
+  if (form) {
+    if (Array.isArray(snap.flags)) {
+      cnSetFormFlags_(form, snap.flags);
+    } else if (snap.flag) {
+      cnSetFormFlags_(form, [snap.flag]);
+    } else {
+      cnSetFormFlags_(form, []);
     }
-    const trainingRow = document.getElementById('cn-training-q-row');
-    if (trainingRow) trainingRow.style.display = snap.flag === 'training' ? 'block' : 'none';
+    if (Array.isArray(snap.tags)) cnSetFormTags_(form, snap.tags);
   }
-  const tq = document.getElementById('cn-fld-training-q');
-  if (tq) tq.value = snap.trainingQ || '';
+  cnSetFieldValue_('cn-fld-training-q', snap.trainingQ || '');
   showToast('Restored', 'toast-success');
 }
 
 function cnClearActiveForm_(opts) {
   const fields = ['callback','caller','relationship','patient','issue','transferred','resolution'];
-  // Snapshot first so Ctrl/⌘+Z can restore. Skip snapshotting when the clear
-  // is itself part of a successful submit (opts.skipSnapshot=true) — the rep
-  // intended to start fresh; restoring a saved note's fields would be confusing.
   const skipSnap = opts && opts.skipSnapshot;
+  const form0 = document.getElementById('cn-active-form');
   if (!skipSnap) {
     const values = {};
     fields.forEach(function (k) {
-      const el = document.getElementById('cn-fld-' + k);
-      if (el) values[k] = el.value;
+      values[k] = cnGetFieldValue_('cn-fld-' + k);
     });
-    const form0 = document.getElementById('cn-active-form');
-    const tq0 = document.getElementById('cn-fld-training-q');
+    const tqVal = cnGetFieldValue_('cn-fld-training-q');
+    const flags0 = cnGetFormFlags_(form0);
+    const tags0 = cnGetFormTags_(form0);
     const anyContent = fields.some(function (k) { return (values[k] || '').trim().length > 0; })
-                     || (tq0 && tq0.value.trim())
-                     || (form0 && form0.dataset.flag);
+                     || (tqVal && tqVal.trim())
+                     || flags0.length > 0
+                     || tags0.length > 0;
     if (anyContent) {
       CN_STATE.lastClearedSnapshot = {
         values: values,
-        flag: form0 ? form0.dataset.flag : '',
-        trainingQ: tq0 ? tq0.value : '',
+        flags: flags0,
+        tags: tags0,
+        flag: form0 ? form0.dataset.flag : '',  // legacy field retained
+        trainingQ: tqVal,
         at: Date.now(),
       };
       showToast('Cleared · ' + (cnIsMac_() ? '⌘' : 'Ctrl') + '+Z to undo', 'toast-warn');
     }
   }
   fields.forEach(function (k) {
-    const el = document.getElementById('cn-fld-' + k);
-    if (el) el.value = '';
+    cnSetFieldValue_('cn-fld-' + k, '');
   });
-  const form = document.getElementById('cn-active-form');
-  if (form) {
-    form.dataset.flag = '';
-    form.querySelectorAll('.cn-flag-btn').forEach(function (b) {
-      b.classList.remove('active', 'action', 'training', 'review');
-    });
-    // V4 Phase 4 — "None" tag button (data-flag="") is the default-active
-    // state; the clear sweep above wiped it, so re-apply here.
-    const noneBtn = form.querySelector('.cn-flag-btn[data-flag=""]');
-    if (noneBtn) noneBtn.classList.add('active');
+  if (form0) {
+    cnSetFormFlags_(form0, []);
+    cnSetFormTags_(form0, []);
   }
-  const trainingRow = document.getElementById('cn-training-q-row');
-  if (trainingRow) trainingRow.style.display = 'none';
-  const tq = document.getElementById('cn-fld-training-q');
-  if (tq) tq.value = '';
-  // Sticky-form: an explicit Clear Note (or a submit-driven clear) means the
-  // rep is done with this draft. Drop the persisted copy so it doesn't get
-  // restored on next load.
+  cnSetFieldValue_('cn-fld-training-q', '');
+  const tagIn = document.getElementById('cn-tag-input');
+  if (tagIn) tagIn.value = '';
   cnClearStickyFormDraft_();
-  // Reset completion timer too — Clear is a fresh start.
   cnFormTimerReset_();
   const cb = document.getElementById('cn-fld-callback');
   if (cb) cb.focus();
 }
 
+/** Round 2 · 8e — form flags/tags state helpers. Flags + tags live on the
+ *  form root as comma-separated dataset attributes so they survive
+ *  sticky-draft persistence + restore. cnSetFormFlags_ also derives
+ *  form.dataset.flag (the highest-priority single value) for any legacy
+ *  consumer + updates button .on classes + training-q-row visibility. */
+const CN_FORM_FLAGS = ['action', 'training', 'review', 'urgent'];
+const CN_FLAG_PRIORITY_CLIENT = ['action', 'training', 'review', 'urgent'];
+
+function cnGetFormFlags_(form) {
+  if (!form) return [];
+  const raw = form.dataset.flags || '';
+  return raw ? raw.split(',').filter(Boolean) : [];
+}
+function cnSetFormFlags_(form, flagsArray) {
+  if (!form) return;
+  const filtered = (flagsArray || []).filter(function (f) {
+    return CN_FORM_FLAGS.indexOf(f) >= 0;
+  });
+  form.dataset.flags = filtered.join(',');
+  // Derive primary for backward compat
+  let primary = '';
+  for (let i = 0; i < CN_FLAG_PRIORITY_CLIENT.length; i++) {
+    if (filtered.indexOf(CN_FLAG_PRIORITY_CLIENT[i]) >= 0) { primary = CN_FLAG_PRIORITY_CLIENT[i]; break; }
+  }
+  form.dataset.flag = primary;
+  // Sync button .on classes
+  form.querySelectorAll('.flag-btn[data-flag]').forEach(function (b) {
+    b.classList.toggle('on', filtered.indexOf(b.dataset.flag) >= 0);
+  });
+  // Training-q row visibility — show when training is one of the selected flags
+  const trainingRow = document.getElementById('cn-training-q-row');
+  if (trainingRow) trainingRow.style.display = filtered.indexOf('training') >= 0 ? 'block' : 'none';
+}
+function cnGetFormTags_(form) {
+  if (!form) return [];
+  const raw = form.dataset.tags || '';
+  return raw ? raw.split(',').filter(Boolean) : [];
+}
+function cnSetFormTags_(form, tagsArray) {
+  if (!form) return;
+  const filtered = (tagsArray || []).map(cnNormalizeTag_).filter(Boolean);
+  // Dedupe + cap at 8
+  const seen = {};
+  const out = [];
+  for (let i = 0; i < filtered.length && out.length < 8; i++) {
+    if (!seen[filtered[i]]) { seen[filtered[i]] = true; out.push(filtered[i]); }
+  }
+  form.dataset.tags = out.join(',');
+  // Re-render chip row
+  const chips = document.getElementById('cn-tag-chips');
+  if (chips) {
+    chips.innerHTML = out.map(function (t) {
+      return '<span class="rail-tag-chip">' + esc(t)
+        + ' <button type="button" class="rail-tag-x" data-remove-tag="' + esc(t) + '" aria-label="Remove tag ' + esc(t) + '">×</button>'
+        + '</span>';
+    }).join('');
+  }
+}
+function cnNormalizeTag_(raw) {
+  const lower = String(raw || '').trim().toLowerCase();
+  const tag = lower.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (tag.length < 2 || tag.length > 24) return '';
+  return tag;
+}
+
+/** Round 2 deferred 8e — Put the caret at end of a contenteditable
+ *  element. Used by the phone formatter after writing the formatted
+ *  string back; native input.setSelectionRange doesn't exist on .ce divs. */
+function cnSetCursorToEnd_(el) {
+  if (!el) return;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+  } catch (e) { /* selection unavailable — cursor stays where it was */ }
+}
+
+/** Round 2 deferred 8e — Field accessors that work transparently with
+ *  contenteditable divs (the new form fields, post-deferred-8e) AND
+ *  legacy input/textarea elements (cn-tag-input, cn-fld-training-q,
+ *  email modal fields). The check is `el.isContentEditable` which is
+ *  a built-in DOM property. */
+function cnGetFieldValue_(id) {
+  const el = document.getElementById(id);
+  if (!el) return '';
+  if (el.isContentEditable) return el.textContent || '';
+  return el.value || '';
+}
+function cnSetFieldValue_(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const v = value || '';
+  if (el.isContentEditable) {
+    el.textContent = v;
+    el.classList.toggle('empty', !el.textContent.trim());
+    // Fire input event so persistence + timer + format-on-type listeners
+    // react the same way as user typing
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    el.value = v;
+  }
+}
+
 function cnReadActiveForm_() {
   const form = document.getElementById('cn-active-form');
+  const flags = cnGetFormFlags_(form);
+  const tags = cnGetFormTags_(form);
   const flag = (form && form.dataset.flag) || '';
-  const trainingEl = document.getElementById('cn-fld-training-q');
-  // When training is selected, capture the rep's question into subformData
-  // (re-using the existing SUBFORM_DATA JSON column — no schema migration).
-  // Other flag types don't write subformData on submit.
-  const trainingQ = (flag === 'training' && trainingEl) ? trainingEl.value.trim() : '';
+  // training-q input is still an <input> (lives below the doc frame, not
+  // contenteditable) — cnGetFieldValue_ falls through to .value transparently.
+  const trainingQ = (flags.indexOf('training') >= 0) ? cnGetFieldValue_('cn-fld-training-q').trim() : '';
   return {
-    callback:      document.getElementById('cn-fld-callback').value,
-    caller:        document.getElementById('cn-fld-caller').value,
-    relationship:  document.getElementById('cn-fld-relationship').value,
-    patientAndTrx: document.getElementById('cn-fld-patient').value,
-    issue:         document.getElementById('cn-fld-issue').value,
-    transferredTo: document.getElementById('cn-fld-transferred').value,
-    resolution:    document.getElementById('cn-fld-resolution').value,
+    callback:      cnGetFieldValue_('cn-fld-callback'),
+    caller:        cnGetFieldValue_('cn-fld-caller'),
+    relationship:  cnGetFieldValue_('cn-fld-relationship'),
+    patientAndTrx: cnGetFieldValue_('cn-fld-patient'),
+    issue:         cnGetFieldValue_('cn-fld-issue'),
+    transferredTo: cnGetFieldValue_('cn-fld-transferred'),
+    resolution:    cnGetFieldValue_('cn-fld-resolution'),
     flagType:      flag,
+    flags:         flags,
+    tags:          tags,
     subformData:   trainingQ ? { trainingQuestion: trainingQ } : null,
   };
 }
@@ -1910,18 +2426,22 @@ function cnPersistActiveFormDraft_() {
   try {
     const values = {};
     ['callback','caller','relationship','patient','issue','transferred','resolution'].forEach(function (k) {
-      const el = document.getElementById('cn-fld-' + k);
-      if (el) values[k] = el.value;
+      values[k] = cnGetFieldValue_('cn-fld-' + k);
     });
     const form = document.getElementById('cn-active-form');
-    const tq = document.getElementById('cn-fld-training-q');
+    const tqVal = cnGetFieldValue_('cn-fld-training-q');
+    const flags = cnGetFormFlags_(form);
+    const tags = cnGetFormTags_(form);
     const data = {
       values: values,
+      flags: flags,
+      tags: tags,
       flag: form ? form.dataset.flag : '',
-      trainingQ: tq ? tq.value : '',
+      trainingQ: tqVal,
     };
     const anyContent = Object.keys(values).some(function (k) { return (values[k] || '').trim(); })
-                    || (data.flag) || (data.trainingQ && data.trainingQ.trim());
+                    || flags.length > 0 || tags.length > 0
+                    || (data.trainingQ && data.trainingQ.trim());
     if (anyContent) {
       localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify(data));
     } else {
@@ -1938,33 +2458,20 @@ function cnRestoreActiveFormDraft_() {
     if (!raw) return false;
     const data = JSON.parse(raw);
     Object.keys(data.values || {}).forEach(function (k) {
-      const el = document.getElementById('cn-fld-' + k);
-      if (el) el.value = data.values[k] || '';
+      cnSetFieldValue_('cn-fld-' + k, data.values[k] || '');
     });
-    // Re-apply flag state if any (matches cnRestoreFromSnapshot_'s shape)
-    if (data.flag) {
-      const form = document.getElementById('cn-active-form');
-      if (form) {
-        form.dataset.flag = data.flag;
-        form.querySelectorAll('.cn-flag-btn[data-flag]').forEach(function (b) {
-          const isOn = b.dataset.flag === data.flag;
-          b.classList.toggle('active', isOn);
-          b.classList.toggle('action',   b.dataset.flag === 'action' && isOn);
-          b.classList.toggle('training', b.dataset.flag === 'training' && isOn);
-          b.classList.toggle('review',   b.dataset.flag === 'review' && isOn);
-        });
-        const moreBtn = document.getElementById('cn-flag-more-btn');
-        if (moreBtn) {
-          const isOverflow = (data.flag === 'review');
-          moreBtn.classList.toggle('active', isOverflow);
-          moreBtn.classList.toggle('review', isOverflow);
-        }
-        const trainingRow = document.getElementById('cn-training-q-row');
-        if (trainingRow) trainingRow.style.display = data.flag === 'training' ? 'block' : 'none';
+    const form = document.getElementById('cn-active-form');
+    if (form) {
+      if (Array.isArray(data.flags) && data.flags.length > 0) {
+        cnSetFormFlags_(form, data.flags);
+      } else if (data.flag) {
+        cnSetFormFlags_(form, [data.flag]);
+      }
+      if (Array.isArray(data.tags) && data.tags.length > 0) {
+        cnSetFormTags_(form, data.tags);
       }
     }
-    const tq = document.getElementById('cn-fld-training-q');
-    if (tq && data.trainingQ) tq.value = data.trainingQ;
+    if (data.trainingQ) cnSetFieldValue_('cn-fld-training-q', data.trainingQ);
     return true;
   } catch (e) { return false; }
 }
@@ -2005,12 +2512,15 @@ function cnVoiceStart_(btn) {
   recog.lang = 'en-US';
   btn._recog = recog;
   btn.classList.add('listening');
-  // Insert transcription at the cursor; if the field is empty append a
-  // leading space when appropriate so concatenated speech doesn't smush
-  // into existing text.
-  const startPos = target.selectionStart;
-  const before = target.value.slice(0, startPos);
-  const after = target.value.slice(target.selectionEnd);
+  // Round 2 deferred 8e — handle both input/textarea (selectionStart-based
+  // cursor) AND contenteditable .ce divs (textContent-append fallback —
+  // simpler than full Selection API range handling for this off-by-default
+  // feature, INV-53).
+  const isCE = target.isContentEditable;
+  const baseText = isCE ? (target.textContent || '') : (target.value || '');
+  const startPos = isCE ? baseText.length : (target.selectionStart || 0);
+  const before = isCE ? baseText : baseText.slice(0, startPos);
+  const after = isCE ? '' : baseText.slice(target.selectionEnd);
   let finalText = '';
   recog.onresult = function (event) {
     let interim = '';
@@ -2020,17 +2530,25 @@ function cnVoiceStart_(btn) {
       else interim += event.results[i][0].transcript;
     }
     const insertion = (before && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
-    target.value = before + insertion + finalText + interim + after;
-    // Trigger the form's input listeners so sticky-save + timer fire
+    const next = before + insertion + finalText + interim + after;
+    if (isCE) {
+      target.textContent = next;
+      target.classList.toggle('empty', !target.textContent.trim());
+    } else {
+      target.value = next;
+    }
     target.dispatchEvent(new Event('input', { bubbles: true }));
   };
   recog.onend = function () {
     btn.classList.remove('listening');
     btn._recog = null;
-    // Position the cursor after the inserted text so the rep can keep typing
     const insertion = (before && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
-    const newPos = before.length + insertion.length + finalText.length;
-    try { target.setSelectionRange(newPos, newPos); target.focus(); } catch (e) {}
+    if (isCE) {
+      try { cnSetCursorToEnd_(target); target.focus(); } catch (e) {}
+    } else {
+      const newPos = before.length + insertion.length + finalText.length;
+      try { target.setSelectionRange(newPos, newPos); target.focus(); } catch (e) {}
+    }
   };
   recog.onerror = function (e) {
     btn.classList.remove('listening');
@@ -2305,6 +2823,23 @@ function cnInstallCardDelegation_(area) {
   if (area._cnDelegationInstalled) return;
   area._cnDelegationInstalled = true;
   area.addEventListener('click', function (e) {
+    // Round 2 · 8g — Q&A thread action buttons (👍 ack, 💬 clarify, send)
+    var qaAck = e.target.closest('[data-qa-ack]');
+    if (qaAck) { cnAckTrainingFlag_(qaAck.getAttribute('data-qa-ack')); return; }
+    var qaClar = e.target.closest('[data-qa-clarify]');
+    if (qaClar) {
+      var nid = qaClar.getAttribute('data-qa-clarify');
+      var row = area.querySelector('[data-qa-clarify-row="' + nid + '"]');
+      if (row) { row.hidden = !row.hidden; if (!row.hidden) { var ta = row.querySelector('textarea'); if (ta) ta.focus(); } }
+      return;
+    }
+    if (e.target.classList && e.target.classList.contains('qa-clarify-submit')) {
+      var row2 = e.target.closest('[data-qa-clarify-row]');
+      var ta2 = row2 && row2.querySelector('textarea');
+      var nid2 = row2 && row2.getAttribute('data-qa-clarify-row');
+      if (nid2 && ta2) cnSubmitClarification_(nid2, ta2.value);
+      return;
+    }
     var btn = e.target.closest('[data-cn-action]');
     if (!btn) return;
     var card = btn.closest('[data-note-id]');
@@ -2324,6 +2859,50 @@ function cnInstallCardDelegation_(area) {
       case 'more':        cnToggleMoreMenu_(btn); break;
     }
   });
+}
+
+/** Round 2 · 8g — agent posts a 👍 acknowledgment to a manager's training
+ *  feedback. Fires appendCallNoteFeedback(noteId, '', 'ack'). On success,
+ *  replaces the note in CN_STATE and re-renders the active view. */
+function cnAckTrainingFlag_(noteId) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        if (typeof showToast === 'function') showToast((res && res.error) || 'Could not save acknowledgment', 'toast-error');
+        return;
+      }
+      if (typeof cnReplaceNoteInState_ === 'function') cnReplaceNoteInState_(res.note);
+      if (typeof cnReRenderActiveView_ === 'function') cnReRenderActiveView_();
+      if (typeof showToast === 'function') showToast('Acknowledged', 'toast-success');
+    })
+    .withFailureHandler(function (err) {
+      if (typeof showToast === 'function') showToast((err && err.message) || 'Server error', 'toast-error');
+    })
+    .appendCallNoteFeedback(noteId, '', 'ack');
+}
+
+/** Round 2 · 8g — agent submits a 💬 clarification (free-text follow-up).
+ *  Fires appendCallNoteFeedback(noteId, message, 'clarification'). */
+function cnSubmitClarification_(noteId, message) {
+  const trimmed = String(message || '').trim();
+  if (!trimmed) {
+    if (typeof showToast === 'function') showToast('Type a question first', 'toast-warn');
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        if (typeof showToast === 'function') showToast((res && res.error) || 'Could not send', 'toast-error');
+        return;
+      }
+      if (typeof cnReplaceNoteInState_ === 'function') cnReplaceNoteInState_(res.note);
+      if (typeof cnReRenderActiveView_ === 'function') cnReRenderActiveView_();
+      if (typeof showToast === 'function') showToast('Sent', 'toast-success');
+    })
+    .withFailureHandler(function (err) {
+      if (typeof showToast === 'function') showToast((err && err.message) || 'Server error', 'toast-error');
+    })
+    .appendCallNoteFeedback(noteId, trimmed, 'clarification');
 }
 
 function cnReRenderActiveView_() {
@@ -2400,19 +2979,22 @@ function cnRenderCardCore_(note, expandable) {
     ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">${detailParts.join(' · ')}</div>` : '';
   const resolutionLine = note.resolution
     ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${esc(note.resolution)}</div>` : '';
-  let trainingQ = '';
-  if (note.flagType === 'training' && note.subformData && note.subformData.trainingQuestion) {
-    trainingQ = `<div class="cn-card-training-q">${icon('bulb', 11)}<span>${esc(String(note.subformData.trainingQuestion))}</span></div>`;
-    if (note.subformData.trainingReply) {
-      trainingQ += `<div class="cn-card-training-a">${icon('checkCircle', 11)}<span>${esc(String(note.subformData.trainingReply))}</span></div>`;
-    }
-  }
+  // Round 2 · 8g — render multi-turn Q&A thread for training-flagged notes.
+  // Reads subformData.feedback[] (new shape) and falls back to the legacy
+  // trainingQuestion + trainingReply pair for older notes.
+  const trainingQ = cnRenderQAThread_(note);
 
+  // Round 2 deferred 8e — card-level flag buttons recognise 'urgent' too.
+  // FlagType column still holds only action/training/review (server-side
+  // sanitizeFlagType_ unchanged); 'urgent' lives in subformData.flags so
+  // toggling it via the card still goes through cnToggleFlag_ → server.
   const flagBtn = function (kind, name, on) {
     const cls = 'cn-act-btn ' + kind + (on ? ' is-on' : '');
     const lbl = kind === 'action' ? 'Flag for action'
               : kind === 'training' ? 'Flag for training'
-              : 'Flag as review candidate';
+              : kind === 'review' ? 'Flag as review candidate'
+              : kind === 'urgent' ? 'Mark urgent'
+              : 'Flag';
     return `<button class="${cls}" title="${lbl}" data-cn-action="flag" data-flag-kind="${kind}">${icon(name, 14)}</button>`;
   };
 
@@ -2550,7 +3132,17 @@ function cnSaveEdit_(noteId) {
 }
 
 function cnDeleteNote_(noteId) {
-  if (!confirm('Delete this note? This cannot be undone.')) return;
+  uiConfirm({
+    title: 'Delete note',
+    message: 'Delete this note? This cannot be undone.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    cnDoDeleteNote_(noteId);
+  });
+}
+function cnDoDeleteNote_(noteId) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res.success) { showToast(res.error || 'Delete failed', 'toast-error'); return; }
@@ -2579,13 +3171,25 @@ function cnToggleFlag_(noteId, kind) {
   const prev = { flagType: note.flagType, resolved: note.resolved };
   const next = (note.flagType === kind) ? '' : kind;
 
-  var trainingQ = null;
   if (next === 'training') {
-    trainingQ = prompt('What question or concern would you like to flag for training?\n(Leave blank to skip)');
-    if (trainingQ === null) return;
-    trainingQ = trainingQ.trim() || null;
+    // uiPrompt is async — wrap the rest of the flow in the .then.
+    uiPrompt({
+      title: 'Flag for training',
+      message: 'What question or concern would you like to flag for training?\n(Leave blank to skip)',
+      initialValue: '',
+      placeholder: 'Optional training question',
+      confirmLabel: 'Flag',
+    }).then(function (raw) {
+      if (raw === null) return;
+      const trimmed = String(raw).trim() || null;
+      cnDoToggleFlag_(noteId, note, prev, next, trimmed);
+    });
+    return;
   }
+  cnDoToggleFlag_(noteId, note, prev, next, null);
+}
 
+function cnDoToggleFlag_(noteId, note, prev, next, trainingQ) {
   note._flagInFlight = true;
   note.flagType = next;
   if (prev.flagType !== next) note.resolved = false;
@@ -2863,6 +3467,60 @@ function cnNoteIsStale_(note) {
 
 // ── Email composer modal ───────────────────────────────────────────────
 
+/** Round 2 follow-on (modal-tab merge) — shared tab strip prepended to BOTH
+ *  the department composer (CN_STATE.composer) and the external composer
+ *  (CN_STATE.extComposer). One button per tab; clicking the inactive tab
+ *  switches between modals via cnSwitchComposerTab_, preserving noteId
+ *  context. Department tab is disabled when no noteId is available — a
+ *  dept email needs a saved note to attach EmailedAt + EmailDepartments to.
+ *  CSS in styles.html: `.cn-composer-tabs` + `.cn-composer-tab(.on,.disabled)`. */
+function cnRenderComposerTabStrip_(active, noteId) {
+  const hasNote = !!noteId;
+  const deptDisabled = !hasNote;
+  const deptCls = 'cn-composer-tab' + (active === 'department' ? ' on' : '')
+    + (deptDisabled ? ' disabled' : '');
+  const extCls = 'cn-composer-tab' + (active === 'external' ? ' on' : '');
+  const deptTitle = deptDisabled
+    ? 'Save the note first to send a department email'
+    : 'Send to internal department(s)';
+  const deptOnclick = deptDisabled
+    ? ''
+    : ' onclick="cnSwitchComposerTab_(\'department\')"';
+  return `<div class="cn-composer-tabs" role="tablist" aria-label="Email composer mode">
+    <button type="button" role="tab" class="${deptCls}" aria-selected="${active === 'department'}"${deptOnclick} title="${esc(deptTitle)}">
+      ${icon('mail', 13)} Department
+    </button>
+    <button type="button" role="tab" class="${extCls}" aria-selected="${active === 'external'}" onclick="cnSwitchComposerTab_('external')" title="Send to a customer or provider">
+      ${icon('send', 13)} External
+    </button>
+  </div>`;
+}
+
+/** Round 2 follow-on (modal-tab merge) — Switch between the dept + external
+ *  composer modals. Preserves the noteId across the transition so the rep
+ *  doesn't lose context. Switching TO Department without a noteId is a
+ *  no-op (the inactive tab is disabled in the strip; this guard is
+ *  defensive in case the strip's disabled state was bypassed). */
+function cnSwitchComposerTab_(target) {
+  // Capture noteId from whichever composer is currently active
+  let noteId = '';
+  if (CN_STATE.composer && CN_STATE.composer.noteId) noteId = CN_STATE.composer.noteId;
+  else if (CN_STATE.extComposer && CN_STATE.extComposer.noteId) noteId = CN_STATE.extComposer.noteId;
+
+  if (target === 'department') {
+    if (!noteId) {
+      showToast('Save the note first to send a department email', 'toast-warn');
+      return;
+    }
+    // Close ext first (clear state), then open dept
+    if (CN_STATE.extComposer) cnCloseExternalEmailModal_();
+    cnOpenEmailComposer_(noteId);
+  } else if (target === 'external') {
+    if (CN_STATE.composer) cnCloseComposerModal_();
+    cnOpenExternalEmailModal_(noteId || null);
+  }
+}
+
 function cnOpenEmailComposer_(noteId) {
   const note = cnFindNoteAnywhere_(noteId);
   if (!note) return;
@@ -2956,6 +3614,7 @@ function cnRenderComposerFormStep_() {
   return `
     <div class="modal" style="max-width:560px;resize:both;overflow:auto" id="cnC-modal">
       <div class="modal-title" style="cursor:move" onmousedown="cnStartDragModal_(event)">Compose email</div>
+      ${cnRenderComposerTabStrip_('department', c.noteId)}
       <div class="modal-sub">
         For: <strong>${esc(c.note.caller || c.note.patientAndTrx || 'this call')}</strong> · ${esc(c.note.patientAndTrx || '')}
       </div>
@@ -3478,6 +4137,7 @@ function cnRenderComposerPreviewStep_() {
   return `
     <div class="modal" style="max-width:780px">
       <div class="modal-title">Preview before sending</div>
+      ${cnRenderComposerTabStrip_('department', c.noteId)}
       <div class="modal-sub">Confirm this is what you want to send — once you click Send, it goes out.</div>
       <div class="cn-compose-preview-meta">
         <div><strong>From:</strong> ${esc(p.from)}</div>
@@ -4129,20 +4789,27 @@ function cnMgrClearTrainingReply_(btn) {
   if (!row) return;
   const noteId = row.dataset.noteId;
   const repId  = row.dataset.repId;
-  if (!confirm('Clear the reply on this note?')) return;
-  btn.disabled = true;
-  google.script.run
-    .withSuccessHandler(function (res) {
-      btn.disabled = false;
-      if (!res.success) { showToast(res.error || 'Clear failed', 'toast-error'); return; }
-      showToast('Reply cleared', 'toast-success');
-      cnMgrLoadRepNotes_();
-    })
-    .withFailureHandler(function (err) {
-      btn.disabled = false;
-      showToast('Clear failed: ' + err.message, 'toast-error');
-    })
-    .setCallNoteTrainingReply(repId, noteId, '');
+  uiConfirm({
+    title: 'Clear reply',
+    message: 'Clear the reply on this note?',
+    confirmLabel: 'Clear',
+    tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false;
+        if (!res.success) { showToast(res.error || 'Clear failed', 'toast-error'); return; }
+        showToast('Reply cleared', 'toast-success');
+        cnMgrLoadRepNotes_();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false;
+        showToast('Clear failed: ' + err.message, 'toast-error');
+      })
+      .setCallNoteTrainingReply(repId, noteId, '');
+  });
 }
 
 function cnMgrRenderQueue_(host, results) {
@@ -4417,6 +5084,109 @@ function cnPollAmbient_() {
     .getCallNotesAmbient();
 }
 
+/** Round 2 · 8g — render multi-turn Q&A thread on training-flagged note
+ *  cards. The thread is the union of the legacy (trainingQuestion,
+ *  trainingReply) pair AND subformData.feedback[] (new shape). Each
+ *  message shows the role badge + the message text + the timestamp.
+ *  When the most recent message is from the manager and the rep hasn't
+ *  responded yet, action buttons (👍 Got it / 💬 Clarify) render below
+ *  the thread. The 💬 button expands an inline textarea + Submit. */
+function cnRenderQAThread_(note) {
+  if (!note || note.flagType !== 'training') return '';
+  const sub = note.subformData || {};
+  // Build the thread: optional rep question seed + manager replies / agent
+  // entries via feedback[], with the legacy single trainingReply folded in
+  // if no feedback array exists yet.
+  const thread = [];
+  if (sub.trainingQuestion) {
+    thread.push({ role: 'agent', kind: 'question', message: String(sub.trainingQuestion), at: '' });
+  }
+  if (Array.isArray(sub.feedback) && sub.feedback.length > 0) {
+    sub.feedback.forEach(function (e) {
+      if (!e) return;
+      thread.push({
+        role: e.role || 'manager',
+        kind: e.kind || 'reply',
+        message: String(e.message || ''),
+        at: String(e.at || ''),
+        by: String(e.by || ''),
+      });
+    });
+  } else if (sub.trainingReply) {
+    // Legacy path — synthesize one manager entry
+    thread.push({
+      role: 'manager',
+      kind: 'reply',
+      message: String(sub.trainingReply),
+      at: String(sub.trainingReplyAt || ''),
+      by: String(sub.trainingReplyBy || ''),
+    });
+  }
+  if (thread.length === 0) return '';
+  // Decide whether response buttons should show: only if the rep hasn't
+  // already acked or sent a clarification, and there IS at least one
+  // manager message to respond to.
+  const lastMgrIdx = (function () {
+    for (let i = thread.length - 1; i >= 0; i--) {
+      if (thread[i].role === 'manager') return i;
+    }
+    return -1;
+  })();
+  let hasAgentResponse = false;
+  if (lastMgrIdx >= 0) {
+    for (let i = lastMgrIdx + 1; i < thread.length; i++) {
+      if (thread[i].role === 'agent') { hasAgentResponse = true; break; }
+    }
+  }
+  const canRespond = lastMgrIdx >= 0 && !hasAgentResponse;
+  const entriesHtml = thread.map(function (e) {
+    const roleCls = e.role === 'manager' ? 'qa-mgr' : 'qa-agent';
+    const kindLabel = e.kind === 'ack' ? '· ack'
+      : e.kind === 'question' ? '· question'
+      : e.kind === 'clarification' ? '· clarification'
+      : '';
+    const body = e.kind === 'ack'
+      ? '<em>Got it</em>'
+      : esc(e.message || '');
+    const ts = e.at ? '<span class="qa-ts">' + esc(String(e.at).slice(11, 16)) + '</span>' : '';
+    return '<div class="qa-row ' + roleCls + '">'
+      + '<span class="qa-role">' + (e.role === 'manager' ? 'Mgr' : 'You') + ' ' + kindLabel + '</span>'
+      + '<span class="qa-msg">' + body + '</span>'
+      + ts
+      + '</div>';
+  }).join('');
+  const actionsHtml = canRespond
+    ? '<div class="qa-actions">'
+        + '<button type="button" class="qa-ack-btn" data-qa-ack="' + esc(note.noteId) + '">👍 Got it</button>'
+        + '<button type="button" class="qa-clarify-btn" data-qa-clarify="' + esc(note.noteId) + '">💬 Clarify</button>'
+      + '</div>'
+      + '<div class="qa-clarify-row" data-qa-clarify-row="' + esc(note.noteId) + '" hidden>'
+        + '<textarea class="qa-clarify-input" placeholder="Your follow-up question…"></textarea>'
+        + '<button type="button" class="qa-clarify-submit">Send</button>'
+      + '</div>'
+    : '';
+  return '<div class="qa-thread">' + entriesHtml + actionsHtml + '</div>';
+}
+
+/** Round 2 · 8z — Consumes window.CLK_NAV_HINT (set by the Clock view's
+ *  coverage-strip CTA, fileMissingCalls_). Today: surfaces a toast so the
+ *  rep sees the source context. Future-ready for when per-call CDR data
+ *  exists: extend hint.calls[] to carry call IDs, then prefill the form
+ *  or auto-filter the rolling stack here. Always nulls the hint after
+ *  read so subsequent CN view enters don't re-fire the same toast. */
+function cnConsumeNavHint_() {
+  const hint = window.CLK_NAV_HINT;
+  if (!hint || hint.source !== 'coverageStrip') return;
+  window.CLK_NAV_HINT = null;
+  if (typeof showToast !== 'function') return;
+  const n = hint.missingCount || 0;
+  const dateLabel = hint.date ? ' for ' + hint.date : ' for today';
+  const msg = n > 0
+    ? `Filing ${n} missing note${n > 1 ? 's' : ''}${dateLabel}`
+    : `Note coverage${dateLabel}`;
+  showToast(msg, 'toast-success');
+}
+
 /** V4 Phase 4 — document-level Ctrl/⌘+K handler that navigates to the
  *  Call Notes Search tab. Installed once (sentinel-guarded) and self-gates
  *  on currentView so other tools don't intercept the shortcut. */
@@ -4455,13 +5225,15 @@ function cnApplyPrefillFromUrl_() {
       const value = pair.substring(idx + 1).trim();
       const targetId = supported[key];
       if (!targetId) return; // unknown key — ignore (date is informational only)
+      // Round 2 deferred 8e — use cnSetFieldValue_ so contenteditable .ce
+      // divs and legacy input/textarea both work transparently. Input event
+      // is dispatched inside the setter for callback-formatter + persistence.
+      cnSetFieldValue_(targetId, value);
       const el = document.getElementById(targetId);
       if (!el) return;
-      el.value = value;
-      const fieldCell = el.closest('.cn-field');
+      // Tag prefilled row (covers both old .cn-field and new .cnv-row markup)
+      const fieldCell = el.closest('.cn-field') || el.closest('.cnv-row');
       if (fieldCell) fieldCell.classList.add('prefilled');
-      // Fire input event so the callback-formatter + persistence hooks pick it up
-      el.dispatchEvent(new Event('input', { bubbles: true }));
     });
   } catch (e) { /* malformed prefill — ignore */ }
 }
@@ -4562,13 +5334,15 @@ function cnOpenShortcutsOverlay_() {
 function cnFormToggleFlag_(kind) {
   var form = document.getElementById('cn-active-form');
   if (!form) return;
-  var btn = form.querySelector('.cn-flag-btn[data-flag="' + kind + '"]');
-  if (!btn) {
-    var item = form.querySelector('.cn-flag-more-item[data-flag="' + kind + '"]');
-    if (item) item.click();
-    return;
-  }
-  btn.click();
+  // Round 2 · 8e — toggle a single flag in the multi-select set. Simulates
+  // the click handler in cnWireActiveForm_ so all the sync effects (button
+  // .on classes, training-q-row visibility, persistence) fire.
+  var btn = form.querySelector('.flag-btn[data-flag="' + kind + '"]');
+  if (btn) { btn.click(); return; }
+  // Fallback for legacy markup where the old .cn-flag-btn[data-flag] still
+  // exists (e.g. an unmigrated rolling-stack card)
+  var legacy = form.querySelector('.cn-flag-btn[data-flag="' + kind + '"]');
+  if (legacy) legacy.click();
 }
 
 function cnFindNoteAnywhere_(noteId) {
@@ -4701,7 +5475,8 @@ function enterCallNotesAdminView(area) {
   var compactHeader = COMPACT_MODE ? cnCompactHeader_('Admin', 'settings') : '';
   area.innerHTML =
     compactHeader +
-    (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'Edit department email mappings and state tax rates. Changes take effect immediately (no redeploy needed).')) +
+    (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'KPIs, tag taxonomy, and department/tax config. Changes take effect immediately (no redeploy needed).')) +
+    '<div id="cn-admin-augment"></div>' +
     '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
@@ -4714,6 +5489,258 @@ function enterCallNotesAdminView(area) {
       area.innerHTML = '<div class="no-data">' + esc(err.message || 'Failed to load config') + '</div>';
     })
     .getAdminConfig();
+  // Round 2 · 8h — load KPI strip + tag taxonomy into the augment slot
+  // alongside the existing dept/tax body. Two parallel server calls; either
+  // can fail without taking down the existing controls.
+  cnLoadAdminAugment_();
+}
+
+/** Round 2 · 8h — fetch + render the new Admin sections (KPI strip + tag
+ *  taxonomy table). Drops into #cn-admin-augment which sits above the
+ *  existing department mapping / state tax / suggestions blocks. */
+function cnLoadAdminAugment_() {
+  const slot = document.getElementById('cn-admin-augment');
+  if (!slot) return;
+  slot.innerHTML = '<div class="spinner" style="margin:18px auto"></div>';
+  // Use the existing getCallNotesAmbient endpoint for KPIs (it returns
+  // weekTotal + flagCounts from Phase 4) AND getCallNotesTagTaxonomy
+  // (new in Round 2 · 8h) for the tag table. Fire in parallel.
+  let kpi = null, tax = null, done = 0;
+  function maybeRender() {
+    if (done < 2) return;
+    if (currentView !== 'callNotesAdmin') return;
+    slot.innerHTML = cnRenderAdminAugmentHtml_(kpi, tax);
+    // Round 2 follow-on — wire the tag-row action buttons. Sentinel-guarded
+    // so repeated renders don't stack handlers.
+    cnWireAdminTagActions_();
+  }
+  google.script.run
+    .withSuccessHandler(function (r) { kpi = r || null; done++; maybeRender(); })
+    .withFailureHandler(function () { done++; maybeRender(); })
+    .getCallNotesAmbient();
+  google.script.run
+    .withSuccessHandler(function (r) { tax = r || null; done++; maybeRender(); })
+    .withFailureHandler(function () { done++; maybeRender(); })
+    .getCallNotesTagTaxonomy();
+}
+
+/** Round 2 · 8h — render the KPI strip + tag taxonomy table HTML. */
+function cnRenderAdminAugmentHtml_(kpi, tax) {
+  // KPI strip: Notes this week, Unresolved actions, Tags in use, Reps scanned
+  const weekVal = kpi && typeof kpi.weekTotal === 'number' ? kpi.weekTotal : '—';
+  const unresolvedVal = kpi && typeof kpi.unresolvedActionCount === 'number' ? kpi.unresolvedActionCount : '—';
+  const tagsCount = tax && Array.isArray(tax.tags) ? tax.tags.length : '—';
+  const repsCount = tax && typeof tax.repsScanned === 'number' ? tax.repsScanned : '—';
+  const unresolvedClass = (typeof unresolvedVal === 'number' && unresolvedVal > 3) ? 'crit'
+    : (typeof unresolvedVal === 'number' && unresolvedVal > 0 ? 'warn' : '');
+  const kpiHtml = '<div class="telemetry" style="max-width:900px;margin-bottom:16px">'
+    + '<div class="tel-cell"><div class="tel-label">Week notes</div><div class="tel-value">' + esc(String(weekVal)) + '</div><div class="tel-sub">across team</div></div>'
+    + '<div class="tel-cell"><div class="tel-label">Unresolved</div><div class="tel-value ' + unresolvedClass + '">' + esc(String(unresolvedVal)) + '</div><div class="tel-sub">action flags open</div></div>'
+    + '<div class="tel-cell"><div class="tel-label">Tags</div><div class="tel-value">' + esc(String(tagsCount)) + '</div><div class="tel-sub">unique in use</div></div>'
+    + '<div class="tel-cell"><div class="tel-label">Reps</div><div class="tel-value">' + esc(String(repsCount)) + '</div><div class="tel-sub">enrolled scanned</div></div>'
+    + '</div>';
+
+  // Tag taxonomy table — Round 2 follow-on extends each row with
+  // Rename / Merge / Archive action buttons. Archived tags render with
+  // an "archived" pill + a Restore button instead.
+  let taxHtml = '';
+  const inUse = (tax && Array.isArray(tax.tags)) ? tax.tags : [];
+  const archivedOnly = (tax && Array.isArray(tax.archivedOnlyTags)) ? tax.archivedOnlyTags : [];
+  if (tax && (inUse.length > 0 || archivedOnly.length > 0)) {
+    const max = inUse.length > 0 ? Math.max.apply(null, inUse.map(function (t) { return t.count || 0; })) : 0;
+    const inUseRowsHtml = inUse.slice(0, 50).map(function (t) {
+      return cnRenderTagRow_(t, max);
+    }).join('');
+    let archivedSection = '';
+    if (archivedOnly.length > 0) {
+      const archRowsHtml = archivedOnly.slice(0, 50).map(function (t) {
+        return cnRenderTagRow_(t, 0);  // 0-bar; rows are archived-only
+      }).join('');
+      archivedSection =
+        '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px">Archived (not in any current note)</div>'
+        + archRowsHtml;
+    }
+    taxHtml =
+      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">'
+        + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy</div>'
+        + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Free-text tags reps applied across all enrolled per-rep Sheets. Rename to merge a typo; Merge to consolidate; Archive to deprecate (notes keep their tags; future-suggestion surfaces hide it).</div>'
+        + (inUse.length > 0
+            ? '<div class="cn-tax-head"><div class="cn-tax-tag">Tag</div><div class="cn-tax-bar">Usage</div><div class="cn-tax-count">Notes</div><div class="cn-tax-last">Last seen</div><div class="cn-tax-actions">Actions</div></div>' + inUseRowsHtml
+            : '<div style="font-size:12px;color:var(--muted)">No tags in active use.</div>')
+        + archivedSection
+      + '</div>';
+  } else if (tax) {
+    taxHtml =
+      '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">'
+        + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy</div>'
+        + '<div style="font-size:12px;color:var(--muted)">No tags in use yet. Tags are free-text categorisations reps add from the Log view (Round 2 · 8e).</div>'
+      + '</div>';
+  }
+
+  return kpiHtml + taxHtml;
+}
+
+/** Round 2 follow-on — one tag-table row with usage bar + Rename / Merge
+ *  / Archive action buttons. Archived tags render with an archived pill
+ *  in place of the rename/merge buttons and a Restore button instead of
+ *  Archive. data-tag attributes drive the click delegation in
+ *  cnWireAdminTagActions_. */
+function cnRenderTagRow_(t, maxCount) {
+  const pct = (maxCount > 0 && t.count) ? Math.round((t.count / maxCount) * 100) : 0;
+  const tagAttr = esc(t.tag);
+  const archived = !!t.archived;
+  const archivedBadge = archived
+    ? ' <span class="cn-tax-archived-pill">archived</span>'
+    : '';
+  let actionsHtml;
+  if (archived) {
+    actionsHtml =
+      '<button class="cn-tax-act" data-tax-action="unarchive" data-tax-tag="' + tagAttr + '" title="Restore tag from archive">'
+        + icon('undo', 12) + ' Restore</button>';
+  } else {
+    actionsHtml =
+      '<button class="cn-tax-act" data-tax-action="rename" data-tax-tag="' + tagAttr + '" title="Rename across all notes">'
+        + icon('adjust', 12) + ' Rename</button>'
+      + '<button class="cn-tax-act" data-tax-action="merge" data-tax-tag="' + tagAttr + '" title="Merge into another tag">'
+        + icon('plus', 12) + ' Merge</button>'
+      + '<button class="cn-tax-act danger" data-tax-action="archive" data-tax-tag="' + tagAttr + '" title="Archive (hides from future suggestions; notes keep the tag)">'
+        + icon('trash', 12) + ' Archive</button>';
+  }
+  return '<div class="cn-tax-row' + (archived ? ' is-archived' : '') + '">'
+    + '<div class="cn-tax-tag">' + esc(t.tag) + archivedBadge + '</div>'
+    + '<div class="cn-tax-bar"><i style="width:' + pct + '%"></i></div>'
+    + '<div class="cn-tax-count">' + (t.count || 0) + '</div>'
+    + '<div class="cn-tax-last">' + esc(t.lastSeen || '—') + '</div>'
+    + '<div class="cn-tax-actions">' + actionsHtml + '</div>'
+  + '</div>';
+}
+
+/** Round 2 follow-on — wires click delegation for the tag-table action
+ *  buttons. Installed once per Admin view enter via a sentinel on the
+ *  augment slot to avoid duplicate handlers across re-renders. Each
+ *  action confirms with the manager before firing the server endpoint;
+ *  on success, reloads the taxonomy via cnLoadAdminAugment_. */
+function cnWireAdminTagActions_() {
+  const slot = document.getElementById('cn-admin-augment');
+  if (!slot || slot._taxActionsBound) return;
+  slot._taxActionsBound = true;
+  slot.addEventListener('click', function (e) {
+    const btn = e.target.closest('[data-tax-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-tax-action');
+    const tag = btn.getAttribute('data-tax-tag');
+    if (!tag) return;
+    if (action === 'rename') cnPromptRenameTag_(tag);
+    else if (action === 'merge') cnPromptMergeTag_(tag);
+    else if (action === 'archive') cnDoArchiveTag_(tag, true);
+    else if (action === 'unarchive') cnDoArchiveTag_(tag, false);
+  });
+}
+
+function cnPromptRenameTag_(oldTag) {
+  uiPrompt({
+    title: 'Rename tag',
+    message: 'Rename "' + oldTag + '" to (lowercase kebab-case, 2–24 chars):',
+    initialValue: oldTag,
+    placeholder: 'new-tag-name',
+    validator: function (v) {
+      const t = String(v || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!t) return 'Tag is empty.';
+      if (t.length < 2 || t.length > 24) return 'Tag must be 2–24 characters.';
+      if (t === oldTag) return 'New name is the same as the current name.';
+      return '';
+    },
+  }).then(function (newTag) {
+    if (newTag == null) return;
+    const trimmed = String(newTag).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!trimmed || trimmed === oldTag) return;
+    uiConfirm({
+      title: 'Confirm rename',
+      message: 'Rename "' + oldTag + '" → "' + trimmed + '" across all enrolled reps\' notes? This batch-edits every note that carries the old tag.',
+      confirmLabel: 'Rename',
+    }).then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success) {
+            showToast((res && res.error) || 'Rename failed', 'toast-error');
+            return;
+          }
+          showToast('Renamed: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+          cnLoadAdminAugment_();
+        })
+        .withFailureHandler(function (err) {
+          showToast((err && err.message) || 'Server error', 'toast-error');
+        })
+        .renameCallNoteTag(oldTag, trimmed);
+    });
+  });
+}
+
+function cnPromptMergeTag_(sourceTag) {
+  uiPrompt({
+    title: 'Merge tag',
+    message: 'Merge "' + sourceTag + '" INTO which existing tag? (lowercase kebab-case)',
+    initialValue: '',
+    placeholder: 'target-tag',
+    validator: function (v) {
+      const t = String(v || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!t) return 'Tag is empty.';
+      if (t.length < 2 || t.length > 24) return 'Tag must be 2–24 characters.';
+      if (t === sourceTag) return 'Target is the same as the source.';
+      return '';
+    },
+  }).then(function (targetTag) {
+    if (targetTag == null) return;
+    const trimmed = String(targetTag).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!trimmed || trimmed === sourceTag) return;
+    uiConfirm({
+      title: 'Confirm merge',
+      message: 'Merge "' + sourceTag + '" → "' + trimmed + '" across all enrolled reps\' notes? Source tag is removed; target tag stays or is added; notes carrying both keep only the target.',
+      confirmLabel: 'Merge',
+    }).then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success) {
+            showToast((res && res.error) || 'Merge failed', 'toast-error');
+            return;
+          }
+          showToast('Merged: ' + res.notesUpdated + ' notes across ' + res.repsTouched + ' rep(s)', 'toast-success');
+          cnLoadAdminAugment_();
+        })
+        .withFailureHandler(function (err) {
+          showToast((err && err.message) || 'Server error', 'toast-error');
+        })
+        .mergeCallNoteTags(sourceTag, trimmed);
+    });
+  });
+}
+
+function cnDoArchiveTag_(tag, archived) {
+  const verb = archived ? 'Archive' : 'Restore';
+  uiConfirm({
+    title: verb + ' tag',
+    message: verb + ' tag "' + tag + '"?' +
+      (archived ? '\n\nNotes keep the tag; the Admin table will section it under Archived.' : ''),
+    confirmLabel: verb,
+    tone: archived ? 'danger' : undefined,
+  }).then(function (ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) {
+          showToast((res && res.error) || (verb + ' failed'), 'toast-error');
+          return;
+        }
+        showToast(verb + 'd: ' + tag, 'toast-success');
+        cnLoadAdminAugment_();
+      })
+      .withFailureHandler(function (err) {
+        showToast((err && err.message) || 'Server error', 'toast-error');
+      })
+      .archiveCallNoteTag(tag, archived);
+  });
 }
 
 function cnRenderAdminBody_(cfg) {
@@ -5047,6 +6074,9 @@ function cnBuildExternalEmailHtml_() {
   return '<div class="modal" style="max-width:540px;resize:both;overflow:auto" id="cnX-modal">' +
     '<div class="modal-title" style="cursor:move" onmousedown="cnStartDragExtModal_(event)">' +
       icon('send', 18) + ' Send External Email</div>' +
+    // Round 2 follow-on (modal-tab merge) — shared tab strip; clicking
+    // Department switches to the dept composer (preserving noteId).
+    cnRenderComposerTabStrip_('external', c.noteId) +
     '<div class="modal-sub">Send forms or messages directly to a customer or provider.</div>' +
 
     '<div class="cn-ext-section">' +

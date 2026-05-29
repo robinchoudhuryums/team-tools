@@ -7,41 +7,24 @@
 // in script_core.html's init handler. Default kept as a safety net.
 let SELF_UNDO_WINDOW_SECONDS = 300;
 
-/** Combined Clock+Timesheet enter handler — top section is the clock UI,
- *  below it is the rep's current timesheet. Replaces the prior separate
- *  enterClockView + enterTimesheetView tabs. Re-renders of the clock UI
- *  (after a punch) target `#clk-section` so the timesheet section below
- *  isn't wiped on each interaction. */
+/** Clock view enter handler. Round 2 · 8b moved the rep's timesheet
+ *  section out of this view into the Time / PTO tab, so the Clock tab
+ *  is now punches + actions + ribbon + cov + ledger + teammate only —
+ *  no timesheet rail below. enterClockCombinedView is kept as the entry
+ *  name (TOOLS registry still references it) but the body is now a
+ *  thin wrapper around renderClockView. */
 function enterClockCombinedView(area) {
   stopClock();
-  // Default timesheet range if not yet set (mirror enterTimesheetView's logic)
-  if (!tsStart) {
-    const range = computeRange(tsViewMode, isoDateTz(empTz()), 0);
-    tsStart = range.start; tsEnd = range.end;
-  }
-  area.innerHTML = `
-    <div id="clk-section"></div>
-    <div class="clk-ts-divider">
-      <div class="clk-ts-divider-line"></div>
-      <span class="clk-ts-divider-label">Your Timesheet</span>
-      <div class="clk-ts-divider-line"></div>
-    </div>
-    <div id="clk-ts-section"></div>
-  `;
-  const clkSection = document.getElementById('clk-section');
-  renderClockView(clkSection);
+  renderClockView(area);
   startClock();
-  const tsSection = document.getElementById('clk-ts-section');
-  tsSection.innerHTML = '<div class="state-center"><div class="spinner"></div><div class="state-label">Loading timesheet…</div></div>';
-  loadTimesheet(tsStart, tsEnd, tsSection);
 }
 
-/** The clock view's interactive handlers (handlePunch, self-undo, etc.) write
- *  to a parent container via innerHTML. In the combined view that container
- *  must be the clock SECTION (#clk-section) — replacing the view-area would
- *  wipe the timesheet below. Fall back to view-area for any standalone use. */
+/** Returns the container the clock view renders into. Pre-8b this had
+ *  to distinguish a #clk-section nested under the combined view; now
+ *  it's just the view-area. Kept as a wrapper so handlePunch /
+ *  selfDeletePunch handlers don't have to change. */
 function getClockArea_() {
-  return document.getElementById('clk-section') || document.getElementById('view-area');
+  return document.getElementById('view-area');
 }
 
 function renderClockView(area) {
@@ -187,6 +170,10 @@ function buildStatusSentence_(stats, nextActions, tzAbbr) {
  *  timesheet load completes. Annual/Sick cells gracefully hide via
  *  muted text when ptoEnabled is false (contractor reps). */
 function renderLedger_(s, stats) {
+  // 3-cell ledger after Round 2 · 8b moved timesheet out of the Clock
+  // view. Pay-period stats now live in the Time / PTO tab's Timesheet-
+  // mode side rail. The remaining cells stay glanceable: Annual / Sick
+  // / Hours today.
   const annualVal = s.ptoEnabled
     ? `<div class="cell-value">${formatLeaveDays(s.annualLeave || 0)}</div><div class="cell-sub">of ${formatLeaveDays(s.annualLeaveMax || 15)} days</div>`
     : `<div class="cell-value muted">—</div><div class="cell-sub">not tracked</div>`;
@@ -196,33 +183,40 @@ function renderLedger_(s, stats) {
   const hoursToday = stats
     ? `<div class="cell-value">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m</div><div class="cell-sub">${stats.lunchMinutes ? stats.lunchMinutes + 'm lunch' : 'no lunch yet'}</div>`
     : `<div class="cell-value muted">0h</div><div class="cell-sub">not in yet</div>`;
-  // Pay-period cell — lazy-populated from tsData when the combined view's
-  // timesheet section finishes loading. See lazyUpdatePayPeriodCell_.
-  const ppLabel = s.payCycle === 'Biweekly' ? 'Pay period' : 'This month';
-  let ppVal;
-  if (tsData && typeof tsData.totalHours === 'number') {
-    ppVal = `<div class="cell-value">${fmtHrs(tsData.totalHours)}</div><div class="cell-sub">${tsData.daysWorked || 0} days worked</div>`;
-  } else {
-    ppVal = `<div class="cell-value muted" id="clk-pp-val">—</div><div class="cell-sub" id="clk-pp-sub">loading…</div>`;
-  }
-  return `<div class="ledger">
+  return `<div class="ledger ledger-3">
     <div class="cell"><div class="cell-label">Annual</div>${annualVal}</div>
     <div class="cell"><div class="cell-label">Sick</div>${sickVal}</div>
     <div class="cell"><div class="cell-label">Hours today</div>${hoursToday}</div>
-    <div class="cell"><div class="cell-label">${ppLabel}</div>${ppVal}</div>
   </div>`;
 }
 
-/** Update the pay-period ledger cell once tsData arrives. Called by
- *  loadTimesheet's success path (via the global hook). Silently no-ops
- *  if the cell isn't in the DOM (rep navigated away). */
-function lazyUpdatePayPeriodCell_() {
-  const val = document.getElementById('clk-pp-val');
-  const sub = document.getElementById('clk-pp-sub');
-  if (!val || !sub || !tsData || typeof tsData.totalHours !== 'number') return;
-  val.textContent = fmtHrs(tsData.totalHours);
-  val.classList.remove('muted');
-  sub.textContent = `${tsData.daysWorked || 0} days worked`;
+// lazyUpdatePayPeriodCell_ removed in Round 2 · 8b — the pay-period
+// ledger cell was deleted along with the Clock view's timesheet section.
+// The guard `typeof === 'function'` in loadTimesheet's success handler
+// (tc/script_timesheet.html) makes the now-missing call a safe no-op.
+
+/** Round 2 · 8z — Coverage-strip CTA handler. Sets an in-memory nav hint
+ *  with the source date + missing count before navigating to Call Notes.
+ *  The Log view's enter handler consumes the hint and (when per-call CDR
+ *  data eventually lands) can populate the Log with the specific unmatched
+ *  call IDs. Today the hint just carries the date so the Log view can
+ *  acknowledge the deep-link with a toast.
+ *
+ *  The original V1·E3 spec called for a URL deep-link with
+ *  ?tool=callNotes&filter=unmatched&date=YYYY-MM-DD, but two constraints
+ *  prevent the URL approach: (a) CDR data is per-(agent, date) aggregated,
+ *  so "unmatched call IDs" don't exist server-side; (b) Apps Script's
+ *  HtmlService iframe sandboxes window.location.search away from the user-
+ *  facing URL (see 8x). The in-memory hint is the practical equivalent
+ *  until a per-call CDR source materialises. */
+window.CLK_NAV_HINT = null;
+function fileMissingCalls_(date, missingCount) {
+  window.CLK_NAV_HINT = {
+    source: 'coverageStrip',
+    date: date || '',
+    missingCount: Number(missingCount) || 0,
+  };
+  if (typeof enterTool === 'function') enterTool('callNotes');
 }
 
 // ── DAY RIBBON (V4·E1) ─────────────────────────────────────────────────
@@ -438,7 +432,13 @@ function renderCoverageStrip_(slot, data) {
 
   let ctaHtml = '';
   if (missing > 0) {
-    ctaHtml = `<button class="cov-cta" onclick="enterTool('callNotes')">${icon('adjust', 12)}File ${missing} missing</button>`;
+    // Round 2 · 8z — pass the date through fileMissingCalls_ as an in-memory
+    // navigation hint. The Log view consumes the hint and (when per-call
+    // CDR data eventually exists) can pre-filter to unmatched calls. Today,
+    // CDR is per-(agent, date) aggregated only — no per-call records — so
+    // the hint just carries the date for context.
+    const today = isoDateTz(empTz());
+    ctaHtml = `<button class="cov-cta" onclick="fileMissingCalls_('${esc(today)}', ${missing})">${icon('adjust', 12)}File ${missing} missing</button>`;
   } else if (noteCount > 0 && answered > 0 && covPct >= 100) {
     ctaHtml = `<button class="cov-cta muted" onclick="enterTool('callNotes')">${icon('check', 12)}All covered</button>`;
   }
@@ -510,8 +510,21 @@ function bindSelfUndoBtns() {
       const time = btn.dataset.time;
       const type = btn.dataset.type;
       const label = btn.dataset.label || type;
-      if (!confirm(`Undo your "${label}" punch at ${dispTime(time)}?\n\nThis only works within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)} min of the punch.`)) return;
-      btn.disabled = true;
+      uiConfirm({
+        title: 'Undo punch',
+        message: `Undo your "${label}" punch at ${dispTime(time)}?\n\nThis only works within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)} min of the punch.`,
+        confirmLabel: 'Undo',
+        tone: 'danger',
+      }).then(ok => {
+        if (!ok) return;
+        cnDoSelfUndo_(btn, date, time, type);
+      });
+    });
+  });
+}
+
+function cnDoSelfUndo_(btn, date, time, type) {
+  btn.disabled = true;
       google.script.run
         .withSuccessHandler(result => {
           if (!result.success) {
@@ -523,8 +536,9 @@ function bindSelfUndoBtns() {
           google.script.run
             .withSuccessHandler(state => {
               empState = state;
-              // Target #clk-section in the combined view so the timesheet
-              // section below survives the re-render. Falls back to view-area.
+              // Round 2 · 8b — re-renders target view-area directly now
+              // that the Clock view no longer hosts a timesheet section
+              // below. getClockArea_ still resolves to view-area.
               const area = getClockArea_();
               if (area && currentView === 'clock') renderClockView(area);
               startClock();
@@ -537,59 +551,15 @@ function bindSelfUndoBtns() {
           showToast((err.message||'Server error'), 'toast-error');
         })
         .selfDeletePunch(date, time, type);
-    });
-  });
 }
 
-/** Two-ring PTO donut (annual + sick) shown beneath the hero clock. */
-function renderPtoRings(s) {
-  if (!s.ptoEnabled) return '';
-  const annualMax = Math.max(s.annualLeaveMax || 15, s.annualLeave || 0, 1);
-  const sickMax   = Math.max(s.sickLeaveMax   || 10, s.sickLeave   || 0, 1);
-  const annual = ptoRingSvg(s.annualLeave, annualMax, 'annual');
-  const sick   = ptoRingSvg(s.sickLeave,   sickMax,   'sick');
-  return `
-    <div class="card pto-card">
-      <div class="card-label">Leave Balance</div>
-      <div class="pto-rings">
-        <div class="pto-ring">
-          <div class="pto-svg">${annual.svg}
-            <div class="pto-ring-center">
-              <div class="pto-ring-val">${annual.label}</div>
-              <div class="pto-ring-of">of ${annual.maxLabel}</div>
-            </div>
-          </div>
-          <div class="pto-ring-label">Annual</div>
-        </div>
-        <div class="pto-ring">
-          <div class="pto-svg">${sick.svg}
-            <div class="pto-ring-center">
-              <div class="pto-ring-val">${sick.label}</div>
-              <div class="pto-ring-of">of ${sick.maxLabel}</div>
-            </div>
-          </div>
-          <div class="pto-ring-label">Sick</div>
-        </div>
-      </div>
-    </div>`;
-}
-
-function ptoRingSvg(value, max, cls) {
-  const v = Math.max(0, Number(value) || 0);
-  const m = Math.max(1, Number(max)   || 1);
-  const pct = Math.min(1, v / m);
-  const r = 48, c = 2 * Math.PI * r;
-  const dashOffset = c * (1 - pct);
-  const fgCls = v <= 0 ? 'depleted' : cls;
-  const svg = `<svg viewBox="0 0 120 120" width="120" height="120">
-      <circle class="pto-svg-bg" cx="60" cy="60" r="${r}" stroke-width="10"/>
-      <circle class="pto-svg-fg ${fgCls}" cx="60" cy="60" r="${r}" stroke-width="10"
-        stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${dashOffset.toFixed(2)}"/>
-    </svg>`;
-  // Format: integer if whole, .5 if half
-  const fmt = n => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
-  return { svg, label: fmt(v), maxLabel: fmt(m) };
-}
+// renderPtoRings + ptoRingSvg — removed in Round 2 (Phase 8d). The Clock
+// view's renderPtoRings was orphaned after Phase 2's hero/ledger swap;
+// ptoRingSvg was the last surviving helper from that era (still consumed
+// by the Time Off side rail until Round 2 · 8d replaced that rail with
+// the rectangular .pto-tile). With no remaining callers, both are gone
+// along with the .pto-card / .pto-rings / .pto-ring / .pto-svg* CSS that
+// fed them.
 
 function renderPunchHistory(punches) {
   if (!punches || punches.length === 0)
@@ -709,8 +679,14 @@ function handlePunch(punchType) {
   const nowStr = new Intl.DateTimeFormat('en-US', {
     timeZone: tz, hour: 'numeric', minute: '2-digit',
   }).format(new Date());
-  if (!confirm(`Record "${PUNCH_META[punchType].label}" at ${nowStr}?`)) return;
-  submitPunch(punchType, null);
+  uiConfirm({
+    title: 'Record punch',
+    message: `Record "${PUNCH_META[punchType].label}" at ${nowStr}?`,
+    confirmLabel: PUNCH_META[punchType].label,
+  }).then(ok => {
+    if (!ok) return;
+    submitPunch(punchType, null);
+  });
 }
 
 function submitPunch(punchType, custom) {
@@ -725,8 +701,8 @@ function submitPunch(punchType, custom) {
         .withSuccessHandler(state => {
           empState = state;
           adjustWindowDays = state.adjustWindowDays || 30;
-          // Target #clk-section in the combined Clock+Timesheet view so the
-          // timesheet below isn't wiped. Falls back to view-area otherwise.
+          // Round 2 · 8b — re-renders target view-area directly now that
+          // the Clock view no longer hosts a timesheet section below.
           const area = getClockArea_();
           if (area && currentView === 'clock') renderClockView(area);
           startClock();
