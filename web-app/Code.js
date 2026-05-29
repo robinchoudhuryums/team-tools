@@ -320,10 +320,10 @@ function doGet(e) {
   // window.SERVER_QUERY_PARAMS so client code can read them reliably.
   const tpl = HtmlService.createTemplateFromFile('index');
   tpl.serverQueryParams = (e && e.parameter) || {};
-  return tpl
-    .evaluate()
-    .setTitle('UMS Team Tools')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  const html = tpl.evaluate();
+  html.setTitle('UMS Team Tools');
+  html.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  return html;
 }
 
 function include(filename) {
