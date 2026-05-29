@@ -156,7 +156,9 @@ this section before touching the relevant area.
   `managerGetShiftStats`, `managerGetUnresolvedActionCount`,
   `getTeamMetrics`,
   `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`,
-  `saveUpdateSuggestions`, `removeAutomationTriggers`.
+  `saveUpdateSuggestions`, `removeAutomationTriggers`,
+  `getCallNotesTagTaxonomy`, `renameCallNoteTag`,
+  `mergeCallNoteTags`, `archiveCallNoteTag`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -366,6 +368,20 @@ this section before touching the relevant area.
   `PersonalSheetSyncFail` audit row on failure. Monitor AuditLog for
   this action type — it means a rep's personal Sheet is inaccessible
   and drifting from the ADP source of truth.
+- **Tag admin operations hold the global ScriptLock across all
+  enrolled rep Sheets.** `renameCallNoteTag` / `mergeCallNoteTags`
+  iterate the roster via `applyTagTransformAcrossReps_`, open each
+  rep's Sheet, parse + rewrite `subformData.tags[]` — all inside one
+  project-level `ScriptLock` held for the full iteration. Concurrent
+  submits / flag toggles / pins across other reps wait until the
+  tag mutation completes. Acceptable today (admin ops are rare and
+  the working set is small), but if you add reps in volume re-
+  evaluate. Per-rep Sheet failures are swallowed via try/catch so one
+  broken Sheet doesn't fail the whole rename, but the audit row's
+  `repsTouched` / `notesUpdated` counts reflect only successfully
+  rewritten reps. `archiveCallNoteTag` is cheap — only the Script
+  Property changes — but it still acquires the same lock so it can't
+  race with a rename/merge that depends on the current archive set.
 - **CN card buttons use `data-cn-action` delegation, not inline onclick.**
   `cnInstallCardDelegation_(area)` installs a single click listener on
   the view container that dispatches to `cnToggleFlag_`,
@@ -644,11 +660,13 @@ this section before touching the relevant area.
   tile, status pill, table action, and toast variant pulls its
   glyph from the ~30-icon library; SVGs use `stroke="currentColor"`
   so tone inheritance and dark-mode flips work automatically.
-  Emoji remain only inside `confirm()` browser dialog strings
-  (where SVG can't render) and in the legacy-prefix-strip safety
-  regex inside `showToast()`. Adding a new icon means appending
-  one path-data entry to `ICONS` in `script_icons.html`; new
-  callers should pass the icon name to `icon()` rather than
+  Emoji remain only inside the legacy-prefix-strip safety regex
+  inside `showToast()` — the prior carve-out for native `confirm()`
+  strings is no longer relevant because `window.confirm` /
+  `window.prompt` have been fully replaced by `uiConfirm` / `uiPrompt`
+  (see the related Key Design Decision). Adding a new icon means
+  appending one path-data entry to `ICONS` in `script_icons.html`;
+  new callers should pass the icon name to `icon()` rather than
   inlining SVG markup.
 - **The two Stage-0 partials are the shared foundation for future
   tools in this repo.** A new tool dropped into
@@ -1082,22 +1100,88 @@ this section before touching the relevant area.
   `[data-qa-clarify]` / `.qa-clarify-submit` clicks to
   `cnAckTrainingFlag_` / `cnSubmitClarification_`.
 - **Admin tab augmented with KPIs + tag taxonomy (Round 2 · 8h).**
-  The Call Notes Admin tab now renders a 4-cell `.telemetry` strip
-  (Week notes / Unresolved / Tags / Reps) and a read-only tag
-  taxonomy table (kebab-case tag + usage bar + count + last-seen)
-  ABOVE the existing department-email / state-tax / suggestions
-  controls (those preserved unchanged). Manager-gated. KPIs from
-  `getCallNotesAmbient`; taxonomy from new `getCallNotesTagTaxonomy`
-  endpoint that scans every enrolled rep's per-rep Sheet for
-  `subformData.tags[]` entries. Tag rename / merge / archive
-  actions are a remaining follow-on (read-only for now).
+  The Call Notes Admin tab renders a 4-cell `.telemetry` strip
+  (Week notes / Unresolved / Tags / Reps) and a tag taxonomy table
+  (kebab-case tag + usage bar + count + last-seen + per-row action
+  buttons) ABOVE the existing department-email / state-tax /
+  suggestions controls (those preserved unchanged). Manager-gated.
+  KPIs from `getCallNotesAmbient`; taxonomy from
+  `getCallNotesTagTaxonomy` which scans every enrolled rep's
+  per-rep Sheet for `subformData.tags[]` entries and marks each
+  with an `archived` flag from the `CN_ARCHIVED_TAGS` Script
+  Property. An `archivedOnlyTags[]` array surfaces archived tags
+  no longer in active use so admins can still restore them.
 - **"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
   modal — customer/provider emails). Save & Compose still opens
-  the department composer. The Internal/External modal-tab merge
-  (one modal with a segmented Department | External tab) is a
-  remaining follow-on.
+  the department composer. Both composer modals share a tab-strip
+  (see the next decision) so reps can flip between them without
+  losing note context.
+- **Email composer Internal/External tab merge.**
+  `cnRenderComposerTabStrip_(active, noteId)` renders a shared
+  Department | External segmented control at the top of BOTH the
+  department composer (`cn-compose-overlay`, in both form + preview
+  steps) and the external composer (`cn-ext-overlay`).
+  `cnSwitchComposerTab_(target)` captures the active composer's
+  `noteId` from `CN_STATE.composer` / `CN_STATE.extComposer`, closes
+  the active modal (clearing its state slot via the close handler),
+  and opens the target modal preserving the noteId. The Department
+  tab is disabled when no noteId is in scope (rep clicked "Open
+  Email" from an unsaved form — there's no saved note to attach
+  EmailedAt/EmailDepartments stamps to); `cnSwitchComposerTab_` also
+  guards defensively with a toast. Brief flash during the
+  close-and-reopen transition is acceptable; a morphing transition
+  would require consolidating both modals into one shell — deferred
+  unless the flicker is reported as annoying. CSS in `styles.html`:
+  `.cn-composer-tabs` + `.cn-composer-tab(.on,.disabled)`, matching
+  the Time/PTO mode-toggle segmented-pill vocabulary.
+- **Tag taxonomy rename/merge/archive batch-edits across reps.**
+  Three new manager-gated endpoints in `Code.js`:
+  `renameCallNoteTag(oldTag, newTag)` and
+  `mergeCallNoteTags(sourceTag, targetTag)` walk every enrolled
+  rep's Sheet via `applyTagTransformAcrossReps_` and rewrite
+  `subformData.tags[]` in place — dedupe handles the case where
+  both tags already exist on the same note. `archiveCallNoteTag(tag,
+  archived)` only toggles membership in the `CN_ARCHIVED_TAGS`
+  Script Property (JSON-encoded array of lowercase tags) and does
+  NOT modify any notes — archived tags continue to render their
+  chips on existing cards; archive only flags the tag for future
+  tag-suggestion surfaces (none exist today) and visually segregates
+  it in the Admin taxonomy table. All three: acquire a single
+  project-level `ScriptLock` (INV-01), write a `CallNoteTagAdmin`
+  audit row with the manager's email + counts, and isolate per-rep
+  Sheet failures via try/catch in the rep loop. Rename + merge
+  share the same row-level transform logic; the separate endpoint
+  names exist purely for audit-trail clarity ("merge" tells future
+  investigators that the manager expected the target to already
+  exist on some notes).
+- **`uiConfirm` / `uiPrompt` replace native `window.confirm` /
+  `window.prompt`.** Promise-returning helpers in `script_core.html`
+  that consume the existing `.overlay` + `.modal` vocabulary so
+  dialogs match the Console-redesign typography and respect dark
+  mode (native dialogs render with system-light chrome regardless
+  of the app's theme). API:
+  `uiConfirm({title?, message?, confirmLabel?, cancelLabel?, tone?})`
+  → `Promise<boolean>`;
+  `uiPrompt({title?, message?, initialValue?, placeholder?,
+  confirmLabel?, cancelLabel?, validator?})` → `Promise<string|null>`.
+  Esc + click-outside resolve `false`/`null`; Enter on confirm fires
+  OK; Enter inside the prompt input submits. `tone:'danger'` paints
+  the OK button destructive (red bg via `.ui-dialog-ok.is-danger`) —
+  applied to delete / archive / cancel / deny-bulk actions.
+  `validator` on uiPrompt returns an error string and the dialog
+  shows it inline WITHOUT closing so the rep can fix and retry —
+  cleaner than the prior prompt→confirm→toast loop. A `resolved`
+  sentinel inside each helper prevents double-resolution if Esc +
+  click-outside fire in quick succession. All 15 native-dialog
+  callsites across `tc/script_clock.html`, `tc/script_manager.html`,
+  `tc/script_timeoff.html`, `cn/script_callnotes.html` are
+  converted — no `window.confirm` / `window.prompt` usage remains.
+  Multi-statement continuations were extracted into helpers
+  (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`,
+  `handleBulkActionConfirmed_`) so the click-handler signatures stay
+  synchronous from the dispatcher's perspective.
 
 ## Operator State Checklist
 
@@ -1165,6 +1249,14 @@ manually for a fresh deploy or environment:
   changes). Similarly, `CN_UPDATE_SUGGESTIONS` stores the
   per-department update-type datalist suggestions as JSON; editable
   via the Admin tab or Script Properties directly.
+- **Script Property `CN_ARCHIVED_TAGS`** (auto-managed). JSON array
+  of lowercase tag strings marked as archived via the Call Notes →
+  Admin tab's tag actions. Created on first archive, deleted when
+  the last tag is unarchived. No manual setup needed — documented
+  here so it's visible when inspecting Script Properties. Read by
+  `getArchivedTagsSet_()`; written by `setArchivedTagsSet_()` from
+  `archiveCallNoteTag`. Archive does NOT modify any notes; tags
+  remain on every existing note's `subformData.tags[]`.
 - **Call-notes EOD + weekly digest knobs** are
   `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17),
   `EOD_WARNING_WINDOW_MINUTES` (default 30), and the
@@ -1260,9 +1352,9 @@ INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) 
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
-INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
-INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread | Subsystem: Server
+INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
 INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configured" when `emp.callNotesSheetId` is missing — call-notes endpoints surface this as the enrollment-missing splash in the client; no auto-provision path exists | Subsystem: Server
@@ -1312,6 +1404,9 @@ INV-78 | URL query params (`?compact=1`, `?tool=<tabKey>`, `?prefill=...`) are p
 INV-79 | Resizable sidebar width persists to `localStorage.umsSidebarW` (range 56–280px on restore — out-of-range values fall back to the default). Default 168px; snap threshold 100px determines the collapsed (icon-only) state. `initResizableSidebar_` sets `--sidebar-w` on both the `.sidebar` element AND `documentElement` so the `.app-shell` grid template recomputes. `.sidebar.collapsed` hides `.sb-lbl` labels + brand sub-name + user info text + section labels via CSS | Subsystem: Client (shell)
 INV-80 | Time / PTO mode (`localStorage.umsMergeMode`, `'timeoff'` \| `'timesheet'`, default `'timeoff'`) persists across reloads. `'timeoff'` mode renders the `.pto-tile` + upcoming-requests in the side rail; `'timesheet'` mode lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call, NOT via `loadTimesheet`) and renders a pay-period `.pto-tile` mirror + recent-activity list. The TOOLS registry tab key stays `'timeoff'` even though the label changed to `'Time / PTO'` so `?tool=timeoff` deep-links + `currentView === 'timeoff'` guards keep working | Subsystem: Client (Time Clock views)
 INV-81 | The Clock view's coverage-strip "File N missing" CTA fires `fileMissingCalls_(date, missingCount)` which sets `window.CLK_NAV_HINT { source: 'coverageStrip', date, missingCount }` before calling `enterTool('callNotes')`. `cnConsumeNavHint_` on Log-view enter reads + nulls the hint and surfaces a confirmation toast. Per-call CDR data doesn't exist today (DQE Historical Data is per-(agent, date) aggregated only), so unmatched call IDs can't be passed via the hint yet — when a per-call source lands, extend the hint with `hint.calls[]` for prefill | Subsystem: Client (Time Clock views) + Client (Call Notes views)
+INV-82 | Tag taxonomy admin endpoints (`renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) are manager-gated (INV-02) and acquire `LockService.getScriptLock` with `waitLock(15000)` (INV-01). Rename and merge use `applyTagTransformAcrossReps_` to iterate every enrolled rep's per-rep Sheet and rewrite `subformData.tags[]` in place; dedupe handles the case where the target tag is already present on a note. Archive only mutates the `CN_ARCHIVED_TAGS` Script Property (JSON-encoded array of lowercase tags) — existing note tags are unchanged, so archive does NOT remove the tag from cards already in production. All three write a `CallNoteTagAdmin` audit row (INV-32 extension) with the manager's email + `{action, oldTag/newTag, repsTouched, notesUpdated}` summary. Per-rep Sheet failures are isolated via try/catch in the loop so one broken Sheet doesn't fail the whole rename. `getCallNotesTagTaxonomy` returns the `archived` flag on each in-use tag plus an `archivedOnlyTags[]` array for archived tags no longer in active use | Subsystem: Server
+INV-83 | `uiConfirm({title?, message?, confirmLabel?, cancelLabel?, tone?})` and `uiPrompt({title?, message?, initialValue?, placeholder?, validator?, confirmLabel?, cancelLabel?})` in `script_core.html` are Promise-returning replacements for `window.confirm` / `window.prompt`. All 15 native-dialog callsites across `tc/script_clock.html`, `tc/script_manager.html`, `tc/script_timeoff.html`, and `cn/script_callnotes.html` are converted — no `window.confirm` / `window.prompt` usage remains in the codebase. Esc + click-outside resolve `false`/`null`; Enter on confirm fires OK; Enter inside the prompt input submits. `tone:'danger'` paints the OK button destructive via `.ui-dialog-ok.is-danger`. `validator` on uiPrompt returns an error string and the dialog shows it inline WITHOUT closing so the rep can fix and retry. A `resolved` sentinel inside each helper prevents double-resolution if Esc + click-outside fire in quick succession. Multi-statement continuations are extracted into helpers (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`, `handleBulkActionConfirmed_`) so click-handler signatures stay synchronous from the dispatcher's perspective | Subsystem: Client (shell)
+INV-84 | `cnRenderComposerTabStrip_(active, noteId)` renders a shared Department | External segmented control prepended to both the department composer (`cn-compose-overlay`, in both `cnRenderComposerFormStep_` + `cnRenderComposerPreviewStep_`) and the external composer (`cn-ext-overlay`, in `cnBuildExternalEmailHtml_`). `cnSwitchComposerTab_(target)` captures the active composer's noteId from `CN_STATE.composer` / `CN_STATE.extComposer`, closes the active modal (clearing its state slot via the close handler), and opens the target modal preserving the noteId. The Department tab is disabled when no noteId is in scope — a dept email needs a saved note to stamp EmailedAt/EmailDepartments — and `cnSwitchComposerTab_` guards defensively with a toast if the disabled state is bypassed | Subsystem: Client (Call Notes views)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -1727,10 +1822,44 @@ S51 | Call Notes Admin tab augment (Round 2 · 8h) | Subsystem: Server + Client 
   Steps:
     - As a manager, open Call Notes → Admin
     - Confirm the KPI strip renders at the top: Week notes / Unresolved / Tags / Reps with tabular numerals
-    - Confirm the tag taxonomy table below shows unique tags + usage bars + counts + last-seen dates
+    - Confirm the tag taxonomy table below shows unique tags + usage bars + counts + last-seen dates + per-row action buttons
     - Confirm the existing department-email mapping + state-tax-rate + update-suggestions controls render BELOW the new sections (preserved unchanged)
     - As a rep (non-manager), open the Admin tab — confirm tab is hidden entirely
-  Expected: KPI strip + tag table are read-only; existing admin controls work unchanged. `getCallNotesTagTaxonomy` is manager-gated. Tag rename / merge / archive actions are NOT present yet (follow-on).
+  Expected: KPI strip + tag table render correctly; existing admin controls work unchanged. `getCallNotesTagTaxonomy` is manager-gated. Rename / Merge / Archive action buttons are present per row (Restore button for archived tags); see S53 for the full action flow.
+
+S52 | Email composer Internal/External tab transition (modal-tab merge) | Subsystem: Client (Call Notes views)
+  Steps:
+    - As an enrolled rep with at least one saved note today, click the envelope on a card → confirm the Department composer opens with the segmented tab strip at the top showing Department (active) | External
+    - Click External → confirm the modal closes and the External composer opens, with External now active and Department clickable (because the noteId is still in scope)
+    - Click Department → confirm the External composer closes and the Department composer reopens for the SAME note (noteId preserved across the transition)
+    - Press the "Open Email" button on the Log view (no saved-note context) → External composer opens; in the tab strip confirm Department is greyed/disabled and clicking it shows a toast "Save the note first to send a department email"
+    - On both modals, confirm the existing close handlers still work (X button, Escape)
+  Expected: noteId is preserved across transitions when present. Department tab is disabled when no noteId is in scope (Save the note first…). CN_STATE.composer / CN_STATE.extComposer never leak — the close handler clears its state slot before the target opens. Brief flash during the close-and-reopen is acceptable; verify no orphaned overlays linger in the DOM.
+
+S53 | Tag taxonomy admin actions (rename / merge / archive) | Subsystem: Server + Client (Call Notes views)
+  Steps:
+    - As a manager, open Call Notes → Admin
+    - In the taxonomy table, pick a tag with a known usage count → click Rename → enter a new lowercase kebab-case name (2–24 chars) → confirm both dialogs
+    - Re-open the table — confirm the tag is renamed and the count moved with it
+    - On another tag, click Merge → enter an existing target tag → confirm both dialogs
+    - Re-open — confirm source tag is gone and target's count is the sum (less any notes that already had both)
+    - On a third tag, click Archive → confirm; refresh — the tag should appear in the archived section (or its row should be visually flagged) with a Restore button. Confirm rep-facing cards still show the tag chip (archive does NOT modify notes)
+    - Click Restore on an archived tag → confirm it returns to the active table
+    - Try Rename with an invalid value (1 char, or "Foo Bar" with spaces) — confirm the inline validator shows an error WITHOUT closing the dialog
+    - Inspect AuditLog
+  Expected: Each successful rename / merge / archive / restore writes a `CallNoteTagAdmin` audit row with the manager's email + `{action, oldTag/newTag, repsTouched, notesUpdated}` notes. Per-rep Sheet failures during rename/merge don't fail the whole run (caught and logged). Archive only toggles `CN_ARCHIVED_TAGS` Script Property — no note rows are touched. Validator catches malformed input client-side; server `normalizeTagForAdmin_` rejects invalid input too (returns `{success: false, error: 'Invalid …'}`).
+
+S54 | Custom modal-styled confirm/prompt dialogs (uiConfirm/uiPrompt) | Subsystem: Client (shell)
+  Steps:
+    - Trigger several confirms across the app: self-undo a punch (Clock view); deny a pending PTO request (Manager view); cancel a time-off request (Time/PTO view); delete a call note (CN); clear a training reply (CN manager view)
+    - On each: confirm the dialog renders with `.modal` chrome + Console-redesign typography (NOT system-light browser chrome) and respects dark mode if active
+    - Press Esc on any open confirm → confirms it resolves to false (no destructive action fires)
+    - Click outside (on the overlay backdrop) → also cancels
+    - Press Enter inside an open confirm → fires OK
+    - Verify destructive confirms (delete punch, archive tag, cancel request, deny bulk) show a red-tinted OK button via `.ui-dialog-ok.is-danger`
+    - Trigger a uiPrompt — try the rename-tag flow: type an invalid new name → confirm the inline error renders WITHOUT closing the dialog → fix the value → confirm it submits cleanly
+    - Press Esc on an open prompt → resolves to null (cancel)
+  Expected: All 15 dialogs use the custom modal. No `window.confirm` / `window.prompt` calls remain in the codebase. The `resolved` sentinel prevents double-resolution when Esc + click-outside fire near-simultaneously (no double-removal exception in the console). Multi-statement continuations route through helpers (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`, `handleBulkActionConfirmed_`) so the post-confirm action fires exactly once.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
