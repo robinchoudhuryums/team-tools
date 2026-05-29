@@ -1321,6 +1321,44 @@ this section before touching the relevant area.
   `handleBulkActionConfirmed_`) so the click-handler signatures stay
   synchronous from the dispatcher's perspective.
 
+## Deferred Follow-ons
+
+Items identified during the V1–V4 + Round 2 redesign work that
+were intentionally deferred. The redesign itself is complete; these
+are polish/expansion items captured here so the next session can
+pick them up without re-deriving the context.
+
+- **Urgent-flag digest infrastructure.** The `urgent` flag already
+  lives in `subformData.flags[]` (INV-75 / INV-77) and renders on
+  cards and the multi-flag toolbar, but there's no manager-side
+  aggregation/email like the action / training / review digests
+  have. Server-side: pick a cadence (likely daily or weekly), add
+  a `sendCallNotesUrgentDigest` trigger handler following the
+  pattern of `sendCallNotesEodDigest` / `sendCallNotesWeeklyDigests`.
+  `installAutomationTriggers` would need a 5th trigger wired in.
+- **Card-level urgent button placement.** Urgent currently toggles
+  via the multi-flag toolbar on the active form. Saved cards have
+  no dedicated urgent button on their action row. Two options
+  considered: (a) a 4th flag chip alongside action / training /
+  review, or (b) hover-reveal. Needs a design call before
+  implementing — primary-vs-secondary action-row split is already
+  tight (see the "CN card actions use a primary/secondary split"
+  decision).
+- **Compliance audit + template library Admin panels.** Round 2
+  listed these as future Admin-tab additions. Spec is just
+  placeholders — concrete requirements needed before any work.
+  Likely candidates: an audit-log search UI scoped to call-note
+  actions, and a templated-response library for common rep
+  scenarios.
+- **Tag-suggestion autocomplete on the Log view.** The Round 2
+  tag-taxonomy work added an `archived` flag on tags expressly so
+  a future autocomplete surface could filter archived suggestions
+  out (see CLAUDE.md "Tag taxonomy rename/merge/archive" decision).
+  That autocomplete UI doesn't exist yet. Lightweight to build:
+  a `<datalist>` on the tag input fed by `getCallNotesTagTaxonomy`
+  (already manager-gated; would need a thin caller-callable
+  variant for reps that returns just the unique active tag list).
+
 ## Operator State Checklist
 
 State that exists outside the codebase and must be set up
