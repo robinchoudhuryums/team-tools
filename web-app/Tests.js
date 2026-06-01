@@ -658,6 +658,8 @@ function _runAllTests() {
   _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
   _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
   _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
+  _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
+  _smokeTest('tpl_noEscapedJsonInjection',         test_tpl_noEscapedJsonInjection);
   _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
 
   // ── Call Notes — integration (sheet-touching) ──────────────────────────
@@ -2274,6 +2276,38 @@ function test_cn_buildEmailHtml_escapesUserFields() {
   _assertFalse(html.indexOf('<img src=x onerror=alert(2)>') >= 0, 'raw patient img payload must NOT appear');
   _assertContains(html, '&lt;script&gt;alert(1)&lt;/script&gt;', 'caller rendered escaped');
   _assertContains(html, 'a &amp; b &lt; c', 'issue ampersand/angle-bracket escaped');
+}
+
+// ── Template scriptlet hygiene (regression guard) ──
+// form_public.html once injected the form token via the HTML-escaping `<?= ?>`
+// print scriptlet, which turns JSON.stringify's double-quotes into &quot; and
+// mangles the token ("Form not found" bug). Pin the fix: the token line must
+// use the unescaped `<?!= ?>` form, and no HTML template may inject a JSON
+// value via the escaping `<?= ?>` scriptlet. createHtmlOutputFromFile(...)
+// .getContent() returns the raw template source (scriptlets unprocessed) —
+// the same call `include()` uses — so this is pure-logic, safe on prod.
+
+function test_tpl_formToken_usesUnescapedScriptlet() {
+  const src = HtmlService.createHtmlOutputFromFile('form_public').getContent();
+  _assertContains(src, 'var FORM_TOKEN =', 'form_public.html still declares FORM_TOKEN');
+  // The token line must use the unescaped print scriptlet, not the escaping one.
+  _assertTrue(/var FORM_TOKEN =\s*<\?!=/.test(src),
+    'FORM_TOKEN must be injected via the unescaped <?!= scriptlet (escaping <?= mangles the JSON quotes)');
+  _assertFalse(/var FORM_TOKEN =\s*<\?=[^!]/.test(src),
+    'FORM_TOKEN must NOT use the HTML-escaping <?= scriptlet');
+}
+
+function test_tpl_noEscapedJsonInjection() {
+  // Across every HTML template, a `<?= ... JSON ... ?>` (escaping) print is the
+  // token-mangling foot-gun. JSON values must go through `<?!=` instead.
+  const files = ['form_public', 'index'];
+  for (let i = 0; i < files.length; i++) {
+    const src = HtmlService.createHtmlOutputFromFile(files[i]).getContent();
+    // Match an escaping scriptlet (`<?=` but not `<?!=`) that prints a
+    // JSON.stringify(...) — the exact dangerous shape.
+    const bad = /<\?=(?!!)[^?]*JSON\.stringify/.test(src);
+    _assertFalse(bad, files[i] + '.html must not inject JSON via the escaping <?= scriptlet (use <?!=)');
+  }
 }
 
 // ── esc_ — HTML entity escape ──
