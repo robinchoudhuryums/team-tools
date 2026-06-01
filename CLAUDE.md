@@ -1064,12 +1064,27 @@ this section before touching the relevant area.
   fallback when `submissionHtml` is absent. The render markup
   (`buildFormSubmissionTableHtml_` / `buildFormSubmissionSigHtml_`) is the
   single source of truth shared by the in-app card AND the rep
-  notification email (`buildFormSubmissionHtml_`). **Standalone-form gap:**
-  a fillable form sent via "Open Email" with NO saved note (empty
-  `noteId`) is never stamped onto a note (`submitFormByToken` stamps only
-  `if (noteId)`), so it has no `.cn-form-pill` and is viewable only in the
-  rep notification email + the `FormSubmissions` sheet — a future "My Sent
-  Forms" view (listing `FormTokens.CreatedBy` rows) would close this.
+  notification email (`buildFormSubmissionHtml_`). A fillable form sent via
+  "Open Email" with NO saved note (empty `noteId`) is never stamped onto a
+  note (`submitFormByToken` stamps only `if (noteId)`), so it has no
+  `.cn-form-pill` — the **Sent Forms** tab (below) is the in-app surface for
+  those.
+- **Sent Forms tab (rep-facing, read-only).** A Call Notes tab
+  (`callNotesForms` → `enterCallNotesFormsView`) listing every fillable
+  form the rep has sent. Backed by `getMySentForms`, caller-scoped to
+  `FormTokens.CreatedBy` (a rep sees only their own tokens), newest-first,
+  with a derived status chip — pending / submitted / expired, where a
+  pending token past its `ExpiresAt` reads as expired on the fly even if
+  the status cell wasn't flipped by a visit. Closes the standalone-form
+  gap: a form sent without a linked note is findable here. "View
+  submission" reuses the caller-scoped, read-only `getFormSubmission`
+  viewer. **Read-only throughout** — `getMySentForms` returns only token
+  metadata (never the responses), and there is NO endpoint anywhere that
+  edits a submitted form's responses (`FormSubmissions` is append-only:
+  the sole write is the `appendRow` in `submitFormByToken`). That
+  immutability is deliberate — a patient-signed submission is an attested
+  record, so altering it would be both a HIPAA integrity-control
+  (§164.312(c)) violation and an ethical one.
 - **Form-submission notification renders the completed form.** When a
   recipient submits a fillable form, `submitFormByToken` calls
   `notifyRepOfFormSubmission_` (best-effort, try/catch — never blocks the

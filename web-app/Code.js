@@ -4444,6 +4444,59 @@ function getFormSubmission(token) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Caller-scoped, read-only list of every fillable-form token the calling rep
+ *  created (`FormTokens.CreatedBy` == caller email), newest-first. Powers the
+ *  "Sent Forms" tab so a rep can find a completed form even when it was sent
+ *  with no linked note (no `.cn-form-pill` surface). Derives an effective
+ *  status (a pending token past its expiry reads as `expired` even if the
+ *  status cell wasn't flipped by a visit). Never returns form responses — only
+ *  the token metadata; the per-form "View submission" action calls the
+ *  separately-scoped read-only `getFormSubmission(token)`. */
+function getMySentForms() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const myEmail = String(emp.email || '').toLowerCase();
+    if (!myEmail) return { forms: [] };
+    const sheet = getOrCreateFormTokensSheet_();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { forms: [] };
+    const rows = sheet.getRange(2, 1, lastRow - 1, FT_HEADERS.length).getValues();
+    const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+    const nameById = {};
+    catalog.forEach(function (f) { nameById[f.id] = f.name; });
+    const nowMs = Date.now();
+    const forms = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][FT.CREATED_BY] || '').toLowerCase().trim() !== myEmail) continue;
+      const formType = String(rows[i][FT.FORM_TYPE] || '').trim();
+      let status = String(rows[i][FT.STATUS] || '').trim().toLowerCase();
+      const expiresAtStr = String(rows[i][FT.EXPIRES_AT] || '');
+      if (status === 'pending' && expiresAtStr) {
+        try {
+          const expMs = Utilities.parseDate(expiresAtStr, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
+          if (nowMs > expMs) status = 'expired';
+        } catch (_) {}
+      }
+      forms.push({
+        token: String(rows[i][FT.TOKEN] || '').trim(),
+        formType: formType,
+        formName: nameById[formType] || formType,
+        recipientName: String(rows[i][FT.RECIPIENT_NAME] || ''),
+        recipientEmail: String(rows[i][FT.RECIPIENT_EMAIL] || ''),
+        status: status,
+        createdAt: String(rows[i][FT.CREATED_AT] || ''),
+        expiresAt: expiresAtStr,
+        noteId: String(rows[i][FT.NOTE_ID] || '').trim(),
+        submitted: status === 'submitted',
+      });
+    }
+    forms.sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+    if (forms.length > 200) forms.length = 200;
+    return { forms: forms };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Manager-side companion to getFormSubmission: lets a manager review a
  *  submitted form from the Team Notes Per-Rep view. Manager-gated (INV-02),
  *  read-only. Scoped to the rep being viewed — the token must have been

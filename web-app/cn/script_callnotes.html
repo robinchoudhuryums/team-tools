@@ -1444,6 +1444,39 @@
     background: #fff; border: 1px solid var(--line); border-radius: 6px;
   }
 
+  /* ── Sent Forms view ────────────────────────────────────────────── */
+  .cn-sf-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .cn-sf-empty { color: var(--muted); font-size: 14px; padding: 24px 4px; text-align: center; }
+  .cn-sf-card {
+    border: 1px solid var(--line); border-radius: var(--radius, 10px);
+    background: var(--paper-card); padding: 12px 14px;
+  }
+  .cn-sf-card:hover { border-color: var(--border-strong); }
+  .cn-sf-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .cn-sf-name { font-weight: 600; color: var(--ink); font-size: 14px; }
+  .cn-sf-standalone {
+    font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: 6px;
+  }
+  .cn-sf-meta { color: var(--muted); font-size: 12px; margin-top: 4px; word-break: break-word; }
+  .cn-sf-actions { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+  .cn-sf-hint { color: var(--muted); font-size: 12px; }
+  .cn-sf-status {
+    font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sf-st-submitted { background: var(--good-soft); color: var(--good-deep); }
+  .sf-st-pending   { background: var(--warn-soft); color: var(--warn-deep); }
+  .sf-st-expired   { background: var(--paper-2); color: var(--muted); }
+  .cn-sf-viewbtn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--paper-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: var(--radius-sm, 6px); padding: 5px 12px; font-size: 12px; font-weight: 600;
+    cursor: pointer;
+  }
+  .cn-sf-viewbtn:hover { border-color: var(--border-strong); background: var(--paper-card); }
+  .cn-sf-viewbtn svg { width: 13px; height: 13px; }
+
   /* ── External email modal ───────────────────────────────────────── */
   .cn-ext-section {
     border-top: 1px solid var(--line);
@@ -1687,6 +1720,83 @@ function enterCallNotesSearchView(area) {
   cnFetchDeptConfigIfNeeded_(function () {
     cnRenderSearchView(area);
   });
+}
+
+// ── Sent Forms view (read-only) ─────────────────────────────────────────────
+// Lists every fillable form the rep has sent (getMySentForms is caller-scoped
+// to FormTokens.CreatedBy). Closes the standalone-form gap: a form sent without
+// a linked note has no card pill, so this is the only in-app way to find it.
+// Strictly read-only — "View submission" reuses the caller-scoped read-only
+// getFormSubmission viewer; submitted form responses are never editable.
+function enterCallNotesFormsView(area) {
+  stopClock();
+  const requestedView = currentView;
+  renderLoading(area, 'Loading sent forms…');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      if (res && res.error) { cnRenderSentFormsView_(area, null, res.error); return; }
+      cnRenderSentFormsView_(area, (res && res.forms) || [], null);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      cnRenderSentFormsView_(area, null, (err && err.message) || 'Failed to load sent forms.');
+    })
+    .getMySentForms();
+}
+
+function cnRenderSentFormsView_(area, forms, errorMsg) {
+  const compact = (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE);
+  const head = compact
+    ? cnCompactHeader_('Sent Forms', 'send')
+    : '<div class="cn-head"><div>' +
+        '<div class="cn-head-eyebrow">Fillable forms you’ve sent · read-only</div>' +
+        '<h2 class="cn-head-title">Sent Forms</h2>' +
+      '</div></div>';
+  if (errorMsg) {
+    area.innerHTML = head + '<div class="cn-sf-empty">' + esc(errorMsg) + '</div>';
+    return;
+  }
+  if (!forms || forms.length === 0) {
+    area.innerHTML = head + '<div class="cn-sf-empty">No fillable forms sent yet. ' +
+      'Send one from the “Open Email” composer on the Log view.</div>';
+    return;
+  }
+  const cards = forms.map(function (f) { return cnSentFormCardHtml_(f); }).join('');
+  area.innerHTML = head + '<div class="cn-sf-list">' + cards + '</div>';
+}
+
+function cnSentFormCardHtml_(f) {
+  const statusMap = {
+    submitted: { label: 'Submitted', cls: 'sf-st-submitted' },
+    pending:   { label: 'Awaiting',  cls: 'sf-st-pending' },
+    expired:   { label: 'Expired',   cls: 'sf-st-expired' },
+  };
+  const st = statusMap[f.status] || { label: f.status || 'Unknown', cls: 'sf-st-pending' };
+  const who = f.recipientName
+    ? esc(f.recipientName) + ' · ' + esc(f.recipientEmail)
+    : esc(f.recipientEmail);
+  const created = f.createdAt ? esc(cnFormatTimestampForCopy_(f.createdAt)) : '';
+  const standalone = f.noteId ? '' :
+    '<span class="cn-sf-standalone" title="Not linked to a call note">standalone</span>';
+  let action;
+  if (f.submitted) {
+    // Token is a UUID (no quotes/special chars) — safe to inline in onclick.
+    action = '<button type="button" class="cn-sf-viewbtn" onclick="cnViewFormSubmission_(\'' +
+      esc(f.token) + '\')">' + icon('list', 13) + ' View submission</button>';
+  } else if (f.status === 'expired') {
+    action = '<span class="cn-sf-hint">Link expired — re-send to collect this form.</span>';
+  } else {
+    action = '<span class="cn-sf-hint">Awaiting the recipient’s response.</span>';
+  }
+  return '<div class="cn-sf-card">' +
+    '<div class="cn-sf-top">' +
+      '<div class="cn-sf-name">' + esc(f.formName) + standalone + '</div>' +
+      '<span class="cn-sf-status ' + st.cls + '">' + esc(st.label) + '</span>' +
+    '</div>' +
+    '<div class="cn-sf-meta">To ' + who + (created ? ' · ' + created : '') + '</div>' +
+    '<div class="cn-sf-actions">' + action + '</div>' +
+  '</div>';
 }
 
 function enterCallNotesManageView(area) {
