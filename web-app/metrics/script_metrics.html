@@ -395,7 +395,7 @@ function mLoadMyStats_() {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       document.getElementById('m-my-content').innerHTML =
-        '<div class="m-empty">Failed to load metrics: ' + (err.message || err) + '</div>';
+        '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
     })
     .getMyMetrics(date);
 }
@@ -405,7 +405,7 @@ function mRenderMyStats_(data) {
   if (!el) return;
 
   if (data.error) {
-    el.innerHTML = '<div class="m-empty">' + data.error + '</div>';
+    el.innerHTML = '<div class="m-empty">' + esc(data.error) + '</div>';
     return;
   }
 
@@ -616,7 +616,7 @@ function mLoadTeamMetrics_() {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       document.getElementById('m-team-content').innerHTML =
-        '<div class="m-empty">Failed to load metrics: ' + (err.message || err) + '</div>';
+        '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
     })
     .getTeamMetrics(from, to);
 }
@@ -626,7 +626,7 @@ function mRenderTeamMetrics_(data) {
   if (!el) return;
 
   if (data.error) {
-    el.innerHTML = '<div class="m-empty">' + data.error + '</div>';
+    el.innerHTML = '<div class="m-empty">' + esc(data.error) + '</div>';
     return;
   }
 
@@ -699,7 +699,7 @@ function mRenderTeamMetrics_(data) {
     for (var i = 0; i < data.reps.length; i++) {
       var r = data.reps[i];
       html += '<tr>';
-      html += '<td class="m-name">' + r.repName + '</td>';
+      html += '<td class="m-name">' + esc(r.repName) + '</td>';
       html += '<td class="m-num">' + r.totalRung + '</td>';
       html += '<td class="m-num">' + r.totalAnswered + '</td>';
       html += '<td class="m-num">' + (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + r.totalMissed + '</span>' : '0') + '</td>';
@@ -718,7 +718,7 @@ function mRenderTeamMetrics_(data) {
     html += '<div class="m-hint" style="margin-top:var(--space-md)">' +
       icon('warning', 14) + ' ' + data.unmatchedAgents.length +
       ' CDR agent(s) not matched to roster: ' +
-      data.unmatchedAgents.join(', ') + '</div>';
+      esc(data.unmatchedAgents.join(', ')) + '</div>';
   }
 
   // Reverse-mismatch: roster reps with no CDR data
@@ -726,7 +726,7 @@ function mRenderTeamMetrics_(data) {
     html += '<div class="m-hint" style="margin-top:var(--space-xs)">' +
       icon('info', 14) + ' ' + data.rosterWithNoCdr.length +
       ' roster rep(s) with no CDR match: ' +
-      data.rosterWithNoCdr.join(', ') +
+      esc(data.rosterWithNoCdr.join(', ')) +
       '. Check name spelling in Employees sheet vs CDR roster.</div>';
   }
 

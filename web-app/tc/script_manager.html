@@ -631,8 +631,8 @@ function openDayEditModal(empId, empName) {
   // CONFIG.ADJUST_WINDOW_DAYS (via getManagerDashboard) so the picker tracks
   // the real limit instead of a hardcoded 30; fall back to 30 if absent.
   // Server still enforces the limit authoritatively.
-  var adjustWindowDays = (managerData && typeof managerData.adjustWindowDays === 'number')
-    ? managerData.adjustWindowDays : 30;
+  var adjustWindowDays = (mgrData && typeof mgrData.adjustWindowDays === 'number')
+    ? mgrData.adjustWindowDays : 30;
   deDateEl.max = today;
   var deMin = new Date(today + 'T00:00:00Z');
   deMin.setUTCDate(deMin.getUTCDate() - adjustWindowDays);

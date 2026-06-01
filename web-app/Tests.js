@@ -660,6 +660,7 @@ function _runAllTests() {
   _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
   _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
   _smokeTest('tpl_noEscapedJsonInjection',         test_tpl_noEscapedJsonInjection);
+  _smokeTest('tpl_formPublic_evaluatesWithoutError', test_tpl_formPublic_evaluatesWithoutError);
   _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
 
   // ── Call Notes — integration (sheet-touching) ──────────────────────────
@@ -676,6 +677,19 @@ function _runAllTests() {
   _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
   _integrationTest('cn_getFormSubmission_callerScoped',      test_cn_getFormSubmission_callerScoped);
   _integrationTest('cn_managerGetFormSubmission_gatedAndScoped', test_cn_managerGetFormSubmission_gatedAndScoped);
+
+  // ── Call Notes — email two-stage send + bodyHash guard (F3 / INV-41/33) ──
+  _integrationTest('cn_previewCallNoteEmail_returnsHashAndSubject', test_cn_previewCallNoteEmail_returnsHashAndSubject);
+  _integrationTest('cn_previewCallNoteEmail_requiresDepartment',    test_cn_previewCallNoteEmail_requiresDepartment);
+  _integrationTest('cn_emailFromCallNote_rejectsMissingHash',       test_cn_emailFromCallNote_rejectsMissingHash);
+  _integrationTest('cn_emailFromCallNote_rejectsStaleHash',         test_cn_emailFromCallNote_rejectsStaleHash);
+  _integrationTest('cn_submitCallNote_doesNotStampEmailedAt',       test_cn_submitCallNote_doesNotStampEmailedAt);
+
+  // ── Call Notes — tag taxonomy admin (F4 / INV-82) ────────────────────────
+  _smokeTest('cn_normalizeTagForAdmin_rules',                test_cn_normalizeTagForAdmin_rules);
+  _integrationTest('cn_tagAdmin_nonManagerRejected',          test_cn_tagAdmin_nonManagerRejected);
+  _integrationTest('cn_renameCallNoteTag_managerRewritesTag', test_cn_renameCallNoteTag_managerRewritesTag);
+  _integrationTest('cn_archiveCallNoteTag_roundTrip',         test_cn_archiveCallNoteTag_roundTrip);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
@@ -2310,6 +2324,28 @@ function test_tpl_noEscapedJsonInjection() {
   }
 }
 
+function test_tpl_formPublic_evaluatesWithoutError() {
+  // The two tests above only string-match the RAW template file — they cannot
+  // catch a scriptlet delimiter (or a closing script tag) accidentally written
+  // inside a JS comment, which fails only at .evaluate() time. That was the
+  // exact production bug: a comment containing the force-print delimiter opened
+  // a spurious scriptlet beginning with ')', throwing "Unexpected token ')'" in
+  // serveExternalForm_. Evaluate the template the way serveExternalForm_ does
+  // and assert it both compiles AND injects the token. Pure template eval (just
+  // the JSON.stringify scriptlet) — no Sheet access, safe on prod.
+  const tpl = HtmlService.createTemplateFromFile('form_public');
+  tpl.formToken = 'test-token-123';
+  let html;
+  try {
+    html = tpl.evaluate().getContent();
+  } catch (e) {
+    throw new Error('form_public template failed to evaluate (stray scriptlet/' +
+      'closing-script-tag inside a comment?): ' + e.message);
+  }
+  _assertContains(html, 'var FORM_TOKEN = "test-token-123"',
+    'evaluated page must inject the token via the force-print scriptlet');
+}
+
 // ── esc_ — HTML entity escape ──
 
 function test_cn_esc_basic() {
@@ -2815,6 +2851,144 @@ function test_cn_managerGetFormSubmission_gatedAndScoped() {
       if (loc) ts.deleteRow(loc.rowIndex);
     } catch (e) {}
   }
+}
+
+// ── F3: Call Notes email two-stage send + bodyHash guard (INV-41/33) ────────
+// NOTE: these tests deliberately exercise only the preview + the send-side
+// guard paths. They never drive emailFromCallNote through to a successful
+// MailApp.sendEmail — a real send would CC CONFIG.CALL_NOTES.CC_EMAIL (a live
+// inbox) and consume mail quota. The hash-mismatch / missing-hash branches
+// return BEFORE any send, so they're safe to run on prod. The successful-send
+// path stays a manual scenario (S19).
+
+const _CN_EMAIL_SELECTIONS = {
+  departments: ['Other'],
+  individualEmail: 'do-not-send@example.invalid',
+  updateInfo: 'Verified Shipping',
+};
+
+function test_cn_previewCallNoteEmail_returnsHashAndSubject() {
+  _clearTestCallNotes();
+  let noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload()).note.noteId;
+  });
+  const p = _asUser(_TEST_INDIA_EMAIL, function () {
+    return previewCallNoteEmail(noteId, _CN_EMAIL_SELECTIONS);
+  });
+  _assertNull(p.error, 'preview should not error');
+  _assertNotNull(p.bodyHash, 'preview returns a bodyHash');
+  _assertEq(String(p.bodyHash).length, 64, 'bodyHash is a 64-char hex SHA-256');
+  _assertContains(p.subject, 'Verified Shipping', 'subject reflects the updateInfo');
+  _assertContains(p.htmlBody, 'Call Details', 'rendered body has the Call Details table');
+}
+
+function test_cn_previewCallNoteEmail_requiresDepartment() {
+  _clearTestCallNotes();
+  let noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload()).note.noteId;
+  });
+  const p = _asUser(_TEST_INDIA_EMAIL, function () {
+    return previewCallNoteEmail(noteId, { departments: [], updateInfo: 'Verified Shipping' });
+  });
+  _assertNotNull(p.error, 'no department selected should error');
+  _assertContains(p.error, 'department', 'error mentions the missing department');
+}
+
+function test_cn_emailFromCallNote_rejectsMissingHash() {
+  _clearTestCallNotes();
+  let noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload()).note.noteId;
+  });
+  // Empty expectedBodyHash → server refuses BEFORE sending (no MailApp call).
+  const r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return emailFromCallNote(noteId, _CN_EMAIL_SELECTIONS, '');
+  });
+  _assertFailure(r, 'preview', 'send without a preview hash must be rejected before sending');
+}
+
+function test_cn_emailFromCallNote_rejectsStaleHash() {
+  _clearTestCallNotes();
+  let noteId;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload()).note.noteId;
+  });
+  // A wrong hash → server re-renders, detects the mismatch, refuses BEFORE send.
+  const r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return emailFromCallNote(noteId, _CN_EMAIL_SELECTIONS, 'deadbeef_not_a_real_hash');
+  });
+  _assertFailure(r, 'changed', 'stale/mismatched hash must be rejected (INV-41)');
+}
+
+function test_cn_submitCallNote_doesNotStampEmailedAt() {
+  _clearTestCallNotes();
+  const r = _asUser(_TEST_INDIA_EMAIL, function () {
+    return submitCallNote(_cnTestPayload());
+  });
+  _assertSuccess(r, 'submit should succeed');
+  _assertEq(r.note.emailedAt, '', 'submit logs only — never sends/stamps an email (INV-33)');
+}
+
+// ── F4: Tag-taxonomy admin endpoints (rename / merge / archive, INV-82) ─────
+
+function test_cn_normalizeTagForAdmin_rules() {
+  _assertEq(normalizeTagForAdmin_('Foo Bar'),       'foo-bar',   'spaces→hyphen + lowercase');
+  _assertEq(normalizeTagForAdmin_('  Good-Tag  '),  'good-tag',  'trim + lowercase');
+  _assertEq(normalizeTagForAdmin_('--lead-trail--'),'lead-trail','strip leading/trailing hyphens');
+  _assertEq(normalizeTagForAdmin_('a'),             '',          'too short → empty');
+  _assertEq(normalizeTagForAdmin_(new Array(27).join('x')), '',  'too long (>24) → empty');
+  _assertEq(normalizeTagForAdmin_(''),              '',          'empty → empty');
+}
+
+function test_cn_tagAdmin_nonManagerRejected() {
+  const rn = _asUser(_TEST_INDIA_EMAIL, function () { return renameCallNoteTag('src-tag', 'dst-tag'); });
+  _assertFailure(rn, 'Manager access', 'renameCallNoteTag is manager-gated');
+  const mg = _asUser(_TEST_INDIA_EMAIL, function () { return mergeCallNoteTags('src-tag', 'dst-tag'); });
+  _assertFailure(mg, 'Manager access', 'mergeCallNoteTags is manager-gated');
+  const ar = _asUser(_TEST_INDIA_EMAIL, function () { return archiveCallNoteTag('src-tag', true); });
+  _assertFailure(ar, 'Manager access', 'archiveCallNoteTag is manager-gated');
+}
+
+function test_cn_renameCallNoteTag_managerRewritesTag() {
+  _clearTestCallNotes();
+  // Globally-unique test tags so the cross-rep scan can't collide with any
+  // real production note (rename only mutates notes that contain the source).
+  const srcTag = 'testtag-rn-src-zzz';
+  const dstTag = 'testtag-rn-dst-zzz';
+  let created;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    created = submitCallNote(_cnTestPayload({ tags: [srcTag] })).note;
+  });
+  _assertTrue(created.subformData && created.subformData.tags.indexOf(srcTag) >= 0,
+    'submitted note carries the source tag');
+
+  const r = _asUser(_TEST_MGR_EMAIL, function () {
+    return renameCallNoteTag(srcTag, dstTag);
+  });
+  _assertSuccess(r, 'manager rename should succeed');
+  _assertTrue(r.notesUpdated >= 1, 'at least the test note should be rewritten');
+
+  // Re-read the note and confirm the tag actually changed on the rep's Sheet.
+  const after = _asUser(_TEST_INDIA_EMAIL, function () {
+    const notes = getMyCallNotes({ date: created.dateLocal }).notes;
+    return notes.filter(function (n) { return n.noteId === created.noteId; })[0];
+  });
+  _assertNotNull(after, 'note should still exist after rename');
+  _assertTrue(after.subformData.tags.indexOf(dstTag) >= 0, 'new tag present after rename');
+  _assertTrue(after.subformData.tags.indexOf(srcTag) < 0, 'old tag removed after rename');
+}
+
+function test_cn_archiveCallNoteTag_roundTrip() {
+  const tag = 'testtag-archive-zzz';
+  const r1 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, true); });
+  _assertSuccess(r1, 'archive should succeed');
+  _assertTrue(!!getArchivedTagsSet_()[tag], 'tag flagged archived in Script Property');
+  // Archive must NOT touch any note rows — only the property.
+  const r2 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, false); });
+  _assertSuccess(r2, 'unarchive should succeed');
+  _assertFalse(!!getArchivedTagsSet_()[tag], 'tag no longer archived after unarchive (cleanup)');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
