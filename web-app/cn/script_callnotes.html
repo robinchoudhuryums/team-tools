@@ -3210,21 +3210,31 @@ function cnBuildFormSubModalHtml_(res) {
   }
   var who = esc(res.recipientName || res.recipientEmail || '');
   var when = res.submittedAt ? esc(cnFormatTimestampForCopy_(res.submittedAt)) : '';
-  var rows = (res.fields || []).map(function (f) {
-    var v = f.value;
-    var vStr = (v && typeof v === 'object') ? JSON.stringify(v) : String(v == null ? '' : v);
-    return '<div class="cn-fs-row"><div class="cn-fs-label">' + esc(f.label) + '</div>' +
-           '<div class="cn-fs-value">' + esc(vStr).replace(/\n/g, '<br>') + '</div></div>';
-  }).join('');
-  if (!rows) rows = '<div class="modal-sub" style="margin-top:6px">No field data captured.</div>';
-  var sig = res.hasSignature
-    ? '<div class="cn-fs-sig"><div class="cn-fs-label">Signature</div>' +
-      '<img class="cn-fs-sig-img" src="' + esc(res.signature) + '" alt="signature"></div>'
-    : '';
-  return '<div class="modal cn-form-sub-modal" style="max-width:560px;max-height:80vh;overflow:auto">' +
+  var body;
+  if (res.submissionHtml) {
+    // Server-rendered branded card (matches the submission email). Safe to
+    // inject — every field is esc_-escaped server-side (same INV-89 discipline
+    // as the email-preview body).
+    body = res.submissionHtml;
+  } else {
+    // Fallback: plain label/value list (e.g. a stale server without submissionHtml).
+    var rows = (res.fields || []).map(function (f) {
+      var v = f.value;
+      var vStr = (v && typeof v === 'object') ? JSON.stringify(v) : String(v == null ? '' : v);
+      return '<div class="cn-fs-row"><div class="cn-fs-label">' + esc(f.label) + '</div>' +
+             '<div class="cn-fs-value">' + esc(vStr).replace(/\n/g, '<br>') + '</div></div>';
+    }).join('');
+    if (!rows) rows = '<div class="modal-sub" style="margin-top:6px">No field data captured.</div>';
+    var sig = res.hasSignature
+      ? '<div class="cn-fs-sig"><div class="cn-fs-label">Signature</div>' +
+        '<img class="cn-fs-sig-img" src="' + esc(res.signature) + '" alt="signature"></div>'
+      : '';
+    body = rows + sig;
+  }
+  return '<div class="modal cn-form-sub-modal" style="max-width:600px;max-height:82vh;overflow:auto">' +
     '<div class="modal-title">' + head + '</div>' +
     '<div class="modal-sub">' + (who ? 'From ' + who : '') + (when ? ' · ' + when : '') + '</div>' +
-    '<div class="cn-form-sub-fields">' + rows + sig + '</div>' +
+    '<div class="cn-form-sub-fields">' + body + '</div>' +
     '<div class="modal-footer"><button class="btn-modal-ok" onclick="cnCloseFormSubOverlay_()">Close</button></div>' +
     '</div>';
 }

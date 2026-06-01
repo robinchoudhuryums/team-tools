@@ -562,6 +562,20 @@ this section before touching the relevant area.
   `test_tpl_formPublic_evaluatesWithoutError`, which `.evaluate()`s the
   template (not just string-matches the raw file) so this class of bug
   is caught.
+- **`form_public.html`'s signature canvas must be resized when its
+  section becomes visible.** The signature `<canvas>` lives in
+  `#sig-section`, which is `display:none` until the HIPAA-consent checkbox
+  is checked. `initSignaturePad`'s `resizeCanvas()` reads
+  `parentElement.getBoundingClientRect()` — while hidden that's a 0-width
+  box, so the canvas gets a 0-width drawing bitmap and the first strokes
+  land nowhere. Symptom: "I couldn't draw until I hit Clear" (Clear was the
+  only other path that re-ran the resize). Fix: the consent `change`
+  handler calls `SIG_PAD.resize()` when it reveals the section (guarded on
+  `SIG_PAD.isEmpty()` so an uncheck→recheck can't wipe a drawn signature,
+  since setting `canvas.width` clears the bitmap). A `.sig-placeholder`
+  overlay ("Tap or click and drag here to sign") hides on first stroke /
+  shows on Clear. Any new code path that toggles the section's visibility
+  must re-resize the canvas the same way.
 - **Call Notes form fields are contenteditable `.ce` divs, not
   input/textarea.** Read via `cnGetFieldValue_(id)` and write via
   `cnSetFieldValue_(id, value)` — both dispatch on `el.isContentEditable`
@@ -1041,6 +1055,34 @@ this section before touching the relevant area.
   modal. Both share `buildFormSubmissionResult_`. Pinned by
   `test_cn_getFormSubmission_callerScoped` +
   `test_cn_managerGetFormSubmission_gatedAndScoped`.
+  The modal renders a server-built **branded card** (`submissionHtml` on
+  the result, from `buildFormSubmissionCardHtml_`) — the navy-header
+  responses table + embedded signature image — so the in-app view matches
+  the submission email. It's injected via `innerHTML` and is safe because
+  every field is `esc_`-escaped server-side (same INV-89 discipline as the
+  email-preview body); the client keeps the old label/value list as a
+  fallback when `submissionHtml` is absent. The render markup
+  (`buildFormSubmissionTableHtml_` / `buildFormSubmissionSigHtml_`) is the
+  single source of truth shared by the in-app card AND the rep
+  notification email (`buildFormSubmissionHtml_`). **Standalone-form gap:**
+  a fillable form sent via "Open Email" with NO saved note (empty
+  `noteId`) is never stamped onto a note (`submitFormByToken` stamps only
+  `if (noteId)`), so it has no `.cn-form-pill` and is viewable only in the
+  rep notification email + the `FormSubmissions` sheet — a future "My Sent
+  Forms" view (listing `FormTokens.CreatedBy` rows) would close this.
+- **Form-submission notification renders the completed form.** When a
+  recipient submits a fillable form, `submitFormByToken` calls
+  `notifyRepOfFormSubmission_` (best-effort, try/catch — never blocks the
+  recipient's successful submit). The email is a branded HTML body
+  (`buildFormSubmissionHtml_`) rendering every response in the navy-header
+  table, plus two attachments: the signature as `signature.png`
+  (`signatureDataUrlToBlob_` — Gmail strips `data:` `<img>` in the body, so
+  the PNG is the reliable path) and a **best-effort** PDF of the whole form
+  via `Utilities.newBlob(html,'text/html').getAs('application/pdf')` (the
+  signature is embedded in the PDF's HTML; if the conversion is unavailable
+  the email still sends with the HTML body + PNG). `formatFormFieldValue_`
+  humanizes array/boolean/nested values for the table + plain-text
+  fallback.
 - **Cross-rep manager aggregates are cached.** Two parameterless
   manager aggregates that otherwise re-scan every enrolled rep's Sheet
   are whole-result cached: `getCallNotesTagTaxonomy`

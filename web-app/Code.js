@@ -4506,6 +4506,9 @@ function buildFormSubmissionResult_(tLocated, token) {
       fields,
       hasSignature: !!signature,
       signature,
+      // Pre-rendered branded card (responses table + signature) so the in-app
+      // viewer matches the submission email. Safe to innerHTML — esc_-escaped.
+      submissionHtml: buildFormSubmissionCardHtml_(formData, signature),
     };
   }
   // Token says submitted but no row found — treat as not-yet-available.
@@ -4548,25 +4551,55 @@ function formatFormFieldValue_(v) {
  *  submission). `embedSignatureImg`: true for the PDF (embeds the signature
  *  data URI); false for the email body (Gmail strips data: <img>, so the email
  *  carries the signature as a separate PNG attachment instead). */
-function buildFormSubmissionHtml_(formName, recipientName, recipientEmail, submittedAt, sanitizedData, signatureDataUrl, embedSignatureImg) {
+/** Shared responses-table renderer (navy header + one row per field) used by
+ *  both the submission email body and the in-app submission card. Every value
+ *  is `esc_`-escaped — these come from an external, unauthenticated form
+ *  submission. */
+function buildFormSubmissionTableHtml_(sanitizedData) {
   const P = CN_EMAIL_PALETTE;
   const rows = Object.keys(sanitizedData || {}).map(function (k) {
     return '<tr>' +
       '<td style="padding:8px 12px;border-top:1px solid ' + P.line + ';font-weight:600;width:38%;color:' + P.brand + ';vertical-align:top;">' +
         esc_(humanizeFormFieldKey_(k)) + '</td>' +
       '<td style="padding:8px 12px;border-top:1px solid ' + P.line + ';color:' + P.ink + ';">' +
-        esc_(formatFormFieldValue_(sanitizedData[k])) + '</td>' +
+        esc_(formatFormFieldValue_(sanitizedData[k])).replace(/\n/g, '<br>') + '</td>' +
     '</tr>';
   }).join('');
-  let sigBlock = '';
-  if (signatureDataUrl) {
-    sigBlock = '<div style="margin-top:18px;">' +
-      '<div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:' + P.muted + ';margin-bottom:6px;">Signature</div>' +
-      (embedSignatureImg
-        ? '<img src="' + esc_(signatureDataUrl) + '" alt="Signature" style="max-width:320px;border:1px solid ' + P.line + ';border-radius:6px;background:#fff;">'
-        : '<div style="font-size:13px;color:' + P.ink + ';">Captured — attached to this email as <strong>signature.png</strong>.</div>') +
-      '</div>';
-  }
+  return '<table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid ' + P.line + ';border-radius:6px;overflow:hidden;">' +
+    '<tr style="background:' + P.brand + ';color:' + P.paperCard + ';"><td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:12px;">Submitted Responses</td></tr>' +
+    rows +
+  '</table>';
+}
+
+/** Signature block for the submission render. `embed=true` inlines the PNG via
+ *  its data URI (fine in the web-app iframe + the PDF converter); `embed=false`
+ *  shows an "attached as signature.png" note (Gmail strips data: <img>). */
+function buildFormSubmissionSigHtml_(signatureDataUrl, embed) {
+  if (!signatureDataUrl) return '';
+  const P = CN_EMAIL_PALETTE;
+  return '<div style="margin-top:16px;">' +
+    '<div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:' + P.muted + ';margin-bottom:6px;">Signature</div>' +
+    (embed
+      ? '<img src="' + esc_(signatureDataUrl) + '" alt="Signature" style="max-width:320px;width:100%;border:1px solid ' + P.line + ';border-radius:6px;background:#fff;">'
+      : '<div style="font-size:13px;color:' + P.ink + ';">Captured — attached to this email as <strong>signature.png</strong>.</div>') +
+  '</div>';
+}
+
+/** In-app submission card (no email shell / logo / footer — the read-only modal
+ *  supplies its own title + "from … · when" sub-line). Signature is embedded
+ *  since the web-app iframe renders data URIs. Returned to the client as
+ *  result.submissionHtml and injected via innerHTML — safe because every field
+ *  is `esc_`-escaped, the same discipline as the email-preview path (INV-89). */
+function buildFormSubmissionCardHtml_(sanitizedData, signatureDataUrl) {
+  const P = CN_EMAIL_PALETTE;
+  return '<div style="font-family:\'Inter\',-apple-system,Helvetica,Arial,sans-serif;color:' + P.ink + ';">' +
+    buildFormSubmissionTableHtml_(sanitizedData) +
+    buildFormSubmissionSigHtml_(signatureDataUrl, true) +
+  '</div>';
+}
+
+function buildFormSubmissionHtml_(formName, recipientName, recipientEmail, submittedAt, sanitizedData, signatureDataUrl, embedSignatureImg) {
+  const P = CN_EMAIL_PALETTE;
   const fromLine = recipientName
     ? esc_(recipientName) + ' (' + esc_(recipientEmail) + ')'
     : esc_(recipientEmail);
@@ -4579,11 +4612,8 @@ function buildFormSubmissionHtml_(formName, recipientName, recipientEmail, submi
         '</tr></table>' +
         '<h2 style="margin:0 0 4px;font-family:\'Inter Tight\',\'Inter\',sans-serif;font-size:20px;font-weight:600;color:' + P.brand + ';">' + esc_(formName) + '</h2>' +
         '<p style="margin:0 0 14px;color:' + P.muted + ';font-size:13px;">Completed by ' + fromLine + ' &middot; ' + esc_(submittedAt) + '</p>' +
-        '<table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid ' + P.line + ';border-radius:6px;overflow:hidden;">' +
-          '<tr style="background:' + P.brand + ';color:' + P.paperCard + ';"><td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:12px;">Submitted Responses</td></tr>' +
-          rows +
-        '</table>' +
-        sigBlock +
+        buildFormSubmissionTableHtml_(sanitizedData) +
+        buildFormSubmissionSigHtml_(signatureDataUrl, embedSignatureImg) +
       '</div>' +
       '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools · Fillable Forms</div>' +
     '</div>'
