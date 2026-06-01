@@ -4343,7 +4343,10 @@ function cnComposerSend_() {
       if (sentNote) {
         sentNote.emailedAt = res.emailedAt;
         sentNote.emailDepartments = c.selections.departments.join(', ');
-        sentNote.subformData = c.selections;
+        // Mirror the server's MERGE (not replace) so the cached note keeps its
+        // tags / pin / feedback / etc. — overwriting subformData here would drop
+        // them from the in-memory card until a reload.
+        sentNote.subformData = Object.assign({}, sentNote.subformData || {}, c.selections);
         cnReplaceNoteInState_(sentNote);
       }
       cnCloseComposerModal_();

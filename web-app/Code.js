@@ -3203,10 +3203,19 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         .setValues([[emailedAt, deptLabel]]);
       // Persist subform selection back to the row so the rolling card can
       // re-open the composer with prior settings if the rep needs to re-send.
+      // MERGE into the existing subformData blob — a straight overwrite would
+      // destroy co-resident per-note metadata (tags, pinned/pinnedAt, feedback,
+      // trainingQuestion/Reply, completionSeconds, externalEmails,
+      // formSubmission). Email-selection keys (departments, updateInfo,
+      // *Details, etc.) don't collide with those metadata keys, so a shallow
+      // merge is safe and keeps the composer re-populate flow working.
       if (selections.updateInfo) {
+        const existingSub = (note.subformData && typeof note.subformData === 'object')
+          ? note.subformData : {};
+        const mergedSub = Object.assign({}, existingSub, selections);
         sheet.getRange(located.rowIndex, CN.SUBFORM + 1, 1, 2).setValues([[
           updateInfoToSubformKey_(selections.updateInfo),
-          JSON.stringify(selections),
+          JSON.stringify(mergedSub),
         ]]);
       }
     } catch (stampErr) {
