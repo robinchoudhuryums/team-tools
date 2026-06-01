@@ -660,6 +660,7 @@ function _runAllTests() {
   _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
   _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
   _smokeTest('tpl_noEscapedJsonInjection',         test_tpl_noEscapedJsonInjection);
+  _smokeTest('tpl_formPublic_evaluatesWithoutError', test_tpl_formPublic_evaluatesWithoutError);
   _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
 
   // ── Call Notes — integration (sheet-touching) ──────────────────────────
@@ -2321,6 +2322,28 @@ function test_tpl_noEscapedJsonInjection() {
     const bad = /<\?=(?!!)[^?]*JSON\.stringify/.test(src);
     _assertFalse(bad, files[i] + '.html must not inject JSON via the escaping <?= scriptlet (use <?!=)');
   }
+}
+
+function test_tpl_formPublic_evaluatesWithoutError() {
+  // The two tests above only string-match the RAW template file — they cannot
+  // catch a scriptlet delimiter (or a closing script tag) accidentally written
+  // inside a JS comment, which fails only at .evaluate() time. That was the
+  // exact production bug: a comment containing the force-print delimiter opened
+  // a spurious scriptlet beginning with ')', throwing "Unexpected token ')'" in
+  // serveExternalForm_. Evaluate the template the way serveExternalForm_ does
+  // and assert it both compiles AND injects the token. Pure template eval (just
+  // the JSON.stringify scriptlet) — no Sheet access, safe on prod.
+  const tpl = HtmlService.createTemplateFromFile('form_public');
+  tpl.formToken = 'test-token-123';
+  let html;
+  try {
+    html = tpl.evaluate().getContent();
+  } catch (e) {
+    throw new Error('form_public template failed to evaluate (stray scriptlet/' +
+      'closing-script-tag inside a comment?): ' + e.message);
+  }
+  _assertContains(html, 'var FORM_TOKEN = "test-token-123"',
+    'evaluated page must inject the token via the force-print scriptlet');
 }
 
 // ── esc_ — HTML entity escape ──
