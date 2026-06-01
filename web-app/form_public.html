@@ -333,11 +333,17 @@
 // PUBLIC FORM CLIENT — self-contained, no dependencies on internal app code
 // ════════════════════════════════════════════════════════════════════════════
 
-// Unescaped print (<?!=) — the escaping <?= variant turns JSON.stringify's
-// double-quotes into &quot;, which is invalid JS and mangles the token (the
-// "Form not found" bug). JSON.stringify already escapes the string contents;
-// the <-replace neutralizes any </script> breakout, matching index.html's
-// SERVER_QUERY_PARAMS injection (INV-78).
+// FORM_TOKEN is injected on the next line via the force-print scriptlet
+// (banged-equals), NOT the HTML-escaping printing variant: the escaping form
+// turns JSON.stringify's double-quotes into &quot;, which is invalid JS and
+// mangles the token (the "Form not found" bug). JSON.stringify already escapes
+// the string contents; the angle-bracket replace neutralizes any
+// closing-script-tag breakout, matching index.html's SERVER_QUERY_PARAMS
+// injection (INV-78).
+// IMPORTANT: never write the literal scriptlet delimiters or a literal closing
+// script tag inside this comment — the HtmlService template parser scans the
+// raw file for them regardless of JS comments, so doing so opens a spurious
+// scriptlet and produces a server-side "Unexpected token ')'" parse error.
 var FORM_TOKEN = <?!= JSON.stringify(formToken || '').replace(/</g, '\\u003c') ?>;
 var FORM_DATA = null;   // populated by getFormByToken
 var SIG_PAD = null;     // signature pad instance

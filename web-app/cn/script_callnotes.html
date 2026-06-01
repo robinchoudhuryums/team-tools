@@ -2691,6 +2691,11 @@ function cnSubmitActiveForm_(opts) {
       transferred: payload.transferredTo, resolution: payload.resolution,
     },
     flag: payload.flagType || '',
+    // Capture the full multi-select flag array (incl. 'urgent') + tags so a
+    // failed-submit revert restores them too — cnRestoreFromSnapshot_ prefers
+    // snap.flags / snap.tags over the single snap.flag (INV-48 / Round 2·8e).
+    flags: Array.isArray(payload.flags) ? payload.flags.slice() : null,
+    tags: Array.isArray(payload.tags) ? payload.tags.slice() : null,
     trainingQ: (payload.subformData && payload.subformData.trainingQuestion) || '',
   };
 
@@ -4329,12 +4334,17 @@ function cnComposerSend_() {
         if (btn) { btn.disabled = false; btn.innerHTML = icon('mail', 14) + ' Send Email'; }
         showToast(res.error || 'Send failed', 'toast-error'); return;
       }
-      // Stamp emailedAt on the cached note
-      const idx = CN_STATE.rollingNotes.findIndex(function (n) { return n.noteId === c.noteId; });
-      if (idx >= 0) {
-        CN_STATE.rollingNotes[idx].emailedAt = res.emailedAt;
-        CN_STATE.rollingNotes[idx].emailDepartments = c.selections.departments.join(', ');
-        CN_STATE.rollingNotes[idx].subformData = c.selections;
+      // Stamp emailedAt on the cached note — update across ALL state arrays
+      // (rolling / history / pinned), since the composer is reachable from
+      // History and pinned-tray cards too, not just today's stack. Mutating
+      // only rollingNotes left the "sent" pill missing on history/pinned cards
+      // until reload (INV-62).
+      const sentNote = cnFindNoteAnywhere_(c.noteId);
+      if (sentNote) {
+        sentNote.emailedAt = res.emailedAt;
+        sentNote.emailDepartments = c.selections.departments.join(', ');
+        sentNote.subformData = c.selections;
+        cnReplaceNoteInState_(sentNote);
       }
       cnCloseComposerModal_();
       cnReRenderActiveView_();
