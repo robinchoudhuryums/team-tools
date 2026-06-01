@@ -18,6 +18,13 @@ const CONFIG = {
 
   // ── Interactive form tokens ──────────────────────────────────────
   FORM_TOKEN_EXPIRY_HOURS: 72, // tokens expire after 72 hours
+  // PHI data-minimization: purge FormSubmissions + FormTokens rows older than
+  // this many days (by SubmittedAt / CreatedAt). 0 = DISABLED (nothing is ever
+  // deleted) — the safe default. Set a positive value (Script Property
+  // FORM_DATA_RETENTION_DAYS overrides this CONFIG fallback) ONLY after
+  // aligning it with your record-retention obligations; the purge is
+  // irreversible. Enforced by the daily purgeExpiredFormData trigger.
+  FORM_DATA_RETENTION_DAYS: 0,
 
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
@@ -4747,6 +4754,87 @@ function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipien
 }
 
 
+// ── Form-data retention (PHI minimization) ──────────────────────────────────
+// purgeExpiredFormData deletes FormSubmissions (responses + signatures) and
+// FormTokens (recipient + prefill data) rows older than the configured
+// retention window. DISABLED by default (FORM_DATA_RETENTION_DAYS = 0). The
+// purge is irreversible — an unparseable/blank date is NEVER deleted
+// (fail-safe). Reachable via google.script.run (top-level for the trigger), so
+// it asserts a manager caller (INV-44). Writes a PHI-free FormDataPurge audit
+// row with the counts removed.
+
+/** Resolves the retention window in days: Script Property
+ *  FORM_DATA_RETENTION_DAYS first, then CONFIG. 0 / negative / unparseable → 0
+ *  (disabled). */
+function getFormRetentionDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('FORM_DATA_RETENTION_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.FORM_DATA_RETENTION_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** Parses a retention date cell ("yyyy-MM-dd'T'HH:mm:ss" in CONFIG.TIMEZONE, or
+ *  a coerced Date) to epoch ms. Returns null on blank/unparseable input so such
+ *  a row is never considered "old" and is never deleted. */
+function parseRetentionDateMs_(val) {
+  if (val instanceof Date) return val.getTime();
+  const s = String(val || '').trim();
+  if (!s) return null;
+  try {
+    return Utilities.parseDate(s, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
+  } catch (_) {
+    const t = Date.parse(s);
+    return isNaN(t) ? null : t;
+  }
+}
+
+/** Deletes data rows whose date column (0-based `dateColIdx`) is strictly older
+ *  than `cutoffMs`. Deletes descending so row-index shifts don't skip rows.
+ *  Returns the count removed. Caller holds the lock. */
+function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const rows = sheet.getDataRange().getValues();
+  const toDelete = [];
+  for (let i = 1; i < rows.length; i++) {
+    const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
+    if (ms !== null && ms < cutoffMs) toDelete.push(i + 1);  // 1-based sheet row
+  }
+  for (let j = toDelete.length - 1; j >= 0; j--) {
+    sheet.deleteRow(toDelete[j]);
+  }
+  return toDelete.length;
+}
+
+function purgeExpiredFormData() {
+  // Top-level (time-trigger target) → reachable via google.script.run, so gate
+  // it: a purge is destructive and must not be firable by a non-manager rep.
+  assertManagerCaller_('purgeExpiredFormData');
+  try {
+    const days = getFormRetentionDays_();
+    if (!days) {
+      Logger.log('purgeExpiredFormData: retention disabled (FORM_DATA_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let subsRemoved = 0, tokensRemoved = 0;
+    try {
+      subsRemoved = purgeSheetRowsOlderThan_(getOrCreateFormSubmissionsSheet_(), FS.SUBMITTED_AT, cutoffMs);
+      tokensRemoved = purgeSheetRowsOlderThan_(getOrCreateFormTokensSheet_(), FT.CREATED_AT, cutoffMs);
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'FormDataPurge', '', '', false, 0,
+      `retentionDays=${days}; submissionsRemoved=${subsRemoved}; tokensRemoved=${tokensRemoved}`);
+    Logger.log(`purgeExpiredFormData: removed ${subsRemoved} submission(s) + ${tokensRemoved} token(s) older than ${days} day(s).`);
+  } catch (err) {
+    Logger.log('purgeExpiredFormData failed: ' + err.message);
+  }
+}
+
+
 // ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
 // ════════════════════════════════════════════════════════════════════════════
@@ -4767,6 +4855,7 @@ function installAutomationTriggers() {
     'runDailyExportCheck',
     'sendCallNotesEodDigest',
     'sendCallNotesWeeklyDigests',
+    'purgeExpiredFormData',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -4790,6 +4879,12 @@ function installAutomationTriggers() {
   // Weekly manager digests for training queue + review candidates
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Daily PHI-retention purge of FormSubmissions + FormTokens. No-ops while
+  // FORM_DATA_RETENTION_DAYS = 0 (the default), so installing it is harmless;
+  // it only deletes once the operator sets a positive retention window.
+  ScriptApp.newTrigger('purgeExpiredFormData')
+    .timeBased().atHour(3).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -4829,6 +4924,7 @@ function removeAutomationTriggers() {
     'runDailyExportCheck',
     'sendCallNotesEodDigest',
     'sendCallNotesWeeklyDigests',
+    'purgeExpiredFormData',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
