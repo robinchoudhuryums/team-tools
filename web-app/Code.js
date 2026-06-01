@@ -4374,25 +4374,14 @@ function submitFormByToken(token, formData) {
       }
     }
 
-    // Notify the rep who created the token (best-effort)
+    // Notify the rep who created the token with the completed, stylized form
+    // (HTML body rendering all responses + the signature as a PNG attachment +
+    // a best-effort PDF of the whole form). Best-effort — a failure here never
+    // blocks the recipient's already-successful submission.
     try {
       if (createdBy) {
-        const formCat = CONFIG.CALL_NOTES.FORM_CATALOG || [];
-        let formName = formType;
-        for (let i = 0; i < formCat.length; i++) {
-          if (formCat[i].id === formType) { formName = formCat[i].name; break; }
-        }
-        MailApp.sendEmail({
-          to: createdBy,
-          subject: 'Form Submission Received: ' + formName + ' from ' + (recipientName || recipientEmail),
-          body:
-            'A form submission was received.\n\n' +
-            'Form:      ' + formName + '\n' +
-            'From:      ' + (recipientName ? recipientName + ' (' + recipientEmail + ')' : recipientEmail) + '\n' +
-            'Submitted: ' + submittedAt + '\n\n' +
-            'You can view the submission in the FormSubmissions tab of the ADP spreadsheet.\n\n' +
-            '— UMS Team Tools (automated)\n',
-        });
+        notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipientEmail,
+          submittedAt, sanitizedData, signatureData);
       }
     } catch (emailErr) {
       console.warn('submitFormByToken: notification email failed: ' + emailErr.message);
@@ -4532,6 +4521,146 @@ function humanizeFormFieldKey_(k) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+}
+
+/** Renders a form-submission value (string / number / boolean / array / nested
+ *  object) into a human-readable plain string for the email + PDF render. */
+function formatFormFieldValue_(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (Array.isArray(v)) {
+    return v.map(function (x) { return formatFormFieldValue_(x); }).join(', ');
+  }
+  if (typeof v === 'object') {
+    return Object.keys(v).map(function (k) {
+      return humanizeFormFieldKey_(k) + ': ' + formatFormFieldValue_(v[k]);
+    }).join('; ');
+  }
+  if (v === true) return 'Yes';
+  if (v === false) return 'No';
+  return String(v);
+}
+
+/** Builds a branded, stylized HTML representation of a completed fillable form
+ *  — used as the rep-notification email body and as the source for the
+ *  best-effort PDF attachment. Mirrors the CN_EMAIL_PALETTE aesthetic so the
+ *  completed form looks continuous with the rest of the tooling. Every field is
+ *  `esc_`-escaped (these values come from an external, unauthenticated form
+ *  submission). `embedSignatureImg`: true for the PDF (embeds the signature
+ *  data URI); false for the email body (Gmail strips data: <img>, so the email
+ *  carries the signature as a separate PNG attachment instead). */
+function buildFormSubmissionHtml_(formName, recipientName, recipientEmail, submittedAt, sanitizedData, signatureDataUrl, embedSignatureImg) {
+  const P = CN_EMAIL_PALETTE;
+  const rows = Object.keys(sanitizedData || {}).map(function (k) {
+    return '<tr>' +
+      '<td style="padding:8px 12px;border-top:1px solid ' + P.line + ';font-weight:600;width:38%;color:' + P.brand + ';vertical-align:top;">' +
+        esc_(humanizeFormFieldKey_(k)) + '</td>' +
+      '<td style="padding:8px 12px;border-top:1px solid ' + P.line + ';color:' + P.ink + ';">' +
+        esc_(formatFormFieldValue_(sanitizedData[k])) + '</td>' +
+    '</tr>';
+  }).join('');
+  let sigBlock = '';
+  if (signatureDataUrl) {
+    sigBlock = '<div style="margin-top:18px;">' +
+      '<div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:' + P.muted + ';margin-bottom:6px;">Signature</div>' +
+      (embedSignatureImg
+        ? '<img src="' + esc_(signatureDataUrl) + '" alt="Signature" style="max-width:320px;border:1px solid ' + P.line + ';border-radius:6px;background:#fff;">'
+        : '<div style="font-size:13px;color:' + P.ink + ';">Captured — attached to this email as <strong>signature.png</strong>.</div>') +
+      '</div>';
+  }
+  const fromLine = recipientName
+    ? esc_(recipientName) + ' (' + esc_(recipientEmail) + ')'
+    : esc_(recipientEmail);
+  return (
+    '<div style="background:' + P.paper + ';padding:24px;font-family:\'Inter\',-apple-system,Helvetica,Arial,sans-serif;color:' + P.ink + ';">' +
+      '<div style="max-width:680px;margin:0 auto;background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;padding:24px 26px;">' +
+        '<table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;"><tr>' +
+          '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';">' +
+            '<img src="' + P.logoUrl + '" alt="UMS" style="height:46px;display:block;border:0;outline:none;"></td>' +
+        '</tr></table>' +
+        '<h2 style="margin:0 0 4px;font-family:\'Inter Tight\',\'Inter\',sans-serif;font-size:20px;font-weight:600;color:' + P.brand + ';">' + esc_(formName) + '</h2>' +
+        '<p style="margin:0 0 14px;color:' + P.muted + ';font-size:13px;">Completed by ' + fromLine + ' &middot; ' + esc_(submittedAt) + '</p>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid ' + P.line + ';border-radius:6px;overflow:hidden;">' +
+          '<tr style="background:' + P.brand + ';color:' + P.paperCard + ';"><td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:12px;">Submitted Responses</td></tr>' +
+          rows +
+        '</table>' +
+        sigBlock +
+      '</div>' +
+      '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools · Fillable Forms</div>' +
+    '</div>'
+  );
+}
+
+/** Decodes a `data:image/png;base64,...` signature data URL into a PNG Blob,
+ *  or null if absent/malformed. */
+function signatureDataUrlToBlob_(signatureDataUrl, name) {
+  try {
+    const s = String(signatureDataUrl || '');
+    const comma = s.indexOf(',');
+    const b64 = comma >= 0 ? s.substring(comma + 1) : s;
+    if (!b64) return null;
+    const bytes = Utilities.base64Decode(b64);
+    return Utilities.newBlob(bytes, 'image/png', name || 'signature.png');
+  } catch (e) {
+    console.warn('signatureDataUrlToBlob_ failed: ' + e.message);
+    return null;
+  }
+}
+
+/** Sends the rep-notification email for a completed fillable form: a stylized
+ *  HTML body rendering all responses, the signature as a PNG attachment, and a
+ *  best-effort PDF of the whole completed form. Each sub-step degrades
+ *  gracefully — the recipient's submission already succeeded, so this is a
+ *  convenience notice that must never throw the caller. */
+function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipientEmail, submittedAt, sanitizedData, signatureData) {
+  const formCat = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+  let formName = formType;
+  for (let i = 0; i < formCat.length; i++) {
+    if (formCat[i].id === formType) { formName = formCat[i].name; break; }
+  }
+
+  const htmlBody = buildFormSubmissionHtml_(formName, recipientName, recipientEmail,
+    submittedAt, sanitizedData, signatureData, false);
+
+  // Plain-text fallback — same content, no styling.
+  const textLines = ['A form submission was received.', '',
+    'Form:      ' + formName,
+    'From:      ' + (recipientName ? recipientName + ' (' + recipientEmail + ')' : recipientEmail),
+    'Submitted: ' + submittedAt, '', 'Responses:'];
+  Object.keys(sanitizedData || {}).forEach(function (k) {
+    textLines.push('  ' + humanizeFormFieldKey_(k) + ': ' + formatFormFieldValue_(sanitizedData[k]));
+  });
+  textLines.push('',
+    'The completed form is attached as a PDF; the signature is attached as a PNG.',
+    'You can also open it from the form pill on the linked call note in the web app.', '',
+    '— UMS Team Tools (automated)');
+  const textBody = textLines.join('\n');
+
+  const attachments = [];
+  // Signature as a standalone PNG (renders reliably; Gmail blocks data: <img>
+  // in the email body).
+  const sigBlob = signatureDataUrlToBlob_(signatureData, 'signature.png');
+  if (sigBlob) attachments.push(sigBlob);
+  // Best-effort PDF of the whole completed form (signature embedded).
+  try {
+    const htmlForPdf = buildFormSubmissionHtml_(formName, recipientName, recipientEmail,
+      submittedAt, sanitizedData, signatureData, true);
+    const stamp = String(submittedAt).replace(/[^\d]/g, '').substring(0, 8);
+    const pdfName = (formName.replace(/[^\w]+/g, '_') || 'Form') + '_' + stamp + '.pdf';
+    const pdf = Utilities.newBlob(htmlForPdf, 'text/html', 'form.html')
+      .getAs('application/pdf').setName(pdfName);
+    attachments.push(pdf);
+  } catch (pdfErr) {
+    console.warn('notifyRepOfFormSubmission_: PDF render failed (sending without it): ' + pdfErr.message);
+  }
+
+  const opts = {
+    to: createdBy,
+    subject: 'Form Submission Received: ' + formName + ' from ' + (recipientName || recipientEmail),
+    body: textBody,
+    htmlBody: htmlBody,
+  };
+  if (attachments.length > 0) opts.attachments = attachments;
+  MailApp.sendEmail(opts);
 }
 
 
