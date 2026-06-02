@@ -326,11 +326,12 @@ function _setupTestCdrFixture_() {
     r[CDR.TOTAL_RUNG - 1]     = rung;
     r[CDR.TOTAL_MISSED - 1]   = missed;
     r[CDR.TOTAL_ANSWERED - 1] = ans;
-    // F9 / INV-64: store durations as H:MM:SS so they coerce to TIME VALUES
-    // below (the real CDR sheet stores them that way). cdrFmtHms_ is the
-    // production seconds→H:MM:SS formatter.
-    r[CDR.TTT - 1]            = cdrFmtHms_(ttt);
-    r[CDR.ATT - 1]            = cdrFmtHms_(att);
+    // F9 / INV-64: store the raw seconds here; the override loop below rewrites
+    // these two columns as TIME VALUES so getValues() returns a Date (the
+    // phantom-offset path INV-64 guards) while getDisplayValues() returns
+    // H:MM:SS.
+    r[CDR.TTT - 1]            = ttt;
+    r[CDR.ATT - 1]            = att;
     return r;
   };
   const header = new Array(34).fill('');
@@ -348,14 +349,17 @@ function _setupTestCdrFixture_() {
   range.setNumberFormat('@');   // plain text — keeps date / agent / counts literal
   range.setValues(rows);
   // F9 / INV-64: re-write the duration columns (TTT col I, ATT col J) as real
-  // TIME VALUES — a time number format coerces the H:MM:SS string, so
-  // getValues() returns a Date (the path INV-64 guards against) while
-  // getDisplayValues() returns the H:MM:SS string. With the prior plain-text
-  // fixture, getValues()==getDisplayValues() and a getValues() regression on
-  // these columns went uncaught. Skip the header row.
+  // TIME VALUES — a numeric fraction-of-a-day written under a time-of-day
+  // number format makes getValues() return a Date (the phantom-offset path
+  // INV-64 guards against) while getDisplayValues() returns the H:MM:SS string.
+  // A numeric value (not a string) GUARANTEES the coercion across locales/
+  // editors. With the prior plain-text fixture, getValues()==getDisplayValues()
+  // and a getValues() regression on these columns went uncaught. Skip the header.
   for (let rr = 2; rr <= rows.length; rr++) {
-    sheet.getRange(rr, CDR.TTT).setNumberFormat('h:mm:ss').setValue(rows[rr - 1][CDR.TTT - 1]);
-    sheet.getRange(rr, CDR.ATT).setNumberFormat('h:mm:ss').setValue(rows[rr - 1][CDR.ATT - 1]);
+    const tttSec = Number(rows[rr - 1][CDR.TTT - 1]) || 0;
+    const attSec = Number(rows[rr - 1][CDR.ATT - 1]) || 0;
+    sheet.getRange(rr, CDR.TTT).setNumberFormat('h:mm:ss').setValue(tttSec / 86400);
+    sheet.getRange(rr, CDR.ATT).setNumberFormat('h:mm:ss').setValue(attSec / 86400);
   }
   SpreadsheetApp.flush();
 }
