@@ -166,7 +166,9 @@ this section before touching the relevant area.
   `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`,
   `saveUpdateSuggestions`, `removeAutomationTriggers`,
   `getCallNotesTagTaxonomy`, `renameCallNoteTag`,
-  `mergeCallNoteTags`, `archiveCallNoteTag`.
+  `mergeCallNoteTags`, `archiveCallNoteTag`,
+  `saveEmailTemplates`, `getCallNotesAuditLog`,
+  `getCallNoteAuditHistory`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -1362,6 +1364,56 @@ this section before touching the relevant area.
   with an `archived` flag from the `CN_ARCHIVED_TAGS` Script
   Property. An `archivedOnlyTags[]` array surfaces archived tags
   no longer in active use so admins can still restore them.
+- **External-email message template library (Admin tab).** Manager-
+  curated canned message bodies for the external (customer/provider)
+  email composer — resolving the deferred "template library Admin
+  panel." Stored as JSON in Script Property `CN_EMAIL_TEMPLATES`
+  (read first by `getEmailTemplates_()`, `CONFIG.CALL_NOTES.EMAIL_TEMPLATES`
+  — default `[]` — the fallback), edited via the Admin tab's "Email
+  Templates" section (name + recipient-type select + body textarea
+  rows; `saveEmailTemplates` is manager-gated, validates name/type/body
+  + caps count 50 / body 4000, writes an `AdminConfigChange` audit row —
+  same family as `saveDepartmentEmails` etc., INV-57). Each template:
+  `{ name, recipientType: 'customer'|'provider'|'any', body }`. The
+  body supports a `{name}` token swapped for the recipient name at
+  insert. Templates ride to reps via `getCallNotesDepartments`
+  (`CN_STATE.deptConfig.emailTemplates`) — a rep-callable config
+  endpoint, so reps can use them without the manager-gated
+  `getAdminConfig`. In the external composer the picker
+  (`cnExtTemplateRowHtml_` / `cnExtTemplateOptionsHtml_`) filters to
+  templates matching the current recipient type plus `'any'`, renders
+  only when ≥1 template is configured, and re-filters its options when
+  the recipient type toggles (no full modal re-render). Selecting one
+  replaces the message textarea with the (token-substituted) body.
+  `getEmailTemplates_` sanitizes on read (bad blob → CONFIG fallback,
+  never throws), so a corrupt property can't break the composer. Pinned
+  by `cnExtTemplatesFor_` / `cnExtTemplateOptionsHtml_` client tests.
+- **Compliance audit panel (Admin tab).** Manager-only call-note
+  AuditLog search living in the Admin tab below the tag taxonomy —
+  resolving the deferred "compliance audit Admin panel." Backed by
+  `getCallNotesAuditLog(filters)` (manager-gated): filters by rep
+  (EmployeeId), action (the `CN_AUDIT_ACTIONS` call-note set), and date
+  range (defaults to the last 30 days in the manager's tz). It reads the
+  shared AuditLog via a **bounded** tail scan (`cnReadCallNoteAuditRows_`
+  reads at most `CN_AUDIT_MAX_SCAN`=4000 of the most-recent rows — the
+  log is append-only/chronological — then filters in memory, capping
+  results at `CN_AUDIT_MAX_RESULTS`=500). Returns a `truncated` flag when
+  the result cap is hit or the scan window didn't reach the requested
+  start date, so the client can prompt the manager to narrow. Rows are
+  **PHI-free** (timestamp, rep, actor email, action, `noteId` parsed from
+  the Notes field) — note content never enters the AuditLog (INV-32).
+  Clicking a row's caret expands its full lifecycle via
+  `getCallNoteAuditHistory(noteId)` (a separate bounded scan, deliberately
+  independent of the search date filter so earlier events still surface,
+  returned oldest-first). "View note" deep-links to the Team Notes
+  Per-Rep view (`cnAuditDrillToNote_` sets `CN_STATE.mgrRepView` +
+  `mgrPendingRepDrill`, then `showView('callNotesManage')`; the Team
+  Notes enter opens the Per-Rep view instead of the default training
+  queue when the pending-drill flag is set) — that view is where the
+  actual note content lives. All server strings route through `esc()`
+  before `innerHTML`. Note IDs/dates/rep IDs pass via `data-*`
+  attributes read in the handler (the `cnStatsDrillDown_` pattern), not
+  inline string interpolation.
 - **"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
@@ -1441,12 +1493,6 @@ were intentionally deferred. The redesign itself is complete; these
 are polish/expansion items captured here so the next session can
 pick them up without re-deriving the context.
 
-- **Compliance audit + template library Admin panels.** Round 2
-  listed these as future Admin-tab additions. Spec is just
-  placeholders — concrete requirements needed before any work.
-  Likely candidates: an audit-log search UI scoped to call-note
-  actions, and a templated-response library for common rep
-  scenarios.
 - **Tag-suggestion autocomplete on the Log view.** The Round 2
   tag-taxonomy work added an `archived` flag on tags expressly so
   a future autocomplete surface could filter archived suggestions
@@ -1565,6 +1611,16 @@ manually for a fresh deploy or environment:
   `getArchivedTagsSet_()`; written by `setArchivedTagsSet_()` from
   `archiveCallNoteTag`. Archive does NOT modify any notes; tags
   remain on every existing note's `subformData.tags[]`.
+- **Script Property `CN_EMAIL_TEMPLATES`** (auto-managed). JSON array
+  of `{name, recipientType, body}` external-email message templates,
+  written by `saveEmailTemplates` from the Call Notes → Admin tab's
+  "Email Templates" section. Created on first save; read by
+  `getEmailTemplates_()` (falls back to `CONFIG.CALL_NOTES.EMAIL_TEMPLATES`,
+  default `[]`). No manual setup needed — documented here so it's
+  recognizable when inspecting Script Properties. Reps see the
+  templates in the external-email composer's template picker (delivered
+  via `getCallNotesDepartments`); a corrupt blob degrades to the CONFIG
+  fallback rather than breaking the composer.
 - **Call-notes EOD + weekly digest knobs** are
   `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17 — the local hour at
   which each rep gets the EOD digest) and the
@@ -1674,7 +1730,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
@@ -1700,7 +1756,7 @@ INV-53 | Voice-to-text dictation is opt-in via `CONFIG.CALL_NOTES.VOICE_INPUT_EN
 INV-54 | Form-completion timer captures duration from the first input event in the active form to the submit. Start time persists to `localStorage['umsCallNotesFormStartedAt']` so a mid-form reload doesn't reset the clock. On submit, `cnFormTimerEndAndGet_` returns elapsed seconds (capped at 30 min as null — rep walked away mid-note). The value rides into the server payload as `payload.subformData.completionSeconds`; the manager Stats tab medians over notes that captured one | Subsystem: Client (Call Notes views)
 INV-55 | Sticky form auto-saves the active draft to `localStorage['umsCallNotesActiveFormDraft']` on every input (debounced 400ms via `cnPersistActiveFormDraft_`). On Log view enter, `cnRestoreActiveFormDraft_` restores values + flag + training-question if a draft is present, with a "Draft restored" toast. Successful submit and explicit Clear Note both clear the draft via `cnClearStickyFormDraft_` — any new form-clearing path must call it too or the draft will resurrect on next load | Subsystem: Client (Call Notes views)
 INV-56 | `cnToggleFlag_`, `cnToggleResolved_`, and `cnTogglePinned_` set `note._flagInFlight = true` before firing the RPC and clear it in both success and failure handlers. A second click while the first RPC is in flight is silently dropped. Prevents the double-click race where two concurrent RPCs capture the same snapshot and clobber each other's revert | Subsystem: Client (Call Notes views)
-INV-57 | `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, and `saveUpdateSuggestions` are manager-gated. Save endpoints validate input (email format for depts, rate range 0–1 for taxes, array-of-strings structure for suggestions) and write an `AdminConfigChange` audit row with the manager's email. Config is persisted to Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`, `CN_UPDATE_SUGGESTIONS`); `getDepartmentEmails_()` / `getStateTaxRates_()` / `getUpdateSuggestions_()` read Script Properties first, falling back to CONFIG | Subsystem: Server
+INV-57 | `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, and `saveEmailTemplates` are manager-gated. Save endpoints validate input (email format for depts, rate range 0–1 for taxes, array-of-strings structure for suggestions, name/recipientType/body + count≤50 / body≤4000 for templates) and write an `AdminConfigChange` audit row with the manager's email. Config is persisted to Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`, `CN_UPDATE_SUGGESTIONS`, `CN_EMAIL_TEMPLATES`); `getDepartmentEmails_()` / `getStateTaxRates_()` / `getUpdateSuggestions_()` / `getEmailTemplates_()` read Script Properties first, falling back to CONFIG. `getEmailTemplates_()` sanitizes on read (corrupt/non-array blob → CONFIG fallback, never throws) and templates also ride to reps via `getCallNotesDepartments` (rep-callable) for the external-email composer picker | Subsystem: Server
 INV-58 | `submitCallNote` calls `notifyManagerTrainingQuestion_()` (best-effort, try/catch) when `flagType === 'training'` and `subformData.trainingQuestion` is non-empty. The notification is a plain-text email to `getManagerEmails_()` with the rep's name, question, and date. Failure does not block the submit response (INV-14 pattern) | Subsystem: Server
 INV-59 | `writeToEmployeeSheet_` and `clearFromEmployeeSheet_` write a `PersonalSheetSyncFail` audit row on failure (nested try/catch so the audit write itself can't throw). The audit row records the punch type and error message. Personal-sheet failures are never surfaced to the user — the ADP Sheet (source of truth) was already written successfully | Subsystem: Server
 INV-60 | `deleteCallNote` rejects deletion when the note is older than `CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS` (300s). The elapsed-time check uses `parseTimestampMs_` against the note's `TIMESTAMP` column. Notes without a parseable timestamp bypass the check (fail-open for legacy data) | Subsystem: Server
@@ -1735,6 +1791,8 @@ INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cache
 INV-89 | `buildCallNoteEmailHtml_` HTML-escapes every user-supplied note field via `esc_` before assembling the email body. The email-preview modal injects that body raw via `innerHTML` (the `${p.htmlBody}` slot in `cnRenderComposerPreviewStep_`), so the escaping is load-bearing — a new field added to the builder without `esc_` is stored XSS in the preview and the sent email. Pinned by `test_cn_buildEmailHtml_escapesUserFields` | Subsystem: Server + Client (Call Notes views)
 INV-90 | `getFormSubmission(token)` is caller-scoped, read-only: it requires `getEmployeeInfo_()` (NOT a public endpoint) and returns submission data only when the calling employee's email matches the token's `FormTokens.CreatedBy` — a rep cannot read another rep's form submissions. Returns `{ submitted: false, status }` when the token isn't completed yet. Pinned by `test_cn_getFormSubmission_callerScoped` | Subsystem: Server
 INV-91 | `managerGetFormSubmission(repEmpId, token)` is manager-gated (INV-02), read-only, and scoped to the target rep — the token must have been created by `repEmpId` (`FormTokens.CreatedBy`), so a manager can only view submissions for forms the selected rep sent. Shares `buildFormSubmissionResult_` with the caller-scoped `getFormSubmission` (INV-90). Surfaced via the form pill on the Team Notes Per-Rep read-only card. Pinned by `test_cn_managerGetFormSubmission_gatedAndScoped` | Subsystem: Server
+INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set). The search filters by rep / action / date range (default last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content | Subsystem: Server
+INV-93 | `saveEmailTemplates(templates)` is manager-gated (INV-02, INV-57), persists to Script Property `CN_EMAIL_TEMPLATES` (JSON array of `{name, recipientType, body}`), validates each entry (non-empty name + body, `recipientType ∈ customer|provider|any`, count ≤ `CN_EMAIL_TEMPLATE_LIMIT`=50, body ≤ `CN_EMAIL_TEMPLATE_BODY_MAX`=4000), and writes an `AdminConfigChange` audit row. `getEmailTemplates_()` reads the property first (CONFIG fallback), sanitizing on read so a corrupt blob degrades to the fallback rather than throwing. Templates are exposed to reps via `getCallNotesDepartments` (rep-callable) for the external-email composer picker, and to managers via `getAdminConfig` for the editor | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10

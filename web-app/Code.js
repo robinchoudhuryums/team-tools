@@ -103,6 +103,13 @@ const CONFIG = {
       { id: 'seating-eval', name: 'Seating Evaluation Form',         fileName: 'Seating_Evaluation_Form (blank sample).pdf',      category: 'provider' },
     ],
     FORM_BASE_URL: 'https://raw.githubusercontent.com/robinchoudhuryums/team-tools/main/forms/',
+    // Manager-curated canned message bodies for the external (customer/provider)
+    // email composer. Empty by default — populated via the Admin tab, which
+    // writes Script Property CN_EMAIL_TEMPLATES (read first by
+    // getEmailTemplates_, this serving as the fallback). Each entry:
+    // { name, recipientType: 'customer'|'provider'|'any', body }. The body
+    // supports a {name} token substituted with the recipient name at insert.
+    EMAIL_TEMPLATES: [],
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
     TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
@@ -202,6 +209,28 @@ const CN_FLAG_TYPES = ['action','training','review'];
 // 3-cap, INV-50). Order matters — it drives deriveFlagType_'s priority.
 const CN_FLAG_TYPES_EXTENDED = ['action','training','review','urgent'];
 const CN_FLAG_PRIORITY = ['action','training','review','urgent'];
+
+// ── Compliance audit panel (Admin tab) ──────────────────────────────────
+// The call-note-related AuditLog action labels the compliance search covers.
+// The audit log is the only cross-rep trail of call-note activity (INV-32),
+// so this is the manager's window into it. Includes the external-email + form
+// actions since they're part of the call-note compliance surface.
+const CN_AUDIT_ACTIONS = [
+  'CallNoteCreate', 'CallNoteEdit', 'CallNoteFlag', 'CallNoteResolve',
+  'CallNoteDelete', 'CallNoteEmail', 'CallNoteTrainingReply', 'CallNotePin',
+  'CallNoteFeedback', 'CallNoteTagAdmin', 'CallNotesExport', 'ExternalEmailSent',
+  'FormTokenCreated', 'FormSubmissionReceived',
+];
+// Bounded read: the audit search scans at most this many of the most-recent
+// AuditLog rows (append-only/chronological), then filters in memory. Keeps the
+// read within the Apps Script cell/time budget (INV-13 spirit) while serving a
+// compliance need broader than the 20-row dashboard read.
+const CN_AUDIT_MAX_SCAN = 4000;
+const CN_AUDIT_MAX_RESULTS = 500;
+const CN_AUDIT_DEFAULT_DAYS = 30;
+const CN_EMAIL_TEMPLATE_LIMIT = 50;
+const CN_EMAIL_TEMPLATE_BODY_MAX = 4000;
+const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
 
 /** Round 2 · 8e — derives the single FlagType column value from a
  *  multi-select flags array. Maintains backward compat with existing
@@ -1956,6 +1985,7 @@ function getCallNotesDepartments() {
       stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
       ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
       voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
+      emailTemplates: getEmailTemplates_(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -2598,6 +2628,7 @@ function getAdminConfig() {
       stateTaxRates: getStateTaxRates_(),
       updateSuggestions: getUpdateSuggestions_(),
       defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
+      emailTemplates: getEmailTemplates_(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -2614,6 +2645,41 @@ function saveUpdateSuggestions(suggestionsJson) {
     PropertiesService.getScriptProperties().setProperty('CN_UPDATE_SUGGESTIONS', JSON.stringify(suggestionsJson));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated update-type suggestions', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Manager-gated. Persists the external-email template library to Script
+ *  Property CN_EMAIL_TEMPLATES (JSON array). Validates each entry's name,
+ *  recipientType, and body; caps count + body length. Writes an
+ *  AdminConfigChange audit row (INV-57). Matches the sibling admin-save
+ *  pattern (no ScriptLock — single Script Property write, same as
+ *  saveDepartmentEmails / saveStateTaxRates / saveUpdateSuggestions). */
+function saveEmailTemplates(templates) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!Array.isArray(templates)) return { success: false, error: 'Invalid templates list.' };
+    if (templates.length > CN_EMAIL_TEMPLATE_LIMIT) {
+      return { success: false, error: 'Too many templates (max ' + CN_EMAIL_TEMPLATE_LIMIT + ').' };
+    }
+    const clean = [];
+    for (var i = 0; i < templates.length; i++) {
+      const t = templates[i] || {};
+      const name = String(t.name || '').trim();
+      const body = String(t.body || '');
+      var rt = String(t.recipientType || 'any').trim().toLowerCase();
+      if (CN_TEMPLATE_RECIPIENT_TYPES.indexOf(rt) < 0) rt = 'any';
+      if (!name) return { success: false, error: 'Each template needs a name.' };
+      if (!body.trim()) return { success: false, error: 'Template "' + name + '" needs a message body.' };
+      if (body.length > CN_EMAIL_TEMPLATE_BODY_MAX) {
+        return { success: false, error: 'Template "' + name + '" body exceeds ' + CN_EMAIL_TEMPLATE_BODY_MAX + ' chars.' };
+      }
+      clean.push({ name: name, recipientType: rt, body: body });
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_EMAIL_TEMPLATES', JSON.stringify(clean));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated email templates (' + clean.length + ')', callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -2650,6 +2716,122 @@ function saveStateTaxRates(ratesJson) {
       'Updated state tax rates (' + keys.length + ' states)', callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
+}
+
+// ── Compliance audit panel (manager-gated) ──────────────────────────────
+
+/** Parses the noteId out of an AuditLog Notes field (e.g.
+ *  "noteId=<uuid>; urgent=on"). Returns '' when none is present. */
+function cnExtractAuditNoteId_(notes) {
+  const m = String(notes || '').match(/noteId=([0-9a-fA-F][0-9a-fA-F-]{7,})/);
+  return m ? m[1] : '';
+}
+
+/** Reads the most-recent CN_AUDIT_MAX_SCAN AuditLog rows (bounded), keeping
+ *  only the call-note action set, and maps each into a normalized object.
+ *  Returns { rows: [...newest-first...], scannedAll: bool } where scannedAll
+ *  is true when the whole sheet fit within the scan cap (so callers can flag
+ *  potential truncation). The AuditLog is append-only/chronological, so the
+ *  tail is the most recent activity. */
+function cnReadCallNoteAuditRows_() {
+  const sheet = getOrCreateAuditSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return { rows: [], scannedAll: true };
+  const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
+  const scannedAll = startRow === 2;
+  const numRows = lastRow - startRow + 1;
+  const data = sheet.getRange(startRow, 1, numRows, 10).getValues();
+  const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  const out = [];
+  for (let i = data.length - 1; i >= 0; i--) {  // newest-first
+    const action = String(data[i][4]);
+    if (CN_AUDIT_ACTIONS.indexOf(action) < 0) continue;
+    const tsRaw = String(data[i][0]);
+    const notes = String(data[i][9]);
+    out.push({
+      timestamp:    tsRaw,
+      timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+      repId:        String(data[i][1]),
+      repName:      String(data[i][2]),
+      actorEmail:   String(data[i][3]),
+      action:       action,
+      dateLocal:    String(data[i][5]),
+      noteId:       cnExtractAuditNoteId_(notes),
+      notes:        notes,
+    });
+  }
+  return { rows: out, scannedAll: scannedAll };
+}
+
+/** Manager-gated compliance audit search over the shared AuditLog. Filters by
+ *  rep (EmployeeId), action, and date range (defaults to the last
+ *  CN_AUDIT_DEFAULT_DAYS in the manager's tz). Returns PHI-free rows only —
+ *  the AuditLog never carries note content (INV-32); the client deep-links a
+ *  row's noteId to the Team Notes Per-Rep view for the actual note.
+ *  filters: { repId?, action?, startDate?, endDate? } (dates yyyy-MM-dd). */
+function getCallNotesAuditLog(filters) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    filters = filters || {};
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const reDate = /^\d{4}-\d{2}-\d{2}$/;
+    let end = (filters.endDate && reDate.test(filters.endDate))
+      ? filters.endDate : fmtDateTz_(new Date(), mgrTz);
+    let start = (filters.startDate && reDate.test(filters.startDate))
+      ? filters.startDate : null;
+    if (!start) {
+      const d = new Date();
+      d.setDate(d.getDate() - CN_AUDIT_DEFAULT_DAYS);
+      start = fmtDateTz_(d, mgrTz);
+    }
+    if (start > end) { const t = start; start = end; end = t; }
+    const repId = String(filters.repId || '').trim();
+    const action = String(filters.action || '').trim();
+
+    const read = cnReadCallNoteAuditRows_();
+    const rows = [];
+    let oldestScannedDate = null;
+    for (let i = 0; i < read.rows.length; i++) {
+      const r = read.rows[i];
+      const dayStr = r.timestamp.substring(0, 10);  // ts is yyyy-MM-dd HH:mm:ss in CONFIG.TIMEZONE
+      if (dayStr) oldestScannedDate = dayStr;        // rows are newest-first, so this ends on the oldest
+      if (repId && r.repId !== repId) continue;
+      if (action && r.action !== action) continue;
+      if (dayStr < start || dayStr > end) continue;
+      rows.push(r);
+      if (rows.length >= CN_AUDIT_MAX_RESULTS) break;
+    }
+    // Truncated if we hit the result cap, OR the scan cap kept us from reaching
+    // back to the requested start date (older matching rows may exist).
+    const truncated = (rows.length >= CN_AUDIT_MAX_RESULTS) ||
+      (!read.scannedAll && oldestScannedDate && oldestScannedDate > start);
+    return {
+      rows: rows,
+      truncated: !!truncated,
+      range: { start: start, end: end },
+      actions: CN_AUDIT_ACTIONS,
+      managerTzAbbr: tzAbbr_(mgrTz),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated. Returns the full chronological audit history for a single
+ *  noteId — every AuditLog row whose Notes embed that noteId — oldest-first,
+ *  so the lifecycle (create → flag → email → … → delete) reads top to bottom.
+ *  Scans the same bounded window as the search; deliberately independent of
+ *  the search's date filter so a note's earlier events still surface. */
+function getCallNoteAuditHistory(noteId) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const id = String(noteId || '').trim();
+    if (!id) return { error: 'Missing noteId.' };
+    const read = cnReadCallNoteAuditRows_();
+    const rows = read.rows.filter(function (r) { return r.noteId === id; });
+    rows.reverse();  // newest-first → oldest-first (lifecycle order)
+    return { rows: rows, truncated: !read.scannedAll };
+  } catch (err) { return { error: err.message }; }
 }
 
 /** Bulk-export every enrolled rep's call notes in a date range to a new
@@ -5774,6 +5956,30 @@ function getUpdateSuggestions_() {
     try { return JSON.parse(prop); } catch (_) {}
   }
   return CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT;
+}
+
+/** Manager-curated external-email message templates. Reads Script Property
+ *  CN_EMAIL_TEMPLATES (JSON array) first, falling back to the CONFIG default.
+ *  Always returns a sanitized array of { name, recipientType, body } — a
+ *  corrupt/non-array property degrades to the CONFIG fallback rather than
+ *  throwing, so a bad blob can't break the rep-facing composer. */
+function getEmailTemplates_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_EMAIL_TEMPLATES');
+  let raw = CONFIG.CALL_NOTES.EMAIL_TEMPLATES || [];
+  if (prop) {
+    try {
+      const parsed = JSON.parse(prop);
+      if (Array.isArray(parsed)) raw = parsed;
+    } catch (_) {}
+  }
+  return raw.map(function (t) {
+    const rt = String((t && t.recipientType) || 'any').trim().toLowerCase();
+    return {
+      name: String((t && t.name) || '').trim(),
+      recipientType: CN_TEMPLATE_RECIPIENT_TYPES.indexOf(rt) >= 0 ? rt : 'any',
+      body: String((t && t.body) || ''),
+    };
+  }).filter(function (t) { return t.name && t.body; });
 }
 
 function getManagerEmails_() {

@@ -33,6 +33,12 @@ const cnExtEmailPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtE
 // the sandbox first.
 const cnIsUrgent_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnIsUrgent_');
 const cnUrgentPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnUrgentPillHtml_');
+// #2 — external-email template picker filter logic. These read CN_STATE
+// (a free var) + esc (sandbox); load the three helpers and seed CN_STATE.
+sb.CN_STATE = { deptConfig: { emailTemplates: [] } };
+const cnExtTemplatesAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesAll_');
+const cnExtTemplatesFor_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesFor_');
+const cnExtTemplateOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplateOptionsHtml_');
 
 // Helper: today's date in a given tz, computed independently of the code under
 // test (the oracle).
@@ -121,6 +127,36 @@ test('cnUrgentPillHtml_ renders the danger pill only when urgent', () => {
   const html = cnUrgentPillHtml_({ subformData: { flags: ['urgent'] } });
   assert.ok(html.includes('cn-urgent-pill'), 'has the pill class');
   assert.ok(/urgent/i.test(html), 'shows the urgent label');
+});
+
+console.log('\ncn — email template picker filtering (#2)');
+test('cnExtTemplatesFor_ returns "any" + matching-type templates only', () => {
+  sb.CN_STATE.deptConfig.emailTemplates = [
+    { name: 'Generic', recipientType: 'any', body: 'Hi {name}' },
+    { name: 'Cust only', recipientType: 'customer', body: 'c' },
+    { name: 'Prov only', recipientType: 'provider', body: 'p' },
+  ];
+  const forCust = cnExtTemplatesFor_('customer').map((t) => t.name);
+  assert.deepStrictEqual(forCust, ['Generic', 'Cust only']);
+  const forProv = cnExtTemplatesFor_('provider').map((t) => t.name);
+  assert.deepStrictEqual(forProv, ['Generic', 'Prov only']);
+});
+test('cnExtTemplateOptionsHtml_ tags non-any templates and escapes names', () => {
+  sb.CN_STATE.deptConfig.emailTemplates = [
+    { name: '<b>x</b>', recipientType: 'customer', body: 'c' },
+  ];
+  const html = cnExtTemplateOptionsHtml_('customer');
+  assert.ok(html.includes('Insert a template…'), 'has placeholder option');
+  assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;'), 'name is escaped');
+  assert.ok(html.includes('(customer)'), 'tags the recipient type');
+  assert.ok(!html.includes('<b>x</b>'), 'no raw HTML survives');
+});
+test('cnExtTemplatesAll_ tolerates a missing deptConfig', () => {
+  const saved = sb.CN_STATE;
+  sb.CN_STATE = {};
+  const all = cnExtTemplatesAll_();
+  assert.ok(Array.isArray(all) && all.length === 0, 'returns an empty array');
+  sb.CN_STATE = saved;
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -290,6 +290,59 @@
     .cn-tax-actions { justify-content: flex-start; }
   }
 
+  /* ─── COMPLIANCE AUDIT PANEL (#3) ────────────────────────────────── */
+  .cn-audit-list { display: flex; flex-direction: column; }
+  .cn-audit-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 2px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .cn-audit-row:last-child { border-bottom: none; }
+  .cn-audit-main {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+    min-width: 0;
+  }
+  .cn-audit-ts {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .cn-audit-action {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .04em; color: var(--info-deep);
+    background: var(--accent-soft); border-radius: 999px; padding: 1px 7px;
+    white-space: nowrap;
+  }
+  .cn-audit-rep { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .cn-audit-actor {
+    font-size: 11px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;
+  }
+  .cn-audit-actions { display: inline-flex; gap: 2px; flex-shrink: 0; }
+  .cn-audit-history {
+    grid-column: 1 / -1;
+    margin: 4px 0 6px; padding: 8px 10px;
+    background: var(--paper-2); border-radius: var(--radius-sm);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .cn-audit-hist-row {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+    font-size: 11px;
+  }
+  .cn-audit-hist-ts {
+    font-family: var(--mono); color: var(--muted);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .cn-audit-hist-action { font-weight: 600; color: var(--info-deep); }
+  .cn-audit-hist-actor { color: var(--muted); }
+  .cn-audit-hist-notes { color: var(--ink); flex-basis: 100%; word-break: break-word; }
+  .cn-audit-hist-empty { font-size: 11px; color: var(--muted); }
+  @media (max-width: 720px) {
+    .cn-audit-actor { max-width: 140px; }
+  }
+
   /* ─── Q&A THREAD (Round 2 · 8g) ──────────────────────────────────── */
   .qa-thread {
     margin-top: 8px; padding: 8px 10px;
@@ -4925,7 +4978,30 @@ function cnRenderManageView(area) {
       }
     })
     .managerGetUnresolvedActionCount();
-  cnMgrLoadQueue_('training');
+  // Compliance audit deep-link (#3): if the Admin audit panel set a pending
+  // drill, open the Per-Rep view for that rep+date instead of the default
+  // training queue. CN_STATE.mgrRepView was set by cnAuditDrillToNote_.
+  if (CN_STATE.mgrPendingRepDrill) {
+    CN_STATE.mgrPendingRepDrill = false;
+    cnMgrLoadRepView_();
+  } else {
+    cnMgrLoadQueue_('training');
+  }
+}
+
+/** Compliance audit deep-link (#3) — from a row in the Admin audit panel,
+ *  jump to the Team Notes → Per-Rep View for the note's rep + date so the
+ *  manager can read the actual note content (the AuditLog itself is PHI-free).
+ *  Mirrors cnStatsDrillDown_ but crosses from the Admin tab into Team Notes. */
+function cnAuditDrillToNote_(repId, dateLocal, noteId) {
+  repId = String(repId || '').trim();
+  if (!repId) { showToast('No rep on this audit row', 'toast-warn'); return; }
+  CN_STATE.mgrRepView = {
+    repId: repId,
+    date: dateLocal || new Intl.DateTimeFormat('en-CA', { timeZone: empTz() }).format(new Date()),
+  };
+  CN_STATE.mgrPendingRepDrill = true;
+  showView('callNotesManage');
 }
 
 /** Opens the call-notes bulk export modal. Defaults to "this week" (Mon→today
@@ -5870,6 +5946,7 @@ function enterCallNotesAdminView(area) {
     compactHeader +
     (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'KPIs, tag taxonomy, and department/tax config. Changes take effect immediately (no redeploy needed).')) +
     '<div id="cn-admin-augment"></div>' +
+    '<div id="cn-admin-audit"></div>' +
     '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
@@ -5886,6 +5963,9 @@ function enterCallNotesAdminView(area) {
   // alongside the existing dept/tax body. Two parallel server calls; either
   // can fail without taking down the existing controls.
   cnLoadAdminAugment_();
+  // #3 — compliance audit panel (call-note AuditLog search). Independent of
+  // the augment + body loads; failure stays contained to its own slot.
+  cnLoadAuditPanel_();
 }
 
 /** Round 2 · 8h — fetch + render the new Admin sections (KPI strip + tag
@@ -6136,6 +6216,173 @@ function cnDoArchiveTag_(tag, archived) {
   });
 }
 
+// ── #3 Compliance audit panel ───────────────────────────────────────────
+// Manager-only call-note AuditLog search in the Admin tab. Filters by rep /
+// action / date range (default last 30 days, server-enforced). Each row with a
+// noteId expands its full lifecycle (getCallNoteAuditHistory) and deep-links to
+// the Team Notes Per-Rep view (cnAuditDrillToNote_) for the note content — the
+// AuditLog itself is PHI-free (INV-32). All server strings route through esc()
+// before innerHTML (same discipline as the Metrics + email-preview surfaces).
+
+var CN_AUDIT_STATE = { reps: [] };
+
+function cnAuditTodayIso_() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: empTz() }).format(new Date());
+}
+function cnAuditDateMinus_(days) {
+  var t = cnAuditTodayIso_().split('-');
+  var d = new Date(parseInt(t[0], 10), parseInt(t[1], 10) - 1, parseInt(t[2], 10));
+  d.setDate(d.getDate() - days);
+  return isoDate(d);
+}
+
+function cnLoadAuditPanel_() {
+  var slot = document.getElementById('cn-admin-audit');
+  if (!slot) return;
+  var todayIso = cnAuditTodayIso_();
+  slot.innerHTML =
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Compliance Audit</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Search the call-note audit trail across all reps. Expand a row for the note’s full history; “View note” opens it in Team Notes. The log is PHI-free — note content lives only in the per-rep view.</div>' +
+      '<div class="field-row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">' +
+        '<div class="field" style="flex:1;min-width:130px"><label>Rep</label><select id="cn-audit-rep"><option value="">All reps</option></select></div>' +
+        '<div class="field" style="flex:1;min-width:150px"><label>Action</label><select id="cn-audit-action"><option value="">All actions</option></select></div>' +
+        '<div class="field" style="min-width:130px"><label>From</label><input type="date" id="cn-audit-start" value="' + esc(cnAuditDateMinus_(30)) + '"></div>' +
+        '<div class="field" style="min-width:130px"><label>To</label><input type="date" id="cn-audit-end" value="' + esc(todayIso) + '"></div>' +
+        '<button class="btn-modal-ok" id="cn-audit-search-btn" style="margin:0">' + icon('search', 13) + ' Search</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;margin:8px 0 4px">' +
+        '<button class="refresh-btn cn-audit-preset" data-days="7">Last 7</button>' +
+        '<button class="refresh-btn cn-audit-preset" data-days="30">Last 30</button>' +
+      '</div>' +
+      '<div id="cn-audit-results" style="margin-top:8px"><div class="spinner" style="margin:18px auto"></div></div>' +
+    '</div>';
+  document.getElementById('cn-audit-search-btn').addEventListener('click', cnRunAuditSearch_);
+  Array.prototype.forEach.call(document.querySelectorAll('.cn-audit-preset'), function (b) {
+    b.addEventListener('click', function () {
+      var days = parseInt(b.dataset.days, 10) || 30;
+      document.getElementById('cn-audit-start').value = cnAuditDateMinus_(days);
+      document.getElementById('cn-audit-end').value = cnAuditTodayIso_();
+      cnRunAuditSearch_();
+    });
+  });
+  // Rep dropdown reuses the enrolled-reps endpoint.
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== 'callNotesAdmin') return;
+      if (!res || res.error || !Array.isArray(res.reps)) return;
+      CN_AUDIT_STATE.reps = res.reps;
+      var sel = document.getElementById('cn-audit-rep');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">All reps</option>' + res.reps.map(function (r) {
+        return '<option value="' + esc(r.id) + '">' + esc(r.name) + '</option>';
+      }).join('');
+    })
+    .getEnrolledCallNotesReps();
+  cnRunAuditSearch_();
+}
+
+function cnRunAuditSearch_() {
+  var host = document.getElementById('cn-audit-results');
+  if (!host) return;
+  host.innerHTML = '<div class="spinner" style="margin:18px auto"></div>';
+  var filters = {
+    repId:     (document.getElementById('cn-audit-rep')    || {}).value || '',
+    action:    (document.getElementById('cn-audit-action') || {}).value || '',
+    startDate: (document.getElementById('cn-audit-start')  || {}).value || '',
+    endDate:   (document.getElementById('cn-audit-end')    || {}).value || '',
+  };
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-audit-results');
+      if (!live) return;
+      if (!res || res.error) { live.innerHTML = '<div class="cn-stack-empty">' + esc((res && res.error) || 'Search failed') + '</div>'; return; }
+      cnPopulateAuditActions_(res.actions);
+      live.innerHTML = cnRenderAuditResults_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-audit-results');
+      if (live) live.innerHTML = '<div class="cn-stack-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
+    })
+    .getCallNotesAuditLog(filters);
+}
+
+/** Fills the action dropdown from the server's action list, preserving the
+ *  current selection. Re-run safe (idempotent) on every search. */
+function cnPopulateAuditActions_(actions) {
+  if (!Array.isArray(actions)) return;
+  var sel = document.getElementById('cn-audit-action');
+  if (!sel) return;
+  var cur = sel.value;
+  sel.innerHTML = '<option value="">All actions</option>' + actions.map(function (a) {
+    return '<option value="' + esc(a) + '">' + esc(a) + '</option>';
+  }).join('');
+  sel.value = cur;
+}
+
+function cnRenderAuditResults_(res) {
+  var rows = res.rows || [];
+  var tzAbbr = res.managerTzAbbr || '';
+  var head = '';
+  if (res.truncated) {
+    head = '<div style="font-size:11px;color:var(--warning-deep);background:var(--warn-soft);border-radius:6px;padding:6px 10px;margin-bottom:8px">' +
+      icon('warning', 11) + ' Showing the most recent matches (capped). Narrow the rep, action, or date range to see older rows.</div>';
+  }
+  if (rows.length === 0) return head + '<div class="cn-stack-empty">No audit activity for this filter.</div>';
+  var body = rows.map(function (r) {
+    var noteId = r.noteId || '';
+    var expandBtn = noteId
+      ? '<button class="cn-act-btn" title="Show this note’s full history" data-note-id="' + esc(noteId) + '" onclick="cnToggleAuditHistory_(this, this.dataset.noteId)">' + icon('chevronDown', 13) + '</button>'
+      : '';
+    var viewBtn = noteId
+      ? '<button class="cn-act-btn" title="Open the note in Team Notes" data-rep-id="' + esc(r.repId) + '" data-date="' + esc(r.dateLocal) + '" data-note-id="' + esc(noteId) + '" onclick="cnAuditDrillToNote_(this.dataset.repId, this.dataset.date, this.dataset.noteId)">' + icon('manage', 13) + '</button>'
+      : '';
+    return '<div class="cn-audit-row">' +
+      '<div class="cn-audit-main">' +
+        '<span class="cn-audit-ts tabular">' + esc(r.timestampMgr || r.timestamp) + (tzAbbr ? ' ' + esc(tzAbbr) : '') + '</span>' +
+        '<span class="cn-audit-action">' + esc(r.action) + '</span>' +
+        '<span class="cn-audit-rep">' + esc(r.repName || r.repId) + '</span>' +
+        '<span class="cn-audit-actor">' + esc(r.actorEmail) + '</span>' +
+      '</div>' +
+      '<div class="cn-audit-actions">' + expandBtn + viewBtn + '</div>' +
+      '<div class="cn-audit-history" style="display:none"></div>' +
+    '</div>';
+  }).join('');
+  return head + '<div class="cn-audit-list">' + body + '</div>';
+}
+
+/** Expand/collapse a single note's full audit lifecycle inline. */
+function cnToggleAuditHistory_(btn, noteId) {
+  var row = btn.closest('.cn-audit-row');
+  if (!row) return;
+  var hist = row.querySelector('.cn-audit-history');
+  if (!hist) return;
+  if (hist.style.display !== 'none') { hist.style.display = 'none'; return; }
+  hist.style.display = 'block';
+  hist.innerHTML = '<div class="spinner" style="margin:10px auto"></div>';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) { hist.innerHTML = '<div class="cn-audit-hist-empty">' + esc((res && res.error) || 'Could not load history') + '</div>'; return; }
+      var hrows = res.rows || [];
+      if (hrows.length === 0) { hist.innerHTML = '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
+      hist.innerHTML = hrows.map(function (h) {
+        return '<div class="cn-audit-hist-row">' +
+          '<span class="cn-audit-hist-ts tabular">' + esc(h.timestampMgr || h.timestamp) + '</span>' +
+          '<span class="cn-audit-hist-action">' + esc(h.action) + '</span>' +
+          '<span class="cn-audit-hist-actor">' + esc(h.actorEmail) + '</span>' +
+          (h.notes ? '<span class="cn-audit-hist-notes">' + esc(h.notes) + '</span>' : '') +
+        '</div>';
+      }).join('');
+    })
+    .withFailureHandler(function (err) {
+      hist.innerHTML = '<div class="cn-audit-hist-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
+    })
+    .getCallNoteAuditHistory(noteId);
+}
+
 function cnRenderAdminBody_(cfg) {
   var body = document.getElementById('cn-admin-body');
   if (!body) return;
@@ -6175,6 +6422,17 @@ function cnRenderAdminBody_(cfg) {
       '<div style="margin-bottom:8px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase">Always shown: ' + esc((cfg.defaultSuggestions || []).join(', ')) + '</div>' +
       '<div id="cn-admin-sug-list">' + cnRenderSuggestionRows_(cfg.updateSuggestions || {}) + '</div>' +
       '<button class="btn-modal-ok" id="cn-admin-save-sugs" style="margin:0;margin-top:10px">Save Suggestions</button>' +
+    '</div>' +
+
+    // #2 — external-email message template library
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Email Templates</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Canned message bodies reps can insert into the external (customer/provider) email composer. Use the <code>{name}</code> token to drop in the recipient’s name. Scope each to a recipient type, or leave it as “Any”.</div>' +
+      '<div id="cn-admin-tmpl-list">' + cnRenderTemplateRows_(cfg.emailTemplates || []) + '</div>' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
+        '<button class="refresh-btn" id="cn-admin-add-tmpl">' + icon('plus', 12) + ' Add Template</button>' +
+        '<button class="btn-modal-ok" id="cn-admin-save-tmpls" style="margin:0">Save Templates</button>' +
+      '</div>' +
     '</div>';
 
   document.getElementById('cn-admin-add-dept').addEventListener('click', function () {
@@ -6262,6 +6520,67 @@ function cnRenderAdminBody_(cfg) {
       })
       .saveUpdateSuggestions(map);
   });
+
+  // #2 — email template editor wiring (add row + save)
+  document.getElementById('cn-admin-add-tmpl').addEventListener('click', function () {
+    var list = document.getElementById('cn-admin-tmpl-list');
+    var wrap = document.createElement('div');
+    wrap.innerHTML = cnRenderTemplateRow_({ name: '', recipientType: 'any', body: '' });
+    list.appendChild(wrap.firstElementChild);
+  });
+
+  document.getElementById('cn-admin-save-tmpls').addEventListener('click', function () {
+    var btn = this;
+    var rows = document.querySelectorAll('#cn-admin-tmpl-list .cn-admin-tmpl-row');
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var name = (rows[i].querySelector('.cn-admin-tmpl-name') || {}).value || '';
+      var type = (rows[i].querySelector('.cn-admin-tmpl-type') || {}).value || 'any';
+      var body = (rows[i].querySelector('.cn-admin-tmpl-body') || {}).value || '';
+      name = name.trim();
+      if (!name && !body.trim()) continue;  // skip fully-empty rows
+      out.push({ name: name, recipientType: type, body: body });
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save Templates';
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+        showToast('Templates saved', 'toast-success');
+        // Refresh the rep-facing cache so the composer picker reflects the change.
+        if (CN_STATE.deptConfig) CN_STATE.deptConfig.emailTemplates = out;
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save Templates';
+        showToast((err && err.message) || 'Save failed', 'toast-error');
+      })
+      .saveEmailTemplates(out);
+  });
+}
+
+/** #2 — render all email-template editor rows. */
+function cnRenderTemplateRows_(templates) {
+  if (!Array.isArray(templates) || templates.length === 0) {
+    return cnRenderTemplateRow_({ name: '', recipientType: 'any', body: '' });
+  }
+  return templates.map(cnRenderTemplateRow_).join('');
+}
+
+/** #2 — one email-template editor row: name + recipient-type select + body. */
+function cnRenderTemplateRow_(t) {
+  t = t || {};
+  var rt = (t.recipientType === 'customer' || t.recipientType === 'provider') ? t.recipientType : 'any';
+  function opt(v, lbl) { return '<option value="' + v + '"' + (rt === v ? ' selected' : '') + '>' + lbl + '</option>'; }
+  return '<div class="cn-admin-tmpl-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
+    '<div class="field-row" style="gap:8px;margin-bottom:6px;align-items:center">' +
+      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-tmpl-name" value="' + esc(t.name || '') + '" placeholder="Template name"></div>' +
+      '<div class="field" style="flex:0 0 130px;margin:0"><select class="cn-admin-tmpl-type">' +
+        opt('any', 'Any') + opt('customer', 'Customer') + opt('provider', 'Provider') +
+      '</select></div>' +
+      '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-tmpl-row\').remove()">' + icon('x', 14) + '</button>' +
+    '</div>' +
+    '<textarea class="cn-admin-tmpl-body" rows="3" placeholder="Message body — use {name} for the recipient name">' + esc(t.body || '') + '</textarea>' +
+  '</div>';
 }
 
 function cnRenderRateRows_(rates) {
@@ -6395,6 +6714,48 @@ function cnPrefillFieldsForForm_(formId) {
   }
 }
 
+// ── #2 External-email message templates ─────────────────────────────────
+// Manager-curated canned message bodies (CN_STATE.deptConfig.emailTemplates,
+// from getCallNotesDepartments). The picker filters to templates matching the
+// current recipient type (plus 'any'); selecting one inserts its body into the
+// message textarea, substituting the {name} token with the recipient name.
+
+/** All configured templates (any recipient type). */
+function cnExtTemplatesAll_() {
+  return (CN_STATE.deptConfig && Array.isArray(CN_STATE.deptConfig.emailTemplates))
+    ? CN_STATE.deptConfig.emailTemplates : [];
+}
+
+/** Templates applicable to a recipient type ('customer' | 'provider'). */
+function cnExtTemplatesFor_(recipientType) {
+  return cnExtTemplatesAll_().filter(function (t) {
+    return t.recipientType === 'any' || t.recipientType === recipientType;
+  });
+}
+
+/** The <option> set for the template <select>, given a recipient type. */
+function cnExtTemplateOptionsHtml_(recipientType) {
+  var list = cnExtTemplatesFor_(recipientType);
+  var opts = '<option value="">Insert a template…</option>';
+  list.forEach(function (t, i) {
+    opts += '<option value="' + i + '">' + esc(t.name) +
+      (t.recipientType === 'any' ? '' : ' (' + esc(t.recipientType) + ')') + '</option>';
+  });
+  return opts;
+}
+
+/** The full template-picker field row. Renders nothing when NO templates are
+ *  configured at all (keeps the composer clean by default). When templates
+ *  exist, the row stays present across recipient-type switches; its options
+ *  re-filter to the active type (cnWireExternalEmailModal_ repopulates them). */
+function cnExtTemplateRowHtml_(recipientType) {
+  if (cnExtTemplatesAll_().length === 0) return '';
+  return '<div class="field" style="margin-bottom:10px">' +
+    '<label>Template</label>' +
+    '<select id="cnX-template">' + cnExtTemplateOptionsHtml_(recipientType) + '</select>' +
+  '</div>';
+}
+
 function cnBuildExternalEmailHtml_() {
   var c = CN_STATE.extComposer;
   var catalog = CN_STATE.formCatalog || [];
@@ -6498,6 +6859,7 @@ function cnBuildExternalEmailHtml_() {
         '<label>Subject</label>' +
         '<input type="text" id="cnX-subject" value="' + esc(autoSubject) + '">' +
       '</div>' +
+      cnExtTemplateRowHtml_(c.recipientType) +
       '<div class="field" style="margin-bottom:0">' +
         '<label>Custom Message (optional)</label>' +
         '<textarea id="cnX-message" rows="3" placeholder="Add a personal message…">' + esc(c.message) + '</textarea>' +
@@ -6528,8 +6890,28 @@ function cnWireExternalEmailModal_() {
       });
       // Update subject if it still has the auto-generated pattern
       cnExtAutoUpdateSubject_();
+      // #2 — re-filter the template picker to the new recipient type.
+      var tsel = document.getElementById('cnX-template');
+      if (tsel) tsel.innerHTML = cnExtTemplateOptionsHtml_(c.recipientType);
     });
   });
+
+  // #2 — template picker: insert the chosen template body into the message
+  // textarea, substituting {name} with the recipient name, then reset the
+  // picker to its placeholder.
+  var tmplSel = document.getElementById('cnX-template');
+  if (tmplSel) {
+    tmplSel.addEventListener('change', function () {
+      var idx = parseInt(tmplSel.value, 10);
+      if (isNaN(idx)) return;
+      var t = cnExtTemplatesFor_(c.recipientType)[idx];
+      tmplSel.value = '';
+      if (!t) return;
+      var body = String(t.body || '').replace(/\{name\}/g, (c.recipientName || '').trim() || 'there');
+      var ta = document.getElementById('cnX-message');
+      if (ta) { ta.value = body; c.message = body; }
+    });
+  }
 
   // Form checkbox sync — updated for fillable mode awareness
   document.querySelectorAll('#cnX-form-list input[type="checkbox"]').forEach(function (cb) {
