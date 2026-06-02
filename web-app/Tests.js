@@ -326,8 +326,11 @@ function _setupTestCdrFixture_() {
     r[CDR.TOTAL_RUNG - 1]     = rung;
     r[CDR.TOTAL_MISSED - 1]   = missed;
     r[CDR.TOTAL_ANSWERED - 1] = ans;
-    r[CDR.TTT - 1]            = ttt;  // seconds as bare number → display parses via cdrParseHms_
-    r[CDR.ATT - 1]            = att;
+    // F9 / INV-64: store durations as H:MM:SS so they coerce to TIME VALUES
+    // below (the real CDR sheet stores them that way). cdrFmtHms_ is the
+    // production seconds→H:MM:SS formatter.
+    r[CDR.TTT - 1]            = cdrFmtHms_(ttt);
+    r[CDR.ATT - 1]            = cdrFmtHms_(att);
     return r;
   };
   const header = new Array(34).fill('');
@@ -342,8 +345,18 @@ function _setupTestCdrFixture_() {
     mkRow('A_Q_Sales',      99, 99, 0, 99,  0,   0),  // queue sentinel — must be excluded
   ];
   const range = sheet.getRange(1, 1, rows.length, 34);
-  range.setNumberFormat('@');   // plain text — defeats date/duration coercion
+  range.setNumberFormat('@');   // plain text — keeps date / agent / counts literal
   range.setValues(rows);
+  // F9 / INV-64: re-write the duration columns (TTT col I, ATT col J) as real
+  // TIME VALUES — a time number format coerces the H:MM:SS string, so
+  // getValues() returns a Date (the path INV-64 guards against) while
+  // getDisplayValues() returns the H:MM:SS string. With the prior plain-text
+  // fixture, getValues()==getDisplayValues() and a getValues() regression on
+  // these columns went uncaught. Skip the header row.
+  for (let rr = 2; rr <= rows.length; rr++) {
+    sheet.getRange(rr, CDR.TTT).setNumberFormat('h:mm:ss').setValue(rows[rr - 1][CDR.TTT - 1]);
+    sheet.getRange(rr, CDR.ATT).setNumberFormat('h:mm:ss').setValue(rows[rr - 1][CDR.ATT - 1]);
+  }
   SpreadsheetApp.flush();
 }
 
@@ -691,9 +704,13 @@ function _runAllTests() {
   _integrationTest('cn_renameCallNoteTag_managerRewritesTag', test_cn_renameCallNoteTag_managerRewritesTag);
   _integrationTest('cn_archiveCallNoteTag_roundTrip',         test_cn_archiveCallNoteTag_roundTrip);
 
+  // ── F8: manager-gate coverage across INV-31 / time-clock manager endpoints ─
+  _integrationTest('managerGates_rejectNonManager',           test_managerGates_rejectNonManager);
+
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
   _integrationTest('metrics_getTeamMetrics_cdrIntegration',     test_metrics_getTeamMetrics_cdrIntegration);
+  _integrationTest('metrics_cdrFixture_durationsUseDisplayValues', test_metrics_cdrFixture_durationsUseDisplayValues);
   _integrationTest('metrics_getTeamMetrics_nonManagerRejected', test_metrics_getTeamMetrics_nonManagerRejected);
   _integrationTest('metrics_getMyMetrics_cdrUnavailableErrors', test_metrics_getMyMetrics_cdrUnavailableErrors);
 
@@ -2991,6 +3008,44 @@ function test_cn_archiveCallNoteTag_roundTrip() {
   _assertFalse(!!getArchivedTagsSet_()[tag], 'tag no longer archived after unarchive (cleanup)');
 }
 
+// ── F8: manager-gate coverage for the INV-31 / time-clock manager endpoints ──
+// Every manager-gated endpoint must reject a non-manager caller BEFORE any side
+// effect (INV-02). Each gate is the first statement, so calling these as a
+// non-manager does no Sheet work / sends no mail / creates no export — safe to
+// run on prod. Parameterized so a newly-added manager endpoint is cheap to pin.
+function test_managerGates_rejectNonManager() {
+  const D = _TEST_CDR_DATE; // a valid yyyy-MM-dd for the date-validating endpoints
+  const cases = [
+    ['managerSearchCallNotes',         function () { return managerSearchCallNotes('x', 'all', null, null); }],
+    ['managerGetTrainingQueue',        function () { return managerGetTrainingQueue(null); }],
+    ['managerGetReviewCandidates',     function () { return managerGetReviewCandidates(null); }],
+    ['managerGetShiftStats',           function () { return managerGetShiftStats(D); }],
+    ['managerGetUnresolvedActionCount',function () { return managerGetUnresolvedActionCount(); }],
+    ['getEnrolledCallNotesReps',       function () { return getEnrolledCallNotesReps(); }],
+    ['exportCallNotesRange',           function () { return exportCallNotesRange(D, D); }],
+    ['setCallNoteTrainingReply',       function () { return setCallNoteTrainingReply(_TEST_INDIA_ID, 'no-such-note', 'r'); }],
+    ['getCallNotesTagTaxonomy',        function () { return getCallNotesTagTaxonomy(); }],
+    ['getAdminConfig',                 function () { return getAdminConfig(); }],
+    ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
+    ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
+    ['saveUpdateSuggestions',          function () { return saveUpdateSuggestions({ Sales: ['x'] }); }],
+    ['getTeamMetrics',                 function () { return getTeamMetrics(D); }],
+    ['exportAdpRange',                 function () { return exportAdpRange(D, D); }],
+    ['getManagerDashboard',            function () { return getManagerDashboard(); }],
+    ['getEmployeesList',               function () { return getEmployeesList(); }],
+    ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
+  ];
+  cases.forEach(function (c) {
+    const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
+    _assertNotNull(r && r.error, c[0] + ' must return an error for a non-manager caller');
+    _assertContains(r.error, 'Manager access', c[0] + ' must be manager-gated (INV-02)');
+  });
+  // getMetricsAmbient gates by silently returning no badge (not an {error}) —
+  // assert it never leaks a badge / data to a non-manager.
+  const amb = _asUser(_TEST_INDIA_EMAIL, function () { return getMetricsAmbient(); });
+  _assertTrue(!amb || amb.badge == null, 'getMetricsAmbient must not leak a badge to a non-manager');
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  METRICS / CDR ENDPOINT INTEGRATION (uses the _setupTestCdrFixture_ sheet)
 // ════════════════════════════════════════════════════════════════════════════
@@ -3006,9 +3061,31 @@ function test_metrics_getMyMetrics_cdrIntegration() {
   _assertEq(r.cdr.totalAnswered, 8, "totalAnswered from fixture");
   _assertEq(r.cdr.totalMissed, 2, "totalMissed from fixture");
   _assertEq(r.cdr.pctAnswered, 80, "pctAnswered = 8/10 = 80%");
-  _assertEq(r.cdr.tttSeconds, 300, "tttSeconds parsed from the bare-number fixture cell");
+  _assertEq(r.cdr.tttSeconds, 300, "tttSeconds parsed via getDisplayValues from the time-value fixture cell (INV-64)");
+  // ATT = 0:02:30 (150s) — seconds matter, so a getValues() regression (which
+  // would read a coerced Date and mis-parse it to 120s) flips this assertion.
+  _assertEq(r.cdr.attSeconds, 150, "attSeconds parsed via getDisplayValues — guards the INV-64 getDisplayValues discipline");
   // No notes were filed on the sentinel date, but answered>0, so coverage is 0 (not null).
   _assertEq(r.noteCoverage, 0, "0 notes / 8 answered → 0% coverage");
+}
+
+function test_metrics_cdrFixture_durationsUseDisplayValues() {
+  // F9: prove the fixture stores TTT/ATT as coerced TIME VALUES so the INV-64
+  // getDisplayValues() discipline is load-bearing. If the cells were plain text
+  // (as before), getValues()==getDisplayValues() and a getValues() regression
+  // would silently pass the integration tests.
+  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  const sheet = SpreadsheetApp.openById(_TEST_CDR_SS_ID).getSheetByName('DQE Historical Data');
+  // Row 2 = India fixture row; ATT = "0:02:30" (150s) — seconds matter so the
+  // raw-Date misparse (120s) is unambiguously wrong.
+  const rawAtt  = sheet.getRange(2, CDR.ATT, 1, 1).getValues()[0][0];
+  const dispAtt = sheet.getRange(2, CDR.ATT, 1, 1).getDisplayValues()[0][0];
+  _assertTrue(rawAtt instanceof Date,
+    "ATT fixture cell must coerce to a time value (Date via getValues) — else INV-64 is untested");
+  _assertEq(cdrParseHms_(dispAtt), 150,
+    "getDisplayValues() parses ATT to the correct seconds (the INV-64 path)");
+  _assertTrue(cdrParseHms_(rawAtt) !== 150,
+    "cdrParseHms_ on the raw getValues() Date does NOT yield 150 — proving getValues is the wrong path");
 }
 
 function test_metrics_getTeamMetrics_cdrIntegration() {

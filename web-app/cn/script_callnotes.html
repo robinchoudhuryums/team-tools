@@ -3183,16 +3183,12 @@ function cnRenderCardCore_(note, expandable) {
   const pinBtn = `<button class="cn-act-btn ${pinCls}" title="${esc(pinTitle)}"
                           data-cn-action="pin">${icon('bookmark', 14)}</button>`;
 
-  // External email indicator — shows when note has external emails sent
-  const extEmails = (note.subformData && Array.isArray(note.subformData.externalEmails))
-    ? note.subformData.externalEmails : [];
-  const extIndicator = extEmails.length > 0
-    ? (function () {
-        const labels = extEmails.map(function (e) { return e.type + ': ' + e.to; }).join(', ');
-        return '<span class="cn-ext-email-pill" title="External: ' + esc(labels) + '">' +
-          icon('send', 11) + '<span>' + extEmails.length + '</span></span>';
-      })()
-    : '';
+  // External email indicator — shows when the note has external emails sent.
+  // Shared with the manager per-rep card (cnExtEmailPillHtml_) so a manager can
+  // see WHO their rep emailed: the shared AuditLog records only the recipient
+  // domain, so the per-rep card tooltip is the manager-only recipient lookup
+  // (F20). Same output the rep sees on their own card.
+  const extIndicator = cnExtEmailPillHtml_(note);
 
   // G3 — when a fillable form linked to this note has been submitted, show a
   // clickable pill that opens the submitted form data in a read-only modal
@@ -3235,6 +3231,21 @@ function cnRenderCardCore_(note, expandable) {
 }
 
 function cnWireCards_(_root) { /* no-op — using onclick attrs */ }
+
+// Shared external-email recipient pill, used by BOTH the rep's own card and the
+// manager per-rep read-only card. The pill's tooltip lists each recipient
+// (type: address) — the manager-only recipient lookup (F20): the shared
+// AuditLog deliberately records only the recipient domain (PII/PHI), so this
+// per-rep-view surface is how a manager sees who their rep emailed externally.
+// Recipients come from the note's subformData.externalEmails[] stamp.
+function cnExtEmailPillHtml_(note) {
+  const extEmails = (note && note.subformData && Array.isArray(note.subformData.externalEmails))
+    ? note.subformData.externalEmails : [];
+  if (extEmails.length === 0) return '';
+  const labels = extEmails.map(function (e) { return e.type + ': ' + e.to; }).join(', ');
+  return '<span class="cn-ext-email-pill" title="External: ' + esc(labels) + '">' +
+    icon('send', 11) + '<span>' + extEmails.length + '</span></span>';
+}
 
 // ── G3: read-only viewer for a submitted fillable form ──────────────────────
 // Fetches the submission (caller-scoped: server verifies the calling rep
@@ -5042,6 +5053,7 @@ function cnMgrRenderReadonlyCard_(note) {
         <div class="cn-card-actions">
           ${flagPill}
           ${sentPill}
+          ${cnExtEmailPillHtml_(note)}
           ${formPill}
         </div>
       </div>
