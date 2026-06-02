@@ -189,6 +189,12 @@
       display: block; width: 100%; height: 140px;
       cursor: crosshair;
     }
+    .sig-placeholder {
+      position: absolute; inset: 0; display: flex;
+      align-items: center; justify-content: center;
+      color: var(--muted); font-size: 13px; font-weight: 500;
+      pointer-events: none; user-select: none; text-align: center; padding: 0 12px;
+    }
     .sig-clear {
       position: absolute; top: 6px; right: 8px;
       background: var(--danger-soft); color: var(--danger);
@@ -309,9 +315,10 @@
         <div class="section-title">Signature <span class="required">*</span></div>
         <div class="sig-canvas-wrap">
           <canvas id="sig-canvas" class="sig-canvas"></canvas>
+          <div class="sig-placeholder" id="sig-placeholder">&#9997; Tap or click and drag here to sign</div>
           <button type="button" class="sig-clear" id="sig-clear">Clear</button>
         </div>
-        <div class="sig-hint">Draw your signature above using your mouse or finger.</div>
+        <div class="sig-hint">Sign with your mouse or finger. Tap &ldquo;Clear&rdquo; to start over.</div>
         <div class="field" style="margin-top:10px">
           <label>Date Signed</label>
           <input type="date" id="sig-date" readonly>
@@ -417,6 +424,14 @@ function renderForm() {
       fieldsArea.style.display = '';
       sigSection.style.display = '';
       submitBtn.disabled = false;
+      // The signature canvas was initialized while this section was hidden, so
+      // its drawable bitmap was sized to a 0-width bounding box. Now that it's
+      // visible, resize it to match the on-screen size — otherwise the first
+      // strokes land on a 0-width canvas and nothing appears until the user
+      // hits "Clear" (which used to be the only path that re-ran the resize).
+      // Guard on isEmpty so an uncheck→recheck doesn't wipe an existing
+      // signature (setting canvas.width clears the bitmap).
+      if (SIG_PAD && SIG_PAD.resize && SIG_PAD.isEmpty()) SIG_PAD.resize();
     } else {
       fieldsArea.style.display = 'none';
       sigSection.style.display = 'none';
@@ -787,8 +802,18 @@ function initSignaturePad() {
     return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
   }
 
+  function hidePlaceholder() {
+    var ph = document.getElementById('sig-placeholder');
+    if (ph) ph.style.display = 'none';
+  }
+  function showPlaceholder() {
+    var ph = document.getElementById('sig-placeholder');
+    if (ph) ph.style.display = '';
+  }
+
   function start(e) {
     drawing = true;
+    hidePlaceholder();
     var pos = getPos(e);
     ctx.beginPath();
     ctx.moveTo(pos.x, pos.y);
@@ -816,15 +841,18 @@ function initSignaturePad() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     hasDrawn = false;
     resizeCanvas();
+    showPlaceholder();
   });
 
   SIG_PAD = {
     isEmpty: function() { return !hasDrawn; },
     toDataURL: function() { return canvas.toDataURL('image/png'); },
+    resize: resizeCanvas,
     clear: function() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       hasDrawn = false;
       resizeCanvas();
+      showPlaceholder();
     },
   };
 }

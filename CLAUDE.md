@@ -170,9 +170,10 @@ this section before touching the relevant area.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
-  The four time-based trigger handlers — `sendDailyMissedPunchAlerts`,
+  The five time-based trigger handlers — `sendDailyMissedPunchAlerts`,
   `runDailyExportCheck`, `sendCallNotesEodDigest`,
-  `sendCallNotesWeeklyDigests` — are top-level (required: Apps Script
+  `sendCallNotesWeeklyDigests`, and `purgeExpiredFormData` (the
+  destructive PHI-retention purge) — are top-level (required: Apps Script
   time-based triggers won't bind to underscore-suffix functions), which
   also means a logged-in rep can fire them from the browser console.
   Each calls `assertManagerCaller_(label)` at the top — throws if
@@ -237,7 +238,11 @@ this section before touching the relevant area.
   pdfForms=...; interactiveForms=...; noteId=...` — NOT the raw
   recipient address (a customer's personal email is PII; for a patient
   it can be PHI-adjacent). The full recipient lives on the linked note's
-  `subformData.externalEmails[]` for the sending rep's own reference.
+  `subformData.externalEmails[]`, surfaced to the sending rep on their own
+  card AND to a manager in the Team Notes Per-Rep view via the shared
+  `cnExtEmailPillHtml_` pill (the manager-only recipient lookup — F20).
+  Logging only the domain in the shared AuditLog is therefore intentional
+  PII/PHI minimization, not a forensic gap.
   Same discipline as the PHI-free `CallNoteEmail` row above.
 - **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.**
   The email-preview modal injects the server-rendered body raw via
@@ -256,7 +261,11 @@ this section before touching the relevant area.
   `call-data-reporting` repo), so they cross a repo trust boundary — an
   unescaped name like `<img src=x onerror=…>` is stored XSS in the
   manager's session. These were unescaped until the F5 fix; keep any new
-  Metrics field consistent.
+  Metrics field consistent. The Metrics client also derives "today" from the
+  employee roster timezone via `empTz()` / `isoDateTz()` (`script_core.html`)
+  — never `new Date()` browser-local time — so offshore reps (IST/PHT) and
+  near-midnight users see the correct day's CDR data, matching how Clock /
+  Time Off / Manager / Export derive dates (F6).
 - **Call Notes Sheet enrollment is manual.** A rep has no Call
   Notes panel until column L (`CallNotesSheetId`) of the Employees
   roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
@@ -562,6 +571,20 @@ this section before touching the relevant area.
   `test_tpl_formPublic_evaluatesWithoutError`, which `.evaluate()`s the
   template (not just string-matches the raw file) so this class of bug
   is caught.
+- **`form_public.html`'s signature canvas must be resized when its
+  section becomes visible.** The signature `<canvas>` lives in
+  `#sig-section`, which is `display:none` until the HIPAA-consent checkbox
+  is checked. `initSignaturePad`'s `resizeCanvas()` reads
+  `parentElement.getBoundingClientRect()` — while hidden that's a 0-width
+  box, so the canvas gets a 0-width drawing bitmap and the first strokes
+  land nowhere. Symptom: "I couldn't draw until I hit Clear" (Clear was the
+  only other path that re-ran the resize). Fix: the consent `change`
+  handler calls `SIG_PAD.resize()` when it reveals the section (guarded on
+  `SIG_PAD.isEmpty()` so an uncheck→recheck can't wipe a drawn signature,
+  since setting `canvas.width` clears the bitmap). A `.sig-placeholder`
+  overlay ("Tap or click and drag here to sign") hides on first stroke /
+  shows on Clear. Any new code path that toggles the section's visibility
+  must re-resize the canvas the same way.
 - **Call Notes form fields are contenteditable `.ce` divs, not
   input/textarea.** Read via `cnGetFieldValue_(id)` and write via
   `cnSetFieldValue_(id, value)` — both dispatch on `el.isContentEditable`
@@ -1041,6 +1064,49 @@ this section before touching the relevant area.
   modal. Both share `buildFormSubmissionResult_`. Pinned by
   `test_cn_getFormSubmission_callerScoped` +
   `test_cn_managerGetFormSubmission_gatedAndScoped`.
+  The modal renders a server-built **branded card** (`submissionHtml` on
+  the result, from `buildFormSubmissionCardHtml_`) — the navy-header
+  responses table + embedded signature image — so the in-app view matches
+  the submission email. It's injected via `innerHTML` and is safe because
+  every field is `esc_`-escaped server-side (same INV-89 discipline as the
+  email-preview body); the client keeps the old label/value list as a
+  fallback when `submissionHtml` is absent. The render markup
+  (`buildFormSubmissionTableHtml_` / `buildFormSubmissionSigHtml_`) is the
+  single source of truth shared by the in-app card AND the rep
+  notification email (`buildFormSubmissionHtml_`). A fillable form sent via
+  "Open Email" with NO saved note (empty `noteId`) is never stamped onto a
+  note (`submitFormByToken` stamps only `if (noteId)`), so it has no
+  `.cn-form-pill` — the **Sent Forms** tab (below) is the in-app surface for
+  those.
+- **Sent Forms tab (rep-facing, read-only).** A Call Notes tab
+  (`callNotesForms` → `enterCallNotesFormsView`) listing every fillable
+  form the rep has sent. Backed by `getMySentForms`, caller-scoped to
+  `FormTokens.CreatedBy` (a rep sees only their own tokens), newest-first,
+  with a derived status chip — pending / submitted / expired, where a
+  pending token past its `ExpiresAt` reads as expired on the fly even if
+  the status cell wasn't flipped by a visit. Closes the standalone-form
+  gap: a form sent without a linked note is findable here. "View
+  submission" reuses the caller-scoped, read-only `getFormSubmission`
+  viewer. **Read-only throughout** — `getMySentForms` returns only token
+  metadata (never the responses), and there is NO endpoint anywhere that
+  edits a submitted form's responses (`FormSubmissions` is append-only:
+  the sole write is the `appendRow` in `submitFormByToken`). That
+  immutability is deliberate — a patient-signed submission is an attested
+  record, so altering it would be both a HIPAA integrity-control
+  (§164.312(c)) violation and an ethical one.
+- **Form-submission notification renders the completed form.** When a
+  recipient submits a fillable form, `submitFormByToken` calls
+  `notifyRepOfFormSubmission_` (best-effort, try/catch — never blocks the
+  recipient's successful submit). The email is a branded HTML body
+  (`buildFormSubmissionHtml_`) rendering every response in the navy-header
+  table, plus two attachments: the signature as `signature.png`
+  (`signatureDataUrlToBlob_` — Gmail strips `data:` `<img>` in the body, so
+  the PNG is the reliable path) and a **best-effort** PDF of the whole form
+  via `Utilities.newBlob(html,'text/html').getAs('application/pdf')` (the
+  signature is embedded in the PDF's HTML; if the conversion is unavailable
+  the email still sends with the HTML body + PNG). `formatFormFieldValue_`
+  humanizes array/boolean/nested values for the table + plain-text
+  fallback.
 - **Cross-rep manager aggregates are cached.** Two parameterless
   manager aggregates that otherwise re-scan every enrolled rep's Sheet
   are whole-result cached: `getCallNotesTagTaxonomy`
@@ -1427,11 +1493,12 @@ manually for a fresh deploy or environment:
   need it set manually.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
-  installer now wires four triggers:
+  installer now wires five triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm)
     - `sendCallNotesEodDigest` (call-notes, hourly — emails each rep at their local EOD hour)
     - `sendCallNotesWeeklyDigests` (call-notes, Friday manager-tz 8am)
+    - `purgeExpiredFormData` (forms, daily manager-tz 3am — no-ops while retention is disabled)
   Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
   reminder about the cross-account trigger-ownership pitfall: Apps
@@ -1440,6 +1507,20 @@ manually for a fresh deploy or environment:
   are invisible to a fresh run. If a different account ever
   installed these triggers before, have that account run
   `removeAutomationTriggers()` first.
+- **Form-data retention is OFF by default.** `purgeExpiredFormData`
+  (daily trigger) deletes `FormSubmissions` (responses + signatures) and
+  `FormTokens` (recipient + prefill data) rows older than
+  `FORM_DATA_RETENTION_DAYS` — Script Property first, then
+  `CONFIG.FORM_DATA_RETENTION_DAYS` (default **0 = disabled**, nothing is
+  ever deleted). To enable PHI minimization, set Script Property
+  `FORM_DATA_RETENTION_DAYS` to a positive day count that matches your
+  record-retention obligations (the purge is **irreversible**; an
+  unparseable/blank date is never deleted — fail-safe). No redeploy needed
+  to change the value, but installing the trigger requires
+  `installAutomationTriggers()`. Each purge writes a PHI-free
+  `FormDataPurge` audit row with the counts removed. The canonical record
+  of an order typically lives in the downstream order system, not these
+  collection sheets — confirm before choosing a window.
 - **`MANAGER_TIMEZONE`** in CONFIG drives manager-dashboard
   display tz; change requires a redeploy.
 - **`CONFIG.SHIFT_SCHEDULE`** sets the Clock-view ribbon/countdown
@@ -1591,7 +1672,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The four trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run` | Subsystem: Server
+INV-44 | The five trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `purgeExpiredFormData`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` is destructive (deletes FormSubmissions + FormTokens rows past the retention window) so the gate is load-bearing, not just defensive | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise substring matching across (caller, callback, patientAndTrx) for `field='caller'|'all'` and (issue, resolution) for `field='issue'|'all'`. Used by the "Find prior calls for this TRX" card button | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
@@ -1611,7 +1692,7 @@ INV-60 | `deleteCallNote` rejects deletion when the note is older than `CONFIG.C
 INV-61 | `removeAutomationTriggers` calls `assertManagerCaller_` — non-manager reps cannot disable automation triggers via `google.script.run` | Subsystem: Server
 INV-62 | `cnFindNoteAnywhere_` searches `CN_STATE.rollingNotes`, `historyNotes`, and `pinnedNotes`. `cnReplaceNoteInState_` updates all three. Actions on pinned notes from past dates no longer silently fail, and flag/resolve changes propagate to the pinned tray | Subsystem: Client (Call Notes views)
 INV-63 | `getMyCallNotesRange(startDate, endDate)` is caller-scoped via `getEmployeeInfo_()`, validates both dates with regex, rejects `startDate > endDate`, and caps the span at 90 days. Returns notes sorted newest-first. Used by the History view for multi-day queries; single-date queries still use `getMyCallNotes` | Subsystem: Server
-INV-64 | CDR data reading uses `getDisplayValues()` for duration columns (TTT, ATT, AvgAbdWait, CsrAvgAbdWait) and `cdrParseHms_()` to convert H:MM:SS strings to seconds. Never use `getValue()` for these columns — the CDR Report spreadsheet has a timezone mismatch that adds a phantom offset. Same constraint as `call-data-reporting/Data.gs::parseHmsDisplay_` | Subsystem: Server
+INV-64 | CDR data reading uses `getDisplayValues()` for duration columns (TTT, ATT, AvgAbdWait, CsrAvgAbdWait) and `cdrParseHms_()` to convert H:MM:SS strings to seconds. Never use `getValue()` for these columns — the CDR Report spreadsheet has a timezone mismatch that adds a phantom offset. Same constraint as `call-data-reporting/Data.gs::parseHmsDisplay_`. Pinned by the CDR test fixture, which stores TTT/ATT as coerced time values (Date via `getValues()`, H:MM:SS via `getDisplayValues()`) so a `getValues()` regression fails `test_metrics_cdrFixture_durationsUseDisplayValues` + the `attSeconds` integration assertion | Subsystem: Server
 INV-65 | `getMyMetrics(date)` is caller-scoped via `getEmployeeInfo_()`, read-only. Returns the rep's own CDR metrics for the given date + a 30-day trend array + note-to-call coverage ratio. CDR data is fetched via `getCdrDailyBreakdown_()` (single-agent filter). The trend window is the 30 days ending on the given date. Returns `cdr: null` if the agent has no DQE data (not an error) | Subsystem: Server
 INV-66 | `getTeamMetrics(from, to)` is manager-gated (INV-02). Accepts a date range; single date collapses to `from === to`. CDR aggregation uses `getCdrAgentMetrics_()` for the range, note counts scan each enrolled rep's call-notes Sheet across the full range. Returns a 30-day team trend in single-day mode only (`trend` field is null for multi-day ranges). `unmatchedAgents` lists CDR agent names not on the team-tools roster | Subsystem: Server
 INV-67 | CDR enrichment in `managerGetShiftStats` is wrapped in a try/catch after the core call-notes aggregation loop. Failure does not break the existing response — `reps[i].cdr` is simply absent. CDR cache (`CDR_CACHE_KEY`, 5-min TTL) is shared across `getCdrAgentMetrics_()` calls but NOT across `getCdrDailyBreakdown_()` (the latter is uncached since it returns per-day granularity needed only for trend rendering) | Subsystem: Server

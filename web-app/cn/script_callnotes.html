@@ -1444,6 +1444,39 @@
     background: #fff; border: 1px solid var(--line); border-radius: 6px;
   }
 
+  /* ── Sent Forms view ────────────────────────────────────────────── */
+  .cn-sf-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .cn-sf-empty { color: var(--muted); font-size: 14px; padding: 24px 4px; text-align: center; }
+  .cn-sf-card {
+    border: 1px solid var(--line); border-radius: var(--radius, 10px);
+    background: var(--paper-card); padding: 12px 14px;
+  }
+  .cn-sf-card:hover { border-color: var(--border-strong); }
+  .cn-sf-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .cn-sf-name { font-weight: 600; color: var(--ink); font-size: 14px; }
+  .cn-sf-standalone {
+    font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: 6px;
+  }
+  .cn-sf-meta { color: var(--muted); font-size: 12px; margin-top: 4px; word-break: break-word; }
+  .cn-sf-actions { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+  .cn-sf-hint { color: var(--muted); font-size: 12px; }
+  .cn-sf-status {
+    font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .sf-st-submitted { background: var(--good-soft); color: var(--good-deep); }
+  .sf-st-pending   { background: var(--warn-soft); color: var(--warn-deep); }
+  .sf-st-expired   { background: var(--paper-2); color: var(--muted); }
+  .cn-sf-viewbtn {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--paper-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: var(--radius-sm, 6px); padding: 5px 12px; font-size: 12px; font-weight: 600;
+    cursor: pointer;
+  }
+  .cn-sf-viewbtn:hover { border-color: var(--border-strong); background: var(--paper-card); }
+  .cn-sf-viewbtn svg { width: 13px; height: 13px; }
+
   /* ── External email modal ───────────────────────────────────────── */
   .cn-ext-section {
     border-top: 1px solid var(--line);
@@ -1687,6 +1720,83 @@ function enterCallNotesSearchView(area) {
   cnFetchDeptConfigIfNeeded_(function () {
     cnRenderSearchView(area);
   });
+}
+
+// ── Sent Forms view (read-only) ─────────────────────────────────────────────
+// Lists every fillable form the rep has sent (getMySentForms is caller-scoped
+// to FormTokens.CreatedBy). Closes the standalone-form gap: a form sent without
+// a linked note has no card pill, so this is the only in-app way to find it.
+// Strictly read-only — "View submission" reuses the caller-scoped read-only
+// getFormSubmission viewer; submitted form responses are never editable.
+function enterCallNotesFormsView(area) {
+  stopClock();
+  const requestedView = currentView;
+  renderLoading(area, 'Loading sent forms…');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      if (res && res.error) { cnRenderSentFormsView_(area, null, res.error); return; }
+      cnRenderSentFormsView_(area, (res && res.forms) || [], null);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      cnRenderSentFormsView_(area, null, (err && err.message) || 'Failed to load sent forms.');
+    })
+    .getMySentForms();
+}
+
+function cnRenderSentFormsView_(area, forms, errorMsg) {
+  const compact = (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE);
+  const head = compact
+    ? cnCompactHeader_('Sent Forms', 'send')
+    : '<div class="cn-head"><div>' +
+        '<div class="cn-head-eyebrow">Fillable forms you’ve sent · read-only</div>' +
+        '<h2 class="cn-head-title">Sent Forms</h2>' +
+      '</div></div>';
+  if (errorMsg) {
+    area.innerHTML = head + '<div class="cn-sf-empty">' + esc(errorMsg) + '</div>';
+    return;
+  }
+  if (!forms || forms.length === 0) {
+    area.innerHTML = head + '<div class="cn-sf-empty">No fillable forms sent yet. ' +
+      'Send one from the “Open Email” composer on the Log view.</div>';
+    return;
+  }
+  const cards = forms.map(function (f) { return cnSentFormCardHtml_(f); }).join('');
+  area.innerHTML = head + '<div class="cn-sf-list">' + cards + '</div>';
+}
+
+function cnSentFormCardHtml_(f) {
+  const statusMap = {
+    submitted: { label: 'Submitted', cls: 'sf-st-submitted' },
+    pending:   { label: 'Awaiting',  cls: 'sf-st-pending' },
+    expired:   { label: 'Expired',   cls: 'sf-st-expired' },
+  };
+  const st = statusMap[f.status] || { label: f.status || 'Unknown', cls: 'sf-st-pending' };
+  const who = f.recipientName
+    ? esc(f.recipientName) + ' · ' + esc(f.recipientEmail)
+    : esc(f.recipientEmail);
+  const created = f.createdAt ? esc(cnFormatTimestampForCopy_(f.createdAt)) : '';
+  const standalone = f.noteId ? '' :
+    '<span class="cn-sf-standalone" title="Not linked to a call note">standalone</span>';
+  let action;
+  if (f.submitted) {
+    // Token is a UUID (no quotes/special chars) — safe to inline in onclick.
+    action = '<button type="button" class="cn-sf-viewbtn" onclick="cnViewFormSubmission_(\'' +
+      esc(f.token) + '\')">' + icon('list', 13) + ' View submission</button>';
+  } else if (f.status === 'expired') {
+    action = '<span class="cn-sf-hint">Link expired — re-send to collect this form.</span>';
+  } else {
+    action = '<span class="cn-sf-hint">Awaiting the recipient’s response.</span>';
+  }
+  return '<div class="cn-sf-card">' +
+    '<div class="cn-sf-top">' +
+      '<div class="cn-sf-name">' + esc(f.formName) + standalone + '</div>' +
+      '<span class="cn-sf-status ' + st.cls + '">' + esc(st.label) + '</span>' +
+    '</div>' +
+    '<div class="cn-sf-meta">To ' + who + (created ? ' · ' + created : '') + '</div>' +
+    '<div class="cn-sf-actions">' + action + '</div>' +
+  '</div>';
 }
 
 function enterCallNotesManageView(area) {
@@ -3073,16 +3183,12 @@ function cnRenderCardCore_(note, expandable) {
   const pinBtn = `<button class="cn-act-btn ${pinCls}" title="${esc(pinTitle)}"
                           data-cn-action="pin">${icon('bookmark', 14)}</button>`;
 
-  // External email indicator — shows when note has external emails sent
-  const extEmails = (note.subformData && Array.isArray(note.subformData.externalEmails))
-    ? note.subformData.externalEmails : [];
-  const extIndicator = extEmails.length > 0
-    ? (function () {
-        const labels = extEmails.map(function (e) { return e.type + ': ' + e.to; }).join(', ');
-        return '<span class="cn-ext-email-pill" title="External: ' + esc(labels) + '">' +
-          icon('send', 11) + '<span>' + extEmails.length + '</span></span>';
-      })()
-    : '';
+  // External email indicator — shows when the note has external emails sent.
+  // Shared with the manager per-rep card (cnExtEmailPillHtml_) so a manager can
+  // see WHO their rep emailed: the shared AuditLog records only the recipient
+  // domain, so the per-rep card tooltip is the manager-only recipient lookup
+  // (F20). Same output the rep sees on their own card.
+  const extIndicator = cnExtEmailPillHtml_(note);
 
   // G3 — when a fillable form linked to this note has been submitted, show a
   // clickable pill that opens the submitted form data in a read-only modal
@@ -3125,6 +3231,21 @@ function cnRenderCardCore_(note, expandable) {
 }
 
 function cnWireCards_(_root) { /* no-op — using onclick attrs */ }
+
+// Shared external-email recipient pill, used by BOTH the rep's own card and the
+// manager per-rep read-only card. The pill's tooltip lists each recipient
+// (type: address) — the manager-only recipient lookup (F20): the shared
+// AuditLog deliberately records only the recipient domain (PII/PHI), so this
+// per-rep-view surface is how a manager sees who their rep emailed externally.
+// Recipients come from the note's subformData.externalEmails[] stamp.
+function cnExtEmailPillHtml_(note) {
+  const extEmails = (note && note.subformData && Array.isArray(note.subformData.externalEmails))
+    ? note.subformData.externalEmails : [];
+  if (extEmails.length === 0) return '';
+  const labels = extEmails.map(function (e) { return e.type + ': ' + e.to; }).join(', ');
+  return '<span class="cn-ext-email-pill" title="External: ' + esc(labels) + '">' +
+    icon('send', 11) + '<span>' + extEmails.length + '</span></span>';
+}
 
 // ── G3: read-only viewer for a submitted fillable form ──────────────────────
 // Fetches the submission (caller-scoped: server verifies the calling rep
@@ -3210,21 +3331,31 @@ function cnBuildFormSubModalHtml_(res) {
   }
   var who = esc(res.recipientName || res.recipientEmail || '');
   var when = res.submittedAt ? esc(cnFormatTimestampForCopy_(res.submittedAt)) : '';
-  var rows = (res.fields || []).map(function (f) {
-    var v = f.value;
-    var vStr = (v && typeof v === 'object') ? JSON.stringify(v) : String(v == null ? '' : v);
-    return '<div class="cn-fs-row"><div class="cn-fs-label">' + esc(f.label) + '</div>' +
-           '<div class="cn-fs-value">' + esc(vStr).replace(/\n/g, '<br>') + '</div></div>';
-  }).join('');
-  if (!rows) rows = '<div class="modal-sub" style="margin-top:6px">No field data captured.</div>';
-  var sig = res.hasSignature
-    ? '<div class="cn-fs-sig"><div class="cn-fs-label">Signature</div>' +
-      '<img class="cn-fs-sig-img" src="' + esc(res.signature) + '" alt="signature"></div>'
-    : '';
-  return '<div class="modal cn-form-sub-modal" style="max-width:560px;max-height:80vh;overflow:auto">' +
+  var body;
+  if (res.submissionHtml) {
+    // Server-rendered branded card (matches the submission email). Safe to
+    // inject — every field is esc_-escaped server-side (same INV-89 discipline
+    // as the email-preview body).
+    body = res.submissionHtml;
+  } else {
+    // Fallback: plain label/value list (e.g. a stale server without submissionHtml).
+    var rows = (res.fields || []).map(function (f) {
+      var v = f.value;
+      var vStr = (v && typeof v === 'object') ? JSON.stringify(v) : String(v == null ? '' : v);
+      return '<div class="cn-fs-row"><div class="cn-fs-label">' + esc(f.label) + '</div>' +
+             '<div class="cn-fs-value">' + esc(vStr).replace(/\n/g, '<br>') + '</div></div>';
+    }).join('');
+    if (!rows) rows = '<div class="modal-sub" style="margin-top:6px">No field data captured.</div>';
+    var sig = res.hasSignature
+      ? '<div class="cn-fs-sig"><div class="cn-fs-label">Signature</div>' +
+        '<img class="cn-fs-sig-img" src="' + esc(res.signature) + '" alt="signature"></div>'
+      : '';
+    body = rows + sig;
+  }
+  return '<div class="modal cn-form-sub-modal" style="max-width:600px;max-height:82vh;overflow:auto">' +
     '<div class="modal-title">' + head + '</div>' +
     '<div class="modal-sub">' + (who ? 'From ' + who : '') + (when ? ' · ' + when : '') + '</div>' +
-    '<div class="cn-form-sub-fields">' + rows + sig + '</div>' +
+    '<div class="cn-form-sub-fields">' + body + '</div>' +
     '<div class="modal-footer"><button class="btn-modal-ok" onclick="cnCloseFormSubOverlay_()">Close</button></div>' +
     '</div>';
 }
@@ -3607,7 +3738,7 @@ function cnNoteIsStale_(note) {
   const noteMs = new Date(d[0], d[1]-1, d[2], h[0], h[1], h[2] || 0).getTime();
   // Same calculation for "now" so the local-vs-tz mismatch cancels
   const nowLocal = new Date();
-  const tz = CN_STATE.empTz || empState.timezone || 'UTC';
+  const tz = CN_STATE.empTz || (empState && empState.timezone) || 'UTC';
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -4922,6 +5053,7 @@ function cnMgrRenderReadonlyCard_(note) {
         <div class="cn-card-actions">
           ${flagPill}
           ${sentPill}
+          ${cnExtEmailPillHtml_(note)}
           ${formPill}
         </div>
       </div>
@@ -5389,8 +5521,11 @@ function cnInstallSearchJumpKeybind_() {
  *  picks it up. */
 function cnApplyPrefillFromUrl_() {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get('prefill');
+    // Read via __URL_PARAMS (SERVER_QUERY_PARAMS-backed) — the HtmlService
+    // iframe sandboxes window.location.search, so the deploy URL's ?prefill=
+    // is invisible through it (INV-78). Using __URL_PARAMS makes the deep-link
+    // actually fire in production (F15).
+    const raw = __URL_PARAMS.get('prefill');
     if (!raw) return;
     const pairs = raw.split(';').map(s => s.trim()).filter(Boolean);
     const supported = { callback: 'cn-fld-callback', caller: 'cn-fld-caller', patient: 'cn-fld-patient', date: null };
@@ -6493,7 +6628,9 @@ function cnSendExternalEmail_() {
         parts.push(res.formLinks.length + ' fillable form(s)');
       }
       var suffix = parts.length > 0 ? ' with ' + parts.join(' + ') : '';
-      showToast('Sent to ' + esc(res.recipientEmail) + suffix, 'toast-success');
+      // showToast assigns via textContent (XSS-safe), so do NOT esc() here —
+      // esc() would render entities literally (e.g. a&amp;b@x.com) (F14).
+      showToast('Sent to ' + res.recipientEmail + suffix, 'toast-success');
 
       // If a note was linked, update the local state so the card pill appears
       if (noteRef) {

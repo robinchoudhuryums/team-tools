@@ -69,11 +69,12 @@ function renderTimeOffView(area, data) {
     });
     plannedDays = Math.round(plannedDays * 10) / 10;
     const remaining = Math.round((annual - plannedDays) * 10) / 10;
-    // Months left in the current calendar year (proxy for "FY left").
-    // getMonth() is 0-indexed, so for January (0) → 12 months left,
-    // for December (11) → 1 month left. Current month counts as remaining.
-    const now = new Date();
-    const monthsLeft = 12 - now.getMonth();
+    // Months left in the current calendar year, derived from the employee-tz
+    // "today" (todayIso = data.today) — NOT browser-local time, which is wrong
+    // across a tz boundary on Dec 31 / Jan 1 (F18). 0-indexed month: January →
+    // 12 left, December → 1 left; current month counts as remaining.
+    const curYear = parseInt(todayIso.slice(0, 4), 10);
+    const monthsLeft = 12 - (parseInt(todayIso.slice(5, 7), 10) - 1);
     // Next-request label: first upcoming request's date as "MMM D", or empty.
     let nextLabel = '';
     if (upcomingReqs.length > 0) {
@@ -87,7 +88,7 @@ function renderTimeOffView(area, data) {
       <div class="pto-tile">
         <div class="head">
           <span class="lbl">Annual leave</span>
-          <span class="meta">${now.getFullYear()} · ${monthsLeft}MO LEFT</span>
+          <span class="meta">${curYear} · ${monthsLeft}MO LEFT</span>
         </div>
         <div class="v-row">
           <span class="v num">${formatLeaveDays(annual)}</span>

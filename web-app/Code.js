@@ -18,6 +18,13 @@ const CONFIG = {
 
   // ── Interactive form tokens ──────────────────────────────────────
   FORM_TOKEN_EXPIRY_HOURS: 72, // tokens expire after 72 hours
+  // PHI data-minimization: purge FormSubmissions + FormTokens rows older than
+  // this many days (by SubmittedAt / CreatedAt). 0 = DISABLED (nothing is ever
+  // deleted) — the safe default. Set a positive value (Script Property
+  // FORM_DATA_RETENTION_DAYS overrides this CONFIG fallback) ONLY after
+  // aligning it with your record-retention obligations; the purge is
+  // irreversible. Enforced by the daily purgeExpiredFormData trigger.
+  FORM_DATA_RETENTION_DAYS: 0,
 
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
@@ -1938,17 +1945,19 @@ function invalidateCnAmbientCache_(empId) {
 /** Returns the department options for the email composer + the dept→type
  *  suggestion map (for the dynamic update-type datalist). */
 function getCallNotesDepartments() {
-  const emp = getEmployeeInfo_();
-  if (!emp) return { error: 'Employee not found.' };
-  return {
-    departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
-    suggestionsByDept: getUpdateSuggestions_(),
-    defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
-    stateTaxRates: getStateTaxRates_(),
-    stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
-    ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
-    voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
-  };
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    return {
+      departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
+      suggestionsByDept: getUpdateSuggestions_(),
+      defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
+      stateTaxRates: getStateTaxRates_(),
+      stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
+      ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
+      voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
+    };
+  } catch (err) { return { error: err.message }; }
 }
 
 /** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all.
@@ -2958,8 +2967,12 @@ function validateCallNotePayload_(cleaned) {
   const anyContent = cleaned.callback || cleaned.caller || cleaned.patientAndTrx
                   || cleaned.issue || cleaned.resolution;
   if (!anyContent) return { error: 'Note is empty. Fill at least one field before submitting.' };
-  if (cleaned.flagType && CN_FLAG_TYPES.indexOf(cleaned.flagType) < 0) {
-    return { error: 'Invalid flag type. Expected: ' + CN_FLAG_TYPES.join(', ') };
+  // Accept the extended flag set (incl. 'urgent') so a legacy single-field
+  // payload.flagType='urgent' isn't rejected outright (F21). 'urgent' still
+  // never reaches the FlagType column — sanitizeFlagType_ strips it downstream
+  // (INV-37) — it only lives in subformData.flags.
+  if (cleaned.flagType && CN_FLAG_TYPES_EXTENDED.indexOf(cleaned.flagType) < 0) {
+    return { error: 'Invalid flag type. Expected: ' + CN_FLAG_TYPES_EXTENDED.join(', ') };
   }
   return { ok: true };
 }
@@ -4374,25 +4387,14 @@ function submitFormByToken(token, formData) {
       }
     }
 
-    // Notify the rep who created the token (best-effort)
+    // Notify the rep who created the token with the completed, stylized form
+    // (HTML body rendering all responses + the signature as a PNG attachment +
+    // a best-effort PDF of the whole form). Best-effort — a failure here never
+    // blocks the recipient's already-successful submission.
     try {
       if (createdBy) {
-        const formCat = CONFIG.CALL_NOTES.FORM_CATALOG || [];
-        let formName = formType;
-        for (let i = 0; i < formCat.length; i++) {
-          if (formCat[i].id === formType) { formName = formCat[i].name; break; }
-        }
-        MailApp.sendEmail({
-          to: createdBy,
-          subject: 'Form Submission Received: ' + formName + ' from ' + (recipientName || recipientEmail),
-          body:
-            'A form submission was received.\n\n' +
-            'Form:      ' + formName + '\n' +
-            'From:      ' + (recipientName ? recipientName + ' (' + recipientEmail + ')' : recipientEmail) + '\n' +
-            'Submitted: ' + submittedAt + '\n\n' +
-            'You can view the submission in the FormSubmissions tab of the ADP spreadsheet.\n\n' +
-            '— UMS Team Tools (automated)\n',
-        });
+        notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipientEmail,
+          submittedAt, sanitizedData, signatureData);
       }
     } catch (emailErr) {
       console.warn('submitFormByToken: notification email failed: ' + emailErr.message);
@@ -4452,6 +4454,59 @@ function getFormSubmission(token) {
       return { error: 'You can only view submissions for forms you sent.' };
     }
     return buildFormSubmissionResult_(tLocated, token);
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Caller-scoped, read-only list of every fillable-form token the calling rep
+ *  created (`FormTokens.CreatedBy` == caller email), newest-first. Powers the
+ *  "Sent Forms" tab so a rep can find a completed form even when it was sent
+ *  with no linked note (no `.cn-form-pill` surface). Derives an effective
+ *  status (a pending token past its expiry reads as `expired` even if the
+ *  status cell wasn't flipped by a visit). Never returns form responses — only
+ *  the token metadata; the per-form "View submission" action calls the
+ *  separately-scoped read-only `getFormSubmission(token)`. */
+function getMySentForms() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const myEmail = String(emp.email || '').toLowerCase();
+    if (!myEmail) return { forms: [] };
+    const sheet = getOrCreateFormTokensSheet_();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { forms: [] };
+    const rows = sheet.getRange(2, 1, lastRow - 1, FT_HEADERS.length).getValues();
+    const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+    const nameById = {};
+    catalog.forEach(function (f) { nameById[f.id] = f.name; });
+    const nowMs = Date.now();
+    const forms = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][FT.CREATED_BY] || '').toLowerCase().trim() !== myEmail) continue;
+      const formType = String(rows[i][FT.FORM_TYPE] || '').trim();
+      let status = String(rows[i][FT.STATUS] || '').trim().toLowerCase();
+      const expiresAtStr = String(rows[i][FT.EXPIRES_AT] || '');
+      if (status === 'pending' && expiresAtStr) {
+        try {
+          const expMs = Utilities.parseDate(expiresAtStr, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
+          if (nowMs > expMs) status = 'expired';
+        } catch (_) {}
+      }
+      forms.push({
+        token: String(rows[i][FT.TOKEN] || '').trim(),
+        formType: formType,
+        formName: nameById[formType] || formType,
+        recipientName: String(rows[i][FT.RECIPIENT_NAME] || ''),
+        recipientEmail: String(rows[i][FT.RECIPIENT_EMAIL] || ''),
+        status: status,
+        createdAt: String(rows[i][FT.CREATED_AT] || ''),
+        expiresAt: expiresAtStr,
+        noteId: String(rows[i][FT.NOTE_ID] || '').trim(),
+        submitted: status === 'submitted',
+      });
+    }
+    forms.sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+    if (forms.length > 200) forms.length = 200;
+    return { forms: forms };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4517,6 +4572,9 @@ function buildFormSubmissionResult_(tLocated, token) {
       fields,
       hasSignature: !!signature,
       signature,
+      // Pre-rendered branded card (responses table + signature) so the in-app
+      // viewer matches the submission email. Safe to innerHTML — esc_-escaped.
+      submissionHtml: buildFormSubmissionCardHtml_(formData, signature),
     };
   }
   // Token says submitted but no row found — treat as not-yet-available.
@@ -4532,6 +4590,254 @@ function humanizeFormFieldKey_(k) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+}
+
+/** Renders a form-submission value (string / number / boolean / array / nested
+ *  object) into a human-readable plain string for the email + PDF render. */
+function formatFormFieldValue_(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (Array.isArray(v)) {
+    return v.map(function (x) { return formatFormFieldValue_(x); }).join(', ');
+  }
+  if (typeof v === 'object') {
+    return Object.keys(v).map(function (k) {
+      return humanizeFormFieldKey_(k) + ': ' + formatFormFieldValue_(v[k]);
+    }).join('; ');
+  }
+  if (v === true) return 'Yes';
+  if (v === false) return 'No';
+  return String(v);
+}
+
+/** Builds a branded, stylized HTML representation of a completed fillable form
+ *  — used as the rep-notification email body and as the source for the
+ *  best-effort PDF attachment. Mirrors the CN_EMAIL_PALETTE aesthetic so the
+ *  completed form looks continuous with the rest of the tooling. Every field is
+ *  `esc_`-escaped (these values come from an external, unauthenticated form
+ *  submission). `embedSignatureImg`: true for the PDF (embeds the signature
+ *  data URI); false for the email body (Gmail strips data: <img>, so the email
+ *  carries the signature as a separate PNG attachment instead). */
+/** Shared responses-table renderer (navy header + one row per field) used by
+ *  both the submission email body and the in-app submission card. Every value
+ *  is `esc_`-escaped — these come from an external, unauthenticated form
+ *  submission. */
+function buildFormSubmissionTableHtml_(sanitizedData) {
+  const P = CN_EMAIL_PALETTE;
+  const rows = Object.keys(sanitizedData || {}).map(function (k) {
+    return '<tr>' +
+      '<td style="padding:8px 12px;border-top:1px solid ' + P.line + ';font-weight:600;width:38%;color:' + P.brand + ';vertical-align:top;">' +
+        esc_(humanizeFormFieldKey_(k)) + '</td>' +
+      '<td style="padding:8px 12px;border-top:1px solid ' + P.line + ';color:' + P.ink + ';">' +
+        esc_(formatFormFieldValue_(sanitizedData[k])).replace(/\n/g, '<br>') + '</td>' +
+    '</tr>';
+  }).join('');
+  return '<table style="width:100%;border-collapse:collapse;font-size:14px;border:1px solid ' + P.line + ';border-radius:6px;overflow:hidden;">' +
+    '<tr style="background:' + P.brand + ';color:' + P.paperCard + ';"><td colspan="2" style="padding:10px 14px;text-align:center;font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:12px;">Submitted Responses</td></tr>' +
+    rows +
+  '</table>';
+}
+
+/** Signature block for the submission render. `embed=true` inlines the PNG via
+ *  its data URI (fine in the web-app iframe + the PDF converter); `embed=false`
+ *  shows an "attached as signature.png" note (Gmail strips data: <img>). */
+function buildFormSubmissionSigHtml_(signatureDataUrl, embed) {
+  if (!signatureDataUrl) return '';
+  const P = CN_EMAIL_PALETTE;
+  return '<div style="margin-top:16px;">' +
+    '<div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:' + P.muted + ';margin-bottom:6px;">Signature</div>' +
+    (embed
+      ? '<img src="' + esc_(signatureDataUrl) + '" alt="Signature" style="max-width:320px;width:100%;border:1px solid ' + P.line + ';border-radius:6px;background:#fff;">'
+      : '<div style="font-size:13px;color:' + P.ink + ';">Captured — attached to this email as <strong>signature.png</strong>.</div>') +
+  '</div>';
+}
+
+/** In-app submission card (no email shell / logo / footer — the read-only modal
+ *  supplies its own title + "from … · when" sub-line). Signature is embedded
+ *  since the web-app iframe renders data URIs. Returned to the client as
+ *  result.submissionHtml and injected via innerHTML — safe because every field
+ *  is `esc_`-escaped, the same discipline as the email-preview path (INV-89). */
+function buildFormSubmissionCardHtml_(sanitizedData, signatureDataUrl) {
+  const P = CN_EMAIL_PALETTE;
+  return '<div style="font-family:\'Inter\',-apple-system,Helvetica,Arial,sans-serif;color:' + P.ink + ';">' +
+    buildFormSubmissionTableHtml_(sanitizedData) +
+    buildFormSubmissionSigHtml_(signatureDataUrl, true) +
+  '</div>';
+}
+
+function buildFormSubmissionHtml_(formName, recipientName, recipientEmail, submittedAt, sanitizedData, signatureDataUrl, embedSignatureImg) {
+  const P = CN_EMAIL_PALETTE;
+  const fromLine = recipientName
+    ? esc_(recipientName) + ' (' + esc_(recipientEmail) + ')'
+    : esc_(recipientEmail);
+  return (
+    '<div style="background:' + P.paper + ';padding:24px;font-family:\'Inter\',-apple-system,Helvetica,Arial,sans-serif;color:' + P.ink + ';">' +
+      '<div style="max-width:680px;margin:0 auto;background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;padding:24px 26px;">' +
+        '<table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:18px;"><tr>' +
+          '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';">' +
+            '<img src="' + P.logoUrl + '" alt="UMS" style="height:46px;display:block;border:0;outline:none;"></td>' +
+        '</tr></table>' +
+        '<h2 style="margin:0 0 4px;font-family:\'Inter Tight\',\'Inter\',sans-serif;font-size:20px;font-weight:600;color:' + P.brand + ';">' + esc_(formName) + '</h2>' +
+        '<p style="margin:0 0 14px;color:' + P.muted + ';font-size:13px;">Completed by ' + fromLine + ' &middot; ' + esc_(submittedAt) + '</p>' +
+        buildFormSubmissionTableHtml_(sanitizedData) +
+        buildFormSubmissionSigHtml_(signatureDataUrl, embedSignatureImg) +
+      '</div>' +
+      '<div style="text-align:center;margin-top:14px;font-family:\'IBM Plex Mono\',ui-monospace,monospace;font-size:10px;color:' + P.muted + ';letter-spacing:.12em;text-transform:uppercase;">UMS Team Tools · Fillable Forms</div>' +
+    '</div>'
+  );
+}
+
+/** Decodes a `data:image/png;base64,...` signature data URL into a PNG Blob,
+ *  or null if absent/malformed. */
+function signatureDataUrlToBlob_(signatureDataUrl, name) {
+  try {
+    const s = String(signatureDataUrl || '');
+    const comma = s.indexOf(',');
+    const b64 = comma >= 0 ? s.substring(comma + 1) : s;
+    if (!b64) return null;
+    const bytes = Utilities.base64Decode(b64);
+    return Utilities.newBlob(bytes, 'image/png', name || 'signature.png');
+  } catch (e) {
+    console.warn('signatureDataUrlToBlob_ failed: ' + e.message);
+    return null;
+  }
+}
+
+/** Sends the rep-notification email for a completed fillable form: a stylized
+ *  HTML body rendering all responses, the signature as a PNG attachment, and a
+ *  best-effort PDF of the whole completed form. Each sub-step degrades
+ *  gracefully — the recipient's submission already succeeded, so this is a
+ *  convenience notice that must never throw the caller. */
+function notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipientEmail, submittedAt, sanitizedData, signatureData) {
+  const formCat = CONFIG.CALL_NOTES.FORM_CATALOG || [];
+  let formName = formType;
+  for (let i = 0; i < formCat.length; i++) {
+    if (formCat[i].id === formType) { formName = formCat[i].name; break; }
+  }
+
+  const htmlBody = buildFormSubmissionHtml_(formName, recipientName, recipientEmail,
+    submittedAt, sanitizedData, signatureData, false);
+
+  // Plain-text fallback — same content, no styling.
+  const textLines = ['A form submission was received.', '',
+    'Form:      ' + formName,
+    'From:      ' + (recipientName ? recipientName + ' (' + recipientEmail + ')' : recipientEmail),
+    'Submitted: ' + submittedAt, '', 'Responses:'];
+  Object.keys(sanitizedData || {}).forEach(function (k) {
+    textLines.push('  ' + humanizeFormFieldKey_(k) + ': ' + formatFormFieldValue_(sanitizedData[k]));
+  });
+  textLines.push('',
+    'The completed form is attached as a PDF; the signature is attached as a PNG.',
+    'You can also open it from the form pill on the linked call note in the web app.', '',
+    '— UMS Team Tools (automated)');
+  const textBody = textLines.join('\n');
+
+  const attachments = [];
+  // Signature as a standalone PNG (renders reliably; Gmail blocks data: <img>
+  // in the email body).
+  const sigBlob = signatureDataUrlToBlob_(signatureData, 'signature.png');
+  if (sigBlob) attachments.push(sigBlob);
+  // Best-effort PDF of the whole completed form (signature embedded).
+  try {
+    const htmlForPdf = buildFormSubmissionHtml_(formName, recipientName, recipientEmail,
+      submittedAt, sanitizedData, signatureData, true);
+    const stamp = String(submittedAt).replace(/[^\d]/g, '').substring(0, 8);
+    const pdfName = (formName.replace(/[^\w]+/g, '_') || 'Form') + '_' + stamp + '.pdf';
+    const pdf = Utilities.newBlob(htmlForPdf, 'text/html', 'form.html')
+      .getAs('application/pdf').setName(pdfName);
+    attachments.push(pdf);
+  } catch (pdfErr) {
+    console.warn('notifyRepOfFormSubmission_: PDF render failed (sending without it): ' + pdfErr.message);
+  }
+
+  const opts = {
+    to: createdBy,
+    subject: 'Form Submission Received: ' + formName + ' from ' + (recipientName || recipientEmail),
+    body: textBody,
+    htmlBody: htmlBody,
+  };
+  if (attachments.length > 0) opts.attachments = attachments;
+  MailApp.sendEmail(opts);
+}
+
+
+// ── Form-data retention (PHI minimization) ──────────────────────────────────
+// purgeExpiredFormData deletes FormSubmissions (responses + signatures) and
+// FormTokens (recipient + prefill data) rows older than the configured
+// retention window. DISABLED by default (FORM_DATA_RETENTION_DAYS = 0). The
+// purge is irreversible — an unparseable/blank date is NEVER deleted
+// (fail-safe). Reachable via google.script.run (top-level for the trigger), so
+// it asserts a manager caller (INV-44). Writes a PHI-free FormDataPurge audit
+// row with the counts removed.
+
+/** Resolves the retention window in days: Script Property
+ *  FORM_DATA_RETENTION_DAYS first, then CONFIG. 0 / negative / unparseable → 0
+ *  (disabled). */
+function getFormRetentionDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('FORM_DATA_RETENTION_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.FORM_DATA_RETENTION_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** Parses a retention date cell ("yyyy-MM-dd'T'HH:mm:ss" in CONFIG.TIMEZONE, or
+ *  a coerced Date) to epoch ms. Returns null on blank/unparseable input so such
+ *  a row is never considered "old" and is never deleted. */
+function parseRetentionDateMs_(val) {
+  if (val instanceof Date) return val.getTime();
+  const s = String(val || '').trim();
+  if (!s) return null;
+  try {
+    return Utilities.parseDate(s, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
+  } catch (_) {
+    const t = Date.parse(s);
+    return isNaN(t) ? null : t;
+  }
+}
+
+/** Deletes data rows whose date column (0-based `dateColIdx`) is strictly older
+ *  than `cutoffMs`. Deletes descending so row-index shifts don't skip rows.
+ *  Returns the count removed. Caller holds the lock. */
+function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const rows = sheet.getDataRange().getValues();
+  const toDelete = [];
+  for (let i = 1; i < rows.length; i++) {
+    const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
+    if (ms !== null && ms < cutoffMs) toDelete.push(i + 1);  // 1-based sheet row
+  }
+  for (let j = toDelete.length - 1; j >= 0; j--) {
+    sheet.deleteRow(toDelete[j]);
+  }
+  return toDelete.length;
+}
+
+function purgeExpiredFormData() {
+  // Top-level (time-trigger target) → reachable via google.script.run, so gate
+  // it: a purge is destructive and must not be firable by a non-manager rep.
+  assertManagerCaller_('purgeExpiredFormData');
+  try {
+    const days = getFormRetentionDays_();
+    if (!days) {
+      Logger.log('purgeExpiredFormData: retention disabled (FORM_DATA_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let subsRemoved = 0, tokensRemoved = 0;
+    try {
+      subsRemoved = purgeSheetRowsOlderThan_(getOrCreateFormSubmissionsSheet_(), FS.SUBMITTED_AT, cutoffMs);
+      tokensRemoved = purgeSheetRowsOlderThan_(getOrCreateFormTokensSheet_(), FT.CREATED_AT, cutoffMs);
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'FormDataPurge', '', '', false, 0,
+      `retentionDays=${days}; submissionsRemoved=${subsRemoved}; tokensRemoved=${tokensRemoved}`);
+    Logger.log(`purgeExpiredFormData: removed ${subsRemoved} submission(s) + ${tokensRemoved} token(s) older than ${days} day(s).`);
+  } catch (err) {
+    Logger.log('purgeExpiredFormData failed: ' + err.message);
+  }
 }
 
 
@@ -4555,6 +4861,7 @@ function installAutomationTriggers() {
     'runDailyExportCheck',
     'sendCallNotesEodDigest',
     'sendCallNotesWeeklyDigests',
+    'purgeExpiredFormData',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -4578,6 +4885,12 @@ function installAutomationTriggers() {
   // Weekly manager digests for training queue + review candidates
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Daily PHI-retention purge of FormSubmissions + FormTokens. No-ops while
+  // FORM_DATA_RETENTION_DAYS = 0 (the default), so installing it is harmless;
+  // it only deletes once the operator sets a positive retention window.
+  ScriptApp.newTrigger('purgeExpiredFormData')
+    .timeBased().atHour(3).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -4617,6 +4930,7 @@ function removeAutomationTriggers() {
     'runDailyExportCheck',
     'sendCallNotesEodDigest',
     'sendCallNotesWeeklyDigests',
+    'purgeExpiredFormData',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -6039,15 +6353,6 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     console.warn('CDR cache put failed: ' + (e.message || e));
   }
   return result;
-}
-
-/**
- * Returns a single agent's CDR metrics for a date. Used by the Metrics
- * self-view and the shift-stats enrichment.
- */
-function getCdrForAgent_(agentName, date) {
-  var result = getCdrAgentMetrics_(date, date, null);
-  return result.agents[agentName] || null;
 }
 
 /**
