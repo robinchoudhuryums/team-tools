@@ -1945,17 +1945,19 @@ function invalidateCnAmbientCache_(empId) {
 /** Returns the department options for the email composer + the dept→type
  *  suggestion map (for the dynamic update-type datalist). */
 function getCallNotesDepartments() {
-  const emp = getEmployeeInfo_();
-  if (!emp) return { error: 'Employee not found.' };
-  return {
-    departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
-    suggestionsByDept: getUpdateSuggestions_(),
-    defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
-    stateTaxRates: getStateTaxRates_(),
-    stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
-    ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
-    voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
-  };
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    return {
+      departments: Object.keys(getDepartmentEmails_()).concat(['Other']),
+      suggestionsByDept: getUpdateSuggestions_(),
+      defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
+      stateTaxRates: getStateTaxRates_(),
+      stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
+      ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
+      voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
+    };
+  } catch (err) { return { error: err.message }; }
 }
 
 /** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all.
@@ -2965,8 +2967,12 @@ function validateCallNotePayload_(cleaned) {
   const anyContent = cleaned.callback || cleaned.caller || cleaned.patientAndTrx
                   || cleaned.issue || cleaned.resolution;
   if (!anyContent) return { error: 'Note is empty. Fill at least one field before submitting.' };
-  if (cleaned.flagType && CN_FLAG_TYPES.indexOf(cleaned.flagType) < 0) {
-    return { error: 'Invalid flag type. Expected: ' + CN_FLAG_TYPES.join(', ') };
+  // Accept the extended flag set (incl. 'urgent') so a legacy single-field
+  // payload.flagType='urgent' isn't rejected outright (F21). 'urgent' still
+  // never reaches the FlagType column — sanitizeFlagType_ strips it downstream
+  // (INV-37) — it only lives in subformData.flags.
+  if (cleaned.flagType && CN_FLAG_TYPES_EXTENDED.indexOf(cleaned.flagType) < 0) {
+    return { error: 'Invalid flag type. Expected: ' + CN_FLAG_TYPES_EXTENDED.join(', ') };
   }
   return { ok: true };
 }
@@ -6347,15 +6353,6 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     console.warn('CDR cache put failed: ' + (e.message || e));
   }
   return result;
-}
-
-/**
- * Returns a single agent's CDR metrics for a date. Used by the Metrics
- * self-view and the shift-stats enrichment.
- */
-function getCdrForAgent_(agentName, date) {
-  var result = getCdrAgentMetrics_(date, date, null);
-  return result.agents[agentName] || null;
 }
 
 /**

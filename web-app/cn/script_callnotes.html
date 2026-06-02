@@ -3738,7 +3738,7 @@ function cnNoteIsStale_(note) {
   const noteMs = new Date(d[0], d[1]-1, d[2], h[0], h[1], h[2] || 0).getTime();
   // Same calculation for "now" so the local-vs-tz mismatch cancels
   const nowLocal = new Date();
-  const tz = CN_STATE.empTz || empState.timezone || 'UTC';
+  const tz = CN_STATE.empTz || (empState && empState.timezone) || 'UTC';
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -5521,8 +5521,11 @@ function cnInstallSearchJumpKeybind_() {
  *  picks it up. */
 function cnApplyPrefillFromUrl_() {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get('prefill');
+    // Read via __URL_PARAMS (SERVER_QUERY_PARAMS-backed) — the HtmlService
+    // iframe sandboxes window.location.search, so the deploy URL's ?prefill=
+    // is invisible through it (INV-78). Using __URL_PARAMS makes the deep-link
+    // actually fire in production (F15).
+    const raw = __URL_PARAMS.get('prefill');
     if (!raw) return;
     const pairs = raw.split(';').map(s => s.trim()).filter(Boolean);
     const supported = { callback: 'cn-fld-callback', caller: 'cn-fld-caller', patient: 'cn-fld-patient', date: null };
@@ -6625,7 +6628,9 @@ function cnSendExternalEmail_() {
         parts.push(res.formLinks.length + ' fillable form(s)');
       }
       var suffix = parts.length > 0 ? ' with ' + parts.join(' + ') : '';
-      showToast('Sent to ' + esc(res.recipientEmail) + suffix, 'toast-success');
+      // showToast assigns via textContent (XSS-safe), so do NOT esc() here —
+      // esc() would render entities literally (e.g. a&amp;b@x.com) (F14).
+      showToast('Sent to ' + res.recipientEmail + suffix, 'toast-success');
 
       // If a note was linked, update the local state so the card pill appears
       if (noteRef) {

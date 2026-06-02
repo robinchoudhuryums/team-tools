@@ -2672,6 +2672,11 @@ function test_auditRow_deletePunch_hasActorEmail() {
   _assertNotNull(row, 'Audit row should exist for PunchDelete');
   var notes = String(row[9] || '');
   _assertContains(notes, 'removed by manager', 'Audit notes should mention manager delete');
+  // F10: the test name promises an actor-email check — assert the UserEmail
+  // column (index 3) records the MANAGER who deleted, not the target employee
+  // (INV-08: manager actions record the actor's email).
+  _assertEq(String(row[3] || '').toLowerCase(), _TEST_MGR_EMAIL.toLowerCase(),
+    'UserEmail (actor) column records the manager who deleted the punch');
 }
 
 

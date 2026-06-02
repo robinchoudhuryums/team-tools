@@ -741,6 +741,10 @@ function mRenderTeamMetrics_(data) {
 var M_AMBIENT_TIMER = null;
 
 function mStartAmbientPolling_() {
+  // getMetricsAmbient is manager-gated (returns no badge to non-managers), so
+  // polling it as a non-manager is a wasted RPC every 5 min for the whole
+  // session. Only managers get a badge — skip entirely otherwise (F13).
+  if (!(typeof empState !== 'undefined' && empState && empState.isManager)) return;
   if (M_AMBIENT_TIMER) clearInterval(M_AMBIENT_TIMER);
   mPollAmbient_();
   M_AMBIENT_TIMER = setInterval(mPollAmbient_, 300000);

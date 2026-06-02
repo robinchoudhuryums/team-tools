@@ -1,0 +1,10 @@
+{
+  "name": "team-tools-dev",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dev-only tooling for team-tools (client-side test harness). NOT deployed — clasp pushes from web-app/ only.",
+  "scripts": {
+    "test": "node test/client/run.js",
+    "test:client": "node test/client/run.js"
+  }
+}
