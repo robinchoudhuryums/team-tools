@@ -238,7 +238,11 @@ this section before touching the relevant area.
   pdfForms=...; interactiveForms=...; noteId=...` — NOT the raw
   recipient address (a customer's personal email is PII; for a patient
   it can be PHI-adjacent). The full recipient lives on the linked note's
-  `subformData.externalEmails[]` for the sending rep's own reference.
+  `subformData.externalEmails[]`, surfaced to the sending rep on their own
+  card AND to a manager in the Team Notes Per-Rep view via the shared
+  `cnExtEmailPillHtml_` pill (the manager-only recipient lookup — F20).
+  Logging only the domain in the shared AuditLog is therefore intentional
+  PII/PHI minimization, not a forensic gap.
   Same discipline as the PHI-free `CallNoteEmail` row above.
 - **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.**
   The email-preview modal injects the server-rendered body raw via
@@ -257,7 +261,11 @@ this section before touching the relevant area.
   `call-data-reporting` repo), so they cross a repo trust boundary — an
   unescaped name like `<img src=x onerror=…>` is stored XSS in the
   manager's session. These were unescaped until the F5 fix; keep any new
-  Metrics field consistent.
+  Metrics field consistent. The Metrics client also derives "today" from the
+  employee roster timezone via `empTz()` / `isoDateTz()` (`script_core.html`)
+  — never `new Date()` browser-local time — so offshore reps (IST/PHT) and
+  near-midnight users see the correct day's CDR data, matching how Clock /
+  Time Off / Manager / Export derive dates (F6).
 - **Call Notes Sheet enrollment is manual.** A rep has no Call
   Notes panel until column L (`CallNotesSheetId`) of the Employees
   roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
@@ -1684,7 +1692,7 @@ INV-60 | `deleteCallNote` rejects deletion when the note is older than `CONFIG.C
 INV-61 | `removeAutomationTriggers` calls `assertManagerCaller_` — non-manager reps cannot disable automation triggers via `google.script.run` | Subsystem: Server
 INV-62 | `cnFindNoteAnywhere_` searches `CN_STATE.rollingNotes`, `historyNotes`, and `pinnedNotes`. `cnReplaceNoteInState_` updates all three. Actions on pinned notes from past dates no longer silently fail, and flag/resolve changes propagate to the pinned tray | Subsystem: Client (Call Notes views)
 INV-63 | `getMyCallNotesRange(startDate, endDate)` is caller-scoped via `getEmployeeInfo_()`, validates both dates with regex, rejects `startDate > endDate`, and caps the span at 90 days. Returns notes sorted newest-first. Used by the History view for multi-day queries; single-date queries still use `getMyCallNotes` | Subsystem: Server
-INV-64 | CDR data reading uses `getDisplayValues()` for duration columns (TTT, ATT, AvgAbdWait, CsrAvgAbdWait) and `cdrParseHms_()` to convert H:MM:SS strings to seconds. Never use `getValue()` for these columns — the CDR Report spreadsheet has a timezone mismatch that adds a phantom offset. Same constraint as `call-data-reporting/Data.gs::parseHmsDisplay_` | Subsystem: Server
+INV-64 | CDR data reading uses `getDisplayValues()` for duration columns (TTT, ATT, AvgAbdWait, CsrAvgAbdWait) and `cdrParseHms_()` to convert H:MM:SS strings to seconds. Never use `getValue()` for these columns — the CDR Report spreadsheet has a timezone mismatch that adds a phantom offset. Same constraint as `call-data-reporting/Data.gs::parseHmsDisplay_`. Pinned by the CDR test fixture, which stores TTT/ATT as coerced time values (Date via `getValues()`, H:MM:SS via `getDisplayValues()`) so a `getValues()` regression fails `test_metrics_cdrFixture_durationsUseDisplayValues` + the `attSeconds` integration assertion | Subsystem: Server
 INV-65 | `getMyMetrics(date)` is caller-scoped via `getEmployeeInfo_()`, read-only. Returns the rep's own CDR metrics for the given date + a 30-day trend array + note-to-call coverage ratio. CDR data is fetched via `getCdrDailyBreakdown_()` (single-agent filter). The trend window is the 30 days ending on the given date. Returns `cdr: null` if the agent has no DQE data (not an error) | Subsystem: Server
 INV-66 | `getTeamMetrics(from, to)` is manager-gated (INV-02). Accepts a date range; single date collapses to `from === to`. CDR aggregation uses `getCdrAgentMetrics_()` for the range, note counts scan each enrolled rep's call-notes Sheet across the full range. Returns a 30-day team trend in single-day mode only (`trend` field is null for multi-day ranges). `unmatchedAgents` lists CDR agent names not on the team-tools roster | Subsystem: Server
 INV-67 | CDR enrichment in `managerGetShiftStats` is wrapped in a try/catch after the core call-notes aggregation loop. Failure does not break the existing response — `reps[i].cdr` is simply absent. CDR cache (`CDR_CACHE_KEY`, 5-min TTL) is shared across `getCdrAgentMetrics_()` calls but NOT across `getCdrDailyBreakdown_()` (the latter is uncached since it returns per-day granularity needed only for trend rendering) | Subsystem: Server
