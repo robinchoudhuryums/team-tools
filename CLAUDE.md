@@ -1604,10 +1604,17 @@ truth — update via `/setup-cycle` rather than ad-hoc edits.
 ### Test Command
 manual
 
-Tests live in `web-app/Tests.js` and run inside the Apps Script
-editor (no Node test runner). Use the Regression Scenarios below
-as the canonical verification path; `runSmokeTests()` and
-`runAllTests()` automate scenarios S1–S2.
+The Apps Script suite (`web-app/Tests.js`) runs inside the editor
+(`runSmokeTests()` / `runAllTests()`, automating scenarios S1–S2; no
+Apps Script runtime exists off-editor). Pure client-side helpers also
+have a dependency-free Node harness — `node test/client/run.js` (or
+`npm test` from the repo root) — that loads the HtmlService `<script>`
+partials into a `vm` sandbox with browser/GAS stubs and unit-tests pure
+functions (`esc`, `empTz` / `isoDateTz`, the metrics date helpers,
+`cnExtEmailPillHtml_`, …); see `test/client/README.md`. It needs no npm
+install and lives outside `web-app/`, so `clasp` never pushes it. Use
+the Regression Scenarios below as the canonical full-system
+verification path.
 
 ### Health Dimensions
 Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability
@@ -1626,7 +1633,7 @@ Client (Metrics views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js
+  web-app/Tests.js, test/client/harness.js, test/client/run.js
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server
@@ -1716,7 +1723,7 @@ INV-84 | `cnRenderComposerTabStrip_(active, noteId)` renders a shared Department
 INV-85 | `getCdrAgentMetrics_()` cache key includes an MD5 hash of the sorted roster-names array via `cdrRosterHash_()` so that different roster filters for the same date range don't collide. Cache payload size is logged at 90KB as a warning (Apps Script CacheService limit is 100KB). Cache key prefix is versioned (`CDR_CACHE_KEY`, currently `cdr_metrics_v2`); bump on any aggregation-rule change | Subsystem: Server
 INV-86 | `getCdrNameMap_()` reads the `Agent Alias Overrides` sheet from the CDR Report spreadsheet (same sheet written by `call-data-reporting`'s `OrphanFix.gs`). Returns `{ oldName → canonicalName }` for active aliases. Cached in-memory for `CDR_CACHE_TTL` seconds. Used by both `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` to resolve CDR agent names that don't directly match the team-tools roster. Missing or empty sheet degrades gracefully (empty map) | Subsystem: Server
 INV-87 | `validateCdrColumns_()` reads row 1 of `DQE Historical Data` on first CDR access per script session and asserts that expected column names (from `CDR_EXPECTED_HEADERS`) appear at the expected 1-indexed positions. Mismatches are logged via `Logger.log` and surfaced in `meta.columnWarning` on the response — non-blocking. Column names are matched case-insensitively via `indexOf`. Validation runs at most once per session (`_cdrColumnsValidated` flag) | Subsystem: Server
-INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cached under `metrics_ambient_v1`. Returns `{ badge: { type: 'warn', label: 'XX.X%', date } }` when yesterday's (weekday only) team answer rate is below `CONFIG.CDR_ALERT_THRESHOLD` (default 85%), else `{ badge: null }`. The client polls every 5 minutes via `mStartAmbientPolling_()` (started on shell render regardless of active tool) and renders an `.m-alert-badge` pill on the Metrics sidebar icon | Subsystem: Server + Client (Metrics views)
+INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cached under `metrics_ambient_v1`. Returns `{ badge: { type: 'warn', label: 'XX.X%', date } }` when yesterday's (weekday only) team answer rate is below `CONFIG.CDR_ALERT_THRESHOLD` (default 85%), else `{ badge: null }`. The client polls every 5 minutes via `mStartAmbientPolling_()` (started on shell render regardless of active tool, but only for managers — `mStartAmbientPolling_` early-returns for non-managers since the badge is manager-only, F13) and renders an `.m-alert-badge` pill on the Metrics sidebar icon | Subsystem: Server + Client (Metrics views)
 INV-89 | `buildCallNoteEmailHtml_` HTML-escapes every user-supplied note field via `esc_` before assembling the email body. The email-preview modal injects that body raw via `innerHTML` (the `${p.htmlBody}` slot in `cnRenderComposerPreviewStep_`), so the escaping is load-bearing — a new field added to the builder without `esc_` is stored XSS in the preview and the sent email. Pinned by `test_cn_buildEmailHtml_escapesUserFields` | Subsystem: Server + Client (Call Notes views)
 INV-90 | `getFormSubmission(token)` is caller-scoped, read-only: it requires `getEmployeeInfo_()` (NOT a public endpoint) and returns submission data only when the calling employee's email matches the token's `FormTokens.CreatedBy` — a rep cannot read another rep's form submissions. Returns `{ submitted: false, status }` when the token isn't completed yet. Pinned by `test_cn_getFormSubmission_callerScoped` | Subsystem: Server
 INV-91 | `managerGetFormSubmission(repEmpId, token)` is manager-gated (INV-02), read-only, and scoped to the target rep — the token must have been created by `repEmpId` (`FormTokens.CreatedBy`), so a manager can only view submissions for forms the selected rep sent. Shares `buildFormSubmissionResult_` with the caller-scoped `getFormSubmission` (INV-90). Surfaced via the form pill on the Team Notes Per-Rep read-only card. Pinned by `test_cn_managerGetFormSubmission_gatedAndScoped` | Subsystem: Server

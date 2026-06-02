@@ -48,3 +48,9 @@ From any project folder: `clasp pull` to sync down, `clasp push -f` to
 deploy changes. After `clasp push`, cut a new deployment version in
 the Apps Script editor (Deploy → Manage deployments → Edit → Version:
 New version) so users see the change on next load.
+
+The Apps Script test suite (`web-app/Tests.js`) runs from the editor
+(`runSmokeTests()` / `runAllTests()`). Pure client-side helpers also have
+unit tests that run off-editor with no dependencies: `npm test` (or
+`node test/client/run.js`). The harness lives outside `web-app/`, so
+`clasp` never pushes it.
