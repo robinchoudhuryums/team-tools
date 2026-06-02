@@ -1606,7 +1606,10 @@ have a dependency-free Node harness — `node test/client/run.js` (or
 partials into a `vm` sandbox with browser/GAS stubs and unit-tests pure
 functions (`esc`, `empTz` / `isoDateTz`, the metrics date helpers,
 `cnExtEmailPillHtml_`, …); see `test/client/README.md`. It needs no npm
-install and lives outside `web-app/`, so `clasp` never pushes it. Use
+install and lives outside `web-app/`, so `clasp` never pushes it. A
+GitHub Action (`.github/workflows/client-tests.yml`) runs this harness +
+a `node --check` of `Code.js` / `Tests.js` on every push and PR — the
+project's only automated check. Use
 the Regression Scenarios below as the canonical full-system
 verification path.
 
@@ -1949,8 +1952,8 @@ S30 | Trigger handlers reject non-manager callers via google.script.run | Subsys
     - As a non-manager rep, open the deployed web app
     - In the browser DevTools console, call (one at a time):
       `google.script.run.withFailureHandler(e => console.log('OK rejected:', e.message)).sendDailyMissedPunchAlerts()`
-      and the same for `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`
-    - Repeat as a manager, expecting them to run normally (or no-op for empty queues)
+      and the same for `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `purgeExpiredFormData`
+    - Repeat as a manager, expecting them to run normally (or no-op for empty queues / disabled retention)
   Expected: Each non-manager call throws "manager access required" via `assertManagerCaller_`. No emails are sent, no Sheets are created, no roster work is done. Manager calls proceed as the time-based triggers do.
 
 S31 | Optimistic submit + failure revert | Subsystem: Client (Call Notes views), Server
@@ -2175,6 +2178,15 @@ S54 | Custom modal-styled confirm/prompt dialogs (uiConfirm/uiPrompt) | Subsyste
     - Trigger a uiPrompt — try the rename-tag flow: type an invalid new name → confirm the inline error renders WITHOUT closing the dialog → fix the value → confirm it submits cleanly
     - Press Esc on an open prompt → resolves to null (cancel)
   Expected: All 15 dialogs use the custom modal. No `window.confirm` / `window.prompt` calls remain in the codebase. The `resolved` sentinel prevents double-resolution when Esc + click-outside fire near-simultaneously (no double-removal exception in the console). Multi-statement continuations route through helpers (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`, `handleBulkActionConfirmed_`) so the post-confirm action fires exactly once.
+
+S55 | Daily urgent-flag digest | Subsystem: Server
+  Steps:
+    - As a rep, submit a note with the `urgent` flag (multi-flag toolbar) — `urgent` rides in `subformData.flags[]`, the FlagType column stays empty
+    - From the Apps Script editor, run `sendCallNotesUrgentDigest` (in production a daily manager-tz 8am trigger fires it; install via `installAutomationTriggers`)
+    - Inspect the manager mailbox
+    - Submit a non-urgent note and re-run; confirm it is NOT included
+    - As a non-manager rep, call `google.script.run...sendCallNotesUrgentDigest()` from the console
+  Expected: One `Urgent` digest email arrives (warm-paper aesthetic, one row per urgent note across all enrolled reps in the yesterday→today manager-tz window) when ≥1 urgent note exists; nothing is sent when none. Non-urgent notes never appear. The non-manager console call throws "manager access required" via `assertManagerCaller_` (INV-44). Pinned by `test_cn_managerAggregateUrgent_findsUrgentNotOthers` + `test_triggerGate_urgentDigest_nonManagerThrows`.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.

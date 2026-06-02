@@ -1,0 +1,33 @@
+name: Client tests
+
+# Runs the dependency-free client-side test harness (and a server-JS syntax
+# check) on every push / PR. The harness loads the web-app HtmlService <script>
+# partials into a Node vm sandbox and unit-tests the pure helpers — see
+# test/client/README.md. No npm install: the harness has no dependencies.
+#
+# This is the only automated check for the project (the Apps Script suite in
+# web-app/Tests.js runs only inside the editor). It guards the client helpers
+# and catches gross syntax errors in Code.js / Tests.js.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  client-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Syntax-check server JS (Code.js / Tests.js)
+        run: |
+          node --check web-app/Code.js
+          node --check web-app/Tests.js
+
+      - name: Run client unit tests
+        run: node test/client/run.js
