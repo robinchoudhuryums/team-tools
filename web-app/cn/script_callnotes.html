@@ -859,6 +859,20 @@
     0%,100% { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--warn); }
     50%     { box-shadow: 0 0 0 3px var(--warn-soft), inset 3px 0 0 var(--warn); }
   }
+  /* Urgent (Round 2 deferred 8e card-level) — danger-toned inset ring,
+     declared AFTER flag-* + stale-action so its source-order specificity wins
+     the ring color for a note that's also action/training/review flagged.
+     'urgent' lives in subformData.flags only (never the FlagType column), so
+     this keys off the is-urgent class set by cnIsUrgent_, not flag-*. */
+  .cn-card.is-urgent { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--destructive); }
+  .cn-urgent-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 999px;
+    background: var(--destructive-soft); color: var(--danger-deep);
+    margin-left: 6px; vertical-align: middle;
+  }
   .cn-card-row {
     display: flex; align-items: center; gap: 10px;
   }
@@ -918,6 +932,7 @@
   .cn-card-actions .cn-act-btn.action.is-on   { background: var(--warn-soft);   color: var(--warning-deep); }
   .cn-card-actions .cn-act-btn.training.is-on { background: var(--accent-soft); color: var(--info-deep);    }
   .cn-card-actions .cn-act-btn.review.is-on   { background: var(--good-soft);   color: var(--success-deep); }
+  .cn-card-actions .cn-act-btn.cn-urgent-toggle.is-on { background: var(--destructive-soft); color: var(--danger-deep); }
   .cn-more-menu {
     display: inline-flex; align-items: center; gap: 2px;
     background: var(--paper-card); border: 1px solid var(--line); border-radius: 6px;
@@ -2986,6 +3001,7 @@ function cnInstallCardDelegation_(area) {
     var noteId = card.dataset.noteId;
     switch (btn.dataset.cnAction) {
       case 'flag':        cnToggleFlag_(noteId, btn.dataset.flagKind); break;
+      case 'flag-urgent': cnToggleUrgent_(noteId); break;
       case 'resolve':     cnToggleResolved_(noteId); break;
       case 'pin':         cnTogglePinned_(noteId); break;
       case 'copy':        cnCopyNoteAgain_(noteId); break;
@@ -3087,6 +3103,8 @@ function cnRenderCardCore_(note, expandable) {
   const flagCls = note.flagType ? ' flag-' + note.flagType : '';
   const isStale = note.flagType === 'action' && !note.resolved && cnNoteIsStale_(note);
   const staleCls = isStale ? ' stale-action' : '';
+  const isUrgent = cnIsUrgent_(note);
+  const urgentCls = isUrgent ? ' is-urgent' : '';
   const pendingCls = note._pending ? ' is-pending' : '';
 
   if (isEditing) {
@@ -3201,11 +3219,11 @@ function cnRenderCardCore_(note, expandable) {
     : '';
 
   return `
-    <div class="cn-card${flagCls}${staleCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
+    <div class="cn-card${flagCls}${staleCls}${urgentCls}${pendingCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}</div>
           ${detailLine}
           <div class="cn-card-issue">${issue}</div>
           ${resolutionLine}
@@ -3218,7 +3236,10 @@ function cnRenderCardCore_(note, expandable) {
               flagBtn('training', 'bulb', note.flagType === 'training') +
               pinBtn + copyBtn + emailBtn + extIndicator + formIndicator +
               (function () {
-                var sec = flagBtn('review', 'star', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
+                var urgentBtn = '<button class="cn-act-btn cn-urgent-toggle' + (isUrgent ? ' is-on' : '') +
+                  '" title="' + (isUrgent ? 'Remove urgent flag' : 'Mark urgent') +
+                  '" data-cn-action="flag-urgent">' + icon('warning', 14) + '</button>';
+                var sec = urgentBtn + flagBtn('review', 'star', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
                 if (!sec) return '';
                 return '<button class="cn-act-btn" title="More actions" data-cn-action="more">' + icon('chevronDown', 14) + '</button>' +
                   '<span class="cn-more-menu" style="display:none">' + sec + '</span>';
@@ -3238,6 +3259,22 @@ function cnWireCards_(_root) { /* no-op — using onclick attrs */ }
 // AuditLog deliberately records only the recipient domain (PII/PHI), so this
 // per-rep-view surface is how a manager sees who their rep emailed externally.
 // Recipients come from the note's subformData.externalEmails[] stamp.
+// Whether a note carries the 'urgent' flag. Urgent lives only in
+// subformData.flags[] (never the FlagType column — INV-37/INV-77), so this is
+// the single source of truth for the danger ring + pill across the rep card,
+// the manager read-only card, and the optimistic toggle.
+function cnIsUrgent_(note) {
+  return !!(note && note.subformData && Array.isArray(note.subformData.flags) &&
+            note.subformData.flags.indexOf('urgent') >= 0);
+}
+
+// Danger-toned "urgent" pill, shared by the rep card and the manager read-only
+// card so both stay visually consistent.
+function cnUrgentPillHtml_(note) {
+  if (!cnIsUrgent_(note)) return '';
+  return '<span class="cn-urgent-pill" title="Flagged urgent">' + icon('warning', 10) + 'urgent</span>';
+}
+
 function cnExtEmailPillHtml_(note) {
   const extEmails = (note && note.subformData && Array.isArray(note.subformData.externalEmails))
     ? note.subformData.externalEmails : [];
@@ -3498,6 +3535,50 @@ function cnDoToggleFlag_(noteId, note, prev, next, trainingQ) {
       showToast('Flag failed: ' + err.message, 'toast-error');
     })
     .setCallNoteFlag(noteId, next, trainingQ);
+}
+
+/** Card-level urgent toggle (Round 2 deferred 8e). Unlike action/training/
+ *  review, urgent never touches the FlagType column — the server toggles
+ *  membership in subformData.flags[] only (INV-77). So this optimistically
+ *  mutates the flags array (not note.flagType), keeping the danger ring + pill
+ *  in sync, and reverts on failure. Shares the _flagInFlight guard (INV-56) so
+ *  a rapid double-click can't fire two clobbering RPCs. */
+function cnToggleUrgent_(noteId) {
+  const note = cnFindNoteAnywhere_(noteId);
+  if (!note) return;
+  if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
+  if (note._flagInFlight) return;
+  note._flagInFlight = true;
+  note.subformData = note.subformData || {};
+  const prevFlags = Array.isArray(note.subformData.flags) ? note.subformData.flags.slice() : [];
+  const wasUrgent = prevFlags.indexOf('urgent') >= 0;
+  const nextFlags = prevFlags.filter(function (f) { return f !== 'urgent'; });
+  if (!wasUrgent) nextFlags.push('urgent');
+  note.subformData.flags = nextFlags;
+  cnReRenderActiveView_();
+  if (typeof cnRenderPinnedTray_ === 'function') cnRenderPinnedTray_();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      note._flagInFlight = false;
+      if (!res || !res.success) {
+        note.subformData.flags = prevFlags;
+        cnReRenderActiveView_();
+        if (typeof cnRenderPinnedTray_ === 'function') cnRenderPinnedTray_();
+        showToast((res && res.error) || 'Urgent toggle failed', 'toast-error');
+        return;
+      }
+      cnReplaceNoteInState_(res.note);
+      cnReRenderActiveView_();
+      if (typeof cnRenderPinnedTray_ === 'function') cnRenderPinnedTray_();
+    })
+    .withFailureHandler(function (err) {
+      note._flagInFlight = false;
+      note.subformData.flags = prevFlags;
+      cnReRenderActiveView_();
+      if (typeof cnRenderPinnedTray_ === 'function') cnRenderPinnedTray_();
+      showToast('Urgent toggle failed: ' + (err && err.message || err), 'toast-error');
+    })
+    .setCallNoteFlag(noteId, 'urgent', null);
 }
 
 /** Toggle the pinned state on a note — optimistic. The pinned tray
@@ -5040,12 +5121,13 @@ function cnMgrRenderReadonlyCard_(note) {
   const formPill = (mgrFormSub && mgrFormSub.token)
     ? `<button class="cn-form-pill" title="Form received — view submission" data-token="${esc(mgrFormSub.token)}" data-rep-id="${esc(mgrRepIdForForm)}" onclick="cnMgrViewFormSubmission_(this)">${icon('paperclip', 11)}<span>form</span></button>`
     : '';
+  const urgentCls = cnIsUrgent_(note) ? ' is-urgent' : '';
   return `
-    <div class="cn-card${flagCls}" data-note-id="${esc(note.noteId)}">
+    <div class="cn-card${flagCls}${urgentCls}" data-note-id="${esc(note.noteId)}">
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}</div>
           <div class="cn-card-issue">${issue}</div>
           ${trainingQ}
           ${resolution}

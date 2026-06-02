@@ -28,6 +28,11 @@ const sb = buildSandbox([
 // cnExtEmailPillHtml_ is extracted standalone rather than loading the whole
 // 6500-line Call Notes partial — it only needs esc (core) + icon (icons).
 const cnExtEmailPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtEmailPillHtml_');
+// Card-level urgent flag (Round 2 deferred 8e). cnUrgentPillHtml_ depends on
+// cnIsUrgent_ (free var) + icon (from script_icons), so load cnIsUrgent_ into
+// the sandbox first.
+const cnIsUrgent_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnIsUrgent_');
+const cnUrgentPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnUrgentPillHtml_');
 
 // Helper: today's date in a given tz, computed independently of the code under
 // test (the oracle).
@@ -99,6 +104,23 @@ test('escapes a malicious recipient (no raw < survives into the markup)', () => 
   });
   assert.ok(!html.includes('<img src=x'), 'raw <img must be escaped');
   assert.ok(html.includes('&lt;img'), 'escaped form present');
+});
+
+console.log('\ncn — cnIsUrgent_() / cnUrgentPillHtml_() (card-level urgent flag)');
+test('cnIsUrgent_ is true only when subformData.flags includes "urgent"', () => {
+  assert.strictEqual(cnIsUrgent_({ subformData: { flags: ['urgent'] } }), true);
+  assert.strictEqual(cnIsUrgent_({ subformData: { flags: ['action', 'urgent'] } }), true);
+  assert.strictEqual(cnIsUrgent_({ subformData: { flags: ['action'] } }), false);
+  assert.strictEqual(cnIsUrgent_({ subformData: { flags: [] } }), false);
+  assert.strictEqual(cnIsUrgent_({ subformData: {} }), false);
+  assert.strictEqual(cnIsUrgent_({}), false);
+  assert.strictEqual(cnIsUrgent_(null), false);
+});
+test('cnUrgentPillHtml_ renders the danger pill only when urgent', () => {
+  assert.strictEqual(cnUrgentPillHtml_({ subformData: { flags: ['action'] } }), '');
+  const html = cnUrgentPillHtml_({ subformData: { flags: ['urgent'] } });
+  assert.ok(html.includes('cn-urgent-pill'), 'has the pill class');
+  assert.ok(/urgent/i.test(html), 'shows the urgent label');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -966,9 +966,28 @@ this section before touching the relevant area.
   card.
 - **CN card actions use a primary/secondary split.** Frequently used
   actions (flag-action, flag-training, pin, copy, email) are always
-  visible. Less-frequent actions (flag-review, resolve, edit,
-  find-prior-TRX) are behind a chevron-down `data-cn-action="more"`
+  visible. Less-frequent actions (urgent-toggle, flag-review, resolve,
+  edit, find-prior-TRX) are behind a chevron-down `data-cn-action="more"`
   toggle that opens an inline `cn-more-menu` popover.
+- **Card-level urgent toggle lives in the More menu.** A saved note can
+  be flagged urgent from its card via a danger-toned button
+  (`data-cn-action="flag-urgent"`) in the `cn-more-menu` popover — the
+  placement resolved the old "primary-vs-secondary action row is tight"
+  deferral (the row stays at its frequently-used set). Unlike
+  action/training/review, urgent never touches the `FlagType` column:
+  the dispatcher routes to `cnToggleUrgent_`, which optimistically
+  toggles membership of `'urgent'` in `subformData.flags[]` (NOT
+  `note.flagType`) and calls `setCallNoteFlag(noteId, 'urgent')` — the
+  server's urgent branch (INV-77) flips the same array. Shares the
+  `_flagInFlight` guard (INV-56) so a double-click can't fire two
+  clobbering RPCs. Urgent notes render a danger-toned inset ring
+  (`.cn-card.is-urgent`, declared after the `flag-*` + `stale-action`
+  rules so its source order wins the ring color) plus a danger `urgent`
+  pill. `cnIsUrgent_(note)` + `cnUrgentPillHtml_(note)` are the single
+  source of truth for both, shared by the rep card and the manager
+  read-only card (`cnMgrRenderReadonlyCard_` shows the ring + pill
+  informationally — no toggle, staying read-only per S26). Pinned by
+  `cnIsUrgent_` / `cnUrgentPillHtml_` client-harness tests.
 - **Email subforms are color-coded by type.** `sf-shipping` /
   `sf-resupply` = green left border, `sf-close` = red, `sf-oop` =
   orange. Matches the legacy email identity palette. The email
@@ -1422,14 +1441,6 @@ were intentionally deferred. The redesign itself is complete; these
 are polish/expansion items captured here so the next session can
 pick them up without re-deriving the context.
 
-- **Card-level urgent button placement.** Urgent currently toggles
-  via the multi-flag toolbar on the active form. Saved cards have
-  no dedicated urgent button on their action row. Two options
-  considered: (a) a 4th flag chip alongside action / training /
-  review, or (b) hover-reveal. Needs a design call before
-  implementing — primary-vs-secondary action-row split is already
-  tight (see the "CN card actions use a primary/secondary split"
-  decision).
 - **Compliance audit + template library Admin panels.** Round 2
   listed these as future Admin-tab additions. Spec is just
   placeholders — concrete requirements needed before any work.
