@@ -170,9 +170,10 @@ this section before touching the relevant area.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
-  The five time-based trigger handlers — `sendDailyMissedPunchAlerts`,
+  The six time-based trigger handlers — `sendDailyMissedPunchAlerts`,
   `runDailyExportCheck`, `sendCallNotesEodDigest`,
-  `sendCallNotesWeeklyDigests`, and `purgeExpiredFormData` (the
+  `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, and
+  `purgeExpiredFormData` (the
   destructive PHI-retention purge) — are top-level (required: Apps Script
   time-based triggers won't bind to underscore-suffix functions), which
   also means a logged-in rep can fire them from the browser console.
@@ -1421,14 +1422,6 @@ were intentionally deferred. The redesign itself is complete; these
 are polish/expansion items captured here so the next session can
 pick them up without re-deriving the context.
 
-- **Urgent-flag digest infrastructure.** The `urgent` flag already
-  lives in `subformData.flags[]` (INV-75 / INV-77) and renders on
-  cards and the multi-flag toolbar, but there's no manager-side
-  aggregation/email like the action / training / review digests
-  have. Server-side: pick a cadence (likely daily or weekly), add
-  a `sendCallNotesUrgentDigest` trigger handler following the
-  pattern of `sendCallNotesEodDigest` / `sendCallNotesWeeklyDigests`.
-  `installAutomationTriggers` would need a 5th trigger wired in.
 - **Card-level urgent button placement.** Urgent currently toggles
   via the multi-flag toolbar on the active form. Saved cards have
   no dedicated urgent button on their action row. Two options
@@ -1493,11 +1486,12 @@ manually for a fresh deploy or environment:
   need it set manually.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
-  installer now wires five triggers:
+  installer now wires six triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm)
     - `sendCallNotesEodDigest` (call-notes, hourly — emails each rep at their local EOD hour)
     - `sendCallNotesWeeklyDigests` (call-notes, Friday manager-tz 8am)
+    - `sendCallNotesUrgentDigest` (call-notes, daily manager-tz 8am — recent urgent-flagged notes; sends nothing when none)
     - `purgeExpiredFormData` (forms, daily manager-tz 3am — no-ops while retention is disabled)
   Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
@@ -1679,7 +1673,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The five trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `purgeExpiredFormData`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` is destructive (deletes FormSubmissions + FormTokens rows past the retention window) so the gate is load-bearing, not just defensive | Subsystem: Server
+INV-44 | The six trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `purgeExpiredFormData`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` is destructive (deletes FormSubmissions + FormTokens rows past the retention window) so the gate is load-bearing, not just defensive | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise substring matching across (caller, callback, patientAndTrx) for `field='caller'|'all'` and (issue, resolution) for `field='issue'|'all'`. Used by the "Find prior calls for this TRX" card button | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server

@@ -2925,6 +2925,41 @@ function managerAggregateFlagged_(flagType, dateRange) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Aggregates urgent-flagged notes across all enrolled reps in a date range.
+ *  'urgent' lives in `subformData.flags[]` (NOT the FlagType column — INV-75/77),
+ *  so this can't reuse managerAggregateFlagged_ (which filters on FlagType).
+ *  Private — called by the manager-gated `sendCallNotesUrgentDigest` (the auth
+ *  boundary). Mirrors managerAggregateFlagged_'s bounded scan + repId/repName
+ *  attach so the digest reuses `sendManagerFlagDigest_`. */
+function managerAggregateUrgent_(dateRange) {
+  const roster = getEmployeeRosterRows_();
+  const results = [];
+  for (let r = 1; r < roster.length; r++) {
+    const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+    if (!sheetId) continue;
+    const repId = String(roster[r][EMP.ID]).trim();
+    const repName = String(roster[r][EMP.NAME]).trim();
+    try {
+      const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+      const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
+      const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
+      for (let i = 0; i < located.length; i++) {
+        const note = callNoteRowToObject_(located[i]);
+        const flags = (note.subformData && Array.isArray(note.subformData.flags)) ? note.subformData.flags : [];
+        if (flags.indexOf('urgent') < 0) continue;
+        if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+        if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+        note.repId = repId; note.repName = repName;
+        results.push(note);
+      }
+    } catch (e) {
+      console.warn('managerAggregateUrgent_ skipped rep ' + repId + ': ' + e.message);
+    }
+  }
+  results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  return { results };
+}
+
 
 // ── Call Notes helpers (private) ────────────────────────────────────────
 
@@ -4861,6 +4896,7 @@ function installAutomationTriggers() {
     'runDailyExportCheck',
     'sendCallNotesEodDigest',
     'sendCallNotesWeeklyDigests',
+    'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
@@ -4885,6 +4921,10 @@ function installAutomationTriggers() {
   // Weekly manager digests for training queue + review candidates
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Daily urgent-flag digest (manager-tz 8am) — recent urgent-flagged notes.
+  ScriptApp.newTrigger('sendCallNotesUrgentDigest')
+    .timeBased().atHour(8).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   // Daily PHI-retention purge of FormSubmissions + FormTokens. No-ops while
   // FORM_DATA_RETENTION_DAYS = 0 (the default), so installing it is harmless;
@@ -4930,6 +4970,7 @@ function removeAutomationTriggers() {
     'runDailyExportCheck',
     'sendCallNotesEodDigest',
     'sendCallNotesWeeklyDigests',
+    'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
@@ -5291,6 +5332,40 @@ function sendCallNotesWeeklyDigests() {
     Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
   } catch (err) {
     Logger.log('sendCallNotesWeeklyDigests failed: ' + err.message);
+  }
+}
+
+/** Daily safety-net digest of urgent-flagged notes to MANAGER_EMAILS. 'urgent'
+ *  is a secondary flag (subformData.flags[], INV-75/77) with no resolved state,
+ *  so unlike the action/training/review digests this is a rolling "recent
+ *  urgent items" view. Reuses sendManagerFlagDigest_ with an 'Urgent' label.
+ *  Best-effort (INV-36) and manager-gated (top-level trigger target reachable
+ *  via google.script.run, INV-44). The live cards remain the real-time path;
+ *  this is the catch-it-by-morning backstop. */
+function sendCallNotesUrgentDigest() {
+  assertManagerCaller_('sendCallNotesUrgentDigest');  // see sendDailyMissedPunchAlerts note
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping urgent digest.'); return; }
+    const now = new Date();
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    // Cover the previous calendar day through today (manager tz) so nothing
+    // filed since roughly the last daily run is missed without persistent
+    // last-run state. A note may surface in two consecutive digests — benign
+    // (urgent has no resolved state, so this doubles as a reminder until it
+    // ages out of the window).
+    const back = new Date(now); back.setDate(back.getDate() - 1);
+    const start = Utilities.formatDate(back, mgrTz, 'yyyy-MM-dd');
+    const end = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
+    const dateRange = { start, end };
+
+    const urgent = managerAggregateUrgent_(dateRange);
+    if (urgent.results && urgent.results.length > 0) {
+      sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results, dateRange);
+    }
+    Logger.log(`sendCallNotesUrgentDigest: urgent=${(urgent.results || []).length}`);
+  } catch (err) {
+    Logger.log('sendCallNotesUrgentDigest failed: ' + err.message);
   }
 }
 

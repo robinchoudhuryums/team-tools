@@ -740,6 +740,8 @@ function _runAllTests() {
   _integrationTest('triggerGate_weeklyDigests_nonManagerThrows',test_triggerGate_weeklyDigests_nonManagerThrows);
   _integrationTest('triggerGate_missedPunch_nonManagerThrows',  test_triggerGate_missedPunch_nonManagerThrows);
   _integrationTest('triggerGate_dailyExport_nonManagerThrows',  test_triggerGate_dailyExport_nonManagerThrows);
+  _integrationTest('triggerGate_urgentDigest_nonManagerThrows', test_triggerGate_urgentDigest_nonManagerThrows);
+  _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Audit row assertions ───────────────────────────────────────────────
   _integrationTest('auditRow_recordPunchAdjustment',            test_auditRow_recordPunchAdjustment);
@@ -2625,6 +2627,35 @@ function test_triggerGate_missedPunch_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendDailyMissedPunchAlerts(); });
   }, 'manager access required');
+}
+
+function test_triggerGate_urgentDigest_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesUrgentDigest(); });
+  }, 'manager access required');
+}
+
+// Aggregation behind the urgent digest — finds urgent-flagged notes (urgent
+// lives in subformData.flags[], NOT the FlagType column). Read-only, no email.
+function test_cn_managerAggregateUrgent_findsUrgentNotOthers() {
+  _clearTestCallNotes();
+  var urgentNote, plainNote;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    urgentNote = submitCallNote(_cnTestPayload({ flags: ['urgent'], caller: 'Urgent Caller' })).note;
+    plainNote  = submitCallNote(_cnTestPayload({ caller: 'Plain Caller' })).note;
+  });
+  // urgent flag rides in subformData.flags, FlagType column stays '' (INV-75/77)
+  _assertTrue(urgentNote.subformData && urgentNote.subformData.flags.indexOf('urgent') >= 0,
+    'submitted note carries urgent in subformData.flags');
+  _assertEq(urgentNote.flagType, '', 'urgent never enters the FlagType column (INV-37)');
+
+  var res = managerAggregateUrgent_({ start: urgentNote.dateLocal, end: urgentNote.dateLocal });
+  var ids = (res.results || []).map(function (n) { return n.noteId; });
+  _assertTrue(ids.indexOf(urgentNote.noteId) >= 0, 'urgent note is aggregated');
+  _assertFalse(ids.indexOf(plainNote.noteId) >= 0, 'a non-urgent note is NOT aggregated');
+  // results carry repId/repName for the digest's per-rep rendering
+  var hit = (res.results || []).filter(function (n) { return n.noteId === urgentNote.noteId; })[0];
+  _assertEq(hit.repId, _TEST_INDIA_ID, 'aggregated note carries repId');
 }
 
 function test_triggerGate_dailyExport_nonManagerThrows() {
