@@ -846,7 +846,26 @@ function initSignaturePad() {
 
   SIG_PAD = {
     isEmpty: function() { return !hasDrawn; },
-    toDataURL: function() { return canvas.toDataURL('image/png'); },
+    // Export at a capped width (not the full high-DPI bitmap). The capture
+    // canvas is rect.width * devicePixelRatio wide, so on a retina/mobile
+    // device the raw PNG can be large enough to trip the server's per-cell
+    // size cap (M3 / INV-96). Downscaling the EXPORT to <= 600px keeps the
+    // base64 comfortably under one Sheets cell while staying crisp for a
+    // signature (line art); capture stays full-res for smooth drawing.
+    toDataURL: function() {
+      var MAX_W = 600;
+      if (!hasDrawn || canvas.width <= MAX_W) return canvas.toDataURL('image/png');
+      try {
+        var scale = MAX_W / canvas.width;
+        var tmp = document.createElement('canvas');
+        tmp.width = MAX_W;
+        tmp.height = Math.max(1, Math.round(canvas.height * scale));
+        tmp.getContext('2d').drawImage(canvas, 0, 0, tmp.width, tmp.height);
+        return tmp.toDataURL('image/png');
+      } catch (e) {
+        return canvas.toDataURL('image/png');   // fall back to full-res on any failure
+      }
+    },
     resize: resizeCanvas,
     clear: function() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);

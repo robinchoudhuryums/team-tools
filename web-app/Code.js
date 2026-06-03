@@ -79,6 +79,7 @@ const CONFIG = {
     NOTES_TAB:           'Notes',
     SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
     DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
+    NOTE_RETENTION_DAYS: 0,              // rolling auto-delete of old notes; 0 = disabled (irreversible PHI delete; CN_NOTE_RETENTION_DAYS Script Property overrides)
     CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
     AUTO_COPY_FORMAT:
       'Callback Number: {callback}\n' +
@@ -293,14 +294,18 @@ function sanitizeTagsArray_(arr) {
 // call-data-reporting/apps-script/department-dashboard/Config.gs.
 // validateCdrColumns_() checks at runtime. On mismatch, update
 // here AND bump CDR_CACHE_KEY. Last verified: 2026-05-28.
-// Duration columns (TTT, ATT, AVG_ABD_WAIT, CSR_AVG_ABD_WAIT) MUST
-// be read via getDisplayValues() — see the "Spreadsheet TZ ≠ script TZ"
-// gotcha in call-data-reporting/CLAUDE.md.
+// Duration columns (TTT, ATT) MUST be read via getDisplayValues() — see
+// the "Spreadsheet TZ ≠ script TZ" gotcha in call-data-reporting/CLAUDE.md.
+// AvgAbdWait (col AG / index 33) and CsrAvgAbdWait (col AH / index 34) are
+// also duration columns, but are intentionally NOT read by any metric today,
+// so they are omitted from this enum to avoid a dead-but-tempting entry. If
+// you ever wire them in: re-add them here AND to CDR_EXPECTED_HEADERS, and
+// read them through getDisplayValues() (never getValue()) or the phantom
+// timezone offset (INV-64) will silently corrupt the parsed seconds.
 const CDR = {
   DATE: 2, AGENT: 3, QUEUE_EXT: 4,
   TOTAL_UNIQUE: 5, TOTAL_RUNG: 6, TOTAL_MISSED: 7, TOTAL_ANSWERED: 8,
   TTT: 9, ATT: 10,
-  AVG_ABD_WAIT: 33, CSR_AVG_ABD_WAIT: 34,
 };
 const CDR_EXPECTED_HEADERS = {
   2: 'Date', 3: 'Agent', 5: 'Unique', 6: 'Rung', 7: 'Missed',
@@ -438,11 +443,12 @@ function getEmployeeState() {
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
       schedule: getShiftSchedule_(empTz),
-      ptoEnabled: !!(CONFIG.ENABLE_PTO_TRACKING && emp.ptoEnabled),
+      ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
       annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
       sickLeaveMax:   CONFIG.SICK_LEAVE_MAX   || 10,
+      flags: getClientFeatureFlags_(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -571,8 +577,13 @@ function submitTimeOffRequest(date, type, notes) {
     if (!emp) return { success: false, error: 'Employee not found.' };
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format.' };
+    if (!isValidTimeOffType_(type))
+      return { success: false, error: 'Invalid leave type.' };
+    const toSheet = getOrCreateTimeOffSheet_();
+    if (hasActiveTimeOffOnDate_(toSheet, emp.id, date))
+      return { success: false, error: 'You already have a pending or approved time-off request for that date.' };
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    getOrCreateTimeOffSheet_().appendRow([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]);
+    toSheet.appendRow([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]);
     writeAuditLog_(emp, 'TimeOffRequest', date, '', false, 0, type + (notes ? ' — ' + notes : ''));
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
@@ -601,8 +612,11 @@ function cancelTimeOffRequest(date, submittedAt) {
         sheet.deleteRow(i + 1);
         // Audit row carries enough context to reconstruct the cancelled request
         // from the log alone — the row itself is gone after deleteRow.
+        // Neutralize the field separators (· and ") inside the user notes so
+        // the · -joined row stays unambiguously parseable (L12).
+        const safeNotes = reqNotes.replace(/[·"\r\n]+/g, ' ').trim();
         const auditParts = [type, 'self-cancelled', 'status=' + status];
-        if (reqNotes)   auditParts.push('notes="' + reqNotes + '"');
+        if (safeNotes)  auditParts.push('notes="' + safeNotes + '"');
         if (submittedAt) auditParts.push('submittedAt=' + submittedAt);
         writeAuditLog_(emp, 'TimeOffCancel', date, '', false, 0, auditParts.join(' · '));
         return { success: true };
@@ -763,7 +777,7 @@ function getManagerDashboard() {
       const dedu = getLeaveDeduction_(reqType);
       const reqEmp = empById[reqEmpId];
       let currentBal = null, projBal = null;
-      if (CONFIG.ENABLE_PTO_TRACKING && reqEmp && dedu.bucket) {
+      if (getFlag_('enablePtoTracking') && reqEmp && dedu.bucket) {
         currentBal = dedu.bucket === 'sick' ? reqEmp.sickLeave : reqEmp.annualLeave;
         projBal = +(currentBal - dedu.days).toFixed(2);
       }
@@ -840,7 +854,11 @@ function getManagerDashboard() {
       const e = empById[id];
       if (!e) continue;
       const rawComment = String(adpRows[i][ADP.COMMENTS]);
-      const dBack = Math.abs(daysBetween_(rowDate, todayStr));
+      // Delete window is measured against the EMPLOYEE's local "today"
+      // (e.todayStr, same tz deletePunch uses), not the manager's — otherwise
+      // an IST/PHT rep near the window edge gets a Delete button the server
+      // then rejects (or vice-versa) (L13).
+      const dBack = Math.abs(daysBetween_(rowDate, e.todayStr));
       recentPunches.push({
         empId: id, empName: e.name,
         date: rowDate,
@@ -985,7 +1003,7 @@ function getManagerDashboard() {
       missedLookbackDays:  CONFIG.MISSED_PUNCH_LOOKBACK_DAYS,
       mgrDeleteWindowDays: CONFIG.MGR_DELETE_WINDOW_DAYS,
       adjustWindowDays:    CONFIG.ADJUST_WINDOW_DAYS,
-      ptoEnabled:          !!CONFIG.ENABLE_PTO_TRACKING,
+      ptoEnabled:          !!getFlag_('enablePtoTracking'),
       mgrTzAbbr,
       punchTrend, toSummary,
       pendingTrend, missedTrend,
@@ -1017,7 +1035,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
 
         // Apply leave-balance change if state transition crosses the Approved boundary
         let newBalance = null;
-        if (CONFIG.ENABLE_PTO_TRACKING) {
+        if (getFlag_('enablePtoTracking')) {
           const dedu = getLeaveDeduction_(type);
           if (dedu.bucket) {
             if (oldStatus !== 'Approved' && newStatus === 'Approved') {
@@ -1065,19 +1083,23 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     if (!empId) return { success: false, error: 'No employee selected.' };
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format (expected yyyy-MM-dd).' };
-    if (!type) return { success: false, error: 'Leave type required.' };
+    if (!isValidTimeOffType_(type)) return { success: false, error: 'Invalid leave type.' };
 
     const targetEmp = lookupEmployeeById_(empId);
     if (!targetEmp) return { success: false, error: 'Employee not found.' };
 
+    const toSheet = getOrCreateTimeOffSheet_();
+    if (hasActiveTimeOffOnDate_(toSheet, targetEmp.id, date))
+      return { success: false, error: 'That employee already has a pending or approved request for that date.' };
+
     const status = autoApprove ? 'Approved' : 'Pending';
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    getOrCreateTimeOffSheet_()
+    toSheet
       .appendRow([targetEmp.id, targetEmp.name, date, type, notes || '', status, submittedAt]);
 
     // Apply leave deduction immediately if auto-approving
     let newBalance = null;
-    if (autoApprove && CONFIG.ENABLE_PTO_TRACKING) {
+    if (autoApprove && getFlag_('enablePtoTracking')) {
       const dedu = getLeaveDeduction_(type);
       if (dedu.bucket) newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
     }
@@ -1096,6 +1118,153 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     }
 
     return { success: true, newBalance, status };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated, read-only. Detects PTO balance drift from the H1 bug class:
+ *  reps with MORE than one Approved time-off row on the same date were
+ *  double-deducted. For each (rep, date) the legitimate charge is the single
+ *  largest deduction; any additional approved rows are over-charge. Returns
+ *  per-rep over-charge per bucket + the duplicate dates + current stored
+ *  balances (for context). Pure read — correction is left to the manager via
+ *  Adjust / timesheet so this can never itself mutate a balance. */
+function getPtoReconciliation() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+
+    const empRows = getEmployeeRosterRows_();
+    const empById = {};
+    for (let i = 1; i < empRows.length; i++) {
+      const id = String(empRows[i][EMP.ID]).trim();
+      if (!id) continue;
+      empById[id] = {
+        name:   String(empRows[i][EMP.NAME]).trim(),
+        annual: parseFloat(empRows[i][EMP.ANNUAL_LEAVE]) || 0,
+        sick:   parseFloat(empRows[i][EMP.SICK_LEAVE]) || 0,
+      };
+    }
+
+    // Approved rows → byEmp[id][date] = [{bucket, days}, ...]
+    const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+    const byEmp = {};
+    for (let i = 1; i < toRows.length; i++) {
+      if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'approved') continue;
+      const id = String(toRows[i][TO.EMP_ID]).trim();
+      if (!id) continue;
+      const dedu = getLeaveDeduction_(String(toRows[i][TO.TYPE]));
+      if (!dedu.bucket || !(dedu.days > 0)) continue;   // unpaid / non-deducting
+      const date = normalizeDate_(toRows[i][TO.DATE]);
+      if (!byEmp[id]) byEmp[id] = {};
+      if (!byEmp[id][date]) byEmp[id][date] = [];
+      byEmp[id][date].push(dedu);
+    }
+
+    const reps = [];
+    Object.keys(byEmp).forEach(function (id) {
+      const dates = byEmp[id];
+      let actAnnual = 0, actSick = 0, expAnnual = 0, expSick = 0;
+      const dupDates = [];
+      Object.keys(dates).forEach(function (d) {
+        const list = dates[d].slice().sort(function (a, b) { return b.days - a.days; });
+        list.forEach(function (x) {
+          if (x.bucket === 'annual') actAnnual += x.days;
+          else if (x.bucket === 'sick') actSick += x.days;
+        });
+        const c = list[0];   // canonical = single largest deduction for the day
+        if (c.bucket === 'annual') expAnnual += c.days;
+        else if (c.bucket === 'sick') expSick += c.days;
+        if (list.length >= 2) dupDates.push({ date: d, approvedCount: list.length });
+      });
+      const overAnnual = Math.round((actAnnual - expAnnual) * 100) / 100;
+      const overSick   = Math.round((actSick - expSick) * 100) / 100;
+      if (overAnnual > 0 || overSick > 0) {
+        const meta = empById[id] || { name: id, annual: 0, sick: 0 };
+        reps.push({
+          empId: id, name: meta.name,
+          overAnnual: overAnnual, overSick: overSick,
+          storedAnnual: meta.annual, storedSick: meta.sick,
+          dates: dupDates.sort(function (a, b) { return a.date < b.date ? -1 : 1; }),
+        });
+      }
+    });
+
+    reps.sort(function (a, b) {
+      return (b.overAnnual + b.overSick) - (a.overAnnual + a.overSick);
+    });
+    return { reps: reps, repsScanned: Object.keys(empById).length };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated, locked corrector for the H1 double-deduct (the mutating
+ *  companion to the read-only getPtoReconciliation). For the target rep: per
+ *  date with >1 Approved row, keep the single largest deduction (the canonical
+ *  leave) and NEUTRALIZE the extras — set their status to 'Reconciled' so they
+ *  no longer count as Approved — then CREDIT the over-charge back to the
+ *  balances. Recomputes the over-charge server-side (never trusts a client
+ *  amount). Idempotent by construction: after the run the extras aren't
+ *  'Approved', so a re-run finds no duplicates and credits nothing. Writes a
+ *  `PtoReconciliationFix` audit row. */
+function fixPtoReconciliation(empId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const target = lookupEmployeeById_(empId);
+    if (!target) return { success: false, error: 'Employee not found.' };
+
+    const sheet = getOrCreateTimeOffSheet_();
+    const rows = sheet.getDataRange().getValues();
+    const byDate = {};   // date → [{rowIndex (1-based), days, bucket}]
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][TO.EMP_ID]).trim() !== empId) continue;
+      if (String(rows[i][TO.STATUS]).toLowerCase().trim() !== 'approved') continue;
+      const dedu = getLeaveDeduction_(String(rows[i][TO.TYPE]));
+      if (!dedu.bucket || !(dedu.days > 0)) continue;
+      const date = normalizeDate_(rows[i][TO.DATE]);
+      if (!byDate[date]) byDate[date] = [];
+      byDate[date].push({ rowIndex: i + 1, days: dedu.days, bucket: dedu.bucket });
+    }
+
+    let creditAnnual = 0, creditSick = 0;
+    const toReconcile = [];   // 1-based row indices of the over-charge rows
+    Object.keys(byDate).forEach(function (d) {
+      const list = byDate[d];
+      if (list.length < 2) return;
+      list.sort(function (a, b) { return b.days - a.days; });   // canonical = list[0]
+      for (let k = 1; k < list.length; k++) {
+        if (list[k].bucket === 'annual') creditAnnual += list[k].days;
+        else if (list[k].bucket === 'sick') creditSick += list[k].days;
+        toReconcile.push(list[k].rowIndex);
+      }
+    });
+    creditAnnual = Math.round(creditAnnual * 100) / 100;
+    creditSick   = Math.round(creditSick * 100) / 100;
+
+    if (toReconcile.length === 0) {
+      return { success: true, fixed: false, message: 'No duplicate approved rows to reconcile.' };
+    }
+
+    // Neutralize the extras FIRST (idempotency), then credit the balances.
+    toReconcile.forEach(function (ri) {
+      sheet.getRange(ri, TO.STATUS + 1).setValue('Reconciled');
+    });
+    let newAnnual = null, newSick = null;
+    if (creditAnnual > 0) newAnnual = adjustLeaveBalance_(empId, 'annual', creditAnnual);
+    if (creditSick > 0)   newSick   = adjustLeaveBalance_(empId, 'sick', creditSick);
+
+    writeAuditLog_(target, 'PtoReconciliationFix', '', '', false, 0,
+      `creditedAnnual=${creditAnnual}; creditedSick=${creditSick}; rowsReconciled=${toReconcile.length}`,
+      callerEmp.email);
+
+    return {
+      success: true, fixed: true,
+      creditedAnnual: creditAnnual, creditedSick: creditSick,
+      rowsReconciled: toReconcile.length,
+      newAnnual: newAnnual, newSick: newSick,
+    };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -1198,7 +1367,7 @@ function selfDeletePunch(date, time, punchType) {
  *  Returns name + status only — no email, no internal IDs, no last-punch detail. */
 function getTeammateStatus() {
   try {
-    if (!CONFIG.SHOW_TEAMMATE_STATUS) return { enabled: false, teammates: [] };
+    if (!getFlag_('showTeammateStatus')) return { enabled: false, teammates: [] };
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
 
@@ -1954,6 +2123,7 @@ function getCallNotesAmbient() {
       weekTotal,
       flagCounts,
       staleFlagHours: CONFIG.CALL_NOTES.STALE_FLAG_HOURS,
+      flagsVersion: cnFlagsVersion_(),
     };
     try { cache.put(cacheKey, JSON.stringify(result), CN_AMBIENT_CACHE_TTL); }
     catch (e) { /* cache put failed — return uncached, no behavioral impact */ }
@@ -1984,8 +2154,9 @@ function getCallNotesDepartments() {
       stateTaxRates: getStateTaxRates_(),
       stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
       ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
-      voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
+      voiceInputEnabled: !!getFlag_('voiceInput'),
       emailTemplates: getEmailTemplates_(),
+      flags: getClientFeatureFlags_(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -2140,6 +2311,37 @@ function getCallNotesTagTaxonomy() {
 function invalidateCnTaxonomyCache_() {
   try { CacheService.getScriptCache().remove(CN_TAXONOMY_CACHE_KEY); }
   catch (e) { /* best-effort */ }
+}
+
+/** Rep-callable (caller-scoped, read-only) tag-suggestion source for the Log
+ *  view's autocomplete datalist (B3). Returns the UNIQUE, non-archived tags the
+ *  CALLER has used in their own per-rep Sheet — a column-bounded read of just
+ *  the SubformData column (~16× fewer cells than a full read). Cross-rep
+ *  suggestions are intentionally out of scope (the manager taxonomy aggregate
+ *  is the expensive, manager-gated path); own-history keeps this cheap and
+ *  leak-free. Not enrolled → `{ tags: [] }`, never throws. */
+function getCallNoteTagSuggestions() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { tags: [] };
+    const sheet = getCallNotesSheet_(emp);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { tags: [] };
+    const subVals = sheet.getRange(2, CN.SUBFORM_DATA + 1, lastRow - 1, 1).getValues();
+    const archived = getArchivedTagsSet_();
+    const seen = {};
+    for (let i = 0; i < subVals.length; i++) {
+      let sub = null;
+      try { sub = JSON.parse(subVals[i][0]); } catch (_) {}
+      if (!sub || !Array.isArray(sub.tags)) continue;
+      sub.tags.forEach(function (t) {
+        const tag = String(t || '').trim().toLowerCase();
+        if (tag && !archived[tag]) seen[tag] = true;
+      });
+    }
+    return { tags: Object.keys(seen).sort() };
+  } catch (err) { return { error: err.message }; }
 }
 
 // ── Round 2 follow-on (Tag taxonomy actions) — Admin tag mutations ────────
@@ -2629,8 +2831,49 @@ function getAdminConfig() {
       updateSuggestions: getUpdateSuggestions_(),
       defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
       emailTemplates: getEmailTemplates_(),
+      featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
     };
   } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated read of the feature-toggle registry + resolved values
+ *  (also embedded in getAdminConfig; kept standalone for testability). */
+function getFeatureFlags() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    return { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated write of the feature toggles to Script Property
+ *  CN_FEATURE_FLAGS. Only registry keys with strict-boolean values are
+ *  accepted (unknown key / non-boolean → rejected, never persisted). Writes an
+ *  AdminConfigChange audit row (INV-57 family). Takes effect immediately:
+ *  server reads getFlag_ fresh per request; clients pick it up on their next
+ *  config fetch (page load / view enter) — see the runtime-flag design note. */
+function saveFeatureFlags(flagMap) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!flagMap || typeof flagMap !== 'object' || Array.isArray(flagMap)) {
+      return { success: false, error: 'Invalid flags payload.' };
+    }
+    const clean = {};
+    const keys = Object.keys(flagMap);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (!featureFlagDef_(k)) return { success: false, error: 'Unknown flag: ' + k };
+      const v = flagMap[k];
+      if (v !== true && v !== false) return { success: false, error: 'Flag "' + k + '" must be true or false.' };
+      clean[k] = v;
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_FEATURE_FLAGS', JSON.stringify(clean));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated feature toggles: ' + keys.map(function (k) { return k + '=' + (clean[k] ? 'on' : 'off'); }).join(', '),
+      callerEmp.email);
+    return { success: true, values: getFeatureFlagsResolved_() };
+  } catch (err) { return { success: false, error: err.message }; }
 }
 
 function saveUpdateSuggestions(suggestionsJson) {
@@ -2830,7 +3073,12 @@ function getCallNoteAuditHistory(noteId) {
     const read = cnReadCallNoteAuditRows_();
     const rows = read.rows.filter(function (r) { return r.noteId === id; });
     rows.reverse();  // newest-first → oldest-first (lifecycle order)
-    return { rows: rows, truncated: !read.scannedAll };
+    // Capturing the note's CallNoteCreate row means we have the start of its
+    // lifecycle and nothing older exists — so it's NOT truncated even when the
+    // bounded scan hit its cap. Only flag truncated when the create row is
+    // absent AND the scan didn't reach all the way back (L11).
+    const sawCreate = rows.some(function (r) { return r.action === 'CallNoteCreate'; });
+    return { rows: rows, truncated: !read.scannedAll && !sawCreate };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -3010,6 +3258,54 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
  *  thumbs-up acknowledgment, 'clarification' for a follow-up question).
  *  Rep-callable (operates on the caller's own per-rep Sheet); locked.
  *  Writes a CallNoteFeedback audit row. */
+/** Manager-gated, locked. Appends a free-text manager comment (feedback /
+ *  praise) to ANY of a rep's notes — not just training-flagged ones (item 9).
+ *  Lands as a `{role:'manager', kind:'comment'}` entry in subformData.feedback[]
+ *  (the same thread the rep's card renders), so it reuses the existing Q&A
+ *  rendering + the rep can ack/clarify (appendCallNoteFeedback now allows a
+ *  reply on any note that has a thread). Writes a CallNoteManagerComment audit
+ *  row (PHI-free: noteId only). */
+function setCallNoteManagerComment(repEmpId, noteId, message) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const msg = String(message || '').trim();
+    if (!msg) return { success: false, error: 'Comment is empty.' };
+    const target = lookupEmployeeById_(repEmpId);
+    if (!target) return { success: false, error: 'Employee not found.' };
+    if (!target.callNotesSheetId) return { success: false, error: 'This rep has no call-notes Sheet configured.' };
+
+    const sheet = getCallNotesSheet_(target);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (e) { subformData = null; }
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+    if (!Array.isArray(subformData.feedback)) subformData.feedback = [];
+
+    const empTz = target.timezone || CONFIG.TIMEZONE;
+    subformData.feedback.push({
+      role: 'manager', kind: 'comment', message: msg,
+      at: Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss"),
+      by: callerEmp.email,
+    });
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(target, 'CallNoteManagerComment', dateLocal, '', false, 0,
+      `noteId=${noteId}`, callerEmp.email);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 function appendCallNoteFeedback(noteId, message, kind) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -3028,11 +3324,6 @@ function appendCallNoteFeedback(noteId, message, kind) {
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
 
-    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
-    if (flagType !== 'training') {
-      return { success: false, error: 'Feedback applies only to training-flagged notes.' };
-    }
-
     let subformData = null;
     if (located.row[CN.SUBFORM_DATA]) {
       try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); }
@@ -3040,6 +3331,13 @@ function appendCallNoteFeedback(noteId, message, kind) {
     }
     if (!subformData || typeof subformData !== 'object') subformData = {};
     if (!Array.isArray(subformData.feedback)) subformData.feedback = [];
+
+    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
+    // Agent can respond to a thread that exists: a training-flagged note OR any
+    // note a manager has commented on (item 9 — general manager comments).
+    if (flagType !== 'training' && subformData.feedback.length === 0) {
+      return { success: false, error: 'No manager feedback to respond to on this note.' };
+    }
 
     const empTz = empTz_(emp);
     const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
@@ -3201,10 +3499,18 @@ function sanitizeFlagType_(t) {
 
 function findCallNoteRow_(sheet, noteId) {
   if (!noteId) return null;
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][CN.NOTE_ID]).trim() === noteId) {
-      return { rowIndex: i + 1, row: rows[i] };
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  // Scan only the NoteId column to locate the row, then fetch that single full
+  // row — avoids pulling every column of the rep's entire history on every
+  // single-note mutation (flag/resolve/pin/edit/email/delete). Return shape is
+  // unchanged: { rowIndex, row } with `row` the full row array (L9).
+  const ids = sheet.getRange(2, CN.NOTE_ID + 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() === noteId) {
+      const rowIndex = i + 2;
+      const row = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+      return { rowIndex: rowIndex, row: row };
     }
   }
   return null;
@@ -3304,6 +3610,42 @@ const CN_EMAIL_PALETTE = {
   brandSoft:    '#e6f2ff',
   logoUrl:      'https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg',
 };
+
+/** Shared branded wrapper for automated notification emails (item 2) — logo
+ *  bar + colored header + white card + footer, matching the CN_EMAIL_PALETTE
+ *  identity (inline hex; email clients strip <style>). `heading` is esc_'d
+ *  here; `bodyHtml` is caller-built and MUST already esc_ any user data.
+ *  `opts.accent` overrides the header color (default brand navy). */
+function buildBrandedEmailHtml_(heading, bodyHtml, opts) {
+  opts = opts || {};
+  const P = CN_EMAIL_PALETTE;
+  const accent = opts.accent || P.brand;
+  return (
+    '<div style="margin:0;padding:0;background:' + P.paper + ';">' +
+    '<div style="max-width:600px;margin:0 auto;padding:20px 12px;font-family:\'Inter\',\'Helvetica Neue\',Arial,sans-serif;color:' + P.ink + ';">' +
+      '<div style="text-align:center;padding:0 0 14px;">' +
+        '<img src="' + P.logoUrl + '" alt="UMS" style="max-height:46px;max-width:200px;">' +
+      '</div>' +
+      '<div style="background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;overflow:hidden;">' +
+        '<div style="background:' + accent + ';color:#ffffff;padding:13px 20px;font-size:16px;font-weight:600;">' + esc_(heading) + '</div>' +
+        '<div style="padding:18px 20px;font-size:14px;line-height:1.55;color:' + P.ink + ';">' + bodyHtml + '</div>' +
+      '</div>' +
+      '<div style="text-align:center;color:' + P.muted + ';font-size:11px;padding:14px 0 0;">UMS Team Tools · automated message</div>' +
+    '</div></div>'
+  );
+}
+
+/** Renders an array of [label, value] pairs as a styled two-column block for
+ *  branded emails. Both label and value are esc_'d. */
+function brandedKvRows_(pairs) {
+  const P = CN_EMAIL_PALETTE;
+  return '<table style="width:100%;border-collapse:collapse;font-size:14px;margin:4px 0;">' +
+    pairs.map(function (p) {
+      return '<tr><td style="padding:4px 12px 4px 0;color:' + P.muted + ';font-weight:600;white-space:nowrap;vertical-align:top;">' +
+               esc_(p[0]) + '</td><td style="padding:4px 0;color:' + P.ink + ';">' + esc_(p[1]) + '</td></tr>';
+    }).join('') +
+  '</table>';
+}
 
 /** Renders the email HTML body + computed subject/recipients for a note +
  *  composer selections, without sending. The client shows this in a
@@ -3578,7 +3920,9 @@ function generateOOPResolutionText_(selections) {
   let text = `OOP Order Processed`;
   const taxFmt = (String(oop.taxAmt || '').charAt(0) === '$')
     ? oop.taxAmt : '$' + oop.taxAmt;
-  text += `\n${paymentStatus}: $${oop.totalCost} (Base: $${oop.baseCost} + Est. Sales Tax: ${taxFmt} + Ship: $${oop.shippingCost})`;
+  // Sales-tax leg gated by the oopSalesTax feature toggle (Admin).
+  const taxBit = getFlag_('oopSalesTax') ? ` + Est. Sales Tax: ${taxFmt}` : '';
+  text += `\n${paymentStatus}: $${oop.totalCost} (Base: $${oop.baseCost}${taxBit} + Ship: $${oop.shippingCost})`;
   text += `\nVerified Addr: ${ship.verifiedAddr ? 'Yes' : 'No'}`;
   if (ship.verifiedAddrText) text += ` (${ship.verifiedAddrText})`;
   text += ` | Loc: ${ship.patientLoc}`;
@@ -3790,13 +4134,17 @@ function renderOopDetailsHtml_(d, P) {
   if (taxDisplay && taxDisplay.charAt(0) !== '$' && !isNaN(parseFloat(taxDisplay))) {
     taxDisplay = '$' + taxDisplay;
   }
+  // Sales-tax row gated by the oopSalesTax feature toggle (Admin).
+  const taxRow = getFlag_('oopSalesTax')
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Est. Sales Tax</td><td style="padding:5px 8px;">${esc_(taxDisplay)}</td></tr>`
+    : '';
   return (
     `<div style="background:${P.warnSoft};border:1px solid #e7bda3;` +
     `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.warn};">` +
       `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.warnDeep};font-weight:600;">OOP Order Breakdown</h3>` +
       `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
         `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Base Cost</td><td style="padding:5px 8px;">$${esc_(d.baseCost || '')}</td></tr>` +
-        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Est. Sales Tax</td><td style="padding:5px 8px;">${esc_(taxDisplay)}</td></tr>` +
+        taxRow +
         `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Shipping</td><td style="padding:5px 8px;">$${esc_(d.shippingCost || '')} <span style="color:${P.muted};font-size:.85em;">(${esc_(d.shippingLabel || '')})</span></td></tr>` +
         `<tr><td style="padding:7px 8px 5px;font-weight:600;color:${P.muted};border-top:1px solid #e7bda3;">Total Customer Cost</td><td style="padding:7px 8px 5px;font-weight:700;color:${P.warnDeep};border-top:1px solid #e7bda3;">$${esc_(d.totalCost || '')}</td></tr>` +
       `</table>` +
@@ -4066,6 +4414,12 @@ function sendExternalEmail(payload) {
   }
 
   // ── Stamp linked note (best-effort, under lock) ───────────────────
+  // NOTE: unlike emailFromCallNote, sendExternalEmail is NOT wrapped in a
+  // single ScriptLock (so it is intentionally absent from INV-30's set). The
+  // send + PDF fetch run lock-free; the only mutating shared-state write — the
+  // externalEmails[] stamp below — takes its own lock here, and token creation
+  // locks independently inside createFormToken. Two concurrent external sends
+  // on the same note therefore serialize on this stamp lock, so no corruption.
   const empTz = empTz_(emp);
   const sentAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
   if (noteId) {
@@ -4431,10 +4785,17 @@ function createFormToken(payload) {
 /** Look up a FormTokens row by token string. Returns { rowIndex, row } or null. */
 function findFormTokenRow_(sheet, token) {
   if (!token) return null;
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][FT.TOKEN]).trim() === token) {
-      return { rowIndex: i + 1, row: rows[i] };
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  // Scan only the Token column to locate the row, then fetch that single full
+  // row — avoids reading every column of the whole FormTokens sheet on each
+  // token validation / submission. Return shape unchanged (L9).
+  const tokens = sheet.getRange(2, FT.TOKEN + 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < tokens.length; i++) {
+    if (String(tokens[i][0]).trim() === token) {
+      const rowIndex = i + 2;
+      const row = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+      return { rowIndex: rowIndex, row: row };
     }
   }
   return null;
@@ -4554,13 +4915,36 @@ function submitFormByToken(token, formData) {
     });
     const signatureData = String(data.signature || '');
 
+    // Bound the payload BEFORE the write. This is a public, token-only
+    // endpoint, so formData/signature are recipient-supplied: each value
+    // lands in a single Sheets cell (~50k-char hard limit) and an oversized
+    // signature otherwise throws mid-append, leaving the token 'pending'
+    // with only a generic error. Reject early with a specific, actionable
+    // message (the token stays pending so the recipient can retry), and cap
+    // the number of arbitrary keys an unauthenticated caller can persist (M3).
+    const FORM_FIELD_LIMIT = 200;
+    const FORM_CELL_CHAR_LIMIT = 45000;
+    if (Object.keys(sanitizedData).length > FORM_FIELD_LIMIT) {
+      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'too many fields');
+      return { success: false, error: 'This submission has too many fields to save.' };
+    }
+    const dataJson = JSON.stringify(sanitizedData);
+    if (dataJson.length > FORM_CELL_CHAR_LIMIT) {
+      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'the response data exceeds the per-cell size limit');
+      return { success: false, error: 'This submission is too large to save. Please shorten your responses and resubmit.' };
+    }
+    if (signatureData.length > FORM_CELL_CHAR_LIMIT) {
+      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'the signature image exceeds the per-cell size limit');
+      return { success: false, error: 'Your signature image is too large to save. Please redraw a simpler signature and resubmit.' };
+    }
+
     // Save submission
     const now = new Date();
     const submittedAt = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
     const submissionsSheet = getOrCreateFormSubmissionsSheet_();
     submissionsSheet.appendRow([
       token, formType, recipientEmail, submittedAt,
-      JSON.stringify(sanitizedData),
+      dataJson,
       signatureData,
     ]);
 
@@ -4919,6 +5303,29 @@ function signatureDataUrlToBlob_(signatureDataUrl, name) {
   }
 }
 
+/** B2 — best-effort notice to the creating rep that a recipient tried to
+ *  submit a form but it could not be saved (size caps, M3). Closes the loop so
+ *  a silently-rejected submission isn't invisible to the rep. PHI-free beyond
+ *  the recipient address the rep already has (they sent the form); never throws
+ *  (INV-14) — the recipient response is unaffected. No-op without a createdBy. */
+function notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, reason) {
+  if (!createdBy) return;
+  try {
+    MailApp.sendEmail({
+      to: createdBy,
+      subject: 'Form submission could not be saved',
+      body:
+        'A recipient tried to submit a form you sent, but it could not be saved.\n\n' +
+        'Form: ' + formType + '\n' +
+        'Recipient: ' + recipientEmail + '\n' +
+        'Reason: ' + reason + '.\n\n' +
+        'The form link is still active — the recipient was asked to retry ' +
+        '(e.g. with a simpler signature or shorter responses). No action is ' +
+        'needed unless they report continued trouble.',
+    });
+  } catch (e) { console.warn('notifyRepOfFailedSubmission_ failed: ' + e.message); }
+}
+
 /** Sends the rep-notification email for a completed fillable form: a stylized
  *  HTML body rendering all responses, the signature as a PNG attachment, and a
  *  best-effort PDF of the whole completed form. Each sub-step degrades
@@ -5057,6 +5464,65 @@ function purgeExpiredFormData() {
   }
 }
 
+/** Rolling note retention (item 7): days from CN_NOTE_RETENTION_DAYS Script
+ *  Property first, else CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS. 0/neg/unparseable
+ *  → 0 (disabled). */
+function getNoteRetentionDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_NOTE_RETENTION_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** Rolling auto-delete of call notes older than the retention window, across
+ *  every enrolled rep's per-rep Sheet (item 7). Top-level (time-trigger
+ *  target) → reachable via google.script.run, so gated like the other
+ *  destructive trigger handlers (assertManagerCaller_). DISABLED by default
+ *  (CN_NOTE_RETENTION_DAYS / CONFIG = 0); the delete is irreversible and the
+ *  notes are PHI — confirm the canonical record lives elsewhere before
+ *  enabling. A broken per-rep Sheet is skipped, not fatal. Dates are read from
+ *  CN.DATE_LOCAL (Sheets-coerced to a Date; parseRetentionDateMs_ handles it).
+ *  Writes a PHI-free CallNotesPurge audit row with counts. */
+function purgeOldCallNotes() {
+  assertManagerCaller_('purgeOldCallNotes');
+  try {
+    const days = getNoteRetentionDays_();
+    if (!days) {
+      Logger.log('purgeOldCallNotes: retention disabled (CN_NOTE_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const roster = getEmployeeRosterRows_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let repsTouched = 0, notesRemoved = 0;
+    try {
+      for (let r = 1; r < roster.length; r++) {
+        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
+        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const emp = {
+          id:   String(roster[r][EMP.ID]).trim(),
+          name: String(roster[r][EMP.NAME]).trim(),
+          callNotesSheetId: String(sheetIdRaw).trim(),
+        };
+        try {
+          const removed = purgeSheetRowsOlderThan_(getCallNotesSheet_(emp), CN.DATE_LOCAL, cutoffMs);
+          if (removed > 0) { notesRemoved += removed; repsTouched++; }
+        } catch (e) {
+          Logger.log('purgeOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
+        }
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesPurge', '', '', false, 0,
+      `retentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}`);
+    Logger.log(`purgeOldCallNotes: removed ${notesRemoved} note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
+  } catch (err) {
+    Logger.log('purgeOldCallNotes failed: ' + err.message);
+  }
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
@@ -5113,6 +5579,12 @@ function installAutomationTriggers() {
   // it only deletes once the operator sets a positive retention window.
   ScriptApp.newTrigger('purgeExpiredFormData')
     .timeBased().atHour(3).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Rolling note retention (item 7) — also no-ops while CN_NOTE_RETENTION_DAYS=0
+  // (the default), so installing it is harmless. Staggered to 4am so the two
+  // destructive purges don't overlap.
+  ScriptApp.newTrigger('purgeOldCallNotes')
+    .timeBased().atHour(4).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -5227,6 +5699,11 @@ function sendDailyMissedPunchAlerts() {
             `feature to record your clock-out time.\n\n` +
             `If you have any questions, please contact your manager.\n\n` +
             `— UMS Time Clock (automated)\n`,
+          htmlBody: buildBrandedEmailHtml_('Missing clock-out',
+            '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
+            '<p style="margin:0 0 12px;">Our records show you clocked in on <b>' + esc_(emp.yesterdayStr) + '</b> (' + esc_(tzAbbr_(emp.timezone)) + ') but didn\'t clock out. Please open the UMS Time Clock app and use the <b>Adjust</b> feature to record your clock-out time.</p>' +
+            '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">If you have any questions, please contact your manager.</p>',
+            { accent: CN_EMAIL_PALETTE.warn }),
         });
       } catch (e) { Logger.log('Failed to email employee ' + emp.email + ': ' + e.message); }
     });
@@ -5236,6 +5713,10 @@ function sendDailyMissedPunchAlerts() {
       const list = missed.map(e =>
         `• ${e.name} (${e.id}) — ${e.email} — missed ${e.yesterdayStr} ${tzAbbr_(e.timezone)}`).join('\n');
       try {
+        const listHtml = '<ul style="margin:0 0 12px;padding-left:18px;">' + missed.map(function (e) {
+          return '<li style="margin:4px 0;">' + esc_(e.name) + ' (' + esc_(e.id) + ') — ' + esc_(e.email) +
+                 ' — missed ' + esc_(e.yesterdayStr) + ' ' + esc_(tzAbbr_(e.timezone)) + '</li>';
+        }).join('') + '</ul>';
         MailApp.sendEmail({
           to: recipients.join(','),
           subject: `⏰ Missed Clock-Outs — ${missed.length} employee(s)`,
@@ -5243,6 +5724,12 @@ function sendDailyMissedPunchAlerts() {
             `The following employees clocked in but did not clock out:\n\n${list}\n\n` +
             `Each has been emailed a reminder to fix it via the Adjust feature.\n\n` +
             `Audit log:\nhttps://docs.google.com/spreadsheets/d/${getAdpSS_().getId()}/edit`,
+          htmlBody: buildBrandedEmailHtml_(missed.length + ' missed clock-out(s)',
+            '<p style="margin:0 0 10px;">The following employees clocked in but did not clock out:</p>' +
+            listHtml +
+            '<p style="margin:0 0 12px;color:' + CN_EMAIL_PALETTE.muted + ';">Each has been emailed a reminder to fix it via the Adjust feature.</p>' +
+            '<p style="margin:0;"><a href="https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open the audit log →</a></p>',
+            { accent: CN_EMAIL_PALETTE.warn }),
         });
       } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
     }
@@ -5774,6 +6261,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     }
   });
   const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+  const showTeammateType = getFlag_('showTeammateType');  // hoisted — avoid a Script-Property read per teammate
   const timeOffRequests = [], teammates = [];
   for (let i = 1; i < toRows.length; i++) {
     const rowId   = String(toRows[i][TO.EMP_ID]).trim();
@@ -5788,7 +6276,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     } else {
       if (statusL !== 'pending' && statusL !== 'approved') continue;
       teammates.push({ date: rowDate, name: String(toRows[i][TO.EMP_NAME]),
-        type: CONFIG.SHOW_TEAMMATE_TYPE ? String(toRows[i][TO.TYPE]) : 'Off', status });
+        type: showTeammateType ? String(toRows[i][TO.TYPE]) : 'Off', status });
     }
   }
   const cutoff = (() => {
@@ -5815,7 +6303,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     workedDates: [...workedDates], workedHoursByDate: hoursByDate,
     timeOffRequests, teammates, holidays, allRequests,
     today: todayStr, timezone: empTz,
-    ptoEnabled: !!(CONFIG.ENABLE_PTO_TRACKING && emp.ptoEnabled),
+    ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
     annualLeave: emp.annualLeave,
     sickLeave:   emp.sickLeave,
     annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
@@ -5874,6 +6362,41 @@ function isoLocalDate_(d) {
  * Returns { bucket: 'sick'|'annual'|null, days: <number> } for the given type.
  * null bucket means no deduction (e.g., unpaid leave — if added in future).
  */
+// Canonical set of leave types the app accepts. Mirrors the Type <select>
+// options in modals.html plus 'Unpaid Leave' (recognized by
+// getLeaveDeduction_ but not offered in the picker). Validated server-side
+// so a client bug / direct RPC can't write a garbage type that
+// getLeaveDeduction_ then silently defaults to annual/1.0 (M1).
+const TIME_OFF_TYPES = [
+  'Full Day', 'Half Day - Morning', 'Half Day - Afternoon',
+  'Sick Leave', 'Personal Day', 'Unpaid Leave', 'Other',
+];
+
+/** Case-insensitive, trimmed validity check for a time-off Type — mirrors
+ *  getLeaveDeduction_'s matching semantics so the two never disagree. */
+function isValidTimeOffType_(type) {
+  const t = String(type || '').toLowerCase().trim();
+  if (!t) return false;
+  return TIME_OFF_TYPES.some(function (k) { return k.toLowerCase() === t; });
+}
+
+/** True when the employee already has a Pending or Approved time-off
+ *  request for `date` (yyyy-MM-dd). Used to block duplicate same-date
+ *  requests: INV-03's transition guard is per-row, so two sibling rows for
+ *  one day would each deduct on approval and double-charge the balance (H1).
+ *  Denied/cancelled rows never deducted, so they don't block a re-request. */
+function hasActiveTimeOffOnDate_(sheet, empId, date) {
+  const rows = sheet.getDataRange().getValues();
+  const id = String(empId).trim();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][TO.EMP_ID]).trim() !== id) continue;
+    if (normalizeDate_(rows[i][TO.DATE]) !== date) continue;
+    const st = String(rows[i][TO.STATUS]).toLowerCase().trim();
+    if (st === 'pending' || st === 'approved') return true;
+  }
+  return false;
+}
+
 function getLeaveDeduction_(type) {
   const t = String(type).toLowerCase().trim();
   if (t === 'sick leave') return { bucket: 'sick', days: 1.0 };
@@ -5889,7 +6412,7 @@ function getLeaveDeduction_(type) {
  * Returns the new balance, or null if PTO disabled / employee not found / bucket null.
  */
 function adjustLeaveBalance_(empId, bucket, delta) {
-  if (!CONFIG.ENABLE_PTO_TRACKING) return null;
+  if (!getFlag_('enablePtoTracking')) return null;
   if (!bucket || !delta) return null;
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = sheet.getDataRange().getValues();
@@ -5940,6 +6463,99 @@ function getDepartmentEmails_() {
     try { return JSON.parse(prop); } catch (_) {}
   }
   return CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
+}
+
+// ── Runtime feature toggles (Admin) ───────────────────────────────────────
+// Manager-flippable booleans, live without a redeploy (same Script-Property
+// pattern as the config getters above). The registry is the single source of
+// truth — only these keys are honored, and each `default` mirrors the legacy
+// CONFIG constant so migrating a read to getFlag_() is a behavioral no-op
+// until a flag is actually set. `scope` decides enforcement: 'client' flags
+// only gate UI (delivered to the client); 'server'/'both' flags are ALSO
+// checked server-side in their endpoint — hiding a button never disables an
+// endpoint (INV-02 / S30). `danger` carries a confirm/warning for the Admin UI.
+const FEATURE_FLAGS = [
+  { key: 'showTeammateStatus', label: 'Teammate status card',
+    description: 'Show the teammate status card on the Clock page.',
+    default: !!CONFIG.SHOW_TEAMMATE_STATUS, scope: 'both' },
+  { key: 'showTeammateType', label: 'Teammate punch type',
+    description: 'Include each teammate’s current punch type in the status card.',
+    default: !!CONFIG.SHOW_TEAMMATE_TYPE, scope: 'both' },
+  { key: 'enablePtoTracking', label: 'PTO tracking',
+    description: 'Master switch for PTO balances, accrual UI, and deductions.',
+    default: !!CONFIG.ENABLE_PTO_TRACKING, scope: 'both',
+    danger: 'Stateful — disabling mid-cycle hides PTO and stops new deductions but does NOT reverse approvals already applied. Flip only between cycles.' },
+  { key: 'voiceInput', label: 'Voice dictation (Call Notes)',
+    description: 'Mic-to-text on the Issue / Resolution fields.',
+    default: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED, scope: 'client',
+    danger: 'HIPAA — routes dictated audio to the browser vendor’s speech-to-text service, which is NOT covered by a typical Google Workspace BAA. Confirm the org’s stance first.' },
+  { key: 'oopSalesTax', label: 'OOP sales-tax calculator',
+    description: 'Show the state sales-tax field + tax line in the OOP Order subform.',
+    default: true, scope: 'client' },
+];
+
+function featureFlagDef_(key) {
+  for (let i = 0; i < FEATURE_FLAGS.length; i++) {
+    if (FEATURE_FLAGS[i].key === key) return FEATURE_FLAGS[i];
+  }
+  return null;
+}
+
+/** Reads the CN_FEATURE_FLAGS Script Property as a { key: bool } override map.
+ *  Sanitizes on read — a corrupt/non-object blob degrades to {} (never throws),
+ *  so a bad property can't break every flag read. */
+function getFlagOverrides_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_FEATURE_FLAGS');
+  if (!prop) return {};
+  try {
+    const obj = JSON.parse(prop);
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (_) { return {}; }
+}
+
+/** Resolve a single flag: Script-Property override first, else the registry
+ *  default. An unknown key fails safe to false. */
+function getFlag_(key) {
+  const overrides = getFlagOverrides_();
+  if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+    return overrides[key] === true || overrides[key] === 'true';
+  }
+  const def = featureFlagDef_(key);
+  return def ? !!def.default : false;
+}
+
+/** Every registry flag → resolved boolean. */
+function getFeatureFlagsResolved_() {
+  const overrides = getFlagOverrides_();
+  const out = {};
+  FEATURE_FLAGS.forEach(function (f) {
+    out[f.key] = Object.prototype.hasOwnProperty.call(overrides, f.key)
+      ? (overrides[f.key] === true || overrides[f.key] === 'true')
+      : !!f.default;
+  });
+  return out;
+}
+
+/** Client-deliverable flags — the resolved values for non-server-only flags.
+ *  (Pure 'server' kill-switches aren't shipped to the client; none exist yet.)
+ *  Rides getEmployeeState (empState.flags) + getCallNotesDepartments
+ *  (deptConfig.flags); the client reads them via flagOn_(). */
+function getClientFeatureFlags_() {
+  const resolved = getFeatureFlagsResolved_();
+  const out = {};
+  FEATURE_FLAGS.forEach(function (f) {
+    if (f.scope !== 'server') out[f.key] = resolved[f.key];
+  });
+  return out;
+}
+
+/** Compact, deterministic version string of the client-deliverable flags.
+ *  Rides the 60s ambient poll (`getCallNotesAmbient`) so the client can detect
+ *  a manager toggle flip and refetch its config within the polling window
+ *  (≤60s) instead of waiting for a page reload / view enter. */
+function cnFlagsVersion_() {
+  const f = getClientFeatureFlags_();
+  return Object.keys(f).sort().map(function (k) { return k + (f[k] ? '1' : '0'); }).join(',');
 }
 
 function getStateTaxRates_() {
@@ -6288,7 +6904,20 @@ function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reaso
       `Threshold:   > ${CONFIG.OLD_ADJUST_ALERT_DAYS} days\n` +
       `Window:      ${CONFIG.ADJUST_WINDOW_DAYS} days\n\n` +
       `Audit log:\nhttps://docs.google.com/spreadsheets/d/${getAdpSS_().getId()}/edit\n`;
-    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body });
+    const html = buildBrandedEmailHtml_('Timesheet adjustment alert',
+      '<p style="margin:0 0 12px;">An older punch adjustment was submitted and may warrant review.</p>' +
+      brandedKvRows_([
+        ['Employee', emp.name + ' (' + emp.id + ')'],
+        ['User email', emp.email],
+        ['Punch type', punchType],
+        ['Punch date', date + ' (' + tzAbbr_(empTz) + ')'],
+        ['Punch time', time + ' ' + tzAbbr_(empTz) + (empTz !== mgrTz ? '  ·  ' + conv.displayTime + ' ' + tzAbbr_(mgrTz) : '')],
+        ['Days back', String(daysBack) + ' (alert threshold > ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ', window ' + CONFIG.ADJUST_WINDOW_DAYS + ')'],
+        ['Reason', reason || '(none provided)'],
+      ]) +
+      '<p style="margin:14px 0 0;"><a href="https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open the audit log →</a></p>',
+      { accent: CN_EMAIL_PALETTE.warn });
+    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Manager alert email failed: ' + e.message); }
 }
 
@@ -6296,15 +6925,19 @@ function notifyManagerTrainingQuestion_(emp, question, dateLocal) {
   const recipients = getManagerEmails_();
   if (recipients.length === 0) return;
   try {
-    MailApp.sendEmail({
-      to: recipients.join(','),
-      subject: `Training Q from ${emp.name}: ${String(question).substring(0, 60)}`,
-      body:
-        `${emp.name} (${emp.id}) submitted a training-flagged call note with a question:\n\n` +
-        `Q: ${question}\n\n` +
-        `Date: ${dateLocal}\n\n` +
-        `Reply in the web app → Call Notes → Team Notes → Per-Rep View.\n`,
-    });
+    const subj = `Training Q from ${emp.name}: ${String(question).substring(0, 60)}`;
+    const body =
+      `${emp.name} (${emp.id}) submitted a training-flagged call note with a question:\n\n` +
+      `Q: ${question}\n\n` +
+      `Date: ${dateLocal}\n\n` +
+      `Reply in the web app → Call Notes → Team Notes → Per-Rep View.\n`;
+    const html = buildBrandedEmailHtml_('Training question from ' + emp.name,
+      '<p style="margin:0 0 12px;"><b>' + esc_(emp.name) + '</b> (' + esc_(emp.id) + ') submitted a training-flagged call note with a question:</p>' +
+      '<div style="background:' + CN_EMAIL_PALETTE.brandSoft + ';border-radius:8px;padding:12px 14px;margin:0 0 12px;font-size:15px;color:' + CN_EMAIL_PALETTE.ink + ';">' + esc_(question) + '</div>' +
+      brandedKvRows_([['Date', dateLocal]]) +
+      '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Reply in the web app → Call Notes → Team Notes → Per-Rep View.</p>',
+      {});
+    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Training question notification failed: ' + e.message); }
 }
 
@@ -6314,23 +6947,38 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
     const verb = newStatus === 'Approved' ? 'approved' :
                  newStatus === 'Denied'   ? 'denied'   : 'updated';
     const subj = `Your time off request for ${date} was ${verb}`;
+    const hasNotes = notes && notes !== 'undefined';
+    let balanceDays = null;
+    if (getFlag_('enablePtoTracking')) {
+      // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
+      const fresh = lookupEmployeeById_(emp.id);
+      if (fresh && fresh.ptoEnabled !== false) balanceDays = fresh.annualLeave;
+    }
+    // Plain-text fallback
     let body = `Hi ${emp.name},\n\n` +
                `Your time off request has been ${verb}:\n\n` +
                `Date:    ${date}\n` +
                `Type:    ${type}\n`;
-    if (notes && notes !== 'undefined') body += `Notes:   ${notes}\n`;
+    if (hasNotes) body += `Notes:   ${notes}\n`;
     body += `Status:  ${newStatus}\n\n`;
-
-    if (CONFIG.ENABLE_PTO_TRACKING) {
-      // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
-      const fresh = lookupEmployeeById_(emp.id);
-      if (fresh && fresh.ptoEnabled !== false) {
-        body += `Your current annual leave balance: ${fresh.annualLeave} day(s)\n\n`;
-      }
-    }
-    body += `Please contact your manager with any questions.\n\n` +
-            `— UMS Time Clock (automated)\n`;
-    MailApp.sendEmail({ to: emp.email, subject: subj, body: body });
+    if (balanceDays !== null) body += `Your current annual leave balance: ${balanceDays} day(s)\n\n`;
+    body += `Please contact your manager with any questions.\n\n— UMS Time Clock (automated)\n`;
+    // Branded HTML (item 2) — green/red/navy header by decision
+    const accent = newStatus === 'Approved' ? CN_EMAIL_PALETTE.accent
+                 : newStatus === 'Denied'   ? CN_EMAIL_PALETTE.danger
+                 : CN_EMAIL_PALETTE.brand;
+    const kv = [['Date', date], ['Type', type]];
+    if (hasNotes) kv.push(['Notes', notes]);
+    kv.push(['Status', newStatus]);
+    const balLine = (balanceDays !== null)
+      ? '<p style="margin:12px 0 0;">Current annual leave balance: <b>' + esc_(balanceDays) + '</b> day(s)</p>' : '';
+    const html = buildBrandedEmailHtml_('Time off ' + verb,
+      '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
+      '<p style="margin:0 0 12px;">Your time off request has been <b>' + esc_(verb) + '</b>:</p>' +
+      brandedKvRows_(kv) + balLine +
+      '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please contact your manager with any questions.</p>',
+      { accent: accent });
+    MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Employee notification email failed: ' + e.message); }
 }
 

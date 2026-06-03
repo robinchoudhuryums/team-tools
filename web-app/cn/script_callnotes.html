@@ -2149,8 +2149,10 @@ function cnRenderActiveForm_() {
           <h4><span>Tags · freeform</span><span class="sub">⏎ to add</span></h4>
           <div class="rail-tags" id="cn-tag-chips" aria-label="Tag chips"></div>
           <input class="rail-tag-input" id="cn-tag-input" type="text"
+                 list="cn-tag-suggestions"
                  placeholder="type a tag and press ⏎" tabindex="8"
                  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <datalist id="cn-tag-suggestions"></datalist>
         </div>
 
         <div class="rail-card">
@@ -2234,6 +2236,7 @@ function cnWireActiveForm_() {
         }
       }
     });
+    cnLoadTagSuggestions_();   // populate the autocomplete datalist (B3)
   }
   // Tag chip clicks (× removal) — event delegation on the chip container.
   const tagChips = document.getElementById('cn-tag-chips');
@@ -2649,6 +2652,22 @@ function cnPersistActiveFormDraft_() {
       localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
     }
   } catch (e) { /* localStorage unavailable — accept the loss */ }
+}
+
+/** B3 — populate the tag-input autocomplete datalist from the rep's own
+ *  non-archived tag history (best-effort; silent on failure). Every option
+ *  value is esc()'d before innerHTML. */
+function cnLoadTagSuggestions_() {
+  const dl = document.getElementById('cn-tag-suggestions');
+  if (!dl) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      const d = document.getElementById('cn-tag-suggestions');
+      if (!d || !res || res.error || !Array.isArray(res.tags)) return;
+      d.innerHTML = res.tags.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+    })
+    .withFailureHandler(function () { /* best-effort — no datalist on failure */ })
+    .getCallNoteTagSuggestions();
 }
 
 /** Sticky form: on view enter (after the form is rendered) restore the
@@ -3546,7 +3565,10 @@ function cnToggleFlag_(noteId, kind) {
   const next = (note.flagType === kind) ? '' : kind;
 
   if (next === 'training') {
-    // uiPrompt is async — wrap the rest of the flow in the .then.
+    // uiPrompt is async — set the in-flight guard BEFORE opening it so a
+    // second click while the prompt is open is dropped (INV-56), then clear
+    // it if the rep cancels. cnDoToggleFlag_ re-sets it for the RPC leg.
+    note._flagInFlight = true;
     uiPrompt({
       title: 'Flag for training',
       message: 'What question or concern would you like to flag for training?\n(Leave blank to skip)',
@@ -3554,7 +3576,7 @@ function cnToggleFlag_(noteId, kind) {
       placeholder: 'Optional training question',
       confirmLabel: 'Flag',
     }).then(function (raw) {
-      if (raw === null) return;
+      if (raw === null) { note._flagInFlight = false; return; }
       const trimmed = String(raw).trim() || null;
       cnDoToggleFlag_(noteId, note, prev, next, trimmed);
     });
@@ -3752,6 +3774,27 @@ function cnLoadTrainingQA_() {
 
 /** Render the training Q&A tray above the filter bar. Only shows when the
  *  rep has at least one answered training note. Collapsible to save space. */
+// Resolve the most recent manager reply for a note, preferring the
+// multi-turn feedback[] thread (Round 2 · 8g) and falling back to the legacy
+// trainingReply field. Without this, surfaces that read only the legacy
+// field (the Training Answers tray, the manager read-only card) show an
+// empty answer line for notes whose reply lives solely in feedback[] (L4/L5).
+function cnLatestManagerReply_(sub) {
+  sub = sub || {};
+  if (Array.isArray(sub.feedback)) {
+    for (let i = sub.feedback.length - 1; i >= 0; i--) {
+      const e = sub.feedback[i];
+      if (e && e.role === 'manager' && (e.kind === 'reply' || !e.kind) && e.message) {
+        return { message: String(e.message), by: String(e.by || '') };
+      }
+    }
+  }
+  if (sub.trainingReply) {
+    return { message: String(sub.trainingReply), by: String(sub.trainingReplyBy || '') };
+  }
+  return { message: '', by: '' };
+}
+
 function cnRenderTrainingQATray_() {
   const host = document.getElementById('cn-training-qa-tray');
   if (!host) return;
@@ -3760,8 +3803,9 @@ function cnRenderTrainingQATray_() {
   const cards = qa.map(function (n) {
     const time = cnFormatTimestampForCopy_(n.timestamp);
     const question = (n.subformData && n.subformData.trainingQuestion) || '';
-    const reply = (n.subformData && n.subformData.trainingReply) || '';
-    const replyBy = (n.subformData && n.subformData.trainingReplyBy) || '';
+    const mgrReply = cnLatestManagerReply_(n.subformData);
+    const reply = mgrReply.message;
+    const replyBy = mgrReply.by;
     return `
       <div class="cn-qa-card">
         <div class="cn-qa-card-meta">${esc(n.dateLocal)} · ${esc(time)}${n.caller ? ' · ' + esc(n.caller) : ''}</div>
@@ -4339,6 +4383,20 @@ function cnRenderResupplySubform_() {
 
 function cnRenderOopSubform_() {
   const od = CN_STATE.composer.selections.oopDetails || {};
+  // Sales-tax field is gated by the oopSalesTax feature toggle (Admin). When
+  // off, the Rx-exempt + Tax Display row is omitted and cnRecalcOop_ totals
+  // base + shipping only.
+  const taxRow = flagOn_('oopSalesTax') ? `
+      <div class="field-row">
+        <div class="field"><label>Rx Tax-Exempt?</label>
+          <select id="cnO-rx" onchange="cnRecalcOop_()">
+            ${cnSelectOpts_(['No','Yes'], od.rxPresent)}
+          </select>
+        </div>
+        <div class="field"><label>Tax Display</label>
+          <div id="cnO-tax-disp" class="tabular" style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2);color:var(--ink);font-family:var(--mono);font-size:12px;">Pick state in shipping</div>
+        </div>
+      </div>` : '';
   return `
     <div class="cn-compose-section sf-oop">
       <div class="cn-compose-section-title">OOP Order Breakdown</div>
@@ -4350,16 +4408,7 @@ function cnRenderOopSubform_() {
           <input type="text" id="cnO-shipping" value="${esc(od.shippingCost || '')}" placeholder="$14.99 / custom" oninput="cnRecalcOop_()">
         </div>
       </div>
-      <div class="field-row">
-        <div class="field"><label>Rx Tax-Exempt?</label>
-          <select id="cnO-rx" onchange="cnRecalcOop_()">
-            ${cnSelectOpts_(['No','Yes'], od.rxPresent)}
-          </select>
-        </div>
-        <div class="field"><label>Tax Display</label>
-          <div id="cnO-tax-disp" class="tabular" style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2);color:var(--ink);font-family:var(--mono);font-size:12px;">Pick state in shipping</div>
-        </div>
-      </div>
+      ${taxRow}
       <div class="field" style="margin:0">
         <label>Total (auto)</label>
         <div id="cnO-total-disp" class="tabular" style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2);color:var(--ink);font-family:var(--mono);font-size:13px;font-weight:600;">$0.00</div>
@@ -4442,8 +4491,9 @@ function cnRecalcOop_() {
   }
   const state = (stateEl && stateEl.value) || '';
   const rxYes = rxEl && rxEl.value === 'Yes';
+  const taxOn = flagOn_('oopSalesTax');
   const rates = (CN_STATE.deptConfig && CN_STATE.deptConfig.stateTaxRates) || {};
-  const rate = rxYes ? 0 : (rates[state] || 0);
+  const rate = (!taxOn || rxYes) ? 0 : (rates[state] || 0);
   const tax = base * rate;
   const total = base + shipping + tax;
   const taxDispEl = document.getElementById('cnO-tax-disp');
@@ -4512,15 +4562,16 @@ function cnGatherComposerSelections_() {
       shipping = isNaN(n) ? 0 : n; shippingLabel = 'Custom Amount';
     }
     const rxYes = rxEl && rxEl.value === 'Yes';
+    const taxOn = flagOn_('oopSalesTax');
     const rates = (CN_STATE.deptConfig && CN_STATE.deptConfig.stateTaxRates) || {};
     const state = stateEl && stateEl.value;
-    const rate = rxYes ? 0 : (rates[state] || 0);
+    const rate = (!taxOn || rxYes) ? 0 : (rates[state] || 0);
     const tax = base * rate;
     s.oopDetails = {
       baseCost:     base.toFixed(2),
       shippingCost: shipping.toFixed(2),
       shippingLabel,
-      taxAmt:       rxYes ? '0.00 (Rx Exempt)' : tax.toFixed(2),
+      taxAmt:       !taxOn ? '' : (rxYes ? '0.00 (Rx Exempt)' : tax.toFixed(2)),
       totalCost:    (base + shipping + tax).toFixed(2),
       rxPresent:    rxYes ? 'Yes' : 'No',
     };
@@ -5155,20 +5206,15 @@ function cnMgrRenderReadonlyCard_(note) {
   const callerLine = note.caller ? esc(note.caller) : (note.patientAndTrx ? esc(note.patientAndTrx) : '<em style="color:var(--muted)">unnamed</em>');
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
   const issue = note.issue ? esc(note.issue) : '<em>—</em>';
-  // Training notes get a question line + (if set) a manager-reply line.
-  let trainingQ = '';
-  let trainingReplyEditor = '';
+  // Render the multi-turn thread (read-only) for ANY note that has one — a
+  // training Q&A or general manager comments (item 9). Returns '' when empty.
+  const threadHtml = cnRenderQAThread_(note, { readonly: true });
+  const repId = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
+  let editor = '';
   if (note.flagType === 'training' && note.subformData && note.subformData.trainingQuestion) {
-    trainingQ = `<div class="cn-card-training-q">${icon('bulb', 11)}<span>${esc(String(note.subformData.trainingQuestion))}</span></div>`;
-    const existingReply = (note.subformData && note.subformData.trainingReply) || '';
-    if (existingReply) {
-      trainingQ += `<div class="cn-card-training-a">${icon('checkCircle', 11)}<span>${esc(String(existingReply))}</span></div>`;
-    }
-    // Inline reply editor — manager can write/edit/clear the answer right
-    // from the per-rep card. `data-rep="..."` lets the click handler find
-    // the right rep without round-tripping the JS string boundary.
-    const repId = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
-    trainingReplyEditor = `
+    // Training notes keep the specialized, clearable reply editor.
+    const existingReply = cnLatestManagerReply_(note.subformData).message;
+    editor = `
       <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
         <input type="text" class="cn-mgr-reply-input" placeholder="${existingReply ? 'Edit reply…' : 'Reply to this question…'}"
                value="${esc(existingReply)}">
@@ -5178,6 +5224,17 @@ function cnMgrRenderReadonlyCard_(note) {
         ${existingReply
           ? `<button type="button" class="cn-mgr-reply-clear" onclick="cnMgrClearTrainingReply_(this)" title="Clear reply">${icon('x', 12)}</button>`
           : ''}
+      </div>
+    `;
+  } else {
+    // Any other note gets a general manager-comment box (feedback / praise) —
+    // appends to subformData.feedback[] via setCallNoteManagerComment (item 9).
+    editor = `
+      <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
+        <input type="text" class="cn-mgr-reply-input" placeholder="Add a comment for this rep…">
+        <button type="button" class="cn-mgr-reply-save" onclick="cnMgrSaveComment_(this)">
+          ${icon('check', 12)}<span>Comment</span>
+        </button>
       </div>
     `;
   }
@@ -5205,7 +5262,7 @@ function cnMgrRenderReadonlyCard_(note) {
         <div class="cn-card-main">
           <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}</div>
           <div class="cn-card-issue">${issue}</div>
-          ${trainingQ}
+          ${threadHtml}
           ${resolution}
         </div>
         <div class="cn-card-actions">
@@ -5215,7 +5272,7 @@ function cnMgrRenderReadonlyCard_(note) {
           ${formPill}
         </div>
       </div>
-      ${trainingReplyEditor}
+      ${editor}
     </div>
   `;
 }
@@ -5246,6 +5303,33 @@ function cnMgrSaveTrainingReply_(btn) {
       showToast('Reply failed: ' + err.message, 'toast-error');
     })
     .setCallNoteTrainingReply(repId, noteId, reply);
+}
+
+/** Item 9 — manager comment (feedback / praise) on ANY note. Reads the text
+ *  from the sibling input and fires setCallNoteManagerComment; refreshes the
+ *  per-rep view so the comment thread renders. */
+function cnMgrSaveComment_(btn) {
+  const row = btn.closest('.cn-mgr-reply-row');
+  if (!row) return;
+  const noteId = row.dataset.noteId;
+  const repId  = row.dataset.repId;
+  const input  = row.querySelector('.cn-mgr-reply-input');
+  if (!input) return;
+  const msg = input.value.trim();
+  if (!msg) { showToast('Type a comment first', 'toast-warn'); return; }
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      btn.disabled = false;
+      if (!res || !res.success) { showToast((res && res.error) || 'Comment failed', 'toast-error'); return; }
+      showToast('Comment added', 'toast-success');
+      cnMgrLoadRepNotes_();
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      showToast('Comment failed: ' + ((err && err.message) || ''), 'toast-error');
+    })
+    .setCallNoteManagerComment(repId, noteId, msg);
 }
 
 /** Clear an existing training reply (passes empty string to the server,
@@ -5522,12 +5606,38 @@ function cnStopAmbientPolling_() {
   if (CN_STATE.ambientTimer) { clearInterval(CN_STATE.ambientTimer); CN_STATE.ambientTimer = null; }
 }
 
+/** Refetch live-editable config after an ambient flagsVersion change, and
+ *  reapply the resolved flags to both empState.flags and deptConfig.flags so
+ *  flagOn_ reflects the new values on the next render. Silent + best-effort —
+ *  no re-render is forced; the rep's next form/composer render picks it up,
+ *  and any server-scope flag is enforced server-side regardless. */
+function cnRefreshConfigForFlags_() {
+  google.script.run
+    .withSuccessHandler(function (cfg) {
+      if (!cfg || cfg.error) return;
+      CN_STATE.deptConfig = cfg;
+      if (typeof empState !== 'undefined' && empState && cfg.flags) empState.flags = cfg.flags;
+    })
+    .withFailureHandler(function () { /* best-effort — keep the stale config */ })
+    .getCallNotesDepartments();
+}
+
 function cnPollAmbient_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error) return;
       if (res.enrolled === false) return;
       CN_STATE.staleFlagHours = res.staleFlagHours || 1;
+      // Runtime feature-flag propagation: if the manager flipped a toggle the
+      // ambient flagsVersion changes → refetch deptConfig (flags + templates +
+      // rates) so the UI honors it within ~60s without a manual reload. Skip
+      // the first poll (no prior baseline — deptConfig is already fresh from
+      // view enter).
+      if (res.flagsVersion && res.flagsVersion !== CN_STATE.flagsVersion) {
+        const hadBaseline = CN_STATE.flagsVersion !== undefined && CN_STATE.flagsVersion !== null;
+        CN_STATE.flagsVersion = res.flagsVersion;
+        if (hadBaseline) cnRefreshConfigForFlags_();
+      }
       // V4 Phase 4 — update stats-mini and quick-chip-row if they're mounted
       // on the current Log view. Both are no-ops when the elements aren't in
       // the DOM (rep is on a different view).
@@ -5557,8 +5667,9 @@ function cnPollAmbient_() {
  *  When the most recent message is from the manager and the rep hasn't
  *  responded yet, action buttons (👍 Got it / 💬 Clarify) render below
  *  the thread. The 💬 button expands an inline textarea + Submit. */
-function cnRenderQAThread_(note) {
-  if (!note || note.flagType !== 'training') return '';
+function cnRenderQAThread_(note, opts) {
+  const readonly = !!(opts && opts.readonly);
+  if (!note) return '';   // item 9: render for ANY note that has a thread (training Q&A or general manager comments), not just training
   const sub = note.subformData || {};
   // Build the thread: optional rep question seed + manager replies / agent
   // entries via feedback[], with the legacy single trainingReply folded in
@@ -5621,7 +5732,7 @@ function cnRenderQAThread_(note) {
       + ts
       + '</div>';
   }).join('');
-  const actionsHtml = canRespond
+  const actionsHtml = (canRespond && !readonly)
     ? '<div class="qa-actions">'
         + '<button type="button" class="qa-ack-btn" data-qa-ack="' + esc(note.noteId) + '">👍 Got it</button>'
         + '<button type="button" class="qa-clarify-btn" data-qa-clarify="' + esc(note.noteId) + '">💬 Clarify</button>'
@@ -6383,9 +6494,38 @@ function cnToggleAuditHistory_(btn, noteId) {
     .getCallNoteAuditHistory(noteId);
 }
 
+/** One row per feature toggle: checkbox + label + scope chip + description +
+ *  (optional) caution line. Every server string is esc()'d. */
+function cnRenderFlagRows_(registry, values) {
+  if (!Array.isArray(registry) || !registry.length) {
+    return '<div style="color:var(--muted);font-size:12px">No toggles defined.</div>';
+  }
+  var vals = values || {};
+  return registry.map(function (f) {
+    var on = vals[f.key] === true;
+    var danger = f.danger
+      ? '<div style="color:var(--danger-deep);font-size:11px;margin-top:4px;line-height:1.4">Caution — ' + esc(f.danger) + '</div>'
+      : '';
+    return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px dashed var(--line);cursor:pointer">' +
+      '<input type="checkbox" class="cn-admin-flag" data-flag-key="' + esc(f.key) + '"' + (on ? ' checked' : '') + ' style="margin-top:3px">' +
+      '<div style="flex:1">' +
+        '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(f.label) +
+          ' <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">' + esc(f.scope || '') + '</span></div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(f.description || '') + '</div>' +
+        danger +
+      '</div>' +
+    '</label>';
+  }).join('');
+}
+
 function cnRenderAdminBody_(cfg) {
   var body = document.getElementById('cn-admin-body');
   if (!body) return;
+
+  var ffRegistry = (cfg.featureFlags && cfg.featureFlags.registry) || [];
+  var ffValues   = (cfg.featureFlags && cfg.featureFlags.values) || {};
+  var ffDanger   = {};
+  ffRegistry.forEach(function (f) { if (f.danger) ffDanger[f.key] = f.danger; });
 
   var deptRows = Object.keys(cfg.departmentEmails).map(function (dept) {
     return '<div class="field-row" style="gap:8px;margin-bottom:6px">' +
@@ -6396,6 +6536,13 @@ function cnRenderAdminBody_(cfg) {
   }).join('');
 
   body.innerHTML =
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' Feature Toggles</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Turn features on or off instantly — no redeploy. Changes reach reps on their next page load. Toggles marked “Caution” have compliance or stateful implications.</div>' +
+      '<div id="cn-admin-flag-list">' + cnRenderFlagRows_(ffRegistry, ffValues) + '</div>' +
+      '<button class="btn-modal-ok" id="cn-admin-save-flags" style="margin:10px 0 0">Save Toggles</button>' +
+    '</div>' +
+
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Department Email Mappings</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Map each department name to the email address that receives call-note emails when reps select that department.</div>' +
@@ -6434,6 +6581,39 @@ function cnRenderAdminBody_(cfg) {
         '<button class="btn-modal-ok" id="cn-admin-save-tmpls" style="margin:0">Save Templates</button>' +
       '</div>' +
     '</div>';
+
+  document.getElementById('cn-admin-save-flags').addEventListener('click', function () {
+    var btn = this;
+    var boxes = document.querySelectorAll('.cn-admin-flag');
+    var map = {};
+    var warnings = [];
+    for (var i = 0; i < boxes.length; i++) {
+      var k = boxes[i].getAttribute('data-flag-key');
+      map[k] = boxes[i].checked;
+      // Warn only on a CHANGED danger flag (either direction).
+      if (map[k] !== (ffValues[k] === true) && ffDanger[k]) warnings.push(ffDanger[k]);
+    }
+    function doSave() {
+      btn.disabled = true; btn.textContent = 'Saving…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          btn.disabled = false; btn.textContent = 'Save Toggles';
+          if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
+          ffValues = res.values || map;   // refresh the baseline so re-saves don't re-warn
+          showToast('Toggles saved — reps see changes on next load', 'toast-success');
+        })
+        .withFailureHandler(function (err) {
+          btn.disabled = false; btn.textContent = 'Save Toggles';
+          showToast(err.message || 'Save failed', 'toast-error');
+        })
+        .saveFeatureFlags(map);
+    }
+    if (warnings.length) {
+      uiConfirm({ title: 'Confirm toggle change', message: warnings.join('\n\n'),
+                  tone: 'danger', confirmLabel: 'Apply changes' })
+        .then(function (ok) { if (ok) doSave(); });
+    } else { doSave(); }
+  });
 
   document.getElementById('cn-admin-add-dept').addEventListener('click', function () {
     var list = document.getElementById('cn-admin-dept-list');
@@ -6587,7 +6767,7 @@ function cnRenderRateRows_(rates) {
   return Object.keys(rates).sort().map(function (st) {
     return '<div class="field-row" style="gap:8px;margin-bottom:4px;align-items:center">' +
       '<span class="cn-admin-rate-state" style="flex:1;font-size:13px">' + esc(st) + '</span>' +
-      '<div class="field" style="flex:0 0 80px;margin:0"><input type="number" step="0.001" min="0" max="1" class="cn-admin-rate-value" value="' + rates[st] + '" style="text-align:right"></div>' +
+      '<div class="field" style="flex:0 0 80px;margin:0"><input type="number" step="0.001" min="0" max="1" class="cn-admin-rate-value" value="' + esc(String(rates[st])) + '" style="text-align:right"></div>' +
       '</div>';
   }).join('');
 }

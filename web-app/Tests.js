@@ -621,6 +621,18 @@ function _runAllTests() {
   _integrationTest('managerSubmitTimeOff_employeeNotFound',    test_managerSubmitTimeOff_employeeNotFound);
   _integrationTest('managerSubmitTimeOff_writesAudit',         test_managerSubmitTimeOff_writesAudit);
 
+  // H1 / M1 — duplicate-date guard + leave-type validation on time-off submit
+  _integrationTest('submitTimeOff_duplicateDateRejected',      test_submitTimeOff_duplicateDateRejected);
+  _integrationTest('submitTimeOff_invalidTypeRejected',        test_submitTimeOff_invalidTypeRejected);
+  _integrationTest('managerSubmitTimeOff_duplicateDateRejected', test_managerSubmitTimeOff_duplicateDateRejected);
+
+  // B1 — PTO balance reconciliation (double-deduct detection)
+  _integrationTest('getPtoReconciliation_detectsDoubleDeduct', test_getPtoReconciliation_detectsDoubleDeduct);
+  _integrationTest('getPtoReconciliation_nonManagerRejected',  test_getPtoReconciliation_nonManagerRejected);
+  _integrationTest('fixPtoReconciliation_creditsAndIdempotent', test_fixPtoReconciliation_creditsAndIdempotent);
+  _integrationTest('fixPtoReconciliation_nonManagerRejected',   test_fixPtoReconciliation_nonManagerRejected);
+  _integrationTest('setCallNoteManagerComment_nonManagerRejected', test_setCallNoteManagerComment_nonManagerRejected);
+
   _integrationTest('getTeammateStatus_shapeRestricted',        test_getTeammateStatus_shapeRestricted);
   _integrationTest('getTeammateStatus_disabledFlag',           test_getTeammateStatus_disabledFlag);
 
@@ -743,6 +755,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_missedPunch_nonManagerThrows',  test_triggerGate_missedPunch_nonManagerThrows);
   _integrationTest('triggerGate_dailyExport_nonManagerThrows',  test_triggerGate_dailyExport_nonManagerThrows);
   _integrationTest('triggerGate_urgentDigest_nonManagerThrows', test_triggerGate_urgentDigest_nonManagerThrows);
+  _integrationTest('triggerGate_purgeOldCallNotes_nonManagerThrows', test_triggerGate_purgeOldCallNotes_nonManagerThrows);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Audit row assertions ───────────────────────────────────────────────
@@ -1172,6 +1185,7 @@ function test_recordPunch_reasonAcceptedOldAdj() {
 // ── submitTimeOffRequest ──
 
 function test_submitTimeOff_createsRow() {
+  _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_INDIA_EMAIL, () => {
     const r = submitTimeOffRequest(_TEST_DATE_FUTURE, 'Sick Leave', 'doctor visit');
     _assertSuccess(r);
@@ -1188,9 +1202,40 @@ function test_submitTimeOff_rejectsBadDate() {
   });
 }
 
+// H1 — a second request for a date that already has a Pending (or Approved)
+// row is rejected, so dual approval can't double-deduct the balance.
+function test_submitTimeOff_duplicateDateRejected() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'first'));
+    _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'dupe'),
+      'already have a pending or approved');
+  });
+  // Exactly one row should exist for that emp+date.
+  const ss = getAdpSS_();
+  const rows = ss.getSheetByName(CONFIG.TIMEOFF_TAB).getDataRange().getValues();
+  let count = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][TO.EMP_ID]).trim() === _TEST_INDIA_ID
+        && normalizeDate_(rows[i][TO.DATE]) === _TEST_DATE_FUTURE) count++;
+  }
+  _assertEq(count, 1, 'Duplicate same-date request must not create a 2nd row');
+}
+
+// M1 — an unrecognized leave type is rejected rather than silently defaulting
+// to annual/1.0 in getLeaveDeduction_.
+function test_submitTimeOff_invalidTypeRejected() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Half Day', ''), 'Invalid leave type');
+    _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, '', ''), 'Invalid leave type');
+  });
+}
+
 // ── cancelTimeOffRequest ──
 
 function test_cancelTimeOff_pendingDeletes() {
+  _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   // Submit
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'vacation'));
@@ -1206,6 +1251,7 @@ function test_cancelTimeOff_pendingDeletes() {
 }
 
 function test_cancelTimeOff_approvedRejected() {
+  _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
   });
@@ -1645,6 +1691,7 @@ function test_selfDeletePunch_unknownType() {
 
 function test_managerSubmitTimeOff_pendingFlow() {
   // Submit without auto-approve. Verify return + balance untouched.
+  _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_INDIA_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     const r = managerSubmitTimeOff(
@@ -1659,6 +1706,7 @@ function test_managerSubmitTimeOff_pendingFlow() {
 }
 
 function test_managerSubmitTimeOff_autoApproveDeducts() {
+  _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     const r = managerSubmitTimeOff(
@@ -1673,6 +1721,7 @@ function test_managerSubmitTimeOff_autoApproveDeducts() {
 }
 
 function test_managerSubmitTimeOff_autoApproveHalfDay() {
+  _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     const r = managerSubmitTimeOff(
@@ -1712,8 +1761,92 @@ function test_managerSubmitTimeOff_employeeNotFound() {
   });
 }
 
+// H1 — the manager-filed path is guarded too: it can't stack a second
+// active request on a date the employee already has Pending/Approved.
+function test_managerSubmitTimeOff_duplicateDateRejected() {
+  _clearTestState(_TEST_PH_ID);
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(managerSubmitTimeOff(_TEST_PH_ID, _TEST_DATE_FUTURE, 'Full Day', '', false));
+    _assertFailure(
+      managerSubmitTimeOff(_TEST_PH_ID, _TEST_DATE_FUTURE, 'Full Day', '', true),
+      'already has a pending or approved'
+    );
+  });
+}
+
+// B1 — getPtoReconciliation flags a rep with two Approved rows on one date
+// (the H1 double-deduct signature) and quantifies the over-charge. The submit
+// endpoints now block duplicates (INV-94), so the rows are appended directly.
+function test_getPtoReconciliation_detectsDoubleDeduct() {
+  _clearTestState(_TEST_PH_ID);
+  const sheet = getOrCreateTimeOffSheet_();
+  const sa = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Approved', sa]);
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Approved', sa + ' b']);
+  let res;
+  _asUser(_TEST_MGR_EMAIL, () => { res = getPtoReconciliation(); });
+  _assertNotNull(res && res.reps, 'reconciliation returns reps');
+  const row = (res.reps || []).filter(function (r) { return r.empId === _TEST_PH_ID; })[0];
+  _assertNotNull(row, 'PH flagged for drift');
+  _assertEqClose(row.overAnnual, 1.0, 0.001, 'over-charged exactly 1 annual day');
+  _assertEq(row.dates.length, 1, 'one duplicate date');
+}
+
+function test_getPtoReconciliation_nonManagerRejected() {
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r = getPtoReconciliation();
+    _assertNotNull(r.error, 'non-manager gets an error');
+    _assertContains(r.error, 'Manager access required');
+  });
+}
+
+// B1 corrector — credits the over-charge, neutralizes the duplicate row, and a
+// re-run is a no-op (idempotent). Reproduce the H1 damage realistically: two
+// Pending rows (appended directly since submit blocks dups now), both Approved
+// via updateTimeOffStatus → double-deduct, then reconcile.
+function test_fixPtoReconciliation_creditsAndIdempotent() {
+  _clearTestState(_TEST_PH_ID);
+  const sheet = getOrCreateTimeOffSheet_();
+  const sa1 = '2099-01-01 09:00:00', sa2 = '2099-01-01 09:00:01';
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', sa1]);
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', sa2]);
+  const before = _getBalance(_TEST_PH_ID, 'annual');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa1, 'Approved'));
+    _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa2, 'Approved'));
+  });
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 2.0, 0.001, 'double-deducted by 2');
+
+  let res;
+  _asUser(_TEST_MGR_EMAIL, () => { res = fixPtoReconciliation(_TEST_PH_ID); });
+  _assertSuccess(res);
+  _assertEq(res.fixed, true, 'reported a fix');
+  _assertEqClose(res.creditedAnnual, 1.0, 0.001, 'credited 1 annual day');
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 1.0, 0.001, 'balance corrected to a single deduction');
+
+  // Idempotent: reconciliation now clean, and a second fix credits nothing.
+  let recon;
+  _asUser(_TEST_MGR_EMAIL, () => { recon = getPtoReconciliation(); });
+  const stillFlagged = (recon.reps || []).filter(function (r) { return r.empId === _TEST_PH_ID; })[0];
+  _assertNull(stillFlagged, 'no longer flagged after the fix');
+  let res2;
+  _asUser(_TEST_MGR_EMAIL, () => { res2 = fixPtoReconciliation(_TEST_PH_ID); });
+  _assertSuccess(res2);
+  _assertEq(res2.fixed, false, 'second fix is a no-op (idempotent)');
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 1.0, 0.001, 'balance unchanged by the no-op');
+}
+
+function test_fixPtoReconciliation_nonManagerRejected() {
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r = fixPtoReconciliation(_TEST_PH_ID);
+    _assertEq(r.success, false, 'non-manager rejected');
+    _assertContains(r.error, 'Manager access required');
+  });
+}
+
 function test_managerSubmitTimeOff_writesAudit() {
   // Auto-approve marks "filed by manager, auto-approved" in the notes column.
+  _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertSuccess(managerSubmitTimeOff(
       _TEST_INDIA_ID, _TEST_DATE_FUTURE, 'Personal Day', 'family event', true
@@ -2632,6 +2765,23 @@ function test_triggerGate_eodDigest_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesEodDigest(); });
   }, 'manager access required', 'Non-manager should be rejected');
+}
+
+// Item 7 — the note-retention purge is destructive + reachable via
+// google.script.run, so it must reject non-managers like the other purges.
+function test_triggerGate_purgeOldCallNotes_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { purgeOldCallNotes(); });
+  }, 'manager access required', 'Non-manager should not be able to purge notes');
+}
+
+// Item 9 — manager comments on any note are manager-gated.
+function test_setCallNoteManagerComment_nonManagerRejected() {
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    const r = setCallNoteManagerComment(_TEST_PH_ID, 'nonexistent-note', 'nice work');
+    _assertEq(r.success, false, 'non-manager rejected');
+    _assertContains(r.error, 'Manager access required');
+  });
 }
 
 function test_triggerGate_weeklyDigests_nonManagerThrows() {
