@@ -5206,19 +5206,15 @@ function cnMgrRenderReadonlyCard_(note) {
   const callerLine = note.caller ? esc(note.caller) : (note.patientAndTrx ? esc(note.patientAndTrx) : '<em style="color:var(--muted)">unnamed</em>');
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
   const issue = note.issue ? esc(note.issue) : '<em>—</em>';
-  // Training notes get a question line + (if set) a manager-reply line.
-  let trainingQ = '';
-  let trainingReplyEditor = '';
+  // Render the multi-turn thread (read-only) for ANY note that has one — a
+  // training Q&A or general manager comments (item 9). Returns '' when empty.
+  const threadHtml = cnRenderQAThread_(note, { readonly: true });
+  const repId = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
+  let editor = '';
   if (note.flagType === 'training' && note.subformData && note.subformData.trainingQuestion) {
-    // Full multi-turn thread (read-only) so the manager sees the rep's acks
-    // and follow-up clarifications, not just the latest reply (L5 / 8g parity).
-    trainingQ = cnRenderQAThread_(note, { readonly: true });
+    // Training notes keep the specialized, clearable reply editor.
     const existingReply = cnLatestManagerReply_(note.subformData).message;
-    // Inline reply editor — manager can write/edit/clear the answer right
-    // from the per-rep card. `data-rep="..."` lets the click handler find
-    // the right rep without round-tripping the JS string boundary.
-    const repId = (CN_STATE.mgrRepView && CN_STATE.mgrRepView.repId) || '';
-    trainingReplyEditor = `
+    editor = `
       <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
         <input type="text" class="cn-mgr-reply-input" placeholder="${existingReply ? 'Edit reply…' : 'Reply to this question…'}"
                value="${esc(existingReply)}">
@@ -5228,6 +5224,17 @@ function cnMgrRenderReadonlyCard_(note) {
         ${existingReply
           ? `<button type="button" class="cn-mgr-reply-clear" onclick="cnMgrClearTrainingReply_(this)" title="Clear reply">${icon('x', 12)}</button>`
           : ''}
+      </div>
+    `;
+  } else {
+    // Any other note gets a general manager-comment box (feedback / praise) —
+    // appends to subformData.feedback[] via setCallNoteManagerComment (item 9).
+    editor = `
+      <div class="cn-mgr-reply-row" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}">
+        <input type="text" class="cn-mgr-reply-input" placeholder="Add a comment for this rep…">
+        <button type="button" class="cn-mgr-reply-save" onclick="cnMgrSaveComment_(this)">
+          ${icon('check', 12)}<span>Comment</span>
+        </button>
       </div>
     `;
   }
@@ -5255,7 +5262,7 @@ function cnMgrRenderReadonlyCard_(note) {
         <div class="cn-card-main">
           <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}</div>
           <div class="cn-card-issue">${issue}</div>
-          ${trainingQ}
+          ${threadHtml}
           ${resolution}
         </div>
         <div class="cn-card-actions">
@@ -5265,7 +5272,7 @@ function cnMgrRenderReadonlyCard_(note) {
           ${formPill}
         </div>
       </div>
-      ${trainingReplyEditor}
+      ${editor}
     </div>
   `;
 }
@@ -5296,6 +5303,33 @@ function cnMgrSaveTrainingReply_(btn) {
       showToast('Reply failed: ' + err.message, 'toast-error');
     })
     .setCallNoteTrainingReply(repId, noteId, reply);
+}
+
+/** Item 9 — manager comment (feedback / praise) on ANY note. Reads the text
+ *  from the sibling input and fires setCallNoteManagerComment; refreshes the
+ *  per-rep view so the comment thread renders. */
+function cnMgrSaveComment_(btn) {
+  const row = btn.closest('.cn-mgr-reply-row');
+  if (!row) return;
+  const noteId = row.dataset.noteId;
+  const repId  = row.dataset.repId;
+  const input  = row.querySelector('.cn-mgr-reply-input');
+  if (!input) return;
+  const msg = input.value.trim();
+  if (!msg) { showToast('Type a comment first', 'toast-warn'); return; }
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      btn.disabled = false;
+      if (!res || !res.success) { showToast((res && res.error) || 'Comment failed', 'toast-error'); return; }
+      showToast('Comment added', 'toast-success');
+      cnMgrLoadRepNotes_();
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      showToast('Comment failed: ' + ((err && err.message) || ''), 'toast-error');
+    })
+    .setCallNoteManagerComment(repId, noteId, msg);
 }
 
 /** Clear an existing training reply (passes empty string to the server,
@@ -5635,7 +5669,7 @@ function cnPollAmbient_() {
  *  the thread. The 💬 button expands an inline textarea + Submit. */
 function cnRenderQAThread_(note, opts) {
   const readonly = !!(opts && opts.readonly);
-  if (!note || note.flagType !== 'training') return '';
+  if (!note) return '';   // item 9: render for ANY note that has a thread (training Q&A or general manager comments), not just training
   const sub = note.subformData || {};
   // Build the thread: optional rep question seed + manager replies / agent
   // entries via feedback[], with the legacy single trainingReply folded in

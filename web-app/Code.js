@@ -79,6 +79,7 @@ const CONFIG = {
     NOTES_TAB:           'Notes',
     SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
     DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
+    NOTE_RETENTION_DAYS: 0,              // rolling auto-delete of old notes; 0 = disabled (irreversible PHI delete; CN_NOTE_RETENTION_DAYS Script Property overrides)
     CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
     AUTO_COPY_FORMAT:
       'Callback Number: {callback}\n' +
@@ -3257,6 +3258,54 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
  *  thumbs-up acknowledgment, 'clarification' for a follow-up question).
  *  Rep-callable (operates on the caller's own per-rep Sheet); locked.
  *  Writes a CallNoteFeedback audit row. */
+/** Manager-gated, locked. Appends a free-text manager comment (feedback /
+ *  praise) to ANY of a rep's notes — not just training-flagged ones (item 9).
+ *  Lands as a `{role:'manager', kind:'comment'}` entry in subformData.feedback[]
+ *  (the same thread the rep's card renders), so it reuses the existing Q&A
+ *  rendering + the rep can ack/clarify (appendCallNoteFeedback now allows a
+ *  reply on any note that has a thread). Writes a CallNoteManagerComment audit
+ *  row (PHI-free: noteId only). */
+function setCallNoteManagerComment(repEmpId, noteId, message) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const msg = String(message || '').trim();
+    if (!msg) return { success: false, error: 'Comment is empty.' };
+    const target = lookupEmployeeById_(repEmpId);
+    if (!target) return { success: false, error: 'Employee not found.' };
+    if (!target.callNotesSheetId) return { success: false, error: 'This rep has no call-notes Sheet configured.' };
+
+    const sheet = getCallNotesSheet_(target);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+
+    let subformData = null;
+    if (located.row[CN.SUBFORM_DATA]) {
+      try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); } catch (e) { subformData = null; }
+    }
+    if (!subformData || typeof subformData !== 'object') subformData = {};
+    if (!Array.isArray(subformData.feedback)) subformData.feedback = [];
+
+    const empTz = target.timezone || CONFIG.TIMEZONE;
+    subformData.feedback.push({
+      role: 'manager', kind: 'comment', message: msg,
+      at: Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss"),
+      by: callerEmp.email,
+    });
+    sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    writeAuditLog_(target, 'CallNoteManagerComment', dateLocal, '', false, 0,
+      `noteId=${noteId}`, callerEmp.email);
+
+    const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+    return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 function appendCallNoteFeedback(noteId, message, kind) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -3275,11 +3324,6 @@ function appendCallNoteFeedback(noteId, message, kind) {
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
 
-    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
-    if (flagType !== 'training') {
-      return { success: false, error: 'Feedback applies only to training-flagged notes.' };
-    }
-
     let subformData = null;
     if (located.row[CN.SUBFORM_DATA]) {
       try { subformData = JSON.parse(located.row[CN.SUBFORM_DATA]); }
@@ -3287,6 +3331,13 @@ function appendCallNoteFeedback(noteId, message, kind) {
     }
     if (!subformData || typeof subformData !== 'object') subformData = {};
     if (!Array.isArray(subformData.feedback)) subformData.feedback = [];
+
+    const flagType = String(located.row[CN.FLAG_TYPE] || '').trim().toLowerCase();
+    // Agent can respond to a thread that exists: a training-flagged note OR any
+    // note a manager has commented on (item 9 — general manager comments).
+    if (flagType !== 'training' && subformData.feedback.length === 0) {
+      return { success: false, error: 'No manager feedback to respond to on this note.' };
+    }
 
     const empTz = empTz_(emp);
     const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
@@ -3559,6 +3610,42 @@ const CN_EMAIL_PALETTE = {
   brandSoft:    '#e6f2ff',
   logoUrl:      'https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg',
 };
+
+/** Shared branded wrapper for automated notification emails (item 2) — logo
+ *  bar + colored header + white card + footer, matching the CN_EMAIL_PALETTE
+ *  identity (inline hex; email clients strip <style>). `heading` is esc_'d
+ *  here; `bodyHtml` is caller-built and MUST already esc_ any user data.
+ *  `opts.accent` overrides the header color (default brand navy). */
+function buildBrandedEmailHtml_(heading, bodyHtml, opts) {
+  opts = opts || {};
+  const P = CN_EMAIL_PALETTE;
+  const accent = opts.accent || P.brand;
+  return (
+    '<div style="margin:0;padding:0;background:' + P.paper + ';">' +
+    '<div style="max-width:600px;margin:0 auto;padding:20px 12px;font-family:\'Inter\',\'Helvetica Neue\',Arial,sans-serif;color:' + P.ink + ';">' +
+      '<div style="text-align:center;padding:0 0 14px;">' +
+        '<img src="' + P.logoUrl + '" alt="UMS" style="max-height:46px;max-width:200px;">' +
+      '</div>' +
+      '<div style="background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;overflow:hidden;">' +
+        '<div style="background:' + accent + ';color:#ffffff;padding:13px 20px;font-size:16px;font-weight:600;">' + esc_(heading) + '</div>' +
+        '<div style="padding:18px 20px;font-size:14px;line-height:1.55;color:' + P.ink + ';">' + bodyHtml + '</div>' +
+      '</div>' +
+      '<div style="text-align:center;color:' + P.muted + ';font-size:11px;padding:14px 0 0;">UMS Team Tools · automated message</div>' +
+    '</div></div>'
+  );
+}
+
+/** Renders an array of [label, value] pairs as a styled two-column block for
+ *  branded emails. Both label and value are esc_'d. */
+function brandedKvRows_(pairs) {
+  const P = CN_EMAIL_PALETTE;
+  return '<table style="width:100%;border-collapse:collapse;font-size:14px;margin:4px 0;">' +
+    pairs.map(function (p) {
+      return '<tr><td style="padding:4px 12px 4px 0;color:' + P.muted + ';font-weight:600;white-space:nowrap;vertical-align:top;">' +
+               esc_(p[0]) + '</td><td style="padding:4px 0;color:' + P.ink + ';">' + esc_(p[1]) + '</td></tr>';
+    }).join('') +
+  '</table>';
+}
 
 /** Renders the email HTML body + computed subject/recipients for a note +
  *  composer selections, without sending. The client shows this in a
@@ -5377,6 +5464,65 @@ function purgeExpiredFormData() {
   }
 }
 
+/** Rolling note retention (item 7): days from CN_NOTE_RETENTION_DAYS Script
+ *  Property first, else CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS. 0/neg/unparseable
+ *  → 0 (disabled). */
+function getNoteRetentionDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_NOTE_RETENTION_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** Rolling auto-delete of call notes older than the retention window, across
+ *  every enrolled rep's per-rep Sheet (item 7). Top-level (time-trigger
+ *  target) → reachable via google.script.run, so gated like the other
+ *  destructive trigger handlers (assertManagerCaller_). DISABLED by default
+ *  (CN_NOTE_RETENTION_DAYS / CONFIG = 0); the delete is irreversible and the
+ *  notes are PHI — confirm the canonical record lives elsewhere before
+ *  enabling. A broken per-rep Sheet is skipped, not fatal. Dates are read from
+ *  CN.DATE_LOCAL (Sheets-coerced to a Date; parseRetentionDateMs_ handles it).
+ *  Writes a PHI-free CallNotesPurge audit row with counts. */
+function purgeOldCallNotes() {
+  assertManagerCaller_('purgeOldCallNotes');
+  try {
+    const days = getNoteRetentionDays_();
+    if (!days) {
+      Logger.log('purgeOldCallNotes: retention disabled (CN_NOTE_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const roster = getEmployeeRosterRows_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let repsTouched = 0, notesRemoved = 0;
+    try {
+      for (let r = 1; r < roster.length; r++) {
+        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
+        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const emp = {
+          id:   String(roster[r][EMP.ID]).trim(),
+          name: String(roster[r][EMP.NAME]).trim(),
+          callNotesSheetId: String(sheetIdRaw).trim(),
+        };
+        try {
+          const removed = purgeSheetRowsOlderThan_(getCallNotesSheet_(emp), CN.DATE_LOCAL, cutoffMs);
+          if (removed > 0) { notesRemoved += removed; repsTouched++; }
+        } catch (e) {
+          Logger.log('purgeOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
+        }
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesPurge', '', '', false, 0,
+      `retentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}`);
+    Logger.log(`purgeOldCallNotes: removed ${notesRemoved} note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
+  } catch (err) {
+    Logger.log('purgeOldCallNotes failed: ' + err.message);
+  }
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
@@ -5433,6 +5579,12 @@ function installAutomationTriggers() {
   // it only deletes once the operator sets a positive retention window.
   ScriptApp.newTrigger('purgeExpiredFormData')
     .timeBased().atHour(3).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Rolling note retention (item 7) — also no-ops while CN_NOTE_RETENTION_DAYS=0
+  // (the default), so installing it is harmless. Staggered to 4am so the two
+  // destructive purges don't overlap.
+  ScriptApp.newTrigger('purgeOldCallNotes')
+    .timeBased().atHour(4).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -5547,6 +5699,11 @@ function sendDailyMissedPunchAlerts() {
             `feature to record your clock-out time.\n\n` +
             `If you have any questions, please contact your manager.\n\n` +
             `— UMS Time Clock (automated)\n`,
+          htmlBody: buildBrandedEmailHtml_('Missing clock-out',
+            '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
+            '<p style="margin:0 0 12px;">Our records show you clocked in on <b>' + esc_(emp.yesterdayStr) + '</b> (' + esc_(tzAbbr_(emp.timezone)) + ') but didn\'t clock out. Please open the UMS Time Clock app and use the <b>Adjust</b> feature to record your clock-out time.</p>' +
+            '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">If you have any questions, please contact your manager.</p>',
+            { accent: CN_EMAIL_PALETTE.warn }),
         });
       } catch (e) { Logger.log('Failed to email employee ' + emp.email + ': ' + e.message); }
     });
@@ -5556,6 +5713,10 @@ function sendDailyMissedPunchAlerts() {
       const list = missed.map(e =>
         `• ${e.name} (${e.id}) — ${e.email} — missed ${e.yesterdayStr} ${tzAbbr_(e.timezone)}`).join('\n');
       try {
+        const listHtml = '<ul style="margin:0 0 12px;padding-left:18px;">' + missed.map(function (e) {
+          return '<li style="margin:4px 0;">' + esc_(e.name) + ' (' + esc_(e.id) + ') — ' + esc_(e.email) +
+                 ' — missed ' + esc_(e.yesterdayStr) + ' ' + esc_(tzAbbr_(e.timezone)) + '</li>';
+        }).join('') + '</ul>';
         MailApp.sendEmail({
           to: recipients.join(','),
           subject: `⏰ Missed Clock-Outs — ${missed.length} employee(s)`,
@@ -5563,6 +5724,12 @@ function sendDailyMissedPunchAlerts() {
             `The following employees clocked in but did not clock out:\n\n${list}\n\n` +
             `Each has been emailed a reminder to fix it via the Adjust feature.\n\n` +
             `Audit log:\nhttps://docs.google.com/spreadsheets/d/${getAdpSS_().getId()}/edit`,
+          htmlBody: buildBrandedEmailHtml_(missed.length + ' missed clock-out(s)',
+            '<p style="margin:0 0 10px;">The following employees clocked in but did not clock out:</p>' +
+            listHtml +
+            '<p style="margin:0 0 12px;color:' + CN_EMAIL_PALETTE.muted + ';">Each has been emailed a reminder to fix it via the Adjust feature.</p>' +
+            '<p style="margin:0;"><a href="https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open the audit log →</a></p>',
+            { accent: CN_EMAIL_PALETTE.warn }),
         });
       } catch (e) { Logger.log('Manager missed-punch digest email failed: ' + e.message); }
     }
@@ -6737,7 +6904,20 @@ function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reaso
       `Threshold:   > ${CONFIG.OLD_ADJUST_ALERT_DAYS} days\n` +
       `Window:      ${CONFIG.ADJUST_WINDOW_DAYS} days\n\n` +
       `Audit log:\nhttps://docs.google.com/spreadsheets/d/${getAdpSS_().getId()}/edit\n`;
-    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body });
+    const html = buildBrandedEmailHtml_('Timesheet adjustment alert',
+      '<p style="margin:0 0 12px;">An older punch adjustment was submitted and may warrant review.</p>' +
+      brandedKvRows_([
+        ['Employee', emp.name + ' (' + emp.id + ')'],
+        ['User email', emp.email],
+        ['Punch type', punchType],
+        ['Punch date', date + ' (' + tzAbbr_(empTz) + ')'],
+        ['Punch time', time + ' ' + tzAbbr_(empTz) + (empTz !== mgrTz ? '  ·  ' + conv.displayTime + ' ' + tzAbbr_(mgrTz) : '')],
+        ['Days back', String(daysBack) + ' (alert threshold > ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ', window ' + CONFIG.ADJUST_WINDOW_DAYS + ')'],
+        ['Reason', reason || '(none provided)'],
+      ]) +
+      '<p style="margin:14px 0 0;"><a href="https://docs.google.com/spreadsheets/d/' + getAdpSS_().getId() + '/edit" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open the audit log →</a></p>',
+      { accent: CN_EMAIL_PALETTE.warn });
+    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Manager alert email failed: ' + e.message); }
 }
 
@@ -6745,15 +6925,19 @@ function notifyManagerTrainingQuestion_(emp, question, dateLocal) {
   const recipients = getManagerEmails_();
   if (recipients.length === 0) return;
   try {
-    MailApp.sendEmail({
-      to: recipients.join(','),
-      subject: `Training Q from ${emp.name}: ${String(question).substring(0, 60)}`,
-      body:
-        `${emp.name} (${emp.id}) submitted a training-flagged call note with a question:\n\n` +
-        `Q: ${question}\n\n` +
-        `Date: ${dateLocal}\n\n` +
-        `Reply in the web app → Call Notes → Team Notes → Per-Rep View.\n`,
-    });
+    const subj = `Training Q from ${emp.name}: ${String(question).substring(0, 60)}`;
+    const body =
+      `${emp.name} (${emp.id}) submitted a training-flagged call note with a question:\n\n` +
+      `Q: ${question}\n\n` +
+      `Date: ${dateLocal}\n\n` +
+      `Reply in the web app → Call Notes → Team Notes → Per-Rep View.\n`;
+    const html = buildBrandedEmailHtml_('Training question from ' + emp.name,
+      '<p style="margin:0 0 12px;"><b>' + esc_(emp.name) + '</b> (' + esc_(emp.id) + ') submitted a training-flagged call note with a question:</p>' +
+      '<div style="background:' + CN_EMAIL_PALETTE.brandSoft + ';border-radius:8px;padding:12px 14px;margin:0 0 12px;font-size:15px;color:' + CN_EMAIL_PALETTE.ink + ';">' + esc_(question) + '</div>' +
+      brandedKvRows_([['Date', dateLocal]]) +
+      '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Reply in the web app → Call Notes → Team Notes → Per-Rep View.</p>',
+      {});
+    MailApp.sendEmail({ to: recipients.join(','), subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Training question notification failed: ' + e.message); }
 }
 
@@ -6763,23 +6947,38 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
     const verb = newStatus === 'Approved' ? 'approved' :
                  newStatus === 'Denied'   ? 'denied'   : 'updated';
     const subj = `Your time off request for ${date} was ${verb}`;
+    const hasNotes = notes && notes !== 'undefined';
+    let balanceDays = null;
+    if (getFlag_('enablePtoTracking')) {
+      // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
+      const fresh = lookupEmployeeById_(emp.id);
+      if (fresh && fresh.ptoEnabled !== false) balanceDays = fresh.annualLeave;
+    }
+    // Plain-text fallback
     let body = `Hi ${emp.name},\n\n` +
                `Your time off request has been ${verb}:\n\n` +
                `Date:    ${date}\n` +
                `Type:    ${type}\n`;
-    if (notes && notes !== 'undefined') body += `Notes:   ${notes}\n`;
+    if (hasNotes) body += `Notes:   ${notes}\n`;
     body += `Status:  ${newStatus}\n\n`;
-
-    if (getFlag_('enablePtoTracking')) {
-      // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
-      const fresh = lookupEmployeeById_(emp.id);
-      if (fresh && fresh.ptoEnabled !== false) {
-        body += `Your current annual leave balance: ${fresh.annualLeave} day(s)\n\n`;
-      }
-    }
-    body += `Please contact your manager with any questions.\n\n` +
-            `— UMS Time Clock (automated)\n`;
-    MailApp.sendEmail({ to: emp.email, subject: subj, body: body });
+    if (balanceDays !== null) body += `Your current annual leave balance: ${balanceDays} day(s)\n\n`;
+    body += `Please contact your manager with any questions.\n\n— UMS Time Clock (automated)\n`;
+    // Branded HTML (item 2) — green/red/navy header by decision
+    const accent = newStatus === 'Approved' ? CN_EMAIL_PALETTE.accent
+                 : newStatus === 'Denied'   ? CN_EMAIL_PALETTE.danger
+                 : CN_EMAIL_PALETTE.brand;
+    const kv = [['Date', date], ['Type', type]];
+    if (hasNotes) kv.push(['Notes', notes]);
+    kv.push(['Status', newStatus]);
+    const balLine = (balanceDays !== null)
+      ? '<p style="margin:12px 0 0;">Current annual leave balance: <b>' + esc_(balanceDays) + '</b> day(s)</p>' : '';
+    const html = buildBrandedEmailHtml_('Time off ' + verb,
+      '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
+      '<p style="margin:0 0 12px;">Your time off request has been <b>' + esc_(verb) + '</b>:</p>' +
+      brandedKvRows_(kv) + balLine +
+      '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please contact your manager with any questions.</p>',
+      { accent: accent });
+    MailApp.sendEmail({ to: emp.email, subject: subj, body: body, htmlBody: html });
   } catch (e) { console.warn('Employee notification email failed: ' + e.message); }
 }
 

@@ -41,6 +41,7 @@ function renderClockView(area) {
   const greetName = (s.name || '').split(' ')[0] || 'there';
   const stats = computeShiftStats_(s.punches, tz);
   const statusSentence = buildStatusSentence_(stats, s.nextActions, tzAbbr);
+  clkBuildRegionFmts_(tz, tzAbbr);   // item 5 — world-clock strip formatters
 
   area.innerHTML = `
     <div class="hero">
@@ -55,6 +56,7 @@ function renderClockView(area) {
           <span>${esc(dateStr)}</span>
           ${tzAbbr ? `<span class="sep">·</span><span>${esc(tzAbbr)}</span>` : ''}
         </div>
+        <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
       </div>
     </div>
 
@@ -241,6 +243,38 @@ const RIBBON_DEFAULT_SHIFT_LEN   = 9 * 60;   // 9h
 let CLK_SCHEDULE = null;
 function clkSchedStartMin_() { return (CLK_SCHEDULE && typeof CLK_SCHEDULE.startMin === 'number') ? CLK_SCHEDULE.startMin : RIBBON_DEFAULT_SHIFT_START; }
 function clkSchedLenMin_()   { return (CLK_SCHEDULE && typeof CLK_SCHEDULE.lengthMin === 'number') ? CLK_SCHEDULE.lengthMin : RIBBON_DEFAULT_SHIFT_LEN; }
+
+// Clock-view world-clock strip (item 5): US customer-service regions + the
+// rep's own offshore tz (IST/PHT) when it isn't already a US zone. Pure
+// client-side Intl.DateTimeFormat — no server cost. Formatters are cached
+// (built once per render) so the per-second tick doesn't reconstruct them.
+const CLK_REGION_ZONES = [
+  { label: 'ET',  tz: 'America/New_York' },
+  { label: 'CT',  tz: 'America/Chicago' },
+  { label: 'PT',  tz: 'America/Los_Angeles' },
+  { label: 'HST', tz: 'Pacific/Honolulu' },
+];
+let CLK_REGION_FMTS = [];
+function clkBuildRegionFmts_(repTz, repAbbr) {
+  const zones = CLK_REGION_ZONES.slice();
+  if (repTz && !zones.some(function (z) { return z.tz === repTz; })) {
+    zones.unshift({ label: repAbbr || 'Local', tz: repTz });   // offshore reps see their own tz first
+  }
+  CLK_REGION_FMTS = zones.map(function (z) {
+    let fmt = null;
+    try { fmt = new Intl.DateTimeFormat('en-US', { timeZone: z.tz, hour: 'numeric', minute: '2-digit' }); }
+    catch (e) { fmt = null; }   // unknown tz → drop
+    return { label: z.label, fmt: fmt };
+  }).filter(function (z) { return z.fmt; });
+}
+function clkUpdateRegions_() {
+  const host = document.getElementById('clk-regions');
+  if (!host) return;
+  const now = new Date();
+  host.innerHTML = CLK_REGION_FMTS.map(function (z) {
+    return '<span class="clk-region"><b>' + esc(z.label) + '</b> ' + esc(z.fmt.format(now)) + '</span>';
+  }).join('');
+}
 
 function ribbonPct_(min) {
   if (typeof min !== 'number' || isNaN(min)) return 0;
@@ -678,6 +712,7 @@ function startClock() {
     } else {
       el.textContent = raw;
     }
+    clkUpdateRegions_();   // item 5 — refresh the world-clock strip (cached formatters)
   };
   tick(); clockInterval = setInterval(tick, 1000);
   startRibbonNowCursor_();

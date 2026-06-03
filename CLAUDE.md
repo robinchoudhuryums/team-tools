@@ -948,6 +948,30 @@ this section before touching the relevant area.
   `feedback[]` thread, falls back to the legacy `trainingReply`), so a
   reply that lives only in `feedback[]` no longer shows a blank answer
   line.
+- **Manager comments on ANY note, not just training (item 9).**
+  `setCallNoteManagerComment(repEmpId, noteId, message)` (manager-gated,
+  locked) appends a `{role:'manager', kind:'comment'}` entry to
+  `subformData.feedback[]` on any of a rep's notes — for feedback / praise.
+  It reuses the multi-turn Q&A machinery: `cnRenderQAThread_` now renders
+  for ANY note with a thread (the training-only guard was dropped), so the
+  rep sees the comment on their own card and can 👍/💬 back
+  (`appendCallNoteFeedback` was relaxed to allow a rep response on any note
+  that has a feedback[] thread). The manager Per-Rep card shows the
+  specialized clearable reply editor on training notes and a general
+  "Comment" box on every other note. Audit row `CallNoteManagerComment`
+  (PHI-free: noteId only). See INV-103.
+- **Automated notification emails are branded (item 2).** A shared
+  `buildBrandedEmailHtml_(heading, bodyHtml, opts)` wrapper (logo bar +
+  colored header + white card + footer, inline hex from `CN_EMAIL_PALETTE`
+  since email clients strip `<style>`) + `brandedKvRows_` give the Time
+  Clock automated emails the same identity as the Call Notes / external /
+  form emails. Converted (each keeps a plain-text `body` fallback +
+  `htmlBody`): PTO decision, missed-punch (employee + manager digest),
+  old-adjustment alert, training-question notification. The header color
+  is semantic (Approved = green, Denied = red, alerts = warn-amber, else
+  navy). `heading` is `esc_`'d in the wrapper; callers `esc_` any user data
+  in `bodyHtml` (INV-89/INV-105). `sendAutomatedExport_` stays plain-text
+  (carries attachments) — a known follow-on.
 - **Email body restored to the UMS legacy aesthetic.** Call-note
   emails sent from the new web app now match the prior
   `closeOrderEmail.js` / `updateOrderEmail.js` identity: UMS logo bar
@@ -1253,7 +1277,13 @@ this section before touching the relevant area.
   (Annual / Sick / Hours today). Pay-period info moved to the Time /
   PTO tab's Timesheet-mode side rail in Round 2 · 8b — the Clock
   view no longer loads timesheet data. Today's Punches and teammate
-  status render below the ledger as the existing cards.
+  status render below the ledger as the existing cards. A world-clock
+  strip (`#clk-regions`, item 5) sits under the hero clock: the rep's own
+  offshore tz (IST/PHT) when it isn't a US zone, plus the US customer
+  regions ET / CT / PT / HST. Pure client-side `Intl.DateTimeFormat` with
+  formatters cached once per render (`clkBuildRegionFmts_`) and refreshed
+  in the existing 1Hz `startClock` tick (`clkUpdateRegions_`) — no server
+  cost, no extra interval. Add/remove zones via `CLK_REGION_ZONES`.
 - **Day ribbon (Clock view).** Horizontal 06:00–22:00 time ribbon
   rendered between the actions row and the coverage strip. Shows a
   dashed scheduled band, filled accent-green work segments + dashed
@@ -1643,13 +1673,14 @@ manually for a fresh deploy or environment:
   need it set manually.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
-  installer now wires six triggers:
+  installer now wires seven triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm)
     - `sendCallNotesEodDigest` (call-notes, hourly — emails each rep at their local EOD hour)
     - `sendCallNotesWeeklyDigests` (call-notes, Friday manager-tz 8am)
     - `sendCallNotesUrgentDigest` (call-notes, daily manager-tz 8am — recent urgent-flagged notes; sends nothing when none)
     - `purgeExpiredFormData` (forms, daily manager-tz 3am — no-ops while retention is disabled)
+    - `purgeOldCallNotes` (call-notes, daily manager-tz 4am — no-ops while note retention is disabled)
   Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
   reminder about the cross-account trigger-ownership pitfall: Apps
@@ -1658,6 +1689,16 @@ manually for a fresh deploy or environment:
   are invisible to a fresh run. If a different account ever
   installed these triggers before, have that account run
   `removeAutomationTriggers()` first.
+- **Call-notes retention is OFF by default.** `purgeOldCallNotes`
+  (daily manager-tz 4am trigger) deletes per-rep `Notes` rows whose
+  `DateLocal` is older than `CN_NOTE_RETENTION_DAYS` — Script Property
+  first, then `CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS` (default **0 =
+  disabled**, nothing is ever deleted). The delete is **irreversible**
+  and the notes are PHI — confirm the canonical record lives elsewhere
+  before enabling. Cross-rep (walks every enrolled rep's Sheet); a broken
+  Sheet is skipped, not fatal. Writes a PHI-free `CallNotesPurge` audit
+  row with counts. No redeploy needed to change the window, but installing
+  the trigger requires `installAutomationTriggers()`.
 - **Form-data retention is OFF by default.** `purgeExpiredFormData`
   (daily trigger) deletes `FormSubmissions` (responses + signatures) and
   `FormTokens` (recipient + prefill data) rows older than
@@ -1873,7 +1914,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The six trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `purgeExpiredFormData`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` is destructive (deletes FormSubmissions + FormTokens rows past the retention window) so the gate is load-bearing, not just defensive | Subsystem: Server
+INV-44 | The seven trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` and `purgeOldCallNotes` are destructive (delete FormSubmissions/FormTokens and per-rep Notes rows past their retention windows) so the gate is load-bearing, not just defensive | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise substring matching across (caller, callback, patientAndTrx) for `field='caller'|'all'` and (issue, resolution) for `field='issue'|'all'`. Used by the "Find prior calls for this TRX" card button | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
@@ -1932,6 +1973,9 @@ INV-99 | `getPtoReconciliation` is manager-gated (INV-02) and strictly read-only
 INV-100 | `getCallNoteTagSuggestions` is rep-callable (requires `getEmployeeInfo_`), caller-scoped, and read-only: it returns only the calling rep's own unique, non-archived (`getArchivedTagsSet_`) tags via a column-bounded read of their own Sheet's `SubformData` column (INV-46-style). Not enrolled → `{tags:[]}`, never throws. No cross-rep data is read or returned. Feeds the Log-view tag-autocomplete `<datalist>`; every option is `esc()`'d client-side before `innerHTML` | Subsystem: Server + Client (Call Notes views)
 INV-101 | `notifyRepOfFailedSubmission_` (B2) is best-effort (try/catch, INV-14) and fired by `submitFormByToken` only on a size-cap rejection (INV-96); it emails the token's `CreatedBy` so a silently-rejected recipient submission is visible to the sending rep. It never throws and never blocks the recipient's error response; a missing `createdBy` is a no-op. The notice is PHI-free beyond the recipient address the creating rep already holds | Subsystem: Server
 INV-102 | `fixPtoReconciliation(empId)` is manager-gated (INV-02) and locked (INV-01) — the mutating companion to the read-only `getPtoReconciliation` (INV-99). Per date with >1 Approved row it keeps the single largest deduction and sets the extra Approved rows' status to `'Reconciled'` (every status reader — dashboard counts, calendar, the reconciliation scan, the INV-94 dup-guard — treats `'Reconciled'` as non-Approved), then credits the SERVER-recomputed over-charge back to the balances via `adjustLeaveBalance_` (positive delta; never trusts a client amount). Idempotent by construction: the neutralized rows are no longer `'Approved'`, so a re-run finds no duplicates and credits nothing (returns `fixed:false`). Writes a `PtoReconciliationFix` audit row with the manager's email. Pinned by `test_fixPtoReconciliation_creditsAndIdempotent` + `_nonManagerRejected` | Subsystem: Server
+INV-103 | `setCallNoteManagerComment(repEmpId, noteId, message)` (item 9) is manager-gated (INV-02) and locked (INV-01). It appends a `{role:'manager', kind:'comment', message, at, by}` entry to `subformData.feedback[]` on ANY of the rep's notes — not just training-flagged — reusing the Q&A thread (`cnRenderQAThread_`, now rendered for any note with a thread). Writes a PHI-free `CallNoteManagerComment` audit row (noteId only). `appendCallNoteFeedback` was relaxed so the rep can ack/clarify on any note that already has a feedback[] thread (training-flagged OR manager-commented), not training-only | Subsystem: Server + Client (Call Notes views)
+INV-104 | `purgeOldCallNotes` (item 7) is a top-level trigger handler reachable via google.script.run, so it calls `assertManagerCaller_` (INV-44 family) and is locked (INV-01). It deletes per-rep `Notes` rows older than `CN_NOTE_RETENTION_DAYS` (Script Property → `CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS`, default 0 = disabled; irreversible PHI delete). Cross-rep; per-rep Sheet failures are skipped; writes a PHI-free `CallNotesPurge` audit row. The note date is read from `CN.DATE_LOCAL` via `parseRetentionDateMs_` (handles the Sheets Date coercion). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` | Subsystem: Server
+INV-105 | Automated notification emails route their HTML through `buildBrandedEmailHtml_(heading, bodyHtml, opts)` (item 2), which `esc_`'s the heading; callers MUST `esc_` any user data placed in `bodyHtml` (same INV-89 discipline), and `brandedKvRows_` `esc_`'s both label and value. Converted senders keep a plain-text `body` fallback alongside `htmlBody`: `notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts` (employee + manager digest), `notifyManagerOldAdjustment_`, `notifyManagerTrainingQuestion_`. `sendAutomatedExport_` remains plain-text (carries attachments) — a known follow-on | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10

@@ -631,6 +631,7 @@ function _runAllTests() {
   _integrationTest('getPtoReconciliation_nonManagerRejected',  test_getPtoReconciliation_nonManagerRejected);
   _integrationTest('fixPtoReconciliation_creditsAndIdempotent', test_fixPtoReconciliation_creditsAndIdempotent);
   _integrationTest('fixPtoReconciliation_nonManagerRejected',   test_fixPtoReconciliation_nonManagerRejected);
+  _integrationTest('setCallNoteManagerComment_nonManagerRejected', test_setCallNoteManagerComment_nonManagerRejected);
 
   _integrationTest('getTeammateStatus_shapeRestricted',        test_getTeammateStatus_shapeRestricted);
   _integrationTest('getTeammateStatus_disabledFlag',           test_getTeammateStatus_disabledFlag);
@@ -754,6 +755,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_missedPunch_nonManagerThrows',  test_triggerGate_missedPunch_nonManagerThrows);
   _integrationTest('triggerGate_dailyExport_nonManagerThrows',  test_triggerGate_dailyExport_nonManagerThrows);
   _integrationTest('triggerGate_urgentDigest_nonManagerThrows', test_triggerGate_urgentDigest_nonManagerThrows);
+  _integrationTest('triggerGate_purgeOldCallNotes_nonManagerThrows', test_triggerGate_purgeOldCallNotes_nonManagerThrows);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Audit row assertions ───────────────────────────────────────────────
@@ -2763,6 +2765,23 @@ function test_triggerGate_eodDigest_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesEodDigest(); });
   }, 'manager access required', 'Non-manager should be rejected');
+}
+
+// Item 7 — the note-retention purge is destructive + reachable via
+// google.script.run, so it must reject non-managers like the other purges.
+function test_triggerGate_purgeOldCallNotes_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { purgeOldCallNotes(); });
+  }, 'manager access required', 'Non-manager should not be able to purge notes');
+}
+
+// Item 9 — manager comments on any note are manager-gated.
+function test_setCallNoteManagerComment_nonManagerRejected() {
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    const r = setCallNoteManagerComment(_TEST_PH_ID, 'nonexistent-note', 'nice work');
+    _assertEq(r.success, false, 'non-manager rejected');
+    _assertContains(r.error, 'Manager access required');
+  });
 }
 
 function test_triggerGate_weeklyDigests_nonManagerThrows() {
