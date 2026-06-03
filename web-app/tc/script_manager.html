@@ -42,19 +42,57 @@ function renderPtoReconCard_(res) {
       return esc(d.date) + ' (' + d.approvedCount + '×)';
     }).join(', ');
     return '<div style="padding:8px 0;border-bottom:1px dashed var(--line)">' +
-      '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.name) +
-        ' <span style="color:var(--danger-deep)">— over-charged ' + esc(over.join(' + ')) + ' day(s)</span></div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-top:2px">Duplicate approved dates: ' + dates + '</div>' +
-      '<div style="font-size:11px;color:var(--muted);margin-top:2px">Current balance: ' +
-        esc(String(r.storedAnnual)) + ' annual / ' + esc(String(r.storedSick)) + ' sick</div>' +
+      '<div style="display:flex;align-items:flex-start;gap:10px">' +
+        '<div style="flex:1">' +
+          '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.name) +
+            ' <span style="color:var(--danger-deep)">— over-charged ' + esc(over.join(' + ')) + ' day(s)</span></div>' +
+          '<div style="font-size:12px;color:var(--muted);margin-top:2px">Duplicate approved dates: ' + dates + '</div>' +
+          '<div style="font-size:11px;color:var(--muted);margin-top:2px">Current balance: ' +
+            esc(String(r.storedAnnual)) + ' annual / ' + esc(String(r.storedSick)) + ' sick</div>' +
+        '</div>' +
+        '<button class="pending-btn pb-approve" style="flex:0 0 auto" ' +
+          'data-emp-id="' + esc(r.empId) + '" data-emp-name="' + esc(r.name) + '" ' +
+          'onclick="fixPtoReconRep_(this)">' + icon('check', 14) + 'Credit &amp; reconcile</button>' +
+      '</div>' +
     '</div>';
   }).join('');
   return '<div class="card" style="border-color:var(--danger)">' +
     '<div class="card-label with-count"><span>PTO Balance Drift</span>' +
       '<span class="count-pill danger">' + res.reps.length + '</span></div>' +
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">These reps have more than one <em>approved</em> time-off row on the same date and were likely double-deducted (the H1 bug, now prevented for new requests). Correct each balance via Adjust or the employee’s timesheet.</div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">These reps have more than one <em>approved</em> time-off row on the same date and were likely double-deducted (the H1 bug, now prevented for new requests). “Credit &amp; reconcile” credits the over-charge back and marks the duplicate rows reconciled (idempotent); or correct manually via Adjust.</div>' +
     rows +
   '</div>';
+}
+
+/** Credit the over-charge back to the rep and neutralize the duplicate rows
+ *  (server-side fixPtoReconciliation). Confirms first (it adjusts a balance). */
+function fixPtoReconRep_(btn) {
+  const empId = btn.getAttribute('data-emp-id');
+  const name = btn.getAttribute('data-emp-name') || 'this rep';
+  uiConfirm({
+    title: 'Reconcile PTO balance',
+    message: 'Credit the over-charged day(s) back to ' + name + ' and mark the duplicate approved rows as reconciled? This adjusts their balance and writes an audit entry.',
+    tone: 'danger', confirmLabel: 'Credit & reconcile',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true; btn.textContent = 'Reconciling…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) {
+          showToast((res && res.error) || 'Reconcile failed', 'toast-error');
+          btn.disabled = false; return;
+        }
+        showToast(res.fixed
+          ? ('Credited ' + (res.creditedAnnual || 0) + ' annual / ' + (res.creditedSick || 0) + ' sick back')
+          : 'Nothing to reconcile', 'toast-success');
+        loadPtoReconciliation_();   // refresh — the rep should drop off when clean
+      })
+      .withFailureHandler(function (err) {
+        showToast((err && err.message) || 'Reconcile failed', 'toast-error');
+        btn.disabled = false;
+      })
+      .fixPtoReconciliation(empId);
+  });
 }
 
 function renderManagerView(area, data) {

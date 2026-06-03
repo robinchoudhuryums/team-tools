@@ -1196,6 +1196,78 @@ function getPtoReconciliation() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Manager-gated, locked corrector for the H1 double-deduct (the mutating
+ *  companion to the read-only getPtoReconciliation). For the target rep: per
+ *  date with >1 Approved row, keep the single largest deduction (the canonical
+ *  leave) and NEUTRALIZE the extras — set their status to 'Reconciled' so they
+ *  no longer count as Approved — then CREDIT the over-charge back to the
+ *  balances. Recomputes the over-charge server-side (never trusts a client
+ *  amount). Idempotent by construction: after the run the extras aren't
+ *  'Approved', so a re-run finds no duplicates and credits nothing. Writes a
+ *  `PtoReconciliationFix` audit row. */
+function fixPtoReconciliation(empId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const target = lookupEmployeeById_(empId);
+    if (!target) return { success: false, error: 'Employee not found.' };
+
+    const sheet = getOrCreateTimeOffSheet_();
+    const rows = sheet.getDataRange().getValues();
+    const byDate = {};   // date → [{rowIndex (1-based), days, bucket}]
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][TO.EMP_ID]).trim() !== empId) continue;
+      if (String(rows[i][TO.STATUS]).toLowerCase().trim() !== 'approved') continue;
+      const dedu = getLeaveDeduction_(String(rows[i][TO.TYPE]));
+      if (!dedu.bucket || !(dedu.days > 0)) continue;
+      const date = normalizeDate_(rows[i][TO.DATE]);
+      if (!byDate[date]) byDate[date] = [];
+      byDate[date].push({ rowIndex: i + 1, days: dedu.days, bucket: dedu.bucket });
+    }
+
+    let creditAnnual = 0, creditSick = 0;
+    const toReconcile = [];   // 1-based row indices of the over-charge rows
+    Object.keys(byDate).forEach(function (d) {
+      const list = byDate[d];
+      if (list.length < 2) return;
+      list.sort(function (a, b) { return b.days - a.days; });   // canonical = list[0]
+      for (let k = 1; k < list.length; k++) {
+        if (list[k].bucket === 'annual') creditAnnual += list[k].days;
+        else if (list[k].bucket === 'sick') creditSick += list[k].days;
+        toReconcile.push(list[k].rowIndex);
+      }
+    });
+    creditAnnual = Math.round(creditAnnual * 100) / 100;
+    creditSick   = Math.round(creditSick * 100) / 100;
+
+    if (toReconcile.length === 0) {
+      return { success: true, fixed: false, message: 'No duplicate approved rows to reconcile.' };
+    }
+
+    // Neutralize the extras FIRST (idempotency), then credit the balances.
+    toReconcile.forEach(function (ri) {
+      sheet.getRange(ri, TO.STATUS + 1).setValue('Reconciled');
+    });
+    let newAnnual = null, newSick = null;
+    if (creditAnnual > 0) newAnnual = adjustLeaveBalance_(empId, 'annual', creditAnnual);
+    if (creditSick > 0)   newSick   = adjustLeaveBalance_(empId, 'sick', creditSick);
+
+    writeAuditLog_(target, 'PtoReconciliationFix', '', '', false, 0,
+      `creditedAnnual=${creditAnnual}; creditedSick=${creditSick}; rowsReconciled=${toReconcile.length}`,
+      callerEmp.email);
+
+    return {
+      success: true, fixed: true,
+      creditedAnnual: creditAnnual, creditedSick: creditSick,
+      rowsReconciled: toReconcile.length,
+      newAnnual: newAnnual, newSick: newSick,
+    };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 /** Manager deletes a single punch within the delete window. */
 function deletePunch(empId, date, time, punchType) {
   const lock = LockService.getScriptLock();
@@ -2050,6 +2122,7 @@ function getCallNotesAmbient() {
       weekTotal,
       flagCounts,
       staleFlagHours: CONFIG.CALL_NOTES.STALE_FLAG_HOURS,
+      flagsVersion: cnFlagsVersion_(),
     };
     try { cache.put(cacheKey, JSON.stringify(result), CN_AMBIENT_CACHE_TTL); }
     catch (e) { /* cache put failed — return uncached, no behavioral impact */ }
@@ -6307,6 +6380,15 @@ function getClientFeatureFlags_() {
     if (f.scope !== 'server') out[f.key] = resolved[f.key];
   });
   return out;
+}
+
+/** Compact, deterministic version string of the client-deliverable flags.
+ *  Rides the 60s ambient poll (`getCallNotesAmbient`) so the client can detect
+ *  a manager toggle flip and refetch its config within the polling window
+ *  (≤60s) instead of waiting for a page reload / view enter. */
+function cnFlagsVersion_() {
+  const f = getClientFeatureFlags_();
+  return Object.keys(f).sort().map(function (k) { return k + (f[k] ? '1' : '0'); }).join(',');
 }
 
 function getStateTaxRates_() {

@@ -5572,12 +5572,38 @@ function cnStopAmbientPolling_() {
   if (CN_STATE.ambientTimer) { clearInterval(CN_STATE.ambientTimer); CN_STATE.ambientTimer = null; }
 }
 
+/** Refetch live-editable config after an ambient flagsVersion change, and
+ *  reapply the resolved flags to both empState.flags and deptConfig.flags so
+ *  flagOn_ reflects the new values on the next render. Silent + best-effort —
+ *  no re-render is forced; the rep's next form/composer render picks it up,
+ *  and any server-scope flag is enforced server-side regardless. */
+function cnRefreshConfigForFlags_() {
+  google.script.run
+    .withSuccessHandler(function (cfg) {
+      if (!cfg || cfg.error) return;
+      CN_STATE.deptConfig = cfg;
+      if (typeof empState !== 'undefined' && empState && cfg.flags) empState.flags = cfg.flags;
+    })
+    .withFailureHandler(function () { /* best-effort — keep the stale config */ })
+    .getCallNotesDepartments();
+}
+
 function cnPollAmbient_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error) return;
       if (res.enrolled === false) return;
       CN_STATE.staleFlagHours = res.staleFlagHours || 1;
+      // Runtime feature-flag propagation: if the manager flipped a toggle the
+      // ambient flagsVersion changes → refetch deptConfig (flags + templates +
+      // rates) so the UI honors it within ~60s without a manual reload. Skip
+      // the first poll (no prior baseline — deptConfig is already fresh from
+      // view enter).
+      if (res.flagsVersion && res.flagsVersion !== CN_STATE.flagsVersion) {
+        const hadBaseline = CN_STATE.flagsVersion !== undefined && CN_STATE.flagsVersion !== null;
+        CN_STATE.flagsVersion = res.flagsVersion;
+        if (hadBaseline) cnRefreshConfigForFlags_();
+      }
       // V4 Phase 4 — update stats-mini and quick-chip-row if they're mounted
       // on the current Log view. Both are no-ops when the elements aren't in
       // the DOM (rep is on a different view).

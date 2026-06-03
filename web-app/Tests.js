@@ -629,6 +629,8 @@ function _runAllTests() {
   // B1 — PTO balance reconciliation (double-deduct detection)
   _integrationTest('getPtoReconciliation_detectsDoubleDeduct', test_getPtoReconciliation_detectsDoubleDeduct);
   _integrationTest('getPtoReconciliation_nonManagerRejected',  test_getPtoReconciliation_nonManagerRejected);
+  _integrationTest('fixPtoReconciliation_creditsAndIdempotent', test_fixPtoReconciliation_creditsAndIdempotent);
+  _integrationTest('fixPtoReconciliation_nonManagerRejected',   test_fixPtoReconciliation_nonManagerRejected);
 
   _integrationTest('getTeammateStatus_shapeRestricted',        test_getTeammateStatus_shapeRestricted);
   _integrationTest('getTeammateStatus_disabledFlag',           test_getTeammateStatus_disabledFlag);
@@ -1792,6 +1794,50 @@ function test_getPtoReconciliation_nonManagerRejected() {
   _asUser(_TEST_PH_EMAIL, () => {
     const r = getPtoReconciliation();
     _assertNotNull(r.error, 'non-manager gets an error');
+    _assertContains(r.error, 'Manager access required');
+  });
+}
+
+// B1 corrector — credits the over-charge, neutralizes the duplicate row, and a
+// re-run is a no-op (idempotent). Reproduce the H1 damage realistically: two
+// Pending rows (appended directly since submit blocks dups now), both Approved
+// via updateTimeOffStatus → double-deduct, then reconcile.
+function test_fixPtoReconciliation_creditsAndIdempotent() {
+  _clearTestState(_TEST_PH_ID);
+  const sheet = getOrCreateTimeOffSheet_();
+  const sa1 = '2099-01-01 09:00:00', sa2 = '2099-01-01 09:00:01';
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', sa1]);
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', sa2]);
+  const before = _getBalance(_TEST_PH_ID, 'annual');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa1, 'Approved'));
+    _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa2, 'Approved'));
+  });
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 2.0, 0.001, 'double-deducted by 2');
+
+  let res;
+  _asUser(_TEST_MGR_EMAIL, () => { res = fixPtoReconciliation(_TEST_PH_ID); });
+  _assertSuccess(res);
+  _assertEq(res.fixed, true, 'reported a fix');
+  _assertEqClose(res.creditedAnnual, 1.0, 0.001, 'credited 1 annual day');
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 1.0, 0.001, 'balance corrected to a single deduction');
+
+  // Idempotent: reconciliation now clean, and a second fix credits nothing.
+  let recon;
+  _asUser(_TEST_MGR_EMAIL, () => { recon = getPtoReconciliation(); });
+  const stillFlagged = (recon.reps || []).filter(function (r) { return r.empId === _TEST_PH_ID; })[0];
+  _assertNull(stillFlagged, 'no longer flagged after the fix');
+  let res2;
+  _asUser(_TEST_MGR_EMAIL, () => { res2 = fixPtoReconciliation(_TEST_PH_ID); });
+  _assertSuccess(res2);
+  _assertEq(res2.fixed, false, 'second fix is a no-op (idempotent)');
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 1.0, 0.001, 'balance unchanged by the no-op');
+}
+
+function test_fixPtoReconciliation_nonManagerRejected() {
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r = fixPtoReconciliation(_TEST_PH_ID);
+    _assertEq(r.success, false, 'non-manager rejected');
     _assertContains(r.error, 'Manager access required');
   });
 }
