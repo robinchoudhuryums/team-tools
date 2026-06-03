@@ -987,7 +987,10 @@ this section before touching the relevant area.
   audit). **Flip semantics:** flags are consulted at request boundaries,
   never mid-transaction (a flip can't interrupt an in-flight locked
   write); the server honors a flip on the next RPC, while client UI lags
-  until its next config fetch (page load / view enter) — so a stale
+  until its next config fetch — page load, view enter, OR the 60s Call-Notes
+  ambient poll, which carries a `flagsVersion` (`cnFlagsVersion_`) and refetches
+  `getCallNotesDepartments` on change (`cnRefreshConfigForFlags_`), collapsing
+  the client staleness window to ≤60s while a rep is in Call Notes. So a stale
   client either keeps working (display flags) or gets a clean
   failure-toast when a server-enforced kill-switch rejects the next call.
   `danger` flags (`voiceInput` = HIPAA/BAA; `enablePtoTracking` =
@@ -1031,13 +1034,19 @@ this section before touching the relevant area.
   recomputed (no recorded initial allotment), so this targets the
   detectable, high-value signature rather than a full audit. The manager
   view lazy-loads it into `#mgr-pto-recon` and renders a danger card ONLY
-  when drift exists (invisible when clean). It is **read-only by design** —
-  correction is left to the existing Adjust / timesheet tooling so the
-  reconciliation can never itself mutate a balance (an auto-corrector
-  would need to neutralize the duplicate rows to stay idempotent;
-  deferred). New requests can no longer create duplicates (INV-94), so
-  this surfaces pre-fix damage. Pinned by
-  `test_getPtoReconciliation_detectsDoubleDeduct`.
+  when drift exists (invisible when clean). `getPtoReconciliation` itself is
+  **read-only**; the companion `fixPtoReconciliation` (manager-gated, locked,
+  surfaced as the uiConfirm-gated "Credit & reconcile" button on the drift
+  card) does the correction — per duplicate date it keeps the single largest
+  deduction and sets the extra Approved rows' status to `'Reconciled'` (a value
+  every status reader ignores — dashboard counts, calendar, reconciliation
+  itself, the INV-94 dup-guard), then credits the server-recomputed over-charge
+  back to the balances via `adjustLeaveBalance_`. Idempotent by construction:
+  the neutralized rows are no longer `'Approved'`, so a re-run finds no
+  duplicates and credits nothing. New requests can no longer create duplicates
+  (INV-94), so this surfaces pre-fix damage. Pinned by
+  `test_getPtoReconciliation_detectsDoubleDeduct` +
+  `test_fixPtoReconciliation_creditsAndIdempotent` (INV-99 / INV-102).
 - **CN card actions use a primary/secondary split.** Frequently used
   actions (flag-action, flag-training, pin, copy, email) are always
   visible. Less-frequent actions (urgent-toggle, flag-review, resolve,
@@ -1844,7 +1853,7 @@ INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configur
 INV-36 | Call-note email sends (`emailFromCallNote`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) are wrapped in try/catch and never block the API result (INV-14 generalized) | Subsystem: Server
 INV-37 | `sanitizeFlagType_` only allows `''` / `'action'` / `'training'` / `'review'` to be written to FlagType; unknown values silently coerce to `''` rather than corrupting the column | Subsystem: Server
 INV-38 | Compact-mode is a shell-level attribute (`data-compact="1"` on `documentElement`); set from the `?compact=1` URL param on boot and consumed via CSS selectors in `styles.html`. Tool views render `.compact-header` instead of `.view-title-row` when `COMPACT_MODE === true` | Subsystem: Client (shell)
-INV-39 | `getCallNotesAmbient` is authenticated to the caller (requires registered employee), read-only — returns `{enrolled, unresolvedActionCount, staleActionCount, todayTotal, weekTotal, flagCounts, staleFlagHours}` for the calling rep (`weekTotal` + `flagCounts {all,action,training,review,unresolved,qa}` added in Phase 4 for the Log view's stats-mini + quick-chip-row). Cached for `CN_AMBIENT_CACHE_TTL` (60s) under `CN_AMBIENT_CACHE_PREFIX + emp.id`. The cache is purely TTL-driven; mutating endpoints do NOT eagerly invalidate (the 60s ceiling matches the sidebar polling interval). Used by the sidebar badge polling + Log view stats; never leaks cross-rep data | Subsystem: Server
+INV-39 | `getCallNotesAmbient` is authenticated to the caller (requires registered employee), read-only — returns `{enrolled, unresolvedActionCount, staleActionCount, todayTotal, weekTotal, flagCounts, staleFlagHours, flagsVersion}` for the calling rep (`weekTotal` + `flagCounts {all,action,training,review,unresolved,qa}` added in Phase 4 for the Log view's stats-mini + quick-chip-row; `flagsVersion` = `cnFlagsVersion_()`, a compact encoding of the client-deliverable feature flags so the poller can detect a manager toggle flip and refetch config within ≤60s — see the runtime-flag flip-semantics decision). Cached for `CN_AMBIENT_CACHE_TTL` (60s) under `CN_AMBIENT_CACHE_PREFIX + emp.id`. The cache is purely TTL-driven; mutating endpoints do NOT eagerly invalidate (the 60s ceiling matches the sidebar polling interval). Used by the sidebar badge polling + Log view stats; never leaks cross-rep data | Subsystem: Server
 INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-type transition (`oldFlag !== t`), not only on full clear — so stale `resolved=TRUE` from a prior action-flag cycle doesn't resurface when the rep flips back to action | Subsystem: Server
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
@@ -1904,9 +1913,10 @@ INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via
 INV-96 | `submitFormByToken` (public, token-only) bounds the recipient-supplied payload before the append: field count ≤ 200 and per-cell char length ≤ 45000 (under the 50k Sheets cell limit) for both the data JSON and the signature. On exceed it returns a specific error and leaves the token `pending` for retry, rather than throwing mid-write; also caps the number of arbitrary keys an unauthenticated caller can persist. Defense-in-depth (B5): `form_public.html`'s `SIG_PAD.toDataURL` downscales the signature EXPORT to ≤ 600px wide (the capture canvas is `rect.width * devicePixelRatio`, large on retina/mobile) so a legitimate signature's base64 stays well under one cell and never trips this cap — capture stays full-res for smooth drawing. A B5 "store the signature in Drive" alternative was deliberately NOT built: it would split a HIPAA-attested append-only record (§164.312(c)) across two stores and require integrating the destructive `purgeExpiredFormData` to avoid orphaned PHI in Drive — disproportionate risk for a cap that the capture-side downscale already keeps from biting | Subsystem: Server + Client (public forms)
 INV-97 | Feature toggles are gated by the `FEATURE_FLAGS` registry (`Code.js`): only registry keys are honored. `getFlag_(key)` reads Script Property `CN_FEATURE_FLAGS` first (sanitize-on-read: corrupt/non-object blob → registry defaults; unknown key → `false`), else the registry default (which mirrors the legacy CONFIG constant, so migrating a read to `getFlag_` is a behavioral no-op until a flag is set). A flag's `scope` decides enforcement: `client` flags only gate UI (delivered via `getEmployeeState` `empState.flags` + `getCallNotesDepartments` `deptConfig.flags`, read client-side via `flagOn_()`); `server`/`both` flags are ALSO enforced in their endpoint — hiding a button never disables an endpoint (INV-02/S30 preserved). Flags are consulted at request boundaries, never mid-transaction | Subsystem: Server + Client (shell)
 INV-98 | `getFeatureFlags` and `saveFeatureFlags` are manager-gated (INV-02/INV-57 family). `saveFeatureFlags` accepts only registry keys with strict-boolean values (unknown key or non-boolean → rejected, never persisted), writes the `{key:bool}` map to Script Property `CN_FEATURE_FLAGS`, and records an `AdminConfigChange` audit row with the manager's email. `danger`-marked flags (`voiceInput` HIPAA/BAA, `enablePtoTracking` stateful) are gated behind a `uiConfirm({tone:'danger'})` in the Admin UI before save | Subsystem: Server + Client (Call Notes views)
-INV-99 | `getPtoReconciliation` is manager-gated (INV-02) and strictly read-only — it never writes a balance or a sheet. It detects reps with >1 Approved time-off row on the same date (the H1 double-deduct signature) and quantifies the over-charge per bucket as `actual − expected`, where expected per date is the single largest deduction. Returns only reps with drift. Correction is deferred to existing Adjust/timesheet tooling (an idempotent auto-corrector would have to neutralize the duplicate rows). Pinned by `test_getPtoReconciliation_detectsDoubleDeduct` + `_nonManagerRejected` | Subsystem: Server
+INV-99 | `getPtoReconciliation` is manager-gated (INV-02) and strictly read-only — it never writes a balance or a sheet. It detects reps with >1 Approved time-off row on the same date (the H1 double-deduct signature) and quantifies the over-charge per bucket as `actual − expected`, where expected per date is the single largest deduction. Returns only reps with drift. Correction is performed by the mutating companion `fixPtoReconciliation` (INV-102), NOT by this read endpoint. Pinned by `test_getPtoReconciliation_detectsDoubleDeduct` + `_nonManagerRejected` | Subsystem: Server
 INV-100 | `getCallNoteTagSuggestions` is rep-callable (requires `getEmployeeInfo_`), caller-scoped, and read-only: it returns only the calling rep's own unique, non-archived (`getArchivedTagsSet_`) tags via a column-bounded read of their own Sheet's `SubformData` column (INV-46-style). Not enrolled → `{tags:[]}`, never throws. No cross-rep data is read or returned. Feeds the Log-view tag-autocomplete `<datalist>`; every option is `esc()`'d client-side before `innerHTML` | Subsystem: Server + Client (Call Notes views)
 INV-101 | `notifyRepOfFailedSubmission_` (B2) is best-effort (try/catch, INV-14) and fired by `submitFormByToken` only on a size-cap rejection (INV-96); it emails the token's `CreatedBy` so a silently-rejected recipient submission is visible to the sending rep. It never throws and never blocks the recipient's error response; a missing `createdBy` is a no-op. The notice is PHI-free beyond the recipient address the creating rep already holds | Subsystem: Server
+INV-102 | `fixPtoReconciliation(empId)` is manager-gated (INV-02) and locked (INV-01) — the mutating companion to the read-only `getPtoReconciliation` (INV-99). Per date with >1 Approved row it keeps the single largest deduction and sets the extra Approved rows' status to `'Reconciled'` (every status reader — dashboard counts, calendar, the reconciliation scan, the INV-94 dup-guard — treats `'Reconciled'` as non-Approved), then credits the SERVER-recomputed over-charge back to the balances via `adjustLeaveBalance_` (positive delta; never trusts a client amount). Idempotent by construction: the neutralized rows are no longer `'Approved'`, so a re-run finds no duplicates and credits nothing (returns `fixed:false`). Writes a `PtoReconciliationFix` audit row with the manager's email. Pinned by `test_fixPtoReconciliation_creditsAndIdempotent` + `_nonManagerRejected` | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10
