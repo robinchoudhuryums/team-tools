@@ -293,14 +293,18 @@ function sanitizeTagsArray_(arr) {
 // call-data-reporting/apps-script/department-dashboard/Config.gs.
 // validateCdrColumns_() checks at runtime. On mismatch, update
 // here AND bump CDR_CACHE_KEY. Last verified: 2026-05-28.
-// Duration columns (TTT, ATT, AVG_ABD_WAIT, CSR_AVG_ABD_WAIT) MUST
-// be read via getDisplayValues() — see the "Spreadsheet TZ ≠ script TZ"
-// gotcha in call-data-reporting/CLAUDE.md.
+// Duration columns (TTT, ATT) MUST be read via getDisplayValues() — see
+// the "Spreadsheet TZ ≠ script TZ" gotcha in call-data-reporting/CLAUDE.md.
+// AvgAbdWait (col AG / index 33) and CsrAvgAbdWait (col AH / index 34) are
+// also duration columns, but are intentionally NOT read by any metric today,
+// so they are omitted from this enum to avoid a dead-but-tempting entry. If
+// you ever wire them in: re-add them here AND to CDR_EXPECTED_HEADERS, and
+// read them through getDisplayValues() (never getValue()) or the phantom
+// timezone offset (INV-64) will silently corrupt the parsed seconds.
 const CDR = {
   DATE: 2, AGENT: 3, QUEUE_EXT: 4,
   TOTAL_UNIQUE: 5, TOTAL_RUNG: 6, TOTAL_MISSED: 7, TOTAL_ANSWERED: 8,
   TTT: 9, ATT: 10,
-  AVG_ABD_WAIT: 33, CSR_AVG_ABD_WAIT: 34,
 };
 const CDR_EXPECTED_HEADERS = {
   2: 'Date', 3: 'Agent', 5: 'Unique', 6: 'Rung', 7: 'Missed',
@@ -571,8 +575,13 @@ function submitTimeOffRequest(date, type, notes) {
     if (!emp) return { success: false, error: 'Employee not found.' };
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format.' };
+    if (!isValidTimeOffType_(type))
+      return { success: false, error: 'Invalid leave type.' };
+    const toSheet = getOrCreateTimeOffSheet_();
+    if (hasActiveTimeOffOnDate_(toSheet, emp.id, date))
+      return { success: false, error: 'You already have a pending or approved time-off request for that date.' };
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    getOrCreateTimeOffSheet_().appendRow([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]);
+    toSheet.appendRow([emp.id, emp.name, date, type, notes || '', 'Pending', submittedAt]);
     writeAuditLog_(emp, 'TimeOffRequest', date, '', false, 0, type + (notes ? ' — ' + notes : ''));
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
@@ -1065,14 +1074,18 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     if (!empId) return { success: false, error: 'No employee selected.' };
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format (expected yyyy-MM-dd).' };
-    if (!type) return { success: false, error: 'Leave type required.' };
+    if (!isValidTimeOffType_(type)) return { success: false, error: 'Invalid leave type.' };
 
     const targetEmp = lookupEmployeeById_(empId);
     if (!targetEmp) return { success: false, error: 'Employee not found.' };
 
+    const toSheet = getOrCreateTimeOffSheet_();
+    if (hasActiveTimeOffOnDate_(toSheet, targetEmp.id, date))
+      return { success: false, error: 'That employee already has a pending or approved request for that date.' };
+
     const status = autoApprove ? 'Approved' : 'Pending';
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    getOrCreateTimeOffSheet_()
+    toSheet
       .appendRow([targetEmp.id, targetEmp.name, date, type, notes || '', status, submittedAt]);
 
     // Apply leave deduction immediately if auto-approving
@@ -4554,13 +4567,30 @@ function submitFormByToken(token, formData) {
     });
     const signatureData = String(data.signature || '');
 
+    // Bound the payload BEFORE the write. This is a public, token-only
+    // endpoint, so formData/signature are recipient-supplied: each value
+    // lands in a single Sheets cell (~50k-char hard limit) and an oversized
+    // signature otherwise throws mid-append, leaving the token 'pending'
+    // with only a generic error. Reject early with a specific, actionable
+    // message (the token stays pending so the recipient can retry), and cap
+    // the number of arbitrary keys an unauthenticated caller can persist (M3).
+    const FORM_FIELD_LIMIT = 200;
+    const FORM_CELL_CHAR_LIMIT = 45000;
+    if (Object.keys(sanitizedData).length > FORM_FIELD_LIMIT)
+      return { success: false, error: 'This submission has too many fields to save.' };
+    const dataJson = JSON.stringify(sanitizedData);
+    if (dataJson.length > FORM_CELL_CHAR_LIMIT)
+      return { success: false, error: 'This submission is too large to save. Please shorten your responses and resubmit.' };
+    if (signatureData.length > FORM_CELL_CHAR_LIMIT)
+      return { success: false, error: 'Your signature image is too large to save. Please redraw a simpler signature and resubmit.' };
+
     // Save submission
     const now = new Date();
     const submittedAt = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
     const submissionsSheet = getOrCreateFormSubmissionsSheet_();
     submissionsSheet.appendRow([
       token, formType, recipientEmail, submittedAt,
-      JSON.stringify(sanitizedData),
+      dataJson,
       signatureData,
     ]);
 
@@ -5874,6 +5904,41 @@ function isoLocalDate_(d) {
  * Returns { bucket: 'sick'|'annual'|null, days: <number> } for the given type.
  * null bucket means no deduction (e.g., unpaid leave — if added in future).
  */
+// Canonical set of leave types the app accepts. Mirrors the Type <select>
+// options in modals.html plus 'Unpaid Leave' (recognized by
+// getLeaveDeduction_ but not offered in the picker). Validated server-side
+// so a client bug / direct RPC can't write a garbage type that
+// getLeaveDeduction_ then silently defaults to annual/1.0 (M1).
+const TIME_OFF_TYPES = [
+  'Full Day', 'Half Day - Morning', 'Half Day - Afternoon',
+  'Sick Leave', 'Personal Day', 'Unpaid Leave', 'Other',
+];
+
+/** Case-insensitive, trimmed validity check for a time-off Type — mirrors
+ *  getLeaveDeduction_'s matching semantics so the two never disagree. */
+function isValidTimeOffType_(type) {
+  const t = String(type || '').toLowerCase().trim();
+  if (!t) return false;
+  return TIME_OFF_TYPES.some(function (k) { return k.toLowerCase() === t; });
+}
+
+/** True when the employee already has a Pending or Approved time-off
+ *  request for `date` (yyyy-MM-dd). Used to block duplicate same-date
+ *  requests: INV-03's transition guard is per-row, so two sibling rows for
+ *  one day would each deduct on approval and double-charge the balance (H1).
+ *  Denied/cancelled rows never deducted, so they don't block a re-request. */
+function hasActiveTimeOffOnDate_(sheet, empId, date) {
+  const rows = sheet.getDataRange().getValues();
+  const id = String(empId).trim();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][TO.EMP_ID]).trim() !== id) continue;
+    if (normalizeDate_(rows[i][TO.DATE]) !== date) continue;
+    const st = String(rows[i][TO.STATUS]).toLowerCase().trim();
+    if (st === 'pending' || st === 'approved') return true;
+  }
+  return false;
+}
+
 function getLeaveDeduction_(type) {
   const t = String(type).toLowerCase().trim();
   if (t === 'sick leave') return { bucket: 'sick', days: 1.0 };

@@ -3752,6 +3752,27 @@ function cnLoadTrainingQA_() {
 
 /** Render the training Q&A tray above the filter bar. Only shows when the
  *  rep has at least one answered training note. Collapsible to save space. */
+// Resolve the most recent manager reply for a note, preferring the
+// multi-turn feedback[] thread (Round 2 · 8g) and falling back to the legacy
+// trainingReply field. Without this, surfaces that read only the legacy
+// field (the Training Answers tray, the manager read-only card) show an
+// empty answer line for notes whose reply lives solely in feedback[] (L4/L5).
+function cnLatestManagerReply_(sub) {
+  sub = sub || {};
+  if (Array.isArray(sub.feedback)) {
+    for (let i = sub.feedback.length - 1; i >= 0; i--) {
+      const e = sub.feedback[i];
+      if (e && e.role === 'manager' && (e.kind === 'reply' || !e.kind) && e.message) {
+        return { message: String(e.message), by: String(e.by || '') };
+      }
+    }
+  }
+  if (sub.trainingReply) {
+    return { message: String(sub.trainingReply), by: String(sub.trainingReplyBy || '') };
+  }
+  return { message: '', by: '' };
+}
+
 function cnRenderTrainingQATray_() {
   const host = document.getElementById('cn-training-qa-tray');
   if (!host) return;
@@ -3760,8 +3781,9 @@ function cnRenderTrainingQATray_() {
   const cards = qa.map(function (n) {
     const time = cnFormatTimestampForCopy_(n.timestamp);
     const question = (n.subformData && n.subformData.trainingQuestion) || '';
-    const reply = (n.subformData && n.subformData.trainingReply) || '';
-    const replyBy = (n.subformData && n.subformData.trainingReplyBy) || '';
+    const mgrReply = cnLatestManagerReply_(n.subformData);
+    const reply = mgrReply.message;
+    const replyBy = mgrReply.by;
     return `
       <div class="cn-qa-card">
         <div class="cn-qa-card-meta">${esc(n.dateLocal)} · ${esc(time)}${n.caller ? ' · ' + esc(n.caller) : ''}</div>
@@ -5159,11 +5181,10 @@ function cnMgrRenderReadonlyCard_(note) {
   let trainingQ = '';
   let trainingReplyEditor = '';
   if (note.flagType === 'training' && note.subformData && note.subformData.trainingQuestion) {
-    trainingQ = `<div class="cn-card-training-q">${icon('bulb', 11)}<span>${esc(String(note.subformData.trainingQuestion))}</span></div>`;
-    const existingReply = (note.subformData && note.subformData.trainingReply) || '';
-    if (existingReply) {
-      trainingQ += `<div class="cn-card-training-a">${icon('checkCircle', 11)}<span>${esc(String(existingReply))}</span></div>`;
-    }
+    // Full multi-turn thread (read-only) so the manager sees the rep's acks
+    // and follow-up clarifications, not just the latest reply (L5 / 8g parity).
+    trainingQ = cnRenderQAThread_(note, { readonly: true });
+    const existingReply = cnLatestManagerReply_(note.subformData).message;
     // Inline reply editor — manager can write/edit/clear the answer right
     // from the per-rep card. `data-rep="..."` lets the click handler find
     // the right rep without round-tripping the JS string boundary.
@@ -5557,7 +5578,8 @@ function cnPollAmbient_() {
  *  When the most recent message is from the manager and the rep hasn't
  *  responded yet, action buttons (👍 Got it / 💬 Clarify) render below
  *  the thread. The 💬 button expands an inline textarea + Submit. */
-function cnRenderQAThread_(note) {
+function cnRenderQAThread_(note, opts) {
+  const readonly = !!(opts && opts.readonly);
   if (!note || note.flagType !== 'training') return '';
   const sub = note.subformData || {};
   // Build the thread: optional rep question seed + manager replies / agent
@@ -5621,7 +5643,7 @@ function cnRenderQAThread_(note) {
       + ts
       + '</div>';
   }).join('');
-  const actionsHtml = canRespond
+  const actionsHtml = (canRespond && !readonly)
     ? '<div class="qa-actions">'
         + '<button type="button" class="qa-ack-btn" data-qa-ack="' + esc(note.noteId) + '">👍 Got it</button>'
         + '<button type="button" class="qa-clarify-btn" data-qa-clarify="' + esc(note.noteId) + '">💬 Clarify</button>'

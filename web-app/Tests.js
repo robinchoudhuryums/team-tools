@@ -621,6 +621,11 @@ function _runAllTests() {
   _integrationTest('managerSubmitTimeOff_employeeNotFound',    test_managerSubmitTimeOff_employeeNotFound);
   _integrationTest('managerSubmitTimeOff_writesAudit',         test_managerSubmitTimeOff_writesAudit);
 
+  // H1 / M1 — duplicate-date guard + leave-type validation on time-off submit
+  _integrationTest('submitTimeOff_duplicateDateRejected',      test_submitTimeOff_duplicateDateRejected);
+  _integrationTest('submitTimeOff_invalidTypeRejected',        test_submitTimeOff_invalidTypeRejected);
+  _integrationTest('managerSubmitTimeOff_duplicateDateRejected', test_managerSubmitTimeOff_duplicateDateRejected);
+
   _integrationTest('getTeammateStatus_shapeRestricted',        test_getTeammateStatus_shapeRestricted);
   _integrationTest('getTeammateStatus_disabledFlag',           test_getTeammateStatus_disabledFlag);
 
@@ -1172,6 +1177,7 @@ function test_recordPunch_reasonAcceptedOldAdj() {
 // ── submitTimeOffRequest ──
 
 function test_submitTimeOff_createsRow() {
+  _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_INDIA_EMAIL, () => {
     const r = submitTimeOffRequest(_TEST_DATE_FUTURE, 'Sick Leave', 'doctor visit');
     _assertSuccess(r);
@@ -1188,9 +1194,40 @@ function test_submitTimeOff_rejectsBadDate() {
   });
 }
 
+// H1 — a second request for a date that already has a Pending (or Approved)
+// row is rejected, so dual approval can't double-deduct the balance.
+function test_submitTimeOff_duplicateDateRejected() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'first'));
+    _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'dupe'),
+      'already have a pending or approved');
+  });
+  // Exactly one row should exist for that emp+date.
+  const ss = getAdpSS_();
+  const rows = ss.getSheetByName(CONFIG.TIMEOFF_TAB).getDataRange().getValues();
+  let count = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][TO.EMP_ID]).trim() === _TEST_INDIA_ID
+        && normalizeDate_(rows[i][TO.DATE]) === _TEST_DATE_FUTURE) count++;
+  }
+  _assertEq(count, 1, 'Duplicate same-date request must not create a 2nd row');
+}
+
+// M1 — an unrecognized leave type is rejected rather than silently defaulting
+// to annual/1.0 in getLeaveDeduction_.
+function test_submitTimeOff_invalidTypeRejected() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Half Day', ''), 'Invalid leave type');
+    _assertFailure(submitTimeOffRequest(_TEST_DATE_FUTURE, '', ''), 'Invalid leave type');
+  });
+}
+
 // ── cancelTimeOffRequest ──
 
 function test_cancelTimeOff_pendingDeletes() {
+  _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   // Submit
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'vacation'));
@@ -1206,6 +1243,7 @@ function test_cancelTimeOff_pendingDeletes() {
 }
 
 function test_cancelTimeOff_approvedRejected() {
+  _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_PH_EMAIL, () => {
     _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', ''));
   });
@@ -1645,6 +1683,7 @@ function test_selfDeletePunch_unknownType() {
 
 function test_managerSubmitTimeOff_pendingFlow() {
   // Submit without auto-approve. Verify return + balance untouched.
+  _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_INDIA_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     const r = managerSubmitTimeOff(
@@ -1659,6 +1698,7 @@ function test_managerSubmitTimeOff_pendingFlow() {
 }
 
 function test_managerSubmitTimeOff_autoApproveDeducts() {
+  _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     const r = managerSubmitTimeOff(
@@ -1673,6 +1713,7 @@ function test_managerSubmitTimeOff_autoApproveDeducts() {
 }
 
 function test_managerSubmitTimeOff_autoApproveHalfDay() {
+  _clearTestState(_TEST_PH_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     const r = managerSubmitTimeOff(
@@ -1712,8 +1753,22 @@ function test_managerSubmitTimeOff_employeeNotFound() {
   });
 }
 
+// H1 — the manager-filed path is guarded too: it can't stack a second
+// active request on a date the employee already has Pending/Approved.
+function test_managerSubmitTimeOff_duplicateDateRejected() {
+  _clearTestState(_TEST_PH_ID);
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(managerSubmitTimeOff(_TEST_PH_ID, _TEST_DATE_FUTURE, 'Full Day', '', false));
+    _assertFailure(
+      managerSubmitTimeOff(_TEST_PH_ID, _TEST_DATE_FUTURE, 'Full Day', '', true),
+      'already has a pending or approved'
+    );
+  });
+}
+
 function test_managerSubmitTimeOff_writesAudit() {
   // Auto-approve marks "filed by manager, auto-approved" in the notes column.
+  _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertSuccess(managerSubmitTimeOff(
       _TEST_INDIA_ID, _TEST_DATE_FUTURE, 'Personal Day', 'family event', true
