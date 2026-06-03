@@ -1200,7 +1200,12 @@ this section before touching the relevant area.
   signature is embedded in the PDF's HTML; if the conversion is unavailable
   the email still sends with the HTML body + PNG). `formatFormFieldValue_`
   humanizes array/boolean/nested values for the table + plain-text
-  fallback.
+  fallback. The mirror case (B2): when a submission is rejected by the
+  payload size caps (INV-96), `submitFormByToken` calls
+  `notifyRepOfFailedSubmission_` (best-effort, try/catch — never blocks the
+  recipient's error response) so a silently-rejected submission isn't
+  invisible to the sending rep. The notice is PHI-free beyond the recipient
+  address the rep already has, and names only the form + the size reason.
 - **Cross-rep manager aggregates are cached.** Two parameterless
   manager aggregates that otherwise re-scan every enrolled rep's Sheet
   are whole-result cached: `getCallNotesTagTaxonomy`
@@ -1570,14 +1575,16 @@ were intentionally deferred. The redesign itself is complete; these
 are polish/expansion items captured here so the next session can
 pick them up without re-deriving the context.
 
-- **Tag-suggestion autocomplete on the Log view.** The Round 2
-  tag-taxonomy work added an `archived` flag on tags expressly so
-  a future autocomplete surface could filter archived suggestions
-  out (see CLAUDE.md "Tag taxonomy rename/merge/archive" decision).
-  That autocomplete UI doesn't exist yet. Lightweight to build:
-  a `<datalist>` on the tag input fed by `getCallNotesTagTaxonomy`
-  (already manager-gated; would need a thin caller-callable
-  variant for reps that returns just the unique active tag list).
+- **Tag-suggestion autocomplete on the Log view.** *(Implemented, B3.)*
+  The Log-view tag input (`#cn-tag-input`) carries a `<datalist>`
+  (`#cn-tag-suggestions`) populated on view enter by `cnLoadTagSuggestions_`
+  → `getCallNoteTagSuggestions` (rep-callable, caller-scoped, read-only): a
+  column-bounded read of the caller's own `SubformData` column that returns
+  their unique, non-archived (`getArchivedTagsSet_`) tags. Cross-rep / shared-
+  vocabulary suggestions were intentionally left out (the manager taxonomy
+  aggregate is the expensive, manager-gated path); own-history keeps it cheap
+  and leak-free. A future enhancement could surface team-wide active tags via
+  a short-TTL cached cross-rep variant.
 
 ## Operator State Checklist
 
@@ -1898,6 +1905,8 @@ INV-96 | `submitFormByToken` (public, token-only) bounds the recipient-supplied 
 INV-97 | Feature toggles are gated by the `FEATURE_FLAGS` registry (`Code.js`): only registry keys are honored. `getFlag_(key)` reads Script Property `CN_FEATURE_FLAGS` first (sanitize-on-read: corrupt/non-object blob → registry defaults; unknown key → `false`), else the registry default (which mirrors the legacy CONFIG constant, so migrating a read to `getFlag_` is a behavioral no-op until a flag is set). A flag's `scope` decides enforcement: `client` flags only gate UI (delivered via `getEmployeeState` `empState.flags` + `getCallNotesDepartments` `deptConfig.flags`, read client-side via `flagOn_()`); `server`/`both` flags are ALSO enforced in their endpoint — hiding a button never disables an endpoint (INV-02/S30 preserved). Flags are consulted at request boundaries, never mid-transaction | Subsystem: Server + Client (shell)
 INV-98 | `getFeatureFlags` and `saveFeatureFlags` are manager-gated (INV-02/INV-57 family). `saveFeatureFlags` accepts only registry keys with strict-boolean values (unknown key or non-boolean → rejected, never persisted), writes the `{key:bool}` map to Script Property `CN_FEATURE_FLAGS`, and records an `AdminConfigChange` audit row with the manager's email. `danger`-marked flags (`voiceInput` HIPAA/BAA, `enablePtoTracking` stateful) are gated behind a `uiConfirm({tone:'danger'})` in the Admin UI before save | Subsystem: Server + Client (Call Notes views)
 INV-99 | `getPtoReconciliation` is manager-gated (INV-02) and strictly read-only — it never writes a balance or a sheet. It detects reps with >1 Approved time-off row on the same date (the H1 double-deduct signature) and quantifies the over-charge per bucket as `actual − expected`, where expected per date is the single largest deduction. Returns only reps with drift. Correction is deferred to existing Adjust/timesheet tooling (an idempotent auto-corrector would have to neutralize the duplicate rows). Pinned by `test_getPtoReconciliation_detectsDoubleDeduct` + `_nonManagerRejected` | Subsystem: Server
+INV-100 | `getCallNoteTagSuggestions` is rep-callable (requires `getEmployeeInfo_`), caller-scoped, and read-only: it returns only the calling rep's own unique, non-archived (`getArchivedTagsSet_`) tags via a column-bounded read of their own Sheet's `SubformData` column (INV-46-style). Not enrolled → `{tags:[]}`, never throws. No cross-rep data is read or returned. Feeds the Log-view tag-autocomplete `<datalist>`; every option is `esc()`'d client-side before `innerHTML` | Subsystem: Server + Client (Call Notes views)
+INV-101 | `notifyRepOfFailedSubmission_` (B2) is best-effort (try/catch, INV-14) and fired by `submitFormByToken` only on a size-cap rejection (INV-96); it emails the token's `CreatedBy` so a silently-rejected recipient submission is visible to the sending rep. It never throws and never blocks the recipient's error response; a missing `createdBy` is a no-op. The notice is PHI-free beyond the recipient address the creating rep already holds | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10

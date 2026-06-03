@@ -2239,6 +2239,37 @@ function invalidateCnTaxonomyCache_() {
   catch (e) { /* best-effort */ }
 }
 
+/** Rep-callable (caller-scoped, read-only) tag-suggestion source for the Log
+ *  view's autocomplete datalist (B3). Returns the UNIQUE, non-archived tags the
+ *  CALLER has used in their own per-rep Sheet — a column-bounded read of just
+ *  the SubformData column (~16× fewer cells than a full read). Cross-rep
+ *  suggestions are intentionally out of scope (the manager taxonomy aggregate
+ *  is the expensive, manager-gated path); own-history keeps this cheap and
+ *  leak-free. Not enrolled → `{ tags: [] }`, never throws. */
+function getCallNoteTagSuggestions() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!emp.callNotesSheetId) return { tags: [] };
+    const sheet = getCallNotesSheet_(emp);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { tags: [] };
+    const subVals = sheet.getRange(2, CN.SUBFORM_DATA + 1, lastRow - 1, 1).getValues();
+    const archived = getArchivedTagsSet_();
+    const seen = {};
+    for (let i = 0; i < subVals.length; i++) {
+      let sub = null;
+      try { sub = JSON.parse(subVals[i][0]); } catch (_) {}
+      if (!sub || !Array.isArray(sub.tags)) continue;
+      sub.tags.forEach(function (t) {
+        const tag = String(t || '').trim().toLowerCase();
+        if (tag && !archived[tag]) seen[tag] = true;
+      });
+    }
+    return { tags: Object.keys(seen).sort() };
+  } catch (err) { return { error: err.message }; }
+}
+
 // ── Round 2 follow-on (Tag taxonomy actions) — Admin tag mutations ────────
 // rename / merge / archive operate across every enrolled rep's per-rep Sheet.
 // Manager-gated, locked at the project level (LockService.getScriptLock).
@@ -4733,13 +4764,19 @@ function submitFormByToken(token, formData) {
     // the number of arbitrary keys an unauthenticated caller can persist (M3).
     const FORM_FIELD_LIMIT = 200;
     const FORM_CELL_CHAR_LIMIT = 45000;
-    if (Object.keys(sanitizedData).length > FORM_FIELD_LIMIT)
+    if (Object.keys(sanitizedData).length > FORM_FIELD_LIMIT) {
+      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'too many fields');
       return { success: false, error: 'This submission has too many fields to save.' };
+    }
     const dataJson = JSON.stringify(sanitizedData);
-    if (dataJson.length > FORM_CELL_CHAR_LIMIT)
+    if (dataJson.length > FORM_CELL_CHAR_LIMIT) {
+      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'the response data exceeds the per-cell size limit');
       return { success: false, error: 'This submission is too large to save. Please shorten your responses and resubmit.' };
-    if (signatureData.length > FORM_CELL_CHAR_LIMIT)
+    }
+    if (signatureData.length > FORM_CELL_CHAR_LIMIT) {
+      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'the signature image exceeds the per-cell size limit');
       return { success: false, error: 'Your signature image is too large to save. Please redraw a simpler signature and resubmit.' };
+    }
 
     // Save submission
     const now = new Date();
@@ -5104,6 +5141,29 @@ function signatureDataUrlToBlob_(signatureDataUrl, name) {
     console.warn('signatureDataUrlToBlob_ failed: ' + e.message);
     return null;
   }
+}
+
+/** B2 — best-effort notice to the creating rep that a recipient tried to
+ *  submit a form but it could not be saved (size caps, M3). Closes the loop so
+ *  a silently-rejected submission isn't invisible to the rep. PHI-free beyond
+ *  the recipient address the rep already has (they sent the form); never throws
+ *  (INV-14) — the recipient response is unaffected. No-op without a createdBy. */
+function notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, reason) {
+  if (!createdBy) return;
+  try {
+    MailApp.sendEmail({
+      to: createdBy,
+      subject: 'Form submission could not be saved',
+      body:
+        'A recipient tried to submit a form you sent, but it could not be saved.\n\n' +
+        'Form: ' + formType + '\n' +
+        'Recipient: ' + recipientEmail + '\n' +
+        'Reason: ' + reason + '.\n\n' +
+        'The form link is still active — the recipient was asked to retry ' +
+        '(e.g. with a simpler signature or shorter responses). No action is ' +
+        'needed unless they report continued trouble.',
+    });
+  } catch (e) { console.warn('notifyRepOfFailedSubmission_ failed: ' + e.message); }
 }
 
 /** Sends the rep-notification email for a completed fillable form: a stylized

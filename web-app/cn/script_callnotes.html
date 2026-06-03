@@ -2149,8 +2149,10 @@ function cnRenderActiveForm_() {
           <h4><span>Tags · freeform</span><span class="sub">⏎ to add</span></h4>
           <div class="rail-tags" id="cn-tag-chips" aria-label="Tag chips"></div>
           <input class="rail-tag-input" id="cn-tag-input" type="text"
+                 list="cn-tag-suggestions"
                  placeholder="type a tag and press ⏎" tabindex="8"
                  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <datalist id="cn-tag-suggestions"></datalist>
         </div>
 
         <div class="rail-card">
@@ -2234,6 +2236,7 @@ function cnWireActiveForm_() {
         }
       }
     });
+    cnLoadTagSuggestions_();   // populate the autocomplete datalist (B3)
   }
   // Tag chip clicks (× removal) — event delegation on the chip container.
   const tagChips = document.getElementById('cn-tag-chips');
@@ -2649,6 +2652,22 @@ function cnPersistActiveFormDraft_() {
       localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
     }
   } catch (e) { /* localStorage unavailable — accept the loss */ }
+}
+
+/** B3 — populate the tag-input autocomplete datalist from the rep's own
+ *  non-archived tag history (best-effort; silent on failure). Every option
+ *  value is esc()'d before innerHTML. */
+function cnLoadTagSuggestions_() {
+  const dl = document.getElementById('cn-tag-suggestions');
+  if (!dl) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      const d = document.getElementById('cn-tag-suggestions');
+      if (!d || !res || res.error || !Array.isArray(res.tags)) return;
+      d.innerHTML = res.tags.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
+    })
+    .withFailureHandler(function () { /* best-effort — no datalist on failure */ })
+    .getCallNoteTagSuggestions();
 }
 
 /** Sticky form: on view enter (after the form is rendered) restore the
