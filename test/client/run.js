@@ -9,13 +9,31 @@
 // pure functions are added. DOM-driving / RPC functions stay out of scope.
 // ─────────────────────────────────────────────────────────────────────────────
 const assert = require('assert');
-const { buildSandbox, loadFunction } = require('./harness');
+const vm = require('vm');
+const { buildSandbox, loadFunction, extractScript, extractRawFunction } = require('./harness');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
   try { fn(); pass++; console.log('  ✓ ' + name); }
   catch (e) { fail++; console.log('  ✗ ' + name + '\n      ' + (e && e.message)); }
 }
+
+// Parse-guard: every JS-bearing HtmlService partial's <script> block must
+// parse. The per-function harness only brace-matches the slices it loads, so a
+// syntax error elsewhere in a partial (e.g. a stray token) would otherwise slip
+// past CI — this is the cheap net that catches it across the whole client.
+console.log('\nclient — all partials parse (<script> syntax guard)');
+[
+  'script_core.html', 'script_icons.html', 'metrics/script_metrics.html',
+  'cn/script_callnotes.html', 'tc/script_clock.html', 'tc/script_timesheet.html',
+  'tc/script_timeoff.html', 'tc/script_manager.html', 'index.html', 'form_public.html',
+].forEach((f) => {
+  test(f + ' parses', () => {
+    const src = extractScript(f);
+    assert.ok(src.trim().length > 0, 'has a <script> block');
+    new vm.Script(src, { filename: f });  // throws on a syntax error
+  });
+});
 
 // Foundational partials: script_icons (icon), script_core (esc, empTz,
 // isoDateTz, __URL_PARAMS), metrics (mTodayIso_, mDaysAgo_). These eval cleanly
@@ -157,6 +175,26 @@ test('cnExtTemplatesAll_ tolerates a missing deptConfig', () => {
   const all = cnExtTemplatesAll_();
   assert.ok(Array.isArray(all) && all.length === 0, 'returns an empty array');
   sb.CN_STATE = saved;
+});
+
+console.log('\nCode.js — cnExtractAuditNoteId_() (#3 audit noteId parser)');
+// Pure server helper both audit endpoints depend on. Extracted from Code.js
+// (raw, not a <script> partial) and run in the sandbox.
+vm.runInContext(extractRawFunction('Code.js', 'cnExtractAuditNoteId_'), sb,
+  { filename: 'Code.js#cnExtractAuditNoteId_' });
+const cnExtractAuditNoteId_ = sb.cnExtractAuditNoteId_;
+test('extracts the uuid from a CallNote audit Notes field', () => {
+  assert.strictEqual(
+    cnExtractAuditNoteId_('noteId=3f2504e0-4f89-41d3-9a0c-0305e82c3301; urgent=on'),
+    '3f2504e0-4f89-41d3-9a0c-0305e82c3301');
+  assert.strictEqual(
+    cnExtractAuditNoteId_('noteId=abc12345; depts=Shipping'), 'abc12345');
+});
+test('returns empty string when no noteId is present', () => {
+  assert.strictEqual(cnExtractAuditNoteId_('Updated department emails (3 depts)'), '');
+  assert.strictEqual(cnExtractAuditNoteId_(''), '');
+  assert.strictEqual(cnExtractAuditNoteId_(null), '');
+  assert.strictEqual(cnExtractAuditNoteId_(undefined), '');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

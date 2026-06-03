@@ -48,6 +48,22 @@ function extractFunction(file, name) {
   return js.slice(start, i);
 }
 
+/** Brace-match a single top-level `function NAME(...) { … }` out of a RAW
+ *  file (no <script> extraction) — for pure helpers living in Code.js. Same
+ *  caveat as extractFunction (no `{`/`}` inside string literals in the body). */
+function extractRawFunction(file, name) {
+  const js = fs.readFileSync(path.join(WEB_APP, file), 'utf8');
+  const start = js.indexOf('function ' + name);
+  if (start < 0) throw new Error(`function ${name} not found in ${file}`);
+  let i = js.indexOf('{', start);
+  let depth = 0;
+  for (; i < js.length; i++) {
+    if (js[i] === '{') depth++;
+    else if (js[i] === '}' && --depth === 0) { i++; break; }
+  }
+  return js.slice(start, i);
+}
+
 /** A permissive fake DOM element — any unknown property read returns a chainable
  *  no-op so load-time DOM touches never throw. */
 function fakeEl() {
@@ -128,4 +144,4 @@ function loadFunction(sandbox, file, name) {
   return sandbox[name];
 }
 
-module.exports = { extractScript, extractFunction, buildSandbox, loadFunction, fakeEl };
+module.exports = { extractScript, extractFunction, extractRawFunction, buildSandbox, loadFunction, fakeEl };

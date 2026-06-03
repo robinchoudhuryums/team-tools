@@ -675,6 +675,8 @@ function _runAllTests() {
   _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
   _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
   _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
+  _smokeTest('cn_extractAuditNoteId_parses',       test_cn_extractAuditNoteId_parses);
+  _smokeTest('cn_extractAuditNoteId_noMatch',      test_cn_extractAuditNoteId_noMatch);
   _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
   _smokeTest('tpl_noEscapedJsonInjection',         test_tpl_noEscapedJsonInjection);
   _smokeTest('tpl_formPublic_evaluatesWithoutError', test_tpl_formPublic_evaluatesWithoutError);
@@ -2377,6 +2379,21 @@ function test_cn_esc_basic() {
   _assertEq(esc_(`"quoted" 'single'`), '&quot;quoted&quot; &#39;single&#39;');
   _assertEq(esc_(null),                '');
   _assertEq(esc_(undefined),           '');
+}
+
+// cnExtractAuditNoteId_ — the noteId parser both compliance-audit endpoints
+// (getCallNotesAuditLog / getCallNoteAuditHistory) depend on. A regression
+// here silently empties the per-note history drill-down (#3).
+function test_cn_extractAuditNoteId_parses() {
+  _assertEq(cnExtractAuditNoteId_('noteId=3f2504e0-4f89-41d3-9a0c-0305e82c3301; urgent=on'),
+            '3f2504e0-4f89-41d3-9a0c-0305e82c3301');
+  _assertEq(cnExtractAuditNoteId_('noteId=abc12345; depts=Shipping'), 'abc12345');
+}
+function test_cn_extractAuditNoteId_noMatch() {
+  _assertEq(cnExtractAuditNoteId_('Updated department emails (3 depts)'), '');
+  _assertEq(cnExtractAuditNoteId_(''),        '');
+  _assertEq(cnExtractAuditNoteId_(null),      '');
+  _assertEq(cnExtractAuditNoteId_(undefined), '');
 }
 
 
