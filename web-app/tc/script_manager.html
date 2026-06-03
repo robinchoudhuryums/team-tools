@@ -9,10 +9,52 @@ function loadManagerDashboard() {
       if (data.error) { showToast(data.error, 'toast-error'); return; }
       mgrData = data;
       const area = document.getElementById('view-area');
-      if (area && currentView === 'manage') renderManagerView(area, data);
+      if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); }
     })
     .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
     .getManagerDashboard();
+}
+
+// ── PTO balance reconciliation (Plan B1) ─────────────────────────────────
+// Lazy, best-effort: fills #mgr-pto-recon only when getPtoReconciliation finds
+// drift (reps double-deducted from duplicate same-date approvals — the H1 bug
+// class). Renders nothing when clean, so the card is invisible in the common case.
+function loadPtoReconciliation_() {
+  const slot = document.getElementById('mgr-pto-recon');
+  if (!slot) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      const s = document.getElementById('mgr-pto-recon');
+      if (!s || currentView !== 'manage') return;
+      if (!res || res.error || !res.reps || res.reps.length === 0) { s.innerHTML = ''; return; }
+      s.innerHTML = renderPtoReconCard_(res);
+    })
+    .withFailureHandler(function () { /* best-effort — stay silent on failure */ })
+    .getPtoReconciliation();
+}
+
+function renderPtoReconCard_(res) {
+  const rows = res.reps.map(function (r) {
+    const over = [];
+    if (r.overAnnual > 0) over.push(r.overAnnual + ' annual');
+    if (r.overSick > 0)   over.push(r.overSick + ' sick');
+    const dates = r.dates.map(function (d) {
+      return esc(d.date) + ' (' + d.approvedCount + '×)';
+    }).join(', ');
+    return '<div style="padding:8px 0;border-bottom:1px dashed var(--line)">' +
+      '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.name) +
+        ' <span style="color:var(--danger-deep)">— over-charged ' + esc(over.join(' + ')) + ' day(s)</span></div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-top:2px">Duplicate approved dates: ' + dates + '</div>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:2px">Current balance: ' +
+        esc(String(r.storedAnnual)) + ' annual / ' + esc(String(r.storedSick)) + ' sick</div>' +
+    '</div>';
+  }).join('');
+  return '<div class="card" style="border-color:var(--danger)">' +
+    '<div class="card-label with-count"><span>PTO Balance Drift</span>' +
+      '<span class="count-pill danger">' + res.reps.length + '</span></div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">These reps have more than one <em>approved</em> time-off row on the same date and were likely double-deducted (the H1 bug, now prevented for new requests). Correct each balance via Adjust or the employee’s timesheet.</div>' +
+    rows +
+  '</div>';
 }
 
 function renderManagerView(area, data) {
@@ -259,6 +301,7 @@ function renderManagerView(area, data) {
 
     ${heroHtml}
     ${renderAnalyticsSection(data)}
+    <div id="mgr-pto-recon"></div>
 
     <div class="card">
       <div class="card-label with-count">

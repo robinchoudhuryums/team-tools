@@ -1021,6 +1021,23 @@ this section before touching the relevant area.
   already loaded by the function — no additional Sheet reads. The
   client renders an inline SVG bar chart and a color-coded summary
   card.
+- **PTO balance reconciliation (drift detection).** `getPtoReconciliation`
+  (manager-gated, read-only) detects the H1 bug class — a rep with more
+  than one *Approved* time-off row on the same date was double-deducted.
+  For each (rep, date) the legitimate charge is the single largest
+  deduction; any additional approved rows are over-charge, summed per
+  bucket (annual/sick). It returns only reps with drift, plus their
+  duplicate dates + current stored balances. Absolute balances can't be
+  recomputed (no recorded initial allotment), so this targets the
+  detectable, high-value signature rather than a full audit. The manager
+  view lazy-loads it into `#mgr-pto-recon` and renders a danger card ONLY
+  when drift exists (invisible when clean). It is **read-only by design** —
+  correction is left to the existing Adjust / timesheet tooling so the
+  reconciliation can never itself mutate a balance (an auto-corrector
+  would need to neutralize the duplicate rows to stay idempotent;
+  deferred). New requests can no longer create duplicates (INV-94), so
+  this surfaces pre-fix damage. Pinned by
+  `test_getPtoReconciliation_detectsDoubleDeduct`.
 - **CN card actions use a primary/secondary split.** Frequently used
   actions (flag-action, flag-training, pin, copy, email) are always
   visible. Less-frequent actions (urgent-toggle, flag-review, resolve,
@@ -1880,6 +1897,7 @@ INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via
 INV-96 | `submitFormByToken` (public, token-only) bounds the recipient-supplied payload before the append: field count ≤ 200 and per-cell char length ≤ 45000 (under the 50k Sheets cell limit) for both the data JSON and the signature. On exceed it returns a specific error and leaves the token `pending` for retry, rather than throwing mid-write; also caps the number of arbitrary keys an unauthenticated caller can persist | Subsystem: Server
 INV-97 | Feature toggles are gated by the `FEATURE_FLAGS` registry (`Code.js`): only registry keys are honored. `getFlag_(key)` reads Script Property `CN_FEATURE_FLAGS` first (sanitize-on-read: corrupt/non-object blob → registry defaults; unknown key → `false`), else the registry default (which mirrors the legacy CONFIG constant, so migrating a read to `getFlag_` is a behavioral no-op until a flag is set). A flag's `scope` decides enforcement: `client` flags only gate UI (delivered via `getEmployeeState` `empState.flags` + `getCallNotesDepartments` `deptConfig.flags`, read client-side via `flagOn_()`); `server`/`both` flags are ALSO enforced in their endpoint — hiding a button never disables an endpoint (INV-02/S30 preserved). Flags are consulted at request boundaries, never mid-transaction | Subsystem: Server + Client (shell)
 INV-98 | `getFeatureFlags` and `saveFeatureFlags` are manager-gated (INV-02/INV-57 family). `saveFeatureFlags` accepts only registry keys with strict-boolean values (unknown key or non-boolean → rejected, never persisted), writes the `{key:bool}` map to Script Property `CN_FEATURE_FLAGS`, and records an `AdminConfigChange` audit row with the manager's email. `danger`-marked flags (`voiceInput` HIPAA/BAA, `enablePtoTracking` stateful) are gated behind a `uiConfirm({tone:'danger'})` in the Admin UI before save | Subsystem: Server + Client (Call Notes views)
+INV-99 | `getPtoReconciliation` is manager-gated (INV-02) and strictly read-only — it never writes a balance or a sheet. It detects reps with >1 Approved time-off row on the same date (the H1 double-deduct signature) and quantifies the over-charge per bucket as `actual − expected`, where expected per date is the single largest deduction. Returns only reps with drift. Correction is deferred to existing Adjust/timesheet tooling (an idempotent auto-corrector would have to neutralize the duplicate rows). Pinned by `test_getPtoReconciliation_detectsDoubleDeduct` + `_nonManagerRejected` | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10

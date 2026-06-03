@@ -626,6 +626,10 @@ function _runAllTests() {
   _integrationTest('submitTimeOff_invalidTypeRejected',        test_submitTimeOff_invalidTypeRejected);
   _integrationTest('managerSubmitTimeOff_duplicateDateRejected', test_managerSubmitTimeOff_duplicateDateRejected);
 
+  // B1 — PTO balance reconciliation (double-deduct detection)
+  _integrationTest('getPtoReconciliation_detectsDoubleDeduct', test_getPtoReconciliation_detectsDoubleDeduct);
+  _integrationTest('getPtoReconciliation_nonManagerRejected',  test_getPtoReconciliation_nonManagerRejected);
+
   _integrationTest('getTeammateStatus_shapeRestricted',        test_getTeammateStatus_shapeRestricted);
   _integrationTest('getTeammateStatus_disabledFlag',           test_getTeammateStatus_disabledFlag);
 
@@ -1763,6 +1767,32 @@ function test_managerSubmitTimeOff_duplicateDateRejected() {
       managerSubmitTimeOff(_TEST_PH_ID, _TEST_DATE_FUTURE, 'Full Day', '', true),
       'already has a pending or approved'
     );
+  });
+}
+
+// B1 — getPtoReconciliation flags a rep with two Approved rows on one date
+// (the H1 double-deduct signature) and quantifies the over-charge. The submit
+// endpoints now block duplicates (INV-94), so the rows are appended directly.
+function test_getPtoReconciliation_detectsDoubleDeduct() {
+  _clearTestState(_TEST_PH_ID);
+  const sheet = getOrCreateTimeOffSheet_();
+  const sa = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Approved', sa]);
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Approved', sa + ' b']);
+  let res;
+  _asUser(_TEST_MGR_EMAIL, () => { res = getPtoReconciliation(); });
+  _assertNotNull(res && res.reps, 'reconciliation returns reps');
+  const row = (res.reps || []).filter(function (r) { return r.empId === _TEST_PH_ID; })[0];
+  _assertNotNull(row, 'PH flagged for drift');
+  _assertEqClose(row.overAnnual, 1.0, 0.001, 'over-charged exactly 1 annual day');
+  _assertEq(row.dates.length, 1, 'one duplicate date');
+}
+
+function test_getPtoReconciliation_nonManagerRejected() {
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r = getPtoReconciliation();
+    _assertNotNull(r.error, 'non-manager gets an error');
+    _assertContains(r.error, 'Manager access required');
   });
 }
 

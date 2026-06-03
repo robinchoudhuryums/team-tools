@@ -1121,6 +1121,81 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
   finally { lock.releaseLock(); }
 }
 
+/** Manager-gated, read-only. Detects PTO balance drift from the H1 bug class:
+ *  reps with MORE than one Approved time-off row on the same date were
+ *  double-deducted. For each (rep, date) the legitimate charge is the single
+ *  largest deduction; any additional approved rows are over-charge. Returns
+ *  per-rep over-charge per bucket + the duplicate dates + current stored
+ *  balances (for context). Pure read — correction is left to the manager via
+ *  Adjust / timesheet so this can never itself mutate a balance. */
+function getPtoReconciliation() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+
+    const empRows = getEmployeeRosterRows_();
+    const empById = {};
+    for (let i = 1; i < empRows.length; i++) {
+      const id = String(empRows[i][EMP.ID]).trim();
+      if (!id) continue;
+      empById[id] = {
+        name:   String(empRows[i][EMP.NAME]).trim(),
+        annual: parseFloat(empRows[i][EMP.ANNUAL_LEAVE]) || 0,
+        sick:   parseFloat(empRows[i][EMP.SICK_LEAVE]) || 0,
+      };
+    }
+
+    // Approved rows → byEmp[id][date] = [{bucket, days}, ...]
+    const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+    const byEmp = {};
+    for (let i = 1; i < toRows.length; i++) {
+      if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'approved') continue;
+      const id = String(toRows[i][TO.EMP_ID]).trim();
+      if (!id) continue;
+      const dedu = getLeaveDeduction_(String(toRows[i][TO.TYPE]));
+      if (!dedu.bucket || !(dedu.days > 0)) continue;   // unpaid / non-deducting
+      const date = normalizeDate_(toRows[i][TO.DATE]);
+      if (!byEmp[id]) byEmp[id] = {};
+      if (!byEmp[id][date]) byEmp[id][date] = [];
+      byEmp[id][date].push(dedu);
+    }
+
+    const reps = [];
+    Object.keys(byEmp).forEach(function (id) {
+      const dates = byEmp[id];
+      let actAnnual = 0, actSick = 0, expAnnual = 0, expSick = 0;
+      const dupDates = [];
+      Object.keys(dates).forEach(function (d) {
+        const list = dates[d].slice().sort(function (a, b) { return b.days - a.days; });
+        list.forEach(function (x) {
+          if (x.bucket === 'annual') actAnnual += x.days;
+          else if (x.bucket === 'sick') actSick += x.days;
+        });
+        const c = list[0];   // canonical = single largest deduction for the day
+        if (c.bucket === 'annual') expAnnual += c.days;
+        else if (c.bucket === 'sick') expSick += c.days;
+        if (list.length >= 2) dupDates.push({ date: d, approvedCount: list.length });
+      });
+      const overAnnual = Math.round((actAnnual - expAnnual) * 100) / 100;
+      const overSick   = Math.round((actSick - expSick) * 100) / 100;
+      if (overAnnual > 0 || overSick > 0) {
+        const meta = empById[id] || { name: id, annual: 0, sick: 0 };
+        reps.push({
+          empId: id, name: meta.name,
+          overAnnual: overAnnual, overSick: overSick,
+          storedAnnual: meta.annual, storedSick: meta.sick,
+          dates: dupDates.sort(function (a, b) { return a.date < b.date ? -1 : 1; }),
+        });
+      }
+    });
+
+    reps.sort(function (a, b) {
+      return (b.overAnnual + b.overSick) - (a.overAnnual + a.overSick);
+    });
+    return { reps: reps, repsScanned: Object.keys(empById).length };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Manager deletes a single punch within the delete window. */
 function deletePunch(empId, date, time, punchType) {
   const lock = LockService.getScriptLock();
