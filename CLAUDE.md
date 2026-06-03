@@ -965,6 +965,35 @@ this section before touching the relevant area.
   write an `AdminConfigChange` audit row. Changes take effect
   immediately — no redeploy needed. CONFIG values in `Code.js` serve
   as the fallback when no Script Property is set.
+- **Runtime feature toggles via a registry + the Admin tab.** A
+  manager-flippable boolean store lets features be turned on/off live,
+  no redeploy. `FEATURE_FLAGS` (a `Code.js` constant) is the single
+  source of truth — `{key, label, description, default, scope, danger}`
+  per flag; **only registry keys are honored**, and each `default`
+  mirrors the legacy CONFIG constant so migrating a read to `getFlag_()`
+  is a behavioral no-op until a flag is set. `getFlag_(key)` reads the
+  Script Property `CN_FEATURE_FLAGS` first (sanitize-on-read → corrupt
+  blob degrades to defaults; unknown key → fail-safe `false`), else the
+  registry default. **`scope` is the load-bearing decision:** `client`
+  flags only gate UI (delivered on `empState.flags` +
+  `deptConfig.flags`, read via the `flagOn_()` client helper);
+  `server`/`both` flags are ALSO checked server-side in their endpoint —
+  hiding a button never disables an endpoint (INV-02/S30). The migrated
+  set is `showTeammateStatus` / `showTeammateType` /
+  `enablePtoTracking` (all `both`) / `voiceInput` (`client`); the first
+  custom flag is `oopSalesTax` (`client`, gates the OOP subform's
+  sales-tax field + the email's tax line). `getFeatureFlags` /
+  `saveFeatureFlags` are manager-gated (INV-57 family, `AdminConfigChange`
+  audit). **Flip semantics:** flags are consulted at request boundaries,
+  never mid-transaction (a flip can't interrupt an in-flight locked
+  write); the server honors a flip on the next RPC, while client UI lags
+  until its next config fetch (page load / view enter) — so a stale
+  client either keeps working (display flags) or gets a clean
+  failure-toast when a server-enforced kill-switch rejects the next call.
+  `danger` flags (`voiceInput` = HIPAA/BAA; `enablePtoTracking` =
+  stateful, don't flip mid-cycle) require a `uiConfirm({tone:'danger'})`
+  in the Admin UI. Pinned by the `getFlag_` / registry-integrity Node
+  tests.
 - **Stale-flag badge on the manager CN landing.**
   `managerGetUnresolvedActionCount` scans the flag + resolved columns
   (2 cols only, not full rows) across all enrolled reps' Sheets and
@@ -1652,6 +1681,17 @@ manually for a fresh deploy or environment:
   templates in the external-email composer's template picker (delivered
   via `getCallNotesDepartments`); a corrupt blob degrades to the CONFIG
   fallback rather than breaking the composer.
+- **Script Property `CN_FEATURE_FLAGS`** (auto-managed). JSON object
+  `{ flagKey: bool }` of manager-set feature-toggle overrides, written by
+  `saveFeatureFlags` from the Call Notes → Admin tab's "Feature Toggles"
+  section. Created on first save; read by `getFlag_()` /
+  `getFeatureFlagsResolved_()`, which fall back to the `FEATURE_FLAGS`
+  registry defaults (each mirroring its legacy CONFIG constant) when a key
+  is absent. A corrupt/non-object blob degrades to defaults (sanitize-on-
+  read). No manual setup needed — documented here so it's recognizable
+  when inspecting Script Properties. Only registry keys are honored; flips
+  take effect server-side on the next request and client-side on the next
+  config fetch.
 - **Call-notes EOD + weekly digest knobs** are
   `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17 — the local hour at
   which each rep gets the EOD digest) and the
@@ -1710,7 +1750,9 @@ feedback[]-vs-legacy precedence helper), and the server-side
 `cnExtractAuditNoteId_` parser plus the `isValidTimeOffType_` leave-type
 validator extracted from `Code.js` via `extractRawFunction` — the latter
 with a coupling tripwire asserting the `day-type` `<select>` options stay
-a subset of `TIME_OFF_TYPES`); it also
+a subset of `TIME_OFF_TYPES`, and the feature-flag layer
+(`FEATURE_FLAGS` registry integrity + `getFlag_` Script-Property override
+/ fail-safe semantics, run in a stubbed `PropertiesService` context)); it also
 parse-guards every JS-bearing `<script>` partial so a syntax error
 anywhere in the client fails CI. See `test/client/README.md`. It needs
 no npm install and lives outside `web-app/`, so `clasp` never pushes it. A
@@ -1836,6 +1878,8 @@ INV-93 | `saveEmailTemplates(templates)` is manager-gated (INV-02, INV-57), pers
 INV-94 | `submitTimeOffRequest` and `managerSubmitTimeOff` reject a request when the employee already has a Pending or Approved row for that date (`hasActiveTimeOffOnDate_`, inside the existing ScriptLock). Prevents the double-deduct that INV-03's per-row transition guard cannot catch — two sibling rows for one day would each deduct on approval. Denied/cancelled rows don't block a re-request | Subsystem: Server
 INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via `isValidTimeOffType_` (case-insensitive, trimmed) before any write; an unknown/empty type is rejected rather than silently defaulting to `getLeaveDeduction_`'s annual/1.0 (INV-17). `TIME_OFF_TYPES` must stay a superset of the `day-type` `<select>` options in `modals.html` — pinned by a Node-harness coupling test | Subsystem: Server
 INV-96 | `submitFormByToken` (public, token-only) bounds the recipient-supplied payload before the append: field count ≤ 200 and per-cell char length ≤ 45000 (under the 50k Sheets cell limit) for both the data JSON and the signature. On exceed it returns a specific error and leaves the token `pending` for retry, rather than throwing mid-write; also caps the number of arbitrary keys an unauthenticated caller can persist | Subsystem: Server
+INV-97 | Feature toggles are gated by the `FEATURE_FLAGS` registry (`Code.js`): only registry keys are honored. `getFlag_(key)` reads Script Property `CN_FEATURE_FLAGS` first (sanitize-on-read: corrupt/non-object blob → registry defaults; unknown key → `false`), else the registry default (which mirrors the legacy CONFIG constant, so migrating a read to `getFlag_` is a behavioral no-op until a flag is set). A flag's `scope` decides enforcement: `client` flags only gate UI (delivered via `getEmployeeState` `empState.flags` + `getCallNotesDepartments` `deptConfig.flags`, read client-side via `flagOn_()`); `server`/`both` flags are ALSO enforced in their endpoint — hiding a button never disables an endpoint (INV-02/S30 preserved). Flags are consulted at request boundaries, never mid-transaction | Subsystem: Server + Client (shell)
+INV-98 | `getFeatureFlags` and `saveFeatureFlags` are manager-gated (INV-02/INV-57 family). `saveFeatureFlags` accepts only registry keys with strict-boolean values (unknown key or non-boolean → rejected, never persisted), writes the `{key:bool}` map to Script Property `CN_FEATURE_FLAGS`, and records an `AdminConfigChange` audit row with the manager's email. `danger`-marked flags (`voiceInput` HIPAA/BAA, `enablePtoTracking` stateful) are gated behind a `uiConfirm({tone:'danger'})` in the Admin UI before save | Subsystem: Server + Client (Call Notes views)
 
 ### Policy Configuration
 Policy threshold: 4/10

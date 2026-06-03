@@ -4364,6 +4364,20 @@ function cnRenderResupplySubform_() {
 
 function cnRenderOopSubform_() {
   const od = CN_STATE.composer.selections.oopDetails || {};
+  // Sales-tax field is gated by the oopSalesTax feature toggle (Admin). When
+  // off, the Rx-exempt + Tax Display row is omitted and cnRecalcOop_ totals
+  // base + shipping only.
+  const taxRow = flagOn_('oopSalesTax') ? `
+      <div class="field-row">
+        <div class="field"><label>Rx Tax-Exempt?</label>
+          <select id="cnO-rx" onchange="cnRecalcOop_()">
+            ${cnSelectOpts_(['No','Yes'], od.rxPresent)}
+          </select>
+        </div>
+        <div class="field"><label>Tax Display</label>
+          <div id="cnO-tax-disp" class="tabular" style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2);color:var(--ink);font-family:var(--mono);font-size:12px;">Pick state in shipping</div>
+        </div>
+      </div>` : '';
   return `
     <div class="cn-compose-section sf-oop">
       <div class="cn-compose-section-title">OOP Order Breakdown</div>
@@ -4375,16 +4389,7 @@ function cnRenderOopSubform_() {
           <input type="text" id="cnO-shipping" value="${esc(od.shippingCost || '')}" placeholder="$14.99 / custom" oninput="cnRecalcOop_()">
         </div>
       </div>
-      <div class="field-row">
-        <div class="field"><label>Rx Tax-Exempt?</label>
-          <select id="cnO-rx" onchange="cnRecalcOop_()">
-            ${cnSelectOpts_(['No','Yes'], od.rxPresent)}
-          </select>
-        </div>
-        <div class="field"><label>Tax Display</label>
-          <div id="cnO-tax-disp" class="tabular" style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2);color:var(--ink);font-family:var(--mono);font-size:12px;">Pick state in shipping</div>
-        </div>
-      </div>
+      ${taxRow}
       <div class="field" style="margin:0">
         <label>Total (auto)</label>
         <div id="cnO-total-disp" class="tabular" style="padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2);color:var(--ink);font-family:var(--mono);font-size:13px;font-weight:600;">$0.00</div>
@@ -4467,8 +4472,9 @@ function cnRecalcOop_() {
   }
   const state = (stateEl && stateEl.value) || '';
   const rxYes = rxEl && rxEl.value === 'Yes';
+  const taxOn = flagOn_('oopSalesTax');
   const rates = (CN_STATE.deptConfig && CN_STATE.deptConfig.stateTaxRates) || {};
-  const rate = rxYes ? 0 : (rates[state] || 0);
+  const rate = (!taxOn || rxYes) ? 0 : (rates[state] || 0);
   const tax = base * rate;
   const total = base + shipping + tax;
   const taxDispEl = document.getElementById('cnO-tax-disp');
@@ -4537,15 +4543,16 @@ function cnGatherComposerSelections_() {
       shipping = isNaN(n) ? 0 : n; shippingLabel = 'Custom Amount';
     }
     const rxYes = rxEl && rxEl.value === 'Yes';
+    const taxOn = flagOn_('oopSalesTax');
     const rates = (CN_STATE.deptConfig && CN_STATE.deptConfig.stateTaxRates) || {};
     const state = stateEl && stateEl.value;
-    const rate = rxYes ? 0 : (rates[state] || 0);
+    const rate = (!taxOn || rxYes) ? 0 : (rates[state] || 0);
     const tax = base * rate;
     s.oopDetails = {
       baseCost:     base.toFixed(2),
       shippingCost: shipping.toFixed(2),
       shippingLabel,
-      taxAmt:       rxYes ? '0.00 (Rx Exempt)' : tax.toFixed(2),
+      taxAmt:       !taxOn ? '' : (rxYes ? '0.00 (Rx Exempt)' : tax.toFixed(2)),
       totalCost:    (base + shipping + tax).toFixed(2),
       rxPresent:    rxYes ? 'Yes' : 'No',
     };
@@ -6408,9 +6415,38 @@ function cnToggleAuditHistory_(btn, noteId) {
     .getCallNoteAuditHistory(noteId);
 }
 
+/** One row per feature toggle: checkbox + label + scope chip + description +
+ *  (optional) caution line. Every server string is esc()'d. */
+function cnRenderFlagRows_(registry, values) {
+  if (!Array.isArray(registry) || !registry.length) {
+    return '<div style="color:var(--muted);font-size:12px">No toggles defined.</div>';
+  }
+  var vals = values || {};
+  return registry.map(function (f) {
+    var on = vals[f.key] === true;
+    var danger = f.danger
+      ? '<div style="color:var(--danger-deep);font-size:11px;margin-top:4px;line-height:1.4">Caution — ' + esc(f.danger) + '</div>'
+      : '';
+    return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px dashed var(--line);cursor:pointer">' +
+      '<input type="checkbox" class="cn-admin-flag" data-flag-key="' + esc(f.key) + '"' + (on ? ' checked' : '') + ' style="margin-top:3px">' +
+      '<div style="flex:1">' +
+        '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(f.label) +
+          ' <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">' + esc(f.scope || '') + '</span></div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(f.description || '') + '</div>' +
+        danger +
+      '</div>' +
+    '</label>';
+  }).join('');
+}
+
 function cnRenderAdminBody_(cfg) {
   var body = document.getElementById('cn-admin-body');
   if (!body) return;
+
+  var ffRegistry = (cfg.featureFlags && cfg.featureFlags.registry) || [];
+  var ffValues   = (cfg.featureFlags && cfg.featureFlags.values) || {};
+  var ffDanger   = {};
+  ffRegistry.forEach(function (f) { if (f.danger) ffDanger[f.key] = f.danger; });
 
   var deptRows = Object.keys(cfg.departmentEmails).map(function (dept) {
     return '<div class="field-row" style="gap:8px;margin-bottom:6px">' +
@@ -6421,6 +6457,13 @@ function cnRenderAdminBody_(cfg) {
   }).join('');
 
   body.innerHTML =
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' Feature Toggles</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Turn features on or off instantly — no redeploy. Changes reach reps on their next page load. Toggles marked “Caution” have compliance or stateful implications.</div>' +
+      '<div id="cn-admin-flag-list">' + cnRenderFlagRows_(ffRegistry, ffValues) + '</div>' +
+      '<button class="btn-modal-ok" id="cn-admin-save-flags" style="margin:10px 0 0">Save Toggles</button>' +
+    '</div>' +
+
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Department Email Mappings</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Map each department name to the email address that receives call-note emails when reps select that department.</div>' +
@@ -6459,6 +6502,39 @@ function cnRenderAdminBody_(cfg) {
         '<button class="btn-modal-ok" id="cn-admin-save-tmpls" style="margin:0">Save Templates</button>' +
       '</div>' +
     '</div>';
+
+  document.getElementById('cn-admin-save-flags').addEventListener('click', function () {
+    var btn = this;
+    var boxes = document.querySelectorAll('.cn-admin-flag');
+    var map = {};
+    var warnings = [];
+    for (var i = 0; i < boxes.length; i++) {
+      var k = boxes[i].getAttribute('data-flag-key');
+      map[k] = boxes[i].checked;
+      // Warn only on a CHANGED danger flag (either direction).
+      if (map[k] !== (ffValues[k] === true) && ffDanger[k]) warnings.push(ffDanger[k]);
+    }
+    function doSave() {
+      btn.disabled = true; btn.textContent = 'Saving…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          btn.disabled = false; btn.textContent = 'Save Toggles';
+          if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
+          ffValues = res.values || map;   // refresh the baseline so re-saves don't re-warn
+          showToast('Toggles saved — reps see changes on next load', 'toast-success');
+        })
+        .withFailureHandler(function (err) {
+          btn.disabled = false; btn.textContent = 'Save Toggles';
+          showToast(err.message || 'Save failed', 'toast-error');
+        })
+        .saveFeatureFlags(map);
+    }
+    if (warnings.length) {
+      uiConfirm({ title: 'Confirm toggle change', message: warnings.join('\n\n'),
+                  tone: 'danger', confirmLabel: 'Apply changes' })
+        .then(function (ok) { if (ok) doSave(); });
+    } else { doSave(); }
+  });
 
   document.getElementById('cn-admin-add-dept').addEventListener('click', function () {
     var list = document.getElementById('cn-admin-dept-list');

@@ -442,11 +442,12 @@ function getEmployeeState() {
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
       schedule: getShiftSchedule_(empTz),
-      ptoEnabled: !!(CONFIG.ENABLE_PTO_TRACKING && emp.ptoEnabled),
+      ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
       annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
       sickLeaveMax:   CONFIG.SICK_LEAVE_MAX   || 10,
+      flags: getClientFeatureFlags_(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -775,7 +776,7 @@ function getManagerDashboard() {
       const dedu = getLeaveDeduction_(reqType);
       const reqEmp = empById[reqEmpId];
       let currentBal = null, projBal = null;
-      if (CONFIG.ENABLE_PTO_TRACKING && reqEmp && dedu.bucket) {
+      if (getFlag_('enablePtoTracking') && reqEmp && dedu.bucket) {
         currentBal = dedu.bucket === 'sick' ? reqEmp.sickLeave : reqEmp.annualLeave;
         projBal = +(currentBal - dedu.days).toFixed(2);
       }
@@ -1001,7 +1002,7 @@ function getManagerDashboard() {
       missedLookbackDays:  CONFIG.MISSED_PUNCH_LOOKBACK_DAYS,
       mgrDeleteWindowDays: CONFIG.MGR_DELETE_WINDOW_DAYS,
       adjustWindowDays:    CONFIG.ADJUST_WINDOW_DAYS,
-      ptoEnabled:          !!CONFIG.ENABLE_PTO_TRACKING,
+      ptoEnabled:          !!getFlag_('enablePtoTracking'),
       mgrTzAbbr,
       punchTrend, toSummary,
       pendingTrend, missedTrend,
@@ -1033,7 +1034,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
 
         // Apply leave-balance change if state transition crosses the Approved boundary
         let newBalance = null;
-        if (CONFIG.ENABLE_PTO_TRACKING) {
+        if (getFlag_('enablePtoTracking')) {
           const dedu = getLeaveDeduction_(type);
           if (dedu.bucket) {
             if (oldStatus !== 'Approved' && newStatus === 'Approved') {
@@ -1097,7 +1098,7 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
 
     // Apply leave deduction immediately if auto-approving
     let newBalance = null;
-    if (autoApprove && CONFIG.ENABLE_PTO_TRACKING) {
+    if (autoApprove && getFlag_('enablePtoTracking')) {
       const dedu = getLeaveDeduction_(type);
       if (dedu.bucket) newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
     }
@@ -1218,7 +1219,7 @@ function selfDeletePunch(date, time, punchType) {
  *  Returns name + status only — no email, no internal IDs, no last-punch detail. */
 function getTeammateStatus() {
   try {
-    if (!CONFIG.SHOW_TEAMMATE_STATUS) return { enabled: false, teammates: [] };
+    if (!getFlag_('showTeammateStatus')) return { enabled: false, teammates: [] };
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
 
@@ -2004,8 +2005,9 @@ function getCallNotesDepartments() {
       stateTaxRates: getStateTaxRates_(),
       stateAbbrToName: CONFIG.CALL_NOTES.STATE_ABBR_TO_NAME,
       ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
-      voiceInputEnabled: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED,
+      voiceInputEnabled: !!getFlag_('voiceInput'),
       emailTemplates: getEmailTemplates_(),
+      flags: getClientFeatureFlags_(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -2649,8 +2651,49 @@ function getAdminConfig() {
       updateSuggestions: getUpdateSuggestions_(),
       defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
       emailTemplates: getEmailTemplates_(),
+      featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
     };
   } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated read of the feature-toggle registry + resolved values
+ *  (also embedded in getAdminConfig; kept standalone for testability). */
+function getFeatureFlags() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    return { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated write of the feature toggles to Script Property
+ *  CN_FEATURE_FLAGS. Only registry keys with strict-boolean values are
+ *  accepted (unknown key / non-boolean → rejected, never persisted). Writes an
+ *  AdminConfigChange audit row (INV-57 family). Takes effect immediately:
+ *  server reads getFlag_ fresh per request; clients pick it up on their next
+ *  config fetch (page load / view enter) — see the runtime-flag design note. */
+function saveFeatureFlags(flagMap) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!flagMap || typeof flagMap !== 'object' || Array.isArray(flagMap)) {
+      return { success: false, error: 'Invalid flags payload.' };
+    }
+    const clean = {};
+    const keys = Object.keys(flagMap);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (!featureFlagDef_(k)) return { success: false, error: 'Unknown flag: ' + k };
+      const v = flagMap[k];
+      if (v !== true && v !== false) return { success: false, error: 'Flag "' + k + '" must be true or false.' };
+      clean[k] = v;
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_FEATURE_FLAGS', JSON.stringify(clean));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated feature toggles: ' + keys.map(function (k) { return k + '=' + (clean[k] ? 'on' : 'off'); }).join(', '),
+      callerEmp.email);
+    return { success: true, values: getFeatureFlagsResolved_() };
+  } catch (err) { return { success: false, error: err.message }; }
 }
 
 function saveUpdateSuggestions(suggestionsJson) {
@@ -3611,7 +3654,9 @@ function generateOOPResolutionText_(selections) {
   let text = `OOP Order Processed`;
   const taxFmt = (String(oop.taxAmt || '').charAt(0) === '$')
     ? oop.taxAmt : '$' + oop.taxAmt;
-  text += `\n${paymentStatus}: $${oop.totalCost} (Base: $${oop.baseCost} + Est. Sales Tax: ${taxFmt} + Ship: $${oop.shippingCost})`;
+  // Sales-tax leg gated by the oopSalesTax feature toggle (Admin).
+  const taxBit = getFlag_('oopSalesTax') ? ` + Est. Sales Tax: ${taxFmt}` : '';
+  text += `\n${paymentStatus}: $${oop.totalCost} (Base: $${oop.baseCost}${taxBit} + Ship: $${oop.shippingCost})`;
   text += `\nVerified Addr: ${ship.verifiedAddr ? 'Yes' : 'No'}`;
   if (ship.verifiedAddrText) text += ` (${ship.verifiedAddrText})`;
   text += ` | Loc: ${ship.patientLoc}`;
@@ -3823,13 +3868,17 @@ function renderOopDetailsHtml_(d, P) {
   if (taxDisplay && taxDisplay.charAt(0) !== '$' && !isNaN(parseFloat(taxDisplay))) {
     taxDisplay = '$' + taxDisplay;
   }
+  // Sales-tax row gated by the oopSalesTax feature toggle (Admin).
+  const taxRow = getFlag_('oopSalesTax')
+    ? `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Est. Sales Tax</td><td style="padding:5px 8px;">${esc_(taxDisplay)}</td></tr>`
+    : '';
   return (
     `<div style="background:${P.warnSoft};border:1px solid #e7bda3;` +
     `padding:14px;border-radius:8px;margin:14px 0;border-left:3px solid ${P.warn};">` +
       `<h3 style="margin:0 0 8px;font-family:'Inter Tight','Inter',sans-serif;font-size:15px;color:${P.warnDeep};font-weight:600;">OOP Order Breakdown</h3>` +
       `<table style="width:100%;border-collapse:collapse;font-size:13px;color:${P.ink};">` +
         `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};width:38%;">Base Cost</td><td style="padding:5px 8px;">$${esc_(d.baseCost || '')}</td></tr>` +
-        `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Est. Sales Tax</td><td style="padding:5px 8px;">${esc_(taxDisplay)}</td></tr>` +
+        taxRow +
         `<tr><td style="padding:5px 8px;font-weight:600;color:${P.muted};">Shipping</td><td style="padding:5px 8px;">$${esc_(d.shippingCost || '')} <span style="color:${P.muted};font-size:.85em;">(${esc_(d.shippingLabel || '')})</span></td></tr>` +
         `<tr><td style="padding:7px 8px 5px;font-weight:600;color:${P.muted};border-top:1px solid #e7bda3;">Total Customer Cost</td><td style="padding:7px 8px 5px;font-weight:700;color:${P.warnDeep};border-top:1px solid #e7bda3;">$${esc_(d.totalCost || '')}</td></tr>` +
       `</table>` +
@@ -5837,6 +5886,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     }
   });
   const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+  const showTeammateType = getFlag_('showTeammateType');  // hoisted — avoid a Script-Property read per teammate
   const timeOffRequests = [], teammates = [];
   for (let i = 1; i < toRows.length; i++) {
     const rowId   = String(toRows[i][TO.EMP_ID]).trim();
@@ -5851,7 +5901,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     } else {
       if (statusL !== 'pending' && statusL !== 'approved') continue;
       teammates.push({ date: rowDate, name: String(toRows[i][TO.EMP_NAME]),
-        type: CONFIG.SHOW_TEAMMATE_TYPE ? String(toRows[i][TO.TYPE]) : 'Off', status });
+        type: showTeammateType ? String(toRows[i][TO.TYPE]) : 'Off', status });
     }
   }
   const cutoff = (() => {
@@ -5878,7 +5928,7 @@ function buildCalendarForEmployee_(emp, year, month) {
     workedDates: [...workedDates], workedHoursByDate: hoursByDate,
     timeOffRequests, teammates, holidays, allRequests,
     today: todayStr, timezone: empTz,
-    ptoEnabled: !!(CONFIG.ENABLE_PTO_TRACKING && emp.ptoEnabled),
+    ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
     annualLeave: emp.annualLeave,
     sickLeave:   emp.sickLeave,
     annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
@@ -5987,7 +6037,7 @@ function getLeaveDeduction_(type) {
  * Returns the new balance, or null if PTO disabled / employee not found / bucket null.
  */
 function adjustLeaveBalance_(empId, bucket, delta) {
-  if (!CONFIG.ENABLE_PTO_TRACKING) return null;
+  if (!getFlag_('enablePtoTracking')) return null;
   if (!bucket || !delta) return null;
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = sheet.getDataRange().getValues();
@@ -6038,6 +6088,90 @@ function getDepartmentEmails_() {
     try { return JSON.parse(prop); } catch (_) {}
   }
   return CONFIG.CALL_NOTES.DEPARTMENT_EMAILS;
+}
+
+// ── Runtime feature toggles (Admin) ───────────────────────────────────────
+// Manager-flippable booleans, live without a redeploy (same Script-Property
+// pattern as the config getters above). The registry is the single source of
+// truth — only these keys are honored, and each `default` mirrors the legacy
+// CONFIG constant so migrating a read to getFlag_() is a behavioral no-op
+// until a flag is actually set. `scope` decides enforcement: 'client' flags
+// only gate UI (delivered to the client); 'server'/'both' flags are ALSO
+// checked server-side in their endpoint — hiding a button never disables an
+// endpoint (INV-02 / S30). `danger` carries a confirm/warning for the Admin UI.
+const FEATURE_FLAGS = [
+  { key: 'showTeammateStatus', label: 'Teammate status card',
+    description: 'Show the teammate status card on the Clock page.',
+    default: !!CONFIG.SHOW_TEAMMATE_STATUS, scope: 'both' },
+  { key: 'showTeammateType', label: 'Teammate punch type',
+    description: 'Include each teammate’s current punch type in the status card.',
+    default: !!CONFIG.SHOW_TEAMMATE_TYPE, scope: 'both' },
+  { key: 'enablePtoTracking', label: 'PTO tracking',
+    description: 'Master switch for PTO balances, accrual UI, and deductions.',
+    default: !!CONFIG.ENABLE_PTO_TRACKING, scope: 'both',
+    danger: 'Stateful — disabling mid-cycle hides PTO and stops new deductions but does NOT reverse approvals already applied. Flip only between cycles.' },
+  { key: 'voiceInput', label: 'Voice dictation (Call Notes)',
+    description: 'Mic-to-text on the Issue / Resolution fields.',
+    default: !!CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED, scope: 'client',
+    danger: 'HIPAA — routes dictated audio to the browser vendor’s speech-to-text service, which is NOT covered by a typical Google Workspace BAA. Confirm the org’s stance first.' },
+  { key: 'oopSalesTax', label: 'OOP sales-tax calculator',
+    description: 'Show the state sales-tax field + tax line in the OOP Order subform.',
+    default: true, scope: 'client' },
+];
+
+function featureFlagDef_(key) {
+  for (let i = 0; i < FEATURE_FLAGS.length; i++) {
+    if (FEATURE_FLAGS[i].key === key) return FEATURE_FLAGS[i];
+  }
+  return null;
+}
+
+/** Reads the CN_FEATURE_FLAGS Script Property as a { key: bool } override map.
+ *  Sanitizes on read — a corrupt/non-object blob degrades to {} (never throws),
+ *  so a bad property can't break every flag read. */
+function getFlagOverrides_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_FEATURE_FLAGS');
+  if (!prop) return {};
+  try {
+    const obj = JSON.parse(prop);
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (_) { return {}; }
+}
+
+/** Resolve a single flag: Script-Property override first, else the registry
+ *  default. An unknown key fails safe to false. */
+function getFlag_(key) {
+  const overrides = getFlagOverrides_();
+  if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+    return overrides[key] === true || overrides[key] === 'true';
+  }
+  const def = featureFlagDef_(key);
+  return def ? !!def.default : false;
+}
+
+/** Every registry flag → resolved boolean. */
+function getFeatureFlagsResolved_() {
+  const overrides = getFlagOverrides_();
+  const out = {};
+  FEATURE_FLAGS.forEach(function (f) {
+    out[f.key] = Object.prototype.hasOwnProperty.call(overrides, f.key)
+      ? (overrides[f.key] === true || overrides[f.key] === 'true')
+      : !!f.default;
+  });
+  return out;
+}
+
+/** Client-deliverable flags — the resolved values for non-server-only flags.
+ *  (Pure 'server' kill-switches aren't shipped to the client; none exist yet.)
+ *  Rides getEmployeeState (empState.flags) + getCallNotesDepartments
+ *  (deptConfig.flags); the client reads them via flagOn_(). */
+function getClientFeatureFlags_() {
+  const resolved = getFeatureFlagsResolved_();
+  const out = {};
+  FEATURE_FLAGS.forEach(function (f) {
+    if (f.scope !== 'server') out[f.key] = resolved[f.key];
+  });
+  return out;
 }
 
 function getStateTaxRates_() {
@@ -6419,7 +6553,7 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
     if (notes && notes !== 'undefined') body += `Notes:   ${notes}\n`;
     body += `Status:  ${newStatus}\n\n`;
 
-    if (CONFIG.ENABLE_PTO_TRACKING) {
+    if (getFlag_('enablePtoTracking')) {
       // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
       const fresh = lookupEmployeeById_(emp.id);
       if (fresh && fresh.ptoEnabled !== false) {

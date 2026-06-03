@@ -266,5 +266,66 @@ test('every day-type <select> option is an accepted leave type', () => {
     `UI offers "${v}" but the server validator rejects it`));
 });
 
+console.log('\nCode.js — feature-flag registry + getFlag_ (Plan A)');
+// These server helpers reference CONFIG (registry defaults) + PropertiesService
+// (the override store). Build a dedicated vm context with minimal stubs, then
+// load the FEATURE_FLAGS const + the flag helpers straight from Code.js.
+const flagCtx = {
+  Object, Array, JSON, String, Boolean, console,
+  CONFIG: {
+    SHOW_TEAMMATE_STATUS: true, SHOW_TEAMMATE_TYPE: true, ENABLE_PTO_TRACKING: true,
+    CALL_NOTES: { VOICE_INPUT_ENABLED: false },
+  },
+  _props: {},
+};
+flagCtx.PropertiesService = {
+  getScriptProperties: function () {
+    return { getProperty: function (k) {
+      return Object.prototype.hasOwnProperty.call(flagCtx._props, k) ? flagCtx._props[k] : null;
+    } };
+  },
+};
+vm.createContext(flagCtx);
+const ffSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+const ffConst = ffSrc.match(/const (FEATURE_FLAGS\s*=\s*\[[\s\S]*?\];)/);
+assert.ok(ffConst, 'FEATURE_FLAGS declaration found in Code.js');
+vm.runInContext(ffConst[1] + ';', flagCtx, { filename: 'Code.js#FEATURE_FLAGS' });
+['featureFlagDef_', 'getFlagOverrides_', 'getFlag_', 'getFeatureFlagsResolved_'].forEach(function (fn) {
+  vm.runInContext(extractRawFunction('Code.js', fn), flagCtx, { filename: 'Code.js#' + fn });
+});
+
+test('registry integrity: unique keys, boolean defaults, valid scope, labelled', () => {
+  const seen = {};
+  flagCtx.FEATURE_FLAGS.forEach(function (f) {
+    assert.ok(f.key && !seen[f.key], 'unique key: ' + f.key); seen[f.key] = 1;
+    assert.strictEqual(typeof f.default, 'boolean', f.key + ' default must be boolean');
+    assert.ok(['client', 'server', 'both'].indexOf(f.scope) >= 0, f.key + ' scope must be valid');
+    assert.ok(f.label, f.key + ' must have a label');
+  });
+});
+test('getFlag_ returns the registry default when no override is set', () => {
+  flagCtx._props = {};
+  assert.strictEqual(flagCtx.getFlag_('oopSalesTax'), true);
+  assert.strictEqual(flagCtx.getFlag_('voiceInput'), false);
+});
+test('getFlag_ honors a Script-Property override (both directions, string + bool)', () => {
+  flagCtx._props = { CN_FEATURE_FLAGS: JSON.stringify({ oopSalesTax: false, voiceInput: true }) };
+  assert.strictEqual(flagCtx.getFlag_('oopSalesTax'), false);
+  assert.strictEqual(flagCtx.getFlag_('voiceInput'), true);
+});
+test('getFlag_ fails safe: corrupt blob → defaults, unknown key → false', () => {
+  flagCtx._props = { CN_FEATURE_FLAGS: '{not valid json' };
+  assert.strictEqual(flagCtx.getFlag_('oopSalesTax'), true);   // corrupt → registry default
+  flagCtx._props = {};
+  assert.strictEqual(flagCtx.getFlag_('totallyUnknownFlag'), false);  // unknown → fail-safe false
+});
+test('getFeatureFlagsResolved_ returns a boolean for every registry key', () => {
+  flagCtx._props = {};
+  const r = flagCtx.getFeatureFlagsResolved_();
+  flagCtx.FEATURE_FLAGS.forEach(function (f) {
+    assert.strictEqual(typeof r[f.key], 'boolean', f.key + ' resolved to a boolean');
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
