@@ -1672,8 +1672,13 @@ have a dependency-free Node harness — `node test/client/run.js` (or
 `npm test` from the repo root) — that loads the HtmlService `<script>`
 partials into a `vm` sandbox with browser/GAS stubs and unit-tests pure
 functions (`esc`, `empTz` / `isoDateTz`, the metrics date helpers,
-`cnExtEmailPillHtml_`, …); see `test/client/README.md`. It needs no npm
-install and lives outside `web-app/`, so `clasp` never pushes it. A
+`cnExtEmailPillHtml_`, `cnIsUrgent_` / `cnUrgentPillHtml_`, the
+external-email template-picker helpers `cnExtTemplatesFor_` /
+`cnExtTemplateOptionsHtml_`, and the server-side `cnExtractAuditNoteId_`
+parser extracted from `Code.js` via `extractRawFunction`); it also
+parse-guards every JS-bearing `<script>` partial so a syntax error
+anywhere in the client fails CI. See `test/client/README.md`. It needs
+no npm install and lives outside `web-app/`, so `clasp` never pushes it. A
 GitHub Action (`.github/workflows/client-tests.yml`) runs this harness +
 a `node --check` of `Code.js` / `Tests.js` on every push and PR — the
 project's only automated check. Use
@@ -2256,6 +2261,29 @@ S55 | Daily urgent-flag digest | Subsystem: Server
     - Submit a non-urgent note and re-run; confirm it is NOT included
     - As a non-manager rep, call `google.script.run...sendCallNotesUrgentDigest()` from the console
   Expected: One `Urgent` digest email arrives (warm-paper aesthetic, one row per urgent note across all enrolled reps in the yesterday→today manager-tz window) when ≥1 urgent note exists; nothing is sent when none. Non-urgent notes never appear. The non-manager console call throws "manager access required" via `assertManagerCaller_` (INV-44). Pinned by `test_cn_managerAggregateUrgent_findsUrgentNotOthers` + `test_triggerGate_urgentDigest_nonManagerThrows`.
+
+S56 | Card-level urgent toggle + external-email template library | Subsystem: Client (Call Notes views), Server
+  Steps:
+    - As a rep, open a saved note's More menu (chevron) on its card → click the danger-toned "Mark urgent" button
+    - Confirm the card gains a danger inset ring + an "urgent" pill (optimistic, before the RPC returns); click again to unflag
+    - Confirm the manager Per-Rep read-only card shows the same ring + pill but NO toggle button (read-only per S26)
+    - As a manager, Call Notes → Admin → Email Templates: add a template (name, recipient type = Customer, body containing `{name}`), click Save Templates; reload and confirm it persists
+    - As a rep, click "Open Email" → set recipient type Customer + a recipient name → open the Template picker → select the template
+    - Confirm the message textarea fills with the body and `{name}` is replaced by the recipient name
+    - Toggle recipient type to Provider → confirm the picker re-filters (the customer-only template drops; `any` templates stay) without re-rendering the whole modal
+    - As a non-manager, call `google.script.run...saveEmailTemplates([])` from the console
+  Expected: Urgent toggles `subformData.flags[]` only (never the FlagType column, INV-77); `_flagInFlight` drops a double-click; failure reverts the array. Templates persist to Script Property `CN_EMAIL_TEMPLATES`; `saveEmailTemplates` writes an `AdminConfigChange` audit row and rejects the non-manager call with "Manager access required." (INV-93). The composer picker renders only when ≥1 template is configured, filters to `{any + current recipient type}`, and inserts the `{name}`-substituted body. A corrupt `CN_EMAIL_TEMPLATES` blob degrades to the CONFIG fallback (composer still works). Pinned by `cnIsUrgent_`/`cnUrgentPillHtml_` + `cnExtTemplatesFor_`/`cnExtTemplateOptionsHtml_` client tests.
+
+S57 | Compliance audit panel (Admin tab) | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - As a manager, Call Notes → Admin → scroll to "Compliance Audit"
+    - Confirm the default range is the last 30 days and results list call-note audit rows newest-first (timestamp · action · rep · actor)
+    - Filter by a specific rep, then by an action, then narrow the date range; click Search — also try the "Last 7" / "Last 30" presets
+    - Click a row's caret (rows with a noteId) → confirm the note's full lifecycle expands inline, oldest-first, even for events outside the search date window
+    - Click "View note" → confirm it deep-links to Team Notes → Per-Rep View pre-selected to that rep + date
+    - Confirm rows are PHI-free (timestamp / rep / actor email / action / noteId only — no note content)
+    - As a non-manager, call `google.script.run...getCallNotesAuditLog({})` and `...getCallNoteAuditHistory('x')` from the console
+  Expected: `getCallNotesAuditLog` is manager-gated (non-manager gets "Manager access required."), reads the AuditLog via a bounded tail scan (≤4000 rows), caps at 500 results, and shows a "capped — narrow the range" banner when `truncated` is set (result cap hit or scan didn't reach the start date). `getCallNoteAuditHistory` returns every row carrying the noteId oldest-first, independent of the date filter. The deep-link opens the Per-Rep view via `cnAuditDrillToNote_` + `CN_STATE.mgrPendingRepDrill`. All server strings are `esc()`-escaped before `innerHTML`; IDs/dates pass via `data-*` attributes. Pinned by `cnExtractAuditNoteId_` (Node harness + `test_cn_extractAuditNoteId_*` editor smoke). Server-side endpoint integration tests (gate/bounding/truncation) are a known follow-on.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
