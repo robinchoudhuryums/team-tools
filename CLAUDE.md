@@ -170,7 +170,8 @@ this section before touching the relevant area.
   `getCallNotesTagTaxonomy`, `renameCallNoteTag`,
   `mergeCallNoteTags`, `archiveCallNoteTag`,
   `saveEmailTemplates`, `getCallNotesAuditLog`,
-  `getCallNoteAuditHistory`.
+  `getCallNoteAuditHistory`, `getPtoReconciliation`,
+  `fixPtoReconciliation`, `getFeatureFlags`, `saveFeatureFlags`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -509,8 +510,10 @@ this section before touching the relevant area.
   Metrics alert badge follows the same `data-tool` pattern.
 - **Modals close on Escape and trap focus.** A shared keydown handler
   in `script_core.html` closes any `.overlay.open` on Escape. A
-  `focusin` handler returns focus to the modal's first focusable
-  element if focus escapes. Both are generic — they cover the Adjust,
+  `focusin` handler returns focus to the **topmost** open overlay's
+  first focusable element if focus escapes (it picks the last
+  `.overlay.open` in DOM order, so a ui-dialog stacked over a base
+  modal keeps focus). Both are generic — they cover the Adjust,
   Day Detail, Day Edit, Export, Manager Time-Off, and Call Notes
   Export modals.
 - **Public form endpoints have no employee auth — token is the
@@ -1328,7 +1331,11 @@ this section before touching the relevant area.
   `SubformData` + `DateLocal` columns (~8x fewer cells) since it has no
   date filter. A future per-rep cached summary could bound the truly
   open-ended scans further, but the column/date bounds already cut the
-  cell volume materially.
+  cell volume materially. The single-row lookups `findCallNoteRow_` /
+  `findFormTokenRow_` are bounded the same way: they scan only the
+  NoteId / Token column to locate the row, then fetch just that one
+  full row (instead of `getDataRange().getValues()`), so a single-note
+  mutation / token validation no longer reads the whole Sheet.
 - **Manager day-edit date picker is bounded `[today-N, today]`.**
   `openDayEditModal` sets `#de-date` min/max so a manager can't pick a
   future date (server rejects `daysBack<0`) or one past the adjust
