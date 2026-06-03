@@ -386,7 +386,9 @@ function loadCoverageStrip_() {
   if (!slot) return;
   const today = isoDateTz(empTz());
   if (CLK_COVERAGE_CACHE.date === today && CLK_COVERAGE_CACHE.data) {
-    renderCoverageStrip_(slot, CLK_COVERAGE_CACHE.data);
+    // Guard on currentView for symmetry with the network branch below — a
+    // late re-render shouldn't paint the strip into a non-Clock view.
+    if (currentView === 'clock') renderCoverageStrip_(slot, CLK_COVERAGE_CACHE.data);
     return;
   }
   google.script.run

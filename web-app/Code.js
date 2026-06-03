@@ -610,8 +610,11 @@ function cancelTimeOffRequest(date, submittedAt) {
         sheet.deleteRow(i + 1);
         // Audit row carries enough context to reconstruct the cancelled request
         // from the log alone — the row itself is gone after deleteRow.
+        // Neutralize the field separators (· and ") inside the user notes so
+        // the · -joined row stays unambiguously parseable (L12).
+        const safeNotes = reqNotes.replace(/[·"\r\n]+/g, ' ').trim();
         const auditParts = [type, 'self-cancelled', 'status=' + status];
-        if (reqNotes)   auditParts.push('notes="' + reqNotes + '"');
+        if (safeNotes)  auditParts.push('notes="' + safeNotes + '"');
         if (submittedAt) auditParts.push('submittedAt=' + submittedAt);
         writeAuditLog_(emp, 'TimeOffCancel', date, '', false, 0, auditParts.join(' · '));
         return { success: true };
@@ -849,7 +852,11 @@ function getManagerDashboard() {
       const e = empById[id];
       if (!e) continue;
       const rawComment = String(adpRows[i][ADP.COMMENTS]);
-      const dBack = Math.abs(daysBetween_(rowDate, todayStr));
+      // Delete window is measured against the EMPLOYEE's local "today"
+      // (e.todayStr, same tz deletePunch uses), not the manager's — otherwise
+      // an IST/PHT rep near the window edge gets a Delete button the server
+      // then rejects (or vice-versa) (L13).
+      const dBack = Math.abs(daysBetween_(rowDate, e.todayStr));
       recentPunches.push({
         empId: id, empName: e.name,
         date: rowDate,
@@ -2843,7 +2850,12 @@ function getCallNoteAuditHistory(noteId) {
     const read = cnReadCallNoteAuditRows_();
     const rows = read.rows.filter(function (r) { return r.noteId === id; });
     rows.reverse();  // newest-first → oldest-first (lifecycle order)
-    return { rows: rows, truncated: !read.scannedAll };
+    // Capturing the note's CallNoteCreate row means we have the start of its
+    // lifecycle and nothing older exists — so it's NOT truncated even when the
+    // bounded scan hit its cap. Only flag truncated when the create row is
+    // absent AND the scan didn't reach all the way back (L11).
+    const sawCreate = rows.some(function (r) { return r.action === 'CallNoteCreate'; });
+    return { rows: rows, truncated: !read.scannedAll && !sawCreate };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -3214,10 +3226,18 @@ function sanitizeFlagType_(t) {
 
 function findCallNoteRow_(sheet, noteId) {
   if (!noteId) return null;
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][CN.NOTE_ID]).trim() === noteId) {
-      return { rowIndex: i + 1, row: rows[i] };
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  // Scan only the NoteId column to locate the row, then fetch that single full
+  // row — avoids pulling every column of the rep's entire history on every
+  // single-note mutation (flag/resolve/pin/edit/email/delete). Return shape is
+  // unchanged: { rowIndex, row } with `row` the full row array (L9).
+  const ids = sheet.getRange(2, CN.NOTE_ID + 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() === noteId) {
+      const rowIndex = i + 2;
+      const row = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+      return { rowIndex: rowIndex, row: row };
     }
   }
   return null;
@@ -4079,6 +4099,12 @@ function sendExternalEmail(payload) {
   }
 
   // ── Stamp linked note (best-effort, under lock) ───────────────────
+  // NOTE: unlike emailFromCallNote, sendExternalEmail is NOT wrapped in a
+  // single ScriptLock (so it is intentionally absent from INV-30's set). The
+  // send + PDF fetch run lock-free; the only mutating shared-state write — the
+  // externalEmails[] stamp below — takes its own lock here, and token creation
+  // locks independently inside createFormToken. Two concurrent external sends
+  // on the same note therefore serialize on this stamp lock, so no corruption.
   const empTz = empTz_(emp);
   const sentAt = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
   if (noteId) {
@@ -4444,10 +4470,17 @@ function createFormToken(payload) {
 /** Look up a FormTokens row by token string. Returns { rowIndex, row } or null. */
 function findFormTokenRow_(sheet, token) {
   if (!token) return null;
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][FT.TOKEN]).trim() === token) {
-      return { rowIndex: i + 1, row: rows[i] };
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  // Scan only the Token column to locate the row, then fetch that single full
+  // row — avoids reading every column of the whole FormTokens sheet on each
+  // token validation / submission. Return shape unchanged (L9).
+  const tokens = sheet.getRange(2, FT.TOKEN + 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < tokens.length; i++) {
+    if (String(tokens[i][0]).trim() === token) {
+      const rowIndex = i + 2;
+      const row = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+      return { rowIndex: rowIndex, row: row };
     }
   }
   return null;

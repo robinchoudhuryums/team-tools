@@ -3546,7 +3546,10 @@ function cnToggleFlag_(noteId, kind) {
   const next = (note.flagType === kind) ? '' : kind;
 
   if (next === 'training') {
-    // uiPrompt is async — wrap the rest of the flow in the .then.
+    // uiPrompt is async — set the in-flight guard BEFORE opening it so a
+    // second click while the prompt is open is dropped (INV-56), then clear
+    // it if the rep cancels. cnDoToggleFlag_ re-sets it for the RPC leg.
+    note._flagInFlight = true;
     uiPrompt({
       title: 'Flag for training',
       message: 'What question or concern would you like to flag for training?\n(Leave blank to skip)',
@@ -3554,7 +3557,7 @@ function cnToggleFlag_(noteId, kind) {
       placeholder: 'Optional training question',
       confirmLabel: 'Flag',
     }).then(function (raw) {
-      if (raw === null) return;
+      if (raw === null) { note._flagInFlight = false; return; }
       const trimmed = String(raw).trim() || null;
       cnDoToggleFlag_(noteId, note, prev, next, trimmed);
     });
@@ -6609,7 +6612,7 @@ function cnRenderRateRows_(rates) {
   return Object.keys(rates).sort().map(function (st) {
     return '<div class="field-row" style="gap:8px;margin-bottom:4px;align-items:center">' +
       '<span class="cn-admin-rate-state" style="flex:1;font-size:13px">' + esc(st) + '</span>' +
-      '<div class="field" style="flex:0 0 80px;margin:0"><input type="number" step="0.001" min="0" max="1" class="cn-admin-rate-value" value="' + rates[st] + '" style="text-align:right"></div>' +
+      '<div class="field" style="flex:0 0 80px;margin:0"><input type="number" step="0.001" min="0" max="1" class="cn-admin-rate-value" value="' + esc(String(rates[st])) + '" style="text-align:right"></div>' +
       '</div>';
   }).join('');
 }

@@ -675,8 +675,12 @@ document.addEventListener('keydown', function (e) {
 });
 
 document.addEventListener('focusin', function (e) {
-  var open = document.querySelector('.overlay.open');
-  if (!open) return;
+  // Trap focus in the TOPMOST open overlay (last in DOM order) — ui-dialogs
+  // are appended after base modals, so when one stacks over a still-open base
+  // modal, focus must stay in the dialog, not the background modal.
+  var opens = document.querySelectorAll('.overlay.open');
+  if (!opens.length) return;
+  var open = opens[opens.length - 1];
   var modal = open.querySelector('.modal') || open.querySelector('.cn-compose-modal');
   if (!modal) return;
   if (modal.contains(e.target)) return;

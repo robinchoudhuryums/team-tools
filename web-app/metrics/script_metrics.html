@@ -527,13 +527,15 @@ function mRailRow_(label, value, toneOrSub, sub) {
   // Polymorphic 3rd arg: 'good'/'warn'/'crit' → tone class; anything else → sub line.
   if (toneOrSub === 'good' || toneOrSub === 'warn' || toneOrSub === 'crit') {
     tone = toneOrSub;
-    if (sub) subLine = '<div class="m-row-sub">' + sub + '</div>';
+    if (sub) subLine = '<div class="m-row-sub">' + esc(sub) + '</div>';
   } else if (toneOrSub) {
-    subLine = '<div class="m-row-sub">' + toneOrSub + '</div>';
+    subLine = '<div class="m-row-sub">' + esc(toneOrSub) + '</div>';
   }
+  // esc() every interpolated slot — value/sub can carry CDR-derived strings;
+  // matches the "Metrics client must esc() every server string" invariant.
   return '<div class="m-row">' +
-    '<span class="m-row-label">' + label + '</span>' +
-    '<span class="m-row-value' + (tone ? ' ' + tone : '') + '">' + value + '</span>' +
+    '<span class="m-row-label">' + esc(label) + '</span>' +
+    '<span class="m-row-value' + (tone ? ' ' + tone : '') + '">' + esc(value) + '</span>' +
     subLine +
     '</div>';
 }

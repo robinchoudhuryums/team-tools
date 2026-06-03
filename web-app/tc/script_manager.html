@@ -95,7 +95,7 @@ function renderManagerView(area, data) {
         const sparkSection = renderEmpSparkline_(e.recentHours);
         return `<div class="emp-card">
           <div class="emp-card-top">
-            <div class="emp-avatar ${meta.avCls}">${initials}</div>
+            <div class="emp-avatar ${meta.avCls}">${esc(initials)}</div>
             <div class="emp-name">${esc(e.name)}</div>
             <button class="de-open-btn" title="Edit day" data-emp-id="${esc(e.id)}" data-emp-name="${esc(e.name)}">${icon('adjust', 13)}</button>
           </div>
