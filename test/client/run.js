@@ -10,6 +10,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const assert = require('assert');
 const vm = require('vm');
+const fs = require('fs');
+const path = require('path');
 const { buildSandbox, loadFunction, extractScript, extractRawFunction } = require('./harness');
 
 let pass = 0, fail = 0;
@@ -195,6 +197,73 @@ test('returns empty string when no noteId is present', () => {
   assert.strictEqual(cnExtractAuditNoteId_(''), '');
   assert.strictEqual(cnExtractAuditNoteId_(null), '');
   assert.strictEqual(cnExtractAuditNoteId_(undefined), '');
+});
+
+console.log('\ncn — cnLatestManagerReply_() (L4/L5 feedback[] vs legacy precedence)');
+// Pure helper behind both the Training Answers tray and the manager read-only
+// card — resolves the latest manager reply, preferring the multi-turn
+// feedback[] thread and falling back to the legacy trainingReply field.
+const cnLatestManagerReply_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnLatestManagerReply_');
+test('prefers the latest manager reply in feedback[] over legacy trainingReply', () => {
+  const r = cnLatestManagerReply_({
+    trainingReply: 'legacy', trainingReplyBy: 'old@x',
+    feedback: [
+      { role: 'manager', kind: 'reply', message: 'first', by: 'm1@x' },
+      { role: 'agent', kind: 'ack', message: '' },
+      { role: 'manager', kind: 'reply', message: 'latest', by: 'm2@x' },
+    ],
+  });
+  assert.strictEqual(r.message, 'latest');
+  assert.strictEqual(r.by, 'm2@x');
+});
+test('falls back to legacy trainingReply when feedback[] has no manager reply', () => {
+  const legacy = cnLatestManagerReply_({ trainingReply: 'legacy', trainingReplyBy: 'm@x' });
+  assert.strictEqual(legacy.message, 'legacy');
+  assert.strictEqual(legacy.by, 'm@x');
+  // agent-only feedback with no manager entry → empty
+  const agentOnly = cnLatestManagerReply_({ feedback: [{ role: 'agent', kind: 'ack', message: '' }] });
+  assert.strictEqual(agentOnly.message, '');
+  // missing / null subformData → empty, never throws
+  assert.strictEqual(cnLatestManagerReply_({}).message, '');
+  assert.strictEqual(cnLatestManagerReply_(null).message, '');
+});
+
+console.log('\nCode.js — isValidTimeOffType_() (M1 leave-type whitelist)');
+// Pure server helper guarding submitTimeOffRequest / managerSubmitTimeOff.
+// Source BOTH the validator and its canonical TIME_OFF_TYPES set from Code.js
+// (no local re-declaration → no Category-B drift). Strip the `const` so the
+// array lands as a sandbox global the extracted function reads as a free var.
+const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+const totMatch = codeSrc.match(/const (TIME_OFF_TYPES\s*=\s*\[[\s\S]*?\]);/);
+assert.ok(totMatch, 'TIME_OFF_TYPES declaration found in Code.js');
+vm.runInContext(totMatch[1] + ';', sb, { filename: 'Code.js#TIME_OFF_TYPES' });
+vm.runInContext(extractRawFunction('Code.js', 'isValidTimeOffType_'), sb,
+  { filename: 'Code.js#isValidTimeOffType_' });
+const isValidTimeOffType_ = sb.isValidTimeOffType_;
+
+test('accepts every canonical type, case- and whitespace-insensitive', () => {
+  sb.TIME_OFF_TYPES.forEach((t) => assert.strictEqual(isValidTimeOffType_(t), true, t));
+  assert.strictEqual(isValidTimeOffType_('  full day  '), true);
+  assert.strictEqual(isValidTimeOffType_('SICK LEAVE'), true);
+});
+test('rejects unknown / empty / malformed types', () => {
+  assert.strictEqual(isValidTimeOffType_('Half Day'), false); // missing - Morning/Afternoon
+  assert.strictEqual(isValidTimeOffType_('Vacation'), false);
+  assert.strictEqual(isValidTimeOffType_(''), false);
+  assert.strictEqual(isValidTimeOffType_(null), false);
+  assert.strictEqual(isValidTimeOffType_(undefined), false);
+});
+// Coupling tripwire: every leave type the UI <select> offers must be accepted
+// by the server validator, or a legitimate request would now be rejected (the
+// new failure mode M1 introduced — TIME_OFF_TYPES ↔ modal options must agree).
+test('every day-type <select> option is an accepted leave type', () => {
+  const modalsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/modals.html'), 'utf8');
+  const block = modalsSrc.slice(modalsSrc.indexOf('id="day-type"'));
+  const sel = block.slice(0, block.indexOf('</select>'));
+  const opts = [...sel.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(opts.length >= 5, 'parsed the day-type option list');
+  opts.forEach((v) => assert.strictEqual(isValidTimeOffType_(v), true,
+    `UI offers "${v}" but the server validator rejects it`));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
