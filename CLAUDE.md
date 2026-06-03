@@ -1805,6 +1805,14 @@ verification path.
 ### Health Dimensions
 Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability
 
+### Horizontal (Axis B) Categories
+Silent Degradation Posture | failures swallowed so the app continues with wrong results instead of surfacing an error (best-effort email, the CDR-overlay try/catch, optimistic-UI reverts, JSON-parse → null)
+Parallel Source-of-Truth Drift | the same value duplicated across places that can diverge (`LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_` ↔ `TIME_OFF_TYPES` ↔ modal options; `CN_EMAIL_PALETTE` ↔ design tokens; `AUTO_COPY_FORMAT` server default ↔ client fallback)
+Operator-Only State Gaps | setup living only in Script Properties / manual triggers / the operator's head (`ADP_SS_ID`, `CDR_SS_ID`, `MANAGER_EMAILS`, `CN_FEATURE_FLAGS`, trigger install, per-rep Sheet enrollment, form-retention window)
+Sheets-Coercion & Timezone Integrity | Sheets coercing time/date/`TRUE`-`FALSE` on read, the CDR spreadsheet TZ mismatch (`getDisplayValues()`), per-rep-tz "today" derivation
+PHI / Access-Boundary Leakage | audit rows staying PHI-free, manager-gating + caller-scoping, token-only public endpoints, `esc()`-before-`innerHTML`, voice/BAA, signature handling
+Test Coverage Quality | whether tests actually guard regressions; the client DOM/RPC layer is manual-only; coupling tripwires (INV-95)
+
 ### Subsystems
 Server:
   web-app/Code.js, web-app/appsscript.json, web-app/.clasp.json
@@ -2411,7 +2419,10 @@ S57 | Compliance audit panel (Admin tab) | Subsystem: Server, Client (Call Notes
     - As a non-manager, call `google.script.run...getCallNotesAuditLog({})` and `...getCallNoteAuditHistory('x')` from the console
   Expected: `getCallNotesAuditLog` is manager-gated (non-manager gets "Manager access required."), reads the AuditLog via a bounded tail scan (≤4000 rows), caps at 500 results, and shows a "capped — narrow the range" banner when `truncated` is set (result cap hit or scan didn't reach the start date). `getCallNoteAuditHistory` returns every row carrying the noteId oldest-first, independent of the date filter. The deep-link opens the Per-Rep view via `cnAuditDrillToNote_` + `CN_STATE.mgrPendingRepDrill`. All server strings are `esc()`-escaped before `innerHTML`; IDs/dates pass via `data-*` attributes. Pinned by `cnExtractAuditNoteId_` (Node harness + `test_cn_extractAuditNoteId_*` editor smoke). Server-side endpoint integration tests (gate/bounding/truncation) are a known follow-on.
 
+### Frozen Subsystems
+- Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
+
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
-Client: same single `clasp push -f` ships all HTML files alongside `Code.js`; same deploy step.
+Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
 Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end).
