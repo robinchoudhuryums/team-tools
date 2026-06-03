@@ -9,13 +9,31 @@
 // pure functions are added. DOM-driving / RPC functions stay out of scope.
 // ─────────────────────────────────────────────────────────────────────────────
 const assert = require('assert');
-const { buildSandbox, loadFunction } = require('./harness');
+const vm = require('vm');
+const { buildSandbox, loadFunction, extractScript, extractRawFunction } = require('./harness');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
   try { fn(); pass++; console.log('  ✓ ' + name); }
   catch (e) { fail++; console.log('  ✗ ' + name + '\n      ' + (e && e.message)); }
 }
+
+// Parse-guard: every JS-bearing HtmlService partial's <script> block must
+// parse. The per-function harness only brace-matches the slices it loads, so a
+// syntax error elsewhere in a partial (e.g. a stray token) would otherwise slip
+// past CI — this is the cheap net that catches it across the whole client.
+console.log('\nclient — all partials parse (<script> syntax guard)');
+[
+  'script_core.html', 'script_icons.html', 'metrics/script_metrics.html',
+  'cn/script_callnotes.html', 'tc/script_clock.html', 'tc/script_timesheet.html',
+  'tc/script_timeoff.html', 'tc/script_manager.html', 'index.html', 'form_public.html',
+].forEach((f) => {
+  test(f + ' parses', () => {
+    const src = extractScript(f);
+    assert.ok(src.trim().length > 0, 'has a <script> block');
+    new vm.Script(src, { filename: f });  // throws on a syntax error
+  });
+});
 
 // Foundational partials: script_icons (icon), script_core (esc, empTz,
 // isoDateTz, __URL_PARAMS), metrics (mTodayIso_, mDaysAgo_). These eval cleanly
@@ -28,6 +46,17 @@ const sb = buildSandbox([
 // cnExtEmailPillHtml_ is extracted standalone rather than loading the whole
 // 6500-line Call Notes partial — it only needs esc (core) + icon (icons).
 const cnExtEmailPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtEmailPillHtml_');
+// Card-level urgent flag (Round 2 deferred 8e). cnUrgentPillHtml_ depends on
+// cnIsUrgent_ (free var) + icon (from script_icons), so load cnIsUrgent_ into
+// the sandbox first.
+const cnIsUrgent_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnIsUrgent_');
+const cnUrgentPillHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnUrgentPillHtml_');
+// #2 — external-email template picker filter logic. These read CN_STATE
+// (a free var) + esc (sandbox); load the three helpers and seed CN_STATE.
+sb.CN_STATE = { deptConfig: { emailTemplates: [] } };
+const cnExtTemplatesAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesAll_');
+const cnExtTemplatesFor_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesFor_');
+const cnExtTemplateOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplateOptionsHtml_');
 
 // Helper: today's date in a given tz, computed independently of the code under
 // test (the oracle).
@@ -99,6 +128,73 @@ test('escapes a malicious recipient (no raw < survives into the markup)', () => 
   });
   assert.ok(!html.includes('<img src=x'), 'raw <img must be escaped');
   assert.ok(html.includes('&lt;img'), 'escaped form present');
+});
+
+console.log('\ncn — cnIsUrgent_() / cnUrgentPillHtml_() (card-level urgent flag)');
+test('cnIsUrgent_ is true only when subformData.flags includes "urgent"', () => {
+  assert.strictEqual(cnIsUrgent_({ subformData: { flags: ['urgent'] } }), true);
+  assert.strictEqual(cnIsUrgent_({ subformData: { flags: ['action', 'urgent'] } }), true);
+  assert.strictEqual(cnIsUrgent_({ subformData: { flags: ['action'] } }), false);
+  assert.strictEqual(cnIsUrgent_({ subformData: { flags: [] } }), false);
+  assert.strictEqual(cnIsUrgent_({ subformData: {} }), false);
+  assert.strictEqual(cnIsUrgent_({}), false);
+  assert.strictEqual(cnIsUrgent_(null), false);
+});
+test('cnUrgentPillHtml_ renders the danger pill only when urgent', () => {
+  assert.strictEqual(cnUrgentPillHtml_({ subformData: { flags: ['action'] } }), '');
+  const html = cnUrgentPillHtml_({ subformData: { flags: ['urgent'] } });
+  assert.ok(html.includes('cn-urgent-pill'), 'has the pill class');
+  assert.ok(/urgent/i.test(html), 'shows the urgent label');
+});
+
+console.log('\ncn — email template picker filtering (#2)');
+test('cnExtTemplatesFor_ returns "any" + matching-type templates only', () => {
+  sb.CN_STATE.deptConfig.emailTemplates = [
+    { name: 'Generic', recipientType: 'any', body: 'Hi {name}' },
+    { name: 'Cust only', recipientType: 'customer', body: 'c' },
+    { name: 'Prov only', recipientType: 'provider', body: 'p' },
+  ];
+  const forCust = cnExtTemplatesFor_('customer').map((t) => t.name);
+  assert.deepStrictEqual(forCust, ['Generic', 'Cust only']);
+  const forProv = cnExtTemplatesFor_('provider').map((t) => t.name);
+  assert.deepStrictEqual(forProv, ['Generic', 'Prov only']);
+});
+test('cnExtTemplateOptionsHtml_ tags non-any templates and escapes names', () => {
+  sb.CN_STATE.deptConfig.emailTemplates = [
+    { name: '<b>x</b>', recipientType: 'customer', body: 'c' },
+  ];
+  const html = cnExtTemplateOptionsHtml_('customer');
+  assert.ok(html.includes('Insert a template…'), 'has placeholder option');
+  assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;'), 'name is escaped');
+  assert.ok(html.includes('(customer)'), 'tags the recipient type');
+  assert.ok(!html.includes('<b>x</b>'), 'no raw HTML survives');
+});
+test('cnExtTemplatesAll_ tolerates a missing deptConfig', () => {
+  const saved = sb.CN_STATE;
+  sb.CN_STATE = {};
+  const all = cnExtTemplatesAll_();
+  assert.ok(Array.isArray(all) && all.length === 0, 'returns an empty array');
+  sb.CN_STATE = saved;
+});
+
+console.log('\nCode.js — cnExtractAuditNoteId_() (#3 audit noteId parser)');
+// Pure server helper both audit endpoints depend on. Extracted from Code.js
+// (raw, not a <script> partial) and run in the sandbox.
+vm.runInContext(extractRawFunction('Code.js', 'cnExtractAuditNoteId_'), sb,
+  { filename: 'Code.js#cnExtractAuditNoteId_' });
+const cnExtractAuditNoteId_ = sb.cnExtractAuditNoteId_;
+test('extracts the uuid from a CallNote audit Notes field', () => {
+  assert.strictEqual(
+    cnExtractAuditNoteId_('noteId=3f2504e0-4f89-41d3-9a0c-0305e82c3301; urgent=on'),
+    '3f2504e0-4f89-41d3-9a0c-0305e82c3301');
+  assert.strictEqual(
+    cnExtractAuditNoteId_('noteId=abc12345; depts=Shipping'), 'abc12345');
+});
+test('returns empty string when no noteId is present', () => {
+  assert.strictEqual(cnExtractAuditNoteId_('Updated department emails (3 depts)'), '');
+  assert.strictEqual(cnExtractAuditNoteId_(''), '');
+  assert.strictEqual(cnExtractAuditNoteId_(null), '');
+  assert.strictEqual(cnExtractAuditNoteId_(undefined), '');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
