@@ -508,5 +508,24 @@ console.log('\nforms — invite email builders carry no prefilled patient data (
   });
 });
 
+console.log('\nforms — normalizeWebAppExecUrl_() produces the canonical public /exec link');
+const _urlCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'normalizeWebAppExecUrl_'), _urlCtx, { filename: 'Code.js#normalizeWebAppExecUrl_' });
+const normalizeWebAppExecUrl_ = _urlCtx.normalizeWebAppExecUrl_;
+test('strips the /a/<domain>/ Workspace prefix (the customer-blocking bug)', () => {
+  assert.strictEqual(
+    normalizeWebAppExecUrl_('https://script.google.com/a/universalmedsupply.com/macros/s/AKfycbABC/exec'),
+    'https://script.google.com/macros/s/AKfycbABC/exec');
+});
+test('rewrites a trailing /dev to /exec', () => {
+  assert.strictEqual(
+    normalizeWebAppExecUrl_('https://script.google.com/macros/s/AKfycbABC/dev'),
+    'https://script.google.com/macros/s/AKfycbABC/exec');
+});
+test('leaves an already-canonical /exec URL unchanged', () => {
+  const u = 'https://script.google.com/macros/s/AKfycbABC/exec';
+  assert.strictEqual(normalizeWebAppExecUrl_(u), u);
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

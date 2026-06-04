@@ -1837,18 +1837,20 @@ manually for a fresh deploy or environment:
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
   reads this before CONFIG; without it, no one passes the
   `isManager` check and manager features stay locked out.
-- **Set Script Property `WEB_APP_URL`** to the deployment's published
-  **`/exec`** URL (Apps Script editor → Deploy → Manage deployments → copy the
-  Web app URL ending in `/exec`). `buildFormUrl_` uses it to build external
-  fillable-form links. Without it, the code falls back to
-  `ScriptApp.getService().getUrl()`, which is **unreliable and can return the
-  `/dev` (head) URL** — a `/dev` link opens ONLY for accounts with edit access
-  to the script, so an external customer gets a Drive "Sorry, unable to open the
-  file at this time" error and the fillable-form feature is broken for everyone
-  outside the project. Also confirm the deployment's **"Who has access" =
-  "Anyone"** (matches `appsscript.json`'s `ANYONE_ANONYMOUS`), and always test an
-  external form link from an incognito window or a non-Google email — never from
-  the editor's dev URL.
+- **External fillable-form links must be the canonical anonymous `/exec` URL.**
+  Inside a Google Workspace, `ScriptApp.getService().getUrl()` returns the
+  **domain-scoped** form `https://script.google.com/a/<domain>/macros/s/<id>/exec`
+  — the `/a/<domain>/` prefix routes through org login, so an external recipient
+  (personal Gmail / customer) is blocked with a Drive "Sorry, unable to open the
+  file at this time" error (works only for `@<domain>` accounts). `buildFormUrl_`
+  runs the base through `normalizeWebAppExecUrl_`, which **strips `/a/<domain>/`**
+  and rewrites a trailing `/dev`→`/exec` (pinned by the `normalizeWebAppExecUrl_`
+  Node tests). Optionally set Script Property **`WEB_APP_URL`** to the published
+  `/exec` URL to override the resolved base entirely. Also confirm the
+  deployment's **"Who has access" = "Anyone"** (matches `appsscript.json`'s
+  `ANYONE_ANONYMOUS`) — a domain-restricted deployment blocks externals even on
+  the stripped URL. Always test an external form link from an incognito window or
+  a non-Google email, never from the editor's dev URL.
 - **`Employees` sheet column K = `PtoEnabled`** — added in the
   current schema; existing sheets must have this column added
   (header row 1, leave blank for back-compat = enabled, write

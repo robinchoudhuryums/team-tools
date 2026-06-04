@@ -4882,16 +4882,28 @@ function generateFormToken_() {
   return Utilities.getUuid();
 }
 
-/** Build the public form URL for a token. `ScriptApp.getService().getUrl()` is
- *  unreliable — it can return the /dev (head) URL, which ONLY accounts with edit
- *  access to the script can open (an external recipient gets a Drive "Sorry,
- *  unable to open the file at this time" error). So prefer the configured
- *  published /exec URL from Script Property WEB_APP_URL; fall back to getUrl()
- *  only when it isn't set. Set WEB_APP_URL once to the deployment's /exec URL. */
+/** Build the PUBLIC form URL for a token. `ScriptApp.getService().getUrl()`
+ *  inside a Google Workspace returns the DOMAIN-scoped form
+ *  `https://script.google.com/a/<domain>/macros/s/<id>/exec` — that `/a/<domain>/`
+ *  prefix routes through the org's login, so an external recipient (personal
+ *  Gmail / customer) is blocked with a Drive "Sorry, unable to open the file at
+ *  this time" error. `normalizeWebAppExecUrl_` strips that prefix (and prefers
+ *  /exec over a /dev head URL) so the emailed link is the canonical anonymous
+ *  form. Script Property WEB_APP_URL (set to the published /exec URL) overrides
+ *  the resolved base. */
 function buildFormUrl_(token) {
   const base = PropertiesService.getScriptProperties().getProperty('WEB_APP_URL')
             || ScriptApp.getService().getUrl();
-  return base.replace(/\/dev$/, '/exec') + '?form=' + encodeURIComponent(token);
+  return normalizeWebAppExecUrl_(base) + '?form=' + encodeURIComponent(token);
+}
+
+/** Normalizes an Apps Script web-app URL to its canonical public /exec form:
+ *  drops the `/a/<domain>/` Workspace routing prefix (which is domain-locked)
+ *  and rewrites a trailing /dev to /exec. */
+function normalizeWebAppExecUrl_(url) {
+  return String(url || '')
+    .replace(/\/a\/[^/]+\/macros\//, '/macros/')
+    .replace(/\/dev$/, '/exec');
 }
 
 /** Creates a form token. Called by the external email flow when "fillable"
