@@ -12,6 +12,7 @@ const CONFIG = {
   EMPLOYEE_TAB: 'Employees',
   ADP_TAB:      'Timesheet',
   TIMEOFF_TAB:  'TimeOffRequests',
+  PUNCH_ADJUST_TAB: 'PunchAdjustRequests',  // #4a — employee adjustment requests pending manager approval
   AUDIT_TAB:    'AuditLog',
   FORM_TOKENS_TAB:      'FormTokens',
   FORM_SUBMISSIONS_TAB: 'FormSubmissions',
@@ -56,8 +57,18 @@ const CONFIG = {
   // handful of exceptions (PH agents start 8:30). Resolved by
   // getShiftSchedule_ and shipped to the client via getEmployeeState.
   SHIFT_SCHEDULE: {
-    DEFAULT:     { start: '08:00', end: '17:00' },
+    DEFAULT:     { start: '08:00', end: '17:00',
+      // Scheduled breaks (item 1) — drive the Clock-view "next break" chip +
+      // the X-min reminder toast. Operator-tunable here (redeploy). A tz entry
+      // without its own `breaks` inherits DEFAULT.breaks.
+      breaks: [
+        { label: 'Morning break',   start: '10:30', len: 15 },
+        { label: 'Lunch',           start: '12:30', len: 60 },
+        { label: 'Afternoon break', start: '15:00', len: 15 },
+      ],
+    },
     BY_TIMEZONE: { 'Asia/Manila': { start: '08:30', end: '17:00' } },
+    BREAK_REMINDER_MINUTES: 10,         // lead time for the upcoming-break reminder toast
   },
 
   // ── Metrics module (CDR integration) ──────────────────────────────────
@@ -506,6 +517,15 @@ function recordPunch(punchType, custom) {
     let daysBack = 0;
     let reason   = '';
     if (isAdj) {
+      // Employee immediate-fix is gated by the employeeImmediateAdjust flag
+      // (#4a/#4b toggle). When off, non-managers must route adjustments through
+      // the approval queue (submitPunchAdjustRequests). Managers self-adjusting
+      // via this path are always allowed (they're trusted; they also have Day
+      // Edit). Server-enforced so hiding the "Apply now" button can't be bypassed.
+      if (!emp.isManager && !getFlag_('employeeImmediateAdjust')) {
+        return { success: false, error:
+          'Immediate punch adjustments are turned off — submit an adjustment request for manager approval instead.' };
+      }
       daysBack = daysBetween_(date, todayStr);
       if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) {
         return { success: false,
@@ -2225,6 +2245,93 @@ function getEnrolledCallNotesReps() {
     reps.sort((a, b) => a.name.localeCompare(b.name));
     return { reps };
   } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated enrollment roster for the Admin tab's auto-provision panel.
+ *  Returns every roster member with an email, split into enrolled (has a
+ *  CallNotesSheetId) and unenrolled. Read-only. */
+function getCallNotesEnrollment() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const rows = getEmployeeRosterRows_();
+    const enrolled = [], unenrolled = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][EMP.EMAIL]) continue;
+      const rec = {
+        id: String(rows[i][EMP.ID]).trim(),
+        name: String(rows[i][EMP.NAME]).trim(),
+      };
+      if (rows[i][EMP.CALL_NOTES_SHEET_ID] && String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim()) {
+        enrolled.push(rec);
+      } else {
+        unenrolled.push(rec);
+      }
+    }
+    enrolled.sort((a, b) => a.name.localeCompare(b.name));
+    unenrolled.sort((a, b) => a.name.localeCompare(b.name));
+    return { enrolled, unenrolled };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Auto-provision a per-rep call-notes Sheet — the one-click replacement for the
+ *  manual "copy the template Sheet, share it, paste the ID into column L"
+ *  workflow. Manager-gated (INV-02) + locked (INV-01, mutates the Employees
+ *  sheet). Creates a fresh Spreadsheet owned by the deployer (the script runs as
+ *  USER_DEPLOYING, so the new Sheet lands in the deployer's Drive — exactly the
+ *  ownership the per-rep model wants), provisions the `Notes` tab with the
+ *  canonical CN_HEADERS, writes the new ID into EMP.CALL_NOTES_SHEET_ID (column
+ *  L) of the rep's Employees row, invalidates the roster cache (INV-10), and
+ *  writes a CallNotesProvision audit row. Idempotent: a rep who already has a
+ *  sheetId is returned unchanged — it NEVER clobbers an existing Sheet (that
+ *  would orphan the rep's note history). */
+function provisionCallNotesSheet(repEmpId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+  if (!repEmpId || !String(repEmpId).trim()) return { error: 'No employee specified.' };
+  repEmpId = String(repEmpId).trim();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+    const rows = sheet.getDataRange().getValues();
+    let targetRow = -1, repName = '', existing = '';
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][EMP.ID]).trim() !== repEmpId) continue;
+      targetRow = i;
+      repName = String(rows[i][EMP.NAME]).trim();
+      existing = rows[i][EMP.CALL_NOTES_SHEET_ID] ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : '';
+      break;
+    }
+    if (targetRow < 0) return { error: 'Employee not found: ' + repEmpId };
+    if (existing) {
+      // Already enrolled — never clobber an existing Sheet (would orphan history).
+      let url = '';
+      try { url = SpreadsheetApp.openById(existing).getUrl(); } catch (e) {}
+      return { success: true, alreadyEnrolled: true, sheetId: existing, url: url, repName: repName };
+    }
+    // Create the new per-rep Spreadsheet (owned by the deployer / script-as-Me).
+    const title = 'Call Notes — ' + (repName || repEmpId) + ' (' + repEmpId + ')';
+    const ss = SpreadsheetApp.create(title);
+    // Provision the Notes tab with the canonical header (rename the default sheet
+    // rather than insert a second one, so there's no stray "Sheet1").
+    const notes = ss.getSheets()[0];
+    notes.setName(CONFIG.CALL_NOTES.NOTES_TAB);
+    notes.appendRow(CN_HEADERS);
+    notes.setFrozenRows(1);
+    notes.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');
+    const sheetId = ss.getId();
+    // Write the ID into column L of the rep's Employees row + invalidate cache.
+    sheet.getRange(targetRow + 1, EMP.CALL_NOTES_SHEET_ID + 1).setValue(sheetId);
+    invalidateRosterCache_();
+    writeAuditLog_(callerEmp, 'CallNotesProvision', repEmpId, '', false, 0,
+      'sheetId=' + sheetId, callerEmp.email);
+    return { success: true, sheetId: sheetId, url: ss.getUrl(), repName: repName };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every
@@ -5523,6 +5630,70 @@ function purgeOldCallNotes() {
   }
 }
 
+/** #8 — manager-triggered reconcile pass. Scans every enrolled rep's Notes tab
+ *  for HAND-ENTERED rows (content present but no noteId — typed directly into
+ *  the Sheet, not via the app) and backfills the fields the app needs to treat
+ *  them as first-class: a UUID noteId, a Timestamp, and a yyyy-MM-dd DateLocal
+ *  (derived from whatever the human supplied, else the rep-tz now/today).
+ *  Idempotent — a row with a noteId is skipped, so re-running is a no-op.
+ *  Manager-gated + locked; per-rep Sheet failures are skipped. Content fields
+ *  are NEVER modified. Writes a CallNotesReconcile audit row. */
+function reconcileCallNotes() {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const roster = getEmployeeRosterRows_();
+    const CONTENT_COLS = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
+    let repsTouched = 0, rowsBackfilled = 0;
+    for (let r = 1; r < roster.length; r++) {
+      const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+      const emp = {
+        id: String(roster[r][EMP.ID]).trim(),
+        name: String(roster[r][EMP.NAME]).trim(),
+        callNotesSheetId: String(sheetIdRaw).trim(),
+        timezone: String(roster[r][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE,
+      };
+      try {
+        const sheet = getCallNotesSheet_(emp);
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) continue;
+        const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+        const tz = safeTimezone_(emp.timezone);
+        let repBackfilled = 0;
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i];
+          if (String(row[CN.NOTE_ID] || '').trim()) continue;   // app-created → skip
+          const hasContent = CONTENT_COLS.some(function (c) { return String(row[c] || '').trim(); });
+          if (!hasContent) continue;                             // blank row → skip
+          const rowIndex = i + 2;
+          const tsHadValue = !!(String(row[CN.TIMESTAMP] || '').trim() || (row[CN.TIMESTAMP] instanceof Date));
+          let dateLocal = normalizeDate_(row[CN.DATE_LOCAL]);    // '' if blank; handles Date coercion
+          let timestamp = (row[CN.TIMESTAMP] instanceof Date)
+            ? Utilities.formatDate(row[CN.TIMESTAMP], tz, "yyyy-MM-dd'T'HH:mm:ss")
+            : String(row[CN.TIMESTAMP] || '').trim();
+          if (!dateLocal && timestamp) dateLocal = timestamp.substring(0, 10);
+          if (!dateLocal) dateLocal = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+          if (!timestamp) timestamp = dateLocal + 'T12:00:00';
+          sheet.getRange(rowIndex, CN.NOTE_ID + 1).setValue(Utilities.getUuid());
+          if (!tsHadValue) sheet.getRange(rowIndex, CN.TIMESTAMP + 1).setValue(timestamp);
+          if (!normalizeDate_(row[CN.DATE_LOCAL])) sheet.getRange(rowIndex, CN.DATE_LOCAL + 1).setValue(dateLocal);
+          repBackfilled++;
+        }
+        if (repBackfilled > 0) { rowsBackfilled += repBackfilled; repsTouched++; }
+      } catch (e) {
+        Logger.log('reconcileCallNotes: skipped rep ' + emp.id + ': ' + e.message);
+      }
+    }
+    writeAuditLog_(callerEmp, 'CallNotesReconcile', '', '', false, 0,
+      `repsTouched=${repsTouched}; rowsBackfilled=${rowsBackfilled}`, callerEmp.email);
+    return { success: true, repsTouched: repsTouched, rowsBackfilled: rowsBackfilled };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
@@ -5546,6 +5717,8 @@ function installAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'purgeOldCallNotes',
+    'reconcileCallNotes',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -5585,6 +5758,13 @@ function installAutomationTriggers() {
   // destructive purges don't overlap.
   ScriptApp.newTrigger('purgeOldCallNotes')
     .timeBased().atHour(4).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Two-way Sheets reconcile (item 8) — back-fills NoteId/Timestamp/DateLocal on
+  // rows added directly in a rep's Sheet outside the app. Non-destructive (never
+  // touches content cells) + idempotent (skips rows already stamped), so the
+  // daily run is harmless. Staggered to 5am, after the purges.
+  ScriptApp.newTrigger('reconcileCallNotes')
+    .timeBased().atHour(5).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -5626,6 +5806,8 @@ function removeAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'purgeOldCallNotes',
+    'reconcileCallNotes',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -5806,6 +5988,10 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         to: recipients.join(','),
         subject: `${subjectPrefix}: ${result.error}`,
         body: `No export generated for ${range.start} to ${range.end}.\nReason: ${result.error}`,
+        htmlBody: buildBrandedEmailHtml_('No export generated',
+          '<p style="margin:0 0 12px;">No export was generated for <b>' + esc_(range.start) + '</b> to <b>' + esc_(range.end) + '</b>.</p>' +
+          brandedKvRows_([['Reason', result.error]]),
+          { accent: CN_EMAIL_PALETTE.warn }),
       });
       writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
         `${payCycleFilter} skipped — ${result.error}`);
@@ -5825,6 +6011,14 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         `Rows:       ${result.rowCount}\n\n` +
         `Also accessible as a Google Sheet:\n${result.url}\n\n` +
         `— UMS Time Clock (automated)`,
+      htmlBody: buildBrandedEmailHtml_('ADP export ready',
+        '<p style="margin:0 0 12px;">Attached: ADP-format export covering <b>' + esc_(range.start) + '</b> to <b>' + esc_(range.end) + '</b> (.xlsx).</p>' +
+        brandedKvRows_([
+          ['Employees', result.employeeCount + ' (' + payCycleFilter + ')'],
+          ['Rows', String(result.rowCount)],
+        ]) +
+        '<p style="margin:14px 0 0;"><a href="' + esc_(result.url) + '" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open as a Google Sheet →</a></p>',
+        { accent: CN_EMAIL_PALETTE.brand }),
       attachments: [blob],
     });
     Logger.log(`Automated ${payCycleFilter} export sent: ${result.rowCount} rows.`);
@@ -5840,6 +6034,14 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         subject: `❌ ${subjectPrefix} FAILED`,
         body: `Automated export failed: ${err.message}\n\nRange: ${range.start} to ${range.end}\n\n` +
               `Please run the export manually from the Manage tab in the UMS Time Clock app.`,
+        htmlBody: buildBrandedEmailHtml_('Automated export failed',
+          '<p style="margin:0 0 12px;">The automated export did not complete.</p>' +
+          brandedKvRows_([
+            ['Error', err.message],
+            ['Range', range.start + ' to ' + range.end],
+          ]) +
+          '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please run the export manually from the Manage tab in the UMS Time Clock app.</p>',
+          { accent: CN_EMAIL_PALETTE.danger }),
       });
     } catch (e) {}
   }
@@ -6492,6 +6694,9 @@ const FEATURE_FLAGS = [
   { key: 'oopSalesTax', label: 'OOP sales-tax calculator',
     description: 'Show the state sales-tax field + tax line in the OOP Order subform.',
     default: true, scope: 'client' },
+  { key: 'employeeImmediateAdjust', label: 'Employee immediate punch fix',
+    description: 'Let employees apply punch adjustments instantly (an "Apply now" button alongside the approval-request flow). Off = all employee adjustments require manager approval (#4a).',
+    default: false, scope: 'both' },
 ];
 
 function featureFlagDef_(key) {
@@ -6636,7 +6841,8 @@ function empTz_(emp) { return (emp && emp.timezone) ? emp.timezone : CONFIG.TIME
  *  countdown. Falls back to 08:00 + 9h if config is missing/malformed. */
 function getShiftSchedule_(timezone) {
   const cfg = CONFIG.SHIFT_SCHEDULE || {};
-  const sched = (cfg.BY_TIMEZONE && cfg.BY_TIMEZONE[timezone]) || cfg.DEFAULT || { start: '08:00', end: '17:00' };
+  const def = cfg.DEFAULT || { start: '08:00', end: '17:00' };
+  const sched = (cfg.BY_TIMEZONE && cfg.BY_TIMEZONE[timezone]) || def;
   const toMin = function (hm) {
     const p = String(hm || '').split(':');
     return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
@@ -6644,7 +6850,18 @@ function getShiftSchedule_(timezone) {
   const startMin = toMin(sched.start);
   let endMin = toMin(sched.end);
   if (!(endMin > startMin)) endMin = startMin + 540; // guard → 9h
-  return { startMin: startMin, lengthMin: endMin - startMin };
+  // Breaks (item 1): the shift entry's own, else inherit DEFAULT's. Resolved to
+  // minutes-from-midnight + length so the client can compute the next break.
+  const rawBreaks = Array.isArray(sched.breaks) ? sched.breaks
+                  : (Array.isArray(def.breaks) ? def.breaks : []);
+  const breaks = rawBreaks.map(function (b) {
+    return { label: String(b.label || 'Break'), startMin: toMin(b.start), lenMin: parseInt(b.len, 10) || 0 };
+  }).filter(function (b) { return b.lenMin > 0; });
+  return {
+    startMin: startMin, lengthMin: endMin - startMin,
+    breaks: breaks,
+    breakReminderMin: parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
+  };
 }
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
@@ -6849,6 +7066,248 @@ function getOrCreateTimeOffSheet_() {
   return sheet;
 }
 
+// ── #4a Punch-adjustment requests (employee batch → manager approval) ─────
+// Parallels TimeOffRequests: employees submit adjustment REQUESTS (no immediate
+// punch change); a manager approves (writes the ADJ- punch for the target emp)
+// or denies. Distinct from the manager Day Edit (managerSaveDay), which is an
+// immediate full-day reconcile and must NOT be reused here (it would delete
+// punch types not present in its slots).
+const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8 };
+
+function getOrCreatePunchAdjustSheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.PUNCH_ADJUST_TAB);
+    sheet.appendRow(['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt']);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** Employee batch submit of punch-adjustment requests (#4a). No punch is
+ *  written — each lands as a Pending row for manager approval. Atomic: the
+ *  whole batch is rejected if any entry is invalid (same guards as
+ *  recordPunch's adjustment path: date/time shape, known punch type, future
+ *  reject, adjust window, reason beyond OLD_ADJUST_ALERT_DAYS). Caller-scoped,
+ *  locked. */
+function submitPunchAdjustRequests(requests) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    if (!Array.isArray(requests) || requests.length === 0) return { success: false, error: 'No adjustments to submit.' };
+    if (requests.length > 20) return { success: false, error: 'Too many adjustments in one submission (max 20).' };
+    const empTz = empTz_(emp);
+    const todayStr = fmtDateTz_(new Date(), empTz);
+    const clean = [];
+    for (let i = 0; i < requests.length; i++) {
+      const r = requests[i] || {};
+      const label = 'Adjustment #' + (i + 1);
+      const date = String(r.date || '').trim();
+      const time = String(r.time || '').trim();
+      const punchType = String(r.punchType || '').trim();
+      const reason = String(r.reason || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { success: false, error: label + ': invalid date.' };
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { success: false, error: label + ': invalid time (expected HH:mm).' };
+      if (PUNCH_LABELS_.indexOf(punchType) < 0) return { success: false, error: label + ': invalid punch type.' };
+      if (date > todayStr) return { success: false, error: label + ': cannot request a future date.' };
+      const daysBack = daysBetween_(date, todayStr);
+      if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: label + ': older than the ' + CONFIG.ADJUST_WINDOW_DAYS + '-day adjust window.' };
+      if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
+      clean.push({ date: date, time: time, punchType: punchType, reason: reason });
+    }
+    const sheet = getOrCreatePunchAdjustSheet_();
+    const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    clean.forEach(function (c) {
+      sheet.appendRow([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt]);
+    });
+    writeAuditLog_(emp, 'PunchAdjustRequest', clean[0].date, '', false, 0,
+      'requested ' + clean.length + ' punch adjustment(s) pending approval');
+    return { success: true, count: clean.length };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** The caller's own adjustment requests, newest-first (employee status list).
+ *  Caller-scoped, read-only. */
+function getMyPunchAdjustRequests() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const rows = getOrCreatePunchAdjustSheet_().getDataRange().getValues();
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][PAR.EMP_ID]).trim() !== emp.id) continue;
+      out.push({
+        reqId: String(rows[i][PAR.REQ_ID]).trim(),
+        date: normalizeDate_(rows[i][PAR.DATE]),
+        punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
+        time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
+        reason: String(rows[i][PAR.REASON] || ''),
+        status: String(rows[i][PAR.STATUS]).trim(),
+        submittedAt: String(rows[i][PAR.SUBMITTED_AT] || ''),
+      });
+    }
+    out.sort(function (a, b) { return String(b.submittedAt).localeCompare(String(a.submittedAt)); });
+    return { requests: out };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated, read-only — all Pending adjustment requests across reps, for
+ *  the manager dashboard approval queue. */
+function managerGetPendingAdjustments() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const rows = getOrCreatePunchAdjustSheet_().getDataRange().getValues();
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][PAR.STATUS]).trim().toLowerCase() !== 'pending') continue;
+      out.push({
+        reqId: String(rows[i][PAR.REQ_ID]).trim(),
+        empId: String(rows[i][PAR.EMP_ID]).trim(),
+        empName: String(rows[i][PAR.EMP_NAME]).trim(),
+        date: normalizeDate_(rows[i][PAR.DATE]),
+        punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
+        time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
+        reason: String(rows[i][PAR.REASON] || ''),
+        submittedAt: String(rows[i][PAR.SUBMITTED_AT] || ''),
+      });
+    }
+    out.sort(function (a, b) { return (a.date + a.empName).localeCompare(b.date + b.empName); });
+    return { requests: out };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated, locked. Approve → writes the ADJ-{punchType} punch for the
+ *  target emp and marks Approved. Deny → marks Denied (no punch). Transition-
+ *  guarded: only acts on a Pending row (so a double-click can't re-approve). */
+function updatePunchAdjustStatus(reqId, newStatus) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (newStatus !== 'Approved' && newStatus !== 'Denied') return { success: false, error: 'Invalid status.' };
+    const id = String(reqId || '').trim();
+    if (!id) return { success: false, error: 'Missing request id.' };
+    const sheet = getOrCreatePunchAdjustSheet_();
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][PAR.REQ_ID]).trim() !== id) continue;
+      const status = String(rows[i][PAR.STATUS]).trim();
+      if (status.toLowerCase() !== 'pending') return { success: false, error: 'This request is no longer pending.' };
+      const empId = String(rows[i][PAR.EMP_ID]).trim();
+      const empName = String(rows[i][PAR.EMP_NAME]).trim();
+      const date = normalizeDate_(rows[i][PAR.DATE]);
+      const punchType = String(rows[i][PAR.PUNCH_TYPE]).trim();
+      const reqTime = normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5);
+      const reason = String(rows[i][PAR.REASON] || '');
+      if (newStatus === 'Approved') {
+        const targetEmp = lookupEmployeeById_(empId);
+        if (!targetEmp) return { success: false, error: 'Employee not found.' };
+        writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
+      } else {
+        const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
+        writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
+          `${punchType} ${reqTime} request denied`, callerEmp.email);
+      }
+      sheet.getRange(i + 1, PAR.STATUS + 1).setValue(newStatus);
+      return { success: true };
+    }
+    return { success: false, error: 'Request not found.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Writes a single ADJ-{punchType} punch for a TARGET employee (the approve
+ *  path). Find-existing-of-that-type-for-date → update, else append; mirrors
+ *  recordPunch's adjustment write + the personal-sheet mirror (INV-09/26/59).
+ *  Touches ONLY that punch type — unlike managerSaveDay's full-day reconcile.
+ *  Writes the `ADJ-` audit row with the approving manager as actor. */
+function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEmail, reason) {
+  const timeFull = time + ':00';
+  const dir = ['ClockIn', 'LunchIn'].indexOf(punchType) >= 0 ? 'IN' : 'OUT';
+  const commentLabel = 'ADJ-' + punchType;
+  const existing = findExistingPunch_(targetEmp.id, date, punchType);
+  if (existing) {
+    existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(timeFull);
+    existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(commentLabel);
+  } else {
+    appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
+  }
+  if (targetEmp.sheetId) {
+    try { writeToEmployeeSheet_(targetEmp, date, timeFull, dir, punchType); } catch (e) {}
+  }
+  const daysBack = Math.abs(daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp))));
+  writeAuditLog_(targetEmp, punchType, date, timeFull, true, daysBack,
+    'approved adjustment request' + (reason ? ' — ' + reason : ''), actorEmail);
+}
+
+/** #4b — manager multi-day adjust. Applies the given punch times to EVERY date
+ *  in [fromDate, toDate] for one rep, ADDITIVELY: each non-empty slot is
+ *  set/updated for that day via writeAdjustPunchForEmployee_ (touches only that
+ *  punch type). Unlike managerSaveDay (a single-day full reconcile), this never
+ *  deletes unspecified punch types — a blank slot leaves that punch untouched
+ *  across the range. Manager-gated, locked, window-bounded, span capped at 31. */
+function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!targetEmpId) return { success: false, error: 'No employee specified.' };
+    if (!fromDate || !/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !toDate || !/^\d{4}-\d{2}-\d{2}$/.test(toDate))
+      return { success: false, error: 'Invalid date range (expected yyyy-MM-dd).' };
+    if (fromDate > toDate) return { success: false, error: 'From date must be on or before To date.' };
+    const targetEmp = lookupEmployeeById_(targetEmpId);
+    if (!targetEmp) return { success: false, error: 'Employee not found.' };
+
+    const cleanSlots = {};
+    let anyTime = false;
+    for (let k = 0; k < PUNCH_LABELS_.length; k++) {
+      const type = PUNCH_LABELS_[k];
+      const raw = String((slots && slots[type]) || '').trim();
+      if (raw && !/^([01]\d|2[0-3]):[0-5]\d$/.test(raw))
+        return { success: false, error: `Invalid time for ${type}: "${raw}" (expected HH:mm, 24-hour)` };
+      cleanSlots[type] = raw;
+      if (raw) anyTime = true;
+    }
+    if (!anyTime) return { success: false, error: 'Enter at least one punch time to apply across the range.' };
+
+    const dates = [];
+    let d = fromDate;
+    while (d <= toDate && dates.length <= 366) { dates.push(d); d = addDaysIso_(d, 1); }
+    if (dates.length > 31) return { success: false, error: 'Range too large (max 31 days).' };
+
+    const empTz = empTz_(targetEmp);
+    const todayStr = fmtDateTz_(new Date(), empTz);
+    for (let i = 0; i < dates.length; i++) {
+      const db = daysBetween_(dates[i], todayStr);
+      if (db < 0) return { success: false, error: 'Range includes a future date.' };
+      if (db > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: `Range includes dates older than the ${CONFIG.ADJUST_WINDOW_DAYS}-day adjust window.` };
+    }
+    const trimmedReason = String(reason || '').trim();
+    if (daysBetween_(dates[0], todayStr) > CONFIG.OLD_ADJUST_ALERT_DAYS && !trimmedReason) {
+      return { success: false, error: `A reason is required when the range goes more than ${CONFIG.OLD_ADJUST_ALERT_DAYS} days back.` };
+    }
+
+    let punchesWritten = 0;
+    dates.forEach(function (date) {
+      PUNCH_LABELS_.forEach(function (type) {
+        const t = cleanSlots[type];
+        if (!t) return;
+        writeAdjustPunchForEmployee_(targetEmp, date, type, t, callerEmp.email, trimmedReason || 'multi-day edit');
+        punchesWritten++;
+      });
+    });
+    return { success: true, daysTouched: dates.length, punchesWritten: punchesWritten };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 function getOrCreateAuditSheet_() {
   const ss = getAdpSS_();
   let sheet = ss.getSheetByName(CONFIG.AUDIT_TAB);
@@ -6997,6 +7456,12 @@ function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
 function timeToMins_(t) { const p = String(t).split(':'); return parseInt(p[0],10)*60 + parseInt(p[1],10); }
 function daysBetween_(earlierIso, laterIso) {
   return Math.round((new Date(laterIso+'T00:00:00Z') - new Date(earlierIso+'T00:00:00Z')) / 86400000);
+}
+/** Advance a yyyy-MM-dd string by n days (UTC math → no tz drift). */
+function addDaysIso_(iso, n) {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
 }
 function normalizeType_(rawComment) { return String(rawComment).replace(/^ADJ-/, ''); }
 

@@ -57,6 +57,7 @@ function renderClockView(area) {
           ${tzAbbr ? `<span class="sep">·</span><span>${esc(tzAbbr)}</span>` : ''}
         </div>
         <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
+        <div class="clk-next-break" id="clk-next-break" style="margin-top:6px"></div>
       </div>
     </div>
 
@@ -408,6 +409,63 @@ function stopRibbonNowCursor_() {
   if (_ribbonNowInterval) { clearInterval(_ribbonNowInterval); _ribbonNowInterval = null; }
 }
 
+// Scheduled breaks (item 1) — read from CLK_SCHEDULE.breaks (server-resolved to
+// minutes-from-midnight). The Clock view shows the next break + a one-time
+// reminder toast `breakReminderMin` before it. Reminders fire only while the
+// Clock tab is open (Apps Script web apps have no background push); the
+// reminded-set dedupes so a toast fires once per break per day.
+function clkBreaks_() { return (CLK_SCHEDULE && Array.isArray(CLK_SCHEDULE.breaks)) ? CLK_SCHEDULE.breaks : []; }
+function clkBreakReminderMin_() { return (CLK_SCHEDULE && CLK_SCHEDULE.breakReminderMin) || 10; }
+function clkNowMin_(tz) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
+  let h = 0, m = 0;
+  parts.forEach(function (p) { if (p.type === 'hour') h = parseInt(p.value, 10) || 0; if (p.type === 'minute') m = parseInt(p.value, 10) || 0; });
+  return (h % 24) * 60 + m;
+}
+function clkFmtMin_(min) {
+  const h24 = Math.floor(min / 60) % 24, m = min % 60;
+  let h = h24 % 12; if (h === 0) h = 12;
+  return h + ':' + String(m).padStart(2, '0') + ' ' + (h24 < 12 ? 'AM' : 'PM');
+}
+function clkNextBreak_(nowMin) {
+  const breaks = clkBreaks_().slice().sort(function (a, b) { return a.startMin - b.startMin; });
+  for (let i = 0; i < breaks.length; i++) {
+    const b = breaks[i];
+    if (nowMin < b.startMin + b.lenMin) {
+      return { brk: b, inProgress: nowMin >= b.startMin, minsUntil: b.startMin - nowMin };
+    }
+  }
+  return null;
+}
+var _clkRemindedBreaks = {};
+function clkUpdateBreak_() {
+  const host = document.getElementById('clk-next-break');
+  if (!host) return;
+  const tz = empTz();
+  const next = clkNextBreak_(clkNowMin_(tz));
+  if (!next) { host.innerHTML = ''; return; }
+  const b = next.brk;
+  const chip = function (txt) {
+    return '<span style="display:inline-block;font-size:11px;font-family:var(--mono);color:var(--ink);background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:2px 10px;">' + esc(txt) + '</span>';
+  };
+  if (next.inProgress) {
+    host.innerHTML = chip('On ' + b.label + ' · until ' + clkFmtMin_(b.startMin + b.lenMin));
+    return;
+  }
+  host.innerHTML = chip('Next break · ' + b.label + ' at ' + clkFmtMin_(b.startMin) +
+    (next.minsUntil <= 90 ? ' (in ' + next.minsUntil + 'm)' : ''));
+  const lead = clkBreakReminderMin_();
+  if (next.minsUntil >= 0 && next.minsUntil <= lead) {
+    const key = isoDateTz(tz) + ':' + b.startMin;
+    if (!_clkRemindedBreaks[key]) {
+      _clkRemindedBreaks[key] = true;
+      if (typeof showToast === 'function') {
+        showToast(b.label + ' in ' + (next.minsUntil <= 0 ? 'a moment' : next.minsUntil + ' min'), 'toast-warn');
+      }
+    }
+  }
+}
+
 /** Note-coverage strip (V1·E3). Fetches via getMyMetrics(today). Renders
  *  a donut gauge for note coverage + 30-day mini-bar trend + "File N
  *  missing" CTA when answered > notes. Hides entirely when the rep had
@@ -713,6 +771,7 @@ function startClock() {
       el.textContent = raw;
     }
     clkUpdateRegions_();   // item 5 — refresh the world-clock strip (cached formatters)
+    clkUpdateBreak_();     // item 1 — next-break chip + X-min reminder toast
   };
   tick(); clockInterval = setInterval(tick, 1000);
   startRibbonNowCursor_();
@@ -767,7 +826,57 @@ function submitPunch(punchType, custom) {
 
 function setClockBtnsDisabled(v) { document.querySelectorAll('.actions .prime, .actions .sec').forEach(b => { b.disabled = v; }); }
 
-// ── ADJUST MODAL ──────────────────────────────────────────────────────────
+// ── ADJUST MODAL (#4a — batch request → manager approval) ───────────────────
+// Employees no longer write punches immediately; they queue one or more
+// adjustment requests here and submit them for manager approval
+// (submitPunchAdjustRequests). The manager approves/denies from the dashboard.
+var ADJ_BATCH = [];
+function adjRenderBatch_() {
+  const host = document.getElementById('adj-batch-list');
+  if (!host) return;
+  if (ADJ_BATCH.length === 0) { host.innerHTML = ''; return; }
+  const label = function (t) { return (PUNCH_META[t] && PUNCH_META[t].label) || t; };
+  host.innerHTML = '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px">To submit (' + ADJ_BATCH.length + ')</div>' +
+    ADJ_BATCH.map(function (e, i) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px">' +
+        '<span style="flex:1">' + esc(e.date) + ' · ' + esc(label(e.punchType)) + ' · ' + esc(e.time) + (e.reason ? ' · ' + esc(e.reason) : '') + '</span>' +
+        '<button class="cn-act-btn" title="Remove" onclick="adjRemoveBatch_(' + i + ')">✕</button>' +
+      '</div>';
+    }).join('');
+}
+function adjRemoveBatch_(i) { ADJ_BATCH.splice(i, 1); adjRenderBatch_(); }
+function adjReadEntry_() {
+  const date = document.getElementById('adj-date').value;
+  const punchType = document.getElementById('adj-type').value;
+  const time = document.getElementById('adj-time').value;
+  const reason = document.getElementById('adj-reason').value.trim();
+  if (!date || !time) { showToast('Please fill in date and time', 'toast-error'); return null; }
+  const today = isoDateTz(empTz());
+  const diff = daysBetweenIso(date, today);
+  const threshold = (empState && empState.adjustReasonThresholdDays) || 7;
+  if (diff > threshold && !reason) {
+    showToast('A reason is required for adjustments more than ' + threshold + ' days back', 'toast-error');
+    document.getElementById('adj-reason').focus();
+    return null;
+  }
+  return { date: date, punchType: punchType, time: time, reason: reason };
+}
+function adjLoadPending_() {
+  const host = document.getElementById('adj-pending-list');
+  if (!host) return;
+  google.script.run.withSuccessHandler(function (res) {
+    const h = document.getElementById('adj-pending-list');
+    if (!h || !res || res.error || !Array.isArray(res.requests)) return;
+    const pend = res.requests.filter(function (r) { return String(r.status).toLowerCase() === 'pending'; });
+    if (pend.length === 0) { h.innerHTML = ''; return; }
+    const label = function (t) { return (PUNCH_META[t] && PUNCH_META[t].label) || t; };
+    h.innerHTML = '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px">Awaiting approval (' + pend.length + ')</div>' +
+      pend.map(function (r) {
+        return '<div style="padding:2px 0">' + esc(r.date) + ' · ' + esc(label(r.punchType)) + ' · ' + esc(r.time) + '</div>';
+      }).join('');
+  }).withFailureHandler(function () {}).getMyPunchAdjustRequests();
+}
+
 function openAdjustModal() {
   const tz = empTz();
   const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
@@ -782,6 +891,13 @@ function openAdjustModal() {
   document.getElementById('adj-time').value = timeHmTz(tz);
   document.getElementById('adj-reason').value = '';
   updateAdjReasonRequirement();
+  ADJ_BATCH = [];
+  adjRenderBatch_();
+  adjLoadPending_();
+  // "Apply now" (immediate fix) shows only when the employeeImmediateAdjust
+  // flag is on; the server enforces the same gate (recordPunch).
+  const applyBtn = document.getElementById('adj-apply-now');
+  if (applyBtn) applyBtn.style.display = flagOn_('employeeImmediateAdjust') ? '' : 'none';
   document.getElementById('adjust-overlay').classList.add('open');
 }
 
@@ -821,21 +937,47 @@ document.getElementById('adjust-overlay').addEventListener('click', e => {
 });
 document.getElementById('adj-date').addEventListener('change', updateAdjReasonRequirement);
 
-document.getElementById('adj-submit').addEventListener('click', () => {
-  const date = document.getElementById('adj-date').value;
-  const type = document.getElementById('adj-type').value;
-  const time = document.getElementById('adj-time').value;
-  const reason = document.getElementById('adj-reason').value.trim();
-  if (!date || !time) { showToast('Please fill in all fields','toast-error'); return; }
-  const today = isoDateTz(empTz());
-  const diff = daysBetweenIso(date, today);
-  const threshold = (empState && empState.adjustReasonThresholdDays) || 7;
-  if (diff > threshold && !reason) {
-    showToast(`A reason is required for adjustments more than ${threshold} days back`, 'toast-error');
-    document.getElementById('adj-reason').focus();
-    return;
-  }
+document.getElementById('adj-add').addEventListener('click', () => {
+  const entry = adjReadEntry_();
+  if (!entry) return;
+  ADJ_BATCH.push(entry);
+  adjRenderBatch_();
+  // Keep date + type, clear time + reason for the next entry.
+  document.getElementById('adj-time').value = '';
+  document.getElementById('adj-reason').value = '';
+});
+
+// "Apply now" — immediate single fix (employeeImmediateAdjust flag on). Uses
+// the legacy recordPunch(custom) path; the server re-checks the flag.
+document.getElementById('adj-apply-now').addEventListener('click', () => {
+  const entry = adjReadEntry_();
+  if (!entry) return;
   document.getElementById('adjust-overlay').classList.remove('open');
-  submitPunch(type, { date, time, reason });
+  submitPunch(entry.punchType, { date: entry.date, time: entry.time, reason: entry.reason });
+});
+
+document.getElementById('adj-submit').addEventListener('click', () => {
+  // Include a currently-filled entry so a single adjustment doesn't require
+  // clicking "Add to list" first.
+  if (document.getElementById('adj-time').value) {
+    const entry = adjReadEntry_();
+    if (!entry) return;
+    ADJ_BATCH.push(entry);
+    document.getElementById('adj-time').value = '';
+    document.getElementById('adj-reason').value = '';
+  }
+  if (ADJ_BATCH.length === 0) { showToast('Add at least one adjustment', 'toast-warn'); return; }
+  const btn = document.getElementById('adj-submit');
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      btn.disabled = false;
+      if (!res || !res.success) { showToast((res && res.error) || 'Submit failed', 'toast-error'); return; }
+      document.getElementById('adjust-overlay').classList.remove('open');
+      ADJ_BATCH = [];
+      showToast(res.count + ' adjustment request(s) submitted for approval', 'toast-success');
+    })
+    .withFailureHandler(function (err) { btn.disabled = false; showToast((err && err.message) || 'Submit failed', 'toast-error'); })
+    .submitPunchAdjustRequests(ADJ_BATCH);
 });
 </script>
