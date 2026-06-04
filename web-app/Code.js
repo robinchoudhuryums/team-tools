@@ -2247,6 +2247,93 @@ function getEnrolledCallNotesReps() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Manager-gated enrollment roster for the Admin tab's auto-provision panel.
+ *  Returns every roster member with an email, split into enrolled (has a
+ *  CallNotesSheetId) and unenrolled. Read-only. */
+function getCallNotesEnrollment() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const rows = getEmployeeRosterRows_();
+    const enrolled = [], unenrolled = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][EMP.EMAIL]) continue;
+      const rec = {
+        id: String(rows[i][EMP.ID]).trim(),
+        name: String(rows[i][EMP.NAME]).trim(),
+      };
+      if (rows[i][EMP.CALL_NOTES_SHEET_ID] && String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim()) {
+        enrolled.push(rec);
+      } else {
+        unenrolled.push(rec);
+      }
+    }
+    enrolled.sort((a, b) => a.name.localeCompare(b.name));
+    unenrolled.sort((a, b) => a.name.localeCompare(b.name));
+    return { enrolled, unenrolled };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Auto-provision a per-rep call-notes Sheet — the one-click replacement for the
+ *  manual "copy the template Sheet, share it, paste the ID into column L"
+ *  workflow. Manager-gated (INV-02) + locked (INV-01, mutates the Employees
+ *  sheet). Creates a fresh Spreadsheet owned by the deployer (the script runs as
+ *  USER_DEPLOYING, so the new Sheet lands in the deployer's Drive — exactly the
+ *  ownership the per-rep model wants), provisions the `Notes` tab with the
+ *  canonical CN_HEADERS, writes the new ID into EMP.CALL_NOTES_SHEET_ID (column
+ *  L) of the rep's Employees row, invalidates the roster cache (INV-10), and
+ *  writes a CallNotesProvision audit row. Idempotent: a rep who already has a
+ *  sheetId is returned unchanged — it NEVER clobbers an existing Sheet (that
+ *  would orphan the rep's note history). */
+function provisionCallNotesSheet(repEmpId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+  if (!repEmpId || !String(repEmpId).trim()) return { error: 'No employee specified.' };
+  repEmpId = String(repEmpId).trim();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+    const rows = sheet.getDataRange().getValues();
+    let targetRow = -1, repName = '', existing = '';
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][EMP.ID]).trim() !== repEmpId) continue;
+      targetRow = i;
+      repName = String(rows[i][EMP.NAME]).trim();
+      existing = rows[i][EMP.CALL_NOTES_SHEET_ID] ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : '';
+      break;
+    }
+    if (targetRow < 0) return { error: 'Employee not found: ' + repEmpId };
+    if (existing) {
+      // Already enrolled — never clobber an existing Sheet (would orphan history).
+      let url = '';
+      try { url = SpreadsheetApp.openById(existing).getUrl(); } catch (e) {}
+      return { success: true, alreadyEnrolled: true, sheetId: existing, url: url, repName: repName };
+    }
+    // Create the new per-rep Spreadsheet (owned by the deployer / script-as-Me).
+    const title = 'Call Notes — ' + (repName || repEmpId) + ' (' + repEmpId + ')';
+    const ss = SpreadsheetApp.create(title);
+    // Provision the Notes tab with the canonical header (rename the default sheet
+    // rather than insert a second one, so there's no stray "Sheet1").
+    const notes = ss.getSheets()[0];
+    notes.setName(CONFIG.CALL_NOTES.NOTES_TAB);
+    notes.appendRow(CN_HEADERS);
+    notes.setFrozenRows(1);
+    notes.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');
+    const sheetId = ss.getId();
+    // Write the ID into column L of the rep's Employees row + invalidate cache.
+    sheet.getRange(targetRow + 1, EMP.CALL_NOTES_SHEET_ID + 1).setValue(sheetId);
+    invalidateRosterCache_();
+    writeAuditLog_(callerEmp, 'CallNotesProvision', repEmpId, '', false, 0,
+      'sheetId=' + sheetId, callerEmp.email);
+    return { success: true, sheetId: sheetId, url: ss.getUrl(), repName: repName };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** Round 2 · 8h — Tag taxonomy aggregate for the Admin tab. Scans every
  *  enrolled rep's call-notes Sheet for subformData.tags[] entries and
  *  returns unique tags with usage counts. Manager-gated; read-only.

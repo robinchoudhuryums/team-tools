@@ -618,6 +618,8 @@ function _runAllTests() {
   _integrationTest('managerSaveDayRange_nonManagerRejected',   test_managerSaveDayRange_nonManagerRejected);
   _integrationTest('reconcileCallNotes_nonManagerRejected',    test_reconcileCallNotes_nonManagerRejected);
   _integrationTest('reconcileCallNotes_backfillsHandEntered',  test_reconcileCallNotes_backfillsHandEntered);
+  _integrationTest('provisionCallNotesSheet_nonManagerRejected', test_provisionCallNotesSheet_nonManagerRejected);
+  _integrationTest('provisionCallNotesSheet_idempotentNoClobber', test_provisionCallNotesSheet_idempotentNoClobber);
   _integrationTest('recordPunch_minIntervalAllowsAdjustment',  test_recordPunch_minIntervalAllowsAdjustment);
 
   _integrationTest('selfDeletePunch_withinWindow',             test_selfDeletePunch_withinWindow);
@@ -1316,6 +1318,33 @@ function test_reconcileCallNotes_backfillsHandEntered() {
   const after2 = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
   _assertEq(String(after2[CN.NOTE_ID]).trim(), String(after[CN.NOTE_ID]).trim(), 'noteId stable on re-run (idempotent)');
   sheet.deleteRow(appended);   // tidy within the run (cleanupTestData also wipes the test Notes tab)
+}
+
+// Auto-provision (INV-110): non-manager is rejected before any Drive write.
+function test_provisionCallNotesSheet_nonManagerRejected() {
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    const r = provisionCallNotesSheet(_TEST_INDIA_ID);
+    _assertNotNull(r.error, 'non-manager rejected');
+    _assertContains(r.error, 'Manager access required');
+  });
+}
+
+// Auto-provision is idempotent: a rep who already has a Sheet is returned
+// unchanged and NO new Spreadsheet is created (never clobbers existing history).
+// The India test employee is enrolled by setupTestEnvironment, so this exercises
+// the no-clobber branch without littering Drive with a fresh Sheet.
+function test_provisionCallNotesSheet_idempotentNoClobber() {
+  const emp = lookupEmployeeById_(_TEST_INDIA_ID);
+  if (!emp || !emp.callNotesSheetId) { _assertTrue(true, 'India call-notes Sheet not provisioned — skipped'); return; }
+  const before = emp.callNotesSheetId;
+  let res;
+  _asUser(_TEST_MGR_EMAIL, function () { res = provisionCallNotesSheet(_TEST_INDIA_ID); });
+  _assertSuccess(res);
+  _assertTrue(res.alreadyEnrolled === true, 'already-enrolled rep returns alreadyEnrolled');
+  _assertEq(res.sheetId, before, 'existing sheetId is NOT clobbered');
+  invalidateRosterCache_();
+  const after = lookupEmployeeById_(_TEST_INDIA_ID);
+  _assertEq(after.callNotesSheetId, before, 'column L unchanged after a no-clobber provision');
 }
 
 function test_recordPunch_reasonAcceptedOldAdj() {

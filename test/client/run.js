@@ -327,5 +327,67 @@ test('getFeatureFlagsResolved_ returns a boolean for every registry key', () => 
   });
 });
 
+console.log('\nCode.js — branded email builders escape user data (#2 INV-105)');
+// buildBrandedEmailHtml_ embeds bodyHtml raw (callers pre-esc_ it) but esc_'s
+// the heading; brandedKvRows_ esc_'s both label and value. A new field added
+// without esc_ is stored XSS in the sent email — these pin that discipline.
+// Source esc_ + CN_EMAIL_PALETTE + the two builders straight from Code.js.
+const palMatch = codeSrc.match(/const (CN_EMAIL_PALETTE\s*=\s*\{[\s\S]*?\});/);
+assert.ok(palMatch, 'CN_EMAIL_PALETTE declaration found in Code.js');
+vm.runInContext(palMatch[1] + ';', sb, { filename: 'Code.js#CN_EMAIL_PALETTE' });
+['esc_', 'buildBrandedEmailHtml_', 'brandedKvRows_'].forEach(function (fn) {
+  vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
+});
+const buildBrandedEmailHtml_ = sb.buildBrandedEmailHtml_;
+const brandedKvRows_ = sb.brandedKvRows_;
+
+test('buildBrandedEmailHtml_ escapes the heading, embeds caller-escaped body raw', () => {
+  const html = buildBrandedEmailHtml_('<img src=x onerror=alert(1)>', '<p>trusted body</p>');
+  assert.strictEqual(html.indexOf('<img src=x onerror=alert(1)>'), -1, 'raw heading must not appear');
+  assert.ok(html.indexOf('&lt;img src=x onerror=alert(1)&gt;') >= 0, 'heading is HTML-escaped');
+  assert.ok(html.indexOf('<p>trusted body</p>') >= 0, 'bodyHtml embeds raw by design (caller esc_s it)');
+});
+test('brandedKvRows_ escapes BOTH label and value', () => {
+  const rows = brandedKvRows_([['Re<b>ason', 'a"<script>x']]);
+  assert.strictEqual(rows.indexOf('<b>ason'), -1, 'no raw label markup');
+  assert.strictEqual(rows.indexOf('<script>'), -1, 'no raw value markup');
+  assert.ok(rows.indexOf('Re&lt;b&gt;ason') >= 0, 'label escaped');
+  assert.ok(rows.indexOf('a&quot;&lt;script&gt;x') >= 0, 'value escaped');
+});
+test('branded builders never throw on null / empty inputs', () => {
+  assert.doesNotThrow(() => buildBrandedEmailHtml_('', ''));
+  assert.doesNotThrow(() => brandedKvRows_([['x', null], [null, undefined]]));
+});
+
+console.log('\nCode.js — automation trigger wiring is self-consistent (#3 coupling tripwire)');
+// Guards the class of bug that bit purgeOldCallNotes: a ScriptApp.newTrigger('X')
+// whose handler is missing from the TARGETS arrays. TARGETS drives BOTH the
+// pre-install dedupe loop AND removeAutomationTriggers, so a missing entry means
+// re-running install DUPLICATES that trigger and remove can't clean it up.
+const installSrc = extractRawFunction('Code.js', 'installAutomationTriggers');
+const removeSrc  = extractRawFunction('Code.js', 'removeAutomationTriggers');
+function targetsSet_(fnSrc) {
+  const m = fnSrc.match(/const TARGETS = \[([\s\S]*?)\]/);
+  assert.ok(m, 'TARGETS array found');
+  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort();
+}
+const newTriggerHandlers = [...installSrc.matchAll(/newTrigger\('([^']+)'\)/g)].map((x) => x[1]).sort();
+const installTargets = targetsSet_(installSrc);
+const removeTargets  = targetsSet_(removeSrc);
+
+test('every installed trigger handler is in the install TARGETS dedupe list', () => {
+  assert.ok(newTriggerHandlers.length >= 8, 'parsed the newTrigger handlers (got ' + newTriggerHandlers.length + ')');
+  newTriggerHandlers.forEach((h) => assert.ok(installTargets.indexOf(h) >= 0,
+    'newTrigger("' + h + '") is missing from install TARGETS → re-install would duplicate it'));
+});
+test('install TARGETS lists nothing it does not also create', () => {
+  installTargets.forEach((t) => assert.ok(newTriggerHandlers.indexOf(t) >= 0,
+    'TARGETS lists "' + t + '" but no newTrigger creates it'));
+});
+test('removeAutomationTriggers TARGETS matches the install set (cleans up all it adds)', () => {
+  assert.deepStrictEqual(removeTargets, installTargets,
+    'install and remove TARGETS must list the same handlers');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

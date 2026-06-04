@@ -3962,7 +3962,13 @@ function cnRenderComposerTabStrip_(active, noteId) {
  *  composer modals. Preserves the noteId across the transition so the rep
  *  doesn't lose context. Switching TO Department without a noteId is a
  *  no-op (the inactive tab is disabled in the strip; this guard is
- *  defensive in case the strip's disabled state was bypassed). */
+ *  defensive in case the strip's disabled state was bypassed).
+ *  Flicker-free: the TARGET modal is mounted before the SOURCE is torn down,
+ *  so the browser never paints the empty-backdrop frame the prior
+ *  close-then-open order exposed. For the synchronous direction (→ Department,
+ *  and → External once the form catalog is cached) both happen in one tick, so
+ *  no in-between paint occurs at all; for External's async first open the
+ *  Department overlay stays mounted until the catalog fetch resolves. */
 function cnSwitchComposerTab_(target) {
   // Capture noteId from whichever composer is currently active
   let noteId = '';
@@ -3974,12 +3980,13 @@ function cnSwitchComposerTab_(target) {
       showToast('Save the note first to send a department email', 'toast-warn');
       return;
     }
-    // Close ext first (clear state), then open dept
-    if (CN_STATE.extComposer) cnCloseExternalEmailModal_();
+    // Mount dept first (synchronous), then remove ext in the same tick.
     cnOpenEmailComposer_(noteId);
+    cnCloseExternalEmailModal_();
   } else if (target === 'external') {
-    if (CN_STATE.composer) cnCloseComposerModal_();
-    cnOpenExternalEmailModal_(noteId || null);
+    // Mount ext (may be async on first open), removing dept only once ext is
+    // actually in the DOM — never an empty-backdrop frame.
+    cnOpenExternalEmailModal_(noteId || null, cnCloseComposerModal_);
   }
 }
 
@@ -6518,6 +6525,84 @@ function cnRenderFlagRows_(registry, values) {
   }).join('');
 }
 
+/** Loads the enrollment roster into the Admin tab's enrollment panel and binds
+ *  a one-time delegated click handler for the per-rep Provision buttons. */
+function cnAdminLoadEnrollment_() {
+  var slot = document.getElementById('cn-admin-enroll-list');
+  if (!slot) return;
+  if (!slot._enrollDelegated) {
+    slot.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.cn-admin-provision-btn') : null;
+      if (!b) return;
+      cnAdminProvision_(b.getAttribute('data-emp-id'), b.getAttribute('data-emp-name'), b);
+    });
+    slot._enrollDelegated = true;
+  }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) {
+        slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((res && res.error) || 'Failed to load enrollment') + '</div>';
+        return;
+      }
+      slot.innerHTML = cnRenderEnrollmentHtml_(res);
+    })
+    .withFailureHandler(function (err) {
+      slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((err && err.message) || 'Failed to load enrollment') + '</div>';
+    })
+    .getCallNotesEnrollment();
+}
+
+/** Builds the enrollment panel: a summary line + a Provision button per
+ *  un-enrolled rep. Every server string routes through esc() before innerHTML. */
+function cnRenderEnrollmentHtml_(res) {
+  var enrolled = res.enrolled || [];
+  var unenrolled = res.unenrolled || [];
+  var html = '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">' +
+    esc(String(enrolled.length)) + ' enrolled · ' + esc(String(unenrolled.length)) + ' not yet enrolled</div>';
+  if (unenrolled.length === 0) {
+    html += '<div style="font-size:13px;color:var(--muted)">Every rostered rep has a Call Notes Sheet.</div>';
+    return html;
+  }
+  html += unenrolled.map(function (r) {
+    return '<div class="field-row" style="gap:8px;align-items:center;margin-bottom:6px">' +
+      '<span style="flex:1;font-size:13px">' + esc(r.name) + ' <span style="color:var(--muted)">(' + esc(r.id) + ')</span></span>' +
+      '<button class="refresh-btn cn-admin-provision-btn" data-emp-id="' + esc(r.id) + '" data-emp-name="' + esc(r.name) + '">' +
+        icon('plus', 12) + ' Provision Sheet</button>' +
+    '</div>';
+  }).join('');
+  return html;
+}
+
+/** Confirms + fires provisionCallNotesSheet for one rep, then refreshes the
+ *  panel (the rep drops off the un-enrolled list on success). */
+function cnAdminProvision_(empId, empName, btn) {
+  uiConfirm({
+    title: 'Provision Call Notes Sheet',
+    message: 'Create a new Call Notes Sheet for ' + empName + ' (' + empId + ')? ' +
+             'It will be owned by the deploying account and the rep is enrolled immediately.',
+    confirmLabel: 'Provision',
+  }).then(function (ok) {
+    if (!ok) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Provisioning…'; }
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || res.error) {
+          if (btn) { btn.disabled = false; btn.innerHTML = icon('plus', 12) + ' Provision Sheet'; }
+          showToast((res && res.error) || 'Provision failed', 'toast-error');
+          return;
+        }
+        if (res.alreadyEnrolled) showToast((res.repName || empName) + ' was already enrolled', 'toast-warn');
+        else showToast('Provisioned a Sheet for ' + (res.repName || empName), 'toast-success');
+        cnAdminLoadEnrollment_();
+      })
+      .withFailureHandler(function (err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = icon('plus', 12) + ' Provision Sheet'; }
+        showToast((err && err.message) || 'Provision failed', 'toast-error');
+      })
+      .provisionCallNotesSheet(empId);
+  });
+}
+
 function cnRenderAdminBody_(cfg) {
   var body = document.getElementById('cn-admin-body');
   if (!body) return;
@@ -6587,7 +6672,17 @@ function cnRenderAdminBody_(cfg) {
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Sheet Reconciliation</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Notes typed directly into a rep’s Sheet (not via the app) lack an internal ID, so they don’t show in flags / search / coverage. Run this to assign IDs + dates and bring those rows into the dashboard. Idempotent — safe to run anytime; existing notes are untouched.</div>' +
       '<button class="btn-modal-ok" id="cn-admin-reconcile" style="margin:0">Reconcile Sheets</button>' +
+    '</div>' +
+
+    // Auto-provision per-rep Call Notes Sheets (replaces the manual
+    // copy-the-template-and-paste-the-ID enrollment workflow).
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('user', 14) + ' Call Notes Enrollment</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Create a per-rep Call Notes Sheet in one click — no more copying a template and pasting the ID. The new Sheet is owned by the deploying account and the rep is enrolled immediately.</div>' +
+      '<div id="cn-admin-enroll-list"><div class="spinner" style="margin:12px auto"></div></div>' +
     '</div>';
+
+  cnAdminLoadEnrollment_();
 
   document.getElementById('cn-admin-reconcile').addEventListener('click', function () {
     var btn = this;
@@ -6829,7 +6924,10 @@ function cnRenderSuggestionRows_(suggestions) {
 //  recipient info + form selection + message + send.
 // ════════════════════════════════════════════════════════════════════════════
 
-function cnOpenExternalEmailModal_(presetNoteId) {
+/** Opens the external-email composer. `onMounted` (optional) fires right after
+ *  the modal is in the DOM — used by cnSwitchComposerTab_ to tear down the
+ *  department composer only once this one has mounted, avoiding a flicker. */
+function cnOpenExternalEmailModal_(presetNoteId, onMounted) {
   CN_STATE.extComposer = {
     recipientType: 'customer',
     recipientEmail: '',
@@ -6843,9 +6941,11 @@ function cnOpenExternalEmailModal_(presetNoteId) {
     noteId: presetNoteId || null,
     sending: false,
   };
+  const done = function () { if (typeof onMounted === 'function') onMounted(); };
   // Fetch catalog on first open, then render
   if (CN_STATE.formCatalog) {
     cnRenderExternalEmailModal_();
+    done();
   } else {
     google.script.run
       .withSuccessHandler(function (res) {
@@ -6856,11 +6956,13 @@ function cnOpenExternalEmailModal_(presetNoteId) {
           CN_STATE.formCatalog = res.forms || [];
         }
         cnRenderExternalEmailModal_();
+        done();
       })
       .withFailureHandler(function (err) {
         showToast('Failed to load form catalog: ' + err.message, 'toast-error');
         CN_STATE.formCatalog = [];
         cnRenderExternalEmailModal_();
+        done();
       })
       .getFormCatalog();
   }

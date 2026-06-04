@@ -173,7 +173,8 @@ this section before touching the relevant area.
   `getCallNoteAuditHistory`, `getPtoReconciliation`,
   `fixPtoReconciliation`, `getFeatureFlags`, `saveFeatureFlags`,
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
-  `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`.
+  `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
+  `getCallNotesEnrollment`, `provisionCallNotesSheet`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -285,13 +286,21 @@ this section before touching the relevant area.
   — never `new Date()` browser-local time — so offshore reps (IST/PHT) and
   near-midnight users see the correct day's CDR data, matching how Clock /
   Time Off / Manager / Export derive dates (F6).
-- **Call Notes Sheet enrollment is manual.** A rep has no Call
-  Notes panel until column L (`CallNotesSheetId`) of the Employees
-  roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
+- **Call Notes Sheet enrollment — one-click auto-provision (or manual).**
+  A rep has no Call Notes panel until column L (`CallNotesSheetId`) of the
+  Employees roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
   throws "Your call-notes Sheet is not configured" if missing; the
-  client renders the enrollment-missing splash. There is intentionally
-  no auto-provision path — Robin still copies the template Sheet and
-  pastes the ID in by hand, matching the existing workflow.
+  client renders the enrollment-missing splash. A manager can now
+  one-click enroll a rep from **Call Notes → Admin → Call Notes
+  Enrollment**: `provisionCallNotesSheet(repEmpId)` (manager-gated,
+  locked, INV-110) creates a fresh Spreadsheet owned by the deploying
+  account, provisions the `Notes` tab with `CN_HEADERS`, writes the new
+  ID into column L, invalidates the roster cache, and audits
+  `CallNotesProvision`. It is **idempotent** — a rep who already has a
+  sheetId is returned unchanged; it NEVER clobbers an existing Sheet
+  (that would orphan their note history). The manual path (Robin copies
+  the template Sheet and pastes the ID) still works for anyone who
+  prefers it; auto-provision just removes the per-rep busywork.
 - **`Notes` tab provisions on first touch.** `getCallNotesSheet_`
   creates the tab + header row if it doesn't exist, so a freshly
   enrolled rep's first `submitCallNote` "just works." The header row
@@ -870,7 +879,11 @@ this section before touching the relevant area.
   `EMP.CALL_NOTES_SHEET_ID`. Robin can pop the rep's Sheet open
   any time for retrospective; the script-as-Me has full access.
   No centralized call-log Sheet exists by design — per-rep isolation
-  matches the legacy workflow Robin already maintains.
+  matches the legacy workflow Robin already maintains. Onboarding a new
+  rep is one click (manager → Admin → Call Notes Enrollment →
+  `provisionCallNotesSheet`, which `SpreadsheetApp.create`s the Sheet in
+  the deployer's Drive and writes its ID into column L) — see the
+  enrollment gotcha + INV-110.
 - **Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
   Sheets are real Google Sheets, a rep can type notes directly into the
   `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
@@ -1610,16 +1623,23 @@ this section before touching the relevant area.
   department composer (`cn-compose-overlay`, in both form + preview
   steps) and the external composer (`cn-ext-overlay`).
   `cnSwitchComposerTab_(target)` captures the active composer's
-  `noteId` from `CN_STATE.composer` / `CN_STATE.extComposer`, closes
-  the active modal (clearing its state slot via the close handler),
-  and opens the target modal preserving the noteId. The Department
+  `noteId` from `CN_STATE.composer` / `CN_STATE.extComposer` and
+  preserves it across the transition. The Department
   tab is disabled when no noteId is in scope (rep clicked "Open
   Email" from an unsaved form — there's no saved note to attach
   EmailedAt/EmailDepartments stamps to); `cnSwitchComposerTab_` also
-  guards defensively with a toast. Brief flash during the
-  close-and-reopen transition is acceptable; a morphing transition
-  would require consolidating both modals into one shell — deferred
-  unless the flicker is reported as annoying. CSS in `styles.html`:
+  guards defensively with a toast. **Flicker-free ordering:** the
+  TARGET modal is mounted BEFORE the SOURCE is torn down (the prior
+  close-then-open order exposed a bare empty-backdrop frame). The
+  synchronous direction (→ Department, and → External once the form
+  catalog is cached) mounts target + removes source in one JS tick,
+  so the browser never paints the in-between state. For External's
+  async first open (form-catalog fetch) the Department overlay stays
+  mounted until the fetch resolves — `cnOpenExternalEmailModal_` takes
+  an optional `onMounted` callback that `cnSwitchComposerTab_` uses to
+  call `cnCloseComposerModal_` only after the external modal is in the
+  DOM. (The full one-shell consolidation is still unbuilt, but the
+  observable flash is gone without it.) CSS in `styles.html`:
   `.cn-composer-tabs` + `.cn-composer-tab(.on,.disabled)`, matching
   the Time/PTO mode-toggle segmented-pill vocabulary.
 - **Tag taxonomy rename/merge/archive batch-edits across reps.**
@@ -1788,11 +1808,14 @@ manually for a fresh deploy or environment:
   while the Clock tab is open (Apps Script web apps have no background
   push); the reminded-set dedupes per break per day.
 - **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
-  call-notes Spreadsheet ID. Robin still copies the template Sheet,
-  renames it for the rep, shares with the script-owner account, and
-  pastes the ID here. Blank means the rep has no Call Notes
-  enrollment yet; their panel renders the enrollment-missing splash.
-  Must be added manually to existing rows (the schema bump in
+  call-notes Spreadsheet ID. Easiest path: **Call Notes → Admin →
+  Call Notes Enrollment → Provision Sheet** (one click — creates the
+  Sheet in the deployer's Drive and fills column L; INV-110). The
+  manual path still works (copy the template Sheet, rename it for the
+  rep, share with the script-owner account, paste the ID here). Blank
+  means the rep has no Call Notes enrollment yet; their panel renders
+  the enrollment-missing splash. Pre-existing rows are blank until
+  provisioned/filled (the schema bump in
   `EMP.CALL_NOTES_SHEET_ID = 11` doesn't auto-fill).
 - **`ROSTER_CACHE_KEY` = `'employee_roster_v5'`** — bumped when
   CallNotesSheetId column landed. After deploying, run `clearCaches_()`
@@ -1902,9 +1925,17 @@ feedback[]-vs-legacy precedence helper), and the server-side
 `cnExtractAuditNoteId_` parser plus the `isValidTimeOffType_` leave-type
 validator extracted from `Code.js` via `extractRawFunction` — the latter
 with a coupling tripwire asserting the `day-type` `<select>` options stay
-a subset of `TIME_OFF_TYPES`, and the feature-flag layer
+a subset of `TIME_OFF_TYPES`, the feature-flag layer
 (`FEATURE_FLAGS` registry integrity + `getFlag_` Script-Property override
-/ fail-safe semantics, run in a stubbed `PropertiesService` context)); it also
+/ fail-safe semantics, run in a stubbed `PropertiesService` context), the
+branded-email builders (`buildBrandedEmailHtml_` esc_'s the heading +
+embeds the caller-escaped body raw; `brandedKvRows_` esc_'s both label
+and value — INV-105), and a source-level coupling tripwire asserting the
+automation **trigger wiring is self-consistent** (every
+`ScriptApp.newTrigger('X')` handler in `installAutomationTriggers` appears
+in BOTH the install and `removeAutomationTriggers` `TARGETS` dedupe arrays
+— the exact class of bug that duplicated `purgeOldCallNotes` until it was
+added to both)); it also
 parse-guards every JS-bearing `<script>` partial so a syntax error
 anywhere in the client fails CI. See `test/client/README.md`. It needs
 no npm install and lives outside `web-app/`, so `clasp` never pushes it. A
@@ -1976,7 +2007,7 @@ INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `m
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
-INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configured" when `emp.callNotesSheetId` is missing — call-notes endpoints surface this as the enrollment-missing splash in the client; no auto-provision path exists | Subsystem: Server
+INV-35 | `getCallNotesSheet_(emp)` throws "Your call-notes Sheet is not configured" when `emp.callNotesSheetId` is missing — call-notes endpoints surface this as the enrollment-missing splash in the client. Enrollment is either manual (paste the ID into column L) or one-click via the manager-gated `provisionCallNotesSheet` (INV-110); `getCallNotesSheet_` itself never auto-provisions a Sheet on a read | Subsystem: Server
 INV-36 | Call-note email sends (`emailFromCallNote`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`) are wrapped in try/catch and never block the API result (INV-14 generalized) | Subsystem: Server
 INV-37 | `sanitizeFlagType_` only allows `''` / `'action'` / `'training'` / `'review'` to be written to FlagType; unknown values silently coerce to `''` rather than corrupting the column | Subsystem: Server
 INV-38 | Compact-mode is a shell-level attribute (`data-compact="1"` on `documentElement`); set from the `?compact=1` URL param on boot and consumed via CSS selectors in `styles.html`. Tool views render `.compact-header` instead of `.view-title-row` when `COMPACT_MODE === true` | Subsystem: Client (shell)
@@ -2051,6 +2082,7 @@ INV-106 | `submitPunchAdjustRequests(requests[])` (#4a) is caller-scoped + locke
 INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newStatus)` (#4a) are manager-gated (INV-02); the latter is locked (INV-01) and transition-guarded (acts only on a `Pending` row). Approve writes the single `ADJ-{punchType}` punch for the TARGET employee via `writeAdjustPunchForEmployee_` (find-existing-of-that-type-for-date → update, else append; + `writeToEmployeeSheet_` personal-sheet mirror; `ADJ-` convention INV-09; `normalizeTime_` reads INV-26) and an `ADJ-` audit row with the manager as actor — it must NEVER reuse `managerSaveDay` (full-day reconcile would delete other punch types). Deny marks `Denied` + writes a `PunchAdjustStatusChange` audit row, no punch. Pinned by `test_punchAdjust_submitApproveWritesPunch` + `_nonManagerRejected` | Subsystem: Server + Client (Time Clock views)
 INV-108 | `managerSaveDayRange(empId, fromDate, toDate, slots, reason)` (#4b) is manager-gated (INV-02), locked (INV-01), span-capped (≤31 days), and window-bounded (no future date; none beyond `ADJUST_WINDOW_DAYS`; reason required if the oldest date is beyond `OLD_ADJUST_ALERT_DAYS`). It applies each NON-EMPTY slot to every date in the inclusive range via `writeAdjustPunchForEmployee_` — purely ADDITIVE (set/update that punch type only), so a blank slot is left untouched and other punch types are never deleted. It must NOT reuse `managerSaveDay` (full-day reconcile deletes blank slots). The immediate employee adjust path (`recordPunch` `custom`) is gated for non-managers by the `employeeImmediateAdjust` flag (default off). Pinned by `test_managerSaveDayRange_appliesAcrossDays` + `_nonManagerRejected` + `test_recordPunch_immediateAdjustGatedByFlag` | Subsystem: Server + Client (Time Clock views)
 INV-109 | `reconcileCallNotes` (#8) is manager-gated (INV-02) and locked (INV-01). It scans every enrolled rep's `Notes` tab and, for rows with content but NO `noteId` (hand-entered directly in the Sheet), backfills a UUID `noteId` + a `Timestamp` + a yyyy-MM-dd `DateLocal` (derived from the human's values, else rep-tz now/today via `safeTimezone_`/`normalizeDate_`) so the row becomes flaggable/searchable/coverage-counted. Content columns are NEVER modified. Idempotent (a row with a `noteId` is skipped → re-run is a no-op). Per-rep Sheet failures are skipped; writes a `CallNotesReconcile` audit row. Runs both manually (Admin → "Reconcile Sheets") and as a daily manager-tz 5am trigger wired by `installAutomationTriggers`; the `isManager`-returns-`{error}` gate (not `assertManagerCaller_`) passes in a trigger context because the installer is a manager. Pinned by `test_reconcileCallNotes_backfillsHandEntered` + `_nonManagerRejected` | Subsystem: Server + Client (Call Notes views)
+INV-110 | `provisionCallNotesSheet(repEmpId)` (auto-provision) is manager-gated (INV-02) and locked (INV-01, mutates the Employees sheet). It `SpreadsheetApp.create`s a fresh per-rep Sheet owned by the deploying account (the web app runs as `USER_DEPLOYING`), renames the default sheet to the `Notes` tab + writes the canonical `CN_HEADERS` header, writes the new spreadsheet ID into `EMP.CALL_NOTES_SHEET_ID` (column L) of the rep's roster row, calls `invalidateRosterCache_()` (INV-10), and writes a `CallNotesProvision` audit row with the manager's email. **Idempotent / no-clobber:** a rep who already has a non-empty `callNotesSheetId` is returned `{success, alreadyEnrolled:true, sheetId}` unchanged — it NEVER creates a second Sheet or overwrites column L (that would orphan the rep's note history). The companion read-only `getCallNotesEnrollment` (manager-gated) returns `{enrolled[], unenrolled[]}` for the Admin enrollment panel. Pinned by `test_provisionCallNotesSheet_nonManagerRejected` + `_idempotentNoClobber` (the create branch is exercised manually to avoid littering Drive in CI) | Subsystem: Server + Client (Call Notes views)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -2479,7 +2511,7 @@ S52 | Email composer Internal/External tab transition (modal-tab merge) | Subsys
     - Click Department → confirm the External composer closes and the Department composer reopens for the SAME note (noteId preserved across the transition)
     - Press the "Open Email" button on the Log view (no saved-note context) → External composer opens; in the tab strip confirm Department is greyed/disabled and clicking it shows a toast "Save the note first to send a department email"
     - On both modals, confirm the existing close handlers still work (X button, Escape)
-  Expected: noteId is preserved across transitions when present. Department tab is disabled when no noteId is in scope (Save the note first…). CN_STATE.composer / CN_STATE.extComposer never leak — the close handler clears its state slot before the target opens. Brief flash during the close-and-reopen is acceptable; verify no orphaned overlays linger in the DOM.
+  Expected: noteId is preserved across transitions when present. Department tab is disabled when no noteId is in scope (Save the note first…). CN_STATE.composer / CN_STATE.extComposer never leak — the close handler clears its state slot. The transition is flicker-free: the target modal mounts before the source is removed (one tick for the synchronous directions; for External's async first open the Department overlay stays mounted until the catalog fetch resolves). Verify no empty-backdrop flash and no orphaned overlays linger in the DOM.
 
 S53 | Tag taxonomy admin actions (rename / merge / archive) | Subsystem: Server + Client (Call Notes views)
   Steps:
@@ -2537,6 +2569,17 @@ S57 | Compliance audit panel (Admin tab) | Subsystem: Server, Client (Call Notes
     - Confirm rows are PHI-free (timestamp / rep / actor email / action / noteId only — no note content)
     - As a non-manager, call `google.script.run...getCallNotesAuditLog({})` and `...getCallNoteAuditHistory('x')` from the console
   Expected: `getCallNotesAuditLog` is manager-gated (non-manager gets "Manager access required."), reads the AuditLog via a bounded tail scan (≤4000 rows), caps at 500 results, and shows a "capped — narrow the range" banner when `truncated` is set (result cap hit or scan didn't reach the start date). `getCallNoteAuditHistory` returns every row carrying the noteId oldest-first, independent of the date filter. The deep-link opens the Per-Rep view via `cnAuditDrillToNote_` + `CN_STATE.mgrPendingRepDrill`. All server strings are `esc()`-escaped before `innerHTML`; IDs/dates pass via `data-*` attributes. Pinned by `cnExtractAuditNoteId_` (Node harness + `test_cn_extractAuditNoteId_*` editor smoke). Server-side endpoint integration tests (gate/bounding/truncation) are a known follow-on.
+
+S58 | Call Notes auto-provision (one-click enrollment) | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - As a manager, open Call Notes → Admin → scroll to "Call Notes Enrollment"
+    - Confirm the panel shows "N enrolled · M not yet enrolled" and a "Provision Sheet" button for each un-enrolled rep
+    - Click Provision on an un-enrolled rep → confirm the uiConfirm dialog → confirm a success toast + the rep drops off the un-enrolled list
+    - Open the deployer's Drive → confirm a new "Call Notes — <Name> (<id>)" Spreadsheet exists with a `Notes` tab carrying the `CN_HEADERS` header row
+    - As that rep, hard-refresh and open Call Notes → confirm the active form renders (no enrollment splash)
+    - Click Provision again on a rep who is ALREADY enrolled (e.g. re-run via console `provisionCallNotesSheet(id)`) → confirm `alreadyEnrolled:true` and that column L is unchanged (no second Sheet, no clobbered history)
+    - As a non-manager, call `google.script.run...provisionCallNotesSheet('id')` and `...getCallNotesEnrollment()` from the console
+  Expected: `provisionCallNotesSheet` is manager-gated + locked, creates the Sheet in the deployer's Drive, writes column L, invalidates the roster cache, and writes a `CallNotesProvision` audit row. Idempotent / no-clobber on an already-enrolled rep. `getCallNotesEnrollment` is manager-gated and read-only. Both non-manager console calls return "Manager access required." Pinned by `test_provisionCallNotesSheet_nonManagerRejected` + `_idempotentNoClobber` (the create branch is verified manually). See INV-110.
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
