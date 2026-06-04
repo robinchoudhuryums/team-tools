@@ -56,8 +56,18 @@ const CONFIG = {
   // handful of exceptions (PH agents start 8:30). Resolved by
   // getShiftSchedule_ and shipped to the client via getEmployeeState.
   SHIFT_SCHEDULE: {
-    DEFAULT:     { start: '08:00', end: '17:00' },
+    DEFAULT:     { start: '08:00', end: '17:00',
+      // Scheduled breaks (item 1) — drive the Clock-view "next break" chip +
+      // the X-min reminder toast. Operator-tunable here (redeploy). A tz entry
+      // without its own `breaks` inherits DEFAULT.breaks.
+      breaks: [
+        { label: 'Morning break',   start: '10:30', len: 15 },
+        { label: 'Lunch',           start: '12:30', len: 60 },
+        { label: 'Afternoon break', start: '15:00', len: 15 },
+      ],
+    },
     BY_TIMEZONE: { 'Asia/Manila': { start: '08:30', end: '17:00' } },
+    BREAK_REMINDER_MINUTES: 10,         // lead time for the upcoming-break reminder toast
   },
 
   // ── Metrics module (CDR integration) ──────────────────────────────────
@@ -6636,7 +6646,8 @@ function empTz_(emp) { return (emp && emp.timezone) ? emp.timezone : CONFIG.TIME
  *  countdown. Falls back to 08:00 + 9h if config is missing/malformed. */
 function getShiftSchedule_(timezone) {
   const cfg = CONFIG.SHIFT_SCHEDULE || {};
-  const sched = (cfg.BY_TIMEZONE && cfg.BY_TIMEZONE[timezone]) || cfg.DEFAULT || { start: '08:00', end: '17:00' };
+  const def = cfg.DEFAULT || { start: '08:00', end: '17:00' };
+  const sched = (cfg.BY_TIMEZONE && cfg.BY_TIMEZONE[timezone]) || def;
   const toMin = function (hm) {
     const p = String(hm || '').split(':');
     return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
@@ -6644,7 +6655,18 @@ function getShiftSchedule_(timezone) {
   const startMin = toMin(sched.start);
   let endMin = toMin(sched.end);
   if (!(endMin > startMin)) endMin = startMin + 540; // guard → 9h
-  return { startMin: startMin, lengthMin: endMin - startMin };
+  // Breaks (item 1): the shift entry's own, else inherit DEFAULT's. Resolved to
+  // minutes-from-midnight + length so the client can compute the next break.
+  const rawBreaks = Array.isArray(sched.breaks) ? sched.breaks
+                  : (Array.isArray(def.breaks) ? def.breaks : []);
+  const breaks = rawBreaks.map(function (b) {
+    return { label: String(b.label || 'Break'), startMin: toMin(b.start), lenMin: parseInt(b.len, 10) || 0 };
+  }).filter(function (b) { return b.lenMin > 0; });
+  return {
+    startMin: startMin, lengthMin: endMin - startMin,
+    breaks: breaks,
+    breakReminderMin: parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
+  };
 }
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }

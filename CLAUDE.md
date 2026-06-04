@@ -1720,7 +1720,15 @@ manually for a fresh deploy or environment:
   `Asia/Manila` 8:30–17:00). Resolved per the rep's roster timezone
   by `getShiftSchedule_`; add a `BY_TIMEZONE` entry for any new
   shift exception. Change requires a redeploy (CONFIG, no Script
-  Property override).
+  Property override). **Breaks (item 1):** each shift entry may carry a
+  `breaks: [{label, start:'HH:mm', len:<min>}]` array (a tz entry without
+  its own `breaks` inherits `DEFAULT.breaks`), and `BREAK_REMINDER_MINUTES`
+  sets the reminder lead time. `getShiftSchedule_` resolves these to
+  `{breaks:[{label,startMin,lenMin}], breakReminderMin}` on `CLK_SCHEDULE`.
+  The Clock view shows a "Next break" chip (`#clk-next-break`) and fires a
+  one-time reminder toast `breakReminderMin` before each break — but ONLY
+  while the Clock tab is open (Apps Script web apps have no background
+  push); the reminded-set dedupes per break per day.
 - **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
   call-notes Spreadsheet ID. Robin still copies the template Sheet,
   renames it for the rep, shares with the script-owner account, and

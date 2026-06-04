@@ -57,6 +57,7 @@ function renderClockView(area) {
           ${tzAbbr ? `<span class="sep">·</span><span>${esc(tzAbbr)}</span>` : ''}
         </div>
         <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
+        <div class="clk-next-break" id="clk-next-break" style="margin-top:6px"></div>
       </div>
     </div>
 
@@ -408,6 +409,63 @@ function stopRibbonNowCursor_() {
   if (_ribbonNowInterval) { clearInterval(_ribbonNowInterval); _ribbonNowInterval = null; }
 }
 
+// Scheduled breaks (item 1) — read from CLK_SCHEDULE.breaks (server-resolved to
+// minutes-from-midnight). The Clock view shows the next break + a one-time
+// reminder toast `breakReminderMin` before it. Reminders fire only while the
+// Clock tab is open (Apps Script web apps have no background push); the
+// reminded-set dedupes so a toast fires once per break per day.
+function clkBreaks_() { return (CLK_SCHEDULE && Array.isArray(CLK_SCHEDULE.breaks)) ? CLK_SCHEDULE.breaks : []; }
+function clkBreakReminderMin_() { return (CLK_SCHEDULE && CLK_SCHEDULE.breakReminderMin) || 10; }
+function clkNowMin_(tz) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
+  let h = 0, m = 0;
+  parts.forEach(function (p) { if (p.type === 'hour') h = parseInt(p.value, 10) || 0; if (p.type === 'minute') m = parseInt(p.value, 10) || 0; });
+  return (h % 24) * 60 + m;
+}
+function clkFmtMin_(min) {
+  const h24 = Math.floor(min / 60) % 24, m = min % 60;
+  let h = h24 % 12; if (h === 0) h = 12;
+  return h + ':' + String(m).padStart(2, '0') + ' ' + (h24 < 12 ? 'AM' : 'PM');
+}
+function clkNextBreak_(nowMin) {
+  const breaks = clkBreaks_().slice().sort(function (a, b) { return a.startMin - b.startMin; });
+  for (let i = 0; i < breaks.length; i++) {
+    const b = breaks[i];
+    if (nowMin < b.startMin + b.lenMin) {
+      return { brk: b, inProgress: nowMin >= b.startMin, minsUntil: b.startMin - nowMin };
+    }
+  }
+  return null;
+}
+var _clkRemindedBreaks = {};
+function clkUpdateBreak_() {
+  const host = document.getElementById('clk-next-break');
+  if (!host) return;
+  const tz = empTz();
+  const next = clkNextBreak_(clkNowMin_(tz));
+  if (!next) { host.innerHTML = ''; return; }
+  const b = next.brk;
+  const chip = function (txt) {
+    return '<span style="display:inline-block;font-size:11px;font-family:var(--mono);color:var(--ink);background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:2px 10px;">' + esc(txt) + '</span>';
+  };
+  if (next.inProgress) {
+    host.innerHTML = chip('On ' + b.label + ' · until ' + clkFmtMin_(b.startMin + b.lenMin));
+    return;
+  }
+  host.innerHTML = chip('Next break · ' + b.label + ' at ' + clkFmtMin_(b.startMin) +
+    (next.minsUntil <= 90 ? ' (in ' + next.minsUntil + 'm)' : ''));
+  const lead = clkBreakReminderMin_();
+  if (next.minsUntil >= 0 && next.minsUntil <= lead) {
+    const key = isoDateTz(tz) + ':' + b.startMin;
+    if (!_clkRemindedBreaks[key]) {
+      _clkRemindedBreaks[key] = true;
+      if (typeof showToast === 'function') {
+        showToast(b.label + ' in ' + (next.minsUntil <= 0 ? 'a moment' : next.minsUntil + ' min'), 'toast-warn');
+      }
+    }
+  }
+}
+
 /** Note-coverage strip (V1·E3). Fetches via getMyMetrics(today). Renders
  *  a donut gauge for note coverage + 30-day mini-bar trend + "File N
  *  missing" CTA when answered > notes. Hides entirely when the rep had
@@ -713,6 +771,7 @@ function startClock() {
       el.textContent = raw;
     }
     clkUpdateRegions_();   // item 5 — refresh the world-clock strip (cached formatters)
+    clkUpdateBreak_();     // item 1 — next-break chip + X-min reminder toast
   };
   tick(); clockInterval = setInterval(tick, 1000);
   startRibbonNowCursor_();
