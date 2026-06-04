@@ -616,6 +616,8 @@ function _runAllTests() {
   _integrationTest('recordPunch_immediateAdjustGatedByFlag',   test_recordPunch_immediateAdjustGatedByFlag);
   _integrationTest('managerSaveDayRange_appliesAcrossDays',    test_managerSaveDayRange_appliesAcrossDays);
   _integrationTest('managerSaveDayRange_nonManagerRejected',   test_managerSaveDayRange_nonManagerRejected);
+  _integrationTest('reconcileCallNotes_nonManagerRejected',    test_reconcileCallNotes_nonManagerRejected);
+  _integrationTest('reconcileCallNotes_backfillsHandEntered',  test_reconcileCallNotes_backfillsHandEntered);
   _integrationTest('recordPunch_minIntervalAllowsAdjustment',  test_recordPunch_minIntervalAllowsAdjustment);
 
   _integrationTest('selfDeletePunch_withinWindow',             test_selfDeletePunch_withinWindow);
@@ -1280,6 +1282,40 @@ function test_managerSaveDayRange_nonManagerRejected() {
     _assertEq(r.success, false, 'non-manager rejected');
     _assertContains(r.error, 'Manager access required');
   });
+}
+
+// #8 — reconcile pass: manager-gated; backfills a hand-entered row (content
+// but no noteId) with a UUID + dates, idempotent, content untouched.
+function test_reconcileCallNotes_nonManagerRejected() {
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    const r = reconcileCallNotes();
+    _assertNotNull(r.error, 'non-manager rejected');
+    _assertContains(r.error, 'Manager access required');
+  });
+}
+
+function test_reconcileCallNotes_backfillsHandEntered() {
+  const emp = lookupEmployeeById_(_TEST_INDIA_ID);
+  if (!emp || !emp.callNotesSheetId) { _assertTrue(true, 'India call-notes Sheet not provisioned — skipped'); return; }
+  const sheet = getCallNotesSheet_(emp);
+  const row = new Array(CN_HEADERS.length).fill('');
+  row[CN.CALLER] = 'Hand Entered Caller';
+  row[CN.ISSUE]  = 'typed directly into the sheet';
+  sheet.appendRow(row);
+  const appended = sheet.getLastRow();
+  let res;
+  _asUser(_TEST_MGR_EMAIL, function () { res = reconcileCallNotes(); });
+  _assertSuccess(res);
+  _assertTrue(res.rowsBackfilled >= 1, 'at least one hand-entered row backfilled');
+  const after = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
+  _assertTrue(String(after[CN.NOTE_ID]).trim().length > 0, 'noteId assigned');
+  _assertEq(String(after[CN.CALLER]).trim(), 'Hand Entered Caller', 'content untouched');
+  // Idempotent: re-run keeps the same noteId (row now has one → skipped).
+  let res2;
+  _asUser(_TEST_MGR_EMAIL, function () { res2 = reconcileCallNotes(); });
+  const after2 = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
+  _assertEq(String(after2[CN.NOTE_ID]).trim(), String(after[CN.NOTE_ID]).trim(), 'noteId stable on re-run (idempotent)');
+  sheet.deleteRow(appended);   // tidy within the run (cleanupTestData also wipes the test Notes tab)
 }
 
 function test_recordPunch_reasonAcceptedOldAdj() {

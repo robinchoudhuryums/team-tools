@@ -171,7 +171,9 @@ this section before touching the relevant area.
   `mergeCallNoteTags`, `archiveCallNoteTag`,
   `saveEmailTemplates`, `getCallNotesAuditLog`,
   `getCallNoteAuditHistory`, `getPtoReconciliation`,
-  `fixPtoReconciliation`, `getFeatureFlags`, `saveFeatureFlags`.
+  `fixPtoReconciliation`, `getFeatureFlags`, `saveFeatureFlags`,
+  `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
+  `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -869,6 +871,20 @@ this section before touching the relevant area.
   any time for retrospective; the script-as-Me has full access.
   No centralized call-log Sheet exists by design — per-rep isolation
   matches the legacy workflow Robin already maintains.
+- **Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
+  Sheets are real Google Sheets, a rep can type notes directly into the
+  `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
+  `Timestamp`, and `DateLocal`, so they don't appear in flags / search /
+  coverage until reconciled. `reconcileCallNotes` (manager-gated, locked;
+  Admin → "Reconcile Sheets" button) scans every enrolled rep's Sheet and
+  backfills those three fields on rows that have content but no `noteId`
+  (deriving the date from whatever the human supplied, else rep-tz today) —
+  **content cells are never touched**. Idempotent: a row with a `noteId` is
+  skipped, so re-running is a no-op. Writes a `CallNotesReconcile` audit row.
+  Metrics/CDR is already Sheet-sourced and independent, so the dashboard's
+  metrics half needs no reconcile. Manual (button) today; a daily trigger is
+  an easy add (the function works in a trigger context too) — kept manual to
+  avoid a daily cross-rep Sheet scan no one asked for. See INV-109.
 - **Two-stage email is the safety mechanism.** Submit logs only,
   zero risk of accidental send. The envelope icon on each note card
   is the only way to compose; that opens the form modal, which
@@ -2024,6 +2040,7 @@ INV-105 | Automated notification emails route their HTML through `buildBrandedEm
 INV-106 | `submitPunchAdjustRequests(requests[])` (#4a) is caller-scoped + locked and writes only Pending rows (no punch). It is ATOMIC — every entry is validated (date `^\d{4}-\d{2}-\d{2}$`, time `^([01]\d|2[0-3]):[0-5]\d$`, `punchType ∈ PUNCH_LABELS_`, not future, ≤ `ADJUST_WINDOW_DAYS`, reason required beyond `OLD_ADJUST_ALERT_DAYS`) and the WHOLE batch is rejected if any entry fails (max 20). Each Pending row gets a UUID `ReqId`. Writes a `PunchAdjustRequest` audit row. Pinned by `test_punchAdjust_batchInvalidRejected` | Subsystem: Server
 INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newStatus)` (#4a) are manager-gated (INV-02); the latter is locked (INV-01) and transition-guarded (acts only on a `Pending` row). Approve writes the single `ADJ-{punchType}` punch for the TARGET employee via `writeAdjustPunchForEmployee_` (find-existing-of-that-type-for-date → update, else append; + `writeToEmployeeSheet_` personal-sheet mirror; `ADJ-` convention INV-09; `normalizeTime_` reads INV-26) and an `ADJ-` audit row with the manager as actor — it must NEVER reuse `managerSaveDay` (full-day reconcile would delete other punch types). Deny marks `Denied` + writes a `PunchAdjustStatusChange` audit row, no punch. Pinned by `test_punchAdjust_submitApproveWritesPunch` + `_nonManagerRejected` | Subsystem: Server + Client (Time Clock views)
 INV-108 | `managerSaveDayRange(empId, fromDate, toDate, slots, reason)` (#4b) is manager-gated (INV-02), locked (INV-01), span-capped (≤31 days), and window-bounded (no future date; none beyond `ADJUST_WINDOW_DAYS`; reason required if the oldest date is beyond `OLD_ADJUST_ALERT_DAYS`). It applies each NON-EMPTY slot to every date in the inclusive range via `writeAdjustPunchForEmployee_` — purely ADDITIVE (set/update that punch type only), so a blank slot is left untouched and other punch types are never deleted. It must NOT reuse `managerSaveDay` (full-day reconcile deletes blank slots). The immediate employee adjust path (`recordPunch` `custom`) is gated for non-managers by the `employeeImmediateAdjust` flag (default off). Pinned by `test_managerSaveDayRange_appliesAcrossDays` + `_nonManagerRejected` + `test_recordPunch_immediateAdjustGatedByFlag` | Subsystem: Server + Client (Time Clock views)
+INV-109 | `reconcileCallNotes` (#8) is manager-gated (INV-02) and locked (INV-01). It scans every enrolled rep's `Notes` tab and, for rows with content but NO `noteId` (hand-entered directly in the Sheet), backfills a UUID `noteId` + a `Timestamp` + a yyyy-MM-dd `DateLocal` (derived from the human's values, else rep-tz now/today via `safeTimezone_`/`normalizeDate_`) so the row becomes flaggable/searchable/coverage-counted. Content columns are NEVER modified. Idempotent (a row with a `noteId` is skipped → re-run is a no-op). Per-rep Sheet failures are skipped; writes a `CallNotesReconcile` audit row. Pinned by `test_reconcileCallNotes_backfillsHandEntered` + `_nonManagerRejected` | Subsystem: Server + Client (Call Notes views)
 
 ### Policy Configuration
 Policy threshold: 4/10

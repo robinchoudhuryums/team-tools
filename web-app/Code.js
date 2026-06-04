@@ -5543,6 +5543,70 @@ function purgeOldCallNotes() {
   }
 }
 
+/** #8 — manager-triggered reconcile pass. Scans every enrolled rep's Notes tab
+ *  for HAND-ENTERED rows (content present but no noteId — typed directly into
+ *  the Sheet, not via the app) and backfills the fields the app needs to treat
+ *  them as first-class: a UUID noteId, a Timestamp, and a yyyy-MM-dd DateLocal
+ *  (derived from whatever the human supplied, else the rep-tz now/today).
+ *  Idempotent — a row with a noteId is skipped, so re-running is a no-op.
+ *  Manager-gated + locked; per-rep Sheet failures are skipped. Content fields
+ *  are NEVER modified. Writes a CallNotesReconcile audit row. */
+function reconcileCallNotes() {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const roster = getEmployeeRosterRows_();
+    const CONTENT_COLS = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
+    let repsTouched = 0, rowsBackfilled = 0;
+    for (let r = 1; r < roster.length; r++) {
+      const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+      const emp = {
+        id: String(roster[r][EMP.ID]).trim(),
+        name: String(roster[r][EMP.NAME]).trim(),
+        callNotesSheetId: String(sheetIdRaw).trim(),
+        timezone: String(roster[r][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE,
+      };
+      try {
+        const sheet = getCallNotesSheet_(emp);
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) continue;
+        const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+        const tz = safeTimezone_(emp.timezone);
+        let repBackfilled = 0;
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i];
+          if (String(row[CN.NOTE_ID] || '').trim()) continue;   // app-created → skip
+          const hasContent = CONTENT_COLS.some(function (c) { return String(row[c] || '').trim(); });
+          if (!hasContent) continue;                             // blank row → skip
+          const rowIndex = i + 2;
+          const tsHadValue = !!(String(row[CN.TIMESTAMP] || '').trim() || (row[CN.TIMESTAMP] instanceof Date));
+          let dateLocal = normalizeDate_(row[CN.DATE_LOCAL]);    // '' if blank; handles Date coercion
+          let timestamp = (row[CN.TIMESTAMP] instanceof Date)
+            ? Utilities.formatDate(row[CN.TIMESTAMP], tz, "yyyy-MM-dd'T'HH:mm:ss")
+            : String(row[CN.TIMESTAMP] || '').trim();
+          if (!dateLocal && timestamp) dateLocal = timestamp.substring(0, 10);
+          if (!dateLocal) dateLocal = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+          if (!timestamp) timestamp = dateLocal + 'T12:00:00';
+          sheet.getRange(rowIndex, CN.NOTE_ID + 1).setValue(Utilities.getUuid());
+          if (!tsHadValue) sheet.getRange(rowIndex, CN.TIMESTAMP + 1).setValue(timestamp);
+          if (!normalizeDate_(row[CN.DATE_LOCAL])) sheet.getRange(rowIndex, CN.DATE_LOCAL + 1).setValue(dateLocal);
+          repBackfilled++;
+        }
+        if (repBackfilled > 0) { rowsBackfilled += repBackfilled; repsTouched++; }
+      } catch (e) {
+        Logger.log('reconcileCallNotes: skipped rep ' + emp.id + ': ' + e.message);
+      }
+    }
+    writeAuditLog_(callerEmp, 'CallNotesReconcile', '', '', false, 0,
+      `repsTouched=${repsTouched}; rowsBackfilled=${rowsBackfilled}`, callerEmp.email);
+    return { success: true, repsTouched: repsTouched, rowsBackfilled: rowsBackfilled };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  AUTOMATION
