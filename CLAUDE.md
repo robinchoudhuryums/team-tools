@@ -719,10 +719,29 @@ this section before touching the relevant area.
   serves both paid and unpaid populations without forks.
 - **Self-undo vs. Adjust split.** Live mistakes within 5 minutes
   go through `selfDeletePunch` (audit row, no Manager
-  involvement). Anything older — or any adjustment — must go
-  through Adjust, which leaves a permanent `ADJ-*` row visible
-  to managers. The intent: keep the audit trail honest while
-  letting employees fix typos quickly.
+  involvement). Anything older now goes through the **adjustment-request
+  flow (#4a)** — the employee Adjust modal batches one or more requested
+  corrections and submits them via `submitPunchAdjustRequests` (no punch
+  is written); a manager approves from the dashboard, which writes the
+  `ADJ-*` punch via `writeAdjustPunchForEmployee_`. (The immediate
+  employee-writes-`ADJ-` path was replaced by this request/approval queue;
+  `recordPunch`'s `custom` branch still exists server-side but is no longer
+  called from the employee client.) The intent: keep the audit trail honest
+  while putting older corrections under manager review.
+- **Punch-adjustment requests are a TimeOffRequests-style queue (#4a).**
+  `PunchAdjustRequests` sheet tab (auto-created), enum `PAR`, keyed by a
+  UUID `ReqId`. `submitPunchAdjustRequests(requests[])` is caller-scoped,
+  locked, and **atomic** — it validates every entry with the same guards as
+  `recordPunch`'s adjustment path (date/time shape, known punch type, future
+  reject, `ADJUST_WINDOW_DAYS`, reason beyond `OLD_ADJUST_ALERT_DAYS`) and
+  rejects the whole batch if any fails, writing `Pending` rows only on full
+  success. `managerGetPendingAdjustments` (manager-gated queue) +
+  `updatePunchAdjustStatus(reqId, 'Approved'|'Denied')` (manager-gated,
+  locked, transition-guarded to Pending only). Approve calls
+  `writeAdjustPunchForEmployee_`, which touches ONLY that one punch type
+  (find-existing-for-date → update, else append) + the personal-sheet
+  mirror — it must NOT reuse `managerSaveDay` (a full-day reconcile that
+  would delete other punch types). See INV-106/107.
 - **`normalizeTime_` as the universal read shim.** Because Sheets
   auto-coerces time strings to Dates on read, every read of
   `row[ADP.TIME]` goes through `normalizeTime_`. New code must
@@ -1806,6 +1825,11 @@ manually for a fresh deploy or environment:
   Both are append-only. No manual setup needed — the
   `getOrCreateFormTokensSheet_()` / `getOrCreateFormSubmissionsSheet_()`
   helpers provision them with headers on first call.
+- **`PunchAdjustRequests` sheet tab (#4a)** is auto-created in the ADP
+  spreadsheet on first adjustment request (`getOrCreatePunchAdjustSheet_`).
+  Tracks employee-requested punch corrections (ReqId, EmpId, EmpName, Date,
+  PunchType, RequestedTime, Reason, Status, SubmittedAt) pending manager
+  approval. No manual setup needed.
 - **Form catalog** is configured in
   `CONFIG.CALL_NOTES.FORM_CATALOG` — each entry maps an ID to a
   filename in the repo's `/forms/` folder. Adding a form: upload
@@ -1984,6 +2008,8 @@ INV-102 | `fixPtoReconciliation(empId)` is manager-gated (INV-02) and locked (IN
 INV-103 | `setCallNoteManagerComment(repEmpId, noteId, message)` (item 9) is manager-gated (INV-02) and locked (INV-01). It appends a `{role:'manager', kind:'comment', message, at, by}` entry to `subformData.feedback[]` on ANY of the rep's notes — not just training-flagged — reusing the Q&A thread (`cnRenderQAThread_`, now rendered for any note with a thread). Writes a PHI-free `CallNoteManagerComment` audit row (noteId only). `appendCallNoteFeedback` was relaxed so the rep can ack/clarify on any note that already has a feedback[] thread (training-flagged OR manager-commented), not training-only | Subsystem: Server + Client (Call Notes views)
 INV-104 | `purgeOldCallNotes` (item 7) is a top-level trigger handler reachable via google.script.run, so it calls `assertManagerCaller_` (INV-44 family) and is locked (INV-01). It deletes per-rep `Notes` rows older than `CN_NOTE_RETENTION_DAYS` (Script Property → `CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS`, default 0 = disabled; irreversible PHI delete). Cross-rep; per-rep Sheet failures are skipped; writes a PHI-free `CallNotesPurge` audit row. The note date is read from `CN.DATE_LOCAL` via `parseRetentionDateMs_` (handles the Sheets Date coercion). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` | Subsystem: Server
 INV-105 | Automated notification emails route their HTML through `buildBrandedEmailHtml_(heading, bodyHtml, opts)` (item 2), which `esc_`'s the heading; callers MUST `esc_` any user data placed in `bodyHtml` (same INV-89 discipline), and `brandedKvRows_` `esc_`'s both label and value. Converted senders keep a plain-text `body` fallback alongside `htmlBody`: `notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts` (employee + manager digest), `notifyManagerOldAdjustment_`, `notifyManagerTrainingQuestion_`. `sendAutomatedExport_` remains plain-text (carries attachments) — a known follow-on | Subsystem: Server
+INV-106 | `submitPunchAdjustRequests(requests[])` (#4a) is caller-scoped + locked and writes only Pending rows (no punch). It is ATOMIC — every entry is validated (date `^\d{4}-\d{2}-\d{2}$`, time `^([01]\d|2[0-3]):[0-5]\d$`, `punchType ∈ PUNCH_LABELS_`, not future, ≤ `ADJUST_WINDOW_DAYS`, reason required beyond `OLD_ADJUST_ALERT_DAYS`) and the WHOLE batch is rejected if any entry fails (max 20). Each Pending row gets a UUID `ReqId`. Writes a `PunchAdjustRequest` audit row. Pinned by `test_punchAdjust_batchInvalidRejected` | Subsystem: Server
+INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newStatus)` (#4a) are manager-gated (INV-02); the latter is locked (INV-01) and transition-guarded (acts only on a `Pending` row). Approve writes the single `ADJ-{punchType}` punch for the TARGET employee via `writeAdjustPunchForEmployee_` (find-existing-of-that-type-for-date → update, else append; + `writeToEmployeeSheet_` personal-sheet mirror; `ADJ-` convention INV-09; `normalizeTime_` reads INV-26) and an `ADJ-` audit row with the manager as actor — it must NEVER reuse `managerSaveDay` (full-day reconcile would delete other punch types). Deny marks `Denied` + writes a `PunchAdjustStatusChange` audit row, no punch. Pinned by `test_punchAdjust_submitApproveWritesPunch` + `_nonManagerRejected` | Subsystem: Server + Client (Time Clock views)
 
 ### Policy Configuration
 Policy threshold: 4/10

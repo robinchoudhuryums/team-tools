@@ -9,7 +9,7 @@ function loadManagerDashboard() {
       if (data.error) { showToast(data.error, 'toast-error'); return; }
       mgrData = data;
       const area = document.getElementById('view-area');
-      if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); }
+      if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); loadPendingAdjustments_(); }
     })
     .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
     .getManagerDashboard();
@@ -93,6 +93,58 @@ function fixPtoReconRep_(btn) {
       })
       .fixPtoReconciliation(empId);
   });
+}
+
+// ── Pending punch-adjustment requests (#4a) ─────────────────────────────
+// Lazy, best-effort: fills #mgr-adjust-queue only when there are pending
+// employee adjustment requests. Approve → server writes the ADJ- punch for the
+// target rep; Deny → marks denied. Mirrors the PTO-recon lazy card.
+function loadPendingAdjustments_() {
+  const slot = document.getElementById('mgr-adjust-queue');
+  if (!slot) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      const s = document.getElementById('mgr-adjust-queue');
+      if (!s || currentView !== 'manage') return;
+      if (!res || res.error || !res.requests || res.requests.length === 0) { s.innerHTML = ''; return; }
+      s.innerHTML = renderAdjustQueueCard_(res.requests);
+    })
+    .withFailureHandler(function () { /* best-effort */ })
+    .managerGetPendingAdjustments();
+}
+
+function renderAdjustQueueCard_(requests) {
+  const rows = requests.map(function (r) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)">' +
+      '<div style="flex:1">' +
+        '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.empName) +
+          ' <span style="color:var(--muted);font-weight:400">— ' + esc(r.punchType) + ' · ' + esc(r.date) + ' · ' + esc(r.time) + '</span></div>' +
+        (r.reason ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(r.reason) + '</div>' : '') +
+      '</div>' +
+      '<button class="pending-btn pb-approve" data-req-id="' + esc(r.reqId) + '" data-act="Approved" onclick="adjDecide_(this)">' + icon('check', 14) + 'Approve</button>' +
+      '<button class="pending-btn pb-deny" data-req-id="' + esc(r.reqId) + '" data-act="Denied" onclick="adjDecide_(this)">' + icon('x', 14) + 'Deny</button>' +
+    '</div>';
+  }).join('');
+  return '<div class="card">' +
+    '<div class="card-label with-count"><span>Pending Punch Adjustments</span>' +
+      '<span class="count-pill warn">' + requests.length + '</span></div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Employee-requested punch corrections. Approve writes the adjustment to the timesheet; deny discards it.</div>' +
+    rows +
+  '</div>';
+}
+
+function adjDecide_(btn) {
+  const reqId = btn.getAttribute('data-req-id');
+  const action = btn.getAttribute('data-act');
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) { showToast((res && res.error) || 'Action failed', 'toast-error'); btn.disabled = false; return; }
+      showToast(action === 'Approved' ? 'Adjustment approved' : 'Request denied', 'toast-success');
+      loadPendingAdjustments_();
+    })
+    .withFailureHandler(function (err) { showToast((err && err.message) || 'Action failed', 'toast-error'); btn.disabled = false; })
+    .updatePunchAdjustStatus(reqId, action);
 }
 
 function renderManagerView(area, data) {
@@ -340,6 +392,7 @@ function renderManagerView(area, data) {
     ${heroHtml}
     ${renderAnalyticsSection(data)}
     <div id="mgr-pto-recon"></div>
+    <div id="mgr-adjust-queue"></div>
 
     <div class="card">
       <div class="card-label with-count">

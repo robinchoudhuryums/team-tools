@@ -371,6 +371,8 @@ function cleanupTestData() {
   _cleanupRowsByPrefix(ss.getSheetByName(CONFIG.ADP_TAB), 'TEST_', ADP.EMP_ID, 3);
   // TimeOffRequests (header row 1, data from row 2)
   _cleanupRowsByPrefix(ss.getSheetByName(CONFIG.TIMEOFF_TAB), 'TEST_', TO.EMP_ID, 2);
+  // PunchAdjustRequests (#4a — EmpId in column index 1)
+  _cleanupRowsByPrefix(ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB), 'TEST_', PAR.EMP_ID, 2);
   // AuditLog (header row 1, data from row 2). EmployeeId in column index 1.
   _cleanupRowsByPrefix(ss.getSheetByName(CONFIG.AUDIT_TAB), 'TEST_', 1, 2);
 
@@ -421,6 +423,7 @@ function _clearTestState(empId) {
   const ss = getAdpSS_();
   _clearRowsByEmp(ss.getSheetByName(CONFIG.ADP_TAB),     empId, ADP.EMP_ID, 3);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.TIMEOFF_TAB), empId, TO.EMP_ID,  2);
+  _clearRowsByEmp(ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB), empId, PAR.EMP_ID, 2);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.AUDIT_TAB),   empId, 1,          2);
 
   const empSheet = ss.getSheetByName(CONFIG.EMPLOYEE_TAB);
@@ -605,6 +608,11 @@ function _runAllTests() {
 
   // ── New endpoints (post-sync coverage backfill) ─────────────────────────
   _integrationTest('recordPunch_minIntervalRejectsRapidLive',  test_recordPunch_minIntervalRejectsRapidLive);
+
+  // #4a — punch-adjustment requests (employee batch → manager approval)
+  _integrationTest('punchAdjust_submitApproveWritesPunch',     test_punchAdjust_submitApproveWritesPunch);
+  _integrationTest('punchAdjust_batchInvalidRejected',         test_punchAdjust_batchInvalidRejected);
+  _integrationTest('punchAdjust_nonManagerRejected',           test_punchAdjust_nonManagerRejected);
   _integrationTest('recordPunch_minIntervalAllowsAdjustment',  test_recordPunch_minIntervalAllowsAdjustment);
 
   _integrationTest('selfDeletePunch_withinWindow',             test_selfDeletePunch_withinWindow);
@@ -1169,6 +1177,57 @@ function test_recordPunch_reasonRequiredOldAdj() {
       recordPunch('ClockIn', { date: _TEST_DATE_OLD, time: '09:00', reason: '' }),
       'reason is required'
     );
+  });
+}
+
+// #4a — submit a request (no punch written), manager approves → ADJ punch
+// appears, and a re-approve is rejected (transition guard).
+function test_punchAdjust_submitApproveWritesPunch() {
+  _clearTestState(_TEST_PH_ID);
+  let sub;
+  _asUser(_TEST_PH_EMAIL, () => {
+    sub = submitPunchAdjustRequests([{ date: _TEST_DATE_RECENT, time: '17:30', punchType: 'ClockOut', reason: 'forgot' }]);
+  });
+  _assertSuccess(sub);
+  _assertEq(sub.count, 1, 'one request submitted');
+  _assertNull(findExistingPunch_(_TEST_PH_ID, _TEST_DATE_RECENT, 'ClockOut'), 'no punch before approval');
+
+  let pend;
+  _asUser(_TEST_MGR_EMAIL, () => { pend = managerGetPendingAdjustments(); });
+  const req = (pend.requests || []).filter(function (r) { return r.empId === _TEST_PH_ID && r.punchType === 'ClockOut'; })[0];
+  _assertNotNull(req, 'request appears in the manager queue');
+
+  let appr;
+  _asUser(_TEST_MGR_EMAIL, () => { appr = updatePunchAdjustStatus(req.reqId, 'Approved'); });
+  _assertSuccess(appr);
+  _assertNotNull(findExistingPunch_(_TEST_PH_ID, _TEST_DATE_RECENT, 'ClockOut'), 'ADJ punch written on approval');
+
+  let appr2;
+  _asUser(_TEST_MGR_EMAIL, () => { appr2 = updatePunchAdjustStatus(req.reqId, 'Approved'); });
+  _assertEq(appr2.success, false, 're-approve rejected (no longer pending)');
+}
+
+function test_punchAdjust_batchInvalidRejected() {
+  _clearTestState(_TEST_PH_ID);
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r = submitPunchAdjustRequests([
+      { date: _TEST_DATE_RECENT, time: '09:00', punchType: 'ClockIn', reason: '' },
+      { date: _TEST_DATE_RECENT, time: '25:99', punchType: 'ClockOut', reason: '' },
+    ]);
+    _assertEq(r.success, false, 'batch rejected when any entry is invalid');
+  });
+  let mine;
+  _asUser(_TEST_PH_EMAIL, () => { mine = getMyPunchAdjustRequests(); });
+  _assertEq((mine.requests || []).length, 0, 'no rows written when the batch is rejected');
+}
+
+function test_punchAdjust_nonManagerRejected() {
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r = updatePunchAdjustStatus('nonexistent', 'Approved');
+    _assertEq(r.success, false, 'non-manager cannot approve');
+    _assertContains(r.error, 'Manager access required');
+    const q = managerGetPendingAdjustments();
+    _assertNotNull(q.error, 'non-manager cannot read the queue');
   });
 }
 

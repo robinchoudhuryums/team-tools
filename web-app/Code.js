@@ -12,6 +12,7 @@ const CONFIG = {
   EMPLOYEE_TAB: 'Employees',
   ADP_TAB:      'Timesheet',
   TIMEOFF_TAB:  'TimeOffRequests',
+  PUNCH_ADJUST_TAB: 'PunchAdjustRequests',  // #4a — employee adjustment requests pending manager approval
   AUDIT_TAB:    'AuditLog',
   FORM_TOKENS_TAB:      'FormTokens',
   FORM_SUBMISSIONS_TAB: 'FormSubmissions',
@@ -6869,6 +6870,186 @@ function getOrCreateTimeOffSheet_() {
     sheet.setFrozenRows(1);
   }
   return sheet;
+}
+
+// ── #4a Punch-adjustment requests (employee batch → manager approval) ─────
+// Parallels TimeOffRequests: employees submit adjustment REQUESTS (no immediate
+// punch change); a manager approves (writes the ADJ- punch for the target emp)
+// or denies. Distinct from the manager Day Edit (managerSaveDay), which is an
+// immediate full-day reconcile and must NOT be reused here (it would delete
+// punch types not present in its slots).
+const PAR = { REQ_ID:0, EMP_ID:1, EMP_NAME:2, DATE:3, PUNCH_TYPE:4, REQ_TIME:5, REASON:6, STATUS:7, SUBMITTED_AT:8 };
+
+function getOrCreatePunchAdjustSheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.PUNCH_ADJUST_TAB);
+    sheet.appendRow(['ReqId','EmpId','EmpName','Date','PunchType','RequestedTime','Reason','Status','SubmittedAt']);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** Employee batch submit of punch-adjustment requests (#4a). No punch is
+ *  written — each lands as a Pending row for manager approval. Atomic: the
+ *  whole batch is rejected if any entry is invalid (same guards as
+ *  recordPunch's adjustment path: date/time shape, known punch type, future
+ *  reject, adjust window, reason beyond OLD_ADJUST_ALERT_DAYS). Caller-scoped,
+ *  locked. */
+function submitPunchAdjustRequests(requests) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Employee not found.' };
+    if (!Array.isArray(requests) || requests.length === 0) return { success: false, error: 'No adjustments to submit.' };
+    if (requests.length > 20) return { success: false, error: 'Too many adjustments in one submission (max 20).' };
+    const empTz = empTz_(emp);
+    const todayStr = fmtDateTz_(new Date(), empTz);
+    const clean = [];
+    for (let i = 0; i < requests.length; i++) {
+      const r = requests[i] || {};
+      const label = 'Adjustment #' + (i + 1);
+      const date = String(r.date || '').trim();
+      const time = String(r.time || '').trim();
+      const punchType = String(r.punchType || '').trim();
+      const reason = String(r.reason || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { success: false, error: label + ': invalid date.' };
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { success: false, error: label + ': invalid time (expected HH:mm).' };
+      if (PUNCH_LABELS_.indexOf(punchType) < 0) return { success: false, error: label + ': invalid punch type.' };
+      if (date > todayStr) return { success: false, error: label + ': cannot request a future date.' };
+      const daysBack = daysBetween_(date, todayStr);
+      if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: label + ': older than the ' + CONFIG.ADJUST_WINDOW_DAYS + '-day adjust window.' };
+      if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
+      clean.push({ date: date, time: time, punchType: punchType, reason: reason });
+    }
+    const sheet = getOrCreatePunchAdjustSheet_();
+    const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    clean.forEach(function (c) {
+      sheet.appendRow([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt]);
+    });
+    writeAuditLog_(emp, 'PunchAdjustRequest', clean[0].date, '', false, 0,
+      'requested ' + clean.length + ' punch adjustment(s) pending approval');
+    return { success: true, count: clean.length };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** The caller's own adjustment requests, newest-first (employee status list).
+ *  Caller-scoped, read-only. */
+function getMyPunchAdjustRequests() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const rows = getOrCreatePunchAdjustSheet_().getDataRange().getValues();
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][PAR.EMP_ID]).trim() !== emp.id) continue;
+      out.push({
+        reqId: String(rows[i][PAR.REQ_ID]).trim(),
+        date: normalizeDate_(rows[i][PAR.DATE]),
+        punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
+        time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
+        reason: String(rows[i][PAR.REASON] || ''),
+        status: String(rows[i][PAR.STATUS]).trim(),
+        submittedAt: String(rows[i][PAR.SUBMITTED_AT] || ''),
+      });
+    }
+    out.sort(function (a, b) { return String(b.submittedAt).localeCompare(String(a.submittedAt)); });
+    return { requests: out };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated, read-only — all Pending adjustment requests across reps, for
+ *  the manager dashboard approval queue. */
+function managerGetPendingAdjustments() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const rows = getOrCreatePunchAdjustSheet_().getDataRange().getValues();
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][PAR.STATUS]).trim().toLowerCase() !== 'pending') continue;
+      out.push({
+        reqId: String(rows[i][PAR.REQ_ID]).trim(),
+        empId: String(rows[i][PAR.EMP_ID]).trim(),
+        empName: String(rows[i][PAR.EMP_NAME]).trim(),
+        date: normalizeDate_(rows[i][PAR.DATE]),
+        punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
+        time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
+        reason: String(rows[i][PAR.REASON] || ''),
+        submittedAt: String(rows[i][PAR.SUBMITTED_AT] || ''),
+      });
+    }
+    out.sort(function (a, b) { return (a.date + a.empName).localeCompare(b.date + b.empName); });
+    return { requests: out };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated, locked. Approve → writes the ADJ-{punchType} punch for the
+ *  target emp and marks Approved. Deny → marks Denied (no punch). Transition-
+ *  guarded: only acts on a Pending row (so a double-click can't re-approve). */
+function updatePunchAdjustStatus(reqId, newStatus) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (newStatus !== 'Approved' && newStatus !== 'Denied') return { success: false, error: 'Invalid status.' };
+    const id = String(reqId || '').trim();
+    if (!id) return { success: false, error: 'Missing request id.' };
+    const sheet = getOrCreatePunchAdjustSheet_();
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][PAR.REQ_ID]).trim() !== id) continue;
+      const status = String(rows[i][PAR.STATUS]).trim();
+      if (status.toLowerCase() !== 'pending') return { success: false, error: 'This request is no longer pending.' };
+      const empId = String(rows[i][PAR.EMP_ID]).trim();
+      const empName = String(rows[i][PAR.EMP_NAME]).trim();
+      const date = normalizeDate_(rows[i][PAR.DATE]);
+      const punchType = String(rows[i][PAR.PUNCH_TYPE]).trim();
+      const reqTime = normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5);
+      const reason = String(rows[i][PAR.REASON] || '');
+      if (newStatus === 'Approved') {
+        const targetEmp = lookupEmployeeById_(empId);
+        if (!targetEmp) return { success: false, error: 'Employee not found.' };
+        writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
+      } else {
+        const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
+        writeAuditLog_(targetForAudit, 'PunchAdjustStatusChange', date, '', false, 0,
+          `${punchType} ${reqTime} request denied`, callerEmp.email);
+      }
+      sheet.getRange(i + 1, PAR.STATUS + 1).setValue(newStatus);
+      return { success: true };
+    }
+    return { success: false, error: 'Request not found.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Writes a single ADJ-{punchType} punch for a TARGET employee (the approve
+ *  path). Find-existing-of-that-type-for-date → update, else append; mirrors
+ *  recordPunch's adjustment write + the personal-sheet mirror (INV-09/26/59).
+ *  Touches ONLY that punch type — unlike managerSaveDay's full-day reconcile.
+ *  Writes the `ADJ-` audit row with the approving manager as actor. */
+function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEmail, reason) {
+  const timeFull = time + ':00';
+  const dir = ['ClockIn', 'LunchIn'].indexOf(punchType) >= 0 ? 'IN' : 'OUT';
+  const commentLabel = 'ADJ-' + punchType;
+  const existing = findExistingPunch_(targetEmp.id, date, punchType);
+  if (existing) {
+    existing.sheet.getRange(existing.rowIndex, ADP.TIME + 1).setValue(timeFull);
+    existing.sheet.getRange(existing.rowIndex, ADP.COMMENTS + 1).setValue(commentLabel);
+  } else {
+    appendToAdpSheet_(targetEmp, date, timeFull, dir, commentLabel);
+  }
+  if (targetEmp.sheetId) {
+    try { writeToEmployeeSheet_(targetEmp, date, timeFull, dir, punchType); } catch (e) {}
+  }
+  const daysBack = Math.abs(daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp))));
+  writeAuditLog_(targetEmp, punchType, date, timeFull, true, daysBack,
+    'approved adjustment request' + (reason ? ' — ' + reason : ''), actorEmail);
 }
 
 function getOrCreateAuditSheet_() {
