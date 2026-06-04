@@ -718,6 +718,9 @@ function _runAllTests() {
   _smokeTest('intake_buildPpdBody_escapesAnswers', test_intake_buildPpdBody_escapesAnswers);
   _smokeTest('intake_emailDomain_extracted',       test_intake_emailDomain_extracted);
 
+  // ── Forms hardening — submission integrity hash (smoke-safe; pure) ──────
+  _smokeTest('form_submissionHash_deterministicAndTamperEvident', test_form_submissionHash_deterministicAndTamperEvident);
+
   // ── Call Notes — integration (sheet-touching) ──────────────────────────
   _integrationTest('cn_submitCallNote_basic',                test_cn_submitCallNote_basic);
   _integrationTest('cn_submitCallNote_withFlag',             test_cn_submitCallNote_withFlag);
@@ -3566,4 +3569,22 @@ function test_intake_buildPpdBody_escapesAnswers() {
 function test_intake_emailDomain_extracted() {
   _assertEq(intakeEmailDomain_('agent@umsupply.com'), 'umsupply.com');
   _assertEq(intakeEmailDomain_('garbage'), '(none)');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  FORMS HARDENING — submission integrity hash (uses real Utilities digest, so
+//  it lives here rather than the Node harness)
+// ════════════════════════════════════════════════════════════════════════════
+function test_form_submissionHash_deterministicAndTamperEvident() {
+  var dataJson = JSON.stringify({ firstName: 'Jane', householdSize: '3' });
+  var sig = 'data:image/png;base64,AAAA';
+  var h1 = computeFormSubmissionHash_(dataJson, sig, 'tok-1', 'forms-consent-2026-06');
+  var h2 = computeFormSubmissionHash_(dataJson, sig, 'tok-1', 'forms-consent-2026-06');
+  _assertEq(h1, h2, 'same input → identical hash (deterministic)');
+  _assertEq(h1.length, 64, 'SHA-256 hex is 64 chars');
+  // Any altered component changes the hash → tamper-evident.
+  _assertTrue(h1 !== computeFormSubmissionHash_(JSON.stringify({ firstName: 'John' }), sig, 'tok-1', 'forms-consent-2026-06'), 'altered responses → different hash');
+  _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, 'data:image/png;base64,BBBB', 'tok-1', 'forms-consent-2026-06'), 'altered signature → different hash');
+  _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, sig, 'tok-2', 'forms-consent-2026-06'), 'different token → different hash');
+  _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, sig, 'tok-1', 'forms-consent-2027-01'), 'different consent version → different hash');
 }

@@ -496,5 +496,17 @@ vm.runInContext('var CLI_PAP = ' + extractClientObject('intake/script_intake.htm
   });
 });
 
+console.log('\nforms — invite email builders carry no prefilled patient data (hardening Fix 6)');
+['buildCustomerEmailHtml_', 'buildProviderEmailHtml_', 'buildCustomerEmailText_', 'buildProviderEmailText_'].forEach((fn) => {
+  test(fn + ' takes only (recipientName, message, formNames, formLinks) and never reads prefill', () => {
+    const src = extractRawFunction('Code.js', fn);
+    const sig = src.match(/function\s+\w+\s*\(([^)]*)\)/)[1].split(',').map((s) => s.trim());
+    assert.deepStrictEqual(sig, ['recipientName', 'message', 'formNames', 'formLinks']);
+    // Prefill (patient identifiers) must stay in the token store, never the
+    // email body — so the invite stays PHI-minimal in cleartext transit.
+    assert.ok(!/prefill/i.test(src), fn + ' must not reference prefill data');
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

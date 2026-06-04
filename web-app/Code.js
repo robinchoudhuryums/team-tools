@@ -19,12 +19,18 @@ const CONFIG = {
 
   // ── Interactive form tokens ──────────────────────────────────────
   FORM_TOKEN_EXPIRY_HOURS: 72, // tokens expire after 72 hours
+  // Version stamp for the form_public.html Privacy Notice / consent text. The
+  // server records this with every submission (it does NOT trust a client-sent
+  // version) so a stored submission proves WHICH consent language the signer
+  // saw. BUMP this whenever the consent copy in form_public.html changes.
+  FORM_CONSENT_VERSION: 'forms-consent-2026-06',
   // PHI data-minimization: purge FormSubmissions + FormTokens rows older than
   // this many days (by SubmittedAt / CreatedAt). 0 = DISABLED (nothing is ever
-  // deleted) — the safe default. Set a positive value (Script Property
-  // FORM_DATA_RETENTION_DAYS overrides this CONFIG fallback) ONLY after
-  // aligning it with your record-retention obligations; the purge is
-  // irreversible. Enforced by the daily purgeExpiredFormData trigger.
+  // deleted) — the safe default kept in committed code so a fresh deploy / fork
+  // never auto-deletes PHI. THIS deployment runs a 90-day window via Script
+  // Property FORM_DATA_RETENTION_DAYS=90 (overrides this fallback) — an operator
+  // step, not a code default, because the purge is irreversible. Enforced by the
+  // daily purgeExpiredFormData trigger (must be installed).
   FORM_DATA_RETENTION_DAYS: 0,
 
   TIMEZONE:         'Asia/Kolkata',
@@ -4810,22 +4816,44 @@ const FT_HEADERS = [
   'CreatedBy','NoteId',
 ];
 
-// FormSubmissions tab schema
+// FormSubmissions tab schema. Cols 6–10 added by the forms-hardening pass
+// (tamper hash + stored consent + Certificate of Completion). TRAILING columns
+// — existing 6-col rows read back with the new fields undefined, handled
+// gracefully; freshly-provisioned sheets (e.g. the segregated FORMS_SS_ID)
+// carry the full header. Same back-compat discipline as CN_HEADERS.
 const FS = {
   TOKEN:0, FORM_TYPE:1, RECIPIENT_EMAIL:2, SUBMITTED_AT:3,
   FORM_DATA:4, SIGNATURE_DATA:5,
+  SUBMISSION_HASH:6, CONSENT_VERSION:7, CONSENT_AT:8, OPENED_AT:9, CERTIFICATE:10,
 };
 const FS_HEADERS = [
   'Token','FormType','RecipientEmail','SubmittedAt',
   'FormData','SignatureData',
+  'SubmissionHash','ConsentVersion','ConsentAt','OpenedAt','Certificate',
 ];
 
 // ── Valid interactive form type IDs (subset of FORM_CATALOG) ─────────
 const INTERACTIVE_FORM_TYPES = ['eaa', 'pt-ot-rx', 'seating-eval'];
 
-/** Returns or creates the FormTokens tab in the ADP spreadsheet. */
+/** PHI segregation (forms hardening). FormTokens + FormSubmissions hold PHI
+ *  (recipient + prefill identifiers, responses, signatures), so they resolve
+ *  here rather than to the ADP/payroll sheet directly: Script Property
+ *  FORMS_SS_ID first (point it at the Intake spreadsheet, INTAKE_SS_ID, to move
+ *  PHI off the payroll sheet — the recommended posture), else the ADP SS
+ *  (back-compat — existing deployments keep working until the operator sets
+ *  FORMS_SS_ID and migrates the two tabs). The deployer account must have edit
+ *  access to whichever spreadsheet this resolves to. */
+function getFormsSS_() {
+  if (typeof _TEST_OVERRIDE_FORMS_SS_ID !== 'undefined' && _TEST_OVERRIDE_FORMS_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_FORMS_SS_ID);
+  }
+  const id = PropertiesService.getScriptProperties().getProperty('FORMS_SS_ID');
+  return id ? SpreadsheetApp.openById(id) : getAdpSS_();
+}
+
+/** Returns or creates the FormTokens tab in the forms (PHI) spreadsheet. */
 function getOrCreateFormTokensSheet_() {
-  const ss = getAdpSS_();
+  const ss = getFormsSS_();
   let sheet = ss.getSheetByName(CONFIG.FORM_TOKENS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.FORM_TOKENS_TAB);
@@ -4836,9 +4864,9 @@ function getOrCreateFormTokensSheet_() {
   return sheet;
 }
 
-/** Returns or creates the FormSubmissions tab in the ADP spreadsheet. */
+/** Returns or creates the FormSubmissions tab in the forms (PHI) spreadsheet. */
 function getOrCreateFormSubmissionsSheet_() {
-  const ss = getAdpSS_();
+  const ss = getFormsSS_();
   let sheet = ss.getSheetByName(CONFIG.FORM_SUBMISSIONS_TAB);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.FORM_SUBMISSIONS_TAB);
@@ -4854,10 +4882,16 @@ function generateFormToken_() {
   return Utilities.getUuid();
 }
 
-/** Build the public form URL for a token. Uses ScriptApp.getService().getUrl()
- *  which returns the deployed web app URL. */
+/** Build the public form URL for a token. `ScriptApp.getService().getUrl()` is
+ *  unreliable — it can return the /dev (head) URL, which ONLY accounts with edit
+ *  access to the script can open (an external recipient gets a Drive "Sorry,
+ *  unable to open the file at this time" error). So prefer the configured
+ *  published /exec URL from Script Property WEB_APP_URL; fall back to getUrl()
+ *  only when it isn't set. Set WEB_APP_URL once to the deployment's /exec URL. */
 function buildFormUrl_(token) {
-  return ScriptApp.getService().getUrl() + '?form=' + encodeURIComponent(token);
+  const base = PropertiesService.getScriptProperties().getProperty('WEB_APP_URL')
+            || ScriptApp.getService().getUrl();
+  return base.replace(/\/dev$/, '/exec') + '?form=' + encodeURIComponent(token);
 }
 
 /** Creates a form token. Called by the external email flow when "fillable"
@@ -5036,14 +5070,25 @@ function submitFormByToken(token, formData) {
     const createdBy = String(row[FT.CREATED_BY] || '').trim();
     const noteId = String(row[FT.NOTE_ID] || '').trim();
 
-    // Validate form data (basic shape check)
+    // Validate form data (basic shape check). `signature` and `_meta` (consent
+    // + openedAt envelope) are pulled out separately so they never land in the
+    // responses blob.
     const data = formData || {};
+    const meta = (data._meta && typeof data._meta === 'object') ? data._meta : {};
     const sanitizedData = {};
     Object.keys(data).forEach(function(k) {
-      if (k === 'signature') return; // signature handled separately
+      if (k === 'signature' || k === '_meta') return; // handled separately
       sanitizedData[k] = data[k];
     });
     const signatureData = String(data.signature || '');
+
+    // Consent is server-enforced, not just client-gated: a payload that
+    // explicitly reports consent NOT given is rejected. (Absent _meta — e.g. a
+    // page loaded before this deploy — is allowed through: the client's consent
+    // checkbox already gated it, INV-78-style back-compat.)
+    if (meta.consentAgreed === false) {
+      return { success: false, error: 'You must acknowledge the privacy notice before submitting.' };
+    }
 
     // Bound the payload BEFORE the write. This is a public, token-only
     // endpoint, so formData/signature are recipient-supplied: each value
@@ -5068,14 +5113,31 @@ function submitFormByToken(token, formData) {
       return { success: false, error: 'Your signature image is too large to save. Please redraw a simpler signature and resubmit.' };
     }
 
-    // Save submission
+    // Save submission. Forms-hardening: stamp the server-authoritative consent
+    // version, the consent/open timestamps, a tamper-evident content hash, and
+    // a Certificate of Completion alongside the responses.
     const now = new Date();
     const submittedAt = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
+    const consentVersion = CONFIG.FORM_CONSENT_VERSION || '';
+    const consentAt = submittedAt; // consent precedes the submit (checkbox-gated)
+    const openedAt = String(meta.openedAt || '');
+    // Hash over coercion-stable content only (dataJson / signature / token /
+    // consentVersion never round-trip as a Date) — submittedAt's independent
+    // witness is the FormSubmissionReceived audit row. See verifyFormSubmissionIntegrity_.
+    const submissionHash = computeFormSubmissionHash_(dataJson, signatureData, token, consentVersion);
+    const certificate = JSON.stringify({
+      token: token, formType: formType,
+      recipientEmail: recipientEmail, recipientName: recipientName, createdBy: createdBy,
+      openedAt: openedAt, submittedAt: submittedAt,
+      consentVersion: consentVersion, consentAt: consentAt,
+      submissionHash: submissionHash,
+    });
     const submissionsSheet = getOrCreateFormSubmissionsSheet_();
     submissionsSheet.appendRow([
       token, formType, recipientEmail, submittedAt,
       dataJson,
       signatureData,
+      submissionHash, consentVersion, consentAt, openedAt, certificate,
     ]);
 
     // Mark token as submitted
@@ -5134,8 +5196,13 @@ function submitFormByToken(token, formData) {
     // Audit log (use a synthetic emp object since this is a public endpoint)
     try {
       const auditEmp = { id: 'EXTERNAL', name: recipientName || recipientEmail, email: recipientEmail };
+      // The audit row carries the content hash + submittedAt — an independent,
+      // append-only witness so a later edit to the stored row is detectable even
+      // against the AuditLog. PHI-free (token / formType / domain-bearing email
+      // only — no responses).
       writeAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
         'token=' + token + '; formType=' + formType + '; from=' + recipientEmail +
+        '; hash=' + submissionHash + '; submittedAt=' + submittedAt +
         (noteId ? '; noteId=' + noteId : ''));
     } catch(_) {}
 
@@ -5270,6 +5337,75 @@ function managerGetFormSubmission(repEmpId, token) {
  *  managerGetFormSubmission. Assumes the caller has already authorized access
  *  to `tLocated` (the FormTokens row). Returns `{ submitted: false, status }`
  *  until the form is completed, else the humanized fields + signature. */
+/** Tamper-evident content hash for a form submission: SHA-256 hex over the
+ *  responses JSON + signature + token + consent version. All coercion-stable
+ *  strings (none round-trips as a Date), so verify recomputes identically from
+ *  the stored cells. submittedAt is deliberately excluded (Sheets may coerce an
+ *  ISO datetime to a Date on read) — its integrity is witnessed by the
+ *  append-only FormSubmissionReceived audit row instead. */
+function computeFormSubmissionHash_(dataJson, signatureData, token, consentVersion) {
+  const payload = String(dataJson || '') + ' ' + String(signatureData || '') +
+                  ' ' + String(token || '') + ' ' + String(consentVersion || '');
+  const buf = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, payload);
+  let out = '';
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i] < 0 ? buf[i] + 256 : buf[i];
+    out += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return out;
+}
+
+/** Manager-gated, read-only integrity check (forms hardening). Recomputes the
+ *  stored submission's content hash from its cells and compares to the stamped
+ *  SubmissionHash — the audit-response / spot-check tool. `match:false` means
+ *  the stored responses / signature were altered after submission. */
+function verifyFormSubmissionIntegrity_(token) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    token = String(token || '').trim();
+    if (!token) return { error: 'No token provided.' };
+    const rows = getOrCreateFormSubmissionsSheet_().getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
+      const stored = String(rows[i][FS.SUBMISSION_HASH] || '');
+      if (!stored) return { found: true, legacy: true, match: null,
+        message: 'This submission predates integrity hashing — no stored hash to verify.' };
+      const recomputed = computeFormSubmissionHash_(
+        String(rows[i][FS.FORM_DATA] || ''), String(rows[i][FS.SIGNATURE_DATA] || ''),
+        String(rows[i][FS.TOKEN] || ''), String(rows[i][FS.CONSENT_VERSION] || ''));
+      return { found: true, match: recomputed === stored, storedHash: stored,
+        recomputedHash: recomputed, submittedAt: String(rows[i][FS.SUBMITTED_AT] || '') };
+    }
+    return { found: false, error: 'No submission found for that token.' };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** "Verified record" block appended to the in-app submission card: the
+ *  Certificate of Completion summary + a live integrity indicator. Every value
+ *  esc_'d (INV-89). */
+function buildFormCertHtml_(cert, hashMatch) {
+  if (!cert) return '';
+  const P = CN_EMAIL_PALETTE;
+  const rows = [
+    ['Submitted', cert.submittedAt || '—'],
+    ['Opened', cert.openedAt || '—'],
+    ['Consent version', cert.consentVersion || '—'],
+    ['Recipient', (cert.recipientName ? cert.recipientName + ' · ' : '') + (cert.recipientEmail || '—')],
+    ['Content hash', cert.submissionHash ? (String(cert.submissionHash).substring(0, 16) + '…') : '—'],
+  ];
+  const integrity = hashMatch === true
+    ? '<span style="color:' + P.good + ';font-weight:600;">&#10003; Integrity verified (hash matches)</span>'
+    : hashMatch === false
+      ? '<span style="color:' + P.danger + ';font-weight:600;">&#9888; Hash MISMATCH — record may have been altered</span>'
+      : '<span style="color:' + P.muted + ';">Integrity hash not available for this record</span>';
+  return '<div style="margin-top:16px;border-top:1px solid ' + P.line + ';padding-top:12px;">' +
+    '<div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:' + P.muted + ';margin-bottom:6px;">Record (Certificate of Completion)</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;color:' + P.ink + ';">' +
+    rows.map(function (r) { return '<tr><td style="padding:2px 10px 2px 0;color:' + P.muted + ';white-space:nowrap;vertical-align:top;">' + esc_(r[0]) + '</td><td style="padding:2px 0;">' + esc_(r[1]) + '</td></tr>'; }).join('') +
+    '</table><div style="margin-top:8px;font-size:12px;">' + integrity + '</div></div>';
+}
+
 function buildFormSubmissionResult_(tLocated, token) {
   const formType = String(tLocated.row[FT.FORM_TYPE] || '').trim();
   let formName = formType;
@@ -5295,6 +5431,18 @@ function buildFormSubmissionResult_(tLocated, token) {
       return { key: k, label: humanizeFormFieldKey_(k), value: formData[k] };
     });
     const signature = String(rows[i][FS.SIGNATURE_DATA] || '');
+    // Forms-hardening: parse the stored Certificate of Completion + verify the
+    // tamper hash live, then append a "verified record" block to the card.
+    let cert = null;
+    try { cert = JSON.parse(rows[i][FS.CERTIFICATE]); } catch (_) {}
+    const storedHash = String(rows[i][FS.SUBMISSION_HASH] || '');
+    let hashMatch = null;
+    if (storedHash) {
+      const recomputed = computeFormSubmissionHash_(
+        String(rows[i][FS.FORM_DATA] || ''), signature,
+        String(rows[i][FS.TOKEN] || ''), String(rows[i][FS.CONSENT_VERSION] || ''));
+      hashMatch = (recomputed === storedHash);
+    }
     return {
       submitted: true,
       formType, formName, recipientName,
@@ -5303,9 +5451,12 @@ function buildFormSubmissionResult_(tLocated, token) {
       fields,
       hasSignature: !!signature,
       signature,
-      // Pre-rendered branded card (responses table + signature) so the in-app
-      // viewer matches the submission email. Safe to innerHTML — esc_-escaped.
-      submissionHtml: buildFormSubmissionCardHtml_(formData, signature),
+      consentVersion: String(rows[i][FS.CONSENT_VERSION] || ''),
+      integrityVerified: hashMatch,
+      // Pre-rendered branded card (responses table + signature + record block)
+      // so the in-app viewer matches the submission email. Safe to innerHTML —
+      // esc_-escaped.
+      submissionHtml: buildFormSubmissionCardHtml_(formData, signature) + buildFormCertHtml_(cert, hashMatch),
     };
   }
   // Token says submitted but no row found — treat as not-yet-available.
