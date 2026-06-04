@@ -709,6 +709,15 @@ function _runAllTests() {
   _smokeTest('tpl_formPublic_evaluatesWithoutError', test_tpl_formPublic_evaluatesWithoutError);
   _smokeTest('cn_esc_basic',                       test_cn_esc_basic);
 
+  // ── Intake — PPD recommendation engine (smoke-safe; pure) ──────────────
+  _smokeTest('intake_engine_standardOnly',         test_intake_engine_standardOnly);
+  _smokeTest('intake_engine_neuroUpgradeAndSubs',  test_intake_engine_neuroUpgradeAndSubs);
+  _smokeTest('intake_engine_weightCap',            test_intake_engine_weightCap);
+  _smokeTest('intake_engine_oxygenExcludesK0837',  test_intake_engine_oxygenExcludesK0837);
+  _smokeTest('intake_engine_emptySafe',            test_intake_engine_emptySafe);
+  _smokeTest('intake_buildPpdBody_escapesAnswers', test_intake_buildPpdBody_escapesAnswers);
+  _smokeTest('intake_emailDomain_extracted',       test_intake_emailDomain_extracted);
+
   // ── Call Notes — integration (sheet-touching) ──────────────────────────
   _integrationTest('cn_submitCallNote_basic',                test_cn_submitCallNote_basic);
   _integrationTest('cn_submitCallNote_withFlag',             test_cn_submitCallNote_withFlag);
@@ -3509,4 +3518,52 @@ function test_metrics_getMyMetrics_cdrUnavailableErrors() {
     _TEST_OVERRIDE_CDR_SS_ID = prev;
     _resetCdrCaches_();
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INTAKE — PPD recommendation engine (pure; mirrors the Node harness branches)
+// ════════════════════════════════════════════════════════════════════════════
+// fixture Offerings rows: [features, hcpcs, weightCap, seatType, pdfLink, imageUrl]
+var _INTAKE_TEST_CAT = [
+  ['Std Captain', 'K0823', '350', 'C', 'pdf-823', 'img-823'],
+  ['SPO solid',   'K0856', '350', 'S', 'pdf-856', 'img-856'],
+  ['G3 solid',    'K0861', '350', 'S', 'pdf-861', 'img-861'],
+  ['MPO solid',   'K0843', '450', 'S', 'pdf-843', 'img-843'],
+  ['G3 wide',     'K0862', '600', 'S', 'pdf-862', 'img-862'],
+];
+
+function test_intake_engine_standardOnly() {
+  var r = intakeFilterRecommendations_({ '38': '250 lbs' }, _INTAKE_TEST_CAT);
+  _assertEq(r.standard.map(function (p) { return p.hcpcs; }).join(','), 'K0823');
+  _assertEq(r.complex.length, 0, 'group-3/SPO/MPO require eligibility');
+}
+function test_intake_engine_neuroUpgradeAndSubs() {
+  var r = intakeFilterRecommendations_({ '38': '250', '43': 'multiple sclerosis' }, _INTAKE_TEST_CAT);
+  _assertEq(r.standard.length, 0, 'captain chair fails solid-seat requirement under neuro');
+  _assertEq(r.complex.map(function (p) { return p.hcpcs; }).join(','), 'K0862,K0861', 'K0856→K0861, K0843→K0862, sorted desc');
+}
+function test_intake_engine_weightCap() {
+  var r = intakeFilterRecommendations_({ '38': '500 lbs', '43': 'ALS' }, _INTAKE_TEST_CAT);
+  var all = r.complex.concat(r.standard).map(function (p) { return p.hcpcs; });
+  _assertTrue(all.indexOf('K0862') >= 0, '600-cap chair survives at 500 lbs');
+  _assertTrue(all.indexOf('K0861') < 0, '350-cap chair excluded at 500 lbs');
+}
+function test_intake_engine_oxygenExcludesK0837() {
+  var cat = [['SPO', 'K0837', '350', 'S', 'p', 'i']];
+  var onOxy = intakeFilterRecommendations_({ '38': '250', '32': 'yes', '44': 'yes' }, cat);
+  _assertEq(onOxy.complex.concat(onOxy.standard).length, 0, 'K0837 dropped when on oxygen');
+}
+function test_intake_engine_emptySafe() {
+  var e = intakeFilterRecommendations_({}, []);
+  _assertEq(e.standard.length + e.complex.length, 0);
+}
+function test_intake_buildPpdBody_escapesAnswers() {
+  var rows = [{ qNum: '41', label: 'Diagnoses', value: '<img src=x onerror=alert(1)>' }];
+  var html = intakeBuildPpdBodyHtml_('Jane <b>Doe</b>', rows, { standard: [], complex: [] }, null);
+  _assertFalse(html.indexOf('<img src=x onerror') >= 0, 'raw answer markup must be escaped');
+  _assertTrue(html.indexOf('&lt;img src=x') >= 0, 'answer is HTML-escaped');
+}
+function test_intake_emailDomain_extracted() {
+  _assertEq(intakeEmailDomain_('agent@umsupply.com'), 'umsupply.com');
+  _assertEq(intakeEmailDomain_('garbage'), '(none)');
 }

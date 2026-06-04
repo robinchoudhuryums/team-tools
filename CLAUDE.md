@@ -32,6 +32,26 @@ Apps Script project under its own directory, synced via `clasp`.
      Call Notes Stats tab (`managerGetShiftStats`) via a best-effort
      try/catch overlay — CDR failure never breaks existing stats.
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
+   - **Intake** — patient-intake forms ported from the bound
+     `form-generator` Apps Script (kept in `incoming/form-generator/`
+     for reference). Three tabs: **PPD** (Patient Profile &
+     recommendation — a 45-question intake that drives the clinical
+     HCPCS recommendation engine `intakeFilterRecommendations_`,
+     reading the **PMD Offerings** catalog), **PMD Account** and **PAP
+     Account** (demographics/insurance/clinical account-creation forms
+     with image attachments). Each form renders a branded email and
+     persists a PHI backup row. The unbound rewrite: the bound tool
+     used the active sheet's cells as the form; here each form is a web
+     form whose answers POST to two-stage, bodyHash-guarded
+     `intakePreview*`/`intakeSend*` endpoints (mirrors the Call Notes
+     email flow), every field `esc_`'d. PHI (patient answers) persists
+     to append-only `PPDSubmissions`/`PMDSubmissions`/`PAPSubmissions`
+     tabs in ONE Intake spreadsheet (`INTAKE_SS_ID`, which also holds
+     the read-only `Offerings` tab); the shared AuditLog row stays
+     PHI-free (`IntakeSent: submissionId + recipientDomain`). The
+     Offerings catalog is isolated behind `getIntakeOfferings_()` (the
+     `getCdrSS_()` pattern). Backs the Intake spreadsheet
+     (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -286,6 +306,33 @@ this section before touching the relevant area.
   — never `new Date()` browser-local time — so offshore reps (IST/PHT) and
   near-midnight users see the correct day's CDR data, matching how Clock /
   Time Off / Manager / Export derive dates (F6).
+- **Intake Offerings catalog is read `A2:F` in a FIXED column order.**
+  `getIntakeOfferings_()` returns the raw 2D array `[features, HCPCS,
+  weightCapacity, seatType, pdfLink, imageUrl]` and `intakeFilterRecommendations_`
+  indexes those positions directly (e.g. `row[1]` = HCPCS for substitution
+  lookups, `row[4]/row[5]` = pdf/image of the substitution target). Reordering
+  or inserting an Offerings column silently corrupts recommendations — keep the
+  A–F contract, or update the engine + the fixture catalog in the tests
+  together. The catalog is cached in-memory per execution (`_intakeOfferingsCache`).
+- **Intake email builders must `esc_` every patient field; the justification
+  is the ONE raw exception.** `intakeBuildPpdBodyHtml_` / `intakeBuildAcctBodyHtml_`
+  inject the body into the preview modal via `innerHTML` and into the sent
+  email, so every answer/label is `esc_`'d (INV-89; pinned by
+  `test_intake_buildPpdBody_escapesAnswers`). The recommendation
+  `justification` is server-generated (a fixed vocabulary + `Left`/`Right`
+  hemiplegia side) and intentionally carries inline markup (`<strong>`,
+  underline span), so it is injected raw — never put a user-supplied value into
+  a justification string. HCPCS / pdfLink / imageUrl (from the Robin-owned
+  Offerings sheet) are still `esc_`'d in attributes defensively.
+- **Intake PMD/PAP layout is duplicated client↔server — keep them equal.**
+  The server `INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT` (email rendering,
+  authoritative) and the client `INTAKE_PMD_CLIENT` / `INTAKE_PAP_CLIENT`
+  (input rendering) carry the same HEADER/CHECKBOX/SECONDARY row sets (the
+  client headers are 0-based; the server's are 1-based — they differ by +1).
+  A Node tripwire (`intake — client render layout mirrors the server`) fails CI
+  if they drift. Adding/removing a PMD/PAP question means updating BOTH the
+  question banks (client `INTAKE_*_Q`) AND both layouts. Same discipline as
+  `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_`.
 - **Call Notes Sheet enrollment — one-click auto-provision (or manual).**
   A rep has no Call Notes panel until column L (`CallNotesSheetId`) of the
   Employees roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
@@ -1731,6 +1778,28 @@ manually for a fresh deploy or environment:
   creates (or reuses) for the Metrics integration tests. Created on
   first `runAllTests`; not used in production. Documented here so it's
   recognizable when inspecting Script Properties.
+- **Set Script Property `INTAKE_SS_ID`** to the Intake spreadsheet ID
+  (the one Robin already used for the bound form-generator). `getIntakeSS_()`
+  reads it before CONFIG; without it the Intake tool fails on first form
+  preview/send. The deployer account must have **edit** access (it provisions
+  submission tabs and reads Offerings). That spreadsheet must contain:
+  (a) an **`Offerings` tab** with columns **A–F = features, HCPCS,
+  weight-capacity (`"300"` or `"300-450"`), seatType (text containing `s`
+  for solid / `c` for captain), pdfLink, imageUrl** — the PPD engine reads
+  `A2:F` via `getIntakeOfferings_()`; a column-order change silently breaks
+  recommendations. The `PPDSubmissions` / `PMDSubmissions` / `PAPSubmissions`
+  PHI tabs auto-provision on first send (`getIntakeSubmissionSheet_`).
+- **Intake recipient addresses are Script-Property-backed.**
+  `INTAKE_SALES_EMAIL` (PMD default), `INTAKE_SLEEP_EMAIL` (PAP default),
+  `INTAKE_BCC_EMAIL` (BCC on every intake email), and
+  `INTAKE_ALL_AGENTS_EMAIL` (PPD "All Agents") read Script Properties first,
+  falling back to the placeholders in `CONFIG.INTAKE`. Agent recipients are
+  resolved from the Employees roster (name→email at send via
+  `intakeResolveRecipient_`), so agent addresses never reach the client and
+  no domain is hardcoded. Set the four addresses once; no redeploy.
+- **Script Property `TEST_INTAKE_SS_ID`** (test-only). `getIntakeSS_()`
+  honors a `_TEST_OVERRIDE_INTAKE_SS_ID` global for integration tests; the
+  pure engine tests need no spreadsheet. Documented here so it's recognizable.
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
@@ -1967,6 +2036,8 @@ Client (Call Notes views):
   web-app/cn/script_callnotes.html
 Client (Metrics views):
   web-app/metrics/script_metrics.html
+Client (Intake views):
+  web-app/intake/script_intake.html
 Client (public forms):
   web-app/form_public.html
 Test Suite:
@@ -2083,6 +2154,8 @@ INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newSt
 INV-108 | `managerSaveDayRange(empId, fromDate, toDate, slots, reason)` (#4b) is manager-gated (INV-02), locked (INV-01), span-capped (≤31 days), and window-bounded (no future date; none beyond `ADJUST_WINDOW_DAYS`; reason required if the oldest date is beyond `OLD_ADJUST_ALERT_DAYS`). It applies each NON-EMPTY slot to every date in the inclusive range via `writeAdjustPunchForEmployee_` — purely ADDITIVE (set/update that punch type only), so a blank slot is left untouched and other punch types are never deleted. It must NOT reuse `managerSaveDay` (full-day reconcile deletes blank slots). The immediate employee adjust path (`recordPunch` `custom`) is gated for non-managers by the `employeeImmediateAdjust` flag (default off). Pinned by `test_managerSaveDayRange_appliesAcrossDays` + `_nonManagerRejected` + `test_recordPunch_immediateAdjustGatedByFlag` | Subsystem: Server + Client (Time Clock views)
 INV-109 | `reconcileCallNotes` (#8) is manager-gated (INV-02) and locked (INV-01). It scans every enrolled rep's `Notes` tab and, for rows with content but NO `noteId` (hand-entered directly in the Sheet), backfills a UUID `noteId` + a `Timestamp` + a yyyy-MM-dd `DateLocal` (derived from the human's values, else rep-tz now/today via `safeTimezone_`/`normalizeDate_`) so the row becomes flaggable/searchable/coverage-counted. Content columns are NEVER modified. Idempotent (a row with a `noteId` is skipped → re-run is a no-op). Per-rep Sheet failures are skipped; writes a `CallNotesReconcile` audit row. Runs both manually (Admin → "Reconcile Sheets") and as a daily manager-tz 5am trigger wired by `installAutomationTriggers`; the `isManager`-returns-`{error}` gate (not `assertManagerCaller_`) passes in a trigger context because the installer is a manager. Pinned by `test_reconcileCallNotes_backfillsHandEntered` + `_nonManagerRejected` | Subsystem: Server + Client (Call Notes views)
 INV-110 | `provisionCallNotesSheet(repEmpId)` (auto-provision) is manager-gated (INV-02) and locked (INV-01, mutates the Employees sheet). It `SpreadsheetApp.create`s a fresh per-rep Sheet owned by the deploying account (the web app runs as `USER_DEPLOYING`), renames the default sheet to the `Notes` tab + writes the canonical `CN_HEADERS` header, writes the new spreadsheet ID into `EMP.CALL_NOTES_SHEET_ID` (column L) of the rep's roster row, calls `invalidateRosterCache_()` (INV-10), and writes a `CallNotesProvision` audit row with the manager's email. **Idempotent / no-clobber:** a rep who already has a non-empty `callNotesSheetId` is returned `{success, alreadyEnrolled:true, sheetId}` unchanged — it NEVER creates a second Sheet or overwrites column L (that would orphan the rep's note history). The companion read-only `getCallNotesEnrollment` (manager-gated) returns `{enrolled[], unenrolled[]}` for the Admin enrollment panel. Pinned by `test_provisionCallNotesSheet_nonManagerRejected` + `_idempotentNoClobber` (the create branch is exercised manually to avoid littering Drive in CI) | Subsystem: Server + Client (Call Notes views)
+INV-111 | The Intake send endpoints (`intakeSendPPD`, `intakeSendPMD`, `intakeSendPAP`) require an enrolled rep (`getEmployeeInfo_`), build the email body server-side with every user field `esc_`'d (INV-89 discipline; pinned by `test_intake_buildPpdBody_escapesAnswers`), and re-render + hash-check the patient-answer body against the `expectedBodyHash` returned by the matching `intakePreview*` — rejecting the send when the form changed since preview (INV-41 pattern; selections/images ride at send and are NOT part of the hash). Patient answers persist to the append-only per-form submission tab in `INTAKE_SS_ID`; the shared AuditLog `IntakeSent` row is PHI-free (`type`, `submissionId`, recipient **domain** only — never the patient name or recipient address, same discipline as the `ExternalEmailSent` row). Recipients are resolved server-side via `intakeResolveRecipient_` (roster id→email, dept default, or validated custom), so agent addresses never reach the client | Subsystem: Server + Client (Intake views)
+INV-112 | `intakeFilterRecommendations_(answers, allProducts)` is a PURE, self-contained port of the bound tool's recommendation engine — `answers` keyed by bare question number (`'38'` weight, `'43'` neuro, `'31a'` stroke, `'34'` amputation, `'33'` ulcers, `'32'` spasticity, `'35'` spine, `'36'` swelling, `'30'` catheters, `'44'` oxygen, `'25'` numbness, `'13'` falls); `allProducts` is the raw `Offerings!A2:F` 2D array. It applies weight-cap, solid-seat/captain, Group-3/SPO/MPO eligibility, the `K0856→K0861` / `K0843→K0862` neuro substitutions, and justification building. Pinned by `test_intake_engine_*` (Tests.js) + the Node harness (`intake — PPD engine`). The PMD/PAP email STRUCTURAL layout (`INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT`, server-authoritative) is mirrored by the client render layouts (`INTAKE_PMD_CLIENT` / `INTAKE_PAP_CLIENT`) for input rendering only; the two are pinned equal by the Node coupling tripwire (`intake — client render layout mirrors the server`) — same parallel-source discipline as `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_` | Subsystem: Server + Client (Intake views)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -2580,6 +2653,25 @@ S58 | Call Notes auto-provision (one-click enrollment) | Subsystem: Server, Clie
     - Click Provision again on a rep who is ALREADY enrolled (e.g. re-run via console `provisionCallNotesSheet(id)`) → confirm `alreadyEnrolled:true` and that column L is unchanged (no second Sheet, no clobbered history)
     - As a non-manager, call `google.script.run...provisionCallNotesSheet('id')` and `...getCallNotesEnrollment()` from the console
   Expected: `provisionCallNotesSheet` is manager-gated + locked, creates the Sheet in the deployer's Drive, writes column L, invalidates the roster cache, and writes a `CallNotesProvision` audit row. Idempotent / no-clobber on an already-enrolled rep. `getCallNotesEnrollment` is manager-gated and read-only. Both non-manager console calls return "Manager access required." Pinned by `test_provisionCallNotesSheet_nonManagerRejected` + `_idempotentNoClobber` (the create branch is verified manually). See INV-110.
+
+S59 | Intake — PPD recommendation + send | Subsystem: Server, Client (Intake views)
+  Steps:
+    - As an enrolled rep, open Intake → PPD; enter a Patient Name & Trx#
+    - Fill clinical answers that should trigger an upgrade (e.g. Q43 a neuro Dx like "MS", Q38 weight 250)
+    - Click "Preview & Recommend" → confirm the modal shows the rendered email body + a recommendation panel (star + accept/undecided/reject per HCPCS)
+    - Mark one product Accepted + star it; pick an agent (or "All Agents") → Send
+    - Inspect the recipient mailbox, the `PPDSubmissions` tab, and the AuditLog
+    - Edit a form field AFTER previewing, then Send the stale preview
+  Expected: Recommendations reflect the engine (neuro → solid-seat/Group-3 upgrade, `K0856→K0861` / `K0843→K0862` substitutions, weight-cap exclusions, oxygen drops K0837). The sent email carries the marked star/badges; recipient resolves from the roster (agent) or `INTAKE_ALL_AGENTS_EMAIL`. A `PPDSubmissions` row stores the answers; the AuditLog `IntakeSent` row is PHI-free (`type=PPD; submissionId=…; recipientDomain=…`). Editing the form after preview makes the send fail with "The form changed since you previewed it" (bodyHash guard). Engine pinned by `test_intake_engine_*` + the Node harness.
+
+S60 | Intake — PMD/PAP account creation with image attach | Subsystem: Server, Client (Intake views)
+  Steps:
+    - As an enrolled rep, open Intake → PMD Account; toggle EN/ES and confirm in-progress answers survive the flip
+    - Fill the demographics/insurance/clinical fields (incl. a checkbox row and, on PAP, a Yes/No conditional select)
+    - Preview → confirm the rendered email matches; drag/drop or paste an image into the modal → confirm the thumbnail gallery
+    - Pick "Default" (sales for PMD / sleep for PAP), a roster agent, or a custom email → Send
+    - Inspect the recipient mailbox (inline image present), the submissions tab, and AuditLog
+  Expected: Checkbox rows render a check/box, conditional-select answers get their tonal coloring in the email (server `INTAKE_*_LAYOUT`). Images ride inline (base64→CID, capped at 12). Default recipient = `INTAKE_SALES_EMAIL`/`INTAKE_SLEEP_EMAIL`; custom email is validated server-side. A submissions row stores the answers + image count; the AuditLog `IntakeSent` row is PHI-free. Client render layout is pinned equal to the server layout by the Node coupling tripwire (INV-112).
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
