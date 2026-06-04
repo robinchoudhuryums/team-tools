@@ -894,6 +894,10 @@ function openAdjustModal() {
   ADJ_BATCH = [];
   adjRenderBatch_();
   adjLoadPending_();
+  // "Apply now" (immediate fix) shows only when the employeeImmediateAdjust
+  // flag is on; the server enforces the same gate (recordPunch).
+  const applyBtn = document.getElementById('adj-apply-now');
+  if (applyBtn) applyBtn.style.display = flagOn_('employeeImmediateAdjust') ? '' : 'none';
   document.getElementById('adjust-overlay').classList.add('open');
 }
 
@@ -941,6 +945,15 @@ document.getElementById('adj-add').addEventListener('click', () => {
   // Keep date + type, clear time + reason for the next entry.
   document.getElementById('adj-time').value = '';
   document.getElementById('adj-reason').value = '';
+});
+
+// "Apply now" — immediate single fix (employeeImmediateAdjust flag on). Uses
+// the legacy recordPunch(custom) path; the server re-checks the flag.
+document.getElementById('adj-apply-now').addEventListener('click', () => {
+  const entry = adjReadEntry_();
+  if (!entry) return;
+  document.getElementById('adjust-overlay').classList.remove('open');
+  submitPunch(entry.punchType, { date: entry.date, time: entry.time, reason: entry.reason });
 });
 
 document.getElementById('adj-submit').addEventListener('click', () => {

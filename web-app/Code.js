@@ -517,6 +517,15 @@ function recordPunch(punchType, custom) {
     let daysBack = 0;
     let reason   = '';
     if (isAdj) {
+      // Employee immediate-fix is gated by the employeeImmediateAdjust flag
+      // (#4a/#4b toggle). When off, non-managers must route adjustments through
+      // the approval queue (submitPunchAdjustRequests). Managers self-adjusting
+      // via this path are always allowed (they're trusted; they also have Day
+      // Edit). Server-enforced so hiding the "Apply now" button can't be bypassed.
+      if (!emp.isManager && !getFlag_('employeeImmediateAdjust')) {
+        return { success: false, error:
+          'Immediate punch adjustments are turned off — submit an adjustment request for manager approval instead.' };
+      }
       daysBack = daysBetween_(date, todayStr);
       if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) {
         return { success: false,
@@ -6503,6 +6512,9 @@ const FEATURE_FLAGS = [
   { key: 'oopSalesTax', label: 'OOP sales-tax calculator',
     description: 'Show the state sales-tax field + tax line in the OOP Order subform.',
     default: true, scope: 'client' },
+  { key: 'employeeImmediateAdjust', label: 'Employee immediate punch fix',
+    description: 'Let employees apply punch adjustments instantly (an "Apply now" button alongside the approval-request flow). Off = all employee adjustments require manager approval (#4a).',
+    default: false, scope: 'both' },
 ];
 
 function featureFlagDef_(key) {
@@ -7052,6 +7064,68 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
     'approved adjustment request' + (reason ? ' — ' + reason : ''), actorEmail);
 }
 
+/** #4b — manager multi-day adjust. Applies the given punch times to EVERY date
+ *  in [fromDate, toDate] for one rep, ADDITIVELY: each non-empty slot is
+ *  set/updated for that day via writeAdjustPunchForEmployee_ (touches only that
+ *  punch type). Unlike managerSaveDay (a single-day full reconcile), this never
+ *  deletes unspecified punch types — a blank slot leaves that punch untouched
+ *  across the range. Manager-gated, locked, window-bounded, span capped at 31. */
+function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!targetEmpId) return { success: false, error: 'No employee specified.' };
+    if (!fromDate || !/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !toDate || !/^\d{4}-\d{2}-\d{2}$/.test(toDate))
+      return { success: false, error: 'Invalid date range (expected yyyy-MM-dd).' };
+    if (fromDate > toDate) return { success: false, error: 'From date must be on or before To date.' };
+    const targetEmp = lookupEmployeeById_(targetEmpId);
+    if (!targetEmp) return { success: false, error: 'Employee not found.' };
+
+    const cleanSlots = {};
+    let anyTime = false;
+    for (let k = 0; k < PUNCH_LABELS_.length; k++) {
+      const type = PUNCH_LABELS_[k];
+      const raw = String((slots && slots[type]) || '').trim();
+      if (raw && !/^([01]\d|2[0-3]):[0-5]\d$/.test(raw))
+        return { success: false, error: `Invalid time for ${type}: "${raw}" (expected HH:mm, 24-hour)` };
+      cleanSlots[type] = raw;
+      if (raw) anyTime = true;
+    }
+    if (!anyTime) return { success: false, error: 'Enter at least one punch time to apply across the range.' };
+
+    const dates = [];
+    let d = fromDate;
+    while (d <= toDate && dates.length <= 366) { dates.push(d); d = addDaysIso_(d, 1); }
+    if (dates.length > 31) return { success: false, error: 'Range too large (max 31 days).' };
+
+    const empTz = empTz_(targetEmp);
+    const todayStr = fmtDateTz_(new Date(), empTz);
+    for (let i = 0; i < dates.length; i++) {
+      const db = daysBetween_(dates[i], todayStr);
+      if (db < 0) return { success: false, error: 'Range includes a future date.' };
+      if (db > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: `Range includes dates older than the ${CONFIG.ADJUST_WINDOW_DAYS}-day adjust window.` };
+    }
+    const trimmedReason = String(reason || '').trim();
+    if (daysBetween_(dates[0], todayStr) > CONFIG.OLD_ADJUST_ALERT_DAYS && !trimmedReason) {
+      return { success: false, error: `A reason is required when the range goes more than ${CONFIG.OLD_ADJUST_ALERT_DAYS} days back.` };
+    }
+
+    let punchesWritten = 0;
+    dates.forEach(function (date) {
+      PUNCH_LABELS_.forEach(function (type) {
+        const t = cleanSlots[type];
+        if (!t) return;
+        writeAdjustPunchForEmployee_(targetEmp, date, type, t, callerEmp.email, trimmedReason || 'multi-day edit');
+        punchesWritten++;
+      });
+    });
+    return { success: true, daysTouched: dates.length, punchesWritten: punchesWritten };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 function getOrCreateAuditSheet_() {
   const ss = getAdpSS_();
   let sheet = ss.getSheetByName(CONFIG.AUDIT_TAB);
@@ -7200,6 +7274,12 @@ function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
 function timeToMins_(t) { const p = String(t).split(':'); return parseInt(p[0],10)*60 + parseInt(p[1],10); }
 function daysBetween_(earlierIso, laterIso) {
   return Math.round((new Date(laterIso+'T00:00:00Z') - new Date(earlierIso+'T00:00:00Z')) / 86400000);
+}
+/** Advance a yyyy-MM-dd string by n days (UTC math → no tz drift). */
+function addDaysIso_(iso, n) {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
 }
 function normalizeType_(rawComment) { return String(rawComment).replace(/^ADJ-/, ''); }
 

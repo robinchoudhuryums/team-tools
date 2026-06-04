@@ -776,6 +776,9 @@ function openDayEditModal(empId, empName) {
   document.getElementById('de-lunchin').value = '';
   document.getElementById('de-clockout').value = '';
   document.getElementById('de-reason').value = '';
+  // #4b — multi-day "To" picker shares the From picker's bounds; cleared on open.
+  var deToEl = document.getElementById('de-date-to');
+  if (deToEl) { deToEl.value = ''; deToEl.min = deDateEl.min; deToEl.max = today; }
   document.getElementById('day-edit-overlay').classList.add('open');
   loadDayEditPunches(empId, today, today);
 }
@@ -823,25 +826,34 @@ document.getElementById('de-save').addEventListener('click', function () {
     ClockOut: document.getElementById('de-clockout').value || '',
   };
   var reason = document.getElementById('de-reason').value.trim();
+  var toDate = (document.getElementById('de-date-to') || {}).value || '';
+  var rangeMode = toDate && toDate > _deDate;   // #4b — multi-day additive apply
   var btn = document.getElementById('de-save');
   btn.disabled = true;
   btn.textContent = 'Saving…';
-  google.script.run
-    .withSuccessHandler(function (result) {
-      btn.disabled = false;
-      btn.textContent = 'Save Changes';
-      if (!result.success) { showToast((result.error || 'Error'), 'toast-error'); return; }
-      document.getElementById('day-edit-overlay').classList.remove('open');
-      showToast(result.changes > 0 ? result.summary : 'No changes needed', 'toast-success');
-      renderLoading(document.getElementById('view-area'), 'Refreshing…');
-      loadManagerDashboard();
-    })
-    .withFailureHandler(function (err) {
-      btn.disabled = false;
-      btn.textContent = 'Save Changes';
-      showToast((err.message || 'Server error'), 'toast-error');
-    })
-    .managerSaveDay(_deEmpId, _deDate, slots, reason);
+  var onOk = function (result) {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+    if (!result.success) { showToast((result.error || 'Error'), 'toast-error'); return; }
+    document.getElementById('day-edit-overlay').classList.remove('open');
+    showToast(rangeMode
+      ? ('Applied ' + (result.punchesWritten || 0) + ' punch(es) across ' + (result.daysTouched || 0) + ' day(s)')
+      : (result.changes > 0 ? result.summary : 'No changes needed'), 'toast-success');
+    renderLoading(document.getElementById('view-area'), 'Refreshing…');
+    loadManagerDashboard();
+  };
+  var onErr = function (err) {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+    showToast((err.message || 'Server error'), 'toast-error');
+  };
+  if (rangeMode) {
+    google.script.run.withSuccessHandler(onOk).withFailureHandler(onErr)
+      .managerSaveDayRange(_deEmpId, _deDate, toDate, slots, reason);
+  } else {
+    google.script.run.withSuccessHandler(onOk).withFailureHandler(onErr)
+      .managerSaveDay(_deEmpId, _deDate, slots, reason);
+  }
 });
 
 /** 7-bar daily-hours sparkline inside each live-status card (V4·E3).

@@ -723,11 +723,14 @@ this section before touching the relevant area.
   flow (#4a)** — the employee Adjust modal batches one or more requested
   corrections and submits them via `submitPunchAdjustRequests` (no punch
   is written); a manager approves from the dashboard, which writes the
-  `ADJ-*` punch via `writeAdjustPunchForEmployee_`. (The immediate
-  employee-writes-`ADJ-` path was replaced by this request/approval queue;
-  `recordPunch`'s `custom` branch still exists server-side but is no longer
-  called from the employee client.) The intent: keep the audit trail honest
-  while putting older corrections under manager review.
+  `ADJ-*` punch via `writeAdjustPunchForEmployee_`. The immediate
+  employee-writes-`ADJ-` path is gated behind the `employeeImmediateAdjust`
+  feature flag (default off): when ON, the Adjust modal also shows an
+  "Apply now" button that uses the legacy `recordPunch(custom)` path for an
+  immediate single fix — server-enforced by the same flag (a non-manager is
+  rejected with a "submit a request" message when it's off), so hiding the
+  button can't be bypassed. The intent: keep the audit trail honest while
+  putting older corrections under manager review by default.
 - **Punch-adjustment requests are a TimeOffRequests-style queue (#4a).**
   `PunchAdjustRequests` sheet tab (auto-created), enum `PAR`, keyed by a
   UUID `ReqId`. `submitPunchAdjustRequests(requests[])` is caller-scoped,
@@ -936,7 +939,14 @@ this section before touching the relevant area.
   `getEmployeeTimesheetForManager`, and submits via `managerSaveDay`.
   The manager can add, edit, or remove individual punch slots and
   must provide a reason for edits older than
-  `CONFIG.OLD_ADJUST_ALERT_DAYS`.
+  `CONFIG.OLD_ADJUST_ALERT_DAYS`. **Multi-day mode (#4b):** filling the
+  optional "To" date switches the submit to `managerSaveDayRange`, which
+  applies the entered times to every day in `[From, To]` (≤31 days)
+  ADDITIVELY — each non-empty slot is set/updated per day via
+  `writeAdjustPunchForEmployee_`, and a BLANK slot is left unchanged (NOT
+  removed). This deliberately differs from single-day mode (`managerSaveDay`,
+  a full-day reconcile where a blank field deletes that punch), so a range
+  apply can't silently wipe lunches on days it touches. See INV-108.
 - **Personal pin is per-rep, capped at 3, stored in `subformData`.**
   Rep toggles the pin via the bookmark icon on a card. State lives in
   `subformData.pinned` + `subformData.pinnedAt` — no schema migration.
@@ -1028,7 +1038,10 @@ this section before touching the relevant area.
   set is `showTeammateStatus` / `showTeammateType` /
   `enablePtoTracking` (all `both`) / `voiceInput` (`client`); the first
   custom flag is `oopSalesTax` (`client`, gates the OOP subform's
-  sales-tax field + the email's tax line). `getFeatureFlags` /
+  sales-tax field + the email's tax line); `employeeImmediateAdjust`
+  (`both`, default off) gates the employee "Apply now" immediate punch fix
+  alongside the #4a approval queue — server-enforced in `recordPunch`'s
+  adjustment path so hiding the button can't be bypassed. `getFeatureFlags` /
   `saveFeatureFlags` are manager-gated (INV-57 family, `AdminConfigChange`
   audit). **Flip semantics:** flags are consulted at request boundaries,
   never mid-transaction (a flip can't interrupt an in-flight locked
@@ -2010,6 +2023,7 @@ INV-104 | `purgeOldCallNotes` (item 7) is a top-level trigger handler reachable 
 INV-105 | Automated notification emails route their HTML through `buildBrandedEmailHtml_(heading, bodyHtml, opts)` (item 2), which `esc_`'s the heading; callers MUST `esc_` any user data placed in `bodyHtml` (same INV-89 discipline), and `brandedKvRows_` `esc_`'s both label and value. Converted senders keep a plain-text `body` fallback alongside `htmlBody`: `notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts` (employee + manager digest), `notifyManagerOldAdjustment_`, `notifyManagerTrainingQuestion_`. `sendAutomatedExport_` remains plain-text (carries attachments) — a known follow-on | Subsystem: Server
 INV-106 | `submitPunchAdjustRequests(requests[])` (#4a) is caller-scoped + locked and writes only Pending rows (no punch). It is ATOMIC — every entry is validated (date `^\d{4}-\d{2}-\d{2}$`, time `^([01]\d|2[0-3]):[0-5]\d$`, `punchType ∈ PUNCH_LABELS_`, not future, ≤ `ADJUST_WINDOW_DAYS`, reason required beyond `OLD_ADJUST_ALERT_DAYS`) and the WHOLE batch is rejected if any entry fails (max 20). Each Pending row gets a UUID `ReqId`. Writes a `PunchAdjustRequest` audit row. Pinned by `test_punchAdjust_batchInvalidRejected` | Subsystem: Server
 INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newStatus)` (#4a) are manager-gated (INV-02); the latter is locked (INV-01) and transition-guarded (acts only on a `Pending` row). Approve writes the single `ADJ-{punchType}` punch for the TARGET employee via `writeAdjustPunchForEmployee_` (find-existing-of-that-type-for-date → update, else append; + `writeToEmployeeSheet_` personal-sheet mirror; `ADJ-` convention INV-09; `normalizeTime_` reads INV-26) and an `ADJ-` audit row with the manager as actor — it must NEVER reuse `managerSaveDay` (full-day reconcile would delete other punch types). Deny marks `Denied` + writes a `PunchAdjustStatusChange` audit row, no punch. Pinned by `test_punchAdjust_submitApproveWritesPunch` + `_nonManagerRejected` | Subsystem: Server + Client (Time Clock views)
+INV-108 | `managerSaveDayRange(empId, fromDate, toDate, slots, reason)` (#4b) is manager-gated (INV-02), locked (INV-01), span-capped (≤31 days), and window-bounded (no future date; none beyond `ADJUST_WINDOW_DAYS`; reason required if the oldest date is beyond `OLD_ADJUST_ALERT_DAYS`). It applies each NON-EMPTY slot to every date in the inclusive range via `writeAdjustPunchForEmployee_` — purely ADDITIVE (set/update that punch type only), so a blank slot is left untouched and other punch types are never deleted. It must NOT reuse `managerSaveDay` (full-day reconcile deletes blank slots). The immediate employee adjust path (`recordPunch` `custom`) is gated for non-managers by the `employeeImmediateAdjust` flag (default off). Pinned by `test_managerSaveDayRange_appliesAcrossDays` + `_nonManagerRejected` + `test_recordPunch_immediateAdjustGatedByFlag` | Subsystem: Server + Client (Time Clock views)
 
 ### Policy Configuration
 Policy threshold: 4/10

@@ -613,6 +613,9 @@ function _runAllTests() {
   _integrationTest('punchAdjust_submitApproveWritesPunch',     test_punchAdjust_submitApproveWritesPunch);
   _integrationTest('punchAdjust_batchInvalidRejected',         test_punchAdjust_batchInvalidRejected);
   _integrationTest('punchAdjust_nonManagerRejected',           test_punchAdjust_nonManagerRejected);
+  _integrationTest('recordPunch_immediateAdjustGatedByFlag',   test_recordPunch_immediateAdjustGatedByFlag);
+  _integrationTest('managerSaveDayRange_appliesAcrossDays',    test_managerSaveDayRange_appliesAcrossDays);
+  _integrationTest('managerSaveDayRange_nonManagerRejected',   test_managerSaveDayRange_nonManagerRejected);
   _integrationTest('recordPunch_minIntervalAllowsAdjustment',  test_recordPunch_minIntervalAllowsAdjustment);
 
   _integrationTest('selfDeletePunch_withinWindow',             test_selfDeletePunch_withinWindow);
@@ -1228,6 +1231,54 @@ function test_punchAdjust_nonManagerRejected() {
     _assertContains(r.error, 'Manager access required');
     const q = managerGetPendingAdjustments();
     _assertNotNull(q.error, 'non-manager cannot read the queue');
+  });
+}
+
+// Toggle — employee immediate adjust is server-gated by employeeImmediateAdjust.
+function test_recordPunch_immediateAdjustGatedByFlag() {
+  _clearTestState(_TEST_PH_ID);
+  const props = PropertiesService.getScriptProperties();
+  const saved = props.getProperty('CN_FEATURE_FLAGS');
+  try {
+    props.deleteProperty('CN_FEATURE_FLAGS');   // flag off (default)
+    let r1;
+    _asUser(_TEST_PH_EMAIL, () => { r1 = recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '09:00', reason: '' }); });
+    _assertEq(r1.success, false, 'immediate adjust blocked when flag off');
+    _assertContains(r1.error, 'turned off');
+    props.setProperty('CN_FEATURE_FLAGS', JSON.stringify({ employeeImmediateAdjust: true }));
+    let r2;
+    _asUser(_TEST_PH_EMAIL, () => { r2 = recordPunch('ClockOut', { date: _TEST_DATE_RECENT, time: '17:00', reason: '' }); });
+    _assertSuccess(r2);
+  } finally {
+    if (saved == null) props.deleteProperty('CN_FEATURE_FLAGS');
+    else props.setProperty('CN_FEATURE_FLAGS', saved);
+  }
+}
+
+// #4b — manager multi-day adjust applies the slot times additively across the
+// whole range (one punch per day here).
+function test_managerSaveDayRange_appliesAcrossDays() {
+  _clearTestState(_TEST_PH_ID);
+  const isoCt = function (offsetDays) {
+    return Utilities.formatDate(new Date(Date.now() + offsetDays * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  };
+  const from = isoCt(-2), to = isoCt(0);
+  let res;
+  _asUser(_TEST_MGR_EMAIL, () => {
+    res = managerSaveDayRange(_TEST_PH_ID, from, to, { ClockIn: '09:00', LunchOut: '', LunchIn: '', ClockOut: '' }, 'range test');
+  });
+  _assertSuccess(res);
+  _assertEq(res.daysTouched, 3, 'three days in the inclusive range');
+  _assertEq(res.punchesWritten, 3, 'one punch written per day');
+  _assertNotNull(findExistingPunch_(_TEST_PH_ID, from, 'ClockIn'), 'ClockIn written on the from-date');
+  _assertNotNull(findExistingPunch_(_TEST_PH_ID, to, 'ClockIn'), 'ClockIn written on the to-date');
+}
+
+function test_managerSaveDayRange_nonManagerRejected() {
+  _asUser(_TEST_PH_EMAIL, () => {
+    const r = managerSaveDayRange(_TEST_PH_ID, '2099-01-01', '2099-01-02', { ClockIn: '09:00' }, '');
+    _assertEq(r.success, false, 'non-manager rejected');
+    _assertContains(r.error, 'Manager access required');
   });
 }
 
