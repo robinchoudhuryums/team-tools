@@ -5630,6 +5630,8 @@ function installAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'purgeOldCallNotes',
+    'reconcileCallNotes',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -5669,6 +5671,13 @@ function installAutomationTriggers() {
   // destructive purges don't overlap.
   ScriptApp.newTrigger('purgeOldCallNotes')
     .timeBased().atHour(4).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Two-way Sheets reconcile (item 8) — back-fills NoteId/Timestamp/DateLocal on
+  // rows added directly in a rep's Sheet outside the app. Non-destructive (never
+  // touches content cells) + idempotent (skips rows already stamped), so the
+  // daily run is harmless. Staggered to 5am, after the purges.
+  ScriptApp.newTrigger('reconcileCallNotes')
+    .timeBased().atHour(5).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -5710,6 +5719,8 @@ function removeAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'purgeOldCallNotes',
+    'reconcileCallNotes',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -5890,6 +5901,10 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         to: recipients.join(','),
         subject: `${subjectPrefix}: ${result.error}`,
         body: `No export generated for ${range.start} to ${range.end}.\nReason: ${result.error}`,
+        htmlBody: buildBrandedEmailHtml_('No export generated',
+          '<p style="margin:0 0 12px;">No export was generated for <b>' + esc_(range.start) + '</b> to <b>' + esc_(range.end) + '</b>.</p>' +
+          brandedKvRows_([['Reason', result.error]]),
+          { accent: CN_EMAIL_PALETTE.warn }),
       });
       writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'AdpExportAuto', rangeLabel, '', false, 0,
         `${payCycleFilter} skipped — ${result.error}`);
@@ -5909,6 +5924,14 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         `Rows:       ${result.rowCount}\n\n` +
         `Also accessible as a Google Sheet:\n${result.url}\n\n` +
         `— UMS Time Clock (automated)`,
+      htmlBody: buildBrandedEmailHtml_('ADP export ready',
+        '<p style="margin:0 0 12px;">Attached: ADP-format export covering <b>' + esc_(range.start) + '</b> to <b>' + esc_(range.end) + '</b> (.xlsx).</p>' +
+        brandedKvRows_([
+          ['Employees', result.employeeCount + ' (' + payCycleFilter + ')'],
+          ['Rows', String(result.rowCount)],
+        ]) +
+        '<p style="margin:14px 0 0;"><a href="' + esc_(result.url) + '" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open as a Google Sheet →</a></p>',
+        { accent: CN_EMAIL_PALETTE.brand }),
       attachments: [blob],
     });
     Logger.log(`Automated ${payCycleFilter} export sent: ${result.rowCount} rows.`);
@@ -5924,6 +5947,14 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         subject: `❌ ${subjectPrefix} FAILED`,
         body: `Automated export failed: ${err.message}\n\nRange: ${range.start} to ${range.end}\n\n` +
               `Please run the export manually from the Manage tab in the UMS Time Clock app.`,
+        htmlBody: buildBrandedEmailHtml_('Automated export failed',
+          '<p style="margin:0 0 12px;">The automated export did not complete.</p>' +
+          brandedKvRows_([
+            ['Error', err.message],
+            ['Range', range.start + ' to ' + range.end],
+          ]) +
+          '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please run the export manually from the Manage tab in the UMS Time Clock app.</p>',
+          { accent: CN_EMAIL_PALETTE.danger }),
       });
     } catch (e) {}
   }

@@ -882,9 +882,13 @@ this section before touching the relevant area.
   **content cells are never touched**. Idempotent: a row with a `noteId` is
   skipped, so re-running is a no-op. Writes a `CallNotesReconcile` audit row.
   Metrics/CDR is already Sheet-sourced and independent, so the dashboard's
-  metrics half needs no reconcile. Manual (button) today; a daily trigger is
-  an easy add (the function works in a trigger context too) — kept manual to
-  avoid a daily cross-rep Sheet scan no one asked for. See INV-109.
+  metrics half needs no reconcile. Runs BOTH ways now: the Admin → "Reconcile
+  Sheets" button (manual) AND a daily manager-tz 5am trigger wired by
+  `installAutomationTriggers` (the function works unchanged in a trigger
+  context — the installer is a manager so the `isManager` gate passes). The
+  daily scan is cheap relative to the destructive purges that already run
+  nightly, and non-destructive + idempotent so an empty run is a harmless
+  no-op. See INV-109.
 - **Two-stage email is the safety mechanism.** Submit logs only,
   zero risk of accidental send. The envelope icon on each note card
   is the only way to compose; that opens the form modal, which
@@ -1012,11 +1016,14 @@ this section before touching the relevant area.
   Clock automated emails the same identity as the Call Notes / external /
   form emails. Converted (each keeps a plain-text `body` fallback +
   `htmlBody`): PTO decision, missed-punch (employee + manager digest),
-  old-adjustment alert, training-question notification. The header color
-  is semantic (Approved = green, Denied = red, alerts = warn-amber, else
-  navy). `heading` is `esc_`'d in the wrapper; callers `esc_` any user data
-  in `bodyHtml` (INV-89/INV-105). `sendAutomatedExport_` stays plain-text
-  (carries attachments) — a known follow-on.
+  old-adjustment alert, training-question notification, and
+  `sendAutomatedExport_` (all three branches: error / success / catch). The
+  header color is semantic (Approved = green, Denied = red, alerts =
+  warn-amber, else navy). `heading` is `esc_`'d in the wrapper; callers
+  `esc_` any user data in `bodyHtml` (INV-89/INV-105). `sendAutomatedExport_`'s
+  success email keeps its `.xlsx` `attachments: [blob]` alongside the branded
+  `htmlBody` — every automated sender is now branded (the prior plain-text
+  follow-on is closed).
 - **Email body restored to the UMS legacy aesthetic.** Call-note
   emails sent from the new web app now match the prior
   `closeOrderEmail.js` / `updateOrderEmail.js` identity: UMS logo bar
@@ -1721,7 +1728,7 @@ manually for a fresh deploy or environment:
   need it set manually.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
-  installer now wires seven triggers:
+  installer now wires eight triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm)
     - `sendCallNotesEodDigest` (call-notes, hourly — emails each rep at their local EOD hour)
@@ -1729,7 +1736,10 @@ manually for a fresh deploy or environment:
     - `sendCallNotesUrgentDigest` (call-notes, daily manager-tz 8am — recent urgent-flagged notes; sends nothing when none)
     - `purgeExpiredFormData` (forms, daily manager-tz 3am — no-ops while retention is disabled)
     - `purgeOldCallNotes` (call-notes, daily manager-tz 4am — no-ops while note retention is disabled)
-  Triggers do not survive an Apps Script project re-clone. After
+    - `reconcileCallNotes` (call-notes, daily manager-tz 5am — two-way Sheets back-fill of NoteId/Timestamp/DateLocal on rows added directly in a rep's Sheet; non-destructive + idempotent, so it's harmless to run daily)
+  The install + remove TARGETS arrays both list all eight, so re-running
+  install dedupes cleanly (a missing entry would silently duplicate that
+  trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
   reminder about the cross-account trigger-ownership pitfall: Apps
   Script's `ScriptApp.getProjectTriggers()` only returns triggers
@@ -2036,11 +2046,11 @@ INV-101 | `notifyRepOfFailedSubmission_` (B2) is best-effort (try/catch, INV-14)
 INV-102 | `fixPtoReconciliation(empId)` is manager-gated (INV-02) and locked (INV-01) — the mutating companion to the read-only `getPtoReconciliation` (INV-99). Per date with >1 Approved row it keeps the single largest deduction and sets the extra Approved rows' status to `'Reconciled'` (every status reader — dashboard counts, calendar, the reconciliation scan, the INV-94 dup-guard — treats `'Reconciled'` as non-Approved), then credits the SERVER-recomputed over-charge back to the balances via `adjustLeaveBalance_` (positive delta; never trusts a client amount). Idempotent by construction: the neutralized rows are no longer `'Approved'`, so a re-run finds no duplicates and credits nothing (returns `fixed:false`). Writes a `PtoReconciliationFix` audit row with the manager's email. Pinned by `test_fixPtoReconciliation_creditsAndIdempotent` + `_nonManagerRejected` | Subsystem: Server
 INV-103 | `setCallNoteManagerComment(repEmpId, noteId, message)` (item 9) is manager-gated (INV-02) and locked (INV-01). It appends a `{role:'manager', kind:'comment', message, at, by}` entry to `subformData.feedback[]` on ANY of the rep's notes — not just training-flagged — reusing the Q&A thread (`cnRenderQAThread_`, now rendered for any note with a thread). Writes a PHI-free `CallNoteManagerComment` audit row (noteId only). `appendCallNoteFeedback` was relaxed so the rep can ack/clarify on any note that already has a feedback[] thread (training-flagged OR manager-commented), not training-only | Subsystem: Server + Client (Call Notes views)
 INV-104 | `purgeOldCallNotes` (item 7) is a top-level trigger handler reachable via google.script.run, so it calls `assertManagerCaller_` (INV-44 family) and is locked (INV-01). It deletes per-rep `Notes` rows older than `CN_NOTE_RETENTION_DAYS` (Script Property → `CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS`, default 0 = disabled; irreversible PHI delete). Cross-rep; per-rep Sheet failures are skipped; writes a PHI-free `CallNotesPurge` audit row. The note date is read from `CN.DATE_LOCAL` via `parseRetentionDateMs_` (handles the Sheets Date coercion). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` | Subsystem: Server
-INV-105 | Automated notification emails route their HTML through `buildBrandedEmailHtml_(heading, bodyHtml, opts)` (item 2), which `esc_`'s the heading; callers MUST `esc_` any user data placed in `bodyHtml` (same INV-89 discipline), and `brandedKvRows_` `esc_`'s both label and value. Converted senders keep a plain-text `body` fallback alongside `htmlBody`: `notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts` (employee + manager digest), `notifyManagerOldAdjustment_`, `notifyManagerTrainingQuestion_`. `sendAutomatedExport_` remains plain-text (carries attachments) — a known follow-on | Subsystem: Server
+INV-105 | Automated notification emails route their HTML through `buildBrandedEmailHtml_(heading, bodyHtml, opts)` (item 2), which `esc_`'s the heading; callers MUST `esc_` any user data placed in `bodyHtml` (same INV-89 discipline), and `brandedKvRows_` `esc_`'s both label and value. Converted senders keep a plain-text `body` fallback alongside `htmlBody`: `notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts` (employee + manager digest), `notifyManagerOldAdjustment_`, `notifyManagerTrainingQuestion_`, and `sendAutomatedExport_` (all three branches — error / success-with-attachment / catch). `sendAutomatedExport_` keeps its `.xlsx` `attachments: [blob]` on the success email alongside the new `htmlBody` + plain `body` | Subsystem: Server
 INV-106 | `submitPunchAdjustRequests(requests[])` (#4a) is caller-scoped + locked and writes only Pending rows (no punch). It is ATOMIC — every entry is validated (date `^\d{4}-\d{2}-\d{2}$`, time `^([01]\d|2[0-3]):[0-5]\d$`, `punchType ∈ PUNCH_LABELS_`, not future, ≤ `ADJUST_WINDOW_DAYS`, reason required beyond `OLD_ADJUST_ALERT_DAYS`) and the WHOLE batch is rejected if any entry fails (max 20). Each Pending row gets a UUID `ReqId`. Writes a `PunchAdjustRequest` audit row. Pinned by `test_punchAdjust_batchInvalidRejected` | Subsystem: Server
 INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newStatus)` (#4a) are manager-gated (INV-02); the latter is locked (INV-01) and transition-guarded (acts only on a `Pending` row). Approve writes the single `ADJ-{punchType}` punch for the TARGET employee via `writeAdjustPunchForEmployee_` (find-existing-of-that-type-for-date → update, else append; + `writeToEmployeeSheet_` personal-sheet mirror; `ADJ-` convention INV-09; `normalizeTime_` reads INV-26) and an `ADJ-` audit row with the manager as actor — it must NEVER reuse `managerSaveDay` (full-day reconcile would delete other punch types). Deny marks `Denied` + writes a `PunchAdjustStatusChange` audit row, no punch. Pinned by `test_punchAdjust_submitApproveWritesPunch` + `_nonManagerRejected` | Subsystem: Server + Client (Time Clock views)
 INV-108 | `managerSaveDayRange(empId, fromDate, toDate, slots, reason)` (#4b) is manager-gated (INV-02), locked (INV-01), span-capped (≤31 days), and window-bounded (no future date; none beyond `ADJUST_WINDOW_DAYS`; reason required if the oldest date is beyond `OLD_ADJUST_ALERT_DAYS`). It applies each NON-EMPTY slot to every date in the inclusive range via `writeAdjustPunchForEmployee_` — purely ADDITIVE (set/update that punch type only), so a blank slot is left untouched and other punch types are never deleted. It must NOT reuse `managerSaveDay` (full-day reconcile deletes blank slots). The immediate employee adjust path (`recordPunch` `custom`) is gated for non-managers by the `employeeImmediateAdjust` flag (default off). Pinned by `test_managerSaveDayRange_appliesAcrossDays` + `_nonManagerRejected` + `test_recordPunch_immediateAdjustGatedByFlag` | Subsystem: Server + Client (Time Clock views)
-INV-109 | `reconcileCallNotes` (#8) is manager-gated (INV-02) and locked (INV-01). It scans every enrolled rep's `Notes` tab and, for rows with content but NO `noteId` (hand-entered directly in the Sheet), backfills a UUID `noteId` + a `Timestamp` + a yyyy-MM-dd `DateLocal` (derived from the human's values, else rep-tz now/today via `safeTimezone_`/`normalizeDate_`) so the row becomes flaggable/searchable/coverage-counted. Content columns are NEVER modified. Idempotent (a row with a `noteId` is skipped → re-run is a no-op). Per-rep Sheet failures are skipped; writes a `CallNotesReconcile` audit row. Pinned by `test_reconcileCallNotes_backfillsHandEntered` + `_nonManagerRejected` | Subsystem: Server + Client (Call Notes views)
+INV-109 | `reconcileCallNotes` (#8) is manager-gated (INV-02) and locked (INV-01). It scans every enrolled rep's `Notes` tab and, for rows with content but NO `noteId` (hand-entered directly in the Sheet), backfills a UUID `noteId` + a `Timestamp` + a yyyy-MM-dd `DateLocal` (derived from the human's values, else rep-tz now/today via `safeTimezone_`/`normalizeDate_`) so the row becomes flaggable/searchable/coverage-counted. Content columns are NEVER modified. Idempotent (a row with a `noteId` is skipped → re-run is a no-op). Per-rep Sheet failures are skipped; writes a `CallNotesReconcile` audit row. Runs both manually (Admin → "Reconcile Sheets") and as a daily manager-tz 5am trigger wired by `installAutomationTriggers`; the `isManager`-returns-`{error}` gate (not `assertManagerCaller_`) passes in a trigger context because the installer is a manager. Pinned by `test_reconcileCallNotes_backfillsHandEntered` + `_nonManagerRejected` | Subsystem: Server + Client (Call Notes views)
 
 ### Policy Configuration
 Policy threshold: 4/10
