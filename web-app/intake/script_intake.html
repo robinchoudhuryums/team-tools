@@ -1,0 +1,668 @@
+<style>
+  /* ── Intake tool (PPD + PMD/PAP account creation) ────────────────────── */
+  .intk-wrap { max-width: 920px; margin: 0 auto; }
+  .intk-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .intk-bar .grow { flex: 1; }
+  .intk-lang { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .intk-lang button { background: var(--paper-2); border: none; padding: 6px 12px; cursor: pointer; font: inherit; color: var(--muted); }
+  .intk-lang button.on { background: var(--accent); color: #fff; }
+  .intk-patient { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+  .intk-patient label { font-size: .8rem; color: var(--muted); font-weight: 600; }
+  .intk-patient input { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--paper-card); color: var(--ink); }
+  .intk-grid { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--paper-card); }
+  .intk-head { background: var(--brand, #223b5d); color: #fff; padding: 9px 14px; font-weight: 700; font-size: .9rem; }
+  .intk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 8px 14px; align-items: center; border-top: 1px solid var(--line); }
+  .intk-row:first-child { border-top: none; }
+  .intk-row .q { font-size: .88rem; color: var(--ink); font-weight: 600; }
+  .intk-row.secondary .q { font-weight: 400; font-style: italic; color: var(--muted); padding-left: 18px; }
+  .intk-row input[type=text], .intk-row select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; font: inherit; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
+  .intk-row .ck { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--muted); }
+  .intk-actions { display: flex; gap: 10px; margin-top: 16px; }
+  /* preview modal */
+  .intk-modal { width: min(860px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
+  .intk-modal .body { overflow: auto; padding: 4px 2px; }
+  .intk-prev { border: 1px solid var(--line); border-radius: 8px; overflow: auto; max-height: 46vh; background: #fff; }
+  .intk-recpanel { margin-top: 14px; }
+  .intk-rec { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; }
+  .intk-rec .star { font-size: 22px; color: #ccc; cursor: pointer; line-height: 1; user-select: none; }
+  .intk-rec .star.on { color: #FFD700; }
+  .intk-rec .meta { flex: 1; }
+  .intk-rec .code { font-weight: 700; }
+  .intk-rec .just { font-size: .82rem; color: var(--muted); margin-top: 3px; }
+  .intk-rec img { width: 64px; height: auto; border: 1px solid var(--line); border-radius: 4px; }
+  .intk-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 12px; }
+  .intk-foot .grow { flex: 1; }
+  .intk-drop { border: 2px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted); font-size: .8rem; cursor: pointer; }
+  .intk-drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .intk-gallery { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .intk-thumb { position: relative; width: 46px; height: 46px; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .intk-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .intk-thumb .rm { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; background: var(--danger, #c13030); color: #fff; font-size: 11px; line-height: 16px; text-align: center; cursor: pointer; }
+  :root[data-compact] .intk-row { grid-template-columns: 1fr; }
+  /* bespoke buttons (the app styles controls per-view; no global .btn system) */
+  .intk-btn { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); color: var(--ink); font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .intk-btn:hover { background: var(--paper-card); }
+  .intk-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .intk-btn.primary:hover { filter: brightness(1.05); }
+  .intk-btn:disabled { opacity: .6; cursor: default; }
+  .intk-modal .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .intk-modal .head h3 { margin: 0; font-size: 1rem; }
+  .intk-modal .xclose { background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; border-radius: 6px; }
+  .intk-modal .xclose:hover { background: var(--paper-2); color: var(--ink); }
+</style>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  INTAKE TOOL — client. Ported from the bound form-generator dialogs.
+//  Forms render from the question banks below; answers POST to the two-stage
+//  intakePreview*/intakeSend* endpoints. PPD also runs the server-side
+//  recommendation engine and shows an interactive accept/reject/star panel.
+// ════════════════════════════════════════════════════════════════════════════
+
+var INTAKE_STATE = {
+  ppd: { lang: 'EN', agents: null },
+  pmd: { lang: 'EN', images: [] },
+  pap: { lang: 'EN', images: [] },
+  preview: null, // { formType, bodyHash, subject, recommendations, payload }
+};
+
+// ── Question banks (verbatim from incoming/form-generator) ────────────────
+var INTAKE_PPD_Q = {
+  EN: [
+    "PPD (English)", "", "", "MRADL",
+    "1. Do you currently use a cane, walker, manual wheelchair, scooter, or PWC?",
+    "2. Going to the restroom and using the toilet", "3. Preparing meals in the kitchen",
+    "4. Getting fully dressed", "5. Grooming (fixing hair, shaving, etc.)",
+    "6. Bathing (getting in & out of shower/tub, washing all areas)", "",
+    "Extremity Strength", "7. Can you move both arms at all?",
+    "8. Can you raise both arms straight out in front of you, as if pointing?",
+    "9. Can you raise both hands straight above your head?", "10. Can you move your legs at all?",
+    "11. While sitting, can you extend your legs straight out in front of you?",
+    "12. Could you push an unlocked door open with your feet?",
+    "13. Have you fallen, nearly fallen, or experienced dizziness in the past six months? If so, how many times?", "",
+    "Consistent Pain", "14. Neck?", "15. Shoulder?", "16. Elbows?", "17. Arms?",
+    "18. Hands?", "19. Back?", "20. Hips?", "21. Knees?", "22. Legs?", "23. Ankles?", "",
+    "Additional Information", "24. Do you take pain medications (over the counter or prescribed)?",
+    "25. Do you have consistent or frequent numbness/tingling in hands, feet or legs?",
+    "26. Do you use caloric/nutritional supplements like Ensure or Boost?",
+    "27. Do you ever have the need for incontinence supplies?",
+    "28. Do you have diabetes?",
+    "29. Do you have any peripheral vascular disease?",
+    "30. Do you use intermittent catheters?",
+    "31. Have you had a stroke in the past?",
+    "        31a. Did it result in weakness or paralysis in either side?",
+    "32. Do you have spasticity?",
+    "33. History of pressure ulcers or “bedsores”?",
+    "        33a. If so, where and do you have absent or impaired sensation in that area?",
+    "34. Any amputations? If so, where and is it above or below the knee?",
+    "35. Any curvature of the spine (like scoliosis or humpback)?",
+    "36. Consistent swelling in feet, ankles, or legs?",
+    "37. Height (inches):",
+    "38. Weight (lbs):",
+    "39. Live alone or w/ friends/family?",
+    "40. Do you have a home health attendant at your home for a few hours per week?",
+    "41. What diagnoses do you have that would qualify you for the PWC?",
+    "42. Any heart or lung conditions not already mentioned?",
+    "43. Any neurological conditions not already mentioned?",
+    "44. Are you on Oxygen?",
+    "45. Do you have arthritis? If so, where and what type (Rheumatoid, Osteo, Psoriatic)?",
+  ],
+  ES: [
+    "PPD (Español)", "", "", "MRADL (Movilidad y Actividades de la Vida Diaria)",
+    "1. ¿Usa actualmente un bastón, andador, silla de ruedas manual, scooter o silla de ruedas motorizada (PWC)?",
+    "2. Ir al baño y usar el inodoro", "3. Preparar comidas en la cocina",
+    "4. Vestirse por completo", "5. Asearse (peinarse, afeitarse, etc.)",
+    "6. Bañarse (entrar y salir de la ducha/bañera, lavarse todas las áreas)", "",
+    "Fuerza de las extremidades", "7. ¿Puede mover ambos brazos?",
+    "8. ¿Puede levantar ambos brazos rectos al frente, como si estuviera apuntando?",
+    "9. ¿Puede levantar ambas manos por encima de la cabeza?", "10. ¿Puede mover las piernas?",
+    "11. Sentado/a, ¿puede extender las piernas rectas al frente?",
+    "12. ¿Podría empujar una puerta sin seguro con los pies?",
+    "13. ¿Se ha caído, casi se ha caído o se ha mareado en los últimos seis meses? Si es así, ¿cuántas veces?", "",
+    "Dolor Constante", "14. ¿Cuello?", "15. ¿Hombro?", "16. ¿Codos?", "17. ¿Brazos?",
+    "18. ¿Manos?", "19. ¿Espalda?", "20. ¿Caderas?", "21. ¿Rodillas?", "22. ¿Piernas?", "23. ¿Tobillos?", "",
+    "Información Adicional", "24. ¿Toma medicamentos para el dolor (de venta libre o recetados)?",
+    "25. ¿Tiene entumecimiento u hormigueo en las manos, pies o piernas?",
+    "26. ¿Usa suplementos calóricos/nutricionales como Ensure o Boost?",
+    "27. ¿Alguna vez necesita productos para la incontinencia?",
+    "28. ¿Tiene diabetes?",
+    "29. ¿Tiene alguna enfermedad vascular periférica?",
+    "30. ¿Usa catéteres intermitentes?",
+    "31. ¿Ha tenido un derrame cerebral (stroke) en el pasado?",
+    "        31a. ¿Resultó en debilidad o parálisis en alguno de los lados?",
+    "32. ¿Tiene espasticidad?",
+    "33. ¿Historial de úlceras por presión o “escaras”?",
+    "        33a. Si es así, ¿dónde? ¿Y tiene la sensación ausente o disminuida en esa área?",
+    "34. ¿Alguna amputación? Si es así, ¿dónde y es arriba o abajo de la rodilla?",
+    "35. ¿Alguna curvatura en la columna (como escoliosis o joroba)?",
+    "36. ¿Hinchazón constante en pies, tobillos o piernas?",
+    "37. Estatura (pulgadas):",
+    "38. Peso (libras):",
+    "39. ¿Vive solo/a o con amigos/familia?",
+    "40. ¿Tiene un/a asistente de salud en casa algunas horas a la semana?",
+    "41. ¿Qué diagnósticos tiene que lo/la calificarían para la PWC?",
+    "42. ¿Alguna condición cardíaca o pulmonar no mencionada?",
+    "43. ¿Alguna condición neurológica no mencionada?",
+    "44. ¿Usa oxígeno?",
+    "45. ¿Tiene artritis? Si es así, ¿dónde y de qué tipo (Reumatoide, Osteoartritis, Psoriásica)?",
+  ],
+};
+
+var INTAKE_PMD_Q = {
+  EN: [
+    "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#",
+    "Patient Email Address", "DOB", "Home Address",
+    "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height", "Weight (lbs)",
+    "Currently used mobility devices", "Diagnoses", "Currently staying at Home or Facility?",
+    "If in facility what is the approximate discharge date?",
+    "Mobility Evaluation & Scheduling", "Already had a Power Mobility Evaluation in last 6 months?",
+    "If so please provide appointment details",
+    "Explained mobility evaluation with doctor is needed for insurance purposes and that we will send MDO paperwork to be filled out during the appointment to be sent back to us",
+    "Permission to call & schedule Mobility Evaluation with MDO?", "ME Availability", "PPD Availability", "Other Notes",
+  ],
+  ES: [
+    "Información del Paciente", "Nombre Completo del Paciente", "Número de Teléfono de Contacto Primario",
+    "Número de Teléfono de Contacto Secundario", "Correo Electrónico del Paciente", "Fecha de Nacimiento (DOB)", "Dirección de Casa",
+    "Información del Seguro", "Seguro Primario y Número de ID de Miembro", "Seguro Secundario y Número de ID de Miembro",
+    "Número de Seguro Social (SSN) (si no hay detalles de seguro)",
+    "Información de Clínica", "Nombre del Doctor Primario (PCP)", "Teléfono de clínica", "Fax de clínica", "Estatura", "Peso (libras)",
+    "Dispositivos de movilidad que utilizas", "Diagnósticos", "¿Está en casa o en un centro médico?",
+    "Si está en un centro, ¿cuál es la fecha aproximada de salida?",
+    "Evaluación de Movilidad y Programación", "¿Ya tuvo una Evaluación de Movilidad en los últimos 6 meses?",
+    "Si es así, por favor proporcione los detalles de la cita",
+    "Explicó que la evaluación de movilidad con el médico es necesaria según el seguro, y que le enviaremos al médico la documentación para que la finalice durante la cita y nos la devuelva.",
+    "¿Tenemos permiso para programar una cita con su médico?", "Disponibilidad para Evaluación de Movilidad (ME)", "Disponibilidad para PPD", "Otras Notas",
+  ],
+};
+
+var INTAKE_PAP_Q = {
+  EN: [
+    "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#", "Patient Email Address", "DOB", "Home Address",
+    "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height", "Weight (lbs)",
+    "PAP Details", "Already have a CPAP?", "Make & Model of current CPAP (if applicable)?", "How long have you had the current CPAP (if applicable)?",
+    "What kind of mask are you using (make/model/size)?", "Looking for Machine, PAP Supplies, or Both?", "Have you done a Sleep Study in the past?",
+    "If so please provide Sleep Study details (approx. date & provider details)",
+    "Informed that we will reach out to MDO for the information required by insurance, and work with both to process your order efficiently.", "Other Notes",
+  ],
+  ES: [
+    "Datos Demográficos", "Nombre Completo del Paciente", "Teléfono de Contacto Primario", "Teléfono de Contacto Secundario", "Correo Electrónico del Paciente", "Fecha de Nacimiento", "Dirección de Casa",
+    "Seguro", "Seguro Primario y ID de Miembro", "Seguro Secundario y ID de Miembro", "SSN (si no hay detalles de seguro)",
+    "Información Clínica", "Nombre del doctor primario", "Teléfono de la oficina del doctor", "Numero de Fax del doctor", "Dirección del oficina", "Estatura", "Peso (libras)",
+    "Detalles de PAP/máquina", "¿Ya tienes una CPAP/máquina?", "¿Marca y Modelo del CPAP (si aplica)?", "¿Cuánto tiempo ha tenido el CPAP (si aplica)?",
+    "¿Qué tipo de mascarilla usa (marca/modelo/tamaño)?", "¿Busca Máquina, Suministros de PAP, o Ambos?", "¿Ha tenido un Estudio del Sueño en el pasado?",
+    "Si es así, proporcione detalles (fecha y doctor)",
+    "Se le informó que contactaremos al doctor para la información requerida por el seguro para aceptar su orden.", "Otras notas",
+  ],
+};
+
+// Client render layouts for the account-creation forms. MUST mirror the server
+// INTAKE_PMD_LAYOUT / INTAKE_PAP_LAYOUT (Code.js) — the server is authoritative
+// for the email; these duplicate only what's needed to render inputs. Pinned by
+// a Node tripwire (test_intake_layoutCoupling). headers/checkboxes are 0-based
+// FORM_RANGE indices; selects maps an index → its option strings (the
+// conditional-formatting answer keys, so the email coloring matches).
+var INTAKE_PMD_CLIENT = {
+  headers:    [0, 7, 11, 21],
+  checkboxes: [22, 24, 25],
+  secondary:  [2, 10, 19, 20, 23, 26, 28],
+  selects:    {},
+};
+var INTAKE_PAP_CLIENT = {
+  headers:    [0, 7, 11, 18],
+  checkboxes: [24, 26],
+  secondary:  [3, 10, 20, 21, 22, 25, 27],
+  selects:    { 19: ['', 'Yes', 'No'], 21: ['', 'Less than 5 years', 'More than 5 years'] },
+};
+
+// ── PPD view ──────────────────────────────────────────────────────────────
+function enterIntakePpdView(area) {
+  if (typeof stopClock === 'function') stopClock();
+  area = area || document.getElementById('view-area');
+  if (!area) return;
+  var lang = INTAKE_STATE.ppd.lang;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('send', 16) + ' PPD</div>' : '') +
+    '<div class="intk-wrap">' +
+      (COMPACT_MODE ? '' : '<div class="view-title-row"><h2>PPD — Patient Profile & Recommendation</h2></div>') +
+      '<div class="intk-bar">' +
+        intakeLangToggleHtml_('ppd') +
+        '<span class="grow"></span>' +
+      '</div>' +
+      '<div class="intk-patient">' +
+        '<label for="intk-ppd-patient">Patient Name &amp; Trx#</label>' +
+        '<input type="text" id="intk-ppd-patient" placeholder="e.g. Jane Doe — TRX 12345" autocomplete="off">' +
+      '</div>' +
+      '<div class="intk-grid" id="intk-ppd-grid">' + intakeRenderPpdRows_(lang) + '</div>' +
+      '<div class="intk-actions">' +
+        '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
+        '<button class="intk-btn" onclick="intakeClearForm_(\'ppd\')">Clear</button>' +
+      '</div>' +
+    '</div>';
+}
+
+function intakeRenderPpdRows_(lang) {
+  var qs = INTAKE_PPD_Q[lang] || INTAKE_PPD_Q.EN;
+  var html = '';
+  for (var i = 1; i < qs.length; i++) {
+    var raw = qs[i];
+    if (!raw || !String(raw).trim()) continue;
+    var isSecondary = /^\s+/.test(raw);
+    var text = String(raw).trim();
+    var m = text.match(/^(\d+[a-z]?)\./);
+    if (!m) { // section header (no leading number)
+      html += '<div class="intk-head">' + esc(text) + '</div>';
+      continue;
+    }
+    var qNum = m[1];
+    html += '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '" data-qnum="' + esc(qNum) + '">' +
+      '<div class="q">' + esc(text) + '</div>' +
+      '<input type="text" autocomplete="off" data-intk-qnum="' + esc(qNum) + '">' +
+    '</div>';
+  }
+  return html;
+}
+
+// Collect { patientInfo, answers, rows, language } from the PPD DOM.
+function intakeCollectPpd_() {
+  var lang = INTAKE_STATE.ppd.lang;
+  var qs = INTAKE_PPD_Q[lang] || INTAKE_PPD_Q.EN;
+  var grid = document.getElementById('intk-ppd-grid');
+  var answers = {};
+  var rows = [];
+  // walk the question array in order, pulling values from inputs by qNum
+  for (var i = 1; i < qs.length; i++) {
+    var raw = qs[i];
+    if (!raw || !String(raw).trim()) continue;
+    var isSecondary = /^\s+/.test(raw);
+    var text = String(raw).trim();
+    var m = text.match(/^(\d+[a-z]?)\./);
+    if (!m) { rows.push({ isHeader: true, label: text }); continue; }
+    var qNum = m[1];
+    var input = grid ? grid.querySelector('input[data-intk-qnum="' + qNum + '"]') : null;
+    var val = input ? input.value.trim() : '';
+    answers[qNum] = val;
+    rows.push({ qNum: qNum, label: text, value: val, isSecondary: isSecondary });
+  }
+  var patientEl = document.getElementById('intk-ppd-patient');
+  return { patientInfo: patientEl ? patientEl.value.trim() : '', answers: answers, rows: rows, language: lang };
+}
+
+function intakePpdPreview_() {
+  var payload = intakeCollectPpd_();
+  if (!payload.patientInfo) { showToast('Enter the Patient Name & Trx# first.', 'toast-warn'); return; }
+  var requested = currentView;
+  showToast('Building preview…', '');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      if (!res || res.error) { showToast((res && res.error) || 'Preview failed.', 'toast-error'); return; }
+      INTAKE_STATE.preview = { formType: 'PPD', bodyHash: res.bodyHash, subject: res.subject, recommendations: res.recommendations, payload: payload };
+      intakeOpenPpdPreviewModal_(res.html, res.recommendations);
+    })
+    .withFailureHandler(function (err) { if (currentView === requested) showToast('Preview failed: ' + (err.message || err), 'toast-error'); })
+    .intakePreviewPPD(payload);
+}
+
+function intakeOpenPpdPreviewModal_(html, recs) {
+  if (!INTAKE_STATE.ppd.agents) {
+    google.script.run.withSuccessHandler(function (r) {
+      INTAKE_STATE.ppd.agents = (r && r.agents) || [];
+      intakeBuildPpdModal_(html, recs);
+    }).withFailureHandler(function () { INTAKE_STATE.ppd.agents = []; intakeBuildPpdModal_(html, recs); }).getIntakeAgents();
+  } else {
+    intakeBuildPpdModal_(html, recs);
+  }
+}
+
+function intakeBuildPpdModal_(html, recs) {
+  var items = [].concat((recs && recs.complex) || [], (recs && recs.standard) || []);
+  var panel = items.length
+    ? items.map(function (p) {
+        var id = String(p.hcpcs).replace(/\s+/g, '-');
+        return '<div class="intk-rec" data-rec-id="' + esc(id) + '">' +
+          '<span class="star" data-star="' + esc(id) + '" onclick="intakeToggleStar_(this)" title="Mark preferred">&#9733;</span>' +
+          (p.imageUrl ? '<img src="' + esc(p.imageUrl) + '" alt="">' : '') +
+          '<div class="meta"><div class="code">' + esc(p.hcpcs) + '</div><div class="just">' + esc(intakeStripTags_(p.justification)) + '</div></div>' +
+          '<select class="status-sel" data-status="' + esc(id) + '">' +
+            '<option value="none">— No selection —</option>' +
+            '<option value="accepted">Accepted</option>' +
+            '<option value="undecided">Undecided/Maybe</option>' +
+            '<option value="rejected">Rejected</option>' +
+          '</select>' +
+        '</div>';
+      }).join('')
+    : '<p style="color:var(--muted);font-style:italic;">No products matched the provided answers.</p>';
+
+  var agentOpts = '<option value="all">All Agents</option>' +
+    (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('');
+
+  var body =
+    '<div class="intk-prev">' + html + '</div>' +
+    '<div class="intk-recpanel"><h4 style="margin:14px 0 8px;">Mark recommendations</h4>' + panel + '</div>' +
+    '<div class="intk-foot">' +
+      '<label><strong>Send to:</strong></label>' +
+      '<select id="intk-ppd-recipient">' + agentOpts + '</select>' +
+      '<span class="grow"></span>' +
+      '<button class="intk-btn" data-intk-close="1">Cancel</button>' +
+      '<button class="intk-btn primary" id="intk-ppd-send" onclick="intakePpdSend_()">' + icon('send', 14) + ' Send Email</button>' +
+    '</div>';
+  intakeOpenModal_('PPD Preview & Send', body);
+}
+
+function intakeToggleStar_(el) {
+  var id = el.getAttribute('data-star');
+  document.querySelectorAll('.intk-rec .star').forEach(function (s) { if (s !== el) s.classList.remove('on'); });
+  el.classList.toggle('on');
+}
+
+function intakeGatherSelections_() {
+  var sel = {};
+  document.querySelectorAll('.intk-rec').forEach(function (row) {
+    var id = row.getAttribute('data-rec-id');
+    var statusEl = row.querySelector('.status-sel');
+    var starEl = row.querySelector('.star');
+    sel[id] = { status: statusEl ? statusEl.value : 'none', preferred: !!(starEl && starEl.classList.contains('on')) };
+  });
+  return sel;
+}
+
+function intakePpdSend_() {
+  var st = INTAKE_STATE.preview;
+  if (!st || st.formType !== 'PPD') { showToast('Preview expired — please preview again.', 'toast-warn'); return; }
+  var recEl = document.getElementById('intk-ppd-recipient');
+  var val = recEl ? recEl.value : 'all';
+  var spec = val === 'all' ? { kind: 'all' } : { kind: 'agent', id: val.replace(/^agent:/, '') };
+  st.payload.selections = intakeGatherSelections_();
+  var btn = document.getElementById('intk-ppd-send');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
+      intakeCloseModal_();
+      intakeClearForm_('ppd');
+      showToast('PPD emailed to ' + res.recipient, 'toast-success');
+    })
+    .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
+    .intakeSendPPD(st.payload, spec, st.bodyHash);
+}
+
+// ── Account-creation views (PMD / PAP share machinery) ────────────────────
+function enterIntakePmdView(area) { intakeEnterAcct_('pmd', 'PMD Account Creation', area); }
+function enterIntakePapView(area) { intakeEnterAcct_('pap', 'PAP Account Creation', area); }
+
+function intakeAcctBank_(form) { return form === 'pap' ? INTAKE_PAP_Q : INTAKE_PMD_Q; }
+function intakeAcctLayout_(form) { return form === 'pap' ? INTAKE_PAP_CLIENT : INTAKE_PMD_CLIENT; }
+
+function intakeEnterAcct_(form, title, area) {
+  if (typeof stopClock === 'function') stopClock();
+  area = area || document.getElementById('view-area');
+  if (!area) return;
+  var lang = INTAKE_STATE[form].lang;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('user', 16) + ' ' + esc(title) + '</div>' : '') +
+    '<div class="intk-wrap">' +
+      (COMPACT_MODE ? '' : '<div class="view-title-row"><h2>' + esc(title) + '</h2></div>') +
+      '<div class="intk-bar">' + intakeLangToggleHtml_(form) + '<span class="grow"></span></div>' +
+      '<div class="intk-grid" id="intk-' + form + '-grid">' + intakeRenderAcctRows_(form, lang) + '</div>' +
+      '<div class="intk-actions">' +
+        '<button class="intk-btn primary" onclick="intakeAcctPreview_(\'' + form + '\')">' + icon('send', 14) + ' Preview &amp; Send</button>' +
+        '<button class="intk-btn" onclick="intakeClearForm_(\'' + form + '\')">Clear</button>' +
+      '</div>' +
+    '</div>';
+}
+
+function intakeRenderAcctRows_(form, lang) {
+  var qs = intakeAcctBank_(form)[lang] || intakeAcctBank_(form).EN;
+  var L = intakeAcctLayout_(form);
+  var html = '';
+  for (var i = 0; i < qs.length; i++) {
+    var label = String(qs[i] || '');
+    if (L.headers.indexOf(i) >= 0) { html += '<div class="intk-head">' + esc(label) + '</div>'; continue; }
+    var isSecondary = L.secondary.indexOf(i) >= 0;
+    var control;
+    if (L.checkboxes.indexOf(i) >= 0) {
+      control = '<label class="ck"><input type="checkbox" data-intk-idx="' + i + '"> Yes</label>';
+    } else if (L.selects[i]) {
+      control = '<select data-intk-idx="' + i + '">' + L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
+    } else {
+      control = '<input type="text" autocomplete="off" data-intk-idx="' + i + '">';
+    }
+    html += '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '"><div class="q">' + esc(label) + '</div>' + control + '</div>';
+  }
+  return html;
+}
+
+// DOB is form index 5 for both PMD & PAP; patient name is index 1.
+function intakeCollectAcct_(form) {
+  var lang = INTAKE_STATE[form].lang;
+  var qs = intakeAcctBank_(form)[lang] || intakeAcctBank_(form).EN;
+  var L = intakeAcctLayout_(form);
+  var grid = document.getElementById('intk-' + form + '-grid');
+  var rows = [], answers = {};
+  for (var i = 0; i < qs.length; i++) {
+    var label = String(qs[i] || '');
+    if (L.headers.indexOf(i) >= 0) { rows.push({ qIndex: i, label: label, isHeader: true }); continue; }
+    var el = grid ? grid.querySelector('[data-intk-idx="' + i + '"]') : null;
+    var val;
+    if (el && el.type === 'checkbox') val = el.checked ? 'TRUE' : 'FALSE';
+    else val = el ? String(el.value).trim() : '';
+    answers[i] = val;
+    rows.push({ qIndex: i, label: label, value: val, isSecondary: L.secondary.indexOf(i) >= 0 });
+  }
+  var nameEl = grid ? grid.querySelector('[data-intk-idx="1"]') : null;
+  var dobEl = grid ? grid.querySelector('[data-intk-idx="5"]') : null;
+  return {
+    patientInfo: nameEl ? String(nameEl.value).trim() : '',
+    dob: dobEl ? String(dobEl.value).trim() : '',
+    answers: answers, rows: rows, language: lang,
+  };
+}
+
+function intakeAcctPreview_(form) {
+  var payload = intakeCollectAcct_(form);
+  if (!payload.patientInfo) { showToast('Enter the Patient Full Name first.', 'toast-warn'); return; }
+  INTAKE_STATE[form].images = [];
+  var requested = currentView;
+  var fn = form === 'pap' ? 'intakePreviewPAP' : 'intakePreviewPMD';
+  showToast('Building preview…', '');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      if (!res || res.error) { showToast((res && res.error) || 'Preview failed.', 'toast-error'); return; }
+      INTAKE_STATE.preview = { formType: form.toUpperCase(), form: form, bodyHash: res.bodyHash, subject: res.subject, payload: payload };
+      intakeBuildAcctModal_(form, res.html);
+    })
+    .withFailureHandler(function (err) { if (currentView === requested) showToast('Preview failed: ' + (err.message || err), 'toast-error'); })
+    [fn](payload);
+}
+
+function intakeBuildAcctModal_(form, html) {
+  var defLabel = form === 'pap' ? 'Default (Sleep)' : 'Default (Sales)';
+  var agentOpts = (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('');
+  var body =
+    '<div class="intk-prev">' + html + '</div>' +
+    '<div class="intk-drop" id="intk-drop" tabindex="0">' + icon('upload', 14) + ' Click, drag &amp; drop, or paste (Ctrl+V) images</div>' +
+    '<input type="file" id="intk-file" accept="image/*" multiple style="display:none">' +
+    '<div class="intk-gallery" id="intk-gallery"></div>' +
+    '<div class="intk-foot">' +
+      '<label><strong>Send to:</strong></label>' +
+      '<select id="intk-acct-recipient"><option value="default">' + esc(defLabel) + '</option>' + agentOpts + '<option value="custom">Custom email…</option></select>' +
+      '<input type="email" id="intk-acct-custom" placeholder="recipient@…" style="display:none;padding:7px 10px;border:1px solid var(--line);border-radius:7px;">' +
+      '<span class="grow"></span>' +
+      '<button class="intk-btn" data-intk-close="1">Cancel</button>' +
+      '<button class="intk-btn primary" id="intk-acct-send" onclick="intakeAcctSend_(\'' + form + '\')">' + icon('send', 14) + ' Send Email</button>' +
+    '</div>';
+  intakeOpenModal_((form.toUpperCase()) + ' Preview & Send', body);
+
+  // load agents lazily (shared cache on ppd.agents) so the dropdown fills
+  if (!INTAKE_STATE.ppd.agents) {
+    google.script.run.withSuccessHandler(function (r) {
+      INTAKE_STATE.ppd.agents = (r && r.agents) || [];
+      var sel = document.getElementById('intk-acct-recipient');
+      if (sel) {
+        var custom = sel.querySelector('option[value="custom"]');
+        (INTAKE_STATE.ppd.agents || []).forEach(function (a) {
+          var o = document.createElement('option'); o.value = 'agent:' + a.id; o.textContent = a.name;
+          sel.insertBefore(o, custom);
+        });
+      }
+    }).getIntakeAgents();
+  }
+
+  var recSel = document.getElementById('intk-acct-recipient');
+  if (recSel) recSel.addEventListener('change', function () {
+    var c = document.getElementById('intk-acct-custom');
+    if (c) c.style.display = this.value === 'custom' ? 'inline-block' : 'none';
+  });
+  intakeSetupImageUpload_(form);
+}
+
+function intakeAcctSend_(form) {
+  var st = INTAKE_STATE.preview;
+  if (!st || st.form !== form) { showToast('Preview expired — please preview again.', 'toast-warn'); return; }
+  var recSel = document.getElementById('intk-acct-recipient');
+  var val = recSel ? recSel.value : 'default';
+  var spec;
+  if (val === 'default') spec = { kind: 'default' };
+  else if (val === 'custom') {
+    var custom = document.getElementById('intk-acct-custom');
+    spec = { kind: 'custom', email: custom ? custom.value.trim() : '' };
+    if (!spec.email) { showToast('Enter a recipient email.', 'toast-warn'); return; }
+  } else spec = { kind: 'agent', id: val.replace(/^agent:/, '') };
+
+  var images = INTAKE_STATE[form].images || [];
+  var fn = form === 'pap' ? 'intakeSendPAP' : 'intakeSendPMD';
+  var btn = document.getElementById('intk-acct-send');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
+      intakeCloseModal_();
+      intakeClearForm_(form);
+      showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
+    })
+    .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
+    [fn](st.payload, spec, images, st.bodyHash);
+}
+
+// ── Image upload (PMD/PAP) ────────────────────────────────────────────────
+function intakeSetupImageUpload_(form) {
+  var drop = document.getElementById('intk-drop');
+  var fileInput = document.getElementById('intk-file');
+  if (!drop || !fileInput) return;
+  drop.addEventListener('click', function () { fileInput.click(); });
+  fileInput.addEventListener('change', function () { intakeHandleFiles_(form, this.files); this.value = ''; });
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); }, false);
+  });
+  ['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function () { drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function () { drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { intakeHandleFiles_(form, e.dataTransfer.files); });
+  drop._intkPaste = function (e) {
+    var items = (e.clipboardData || {}).items || [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) { intakeProcessImage_(form, items[i].getAsFile()); e.preventDefault(); }
+    }
+  };
+  document.addEventListener('paste', drop._intkPaste);
+}
+
+function intakeHandleFiles_(form, files) {
+  if (!files) return;
+  for (var i = 0; i < files.length; i++) { if (files[i].type.indexOf('image/') === 0) intakeProcessImage_(form, files[i]); }
+}
+
+function intakeProcessImage_(form, file) {
+  if (!file) return;
+  var max = 12;
+  if ((INTAKE_STATE[form].images || []).length >= max) { showToast('Up to ' + max + ' images.', 'toast-warn'); return; }
+  var reader = new FileReader();
+  reader.onload = function (e) { INTAKE_STATE[form].images.push(e.target.result); intakeRenderGallery_(form); };
+  reader.readAsDataURL(file);
+}
+
+function intakeRenderGallery_(form) {
+  var g = document.getElementById('intk-gallery');
+  if (!g) return;
+  g.innerHTML = (INTAKE_STATE[form].images || []).map(function (src, idx) {
+    return '<div class="intk-thumb"><img src="' + esc(src) + '" alt=""><span class="rm" onclick="intakeRemoveImage_(\'' + form + '\',' + idx + ')">&#10005;</span></div>';
+  }).join('');
+}
+
+function intakeRemoveImage_(form, idx) {
+  INTAKE_STATE[form].images.splice(idx, 1);
+  intakeRenderGallery_(form);
+}
+
+// ── Shared UI helpers ─────────────────────────────────────────────────────
+function intakeLangToggleHtml_(form) {
+  var lang = INTAKE_STATE[form].lang;
+  return '<div class="intk-lang">' +
+    '<button class="' + (lang === 'EN' ? 'on' : '') + '" onclick="intakeSetLang_(\'' + form + '\',\'EN\')">English</button>' +
+    '<button class="' + (lang === 'ES' ? 'on' : '') + '" onclick="intakeSetLang_(\'' + form + '\',\'ES\')">Español</button>' +
+  '</div>';
+}
+
+function intakeSetLang_(form, lang) {
+  if (INTAKE_STATE[form].lang === lang) return;
+  // preserve in-progress answers across the language flip (keys are qNum/qIndex)
+  var snapshot = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form);
+  INTAKE_STATE[form].lang = lang;
+  if (form === 'ppd') enterIntakePpdView(); else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account Creation' : 'PMD Account Creation');
+  intakeRestoreAnswers_(form, snapshot);
+}
+
+function intakeRestoreAnswers_(form, snapshot) {
+  var grid = document.getElementById('intk-' + form + '-grid');
+  if (!grid || !snapshot) return;
+  if (form === 'ppd') {
+    var pat = document.getElementById('intk-ppd-patient');
+    if (pat) pat.value = snapshot.patientInfo || '';
+    Object.keys(snapshot.answers || {}).forEach(function (qNum) {
+      var el = grid.querySelector('input[data-intk-qnum="' + qNum + '"]');
+      if (el) el.value = snapshot.answers[qNum];
+    });
+  } else {
+    Object.keys(snapshot.answers || {}).forEach(function (idx) {
+      var el = grid.querySelector('[data-intk-idx="' + idx + '"]');
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = snapshot.answers[idx] === 'TRUE';
+      else el.value = snapshot.answers[idx];
+    });
+  }
+}
+
+function intakeClearForm_(form) {
+  INTAKE_STATE[form].images = [];
+  if (form === 'ppd') enterIntakePpdView();
+  else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account Creation' : 'PMD Account Creation');
+}
+
+function intakeStripTags_(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, ''); }
+
+// Minimal modal built on the shared .overlay vocabulary (Escape-close + focus
+// trap handled in script_core). Single instance; cleans up its paste listener.
+function intakeOpenModal_(title, bodyHtml) {
+  intakeCloseModal_();
+  var ov = document.createElement('div');
+  ov.className = 'overlay open';
+  ov.id = 'intk-modal-overlay';
+  ov.innerHTML = '<div class="modal intk-modal" role="dialog" aria-modal="true">' +
+    '<div class="head"><h3>' + esc(title) + '</h3><button class="xclose" data-intk-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
+    '<div class="body">' + bodyHtml + '</div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click', function (e) {
+    if (e.target === ov || (e.target.closest && e.target.closest('[data-intk-close]'))) intakeCloseModal_();
+  });
+}
+
+function intakeCloseModal_() {
+  var ov = document.getElementById('intk-modal-overlay');
+  if (!ov) return;
+  var drop = document.getElementById('intk-drop');
+  if (drop && drop._intkPaste) document.removeEventListener('paste', drop._intkPaste);
+  ov.remove();
+}
+</script>

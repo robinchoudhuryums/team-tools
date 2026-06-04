@@ -187,6 +187,29 @@ const CONFIG = {
       'WY':'Wyoming',
     },
   },
+
+  // ── Intake module (PPD + PMD/PAP account creation) ───────────────────
+  // Ported from the bound "form-generator" Apps Script. Patient intake forms
+  // that render a branded email + persist a PHI backup row. The Offerings
+  // catalog (PMD product data the PPD recommendation engine reads) and the
+  // per-form submission tabs all live in ONE spreadsheet — set Script Property
+  // INTAKE_SS_ID to it (this CONFIG value is the inert fallback). Recipient
+  // addresses are Script-Property-backed (INTAKE_SALES_EMAIL / INTAKE_SLEEP_EMAIL
+  // / INTAKE_BCC_EMAIL / INTAKE_ALL_AGENTS_EMAIL) so the repo stays clean of
+  // real addresses. See getIntakeSS_(), getIntakeOfferings_(), getIntake*Email_().
+  INTAKE: {
+    SS_ID:               'YOUR_INTAKE_SPREADSHEET_ID',
+    OFFERINGS_TAB:       'Offerings',
+    PPD_SUBMISSIONS_TAB: 'PPDSubmissions',
+    PMD_SUBMISSIONS_TAB: 'PMDSubmissions',
+    PAP_SUBMISSIONS_TAB: 'PAPSubmissions',
+    SALES_EMAIL:         'sales@universalmedsupply.com',
+    SLEEP_EMAIL:         'sleep@universalmedsupply.com',
+    BCC_EMAIL:           'robin.choudhury@universalmedsupply.com',
+    ALL_AGENTS_EMAIL:    'robin.choudhury@universalmedsupply.com',
+    MAX_IMAGES:          12,           // PMD/PAP inline-attachment count cap
+    MAX_IMAGE_CHARS:     7000000,      // ~5MB binary per image (base64) — bounded
+  },
 };
 
 const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8 };
@@ -8112,4 +8135,695 @@ function getMetricsAmbient() {
     try { cache.put(ck, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     return out;
   } catch (_) { return { badge: null }; }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INTAKE MODULE  —  PPD + PMD/PAP account-creation forms
+//  Ported from the bound "form-generator" Apps Script (incoming/form-generator).
+//  Web-app rewrite: the bound tool used the active sheet's cells as the form;
+//  here each form is a web form whose answers arrive as a payload, render a
+//  branded email (esc_'d throughout — closing the original's raw-interpolation
+//  XSS hole), persist a PHI backup row to the Intake spreadsheet, and write a
+//  PHI-free audit row. Two-stage (preview→send), bodyHash-guarded like the
+//  Call Notes email flow (INV-41). The PPD recommendation engine
+//  (intakeFilterRecommendations_) is server-authoritative + Node-tested.
+// ════════════════════════════════════════════════════════════════════════════
+
+const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient'];
+const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount'];
+
+// Per-form structural layout (0-based FORM_RANGE row index → role). Ported from
+// the bound tool's AC_CONFIG / PAP_CONFIG. The question LABELS arrive from the
+// client (EN/ES, so no parallel server-side question bank to drift); these
+// fixed structural rules stay server-side so styling can't be spoofed.
+const INTAKE_PMD_LAYOUT = {
+  HEADER_ROWS:             [1, 8, 12, 22],          // 1-based offset rows (matches original HEADER_ROWS check i+1)
+  CHECKBOX_ROWS:           [22, 24, 25],
+  SECONDARY_QUESTION_ROWS: [2, 10, 19, 20, 23, 26, 28],
+  CHECKBOX_WARN_ROWS:      [22],                     // amber check instead of green
+  CONDITIONAL_FORMATTING_ROWS: {},
+};
+const INTAKE_PAP_LAYOUT = {
+  HEADER_ROWS:             [1, 8, 12, 19],
+  CHECKBOX_ROWS:           [24, 26],
+  SECONDARY_QUESTION_ROWS: [3, 10, 20, 21, 22, 25, 27],
+  CHECKBOX_WARN_ROWS:      [],
+  CONDITIONAL_FORMATTING_ROWS: {
+    19: { 'No': { bg: '#d4edda', fg: '#155724' }, 'Yes': { bg: '#F7E891', fg: '#7A6C21' } },
+    21: { 'Less than 5 years': { bg: '#F7E891', fg: '#7A6C21' }, 'More than 5 years': { bg: '#d4edda', fg: '#155724' } },
+  },
+};
+
+// ── Isolated spreadsheet + config getters (Script Property first) ──────────
+function getIntakeSS_() {
+  if (typeof _TEST_OVERRIDE_INTAKE_SS_ID !== 'undefined' && _TEST_OVERRIDE_INTAKE_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_INTAKE_SS_ID);
+  }
+  const id = PropertiesService.getScriptProperties().getProperty('INTAKE_SS_ID') || CONFIG.INTAKE.SS_ID;
+  return SpreadsheetApp.openById(id);
+}
+function getIntakeSalesEmail_()     { return PropertiesService.getScriptProperties().getProperty('INTAKE_SALES_EMAIL')      || CONFIG.INTAKE.SALES_EMAIL; }
+function getIntakeSleepEmail_()     { return PropertiesService.getScriptProperties().getProperty('INTAKE_SLEEP_EMAIL')      || CONFIG.INTAKE.SLEEP_EMAIL; }
+function getIntakeBccEmail_()       { return PropertiesService.getScriptProperties().getProperty('INTAKE_BCC_EMAIL')        || CONFIG.INTAKE.BCC_EMAIL; }
+function getIntakeAllAgentsEmail_() { return PropertiesService.getScriptProperties().getProperty('INTAKE_ALL_AGENTS_EMAIL') || CONFIG.INTAKE.ALL_AGENTS_EMAIL; }
+
+let _intakeOfferingsCache = null;
+// Returns the raw 2D Offerings rows [features, hcpcs, weightCap, seatType,
+// pdfLink, imageUrl] (A2:F) — the exact shape the ported engine expects.
+function getIntakeOfferings_() {
+  if (_intakeOfferingsCache) return _intakeOfferingsCache;
+  const sheet = getIntakeSS_().getSheetByName(CONFIG.INTAKE.OFFERINGS_TAB);
+  if (!sheet) throw new Error('Offerings tab "' + CONFIG.INTAKE.OFFERINGS_TAB + '" not found in the Intake spreadsheet.');
+  const last = sheet.getLastRow();
+  _intakeOfferingsCache = last < 2 ? [] : sheet.getRange(2, 1, last - 1, 6).getValues();
+  return _intakeOfferingsCache;
+}
+
+function getIntakeSubmissionSheet_(formType) {
+  const ss = getIntakeSS_();
+  let tab, headers;
+  if (formType === 'PPD')      { tab = CONFIG.INTAKE.PPD_SUBMISSIONS_TAB; headers = INTAKE_PPD_SUB_HEADERS; }
+  else if (formType === 'PMD') { tab = CONFIG.INTAKE.PMD_SUBMISSIONS_TAB; headers = INTAKE_ACCT_SUB_HEADERS; }
+  else                         { tab = CONFIG.INTAKE.PAP_SUBMISSIONS_TAB; headers = INTAKE_ACCT_SUB_HEADERS; }
+  let sheet = ss.getSheetByName(tab);
+  if (!sheet) {
+    sheet = ss.insertSheet(tab);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function intakeValidateEmail_(email) {
+  const re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+  return re.test(String(email).toLowerCase());
+}
+
+// spec: { kind:'agent'|'default'|'all'|'custom', id?, email? }
+function intakeResolveRecipient_(formType, spec) {
+  spec = spec || {};
+  if (spec.kind === 'default') return formType === 'PAP' ? getIntakeSleepEmail_() : getIntakeSalesEmail_();
+  if (spec.kind === 'all')     return getIntakeAllAgentsEmail_();
+  if (spec.kind === 'agent') {
+    const rows = getEmployeeRosterRows_();
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][EMP.ID]).trim() === String(spec.id).trim()) {
+        const em = String(rows[i][EMP.EMAIL]).trim();
+        if (em) return em;
+      }
+    }
+    throw new Error('Could not resolve an email for the selected agent.');
+  }
+  if (spec.kind === 'custom') {
+    const em = String(spec.email || '').trim();
+    if (!intakeValidateEmail_(em)) throw new Error('Invalid recipient email: ' + em);
+    return em;
+  }
+  throw new Error('No recipient selected.');
+}
+
+// Agent picker for the PPD send footer. Any registered employee may call it;
+// returns names + ids only (never emails — the server resolves id→email at
+// send so agent addresses never reach the client).
+function getIntakeAgents() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const rows = getEmployeeRosterRows_();
+    const agents = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][EMP.EMAIL]) continue;
+      agents.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
+    }
+    agents.sort((a, b) => a.name.localeCompare(b.name));
+    return { agents };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Recommendation engine ─────────────────────────────────────────────────
+// Ported verbatim from filterRecommendations.js::getFilteredRecommendations,
+// with two changes: (1) answers come from the `answers` object (keyed by bare
+// question number, e.g. '38','31a','33') instead of the active sheet, and
+// (2) the diagnostic toast is removed. `allProducts` is the raw 2D Offerings
+// array [features, hcpcs, weightCap, seatType, pdfLink, imageUrl]. Pure +
+// self-contained so the Node harness can unit-test the eligibility branches.
+function intakeFilterRecommendations_(answers, allProducts) {
+  answers = answers || {};
+  allProducts = allProducts || [];
+
+  const getAnswerText = (q) => String(answers[q] == null ? '' : answers[q]).toLowerCase().trim();
+  const isPositive = (q) => { const a = getAnswerText(q); return a.includes('yes') || a.includes('true'); };
+
+  const patient = {
+    weight: parseInt(getAnswerText('38').replace(/\D/g, ''), 10) || 0,
+    neuroCondition: getAnswerText('43'),
+    numbnessAnswer: getAnswerText('25'),
+    amputationStatus: getAnswerText('34'),
+    strokeDetails: getAnswerText('31a'),
+    hasSpineCurvature: isPositive('35'),
+    isOnOxygen: isPositive('44'),
+    hasPressureUlcers: isPositive('33'),
+    hasSpasticity: isPositive('32'),
+    hasSwelling: isPositive('36'),
+    hasFallHistory: isPositive('13'),
+    usesCatheters: isPositive('30'),
+  };
+
+  patient.hasLowerExtremityNumbness = patient.numbnessAnswer.includes('feet') || patient.numbnessAnswer.includes('legs');
+  patient.hasAmputation = (patient.amputationStatus.includes('knee') ||
+                           patient.amputationStatus.includes('left') ||
+                           patient.amputationStatus.includes('right')) &&
+                          !patient.amputationStatus.includes('no');
+
+  // --- STROKE ANALYSIS ---
+  let qualifiesForHemiplegia = false;
+  let hasStrokeWeakness = false;
+  let hemiplegiaSide = '';
+  if (patient.strokeDetails && !patient.strokeDetails.includes('no')) {
+    const parts = patient.strokeDetails.split(/[,;\n\r]+/);
+    let rightParaCount = 0, leftParaCount = 0;
+    parts.forEach(part => {
+      const p = part.trim();
+      if (p.includes('weakness') || p.includes('paralysis')) hasStrokeWeakness = true;
+      if (p.includes('paralysis')) {
+        if (p.includes('right arm'))  rightParaCount++;
+        if (p.includes('right leg'))  rightParaCount++;
+        if (p.includes('right side')) rightParaCount += 2;
+        if (p.includes('left arm'))   leftParaCount++;
+        if (p.includes('left leg'))   leftParaCount++;
+        if (p.includes('left side'))  leftParaCount += 2;
+      }
+    });
+    if (rightParaCount >= 2)      { qualifiesForHemiplegia = true; hemiplegiaSide = 'Right'; }
+    else if (leftParaCount >= 2)  { qualifiesForHemiplegia = true; hemiplegiaSide = 'Left'; }
+  }
+
+  const hasValidNeuroDiagnosis = patient.neuroCondition && !['no', 'n/a', 'none', '', 'no.'].includes(patient.neuroCondition);
+
+  const isNeuroEligible = hasValidNeuroDiagnosis || patient.hasSpasticity || qualifiesForHemiplegia;
+  const isSPOEligible = patient.hasSwelling || patient.hasPressureUlcers || isNeuroEligible ||
+                        patient.usesCatheters || patient.hasSpineCurvature || patient.hasAmputation;
+  const isMPOEligible = patient.usesCatheters || isNeuroEligible;
+
+  const inherentlySolidCodes = [
+    'K0822', 'K0824', 'K0826', 'K0828',
+    'K0835', 'K0837', 'K0839',
+    'K0840', 'K0841', 'K0843',
+    'K0848', 'K0849', 'K0850', 'K0851',
+    'K0856', 'K0857', 'K0858', 'K0859',
+    'K0861', 'K0862', 'K0863', 'K0864',
+  ];
+
+  const eligibleProducts = allProducts
+    .map(productRow => {
+      const [features, hcpcs, weightCapacityStr, seatType, pdfLink, imageUrl] = productRow.map(p => String(p == null ? '' : p));
+      return { features, hcpcs, weightCapacityStr, seatType, pdfLink, imageUrl };
+    })
+    .filter(product => {
+      const hcpcs = product.hcpcs.trim();
+      const hcpcsNum = parseInt(hcpcs.replace(/\D/g, ''), 10) || 0;
+      if (hcpcsNum === 0) return false;
+
+      const seatCode = product.seatType.toLowerCase().trim();
+      const isKnownSolid = inherentlySolidCodes.includes(hcpcs);
+      const sheetSaysSolid = seatCode.includes('s');
+      const offersSolid = isKnownSolid || sheetSaysSolid;
+      const offersCaptain = seatCode.includes('c') && !isKnownSolid && !sheetSaysSolid;
+
+      if (patient.weight > 0) {
+        let minCap = 0, maxCap = 999;
+        if (product.weightCapacityStr.includes('-')) {
+          [minCap, maxCap] = product.weightCapacityStr.split('-').map(n => parseInt(n, 10));
+          if (patient.weight < minCap) return false;
+          if (patient.weight > maxCap) return false;
+        } else {
+          maxCap = parseInt(product.weightCapacityStr, 10);
+          if (patient.weight > maxCap) return false;
+        }
+      }
+
+      const isGroup3 = hcpcsNum >= 848;
+      const isMPO = (hcpcsNum >= 840 && hcpcsNum <= 843) || (hcpcsNum >= 861 && hcpcsNum <= 864);
+      const isSPO = (hcpcsNum >= 835 && hcpcsNum <= 839) || (hcpcsNum >= 856 && hcpcsNum <= 859);
+
+      const needsSolidSeat = patient.hasSpineCurvature || patient.hasPressureUlcers || patient.hasSpasticity ||
+                             hasValidNeuroDiagnosis || qualifiesForHemiplegia || hasStrokeWeakness ||
+                             patient.hasLowerExtremityNumbness || patient.usesCatheters || patient.hasAmputation;
+
+      if (needsSolidSeat) { if (!offersSolid) return false; }
+      else { if (!isGroup3 && !offersCaptain) return false; }
+
+      if (patient.isOnOxygen && (hcpcs === 'K0837' || hcpcs === 'K0838')) return false;
+
+      if (isGroup3 && !isNeuroEligible) return false;
+      if (isMPO && !isMPOEligible) return false;
+      if (isSPO && !isSPOEligible) return false;
+
+      return true;
+    });
+
+  // --- SUBSTITUTION ---
+  const substitutions = { 'K0856': 'K0861', 'K0838': 'K0837' };
+  const processedMap = new Map();
+
+  eligibleProducts.forEach(product => {
+    let finalHcpcs = product.hcpcs.trim();
+    let finalProduct = Object.assign({}, product);
+
+    if (['K0841', 'K0842', 'K0843'].includes(finalHcpcs)) {
+      if (isNeuroEligible) {
+        if (finalHcpcs === 'K0843') finalHcpcs = 'K0862';
+        else finalHcpcs = 'K0861';
+        const targetDetails = allProducts.find(r => String(r[1]).trim() === finalHcpcs);
+        if (targetDetails) {
+          finalProduct.hcpcs = finalHcpcs;
+          finalProduct.pdfLink = String(targetDetails[4] == null ? '' : targetDetails[4]);
+          finalProduct.imageUrl = String(targetDetails[5] == null ? '' : targetDetails[5]);
+        }
+      }
+    } else if (substitutions[finalHcpcs]) {
+      const targetHcpcs = substitutions[finalHcpcs];
+      const targetIsGroup3 = parseInt(targetHcpcs.replace(/\D/g, ''), 10) >= 848;
+      const originalIsGroup2 = parseInt(finalHcpcs.replace(/\D/g, ''), 10) < 848;
+      if (originalIsGroup2 && targetIsGroup3 && !isNeuroEligible) {
+        finalHcpcs = product.hcpcs.trim();
+      } else {
+        finalHcpcs = targetHcpcs;
+        const targetDetails = allProducts.find(r => String(r[1]).trim() === targetHcpcs);
+        if (targetDetails) {
+          finalProduct.hcpcs = finalHcpcs;
+          finalProduct.pdfLink = String(targetDetails[4] == null ? '' : targetDetails[4]);
+          finalProduct.imageUrl = String(targetDetails[5] == null ? '' : targetDetails[5]);
+        }
+      }
+    }
+
+    if (!processedMap.has(finalHcpcs)) processedMap.set(finalHcpcs, finalProduct);
+  });
+
+  // --- SORT & JUSTIFY ---
+  const finalResults = Array.from(processedMap.values()).map(p => {
+    const hcpcsNum = parseInt(p.hcpcs.replace(/\D/g, ''), 10) || 0;
+    const isGroup3 = hcpcsNum >= 848;
+    const isComplex = hcpcsNum >= 835;
+    const isSPO = (hcpcsNum >= 835 && hcpcsNum <= 839) || (hcpcsNum >= 856 && hcpcsNum <= 859);
+
+    const isKnownSolid = inherentlySolidCodes.includes(p.hcpcs);
+    const seatCode = p.seatType.toLowerCase();
+    const sheetSaysSolid = seatCode.includes('s');
+    const offersSolid = isKnownSolid || sheetSaysSolid;
+    const isCaptainOnly = seatCode.includes('c') && !offersSolid;
+
+    let displayHcpcs = p.hcpcs;
+    let justification = 'Eligible option';
+
+    if (isGroup3) {
+      const reasons = [];
+      if (hasValidNeuroDiagnosis) reasons.push('Neuro Dx');
+      if (patient.hasSpasticity) reasons.push('Spasticity');
+      if (qualifiesForHemiplegia) reasons.push('Hemiplegia (' + hemiplegiaSide + ' Side)');
+      if (patient.hasAmputation) reasons.push('Amputation');
+      justification = 'Medically Necessary Upgrade due to: ' + reasons.join(', ');
+    } else {
+      const solidReasons = [];
+      if (patient.hasPressureUlcers) solidReasons.push('Pressure Ulcers');
+      if (patient.hasSpineCurvature) solidReasons.push('Spinal Curvature');
+      if (patient.hasLowerExtremityNumbness) solidReasons.push('Impaired Sensation');
+      if (patient.hasSpasticity) solidReasons.push('Spasticity');
+      if (hasValidNeuroDiagnosis) solidReasons.push('Neuro Dx');
+      if (hasStrokeWeakness && !qualifiesForHemiplegia) solidReasons.push('CVA/Stroke Weakness');
+      if (patient.hasAmputation) solidReasons.push('Amputation (Center of Gravity/Pressure Relief)');
+      if (patient.usesCatheters) solidReasons.push('Intermittent Catheterization');
+
+      if (isSPO) {
+        const spoReasons = [];
+        if (patient.hasSwelling) spoReasons.push('Power Legs (Edema)');
+        if (patient.hasPressureUlcers) spoReasons.push('Power Tilt (Pressure Relief)');
+        if (patient.hasSpineCurvature || patient.hasAmputation || isNeuroEligible) spoReasons.push('Power Tilt (Positioning/Stability)');
+        if (patient.usesCatheters) spoReasons.push('Power Tilt (Catheterization)');
+        const spoText = spoReasons.length > 0 ? spoReasons.join(', ') : 'Power Accessory';
+        justification = 'Indicated for: ' + spoText;
+      }
+
+      if (solidReasons.length > 0 && offersSolid) {
+        if (justification === 'Eligible option') justification = '';
+        else justification += ' | ';
+        justification += 'Solid Seat indicated for: ' + solidReasons.join(', ');
+      } else if (!isSPO && offersSolid) {
+        if (justification === 'Eligible option') justification = 'Solid Seat';
+        else justification += ' (Solid Seat)';
+      } else if (isCaptainOnly && !isSPO) {
+        justification = "Captain's Seat";
+      }
+
+      if (['K0841', 'K0842', 'K0843'].includes(p.hcpcs)) {
+        const subTarget = (p.hcpcs === 'K0843') ? 'K0862' : 'K0861';
+        displayHcpcs = p.hcpcs + ' (substitute ' + subTarget + ')';
+        let reason = 'MPO';
+        if (patient.usesCatheters) reason += ' (for Intermittent Cath)';
+        justification = reason + ' - <span style="text-decoration: underline;">Provide <strong>' + subTarget + '</strong> as free upgrade</span>';
+      }
+      if (['K0800', 'K0801'].includes(p.hcpcs)) justification += ' | (if POV eligible)';
+    }
+
+    return {
+      hcpcs: displayHcpcs,
+      pdfLink: p.pdfLink,
+      imageUrl: p.imageUrl,
+      category: isComplex ? 'Complex' : 'Standard',
+      sortOrder: hcpcsNum,
+      justification: justification,
+    };
+  });
+
+  finalResults.sort((a, b) => b.sortOrder - a.sortOrder);
+  return {
+    standard: finalResults.filter(p => p.category === 'Standard'),
+    complex: finalResults.filter(p => p.category === 'Complex'),
+  };
+}
+
+// ── Email body builders (all user fields esc_'d — INV-89 discipline) ──────
+function intakeEmailShell_(title, innerHtml) {
+  const P = CN_EMAIL_PALETTE;
+  return (
+    '<div style="margin:0;padding:0;background:' + P.paper + ';">' +
+    '<div style="max-width:680px;margin:0 auto;padding:20px 12px;font-family:\'Helvetica Neue\',Arial,sans-serif;color:' + P.ink + ';">' +
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;"><tr>' +
+        '<td style="width:60px;vertical-align:middle;"><img src="' + P.logoUrl + '" alt="UMS" style="height:46px;display:block;"></td>' +
+        '<td style="vertical-align:middle;padding-left:14px;"><h2 style="margin:0;text-align:left;color:' + P.brand + ';font-size:18px;">' + esc_(title) + '</h2></td>' +
+      '</tr></table>' +
+      '<div style="background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:8px;padding:18px;">' +
+        innerHtml +
+      '</div>' +
+      '<div style="text-align:center;color:' + P.muted + ';font-size:11px;padding:14px 0 0;">UMS Team Tools · Intake</div>' +
+    '</div></div>'
+  );
+}
+
+const INTAKE_PPD_YESNO_QS = ['14','15','16','17','18','19','20','21','22','23','26','27','28','30','31','33','35','36','44'];
+function intakePpdAnswerStyles_() {
+  return {
+    green:  'background-color:#d4edda;color:#155724;border:1px solid #c3e6cb;font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
+    red:    'background-color:#f8d7da;color:#721c24;border:1px solid #f5c6cb;font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
+    gray:   'background-color:#e2e3e5;color:#383d41;border:1px solid #d6d8db;border-radius:4px;padding:4px 8px;display:inline-block;',
+    yellow: 'background-color:#fff3cd;color:#856404;border:1px solid #ffeeba;font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
+  };
+}
+
+// rows: [{ qNum, label, value, isHeader, isSecondary }]
+function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
+  const P = CN_EMAIL_PALETTE;
+  const s = intakePpdAnswerStyles_();
+  let html = '<table style="border-collapse:collapse;width:100%;font-size:14px;">';
+  let fieldIdx = 0;
+  (rows || []).forEach(function (r) {
+    const label = esc_(r.label || '');
+    if (r.isHeader) {
+      html += '<tr><td colspan="2" style="height:14px;"></td></tr><tr style="background:' + P.brand + ';"><td colspan="2" style="padding:10px;border:1px solid #ccc;text-align:center;font-weight:bold;color:#ffffff;">' + label + '</td></tr>';
+      return;
+    }
+    const answerRaw = String(r.value == null ? '' : r.value);
+    const qNum = String(r.qNum || '');
+    let displayAnswer;
+    if (!answerRaw) {
+      displayAnswer = '<span style="color:#999;font-style:italic;font-weight:normal;">N/A</span>';
+    } else {
+      const escAns = esc_(answerRaw);
+      const lower = answerRaw.toLowerCase();
+      if (qNum && INTAKE_PPD_YESNO_QS.indexOf(qNum) >= 0) {
+        displayAnswer = '<div style="' + (lower.indexOf('no') >= 0 ? s.red : s.green) + '">' + escAns + '</div>';
+      } else if (qNum === '34') {
+        displayAnswer = '<div style="' + (lower.indexOf('no') >= 0 ? s.gray : s.yellow) + '">' + escAns + '</div>';
+      } else if (qNum === '25' || qNum === '31a') {
+        if (lower.indexOf('no') >= 0 && lower.indexOf('weakness') < 0 && lower.indexOf('paralysis') < 0 && lower.indexOf('feet') < 0 && lower.indexOf('hands') < 0) {
+          displayAnswer = '<div style="' + s.gray + '">' + escAns + '</div>';
+        } else {
+          displayAnswer = answerRaw.split(',').map(function (part) { return '<span style="' + s.yellow + ' margin:2px;">' + esc_(part.trim()) + '</span>'; }).join(' ');
+        }
+      } else {
+        displayAnswer = escAns;
+      }
+    }
+    const qStyle = r.isSecondary ? 'font-weight:normal;font-style:italic;color:#444;padding-left:25px;' : 'font-weight:bold;color:#333333;';
+    const bg = (fieldIdx % 2 === 0) ? '#ffffff' : '#e6f2ff';
+    fieldIdx++;
+    html += '<tr style="background:' + bg + ';"><td style="padding:8px;border:1px solid #ddd;width:50%;' + qStyle + '">' + label + '</td><td style="padding:8px;border:1px solid #ddd;text-align:center;vertical-align:middle;font-weight:bold;">' + displayAnswer + '</td></tr>';
+  });
+
+  // --- Recommendations ---
+  html += '<tr><td colspan="2" style="padding:20px 10px 5px 10px;border-top:2px solid #ccc;"><h3 style="margin:0 0 8px;">Recommended HCPCS:</h3>';
+  const hasComplex = recData && recData.complex && recData.complex.length > 0;
+  const hasStandard = recData && recData.standard && recData.standard.length > 0;
+  if (!hasComplex && !hasStandard) {
+    html += '<p style="color:#666;font-style:italic;">No products matched all criteria based on the provided answers.</p>';
+  } else {
+    if (hasComplex) {
+      html += '<h4 style="margin-bottom:5px;color:#b71c1c;">Complex Rehab</h4>' + intakeRecListHtml_(recData.complex, selections);
+    }
+    if (hasStandard) {
+      if (hasComplex) html += '<div style="height:20px;"></div>';
+      html += '<h4 style="margin-bottom:5px;color:#1565c0;">Standard Powerchair</h4>' + intakeRecListHtml_(recData.standard, selections);
+    }
+  }
+  html += '</td></tr></table>';
+  return html;
+}
+
+// selections: { itemId: { status:'accepted'|'rejected'|'undecided'|'none', preferred:bool } }
+// justification is server-generated (trusted) and intentionally carries inline
+// markup, so it is injected raw; hcpcs / links / images are esc_'d.
+function intakeRecListHtml_(items, selections) {
+  selections = selections || {};
+  let out = '<ul style="list-style-type:none;padding-left:0;margin:0;">';
+  (items || []).forEach(function (product) {
+    const itemId = String(product.hcpcs).replace(/\s+/g, '-');
+    const sel = selections[itemId] || {};
+    const status = sel.status || 'none';
+    const isPreferred = !!sel.preferred;
+
+    let rowStyle = 'padding:10px;border-bottom:1px solid #ddd;display:flex;align-items:flex-start;gap:15px;';
+    if (status === 'rejected') rowStyle += 'background-color:#f8f9fa;opacity:0.6;filter:grayscale(100%);';
+    out += '<li style="' + rowStyle + '">';
+
+    out += '<div style="padding-top:5px;">' + (isPreferred
+      ? '<span style="font-size:24px;color:#FFD700;line-height:1;">&#9733;</span>'
+      : '<span style="width:24px;display:inline-block;"></span>') + '</div>';
+
+    if (product.imageUrl) {
+      out += '<img src="' + esc_(product.imageUrl) + '?v=' + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;vertical-align:middle;border:1px solid #eee;margin-right:10px;">';
+    }
+
+    out += '<div style="font-size:14px;flex-grow:1;">';
+    out += '<div style="font-weight:bold;font-size:16px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">';
+    const title = product.pdfLink
+      ? '<a href="' + esc_(product.pdfLink) + '" target="_blank" style="text-decoration:none;color:#1a73e8;">' + esc_(product.hcpcs) + '</a>'
+      : esc_(product.hcpcs);
+    out += '<span>' + title + '</span><div style="font-weight:normal;margin-left:15px;">';
+    if (status === 'accepted')       out += '<span style="background:#e6fffa;color:#00875A;border:1px solid #b3f5e1;padding:2px 6px;border-radius:4px;font-size:12px;">&#10004; Accepted</span>';
+    else if (status === 'rejected')  out += '<span style="background:#ffebe6;color:#DE350B;border:1px solid #ffbdad;padding:2px 6px;border-radius:4px;font-size:12px;">&#10008; Rejected</span>';
+    else if (status === 'undecided') out += '<span style="background:#e2e8f0;color:#334155;border:1px solid #94a3b8;padding:2px 6px;border-radius:4px;font-size:12px;">&#129300; Undecided/Maybe</span>';
+    else                             out += '<span style="background:#f4f5f7;color:#888;border:1px solid #dfe1e6;padding:2px 6px;border-radius:4px;font-size:12px;">Unconfirmed</span>';
+    out += '</div></div>';
+    out += '<div style="color:#555;">' + (product.justification || 'Eligible match.') + '</div>';
+    out += '</div></li>';
+  });
+  out += '</ul>';
+  return out;
+}
+
+// rows: [{ qIndex, label, value, isHeader, isSecondary }] — account-creation forms.
+// layout: INTAKE_PMD_LAYOUT | INTAKE_PAP_LAYOUT (server-held structural rules).
+function intakeBuildAcctBodyHtml_(rows, layout) {
+  const P = CN_EMAIL_PALETTE;
+  let html = '<table style="border-collapse:collapse;width:100%;font-size:14px;">';
+  let fieldIdx = 0;
+  (rows || []).forEach(function (r) {
+    const i = Number(r.qIndex);
+    const label = esc_(r.label || '');
+    const answerRaw = String(r.value == null ? '' : r.value);
+    const isHeader = layout.HEADER_ROWS.indexOf(i + 1) >= 0;
+
+    if (isHeader) {
+      html += '<tr><td colspan="2" style="height:14px;"></td></tr><tr style="background:' + P.brand + ';"><td colspan="2" style="padding:10px;border:1px solid #ccc;text-align:center;font-weight:bold;color:#ffffff;">' + label + '</td></tr>';
+      return;
+    }
+
+    let displayAnswer;
+    const cond = layout.CONDITIONAL_FORMATTING_ROWS[i];
+    if (cond && cond[answerRaw]) {
+      const rule = cond[answerRaw];
+      displayAnswer = '<div style="background-color:' + rule.bg + ';color:' + rule.fg + ';border:1px solid ' + rule.bg + ';border-radius:4px;padding:5px 8px;font-weight:bold;display:inline-block;">' + esc_(answerRaw) + '</div>';
+    } else if (layout.CHECKBOX_ROWS.indexOf(i) >= 0) {
+      const checkColor = layout.CHECKBOX_WARN_ROWS.indexOf(i) >= 0 ? '#FFC107' : '#00875A';
+      displayAnswer = (answerRaw === 'TRUE')
+        ? '<div style="width:16px;height:16px;border:1px solid #777;background-color:#fff;text-align:center;line-height:16px;font-weight:bold;color:' + checkColor + ';display:inline-block;">&#10003;</div>'
+        : '<div style="width:16px;height:16px;border:1px solid #ccc;background-color:#f4f4f4;display:inline-block;"></div>';
+    } else {
+      displayAnswer = !answerRaw ? '<span style="color:#999;font-style:italic;">N/A</span>' : esc_(answerRaw);
+    }
+
+    const qStyle = layout.SECONDARY_QUESTION_ROWS.indexOf(i) >= 0
+      ? 'font-weight:normal;font-style:italic;color:#444;padding-left:25px;'
+      : 'font-weight:bold;color:#333333;';
+    const bg = (fieldIdx % 2 === 0) ? '#ffffff' : '#e6f2ff';
+    fieldIdx++;
+    html += '<tr style="background:' + bg + ';"><td style="padding:8px;border:1px solid #ddd;width:50%;' + qStyle + '">' + label + '</td><td style="padding:8px;border:1px solid #ddd;text-align:center;vertical-align:middle;">' + displayAnswer + '</td></tr>';
+  });
+  html += '</table>';
+  return html;
+}
+
+// SHA-256 over the body+subject — guards the patient answers between Preview
+// and Send (the rep may edit the form in between). Mirrors INV-41.
+function intakeBodyHash_(html, subject) { return computeCnEmailHash_(html, subject, ''); }
+
+function intakeDecodeImages_(images) {
+  const inlineImagesObj = {};
+  let sectionHtml = '';
+  if (!images || !images.length) return { inlineImagesObj: inlineImagesObj, sectionHtml: '' };
+  const capped = images.slice(0, CONFIG.INTAKE.MAX_IMAGES);
+  sectionHtml = '<div style="margin-top:20px;border-top:2px dashed #ccc;padding-top:20px;text-align:center;"><h3 style="color:#444;">Attached Images</h3>';
+  capped.forEach(function (b64, index) {
+    const str = String(b64 || '');
+    if (str.length > CONFIG.INTAKE.MAX_IMAGE_CHARS) throw new Error('An attached image is too large (max ~5MB each).');
+    if (str.indexOf('data:') !== 0 || str.indexOf(',') < 0) return;
+    const cid = 'attachedImage' + index;
+    const contentType = str.substring(5, str.indexOf(';'));
+    const data = str.split(',')[1];
+    const blob = Utilities.newBlob(Utilities.base64Decode(data), contentType, cid);
+    inlineImagesObj[cid] = blob;
+    sectionHtml += '<img src="cid:' + cid + '" style="max-width:100%;border:1px solid #ddd;border-radius:4px;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />';
+  });
+  sectionHtml += '</div>';
+  return { inlineImagesObj: inlineImagesObj, sectionHtml: sectionHtml };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INTAKE ENDPOINTS  (two-stage: preview → send; all require an enrolled rep)
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── PPD ──
+function intakePreviewPPD(payload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    payload = payload || {};
+    const patientInfo = String(payload.patientInfo || '').trim();
+    if (!patientInfo) return { error: 'Enter the Patient Name & Trx# before previewing.' };
+    const recData = intakeFilterRecommendations_(payload.answers || {}, getIntakeOfferings_());
+    const subject = 'PPD for ' + patientInfo;
+    const body = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, null);
+    const html = intakeEmailShell_(subject, body);
+    return { success: true, html: html, subject: subject, recommendations: recData, bodyHash: intakeBodyHash_(body, subject) };
+  } catch (err) { return { error: err.message }; }
+}
+
+function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    payload = payload || {};
+    const patientInfo = String(payload.patientInfo || '').trim();
+    if (!patientInfo) return { success: false, error: 'Patient Name & Trx# is required.' };
+
+    const recData = intakeFilterRecommendations_(payload.answers || {}, getIntakeOfferings_());
+    const subject = 'PPD for ' + patientInfo;
+    // Re-build WITHOUT selections to verify the patient answers haven't drifted.
+    const baseBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, null);
+    if (expectedBodyHash && intakeBodyHash_(baseBody, subject) !== expectedBodyHash) {
+      return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
+    }
+    const recipient = intakeResolveRecipient_('PPD', recipientSpec);
+    const finalBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {});
+    const html = intakeEmailShell_(subject, finalBody);
+
+    MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });
+
+    const submissionId = Utilities.getUuid();
+    try {
+      getIntakeSubmissionSheet_('PPD').appendRow([
+        submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
+        patientInfo, String(payload.language || 'EN'),
+        JSON.stringify(payload.answers || {}), JSON.stringify(recData),
+        JSON.stringify(payload.selections || {}), recipient,
+      ]);
+    } catch (e) { console.warn('intake PPD submission store failed: ' + e.message); }
+
+    writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
+      'type=PPD; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient), emp.email);
+
+    return { success: true, recipient: recipient, submissionId: submissionId };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+// ── PMD / PAP account creation (shared shape) ──
+function intakePreviewAcct_(formType, payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Not authorized.' };
+  payload = payload || {};
+  const patientInfo = String(payload.patientInfo || '').trim();
+  if (!patientInfo) return { error: 'Enter the Patient Name before previewing.' };
+  const dob = String(payload.dob || '').trim();
+  const layout = formType === 'PAP' ? INTAKE_PAP_LAYOUT : INTAKE_PMD_LAYOUT;
+  const subject = (formType === 'PAP' ? 'PAP' : 'PMD') + ' Account Creation for ' + patientInfo + (dob ? ' ' + dob : '');
+  const body = intakeBuildAcctBodyHtml_(payload.rows || [], layout);
+  const html = intakeEmailShell_(subject, body);
+  return { success: true, html: html, subject: subject, bodyHash: intakeBodyHash_(body, subject) };
+}
+
+function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyHash) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
+  payload = payload || {};
+  const patientInfo = String(payload.patientInfo || '').trim();
+  if (!patientInfo) return { success: false, error: 'Patient Name is required.' };
+  const dob = String(payload.dob || '').trim();
+  const layout = formType === 'PAP' ? INTAKE_PAP_LAYOUT : INTAKE_PMD_LAYOUT;
+  const subject = (formType === 'PAP' ? 'PAP' : 'PMD') + ' Account Creation for ' + patientInfo + (dob ? ' ' + dob : '');
+
+  const body = intakeBuildAcctBodyHtml_(payload.rows || [], layout);
+  if (expectedBodyHash && intakeBodyHash_(body, subject) !== expectedBodyHash) {
+    return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
+  }
+  const recipient = intakeResolveRecipient_(formType, recipientSpec);
+
+  // Images ride at send only (not part of the preview hash). Append the image
+  // section to the inner body, then wrap — no brittle string surgery.
+  let innerBody = body;
+  let inlineImagesObj = {};
+  const imgCount = (images && images.length) ? Math.min(images.length, CONFIG.INTAKE.MAX_IMAGES) : 0;
+  if (imgCount > 0) {
+    const decoded = intakeDecodeImages_(images);
+    inlineImagesObj = decoded.inlineImagesObj;
+    innerBody += decoded.sectionHtml;
+  }
+  const htmlBody = intakeEmailShell_(subject, innerBody);
+
+  MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });
+
+  const submissionId = Utilities.getUuid();
+  try {
+    getIntakeSubmissionSheet_(formType).appendRow([
+      submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
+      patientInfo, dob, String(payload.language || 'EN'),
+      JSON.stringify(payload.answers || {}), recipient, imgCount,
+    ]);
+  } catch (e) { console.warn('intake ' + formType + ' submission store failed: ' + e.message); }
+
+  writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
+    'type=' + formType + '; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) + '; images=' + imgCount, emp.email);
+
+  return { success: true, recipient: recipient, submissionId: submissionId };
+}
+
+function intakePreviewPMD(payload) { try { return intakePreviewAcct_('PMD', payload); } catch (e) { return { error: e.message }; } }
+function intakeSendPMD(payload, recipientSpec, images, expectedBodyHash) { try { return intakeSendAcct_('PMD', payload, recipientSpec, images, expectedBodyHash); } catch (e) { return { success: false, error: e.message }; } }
+function intakePreviewPAP(payload) { try { return intakePreviewAcct_('PAP', payload); } catch (e) { return { error: e.message }; } }
+function intakeSendPAP(payload, recipientSpec, images, expectedBodyHash) { try { return intakeSendAcct_('PAP', payload, recipientSpec, images, expectedBodyHash); } catch (e) { return { success: false, error: e.message }; } }
+
+function intakeEmailDomain_(email) {
+  const at = String(email || '').indexOf('@');
+  return at >= 0 ? String(email).substring(at + 1).toLowerCase() : '(none)';
 }
