@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; font-size: 14px; color: #333; background-image: url('<?= AC_CONFIG.BACKGROUND_IMAGE_URL ?>'); background-color: #e9ecef; background-size: cover; }
+      
+      /* Main content adjustment for taller footer */
+      #main-content { position: absolute; top: 0; bottom: 160px; left: 0; right: 0; padding: 15px 25px; overflow-y: auto; background-color: rgba(255, 255, 255, 0.85); }
+      
+      /* Taller footer */
+      #footer { position: fixed; bottom: 0; left: 0; width: 100%; height: 160px; background-color: #f8f9fa; border-top: 1px solid #dee2e6; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; padding: 10px; }
+      
+      .footer-controls { display: flex; align-items: center; gap: 15px; width: 100%; justify-content: center; margin-top: auto; margin-bottom: 5px; }
+      
+      input, button { padding: 8px 12px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; }
+      input[type="text"] { width: 220px; }
+      
+      button { cursor: pointer; transition: background-color 0.2s; }
+      button#send-btn { background-color: #1a73e8; color: white; border-color: #1a73e8; font-weight: 500; display: flex; align-items: center; justify-content: center; min-width: 110px; height: 38px; }
+      button#send-btn:disabled { background-color: #9E9E9E; border-color: #9E9E9E; cursor: not-allowed; }
+      button#cancel-btn { background-color: #fff; }
+      
+      .loader { border: 2px solid rgba(255, 255, 255, 0.3); border-top: 2px solid #fff; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: none; }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+      /* --- IMAGE UPLOAD STYLES --- */
+      #image-drop-zone {
+        width: 90%;
+        height: 40px;
+        border: 2px dashed #ccc;
+        border-radius: 5px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: white;
+        color: #666;
+        font-size: 12px;
+        transition: all 0.2s;
+        outline: none;
+        position: relative;
+      }
+      #image-drop-zone:focus { border-color: #1a73e8; background-color: #f1f8ff; }
+      #image-drop-zone.drag-over { border-color: #00875A; background-color: #E3FCEF; }
+      
+      .upload-trigger { color: #1a73e8; cursor: pointer; text-decoration: underline; font-weight: bold; }
+      
+      #status-msg { margin-left: 10px; font-weight: bold; font-size: 12px; display: none; }
+      .success-text { color: #00875A; }
+
+      /* Gallery */
+      #gallery-container {
+        width: 90%;
+        height: 50px;
+        display: flex;
+        gap: 10px;
+        margin-top: 5px;
+        overflow-x: auto;
+        padding: 2px;
+      }
+      .thumb-wrapper {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: #fff;
+        flex-shrink: 0;
+      }
+      .thumb-wrapper img { width: 100%; height: 100%; object-fit: cover; border-radius: 3px; }
+      .thumb-remove {
+        position: absolute; top: -6px; right: -6px; background: red; color: white;
+        border-radius: 50%; width: 16px; height: 16px; text-align: center;
+        line-height: 14px; font-size: 10px; cursor: pointer; display: none; border: 1px solid white;
+      }
+      .thumb-wrapper:hover .thumb-remove { display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="main-content">
+      <?!= formPreview; ?>
+    </div>
+    
+    <div id="footer">
+      <div id="image-drop-zone" tabindex="0">
+        <span id="drop-text">
+          📸 <span class="upload-trigger" onclick="document.getElementById('file-input').click()">Click to Upload</span>, Drag & Drop, or Paste (Ctrl+V)
+        </span>
+        <span id="status-msg"></span>
+        <input type="file" id="file-input" accept="image/*" style="display:none" multiple onchange="handleFileSelect(this)">
+      </div>
+
+      <div id="gallery-container"></div>
+
+      <div class="footer-controls">
+        <label for="recipient-input"><strong>Send to:</strong></label>
+        
+        <input type="text" id="recipient-input" list="team-members" placeholder="Select or type a name...">
+        <datalist id="team-members">
+          <option value="<?= AC_CONFIG.DEFAULT_EMAIL ?>">Default</option>
+          <? for (let i = 0; i < teamMembers.length; i++) { ?>
+            <option value="<?= teamMembers[i] ?>"></option>
+          <? } ?>
+        </datalist>
+
+        <button id="send-btn" onclick="sendEmail()">
+          <span id="btn-text">Send Email</span>
+          <div id="loader" class="loader"></div>
+        </button>
+        <button id="cancel-btn" onclick="google.script.host.close()">Cancel</button>
+      </div>
+    </div>
+
+    <script>
+      let storedImages = []; 
+
+      document.addEventListener('DOMContentLoaded', () => {
+        setupDragAndDrop();
+        
+        document.addEventListener('paste', function(e) {
+          const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+          for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+              const blob = items[i].getAsFile();
+              processImageFile(blob);
+              e.preventDefault();
+            }
+          }
+        });
+      });
+
+      // --- Drag & Drop & Image Processing Helpers ---
+      function setupDragAndDrop() {
+        const dropZone = document.getElementById('image-drop-zone');
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+          dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
+        });
+        ['dragenter', 'dragover'].forEach(eventName => {
+          dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+        });
+        ['dragleave', 'drop'].forEach(eventName => {
+          dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+        });
+        dropZone.addEventListener('drop', (e) => {
+          handleFiles(e.dataTransfer.files);
+        }, false);
+      }
+
+      function handleFileSelect(input) {
+        handleFiles(input.files);
+        input.value = "";
+      }
+
+      function handleFiles(files) {
+        if (!files || files.length === 0) return;
+        for (let i = 0; i < files.length; i++) {
+          if (files[i].type.startsWith('image/')) {
+            processImageFile(files[i]);
+          }
+        }
+      }
+
+      function processImageFile(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          storedImages.push(e.target.result);
+          renderGallery();
+          showStatus("✅ Image attached!");
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function showStatus(msg) {
+        const el = document.getElementById('status-msg');
+        const dropText = document.getElementById('drop-text');
+        dropText.style.display = 'none';
+        el.innerText = msg;
+        el.className = "success-text";
+        el.style.display = 'inline';
+        setTimeout(() => {
+          el.style.display = 'none';
+          dropText.style.display = 'inline';
+        }, 2500);
+      }
+
+      function renderGallery() {
+        const container = document.getElementById('gallery-container');
+        container.innerHTML = ""; 
+        storedImages.forEach((imgData, index) => {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'thumb-wrapper';
+          const img = document.createElement('img');
+          img.src = imgData;
+          const removeBtn = document.createElement('div');
+          removeBtn.className = 'thumb-remove';
+          removeBtn.innerText = '✕';
+          removeBtn.onclick = () => removeImage(index);
+          wrapper.appendChild(img);
+          wrapper.appendChild(removeBtn);
+          container.appendChild(wrapper);
+        });
+      }
+
+      function removeImage(index) {
+        storedImages.splice(index, 1);
+        renderGallery();
+      }
+
+      // --- SEND EMAIL FUNCTION ---
+      function sendEmail() {
+        const sendButton = document.getElementById('send-btn');
+        const btnText = document.getElementById('btn-text');
+        const loader = document.getElementById('loader');
+        const selectedValue = document.getElementById('recipient-input').value;
+        let finalEmail;
+
+        if (!selectedValue) {
+            alert("Please select or enter a recipient.");
+            return;
+        }
+
+        // --- PRESERVED LOGIC: Construct Email ---
+        // Check if the user selected the default or entered a full email address
+        if (selectedValue.includes('@')) {
+          finalEmail = selectedValue;
+        } 
+        else if (selectedValue.toLowerCase() === 'default') {
+          finalEmail = "<?= AC_CONFIG.DEFAULT_EMAIL ?>";
+        }
+        else {
+          // Construct email from Name (First.Last)
+          const nameParts = selectedValue.split(' ');
+          const firstName = nameParts[0].toLowerCase();
+          const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1].toLowerCase() : '';
+          finalEmail = `${firstName}.${lastName}@universalmedsupply.com`;
+        }
+        // ----------------------------------------
+
+        const recipientInfo = {
+          customEmail: finalEmail,
+          useDefault: false,
+          images: storedImages // Include the images array
+        };
+
+        sendButton.disabled = true;
+        btnText.style.display = 'none';
+        loader.style.display = 'inline-block';
+        
+        google.script.run
+          .withSuccessHandler(function(successMessage) {
+            google.script.host.close();
+            google.script.run.showSuccessDialog_wrapper(successMessage);
+          })
+          .withFailureHandler(function(error) {
+            sendButton.disabled = false;
+            btnText.style.display = 'inline-block';
+            loader.style.display = 'none';
+            google.script.run.showFailureDialog_wrapper('Error: ' + error.message);
+          })
+          .processAccountCreationEmail_wrapper(recipientInfo);
+      }
+    </script>
+  </body>
+</html>

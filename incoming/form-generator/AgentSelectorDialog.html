@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <style>
+  
+      .container {
+        padding: 15px 20px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between; 
+        height: calc(100% - 30px); // Adjust for padding to fill the dialog 
+      }
+      .content {
+
+      }
+      label {
+        font-weight: 500;
+        display: block;
+        margin-bottom: 8px; // Space between label and select box
+      }
+      #agent-select {
+        width: 100%;
+        padding: 6px; 
+      }
+      .button-bar {
+        display: flex;
+        justify-content: flex-end; 
+        gap: 8px; // Adds space between the buttons
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="content">
+        <label for="agent-select">Select a recipient for the form:</label>
+        <select id="agent-select">
+          <? for (var i = 0; i < agentOptions.length; i++) { ?>
+            <option><?= agentOptions[i] ?></option>
+          <? } ?>
+        </select>
+      </div>
+      
+      <div class="button-bar">
+        <button onclick="google.script.host.close()">Cancel</button>
+        <button class="action" onclick="submitSelection()">Submit</button>
+      </div>
+    </div>
+
+    <script>
+      function submitSelection() {
+        var selectedAgent = document.getElementById("agent-select").value;
+        // Disable button and change text to give user feedback
+        var submitButton = document.querySelector('button.action');
+        submitButton.disabled = true;
+        submitButton.textContent = 'Sending...';
+        
+        google.script.run
+          .withSuccessHandler(function() {
+            google.script.host.close();
+          })
+          .withFailureHandler(function(error) {
+            alert('An error occurred: ' + error.message);
+            google.script.host.close();
+          })
+          .processEmailToSend(selectedAgent);
+      }
+    </script>
+  </body>
+</html>

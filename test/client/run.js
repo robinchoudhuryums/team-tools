@@ -29,6 +29,7 @@ console.log('\nclient — all partials parse (<script> syntax guard)');
   'script_core.html', 'script_icons.html', 'metrics/script_metrics.html',
   'cn/script_callnotes.html', 'tc/script_clock.html', 'tc/script_timesheet.html',
   'tc/script_timeoff.html', 'tc/script_manager.html', 'index.html', 'form_public.html',
+  'intake/script_intake.html',
 ].forEach((f) => {
   test(f + ' parses', () => {
     const src = extractScript(f);
@@ -59,6 +60,12 @@ sb.CN_STATE = { deptConfig: { emailTemplates: [] } };
 const cnExtTemplatesAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesAll_');
 const cnExtTemplatesFor_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesFor_');
 const cnExtTemplateOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplateOptionsHtml_');
+// Quick-link picker (surveys/reviews) — reads CN_STATE.deptConfig.externalLinks + esc.
+const cnExtLinksAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinksAll_');
+const cnExtLinkOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinkOptionsHtml_');
+// Win-back nudge pure logic (reason matcher + template finder).
+const cnIsSwitchingSuppliersReason_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnIsSwitchingSuppliersReason_');
+const cnFindWinbackTemplate_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnFindWinbackTemplate_');
 
 // Helper: today's date in a given tz, computed independently of the code under
 // test (the oracle).
@@ -176,6 +183,43 @@ test('cnExtTemplatesAll_ tolerates a missing deptConfig', () => {
   sb.CN_STATE = {};
   const all = cnExtTemplatesAll_();
   assert.ok(Array.isArray(all) && all.length === 0, 'returns an empty array');
+  sb.CN_STATE = saved;
+});
+
+console.log('\ncn — quick-link picker (surveys / reviews)');
+test('cnExtLinkOptionsHtml_ lists labels + escapes them, with a placeholder', () => {
+  sb.CN_STATE.deptConfig.externalLinks = [
+    { label: 'Satisfaction Survey', url: 'https://survey.example/abc' },
+    { label: '<b>Review</b>', url: 'https://g.page/r/xyz' },
+  ];
+  const html = cnExtLinkOptionsHtml_();
+  assert.ok(html.includes('Insert a link…'), 'has placeholder option');
+  assert.ok(html.includes('Satisfaction Survey'), 'lists the label');
+  assert.ok(html.includes('&lt;b&gt;Review&lt;/b&gt;') && !html.includes('<b>Review</b>'), 'escapes labels');
+});
+test('cnExtLinksAll_ tolerates a missing deptConfig', () => {
+  const saved = sb.CN_STATE;
+  sb.CN_STATE = {};
+  assert.ok(Array.isArray(cnExtLinksAll_()) && cnExtLinksAll_().length === 0);
+  sb.CN_STATE = saved;
+});
+
+console.log('\ncn — win-back nudge (close reason = changing suppliers)');
+test('cnIsSwitchingSuppliersReason_ matches switch/change-supplier phrasings', () => {
+  ['changing suppliers', 'Changed supplier', 'switching to another provider',
+   'going with a different supplier', 'moving to a competitor', 'found supplies elsewhere',
+  ].forEach((r) => assert.ok(cnIsSwitchingSuppliersReason_(r), 'should match: ' + r));
+});
+test('cnIsSwitchingSuppliersReason_ ignores unrelated / empty reasons', () => {
+  ['', 'duplicate order', 'patient deceased', 'insurance denied', 'no longer needs equipment',
+  ].forEach((r) => assert.ok(!cnIsSwitchingSuppliersReason_(r), 'should NOT match: ' + r));
+});
+test('cnFindWinbackTemplate_ self-gates on a configured win-back template', () => {
+  const saved = sb.CN_STATE;
+  sb.CN_STATE = { deptConfig: { emailTemplates: [{ name: 'Feedback', recipientType: 'customer', body: 'x' }] } };
+  assert.strictEqual(cnFindWinbackTemplate_(), null, 'no win-back template → null (nudge stays silent)');
+  sb.CN_STATE.deptConfig.emailTemplates.push({ name: 'Win-Back Survey', recipientType: 'customer', body: 'Hi {name}' });
+  assert.strictEqual((cnFindWinbackTemplate_() || {}).name, 'Win-Back Survey');
   sb.CN_STATE = saved;
 });
 
@@ -387,6 +431,143 @@ test('install TARGETS lists nothing it does not also create', () => {
 test('removeAutomationTriggers TARGETS matches the install set (cleans up all it adds)', () => {
   assert.deepStrictEqual(removeTargets, installTargets,
     'install and remove TARGETS must list the same handlers');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Intake module — recommendation engine (PPD crown jewel) + layout coupling.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// extract a top-level `const NAME = {...};` object literal from a source file
+function extractConstObject(file, name) {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'web-app', file), 'utf8');
+  const start = src.indexOf('const ' + name);
+  if (start < 0) throw new Error('const ' + name + ' not found in ' + file);
+  const open = src.indexOf('{', start);
+  let depth = 0, i = open;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) { i++; break; } }
+  }
+  return src.slice(open, i); // the {...} text
+}
+// same for a client partial: read its <script> and slice a `var NAME = {...}`
+function extractClientObject(file, name) {
+  const src = extractScript(file);
+  const start = src.indexOf(name + ' = {');
+  if (start < 0) throw new Error(name + ' not found in ' + file);
+  const open = src.indexOf('{', start);
+  let depth = 0, i = open;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) { i++; break; } }
+  }
+  return src.slice(open, i);
+}
+
+console.log('\nCode.js — intakeFilterRecommendations_() (PPD engine)');
+const engineCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'intakeFilterRecommendations_'), engineCtx,
+  { filename: 'Code.js#intakeFilterRecommendations_' });
+const intakeFilterRecommendations_ = engineCtx.intakeFilterRecommendations_;
+
+// fixture catalog: [features, hcpcs, weightCap, seatType, pdfLink, imageUrl]
+const CAT = [
+  ['Std Captain', 'K0823', '350', 'C', 'pdf-823', 'img-823'],
+  ['SPO solid',   'K0856', '350', 'S', 'pdf-856', 'img-856'],
+  ['G3 solid',    'K0861', '350', 'S', 'pdf-861', 'img-861'],
+  ['MPO solid',   'K0843', '450', 'S', 'pdf-843', 'img-843'],
+  ['G3 wide',     'K0862', '600', 'S', 'pdf-862', 'img-862'],
+];
+
+// NOTE: engine outputs are created inside the vm context (different realm), so
+// assert.deepStrictEqual against main-realm literals would fail the prototype
+// check. Compare via primitives (join/length) instead.
+test('no complex conditions → standard captain chair only, no Group-3/SPO/MPO', () => {
+  const r = intakeFilterRecommendations_({ '38': '250 lbs' }, CAT);
+  assert.strictEqual(r.standard.map((p) => p.hcpcs).join(','), 'K0823');
+  assert.strictEqual(r.complex.length, 0, 'group-3/SPO/MPO require eligibility');
+});
+
+test('neuro Dx → solid-seat required (captain dropped) + K0856→K0861 & K0843→K0862 substitutions', () => {
+  const r = intakeFilterRecommendations_({ '38': '250', '43': 'multiple sclerosis' }, CAT);
+  assert.strictEqual(r.standard.length, 0, 'captain chair fails the solid-seat requirement');
+  assert.strictEqual(r.complex.map((p) => p.hcpcs).join(','), 'K0862,K0861', 'substituted + sorted desc');
+  // substitution must carry the TARGET code's pdf/image, not the source's
+  const k0861 = r.complex.find((p) => p.hcpcs === 'K0861');
+  assert.strictEqual(k0861.pdfLink, 'pdf-861');
+});
+
+test('weight cap excludes products below the patient weight ceiling', () => {
+  const r = intakeFilterRecommendations_({ '38': '500 lbs', '43': 'ALS' }, CAT);
+  const all = r.complex.concat(r.standard).map((p) => p.hcpcs);
+  assert.ok(all.indexOf('K0862') >= 0, 'the 600-cap chair survives at 500 lbs');
+  assert.ok(all.indexOf('K0861') < 0, 'the 350-cap chair is excluded at 500 lbs');
+  assert.ok(all.indexOf('K0843') < 0, 'the 450-cap chair is excluded at 500 lbs');
+});
+
+test('oxygen excludes K0837 (an inherently-solid SPO chair)', () => {
+  const oxyCat = [['SPO', 'K0837', '350', 'S', 'p', 'i']];
+  const onOxy = intakeFilterRecommendations_({ '38': '250', '32': 'yes', '44': 'yes' }, oxyCat);
+  const offOxy = intakeFilterRecommendations_({ '38': '250', '32': 'yes', '44': 'no' }, oxyCat);
+  assert.strictEqual(onOxy.complex.concat(onOxy.standard).length, 0, 'K0837 dropped when on oxygen');
+  assert.ok(offOxy.complex.concat(offOxy.standard).map((p) => p.hcpcs).indexOf('K0837') >= 0);
+});
+
+test('engine never throws on empty answers / empty catalog', () => {
+  const e1 = intakeFilterRecommendations_({}, []);
+  assert.strictEqual(e1.standard.length + e1.complex.length, 0);
+  const e2 = intakeFilterRecommendations_(null, null);
+  assert.strictEqual(e2.standard.length + e2.complex.length, 0);
+});
+
+console.log('\nintake — client render layout mirrors the server (coupling tripwire)');
+const _lcx = vm.createContext({});
+vm.runInContext('var SRV_PMD = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', _lcx);
+vm.runInContext('var SRV_PAP = ' + extractConstObject('Code.js', 'INTAKE_PAP_LAYOUT') + ';', _lcx);
+vm.runInContext('var CLI_PMD = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PMD_CLIENT') + ';', _lcx);
+vm.runInContext('var CLI_PAP = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PAP_CLIENT') + ';', _lcx);
+
+[['PMD', _lcx.SRV_PMD, _lcx.CLI_PMD], ['PAP', _lcx.SRV_PAP, _lcx.CLI_PAP]].forEach(([form, srv, cli]) => {
+  test(form + ' headers: client (0-based) +1 === server HEADER_ROWS (1-based)', () => {
+    assert.deepStrictEqual(cli.headers.map((x) => x + 1), srv.HEADER_ROWS);
+  });
+  test(form + ' checkbox rows match server CHECKBOX_ROWS', () => {
+    assert.deepStrictEqual(cli.checkboxes, srv.CHECKBOX_ROWS);
+  });
+  test(form + ' secondary rows match server SECONDARY_QUESTION_ROWS', () => {
+    assert.deepStrictEqual(cli.secondary, srv.SECONDARY_QUESTION_ROWS);
+  });
+});
+
+console.log('\nforms — invite email builders carry no prefilled patient data (hardening Fix 6)');
+['buildCustomerEmailHtml_', 'buildProviderEmailHtml_', 'buildCustomerEmailText_', 'buildProviderEmailText_'].forEach((fn) => {
+  test(fn + ' takes only (recipientName, message, formNames, formLinks) and never reads prefill', () => {
+    const src = extractRawFunction('Code.js', fn);
+    const sig = src.match(/function\s+\w+\s*\(([^)]*)\)/)[1].split(',').map((s) => s.trim());
+    assert.deepStrictEqual(sig, ['recipientName', 'message', 'formNames', 'formLinks']);
+    // Prefill (patient identifiers) must stay in the token store, never the
+    // email body — so the invite stays PHI-minimal in cleartext transit.
+    assert.ok(!/prefill/i.test(src), fn + ' must not reference prefill data');
+  });
+});
+
+console.log('\nforms — normalizeWebAppExecUrl_() produces the canonical public /exec link');
+const _urlCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'normalizeWebAppExecUrl_'), _urlCtx, { filename: 'Code.js#normalizeWebAppExecUrl_' });
+const normalizeWebAppExecUrl_ = _urlCtx.normalizeWebAppExecUrl_;
+test('strips the /a/<domain>/ Workspace prefix (the customer-blocking bug)', () => {
+  assert.strictEqual(
+    normalizeWebAppExecUrl_('https://script.google.com/a/universalmedsupply.com/macros/s/AKfycbABC/exec'),
+    'https://script.google.com/macros/s/AKfycbABC/exec');
+});
+test('rewrites a trailing /dev to /exec', () => {
+  assert.strictEqual(
+    normalizeWebAppExecUrl_('https://script.google.com/macros/s/AKfycbABC/dev'),
+    'https://script.google.com/macros/s/AKfycbABC/exec');
+});
+test('leaves an already-canonical /exec URL unchanged', () => {
+  const u = 'https://script.google.com/macros/s/AKfycbABC/exec';
+  assert.strictEqual(normalizeWebAppExecUrl_(u), u);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

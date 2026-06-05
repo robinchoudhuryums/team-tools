@@ -4676,12 +4676,73 @@ function cnComposerSend_() {
       cnReRenderActiveView_();
       cnRenderFilterBar_();
       showToast('Email sent', 'toast-success');
+      // Win-back nudge: a Close-Order email sent because the customer is
+      // switching suppliers → offer to send a (PHI-free) win-back survey.
+      // Self-gated inside cnMaybeWinbackNudge_ (no configured win-back template
+      // → no nudge); guarded so it can never break the send result.
+      try {
+        var cd2 = c.selections && c.selections.closeDetails;
+        if (cd2 && cnIsSwitchingSuppliersReason_(cd2.reason)) {
+          cnMaybeWinbackNudge_(c.noteId, (sentNote && sentNote.caller) || '');
+        }
+      } catch (_) {}
     })
     .withFailureHandler(function (err) {
       if (btn) { btn.disabled = false; btn.innerHTML = icon('mail', 14) + ' Send Email'; }
       showToast('Send failed: ' + err.message, 'toast-error');
     })
     .emailFromCallNote(c.noteId, c.selections, expectedHash);
+}
+
+// ── Win-back nudge (close reason = changing suppliers) ────────────────────
+// The Close-Order "reason" is a free-text field, so the trigger is a loose
+// substring match — a false positive is just a dismissible prompt. The whole
+// feature self-gates on a manager-configured "win-back" email template existing,
+// so it stays silent until set up. Keeps PHI out: it only opens the (non-PHI)
+// external customer composer pre-filled with the win-back template body.
+function cnIsSwitchingSuppliersReason_(reason) {
+  var r = String(reason || '').toLowerCase();
+  if (!r) return false;
+  if (/chang(ing|ed)?\s+suppliers?/.test(r)) return true;
+  if (/elsewhere|competitor/.test(r)) return true; // strong standalone signals
+  var alt = /suppl|provider|compan/.test(r);
+  var move = /switch|chang|moving|moved|going with|go with|leav|different|another/.test(r);
+  return alt && move;
+}
+
+// The first email template whose NAME marks it as the win-back one (e.g.
+// "Win-Back Survey"). Returns null when none is configured — the nudge's gate.
+function cnFindWinbackTemplate_() {
+  var all = (typeof cnExtTemplatesAll_ === 'function') ? cnExtTemplatesAll_() : [];
+  for (var i = 0; i < all.length; i++) {
+    if (/win[\s\-]?back/i.test(String((all[i] || {}).name || ''))) return all[i];
+  }
+  return null;
+}
+
+function cnMaybeWinbackNudge_(noteId, callerName) {
+  var tmpl = cnFindWinbackTemplate_();
+  if (!tmpl) return; // self-gated: no win-back template configured → no nudge
+  uiConfirm({
+    title: 'Send a win-back survey?',
+    message: 'This order closed because the customer is switching suppliers. Open a quick win-back survey email to them? (Service feedback only — no medical details.)',
+    confirmLabel: 'Open win-back email',
+    cancelLabel: 'Not now',
+  }).then(function (ok) {
+    if (!ok) return;
+    cnOpenExternalEmailModal_(noteId, function () {
+      var c = CN_STATE.extComposer;
+      if (!c) return;
+      c.recipientType = 'customer';
+      var body = String(tmpl.body || '').replace(/\{name\}/g, String(callerName || '').trim() || 'there');
+      c.message = body;
+      if (callerName) c.recipientName = String(callerName).trim();
+      var msgEl = document.getElementById('cnX-message'); if (msgEl) msgEl.value = body;
+      var nameEl = document.getElementById('cnX-name'); if (nameEl && callerName) nameEl.value = String(callerName).trim();
+      var subjEl = document.getElementById('cnX-subject');
+      if (subjEl && !subjEl.value.trim()) { subjEl.value = 'Before you go — we’d value your feedback'; c.subject = subjEl.value; }
+    });
+  });
 }
 
 // ── History view ───────────────────────────────────────────────────────
@@ -6667,6 +6728,17 @@ function cnRenderAdminBody_(cfg) {
       '</div>' +
     '</div>' +
 
+    // Quick links (surveys / reviews) for the external composer
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('send', 14) + ' Quick Links (surveys / reviews)</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Links reps can drop into an external email — survey, feedback, or Google-review-request URLs hosted <strong>outside</strong> this app. Each needs a label and an http(s) URL. (The in-app fillable-form route can\'t be served to external recipients on this domain — see your admin.)</div>' +
+      '<div id="cn-admin-link-list">' + cnRenderLinkRows_(cfg.externalLinks || []) + '</div>' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
+        '<button class="refresh-btn" id="cn-admin-add-link">' + icon('plus', 12) + ' Add Link</button>' +
+        '<button class="btn-modal-ok" id="cn-admin-save-links" style="margin:0">Save Links</button>' +
+      '</div>' +
+    '</div>' +
+
     // #8 — reconcile hand-entered Sheet rows
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Sheet Reconciliation</div>' +
@@ -6860,6 +6932,55 @@ function cnRenderAdminBody_(cfg) {
       })
       .saveEmailTemplates(out);
   });
+
+  // Quick-link editor wiring (add row + save)
+  document.getElementById('cn-admin-add-link').addEventListener('click', function () {
+    var list = document.getElementById('cn-admin-link-list');
+    var wrap = document.createElement('div');
+    wrap.innerHTML = cnRenderLinkRow_({ label: '', url: '' });
+    list.appendChild(wrap.firstElementChild);
+  });
+
+  document.getElementById('cn-admin-save-links').addEventListener('click', function () {
+    var btn = this;
+    var rows = document.querySelectorAll('#cn-admin-link-list .cn-admin-link-row');
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var label = ((rows[i].querySelector('.cn-admin-link-label') || {}).value || '').trim();
+      var url = ((rows[i].querySelector('.cn-admin-link-url') || {}).value || '').trim();
+      if (!label && !url) continue;  // skip fully-empty rows
+      out.push({ label: label, url: url });
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save Links';
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+        showToast('Quick links saved', 'toast-success');
+        if (CN_STATE.deptConfig) CN_STATE.deptConfig.externalLinks = out;
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save Links';
+        showToast((err && err.message) || 'Save failed', 'toast-error');
+      })
+      .saveExternalLinks(out);
+  });
+}
+
+/** Render all quick-link editor rows (label + url). */
+function cnRenderLinkRows_(links) {
+  if (!Array.isArray(links) || links.length === 0) return cnRenderLinkRow_({ label: '', url: '' });
+  return links.map(cnRenderLinkRow_).join('');
+}
+function cnRenderLinkRow_(l) {
+  l = l || {};
+  return '<div class="cn-admin-link-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
+    '<div class="field-row" style="gap:8px;margin:0;align-items:center">' +
+      '<div class="field" style="flex:0 0 32%;margin:0"><input type="text" class="cn-admin-link-label" value="' + esc(l.label || '') + '" placeholder="Label (e.g. Satisfaction Survey)"></div>' +
+      '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-link-url" value="' + esc(l.url || '') + '" placeholder="https://…"></div>' +
+      '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-link-row\').remove()">' + icon('x', 14) + '</button>' +
+    '</div>' +
+  '</div>';
 }
 
 /** #2 — render all email-template editor rows. */
@@ -7067,6 +7188,28 @@ function cnExtTemplateRowHtml_(recipientType) {
   '</div>';
 }
 
+// Manager-curated quick links (CN_STATE.deptConfig.externalLinks, from
+// getCallNotesDepartments) — survey / feedback / Google-review URLs hosted
+// outside this app. The picker appends "label: url" to the message textarea
+// (the external fillable-form route is admin-blocked on this domain, so links
+// to an external survey host are the workaround). Recipient-type-agnostic.
+function cnExtLinksAll_() {
+  return (CN_STATE.deptConfig && Array.isArray(CN_STATE.deptConfig.externalLinks))
+    ? CN_STATE.deptConfig.externalLinks : [];
+}
+function cnExtLinkOptionsHtml_() {
+  var opts = '<option value="">Insert a link…</option>';
+  cnExtLinksAll_().forEach(function (l, i) { opts += '<option value="' + i + '">' + esc(l.label) + '</option>'; });
+  return opts;
+}
+function cnExtLinkRowHtml_() {
+  if (cnExtLinksAll_().length === 0) return '';
+  return '<div class="field" style="margin-bottom:10px">' +
+    '<label>Quick link (survey / review)</label>' +
+    '<select id="cnX-link">' + cnExtLinkOptionsHtml_() + '</select>' +
+  '</div>';
+}
+
 function cnBuildExternalEmailHtml_() {
   var c = CN_STATE.extComposer;
   var catalog = CN_STATE.formCatalog || [];
@@ -7171,6 +7314,7 @@ function cnBuildExternalEmailHtml_() {
         '<input type="text" id="cnX-subject" value="' + esc(autoSubject) + '">' +
       '</div>' +
       cnExtTemplateRowHtml_(c.recipientType) +
+      cnExtLinkRowHtml_() +
       '<div class="field" style="margin-bottom:0">' +
         '<label>Custom Message (optional)</label>' +
         '<textarea id="cnX-message" rows="3" placeholder="Add a personal message…">' + esc(c.message) + '</textarea>' +
@@ -7221,6 +7365,24 @@ function cnWireExternalEmailModal_() {
       var body = String(t.body || '').replace(/\{name\}/g, (c.recipientName || '').trim() || 'there');
       var ta = document.getElementById('cnX-message');
       if (ta) { ta.value = body; c.message = body; }
+    });
+  }
+
+  // Quick-link picker: APPEND "label: url" to the message (don't clobber the
+  // rep's text), then reset to the placeholder.
+  var linkSel = document.getElementById('cnX-link');
+  if (linkSel) {
+    linkSel.addEventListener('change', function () {
+      var idx = parseInt(linkSel.value, 10);
+      linkSel.value = '';
+      if (isNaN(idx)) return;
+      var l = cnExtLinksAll_()[idx];
+      if (!l) return;
+      var ta = document.getElementById('cnX-message');
+      if (!ta) return;
+      var prefix = ta.value && ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n\n' : '';
+      ta.value = prefix + l.label + ': ' + l.url;
+      c.message = ta.value;
     });
   }
 

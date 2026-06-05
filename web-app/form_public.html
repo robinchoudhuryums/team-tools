@@ -354,6 +354,7 @@
 var FORM_TOKEN = <?!= JSON.stringify(formToken || '').replace(/</g, '\\u003c') ?>;
 var FORM_DATA = null;   // populated by getFormByToken
 var SIG_PAD = null;     // signature pad instance
+var PAGE_OPENED_AT = new Date().toISOString();  // forms-hardening: certificate metadata
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 (function boot() {
@@ -928,6 +929,16 @@ function gatherFormData() {
   if (incTotal) data.incomeTotal = incTotal.textContent;
   var expTotal = document.getElementById('expense-total');
   if (expTotal) data.expenseTotal = expTotal.textContent;
+
+  // Consent + open-time envelope (forms-hardening). The server pulls `_meta`
+  // out before storing responses; it stamps the authoritative consent VERSION
+  // itself and uses `consentAgreed` for server-side enforcement.
+  var consentEl = document.getElementById('consent-checkbox');
+  data._meta = {
+    consentAgreed: !!(consentEl && consentEl.checked),
+    openedAt: PAGE_OPENED_AT,
+    consentAtClient: new Date().toISOString(),
+  };
 
   return data;
 }

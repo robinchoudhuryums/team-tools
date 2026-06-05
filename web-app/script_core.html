@@ -74,6 +74,16 @@ const TOOLS = {
       metricsTeam:     { label: 'Team Metrics',   icon: 'manage', enter: 'enterMetricsTeamView', managerOnly: true },
     },
   },
+  intake: {
+    label: 'Intake',
+    sidebarIcon: 'send',
+    defaultTab: 'intakePpd',
+    tabs: {
+      intakePpd:        { label: 'PPD',                icon: 'list', enter: 'enterIntakePpdView' },
+      intakePmdAccount: { label: 'PMD Account',        icon: 'user', enter: 'enterIntakePmdView' },
+      intakePapAccount: { label: 'PAP Account',        icon: 'user', enter: 'enterIntakePapView' },
+    },
+  },
 };
 // tabKey → toolKey lookup. Tab keys are globally unique by convention so
 // existing call sites that compare `currentView === 'callNotes'` continue

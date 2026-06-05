@@ -32,6 +32,26 @@ Apps Script project under its own directory, synced via `clasp`.
      Call Notes Stats tab (`managerGetShiftStats`) via a best-effort
      try/catch overlay — CDR failure never breaks existing stats.
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
+   - **Intake** — patient-intake forms ported from the bound
+     `form-generator` Apps Script (kept in `incoming/form-generator/`
+     for reference). Three tabs: **PPD** (Patient Profile &
+     recommendation — a 45-question intake that drives the clinical
+     HCPCS recommendation engine `intakeFilterRecommendations_`,
+     reading the **PMD Offerings** catalog), **PMD Account** and **PAP
+     Account** (demographics/insurance/clinical account-creation forms
+     with image attachments). Each form renders a branded email and
+     persists a PHI backup row. The unbound rewrite: the bound tool
+     used the active sheet's cells as the form; here each form is a web
+     form whose answers POST to two-stage, bodyHash-guarded
+     `intakePreview*`/`intakeSend*` endpoints (mirrors the Call Notes
+     email flow), every field `esc_`'d. PHI (patient answers) persists
+     to append-only `PPDSubmissions`/`PMDSubmissions`/`PAPSubmissions`
+     tabs in ONE Intake spreadsheet (`INTAKE_SS_ID`, which also holds
+     the read-only `Offerings` tab); the shared AuditLog row stays
+     PHI-free (`IntakeSent: submissionId + recipientDomain`). The
+     Offerings catalog is isolated behind `getIntakeOfferings_()` (the
+     `getCdrSS_()` pattern). Backs the Intake spreadsheet
+     (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -286,6 +306,33 @@ this section before touching the relevant area.
   — never `new Date()` browser-local time — so offshore reps (IST/PHT) and
   near-midnight users see the correct day's CDR data, matching how Clock /
   Time Off / Manager / Export derive dates (F6).
+- **Intake Offerings catalog is read `A2:F` in a FIXED column order.**
+  `getIntakeOfferings_()` returns the raw 2D array `[features, HCPCS,
+  weightCapacity, seatType, pdfLink, imageUrl]` and `intakeFilterRecommendations_`
+  indexes those positions directly (e.g. `row[1]` = HCPCS for substitution
+  lookups, `row[4]/row[5]` = pdf/image of the substitution target). Reordering
+  or inserting an Offerings column silently corrupts recommendations — keep the
+  A–F contract, or update the engine + the fixture catalog in the tests
+  together. The catalog is cached in-memory per execution (`_intakeOfferingsCache`).
+- **Intake email builders must `esc_` every patient field; the justification
+  is the ONE raw exception.** `intakeBuildPpdBodyHtml_` / `intakeBuildAcctBodyHtml_`
+  inject the body into the preview modal via `innerHTML` and into the sent
+  email, so every answer/label is `esc_`'d (INV-89; pinned by
+  `test_intake_buildPpdBody_escapesAnswers`). The recommendation
+  `justification` is server-generated (a fixed vocabulary + `Left`/`Right`
+  hemiplegia side) and intentionally carries inline markup (`<strong>`,
+  underline span), so it is injected raw — never put a user-supplied value into
+  a justification string. HCPCS / pdfLink / imageUrl (from the Robin-owned
+  Offerings sheet) are still `esc_`'d in attributes defensively.
+- **Intake PMD/PAP layout is duplicated client↔server — keep them equal.**
+  The server `INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT` (email rendering,
+  authoritative) and the client `INTAKE_PMD_CLIENT` / `INTAKE_PAP_CLIENT`
+  (input rendering) carry the same HEADER/CHECKBOX/SECONDARY row sets (the
+  client headers are 0-based; the server's are 1-based — they differ by +1).
+  A Node tripwire (`intake — client render layout mirrors the server`) fails CI
+  if they drift. Adding/removing a PMD/PAP question means updating BOTH the
+  question banks (client `INTAKE_*_Q`) AND both layouts. Same discipline as
+  `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_`.
 - **Call Notes Sheet enrollment — one-click auto-provision (or manual).**
   A rep has no Call Notes panel until column L (`CallNotesSheetId`) of the
   Employees roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
@@ -543,6 +590,34 @@ this section before touching the relevant area.
   signature — returning a specific, actionable error and leaving the
   token `pending` for retry instead of throwing mid-append on an
   oversized signature (INV-96).
+- **Form submissions are PHI and segregated, hashed, and consent-stamped.**
+  (Forms-hardening pass.) `getFormsSS_()` resolves `FormTokens`/`FormSubmissions`
+  to Script Property `FORMS_SS_ID` (point it at `INTAKE_SS_ID` to move PHI off
+  the ADP/payroll sheet) and falls back to the ADP SS only for back-compat — a
+  fresh deploy that wants segregation MUST set `FORMS_SS_ID` and migrate the two
+  tabs. `submitFormByToken` pulls `signature` AND `_meta` out before storing
+  responses, **server-enforces consent** (`_meta.consentAgreed === false` →
+  rejected; absent `_meta` allowed for back-compat since the client checkbox
+  gated it), stamps the **server-authoritative** `CONFIG.FORM_CONSENT_VERSION`
+  (never trusts a client-sent version), and writes a **tamper-evident
+  `SubmissionHash`** + a `Certificate` JSON into trailing `FS` columns. The hash
+  (`computeFormSubmissionHash_`) covers responses+signature+token+consentVersion
+  — **NOT `submittedAt`** (Sheets coerces an ISO datetime to a Date on read,
+  which would break recompute); the timestamp's independent witness is the
+  append-only `FormSubmissionReceived` audit row (which now carries `hash=` +
+  `submittedAt=`). `verifyFormSubmissionIntegrity_(token)` (manager-gated,
+  read-only) recomputes and compares — a mismatch means the stored row was
+  altered. `FS_HEADERS` grew by trailing columns (back-compat like `CN_HEADERS`:
+  old 6-col rows read back with the new fields undefined; `verify`/the viewer
+  treat a missing hash as "legacy, can't verify", not a failure). **The invite
+  email stays PHI-minimal** — prefill lives in the token, never the email body
+  (pinned by the `forms — invite email builders` Node guard); the rep's freeform
+  `subject`/`message` must not carry clinical PHI. **Suitability:** this pipeline
+  is appropriate for patient-self-submission (EAA, self-serve PPD, demographics);
+  it is NOT a signature-of-record for provider-signed clinical documents
+  (PT/OT Rx, seating evals) submitted to payers — those need a certified e-sign
+  vendor or a DMEPOS platform (CMS signature-validity + the supplier-can't-author
+  rule + corroborating-record requirements are out of this tool's reach).
 - **`LEAVE_DEDUCTION_CLIENT` mirrors the server's `getLeaveDeduction_`
   exactly.** Powers the live balance-after preview in the PTO day
   modal (`tc/script_timeoff.html`). Adding a new leave type means
@@ -1584,6 +1659,38 @@ this section before touching the relevant area.
   `getEmailTemplates_` sanitizes on read (bad blob → CONFIG fallback,
   never throws), so a corrupt property can't break the composer. Pinned
   by `cnExtTemplatesFor_` / `cnExtTemplateOptionsHtml_` client tests.
+- **Quick Links picker (Admin tab + external composer).** The same
+  manager-curated/Script-Property/sanitize-on-read pattern as email templates,
+  for `{label, url}` external links — survey / feedback / Google-review URLs
+  hosted OUTSIDE this app. It's the deliberate workaround for the admin-blocked
+  external fillable-form route (anonymous web-app access is disabled on the
+  domain): reps email a link to an external survey/review host instead of an
+  in-app `?form` link. Stored in Script Property `CN_EXTERNAL_LINKS` (CONFIG
+  `EXTERNAL_LINKS` fallback `[]`); edited via the Admin "Quick Links" section
+  (`saveExternalLinks`, manager-gated, validates label + http(s) url, caps 50,
+  `AdminConfigChange` audit — INV-57 family); delivered to reps via
+  `getCallNotesDepartments` (`CN_STATE.deptConfig.externalLinks`). In the
+  composer the picker (`cnExtLinkRowHtml_` / `cnExtLinkOptionsHtml_`) renders
+  only when ≥1 link is configured and **appends** the chosen `label: url` to the
+  message (unlike the template picker, which replaces). Unlike templates, links
+  are recipient-type-agnostic. Pinned by `cnExtLinkOptionsHtml_` client tests.
+- **Win-back nudge on a "changing suppliers" close.** When a Close-Order
+  department email is sent and the free-text `closeDetails.reason` matches a
+  supplier-switch pattern (`cnIsSwitchingSuppliersReason_` — loose substring
+  match; a false positive is just a dismissible prompt), the send success
+  handler offers (`uiConfirm`) to open the external **customer** composer
+  pre-filled with the win-back survey email. **Self-gating:** `cnMaybeWinbackNudge_`
+  fires only when a manager has configured an email template whose NAME contains
+  "win-back" (`cnFindWinbackTemplate_`, matches `/win[\s\-]?back/i`) — so it stays
+  silent until set up, and a deployer disables it by removing/renaming that
+  template. The nudge is wrapped in try/catch in the send handler so it can never
+  break the email result, and it carries NO PHI (opens the non-PHI customer
+  composer, pre-fills `{name}` from the note's caller + the win-back template
+  body). The survey it links to must stay service-only — no clinical questions,
+  no PHI in the link (it's a churn/quality survey = health-care operations).
+  Pinned by `cnIsSwitchingSuppliersReason_` / `cnFindWinbackTemplate_` client
+  tests. **Operator note:** name the win-back template "Win-Back Survey" (or
+  anything containing "win-back") or the nudge won't find it.
 - **Compliance audit panel (Admin tab).** Manager-only call-note
   AuditLog search living in the Admin tab below the tag taxonomy —
   resolving the deferred "compliance audit Admin panel." Backed by
@@ -1731,6 +1838,28 @@ manually for a fresh deploy or environment:
   creates (or reuses) for the Metrics integration tests. Created on
   first `runAllTests`; not used in production. Documented here so it's
   recognizable when inspecting Script Properties.
+- **Set Script Property `INTAKE_SS_ID`** to the Intake spreadsheet ID
+  (the one Robin already used for the bound form-generator). `getIntakeSS_()`
+  reads it before CONFIG; without it the Intake tool fails on first form
+  preview/send. The deployer account must have **edit** access (it provisions
+  submission tabs and reads Offerings). That spreadsheet must contain:
+  (a) an **`Offerings` tab** with columns **A–F = features, HCPCS,
+  weight-capacity (`"300"` or `"300-450"`), seatType (text containing `s`
+  for solid / `c` for captain), pdfLink, imageUrl** — the PPD engine reads
+  `A2:F` via `getIntakeOfferings_()`; a column-order change silently breaks
+  recommendations. The `PPDSubmissions` / `PMDSubmissions` / `PAPSubmissions`
+  PHI tabs auto-provision on first send (`getIntakeSubmissionSheet_`).
+- **Intake recipient addresses are Script-Property-backed.**
+  `INTAKE_SALES_EMAIL` (PMD default), `INTAKE_SLEEP_EMAIL` (PAP default),
+  `INTAKE_BCC_EMAIL` (BCC on every intake email), and
+  `INTAKE_ALL_AGENTS_EMAIL` (PPD "All Agents") read Script Properties first,
+  falling back to the placeholders in `CONFIG.INTAKE`. Agent recipients are
+  resolved from the Employees roster (name→email at send via
+  `intakeResolveRecipient_`), so agent addresses never reach the client and
+  no domain is hardcoded. Set the four addresses once; no redeploy.
+- **Script Property `TEST_INTAKE_SS_ID`** (test-only). `getIntakeSS_()`
+  honors a `_TEST_OVERRIDE_INTAKE_SS_ID` global for integration tests; the
+  pure engine tests need no spreadsheet. Documented here so it's recognizable.
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
@@ -1740,6 +1869,41 @@ manually for a fresh deploy or environment:
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
   reads this before CONFIG; without it, no one passes the
   `isManager` check and manager features stay locked out.
+- **External fillable-form links must be the canonical anonymous `/exec` URL.**
+  Inside a Google Workspace, `ScriptApp.getService().getUrl()` returns the
+  **domain-scoped** form `https://script.google.com/a/<domain>/macros/s/<id>/exec`
+  — the `/a/<domain>/` prefix routes through org login, so an external recipient
+  (personal Gmail / customer) is blocked with a Drive "Sorry, unable to open the
+  file at this time" error (works only for `@<domain>` accounts). `buildFormUrl_`
+  runs the base through `normalizeWebAppExecUrl_`, which **strips `/a/<domain>/`**
+  and rewrites a trailing `/dev`→`/exec` (pinned by the `normalizeWebAppExecUrl_`
+  Node tests). Optionally set Script Property **`WEB_APP_URL`** to the published
+  `/exec` URL to override the resolved base entirely. Also confirm the
+  deployment's **"Who has access" = "Anyone"** (matches `appsscript.json`'s
+  `ANYONE_ANONYMOUS`) — a domain-restricted deployment blocks externals even on
+  the stripped URL. Always test an external form link from an incognito window or
+  a non-Google email, never from the editor's dev URL.
+- **External anonymous web-app access is BLOCKED by Workspace admin policy on
+  this domain — the `?form=<token>` fillable-form route is non-functional for
+  external recipients.** Confirmed on `universalmedsupply.com`: the deployment's
+  "Who has access" dropdown offers only "Only myself" and "Anyone within
+  Universal Medical Supply" — **not "Anyone"** — so `appsscript.json`'s
+  `ANYONE_ANONYMOUS` silently downgrades to domain-only and Google issues the
+  `/a/<domain>/` URL. A customer / personal-Gmail recipient therefore CANNOT open
+  a form link (Drive "unable to open the file" error), and **no code change can
+  fix this** — it needs the Workspace admin to allow anonymous web-app access (or
+  allowlist this app), the same ticket-driven path that blocks Marketplace
+  add-ons. **Scope:** this affects ONLY the external `?form` route; every
+  internal tool (Time Clock, Call Notes, Metrics, the rep-filled Intake forms)
+  works fine because reps are authenticated `@umsupply.com` users, and the
+  forms-hardening (hash/consent/segregation) still stands — it just can't be
+  exercised externally until the block is lifted. **Workaround for surveys /
+  feedback / review requests** (low/no-PHI): host them on an external SaaS
+  (Typeform / Jotform / Google Forms if its separate external-response policy
+  allows) or send a direct Google-review link, and surface them via the
+  manager-curated **Quick Links** picker in the external-email composer
+  (`CN_EXTERNAL_LINKS`, below). Do NOT re-file the external-form block as a code
+  bug — it's an environmental/admin constraint.
 - **`Employees` sheet column K = `PtoEnabled`** — added in the
   current schema; existing sheets must have this column added
   (header row 1, leave blank for back-compat = enabled, write
@@ -1790,7 +1954,27 @@ manually for a fresh deploy or environment:
   `installAutomationTriggers()`. Each purge writes a PHI-free
   `FormDataPurge` audit row with the counts removed. The canonical record
   of an order typically lives in the downstream order system, not these
-  collection sheets — confirm before choosing a window.
+  collection sheets — confirm before choosing a window. **This deployment runs
+  a 90-day window** — set Script Property `FORM_DATA_RETENTION_DAYS=90` (the
+  committed CONFIG stays `0` so a fork/fresh deploy never auto-deletes) and
+  ensure the `purgeExpiredFormData` trigger is installed.
+- **Forms PHI store — set `FORMS_SS_ID` to segregate (forms-hardening).** By
+  default `getFormsSS_()` falls back to the ADP/payroll spreadsheet (back-compat),
+  co-locating form PHI with timesheet data. To segregate (recommended), set
+  Script Property **`FORMS_SS_ID` to the `INTAKE_SS_ID` spreadsheet** and **one-
+  time migrate** the existing `FormTokens` + `FormSubmissions` tabs into it (move
+  the tabs, or copy rows — in-flight `pending` tokens live in `FormTokens`, so
+  migrate while no forms are mid-flight, or accept that older pending links break).
+  Fresh `FormSubmissions` tabs in the new location get the full 11-column
+  `FS_HEADERS`; existing rows migrated from the ADP sheet keep their 6 columns
+  (no hash/consent/certificate — `verify` reports them as legacy). The deployer
+  account needs edit access to whatever `FORMS_SS_ID` points at (it already does
+  for `INTAKE_SS_ID`).
+- **`FORM_CONSENT_VERSION` in CONFIG** stamps every form submission with the
+  Privacy-Notice version the signer saw (server-authoritative — the client's
+  reported version is ignored). **Bump it whenever the consent copy in
+  `form_public.html` changes** so stored submissions prove which language was
+  shown. Change requires a redeploy (CONFIG, no Script Property override).
 - **`MANAGER_TIMEZONE`** in CONFIG drives manager-dashboard
   display tz; change requires a redeploy.
 - **`CONFIG.SHIFT_SCHEDULE`** sets the Clock-view ribbon/countdown
@@ -1851,6 +2035,17 @@ manually for a fresh deploy or environment:
   templates in the external-email composer's template picker (delivered
   via `getCallNotesDepartments`); a corrupt blob degrades to the CONFIG
   fallback rather than breaking the composer.
+- **Script Property `CN_EXTERNAL_LINKS`** (auto-managed). JSON array of
+  `{label, url}` manager-curated quick links (survey / feedback / Google-review
+  URLs hosted OUTSIDE this app), written by `saveExternalLinks` from the Call
+  Notes → Admin tab's "Quick Links" section. Created on first save; read by
+  `getExternalLinks_()` (sanitize-on-read — keeps only entries with a label +
+  an http(s) url; falls back to `CONFIG.CALL_NOTES.EXTERNAL_LINKS`, default
+  `[]`). Delivered to reps via `getCallNotesDepartments` (and managers via
+  `getAdminConfig`); the external-email composer's quick-link picker appends the
+  chosen `label: url` to the message. This is the workaround for the
+  admin-blocked external fillable-form route — reps email a link to an external
+  survey/review host instead. No manual setup needed.
 - **Script Property `CN_FEATURE_FLAGS`** (auto-managed). JSON object
   `{ flagKey: bool }` of manager-set feature-toggle overrides, written by
   `saveFeatureFlags` from the Call Notes → Admin tab's "Feature Toggles"
@@ -1880,13 +2075,17 @@ manually for a fresh deploy or environment:
   propagate to clients. When false, the UI never renders the mic
   button (no surface area for accidents).
 - **`FormTokens` and `FormSubmissions` sheet tabs** are auto-created
-  in the ADP spreadsheet on first use of the external forms feature.
+  in the **forms (PHI) spreadsheet resolved by `getFormsSS_()`** (Script
+  Property `FORMS_SS_ID`, else the ADP SS for back-compat — see the
+  segregation operator note above) on first use of the external forms feature.
   `FormTokens` tracks pending/submitted/expired form links (token,
   formType, recipientEmail, expiresAt, status, prefillData, noteId).
-  `FormSubmissions` stores completed form data + signature base64.
-  Both are append-only. No manual setup needed — the
-  `getOrCreateFormTokensSheet_()` / `getOrCreateFormSubmissionsSheet_()`
-  helpers provision them with headers on first call.
+  `FormSubmissions` stores completed form data + signature base64 **plus the
+  forms-hardening trailing columns** (`SubmissionHash`, `ConsentVersion`,
+  `ConsentAt`, `OpenedAt`, `Certificate`). Both are append-only. No manual setup
+  needed — the `getOrCreateFormTokensSheet_()` /
+  `getOrCreateFormSubmissionsSheet_()` helpers provision them with headers on
+  first call.
 - **`PunchAdjustRequests` sheet tab (#4a)** is auto-created in the ADP
   spreadsheet on first adjustment request (`getOrCreatePunchAdjustSheet_`).
   Tracks employee-requested punch corrections (ReqId, EmpId, EmpName, Date,
@@ -1967,6 +2166,8 @@ Client (Call Notes views):
   web-app/cn/script_callnotes.html
 Client (Metrics views):
   web-app/metrics/script_metrics.html
+Client (Intake views):
+  web-app/intake/script_intake.html
 Client (public forms):
   web-app/form_public.html
 Test Suite:
@@ -2083,6 +2284,10 @@ INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newSt
 INV-108 | `managerSaveDayRange(empId, fromDate, toDate, slots, reason)` (#4b) is manager-gated (INV-02), locked (INV-01), span-capped (≤31 days), and window-bounded (no future date; none beyond `ADJUST_WINDOW_DAYS`; reason required if the oldest date is beyond `OLD_ADJUST_ALERT_DAYS`). It applies each NON-EMPTY slot to every date in the inclusive range via `writeAdjustPunchForEmployee_` — purely ADDITIVE (set/update that punch type only), so a blank slot is left untouched and other punch types are never deleted. It must NOT reuse `managerSaveDay` (full-day reconcile deletes blank slots). The immediate employee adjust path (`recordPunch` `custom`) is gated for non-managers by the `employeeImmediateAdjust` flag (default off). Pinned by `test_managerSaveDayRange_appliesAcrossDays` + `_nonManagerRejected` + `test_recordPunch_immediateAdjustGatedByFlag` | Subsystem: Server + Client (Time Clock views)
 INV-109 | `reconcileCallNotes` (#8) is manager-gated (INV-02) and locked (INV-01). It scans every enrolled rep's `Notes` tab and, for rows with content but NO `noteId` (hand-entered directly in the Sheet), backfills a UUID `noteId` + a `Timestamp` + a yyyy-MM-dd `DateLocal` (derived from the human's values, else rep-tz now/today via `safeTimezone_`/`normalizeDate_`) so the row becomes flaggable/searchable/coverage-counted. Content columns are NEVER modified. Idempotent (a row with a `noteId` is skipped → re-run is a no-op). Per-rep Sheet failures are skipped; writes a `CallNotesReconcile` audit row. Runs both manually (Admin → "Reconcile Sheets") and as a daily manager-tz 5am trigger wired by `installAutomationTriggers`; the `isManager`-returns-`{error}` gate (not `assertManagerCaller_`) passes in a trigger context because the installer is a manager. Pinned by `test_reconcileCallNotes_backfillsHandEntered` + `_nonManagerRejected` | Subsystem: Server + Client (Call Notes views)
 INV-110 | `provisionCallNotesSheet(repEmpId)` (auto-provision) is manager-gated (INV-02) and locked (INV-01, mutates the Employees sheet). It `SpreadsheetApp.create`s a fresh per-rep Sheet owned by the deploying account (the web app runs as `USER_DEPLOYING`), renames the default sheet to the `Notes` tab + writes the canonical `CN_HEADERS` header, writes the new spreadsheet ID into `EMP.CALL_NOTES_SHEET_ID` (column L) of the rep's roster row, calls `invalidateRosterCache_()` (INV-10), and writes a `CallNotesProvision` audit row with the manager's email. **Idempotent / no-clobber:** a rep who already has a non-empty `callNotesSheetId` is returned `{success, alreadyEnrolled:true, sheetId}` unchanged — it NEVER creates a second Sheet or overwrites column L (that would orphan the rep's note history). The companion read-only `getCallNotesEnrollment` (manager-gated) returns `{enrolled[], unenrolled[]}` for the Admin enrollment panel. Pinned by `test_provisionCallNotesSheet_nonManagerRejected` + `_idempotentNoClobber` (the create branch is exercised manually to avoid littering Drive in CI) | Subsystem: Server + Client (Call Notes views)
+INV-111 | The Intake send endpoints (`intakeSendPPD`, `intakeSendPMD`, `intakeSendPAP`) require an enrolled rep (`getEmployeeInfo_`), build the email body server-side with every user field `esc_`'d (INV-89 discipline; pinned by `test_intake_buildPpdBody_escapesAnswers`), and re-render + hash-check the patient-answer body against the `expectedBodyHash` returned by the matching `intakePreview*` — rejecting the send when the form changed since preview (INV-41 pattern; selections/images ride at send and are NOT part of the hash). Patient answers persist to the append-only per-form submission tab in `INTAKE_SS_ID`; the shared AuditLog `IntakeSent` row is PHI-free (`type`, `submissionId`, recipient **domain** only — never the patient name or recipient address, same discipline as the `ExternalEmailSent` row). Recipients are resolved server-side via `intakeResolveRecipient_` (roster id→email, dept default, or validated custom), so agent addresses never reach the client | Subsystem: Server + Client (Intake views)
+INV-112 | `intakeFilterRecommendations_(answers, allProducts)` is a PURE, self-contained port of the bound tool's recommendation engine — `answers` keyed by bare question number (`'38'` weight, `'43'` neuro, `'31a'` stroke, `'34'` amputation, `'33'` ulcers, `'32'` spasticity, `'35'` spine, `'36'` swelling, `'30'` catheters, `'44'` oxygen, `'25'` numbness, `'13'` falls); `allProducts` is the raw `Offerings!A2:F` 2D array. It applies weight-cap, solid-seat/captain, Group-3/SPO/MPO eligibility, the `K0856→K0861` / `K0843→K0862` neuro substitutions, and justification building. Pinned by `test_intake_engine_*` (Tests.js) + the Node harness (`intake — PPD engine`). The PMD/PAP email STRUCTURAL layout (`INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT`, server-authoritative) is mirrored by the client render layouts (`INTAKE_PMD_CLIENT` / `INTAKE_PAP_CLIENT`) for input rendering only; the two are pinned equal by the Node coupling tripwire (`intake — client render layout mirrors the server`) — same parallel-source discipline as `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_` | Subsystem: Server + Client (Intake views)
+INV-113 | `submitFormByToken` (public, token-only) extracts `signature` AND `_meta` before persisting responses, **server-enforces consent** (rejects `_meta.consentAgreed === false`; absent `_meta` allowed for back-compat), stamps the server-authoritative `CONFIG.FORM_CONSENT_VERSION` (never a client-sent version), and writes a tamper-evident `SubmissionHash` (`computeFormSubmissionHash_` over responses+signature+token+consentVersion — NOT `submittedAt`, which Sheets may coerce to a Date) + a `Certificate` JSON into trailing `FS` columns. The `FormSubmissionReceived` audit row carries `hash=` + `submittedAt=` as the append-only independent witness. `verifyFormSubmissionIntegrity_(token)` (manager-gated, read-only) recomputes + compares; a legacy row with no stored hash returns `match:null` (not a failure). `FS_HEADERS` grew by TRAILING columns only (back-compat like `CN_HEADERS`). `FormSubmissions` remains **append-only — no edit endpoint exists** (the immutability is a HIPAA §164.312(c) integrity control, and the hash makes any out-of-band alteration detectable) | Subsystem: Server + Client (public forms)
+INV-114 | `getFormsSS_()` resolves the forms PHI store: Script Property `FORMS_SS_ID` first (segregates PHI off the ADP/payroll sheet — point it at `INTAKE_SS_ID`), else `getAdpSS_()` for back-compat; honors `_TEST_OVERRIDE_FORMS_SS_ID`. Both `getOrCreateFormTokensSheet_` / `getOrCreateFormSubmissionsSheet_` (and therefore `submitFormByToken`, `getFormByToken`, `serveExternalForm_`, the viewers, and `purgeExpiredFormData`) route through it, so the location is a single point of change. The invite-email builders (`buildCustomerEmailHtml_`/`buildProviderEmailHtml_`/`*Text_`) take only `(recipientName, message, formNames, formLinks)` and never read prefill — patient identifiers stay in the token, never the cleartext email body. Pinned by the `forms — invite email builders` Node guard | Subsystem: Server + Client (public forms)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -2580,6 +2785,38 @@ S58 | Call Notes auto-provision (one-click enrollment) | Subsystem: Server, Clie
     - Click Provision again on a rep who is ALREADY enrolled (e.g. re-run via console `provisionCallNotesSheet(id)`) → confirm `alreadyEnrolled:true` and that column L is unchanged (no second Sheet, no clobbered history)
     - As a non-manager, call `google.script.run...provisionCallNotesSheet('id')` and `...getCallNotesEnrollment()` from the console
   Expected: `provisionCallNotesSheet` is manager-gated + locked, creates the Sheet in the deployer's Drive, writes column L, invalidates the roster cache, and writes a `CallNotesProvision` audit row. Idempotent / no-clobber on an already-enrolled rep. `getCallNotesEnrollment` is manager-gated and read-only. Both non-manager console calls return "Manager access required." Pinned by `test_provisionCallNotesSheet_nonManagerRejected` + `_idempotentNoClobber` (the create branch is verified manually). See INV-110.
+
+S59 | Intake — PPD recommendation + send | Subsystem: Server, Client (Intake views)
+  Steps:
+    - As an enrolled rep, open Intake → PPD; enter a Patient Name & Trx#
+    - Fill clinical answers that should trigger an upgrade (e.g. Q43 a neuro Dx like "MS", Q38 weight 250)
+    - Click "Preview & Recommend" → confirm the modal shows the rendered email body + a recommendation panel (star + accept/undecided/reject per HCPCS)
+    - Mark one product Accepted + star it; pick an agent (or "All Agents") → Send
+    - Inspect the recipient mailbox, the `PPDSubmissions` tab, and the AuditLog
+    - Edit a form field AFTER previewing, then Send the stale preview
+  Expected: Recommendations reflect the engine (neuro → solid-seat/Group-3 upgrade, `K0856→K0861` / `K0843→K0862` substitutions, weight-cap exclusions, oxygen drops K0837). The sent email carries the marked star/badges; recipient resolves from the roster (agent) or `INTAKE_ALL_AGENTS_EMAIL`. A `PPDSubmissions` row stores the answers; the AuditLog `IntakeSent` row is PHI-free (`type=PPD; submissionId=…; recipientDomain=…`). Editing the form after preview makes the send fail with "The form changed since you previewed it" (bodyHash guard). Engine pinned by `test_intake_engine_*` + the Node harness.
+
+S60 | Intake — PMD/PAP account creation with image attach | Subsystem: Server, Client (Intake views)
+  Steps:
+    - As an enrolled rep, open Intake → PMD Account; toggle EN/ES and confirm in-progress answers survive the flip
+    - Fill the demographics/insurance/clinical fields (incl. a checkbox row and, on PAP, a Yes/No conditional select)
+    - Preview → confirm the rendered email matches; drag/drop or paste an image into the modal → confirm the thumbnail gallery
+    - Pick "Default" (sales for PMD / sleep for PAP), a roster agent, or a custom email → Send
+    - Inspect the recipient mailbox (inline image present), the submissions tab, and AuditLog
+  Expected: Checkbox rows render a check/box, conditional-select answers get their tonal coloring in the email (server `INTAKE_*_LAYOUT`). Images ride inline (base64→CID, capped at 12). Default recipient = `INTAKE_SALES_EMAIL`/`INTAKE_SLEEP_EMAIL`; custom email is validated server-side. A submissions row stores the answers + image count; the AuditLog `IntakeSent` row is PHI-free. Client render layout is pinned equal to the server layout by the Node coupling tripwire (INV-112).
+
+S61 | Fillable form — consent stored, tamper-evident, segregated, retained | Subsystem: Server, Client (public forms)
+  Steps:
+    - Set Script Property `FORMS_SS_ID` to the `INTAKE_SS_ID` spreadsheet (segregation); send an EAA fillable form to a test address
+    - Open the link, fill it, check the consent box, sign, submit
+    - In `INTAKE_SS_ID` → `FormSubmissions`: confirm the new trailing columns are populated — `SubmissionHash` (64-hex), `ConsentVersion` (= `CONFIG.FORM_CONSENT_VERSION`), `ConsentAt`, `OpenedAt`, `Certificate` (JSON)
+    - As the sending rep, open the in-app submission viewer → confirm the "Certificate of Completion" block + "✓ Integrity verified (hash matches)"
+    - As a manager, run `verifyFormSubmissionIntegrity_(token)` → `{ match: true }`
+    - Hand-edit a response cell in `FormSubmissions`, re-run verify → `{ match: false }`; the viewer shows the mismatch warning
+    - Inspect the `FormSubmissionReceived` AuditLog row → carries `hash=` + `submittedAt=`, no response content
+    - Inspect the invite email body → no patient identifiers (prefill rode in the token, not the email)
+    - Set `FORM_DATA_RETENTION_DAYS=90` + install triggers; confirm `purgeExpiredFormData` targets the `FORMS_SS_ID` store and no-ops when nothing is older than 90 days
+  Expected: Consent is server-stamped (authoritative version) + server-enforced (a `consentAgreed:false` payload is rejected). The hash is deterministic + tamper-evident (`computeFormSubmissionHash_`, smoke-pinned), excludes `submittedAt` (coercion-safe), and the AuditLog is the independent timestamp witness. `FormSubmissions` stays append-only with NO edit endpoint (§164.312(c)); `verify` flags any out-of-band edit. Legacy 6-column rows (pre-hardening) verify as `match:null` ("legacy"), not a failure. The invite email stays PHI-minimal (Node-guarded). `getFormsSS_()` routes all form reads/writes/purge to the segregated store.
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
