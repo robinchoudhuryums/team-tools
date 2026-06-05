@@ -1659,6 +1659,21 @@ this section before touching the relevant area.
   `getEmailTemplates_` sanitizes on read (bad blob → CONFIG fallback,
   never throws), so a corrupt property can't break the composer. Pinned
   by `cnExtTemplatesFor_` / `cnExtTemplateOptionsHtml_` client tests.
+- **Quick Links picker (Admin tab + external composer).** The same
+  manager-curated/Script-Property/sanitize-on-read pattern as email templates,
+  for `{label, url}` external links — survey / feedback / Google-review URLs
+  hosted OUTSIDE this app. It's the deliberate workaround for the admin-blocked
+  external fillable-form route (anonymous web-app access is disabled on the
+  domain): reps email a link to an external survey/review host instead of an
+  in-app `?form` link. Stored in Script Property `CN_EXTERNAL_LINKS` (CONFIG
+  `EXTERNAL_LINKS` fallback `[]`); edited via the Admin "Quick Links" section
+  (`saveExternalLinks`, manager-gated, validates label + http(s) url, caps 50,
+  `AdminConfigChange` audit — INV-57 family); delivered to reps via
+  `getCallNotesDepartments` (`CN_STATE.deptConfig.externalLinks`). In the
+  composer the picker (`cnExtLinkRowHtml_` / `cnExtLinkOptionsHtml_`) renders
+  only when ≥1 link is configured and **appends** the chosen `label: url` to the
+  message (unlike the template picker, which replaces). Unlike templates, links
+  are recipient-type-agnostic. Pinned by `cnExtLinkOptionsHtml_` client tests.
 - **Compliance audit panel (Admin tab).** Manager-only call-note
   AuditLog search living in the Admin tab below the tag taxonomy —
   resolving the deferred "compliance audit Admin panel." Backed by
@@ -1851,6 +1866,27 @@ manually for a fresh deploy or environment:
   `ANYONE_ANONYMOUS`) — a domain-restricted deployment blocks externals even on
   the stripped URL. Always test an external form link from an incognito window or
   a non-Google email, never from the editor's dev URL.
+- **External anonymous web-app access is BLOCKED by Workspace admin policy on
+  this domain — the `?form=<token>` fillable-form route is non-functional for
+  external recipients.** Confirmed on `universalmedsupply.com`: the deployment's
+  "Who has access" dropdown offers only "Only myself" and "Anyone within
+  Universal Medical Supply" — **not "Anyone"** — so `appsscript.json`'s
+  `ANYONE_ANONYMOUS` silently downgrades to domain-only and Google issues the
+  `/a/<domain>/` URL. A customer / personal-Gmail recipient therefore CANNOT open
+  a form link (Drive "unable to open the file" error), and **no code change can
+  fix this** — it needs the Workspace admin to allow anonymous web-app access (or
+  allowlist this app), the same ticket-driven path that blocks Marketplace
+  add-ons. **Scope:** this affects ONLY the external `?form` route; every
+  internal tool (Time Clock, Call Notes, Metrics, the rep-filled Intake forms)
+  works fine because reps are authenticated `@umsupply.com` users, and the
+  forms-hardening (hash/consent/segregation) still stands — it just can't be
+  exercised externally until the block is lifted. **Workaround for surveys /
+  feedback / review requests** (low/no-PHI): host them on an external SaaS
+  (Typeform / Jotform / Google Forms if its separate external-response policy
+  allows) or send a direct Google-review link, and surface them via the
+  manager-curated **Quick Links** picker in the external-email composer
+  (`CN_EXTERNAL_LINKS`, below). Do NOT re-file the external-form block as a code
+  bug — it's an environmental/admin constraint.
 - **`Employees` sheet column K = `PtoEnabled`** — added in the
   current schema; existing sheets must have this column added
   (header row 1, leave blank for back-compat = enabled, write
@@ -1982,6 +2018,17 @@ manually for a fresh deploy or environment:
   templates in the external-email composer's template picker (delivered
   via `getCallNotesDepartments`); a corrupt blob degrades to the CONFIG
   fallback rather than breaking the composer.
+- **Script Property `CN_EXTERNAL_LINKS`** (auto-managed). JSON array of
+  `{label, url}` manager-curated quick links (survey / feedback / Google-review
+  URLs hosted OUTSIDE this app), written by `saveExternalLinks` from the Call
+  Notes → Admin tab's "Quick Links" section. Created on first save; read by
+  `getExternalLinks_()` (sanitize-on-read — keeps only entries with a label +
+  an http(s) url; falls back to `CONFIG.CALL_NOTES.EXTERNAL_LINKS`, default
+  `[]`). Delivered to reps via `getCallNotesDepartments` (and managers via
+  `getAdminConfig`); the external-email composer's quick-link picker appends the
+  chosen `label: url` to the message. This is the workaround for the
+  admin-blocked external fillable-form route — reps email a link to an external
+  survey/review host instead. No manual setup needed.
 - **Script Property `CN_FEATURE_FLAGS`** (auto-managed). JSON object
   `{ flagKey: bool }` of manager-set feature-toggle overrides, written by
   `saveFeatureFlags` from the Call Notes → Admin tab's "Feature Toggles"

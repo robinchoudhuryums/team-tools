@@ -60,6 +60,9 @@ sb.CN_STATE = { deptConfig: { emailTemplates: [] } };
 const cnExtTemplatesAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesAll_');
 const cnExtTemplatesFor_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesFor_');
 const cnExtTemplateOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplateOptionsHtml_');
+// Quick-link picker (surveys/reviews) — reads CN_STATE.deptConfig.externalLinks + esc.
+const cnExtLinksAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinksAll_');
+const cnExtLinkOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinkOptionsHtml_');
 
 // Helper: today's date in a given tz, computed independently of the code under
 // test (the oracle).
@@ -177,6 +180,24 @@ test('cnExtTemplatesAll_ tolerates a missing deptConfig', () => {
   sb.CN_STATE = {};
   const all = cnExtTemplatesAll_();
   assert.ok(Array.isArray(all) && all.length === 0, 'returns an empty array');
+  sb.CN_STATE = saved;
+});
+
+console.log('\ncn — quick-link picker (surveys / reviews)');
+test('cnExtLinkOptionsHtml_ lists labels + escapes them, with a placeholder', () => {
+  sb.CN_STATE.deptConfig.externalLinks = [
+    { label: 'Satisfaction Survey', url: 'https://survey.example/abc' },
+    { label: '<b>Review</b>', url: 'https://g.page/r/xyz' },
+  ];
+  const html = cnExtLinkOptionsHtml_();
+  assert.ok(html.includes('Insert a link…'), 'has placeholder option');
+  assert.ok(html.includes('Satisfaction Survey'), 'lists the label');
+  assert.ok(html.includes('&lt;b&gt;Review&lt;/b&gt;') && !html.includes('<b>Review</b>'), 'escapes labels');
+});
+test('cnExtLinksAll_ tolerates a missing deptConfig', () => {
+  const saved = sb.CN_STATE;
+  sb.CN_STATE = {};
+  assert.ok(Array.isArray(cnExtLinksAll_()) && cnExtLinksAll_().length === 0);
   sb.CN_STATE = saved;
 });
 

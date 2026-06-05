@@ -128,6 +128,14 @@ const CONFIG = {
     // { name, recipientType: 'customer'|'provider'|'any', body }. The body
     // supports a {name} token substituted with the recipient name at insert.
     EMAIL_TEMPLATES: [],
+    // Manager-curated quick links the rep can drop into an external email —
+    // survey / feedback / Google-review-request URLs hosted OUTSIDE this app
+    // (Apps Script web apps can't be served anonymously on this domain — see
+    // the admin-block gotcha). Empty by default; populated via the Admin tab,
+    // which writes Script Property CN_EXTERNAL_LINKS (read first by
+    // getExternalLinks_, this serving as the fallback). Each entry:
+    // { label, url } where url is an http(s) link.
+    EXTERNAL_LINKS: [],
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
     TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
@@ -272,6 +280,7 @@ const CN_AUDIT_DEFAULT_DAYS = 30;
 const CN_EMAIL_TEMPLATE_LIMIT = 50;
 const CN_EMAIL_TEMPLATE_BODY_MAX = 4000;
 const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
+const CN_EXTERNAL_LINK_LIMIT = 50;
 
 /** Round 2 · 8e — derives the single FlagType column value from a
  *  multi-select flags array. Maintains backward compat with existing
@@ -2205,6 +2214,7 @@ function getCallNotesDepartments() {
       ccEmail: CONFIG.CALL_NOTES.CC_EMAIL,
       voiceInputEnabled: !!getFlag_('voiceInput'),
       emailTemplates: getEmailTemplates_(),
+      externalLinks: getExternalLinks_(),
       flags: getClientFeatureFlags_(),
     };
   } catch (err) { return { error: err.message }; }
@@ -2967,6 +2977,7 @@ function getAdminConfig() {
       updateSuggestions: getUpdateSuggestions_(),
       defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
       emailTemplates: getEmailTemplates_(),
+      externalLinks: getExternalLinks_(),
       featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
     };
   } catch (err) { return { error: err.message }; }
@@ -3059,6 +3070,34 @@ function saveEmailTemplates(templates) {
     PropertiesService.getScriptProperties().setProperty('CN_EMAIL_TEMPLATES', JSON.stringify(clean));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated email templates (' + clean.length + ')', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Manager-gated. Persists the external-email quick-link library to Script
+ *  Property CN_EXTERNAL_LINKS (JSON array of {label, url}). Validates each
+ *  entry's label + http(s) url; caps count. Writes an AdminConfigChange audit
+ *  row (INV-57 family). Same single-property-write pattern as saveEmailTemplates. */
+function saveExternalLinks(links) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!Array.isArray(links)) return { success: false, error: 'Invalid links list.' };
+    if (links.length > CN_EXTERNAL_LINK_LIMIT) {
+      return { success: false, error: 'Too many links (max ' + CN_EXTERNAL_LINK_LIMIT + ').' };
+    }
+    const clean = [];
+    for (var i = 0; i < links.length; i++) {
+      const l = links[i] || {};
+      const label = String(l.label || '').trim();
+      const url = String(l.url || '').trim();
+      if (!label) return { success: false, error: 'Each link needs a label.' };
+      if (!/^https?:\/\//i.test(url)) return { success: false, error: 'Link "' + label + '" needs an http(s) URL.' };
+      clean.push({ label: label, url: url });
+    }
+    PropertiesService.getScriptProperties().setProperty('CN_EXTERNAL_LINKS', JSON.stringify(clean));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated external quick links (' + clean.length + ')', callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -6987,6 +7026,24 @@ function getEmailTemplates_() {
       body: String((t && t.body) || ''),
     };
   }).filter(function (t) { return t.name && t.body; });
+}
+
+/** Manager-curated quick links (surveys / reviews) for the external composer.
+ *  Script Property CN_EXTERNAL_LINKS first, CONFIG fallback; sanitize-on-read
+ *  (corrupt blob → fallback, never throws), keeping only entries with a label
+ *  and an http(s) url. */
+function getExternalLinks_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_EXTERNAL_LINKS');
+  let raw = CONFIG.CALL_NOTES.EXTERNAL_LINKS || [];
+  if (prop) {
+    try {
+      const parsed = JSON.parse(prop);
+      if (Array.isArray(parsed)) raw = parsed;
+    } catch (_) {}
+  }
+  return raw.map(function (l) {
+    return { label: String((l && l.label) || '').trim(), url: String((l && l.url) || '').trim() };
+  }).filter(function (l) { return l.label && /^https?:\/\//i.test(l.url); });
 }
 
 function getManagerEmails_() {
