@@ -1674,6 +1674,23 @@ this section before touching the relevant area.
   only when ≥1 link is configured and **appends** the chosen `label: url` to the
   message (unlike the template picker, which replaces). Unlike templates, links
   are recipient-type-agnostic. Pinned by `cnExtLinkOptionsHtml_` client tests.
+- **Win-back nudge on a "changing suppliers" close.** When a Close-Order
+  department email is sent and the free-text `closeDetails.reason` matches a
+  supplier-switch pattern (`cnIsSwitchingSuppliersReason_` — loose substring
+  match; a false positive is just a dismissible prompt), the send success
+  handler offers (`uiConfirm`) to open the external **customer** composer
+  pre-filled with the win-back survey email. **Self-gating:** `cnMaybeWinbackNudge_`
+  fires only when a manager has configured an email template whose NAME contains
+  "win-back" (`cnFindWinbackTemplate_`, matches `/win[\s\-]?back/i`) — so it stays
+  silent until set up, and a deployer disables it by removing/renaming that
+  template. The nudge is wrapped in try/catch in the send handler so it can never
+  break the email result, and it carries NO PHI (opens the non-PHI customer
+  composer, pre-fills `{name}` from the note's caller + the win-back template
+  body). The survey it links to must stay service-only — no clinical questions,
+  no PHI in the link (it's a churn/quality survey = health-care operations).
+  Pinned by `cnIsSwitchingSuppliersReason_` / `cnFindWinbackTemplate_` client
+  tests. **Operator note:** name the win-back template "Win-Back Survey" (or
+  anything containing "win-back") or the nudge won't find it.
 - **Compliance audit panel (Admin tab).** Manager-only call-note
   AuditLog search living in the Admin tab below the tag taxonomy —
   resolving the deferred "compliance audit Admin panel." Backed by

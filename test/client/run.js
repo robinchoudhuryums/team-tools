@@ -63,6 +63,9 @@ const cnExtTemplateOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', '
 // Quick-link picker (surveys/reviews) — reads CN_STATE.deptConfig.externalLinks + esc.
 const cnExtLinksAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinksAll_');
 const cnExtLinkOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinkOptionsHtml_');
+// Win-back nudge pure logic (reason matcher + template finder).
+const cnIsSwitchingSuppliersReason_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnIsSwitchingSuppliersReason_');
+const cnFindWinbackTemplate_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnFindWinbackTemplate_');
 
 // Helper: today's date in a given tz, computed independently of the code under
 // test (the oracle).
@@ -198,6 +201,25 @@ test('cnExtLinksAll_ tolerates a missing deptConfig', () => {
   const saved = sb.CN_STATE;
   sb.CN_STATE = {};
   assert.ok(Array.isArray(cnExtLinksAll_()) && cnExtLinksAll_().length === 0);
+  sb.CN_STATE = saved;
+});
+
+console.log('\ncn — win-back nudge (close reason = changing suppliers)');
+test('cnIsSwitchingSuppliersReason_ matches switch/change-supplier phrasings', () => {
+  ['changing suppliers', 'Changed supplier', 'switching to another provider',
+   'going with a different supplier', 'moving to a competitor', 'found supplies elsewhere',
+  ].forEach((r) => assert.ok(cnIsSwitchingSuppliersReason_(r), 'should match: ' + r));
+});
+test('cnIsSwitchingSuppliersReason_ ignores unrelated / empty reasons', () => {
+  ['', 'duplicate order', 'patient deceased', 'insurance denied', 'no longer needs equipment',
+  ].forEach((r) => assert.ok(!cnIsSwitchingSuppliersReason_(r), 'should NOT match: ' + r));
+});
+test('cnFindWinbackTemplate_ self-gates on a configured win-back template', () => {
+  const saved = sb.CN_STATE;
+  sb.CN_STATE = { deptConfig: { emailTemplates: [{ name: 'Feedback', recipientType: 'customer', body: 'x' }] } };
+  assert.strictEqual(cnFindWinbackTemplate_(), null, 'no win-back template → null (nudge stays silent)');
+  sb.CN_STATE.deptConfig.emailTemplates.push({ name: 'Win-Back Survey', recipientType: 'customer', body: 'Hi {name}' });
+  assert.strictEqual((cnFindWinbackTemplate_() || {}).name, 'Win-Back Survey');
   sb.CN_STATE = saved;
 });
 

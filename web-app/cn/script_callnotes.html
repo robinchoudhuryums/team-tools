@@ -4676,12 +4676,73 @@ function cnComposerSend_() {
       cnReRenderActiveView_();
       cnRenderFilterBar_();
       showToast('Email sent', 'toast-success');
+      // Win-back nudge: a Close-Order email sent because the customer is
+      // switching suppliers → offer to send a (PHI-free) win-back survey.
+      // Self-gated inside cnMaybeWinbackNudge_ (no configured win-back template
+      // → no nudge); guarded so it can never break the send result.
+      try {
+        var cd2 = c.selections && c.selections.closeDetails;
+        if (cd2 && cnIsSwitchingSuppliersReason_(cd2.reason)) {
+          cnMaybeWinbackNudge_(c.noteId, (sentNote && sentNote.caller) || '');
+        }
+      } catch (_) {}
     })
     .withFailureHandler(function (err) {
       if (btn) { btn.disabled = false; btn.innerHTML = icon('mail', 14) + ' Send Email'; }
       showToast('Send failed: ' + err.message, 'toast-error');
     })
     .emailFromCallNote(c.noteId, c.selections, expectedHash);
+}
+
+// ── Win-back nudge (close reason = changing suppliers) ────────────────────
+// The Close-Order "reason" is a free-text field, so the trigger is a loose
+// substring match — a false positive is just a dismissible prompt. The whole
+// feature self-gates on a manager-configured "win-back" email template existing,
+// so it stays silent until set up. Keeps PHI out: it only opens the (non-PHI)
+// external customer composer pre-filled with the win-back template body.
+function cnIsSwitchingSuppliersReason_(reason) {
+  var r = String(reason || '').toLowerCase();
+  if (!r) return false;
+  if (/chang(ing|ed)?\s+suppliers?/.test(r)) return true;
+  if (/elsewhere|competitor/.test(r)) return true; // strong standalone signals
+  var alt = /suppl|provider|compan/.test(r);
+  var move = /switch|chang|moving|moved|going with|go with|leav|different|another/.test(r);
+  return alt && move;
+}
+
+// The first email template whose NAME marks it as the win-back one (e.g.
+// "Win-Back Survey"). Returns null when none is configured — the nudge's gate.
+function cnFindWinbackTemplate_() {
+  var all = (typeof cnExtTemplatesAll_ === 'function') ? cnExtTemplatesAll_() : [];
+  for (var i = 0; i < all.length; i++) {
+    if (/win[\s\-]?back/i.test(String((all[i] || {}).name || ''))) return all[i];
+  }
+  return null;
+}
+
+function cnMaybeWinbackNudge_(noteId, callerName) {
+  var tmpl = cnFindWinbackTemplate_();
+  if (!tmpl) return; // self-gated: no win-back template configured → no nudge
+  uiConfirm({
+    title: 'Send a win-back survey?',
+    message: 'This order closed because the customer is switching suppliers. Open a quick win-back survey email to them? (Service feedback only — no medical details.)',
+    confirmLabel: 'Open win-back email',
+    cancelLabel: 'Not now',
+  }).then(function (ok) {
+    if (!ok) return;
+    cnOpenExternalEmailModal_(noteId, function () {
+      var c = CN_STATE.extComposer;
+      if (!c) return;
+      c.recipientType = 'customer';
+      var body = String(tmpl.body || '').replace(/\{name\}/g, String(callerName || '').trim() || 'there');
+      c.message = body;
+      if (callerName) c.recipientName = String(callerName).trim();
+      var msgEl = document.getElementById('cnX-message'); if (msgEl) msgEl.value = body;
+      var nameEl = document.getElementById('cnX-name'); if (nameEl && callerName) nameEl.value = String(callerName).trim();
+      var subjEl = document.getElementById('cnX-subject');
+      if (subjEl && !subjEl.value.trim()) { subjEl.value = 'Before you go — we’d value your feedback'; c.subject = subjEl.value; }
+    });
+  });
 }
 
 // ── History view ───────────────────────────────────────────────────────
