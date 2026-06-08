@@ -1847,7 +1847,12 @@ manually for a fresh deploy or environment:
   weight-capacity (`"300"` or `"300-450"`), seatType (text containing `s`
   for solid / `c` for captain), pdfLink, imageUrl** — the PPD engine reads
   `A2:F` via `getIntakeOfferings_()`; a column-order change silently breaks
-  recommendations. The `PPDSubmissions` / `PMDSubmissions` / `PAPSubmissions`
+  recommendations. **Columns E (pdfLink) + F (imageUrl) must be populated with
+  real URLs** (e.g. the brochure-PDF + device-image URLs from the marketing/image
+  repo) — the PPD result cards make the device IMAGE clickable/openable (agent
+  copies/saves it to text the patient, via `intakeCopyImage_` / `intakeCopyLink_`)
+  and the HCPCS **code a link to the brochure** (pdfLink); blank E/F → no
+  image/brochure shows. The `PPDSubmissions` / `PMDSubmissions` / `PAPSubmissions`
   PHI tabs auto-provision on first send (`getIntakeSubmissionSheet_`).
 - **Intake recipient addresses are Script-Property-backed.**
   `INTAKE_SALES_EMAIL` (PMD default), `INTAKE_SLEEP_EMAIL` (PAP default),

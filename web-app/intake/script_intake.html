@@ -29,7 +29,13 @@
   .intk-rec .meta { flex: 1; }
   .intk-rec .code { font-weight: 700; }
   .intk-rec .just { font-size: .82rem; color: var(--muted); margin-top: 3px; }
-  .intk-rec img { width: 64px; height: auto; border: 1px solid var(--line); border-radius: 4px; }
+  .intk-rec img { width: 84px; height: auto; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  .intk-rec .code-link { color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .intk-rec .code-link:hover { text-decoration: underline; }
+  .intk-rec-noimg { width: 84px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: .7rem; color: var(--muted); border: 1px dashed var(--line); border-radius: 4px; flex-shrink: 0; }
+  .intk-rec-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+  .intk-rec-mini { font: inherit; font-size: .72rem; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .intk-rec-mini:hover { background: var(--paper-card); }
   .intk-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 12px; }
   .intk-foot .grow { flex: 1; }
   .intk-drop { border: 2px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted); font-size: .8rem; cursor: pointer; }
@@ -321,11 +327,28 @@ function intakeBuildPpdModal_(html, recs) {
   var panel = items.length
     ? items.map(function (p) {
         var id = String(p.hcpcs).replace(/\s+/g, '-');
+        var imgUrl = p.imageUrl ? esc(p.imageUrl) : '';
+        var pdfUrl = p.pdfLink ? esc(p.pdfLink) : '';
+        // Image opens full-size in a new tab (agent can right-click/copy/save to
+        // text the patient); code links to the brochure PDF.
+        var imgHtml = imgUrl
+          ? '<a href="' + imgUrl + '" target="_blank" rel="noopener" title="Open full image"><img src="' + imgUrl + '" alt="' + esc(p.hcpcs) + '"></a>'
+          : '<div class="intk-rec-noimg">no image</div>';
+        var codeHtml = pdfUrl
+          ? '<a href="' + pdfUrl + '" target="_blank" rel="noopener" class="code code-link" title="Open brochure">' + esc(p.hcpcs) + ' ' + icon('popOut', 11) + '</a>'
+          : '<span class="code">' + esc(p.hcpcs) + '</span>';
+        var actions = '<div class="intk-rec-actions">';
+        if (imgUrl) actions += '<button type="button" class="intk-rec-mini" data-img="' + imgUrl + '" onclick="intakeCopyImage_(this)">' + icon('copy', 11) + ' Copy image</button>';
+        if (imgUrl) actions += '<button type="button" class="intk-rec-mini" data-copy="' + imgUrl + '" onclick="intakeCopyLink_(this)">Image link</button>';
+        if (pdfUrl) actions += '<button type="button" class="intk-rec-mini" data-copy="' + pdfUrl + '" onclick="intakeCopyLink_(this)">Brochure link</button>';
+        actions += '</div>';
         return '<div class="intk-rec" data-rec-id="' + esc(id) + '">' +
-          '<span class="star" data-star="' + esc(id) + '" onclick="intakeToggleStar_(this)" title="Mark preferred">&#9733;</span>' +
-          (p.imageUrl ? '<img src="' + esc(p.imageUrl) + '" alt="">' : '') +
-          '<div class="meta"><div class="code">' + esc(p.hcpcs) + '</div><div class="just">' + esc(intakeStripTags_(p.justification)) + '</div></div>' +
-          '<select class="status-sel" data-status="' + esc(id) + '">' +
+          '<span class="star" data-star="' + esc(id) + '" onclick="intakeToggleStar_(this)" title="Mark preferred (starred in the email)">&#9733;</span>' +
+          imgHtml +
+          '<div class="meta">' + codeHtml +
+            '<div class="just">' + esc(intakeStripTags_(p.justification)) + '</div>' + actions +
+          '</div>' +
+          '<select class="status-sel" data-status="' + esc(id) + '" title="Marked on the email sent to the agent">' +
             '<option value="none">— No selection —</option>' +
             '<option value="accepted">Accepted</option>' +
             '<option value="undecided">Undecided/Maybe</option>' +
@@ -338,9 +361,13 @@ function intakeBuildPpdModal_(html, recs) {
   var agentOpts = '<option value="all">All Agents</option>' +
     (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('');
 
+  // Recommendations first (the agent shares these with the patient — image to
+  // text, code to open the brochure), email-body preview below.
   var body =
-    '<div class="intk-prev">' + html + '</div>' +
-    '<div class="intk-recpanel"><h4 style="margin:14px 0 8px;">Mark recommendations</h4>' + panel + '</div>' +
+    '<div class="intk-recpanel"><h4 style="margin:0 0 8px;">Qualifying Power Mobility Devices</h4>' +
+      '<div style="font-size:.78rem;color:var(--muted);margin-bottom:8px;">Click an image to open it (copy/save to text the patient); click the code to open the brochure. Star + Accepted/Rejected ride into the email.</div>' +
+      panel + '</div>' +
+    '<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:.82rem;color:var(--muted);">Preview the email body</summary><div class="intk-prev" style="margin-top:8px;">' + html + '</div></details>' +
     '<div class="intk-foot">' +
       '<label><strong>Send to:</strong></label>' +
       '<select id="intk-ppd-recipient">' + agentOpts + '</select>' +
@@ -355,6 +382,47 @@ function intakeToggleStar_(el) {
   var id = el.getAttribute('data-star');
   document.querySelectorAll('.intk-rec .star').forEach(function (s) { if (s !== el) s.classList.remove('on'); });
   el.classList.toggle('on');
+}
+
+// Copy a URL (image or brochure) to the clipboard so the agent can paste it
+// into their texting tool. navigator.clipboard with a <textarea> execCommand
+// fallback (the HtmlService iframe often blocks the async clipboard API).
+function intakeCopyLink_(btn) {
+  var txt = btn.getAttribute('data-copy') || '';
+  if (!txt) return;
+  function fallback() {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      showToast('Link copied', 'toast-success');
+    } catch (e) { showToast('Copy failed — ' + txt, 'toast-error'); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(function () { showToast('Link copied', 'toast-success'); }, fallback);
+  } else { fallback(); }
+}
+
+// Best-effort copy of the actual device IMAGE bytes (so it can be pasted
+// straight into a text). Clipboard image-write is unreliable in the iframe and
+// needs permissive CORS on the image host, so it falls back to opening the
+// image in a new tab for a native right-click copy/save.
+function intakeCopyImage_(btn) {
+  var url = btn.getAttribute('data-img');
+  if (!url) return;
+  function openIt() { window.open(url, '_blank', 'noopener'); showToast('Opened image — right-click to copy/save', ''); }
+  try {
+    if (navigator.clipboard && window.ClipboardItem && window.fetch) {
+      fetch(url).then(function (r) { return r.blob(); }).then(function (blob) {
+        var item = {}; item[blob.type || 'image/png'] = blob;
+        return navigator.clipboard.write([new ClipboardItem(item)]);
+      }).then(function () { showToast('Image copied — paste into your text', 'toast-success'); })
+        .catch(openIt);
+      return;
+    }
+  } catch (e) {}
+  openIt();
 }
 
 function intakeGatherSelections_() {
