@@ -25,7 +25,6 @@ Updated: 2026-06-10
 - (Carried) Operator Script Properties for the Intake/forms/KB feature run: INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID, FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
 
 ## Open follow-on items
-- CLAUDE.md Common Gotchas — add entries for (a) the getTodayPunches_ append-order assumption (now fixed by sort; keep new consumers sorted) and (b) document-level keyboard handlers must check isContentEditable, not just tagName. Run /sync-docs.
 - `FormTokenCreated` + `FormSubmissionReceived` audit rows carry the full recipient email — inconsistent with the ExternalEmailSent domain-only minimization (pre-existing; from Cycle 1 scan).
 - `CN_AUDIT_ACTIONS` omits `CallNoteManagerComment` — manager comments invisible to the compliance audit panel / note lifecycle (Cycle 1 scan, not selected).
 - Server-side integration tests for the compliance-audit endpoints + intake/forms endpoints.
@@ -40,4 +39,4 @@ Updated: 2026-06-10
 - Reference KB = native markdown articles (primary) + Drive-embed fallback; articles stored as markdown source, rendered with HTML-escape-first.
 
 ## Where I left off
-Implemented broad-scan findings A1–A4 + A7 (Node harness 73/73, node --check clean) and committed to `claude/gifted-hypatia-aee7wa`. Next: /sync-docs for the two new Common Gotchas entries, operator deploy (clasp push + new version + editor runAllTests), then /reflect to close Cycle 1.
+Implemented broad-scan findings A1–A4 + A7 (Node harness 73/73, node --check clean) and ran /sync-docs (punch-ordering + isContentEditable gotchas, kbMd_ quote-encoding note, FormTokens-tz operator note) — all committed to `claude/gifted-hypatia-aee7wa`. Next: operator deploy (clasp push + new version + editor runAllTests), then /reflect to close Cycle 1. Remaining audit backlog: A5/A6/A8/A9 + audit-trail follow-ons (CN_AUDIT_ACTIONS gap, recipient-email minimization).

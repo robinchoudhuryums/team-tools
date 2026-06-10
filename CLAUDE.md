@@ -146,6 +146,17 @@ this section before touching the relevant area.
   downstream display logic. Always read times through
   `normalizeTime_()`, which detects Dates and re-formats them via
   the spreadsheet's timezone.
+- **Timesheet rows are in APPEND order, not time order.** A same-day
+  back-fill (approved adjustment request, manager Day Edit add,
+  employee immediate-adjust) appends its row AFTER later punches, so
+  raw sheet order scrambles any "last punch wins" / state-machine
+  consumer — live status read "On Lunch" after a rep had clocked out
+  until this was fixed. `getTodayPunches_` and `getManagerDashboard`'s
+  per-emp collector now sort chronologically at the source (normalized
+  `HH:mm:ss` strings, lexicographic = chronological); `getTeammateStatus`
+  max-time-selects. Any NEW consumer of same-day punch rows must sort
+  by time (or reuse `getTodayPunches_`) — never derive order from raw
+  row position. Pinned by `test_getTodayPunches_sortsOutOfOrderBackfill`.
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** The
   `DateLocal` column is written as a `yyyy-MM-dd` string but Sheets
   coerces it to a Date object on read, so `String(row[CN.DATE_LOCAL])`
@@ -726,6 +737,14 @@ this section before touching the relevant area.
   full formatted CRM template via `cnFormatNoteForCopy_` — drag-
   highlighting any subset still produces a complete CRM-ready note
   (the headline UX win that drove the contenteditable refactor).
+  COROLLARY: any document-level keyboard handler that exempts form
+  fields must check `document.activeElement.isContentEditable` in
+  addition to the `INPUT`/`TEXTAREA`/`SELECT` tagName check — the `.ce`
+  divs are DIVs, so a tagName-only guard misses them. The shell's
+  bare-`?` shortcuts-overlay handler (`script_core.html`) regressed on
+  exactly this (a literal `?` typed into Issue/Resolution opened the
+  overlay and swallowed the keystroke) until the isContentEditable
+  check was added.
 - **Six client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
@@ -1693,8 +1712,11 @@ this section before touching the relevant area.
   DriveKind, DriveFileId, sortOrder, …}`). Articles store **markdown source** (not
   HTML) — `kbMd_` renders it client-side and **escapes HTML before applying the
   markdown subset**, so authored content can't inject script and links are
-  restricted to `http(s)`/`mailto` (the safety boundary; managers are the only
-  authors but defense-in-depth keeps a bad paste inert). Embeds store only a
+  restricted to `http(s)`/`mailto` with quotes percent-encoded in the URL —
+  the top-level escape covers `&`/`<`/`>` but NOT quotes, so without the
+  encoding a `"` in a link URL broke out of the `href` attribute (attribute
+  injection). That's the safety boundary; managers are the only
+  authors but defense-in-depth keeps a bad paste inert. Embeds store only a
   Drive `{kind, fileId}` and render the `/preview` iframe — no content copied, so
   the Drive doc stays the source of truth. The tree is whole-result cached
   (`KB_CACHE_KEY`, 5 min), invalidated on save/delete. Reps are read-only;
@@ -2124,8 +2146,13 @@ manually for a fresh deploy or environment:
   formType, recipientEmail, expiresAt, status, prefillData, noteId).
   `FormSubmissions` stores completed form data + signature base64 **plus the
   forms-hardening trailing columns** (`SubmissionHash`, `ConsentVersion`,
-  `ConsentAt`, `OpenedAt`, `Certificate`). Both are append-only. No manual setup
-  needed — the `getOrCreateFormTokensSheet_()` /
+  `ConsentAt`, `OpenedAt`, `Certificate`). Both are append-only. ALL timestamp
+  cells in both tabs (`CreatedAt`, `ExpiresAt`, `SubmittedAt`) are written in
+  `CONFIG.TIMEZONE` — every parse site (`getFormByToken`, `submitFormByToken`,
+  `getMySentForms`, `parseRetentionDateMs_`) assumes that tz, and writing
+  `ExpiresAt` in the creating rep's tz skewed token expiry by the tz offset
+  (±~12h for CST reps) until fixed. Keep new timestamp columns consistent.
+  No manual setup needed — the `getOrCreateFormTokensSheet_()` /
   `getOrCreateFormSubmissionsSheet_()` helpers provision them with headers on
   first call.
 - **`PunchAdjustRequests` sheet tab (#4a)** is auto-created in the ADP
