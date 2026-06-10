@@ -41,7 +41,14 @@ Updated: 2026-06-10
 - TEST | web-app/Tests.js | setupTestEnvironment aligns test CN sheet tz to ADP tz; fixPto test reads back coerced SubmittedAt; auditPanel test explicit endDate (tz-fuzz hermetic).
 - DOCS | CLAUDE.md | two new gotchas (audit-ts coercion; per-rep/fixture sheet tz must match ADP tz), safeTimezone_ gotcha rewrite, INV-16/92/110 amendments.
 
+## Completed (KB tables/images — Phase 1 + 2a, commit cc4ad3c)
+- KB-P1 | web-app/kb/script_kb.html | kbMd_ renders GFM tables (alignment, \| escape, header-clamped rows) + inline images (http(s)-only, src quotes percent-encoded, alt quotes entity-escaped, lazy, open-full-size anchor); table/img CSS in .kb-article (shared by the editor live preview); paragraph continuation stops at table lines. NOTE: the partial contains raw NUL-byte code-block sentinels — edit via script, not the Edit tool.
+- KB-P2a | web-app/Code.js | kbDocBodyToMarkdown_ TABLE branch emits GFM (row 0 = header, runs pipeline in cells, \| escape, ragged-row pad); warnings now nested-tables + multi-line-cells only (flatten warning gone).
+- KB tests | test/client/run.js | 82/82 — table/image render + injection cases, converter GFM cases, mkTable stub upgraded (editAsText/getNumChildren), round-trip tripwire (converter GFM → kbMd_ → <table>).
+- KB docs | CLAUDE.md | Reference + KB Phase 2 decisions, INV-115, S62/S63 updated.
+
 ## Pending / not yet done
+- KB Phase 2b (converter inline-image export): planned design = converter stays read-only and emits kbdoc:<fileId>:<n> placeholder tokens; kbSaveItem resolves them at save (re-walk Doc in same element order, export blobs to a deployer-owned "KB Images" Drive folder — folder ID in a Script Property, domain-viewable, thumbnail-URL form for <img>), caps ~20 images/doc. Operator must verify a domain-shared Drive image renders inside the HtmlService iframe BEFORE building it out. Then Phase 3: paste-a-screenshot upload in the article editor (reuses the same folder plumbing).
 - P#17 — per-call CDR data (Neon Option C): NOT implementable in this repo (external Postgres + call-data-reporting pipeline). Revisit only if/when that infrastructure project is undertaken.
 - Operator deploy: `cd web-app && clasp push -f` + Apps Script editor → Deploy → New version (covers everything since the last deploy, incl. the NEW Docs OAuth scope from P#16 — first editor run prompts re-auth).
 - Operator: run `runAllTests()` once from the editor (creates the TEST_INTAKE_SS_ID fixture on first run; exercises the ~11 new integration tests).
@@ -63,4 +70,4 @@ Updated: 2026-06-10
 - P#17 (Neon per-call CDR) is out of this repo's scope by design — the CDR data layer isolation (INV-68) is the only in-repo preparation possible.
 
 ## Where I left off
-Cycle 1 implementation COMPLETE + the operator's first full runAllTests (218/233) triaged: all 15 failures classified and fixed (4 production fixes incl. the audit-ts coercion bug that blanked the compliance panel; rest test drift from the flag migration / #4a flag / fixture tz / coercion-unaware fixtures). Latest commit b45d5a6 on `claude/gifted-hypatia-aee7wa`; Node harness 78/78. Next: operator re-runs `runAllTests()` (expect green — setup re-aligns the fixture tz on this run; if the DateLocal trio still fails, the setup log line "CN fixture tz aligned…" vs its absence discriminates the diagnosis), then clasp push -f + New version deploy, then `/reflect` to close Cycle 1.
+Latest commit cc4ad3c on `claude/gifted-hypatia-aee7wa` (Node harness 82/82): KB tables/images Phase 1 + 2a shipped on top of the runAllTests triage (b45d5a6). Operator is mid-redeploy; the pending editor `runAllTests()` re-run validates the triage fixes (expect green — setup re-aligns the fixture tz on this run; if the DateLocal trio still fails, the setup log line "CN fixture tz aligned…" vs its absence discriminates the diagnosis). After a green run + New-version deploy: verify S62/S63 with a real table/image article, then `/reflect` to close Cycle 1. KB Phase 2b (image export) + Phase 3 (paste-upload) are the queued follow-ons — see Pending.
