@@ -278,7 +278,8 @@ const CN_FLAG_PRIORITY = ['action','training','review','urgent'];
 const CN_AUDIT_ACTIONS = [
   'CallNoteCreate', 'CallNoteEdit', 'CallNoteFlag', 'CallNoteResolve',
   'CallNoteDelete', 'CallNoteEmail', 'CallNoteTrainingReply', 'CallNotePin',
-  'CallNoteFeedback', 'CallNoteTagAdmin', 'CallNotesExport', 'ExternalEmailSent',
+  'CallNoteFeedback', 'CallNoteManagerComment', 'CallNoteTagAdmin',
+  'CallNotesExport', 'ExternalEmailSent',
   'FormTokenCreated', 'FormSubmissionReceived',
 ];
 // Bounded read: the audit search scans at most this many of the most-recent
@@ -750,6 +751,12 @@ function getManagerDashboard() {
         type: normalizeType_(String(adpRows[i][ADP.COMMENTS])),
       });
     }
+    // Rows arrive in APPEND order; a same-day back-fill (approved adjustment,
+    // Day Edit) lands last and would mis-derive "last punch" → wrong live
+    // status. Sort each rep's punches chronologically ("HH:mm:ss" strings).
+    Object.keys(todayPunchesByEmp).forEach(id => {
+      todayPunchesByEmp[id].sort((a, b) => a.time.localeCompare(b.time));
+    });
 
     // Live status with manager-tz conversion
     const liveStatus = employees.map(e => {
@@ -1996,18 +2003,36 @@ function setCallNotePinned(noteId, pinned) {
 }
 
 /** Returns the calling rep's pinned notes across all dates (not just today).
- *  Read-only, no lock. Used by the Log view's pinned tray. */
+ *  Read-only, no lock. Used by the Log view's pinned tray.
+ *  Bounded read (A6): scans only the SubformData column to find pinned rows
+ *  (~16× fewer cells than a full-history read), with a cheap substring
+ *  pre-filter before JSON.parse, then fetches just the few pinned rows
+ *  (≤ CN_PIN_LIMIT under the cap) at full width. */
 function getMyPinnedCallNotes() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
     if (!emp.callNotesSheetId) return { notes: [] };
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    const lastRow = sheet.getLastRow();
     const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
-      if (note.subformData && note.subformData.pinned) notes.push(note);
+    if (lastRow >= 2) {
+      const n = lastRow - 1;
+      const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
+      for (let i = 0; i < n; i++) {
+        const raw = subCol[i][0];
+        if (!raw) continue;
+        // Pre-filter: an unpinned note's blob never contains the key (the pin
+        // toggle DELETES `pinned`/`pinnedAt` rather than writing false). The
+        // JSON.parse below stays authoritative for any substring false-positive.
+        if (String(raw).indexOf('"pinned"') < 0) continue;
+        let sub = null;
+        try { sub = JSON.parse(raw); } catch (e) { continue; }
+        if (!sub || !sub.pinned) continue;
+        const rowIndex = i + 2;
+        const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+        notes.push(callNoteRowToObject_({ row: row, rowIndex: rowIndex }));
+      }
     }
     // Newest-pinned first
     notes.sort(function (a, b) {
@@ -2022,25 +2047,38 @@ function getMyPinnedCallNotes() {
 /** Returns the calling rep's most recent training-flagged notes that have a
  *  manager reply (non-empty subformData.trainingReply). Spans ALL dates
  *  (not just today) so the rep can see historical Q&A. Limited to 5,
- *  newest first. Read-only, caller-scoped. */
+ *  newest first. Read-only, caller-scoped.
+ *  Bounded read (A6): scans the Timestamp / FlagType / SubformData columns to
+ *  pick the 5 newest answered training notes, then fetches only those 5 rows
+ *  at full width — instead of reading + JSON-parsing the entire history. */
 function getMyTrainingQA() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
     if (!emp.callNotesSheetId) return { notes: [] };
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
-    const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
-      if (note.flagType === 'training'
-          && note.subformData
-          && note.subformData.trainingReply) {
-        notes.push(note);
-      }
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { notes: [] };
+    const n = lastRow - 1;
+    const tsCol   = sheet.getRange(2, CN.TIMESTAMP + 1, n, 1).getValues();
+    const flagCol = sheet.getRange(2, CN.FLAG_TYPE + 1, n, 1).getValues();
+    const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
+    const candidates = [];   // { rowIndex, ts }
+    for (let i = 0; i < n; i++) {
+      if (String(flagCol[i][0] || '').trim().toLowerCase() !== 'training') continue;
+      const raw = subCol[i][0];
+      if (!raw || String(raw).indexOf('"trainingReply"') < 0) continue;
+      let sub = null;
+      try { sub = JSON.parse(raw); } catch (e) { continue; }
+      if (!sub || !sub.trainingReply) continue;
+      candidates.push({ rowIndex: i + 2, ts: String(tsCol[i][0] || '') });
     }
-    notes.sort(function (a, b) { return b.timestamp.localeCompare(a.timestamp); });
-    if (notes.length > 5) notes.length = 5;
+    candidates.sort(function (a, b) { return b.ts.localeCompare(a.ts); });
+    if (candidates.length > 5) candidates.length = 5;
+    const notes = candidates.map(function (c) {
+      const row = sheet.getRange(c.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+      return callNoteRowToObject_({ row: row, rowIndex: c.rowIndex });
+    });
     return { notes: notes };
   } catch (err) { return { error: err.message }; }
 }
@@ -2154,7 +2192,6 @@ function getCallNotesAmbient() {
     const weekStart = Utilities.formatDate(weekStartDate, empTz, 'yyyy-MM-dd');
 
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
     let unresolvedActionCount = 0;
     let staleActionCount = 0;
     let todayTotal = 0;
@@ -2166,22 +2203,45 @@ function getCallNotesAmbient() {
     const flagCounts = { all: 0, action: 0, training: 0, review: 0, unresolved: 0, qa: 0 };
     const staleMs = CONFIG.CALL_NOTES.STALE_FLAG_HOURS * 3600 * 1000;
     const nowMs = Date.now();
-    for (let i = 1; i < rows.length; i++) {
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
-      if (note.dateLocal === today) todayTotal++;
-      if (note.dateLocal && note.dateLocal >= weekStart && note.dateLocal <= today) weekTotal++;
-      flagCounts.all++;
-      if (note.flagType === 'action')   flagCounts.action++;
-      if (note.flagType === 'training') flagCounts.training++;
-      if (note.flagType === 'review')   flagCounts.review++;
-      if (note.flagType === 'action' && !note.resolved) {
-        unresolvedActionCount++;
-        flagCounts.unresolved++;
-        const noteMs = parseTimestampMs_(note.timestamp, empTz);
-        if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
-      }
-      if (note.flagType === 'training' && note.subformData && note.subformData.trainingReply) {
-        flagCounts.qa++;
+    // Bounded read (A6): this runs on the 60s sidebar poll, so read only the
+    // 5 columns the counts need (Timestamp+DateLocal, FlagType+Resolved,
+    // SubformData — ~3× fewer cells than the full 16-column history) and
+    // JSON-parse SubformData only for training-flagged rows with a reply key.
+    // Counts still span the entire Sheet (INV-39 — historical totals).
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      const n = lastRow - 1;
+      const tsDate  = sheet.getRange(2, CN.TIMESTAMP + 1, n, 2).getValues();  // Timestamp, DateLocal
+      const flagRes = sheet.getRange(2, CN.FLAG_TYPE + 1, n, 2).getValues();  // FlagType, Resolved
+      const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
+      for (let i = 0; i < n; i++) {
+        const dateLocal = normalizeDate_(tsDate[i][1]);
+        if (dateLocal === today) todayTotal++;
+        if (dateLocal && dateLocal >= weekStart && dateLocal <= today) weekTotal++;
+        flagCounts.all++;
+        const flagType = String(flagRes[i][0] || '').trim().toLowerCase();
+        if (flagType === 'action')   flagCounts.action++;
+        if (flagType === 'training') flagCounts.training++;
+        if (flagType === 'review')   flagCounts.review++;
+        if (flagType === 'action') {
+          const resRaw = flagRes[i][1];
+          const resStr = (resRaw === null || resRaw === undefined) ? ''
+            : String(resRaw).trim().toLowerCase();
+          const resolved = (resStr === 'true' || resStr === 'yes' || resStr === '1');
+          if (!resolved) {
+            unresolvedActionCount++;
+            flagCounts.unresolved++;
+            const noteMs = parseTimestampMs_(String(tsDate[i][0] || ''), empTz);
+            if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
+          }
+        }
+        if (flagType === 'training' && subCol[i][0]
+            && String(subCol[i][0]).indexOf('"trainingReply"') >= 0) {
+          try {
+            const sub = JSON.parse(subCol[i][0]);
+            if (sub && sub.trainingReply) flagCounts.qa++;
+          } catch (e) { /* corrupt blob — skip, same as callNoteRowToObject_ */ }
+        }
       }
     }
     const result = {
@@ -3265,6 +3325,122 @@ function getCallNoteAuditHistory(noteId) {
     // absent AND the scan didn't reach all the way back (L11).
     const sawCreate = rows.some(function (r) { return r.action === 'CallNoteCreate'; });
     return { rows: rows, truncated: !read.scannedAll && !sawCreate };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Automation Health (Admin tab) ────────────────────────────────────────
+// Operationalizes the "monitor AuditLog for PersonalSheetSyncFail" gotcha and
+// the silent-degradation posture: one manager-gated, read-only aggregate that
+// surfaces (a) personal-sheet sync failures, (b) CDR reachability / column
+// drift / roster↔agent name mismatches, and (c) the last-seen audit row per
+// automation job — so a missing trigger or a drifting external sheet shows up
+// in the Admin tab instead of only in Logger / the raw AuditLog.
+
+// Audit actions written by the automation jobs. Purges write a row only when
+// retention is enabled (a disabled purge returns before the audit write), and
+// AdpExportAuto only fires at period end — the client captions each
+// accordingly so "never seen" isn't misread as "broken".
+const AUTOMATION_AUDIT_ACTIONS = [
+  'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
+];
+const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
+
+/** Manager-gated, read-only. One bounded AuditLog tail scan (CN_AUDIT_MAX_SCAN
+ *  rows, INV-13 spirit) + the 5-min-cached CDR aggregate. Never throws — CDR
+ *  unreachability degrades to { cdr: { ok:false, error } } so the rest of the
+ *  panel still renders (same best-effort posture as the shift-stats overlay). */
+function getAutomationHealth() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+
+    // ── (a) + (c): one bounded tail scan of the AuditLog ─────────────────
+    const syncFails = { count: 0, recent: [], windowDays: AUTOMATION_SYNCFAIL_WINDOW_DAYS };
+    const lastRunByAction = {};
+    let scannedAll = true;
+    const auditSheet = getOrCreateAuditSheet_();
+    const lastRow = auditSheet.getLastRow();
+    if (lastRow > 1) {
+      const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
+      scannedAll = startRow === 2;
+      const data = auditSheet.getRange(startRow, 1, lastRow - startRow + 1, 10).getValues();
+      // Day-string comparison against IST-written timestamps — same accepted
+      // boundary fuzz as getCallNotesAuditLog's date filter.
+      const cutD = new Date();
+      cutD.setDate(cutD.getDate() - AUTOMATION_SYNCFAIL_WINDOW_DAYS);
+      const cutoff = fmtDateTz_(cutD, mgrTz);
+      for (let i = data.length - 1; i >= 0; i--) {   // newest-first
+        const action = String(data[i][4]);
+        const tsRaw = String(data[i][0]);
+        if (action === 'PersonalSheetSyncFail') {
+          if (tsRaw.substring(0, 10) >= cutoff) {
+            syncFails.count++;
+            if (syncFails.recent.length < 5) {
+              syncFails.recent.push({
+                timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+                empName: String(data[i][2]),
+                notes: String(data[i][9]),
+              });
+            }
+          }
+        } else if (AUTOMATION_AUDIT_ACTIONS.indexOf(action) >= 0 && !lastRunByAction[action]) {
+          lastRunByAction[action] = {
+            timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+            notes: String(data[i][9]),
+          };
+        }
+      }
+    }
+    const automationLastRuns = AUTOMATION_AUDIT_ACTIONS.map(function (a) {
+      return { action: a, last: lastRunByAction[a] || null };
+    });
+
+    // ── (b): CDR reachability + name-match health (last 7 days) ──────────
+    let cdr;
+    try {
+      const now = new Date();
+      const to = fmtDateTz_(now, mgrTz);
+      const fromD = new Date(now);
+      fromD.setDate(fromD.getDate() - 7);
+      const from = fmtDateTz_(fromD, mgrTz);
+      const result = getCdrAgentMetrics_(from, to, null);   // unfiltered — all agents
+      if (result.meta && result.meta.error) {
+        cdr = { ok: false, error: result.meta.error };
+      } else {
+        // Canonicalize agent names through the alias map before comparing to
+        // the roster (the unfiltered read doesn't apply aliases itself), so an
+        // aliased agent isn't reported as unmatched.
+        const aliasMap = getCdrNameMap_();
+        const roster = getEmployeeRosterRows_();
+        const rosterSet = {};
+        for (let r = 1; r < roster.length; r++) {
+          const nm = String(roster[r][EMP.NAME]).trim();
+          if (nm) rosterSet[nm] = true;
+        }
+        const canonicalAgents = {};
+        Object.keys(result.agents || {}).forEach(function (a) {
+          canonicalAgents[aliasMap[a] || a] = true;
+        });
+        cdr = {
+          ok: true, from: from, to: to,
+          rowsMatched: (result.meta && result.meta.rowsMatched) || 0,
+          columnWarning: (result.meta && result.meta.columnWarning) || null,
+          unmatchedAgents: Object.keys(canonicalAgents).filter(function (a) { return !rosterSet[a]; }).sort(),
+          rosterWithNoCdr: Object.keys(rosterSet).filter(function (n) { return !canonicalAgents[n]; }).sort(),
+        };
+      }
+    } catch (cdrErr) {
+      cdr = { ok: false, error: cdrErr.message };
+    }
+
+    return {
+      syncFails: syncFails,
+      automationLastRuns: automationLastRuns,
+      cdr: cdr,
+      auditScanComplete: scannedAll,
+      managerTzAbbr: tzAbbr_(mgrTz),
+    };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4980,10 +5156,14 @@ function createFormToken(payload) {
 
   const token = generateFormToken_();
   const now = new Date();
-  const empTz = empTz_(emp);
-  const createdAt = Utilities.formatDate(now, empTz, "yyyy-MM-dd'T'HH:mm:ss");
+  // CreatedAt / ExpiresAt are stored in CONFIG.TIMEZONE — every reader
+  // (getFormByToken, submitFormByToken, getMySentForms, parseRetentionDateMs_)
+  // parses these cells with CONFIG.TIMEZONE, and FormSubmissions.SubmittedAt is
+  // already written in it. Writing them in the creating rep's tz skewed the
+  // expiry check by the rep↔CONFIG tz offset (±~12h for CST reps).
+  const createdAt = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
   const expiresDate = new Date(now.getTime() + (CONFIG.FORM_TOKEN_EXPIRY_HOURS || 72) * 3600000);
-  const expiresAt = Utilities.formatDate(expiresDate, empTz, "yyyy-MM-dd'T'HH:mm:ss");
+  const expiresAt = Utilities.formatDate(expiresDate, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
 
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -5001,8 +5181,13 @@ function createFormToken(payload) {
 
   const formUrl = buildFormUrl_(token);
 
+  // Audit row logs only the recipient DOMAIN — same PII/PHI minimization as
+  // the ExternalEmailSent row (a customer's personal address is PII; for a
+  // patient it can be PHI-adjacent). The full recipient lives on the
+  // FormTokens row itself, reachable via the token for an investigator.
   writeAuditLog_(emp, 'FormTokenCreated', '', '', false, 0,
-    'token=' + token + '; formType=' + formType + '; to=' + recipientEmail +
+    'token=' + token + '; formType=' + formType +
+    '; toDomain=' + intakeEmailDomain_(recipientEmail) +
     (noteId ? '; noteId=' + noteId : ''));
 
   return { success: true, token: token, formUrl: formUrl };
@@ -5098,6 +5283,9 @@ function submitFormByToken(token, formData) {
   token = String(token || '').trim();
   if (!token) return { success: false, error: 'No form token provided.' };
 
+  // Rep-notification payload, captured inside the lock and sent AFTER release
+  // (the email's PDF render is slow — see the deferred send in finally).
+  let notifyPayload = null;
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -5144,11 +5332,13 @@ function submitFormByToken(token, formData) {
     });
     const signatureData = String(data.signature || '');
 
-    // Consent is server-enforced, not just client-gated: a payload that
-    // explicitly reports consent NOT given is rejected. (Absent _meta — e.g. a
-    // page loaded before this deploy — is allowed through: the client's consent
-    // checkbox already gated it, INV-78-style back-compat.)
-    if (meta.consentAgreed === false) {
+    // Consent is server-enforced, not just client-gated: the payload MUST
+    // affirmatively report consentAgreed === true. The original deploy
+    // tolerated an absent _meta (pages cached pre-hardening), but the shipped
+    // form_public.html has sent _meta on every submit since — so a missing
+    // envelope now means a hand-crafted POST bypassing the consent checkbox,
+    // and the tolerance window is closed (A9).
+    if (!meta || meta.consentAgreed !== true) {
       return { success: false, error: 'You must acknowledge the privacy notice before submitting.' };
     }
 
@@ -5245,25 +5435,29 @@ function submitFormByToken(token, formData) {
     // Notify the rep who created the token with the completed, stylized form
     // (HTML body rendering all responses + the signature as a PNG attachment +
     // a best-effort PDF of the whole form). Best-effort — a failure here never
-    // blocks the recipient's already-successful submission.
-    try {
-      if (createdBy) {
-        notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipientEmail,
-          submittedAt, sanitizedData, signatureData);
-      }
-    } catch (emailErr) {
-      console.warn('submitFormByToken: notification email failed: ' + emailErr.message);
+    // blocks the recipient's already-successful submission. The send is
+    // DEFERRED past lock release (see finally) — it renders an HTML→PDF
+    // conversion that can take seconds, and holding the global ScriptLock
+    // through it would stall every punch / call-note write in the app
+    // (same post-release pattern as recordPunch's old-adjustment alert).
+    if (createdBy) {
+      notifyPayload = { createdBy: createdBy, formType: formType,
+        recipientName: recipientName, recipientEmail: recipientEmail,
+        submittedAt: submittedAt, sanitizedData: sanitizedData,
+        signatureData: signatureData };
     }
 
     // Audit log (use a synthetic emp object since this is a public endpoint)
     try {
-      const auditEmp = { id: 'EXTERNAL', name: recipientName || recipientEmail, email: recipientEmail };
       // The audit row carries the content hash + submittedAt — an independent,
       // append-only witness so a later edit to the stored row is detectable even
-      // against the AuditLog. PHI-free (token / formType / domain-bearing email
-      // only — no responses).
+      // against the AuditLog. PII/PHI-minimized like the ExternalEmailSent row:
+      // only the recipient DOMAIN is recorded (the full address — for a patient,
+      // PHI-adjacent — lives on the FormTokens row, reachable via the token).
+      const fromDomain = intakeEmailDomain_(recipientEmail);
+      const auditEmp = { id: 'EXTERNAL', name: 'External recipient', email: fromDomain };
       writeAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
-        'token=' + token + '; formType=' + formType + '; from=' + recipientEmail +
+        'token=' + token + '; formType=' + formType + '; fromDomain=' + fromDomain +
         '; hash=' + submissionHash + '; submittedAt=' + submittedAt +
         (noteId ? '; noteId=' + noteId : ''));
     } catch(_) {}
@@ -5278,6 +5472,15 @@ function submitFormByToken(token, formData) {
     return { success: false, error: 'We could not submit your form. Please try again, or contact UMS if the problem persists.' };
   } finally {
     lock.releaseLock();
+    if (notifyPayload) {
+      try {
+        notifyRepOfFormSubmission_(notifyPayload.createdBy, notifyPayload.formType,
+          notifyPayload.recipientName, notifyPayload.recipientEmail,
+          notifyPayload.submittedAt, notifyPayload.sanitizedData, notifyPayload.signatureData);
+      } catch (emailErr) {
+        console.warn('submitFormByToken: notification email failed: ' + emailErr.message);
+      }
+    }
   }
 }
 
@@ -5417,6 +5620,28 @@ function computeFormSubmissionHash_(dataJson, signatureData, token, consentVersi
   return out;
 }
 
+/** Look up the FormSubmissions row for a token. Scans only the Token column —
+ *  bottom-up, so the newest row wins, matching the prior full-scan semantics —
+ *  then fetches just that one full row, instead of reading every submission's
+ *  responses + signature on each lookup (same bounded pattern as
+ *  findFormTokenRow_ / findCallNoteRow_, L9). Returns { rowIndex, row } or null.
+ *  The row is read at FS_HEADERS width so legacy 6-column rows come back with
+ *  the hardening columns as '' (treated as "legacy, no hash" by callers). */
+function findFormSubmissionRow_(sheet, token) {
+  if (!token) return null;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const tokens = sheet.getRange(2, FS.TOKEN + 1, lastRow - 1, 1).getValues();
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (String(tokens[i][0]).trim() === token) {
+      const rowIndex = i + 2;
+      const row = sheet.getRange(rowIndex, 1, 1, FS_HEADERS.length).getValues()[0];
+      return { rowIndex: rowIndex, row: row };
+    }
+  }
+  return null;
+}
+
 /** Manager-gated, read-only integrity check (forms hardening). Recomputes the
  *  stored submission's content hash from its cells and compares to the stamped
  *  SubmissionHash — the audit-response / spot-check tool. `match:false` means
@@ -5427,19 +5652,17 @@ function verifyFormSubmissionIntegrity_(token) {
     if (!emp || !emp.isManager) return { error: 'Manager access required.' };
     token = String(token || '').trim();
     if (!token) return { error: 'No token provided.' };
-    const rows = getOrCreateFormSubmissionsSheet_().getDataRange().getValues();
-    for (let i = rows.length - 1; i >= 1; i--) {
-      if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
-      const stored = String(rows[i][FS.SUBMISSION_HASH] || '');
-      if (!stored) return { found: true, legacy: true, match: null,
-        message: 'This submission predates integrity hashing — no stored hash to verify.' };
-      const recomputed = computeFormSubmissionHash_(
-        String(rows[i][FS.FORM_DATA] || ''), String(rows[i][FS.SIGNATURE_DATA] || ''),
-        String(rows[i][FS.TOKEN] || ''), String(rows[i][FS.CONSENT_VERSION] || ''));
-      return { found: true, match: recomputed === stored, storedHash: stored,
-        recomputedHash: recomputed, submittedAt: String(rows[i][FS.SUBMITTED_AT] || '') };
-    }
-    return { found: false, error: 'No submission found for that token.' };
+    const located = findFormSubmissionRow_(getOrCreateFormSubmissionsSheet_(), token);
+    if (!located) return { found: false, error: 'No submission found for that token.' };
+    const row = located.row;
+    const stored = String(row[FS.SUBMISSION_HASH] || '');
+    if (!stored) return { found: true, legacy: true, match: null,
+      message: 'This submission predates integrity hashing — no stored hash to verify.' };
+    const recomputed = computeFormSubmissionHash_(
+      String(row[FS.FORM_DATA] || ''), String(row[FS.SIGNATURE_DATA] || ''),
+      String(row[FS.TOKEN] || ''), String(row[FS.CONSENT_VERSION] || ''));
+    return { found: true, match: recomputed === stored, storedHash: stored,
+      recomputedHash: recomputed, submittedAt: String(row[FS.SUBMITTED_AT] || '') };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -5483,37 +5706,38 @@ function buildFormSubmissionResult_(tLocated, token) {
     return { submitted: false, status, formType, formName, recipientName, recipientEmail };
   }
 
-  const subSheet = getOrCreateFormSubmissionsSheet_();
-  const rows = subSheet.getDataRange().getValues();
-  for (let i = rows.length - 1; i >= 1; i--) {
-    if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
+  // Bounded lookup (L9 pattern) — token-column scan + one-row fetch instead of
+  // reading every submission's responses + signature.
+  const sLocated = findFormSubmissionRow_(getOrCreateFormSubmissionsSheet_(), token);
+  if (sLocated) {
+    const sRow = sLocated.row;
     let formData = {};
-    try { formData = JSON.parse(rows[i][FS.FORM_DATA]) || {}; } catch (_) {}
+    try { formData = JSON.parse(sRow[FS.FORM_DATA]) || {}; } catch (_) {}
     const fields = Object.keys(formData).map(function (k) {
       return { key: k, label: humanizeFormFieldKey_(k), value: formData[k] };
     });
-    const signature = String(rows[i][FS.SIGNATURE_DATA] || '');
+    const signature = String(sRow[FS.SIGNATURE_DATA] || '');
     // Forms-hardening: parse the stored Certificate of Completion + verify the
     // tamper hash live, then append a "verified record" block to the card.
     let cert = null;
-    try { cert = JSON.parse(rows[i][FS.CERTIFICATE]); } catch (_) {}
-    const storedHash = String(rows[i][FS.SUBMISSION_HASH] || '');
+    try { cert = JSON.parse(sRow[FS.CERTIFICATE]); } catch (_) {}
+    const storedHash = String(sRow[FS.SUBMISSION_HASH] || '');
     let hashMatch = null;
     if (storedHash) {
       const recomputed = computeFormSubmissionHash_(
-        String(rows[i][FS.FORM_DATA] || ''), signature,
-        String(rows[i][FS.TOKEN] || ''), String(rows[i][FS.CONSENT_VERSION] || ''));
+        String(sRow[FS.FORM_DATA] || ''), signature,
+        String(sRow[FS.TOKEN] || ''), String(sRow[FS.CONSENT_VERSION] || ''));
       hashMatch = (recomputed === storedHash);
     }
     return {
       submitted: true,
       formType, formName, recipientName,
-      recipientEmail: String(rows[i][FS.RECIPIENT_EMAIL] || recipientEmail),
-      submittedAt: String(rows[i][FS.SUBMITTED_AT] || ''),
+      recipientEmail: String(sRow[FS.RECIPIENT_EMAIL] || recipientEmail),
+      submittedAt: String(sRow[FS.SUBMITTED_AT] || ''),
       fields,
       hasSignature: !!signature,
       signature,
-      consentVersion: String(rows[i][FS.CONSENT_VERSION] || ''),
+      consentVersion: String(sRow[FS.CONSENT_VERSION] || ''),
       integrityVerified: hashMatch,
       // Pre-rendered branded card (responses table + signature + record block)
       // so the in-app viewer matches the submission email. Safe to innerHTML —
@@ -6344,14 +6568,18 @@ function sendCallNotesEodDigest() {
       let unresolved;
       try {
         const sheet = getCallNotesSheet_(empObj);
-        const rows = sheet.getDataRange().getValues();
+        // Bounded read (A6): today's notes are a contiguous row slice
+        // (append-order assumption, INV-46) — scan the 1-column date range to
+        // find it instead of reading the rep's whole history every hour.
+        const located = readCallNoteRowsInRange_(sheet, today, today);
         unresolved = [];
-        for (let i = 1; i < rows.length; i++) {
-          if (normalizeDate_(rows[i][CN.DATE_LOCAL]) !== today) continue;
-          if (String(rows[i][CN.FLAG_TYPE] || '').toLowerCase() !== 'action') continue;
-          const resStr = String(rows[i][CN.RESOLVED] || '').toLowerCase();
+        for (let i = 0; i < located.length; i++) {
+          const row = located[i].row;
+          if (normalizeDate_(row[CN.DATE_LOCAL]) !== today) continue;
+          if (String(row[CN.FLAG_TYPE] || '').toLowerCase() !== 'action') continue;
+          const resStr = String(row[CN.RESOLVED] || '').toLowerCase();
           if (resStr === 'true' || resStr === 'yes' || resStr === '1') continue;
-          unresolved.push(callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 }));
+          unresolved.push(callNoteRowToObject_(located[i]));
         }
       } catch (e) {
         Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
@@ -7249,6 +7477,12 @@ function getTodayPunches_(empId, empTz) {
       type: normalizeType_(raw), isAdjustment: raw.indexOf('ADJ-') === 0,
     });
   }
+  // Sheet rows are in APPEND order, not time order — a same-day back-fill
+  // (approved adjustment request, manager Day Edit, immediate adjust) lands
+  // last and would otherwise scramble every order-sensitive consumer
+  // (getNextActions_, the client's status sentence / day ribbon / hours).
+  // Normalized times are "HH:mm:ss", so a lexicographic sort is chronological.
+  punches.sort((a, b) => a.time.localeCompare(b.time));
   return { today, punches };
 }
 
@@ -7372,7 +7606,30 @@ function submitPunchAdjustRequests(requests) {
       if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
       clean.push({ date: date, time: time, punchType: punchType, reason: reason });
     }
+    // Duplicate guards (same family as INV-94's time-off dup-guard): reject a
+    // batch carrying two entries for the same (date, punchType), and reject an
+    // entry that duplicates an EXISTING Pending request — a double-submit
+    // would otherwise queue twin rows that each write a punch on approval
+    // (benign-ish since approve updates-in-place, but it clutters the queue
+    // and invites a double-approve race).
+    const batchSeen = {};
+    for (let i = 0; i < clean.length; i++) {
+      const key = clean[i].date + '|' + clean[i].punchType;
+      if (batchSeen[key]) return { success: false, error: 'Duplicate adjustment in this batch: ' + clean[i].punchType + ' on ' + clean[i].date + '.' };
+      batchSeen[key] = true;
+    }
     const sheet = getOrCreatePunchAdjustSheet_();
+    const existing = sheet.getDataRange().getValues();
+    for (let i = 1; i < existing.length; i++) {
+      if (String(existing[i][PAR.EMP_ID]).trim() !== emp.id) continue;
+      if (String(existing[i][PAR.STATUS]).trim().toLowerCase() !== 'pending') continue;
+      const key = normalizeDate_(existing[i][PAR.DATE]) + '|' + String(existing[i][PAR.PUNCH_TYPE]).trim();
+      if (batchSeen[key]) {
+        return { success: false, error: 'You already have a pending ' +
+          String(existing[i][PAR.PUNCH_TYPE]).trim() + ' adjustment for ' +
+          normalizeDate_(existing[i][PAR.DATE]) + ' awaiting approval.' };
+      }
+    }
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     clean.forEach(function (c) {
       sheet.appendRow([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt]);
@@ -7462,6 +7719,16 @@ function updatePunchAdjustStatus(reqId, newStatus) {
       if (newStatus === 'Approved') {
         const targetEmp = lookupEmployeeById_(empId);
         if (!targetEmp) return { success: false, error: 'Employee not found.' };
+        // Re-validate the adjust window at APPROVAL time — the submit-time
+        // check (INV-106) doesn't cover a request that sat in the queue past
+        // the window. Writing it would bypass the same bound recordPunch /
+        // managerSaveDay enforce; the manager should deny instead.
+        const ageDays = daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp)));
+        if (ageDays > CONFIG.ADJUST_WINDOW_DAYS) {
+          return { success: false, error:
+            'This request is now older than the ' + CONFIG.ADJUST_WINDOW_DAYS +
+            '-day adjust window — deny it (the rep can re-submit if still needed).' };
+        }
         writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
@@ -7661,11 +7928,21 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
                  newStatus === 'Denied'   ? 'denied'   : 'updated';
     const subj = `Your time off request for ${date} was ${verb}`;
     const hasNotes = notes && notes !== 'undefined';
+    // Show the balance of the bucket this request actually deducts from —
+    // a Sick Leave decision must report the SICK balance, not annual (and an
+    // Unpaid Leave decision has no balance line at all, bucket=null).
     let balanceDays = null;
+    let balanceLabel = 'annual';
     if (getFlag_('enablePtoTracking')) {
-      // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
-      const fresh = lookupEmployeeById_(emp.id);
-      if (fresh && fresh.ptoEnabled !== false) balanceDays = fresh.annualLeave;
+      const dedu = getLeaveDeduction_(type);
+      if (dedu.bucket) {
+        // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
+        const fresh = lookupEmployeeById_(emp.id);
+        if (fresh && fresh.ptoEnabled !== false) {
+          balanceDays = dedu.bucket === 'sick' ? fresh.sickLeave : fresh.annualLeave;
+          balanceLabel = dedu.bucket === 'sick' ? 'sick' : 'annual';
+        }
+      }
     }
     // Plain-text fallback
     let body = `Hi ${emp.name},\n\n` +
@@ -7674,7 +7951,7 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
                `Type:    ${type}\n`;
     if (hasNotes) body += `Notes:   ${notes}\n`;
     body += `Status:  ${newStatus}\n\n`;
-    if (balanceDays !== null) body += `Your current annual leave balance: ${balanceDays} day(s)\n\n`;
+    if (balanceDays !== null) body += `Your current ${balanceLabel} leave balance: ${balanceDays} day(s)\n\n`;
     body += `Please contact your manager with any questions.\n\n— UMS Time Clock (automated)\n`;
     // Branded HTML (item 2) — green/red/navy header by decision
     const accent = newStatus === 'Approved' ? CN_EMAIL_PALETTE.accent
@@ -7684,7 +7961,7 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
     if (hasNotes) kv.push(['Notes', notes]);
     kv.push(['Status', newStatus]);
     const balLine = (balanceDays !== null)
-      ? '<p style="margin:12px 0 0;">Current annual leave balance: <b>' + esc_(balanceDays) + '</b> day(s)</p>' : '';
+      ? '<p style="margin:12px 0 0;">Current ' + esc_(balanceLabel) + ' leave balance: <b>' + esc_(balanceDays) + '</b> day(s)</p>' : '';
     const html = buildBrandedEmailHtml_('Time off ' + verb,
       '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
       '<p style="margin:0 0 12px;">Your time off request has been <b>' + esc_(verb) + '</b>:</p>' +
@@ -8327,7 +8604,11 @@ function getMetricsAmbient() {
     if (!emp || !emp.isManager) return { badge: null };
 
     var cache = CacheService.getScriptCache();
-    var ck = 'metrics_ambient_v1';
+    // Threshold rides in the cache key (INV-85 versioned-key discipline) so a
+    // CDR_ALERT_THRESHOLD change takes effect on the next poll instead of
+    // serving a badge computed against the old cutoff for up to the TTL.
+    var ambientThreshold = CONFIG.CDR_ALERT_THRESHOLD || 85;
+    var ck = 'metrics_ambient_v1:' + ambientThreshold;
     var cached = cache.get(ck);
     if (cached) { try { return JSON.parse(cached); } catch (_) {} }
 
@@ -8359,8 +8640,7 @@ function getMetricsAmbient() {
       totalAns += result.agents[k].totalAnswered;
     });
     var pct = totalRung > 0 ? Math.round((totalAns / totalRung) * 1000) / 10 : null;
-    var threshold = CONFIG.CDR_ALERT_THRESHOLD || 85;
-    var badge = (pct !== null && pct < threshold)
+    var badge = (pct !== null && pct < ambientThreshold)
       ? { type: 'warn', label: pct + '%', date: yIso } : null;
     var out = { badge: badge, pctAnswered: pct, date: yIso };
     try { cache.put(ck, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) {}
@@ -9059,6 +9339,117 @@ function intakeEmailDomain_(email) {
   return at >= 0 ? String(email).substring(at + 1).toLowerCase() : '(none)';
 }
 
+// ── Intake submissions viewer (P15) ─────────────────────────────────────────
+// In-app review of sent PPD / PMD / PAP submissions, replacing "open the PHI
+// spreadsheet". Caller-scoped: a rep sees only rows they authored; a manager
+// sees everyone's (parallels the Sent Forms / managerGetFormSubmission model).
+// Read-only — the submission tabs stay append-only.
+
+const INTAKE_FORM_TYPES_ = ['PPD', 'PMD', 'PAP'];
+const INTAKE_LIST_CAP_ = 100;
+
+/** Timestamp cells ("yyyy-MM-dd HH:mm:ss") are Sheets-coerced to Dates on
+ *  read — format them back in CONFIG.TIMEZONE (the tz they were written in). */
+function intakeTsString_(v) {
+  return (v instanceof Date)
+    ? Utilities.formatDate(v, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss')
+    : String(v == null ? '' : v);
+}
+
+/** Metadata-only list across all three submission tabs, newest-first, capped
+ *  at INTAKE_LIST_CAP_. Answers never ride the list — details come one at a
+ *  time via intakeGetSubmission. An unreachable Intake spreadsheet / tab skips
+ *  that form type rather than failing the whole list (best-effort posture). */
+function intakeListMySubmissions() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const out = [];
+    INTAKE_FORM_TYPES_.forEach(function (ft) {
+      let sheet;
+      try { sheet = getIntakeSubmissionSheet_(ft); } catch (e) { return; }
+      const last = sheet.getLastRow();
+      if (last < 2) return;
+      const isPpd = ft === 'PPD';
+      const width = isPpd ? INTAKE_PPD_SUB_HEADERS.length : INTAKE_ACCT_SUB_HEADERS.length;
+      const rows = sheet.getRange(2, 1, last - 1, width).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        const repId = String(rows[i][2] || '').trim();
+        if (!emp.isManager && repId !== emp.id) continue;
+        out.push({
+          formType: ft,
+          submissionId: String(rows[i][0] || ''),
+          timestamp: intakeTsString_(rows[i][1]),
+          repId: repId,
+          repName: String(rows[i][3] || ''),
+          patientInfo: String(rows[i][4] || ''),
+          language: isPpd ? String(rows[i][5] || 'EN') : String(rows[i][6] || 'EN'),
+          recipient: isPpd ? String(rows[i][9] || '') : String(rows[i][8] || ''),
+        });
+      }
+    });
+    out.sort(function (a, b) { return b.timestamp.localeCompare(a.timestamp); });
+    if (out.length > INTAKE_LIST_CAP_) out.length = INTAKE_LIST_CAP_;
+    return { submissions: out, isManager: !!emp.isManager };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Full detail for one submission — same scoping as the list (owner or
+ *  manager). Bounded lookup: id-column scan, then a single full-row fetch
+ *  (the L9 pattern), so viewing one submission never reads every patient's
+ *  answers. */
+function intakeGetSubmission(formType, submissionId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const ft = String(formType || '').trim().toUpperCase();
+    if (INTAKE_FORM_TYPES_.indexOf(ft) < 0) return { error: 'Unknown form type.' };
+    const id = String(submissionId || '').trim();
+    if (!id) return { error: 'Missing submission id.' };
+    const sheet = getIntakeSubmissionSheet_(ft);
+    const last = sheet.getLastRow();
+    if (last < 2) return { error: 'Submission not found.' };
+    const isPpd = ft === 'PPD';
+    const width = isPpd ? INTAKE_PPD_SUB_HEADERS.length : INTAKE_ACCT_SUB_HEADERS.length;
+    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    let row = null;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() === id) {
+        row = sheet.getRange(i + 2, 1, 1, width).getValues()[0];
+        break;
+      }
+    }
+    if (!row) return { error: 'Submission not found.' };
+    const repId = String(row[2] || '').trim();
+    if (!emp.isManager && repId !== emp.id) {
+      return { error: 'You can only view your own intake submissions.' };
+    }
+    const parse = function (raw) { try { return JSON.parse(raw) || {}; } catch (e) { return {}; } };
+    const result = {
+      formType: ft,
+      submissionId: id,
+      timestamp: intakeTsString_(row[1]),
+      repId: repId,
+      repName: String(row[3] || ''),
+      patientInfo: String(row[4] || ''),
+      language: isPpd ? String(row[5] || 'EN') : String(row[6] || 'EN'),
+      answers: parse(isPpd ? row[6] : row[7]),
+      recipient: isPpd ? String(row[9] || '') : String(row[8] || ''),
+    };
+    if (isPpd) {
+      result.recommendations = parse(row[7]);
+      result.selections = parse(row[8]);
+    } else {
+      // DOB is user-typed text but Sheets may coerce a date-like value
+      result.dob = (row[5] instanceof Date)
+        ? Utilities.formatDate(row[5], CONFIG.TIMEZONE, 'yyyy-MM-dd')
+        : String(row[5] || '');
+      result.imageCount = Number(row[9]) || 0;
+    }
+    return result;
+  } catch (err) { return { error: err.message }; }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  REFERENCE / KNOWLEDGE BASE  (Phase 1)
 //  Per-department reference articles (markdown source, rendered client-side) +
@@ -9257,4 +9648,208 @@ function kbDeleteItem(id) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+// ── KB Phase 2 — Google-Doc → markdown article converter ───────────────────
+// Per-item, review-before-save migration off Drive embeds: kbConvertDriveDoc
+// reads a Google Doc via DocumentApp and emits ONLY the markdown subset kbMd_
+// renders (headings, bold/italic, links, ul/ol, hr, paragraphs). The result is
+// returned to the editor for the manager to REVIEW (live preview) — nothing is
+// saved until they press Save (the existing kbSaveItem path), and the Drive
+// file is never modified. A blind "convert all embeds" batch was deliberately
+// NOT built: unreviewed conversions could silently replace working embeds with
+// degraded articles (images/tables don't survive).
+//
+// The walker compares String(getType()) / String(getHeading()) /
+// String(getGlyphType()) against enum NAMES (DocumentApp enums stringify to
+// their names) so the Node harness can drive it with plain-object stubs —
+// see the "kb — Doc→markdown converter" tests in test/client/run.js.
+
+const KB_DOC_HEADING_PREFIX = {
+  TITLE: '# ', HEADING1: '# ', HEADING2: '## ', HEADING3: '### ',
+  HEADING4: '#### ', HEADING5: '##### ', HEADING6: '###### ', SUBTITLE: '## ',
+};
+
+/** Extracts formatting runs from a DocumentApp Text element:
+ *  [{ text, bold, italic, link }]. */
+function kbTextToRuns_(textEl) {
+  const s = textEl.getText();
+  if (!s) return [];
+  const idx = textEl.getTextAttributeIndices();
+  if (!idx || idx.length === 0) {
+    return [{ text: s, bold: !!textEl.isBold(0), italic: !!textEl.isItalic(0),
+              link: textEl.getLinkUrl(0) || '' }];
+  }
+  const runs = [];
+  for (let i = 0; i < idx.length; i++) {
+    const start = idx[i];
+    const end = (i + 1 < idx.length) ? idx[i + 1] : s.length;
+    runs.push({
+      text: s.substring(start, end),
+      bold: !!textEl.isBold(start),
+      italic: !!textEl.isItalic(start),
+      link: textEl.getLinkUrl(start) || '',
+    });
+  }
+  return runs;
+}
+
+/** PURE: formats runs into inline markdown. Render-safe for kbMd_:
+ *  bold+italic collapses to bold (kbMd_ has no *** handling); links are
+ *  emitted only for http(s)/mailto, with `()`/whitespace percent-encoded in
+ *  the URL (kbMd_'s link regex stops at `)` / whitespace) and `[]` stripped
+ *  from the link text; Docs soft line-breaks (\r) become spaces. */
+function kbRunsToMarkdown_(runs) {
+  return (runs || []).map(function (r) {
+    let t = String(r.text == null ? '' : r.text).replace(/\r/g, ' ');
+    if (!t) return '';
+    const m = t.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    const pre = m[1], post = m[3];
+    let core = m[2];
+    if (!core) return t;   // whitespace-only run
+    if (r.bold) core = '**' + core + '**';
+    else if (r.italic) core = '*' + core + '*';
+    const link = String(r.link || '');
+    if (link && /^(https?:|mailto:)/i.test(link)) {
+      const safeUrl = link.replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\s/g, '%20');
+      core = '[' + core.replace(/[\[\]]/g, '') + '](' + safeUrl + ')';
+    }
+    return pre + core + post;
+  }).join('');
+}
+
+/** Walks a DocumentApp Body and returns { markdown, warnings }. Paragraphs,
+ *  headings, bullet/numbered lists, and horizontal rules convert faithfully;
+ *  tables flatten to bullet lists (cells joined with " | "); images become an
+ *  italic placeholder — each lossy conversion adds a warning so the reviewing
+ *  manager knows to keep the original Doc when visuals matter. */
+function kbDocBodyToMarkdown_(body) {
+  const out = [];
+  const warnings = [];
+  let imageCount = 0, tableCount = 0;
+  const skippedTypes = {};
+  let listBuf = [];
+  const flushList = function () {
+    if (listBuf.length) { out.push(listBuf.join('\n')); listBuf = []; }
+  };
+  const n = body.getNumChildren();
+  for (let i = 0; i < n; i++) {
+    const el = body.getChild(i);
+    const t = String(el.getType());
+    if (t === 'PARAGRAPH') {
+      flushList();
+      let isHr = false;
+      let parImages = 0;
+      const m = el.getNumChildren();
+      for (let c = 0; c < m; c++) {
+        const ct = String(el.getChild(c).getType());
+        if (ct === 'HORIZONTAL_RULE') isHr = true;
+        else if (ct === 'INLINE_IMAGE' || ct === 'INLINE_DRAWING') parImages++;
+      }
+      if (isHr) { out.push('---'); continue; }
+      const text = kbRunsToMarkdown_(kbTextToRuns_(el.editAsText())).trim();
+      const prefix = KB_DOC_HEADING_PREFIX[String(el.getHeading())] || '';
+      let line = text ? prefix + text : '';
+      if (parImages > 0) {
+        imageCount += parImages;
+        line = (line ? line + ' ' : '') + '*[image — see the original Doc]*';
+      }
+      if (line) out.push(line);
+    } else if (t === 'LIST_ITEM') {
+      const glyph = String(el.getGlyphType());
+      const ordered = glyph === 'NUMBER' || glyph.indexOf('LATIN') === 0 || glyph.indexOf('ROMAN') === 0;
+      const indent = new Array(Math.max(0, el.getNestingLevel()) + 1).join('  ');
+      const text = kbRunsToMarkdown_(kbTextToRuns_(el.editAsText())).trim();
+      if (text) listBuf.push(indent + (ordered ? '1. ' : '- ') + text);
+    } else if (t === 'TABLE') {
+      flushList();
+      tableCount++;
+      const lines = [];
+      for (let r = 0; r < el.getNumRows(); r++) {
+        const row = el.getRow(r);
+        const cells = [];
+        for (let c = 0; c < row.getNumCells(); c++) {
+          cells.push(String(row.getCell(c).getText() || '').replace(/\s+/g, ' ').trim());
+        }
+        if (cells.join('')) lines.push('- ' + cells.join(' | '));
+      }
+      if (lines.length) out.push(lines.join('\n'));
+    } else {
+      skippedTypes[t] = true;
+    }
+  }
+  flushList();
+  if (imageCount > 0) {
+    warnings.push(imageCount + ' image(s) could not be converted — placeholders inserted; keep the original Doc if the visuals matter.');
+  }
+  if (tableCount > 0) {
+    warnings.push(tableCount + ' table(s) flattened to bullet lists (articles have no table support).');
+  }
+  const skipped = Object.keys(skippedTypes);
+  if (skipped.length > 0) {
+    warnings.push('Skipped unsupported element(s): ' + skipped.join(', ') + '.');
+  }
+  const markdown = out.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { markdown: markdown, warnings: warnings };
+}
+
+/** Manager-gated, READ-ONLY converter endpoint. Accepts { itemId } (an
+ *  existing doc-embed KB item — title/department come back for the editor) or
+ *  { driveUrl } (editor embed mode, pre-save). Opens the Doc with the
+ *  DEPLOYER's access (same trust model as embedding it) and returns
+ *  { markdown, warnings, docTitle, title, department }. Never writes — the
+ *  manager reviews in the editor and saves via the existing kbSaveItem,
+ *  which is what flips the row to type=article in place. */
+function kbConvertDriveDoc(payload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    payload = payload || {};
+    let fileId = '', title = '', department = '';
+    const itemId = String(payload.itemId || '').trim();
+    if (itemId) {
+      const sheet = getOrCreateKbSheet_();
+      const last = sheet.getLastRow();
+      let row = null;
+      if (last >= 2) {
+        const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]) === itemId) {
+            row = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
+            break;
+          }
+        }
+      }
+      if (!row) return { error: 'Item not found.' };
+      if (String(row[KB.TYPE]) !== 'embed' || String(row[KB.DRIVE_KIND] || 'doc') !== 'doc') {
+        return { error: 'Only embedded Google Docs can be converted to articles.' };
+      }
+      fileId = String(row[KB.DRIVE_FILE_ID] || '');
+      title = String(row[KB.TITLE] || '');
+      department = String(row[KB.DEPARTMENT] || '');
+    } else {
+      const parsed = kbParseDriveUrl_(payload.driveUrl);
+      if (!parsed) return { error: 'Could not read that Drive link — paste a Google Doc share URL.' };
+      if (parsed.kind !== 'doc') return { error: 'Only Google Docs convert to articles — Sheets and files stay as embeds.' };
+      fileId = parsed.fileId;
+    }
+    if (!fileId) return { error: 'No Doc id on this item.' };
+    let doc;
+    try { doc = DocumentApp.openById(fileId); }
+    catch (e) {
+      return { error: 'Could not open the Doc — the deploying account needs at least Viewer access. (' + e.message + ')' };
+    }
+    const res = kbDocBodyToMarkdown_(doc.getBody());
+    if (res.markdown.length > KB_BODY_MAX) {
+      res.warnings.push('Converted article is over the ~49,000-character limit — trim it before saving, or split into multiple articles.');
+    }
+    return {
+      success: true,
+      markdown: res.markdown,
+      warnings: res.warnings,
+      docTitle: String(doc.getName() || ''),
+      title: title,
+      department: department,
+    };
+  } catch (err) { return { error: err.message }; }
 }

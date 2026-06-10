@@ -34,12 +34,15 @@ Apps Script project under its own directory, synced via `clasp`.
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
    - **Intake** — patient-intake forms ported from the bound
      `form-generator` Apps Script (kept in `incoming/form-generator/`
-     for reference). Three tabs: **PPD** (Patient Profile &
+     for reference). Four tabs: **PPD** (Patient Profile &
      recommendation — a 45-question intake that drives the clinical
      HCPCS recommendation engine `intakeFilterRecommendations_`,
      reading the **PMD Offerings** catalog), **PMD Account** and **PAP
      Account** (demographics/insurance/clinical account-creation forms
-     with image attachments). Each form renders a branded email and
+     with image attachments), and **Sent** (read-only sent-submissions
+     viewer — `intakeListMySubmissions` / `intakeGetSubmission`,
+     caller-scoped to the sending rep, managers see all; replaces
+     opening the PHI spreadsheet). Each form renders a branded email and
      persists a PHI backup row. The unbound rewrite: the bound tool
      used the active sheet's cells as the form; here each form is a web
      form whose answers POST to two-stage, bodyHash-guarded
@@ -64,8 +67,10 @@ Apps Script project under its own directory, synced via `clasp`.
      `searchReference`). **PHI-free by policy** (training/reference only —
      scrub patient data from screenshots). Backs a dedicated KB
      spreadsheet (`CONFIG.KB.SS_ID` / Script Property `KB_SS_ID`); reps
-     read via the server and never open it. Phase 2 (deferred) is a
-     Google-Doc→article auto-converter for bulk migration.
+     read via the server and never open it. Phase 2 (shipped): a
+     per-item Google-Doc→article converter (`kbConvertDriveDoc`) —
+     review-before-save in the editor, for migrating embeds to fast
+     native articles.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -146,6 +151,17 @@ this section before touching the relevant area.
   downstream display logic. Always read times through
   `normalizeTime_()`, which detects Dates and re-formats them via
   the spreadsheet's timezone.
+- **Timesheet rows are in APPEND order, not time order.** A same-day
+  back-fill (approved adjustment request, manager Day Edit add,
+  employee immediate-adjust) appends its row AFTER later punches, so
+  raw sheet order scrambles any "last punch wins" / state-machine
+  consumer — live status read "On Lunch" after a rep had clocked out
+  until this was fixed. `getTodayPunches_` and `getManagerDashboard`'s
+  per-emp collector now sort chronologically at the source (normalized
+  `HH:mm:ss` strings, lexicographic = chronological); `getTeammateStatus`
+  max-time-selects. Any NEW consumer of same-day punch rows must sort
+  by time (or reuse `getTodayPunches_`) — never derive order from raw
+  row position. Pinned by `test_getTodayPunches_sortsOutOfOrderBackfill`.
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** The
   `DateLocal` column is written as a `yyyy-MM-dd` string but Sheets
   coerces it to a Date object on read, so `String(row[CN.DATE_LOCAL])`
@@ -208,7 +224,8 @@ this section before touching the relevant area.
   `fixPtoReconciliation`, `getFeatureFlags`, `saveFeatureFlags`,
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
-  `getCallNotesEnrollment`, `provisionCallNotesSheet`.
+  `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
+  `kbConvertDriveDoc`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -297,7 +314,12 @@ this section before touching the relevant area.
   `cnExtEmailPillHtml_` pill (the manager-only recipient lookup — F20).
   Logging only the domain in the shared AuditLog is therefore intentional
   PII/PHI minimization, not a forensic gap.
-  Same discipline as the PHI-free `CallNoteEmail` row above.
+  Same discipline as the PHI-free `CallNoteEmail` row above. The
+  `FormTokenCreated` / `FormSubmissionReceived` audit rows follow the
+  same rule (`toDomain=` / `fromDomain=` — the full recipient lives on
+  the FormTokens row, reachable via the token), and the submission row's
+  synthetic actor identity is likewise de-identified ("External
+  recipient" + domain, never the recipient's name or raw address).
 - **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.**
   The email-preview modal injects the server-rendered body raw via
   `innerHTML` (`cn/script_callnotes.html` `cnRenderComposerPreviewStep_`,
@@ -504,9 +526,11 @@ this section before touching the relevant area.
   helper rather than raw `|| CONFIG.TIMEZONE` fallback.
 - **Personal-sheet sync failures log to the audit trail.**
   `writeToEmployeeSheet_` and `clearFromEmployeeSheet_` write a
-  `PersonalSheetSyncFail` audit row on failure. Monitor AuditLog for
-  this action type — it means a rep's personal Sheet is inaccessible
-  and drifting from the ADP source of truth.
+  `PersonalSheetSyncFail` audit row on failure — it means a rep's
+  personal Sheet is inaccessible and drifting from the ADP source of
+  truth. These are surfaced (count + recent entries, 30-day window) in
+  **Call Notes → Admin → Automation Health** (`getAutomationHealth`),
+  so a manager sees the drift without reading the raw AuditLog.
 - **Tag admin operations hold the global ScriptLock across all
   enrolled rep Sheets.** `renameCallNoteTag` / `mergeCallNoteTags`
   iterate the roster via `applyTagTransformAcrossReps_`, open each
@@ -610,9 +634,10 @@ this section before touching the relevant area.
   the ADP/payroll sheet) and falls back to the ADP SS only for back-compat — a
   fresh deploy that wants segregation MUST set `FORMS_SS_ID` and migrate the two
   tabs. `submitFormByToken` pulls `signature` AND `_meta` out before storing
-  responses, **server-enforces consent** (`_meta.consentAgreed === false` →
-  rejected; absent `_meta` allowed for back-compat since the client checkbox
-  gated it), stamps the **server-authoritative** `CONFIG.FORM_CONSENT_VERSION`
+  responses, **server-enforces consent** (the payload must carry
+  `_meta.consentAgreed === true` — an absent `_meta` is now rejected too,
+  closing the prior back-compat hole where a hand-crafted payload could omit
+  it), stamps the **server-authoritative** `CONFIG.FORM_CONSENT_VERSION`
   (never trusts a client-sent version), and writes a **tamper-evident
   `SubmissionHash`** + a `Certificate` JSON into trailing `FS` columns. The hash
   (`computeFormSubmissionHash_`) covers responses+signature+token+consentVersion
@@ -726,6 +751,14 @@ this section before touching the relevant area.
   full formatted CRM template via `cnFormatNoteForCopy_` — drag-
   highlighting any subset still produces a complete CRM-ready note
   (the headline UX win that drove the contenteditable refactor).
+  COROLLARY: any document-level keyboard handler that exempts form
+  fields must check `document.activeElement.isContentEditable` in
+  addition to the `INPUT`/`TEXTAREA`/`SELECT` tagName check — the `.ce`
+  divs are DIVs, so a tagName-only guard misses them. The shell's
+  bare-`?` shortcuts-overlay handler (`script_core.html`) regressed on
+  exactly this (a literal `?` typed into Issue/Resolution opened the
+  overlay and swallowed the keystroke) until the isContentEditable
+  check was added.
 - **Six client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
@@ -737,6 +770,10 @@ this section before touching the relevant area.
     Log view enter with a "Draft restored" toast. Cleared on
     successful submit or explicit Clear Note. Round 2 · 8e extended
     the persisted shape to include `flags[]` (multi-select) + `tags[]`.
+    Drafts carry an `at` ms stamp and expire after 24h
+    (`CN_FORM_STICKY_MAX_AGE_MS`) — a stale draft from a prior shift
+    is silently discarded (and the completion timer reset) instead of
+    resurrecting day-old patient details into a fresh session.
   - `umsCallNotesFormStartedAt` — start-ms of the active form's
     completion timer; persists across refresh so a mid-form reload
     doesn't reset the clock. Captured into `subformData.completionSeconds`
@@ -1381,6 +1418,19 @@ this section before touching the relevant area.
   immutability is deliberate — a patient-signed submission is an attested
   record, so altering it would be both a HIPAA integrity-control
   (§164.312(c)) violation and an ethical one.
+- **Intake Sent tab (rep-facing, read-only) — same model for intake
+  submissions.** A fourth Intake tab (`intakeSent` → `enterIntakeSentView`)
+  listing the rep's sent PPD / PMD / PAP submissions, so reviewing what was
+  sent no longer means opening the PHI spreadsheet. Backed by
+  `intakeListMySubmissions` (metadata-only list across the three submission
+  tabs, caller-scoped to the stored `repId`, manager sees all, newest-first,
+  cap 100) + `intakeGetSubmission` (bounded id-column lookup, owner-or-manager
+  scoped). The detail view re-renders answers against the client question
+  banks/layouts (PPD: `INTAKE_PPD_Q`; ACCT: `INTAKE_PMD_CLIENT`/
+  `INTAKE_PAP_CLIENT`) and, for PPD, the stored recommendations + the rep's
+  accept/undecided/reject selections. Read-only throughout — the submission
+  tabs stay append-only (same §164.312(c) discipline as Sent Forms). See
+  INV-116.
 - **Form-submission notification renders the completed form.** When a
   recipient submits a fillable form, `submitFormByToken` calls
   `notifyRepOfFormSubmission_` (best-effort, try/catch — never blocks the
@@ -1523,6 +1573,17 @@ this section before touching the relevant area.
   NoteId / Token column to locate the row, then fetch just that one
   full row (instead of `getDataRange().getValues()`), so a single-note
   mutation / token validation no longer reads the whole Sheet.
+  The per-rep self-reads are bounded the same way (A6 hardening):
+  `getCallNotesAmbient` (the 60s poll) reads only 5 columns and
+  JSON-parses `SubformData` just for answered training rows;
+  `getMyPinnedCallNotes` scans the `SubformData` column with a
+  `"pinned"` substring pre-filter then fetches only the pinned rows;
+  `getMyTrainingQA` picks the 5 newest answered training notes from
+  column scans and fetches just those; the EOD digest reads only the
+  rep's today-slice via `readCallNoteRowsInRange_`. `FormSubmissions`
+  lookups (`buildFormSubmissionResult_`, `verifyFormSubmissionIntegrity_`)
+  go through `findFormSubmissionRow_` (token-column scan, newest row
+  wins) rather than reading every submission's responses + signature.
 - **Manager day-edit date picker is bounded `[today-N, today]`.**
   `openDayEditModal` sets `#de-date` min/max so a manager can't pick a
   future date (server rejects `daysBack<0`) or one past the adjust
@@ -1693,16 +1754,38 @@ this section before touching the relevant area.
   DriveKind, DriveFileId, sortOrder, …}`). Articles store **markdown source** (not
   HTML) — `kbMd_` renders it client-side and **escapes HTML before applying the
   markdown subset**, so authored content can't inject script and links are
-  restricted to `http(s)`/`mailto` (the safety boundary; managers are the only
-  authors but defense-in-depth keeps a bad paste inert). Embeds store only a
+  restricted to `http(s)`/`mailto` with quotes percent-encoded in the URL —
+  the top-level escape covers `&`/`<`/`>` but NOT quotes, so without the
+  encoding a `"` in a link URL broke out of the `href` attribute (attribute
+  injection). That's the safety boundary; managers are the only
+  authors but defense-in-depth keeps a bad paste inert. Embeds store only a
   Drive `{kind, fileId}` and render the `/preview` iframe — no content copied, so
   the Drive doc stays the source of truth. The tree is whole-result cached
   (`KB_CACHE_KEY`, 5 min), invalidated on save/delete. Reps are read-only;
   manager writes are gated + locked + audited (`KbItemSave`/`KbItemDelete`).
   Native-primary + Drive-fallback was chosen so 100% of content is navigable on
   day one (embed everything) while the most-referenced docs migrate to fast
-  native articles over time. Phase 2 (deferred): a Google-Doc→article converter.
-  Pinned by `kbMd_` (escaping/links) + `kbParseDriveUrl_` Node tests.
+  native articles over time. Pinned by `kbMd_` (escaping/links) +
+  `kbParseDriveUrl_` Node tests.
+- **KB Phase 2: per-item Doc→article converter, review-before-save.**
+  `kbConvertDriveDoc({itemId | driveUrl})` (manager-gated, READ-ONLY)
+  opens a Google Doc with the DEPLOYER's access (same trust model as
+  embedding it) and converts the body to the markdown subset `kbMd_`
+  renders, via `kbDocBodyToMarkdown_` / `kbTextToRuns_` /
+  `kbRunsToMarkdown_`. Lossy parts degrade explicitly with warnings:
+  images → italic placeholder, tables → bullet lists (`cells | joined`),
+  unsupported elements skipped by name; bold+italic collapses to bold
+  and link URLs get `()`/whitespace percent-encoded so the output is
+  always `kbMd_`-render-safe. Two client entries — "Convert to article"
+  on a doc-embed's reader view and "Convert this Doc to an article
+  instead" in the editor's embed mode — both just PRE-FILL the existing
+  editor (live preview); the save is the normal `kbSaveItem` in-place
+  update, and the Drive file is never modified. A blind "convert ALL
+  embeds" batch was deliberately not built (unreviewed conversions could
+  silently replace working embeds with degraded articles). The walker
+  compares `String(getType())` etc. against enum NAMES so the Node
+  harness drives it with plain-object stubs ("kb — Doc→markdown
+  converter" tests).
 - **Win-back nudge on a "changing suppliers" close.** When a Close-Order
   department email is sent and the free-text `closeDetails.reason` matches a
   supplier-switch pattern (`cnIsSwitchingSuppliersReason_` — loose substring
@@ -1746,6 +1829,24 @@ this section before touching the relevant area.
   before `innerHTML`. Note IDs/dates/rep IDs pass via `data-*`
   attributes read in the handler (the `cnStatsDrillDown_` pattern), not
   inline string interpolation.
+- **Automation Health panel (Admin tab).** Manager-only, read-only
+  surfacing of the silent-degradation signals (`getAutomationHealth`,
+  rendered by `cnLoadHealthPanel_` below the compliance panel). One
+  bounded AuditLog tail scan (`CN_AUDIT_MAX_SCAN` rows) yields (a) the
+  `PersonalSheetSyncFail` count + 5 most recent entries over a 30-day
+  window and (b) the last-seen audit row per automation job
+  (`AUTOMATION_AUDIT_ACTIONS`: reconcile / ADP export / both purges) —
+  each captioned with its expectation, since purges only write a row
+  when retention is enabled and the export only fires at period end, so
+  "never seen" isn't automatically "broken". A CDR block (5-min-cached
+  unfiltered 7-day read) reports reachability, `columnWarning`, and
+  roster↔agent name mismatches — canonicalized through
+  `getCdrNameMap_()` first, because the unfiltered read doesn't apply
+  aliases itself and every aliased agent would otherwise false-positive
+  as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
+  without taking down the rest of the panel. Every server string is
+  `esc()`'d before `innerHTML`. The EOD/weekly/urgent digests write no
+  audit rows, so the panel can't show their last run — a known gap.
 - **"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
@@ -1891,9 +1992,15 @@ manually for a fresh deploy or environment:
   resolved from the Employees roster (name→email at send via
   `intakeResolveRecipient_`), so agent addresses never reach the client and
   no domain is hardcoded. Set the four addresses once; no redeploy.
-- **Script Property `TEST_INTAKE_SS_ID`** (test-only). `getIntakeSS_()`
-  honors a `_TEST_OVERRIDE_INTAKE_SS_ID` global for integration tests; the
-  pure engine tests need no spreadsheet. Documented here so it's recognizable.
+- **Script Property `TEST_INTAKE_SS_ID`** (test-only, auto-managed). The
+  Intake fixture spreadsheet `setupTestEnvironment` / `_setupTestIntakeFixture_`
+  creates (or reuses) for the Intake endpoint integration tests — an
+  `Offerings` tab with two catalog rows (K0823 captain + K0861 Group-3
+  solid). `getIntakeSS_()` honors the `_TEST_OVERRIDE_INTAKE_SS_ID` global
+  (set via `_withTestIntake_`, which also resets the per-execution
+  `_intakeOfferingsCache`); the pure engine tests need no spreadsheet.
+  Created on first `runAllTests`; not used in production. Documented here
+  so it's recognizable when inspecting Script Properties.
 - **Set Script Property `KB_SS_ID`** to a dedicated Knowledge-Base spreadsheet
   for the Reference tool (`getKbSS_()` reads it before `CONFIG.KB.SS_ID`). The
   `KB` tab auto-provisions on first use (`getOrCreateKbSheet_`, headers
@@ -1902,6 +2009,13 @@ manually for a fresh deploy or environment:
   it a **separate** spreadsheet from the PHI intake/forms sheets — the KB is
   broadly rep-readable and PHI-free by policy. (`_TEST_OVERRIDE_KB_SS_ID` is the
   test override.)
+- **KB Phase 2 converter requires the Google Docs OAuth scope.**
+  `kbConvertDriveDoc` is the project's first `DocumentApp` call, so the deploy
+  that ships it adds the `documents` scope to the auto-detected scope set. The
+  DEPLOYING account must re-authorize once (the editor prompts on the next run
+  / deploy — accept the new scope) or every conversion fails with an auth
+  error. The converter reads Docs with the deployer's access, the same trust
+  boundary as embedding them.
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
@@ -2124,8 +2238,13 @@ manually for a fresh deploy or environment:
   formType, recipientEmail, expiresAt, status, prefillData, noteId).
   `FormSubmissions` stores completed form data + signature base64 **plus the
   forms-hardening trailing columns** (`SubmissionHash`, `ConsentVersion`,
-  `ConsentAt`, `OpenedAt`, `Certificate`). Both are append-only. No manual setup
-  needed — the `getOrCreateFormTokensSheet_()` /
+  `ConsentAt`, `OpenedAt`, `Certificate`). Both are append-only. ALL timestamp
+  cells in both tabs (`CreatedAt`, `ExpiresAt`, `SubmittedAt`) are written in
+  `CONFIG.TIMEZONE` — every parse site (`getFormByToken`, `submitFormByToken`,
+  `getMySentForms`, `parseRetentionDateMs_`) assumes that tz, and writing
+  `ExpiresAt` in the creating rep's tz skewed token expiry by the tz offset
+  (±~12h for CST reps) until fixed. Keep new timestamp columns consistent.
+  No manual setup needed — the `getOrCreateFormTokensSheet_()` /
   `getOrCreateFormSubmissionsSheet_()` helpers provision them with headers on
   first call.
 - **`PunchAdjustRequests` sheet tab (#4a)** is auto-created in the ADP
@@ -2320,7 +2439,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
@@ -2377,11 +2496,11 @@ INV-84 | `cnRenderComposerTabStrip_(active, noteId)` renders a shared Department
 INV-85 | `getCdrAgentMetrics_()` cache key includes an MD5 hash of the sorted roster-names array via `cdrRosterHash_()` so that different roster filters for the same date range don't collide. Cache payload size is logged at 90KB as a warning (Apps Script CacheService limit is 100KB). Cache key prefix is versioned (`CDR_CACHE_KEY`, currently `cdr_metrics_v2`); bump on any aggregation-rule change | Subsystem: Server
 INV-86 | `getCdrNameMap_()` reads the `Agent Alias Overrides` sheet from the CDR Report spreadsheet (same sheet written by `call-data-reporting`'s `OrphanFix.gs`). Returns `{ oldName → canonicalName }` for active aliases. Cached in-memory for `CDR_CACHE_TTL` seconds. Used by both `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` to resolve CDR agent names that don't directly match the team-tools roster. Missing or empty sheet degrades gracefully (empty map) | Subsystem: Server
 INV-87 | `validateCdrColumns_()` reads row 1 of `DQE Historical Data` on first CDR access per script session and asserts that expected column names (from `CDR_EXPECTED_HEADERS`) appear at the expected 1-indexed positions. Mismatches are logged via `Logger.log` and surfaced in `meta.columnWarning` on the response — non-blocking. Column names are matched case-insensitively via `indexOf`. Validation runs at most once per session (`_cdrColumnsValidated` flag) | Subsystem: Server
-INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cached under `metrics_ambient_v1`. Returns `{ badge: { type: 'warn', label: 'XX.X%', date } }` when yesterday's (weekday only) team answer rate is below `CONFIG.CDR_ALERT_THRESHOLD` (default 85%), else `{ badge: null }`. The client polls every 5 minutes via `mStartAmbientPolling_()` (started on shell render regardless of active tool, but only for managers — `mStartAmbientPolling_` early-returns for non-managers since the badge is manager-only, F13) and renders an `.m-alert-badge` pill on the Metrics sidebar icon | Subsystem: Server + Client (Metrics views)
+INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cached under a threshold-suffixed key (`metrics_ambient_v1:<threshold>`) so editing `CONFIG.CDR_ALERT_THRESHOLD` takes effect on the next poll instead of serving a stale badge for up to 5 min. Returns `{ badge: { type: 'warn', label: 'XX.X%', date } }` when yesterday's (weekday only) team answer rate is below `CONFIG.CDR_ALERT_THRESHOLD` (default 85%), else `{ badge: null }`. The client polls every 5 minutes via `mStartAmbientPolling_()` (started on shell render regardless of active tool, but only for managers — `mStartAmbientPolling_` early-returns for non-managers since the badge is manager-only, F13) and renders an `.m-alert-badge` pill on the Metrics sidebar icon | Subsystem: Server + Client (Metrics views)
 INV-89 | `buildCallNoteEmailHtml_` HTML-escapes every user-supplied note field via `esc_` before assembling the email body. The email-preview modal injects that body raw via `innerHTML` (the `${p.htmlBody}` slot in `cnRenderComposerPreviewStep_`), so the escaping is load-bearing — a new field added to the builder without `esc_` is stored XSS in the preview and the sent email. Pinned by `test_cn_buildEmailHtml_escapesUserFields` | Subsystem: Server + Client (Call Notes views)
 INV-90 | `getFormSubmission(token)` is caller-scoped, read-only: it requires `getEmployeeInfo_()` (NOT a public endpoint) and returns submission data only when the calling employee's email matches the token's `FormTokens.CreatedBy` — a rep cannot read another rep's form submissions. Returns `{ submitted: false, status }` when the token isn't completed yet. Pinned by `test_cn_getFormSubmission_callerScoped` | Subsystem: Server
 INV-91 | `managerGetFormSubmission(repEmpId, token)` is manager-gated (INV-02), read-only, and scoped to the target rep — the token must have been created by `repEmpId` (`FormTokens.CreatedBy`), so a manager can only view submissions for forms the selected rep sent. Shares `buildFormSubmissionResult_` with the caller-scoped `getFormSubmission` (INV-90). Surfaced via the form pill on the Team Notes Per-Rep read-only card. Pinned by `test_cn_managerGetFormSubmission_gatedAndScoped` | Subsystem: Server
-INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set). The search filters by rep / action / date range (default last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content | Subsystem: Server
+INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set). The search filters by rep / action / date range (default last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content. Pinned by `test_auditPanel_searchAndHistory` + the gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server
 INV-93 | `saveEmailTemplates(templates)` is manager-gated (INV-02, INV-57), persists to Script Property `CN_EMAIL_TEMPLATES` (JSON array of `{name, recipientType, body}`), validates each entry (non-empty name + body, `recipientType ∈ customer|provider|any`, count ≤ `CN_EMAIL_TEMPLATE_LIMIT`=50, body ≤ `CN_EMAIL_TEMPLATE_BODY_MAX`=4000), and writes an `AdminConfigChange` audit row. `getEmailTemplates_()` reads the property first (CONFIG fallback), sanitizing on read so a corrupt blob degrades to the fallback rather than throwing. Templates are exposed to reps via `getCallNotesDepartments` (rep-callable) for the external-email composer picker, and to managers via `getAdminConfig` for the editor | Subsystem: Server
 INV-94 | `submitTimeOffRequest` and `managerSubmitTimeOff` reject a request when the employee already has a Pending or Approved row for that date (`hasActiveTimeOffOnDate_`, inside the existing ScriptLock). Prevents the double-deduct that INV-03's per-row transition guard cannot catch — two sibling rows for one day would each deduct on approval. Denied/cancelled rows don't block a re-request | Subsystem: Server
 INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via `isValidTimeOffType_` (case-insensitive, trimmed) before any write; an unknown/empty type is rejected rather than silently defaulting to `getLeaveDeduction_`'s annual/1.0 (INV-17). `TIME_OFF_TYPES` must stay a superset of the `day-type` `<select>` options in `modals.html` — pinned by a Node-harness coupling test | Subsystem: Server
@@ -2395,15 +2514,17 @@ INV-102 | `fixPtoReconciliation(empId)` is manager-gated (INV-02) and locked (IN
 INV-103 | `setCallNoteManagerComment(repEmpId, noteId, message)` (item 9) is manager-gated (INV-02) and locked (INV-01). It appends a `{role:'manager', kind:'comment', message, at, by}` entry to `subformData.feedback[]` on ANY of the rep's notes — not just training-flagged — reusing the Q&A thread (`cnRenderQAThread_`, now rendered for any note with a thread). Writes a PHI-free `CallNoteManagerComment` audit row (noteId only). `appendCallNoteFeedback` was relaxed so the rep can ack/clarify on any note that already has a feedback[] thread (training-flagged OR manager-commented), not training-only | Subsystem: Server + Client (Call Notes views)
 INV-104 | `purgeOldCallNotes` (item 7) is a top-level trigger handler reachable via google.script.run, so it calls `assertManagerCaller_` (INV-44 family) and is locked (INV-01). It deletes per-rep `Notes` rows older than `CN_NOTE_RETENTION_DAYS` (Script Property → `CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS`, default 0 = disabled; irreversible PHI delete). Cross-rep; per-rep Sheet failures are skipped; writes a PHI-free `CallNotesPurge` audit row. The note date is read from `CN.DATE_LOCAL` via `parseRetentionDateMs_` (handles the Sheets Date coercion). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` | Subsystem: Server
 INV-105 | Automated notification emails route their HTML through `buildBrandedEmailHtml_(heading, bodyHtml, opts)` (item 2), which `esc_`'s the heading; callers MUST `esc_` any user data placed in `bodyHtml` (same INV-89 discipline), and `brandedKvRows_` `esc_`'s both label and value. Converted senders keep a plain-text `body` fallback alongside `htmlBody`: `notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts` (employee + manager digest), `notifyManagerOldAdjustment_`, `notifyManagerTrainingQuestion_`, and `sendAutomatedExport_` (all three branches — error / success-with-attachment / catch). `sendAutomatedExport_` keeps its `.xlsx` `attachments: [blob]` on the success email alongside the new `htmlBody` + plain `body` | Subsystem: Server
-INV-106 | `submitPunchAdjustRequests(requests[])` (#4a) is caller-scoped + locked and writes only Pending rows (no punch). It is ATOMIC — every entry is validated (date `^\d{4}-\d{2}-\d{2}$`, time `^([01]\d|2[0-3]):[0-5]\d$`, `punchType ∈ PUNCH_LABELS_`, not future, ≤ `ADJUST_WINDOW_DAYS`, reason required beyond `OLD_ADJUST_ALERT_DAYS`) and the WHOLE batch is rejected if any entry fails (max 20). Each Pending row gets a UUID `ReqId`. Writes a `PunchAdjustRequest` audit row. Pinned by `test_punchAdjust_batchInvalidRejected` | Subsystem: Server
-INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newStatus)` (#4a) are manager-gated (INV-02); the latter is locked (INV-01) and transition-guarded (acts only on a `Pending` row). Approve writes the single `ADJ-{punchType}` punch for the TARGET employee via `writeAdjustPunchForEmployee_` (find-existing-of-that-type-for-date → update, else append; + `writeToEmployeeSheet_` personal-sheet mirror; `ADJ-` convention INV-09; `normalizeTime_` reads INV-26) and an `ADJ-` audit row with the manager as actor — it must NEVER reuse `managerSaveDay` (full-day reconcile would delete other punch types). Deny marks `Denied` + writes a `PunchAdjustStatusChange` audit row, no punch. Pinned by `test_punchAdjust_submitApproveWritesPunch` + `_nonManagerRejected` | Subsystem: Server + Client (Time Clock views)
+INV-106 | `submitPunchAdjustRequests(requests[])` (#4a) is caller-scoped + locked and writes only Pending rows (no punch). It is ATOMIC — every entry is validated (date `^\d{4}-\d{2}-\d{2}$`, time `^([01]\d|2[0-3]):[0-5]\d$`, `punchType ∈ PUNCH_LABELS_`, not future, ≤ `ADJUST_WINDOW_DAYS`, reason required beyond `OLD_ADJUST_ALERT_DAYS`) and the WHOLE batch is rejected if any entry fails (max 20). Duplicate-guarded: the batch is rejected when two entries target the same (date, punchType), or when the employee already has a `Pending` row for that (date, punchType) awaiting approval — preventing the queue from accumulating sibling requests that a manager could double-approve. Each Pending row gets a UUID `ReqId`. Writes a `PunchAdjustRequest` audit row. Pinned by `test_punchAdjust_batchInvalidRejected` + `test_punchAdjust_duplicatePendingRejected` | Subsystem: Server
+INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newStatus)` (#4a) are manager-gated (INV-02); the latter is locked (INV-01) and transition-guarded (acts only on a `Pending` row). Approve writes the single `ADJ-{punchType}` punch for the TARGET employee via `writeAdjustPunchForEmployee_` (find-existing-of-that-type-for-date → update, else append; + `writeToEmployeeSheet_` personal-sheet mirror; `ADJ-` convention INV-09; `normalizeTime_` reads INV-26) and an `ADJ-` audit row with the manager as actor — it must NEVER reuse `managerSaveDay` (full-day reconcile would delete other punch types). Approve also re-checks the adjust window AT APPROVAL TIME (in the target employee's tz): a request that has aged past `ADJUST_WINDOW_DAYS` while sitting in the queue is rejected with a deny-it message instead of writing a punch the employee could no longer request — the window is enforced at both submit and approve. Deny marks `Denied` + writes a `PunchAdjustStatusChange` audit row, no punch (and is allowed regardless of age). Pinned by `test_punchAdjust_submitApproveWritesPunch` + `_nonManagerRejected` + `test_punchAdjust_approveAgedPastWindowRejected` | Subsystem: Server + Client (Time Clock views)
 INV-108 | `managerSaveDayRange(empId, fromDate, toDate, slots, reason)` (#4b) is manager-gated (INV-02), locked (INV-01), span-capped (≤31 days), and window-bounded (no future date; none beyond `ADJUST_WINDOW_DAYS`; reason required if the oldest date is beyond `OLD_ADJUST_ALERT_DAYS`). It applies each NON-EMPTY slot to every date in the inclusive range via `writeAdjustPunchForEmployee_` — purely ADDITIVE (set/update that punch type only), so a blank slot is left untouched and other punch types are never deleted. It must NOT reuse `managerSaveDay` (full-day reconcile deletes blank slots). The immediate employee adjust path (`recordPunch` `custom`) is gated for non-managers by the `employeeImmediateAdjust` flag (default off). Pinned by `test_managerSaveDayRange_appliesAcrossDays` + `_nonManagerRejected` + `test_recordPunch_immediateAdjustGatedByFlag` | Subsystem: Server + Client (Time Clock views)
 INV-109 | `reconcileCallNotes` (#8) is manager-gated (INV-02) and locked (INV-01). It scans every enrolled rep's `Notes` tab and, for rows with content but NO `noteId` (hand-entered directly in the Sheet), backfills a UUID `noteId` + a `Timestamp` + a yyyy-MM-dd `DateLocal` (derived from the human's values, else rep-tz now/today via `safeTimezone_`/`normalizeDate_`) so the row becomes flaggable/searchable/coverage-counted. Content columns are NEVER modified. Idempotent (a row with a `noteId` is skipped → re-run is a no-op). Per-rep Sheet failures are skipped; writes a `CallNotesReconcile` audit row. Runs both manually (Admin → "Reconcile Sheets") and as a daily manager-tz 5am trigger wired by `installAutomationTriggers`; the `isManager`-returns-`{error}` gate (not `assertManagerCaller_`) passes in a trigger context because the installer is a manager. Pinned by `test_reconcileCallNotes_backfillsHandEntered` + `_nonManagerRejected` | Subsystem: Server + Client (Call Notes views)
 INV-110 | `provisionCallNotesSheet(repEmpId)` (auto-provision) is manager-gated (INV-02) and locked (INV-01, mutates the Employees sheet). It `SpreadsheetApp.create`s a fresh per-rep Sheet owned by the deploying account (the web app runs as `USER_DEPLOYING`), renames the default sheet to the `Notes` tab + writes the canonical `CN_HEADERS` header, writes the new spreadsheet ID into `EMP.CALL_NOTES_SHEET_ID` (column L) of the rep's roster row, calls `invalidateRosterCache_()` (INV-10), and writes a `CallNotesProvision` audit row with the manager's email. **Idempotent / no-clobber:** a rep who already has a non-empty `callNotesSheetId` is returned `{success, alreadyEnrolled:true, sheetId}` unchanged — it NEVER creates a second Sheet or overwrites column L (that would orphan the rep's note history). The companion read-only `getCallNotesEnrollment` (manager-gated) returns `{enrolled[], unenrolled[]}` for the Admin enrollment panel. Pinned by `test_provisionCallNotesSheet_nonManagerRejected` + `_idempotentNoClobber` (the create branch is exercised manually to avoid littering Drive in CI) | Subsystem: Server + Client (Call Notes views)
 INV-111 | The Intake send endpoints (`intakeSendPPD`, `intakeSendPMD`, `intakeSendPAP`) require an enrolled rep (`getEmployeeInfo_`), build the email body server-side with every user field `esc_`'d (INV-89 discipline; pinned by `test_intake_buildPpdBody_escapesAnswers`), and re-render + hash-check the patient-answer body against the `expectedBodyHash` returned by the matching `intakePreview*` — rejecting the send when the form changed since preview (INV-41 pattern; selections/images ride at send and are NOT part of the hash). Patient answers persist to the append-only per-form submission tab in `INTAKE_SS_ID`; the shared AuditLog `IntakeSent` row is PHI-free (`type`, `submissionId`, recipient **domain** only — never the patient name or recipient address, same discipline as the `ExternalEmailSent` row). Recipients are resolved server-side via `intakeResolveRecipient_` (roster id→email, dept default, or validated custom), so agent addresses never reach the client | Subsystem: Server + Client (Intake views)
 INV-112 | `intakeFilterRecommendations_(answers, allProducts)` is a PURE, self-contained port of the bound tool's recommendation engine — `answers` keyed by bare question number (`'38'` weight, `'43'` neuro, `'31a'` stroke, `'34'` amputation, `'33'` ulcers, `'32'` spasticity, `'35'` spine, `'36'` swelling, `'30'` catheters, `'44'` oxygen, `'25'` numbness, `'13'` falls); `allProducts` is the raw `Offerings!A2:F` 2D array. It applies weight-cap, solid-seat/captain, Group-3/SPO/MPO eligibility, the `K0856→K0861` / `K0843→K0862` neuro substitutions, and justification building. Pinned by `test_intake_engine_*` (Tests.js) + the Node harness (`intake — PPD engine`). The PMD/PAP email STRUCTURAL layout (`INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT`, server-authoritative) is mirrored by the client render layouts (`INTAKE_PMD_CLIENT` / `INTAKE_PAP_CLIENT`) for input rendering only; the two are pinned equal by the Node coupling tripwire (`intake — client render layout mirrors the server`) — same parallel-source discipline as `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_` | Subsystem: Server + Client (Intake views)
-INV-113 | `submitFormByToken` (public, token-only) extracts `signature` AND `_meta` before persisting responses, **server-enforces consent** (rejects `_meta.consentAgreed === false`; absent `_meta` allowed for back-compat), stamps the server-authoritative `CONFIG.FORM_CONSENT_VERSION` (never a client-sent version), and writes a tamper-evident `SubmissionHash` (`computeFormSubmissionHash_` over responses+signature+token+consentVersion — NOT `submittedAt`, which Sheets may coerce to a Date) + a `Certificate` JSON into trailing `FS` columns. The `FormSubmissionReceived` audit row carries `hash=` + `submittedAt=` as the append-only independent witness. `verifyFormSubmissionIntegrity_(token)` (manager-gated, read-only) recomputes + compares; a legacy row with no stored hash returns `match:null` (not a failure). `FS_HEADERS` grew by TRAILING columns only (back-compat like `CN_HEADERS`). `FormSubmissions` remains **append-only — no edit endpoint exists** (the immutability is a HIPAA §164.312(c) integrity control, and the hash makes any out-of-band alteration detectable) | Subsystem: Server + Client (public forms)
+INV-113 | `submitFormByToken` (public, token-only) extracts `signature` AND `_meta` before persisting responses, **server-enforces consent** (requires `_meta.consentAgreed === true`; an absent `_meta` is rejected — the prior back-compat tolerance let a hand-crafted payload skip the consent record entirely), stamps the server-authoritative `CONFIG.FORM_CONSENT_VERSION` (never a client-sent version), and writes a tamper-evident `SubmissionHash` (`computeFormSubmissionHash_` over responses+signature+token+consentVersion — NOT `submittedAt`, which Sheets may coerce to a Date) + a `Certificate` JSON into trailing `FS` columns. The `FormSubmissionReceived` audit row carries `hash=` + `submittedAt=` as the append-only independent witness. `verifyFormSubmissionIntegrity_(token)` (manager-gated, read-only) recomputes + compares; a legacy row with no stored hash returns `match:null` (not a failure). `FS_HEADERS` grew by TRAILING columns only (back-compat like `CN_HEADERS`). `FormSubmissions` remains **append-only — no edit endpoint exists** (the immutability is a HIPAA §164.312(c) integrity control, and the hash makes any out-of-band alteration detectable) | Subsystem: Server + Client (public forms)
 INV-114 | `getFormsSS_()` resolves the forms PHI store: Script Property `FORMS_SS_ID` first (segregates PHI off the ADP/payroll sheet — point it at `INTAKE_SS_ID`), else `getAdpSS_()` for back-compat; honors `_TEST_OVERRIDE_FORMS_SS_ID`. Both `getOrCreateFormTokensSheet_` / `getOrCreateFormSubmissionsSheet_` (and therefore `submitFormByToken`, `getFormByToken`, `serveExternalForm_`, the viewers, and `purgeExpiredFormData`) route through it, so the location is a single point of change. The invite-email builders (`buildCustomerEmailHtml_`/`buildProviderEmailHtml_`/`*Text_`) take only `(recipientName, message, formNames, formLinks)` and never read prefill — patient identifiers stay in the token, never the cleartext email body. Pinned by the `forms — invite email builders` Node guard | Subsystem: Server + Client (public forms)
+INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text) and reports lossy conversions (images/tables/skipped elements) as `warnings[]` rather than silently dropping content. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissionId)` (the Intake Sent tab) are read-only and caller-scoped: a rep sees only rows whose stored `repId` matches their own; a manager sees all (parallels INV-90/91). The list is metadata-only (id, timestamp, rep, patientInfo, language, recipient — never the answers JSON), newest-first, capped at `INTAKE_LIST_CAP_`=100, and skips an unreachable form-type tab rather than failing the whole list. The detail is a bounded lookup — id-column scan, then one full-row fetch — and parses the answers/recommendations/selections JSON defensively (corrupt blob → `{}`). Timestamps and the ACCT dob cell route through Date-coercion guards (`intakeTsString_`). The submission tabs remain APPEND-ONLY — no edit endpoint exists. Pinned by `test_intake_sentViewer_callerScopedAndManager` | Subsystem: Server + Client (Intake views)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -2889,7 +3010,7 @@ S57 | Compliance audit panel (Admin tab) | Subsystem: Server, Client (Call Notes
     - Click "View note" → confirm it deep-links to Team Notes → Per-Rep View pre-selected to that rep + date
     - Confirm rows are PHI-free (timestamp / rep / actor email / action / noteId only — no note content)
     - As a non-manager, call `google.script.run...getCallNotesAuditLog({})` and `...getCallNoteAuditHistory('x')` from the console
-  Expected: `getCallNotesAuditLog` is manager-gated (non-manager gets "Manager access required."), reads the AuditLog via a bounded tail scan (≤4000 rows), caps at 500 results, and shows a "capped — narrow the range" banner when `truncated` is set (result cap hit or scan didn't reach the start date). `getCallNoteAuditHistory` returns every row carrying the noteId oldest-first, independent of the date filter. The deep-link opens the Per-Rep view via `cnAuditDrillToNote_` + `CN_STATE.mgrPendingRepDrill`. All server strings are `esc()`-escaped before `innerHTML`; IDs/dates pass via `data-*` attributes. Pinned by `cnExtractAuditNoteId_` (Node harness + `test_cn_extractAuditNoteId_*` editor smoke). Server-side endpoint integration tests (gate/bounding/truncation) are a known follow-on.
+  Expected: `getCallNotesAuditLog` is manager-gated (non-manager gets "Manager access required."), reads the AuditLog via a bounded tail scan (≤4000 rows), caps at 500 results, and shows a "capped — narrow the range" banner when `truncated` is set (result cap hit or scan didn't reach the start date). `getCallNoteAuditHistory` returns every row carrying the noteId oldest-first, independent of the date filter. The deep-link opens the Per-Rep view via `cnAuditDrillToNote_` + `CN_STATE.mgrPendingRepDrill`. All server strings are `esc()`-escaped before `innerHTML`; IDs/dates pass via `data-*` attributes. Pinned by `cnExtractAuditNoteId_` (Node harness + `test_cn_extractAuditNoteId_*` editor smoke) + `test_auditPanel_searchAndHistory` (filters, PHI-free rows, lifecycle ordering) + the `getCallNotesAuditLog`/`getCallNoteAuditHistory` cases in `test_managerGates_rejectNonManager`.
 
 S58 | Call Notes auto-provision (one-click enrollment) | Subsystem: Server, Client (Call Notes views)
   Steps:
@@ -2932,7 +3053,7 @@ S61 | Fillable form — consent stored, tamper-evident, segregated, retained | S
     - Inspect the `FormSubmissionReceived` AuditLog row → carries `hash=` + `submittedAt=`, no response content
     - Inspect the invite email body → no patient identifiers (prefill rode in the token, not the email)
     - Set `FORM_DATA_RETENTION_DAYS=90` + install triggers; confirm `purgeExpiredFormData` targets the `FORMS_SS_ID` store and no-ops when nothing is older than 90 days
-  Expected: Consent is server-stamped (authoritative version) + server-enforced (a `consentAgreed:false` payload is rejected). The hash is deterministic + tamper-evident (`computeFormSubmissionHash_`, smoke-pinned), excludes `submittedAt` (coercion-safe), and the AuditLog is the independent timestamp witness. `FormSubmissions` stays append-only with NO edit endpoint (§164.312(c)); `verify` flags any out-of-band edit. Legacy 6-column rows (pre-hardening) verify as `match:null` ("legacy"), not a failure. The invite email stays PHI-minimal (Node-guarded). `getFormsSS_()` routes all form reads/writes/purge to the segregated store.
+  Expected: Consent is server-stamped (authoritative version) + server-enforced (the payload must carry `consentAgreed:true` — a `false` OR absent `_meta` payload is rejected). The hash is deterministic + tamper-evident (`computeFormSubmissionHash_`, smoke-pinned), excludes `submittedAt` (coercion-safe), and the AuditLog is the independent timestamp witness. `FormSubmissions` stays append-only with NO edit endpoint (§164.312(c)); `verify` flags any out-of-band edit. Legacy 6-column rows (pre-hardening) verify as `match:null` ("legacy"), not a failure. The invite email stays PHI-minimal (Node-guarded). `getFormsSS_()` routes all form reads/writes/purge to the segregated store.
 
 S62 | Reference tool — browse, search, article + Drive embed, manager edit | Subsystem: Server, Client (Reference views)
   Steps:
@@ -2945,6 +3066,19 @@ S62 | Reference tool — browse, search, article + Drive embed, manager edit | S
     - As a non-manager rep: confirm browse + search work but NO add/edit/delete affordances appear; from the console call `google.script.run...kbSaveItem({})` and `...kbDeleteItem('x')`
     - Paste raw `<script>` / a `javascript:` link into an article body and Save → open it
   Expected: Articles store markdown source; `kbMd_` renders escaped HTML (the `<script>`/`javascript:` content is inert — escaped/stripped, never executed). Embeds render the Drive preview + open-in-new-tab; the Drive file isn't copied. Tree is per-department, cached 5 min (invalidated on save/delete). `kbSaveItem`/`kbDeleteItem` are manager-gated (non-manager console calls return "Manager access required."), locked, and write `KbItemSave`/`KbItemDelete` audit rows. `getReferenceTree`/`getReferenceItem`/`searchReference` require an enrolled employee, read-only. Pinned by `kbMd_` + `kbParseDriveUrl_` Node tests.
+
+S63 | Reference tool — Doc→article converter (KB Phase 2) | Subsystem: Server, Client (Reference views)
+  Steps:
+    - As a manager, embed a Google Doc (with a heading, bold text, a bullet list, a link, a table, and an image) the deployer account can read
+    - Open the embed in the reader → click **Convert to article** → confirm the uiConfirm explains review-before-save → Convert
+    - Confirm the EDITOR opens in article mode pre-filled with markdown + live preview; toasts list the lossy conversions (image placeholder, table flattened)
+    - Confirm headings/bold/list/link render in the preview; the table appears as a bullet list; the image is an italic placeholder
+    - Press Save → the item re-opens as a native article; open the original Doc in Drive → confirm it is UNCHANGED
+    - Add item → Embed mode → paste a Doc URL → click **Convert this Doc to an article instead** → confirm the editor flips to article mode with the body filled and the Doc's name as title (when title was blank)
+    - Try converting a Sheet/file embed (no Convert button should render) and a Sheets URL from the editor (server rejects: "Only Google Docs convert…")
+    - Cancel an editor after converting → confirm the embed item is untouched (nothing saved)
+    - As a non-manager, call `google.script.run...kbConvertDriveDoc({driveUrl:'…'})` from the console
+  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything; the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. Pinned by the `kb — Doc→markdown converter` Node stub tests (INV-115).
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)

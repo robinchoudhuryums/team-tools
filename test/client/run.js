@@ -540,6 +540,19 @@ vm.runInContext('var CLI_PAP = ' + extractClientObject('intake/script_intake.htm
   });
 });
 
+console.log('\nforms — interactive form IDs: client mirrors the server (coupling tripwire)');
+test('CN_INTERACTIVE_FORM_IDS (cn partial) === INTERACTIVE_FORM_TYPES (Code.js)', () => {
+  const grabArr = (src, name, where) => {
+    const m = src.match(new RegExp(name + "\\s*=\\s*\\[([^\\]]*)\\]"));
+    assert.ok(m, name + ' not found in ' + where);
+    return m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+  };
+  assert.deepStrictEqual(
+    grabArr(extractScript('cn/script_callnotes.html'), 'CN_INTERACTIVE_FORM_IDS', 'cn/script_callnotes.html'),
+    grabArr(codeSrc, 'INTERACTIVE_FORM_TYPES', 'Code.js'),
+    'the client fillable-form ID list must mirror the server list');
+});
+
 console.log('\nforms — invite email builders carry no prefilled patient data (hardening Fix 6)');
 ['buildCustomerEmailHtml_', 'buildProviderEmailHtml_', 'buildCustomerEmailText_', 'buildProviderEmailText_'].forEach((fn) => {
   test(fn + ' takes only (recipientName, message, formNames, formLinks) and never reads prefill', () => {
@@ -588,6 +601,15 @@ test('allows http(s)/mailto links, strips javascript: URLs to plain text', () =>
   const js = kbMd_('[x](javascript:alert(1))');
   assert.ok(js.indexOf('href="javascript') < 0 && js.indexOf('<a ') < 0, 'javascript: URL not linked');
 });
+test('percent-encodes quotes in link URLs (no href attribute breakout)', () => {
+  // A `"` in the URL would otherwise close the href attribute and inject an
+  // event handler (the top-level escape covers &/</> but not quotes).
+  const out = kbMd_('[x](https://e.com/"onmouseover=alert`1`)');
+  assert.ok(out.indexOf('"onmouseover') < 0, 'quote must not terminate the href attribute');
+  assert.ok(out.indexOf('%22') >= 0, 'double quote percent-encoded');
+  const single = kbMd_("[x](https://e.com/'q)");
+  assert.ok(single.indexOf('%27') >= 0, 'single quote percent-encoded');
+});
 
 console.log('\nCode.js — kbParseDriveUrl_() extracts {kind,fileId} from Drive URLs');
 const _kbCtx = vm.createContext({});
@@ -598,6 +620,124 @@ test('parses Doc / Sheet / file URLs and rejects junk', () => {
   assert.strictEqual(kbParseDriveUrl_('https://docs.google.com/spreadsheets/d/SHEET9/edit#gid=0').kind, 'sheet');
   assert.strictEqual(kbParseDriveUrl_('https://drive.google.com/file/d/FILE7/view').fileId, 'FILE7');
   assert.strictEqual(kbParseDriveUrl_('not a url'), null);
+});
+
+// ── KB Phase 2 — Doc→markdown converter ─────────────────────────────────────
+// kbDocBodyToMarkdown_ compares String(getType()) etc. against enum NAMES
+// (DocumentApp enums stringify to their names), so plain-object stubs can
+// drive the whole walker here. The stubs mirror exactly the DocumentApp
+// surface the converter touches.
+console.log('\nkb — Doc→markdown converter (kbDocBodyToMarkdown_ via DocumentApp stubs)');
+const _kbConvCtx = vm.createContext({
+  KB_DOC_HEADING_PREFIX: {
+    TITLE: '# ', HEADING1: '# ', HEADING2: '## ', HEADING3: '### ',
+    HEADING4: '#### ', HEADING5: '##### ', HEADING6: '###### ', SUBTITLE: '## ',
+  },
+});
+['kbTextToRuns_', 'kbRunsToMarkdown_', 'kbDocBodyToMarkdown_'].forEach((fn) => {
+  vm.runInContext(extractRawFunction('Code.js', fn), _kbConvCtx, { filename: 'Code.js#' + fn });
+});
+const kbRunsToMarkdown_ = _kbConvCtx.kbRunsToMarkdown_;
+const kbDocBodyToMarkdown_ = _kbConvCtx.kbDocBodyToMarkdown_;
+
+function mkText(runs) {  // runs: [{text, bold, italic, link}]
+  const full = runs.map((r) => r.text).join('');
+  const starts = [];
+  let pos = 0;
+  runs.forEach((r) => { starts.push(pos); pos += r.text.length; });
+  const runAt = (off) => {
+    for (let i = runs.length - 1; i >= 0; i--) if (off >= starts[i]) return runs[i];
+    return runs[0];
+  };
+  return {
+    getText: () => full,
+    getTextAttributeIndices: () => starts,
+    isBold: (o) => !!runAt(o).bold,
+    isItalic: (o) => !!runAt(o).italic,
+    getLinkUrl: (o) => runAt(o).link || null,
+  };
+}
+function mkPara(opts) {  // {heading?, runs?, children?: [elementTypeNames]}
+  const kids = (opts.children || []).map((t) => ({ getType: () => t }));
+  return {
+    getType: () => 'PARAGRAPH',
+    getHeading: () => opts.heading || 'NORMAL',
+    getNumChildren: () => kids.length,
+    getChild: (i) => kids[i],
+    editAsText: () => mkText(opts.runs || []),
+  };
+}
+function mkList(opts) {  // {glyph?, nest?, runs}
+  return {
+    getType: () => 'LIST_ITEM',
+    getGlyphType: () => (opts.glyph === undefined ? 'BULLET' : opts.glyph),
+    getNestingLevel: () => opts.nest || 0,
+    editAsText: () => mkText(opts.runs || []),
+  };
+}
+function mkTable(rows) {  // rows: [[cellText, ...], ...]
+  return {
+    getType: () => 'TABLE',
+    getNumRows: () => rows.length,
+    getRow: (r) => ({
+      getNumCells: () => rows[r].length,
+      getCell: (c) => ({ getText: () => rows[r][c] }),
+    }),
+  };
+}
+function mkBody(els) { return { getNumChildren: () => els.length, getChild: (i) => els[i] }; }
+
+test('kbRunsToMarkdown_: bold/italic/link emission is kbMd_-render-safe', () => {
+  assert.strictEqual(kbRunsToMarkdown_([{ text: 'plain ' }, { text: 'bold', bold: true }]), 'plain **bold**');
+  assert.strictEqual(kbRunsToMarkdown_([{ text: 'it', italic: true }]), '*it*');
+  // bold+italic collapses to bold (kbMd_ can't render ***)
+  assert.strictEqual(kbRunsToMarkdown_([{ text: 'both', bold: true, italic: true }]), '**both**');
+  // trailing run whitespace stays OUTSIDE the markers
+  assert.strictEqual(kbRunsToMarkdown_([{ text: 'b ', bold: true }, { text: 'after' }]), '**b** after');
+  // links: http(s)/mailto only; parens/spaces percent-encoded; [] stripped from text
+  assert.strictEqual(kbRunsToMarkdown_([{ text: 'go', link: 'https://e.com/a(1) b' }]),
+    '[go](https://e.com/a%281%29%20b)');
+  assert.strictEqual(kbRunsToMarkdown_([{ text: 'x[y]', link: 'https://e.com' }]), '[xy](https://e.com)');
+  assert.strictEqual(kbRunsToMarkdown_([{ text: 'js', link: 'javascript:alert(1)' }]), 'js');
+  // Docs soft line-break (\r) becomes a space
+  assert.strictEqual(kbRunsToMarkdown_([{ text: 'a\rb' }]), 'a b');
+});
+
+test('converts headings, paragraphs, lists, and hr', () => {
+  const res = kbDocBodyToMarkdown_(mkBody([
+    mkPara({ heading: 'HEADING1', runs: [{ text: 'Title' }] }),
+    mkPara({ runs: [{ text: 'Body with ' }, { text: 'bold', bold: true }, { text: '.' }] }),
+    mkList({ runs: [{ text: 'one' }] }),
+    mkList({ runs: [{ text: 'two' }] }),
+    mkList({ glyph: 'NUMBER', runs: [{ text: 'first' }] }),
+    mkPara({ children: ['HORIZONTAL_RULE'] }),
+    mkPara({ heading: 'HEADING2', runs: [{ text: 'Sub' }] }),
+  ]));
+  assert.strictEqual(res.markdown,
+    '# Title\n\nBody with **bold**.\n\n- one\n- two\n1. first\n\n---\n\n## Sub');
+  // strictEqual on length (not deepStrictEqual on the array) — the result
+  // array comes from the vm context, whose Array prototype differs.
+  assert.strictEqual(res.warnings.length, 0);
+});
+
+test('flattens tables to bullet lists + warns; images become placeholders + warn', () => {
+  const res = kbDocBodyToMarkdown_(mkBody([
+    mkTable([['H1', 'H2'], ['a', 'b']]),
+    mkPara({ runs: [{ text: 'caption' }], children: ['INLINE_IMAGE'] }),
+  ]));
+  assert.ok(res.markdown.indexOf('- H1 | H2\n- a | b') >= 0, 'table rows flattened');
+  assert.ok(res.markdown.indexOf('caption *[image — see the original Doc]*') >= 0, 'image placeholder appended');
+  assert.strictEqual(res.warnings.length, 2);
+  assert.ok(/1 table/.test(res.warnings.join(' ')) && /1 image/.test(res.warnings.join(' ')));
+});
+
+test('skips unsupported elements with a warning; null glyph defaults to bullet', () => {
+  const res = kbDocBodyToMarkdown_(mkBody([
+    { getType: () => 'TABLE_OF_CONTENTS' },
+    mkList({ glyph: null, runs: [{ text: 'item' }] }),
+  ]));
+  assert.strictEqual(res.markdown, '- item');
+  assert.ok(/TABLE_OF_CONTENTS/.test(res.warnings.join(' ')), 'skipped type named in warnings');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

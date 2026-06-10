@@ -70,6 +70,7 @@ var INTAKE_STATE = {
   pmd: { lang: 'EN', images: [] },
   pap: { lang: 'EN', images: [] },
   preview: null, // { formType, bodyHash, subject, recommendations, payload }
+  sent: [],      // cached intakeListMySubmissions rows for the Sent tab
 };
 
 // ── Question banks (verbatim from incoming/form-generator) ────────────────
@@ -662,6 +663,127 @@ function intakeRenderGallery_(form) {
 function intakeRemoveImage_(form, idx) {
   INTAKE_STATE[form].images.splice(idx, 1);
   intakeRenderGallery_(form);
+}
+
+// ── Sent tab (P15) — in-app viewer for past intake submissions ─────────────
+// Caller-scoped server-side (rep sees own; manager sees all). Read-only.
+// Answer labels are reconstructed client-side from the question banks using
+// the submission's stored language, so nothing but the stored answers rides
+// the wire twice. Every value is esc()'d before innerHTML.
+
+function enterIntakeSentView(area) {
+  if (typeof stopClock === 'function') stopClock();
+  area = area || document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('send', 16) + ' Sent Intake</div>' : '<div class="view-title-row"><h2>Sent Intake Forms</h2></div>') +
+    '<div class="intk-wrap"><div id="intk-sent-list"><div class="spinner" style="margin:24px auto"></div></div></div>';
+  var requested = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      var host = document.getElementById('intk-sent-list');
+      if (!host) return;
+      if (!res || res.error) { host.innerHTML = '<div class="no-data">' + esc((res && res.error) || 'Failed to load submissions') + '</div>'; return; }
+      INTAKE_STATE.sent = res.submissions || [];
+      host.innerHTML = intakeRenderSentList_(INTAKE_STATE.sent, !!res.isManager);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requested) return;
+      var host = document.getElementById('intk-sent-list');
+      if (host) host.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load submissions') + '</div>';
+    })
+    .intakeListMySubmissions();
+}
+
+function intakeRenderSentList_(subs, isManager) {
+  if (!subs || subs.length === 0) {
+    return '<div class="no-data" style="padding:20px 0">No intake submissions yet' +
+      (isManager ? '.' : ' — your sent PPD / PMD / PAP forms will appear here.') + '</div>';
+  }
+  return '<div class="intk-grid">' +
+    '<div class="intk-head">' + (isManager ? 'All reps · ' : 'Your submissions · ') + 'newest first (max 100)</div>' +
+    subs.map(function (s, i) {
+      return '<div class="intk-row" style="grid-template-columns:1fr auto">' +
+        '<div class="q" style="font-weight:400"><strong>' + esc(s.formType) + '</strong> · ' + esc(s.patientInfo || '(no patient label)') +
+          '<div style="font-size:.76rem;color:var(--muted)">' + esc(s.timestamp) +
+          (isManager ? ' · ' + esc(s.repName) : '') + ' · to ' + esc(s.recipient) + '</div></div>' +
+        '<button class="intk-btn" data-sent-idx="' + i + '" onclick="intakeOpenSent_(this)">View</button>' +
+      '</div>';
+    }).join('') + '</div>';
+}
+
+function intakeOpenSent_(btn) {
+  var s = (INTAKE_STATE.sent || [])[parseInt(btn.getAttribute('data-sent-idx'), 10)];
+  if (!s) return;
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      btn.disabled = false;
+      if (!res || res.error) { showToast((res && res.error) || 'Could not load the submission', 'toast-error'); return; }
+      intakeOpenModal_(res.formType + ' — ' + (res.patientInfo || res.submissionId), intakeRenderSentDetail_(res));
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      showToast((err && err.message) || 'Could not load the submission', 'toast-error');
+    })
+    .intakeGetSubmission(s.formType, s.submissionId);
+}
+
+function intakeRenderSentDetail_(d) {
+  var lang = (d.language === 'ES') ? 'ES' : 'EN';
+  var na = '<span style="color:var(--muted);font-style:italic">N/A</span>';
+  var rowsHtml = '';
+  if (d.formType === 'PPD') {
+    var qs = INTAKE_PPD_Q[lang] || INTAKE_PPD_Q.EN;
+    for (var i = 1; i < qs.length; i++) {
+      var raw = qs[i];
+      if (!raw || !String(raw).trim()) continue;
+      var text = String(raw).trim();
+      var m = text.match(/^(\d+[a-z]?)\./);
+      if (!m) { rowsHtml += '<div class="intk-head">' + esc(text) + '</div>'; continue; }
+      var val = (d.answers || {})[m[1]];
+      rowsHtml += '<div class="intk-row' + (/^\s+/.test(raw) ? ' secondary' : '') + '">' +
+        '<div class="q">' + esc(text) + '</div>' +
+        '<div>' + (val ? esc(String(val)) : na) + '</div></div>';
+    }
+    var recs = [].concat(
+      (d.recommendations && d.recommendations.complex) || [],
+      (d.recommendations && d.recommendations.standard) || []);
+    if (recs.length > 0) {
+      rowsHtml += '<div class="intk-head">Recommendations sent</div>';
+      recs.forEach(function (p) {
+        var rid = String(p.hcpcs).replace(/\s+/g, '-');
+        var sel = (d.selections || {})[rid] || {};
+        var bits = [];
+        if (sel.preferred) bits.push('★ preferred');
+        if (sel.status && sel.status !== 'none') bits.push(sel.status);
+        rowsHtml += '<div class="intk-row"><div class="q" style="font-weight:400">' + esc(String(p.hcpcs)) + '</div>' +
+          '<div style="font-size:.82rem;color:var(--muted)">' + esc(bits.join(' · ') || '—') + '</div></div>';
+      });
+    }
+  } else {
+    var bank = (d.formType === 'PAP') ? INTAKE_PAP_Q : INTAKE_PMD_Q;
+    var L = (d.formType === 'PAP') ? INTAKE_PAP_CLIENT : INTAKE_PMD_CLIENT;
+    var qs2 = bank[lang] || bank.EN;
+    for (var j = 0; j < qs2.length; j++) {
+      var label2 = String(qs2[j] || '');
+      if (L.headers.indexOf(j) >= 0) { rowsHtml += '<div class="intk-head">' + esc(label2) + '</div>'; continue; }
+      var v2 = (d.answers || {})[j];
+      var disp;
+      if (L.checkboxes.indexOf(j) >= 0) disp = (v2 === 'TRUE') ? 'Yes' : 'No';
+      else disp = (v2 == null || v2 === '') ? '' : String(v2);
+      rowsHtml += '<div class="intk-row' + (L.secondary.indexOf(j) >= 0 ? ' secondary' : '') + '">' +
+        '<div class="q">' + esc(label2) + '</div>' +
+        '<div>' + (disp ? esc(disp) : na) + '</div></div>';
+    }
+    if (d.imageCount) {
+      rowsHtml += '<div class="intk-row"><div class="q">Images attached</div><div>' + Number(d.imageCount) + '</div></div>';
+    }
+  }
+  var meta = '<div style="font-size:.8rem;color:var(--muted);margin-bottom:10px">' +
+    esc(d.timestamp) + ' · sent by ' + esc(d.repName) + ' · to ' + esc(d.recipient) + '</div>';
+  return meta + '<div class="intk-grid">' + rowsHtml + '</div>';
 }
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────

@@ -82,6 +82,7 @@ const TOOLS = {
       intakePpd:        { label: 'PPD',                icon: 'list', enter: 'enterIntakePpdView' },
       intakePmdAccount: { label: 'PMD Account',        icon: 'user', enter: 'enterIntakePmdView' },
       intakePapAccount: { label: 'PAP Account',        icon: 'user', enter: 'enterIntakePapView' },
+      intakeSent:       { label: 'Sent',               icon: 'send', enter: 'enterIntakeSentView' },
     },
   },
   reference: {
@@ -703,10 +704,15 @@ document.addEventListener('keydown', function (e) {
     if (so) { e.preventDefault(); so.classList.add('open'); }
     return;
   }
-  // ? key (no modifier, no input focused) opens the shortcuts overlay
+  // ? key (no modifier, no editable element focused) opens the shortcuts
+  // overlay. Contenteditable counts as editable: the Call Notes form fields
+  // are .ce divs (Round 2 · 8e), and gating on tagName alone swallowed a
+  // literal "?" typed into Issue / Resolution.
   if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    var tag = (document.activeElement || {}).tagName;
+    var ae = document.activeElement || {};
+    var tag = ae.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (ae.isContentEditable) return;
     var so2 = document.getElementById('cn-shortcuts-overlay');
     if (so2) { e.preventDefault(); so2.classList.add('open'); }
   }
