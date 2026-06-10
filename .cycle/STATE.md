@@ -32,6 +32,15 @@ Updated: 2026-06-10
 - P#15 | Code.js, intake partial, script_core.html, Tests.js | Intake "Sent" tab — intakeListMySubmissions / intakeGetSubmission (caller-scoped, manager-all, bounded detail lookup, read-only); INV-116 + test
 - docs | CLAUDE.md | INV-88/106/107/113 amendments; INV-116; S57/S61 expected text; sticky-draft TTL; Intake four-tabs + Sent design decision; TEST_INTAKE_SS_ID fixture note
 
+## Completed post-run (operator's first full runAllTests: 218/233 → fixes pushed as b45d5a6)
+- PROD | web-app/Code.js | normalizeAuditTs_ — AuditLog ts cells are Sheets-coerced Dates; String(cell) broke every audit date filter (compliance panel showed ZERO rows). Applied in getManagerDashboard recent-audits, cnReadCallNoteAuditRows_, getAutomationHealth.
+- PROD | web-app/Code.js | getCallNotesAuditLog default endDate now CONFIG.TIMEZONE-today (IST-stamped rows no longer hidden from a US-afternoon manager's default view).
+- PROD | web-app/Code.js | safeTimezone_ IANA shape gate (V8 formatDate no longer throws on unknown tz ids — the probe alone stopped validating).
+- PROD | web-app/Code.js | provisionCallNotesSheet pins new per-rep Sheet tz to the ADP sheet's (normalizeDate_ DateLocal round-trip requires matching tzs).
+- TEST | web-app/Tests.js | _withFeatureFlags_ helper; applied to 9 tests broken by the flag migration (CONFIG-mutation idiom dead) + employeeImmediateAdjust default-off (#4a).
+- TEST | web-app/Tests.js | setupTestEnvironment aligns test CN sheet tz to ADP tz; fixPto test reads back coerced SubmittedAt; auditPanel test explicit endDate (tz-fuzz hermetic).
+- DOCS | CLAUDE.md | two new gotchas (audit-ts coercion; per-rep/fixture sheet tz must match ADP tz), safeTimezone_ gotcha rewrite, INV-16/92/110 amendments.
+
 ## Pending / not yet done
 - P#17 — per-call CDR data (Neon Option C): NOT implementable in this repo (external Postgres + call-data-reporting pipeline). Revisit only if/when that infrastructure project is undertaken.
 - Operator deploy: `cd web-app && clasp push -f` + Apps Script editor → Deploy → New version (covers everything since the last deploy, incl. the NEW Docs OAuth scope from P#16 — first editor run prompts re-auth).
@@ -54,4 +63,4 @@ Updated: 2026-06-10
 - P#17 (Neon per-call CDR) is out of this repo's scope by design — the CDR data layer isolation (INV-68) is the only in-repo preparation possible.
 
 ## Where I left off
-Cycle 1 implementation is COMPLETE (all selected findings + the full priority backlog except the out-of-scope P#17), latest commit c956a7d on `claude/gifted-hypatia-aee7wa`; Node harness 78/78. Next: operator deploy (clasp push -f + Docs OAuth re-auth + New version + editor runAllTests once), then `/reflect` to close Cycle 1 and record metrics.
+Cycle 1 implementation COMPLETE + the operator's first full runAllTests (218/233) triaged: all 15 failures classified and fixed (4 production fixes incl. the audit-ts coercion bug that blanked the compliance panel; rest test drift from the flag migration / #4a flag / fixture tz / coercion-unaware fixtures). Latest commit b45d5a6 on `claude/gifted-hypatia-aee7wa`; Node harness 78/78. Next: operator re-runs `runAllTests()` (expect green — setup re-aligns the fixture tz on this run; if the DateLocal trio still fails, the setup log line "CN fixture tz aligned…" vs its absence discriminates the diagnosis), then clasp push -f + New version deploy, then `/reflect` to close Cycle 1.
