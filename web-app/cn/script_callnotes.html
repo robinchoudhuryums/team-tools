@@ -6126,6 +6126,7 @@ function enterCallNotesAdminView(area) {
     (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'KPIs, tag taxonomy, and department/tax config. Changes take effect immediately (no redeploy needed).')) +
     '<div id="cn-admin-augment"></div>' +
     '<div id="cn-admin-audit"></div>' +
+    '<div id="cn-admin-health"></div>' +
     '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
@@ -6145,6 +6146,9 @@ function enterCallNotesAdminView(area) {
   // #3 — compliance audit panel (call-note AuditLog search). Independent of
   // the augment + body loads; failure stays contained to its own slot.
   cnLoadAuditPanel_();
+  // Automation Health — sync-failure / CDR-drift / last-run surfacing.
+  // Independent load; failure stays contained to its own slot.
+  cnLoadHealthPanel_();
 }
 
 /** Round 2 · 8h — fetch + render the new Admin sections (KPI strip + tag
@@ -6560,6 +6564,116 @@ function cnToggleAuditHistory_(btn, noteId) {
       hist.innerHTML = '<div class="cn-audit-hist-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
     })
     .getCallNoteAuditHistory(noteId);
+}
+
+// ── Automation Health panel ───────────────────────────────────────────────
+// Manager-only surfacing of the silent-degradation signals: personal-sheet
+// sync failures (PersonalSheetSyncFail audit rows), CDR reachability / column
+// drift / roster↔agent name mismatches, and the last-seen audit row per
+// automation job. Every server string routes through esc() before innerHTML
+// (same discipline as the compliance panel).
+
+var CN_HEALTH_RUN_LABELS = {
+  CallNotesReconcile: { label: 'Sheet reconcile',            expect: 'expected daily (5am)' },
+  AdpExportAuto:      { label: 'Automated ADP export',       expect: 'expected at period end' },
+  FormDataPurge:      { label: 'Form-data retention purge',  expect: 'writes a row only when retention is enabled' },
+  CallNotesPurge:     { label: 'Call-note retention purge',  expect: 'writes a row only when retention is enabled' },
+};
+
+function cnLoadHealthPanel_() {
+  var slot = document.getElementById('cn-admin-health');
+  if (!slot) return;
+  slot.innerHTML = '<div class="spinner" style="margin:18px auto"></div>';
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-admin-health');
+      if (!live) return;
+      if (!res || res.error) {
+        live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Automation health unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
+        return;
+      }
+      live.innerHTML = cnRenderHealthPanel_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-admin-health');
+      if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Automation health unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
+    })
+    .getAutomationHealth();
+}
+
+function cnRenderHealthPanel_(res) {
+  var tz = res.managerTzAbbr || '';
+  var okLine = function (txt) {
+    return '<div style="font-size:12px;color:var(--success-deep);display:flex;align-items:center;gap:6px">' + icon('checkCircle', 12) + ' ' + txt + '</div>';
+  };
+  var warnBox = function (html) {
+    return '<div style="font-size:12px;color:var(--warning-deep);background:var(--warn-soft);border-radius:6px;padding:6px 10px">' + html + '</div>';
+  };
+  var secLabel = function (txt) {
+    return '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px">' + txt + '</div>';
+  };
+
+  // (a) Personal-sheet sync failures
+  var sf = res.syncFails || { count: 0, recent: [], windowDays: 30 };
+  var sfHtml;
+  if (sf.count > 0) {
+    var sfRows = (sf.recent || []).map(function (r) {
+      return '<div style="font-size:11px;padding:2px 0">' +
+        '<span class="tabular" style="font-family:var(--mono);color:var(--warning-deep)">' + esc(r.timestampMgr) + (tz ? ' ' + esc(tz) : '') + '</span>' +
+        ' · <strong>' + esc(r.empName) + '</strong> · ' + esc(r.notes) + '</div>';
+    }).join('');
+    sfHtml = warnBox(icon('warning', 11) + ' <strong>' + sf.count + '</strong> personal-sheet sync failure(s) in the last ' +
+      sf.windowDays + ' days — those reps’ personal Sheets are drifting from the ADP source of truth.' + sfRows);
+  } else {
+    sfHtml = okLine('No personal-sheet sync failures in the last ' + (sf.windowDays || 30) + ' days.');
+  }
+
+  // (b) CDR data feed
+  var cdr = res.cdr || { ok: false };
+  var cdrParts = [];
+  if (!cdr.ok) {
+    cdrParts.push(warnBox(icon('warning', 11) + ' CDR data unreachable: ' + esc(cdr.error || 'unknown error') +
+      ' — Metrics and the shift-stats overlay are degraded. Check the CDR_SS_ID Script Property and the deployer’s access.'));
+  } else {
+    cdrParts.push(cdr.columnWarning
+      ? warnBox(icon('warning', 11) + ' Column drift in DQE Historical Data: ' + esc(cdr.columnWarning))
+      : okLine('CDR reachable · column layout OK · ' + (cdr.rowsMatched || 0) + ' row(s) ' + esc(cdr.from || '') + ' → ' + esc(cdr.to || '') + '.'));
+    if (cdr.unmatchedAgents && cdr.unmatchedAgents.length > 0) {
+      cdrParts.push(warnBox(icon('warning', 11) + ' ' + cdr.unmatchedAgents.length +
+        ' CDR agent(s) not matched to the roster (add an Agent Alias Override or fix the Employees name): ' +
+        esc(cdr.unmatchedAgents.join(', '))));
+    }
+    if (cdr.rosterWithNoCdr && cdr.rosterWithNoCdr.length > 0) {
+      cdrParts.push('<div style="font-size:12px;color:var(--muted)">' + icon('info', 11) + ' ' + cdr.rosterWithNoCdr.length +
+        ' roster name(s) with no CDR rows this week: ' + esc(cdr.rosterWithNoCdr.join(', ')) + '</div>');
+    }
+  }
+  var cdrHtml = cdrParts.join('<div style="height:6px"></div>');
+
+  // (c) Automation last-seen
+  var runsHtml = (res.automationLastRuns || []).map(function (r) {
+    var meta = CN_HEALTH_RUN_LABELS[r.action] || { label: r.action, expect: '' };
+    var when = r.last
+      ? '<span class="tabular" style="font-family:var(--mono)">' + esc(r.last.timestampMgr) + (tz ? ' ' + esc(tz) : '') + '</span>' +
+        (r.last.notes ? ' <span style="color:var(--muted)">· ' + esc(r.last.notes) + '</span>' : '')
+      : '<span style="color:var(--muted)">no audit row in the scan window</span>';
+    return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="flex:0 0 200px;font-weight:600">' + esc(meta.label) + '</span>' +
+      '<span style="flex:1;min-width:200px">' + when + '</span>' +
+      '<span style="color:var(--muted);font-size:11px">' + esc(meta.expect) + '</span>' +
+    '</div>';
+  }).join('');
+
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+    '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Automation Health</div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:4px">Silent-failure signals in one place: personal-sheet sync, the CDR data feed, and when each automation job last left an audit trail.</div>' +
+    secLabel('Personal-sheet sync') + sfHtml +
+    secLabel('CDR data feed · last 7 days') + cdrHtml +
+    secLabel('Automation last seen') + runsHtml +
+  '</div>';
 }
 
 /** One row per feature toggle: checkbox + label + scope chip + description +

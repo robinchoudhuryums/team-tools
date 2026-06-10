@@ -3450,6 +3450,7 @@ function test_managerGates_rejectNonManager() {
     ['getManagerDashboard',            function () { return getManagerDashboard(); }],
     ['getEmployeesList',               function () { return getEmployeesList(); }],
     ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
+    ['getAutomationHealth',            function () { return getAutomationHealth(); }],
   ];
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);

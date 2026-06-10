@@ -2003,18 +2003,36 @@ function setCallNotePinned(noteId, pinned) {
 }
 
 /** Returns the calling rep's pinned notes across all dates (not just today).
- *  Read-only, no lock. Used by the Log view's pinned tray. */
+ *  Read-only, no lock. Used by the Log view's pinned tray.
+ *  Bounded read (A6): scans only the SubformData column to find pinned rows
+ *  (~16× fewer cells than a full-history read), with a cheap substring
+ *  pre-filter before JSON.parse, then fetches just the few pinned rows
+ *  (≤ CN_PIN_LIMIT under the cap) at full width. */
 function getMyPinnedCallNotes() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
     if (!emp.callNotesSheetId) return { notes: [] };
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    const lastRow = sheet.getLastRow();
     const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
-      if (note.subformData && note.subformData.pinned) notes.push(note);
+    if (lastRow >= 2) {
+      const n = lastRow - 1;
+      const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
+      for (let i = 0; i < n; i++) {
+        const raw = subCol[i][0];
+        if (!raw) continue;
+        // Pre-filter: an unpinned note's blob never contains the key (the pin
+        // toggle DELETES `pinned`/`pinnedAt` rather than writing false). The
+        // JSON.parse below stays authoritative for any substring false-positive.
+        if (String(raw).indexOf('"pinned"') < 0) continue;
+        let sub = null;
+        try { sub = JSON.parse(raw); } catch (e) { continue; }
+        if (!sub || !sub.pinned) continue;
+        const rowIndex = i + 2;
+        const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+        notes.push(callNoteRowToObject_({ row: row, rowIndex: rowIndex }));
+      }
     }
     // Newest-pinned first
     notes.sort(function (a, b) {
@@ -2029,25 +2047,38 @@ function getMyPinnedCallNotes() {
 /** Returns the calling rep's most recent training-flagged notes that have a
  *  manager reply (non-empty subformData.trainingReply). Spans ALL dates
  *  (not just today) so the rep can see historical Q&A. Limited to 5,
- *  newest first. Read-only, caller-scoped. */
+ *  newest first. Read-only, caller-scoped.
+ *  Bounded read (A6): scans the Timestamp / FlagType / SubformData columns to
+ *  pick the 5 newest answered training notes, then fetches only those 5 rows
+ *  at full width — instead of reading + JSON-parsing the entire history. */
 function getMyTrainingQA() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
     if (!emp.callNotesSheetId) return { notes: [] };
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
-    const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
-      if (note.flagType === 'training'
-          && note.subformData
-          && note.subformData.trainingReply) {
-        notes.push(note);
-      }
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { notes: [] };
+    const n = lastRow - 1;
+    const tsCol   = sheet.getRange(2, CN.TIMESTAMP + 1, n, 1).getValues();
+    const flagCol = sheet.getRange(2, CN.FLAG_TYPE + 1, n, 1).getValues();
+    const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
+    const candidates = [];   // { rowIndex, ts }
+    for (let i = 0; i < n; i++) {
+      if (String(flagCol[i][0] || '').trim().toLowerCase() !== 'training') continue;
+      const raw = subCol[i][0];
+      if (!raw || String(raw).indexOf('"trainingReply"') < 0) continue;
+      let sub = null;
+      try { sub = JSON.parse(raw); } catch (e) { continue; }
+      if (!sub || !sub.trainingReply) continue;
+      candidates.push({ rowIndex: i + 2, ts: String(tsCol[i][0] || '') });
     }
-    notes.sort(function (a, b) { return b.timestamp.localeCompare(a.timestamp); });
-    if (notes.length > 5) notes.length = 5;
+    candidates.sort(function (a, b) { return b.ts.localeCompare(a.ts); });
+    if (candidates.length > 5) candidates.length = 5;
+    const notes = candidates.map(function (c) {
+      const row = sheet.getRange(c.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
+      return callNoteRowToObject_({ row: row, rowIndex: c.rowIndex });
+    });
     return { notes: notes };
   } catch (err) { return { error: err.message }; }
 }
@@ -2161,7 +2192,6 @@ function getCallNotesAmbient() {
     const weekStart = Utilities.formatDate(weekStartDate, empTz, 'yyyy-MM-dd');
 
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
     let unresolvedActionCount = 0;
     let staleActionCount = 0;
     let todayTotal = 0;
@@ -2173,22 +2203,45 @@ function getCallNotesAmbient() {
     const flagCounts = { all: 0, action: 0, training: 0, review: 0, unresolved: 0, qa: 0 };
     const staleMs = CONFIG.CALL_NOTES.STALE_FLAG_HOURS * 3600 * 1000;
     const nowMs = Date.now();
-    for (let i = 1; i < rows.length; i++) {
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
-      if (note.dateLocal === today) todayTotal++;
-      if (note.dateLocal && note.dateLocal >= weekStart && note.dateLocal <= today) weekTotal++;
-      flagCounts.all++;
-      if (note.flagType === 'action')   flagCounts.action++;
-      if (note.flagType === 'training') flagCounts.training++;
-      if (note.flagType === 'review')   flagCounts.review++;
-      if (note.flagType === 'action' && !note.resolved) {
-        unresolvedActionCount++;
-        flagCounts.unresolved++;
-        const noteMs = parseTimestampMs_(note.timestamp, empTz);
-        if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
-      }
-      if (note.flagType === 'training' && note.subformData && note.subformData.trainingReply) {
-        flagCounts.qa++;
+    // Bounded read (A6): this runs on the 60s sidebar poll, so read only the
+    // 5 columns the counts need (Timestamp+DateLocal, FlagType+Resolved,
+    // SubformData — ~3× fewer cells than the full 16-column history) and
+    // JSON-parse SubformData only for training-flagged rows with a reply key.
+    // Counts still span the entire Sheet (INV-39 — historical totals).
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      const n = lastRow - 1;
+      const tsDate  = sheet.getRange(2, CN.TIMESTAMP + 1, n, 2).getValues();  // Timestamp, DateLocal
+      const flagRes = sheet.getRange(2, CN.FLAG_TYPE + 1, n, 2).getValues();  // FlagType, Resolved
+      const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
+      for (let i = 0; i < n; i++) {
+        const dateLocal = normalizeDate_(tsDate[i][1]);
+        if (dateLocal === today) todayTotal++;
+        if (dateLocal && dateLocal >= weekStart && dateLocal <= today) weekTotal++;
+        flagCounts.all++;
+        const flagType = String(flagRes[i][0] || '').trim().toLowerCase();
+        if (flagType === 'action')   flagCounts.action++;
+        if (flagType === 'training') flagCounts.training++;
+        if (flagType === 'review')   flagCounts.review++;
+        if (flagType === 'action') {
+          const resRaw = flagRes[i][1];
+          const resStr = (resRaw === null || resRaw === undefined) ? ''
+            : String(resRaw).trim().toLowerCase();
+          const resolved = (resStr === 'true' || resStr === 'yes' || resStr === '1');
+          if (!resolved) {
+            unresolvedActionCount++;
+            flagCounts.unresolved++;
+            const noteMs = parseTimestampMs_(String(tsDate[i][0] || ''), empTz);
+            if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
+          }
+        }
+        if (flagType === 'training' && subCol[i][0]
+            && String(subCol[i][0]).indexOf('"trainingReply"') >= 0) {
+          try {
+            const sub = JSON.parse(subCol[i][0]);
+            if (sub && sub.trainingReply) flagCounts.qa++;
+          } catch (e) { /* corrupt blob — skip, same as callNoteRowToObject_ */ }
+        }
       }
     }
     const result = {
@@ -3272,6 +3325,122 @@ function getCallNoteAuditHistory(noteId) {
     // absent AND the scan didn't reach all the way back (L11).
     const sawCreate = rows.some(function (r) { return r.action === 'CallNoteCreate'; });
     return { rows: rows, truncated: !read.scannedAll && !sawCreate };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Automation Health (Admin tab) ────────────────────────────────────────
+// Operationalizes the "monitor AuditLog for PersonalSheetSyncFail" gotcha and
+// the silent-degradation posture: one manager-gated, read-only aggregate that
+// surfaces (a) personal-sheet sync failures, (b) CDR reachability / column
+// drift / roster↔agent name mismatches, and (c) the last-seen audit row per
+// automation job — so a missing trigger or a drifting external sheet shows up
+// in the Admin tab instead of only in Logger / the raw AuditLog.
+
+// Audit actions written by the automation jobs. Purges write a row only when
+// retention is enabled (a disabled purge returns before the audit write), and
+// AdpExportAuto only fires at period end — the client captions each
+// accordingly so "never seen" isn't misread as "broken".
+const AUTOMATION_AUDIT_ACTIONS = [
+  'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
+];
+const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
+
+/** Manager-gated, read-only. One bounded AuditLog tail scan (CN_AUDIT_MAX_SCAN
+ *  rows, INV-13 spirit) + the 5-min-cached CDR aggregate. Never throws — CDR
+ *  unreachability degrades to { cdr: { ok:false, error } } so the rest of the
+ *  panel still renders (same best-effort posture as the shift-stats overlay). */
+function getAutomationHealth() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+
+    // ── (a) + (c): one bounded tail scan of the AuditLog ─────────────────
+    const syncFails = { count: 0, recent: [], windowDays: AUTOMATION_SYNCFAIL_WINDOW_DAYS };
+    const lastRunByAction = {};
+    let scannedAll = true;
+    const auditSheet = getOrCreateAuditSheet_();
+    const lastRow = auditSheet.getLastRow();
+    if (lastRow > 1) {
+      const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
+      scannedAll = startRow === 2;
+      const data = auditSheet.getRange(startRow, 1, lastRow - startRow + 1, 10).getValues();
+      // Day-string comparison against IST-written timestamps — same accepted
+      // boundary fuzz as getCallNotesAuditLog's date filter.
+      const cutD = new Date();
+      cutD.setDate(cutD.getDate() - AUTOMATION_SYNCFAIL_WINDOW_DAYS);
+      const cutoff = fmtDateTz_(cutD, mgrTz);
+      for (let i = data.length - 1; i >= 0; i--) {   // newest-first
+        const action = String(data[i][4]);
+        const tsRaw = String(data[i][0]);
+        if (action === 'PersonalSheetSyncFail') {
+          if (tsRaw.substring(0, 10) >= cutoff) {
+            syncFails.count++;
+            if (syncFails.recent.length < 5) {
+              syncFails.recent.push({
+                timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+                empName: String(data[i][2]),
+                notes: String(data[i][9]),
+              });
+            }
+          }
+        } else if (AUTOMATION_AUDIT_ACTIONS.indexOf(action) >= 0 && !lastRunByAction[action]) {
+          lastRunByAction[action] = {
+            timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+            notes: String(data[i][9]),
+          };
+        }
+      }
+    }
+    const automationLastRuns = AUTOMATION_AUDIT_ACTIONS.map(function (a) {
+      return { action: a, last: lastRunByAction[a] || null };
+    });
+
+    // ── (b): CDR reachability + name-match health (last 7 days) ──────────
+    let cdr;
+    try {
+      const now = new Date();
+      const to = fmtDateTz_(now, mgrTz);
+      const fromD = new Date(now);
+      fromD.setDate(fromD.getDate() - 7);
+      const from = fmtDateTz_(fromD, mgrTz);
+      const result = getCdrAgentMetrics_(from, to, null);   // unfiltered — all agents
+      if (result.meta && result.meta.error) {
+        cdr = { ok: false, error: result.meta.error };
+      } else {
+        // Canonicalize agent names through the alias map before comparing to
+        // the roster (the unfiltered read doesn't apply aliases itself), so an
+        // aliased agent isn't reported as unmatched.
+        const aliasMap = getCdrNameMap_();
+        const roster = getEmployeeRosterRows_();
+        const rosterSet = {};
+        for (let r = 1; r < roster.length; r++) {
+          const nm = String(roster[r][EMP.NAME]).trim();
+          if (nm) rosterSet[nm] = true;
+        }
+        const canonicalAgents = {};
+        Object.keys(result.agents || {}).forEach(function (a) {
+          canonicalAgents[aliasMap[a] || a] = true;
+        });
+        cdr = {
+          ok: true, from: from, to: to,
+          rowsMatched: (result.meta && result.meta.rowsMatched) || 0,
+          columnWarning: (result.meta && result.meta.columnWarning) || null,
+          unmatchedAgents: Object.keys(canonicalAgents).filter(function (a) { return !rosterSet[a]; }).sort(),
+          rosterWithNoCdr: Object.keys(rosterSet).filter(function (n) { return !canonicalAgents[n]; }).sort(),
+        };
+      }
+    } catch (cdrErr) {
+      cdr = { ok: false, error: cdrErr.message };
+    }
+
+    return {
+      syncFails: syncFails,
+      automationLastRuns: automationLastRuns,
+      cdr: cdr,
+      auditScanComplete: scannedAll,
+      managerTzAbbr: tzAbbr_(mgrTz),
+    };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -5449,6 +5618,28 @@ function computeFormSubmissionHash_(dataJson, signatureData, token, consentVersi
   return out;
 }
 
+/** Look up the FormSubmissions row for a token. Scans only the Token column —
+ *  bottom-up, so the newest row wins, matching the prior full-scan semantics —
+ *  then fetches just that one full row, instead of reading every submission's
+ *  responses + signature on each lookup (same bounded pattern as
+ *  findFormTokenRow_ / findCallNoteRow_, L9). Returns { rowIndex, row } or null.
+ *  The row is read at FS_HEADERS width so legacy 6-column rows come back with
+ *  the hardening columns as '' (treated as "legacy, no hash" by callers). */
+function findFormSubmissionRow_(sheet, token) {
+  if (!token) return null;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const tokens = sheet.getRange(2, FS.TOKEN + 1, lastRow - 1, 1).getValues();
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (String(tokens[i][0]).trim() === token) {
+      const rowIndex = i + 2;
+      const row = sheet.getRange(rowIndex, 1, 1, FS_HEADERS.length).getValues()[0];
+      return { rowIndex: rowIndex, row: row };
+    }
+  }
+  return null;
+}
+
 /** Manager-gated, read-only integrity check (forms hardening). Recomputes the
  *  stored submission's content hash from its cells and compares to the stamped
  *  SubmissionHash — the audit-response / spot-check tool. `match:false` means
@@ -5459,19 +5650,17 @@ function verifyFormSubmissionIntegrity_(token) {
     if (!emp || !emp.isManager) return { error: 'Manager access required.' };
     token = String(token || '').trim();
     if (!token) return { error: 'No token provided.' };
-    const rows = getOrCreateFormSubmissionsSheet_().getDataRange().getValues();
-    for (let i = rows.length - 1; i >= 1; i--) {
-      if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
-      const stored = String(rows[i][FS.SUBMISSION_HASH] || '');
-      if (!stored) return { found: true, legacy: true, match: null,
-        message: 'This submission predates integrity hashing — no stored hash to verify.' };
-      const recomputed = computeFormSubmissionHash_(
-        String(rows[i][FS.FORM_DATA] || ''), String(rows[i][FS.SIGNATURE_DATA] || ''),
-        String(rows[i][FS.TOKEN] || ''), String(rows[i][FS.CONSENT_VERSION] || ''));
-      return { found: true, match: recomputed === stored, storedHash: stored,
-        recomputedHash: recomputed, submittedAt: String(rows[i][FS.SUBMITTED_AT] || '') };
-    }
-    return { found: false, error: 'No submission found for that token.' };
+    const located = findFormSubmissionRow_(getOrCreateFormSubmissionsSheet_(), token);
+    if (!located) return { found: false, error: 'No submission found for that token.' };
+    const row = located.row;
+    const stored = String(row[FS.SUBMISSION_HASH] || '');
+    if (!stored) return { found: true, legacy: true, match: null,
+      message: 'This submission predates integrity hashing — no stored hash to verify.' };
+    const recomputed = computeFormSubmissionHash_(
+      String(row[FS.FORM_DATA] || ''), String(row[FS.SIGNATURE_DATA] || ''),
+      String(row[FS.TOKEN] || ''), String(row[FS.CONSENT_VERSION] || ''));
+    return { found: true, match: recomputed === stored, storedHash: stored,
+      recomputedHash: recomputed, submittedAt: String(row[FS.SUBMITTED_AT] || '') };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -5515,37 +5704,38 @@ function buildFormSubmissionResult_(tLocated, token) {
     return { submitted: false, status, formType, formName, recipientName, recipientEmail };
   }
 
-  const subSheet = getOrCreateFormSubmissionsSheet_();
-  const rows = subSheet.getDataRange().getValues();
-  for (let i = rows.length - 1; i >= 1; i--) {
-    if (String(rows[i][FS.TOKEN]).trim() !== token) continue;
+  // Bounded lookup (L9 pattern) — token-column scan + one-row fetch instead of
+  // reading every submission's responses + signature.
+  const sLocated = findFormSubmissionRow_(getOrCreateFormSubmissionsSheet_(), token);
+  if (sLocated) {
+    const sRow = sLocated.row;
     let formData = {};
-    try { formData = JSON.parse(rows[i][FS.FORM_DATA]) || {}; } catch (_) {}
+    try { formData = JSON.parse(sRow[FS.FORM_DATA]) || {}; } catch (_) {}
     const fields = Object.keys(formData).map(function (k) {
       return { key: k, label: humanizeFormFieldKey_(k), value: formData[k] };
     });
-    const signature = String(rows[i][FS.SIGNATURE_DATA] || '');
+    const signature = String(sRow[FS.SIGNATURE_DATA] || '');
     // Forms-hardening: parse the stored Certificate of Completion + verify the
     // tamper hash live, then append a "verified record" block to the card.
     let cert = null;
-    try { cert = JSON.parse(rows[i][FS.CERTIFICATE]); } catch (_) {}
-    const storedHash = String(rows[i][FS.SUBMISSION_HASH] || '');
+    try { cert = JSON.parse(sRow[FS.CERTIFICATE]); } catch (_) {}
+    const storedHash = String(sRow[FS.SUBMISSION_HASH] || '');
     let hashMatch = null;
     if (storedHash) {
       const recomputed = computeFormSubmissionHash_(
-        String(rows[i][FS.FORM_DATA] || ''), signature,
-        String(rows[i][FS.TOKEN] || ''), String(rows[i][FS.CONSENT_VERSION] || ''));
+        String(sRow[FS.FORM_DATA] || ''), signature,
+        String(sRow[FS.TOKEN] || ''), String(sRow[FS.CONSENT_VERSION] || ''));
       hashMatch = (recomputed === storedHash);
     }
     return {
       submitted: true,
       formType, formName, recipientName,
-      recipientEmail: String(rows[i][FS.RECIPIENT_EMAIL] || recipientEmail),
-      submittedAt: String(rows[i][FS.SUBMITTED_AT] || ''),
+      recipientEmail: String(sRow[FS.RECIPIENT_EMAIL] || recipientEmail),
+      submittedAt: String(sRow[FS.SUBMITTED_AT] || ''),
       fields,
       hasSignature: !!signature,
       signature,
-      consentVersion: String(rows[i][FS.CONSENT_VERSION] || ''),
+      consentVersion: String(sRow[FS.CONSENT_VERSION] || ''),
       integrityVerified: hashMatch,
       // Pre-rendered branded card (responses table + signature + record block)
       // so the in-app viewer matches the submission email. Safe to innerHTML —
@@ -6376,14 +6566,18 @@ function sendCallNotesEodDigest() {
       let unresolved;
       try {
         const sheet = getCallNotesSheet_(empObj);
-        const rows = sheet.getDataRange().getValues();
+        // Bounded read (A6): today's notes are a contiguous row slice
+        // (append-order assumption, INV-46) — scan the 1-column date range to
+        // find it instead of reading the rep's whole history every hour.
+        const located = readCallNoteRowsInRange_(sheet, today, today);
         unresolved = [];
-        for (let i = 1; i < rows.length; i++) {
-          if (normalizeDate_(rows[i][CN.DATE_LOCAL]) !== today) continue;
-          if (String(rows[i][CN.FLAG_TYPE] || '').toLowerCase() !== 'action') continue;
-          const resStr = String(rows[i][CN.RESOLVED] || '').toLowerCase();
+        for (let i = 0; i < located.length; i++) {
+          const row = located[i].row;
+          if (normalizeDate_(row[CN.DATE_LOCAL]) !== today) continue;
+          if (String(row[CN.FLAG_TYPE] || '').toLowerCase() !== 'action') continue;
+          const resStr = String(row[CN.RESOLVED] || '').toLowerCase();
           if (resStr === 'true' || resStr === 'yes' || resStr === '1') continue;
-          unresolved.push(callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 }));
+          unresolved.push(callNoteRowToObject_(located[i]));
         }
       } catch (e) {
         Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
