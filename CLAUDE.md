@@ -2879,5 +2879,5 @@ S62 | Reference tool — browse, search, article + Drive embed, manager edit | S
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
-Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
+Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
 Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end).
