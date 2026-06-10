@@ -610,6 +610,44 @@ test('percent-encodes quotes in link URLs (no href attribute breakout)', () => {
   const single = kbMd_("[x](https://e.com/'q)");
   assert.ok(single.indexOf('%27') >= 0, 'single quote percent-encoded');
 });
+test('renders GFM tables (header, body, alignment, pipe escape)', () => {
+  const out = kbMd_('| H1 | H2 |\n| --- | :---: |\n| a | b |\n| c | d |');
+  assert.ok(out.indexOf('<table>') >= 0 && out.indexOf('</table>') >= 0, 'table element emitted');
+  assert.ok(out.indexOf('<th>H1</th>') >= 0, 'header cell');
+  assert.ok(out.indexOf('<th style="text-align:center">H2</th>') >= 0, 'alignment honored');
+  assert.ok(out.indexOf('<td>a</td>') >= 0, 'body cell (unaligned column)');
+  assert.ok(out.indexOf('<td style="text-align:center">d</td>') >= 0, 'body cell inherits column alignment');
+  // inline formatting works inside cells
+  const fmt = kbMd_('| H |\n| --- |\n| **b** |');
+  assert.ok(fmt.indexOf('<td><strong>b</strong></td>') >= 0, 'bold inside a cell');
+  // \| is a literal pipe inside a cell, not a column break
+  const esc2 = kbMd_('| H |\n| --- |\n| a \\| b |');
+  assert.ok(esc2.indexOf('<td>a | b</td>') >= 0, 'escaped pipe stays in the cell');
+  // body rows clamp to the header column count (extra cells dropped)
+  const clamp = kbMd_('| H |\n| --- |\n| a | extra |');
+  assert.ok(clamp.indexOf('<td>extra</td>') < 0, 'extra cell beyond the header is dropped');
+  // a lone |-line with no separator is NOT a table (renders as a paragraph)
+  const notTable = kbMd_('| just text |');
+  assert.ok(notTable.indexOf('<table>') < 0, 'no separator → no table');
+});
+test('renders images (http(s) only) with escaped alt + URL quotes', () => {
+  const out = kbMd_('![cap](https://e.com/i.png)');
+  assert.ok(out.indexOf('<img src="https://e.com/i.png"') >= 0, 'img emitted');
+  assert.ok(out.indexOf('alt="cap"') >= 0, 'alt carried');
+  assert.ok(out.indexOf('loading="lazy"') >= 0, 'lazy loading');
+  assert.ok(out.indexOf('<a href="https://e.com/i.png"') >= 0, 'wrapped in an open-full-size anchor');
+  // scheme restriction: javascript:/data:/mailto demote to plain alt text
+  const js = kbMd_('![x](javascript:alert(1))');
+  assert.ok(js.indexOf('<img') < 0 && js.indexOf('javascript:') < 0, 'javascript: image not rendered');
+  assert.ok(js.indexOf('x') >= 0, 'alt text kept as plain text');
+  assert.ok(kbMd_('![x](data:image/svg+xml,abc)').indexOf('<img') < 0, 'data: image not rendered');
+  // attribute breakout guards: quotes encoded in src, entity-escaped in alt
+  const q = kbMd_('![a" onerror=alert(1)](https://e.com/i.png)');
+  assert.ok(q.indexOf('" onerror') < 0, 'quote in alt must not terminate the attribute');
+  assert.ok(q.indexOf('&quot;') >= 0, 'alt quote entity-escaped');
+  const uq = kbMd_('![x](https://e.com/"o.png)');
+  assert.ok(uq.indexOf('"o.png') < 0 && uq.indexOf('%22') >= 0, 'quote in src percent-encoded');
+});
 
 console.log('\nCode.js — kbParseDriveUrl_() extracts {kind,fileId} from Drive URLs');
 const _kbCtx = vm.createContext({});
@@ -675,13 +713,23 @@ function mkList(opts) {  // {glyph?, nest?, runs}
     editAsText: () => mkText(opts.runs || []),
   };
 }
-function mkTable(rows) {  // rows: [[cellText, ...], ...]
+function mkTable(rows) {  // rows: [[cell, ...], ...] — cell: string | {runs, nested?}
+  const mkCell = (def) => {
+    const runs = (def && typeof def === 'object') ? (def.runs || []) : [{ text: String(def == null ? '' : def) }];
+    const kids = (def && typeof def === 'object' && def.nested) ? [{ getType: () => 'TABLE' }] : [];
+    return {
+      getText: () => runs.map((r) => r.text).join(''),
+      editAsText: () => mkText(runs),
+      getNumChildren: () => kids.length,
+      getChild: (i) => kids[i],
+    };
+  };
   return {
     getType: () => 'TABLE',
     getNumRows: () => rows.length,
     getRow: (r) => ({
       getNumCells: () => rows[r].length,
-      getCell: (c) => ({ getText: () => rows[r][c] }),
+      getCell: (c) => mkCell(rows[r][c]),
     }),
   };
 }
@@ -720,15 +768,40 @@ test('converts headings, paragraphs, lists, and hr', () => {
   assert.strictEqual(res.warnings.length, 0);
 });
 
-test('flattens tables to bullet lists + warns; images become placeholders + warn', () => {
+test('converts tables to GFM (row 0 = header); images still placeholder + warn', () => {
   const res = kbDocBodyToMarkdown_(mkBody([
     mkTable([['H1', 'H2'], ['a', 'b']]),
     mkPara({ runs: [{ text: 'caption' }], children: ['INLINE_IMAGE'] }),
   ]));
-  assert.ok(res.markdown.indexOf('- H1 | H2\n- a | b') >= 0, 'table rows flattened');
+  assert.ok(res.markdown.indexOf('| H1 | H2 |\n| --- | --- |\n| a | b |') >= 0, 'GFM table emitted');
   assert.ok(res.markdown.indexOf('caption *[image — see the original Doc]*') >= 0, 'image placeholder appended');
-  assert.strictEqual(res.warnings.length, 2);
-  assert.ok(/1 table/.test(res.warnings.join(' ')) && /1 image/.test(res.warnings.join(' ')));
+  assert.strictEqual(res.warnings.length, 1, 'tables no longer warn — only the image does');
+  assert.ok(/1 image/.test(res.warnings.join(' ')));
+});
+
+test('table cells: formatting survives, pipes escape, ragged rows pad, lossy cases warn', () => {
+  const res = kbDocBodyToMarkdown_(mkBody([
+    mkTable([
+      [{ runs: [{ text: 'Bold', bold: true }] }, 'A | B'],
+      [{ runs: [{ text: 'line1\nline2' }] }],                       // ragged + multi-line
+      ['x', { runs: [{ text: 'nest' }], nested: true }],            // nested table
+    ]),
+  ]));
+  assert.ok(res.markdown.indexOf('| **Bold** | A \\| B |') >= 0, 'bold survives; literal pipe escaped');
+  assert.ok(res.markdown.indexOf('| line1 line2 |  |') >= 0, 'multi-line cell joined; short row padded');
+  assert.ok(/multiple lines/.test(res.warnings.join(' ')), 'line-break cells warned');
+  assert.ok(/Nested table/.test(res.warnings.join(' ')), 'nested tables warned');
+  // Round-trip tripwire: the converter's GFM must be renderable by kbMd_ —
+  // the two formats are a parallel source-of-truth pair.
+  const html = kbMd_(res.markdown);
+  assert.ok(html.indexOf('<table>') >= 0, 'kbMd_ parses the converter output as a table');
+  assert.ok(html.indexOf('<th>A | B</th>') >= 0, 'escaped pipe round-trips through kbMd_ (header row)');
+  assert.ok(html.indexOf('<th><strong>Bold</strong></th>') >= 0, 'bold round-trips inside a header cell');
+});
+
+test('empty table emits nothing (no stray separator)', () => {
+  const res = kbDocBodyToMarkdown_(mkBody([mkTable([['', ''], ['', '']])]));
+  assert.strictEqual(res.markdown, '');
 });
 
 test('skips unsupported elements with a warning; null glyph defaults to bullet', () => {

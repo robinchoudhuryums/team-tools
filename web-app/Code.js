@@ -9754,14 +9754,16 @@ function kbRunsToMarkdown_(runs) {
 }
 
 /** Walks a DocumentApp Body and returns { markdown, warnings }. Paragraphs,
- *  headings, bullet/numbered lists, and horizontal rules convert faithfully;
- *  tables flatten to bullet lists (cells joined with " | "); images become an
+ *  headings, bullet/numbered lists, horizontal rules, and tables convert
+ *  faithfully (tables → GFM, row 0 as the header; cell formatting goes
+ *  through the runs pipeline so bold/links survive); images become an
  *  italic placeholder — each lossy conversion adds a warning so the reviewing
  *  manager knows to keep the original Doc when visuals matter. */
 function kbDocBodyToMarkdown_(body) {
   const out = [];
   const warnings = [];
-  let imageCount = 0, tableCount = 0;
+  let imageCount = 0;
+  let tableCellLineBreaks = false, nestedTables = false;
   const skippedTypes = {};
   let listBuf = [];
   const flushList = function () {
@@ -9798,17 +9800,46 @@ function kbDocBodyToMarkdown_(body) {
       if (text) listBuf.push(indent + (ordered ? '1. ' : '- ') + text);
     } else if (t === 'TABLE') {
       flushList();
-      tableCount++;
-      const lines = [];
-      for (let r = 0; r < el.getNumRows(); r++) {
+      // GFM table: row 0 = header (Docs tables have no header concept), then
+      // the |---| separator, then body rows. Literal pipes in cells escape as
+      // \| (kbMd_'s tableCells understands that); a cell's internal line
+      // breaks join with spaces (GFM cells are single-line). Cell text goes
+      // through the runs pipeline so bold/links convert too. Nested tables
+      // flatten into the parent cell's text via editAsText() — warned.
+      const rowsOut = [];
+      let maxCols = 0;
+      const numRows = el.getNumRows();
+      for (let r = 0; r < numRows; r++) {
         const row = el.getRow(r);
         const cells = [];
         for (let c = 0; c < row.getNumCells(); c++) {
-          cells.push(String(row.getCell(c).getText() || '').replace(/\s+/g, ' ').trim());
+          const cell = row.getCell(c);
+          try {
+            const cn = cell.getNumChildren ? cell.getNumChildren() : 0;
+            for (let k = 0; k < cn; k++) {
+              if (String(cell.getChild(k).getType()) === 'TABLE') nestedTables = true;
+            }
+          } catch (e) {}
+          let text = kbRunsToMarkdown_(kbTextToRuns_(cell.editAsText()));
+          if (/\n/.test(text)) tableCellLineBreaks = true;
+          text = text.replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
+          cells.push(text);
         }
-        if (cells.join('')) lines.push('- ' + cells.join(' | '));
+        rowsOut.push(cells);
+        if (cells.length > maxCols) maxCols = cells.length;
       }
-      if (lines.length) out.push(lines.join('\n'));
+      const hasContent = rowsOut.some(function (cells) { return cells.join('') !== ''; });
+      if (maxCols > 0 && hasContent) {
+        const pad = function (cells) {
+          const padded = cells.slice();
+          while (padded.length < maxCols) padded.push('');
+          return '| ' + padded.join(' | ') + ' |';
+        };
+        const lines = [pad(rowsOut[0])];
+        lines.push('|' + new Array(maxCols + 1).join(' --- |'));
+        for (let r2 = 1; r2 < rowsOut.length; r2++) lines.push(pad(rowsOut[r2]));
+        out.push(lines.join('\n'));
+      }
     } else {
       skippedTypes[t] = true;
     }
@@ -9817,8 +9848,11 @@ function kbDocBodyToMarkdown_(body) {
   if (imageCount > 0) {
     warnings.push(imageCount + ' image(s) could not be converted — placeholders inserted; keep the original Doc if the visuals matter.');
   }
-  if (tableCount > 0) {
-    warnings.push(tableCount + ' table(s) flattened to bullet lists (articles have no table support).');
+  if (nestedTables) {
+    warnings.push('Nested table(s) flattened into their parent cell — review the converted table(s).');
+  }
+  if (tableCellLineBreaks) {
+    warnings.push('Some table cell(s) had multiple lines — joined with spaces.');
   }
   const skipped = Object.keys(skippedTypes);
   if (skipped.length > 0) {

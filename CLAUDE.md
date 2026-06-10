@@ -1784,7 +1784,13 @@ this section before touching the relevant area.
   restricted to `http(s)`/`mailto` with quotes percent-encoded in the URL —
   the top-level escape covers `&`/`<`/`>` but NOT quotes, so without the
   encoding a `"` in a link URL broke out of the `href` attribute (attribute
-  injection). That's the safety boundary; managers are the only
+  injection). The subset also covers **GFM tables** (`|`-row + `|---|`
+  separator, `:` alignment, `\|` for a literal pipe in a cell, body rows
+  clamped to the header's column count) and **inline images**
+  (`![alt](url)` — `http(s)` only, NO mailto/data:; quotes percent-encoded
+  in the src AND entity-escaped in the alt, the same two attribute-breakout
+  guards as link `href`; rendered lazy + wrapped in an open-full-size
+  anchor). That's the safety boundary; managers are the only
   authors but defense-in-depth keeps a bad paste inert. Embeds store only a
   Drive `{kind, fileId}` and render the `/preview` iframe — no content copied, so
   the Drive doc stays the source of truth. The tree is whole-result cached
@@ -1792,18 +1798,24 @@ this section before touching the relevant area.
   manager writes are gated + locked + audited (`KbItemSave`/`KbItemDelete`).
   Native-primary + Drive-fallback was chosen so 100% of content is navigable on
   day one (embed everything) while the most-referenced docs migrate to fast
-  native articles over time. Pinned by `kbMd_` (escaping/links) +
+  native articles over time. Pinned by `kbMd_` (escaping/links/tables/images) +
   `kbParseDriveUrl_` Node tests.
 - **KB Phase 2: per-item Doc→article converter, review-before-save.**
   `kbConvertDriveDoc({itemId | driveUrl})` (manager-gated, READ-ONLY)
   opens a Google Doc with the DEPLOYER's access (same trust model as
   embedding it) and converts the body to the markdown subset `kbMd_`
   renders, via `kbDocBodyToMarkdown_` / `kbTextToRuns_` /
-  `kbRunsToMarkdown_`. Lossy parts degrade explicitly with warnings:
-  images → italic placeholder, tables → bullet lists (`cells | joined`),
+  `kbRunsToMarkdown_`. Tables convert faithfully to **GFM** (row 0 as the
+  header since Docs tables have no header concept; cell formatting goes
+  through the runs pipeline so bold/links survive; literal pipes escape
+  as `\|`; ragged rows pad to the widest row). Lossy parts degrade
+  explicitly with warnings: images → italic placeholder, nested tables →
+  flattened into the parent cell, multi-line cells → joined with spaces,
   unsupported elements skipped by name; bold+italic collapses to bold
   and link URLs get `()`/whitespace percent-encoded so the output is
-  always `kbMd_`-render-safe. Two client entries — "Convert to article"
+  always `kbMd_`-render-safe (a Node round-trip tripwire feeds the
+  converter's GFM back through `kbMd_` and asserts a `<table>` renders —
+  the two formats are a parallel source-of-truth pair). Two client entries — "Convert to article"
   on a doc-embed's reader view and "Convert this Doc to an article
   instead" in the editor's embed mode — both just PRE-FILL the existing
   editor (live preview); the save is the normal `kbSaveItem` in-place
@@ -2550,7 +2562,7 @@ INV-111 | The Intake send endpoints (`intakeSendPPD`, `intakeSendPMD`, `intakeSe
 INV-112 | `intakeFilterRecommendations_(answers, allProducts)` is a PURE, self-contained port of the bound tool's recommendation engine — `answers` keyed by bare question number (`'38'` weight, `'43'` neuro, `'31a'` stroke, `'34'` amputation, `'33'` ulcers, `'32'` spasticity, `'35'` spine, `'36'` swelling, `'30'` catheters, `'44'` oxygen, `'25'` numbness, `'13'` falls); `allProducts` is the raw `Offerings!A2:F` 2D array. It applies weight-cap, solid-seat/captain, Group-3/SPO/MPO eligibility, the `K0856→K0861` / `K0843→K0862` neuro substitutions, and justification building. Pinned by `test_intake_engine_*` (Tests.js) + the Node harness (`intake — PPD engine`). The PMD/PAP email STRUCTURAL layout (`INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT`, server-authoritative) is mirrored by the client render layouts (`INTAKE_PMD_CLIENT` / `INTAKE_PAP_CLIENT`) for input rendering only; the two are pinned equal by the Node coupling tripwire (`intake — client render layout mirrors the server`) — same parallel-source discipline as `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_` | Subsystem: Server + Client (Intake views)
 INV-113 | `submitFormByToken` (public, token-only) extracts `signature` AND `_meta` before persisting responses, **server-enforces consent** (requires `_meta.consentAgreed === true`; an absent `_meta` is rejected — the prior back-compat tolerance let a hand-crafted payload skip the consent record entirely), stamps the server-authoritative `CONFIG.FORM_CONSENT_VERSION` (never a client-sent version), and writes a tamper-evident `SubmissionHash` (`computeFormSubmissionHash_` over responses+signature+token+consentVersion — NOT `submittedAt`, which Sheets may coerce to a Date) + a `Certificate` JSON into trailing `FS` columns. The `FormSubmissionReceived` audit row carries `hash=` + `submittedAt=` as the append-only independent witness. `verifyFormSubmissionIntegrity_(token)` (manager-gated, read-only) recomputes + compares; a legacy row with no stored hash returns `match:null` (not a failure). `FS_HEADERS` grew by TRAILING columns only (back-compat like `CN_HEADERS`). `FormSubmissions` remains **append-only — no edit endpoint exists** (the immutability is a HIPAA §164.312(c) integrity control, and the hash makes any out-of-band alteration detectable) | Subsystem: Server + Client (public forms)
 INV-114 | `getFormsSS_()` resolves the forms PHI store: Script Property `FORMS_SS_ID` first (segregates PHI off the ADP/payroll sheet — point it at `INTAKE_SS_ID`), else `getAdpSS_()` for back-compat; honors `_TEST_OVERRIDE_FORMS_SS_ID`. Both `getOrCreateFormTokensSheet_` / `getOrCreateFormSubmissionsSheet_` (and therefore `submitFormByToken`, `getFormByToken`, `serveExternalForm_`, the viewers, and `purgeExpiredFormData`) route through it, so the location is a single point of change. The invite-email builders (`buildCustomerEmailHtml_`/`buildProviderEmailHtml_`/`*Text_`) take only `(recipientName, message, formNames, formLinks)` and never read prefill — patient identifiers stay in the token, never the cleartext email body. Pinned by the `forms — invite email builders` Node guard | Subsystem: Server + Client (public forms)
-INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text) and reports lossy conversions (images/tables/skipped elements) as `warnings[]` rather than silently dropping content. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text; tables → GFM with row 0 as header and `\|`-escaped literal pipes) and reports lossy conversions (images, nested tables, multi-line cells, skipped elements) as `warnings[]` rather than silently dropping content — pinned by a Node round-trip tripwire that renders the converter's GFM through `kbMd_`. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissionId)` (the Intake Sent tab) are read-only and caller-scoped: a rep sees only rows whose stored `repId` matches their own; a manager sees all (parallels INV-90/91). The list is metadata-only (id, timestamp, rep, patientInfo, language, recipient — never the answers JSON), newest-first, capped at `INTAKE_LIST_CAP_`=100, and skips an unreachable form-type tab rather than failing the whole list. The detail is a bounded lookup — id-column scan, then one full-row fetch — and parses the answers/recommendations/selections JSON defensively (corrupt blob → `{}`). Timestamps and the ACCT dob cell route through Date-coercion guards (`intakeTsString_`). The submission tabs remain APPEND-ONLY — no edit endpoint exists. Pinned by `test_intake_sentViewer_callerScopedAndManager` | Subsystem: Server + Client (Intake views)
 
 ### Policy Configuration
@@ -3085,21 +3097,21 @@ S61 | Fillable form — consent stored, tamper-evident, segregated, retained | S
 S62 | Reference tool — browse, search, article + Drive embed, manager edit | Subsystem: Server, Client (Reference views)
   Steps:
     - Set Script Property `KB_SS_ID` to a dedicated spreadsheet (deployer has edit access)
-    - As a manager, open **Reference** → "Add item" → type **Article**: set a department + title, write markdown (heading, bold, a list, a link) → watch the live preview → Save
+    - As a manager, open **Reference** → "Add item" → type **Article**: set a department + title, write markdown (heading, bold, a list, a link, a `|`-table with a `|---|` separator, an `![alt](https://…)` image) → watch the live preview → Save
     - Confirm it appears under its department in the tree and renders as formatted HTML when opened
     - "Add item" → type **Embed Drive doc**: paste a Google Doc/Sheet/file share URL → Save → open it → confirm the Drive `/preview` iframe loads + "Open in new tab" works
     - Type a 2+ char query in the search box → confirm title/body matches list with snippets; clear it → tree returns
     - Edit an item, then Delete one (confirm the uiConfirm danger dialog)
     - As a non-manager rep: confirm browse + search work but NO add/edit/delete affordances appear; from the console call `google.script.run...kbSaveItem({})` and `...kbDeleteItem('x')`
-    - Paste raw `<script>` / a `javascript:` link into an article body and Save → open it
-  Expected: Articles store markdown source; `kbMd_` renders escaped HTML (the `<script>`/`javascript:` content is inert — escaped/stripped, never executed). Embeds render the Drive preview + open-in-new-tab; the Drive file isn't copied. Tree is per-department, cached 5 min (invalidated on save/delete). `kbSaveItem`/`kbDeleteItem` are manager-gated (non-manager console calls return "Manager access required."), locked, and write `KbItemSave`/`KbItemDelete` audit rows. `getReferenceTree`/`getReferenceItem`/`searchReference` require an enrolled employee, read-only. Pinned by `kbMd_` + `kbParseDriveUrl_` Node tests.
+    - Paste raw `<script>` / a `javascript:` link / a `![x](javascript:…)` image into an article body and Save → open it
+  Expected: Articles store markdown source; `kbMd_` renders escaped HTML (the `<script>`/`javascript:` content is inert — escaped/stripped, never executed; a non-http(s) image demotes to its alt text). The table renders with borders/header tint and the image renders capped at container width, lazy, wrapped in an open-full-size link. Embeds render the Drive preview + open-in-new-tab; the Drive file isn't copied. Tree is per-department, cached 5 min (invalidated on save/delete). `kbSaveItem`/`kbDeleteItem` are manager-gated (non-manager console calls return "Manager access required."), locked, and write `KbItemSave`/`KbItemDelete` audit rows. `getReferenceTree`/`getReferenceItem`/`searchReference` require an enrolled employee, read-only. Pinned by `kbMd_` + `kbParseDriveUrl_` Node tests.
 
 S63 | Reference tool — Doc→article converter (KB Phase 2) | Subsystem: Server, Client (Reference views)
   Steps:
     - As a manager, embed a Google Doc (with a heading, bold text, a bullet list, a link, a table, and an image) the deployer account can read
     - Open the embed in the reader → click **Convert to article** → confirm the uiConfirm explains review-before-save → Convert
-    - Confirm the EDITOR opens in article mode pre-filled with markdown + live preview; toasts list the lossy conversions (image placeholder, table flattened)
-    - Confirm headings/bold/list/link render in the preview; the table appears as a bullet list; the image is an italic placeholder
+    - Confirm the EDITOR opens in article mode pre-filled with markdown + live preview; toasts list the lossy conversions (image placeholder; nested/multi-line table cells if present)
+    - Confirm headings/bold/list/link render in the preview; the table renders as a REAL table (first Doc row as the header); the image is an italic placeholder
     - Press Save → the item re-opens as a native article; open the original Doc in Drive → confirm it is UNCHANGED
     - Add item → Embed mode → paste a Doc URL → click **Convert this Doc to an article instead** → confirm the editor flips to article mode with the body filled and the Doc's name as title (when title was blank)
     - Try converting a Sheet/file embed (no Convert button should render) and a Sheets URL from the editor (server rejects: "Only Google Docs convert…")
