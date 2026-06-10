@@ -9,41 +9,49 @@ Subsystem cycles since last Seams audit: 0
 Updated: 2026-06-10
 
 ## In progress (facts to carry forward — NOT judgments)
-- Cycle 1 broad-scan completed 2026-06-10 (findings A1–A10; A11 retracted). Implemented A1–A4 + A7 this session; committed on `claude/gifted-hypatia-aee7wa`.
-- Next concrete step: operator runs `runAllTests()` from the Apps Script editor (new integration test `getTodayPunches_sortsOutOfOrderBackfill` hasn't executed against a real spreadsheet yet), then `clasp push -f` + new deployment version.
+- Cycle 1 broad-scan completed 2026-06-10 (findings A1–A10; A11 retracted). ALL selected backlog items are now implemented across this branch: A1–A4, A7 (4f0e170), P#1–P#4 (ac56aa1), P#5/P#6/P#14 (fa78c5e), KB Phase 2 / P#16 (cafad8f), and A8/A9 + P#7–P#13 + P#15 (c956a7d). P#17 (per-call CDR / Neon Option C) is NOT implementable in this repo — external datastore + call-data-reporting pipeline changes; CDR layer already isolated (INV-68).
+- Next concrete step: operator deploy + editor `runAllTests()` (first run creates the new `TEST_INTAKE_SS_ID` fixture; ~9 new integration tests haven't executed against a real spreadsheet yet), then `/reflect` to close Cycle 1.
 
 ## Completed this cycle
-- A1 | web-app/Code.js | FormTokens CreatedAt/ExpiresAt now written in CONFIG.TIMEZONE (matches all readers; fixes ±~12h expiry skew for non-IST reps)
-- A2 | web-app/Code.js, web-app/Tests.js | getTodayPunches_ + getManagerDashboard per-emp punches sorted chronologically (same-day back-fills no longer scramble live status / next actions / ribbon); new integration test registered
-- A3 | web-app/script_core.html | "?" shortcut handler now skips contenteditable elements (CN .ce fields no longer swallow a typed "?")
-- A4 | web-app/kb/script_kb.html, test/client/run.js | kbMd_ percent-encodes quotes in link URLs (href attribute-injection closed); Node test extended (73 passing)
-- A7 | web-app/cn/script_callnotes.html | Sent Forms chips: var(--good-deep)/var(--warn-deep) → the defined --success-deep/--warning-deep tokens
-- /sync-docs | CLAUDE.md | punch append-order + isContentEditable gotchas; kbMd_ quote-encoding note; FormTokens-tz operator note
-- P#1 | web-app/Code.js | CallNoteManagerComment added to CN_AUDIT_ACTIONS (compliance panel + lifecycle now cover manager comments)
-- P#2 | web-app/Code.js | FormTokenCreated/FormSubmissionReceived audit rows log recipient DOMAIN only (toDomain=/fromDomain=); synthetic actor identity de-identified
-- P#3 | web-app/Code.js | notifyEmployeeOfDecision_ reports the deducted bucket's balance (sick vs annual; none for unpaid)
-- P#4 | web-app/Code.js | submitFormByToken sends the rep-notification email (PDF render) AFTER ScriptLock release
-- P#5 (A6) | web-app/Code.js | bounded the whole-history per-rep CN reads: ambient (5-col), pinned tray (subform-col prefilter + per-row fetch), training QA (col scans + 5-row fetch), EOD digest (readCallNoteRowsInRange_ today-slice)
-- P#6 (A5) | web-app/Code.js | findFormSubmissionRow_ token-column lookup; buildFormSubmissionResult_ + verifyFormSubmissionIntegrity_ no longer full-scan FormSubmissions
-- P#14 | web-app/Code.js, web-app/cn/script_callnotes.html, web-app/Tests.js | Automation Health admin panel (getAutomationHealth: sync-fail count/recent, CDR reachability + column drift + alias-aware name mismatches, last-seen audit row per automation job); endpoint added to the parameterized manager-gate test
-- /sync-docs (2nd) | CLAUDE.md | Automation Health design entry; gated lists + INV-31 += getAutomationHealth; PersonalSheetSyncFail gotcha -> surfaced in Admin; form audit rows domain-only note; per-rep bounded-reads note
-- P#16 (KB Phase 2) | web-app/Code.js, web-app/kb/script_kb.html, web-app/Tests.js, test/client/run.js, CLAUDE.md | kbConvertDriveDoc Doc->markdown converter (manager-gated, read-only, review-before-save in the editor; no batch by design); Node stub tests (77/77); INV-115 + S63 + Docs-OAuth-scope operator note
+- A1 | web-app/Code.js | FormTokens CreatedAt/ExpiresAt written in CONFIG.TIMEZONE (fixes ±~12h expiry skew)
+- A2 | web-app/Code.js, web-app/Tests.js | getTodayPunches_ + dashboard collector sort punches chronologically at the source
+- A3 | web-app/script_core.html | "?" shortcut handler skips contenteditable
+- A4 | web-app/kb/script_kb.html, test/client/run.js | kbMd_ percent-encodes quotes in link URLs
+- A7 | web-app/cn/script_callnotes.html | Sent Forms chips use defined design tokens
+- P#1–P#4 | web-app/Code.js | CallNoteManagerComment audit action; domain-only form audit rows; bucket-aware decision email; submitFormByToken notify deferred past lock release
+- P#5/P#6 (A6/A5) | web-app/Code.js | bounded per-rep CN reads (ambient/pins/QA/EOD); findFormSubmissionRow_ token-column lookup
+- P#14 | Code.js, cn partial, Tests.js | Automation Health admin panel (getAutomationHealth)
+- P#16 (KB Phase 2) | Code.js, kb partial, Tests.js, run.js | kbConvertDriveDoc Doc→markdown converter (INV-115, S63)
+- A8 (=#13) | web-app/Code.js | getMetricsAmbient cache key threshold-suffixed (`metrics_ambient_v1:<threshold>`)
+- A9 (=#10) | web-app/Code.js | submitFormByToken requires `_meta.consentAgreed === true` (absent `_meta` now rejected)
+- P#7 | web-app/Tests.js | test_auditPanel_searchAndHistory + getCallNotesAuditLog/getCallNoteAuditHistory gate cases in test_managerGates_rejectNonManager
+- P#8 | test/client/run.js | Node tripwire: CN_INTERACTIVE_FORM_IDS (client) === INTERACTIVE_FORM_TYPES (Code.js)
+- P#9 | web-app/Tests.js | intake endpoint tests (preview hash+recs, stale-hash send rejected, unauthorized rejected, intakeResolveRecipient_ smoke) + TEST_INTAKE_SS_ID fixture (_setupTestIntakeFixture_, _withTestIntake_)
+- P#11 | web-app/Code.js, web-app/Tests.js | punch-adjust dup guards (in-batch + existing-Pending per (date,punchType)) + approval-time adjust-window re-check; 2 integration tests
+- P#12 | web-app/cn/script_callnotes.html | sticky form draft 24h TTL (CN_FORM_STICKY_MAX_AGE_MS); stale-PHI drafts discarded, timer reset
+- P#15 | Code.js, intake partial, script_core.html, Tests.js | Intake "Sent" tab — intakeListMySubmissions / intakeGetSubmission (caller-scoped, manager-all, bounded detail lookup, read-only); INV-116 + test
+- docs | CLAUDE.md | INV-88/106/107/113 amendments; INV-116; S57/S61 expected text; sticky-draft TTL; Intake four-tabs + Sent design decision; TEST_INTAKE_SS_ID fixture note
 
 ## Pending / not yet done
-- Audit findings NOT selected for implementation: A8 (metrics ambient cache key), A9 (consent _meta back-compat tolerance), A10 (frozen legacy dirs — no action by design). A5/A6 done as P#6/P#5.
-- Operator deploy for this session's fixes: `cd web-app && clasp push -f` + Apps Script editor → Deploy → New version; re-run `runAllTests()` once.
+- P#17 — per-call CDR data (Neon Option C): NOT implementable in this repo (external Postgres + call-data-reporting pipeline). Revisit only if/when that infrastructure project is undertaken.
+- Operator deploy: `cd web-app && clasp push -f` + Apps Script editor → Deploy → New version (covers everything since the last deploy, incl. the NEW Docs OAuth scope from P#16 — first editor run prompts re-auth).
+- Operator: run `runAllTests()` once from the editor (creates the TEST_INTAKE_SS_ID fixture on first run; exercises the ~11 new integration tests).
 - (Carried) Operator Script Properties for the Intake/forms/KB feature run: INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID, FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
 
 ## Open follow-on items
-- `notifyRepOfFailedSubmission_` (size-cap rejections) still sends inside the ScriptLock — fast plain-text sends, but could use the same deferred pattern as P#4 for symmetry.
-- Server-side integration tests for the compliance-audit endpoints + intake/forms endpoints.
+- `intakeSend*` treats `expectedBodyHash` as optional (empty hash skips the guard) — `emailFromCallNote` REQUIRES it; consider tightening for parity (client always sends it).
+- `notifyRepOfFailedSubmission_` still sends inside the ScriptLock (P#4 deferred-send parity).
+- Existing duplicate Pending punch-adjust rows created BEFORE the P#11 guard aren't cleaned up — managers should deny stale dupes in the queue once.
+- Optional: KB batch-convert helper once per-item conversion proves out; digest last-run audit rows for the Automation Health panel.
 
 ## Decisions made (so the next session doesn't re-litigate)
-- FormTokens timestamps (CreatedAt/ExpiresAt) are stored in CONFIG.TIMEZONE — matching FormSubmissions.SubmittedAt and every parse site; rep-tz display fidelity was deliberately traded for parse correctness.
-- Punch ordering is fixed at the data source (getTodayPunches_ / dashboard collector sort), not in each consumer.
-- External anonymous web-app access is blocked by Workspace admin policy — the external fillable-form route is non-functional for external recipients; not a code bug.
-- Provider claim docs (PT/OT Rx, seating eval) are out-of-scope for signature-of-record; EAA + patient self-serve intake are in-scope.
-- Reference KB = native markdown articles (primary) + Drive-embed fallback; articles stored as markdown source, rendered with HTML-escape-first.
+- FormTokens timestamps stored in CONFIG.TIMEZONE — parse correctness over display fidelity.
+- Punch ordering fixed at the data source, not per-consumer.
+- External anonymous web-app access is admin-blocked — external fillable-form route non-functional; not a code bug.
+- Absent `_meta` on submitFormByToken is now REJECTED (A9) — the back-compat tolerance window is deliberately closed; the shipped client always sends it, and the external route is admin-blocked anyway.
+- Punch-adjust approval re-checks ADJUST_WINDOW_DAYS at approve time — aged-in-queue requests must be denied, not approved (window enforced at both ends).
+- Sticky CN drafts expire after 24h — PHI-minimization trade-off accepted (a >24h-old draft is discarded silently); pre-TTL drafts without the `at` stamp still restore.
+- P#17 (Neon per-call CDR) is out of this repo's scope by design — the CDR data layer isolation (INV-68) is the only in-repo preparation possible.
 
 ## Where I left off
-Cycle 1 implementation: A1–A4 + A7, two /sync-docs passes, P#1–P#6, P#14, and KB Phase 2 (Doc->article converter, P#16) — all on `claude/gifted-hypatia-aee7wa` (latest cafad8f; Node harness 77/77). Next: operator deploy (clasp push -f + NEW Docs OAuth scope re-auth + new version + editor runAllTests), then /reflect to close Cycle 1. Remaining backlog: A8/A9 + P7–P13, P15, P17; follow-on: optional batch-convert helper once per-item conversion proves out, digest last-run audit rows for the health panel.
+Cycle 1 implementation is COMPLETE (all selected findings + the full priority backlog except the out-of-scope P#17), latest commit c956a7d on `claude/gifted-hypatia-aee7wa`; Node harness 78/78. Next: operator deploy (clasp push -f + Docs OAuth re-auth + New version + editor runAllTests once), then `/reflect` to close Cycle 1 and record metrics.
