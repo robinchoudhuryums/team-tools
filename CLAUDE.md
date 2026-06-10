@@ -2142,6 +2142,75 @@ manually for a fresh deploy or environment:
   (`CONFIG.CALL_NOTES.FORM_BASE_URL`). Interactive (fillable) forms
   must also have a rendering function in `form_public.html`.
 
+## Cycle State & Memory
+
+Claude Code has no memory between sessions; this project runs on Claude Code
+on the web (ephemeral containers, repo re-cloned each session), so the
+cross-session state lives in **committed** files — `.cycle/` + `PROJECT_HEALTH.md`.
+Two memory channels — keep the boundary:
+- **Substrate (carry forward):** the systems map, the Invariant Library, Common
+  Gotchas, and the score history. Always load these into a new session.
+- **Judgment (re-derive fresh):** audit findings + severity calls. A new audit
+  uses fresh eyes; never inherit the prior scan's conclusions as authoritative.
+
+`/cycle-resume` continues an *in-progress implementation thread* (substrate +
+objective facts: what changed, what's pending, decisions made) — never prior
+judgments. Starting a new audit is always fresh.
+
+**Cycle numbering (single source of truth):** the `Cycle:` field in
+`.cycle/STATE.md` is authoritative; it increments by 1 when a NEW audit cycle
+begins (a fresh `/broad-scan` or `/audit` after the prior cycle's `/reflect`).
+Every phase within a cycle (audit → plan → implement → regression → reflect)
+carries the same number. `/cycle-status` surfaces it.
+
+### `.cycle/` state directory (committed — survives the ephemeral container)
+- `.cycle/STATE.md` — rolling "where I left off" (template below); written by the
+  implement commands' CHECKPOINT step, read by `/cycle-resume` + `/cycle-status`.
+- `.cycle/metrics.csv` — per-cycle metrics appended by `/reflect` / synthesis.
+  Header: `date,cycle,subsystem,phase,net_score,prod_fixes,new_failure_modes,category_d_ratio,axis_b_lowest,notes,defensive_count`
+- `.cycle/estimates.csv` — estimate-vs-actual calibration, appended by `/reflect`.
+  Header: `date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note`
+- `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
+
+Fully optional + additive: with no `.cycle/`, every command behaves as before
+(emit the handoff/summary block in chat). The workflow-tools repo also ships
+optional helpers (`scripts/cycle-context.mjs` SessionStart hook,
+`scripts/render-metrics.mjs`) NOT copied here — add them if you want
+auto-substrate-loading on session start.
+
+`.cycle/STATE.md` template:
+
+```
+# Cycle State
+
+## Current
+Cycle: [N — single source of truth; increments only when a new audit cycle begins]
+Phase: [audit | plan | implement | regression | verify | reflect | idle]
+Scope: [subsystem(s) or "broad"]
+Test Command: [from Cycle Workflow Config]
+Subsystem cycles since last Seams audit: [K — /reflect increments, a Seams audit resets to 0]
+Updated: [date]
+
+## In progress (facts to carry forward — NOT judgments)
+- [what is partially done]
+- [the next concrete step]
+
+## Completed this cycle
+- [action ID] | [file(s)] | [one line]
+
+## Pending / not yet done
+- [action ID or description]
+
+## Open follow-on items
+- [File: area] — [what to check and why]
+
+## Decisions made (so the next session doesn't re-litigate)
+- [decision] — [rationale]
+
+## Where I left off
+[1–3 sentences: exactly what to do first on resume]
+```
+
 ## Cycle Workflow Config
 
 The workflow templates that drive `/broad-scan`, `/broad-implement`,
