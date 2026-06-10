@@ -958,7 +958,7 @@ function getManagerDashboard() {
       const numRows = lastRow - startRow + 1;
       const auditData = auditSheet.getRange(startRow, 1, numRows, 10).getValues();
       for (let i = auditData.length - 1; i >= 0; i--) {
-        const tsRaw = String(auditData[i][0]);
+        const tsRaw = normalizeAuditTs_(auditData[i][0]);
         recentAudits.push({
           timestamp:    tsRaw,
           timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
@@ -2423,6 +2423,12 @@ function provisionCallNotesSheet(repEmpId) {
     // Create the new per-rep Spreadsheet (owned by the deployer / script-as-Me).
     const title = 'Call Notes — ' + (repName || repEmpId) + ' (' + repEmpId + ')';
     const ss = SpreadsheetApp.create(title);
+    // Pin the new Sheet's timezone to the ADP sheet's. DateLocal strings are
+    // coerced to Dates in THIS sheet's tz but recovered by normalizeDate_ in
+    // the ADP sheet's tz — the round-trip only holds when the two match. A
+    // deployer account whose default sheet tz differs would otherwise shift
+    // every date-filtered read (coverage, history, digests) by a day.
+    try { ss.setSpreadsheetTimeZone(getAdpSS_().getSpreadsheetTimeZone()); } catch (e) {}
     // Provision the Notes tab with the canonical header (rename the default sheet
     // rather than insert a second one, so there's no stray "Sheet1").
     const notes = ss.getSheets()[0];
@@ -3235,7 +3241,7 @@ function cnReadCallNoteAuditRows_() {
   for (let i = data.length - 1; i >= 0; i--) {  // newest-first
     const action = String(data[i][4]);
     if (CN_AUDIT_ACTIONS.indexOf(action) < 0) continue;
-    const tsRaw = String(data[i][0]);
+    const tsRaw = normalizeAuditTs_(data[i][0]);
     const notes = String(data[i][9]);
     out.push({
       timestamp:    tsRaw,
@@ -3265,8 +3271,12 @@ function getCallNotesAuditLog(filters) {
     filters = filters || {};
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     const reDate = /^\d{4}-\d{2}-\d{2}$/;
+    // Default end = "today" in CONFIG.TIMEZONE — the tz audit rows are stamped
+    // in. Rows are written in IST wall time, which can be a calendar day ahead
+    // of the manager's tz during the US afternoon; an mgr-tz default end
+    // silently hid rows written "tomorrow" (IST) until the next day.
     let end = (filters.endDate && reDate.test(filters.endDate))
-      ? filters.endDate : fmtDateTz_(new Date(), mgrTz);
+      ? filters.endDate : fmtDateTz_(new Date(), CONFIG.TIMEZONE);
     let start = (filters.startDate && reDate.test(filters.startDate))
       ? filters.startDate : null;
     if (!start) {
@@ -3372,7 +3382,7 @@ function getAutomationHealth() {
       const cutoff = fmtDateTz_(cutD, mgrTz);
       for (let i = data.length - 1; i >= 0; i--) {   // newest-first
         const action = String(data[i][4]);
-        const tsRaw = String(data[i][0]);
+        const tsRaw = normalizeAuditTs_(data[i][0]);
         if (action === 'PersonalSheetSyncFail') {
           if (tsRaw.substring(0, 10) >= cutoff) {
             syncFails.count++;
@@ -7349,8 +7359,19 @@ function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
 function safeTimezone_(tz) {
   if (!tz) return CONFIG.TIMEZONE;
-  try { Utilities.formatDate(new Date(), tz, 'z'); return tz; }
-  catch (_) { Logger.log('Invalid timezone "' + tz + '" — falling back to ' + CONFIG.TIMEZONE); return CONFIG.TIMEZONE; }
+  const t = String(tz).trim();
+  // Shape gate first: the V8 runtime's formatDate no longer throws on an
+  // unknown tz id (it silently resolves it to GMT), so the try/catch probe
+  // alone can't catch a roster typo like "NotATimezone". Require an IANA
+  // Area/Location id or an explicit UTC/GMT token before probing.
+  const shapeOk = /^[A-Za-z]+(\/[A-Za-z0-9_+\-]+)+$/.test(t) ||
+                  /^(UTC|GMT([+-]\d{1,2}(:\d{2})?)?)$/i.test(t);
+  if (!shapeOk) {
+    Logger.log('Invalid timezone "' + t + '" — falling back to ' + CONFIG.TIMEZONE);
+    return CONFIG.TIMEZONE;
+  }
+  try { Utilities.formatDate(new Date(), t, 'z'); return t; }
+  catch (_) { Logger.log('Invalid timezone "' + t + '" — falling back to ' + CONFIG.TIMEZONE); return CONFIG.TIMEZONE; }
 }
 
 function convertDateTime_(dateStr, timeStr, fromTz, toTz) {
@@ -8048,6 +8069,20 @@ function normalizeTime_(val) {
     return Utilities.formatDate(val, ssTz, 'HH:mm:ss');
   }
   return String(val).trim();
+}
+/** AuditLog timestamp cells are written as "yyyy-MM-dd HH:mm:ss" strings
+ *  (CONFIG.TIMEZONE wall time) but Sheets coerces them to datetime values on
+ *  write. String(date) yields "Tue Jun 10 2026 ..." — which silently fails
+ *  every substring(0,10) date filter and convertAuditTs_ parse downstream.
+ *  Formatting the coerced Date back in the SAME tz the sheet used to parse it
+ *  (the audit/ADP sheet's own tz) recovers the as-written digits. Plain-text
+ *  cells pass through untouched. Same family as normalizeDate_/normalizeTime_. */
+function normalizeAuditTs_(val) {
+  if (val instanceof Date) {
+    const ssTz = getAdpSS_().getSpreadsheetTimeZone();
+    return Utilities.formatDate(val, ssTz, 'yyyy-MM-dd HH:mm:ss');
+  }
+  return String(val == null ? '' : val).trim();
 }
 /** Difference in seconds between two "HH:mm:ss" or "HH:mm" strings (later - earlier).
  *  Returns negative if earlier > later (treat as "different day", skip the check). */
