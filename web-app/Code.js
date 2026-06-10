@@ -224,6 +224,17 @@ const CONFIG = {
     MAX_IMAGES:          12,           // PMD/PAP inline-attachment count cap
     MAX_IMAGE_CHARS:     7000000,      // ~5MB binary per image (base64) — bounded
   },
+
+  // ── Reference / Knowledge Base module (Phase 1) ──────────────────────
+  // Native per-department reference articles (markdown source) + embedded
+  // Drive items (Doc/Sheet/file preview). PHI-free by policy (training/
+  // reference content). Backed by a dedicated KB spreadsheet — set Script
+  // Property KB_SS_ID (this CONFIG value is the inert fallback). The deploying
+  // account needs edit access; reps read via the server, never open the sheet.
+  KB: {
+    SS_ID: 'YOUR_KB_SPREADSHEET_ID',
+    TAB:   'KB',
+  },
 };
 
 const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8 };
@@ -9046,4 +9057,204 @@ function intakeSendPAP(payload, recipientSpec, images, expectedBodyHash) { try {
 function intakeEmailDomain_(email) {
   const at = String(email || '').indexOf('@');
   return at >= 0 ? String(email).substring(at + 1).toLowerCase() : '(none)';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  REFERENCE / KNOWLEDGE BASE  (Phase 1)
+//  Per-department reference articles (markdown source, rendered client-side) +
+//  embedded Drive items (Doc/Sheet/file preview) — a navigable, searchable
+//  in-app KB. PHI-free by policy. Backed by a dedicated KB spreadsheet
+//  (KB_SS_ID), read by the server; reps never open the sheet directly.
+// ════════════════════════════════════════════════════════════════════════════
+const KB = { ID:0, DEPARTMENT:1, TITLE:2, TYPE:3, BODY_MD:4, DRIVE_KIND:5, DRIVE_FILE_ID:6, SORT_ORDER:7, UPDATED_AT:8, UPDATED_BY:9 };
+const KB_HEADERS = ['Id','Department','Title','Type','BodyMd','DriveKind','DriveFileId','SortOrder','UpdatedAt','UpdatedBy'];
+const KB_CACHE_KEY = 'kb_tree_v1';
+const KB_CACHE_TTL = 300;
+const KB_BODY_MAX = 49000; // under the 50k Sheets cell limit
+
+function getKbSS_() {
+  if (typeof _TEST_OVERRIDE_KB_SS_ID !== 'undefined' && _TEST_OVERRIDE_KB_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_KB_SS_ID);
+  }
+  const id = PropertiesService.getScriptProperties().getProperty('KB_SS_ID') || CONFIG.KB.SS_ID;
+  return SpreadsheetApp.openById(id);
+}
+function getOrCreateKbSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(CONFIG.KB.TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.KB.TAB);
+    sheet.appendRow(KB_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+function invalidateKbCache_() { try { CacheService.getScriptCache().remove(KB_CACHE_KEY); } catch (_) {} }
+
+// Parse a Google Drive/Docs/Sheets share URL into { kind, fileId }. kind ∈
+// doc | sheet | file. Returns null when no file id can be extracted.
+function kbParseDriveUrl_(url) {
+  const u = String(url || '').trim();
+  if (!u) return null;
+  let m;
+  if ((m = u.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/))) return { kind: 'sheet', fileId: m[1] };
+  if ((m = u.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/)))     return { kind: 'doc',   fileId: m[1] };
+  if ((m = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)))        return { kind: 'file',  fileId: m[1] };
+  if ((m = u.match(/[?&]id=([a-zA-Z0-9_-]+)/)))                              return { kind: 'file',  fileId: m[1] };
+  return null;
+}
+function kbEmbedUrl_(kind, fileId) {
+  const id = encodeURIComponent(String(fileId || ''));
+  if (kind === 'sheet') return 'https://docs.google.com/spreadsheets/d/' + id + '/preview';
+  if (kind === 'file')  return 'https://drive.google.com/file/d/' + id + '/preview';
+  return 'https://docs.google.com/document/d/' + id + '/preview';
+}
+function kbOpenUrl_(kind, fileId) {
+  const id = encodeURIComponent(String(fileId || ''));
+  if (kind === 'sheet') return 'https://docs.google.com/spreadsheets/d/' + id + '/edit';
+  if (kind === 'file')  return 'https://drive.google.com/file/d/' + id + '/view';
+  return 'https://docs.google.com/document/d/' + id + '/edit';
+}
+
+// ── Rep-callable reads (require an enrolled employee; read-only) ──────────
+function getReferenceTree() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const cache = CacheService.getScriptCache();
+    let cached = null;
+    try { cached = cache.get(KB_CACHE_KEY); } catch (_) {}
+    if (cached) { const o = JSON.parse(cached); o.isManager = !!emp.isManager; return o; }
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    const items = [];
+    if (last >= 2) {
+      const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
+      rows.forEach(function (r) {
+        if (!r[KB.ID]) return;
+        items.push({
+          id: String(r[KB.ID]), department: String(r[KB.DEPARTMENT] || 'General'),
+          title: String(r[KB.TITLE] || '(untitled)'), type: String(r[KB.TYPE] || 'article'),
+          driveKind: String(r[KB.DRIVE_KIND] || ''), sortOrder: Number(r[KB.SORT_ORDER] || 0),
+        });
+      });
+    }
+    items.sort(function (a, b) { return a.department.localeCompare(b.department) || (a.sortOrder - b.sortOrder) || a.title.localeCompare(b.title); });
+    const out = { items: items, isManager: !!emp.isManager };
+    try { cache.put(KB_CACHE_KEY, JSON.stringify({ items: items }), KB_CACHE_TTL); } catch (_) {}
+    return out;
+  } catch (err) { return { error: err.message }; }
+}
+
+function getReferenceItem(id) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    id = String(id || '').trim();
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { error: 'Not found.' };
+    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][KB.ID]) !== id) continue;
+      const type = String(rows[i][KB.TYPE] || 'article');
+      const base = { id: id, title: String(rows[i][KB.TITLE] || ''), department: String(rows[i][KB.DEPARTMENT] || '') };
+      if (type === 'embed') {
+        const kind = String(rows[i][KB.DRIVE_KIND] || 'doc');
+        const fid = String(rows[i][KB.DRIVE_FILE_ID] || '');
+        base.type = 'embed'; base.driveKind = kind; base.embedUrl = kbEmbedUrl_(kind, fid); base.openUrl = kbOpenUrl_(kind, fid);
+        return base;
+      }
+      base.type = 'article'; base.bodyMd = String(rows[i][KB.BODY_MD] || '');
+      return base;
+    }
+    return { error: 'Not found.' };
+  } catch (err) { return { error: err.message }; }
+}
+
+function searchReference(query) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const q = String(query || '').trim().toLowerCase();
+    if (q.length < 2) return { results: [] };
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { results: [] };
+    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
+    const results = [];
+    for (let i = 0; i < rows.length && results.length < 50; i++) {
+      if (!rows[i][KB.ID]) continue;
+      const title = String(rows[i][KB.TITLE] || '');
+      const body = String(rows[i][KB.BODY_MD] || '');
+      if ((title + ' ' + body).toLowerCase().indexOf(q) < 0) continue;
+      let snippet = '';
+      const bidx = body.toLowerCase().indexOf(q);
+      if (bidx >= 0) { const s = Math.max(0, bidx - 40); snippet = (s > 0 ? '…' : '') + body.substring(s, bidx + q.length + 60).replace(/\s+/g, ' ').trim() + '…'; }
+      results.push({ id: String(rows[i][KB.ID]), title: title, department: String(rows[i][KB.DEPARTMENT] || ''), type: String(rows[i][KB.TYPE] || 'article'), snippet: snippet });
+    }
+    return { results: results };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Manager-gated writes (locked + audited) ──────────────────────────────
+function kbSaveItem(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    payload = payload || {};
+    const department = String(payload.department || '').trim() || 'General';
+    const title = String(payload.title || '').trim();
+    const type = (payload.type === 'embed') ? 'embed' : 'article';
+    if (!title) return { success: false, error: 'Title is required.' };
+    let bodyMd = '', driveKind = '', driveFileId = '';
+    if (type === 'embed') {
+      const parsed = kbParseDriveUrl_(payload.driveUrl);
+      if (!parsed) return { success: false, error: 'Could not read that Drive link — paste a Google Doc, Sheet, or file share URL.' };
+      driveKind = parsed.kind; driveFileId = parsed.fileId;
+    } else {
+      bodyMd = String(payload.body || '');
+      if (bodyMd.length > KB_BODY_MAX) return { success: false, error: 'Article is too long (max ~49,000 chars). Split it into multiple articles.' };
+    }
+    const sortOrder = Number(payload.sortOrder || 0) || 0;
+    const sheet = getOrCreateKbSheet_();
+    const id = String(payload.id || '').trim() || Utilities.getUuid();
+    const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email];
+    const last = sheet.getLastRow();
+    let found = -1;
+    if (last >= 2 && payload.id) {
+      const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+    }
+    if (found > 0) sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([rowVals]);
+    else sheet.appendRow(rowVals);
+    invalidateKbCache_();
+    writeAuditLog_(emp, 'KbItemSave', '', '', false, 0, 'id=' + id + '; dept=' + department + '; type=' + type, emp.email);
+    return { success: true, id: id };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+function kbDeleteItem(id) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    id = String(id || '').trim();
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last >= 2) {
+      const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { sheet.deleteRow(i + 2); break; } }
+    }
+    invalidateKbCache_();
+    writeAuditLog_(emp, 'KbItemDelete', '', '', false, 0, 'id=' + id, emp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }

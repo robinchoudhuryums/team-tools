@@ -84,6 +84,14 @@ const TOOLS = {
       intakePapAccount: { label: 'PAP Account',        icon: 'user', enter: 'enterIntakePapView' },
     },
   },
+  reference: {
+    label: 'Reference',
+    sidebarIcon: 'list',
+    defaultTab: 'reference',
+    tabs: {
+      reference: { label: 'Browse', icon: 'list', enter: 'enterReferenceView' },
+    },
+  },
 };
 // tabKey → toolKey lookup. Tab keys are globally unique by convention so
 // existing call sites that compare `currentView === 'callNotes'` continue

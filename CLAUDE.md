@@ -52,6 +52,20 @@ Apps Script project under its own directory, synced via `clasp`.
      Offerings catalog is isolated behind `getIntakeOfferings_()` (the
      `getCdrSS_()` pattern). Backs the Intake spreadsheet
      (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
+   - **Reference** — in-app knowledge base (Phase 1). A per-department
+     tree + full-text search + reader for training/policy docs, so the
+     team stops fighting Drive's folder UI. Two item types: **`article`**
+     (markdown source stored in the KB sheet, rendered client-side by
+     `kbMd_` which escapes HTML first) and **`embed`** (a Google Doc/
+     Sheet/file shown via its Drive `/preview` iframe + open-in-new-tab —
+     the "Drive-linked fallback"). Managers add/edit/delete inline
+     (`kbSaveItem`/`kbDeleteItem`, gated + locked + audited); reps get
+     read-only browse + search (`getReferenceTree`/`getReferenceItem`/
+     `searchReference`). **PHI-free by policy** (training/reference only —
+     scrub patient data from screenshots). Backs a dedicated KB
+     spreadsheet (`CONFIG.KB.SS_ID` / Script Property `KB_SS_ID`); reps
+     read via the server and never open it. Phase 2 (deferred) is a
+     Google-Doc→article auto-converter for bulk migration.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -1674,6 +1688,21 @@ this section before touching the relevant area.
   only when ≥1 link is configured and **appends** the chosen `label: url` to the
   message (unlike the template picker, which replaces). Unlike templates, links
   are recipient-type-agnostic. Pinned by `cnExtLinkOptionsHtml_` client tests.
+- **Reference tool: native markdown articles + Drive embeds, one store.** The KB
+  is a single `KB` tab (one row per item: `{id, department, title, type, BodyMd,
+  DriveKind, DriveFileId, sortOrder, …}`). Articles store **markdown source** (not
+  HTML) — `kbMd_` renders it client-side and **escapes HTML before applying the
+  markdown subset**, so authored content can't inject script and links are
+  restricted to `http(s)`/`mailto` (the safety boundary; managers are the only
+  authors but defense-in-depth keeps a bad paste inert). Embeds store only a
+  Drive `{kind, fileId}` and render the `/preview` iframe — no content copied, so
+  the Drive doc stays the source of truth. The tree is whole-result cached
+  (`KB_CACHE_KEY`, 5 min), invalidated on save/delete. Reps are read-only;
+  manager writes are gated + locked + audited (`KbItemSave`/`KbItemDelete`).
+  Native-primary + Drive-fallback was chosen so 100% of content is navigable on
+  day one (embed everything) while the most-referenced docs migrate to fast
+  native articles over time. Phase 2 (deferred): a Google-Doc→article converter.
+  Pinned by `kbMd_` (escaping/links) + `kbParseDriveUrl_` Node tests.
 - **Win-back nudge on a "changing suppliers" close.** When a Close-Order
   department email is sent and the free-text `closeDetails.reason` matches a
   supplier-switch pattern (`cnIsSwitchingSuppliersReason_` — loose substring
@@ -1865,6 +1894,14 @@ manually for a fresh deploy or environment:
 - **Script Property `TEST_INTAKE_SS_ID`** (test-only). `getIntakeSS_()`
   honors a `_TEST_OVERRIDE_INTAKE_SS_ID` global for integration tests; the
   pure engine tests need no spreadsheet. Documented here so it's recognizable.
+- **Set Script Property `KB_SS_ID`** to a dedicated Knowledge-Base spreadsheet
+  for the Reference tool (`getKbSS_()` reads it before `CONFIG.KB.SS_ID`). The
+  `KB` tab auto-provisions on first use (`getOrCreateKbSheet_`, headers
+  `KB_HEADERS`). The deploying account needs **edit** access; reps never open it
+  (they read via `getReferenceTree`/`getReferenceItem`/`searchReference`). Keep
+  it a **separate** spreadsheet from the PHI intake/forms sheets — the KB is
+  broadly rep-readable and PHI-free by policy. (`_TEST_OVERRIDE_KB_SS_ID` is the
+  test override.)
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
@@ -2173,6 +2210,8 @@ Client (Metrics views):
   web-app/metrics/script_metrics.html
 Client (Intake views):
   web-app/intake/script_intake.html
+Client (Reference views):
+  web-app/kb/script_kb.html
 Client (public forms):
   web-app/form_public.html
 Test Suite:
@@ -2822,6 +2861,18 @@ S61 | Fillable form — consent stored, tamper-evident, segregated, retained | S
     - Inspect the invite email body → no patient identifiers (prefill rode in the token, not the email)
     - Set `FORM_DATA_RETENTION_DAYS=90` + install triggers; confirm `purgeExpiredFormData` targets the `FORMS_SS_ID` store and no-ops when nothing is older than 90 days
   Expected: Consent is server-stamped (authoritative version) + server-enforced (a `consentAgreed:false` payload is rejected). The hash is deterministic + tamper-evident (`computeFormSubmissionHash_`, smoke-pinned), excludes `submittedAt` (coercion-safe), and the AuditLog is the independent timestamp witness. `FormSubmissions` stays append-only with NO edit endpoint (§164.312(c)); `verify` flags any out-of-band edit. Legacy 6-column rows (pre-hardening) verify as `match:null` ("legacy"), not a failure. The invite email stays PHI-minimal (Node-guarded). `getFormsSS_()` routes all form reads/writes/purge to the segregated store.
+
+S62 | Reference tool — browse, search, article + Drive embed, manager edit | Subsystem: Server, Client (Reference views)
+  Steps:
+    - Set Script Property `KB_SS_ID` to a dedicated spreadsheet (deployer has edit access)
+    - As a manager, open **Reference** → "Add item" → type **Article**: set a department + title, write markdown (heading, bold, a list, a link) → watch the live preview → Save
+    - Confirm it appears under its department in the tree and renders as formatted HTML when opened
+    - "Add item" → type **Embed Drive doc**: paste a Google Doc/Sheet/file share URL → Save → open it → confirm the Drive `/preview` iframe loads + "Open in new tab" works
+    - Type a 2+ char query in the search box → confirm title/body matches list with snippets; clear it → tree returns
+    - Edit an item, then Delete one (confirm the uiConfirm danger dialog)
+    - As a non-manager rep: confirm browse + search work but NO add/edit/delete affordances appear; from the console call `google.script.run...kbSaveItem({})` and `...kbDeleteItem('x')`
+    - Paste raw `<script>` / a `javascript:` link into an article body and Save → open it
+  Expected: Articles store markdown source; `kbMd_` renders escaped HTML (the `<script>`/`javascript:` content is inert — escaped/stripped, never executed). Embeds render the Drive preview + open-in-new-tab; the Drive file isn't copied. Tree is per-department, cached 5 min (invalidated on save/delete). `kbSaveItem`/`kbDeleteItem` are manager-gated (non-manager console calls return "Manager access required."), locked, and write `KbItemSave`/`KbItemDelete` audit rows. `getReferenceTree`/`getReferenceItem`/`searchReference` require an enrolled employee, read-only. Pinned by `kbMd_` + `kbParseDriveUrl_` Node tests.
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
