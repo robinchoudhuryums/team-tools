@@ -219,7 +219,7 @@ this section before touching the relevant area.
   `fixPtoReconciliation`, `getFeatureFlags`, `saveFeatureFlags`,
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
-  `getCallNotesEnrollment`, `provisionCallNotesSheet`.
+  `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -308,7 +308,12 @@ this section before touching the relevant area.
   `cnExtEmailPillHtml_` pill (the manager-only recipient lookup — F20).
   Logging only the domain in the shared AuditLog is therefore intentional
   PII/PHI minimization, not a forensic gap.
-  Same discipline as the PHI-free `CallNoteEmail` row above.
+  Same discipline as the PHI-free `CallNoteEmail` row above. The
+  `FormTokenCreated` / `FormSubmissionReceived` audit rows follow the
+  same rule (`toDomain=` / `fromDomain=` — the full recipient lives on
+  the FormTokens row, reachable via the token), and the submission row's
+  synthetic actor identity is likewise de-identified ("External
+  recipient" + domain, never the recipient's name or raw address).
 - **`buildCallNoteEmailHtml_` must `esc_` every user-supplied field.**
   The email-preview modal injects the server-rendered body raw via
   `innerHTML` (`cn/script_callnotes.html` `cnRenderComposerPreviewStep_`,
@@ -515,9 +520,11 @@ this section before touching the relevant area.
   helper rather than raw `|| CONFIG.TIMEZONE` fallback.
 - **Personal-sheet sync failures log to the audit trail.**
   `writeToEmployeeSheet_` and `clearFromEmployeeSheet_` write a
-  `PersonalSheetSyncFail` audit row on failure. Monitor AuditLog for
-  this action type — it means a rep's personal Sheet is inaccessible
-  and drifting from the ADP source of truth.
+  `PersonalSheetSyncFail` audit row on failure — it means a rep's
+  personal Sheet is inaccessible and drifting from the ADP source of
+  truth. These are surfaced (count + recent entries, 30-day window) in
+  **Call Notes → Admin → Automation Health** (`getAutomationHealth`),
+  so a manager sees the drift without reading the raw AuditLog.
 - **Tag admin operations hold the global ScriptLock across all
   enrolled rep Sheets.** `renameCallNoteTag` / `mergeCallNoteTags`
   iterate the roster via `applyTagTransformAcrossReps_`, open each
@@ -1542,6 +1549,17 @@ this section before touching the relevant area.
   NoteId / Token column to locate the row, then fetch just that one
   full row (instead of `getDataRange().getValues()`), so a single-note
   mutation / token validation no longer reads the whole Sheet.
+  The per-rep self-reads are bounded the same way (A6 hardening):
+  `getCallNotesAmbient` (the 60s poll) reads only 5 columns and
+  JSON-parses `SubformData` just for answered training rows;
+  `getMyPinnedCallNotes` scans the `SubformData` column with a
+  `"pinned"` substring pre-filter then fetches only the pinned rows;
+  `getMyTrainingQA` picks the 5 newest answered training notes from
+  column scans and fetches just those; the EOD digest reads only the
+  rep's today-slice via `readCallNoteRowsInRange_`. `FormSubmissions`
+  lookups (`buildFormSubmissionResult_`, `verifyFormSubmissionIntegrity_`)
+  go through `findFormSubmissionRow_` (token-column scan, newest row
+  wins) rather than reading every submission's responses + signature.
 - **Manager day-edit date picker is bounded `[today-N, today]`.**
   `openDayEditModal` sets `#de-date` min/max so a manager can't pick a
   future date (server rejects `daysBack<0`) or one past the adjust
@@ -1768,6 +1786,24 @@ this section before touching the relevant area.
   before `innerHTML`. Note IDs/dates/rep IDs pass via `data-*`
   attributes read in the handler (the `cnStatsDrillDown_` pattern), not
   inline string interpolation.
+- **Automation Health panel (Admin tab).** Manager-only, read-only
+  surfacing of the silent-degradation signals (`getAutomationHealth`,
+  rendered by `cnLoadHealthPanel_` below the compliance panel). One
+  bounded AuditLog tail scan (`CN_AUDIT_MAX_SCAN` rows) yields (a) the
+  `PersonalSheetSyncFail` count + 5 most recent entries over a 30-day
+  window and (b) the last-seen audit row per automation job
+  (`AUTOMATION_AUDIT_ACTIONS`: reconcile / ADP export / both purges) —
+  each captioned with its expectation, since purges only write a row
+  when retention is enabled and the export only fires at period end, so
+  "never seen" isn't automatically "broken". A CDR block (5-min-cached
+  unfiltered 7-day read) reports reachability, `columnWarning`, and
+  roster↔agent name mismatches — canonicalized through
+  `getCdrNameMap_()` first, because the unfiltered read doesn't apply
+  aliases itself and every aliased agent would otherwise false-positive
+  as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
+  without taking down the rest of the panel. Every server string is
+  `esc()`'d before `innerHTML`. The EOD/weekly/urgent digests write no
+  audit rows, so the panel can't show their last run — a known gap.
 - **"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
@@ -2347,7 +2383,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
