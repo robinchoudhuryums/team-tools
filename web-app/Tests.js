@@ -144,6 +144,24 @@ function _withTestIntake_(fn) {
   }
 }
 
+/** Runs `fn` with the CN_FEATURE_FLAGS Script Property overridden (the given
+ *  keys merged over whatever is currently stored), restoring the prior
+ *  property afterwards. Needed because the FEATURE_FLAGS registry defaults
+ *  snapshot CONFIG.* at load time — mutating CONFIG at runtime no longer
+ *  affects getFlag_ reads (the pre-flag-migration test idiom). */
+function _withFeatureFlags_(overrides, fn) {
+  const props = PropertiesService.getScriptProperties();
+  const saved = props.getProperty('CN_FEATURE_FLAGS');
+  let base = {};
+  if (saved) { try { base = JSON.parse(saved) || {}; } catch (e) { base = {}; } }
+  props.setProperty('CN_FEATURE_FLAGS', JSON.stringify(Object.assign({}, base, overrides)));
+  try { return fn(); }
+  finally {
+    if (saved == null) props.deleteProperty('CN_FEATURE_FLAGS');
+    else props.setProperty('CN_FEATURE_FLAGS', saved);
+  }
+}
+
 /** Resets the session-level CDR in-memory caches (name-map + column-validation
  *  flags) so they re-read whichever sheet getCdrSS_ currently points at. */
 function _resetCdrCaches_() {
@@ -301,6 +319,21 @@ function setupTestEnvironment() {
       }
       break;
     }
+  }
+  // Pin the test Sheet's timezone to the ADP sheet's (both create and reuse
+  // paths). DateLocal strings are coerced to Dates in the CN sheet's tz but
+  // recovered by normalizeDate_ in the ADP tz — a mismatched fixture tz shifts
+  // every date-filtered read by a day (count/coverage/getMyCallNotes/digests
+  // all silently return nothing). Mirrors provisionCallNotesSheet's tz pin.
+  if (_TEST_CN_SS_ID) {
+    try {
+      const adpTz = getAdpSS_().getSpreadsheetTimeZone();
+      const cnSsHandle = SpreadsheetApp.openById(_TEST_CN_SS_ID);
+      if (cnSsHandle.getSpreadsheetTimeZone() !== adpTz) {
+        cnSsHandle.setSpreadsheetTimeZone(adpTz);
+        Logger.log('  CN fixture tz aligned to ADP tz: ' + adpTz);
+      }
+    } catch (e) { Logger.log('  CN fixture tz align skipped: ' + e.message); }
   }
 
   // Provision the CDR fixture (best-effort — a hiccup here shouldn't block the
@@ -1178,16 +1211,16 @@ function test_adjustLeaveBalance_invalidatesCache() {
 }
 
 function test_adjustLeaveBalance_disabledNoOp() {
-  const orig = CONFIG.ENABLE_PTO_TRACKING;
-  CONFIG.ENABLE_PTO_TRACKING = false;
-  try {
+  // enablePtoTracking is read via getFlag_ since the feature-flag migration —
+  // mutating CONFIG.ENABLE_PTO_TRACKING at runtime no longer disables it
+  // (the registry default snapshots CONFIG at load). Override via the
+  // Script-Property flag store instead.
+  _withFeatureFlags_({ enablePtoTracking: false }, () => {
     const before = _getBalance(_TEST_INDIA_ID, 'sick');
     const result = adjustLeaveBalance_(_TEST_INDIA_ID, 'sick', -1);
     _assertNull(result);
     _assertEqClose(_getBalance(_TEST_INDIA_ID, 'sick'), before, 'No change when PTO disabled');
-  } finally {
-    CONFIG.ENABLE_PTO_TRACKING = orig;
-  }
+  });
 }
 
 // ── recordPunch ──
@@ -1206,10 +1239,13 @@ function test_recordPunch_adjustDedup() {
   // Pre-existing ClockIn for the test user
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   _assertEq(_countTimesheetRows(_TEST_INDIA_ID, _TEST_DATE_RECENT, 'ClockIn'), 1);
-  // Adjust it
-  _asUser(_TEST_INDIA_EMAIL, () => {
-    const r = recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '08:55', reason: 'corrected' });
-    _assertSuccess(r);
+  // Adjust it (employee immediate-adjust is flag-gated since #4a — enable for
+  // the duration so the legacy update-in-place path is exercised)
+  _withFeatureFlags_({ employeeImmediateAdjust: true }, () => {
+    _asUser(_TEST_INDIA_EMAIL, () => {
+      const r = recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '08:55', reason: 'corrected' });
+      _assertSuccess(r);
+    });
   });
   // Should still be exactly ONE row (updated in place, not appended)
   _assertEq(_countTimesheetRows(_TEST_INDIA_ID, _TEST_DATE_RECENT, 'ClockIn'), 1,
@@ -1256,14 +1292,17 @@ function test_recordPunch_rejectsFutureDate() {
 }
 
 function test_recordPunch_rejectsBeyondWindow() {
-  // Date 60 days back, beyond the 30-day window
+  // Date 60 days back, beyond the 30-day window. Flag enabled so the window
+  // check (not the #4a immediate-adjust gate) is what rejects.
   const d = new Date(); d.setDate(d.getDate() - 60);
   const oldDate = Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
-  _asUser(_TEST_INDIA_EMAIL, () => {
-    _assertFailure(
-      recordPunch('ClockIn', { date: oldDate, time: '09:00', reason: 'long ago' }),
-      'within the last'
-    );
+  _withFeatureFlags_({ employeeImmediateAdjust: true }, () => {
+    _asUser(_TEST_INDIA_EMAIL, () => {
+      _assertFailure(
+        recordPunch('ClockIn', { date: oldDate, time: '09:00', reason: 'long ago' }),
+        'within the last'
+      );
+    });
   });
 }
 
@@ -1274,12 +1313,14 @@ function test_recordPunch_rejectsUnknownType() {
 }
 
 function test_recordPunch_reasonRequiredOldAdj() {
-  _asUser(_TEST_INDIA_EMAIL, () => {
-    // 14 days back, no reason → rejected
-    _assertFailure(
-      recordPunch('ClockIn', { date: _TEST_DATE_OLD, time: '09:00', reason: '' }),
-      'reason is required'
-    );
+  _withFeatureFlags_({ employeeImmediateAdjust: true }, () => {
+    _asUser(_TEST_INDIA_EMAIL, () => {
+      // 14 days back, no reason → rejected
+      _assertFailure(
+        recordPunch('ClockIn', { date: _TEST_DATE_OLD, time: '09:00', reason: '' }),
+        'reason is required'
+      );
+    });
   });
 }
 
@@ -1492,12 +1533,14 @@ function test_provisionCallNotesSheet_idempotentNoClobber() {
 }
 
 function test_recordPunch_reasonAcceptedOldAdj() {
-  _asUser(_TEST_INDIA_EMAIL, () => {
-    // 14 days back, WITH reason → accepted
-    const r = recordPunch('ClockIn', {
-      date: _TEST_DATE_OLD, time: '09:00', reason: 'forgot to punch in'
+  _withFeatureFlags_({ employeeImmediateAdjust: true }, () => {
+    _asUser(_TEST_INDIA_EMAIL, () => {
+      // 14 days back, WITH reason → accepted
+      const r = recordPunch('ClockIn', {
+        date: _TEST_DATE_OLD, time: '09:00', reason: 'forgot to punch in'
+      });
+      _assertSuccess(r);
     });
-    _assertSuccess(r);
   });
 }
 
@@ -1925,13 +1968,15 @@ function test_recordPunch_minIntervalRejectsRapidLive() {
 function test_recordPunch_minIntervalAllowsAdjustment() {
   // Adjustments bypass the debounce check (isAdj branch is excluded). Even with
   // a fresh live punch in the recent history, an adjustment for a past date
-  // should succeed.
-  _asUser(_TEST_PH_EMAIL, () => {
-    const r = recordPunch('ClockOut', {
-      date: _TEST_DATE_RECENT, time: '17:00', reason: '',
+  // should succeed. (Flag-gated since #4a — enabled for the duration.)
+  _withFeatureFlags_({ employeeImmediateAdjust: true }, () => {
+    _asUser(_TEST_PH_EMAIL, () => {
+      const r = recordPunch('ClockOut', {
+        date: _TEST_DATE_RECENT, time: '17:00', reason: '',
+      });
+      _assertSuccess(r, 'Adjustment should bypass min-interval');
+      _assertEq(r.isAdjustment, true);
     });
-    _assertSuccess(r, 'Adjustment should bypass min-interval');
-    _assertEq(r.isAdjustment, true);
   });
 }
 
@@ -2126,9 +2171,16 @@ function test_getPtoReconciliation_nonManagerRejected() {
 function test_fixPtoReconciliation_creditsAndIdempotent() {
   _clearTestState(_TEST_PH_ID);
   const sheet = getOrCreateTimeOffSheet_();
-  const sa1 = '2099-01-01 09:00:00', sa2 = '2099-01-01 09:00:01';
-  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', sa1]);
-  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', sa2]);
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', '2099-01-01 09:00:00']);
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', '2099-01-01 09:00:01']);
+  SpreadsheetApp.flush();
+  // Sheets coerces the appended SubmittedAt strings to Dates; updateTimeOffStatus
+  // matches String(cell).trim(), so read the keys BACK the same way the
+  // production flow does (the dashboard sends the coerced-cell string to the
+  // client, which echoes it on approve).
+  const lastRowIdx = sheet.getLastRow();
+  const stored = sheet.getRange(lastRowIdx - 1, TO.SUBMITTED_AT + 1, 2, 1).getValues();
+  const sa1 = String(stored[0][0]).trim(), sa2 = String(stored[1][0]).trim();
   const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa1, 'Approved'));
@@ -2209,17 +2261,15 @@ function test_getTeammateStatus_shapeRestricted() {
 }
 
 function test_getTeammateStatus_disabledFlag() {
-  const orig = CONFIG.SHOW_TEAMMATE_STATUS;
-  CONFIG.SHOW_TEAMMATE_STATUS = false;
-  try {
+  // showTeammateStatus is read via getFlag_ since the feature-flag migration —
+  // a runtime CONFIG.SHOW_TEAMMATE_STATUS mutation no longer disables it.
+  _withFeatureFlags_({ showTeammateStatus: false }, () => {
     _asUser(_TEST_INDIA_EMAIL, () => {
       const r = getTeammateStatus();
       _assertEq(r.enabled, false);
       _assertEq(r.teammates.length, 0);
     });
-  } finally {
-    CONFIG.SHOW_TEAMMATE_STATUS = orig;
-  }
+  });
 }
 
 
@@ -3170,8 +3220,10 @@ function _findAuditRow(empId, actionType) {
 
 function test_auditRow_recordPunchAdjustment() {
   _clearTestState(_TEST_INDIA_ID);
-  _asUser(_TEST_INDIA_EMAIL, function () {
-    recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '08:00', reason: 'test audit' });
+  _withFeatureFlags_({ employeeImmediateAdjust: true }, function () {
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '08:00', reason: 'test audit' });
+    });
   });
   var row = _findAuditRow(_TEST_INDIA_ID, 'ClockIn');
   _assertNotNull(row, 'Audit row should exist for recordPunch');
@@ -3179,8 +3231,10 @@ function test_auditRow_recordPunchAdjustment() {
 
 function test_auditRow_deletePunch_hasActorEmail() {
   _clearTestState(_TEST_INDIA_ID);
-  _asUser(_TEST_INDIA_EMAIL, function () {
-    recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '09:00', reason: 'setup' });
+  _withFeatureFlags_({ employeeImmediateAdjust: true }, function () {
+    _asUser(_TEST_INDIA_EMAIL, function () {
+      recordPunch('ClockIn', { date: _TEST_DATE_RECENT, time: '09:00', reason: 'setup' });
+    });
   });
   _asUser(_TEST_MGR_EMAIL, function () {
     deletePunch(_TEST_INDIA_ID, _TEST_DATE_RECENT, '09:00:00', 'ClockIn');
@@ -3596,9 +3650,13 @@ function test_auditPanel_searchAndHistory() {
     // A second lifecycle event so history has ≥2 rows.
     _asUser(_TEST_INDIA_EMAIL, function () { return setCallNoteFlag(noteId, 'action'); });
 
-    // ── Search: rep + action filters, default 30-day range ────────────────
+    // ── Search: rep + action filters, default-start 30-day range ──────────
+    // Explicit endDate two days out: audit rows are stamped in CONFIG.TIMEZONE
+    // (IST) wall time, which can read as "tomorrow" relative to the manager's
+    // tz during the US afternoon — an implicit today-end would flake then.
+    const endFuzz = fmtDate_(new Date(Date.now() + 2 * 86400000));
     const res = _asUser(_TEST_MGR_EMAIL, function () {
-      return getCallNotesAuditLog({ repId: _TEST_INDIA_ID, action: 'CallNoteCreate' });
+      return getCallNotesAuditLog({ repId: _TEST_INDIA_ID, action: 'CallNoteCreate', endDate: endFuzz });
     });
     _assertNull(res.error, 'audit search should not error for a manager');
     _assertNotNull(res.range && res.range.start, 'default date range is reported back');
