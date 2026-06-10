@@ -278,7 +278,8 @@ const CN_FLAG_PRIORITY = ['action','training','review','urgent'];
 const CN_AUDIT_ACTIONS = [
   'CallNoteCreate', 'CallNoteEdit', 'CallNoteFlag', 'CallNoteResolve',
   'CallNoteDelete', 'CallNoteEmail', 'CallNoteTrainingReply', 'CallNotePin',
-  'CallNoteFeedback', 'CallNoteTagAdmin', 'CallNotesExport', 'ExternalEmailSent',
+  'CallNoteFeedback', 'CallNoteManagerComment', 'CallNoteTagAdmin',
+  'CallNotesExport', 'ExternalEmailSent',
   'FormTokenCreated', 'FormSubmissionReceived',
 ];
 // Bounded read: the audit search scans at most this many of the most-recent
@@ -5011,8 +5012,13 @@ function createFormToken(payload) {
 
   const formUrl = buildFormUrl_(token);
 
+  // Audit row logs only the recipient DOMAIN — same PII/PHI minimization as
+  // the ExternalEmailSent row (a customer's personal address is PII; for a
+  // patient it can be PHI-adjacent). The full recipient lives on the
+  // FormTokens row itself, reachable via the token for an investigator.
   writeAuditLog_(emp, 'FormTokenCreated', '', '', false, 0,
-    'token=' + token + '; formType=' + formType + '; to=' + recipientEmail +
+    'token=' + token + '; formType=' + formType +
+    '; toDomain=' + intakeEmailDomain_(recipientEmail) +
     (noteId ? '; noteId=' + noteId : ''));
 
   return { success: true, token: token, formUrl: formUrl };
@@ -5108,6 +5114,9 @@ function submitFormByToken(token, formData) {
   token = String(token || '').trim();
   if (!token) return { success: false, error: 'No form token provided.' };
 
+  // Rep-notification payload, captured inside the lock and sent AFTER release
+  // (the email's PDF render is slow — see the deferred send in finally).
+  let notifyPayload = null;
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -5255,25 +5264,29 @@ function submitFormByToken(token, formData) {
     // Notify the rep who created the token with the completed, stylized form
     // (HTML body rendering all responses + the signature as a PNG attachment +
     // a best-effort PDF of the whole form). Best-effort — a failure here never
-    // blocks the recipient's already-successful submission.
-    try {
-      if (createdBy) {
-        notifyRepOfFormSubmission_(createdBy, formType, recipientName, recipientEmail,
-          submittedAt, sanitizedData, signatureData);
-      }
-    } catch (emailErr) {
-      console.warn('submitFormByToken: notification email failed: ' + emailErr.message);
+    // blocks the recipient's already-successful submission. The send is
+    // DEFERRED past lock release (see finally) — it renders an HTML→PDF
+    // conversion that can take seconds, and holding the global ScriptLock
+    // through it would stall every punch / call-note write in the app
+    // (same post-release pattern as recordPunch's old-adjustment alert).
+    if (createdBy) {
+      notifyPayload = { createdBy: createdBy, formType: formType,
+        recipientName: recipientName, recipientEmail: recipientEmail,
+        submittedAt: submittedAt, sanitizedData: sanitizedData,
+        signatureData: signatureData };
     }
 
     // Audit log (use a synthetic emp object since this is a public endpoint)
     try {
-      const auditEmp = { id: 'EXTERNAL', name: recipientName || recipientEmail, email: recipientEmail };
       // The audit row carries the content hash + submittedAt — an independent,
       // append-only witness so a later edit to the stored row is detectable even
-      // against the AuditLog. PHI-free (token / formType / domain-bearing email
-      // only — no responses).
+      // against the AuditLog. PII/PHI-minimized like the ExternalEmailSent row:
+      // only the recipient DOMAIN is recorded (the full address — for a patient,
+      // PHI-adjacent — lives on the FormTokens row, reachable via the token).
+      const fromDomain = intakeEmailDomain_(recipientEmail);
+      const auditEmp = { id: 'EXTERNAL', name: 'External recipient', email: fromDomain };
       writeAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
-        'token=' + token + '; formType=' + formType + '; from=' + recipientEmail +
+        'token=' + token + '; formType=' + formType + '; fromDomain=' + fromDomain +
         '; hash=' + submissionHash + '; submittedAt=' + submittedAt +
         (noteId ? '; noteId=' + noteId : ''));
     } catch(_) {}
@@ -5288,6 +5301,15 @@ function submitFormByToken(token, formData) {
     return { success: false, error: 'We could not submit your form. Please try again, or contact UMS if the problem persists.' };
   } finally {
     lock.releaseLock();
+    if (notifyPayload) {
+      try {
+        notifyRepOfFormSubmission_(notifyPayload.createdBy, notifyPayload.formType,
+          notifyPayload.recipientName, notifyPayload.recipientEmail,
+          notifyPayload.submittedAt, notifyPayload.sanitizedData, notifyPayload.signatureData);
+      } catch (emailErr) {
+        console.warn('submitFormByToken: notification email failed: ' + emailErr.message);
+      }
+    }
   }
 }
 
@@ -7677,11 +7699,21 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
                  newStatus === 'Denied'   ? 'denied'   : 'updated';
     const subj = `Your time off request for ${date} was ${verb}`;
     const hasNotes = notes && notes !== 'undefined';
+    // Show the balance of the bucket this request actually deducts from —
+    // a Sick Leave decision must report the SICK balance, not annual (and an
+    // Unpaid Leave decision has no balance line at all, bucket=null).
     let balanceDays = null;
+    let balanceLabel = 'annual';
     if (getFlag_('enablePtoTracking')) {
-      // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
-      const fresh = lookupEmployeeById_(emp.id);
-      if (fresh && fresh.ptoEnabled !== false) balanceDays = fresh.annualLeave;
+      const dedu = getLeaveDeduction_(type);
+      if (dedu.bucket) {
+        // Re-fetch fresh balances (cache was invalidated by adjustLeaveBalance_)
+        const fresh = lookupEmployeeById_(emp.id);
+        if (fresh && fresh.ptoEnabled !== false) {
+          balanceDays = dedu.bucket === 'sick' ? fresh.sickLeave : fresh.annualLeave;
+          balanceLabel = dedu.bucket === 'sick' ? 'sick' : 'annual';
+        }
+      }
     }
     // Plain-text fallback
     let body = `Hi ${emp.name},\n\n` +
@@ -7690,7 +7722,7 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
                `Type:    ${type}\n`;
     if (hasNotes) body += `Notes:   ${notes}\n`;
     body += `Status:  ${newStatus}\n\n`;
-    if (balanceDays !== null) body += `Your current annual leave balance: ${balanceDays} day(s)\n\n`;
+    if (balanceDays !== null) body += `Your current ${balanceLabel} leave balance: ${balanceDays} day(s)\n\n`;
     body += `Please contact your manager with any questions.\n\n— UMS Time Clock (automated)\n`;
     // Branded HTML (item 2) — green/red/navy header by decision
     const accent = newStatus === 'Approved' ? CN_EMAIL_PALETTE.accent
@@ -7700,7 +7732,7 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
     if (hasNotes) kv.push(['Notes', notes]);
     kv.push(['Status', newStatus]);
     const balLine = (balanceDays !== null)
-      ? '<p style="margin:12px 0 0;">Current annual leave balance: <b>' + esc_(balanceDays) + '</b> day(s)</p>' : '';
+      ? '<p style="margin:12px 0 0;">Current ' + esc_(balanceLabel) + ' leave balance: <b>' + esc_(balanceDays) + '</b> day(s)</p>' : '';
     const html = buildBrandedEmailHtml_('Time off ' + verb,
       '<p style="margin:0 0 10px;">Hi ' + esc_(emp.name) + ',</p>' +
       '<p style="margin:0 0 12px;">Your time off request has been <b>' + esc_(verb) + '</b>:</p>' +
