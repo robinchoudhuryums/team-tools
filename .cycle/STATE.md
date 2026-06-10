@@ -26,6 +26,8 @@ Updated: 2026-06-10
 - P#5 (A6) | web-app/Code.js | bounded the whole-history per-rep CN reads: ambient (5-col), pinned tray (subform-col prefilter + per-row fetch), training QA (col scans + 5-row fetch), EOD digest (readCallNoteRowsInRange_ today-slice)
 - P#6 (A5) | web-app/Code.js | findFormSubmissionRow_ token-column lookup; buildFormSubmissionResult_ + verifyFormSubmissionIntegrity_ no longer full-scan FormSubmissions
 - P#14 | web-app/Code.js, web-app/cn/script_callnotes.html, web-app/Tests.js | Automation Health admin panel (getAutomationHealth: sync-fail count/recent, CDR reachability + column drift + alias-aware name mismatches, last-seen audit row per automation job); endpoint added to the parameterized manager-gate test
+- /sync-docs (2nd) | CLAUDE.md | Automation Health design entry; gated lists + INV-31 += getAutomationHealth; PersonalSheetSyncFail gotcha -> surfaced in Admin; form audit rows domain-only note; per-rep bounded-reads note
+- P#16 (KB Phase 2) | web-app/Code.js, web-app/kb/script_kb.html, web-app/Tests.js, test/client/run.js, CLAUDE.md | kbConvertDriveDoc Doc->markdown converter (manager-gated, read-only, review-before-save in the editor; no batch by design); Node stub tests (77/77); INV-115 + S63 + Docs-OAuth-scope operator note
 
 ## Pending / not yet done
 - Audit findings NOT selected for implementation: A8 (metrics ambient cache key), A9 (consent _meta back-compat tolerance), A10 (frozen legacy dirs — no action by design). A5/A6 done as P#6/P#5.
@@ -35,7 +37,6 @@ Updated: 2026-06-10
 ## Open follow-on items
 - `notifyRepOfFailedSubmission_` (size-cap rejections) still sends inside the ScriptLock — fast plain-text sends, but could use the same deferred pattern as P#4 for symmetry.
 - Server-side integration tests for the compliance-audit endpoints + intake/forms endpoints.
-- web-app/intake — Reference Phase 2 (Google-Doc→article converter for bulk KB migration).
 
 ## Decisions made (so the next session doesn't re-litigate)
 - FormTokens timestamps (CreatedAt/ExpiresAt) are stored in CONFIG.TIMEZONE — matching FormSubmissions.SubmittedAt and every parse site; rep-tz display fidelity was deliberately traded for parse correctness.
@@ -45,4 +46,4 @@ Updated: 2026-06-10
 - Reference KB = native markdown articles (primary) + Drive-embed fallback; articles stored as markdown source, rendered with HTML-escape-first.
 
 ## Where I left off
-Cycle 1 implementation: A1–A4 + A7, /sync-docs, P#1–P#4, and P#5/P#6/P#14 (bounded per-rep + form reads; Automation Health admin panel) — all on `claude/gifted-hypatia-aee7wa` (latest fa78c5e; Node harness 73/73). Next: /sync-docs (Automation Health design entry, manager-gated endpoint list, PersonalSheetSyncFail gotcha now surfaced in Admin, P#2 audit-row notes), operator deploy (clasp push + new version + editor runAllTests), then /reflect to close Cycle 1. Remaining backlog: A8/A9 + P7–P13, P15–P17.
+Cycle 1 implementation: A1–A4 + A7, two /sync-docs passes, P#1–P#6, P#14, and KB Phase 2 (Doc->article converter, P#16) — all on `claude/gifted-hypatia-aee7wa` (latest cafad8f; Node harness 77/77). Next: operator deploy (clasp push -f + NEW Docs OAuth scope re-auth + new version + editor runAllTests), then /reflect to close Cycle 1. Remaining backlog: A8/A9 + P7–P13, P15, P17; follow-on: optional batch-convert helper once per-item conversion proves out, digest last-run audit rows for the health panel.
