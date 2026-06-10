@@ -9500,3 +9500,207 @@ function kbDeleteItem(id) {
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
+
+// ── KB Phase 2 — Google-Doc → markdown article converter ───────────────────
+// Per-item, review-before-save migration off Drive embeds: kbConvertDriveDoc
+// reads a Google Doc via DocumentApp and emits ONLY the markdown subset kbMd_
+// renders (headings, bold/italic, links, ul/ol, hr, paragraphs). The result is
+// returned to the editor for the manager to REVIEW (live preview) — nothing is
+// saved until they press Save (the existing kbSaveItem path), and the Drive
+// file is never modified. A blind "convert all embeds" batch was deliberately
+// NOT built: unreviewed conversions could silently replace working embeds with
+// degraded articles (images/tables don't survive).
+//
+// The walker compares String(getType()) / String(getHeading()) /
+// String(getGlyphType()) against enum NAMES (DocumentApp enums stringify to
+// their names) so the Node harness can drive it with plain-object stubs —
+// see the "kb — Doc→markdown converter" tests in test/client/run.js.
+
+const KB_DOC_HEADING_PREFIX = {
+  TITLE: '# ', HEADING1: '# ', HEADING2: '## ', HEADING3: '### ',
+  HEADING4: '#### ', HEADING5: '##### ', HEADING6: '###### ', SUBTITLE: '## ',
+};
+
+/** Extracts formatting runs from a DocumentApp Text element:
+ *  [{ text, bold, italic, link }]. */
+function kbTextToRuns_(textEl) {
+  const s = textEl.getText();
+  if (!s) return [];
+  const idx = textEl.getTextAttributeIndices();
+  if (!idx || idx.length === 0) {
+    return [{ text: s, bold: !!textEl.isBold(0), italic: !!textEl.isItalic(0),
+              link: textEl.getLinkUrl(0) || '' }];
+  }
+  const runs = [];
+  for (let i = 0; i < idx.length; i++) {
+    const start = idx[i];
+    const end = (i + 1 < idx.length) ? idx[i + 1] : s.length;
+    runs.push({
+      text: s.substring(start, end),
+      bold: !!textEl.isBold(start),
+      italic: !!textEl.isItalic(start),
+      link: textEl.getLinkUrl(start) || '',
+    });
+  }
+  return runs;
+}
+
+/** PURE: formats runs into inline markdown. Render-safe for kbMd_:
+ *  bold+italic collapses to bold (kbMd_ has no *** handling); links are
+ *  emitted only for http(s)/mailto, with `()`/whitespace percent-encoded in
+ *  the URL (kbMd_'s link regex stops at `)` / whitespace) and `[]` stripped
+ *  from the link text; Docs soft line-breaks (\r) become spaces. */
+function kbRunsToMarkdown_(runs) {
+  return (runs || []).map(function (r) {
+    let t = String(r.text == null ? '' : r.text).replace(/\r/g, ' ');
+    if (!t) return '';
+    const m = t.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    const pre = m[1], post = m[3];
+    let core = m[2];
+    if (!core) return t;   // whitespace-only run
+    if (r.bold) core = '**' + core + '**';
+    else if (r.italic) core = '*' + core + '*';
+    const link = String(r.link || '');
+    if (link && /^(https?:|mailto:)/i.test(link)) {
+      const safeUrl = link.replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\s/g, '%20');
+      core = '[' + core.replace(/[\[\]]/g, '') + '](' + safeUrl + ')';
+    }
+    return pre + core + post;
+  }).join('');
+}
+
+/** Walks a DocumentApp Body and returns { markdown, warnings }. Paragraphs,
+ *  headings, bullet/numbered lists, and horizontal rules convert faithfully;
+ *  tables flatten to bullet lists (cells joined with " | "); images become an
+ *  italic placeholder — each lossy conversion adds a warning so the reviewing
+ *  manager knows to keep the original Doc when visuals matter. */
+function kbDocBodyToMarkdown_(body) {
+  const out = [];
+  const warnings = [];
+  let imageCount = 0, tableCount = 0;
+  const skippedTypes = {};
+  let listBuf = [];
+  const flushList = function () {
+    if (listBuf.length) { out.push(listBuf.join('\n')); listBuf = []; }
+  };
+  const n = body.getNumChildren();
+  for (let i = 0; i < n; i++) {
+    const el = body.getChild(i);
+    const t = String(el.getType());
+    if (t === 'PARAGRAPH') {
+      flushList();
+      let isHr = false;
+      let parImages = 0;
+      const m = el.getNumChildren();
+      for (let c = 0; c < m; c++) {
+        const ct = String(el.getChild(c).getType());
+        if (ct === 'HORIZONTAL_RULE') isHr = true;
+        else if (ct === 'INLINE_IMAGE' || ct === 'INLINE_DRAWING') parImages++;
+      }
+      if (isHr) { out.push('---'); continue; }
+      const text = kbRunsToMarkdown_(kbTextToRuns_(el.editAsText())).trim();
+      const prefix = KB_DOC_HEADING_PREFIX[String(el.getHeading())] || '';
+      let line = text ? prefix + text : '';
+      if (parImages > 0) {
+        imageCount += parImages;
+        line = (line ? line + ' ' : '') + '*[image — see the original Doc]*';
+      }
+      if (line) out.push(line);
+    } else if (t === 'LIST_ITEM') {
+      const glyph = String(el.getGlyphType());
+      const ordered = glyph === 'NUMBER' || glyph.indexOf('LATIN') === 0 || glyph.indexOf('ROMAN') === 0;
+      const indent = new Array(Math.max(0, el.getNestingLevel()) + 1).join('  ');
+      const text = kbRunsToMarkdown_(kbTextToRuns_(el.editAsText())).trim();
+      if (text) listBuf.push(indent + (ordered ? '1. ' : '- ') + text);
+    } else if (t === 'TABLE') {
+      flushList();
+      tableCount++;
+      const lines = [];
+      for (let r = 0; r < el.getNumRows(); r++) {
+        const row = el.getRow(r);
+        const cells = [];
+        for (let c = 0; c < row.getNumCells(); c++) {
+          cells.push(String(row.getCell(c).getText() || '').replace(/\s+/g, ' ').trim());
+        }
+        if (cells.join('')) lines.push('- ' + cells.join(' | '));
+      }
+      if (lines.length) out.push(lines.join('\n'));
+    } else {
+      skippedTypes[t] = true;
+    }
+  }
+  flushList();
+  if (imageCount > 0) {
+    warnings.push(imageCount + ' image(s) could not be converted — placeholders inserted; keep the original Doc if the visuals matter.');
+  }
+  if (tableCount > 0) {
+    warnings.push(tableCount + ' table(s) flattened to bullet lists (articles have no table support).');
+  }
+  const skipped = Object.keys(skippedTypes);
+  if (skipped.length > 0) {
+    warnings.push('Skipped unsupported element(s): ' + skipped.join(', ') + '.');
+  }
+  const markdown = out.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { markdown: markdown, warnings: warnings };
+}
+
+/** Manager-gated, READ-ONLY converter endpoint. Accepts { itemId } (an
+ *  existing doc-embed KB item — title/department come back for the editor) or
+ *  { driveUrl } (editor embed mode, pre-save). Opens the Doc with the
+ *  DEPLOYER's access (same trust model as embedding it) and returns
+ *  { markdown, warnings, docTitle, title, department }. Never writes — the
+ *  manager reviews in the editor and saves via the existing kbSaveItem,
+ *  which is what flips the row to type=article in place. */
+function kbConvertDriveDoc(payload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    payload = payload || {};
+    let fileId = '', title = '', department = '';
+    const itemId = String(payload.itemId || '').trim();
+    if (itemId) {
+      const sheet = getOrCreateKbSheet_();
+      const last = sheet.getLastRow();
+      let row = null;
+      if (last >= 2) {
+        const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]) === itemId) {
+            row = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
+            break;
+          }
+        }
+      }
+      if (!row) return { error: 'Item not found.' };
+      if (String(row[KB.TYPE]) !== 'embed' || String(row[KB.DRIVE_KIND] || 'doc') !== 'doc') {
+        return { error: 'Only embedded Google Docs can be converted to articles.' };
+      }
+      fileId = String(row[KB.DRIVE_FILE_ID] || '');
+      title = String(row[KB.TITLE] || '');
+      department = String(row[KB.DEPARTMENT] || '');
+    } else {
+      const parsed = kbParseDriveUrl_(payload.driveUrl);
+      if (!parsed) return { error: 'Could not read that Drive link — paste a Google Doc share URL.' };
+      if (parsed.kind !== 'doc') return { error: 'Only Google Docs convert to articles — Sheets and files stay as embeds.' };
+      fileId = parsed.fileId;
+    }
+    if (!fileId) return { error: 'No Doc id on this item.' };
+    let doc;
+    try { doc = DocumentApp.openById(fileId); }
+    catch (e) {
+      return { error: 'Could not open the Doc — the deploying account needs at least Viewer access. (' + e.message + ')' };
+    }
+    const res = kbDocBodyToMarkdown_(doc.getBody());
+    if (res.markdown.length > KB_BODY_MAX) {
+      res.warnings.push('Converted article is over the ~49,000-character limit — trim it before saving, or split into multiple articles.');
+    }
+    return {
+      success: true,
+      markdown: res.markdown,
+      warnings: res.warnings,
+      docTitle: String(doc.getName() || ''),
+      title: title,
+      department: department,
+    };
+  } catch (err) { return { error: err.message }; }
+}
