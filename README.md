@@ -6,7 +6,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
 ## Projects
 
 - **web-app/** — Multi-module browser app deployed at one Web App URL.
-  Hosts three modules today, registered side-by-side in the `TOOLS`
+  Hosts five modules today, registered side-by-side in the `TOOLS`
   registry in `script_core.html`:
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export.
@@ -22,6 +22,17 @@ Script project synced via [clasp](https://github.com/google/clasp).
     and "Team Metrics" (manager-only — per-rep table with date-range
     and preset chips). CDR metrics also enrich the Call Notes Stats
     tab via a best-effort overlay.
+  - **Intake** — patient-intake forms ported from the bound
+    `form-generator` Apps Script. PPD (a 45-question intake driving a
+    clinical HCPCS recommendation engine) plus PMD/PAP account-creation
+    forms with image attachments. Each renders a branded email (two-stage,
+    bodyHash-guarded) and persists a PHI backup row to the Intake
+    spreadsheet; the shared AuditLog row stays PHI-free.
+  - **Reference** — in-app knowledge base: a per-department tree +
+    full-text search + reader for training/policy docs. Markdown
+    articles (rendered with HTML-escape-first) and embedded Drive
+    Doc/Sheet/file previews. Managers edit inline; reps browse read-only.
+    PHI-free by policy.
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in

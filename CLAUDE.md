@@ -2173,10 +2173,13 @@ carries the same number. `/cycle-status` surfaces it.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
 
 Fully optional + additive: with no `.cycle/`, every command behaves as before
-(emit the handoff/summary block in chat). The workflow-tools repo also ships
-optional helpers (`scripts/cycle-context.mjs` SessionStart hook,
-`scripts/render-metrics.mjs`) NOT copied here — add them if you want
-auto-substrate-loading on session start.
+(emit the handoff/summary block in chat). `scripts/cycle-context.mjs` IS
+installed here and wired as a **SessionStart hook** via `.claude/settings.json`
+— it auto-loads the substrate (STATE Current / Where-I-left-off / Pending +
+PROJECT_HEALTH Current Standing + invariant count) into each new session
+(fail-safe: prints nothing without `.cycle/`, never throws). The
+`scripts/render-metrics.mjs` trend-report helper from workflow-tools is NOT
+copied — add it if you want the metrics sparkline report.
 
 `.cycle/STATE.md` template:
 
