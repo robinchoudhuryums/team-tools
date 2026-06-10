@@ -18,6 +18,11 @@ Updated: 2026-06-10
 - A3 | web-app/script_core.html | "?" shortcut handler now skips contenteditable elements (CN .ce fields no longer swallow a typed "?")
 - A4 | web-app/kb/script_kb.html, test/client/run.js | kbMd_ percent-encodes quotes in link URLs (href attribute-injection closed); Node test extended (73 passing)
 - A7 | web-app/cn/script_callnotes.html | Sent Forms chips: var(--good-deep)/var(--warn-deep) → the defined --success-deep/--warning-deep tokens
+- /sync-docs | CLAUDE.md | punch append-order + isContentEditable gotchas; kbMd_ quote-encoding note; FormTokens-tz operator note
+- P#1 | web-app/Code.js | CallNoteManagerComment added to CN_AUDIT_ACTIONS (compliance panel + lifecycle now cover manager comments)
+- P#2 | web-app/Code.js | FormTokenCreated/FormSubmissionReceived audit rows log recipient DOMAIN only (toDomain=/fromDomain=); synthetic actor identity de-identified
+- P#3 | web-app/Code.js | notifyEmployeeOfDecision_ reports the deducted bucket's balance (sick vs annual; none for unpaid)
+- P#4 | web-app/Code.js | submitFormByToken sends the rep-notification email (PDF render) AFTER ScriptLock release
 
 ## Pending / not yet done
 - Audit findings NOT selected for implementation: A5 (unbounded FormSubmissions scans), A6 (whole-history per-rep CN reads incl. EOD digest), A8 (metrics ambient cache key), A9 (consent _meta back-compat tolerance), A10 (frozen legacy dirs — no action by design).
@@ -25,8 +30,7 @@ Updated: 2026-06-10
 - (Carried) Operator Script Properties for the Intake/forms/KB feature run: INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID, FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
 
 ## Open follow-on items
-- `FormTokenCreated` + `FormSubmissionReceived` audit rows carry the full recipient email — inconsistent with the ExternalEmailSent domain-only minimization (pre-existing; from Cycle 1 scan).
-- `CN_AUDIT_ACTIONS` omits `CallNoteManagerComment` — manager comments invisible to the compliance audit panel / note lifecycle (Cycle 1 scan, not selected).
+- `notifyRepOfFailedSubmission_` (size-cap rejections) still sends inside the ScriptLock — fast plain-text sends, but could use the same deferred pattern as P#4 for symmetry.
 - Server-side integration tests for the compliance-audit endpoints + intake/forms endpoints.
 - web-app/intake — Reference Phase 2 (Google-Doc→article converter for bulk KB migration).
 - Automation-health surfacing (PersonalSheetSyncFail / CDR columnWarning counts) — Stage 3 suggestion.
@@ -39,4 +43,4 @@ Updated: 2026-06-10
 - Reference KB = native markdown articles (primary) + Drive-embed fallback; articles stored as markdown source, rendered with HTML-escape-first.
 
 ## Where I left off
-Implemented broad-scan findings A1–A4 + A7 (Node harness 73/73, node --check clean) and ran /sync-docs (punch-ordering + isContentEditable gotchas, kbMd_ quote-encoding note, FormTokens-tz operator note) — all committed to `claude/gifted-hypatia-aee7wa`. Next: operator deploy (clasp push + new version + editor runAllTests), then /reflect to close Cycle 1. Remaining audit backlog: A5/A6/A8/A9 + audit-trail follow-ons (CN_AUDIT_ACTIONS gap, recipient-email minimization).
+Cycle 1 implementation complete: A1–A4 + A7, /sync-docs, and priority items P#1–P#4 (audit coverage, PII minimization, decision-email bucket, lock scope) — all on `claude/gifted-hypatia-aee7wa` (latest ac56aa1; Node harness 73/73). Next: small /sync-docs for the P#2 doc notes, operator deploy (clasp push + new version + editor runAllTests), then /reflect to close Cycle 1. Remaining audit backlog: A5/A6/A8/A9 + P5–P13 of the prioritized improvement list (see chat 2026-06-10).
