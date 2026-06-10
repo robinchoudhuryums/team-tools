@@ -30,6 +30,7 @@ console.log('\nclient — all partials parse (<script> syntax guard)');
   'cn/script_callnotes.html', 'tc/script_clock.html', 'tc/script_timesheet.html',
   'tc/script_timeoff.html', 'tc/script_manager.html', 'index.html', 'form_public.html',
   'intake/script_intake.html',
+  'kb/script_kb.html',
 ].forEach((f) => {
   test(f + ' parses', () => {
     const src = extractScript(f);
@@ -568,6 +569,35 @@ test('rewrites a trailing /dev to /exec', () => {
 test('leaves an already-canonical /exec URL unchanged', () => {
   const u = 'https://script.google.com/macros/s/AKfycbABC/exec';
   assert.strictEqual(normalizeWebAppExecUrl_(u), u);
+});
+
+console.log('\nkb — markdown renderer (kbMd_) escapes HTML + sanitizes links');
+const kbMd_ = loadFunction(sb, 'kb/script_kb.html', 'kbMd_');
+test('renders headings, bold, and lists', () => {
+  assert.ok(kbMd_('# Title').indexOf('<h1>Title</h1>') >= 0);
+  assert.ok(kbMd_('**b**').indexOf('<strong>b</strong>') >= 0);
+  assert.ok(kbMd_('- one\n- two').indexOf('<li>one</li>') >= 0);
+});
+test('escapes raw HTML / script in the source (no injection)', () => {
+  const out = kbMd_('<script>alert(1)</script>');
+  assert.ok(out.indexOf('<script') < 0, 'no raw <script>');
+  assert.ok(out.indexOf('&lt;script&gt;') >= 0, 'angle brackets escaped');
+});
+test('allows http(s)/mailto links, strips javascript: URLs to plain text', () => {
+  assert.ok(kbMd_('[x](https://a.com)').indexOf('<a href="https://a.com"') >= 0);
+  const js = kbMd_('[x](javascript:alert(1))');
+  assert.ok(js.indexOf('href="javascript') < 0 && js.indexOf('<a ') < 0, 'javascript: URL not linked');
+});
+
+console.log('\nCode.js — kbParseDriveUrl_() extracts {kind,fileId} from Drive URLs');
+const _kbCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'kbParseDriveUrl_'), _kbCtx, { filename: 'Code.js#kbParseDriveUrl_' });
+const kbParseDriveUrl_ = _kbCtx.kbParseDriveUrl_;
+test('parses Doc / Sheet / file URLs and rejects junk', () => {
+  assert.strictEqual(kbParseDriveUrl_('https://docs.google.com/document/d/ABC123/edit').kind, 'doc');
+  assert.strictEqual(kbParseDriveUrl_('https://docs.google.com/spreadsheets/d/SHEET9/edit#gid=0').kind, 'sheet');
+  assert.strictEqual(kbParseDriveUrl_('https://drive.google.com/file/d/FILE7/view').fileId, 'FILE7');
+  assert.strictEqual(kbParseDriveUrl_('not a url'), null);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
