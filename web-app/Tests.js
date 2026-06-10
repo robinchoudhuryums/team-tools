@@ -566,6 +566,7 @@ function _runAllTests() {
   // ── Integration (sheet-touching) ────────────────────────────────────────
   _integrationTest('findExistingPunch_match',           test_findExistingPunch_match);
   _integrationTest('findExistingPunch_noMatch',         test_findExistingPunch_noMatch);
+  _integrationTest('getTodayPunches_sortsOutOfOrderBackfill', test_getTodayPunches_sortsOutOfOrderBackfill);
   _integrationTest('adjustLeaveBalance_deduct',         test_adjustLeaveBalance_deduct);
   _integrationTest('adjustLeaveBalance_restore',        test_adjustLeaveBalance_restore);
   _integrationTest('adjustLeaveBalance_invalidatesCache', test_adjustLeaveBalance_invalidatesCache);
@@ -1059,6 +1060,27 @@ function test_findExistingPunch_noMatch() {
   _appendTestPunch(_TEST_INDIA_ID, 'Test India User', _TEST_DATE_RECENT, '09:00:00', 'IN', 'ClockIn');
   _assertNull(findExistingPunch_(_TEST_INDIA_ID, _TEST_DATE_RECENT, 'ClockOut'));
   _assertNull(findExistingPunch_('DOES_NOT_EXIST',  _TEST_DATE_RECENT, 'ClockIn'));
+}
+
+// ── getTodayPunches_ — same-day back-fill ordering ──
+
+function test_getTodayPunches_sortsOutOfOrderBackfill() {
+  _clearTestState(_TEST_INDIA_ID);
+  const today = fmtDateTz_(new Date(), 'Asia/Kolkata');
+  // Simulate live punches followed by a same-day back-fill: the lunch
+  // adjustments are APPENDED after the ClockOut, so sheet order ≠ time order.
+  // Without the chronological sort, the "last punch" would read as LunchIn and
+  // live status / getNextActions_ would claim the rep is still working.
+  _appendTestPunch(_TEST_INDIA_ID, 'Test India User', today, '09:00:00', 'IN',  'ClockIn');
+  _appendTestPunch(_TEST_INDIA_ID, 'Test India User', today, '17:00:00', 'OUT', 'ClockOut');
+  _appendTestPunch(_TEST_INDIA_ID, 'Test India User', today, '12:30:00', 'OUT', 'ADJ-LunchOut');
+  _appendTestPunch(_TEST_INDIA_ID, 'Test India User', today, '13:00:00', 'IN',  'ADJ-LunchIn');
+  const { punches } = getTodayPunches_(_TEST_INDIA_ID, 'Asia/Kolkata');
+  _assertEq(punches.length, 4, 'All four punches found for today');
+  _assertEq(punches.map(p => p.time).join(','),
+    '09:00:00,12:30:00,13:00:00,17:00:00', 'Punches sorted chronologically');
+  _assertEq(punches[punches.length - 1].type, 'ClockOut',
+    'Last punch is ClockOut — back-filled lunch must not flip live status');
 }
 
 // ── adjustLeaveBalance_ ──

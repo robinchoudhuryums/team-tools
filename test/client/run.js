@@ -588,6 +588,15 @@ test('allows http(s)/mailto links, strips javascript: URLs to plain text', () =>
   const js = kbMd_('[x](javascript:alert(1))');
   assert.ok(js.indexOf('href="javascript') < 0 && js.indexOf('<a ') < 0, 'javascript: URL not linked');
 });
+test('percent-encodes quotes in link URLs (no href attribute breakout)', () => {
+  // A `"` in the URL would otherwise close the href attribute and inject an
+  // event handler (the top-level escape covers &/</> but not quotes).
+  const out = kbMd_('[x](https://e.com/"onmouseover=alert`1`)');
+  assert.ok(out.indexOf('"onmouseover') < 0, 'quote must not terminate the href attribute');
+  assert.ok(out.indexOf('%22') >= 0, 'double quote percent-encoded');
+  const single = kbMd_("[x](https://e.com/'q)");
+  assert.ok(single.indexOf('%27') >= 0, 'single quote percent-encoded');
+});
 
 console.log('\nCode.js — kbParseDriveUrl_() extracts {kind,fileId} from Drive URLs');
 const _kbCtx = vm.createContext({});

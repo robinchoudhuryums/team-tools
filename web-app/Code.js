@@ -750,6 +750,12 @@ function getManagerDashboard() {
         type: normalizeType_(String(adpRows[i][ADP.COMMENTS])),
       });
     }
+    // Rows arrive in APPEND order; a same-day back-fill (approved adjustment,
+    // Day Edit) lands last and would mis-derive "last punch" → wrong live
+    // status. Sort each rep's punches chronologically ("HH:mm:ss" strings).
+    Object.keys(todayPunchesByEmp).forEach(id => {
+      todayPunchesByEmp[id].sort((a, b) => a.time.localeCompare(b.time));
+    });
 
     // Live status with manager-tz conversion
     const liveStatus = employees.map(e => {
@@ -4980,10 +4986,14 @@ function createFormToken(payload) {
 
   const token = generateFormToken_();
   const now = new Date();
-  const empTz = empTz_(emp);
-  const createdAt = Utilities.formatDate(now, empTz, "yyyy-MM-dd'T'HH:mm:ss");
+  // CreatedAt / ExpiresAt are stored in CONFIG.TIMEZONE — every reader
+  // (getFormByToken, submitFormByToken, getMySentForms, parseRetentionDateMs_)
+  // parses these cells with CONFIG.TIMEZONE, and FormSubmissions.SubmittedAt is
+  // already written in it. Writing them in the creating rep's tz skewed the
+  // expiry check by the rep↔CONFIG tz offset (±~12h for CST reps).
+  const createdAt = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
   const expiresDate = new Date(now.getTime() + (CONFIG.FORM_TOKEN_EXPIRY_HOURS || 72) * 3600000);
-  const expiresAt = Utilities.formatDate(expiresDate, empTz, "yyyy-MM-dd'T'HH:mm:ss");
+  const expiresAt = Utilities.formatDate(expiresDate, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
 
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -7249,6 +7259,12 @@ function getTodayPunches_(empId, empTz) {
       type: normalizeType_(raw), isAdjustment: raw.indexOf('ADJ-') === 0,
     });
   }
+  // Sheet rows are in APPEND order, not time order — a same-day back-fill
+  // (approved adjustment request, manager Day Edit, immediate adjust) lands
+  // last and would otherwise scramble every order-sensitive consumer
+  // (getNextActions_, the client's status sentence / day ribbon / hours).
+  // Normalized times are "HH:mm:ss", so a lexicographic sort is chronological.
+  punches.sort((a, b) => a.time.localeCompare(b.time));
   return { today, punches };
 }
 

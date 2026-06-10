@@ -2,32 +2,42 @@
 
 ## Current
 Cycle: 1
-Phase: idle
+Phase: implement
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-06-05
+Updated: 2026-06-10
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing in progress — cycle tracking initialized after a large feature run.
+- Cycle 1 broad-scan completed 2026-06-10 (findings A1–A10; A11 retracted). Implemented A1–A4 + A7 this session; committed on `claude/gifted-hypatia-aee7wa`.
+- Next concrete step: operator runs `runAllTests()` from the Apps Script editor (new integration test `getTodayPunches_sortsOutOfOrderBackfill` hasn't executed against a real spreadsheet yet), then `clasp push -f` + new deployment version.
 
 ## Completed this cycle
-- (pre-tracking) Intake tool (PPD recommendation engine + PMD/PAP account creation), external fillable-form hardening (hash/consent/segregation/certificate/retention), the `/a/<domain>` form-link fix, Quick Links picker, the win-back nudge, and the Reference/KB tool. Merged to main via PR #39; later commits (PPD result cards, Reference tool, command sync) on `claude/nifty-knuth-dZUVP`.
+- A1 | web-app/Code.js | FormTokens CreatedAt/ExpiresAt now written in CONFIG.TIMEZONE (matches all readers; fixes ±~12h expiry skew for non-IST reps)
+- A2 | web-app/Code.js, web-app/Tests.js | getTodayPunches_ + getManagerDashboard per-emp punches sorted chronologically (same-day back-fills no longer scramble live status / next actions / ribbon); new integration test registered
+- A3 | web-app/script_core.html | "?" shortcut handler now skips contenteditable elements (CN .ce fields no longer swallow a typed "?")
+- A4 | web-app/kb/script_kb.html, test/client/run.js | kbMd_ percent-encodes quotes in link URLs (href attribute-injection closed); Node test extended (73 passing)
+- A7 | web-app/cn/script_callnotes.html | Sent Forms chips: var(--good-deep)/var(--warn-deep) → the defined --success-deep/--warning-deep tokens
 
 ## Pending / not yet done
-- Open a follow-up PR for the post-#39 commits if not already merged.
-- Operator deploy: `clasp push -f` + new version, and set the Script Properties (INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID, FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID).
+- Audit findings NOT selected for implementation: A5 (unbounded FormSubmissions scans), A6 (whole-history per-rep CN reads incl. EOD digest), A8 (metrics ambient cache key), A9 (consent _meta back-compat tolerance), A10 (frozen legacy dirs — no action by design).
+- Operator deploy for this session's fixes: `cd web-app && clasp push -f` + Apps Script editor → Deploy → New version; re-run `runAllTests()` once.
+- (Carried) Operator Script Properties for the Intake/forms/KB feature run: INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID, FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
 
 ## Open follow-on items
+- CLAUDE.md Common Gotchas — add entries for (a) the getTodayPunches_ append-order assumption (now fixed by sort; keep new consumers sorted) and (b) document-level keyboard handlers must check isContentEditable, not just tagName. Run /sync-docs.
+- `FormTokenCreated` + `FormSubmissionReceived` audit rows carry the full recipient email — inconsistent with the ExternalEmailSent domain-only minimization (pre-existing; from Cycle 1 scan).
+- `CN_AUDIT_ACTIONS` omits `CallNoteManagerComment` — manager comments invisible to the compliance audit panel / note lifecycle (Cycle 1 scan, not selected).
+- Server-side integration tests for the compliance-audit endpoints + intake/forms endpoints.
 - web-app/intake — Reference Phase 2 (Google-Doc→article converter for bulk KB migration).
-- web-app (forms) — external `?form` route is admin-blocked (environmental, not a code bug); surveys/reviews go via Quick Links → external SaaS.
-- `FormSubmissionReceived` audit row carries the recipient email (pre-existing PII) — consider domain-only minimization to match `ExternalEmailSent`.
-- Server-side integration tests for the intake/forms endpoints (editor/manual only today).
+- Automation-health surfacing (PersonalSheetSyncFail / CDR columnWarning counts) — Stage 3 suggestion.
 
 ## Decisions made (so the next session doesn't re-litigate)
+- FormTokens timestamps (CreatedAt/ExpiresAt) are stored in CONFIG.TIMEZONE — matching FormSubmissions.SubmittedAt and every parse site; rep-tz display fidelity was deliberately traded for parse correctness.
+- Punch ordering is fixed at the data source (getTodayPunches_ / dashboard collector sort), not in each consumer.
 - External anonymous web-app access is blocked by Workspace admin policy — the external fillable-form route is non-functional for external recipients; not a code bug.
 - Provider claim docs (PT/OT Rx, seating eval) are out-of-scope for signature-of-record; EAA + patient self-serve intake are in-scope.
 - Reference KB = native markdown articles (primary) + Drive-embed fallback; articles stored as markdown source, rendered with HTML-escape-first.
 
 ## Where I left off
-Cycle tracking just initialized; no work in progress. Next: run `/health-pulse` for a directional baseline across the Health Dimensions, or `/broad-scan` to start Cycle 1 properly. The merged Intake/forms/KB work still needs the operator deploy + Script-Property setup (see Pending).
+Implemented broad-scan findings A1–A4 + A7 (Node harness 73/73, node --check clean) and committed to `claude/gifted-hypatia-aee7wa`. Next: /sync-docs for the two new Common Gotchas entries, operator deploy (clasp push + new version + editor runAllTests), then /reflect to close Cycle 1.
