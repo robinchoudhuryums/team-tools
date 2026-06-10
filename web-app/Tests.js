@@ -41,6 +41,12 @@ var _TEST_CDR_SS_ID = null;
 var _TEST_OVERRIDE_CDR_SS_ID = null;
 const _TEST_CDR_DATE = '2026-05-15';  // a Friday, in the past relative to test runs
 
+// Intake fixture spreadsheet (Offerings tab) for the intake endpoint
+// integration tests; _TEST_OVERRIDE_INTAKE_SS_ID redirects getIntakeSS_ at it
+// (consumed in Code.js). Reused across runs via Script Property TEST_INTAKE_SS_ID.
+var _TEST_INTAKE_SS_ID = null;
+var _TEST_OVERRIDE_INTAKE_SS_ID = null;
+
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
   const d = new Date(); d.setDate(d.getDate() - 3);
@@ -122,6 +128,19 @@ function _withTestCdr_(fn) {
   finally {
     _TEST_OVERRIDE_CDR_SS_ID = null;
     _resetCdrCaches_();
+  }
+}
+
+/** Runs `fn` with getIntakeSS_ redirected at the test Intake fixture. Resets
+ *  the per-execution Offerings cache on entry AND exit so a warm cache can't
+ *  leak fixture rows into real reads (or vice versa). */
+function _withTestIntake_(fn) {
+  _TEST_OVERRIDE_INTAKE_SS_ID = _TEST_INTAKE_SS_ID;
+  _intakeOfferingsCache = null;
+  try { return fn(); }
+  finally {
+    _TEST_OVERRIDE_INTAKE_SS_ID = null;
+    _intakeOfferingsCache = null;
   }
 }
 
@@ -289,6 +308,11 @@ function setupTestEnvironment() {
   try { _setupTestCdrFixture_(); }
   catch (e) { Logger.log('  CDR fixture setup skipped: ' + e.message); }
 
+  // Provision the Intake fixture (same best-effort posture; the intake
+  // endpoint tests guard on _TEST_INTAKE_SS_ID).
+  try { _setupTestIntakeFixture_(); }
+  catch (e) { Logger.log('  Intake fixture setup skipped: ' + e.message); }
+
   invalidateRosterCache_();
   Logger.log(`setupTestEnvironment: ${added} test employee row(s) added (existing left unchanged).`);
   if (_TEST_CN_SS_ID) Logger.log('  Call-notes test Sheet ID: ' + _TEST_CN_SS_ID);
@@ -361,6 +385,32 @@ function _setupTestCdrFixture_() {
     sheet.getRange(rr, CDR.TTT).setNumberFormat('h:mm:ss').setValue(tttSec / 86400);
     sheet.getRange(rr, CDR.ATT).setNumberFormat('h:mm:ss').setValue(attSec / 86400);
   }
+  SpreadsheetApp.flush();
+}
+
+/** Creates (or reuses, via Script Property TEST_INTAKE_SS_ID) a fixture
+ *  spreadsheet with a deterministic Offerings tab (the A2:F column contract,
+ *  INV-112) for the intake endpoint integration tests. Rows are rebuilt on
+ *  every setup so the data is idempotent. Submission tabs auto-provision in
+ *  the fixture on first use via getIntakeSubmissionSheet_. */
+function _setupTestIntakeFixture_() {
+  const props = PropertiesService.getScriptProperties();
+  const existing = props.getProperty('TEST_INTAKE_SS_ID');
+  let ss = null;
+  if (existing) { try { ss = SpreadsheetApp.openById(existing); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = SpreadsheetApp.create('TEST_Intake_Fixture');
+    props.setProperty('TEST_INTAKE_SS_ID', ss.getId());
+  }
+  _TEST_INTAKE_SS_ID = ss.getId();
+  let sheet = ss.getSheetByName(CONFIG.INTAKE.OFFERINGS_TAB);
+  if (!sheet) sheet = ss.insertSheet(CONFIG.INTAKE.OFFERINGS_TAB);
+  sheet.clear();
+  sheet.getRange(1, 1, 3, 6).setValues([
+    ['Features', 'HCPCS', 'WeightCap', 'SeatType', 'PdfLink', 'ImageUrl'],
+    ['Standard captain chair', 'K0823', '300', 'c', 'https://example.invalid/k0823.pdf', 'https://example.invalid/k0823.jpg'],
+    ['Group 3 solid seat',     'K0861', '300', 's', 'https://example.invalid/k0861.pdf', 'https://example.invalid/k0861.jpg'],
+  ]);
   SpreadsheetApp.flush();
 }
 
@@ -614,6 +664,8 @@ function _runAllTests() {
   _integrationTest('punchAdjust_submitApproveWritesPunch',     test_punchAdjust_submitApproveWritesPunch);
   _integrationTest('punchAdjust_batchInvalidRejected',         test_punchAdjust_batchInvalidRejected);
   _integrationTest('punchAdjust_nonManagerRejected',           test_punchAdjust_nonManagerRejected);
+  _integrationTest('punchAdjust_duplicatePendingRejected',     test_punchAdjust_duplicatePendingRejected);
+  _integrationTest('punchAdjust_approveAgedPastWindowRejected', test_punchAdjust_approveAgedPastWindowRejected);
   _integrationTest('recordPunch_immediateAdjustGatedByFlag',   test_recordPunch_immediateAdjustGatedByFlag);
   _integrationTest('managerSaveDayRange_appliesAcrossDays',    test_managerSaveDayRange_appliesAcrossDays);
   _integrationTest('managerSaveDayRange_nonManagerRejected',   test_managerSaveDayRange_nonManagerRejected);
@@ -718,6 +770,7 @@ function _runAllTests() {
   _smokeTest('intake_engine_emptySafe',            test_intake_engine_emptySafe);
   _smokeTest('intake_buildPpdBody_escapesAnswers', test_intake_buildPpdBody_escapesAnswers);
   _smokeTest('intake_emailDomain_extracted',       test_intake_emailDomain_extracted);
+  _smokeTest('intake_resolveRecipient_customValidation', test_intake_resolveRecipient_customValidation);
 
   // ── Forms hardening — submission integrity hash (smoke-safe; pure) ──────
   _smokeTest('form_submissionHash_deterministicAndTamperEvident', test_form_submissionHash_deterministicAndTamperEvident);
@@ -759,6 +812,15 @@ function _runAllTests() {
   _integrationTest('metrics_cdrFixture_durationsUseDisplayValues', test_metrics_cdrFixture_durationsUseDisplayValues);
   _integrationTest('metrics_getTeamMetrics_nonManagerRejected', test_metrics_getTeamMetrics_nonManagerRejected);
   _integrationTest('metrics_getMyMetrics_cdrUnavailableErrors', test_metrics_getMyMetrics_cdrUnavailableErrors);
+
+  // ── Compliance audit panel (INV-92 endpoints, P7) ───────────────────────
+  _integrationTest('auditPanel_searchAndHistory',               test_auditPanel_searchAndHistory);
+
+  // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
+  _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
+  _integrationTest('intake_sendPPD_staleHashRejected',          test_intake_sendPPD_staleHashRejected);
+  _integrationTest('intake_send_unauthorizedRejected',          test_intake_send_unauthorizedRejected);
+  _integrationTest('intake_sentViewer_callerScopedAndManager',  test_intake_sentViewer_callerScopedAndManager);
 
   // ── Metrics / CDR module (G1 backfill) ─────────────────────────────────
   _smokeTest('metrics_cnNoteCoverage_basic',            test_metrics_cnNoteCoverage_basic);
@@ -1270,6 +1332,54 @@ function test_punchAdjust_nonManagerRejected() {
     const q = managerGetPendingAdjustments();
     _assertNotNull(q.error, 'non-manager cannot read the queue');
   });
+}
+
+// P11 — duplicate guards (INV-94 family) on the adjustment queue.
+function test_punchAdjust_duplicatePendingRejected() {
+  _clearTestState(_TEST_INDIA_ID);
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    // (a) duplicate (date, punchType) within ONE batch
+    _assertFailure(submitPunchAdjustRequests([
+      { date: _TEST_DATE_RECENT, time: '09:00', punchType: 'ClockIn', reason: '' },
+      { date: _TEST_DATE_RECENT, time: '09:05', punchType: 'ClockIn', reason: '' },
+    ]), 'Duplicate adjustment in this batch');
+    // (b) duplicate of an EXISTING Pending request
+    _assertSuccess(submitPunchAdjustRequests([
+      { date: _TEST_DATE_RECENT, time: '09:00', punchType: 'ClockIn', reason: '' },
+    ]), 'first request lands');
+    _assertFailure(submitPunchAdjustRequests([
+      { date: _TEST_DATE_RECENT, time: '09:10', punchType: 'ClockIn', reason: '' },
+    ]), 'already have a pending');
+    // (c) a DIFFERENT punch type on the same date is still allowed
+    _assertSuccess(submitPunchAdjustRequests([
+      { date: _TEST_DATE_RECENT, time: '17:00', punchType: 'ClockOut', reason: '' },
+    ]), 'different punch type is not a duplicate');
+  });
+  _clearTestState(_TEST_INDIA_ID);
+}
+
+// P11 — approval-time re-validation of the adjust window (a request that aged
+// past the window in the queue must not write a punch the submit-time check
+// would have rejected).
+function test_punchAdjust_approveAgedPastWindowRejected() {
+  _clearTestState(_TEST_INDIA_ID);
+  const sheet = getOrCreatePunchAdjustSheet_();
+  const d = new Date();
+  d.setDate(d.getDate() - (CONFIG.ADJUST_WINDOW_DAYS + 10));
+  const oldDate = Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  const reqId = Utilities.getUuid();
+  // Fabricate the aged Pending row directly — submitPunchAdjustRequests would
+  // (correctly) refuse to create it.
+  sheet.appendRow([reqId, _TEST_INDIA_ID, 'Test India User', oldDate, 'ClockIn', '09:00', 'aged in queue', 'Pending', '2026-01-01 00:00:00']);
+  try {
+    const r = _asUser(_TEST_MGR_EMAIL, () => updatePunchAdjustStatus(reqId, 'Approved'));
+    _assertFailure(r, 'older than the', 'aged request cannot be approved');
+    _assertEq(_countTimesheetRows(_TEST_INDIA_ID, oldDate, 'ClockIn'), 0, 'no punch was written');
+    const r2 = _asUser(_TEST_MGR_EMAIL, () => updatePunchAdjustStatus(reqId, 'Denied'));
+    _assertSuccess(r2, 'deny path still works for an aged request');
+  } finally {
+    _clearTestState(_TEST_INDIA_ID);
+  }
 }
 
 // Toggle — employee immediate adjust is server-gated by employeeImmediateAdjust.
@@ -3452,6 +3562,8 @@ function test_managerGates_rejectNonManager() {
     ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
     ['getAutomationHealth',            function () { return getAutomationHealth(); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
+    ['getCallNotesAuditLog',           function () { return getCallNotesAuditLog({}); }],
+    ['getCallNoteAuditHistory',        function () { return getCallNoteAuditHistory('no-such-note'); }],
   ];
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
@@ -3462,6 +3574,59 @@ function test_managerGates_rejectNonManager() {
   // assert it never leaks a badge / data to a non-manager.
   const amb = _asUser(_TEST_INDIA_EMAIL, function () { return getMetricsAmbient(); });
   _assertTrue(!amb || amb.badge == null, 'getMetricsAmbient must not leak a badge to a non-manager');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  COMPLIANCE AUDIT PANEL — getCallNotesAuditLog / getCallNoteAuditHistory
+//  (P7 — server-side integration for the S57 panel: filters, PHI-free rows,
+//  lifecycle ordering. The non-manager gate lives in managerGates above.)
+// ════════════════════════════════════════════════════════════════════════════
+
+function test_auditPanel_searchAndHistory() {
+  _clearTestCallNotes();
+  var noteId = null;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    noteId = submitCallNote(_cnTestPayload({
+      caller: 'Audit Panel Test',
+      issue: 'compliance panel integration test',
+    })).note.noteId;
+  });
+  _assertNotNull(noteId, 'test note created');
+  try {
+    // A second lifecycle event so history has ≥2 rows.
+    _asUser(_TEST_INDIA_EMAIL, function () { return setCallNoteFlag(noteId, 'action'); });
+
+    // ── Search: rep + action filters, default 30-day range ────────────────
+    const res = _asUser(_TEST_MGR_EMAIL, function () {
+      return getCallNotesAuditLog({ repId: _TEST_INDIA_ID, action: 'CallNoteCreate' });
+    });
+    _assertNull(res.error, 'audit search should not error for a manager');
+    _assertNotNull(res.range && res.range.start, 'default date range is reported back');
+    var hit = null;
+    res.rows.forEach(function (r) {
+      _assertEq(r.action, 'CallNoteCreate', 'action filter applied to every returned row');
+      _assertEq(r.repId, _TEST_INDIA_ID, 'rep filter applied to every returned row');
+      if (r.noteId === noteId) hit = r;
+    });
+    _assertNotNull(hit, 'the created note surfaces in the audit search');
+    // PHI-free contract (INV-92 / INV-32): the audit row carries the noteId,
+    // never the note content.
+    _assertFalse(String(hit.notes).indexOf('compliance panel integration test') >= 0,
+      'audit row must be PHI-free — note content never enters the AuditLog');
+    _assertFalse(String(hit.notes).indexOf('Audit Panel Test') >= 0,
+      'audit row must not carry the caller name');
+
+    // ── History: full lifecycle, oldest-first, independent of date filter ──
+    const hist = _asUser(_TEST_MGR_EMAIL, function () {
+      return getCallNoteAuditHistory(noteId);
+    });
+    _assertNull(hist.error, 'audit history should not error for a manager');
+    _assertTrue(hist.rows.length >= 2, 'create + flag lifecycle rows present');
+    _assertEq(hist.rows[0].action, 'CallNoteCreate', 'history is oldest-first (lifecycle order)');
+    _assertEq(hist.truncated, false, 'create row captured → history is not truncated (L11)');
+  } finally {
+    if (noteId) _asUser(_TEST_INDIA_EMAIL, function () { try { return deleteCallNote(noteId); } catch (e) {} });
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3593,6 +3758,106 @@ function test_intake_buildPpdBody_escapesAnswers() {
 function test_intake_emailDomain_extracted() {
   _assertEq(intakeEmailDomain_('agent@umsupply.com'), 'umsupply.com');
   _assertEq(intakeEmailDomain_('garbage'), '(none)');
+}
+
+function test_intake_resolveRecipient_customValidation() {
+  // Pure branches — no roster read on the custom / missing paths.
+  _assertThrows(function () { intakeResolveRecipient_('PMD', { kind: 'custom', email: 'not-an-email' }); },
+    'Invalid recipient email', 'custom recipient must be a valid email');
+  _assertThrows(function () { intakeResolveRecipient_('PMD', {}); },
+    'No recipient selected', 'missing spec kind is rejected');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INTAKE — endpoint integration (uses the _setupTestIntakeFixture_ Offerings
+//  sheet via _withTestIntake_; P9 + the P15 sent-submissions viewer)
+// ════════════════════════════════════════════════════════════════════════════
+
+function test_intake_previewPPD_returnsHashAndRecs() {
+  if (!_TEST_INTAKE_SS_ID) { _assertTrue(true, 'Intake fixture unavailable — skipped'); return; }
+  const r = _withTestIntake_(function () {
+    return _asUser(_TEST_INDIA_EMAIL, function () {
+      return intakePreviewPPD({
+        patientInfo: 'TEST Patient 12345',
+        answers: { '38': '200 lbs' },
+        rows: [{ qNum: '38', label: 'Weight', value: '200 lbs' }],
+      });
+    });
+  });
+  _assertSuccess(r, 'intakePreviewPPD should succeed for an enrolled rep');
+  _assertTrue(/^[0-9a-f]{64}$/.test(String(r.bodyHash || '')), 'bodyHash is a 64-hex SHA-256 (INV-111)');
+  _assertNotNull(r.recommendations, 'recommendations ride the preview');
+  const std = (r.recommendations.standard || []).map(function (p) { return p.hcpcs; });
+  _assertContains(std, 'K0823', 'fixture captain chair recommended at 200 lbs, no eligibility');
+  _assertContains(r.subject, 'TEST Patient 12345', 'subject carries the patient label');
+}
+
+function test_intake_sendPPD_staleHashRejected() {
+  if (!_TEST_INTAKE_SS_ID) { _assertTrue(true, 'Intake fixture unavailable — skipped'); return; }
+  // The hash check fires BEFORE recipient resolution / MailApp, so a stale
+  // hash sends nothing and stores nothing (INV-111 / INV-41 pattern).
+  const r = _withTestIntake_(function () {
+    return _asUser(_TEST_INDIA_EMAIL, function () {
+      return intakeSendPPD(
+        { patientInfo: 'TEST Patient 12345', answers: { '38': '200 lbs' }, rows: [] },
+        { kind: 'custom', email: 'do-not-send@example.invalid' },
+        '0'.repeat(64)
+      );
+    });
+  });
+  _assertFailure(r, 'changed since you previewed', 'stale bodyHash must reject the send');
+}
+
+function test_intake_send_unauthorizedRejected() {
+  // Auth check precedes the Offerings read, so no fixture is needed.
+  const r = _asUser('not-a-registered-user@example.invalid', function () {
+    return intakeSendPPD({ patientInfo: 'X' }, { kind: 'custom', email: 'x@example.invalid' }, '');
+  });
+  _assertFailure(r, 'Not authorized', 'unregistered caller is rejected before any work');
+}
+
+function test_intake_sentViewer_callerScopedAndManager() {
+  if (!_TEST_INTAKE_SS_ID) { _assertTrue(true, 'Intake fixture unavailable — skipped'); return; }
+  _withTestIntake_(function () {
+    // PPD submission row layout: [id, ts, repId, repName, patientInfo,
+    // language, answersJSON, recommendations, selections, recipient]
+    const sheet = getIntakeSubmissionSheet_('PPD');
+    sheet.appendRow(['TESTSUB-1', '2026-01-01 10:00:00', _TEST_INDIA_ID, 'Test India User',
+      'TEST Patient X', 'EN', '{"38":"200"}', '{}', '{}', 'recipient@example.invalid']);
+    SpreadsheetApp.flush();
+    try {
+      const mine = _asUser(_TEST_INDIA_EMAIL, function () { return intakeListMySubmissions(); });
+      _assertNull(mine.error, 'owner list should not error');
+      _assertTrue(mine.submissions.some(function (s) { return s.submissionId === 'TESTSUB-1'; }),
+        'owner sees their own submission in the list');
+
+      const others = _asUser(_TEST_PH_EMAIL, function () { return intakeListMySubmissions(); });
+      _assertNull(others.error, 'other rep list should not error');
+      _assertFalse((others.submissions || []).some(function (s) { return s.submissionId === 'TESTSUB-1'; }),
+        'another rep must NOT see the owner\'s submission (caller-scoped)');
+
+      const det = _asUser(_TEST_INDIA_EMAIL, function () { return intakeGetSubmission('PPD', 'TESTSUB-1'); });
+      _assertNull(det.error, 'owner detail should not error');
+      _assertEq(det.answers['38'], '200', 'answers JSON round-trips in the detail');
+      _assertEq(det.patientInfo, 'TEST Patient X', 'patientInfo round-trips');
+
+      const denied = _asUser(_TEST_PH_EMAIL, function () { return intakeGetSubmission('PPD', 'TESTSUB-1'); });
+      _assertNotNull(denied.error, 'another rep\'s detail request is rejected');
+      _assertContains(denied.error, 'your own intake submissions', 'scoping error message');
+
+      const mgr = _asUser(_TEST_MGR_EMAIL, function () { return intakeGetSubmission('PPD', 'TESTSUB-1'); });
+      _assertNull(mgr.error, 'manager detail should not error');
+      _assertEq(mgr.patientInfo, 'TEST Patient X', 'manager sees any rep\'s submission');
+    } finally {
+      const last = sheet.getLastRow();
+      if (last >= 2) {
+        const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+        for (let i = ids.length - 1; i >= 0; i--) {
+          if (String(ids[i][0]).trim() === 'TESTSUB-1') sheet.deleteRow(i + 2);
+        }
+      }
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -5332,11 +5332,13 @@ function submitFormByToken(token, formData) {
     });
     const signatureData = String(data.signature || '');
 
-    // Consent is server-enforced, not just client-gated: a payload that
-    // explicitly reports consent NOT given is rejected. (Absent _meta — e.g. a
-    // page loaded before this deploy — is allowed through: the client's consent
-    // checkbox already gated it, INV-78-style back-compat.)
-    if (meta.consentAgreed === false) {
+    // Consent is server-enforced, not just client-gated: the payload MUST
+    // affirmatively report consentAgreed === true. The original deploy
+    // tolerated an absent _meta (pages cached pre-hardening), but the shipped
+    // form_public.html has sent _meta on every submit since — so a missing
+    // envelope now means a hand-crafted POST bypassing the consent checkbox,
+    // and the tolerance window is closed (A9).
+    if (!meta || meta.consentAgreed !== true) {
       return { success: false, error: 'You must acknowledge the privacy notice before submitting.' };
     }
 
@@ -7604,7 +7606,30 @@ function submitPunchAdjustRequests(requests) {
       if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
       clean.push({ date: date, time: time, punchType: punchType, reason: reason });
     }
+    // Duplicate guards (same family as INV-94's time-off dup-guard): reject a
+    // batch carrying two entries for the same (date, punchType), and reject an
+    // entry that duplicates an EXISTING Pending request — a double-submit
+    // would otherwise queue twin rows that each write a punch on approval
+    // (benign-ish since approve updates-in-place, but it clutters the queue
+    // and invites a double-approve race).
+    const batchSeen = {};
+    for (let i = 0; i < clean.length; i++) {
+      const key = clean[i].date + '|' + clean[i].punchType;
+      if (batchSeen[key]) return { success: false, error: 'Duplicate adjustment in this batch: ' + clean[i].punchType + ' on ' + clean[i].date + '.' };
+      batchSeen[key] = true;
+    }
     const sheet = getOrCreatePunchAdjustSheet_();
+    const existing = sheet.getDataRange().getValues();
+    for (let i = 1; i < existing.length; i++) {
+      if (String(existing[i][PAR.EMP_ID]).trim() !== emp.id) continue;
+      if (String(existing[i][PAR.STATUS]).trim().toLowerCase() !== 'pending') continue;
+      const key = normalizeDate_(existing[i][PAR.DATE]) + '|' + String(existing[i][PAR.PUNCH_TYPE]).trim();
+      if (batchSeen[key]) {
+        return { success: false, error: 'You already have a pending ' +
+          String(existing[i][PAR.PUNCH_TYPE]).trim() + ' adjustment for ' +
+          normalizeDate_(existing[i][PAR.DATE]) + ' awaiting approval.' };
+      }
+    }
     const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     clean.forEach(function (c) {
       sheet.appendRow([Utilities.getUuid(), emp.id, emp.name, c.date, c.punchType, c.time, c.reason, 'Pending', submittedAt]);
@@ -7694,6 +7719,16 @@ function updatePunchAdjustStatus(reqId, newStatus) {
       if (newStatus === 'Approved') {
         const targetEmp = lookupEmployeeById_(empId);
         if (!targetEmp) return { success: false, error: 'Employee not found.' };
+        // Re-validate the adjust window at APPROVAL time — the submit-time
+        // check (INV-106) doesn't cover a request that sat in the queue past
+        // the window. Writing it would bypass the same bound recordPunch /
+        // managerSaveDay enforce; the manager should deny instead.
+        const ageDays = daysBetween_(date, fmtDateTz_(new Date(), empTz_(targetEmp)));
+        if (ageDays > CONFIG.ADJUST_WINDOW_DAYS) {
+          return { success: false, error:
+            'This request is now older than the ' + CONFIG.ADJUST_WINDOW_DAYS +
+            '-day adjust window — deny it (the rep can re-submit if still needed).' };
+        }
         writeAdjustPunchForEmployee_(targetEmp, date, punchType, reqTime, callerEmp.email, reason);
       } else {
         const targetForAudit = lookupEmployeeById_(empId) || { id: empId, name: empName, email: '' };
@@ -8569,7 +8604,11 @@ function getMetricsAmbient() {
     if (!emp || !emp.isManager) return { badge: null };
 
     var cache = CacheService.getScriptCache();
-    var ck = 'metrics_ambient_v1';
+    // Threshold rides in the cache key (INV-85 versioned-key discipline) so a
+    // CDR_ALERT_THRESHOLD change takes effect on the next poll instead of
+    // serving a badge computed against the old cutoff for up to the TTL.
+    var ambientThreshold = CONFIG.CDR_ALERT_THRESHOLD || 85;
+    var ck = 'metrics_ambient_v1:' + ambientThreshold;
     var cached = cache.get(ck);
     if (cached) { try { return JSON.parse(cached); } catch (_) {} }
 
@@ -8601,8 +8640,7 @@ function getMetricsAmbient() {
       totalAns += result.agents[k].totalAnswered;
     });
     var pct = totalRung > 0 ? Math.round((totalAns / totalRung) * 1000) / 10 : null;
-    var threshold = CONFIG.CDR_ALERT_THRESHOLD || 85;
-    var badge = (pct !== null && pct < threshold)
+    var badge = (pct !== null && pct < ambientThreshold)
       ? { type: 'warn', label: pct + '%', date: yIso } : null;
     var out = { badge: badge, pctAnswered: pct, date: yIso };
     try { cache.put(ck, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) {}
@@ -9299,6 +9337,117 @@ function intakeSendPAP(payload, recipientSpec, images, expectedBodyHash) { try {
 function intakeEmailDomain_(email) {
   const at = String(email || '').indexOf('@');
   return at >= 0 ? String(email).substring(at + 1).toLowerCase() : '(none)';
+}
+
+// ── Intake submissions viewer (P15) ─────────────────────────────────────────
+// In-app review of sent PPD / PMD / PAP submissions, replacing "open the PHI
+// spreadsheet". Caller-scoped: a rep sees only rows they authored; a manager
+// sees everyone's (parallels the Sent Forms / managerGetFormSubmission model).
+// Read-only — the submission tabs stay append-only.
+
+const INTAKE_FORM_TYPES_ = ['PPD', 'PMD', 'PAP'];
+const INTAKE_LIST_CAP_ = 100;
+
+/** Timestamp cells ("yyyy-MM-dd HH:mm:ss") are Sheets-coerced to Dates on
+ *  read — format them back in CONFIG.TIMEZONE (the tz they were written in). */
+function intakeTsString_(v) {
+  return (v instanceof Date)
+    ? Utilities.formatDate(v, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss')
+    : String(v == null ? '' : v);
+}
+
+/** Metadata-only list across all three submission tabs, newest-first, capped
+ *  at INTAKE_LIST_CAP_. Answers never ride the list — details come one at a
+ *  time via intakeGetSubmission. An unreachable Intake spreadsheet / tab skips
+ *  that form type rather than failing the whole list (best-effort posture). */
+function intakeListMySubmissions() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const out = [];
+    INTAKE_FORM_TYPES_.forEach(function (ft) {
+      let sheet;
+      try { sheet = getIntakeSubmissionSheet_(ft); } catch (e) { return; }
+      const last = sheet.getLastRow();
+      if (last < 2) return;
+      const isPpd = ft === 'PPD';
+      const width = isPpd ? INTAKE_PPD_SUB_HEADERS.length : INTAKE_ACCT_SUB_HEADERS.length;
+      const rows = sheet.getRange(2, 1, last - 1, width).getValues();
+      for (let i = 0; i < rows.length; i++) {
+        const repId = String(rows[i][2] || '').trim();
+        if (!emp.isManager && repId !== emp.id) continue;
+        out.push({
+          formType: ft,
+          submissionId: String(rows[i][0] || ''),
+          timestamp: intakeTsString_(rows[i][1]),
+          repId: repId,
+          repName: String(rows[i][3] || ''),
+          patientInfo: String(rows[i][4] || ''),
+          language: isPpd ? String(rows[i][5] || 'EN') : String(rows[i][6] || 'EN'),
+          recipient: isPpd ? String(rows[i][9] || '') : String(rows[i][8] || ''),
+        });
+      }
+    });
+    out.sort(function (a, b) { return b.timestamp.localeCompare(a.timestamp); });
+    if (out.length > INTAKE_LIST_CAP_) out.length = INTAKE_LIST_CAP_;
+    return { submissions: out, isManager: !!emp.isManager };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Full detail for one submission — same scoping as the list (owner or
+ *  manager). Bounded lookup: id-column scan, then a single full-row fetch
+ *  (the L9 pattern), so viewing one submission never reads every patient's
+ *  answers. */
+function intakeGetSubmission(formType, submissionId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const ft = String(formType || '').trim().toUpperCase();
+    if (INTAKE_FORM_TYPES_.indexOf(ft) < 0) return { error: 'Unknown form type.' };
+    const id = String(submissionId || '').trim();
+    if (!id) return { error: 'Missing submission id.' };
+    const sheet = getIntakeSubmissionSheet_(ft);
+    const last = sheet.getLastRow();
+    if (last < 2) return { error: 'Submission not found.' };
+    const isPpd = ft === 'PPD';
+    const width = isPpd ? INTAKE_PPD_SUB_HEADERS.length : INTAKE_ACCT_SUB_HEADERS.length;
+    const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+    let row = null;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() === id) {
+        row = sheet.getRange(i + 2, 1, 1, width).getValues()[0];
+        break;
+      }
+    }
+    if (!row) return { error: 'Submission not found.' };
+    const repId = String(row[2] || '').trim();
+    if (!emp.isManager && repId !== emp.id) {
+      return { error: 'You can only view your own intake submissions.' };
+    }
+    const parse = function (raw) { try { return JSON.parse(raw) || {}; } catch (e) { return {}; } };
+    const result = {
+      formType: ft,
+      submissionId: id,
+      timestamp: intakeTsString_(row[1]),
+      repId: repId,
+      repName: String(row[3] || ''),
+      patientInfo: String(row[4] || ''),
+      language: isPpd ? String(row[5] || 'EN') : String(row[6] || 'EN'),
+      answers: parse(isPpd ? row[6] : row[7]),
+      recipient: isPpd ? String(row[9] || '') : String(row[8] || ''),
+    };
+    if (isPpd) {
+      result.recommendations = parse(row[7]);
+      result.selections = parse(row[8]);
+    } else {
+      // DOB is user-typed text but Sheets may coerce a date-like value
+      result.dob = (row[5] instanceof Date)
+        ? Utilities.formatDate(row[5], CONFIG.TIMEZONE, 'yyyy-MM-dd')
+        : String(row[5] || '');
+      result.imageCount = Number(row[9]) || 0;
+    }
+    return result;
+  } catch (err) { return { error: err.message }; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

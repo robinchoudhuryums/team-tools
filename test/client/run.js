@@ -540,6 +540,19 @@ vm.runInContext('var CLI_PAP = ' + extractClientObject('intake/script_intake.htm
   });
 });
 
+console.log('\nforms — interactive form IDs: client mirrors the server (coupling tripwire)');
+test('CN_INTERACTIVE_FORM_IDS (cn partial) === INTERACTIVE_FORM_TYPES (Code.js)', () => {
+  const grabArr = (src, name, where) => {
+    const m = src.match(new RegExp(name + "\\s*=\\s*\\[([^\\]]*)\\]"));
+    assert.ok(m, name + ' not found in ' + where);
+    return m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+  };
+  assert.deepStrictEqual(
+    grabArr(extractScript('cn/script_callnotes.html'), 'CN_INTERACTIVE_FORM_IDS', 'cn/script_callnotes.html'),
+    grabArr(codeSrc, 'INTERACTIVE_FORM_TYPES', 'Code.js'),
+    'the client fillable-form ID list must mirror the server list');
+});
+
 console.log('\nforms — invite email builders carry no prefilled patient data (hardening Fix 6)');
 ['buildCustomerEmailHtml_', 'buildProviderEmailHtml_', 'buildCustomerEmailText_', 'buildProviderEmailText_'].forEach((fn) => {
   test(fn + ' takes only (recipientName, message, formNames, formLinks) and never reads prefill', () => {

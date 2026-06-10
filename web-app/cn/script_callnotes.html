@@ -1735,6 +1735,11 @@ const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','ans
 const CN_CLEAR_UNDO_WINDOW_MS = 30000;  // window during which Ctrl/⌘+Z restores a just-cleared form
 const CN_FORM_STARTED_LS_KEY = 'umsCallNotesFormStartedAt';  // persists across refresh so completion-time stays accurate
 const CN_FORM_STICKY_LS_KEY  = 'umsCallNotesActiveFormDraft'; // sticky-form: in-progress draft restored on next load
+// Draft TTL — the sticky draft carries PHI (patient name/TRX, issue text) in
+// the browser's localStorage, so it must not linger indefinitely on a shared
+// computer. 24h covers an overnight resume; older drafts are wiped on the
+// next restore attempt instead of resurfacing.
+const CN_FORM_STICKY_MAX_AGE_MS = 24 * 3600 * 1000;
 
 // ── View enter handlers (called by the shell router) ────────────────────
 
@@ -2642,6 +2647,7 @@ function cnPersistActiveFormDraft_() {
       tags: tags,
       flag: form ? form.dataset.flag : '',
       trainingQ: tqVal,
+      at: Date.now(),   // drafts expire after CN_FORM_STICKY_MAX_AGE_MS (PHI TTL)
     };
     const anyContent = Object.keys(values).some(function (k) { return (values[k] || '').trim(); })
                     || flags.length > 0 || tags.length > 0
@@ -2677,6 +2683,14 @@ function cnRestoreActiveFormDraft_() {
     const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
     if (!raw) return false;
     const data = JSON.parse(raw);
+    // PHI TTL: a draft older than CN_FORM_STICKY_MAX_AGE_MS is wiped, not
+    // restored (shared-computer hygiene). Legacy drafts without `at` (saved
+    // pre-TTL) restore this once and pick up a timestamp on the next persist.
+    if (data && data.at && (Date.now() - data.at) > CN_FORM_STICKY_MAX_AGE_MS) {
+      localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
+      cnFormTimerReset_();
+      return false;
+    }
     Object.keys(data.values || {}).forEach(function (k) {
       cnSetFieldValue_('cn-fld-' + k, data.values[k] || '');
     });
