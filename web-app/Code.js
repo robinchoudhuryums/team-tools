@@ -9599,28 +9599,249 @@ function getReferenceItem(id) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── Section-aware search ──────────────────────────────────────────────────
+// Results are heading-delimited CHUNKS of articles (read inline, jump to the
+// section in the full doc), not just doc titles — multiple chunks from
+// multiple docs surface side by side. Embeds have no stored content, so they
+// match on title only (another native-first nudge).
+const KB_SEARCH_MAX_RESULTS = 20;
+const KB_SEARCH_MAX_PER_ITEM = 3;
+const KB_CHUNK_MAX_CHARS = 1200;
+
+/** Shared anchor slug — MUST stay identical to the client `kbSlug_` in
+ *  kb/script_kb.html (kbMd_ stamps id="kb-h-<slug>" on headings; search
+ *  results carry the server-computed anchor for the jump-to-section link).
+ *  The entity de-escape keeps the two identical even though the client slugs
+ *  ESCAPED source (kbMd_ escapes &/</> up front) while the server slugs raw
+ *  markdown. Pinned by a Node parity test. */
+function kbSlug_(text) {
+  return String(text || '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** PURE: split article markdown into heading-delimited sections —
+ *  [{heading, anchor, md}]. `md` EXCLUDES its heading line (chunk cards
+ *  render the heading separately). The preamble before the first heading is
+ *  a section with heading ''. Headings inside ``` fences don't split (kbMd_
+ *  masks fences before its heading rule — same contract). Duplicate-heading
+ *  anchors dedupe with -2/-3… in document order, matching kbMd_'s ids. */
+function kbSplitSections_(bodyMd) {
+  const lines = String(bodyMd || '').split(/\r?\n/);
+  const sections = [];
+  let cur = { heading: '', anchor: '', md: [] };
+  let inFence = false;
+  const seen = {};
+  const push = function () {
+    if (cur.heading || cur.md.join('\n').trim()) {
+      sections.push({ heading: cur.heading, anchor: cur.anchor, md: cur.md.join('\n').trim() });
+    }
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (/^\s*```/.test(ln)) inFence = !inFence;
+    const h = !inFence && ln.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      push();
+      let anchor = kbSlug_(h[2]);
+      if (anchor) {
+        seen[anchor] = (seen[anchor] || 0) + 1;
+        if (seen[anchor] > 1) anchor += '-' + seen[anchor];
+      }
+      cur = { heading: h[2].trim(), anchor: anchor, md: [] };
+    } else {
+      cur.md.push(ln);
+    }
+  }
+  push();
+  return sections;
+}
+
+/** PURE: cap a chunk at a paragraph boundary; repair an odd fence count so a
+ *  truncated chunk never renders a runaway <pre>. */
+function kbChunkTruncate_(md, cap) {
+  md = String(md || '');
+  cap = cap || KB_CHUNK_MAX_CHARS;
+  if (md.length <= cap) return { md: md, truncated: false };
+  let cut = md.lastIndexOf('\n\n', cap);
+  if (cut < cap * 0.4) cut = cap;
+  let out = md.substring(0, cut).trim();
+  const fences = (out.match(/^\s*```/gm) || []).length;
+  if (fences % 2 === 1) out += '\n```';
+  return { md: out, truncated: true };
+}
+
+/** PURE: weighted token score for one section. 0 unless the section's own
+ *  text (heading or body) matches at least one token — a title-only match
+ *  must NOT flood every section of that doc into the results (the caller
+ *  emits a single doc-level hit for that case instead). Heading hits (2)
+ *  outrank body hits (1); title hits add 3 per token on qualifying sections;
+ *  an exact-phrase hit adds 2. */
+function kbSearchScore_(tokens, q, titleLc, headLc, bodyLc) {
+  let score = 0;
+  let sectionHit = false;
+  tokens.forEach(function (t) {
+    if (headLc.indexOf(t) >= 0) { score += 2; sectionHit = true; }
+    else if (bodyLc.indexOf(t) >= 0) { score += 1; sectionHit = true; }
+  });
+  if (!sectionHit) return 0;
+  tokens.forEach(function (t) { if (titleLc.indexOf(t) >= 0) score += 3; });
+  if (q.length >= 4 && (headLc.indexOf(q) >= 0 || bodyLc.indexOf(q) >= 0)) score += 2;
+  return score;
+}
+
 function searchReference(query) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
     const q = String(query || '').trim().toLowerCase();
     if (q.length < 2) return { results: [] };
+    const tokens = [];
+    (q.match(/[a-z0-9]{2,}/g) || []).forEach(function (t) { if (tokens.indexOf(t) < 0) tokens.push(t); });
+    if (!tokens.length) return { results: [] };
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
     if (last < 2) return { results: [] };
     const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
-    const results = [];
-    for (let i = 0; i < rows.length && results.length < 50; i++) {
+    const hits = [];
+    const snippetOf = function (md) {
+      return md.replace(/[#*`>|\[\]()!]/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 120);
+    };
+    for (let i = 0; i < rows.length; i++) {
       if (!rows[i][KB.ID]) continue;
+      const id = String(rows[i][KB.ID]);
       const title = String(rows[i][KB.TITLE] || '');
-      const body = String(rows[i][KB.BODY_MD] || '');
-      if ((title + ' ' + body).toLowerCase().indexOf(q) < 0) continue;
-      let snippet = '';
-      const bidx = body.toLowerCase().indexOf(q);
-      if (bidx >= 0) { const s = Math.max(0, bidx - 40); snippet = (s > 0 ? '…' : '') + body.substring(s, bidx + q.length + 60).replace(/\s+/g, ' ').trim() + '…'; }
-      results.push({ id: String(rows[i][KB.ID]), title: title, department: String(rows[i][KB.DEPARTMENT] || ''), type: String(rows[i][KB.TYPE] || 'article'), snippet: snippet });
+      const dept = String(rows[i][KB.DEPARTMENT] || '');
+      const type = String(rows[i][KB.TYPE] || 'article');
+      const titleLc = title.toLowerCase();
+      let titleScore = 0;
+      tokens.forEach(function (t) { if (titleLc.indexOf(t) >= 0) titleScore += 3; });
+      if (type === 'embed') {
+        // No stored content to chunk — title-only hit.
+        if (titleScore > 0) {
+          hits.push({ id: id, title: title, department: dept, type: 'embed',
+            heading: '', anchor: '', chunkMd: '', truncated: false, score: titleScore, snippet: '' });
+        }
+        continue;
+      }
+      const sections = kbSplitSections_(String(rows[i][KB.BODY_MD] || ''));
+      const secHits = [];
+      sections.forEach(function (s) {
+        const score = kbSearchScore_(tokens, q, titleLc, s.heading.toLowerCase(), s.md.toLowerCase());
+        if (score > 0) secHits.push({ section: s, score: score });
+      });
+      if (!secHits.length) {
+        if (titleScore > 0) {
+          hits.push({ id: id, title: title, department: dept, type: 'article',
+            heading: '', anchor: '', chunkMd: '', truncated: false, score: titleScore, snippet: '' });
+        }
+        continue;
+      }
+      secHits.sort(function (a, b) { return b.score - a.score; });
+      secHits.slice(0, KB_SEARCH_MAX_PER_ITEM).forEach(function (sh) {
+        const cut = kbChunkTruncate_(sh.section.md, KB_CHUNK_MAX_CHARS);
+        hits.push({ id: id, title: title, department: dept, type: 'article',
+          heading: sh.section.heading, anchor: sh.section.anchor,
+          chunkMd: cut.md, truncated: cut.truncated, score: sh.score,
+          snippet: snippetOf(cut.md) });
+      });
     }
-    return { results: results };
+    hits.sort(function (a, b) { return b.score - a.score; });
+    if (hits.length > KB_SEARCH_MAX_RESULTS) hits.length = KB_SEARCH_MAX_RESULTS;
+    return { results: hits, sectioned: true };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Usage feedback loop (drawer + Reference reader) ───────────────────────
+// Append-only KbViews tab in the KB spreadsheet: one tiny PHI-free row per
+// article/embed open (timestamp, itemId, repId, context). Written
+// fire-and-forget from the client; aggregated on demand for managers so the
+// "most referenced during calls" signal drives conversion/curation priority.
+const KB_VIEWS_TAB = 'KbViews';
+const KB_VIEWS_HEADERS = ['Timestamp', 'ItemId', 'RepId', 'Context'];
+const KB_VIEWS_MAX_SCAN = 4000;   // bounded tail scan, INV-13 spirit
+const KB_USAGE_WINDOW_DAYS = 30;
+const KB_USAGE_TOP_N = 5;
+
+function getOrCreateKbViewsSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_VIEWS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_VIEWS_TAB);
+    sheet.appendRow(KB_VIEWS_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_VIEWS_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** Rep-callable, append-only, locked (INV-01). Records one view event —
+ *  PHI-free by construction (itemId + repId + a sanitized context token).
+ *  The client fires it best-effort; an error here never surfaces. */
+function kbRecordView(itemId, context) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const id = String(itemId || '').trim().substring(0, 100);
+    if (!id) return { success: false, error: 'Missing item id.' };
+    const ctx = String(context || '').replace(/[^a-zA-Z0-9:_-]/g, '').substring(0, 40);
+    getOrCreateKbViewsSheet_().appendRow([
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, emp.id, ctx,
+    ]);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated, read-only. Top KB_USAGE_TOP_N items by opens in the last
+ *  KB_USAGE_WINDOW_DAYS, with the in-call (drawer) share broken out. Bounded
+ *  tail scan of KbViews (the tab is append-only/chronological). Timestamp
+ *  cells are Sheets-coerced Dates — recovered in the KB spreadsheet's OWN tz
+ *  (the tz that coerced them; same discipline as normalizeAuditTs_). */
+function kbGetUsageStats() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const ss = getKbSS_();
+    const sheet = ss.getSheetByName(KB_VIEWS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { items: [] };
+    const ssTz = ss.getSpreadsheetTimeZone();
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - KB_VIEWS_MAX_SCAN + 1);
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_VIEWS_HEADERS.length).getValues();
+    const cutD = new Date();
+    cutD.setDate(cutD.getDate() - KB_USAGE_WINDOW_DAYS);
+    const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
+    const counts = {};
+    for (let i = 0; i < data.length; i++) {
+      const tsRaw = (data[i][0] instanceof Date)
+        ? Utilities.formatDate(data[i][0], ssTz, 'yyyy-MM-dd')
+        : String(data[i][0] || '').substring(0, 10);
+      if (tsRaw < cutoff) continue;
+      const id = String(data[i][1] || '').trim();
+      if (!id) continue;
+      if (!counts[id]) counts[id] = { count: 0, drawerCount: 0 };
+      counts[id].count++;
+      if (String(data[i][3] || '').indexOf('drawer') === 0) counts[id].drawerCount++;
+    }
+    const ids = Object.keys(counts);
+    if (!ids.length) return { items: [] };
+    // Join titles from the KB sheet (small — one bounded read).
+    const titles = {};
+    const kbSheet = getOrCreateKbSheet_();
+    const kbLast = kbSheet.getLastRow();
+    if (kbLast >= 2) {
+      const rows = kbSheet.getRange(2, 1, kbLast - 1, 3).getValues();   // Id, Department, Title
+      rows.forEach(function (r) { if (r[0]) titles[String(r[0])] = String(r[2] || '(untitled)'); });
+    }
+    const items = ids
+      .filter(function (id) { return !!titles[id]; })   // deleted items drop out
+      .map(function (id) { return { id: id, title: titles[id], count: counts[id].count, drawerCount: counts[id].drawerCount }; })
+      .sort(function (a, b) { return b.count - a.count; })
+      .slice(0, KB_USAGE_TOP_N);
+    return { items: items, windowDays: KB_USAGE_WINDOW_DAYS };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -9754,14 +9975,16 @@ function kbRunsToMarkdown_(runs) {
 }
 
 /** Walks a DocumentApp Body and returns { markdown, warnings }. Paragraphs,
- *  headings, bullet/numbered lists, and horizontal rules convert faithfully;
- *  tables flatten to bullet lists (cells joined with " | "); images become an
+ *  headings, bullet/numbered lists, horizontal rules, and tables convert
+ *  faithfully (tables → GFM, row 0 as the header; cell formatting goes
+ *  through the runs pipeline so bold/links survive); images become an
  *  italic placeholder — each lossy conversion adds a warning so the reviewing
  *  manager knows to keep the original Doc when visuals matter. */
 function kbDocBodyToMarkdown_(body) {
   const out = [];
   const warnings = [];
-  let imageCount = 0, tableCount = 0;
+  let imageCount = 0;
+  let tableCellLineBreaks = false, nestedTables = false;
   const skippedTypes = {};
   let listBuf = [];
   const flushList = function () {
@@ -9798,17 +10021,46 @@ function kbDocBodyToMarkdown_(body) {
       if (text) listBuf.push(indent + (ordered ? '1. ' : '- ') + text);
     } else if (t === 'TABLE') {
       flushList();
-      tableCount++;
-      const lines = [];
-      for (let r = 0; r < el.getNumRows(); r++) {
+      // GFM table: row 0 = header (Docs tables have no header concept), then
+      // the |---| separator, then body rows. Literal pipes in cells escape as
+      // \| (kbMd_'s tableCells understands that); a cell's internal line
+      // breaks join with spaces (GFM cells are single-line). Cell text goes
+      // through the runs pipeline so bold/links convert too. Nested tables
+      // flatten into the parent cell's text via editAsText() — warned.
+      const rowsOut = [];
+      let maxCols = 0;
+      const numRows = el.getNumRows();
+      for (let r = 0; r < numRows; r++) {
         const row = el.getRow(r);
         const cells = [];
         for (let c = 0; c < row.getNumCells(); c++) {
-          cells.push(String(row.getCell(c).getText() || '').replace(/\s+/g, ' ').trim());
+          const cell = row.getCell(c);
+          try {
+            const cn = cell.getNumChildren ? cell.getNumChildren() : 0;
+            for (let k = 0; k < cn; k++) {
+              if (String(cell.getChild(k).getType()) === 'TABLE') nestedTables = true;
+            }
+          } catch (e) {}
+          let text = kbRunsToMarkdown_(kbTextToRuns_(cell.editAsText()));
+          if (/\n/.test(text)) tableCellLineBreaks = true;
+          text = text.replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
+          cells.push(text);
         }
-        if (cells.join('')) lines.push('- ' + cells.join(' | '));
+        rowsOut.push(cells);
+        if (cells.length > maxCols) maxCols = cells.length;
       }
-      if (lines.length) out.push(lines.join('\n'));
+      const hasContent = rowsOut.some(function (cells) { return cells.join('') !== ''; });
+      if (maxCols > 0 && hasContent) {
+        const pad = function (cells) {
+          const padded = cells.slice();
+          while (padded.length < maxCols) padded.push('');
+          return '| ' + padded.join(' | ') + ' |';
+        };
+        const lines = [pad(rowsOut[0])];
+        lines.push('|' + new Array(maxCols + 1).join(' --- |'));
+        for (let r2 = 1; r2 < rowsOut.length; r2++) lines.push(pad(rowsOut[r2]));
+        out.push(lines.join('\n'));
+      }
     } else {
       skippedTypes[t] = true;
     }
@@ -9817,8 +10069,11 @@ function kbDocBodyToMarkdown_(body) {
   if (imageCount > 0) {
     warnings.push(imageCount + ' image(s) could not be converted — placeholders inserted; keep the original Doc if the visuals matter.');
   }
-  if (tableCount > 0) {
-    warnings.push(tableCount + ' table(s) flattened to bullet lists (articles have no table support).');
+  if (nestedTables) {
+    warnings.push('Nested table(s) flattened into their parent cell — review the converted table(s).');
+  }
+  if (tableCellLineBreaks) {
+    warnings.push('Some table cell(s) had multiple lines — joined with spaces.');
   }
   const skipped = Object.keys(skippedTypes);
   if (skipped.length > 0) {

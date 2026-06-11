@@ -407,6 +407,9 @@ function showView(view) {
   const toolKey = VIEW_TO_TOOL[view];
   if (!toolKey) return;
   if (toolKey !== 'callNotes' && typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  // KB drawer (shell capability): close on any navigation + toggle its
+  // right-edge tab for the mid-task tools (Call Notes / Intake).
+  if (typeof kbDrawerOnNavigate_ === 'function') kbDrawerOnNavigate_(view);
   currentView = view;
   // Tab bar active state
   document.querySelectorAll('.tt-btn').forEach(b => {
@@ -690,12 +693,22 @@ function uiPrompt(opts) {
 
 // ── Modal accessibility: Escape-to-close + focus trap ─────────────────────
 document.addEventListener('keydown', function (e) {
-  // Escape closes any open overlay
+  // Escape closes any open overlay; with no overlay open it closes the KB
+  // drawer instead (overlays stack above the drawer, so they win).
   if (e.key === 'Escape') {
     var open = document.querySelector('.overlay.open');
-    if (!open) return;
+    if (!open) {
+      if (typeof kbDrawerCloseIfOpen_ === 'function' && kbDrawerCloseIfOpen_()) e.preventDefault();
+      return;
+    }
     e.preventDefault();
     open.classList.remove('open');
+    return;
+  }
+  // Ctrl/Cmd + K toggles the KB reference drawer — deliberately works even
+  // when focus is in a form field (the point is mid-note lookup).
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K') && !e.shiftKey && !e.altKey) {
+    if (typeof kbDrawerToggle_ === 'function') { e.preventDefault(); kbDrawerToggle_(); }
     return;
   }
   // Ctrl/Cmd + / opens the Call Notes shortcuts overlay (if present)

@@ -849,6 +849,9 @@ function _runAllTests() {
   // ── Compliance audit panel (INV-92 endpoints, P7) ───────────────────────
   _integrationTest('auditPanel_searchAndHistory',               test_auditPanel_searchAndHistory);
 
+  // ── KB usage feedback loop ──────────────────────────────────────────────
+  _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
+
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
   _integrationTest('intake_sendPPD_staleHashRejected',          test_intake_sendPPD_staleHashRejected);
@@ -3616,6 +3619,7 @@ function test_managerGates_rejectNonManager() {
     ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
     ['getAutomationHealth',            function () { return getAutomationHealth(); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
+    ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
     ['getCallNotesAuditLog',           function () { return getCallNotesAuditLog({}); }],
     ['getCallNoteAuditHistory',        function () { return getCallNoteAuditHistory('no-such-note'); }],
   ];
@@ -3628,6 +3632,15 @@ function test_managerGates_rejectNonManager() {
   // assert it never leaks a badge / data to a non-manager.
   const amb = _asUser(_TEST_INDIA_EMAIL, function () { return getMetricsAmbient(); });
   _assertTrue(!amb || amb.badge == null, 'getMetricsAmbient must not leak a badge to a non-manager');
+}
+
+// kbRecordView is rep-callable (append-only KbViews row) but must reject an
+// unregistered caller BEFORE touching the KB spreadsheet.
+function test_kb_recordView_requiresEmployee() {
+  const r = _asUser('not-a-registered-user@example.invalid', function () {
+    return kbRecordView('some-item', 'drawer:callNotes');
+  });
+  _assertFailure(r, 'Not authorized', 'unregistered caller rejected before any KbViews write');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
