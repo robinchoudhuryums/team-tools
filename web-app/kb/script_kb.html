@@ -60,6 +60,30 @@
   .kb-ed-prev { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: var(--paper); margin-top: 6px; max-height: 240px; overflow: auto; }
   .kb-ed-foot { display: flex; gap: 10px; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
   :root[data-compact] .kb-wrap { grid-template-columns: 1fr; height: auto; }
+  /* - KB slide-over drawer (shell capability) - sits UNDER overlays (z 50)
+     so modals stack over it; survives Call Notes' #view-area re-renders by
+     mounting on document.body. */
+  #kb-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw); background: var(--paper-card); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); z-index: 45; display: flex; flex-direction: column; transform: translateX(102%); transition: transform .22s var(--ease); }
+  #kb-drawer.open { transform: translateX(0); }
+  .kbd-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .kbd-kicker { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); flex: 1; }
+  .kbd-x { background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; border-radius: 6px; display: inline-flex; }
+  .kbd-x:hover { background: var(--paper-2); color: var(--ink); }
+  .kbd-search { padding: 10px 14px 0; flex-shrink: 0; }
+  .kbd-search input { width: 100%; box-sizing: border-box; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--paper); color: var(--ink); }
+  .kbd-body { overflow-y: auto; flex: 1; padding: 10px 14px 16px; }
+  .kbd-sec { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding: 12px 0 4px; display: flex; align-items: center; gap: 8px; }
+  .kbd-sec .kbd-tgl { margin-left: auto; font-family: var(--ui); font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  .kbd-item { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; font: inherit; font-size: .86rem; padding: 7px 9px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }
+  .kbd-item:hover { background: var(--paper-2); }
+  .kbd-item .kb-snip { font-size: .74rem; color: var(--muted); }
+  .kbd-empty { color: var(--muted); font-size: .84rem; padding: 6px 0; }
+  .kbd-back { font: inherit; font-size: .8rem; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--ink); cursor: pointer; padding: 4px 10px; display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px; }
+  .kbd-embed-card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 14px; margin-top: 8px; }
+  #kb-drawer-tab { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 44; writing-mode: vertical-rl; font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); background: var(--paper-card); border: 1px solid var(--line); border-right: none; border-radius: 8px 0 0 8px; padding: 10px 4px; cursor: pointer; display: none; }
+  #kb-drawer-tab:hover { color: var(--ink); background: var(--paper-2); }
+  #kb-drawer-tab.show { display: block; }
+  :root[data-compact] #kb-drawer-tab { display: none !important; }
 </style>
 
 <script>
@@ -185,6 +209,7 @@ function enterReferenceView(area) {
       if (!res || res.error) { el.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
       KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager;
       kbRenderTree_();
+      if (KB_STATE.isManager) kbLoadUsageBlock_();
     })
     .withFailureHandler(function (err) { if (currentView === requested) { var el = document.getElementById('kb-tree'); if (el) el.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; } })
     .getReferenceTree();
@@ -251,6 +276,7 @@ function kbOpenItem_(id) {
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
       if (!res || res.error) { main.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed') + '</div>'; return; }
+      kbPanelRecordOpen_(res, 'reference');
       kbRenderItem_(res);
     })
     .withFailureHandler(function (err) { if (currentView === requested) main.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; })
@@ -487,4 +513,284 @@ function kbCloseModal_() {
   var ov = document.getElementById('kb-ed-overlay');
   if (ov) ov.remove();
 }
+
+// ============================================================================
+//  KB SLIDE-OVER DRAWER - shell capability: searchable Reference panel that
+//  can open over ANY tool (built for the Call Notes hot path). Mounted on
+//  document.body so Call Notes' optimistic #view-area re-renders can't wipe
+//  it mid-read; closed on every showView navigation (core calls
+//  kbDrawerOnNavigate_). Toggled by Ctrl/Cmd+K (bound in script_core) or the
+//  right-edge tab (visible on Call Notes / Intake views only). Articles
+//  render inline via kbMd_ (.kb-article styles shared); embeds get an
+//  open-in-new-tab card - the drawer is for fast native articles.
+//  Reads reuse the three enrolled-employee KB endpoints; opens are recorded
+//  best-effort via kbRecordView (fire-and-forget, never blocks the UI).
+// ============================================================================
+var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null };
+var KB_PANEL_LS_KEY = 'umsKbPanel';
+
+function kbPanelPrefs_() {
+  try {
+    var o = JSON.parse(localStorage.getItem(KB_PANEL_LS_KEY) || '{}');
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  } catch (e) { return {}; }
+}
+function kbPanelSave_(p) { try { localStorage.setItem(KB_PANEL_LS_KEY, JSON.stringify(p)); } catch (e) {} }
+
+// PURE: prepend an item to a recents list, dedupe by id, cap length (5).
+function kbRecentsPush_(list, item, cap) {
+  cap = cap || 5;
+  var out = [{ id: String(item.id), title: String(item.title || '') }];
+  (list || []).forEach(function (r) {
+    if (out.length >= cap || !r) return;
+    if (String(r.id) === String(item.id)) return;
+    out.push({ id: String(r.id), title: String(r.title || '') });
+  });
+  return out;
+}
+
+// PURE: score KB tree items against free text (the rep's in-progress Issue
+// field). Tokens are 4+ char words; an item scores 1 per distinct token its
+// title contains. Top `cap` scorers, best first. Deliberately title-only and
+// client-side: zero extra RPCs, and the note text never leaves the browser.
+function kbSuggestMatches_(tree, text, cap) {
+  cap = cap || 3;
+  var raw = String(text || '').toLowerCase().match(/[a-z0-9]{4,}/g) || [];
+  if (!raw.length) return [];
+  var seen = {};
+  var tokens = [];
+  raw.forEach(function (t) { if (!seen[t]) { seen[t] = true; tokens.push(t); } });
+  var scored = [];
+  (tree || []).forEach(function (it) {
+    var title = String(it.title || '').toLowerCase();
+    var score = 0;
+    tokens.forEach(function (t) { if (title.indexOf(t) >= 0) score++; });
+    if (score > 0) scored.push({ item: it, score: score });
+  });
+  scored.sort(function (a, b) { return b.score - a.score; });
+  return scored.slice(0, cap).map(function (s) { return s.item; });
+}
+
+function kbDrawerMount_() {
+  if (document.getElementById('kb-drawer')) return;
+  var d = document.createElement('div');
+  d.id = 'kb-drawer';
+  d.innerHTML =
+    '<div class="kbd-head">' + icon('list', 14) +
+      '<span class="kbd-kicker">Reference</span>' +
+      '<button class="kbd-x" onclick="kbDrawerClose_()" aria-label="Close">' + icon('x', 15) + '</button></div>' +
+    '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off"></div>' +
+    '<div class="kbd-body" id="kbd-body"></div>';
+  document.body.appendChild(d);
+  var tab = document.createElement('button');
+  tab.id = 'kb-drawer-tab';
+  tab.textContent = 'Reference';
+  tab.onclick = function () { kbDrawerOpen_(); };
+  document.body.appendChild(tab);
+  var q = d.querySelector('#kbd-q');
+  var t;
+  q.addEventListener('input', function () {
+    clearTimeout(t);
+    var v = q.value;
+    t = setTimeout(function () { kbDrawerSearch_(v); }, 250);
+  });
+  // Re-render the suggestions block as the rep types the Issue field (input
+  // events bubble from the contenteditable .ce div). Drawer-open + home only.
+  var st;
+  document.addEventListener('input', function (e) {
+    if (!KB_DRAWER.open || KB_DRAWER.view !== 'home') return;
+    if (!e.target || e.target.id !== 'cn-fld-issue') return;
+    clearTimeout(st);
+    st = setTimeout(function () { kbDrawerRenderSuggest_(); }, 400);
+  });
+}
+
+function kbDrawerOpen_() {
+  kbDrawerMount_();
+  KB_DRAWER.open = true;
+  document.getElementById('kb-drawer').classList.add('open');
+  if (!KB_DRAWER.tree) {
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (res && res.items) { KB_DRAWER.tree = res.items; if (KB_DRAWER.open && KB_DRAWER.view === 'home') kbDrawerRenderHome_(); }
+      })
+      .withFailureHandler(function () {})
+      .getReferenceTree();
+  }
+  KB_DRAWER.view = 'home';
+  kbDrawerRenderHome_();
+  var q = document.getElementById('kbd-q');
+  if (q) { q.value = KB_DRAWER.lastQuery || ''; setTimeout(function () { q.focus(); }, 230); }
+  if (KB_DRAWER.lastQuery) kbDrawerSearch_(KB_DRAWER.lastQuery);
+}
+
+function kbDrawerClose_() {
+  KB_DRAWER.open = false;
+  var d = document.getElementById('kb-drawer');
+  if (d) d.classList.remove('open');
+}
+function kbDrawerToggle_() { if (KB_DRAWER.open) kbDrawerClose_(); else kbDrawerOpen_(); }
+/** Core Esc handler hook: returns true when it consumed the keypress. */
+function kbDrawerCloseIfOpen_() { if (!KB_DRAWER.open) return false; kbDrawerClose_(); return true; }
+/** Core showView hook: close on any navigation; edge tab only on the
+ *  mid-task tools (Call Notes / Intake) - the hotkey works everywhere. */
+function kbDrawerOnNavigate_(view) {
+  kbDrawerClose_();
+  var tool = (typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[view]) || '';
+  var show = (tool === 'callNotes' || tool === 'intake');
+  if (show) kbDrawerMount_();
+  var tab = document.getElementById('kb-drawer-tab');
+  if (tab) tab.classList.toggle('show', show);
+}
+
+function kbDrawerItemBtnHtml_(it, snippet) {
+  return '<button class="kbd-item" data-kb-id="' + esc(it.id) + '" onclick="kbDrawerOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+    '<span>' + icon(kbItemIcon_(it), 12) + ' ' + esc(it.title) + (it.type === 'embed' ? ' <span class="kb-snip">(Drive)</span>' : '') + '</span>' +
+    (snippet ? '<span class="kb-snip">' + esc(snippet) + '</span>' : '') + '</button>';
+}
+
+function kbDrawerRenderHome_() {
+  KB_DRAWER.view = 'home';
+  var body = document.getElementById('kbd-body'); if (!body) return;
+  var prefs = kbPanelPrefs_();
+  var html = '<div id="kbd-suggest"></div>';
+  var recents = prefs.recents || [];
+  if (recents.length) {
+    html += '<div class="kbd-sec">Recent</div>';
+    recents.forEach(function (r) {
+      html += '<button class="kbd-item" data-kb-id="' + esc(r.id) + '" onclick="kbDrawerOpenItem_(this.getAttribute(\'data-kb-id\'))"><span>' + esc(r.title) + '</span></button>';
+    });
+  }
+  if (!recents.length) html += '<div class="kbd-empty">Type 2+ characters to search the knowledge base.</div>';
+  body.innerHTML = html;
+  kbDrawerRenderSuggest_();
+}
+
+/** "Suggested" block: matches the in-progress Call Notes Issue text against
+ *  cached KB titles. Lives only inside the drawer (unobtrusive) and behind a
+ *  per-rep toggle persisted to umsKbPanel.suggest (default ON). */
+function kbDrawerRenderSuggest_() {
+  var host = document.getElementById('kbd-suggest'); if (!host) return;
+  var prefs = kbPanelPrefs_();
+  var on = prefs.suggest !== false;
+  var issue = '';
+  try {
+    if (typeof cnGetFieldValue_ === 'function' && typeof currentView !== 'undefined' &&
+        (typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[currentView]) === 'callNotes') {
+      issue = cnGetFieldValue_('cn-fld-issue') || '';
+    }
+  } catch (e) {}
+  var tglHtml = '<label class="kbd-tgl"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="kbDrawerSuggestToggle_(this.checked)"> suggest</label>';
+  if (!issue.trim()) { host.innerHTML = on ? '' : '<div class="kbd-sec">Suggested' + tglHtml + '</div><div class="kbd-empty">Suggestions are off.</div>'; return; }
+  var matches = on ? kbSuggestMatches_(KB_DRAWER.tree, issue, 3) : [];
+  var html = '<div class="kbd-sec">Suggested ' + tglHtml + '</div>';
+  if (!on) html += '<div class="kbd-empty">Suggestions are off.</div>';
+  else if (!matches.length) html += '<div class="kbd-empty">No title matches for this issue yet.</div>';
+  else matches.forEach(function (it) { html += kbDrawerItemBtnHtml_(it, ''); });
+  host.innerHTML = html;
+}
+function kbDrawerSuggestToggle_(on) {
+  var prefs = kbPanelPrefs_();
+  prefs.suggest = !!on;
+  kbPanelSave_(prefs);
+  kbDrawerRenderSuggest_();
+}
+
+function kbDrawerSearch_(q) {
+  q = String(q || '').trim();
+  KB_DRAWER.lastQuery = q;
+  if (q.length < 2) { kbDrawerRenderHome_(); return; }
+  var body = document.getElementById('kbd-body'); if (!body) return;
+  var seq = ++KB_DRAWER.searchSeq;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== KB_DRAWER.searchSeq || !KB_DRAWER.open) return;
+      KB_DRAWER.view = 'results';
+      var results = (res && res.results) || [];
+      var html = '<div class="kbd-sec">Results (' + results.length + ')</div>';
+      if (!results.length) html += '<div class="kbd-empty">No matches.</div>';
+      results.forEach(function (r) { html += kbDrawerItemBtnHtml_(r, r.snippet || ''); });
+      body.innerHTML = html;
+    })
+    .withFailureHandler(function () {})
+    .searchReference(q);
+}
+
+function kbDrawerOpenItem_(id) {
+  var body = document.getElementById('kbd-body'); if (!body) return;
+  body.innerHTML = '<div class="kb-loading"><div class="spinner"></div></div>';
+  KB_DRAWER.view = 'item';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!KB_DRAWER.open || KB_DRAWER.view !== 'item') return;
+      if (!res || res.error) { body.innerHTML = '<div class="kbd-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
+      kbPanelRecordOpen_(res);
+      var back = '<button class="kbd-back" onclick="kbDrawerBack_()">' + icon('chevronLeft', 12) + ' Back</button>';
+      if (res.type === 'embed') {
+        // Drive embeds are cramped in a 400px drawer - hand off to a tab.
+        body.innerHTML = back +
+          '<div class="kbd-embed-card"><strong>' + esc(res.title) + '</strong>' +
+          '<div class="kbd-empty" style="padding:6px 0 10px;">This item is an embedded Drive doc - it opens in its own tab.</div>' +
+          '<a class="kb-btn" href="' + esc(res.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a></div>';
+      } else {
+        body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>';
+      }
+    })
+    .withFailureHandler(function (err) {
+      if (KB_DRAWER.open) body.innerHTML = '<div class="kbd-empty">' + esc((err && err.message) || 'Failed to load') + '</div>';
+    })
+    .getReferenceItem(id);
+}
+function kbDrawerBack_() {
+  if (KB_DRAWER.lastQuery && KB_DRAWER.lastQuery.length >= 2) kbDrawerSearch_(KB_DRAWER.lastQuery);
+  else kbDrawerRenderHome_();
+}
+
+/** Records an open: recents (localStorage) + best-effort server usage row
+ *  (fire-and-forget - a failure never surfaces). Context tells the manager
+ *  usage panel whether the open happened mid-call (drawer) or in the
+ *  Reference tab. */
+function kbPanelRecordOpen_(item, context) {
+  try {
+    var prefs = kbPanelPrefs_();
+    prefs.recents = kbRecentsPush_(prefs.recents || [], item, 5);
+    kbPanelSave_(prefs);
+  } catch (e) {}
+  kbRecordViewFireAndForget_(item.id,
+    context || ('drawer:' + (typeof currentView !== 'undefined' ? currentView : '')));
+}
+/** Manager-only: top "most referenced (30d)" items, prepended to the tree.
+ *  Best-effort - any error renders nothing. The in-call count tells the
+ *  manager which guides reps actually lean on mid-call (the conversion
+ *  priority signal). */
+function kbLoadUsageBlock_() {
+  var requested = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      if (!res || res.error || !res.items || !res.items.length) return;
+      var el = document.getElementById('kb-tree'); if (!el) return;
+      var html = '<div class="kb-dept"><div class="kb-dept-h">Most referenced \u00b7 30d</div>';
+      res.items.forEach(function (u) {
+        html += '<button class="kb-item" data-kb-id="' + esc(u.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+          '<span>' + esc(u.title) + '</span>' +
+          '<span class="kb-snip">' + u.count + ' open' + (u.count === 1 ? '' : 's') +
+          (u.drawerCount ? ' \u00b7 ' + u.drawerCount + ' in-call' : '') + '</span></button>';
+      });
+      html += '</div>';
+      var hostDiv = document.createElement('div');
+      hostDiv.innerHTML = html;
+      el.insertBefore(hostDiv.firstChild, el.firstChild);
+    })
+    .withFailureHandler(function () {})
+    .kbGetUsageStats();
+}
+
+function kbRecordViewFireAndForget_(itemId, context) {
+  try {
+    google.script.run.withSuccessHandler(function () {}).withFailureHandler(function () {})
+      .kbRecordView(itemId, context);
+  } catch (e) {}
+}
+
 </script>

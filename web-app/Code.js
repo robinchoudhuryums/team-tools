@@ -9624,6 +9624,99 @@ function searchReference(query) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── Usage feedback loop (drawer + Reference reader) ───────────────────────
+// Append-only KbViews tab in the KB spreadsheet: one tiny PHI-free row per
+// article/embed open (timestamp, itemId, repId, context). Written
+// fire-and-forget from the client; aggregated on demand for managers so the
+// "most referenced during calls" signal drives conversion/curation priority.
+const KB_VIEWS_TAB = 'KbViews';
+const KB_VIEWS_HEADERS = ['Timestamp', 'ItemId', 'RepId', 'Context'];
+const KB_VIEWS_MAX_SCAN = 4000;   // bounded tail scan, INV-13 spirit
+const KB_USAGE_WINDOW_DAYS = 30;
+const KB_USAGE_TOP_N = 5;
+
+function getOrCreateKbViewsSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_VIEWS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_VIEWS_TAB);
+    sheet.appendRow(KB_VIEWS_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_VIEWS_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** Rep-callable, append-only, locked (INV-01). Records one view event —
+ *  PHI-free by construction (itemId + repId + a sanitized context token).
+ *  The client fires it best-effort; an error here never surfaces. */
+function kbRecordView(itemId, context) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const id = String(itemId || '').trim().substring(0, 100);
+    if (!id) return { success: false, error: 'Missing item id.' };
+    const ctx = String(context || '').replace(/[^a-zA-Z0-9:_-]/g, '').substring(0, 40);
+    getOrCreateKbViewsSheet_().appendRow([
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, emp.id, ctx,
+    ]);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated, read-only. Top KB_USAGE_TOP_N items by opens in the last
+ *  KB_USAGE_WINDOW_DAYS, with the in-call (drawer) share broken out. Bounded
+ *  tail scan of KbViews (the tab is append-only/chronological). Timestamp
+ *  cells are Sheets-coerced Dates — recovered in the KB spreadsheet's OWN tz
+ *  (the tz that coerced them; same discipline as normalizeAuditTs_). */
+function kbGetUsageStats() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const ss = getKbSS_();
+    const sheet = ss.getSheetByName(KB_VIEWS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { items: [] };
+    const ssTz = ss.getSpreadsheetTimeZone();
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - KB_VIEWS_MAX_SCAN + 1);
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_VIEWS_HEADERS.length).getValues();
+    const cutD = new Date();
+    cutD.setDate(cutD.getDate() - KB_USAGE_WINDOW_DAYS);
+    const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
+    const counts = {};
+    for (let i = 0; i < data.length; i++) {
+      const tsRaw = (data[i][0] instanceof Date)
+        ? Utilities.formatDate(data[i][0], ssTz, 'yyyy-MM-dd')
+        : String(data[i][0] || '').substring(0, 10);
+      if (tsRaw < cutoff) continue;
+      const id = String(data[i][1] || '').trim();
+      if (!id) continue;
+      if (!counts[id]) counts[id] = { count: 0, drawerCount: 0 };
+      counts[id].count++;
+      if (String(data[i][3] || '').indexOf('drawer') === 0) counts[id].drawerCount++;
+    }
+    const ids = Object.keys(counts);
+    if (!ids.length) return { items: [] };
+    // Join titles from the KB sheet (small — one bounded read).
+    const titles = {};
+    const kbSheet = getOrCreateKbSheet_();
+    const kbLast = kbSheet.getLastRow();
+    if (kbLast >= 2) {
+      const rows = kbSheet.getRange(2, 1, kbLast - 1, 3).getValues();   // Id, Department, Title
+      rows.forEach(function (r) { if (r[0]) titles[String(r[0])] = String(r[2] || '(untitled)'); });
+    }
+    const items = ids
+      .filter(function (id) { return !!titles[id]; })   // deleted items drop out
+      .map(function (id) { return { id: id, title: titles[id], count: counts[id].count, drawerCount: counts[id].drawerCount }; })
+      .sort(function (a, b) { return b.count - a.count; })
+      .slice(0, KB_USAGE_TOP_N);
+    return { items: items, windowDays: KB_USAGE_WINDOW_DAYS };
+  } catch (err) { return { error: err.message }; }
+}
+
 // ── Manager-gated writes (locked + audited) ──────────────────────────────
 function kbSaveItem(payload) {
   const lock = LockService.getScriptLock();

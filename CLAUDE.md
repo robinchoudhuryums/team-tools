@@ -246,7 +246,7 @@ this section before touching the relevant area.
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
-  `kbConvertDriveDoc`.
+  `kbConvertDriveDoc`, `kbGetUsageStats`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -786,7 +786,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Six client-side localStorage keys total.** All per-browser, all
+- **Seven client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -810,7 +810,12 @@ this section before touching the relevant area.
   - `umsMergeMode` — Time / PTO mode (Round 2 · 8b): `'timeoff'`
     (default) or `'timesheet'`. Picks the side-rail content + the
     segmented toggle's active state.
-  Clearing browser data wipes all six.
+  - `umsKbPanel` — KB drawer preferences as ONE JSON blob:
+    `recents[]` ({id, title}, capped 5, deduped) + `suggest` (bool,
+    default true — the context-suggestions toggle). Sanitized on read
+    (corrupt blob → `{}`); deliberately a single key so drawer prefs
+    don't multiply the key count.
+  Clearing browser data wipes all seven.
 
 ## Key Design Decisions
 
@@ -1084,13 +1089,14 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Six client-side localStorage keys total" entry in
+  authoritative "Seven client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
-  `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`) — all
-  per-browser, all try/catch-wrapped. (An earlier version of this
-  decision listed only four; the sidebar-width and Time/PTO-mode keys
-  added in Round 2 · 8a/8b brought the total to six.)
+  `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
+  `umsKbPanel`) — all per-browser, all try/catch-wrapped. (An earlier
+  version of this decision listed only four; Round 2 · 8a/8b added the
+  sidebar-width and Time/PTO-mode keys, and the KB drawer added its
+  single `umsKbPanel` prefs blob.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -1825,6 +1831,43 @@ this section before touching the relevant area.
   compares `String(getType())` etc. against enum NAMES so the Node
   harness drives it with plain-object stubs ("kb — Doc→markdown
   converter" tests).
+- **KB reference drawer — mid-call lookup as a shell capability.** A
+  slide-over panel (`#kb-drawer`, right edge, z-index 45 — UNDER the
+  `.overlay` layer so modals stack over it) giving reps searchable
+  Reference access without leaving the note form. Toggled by
+  **Ctrl/⌘+K** (bound in `script_core.html`'s shared keydown — fires
+  even when focus is in a form field, that's the point) or a right-edge
+  vertical tab shown only on the mid-task tools (Call Notes / Intake,
+  per `VIEW_TO_TOOL`; hidden in compact mode). **Mounted on
+  `document.body`, NOT `#view-area`** — Call Notes' optimistic
+  re-renders rewrite `#view-area`'s innerHTML and would wipe a drawer
+  mid-read at exactly the moment a rep is using it. `showView` calls
+  `kbDrawerOnNavigate_` (typeof-guarded, the `cnStopAmbientPolling_`
+  pattern) to close it on any navigation; Esc closes it only when no
+  overlay is open. Search-first UX (250ms debounce → `searchReference`,
+  stale responses dropped via a sequence counter); articles render
+  inline via `kbMd_` (sharing `.kb-article` styles); **Drive embeds get
+  an open-in-new-tab card** — a 400px drawer can't host an iframe
+  usefully, which quietly reinforces native-first conversion. Home view
+  = "Suggested" + "Recent": recents live in the single `umsKbPanel`
+  localStorage blob; suggestions match the in-progress Issue field text
+  against the cached KB tree TITLES client-side (`kbSuggestMatches_` —
+  4+ char tokens, distinct-token scoring, zero RPCs, note text never
+  leaves the browser), rendered only inside the drawer and behind a
+  per-rep toggle (`umsKbPanel.suggest`, default on). Reuses the three
+  enrolled-employee KB read endpoints — no new read surface. Pinned by
+  the `kbRecentsPush_` / `kbSuggestMatches_` Node tests.
+- **KB usage feedback loop ("most referenced during calls").** Every
+  article/embed open — drawer or Reference tab — fires a best-effort
+  `kbRecordView(itemId, context)` (rep-callable, locked INV-01,
+  append-only `KbViews` tab in the KB spreadsheet; PHI-free row:
+  timestamp + itemId + repId + sanitized context token like
+  `drawer:callNotes` vs `reference`). `kbGetUsageStats` (manager-gated,
+  read-only, bounded 4000-row tail scan) aggregates a 30-day top-5 with
+  the in-call share broken out, rendered as a "Most referenced · 30d"
+  block atop the manager's Reference tree — the signal for which guides
+  to polish/convert next. Client calls are fire-and-forget; a failure
+  never surfaces. See INV-117.
 - **Win-back nudge on a "changing suppliers" close.** When a Close-Order
   department email is sent and the free-text `closeDetails.reason` matches a
   supplier-switch pattern (`cnIsSwitchingSuppliersReason_` — loose substring
@@ -2047,7 +2090,12 @@ manually for a fresh deploy or environment:
   (they read via `getReferenceTree`/`getReferenceItem`/`searchReference`). Keep
   it a **separate** spreadsheet from the PHI intake/forms sheets — the KB is
   broadly rep-readable and PHI-free by policy. (`_TEST_OVERRIDE_KB_SS_ID` is the
-  test override.)
+  test override.) A **`KbViews` tab** also auto-provisions in this spreadsheet
+  on the first article open (`getOrCreateKbViewsSheet_`) — the append-only,
+  PHI-free usage log behind the manager "Most referenced · 30d" block
+  (INV-117). It grows one tiny row per open with no purge yet; the stats scan
+  is bounded (last 4000 rows) so growth never slows reads — trim it manually
+  if it ever bothers you.
 - **KB Phase 2 converter requires the Google Docs OAuth scope.**
   `kbConvertDriveDoc` is the project's first `DocumentApp` call, so the deploy
   that ships it adds the `documents` scope to the auto-detected scope set. The
@@ -2478,7 +2526,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`, `kbGetUsageStats`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
@@ -2564,6 +2612,7 @@ INV-113 | `submitFormByToken` (public, token-only) extracts `signature` AND `_me
 INV-114 | `getFormsSS_()` resolves the forms PHI store: Script Property `FORMS_SS_ID` first (segregates PHI off the ADP/payroll sheet — point it at `INTAKE_SS_ID`), else `getAdpSS_()` for back-compat; honors `_TEST_OVERRIDE_FORMS_SS_ID`. Both `getOrCreateFormTokensSheet_` / `getOrCreateFormSubmissionsSheet_` (and therefore `submitFormByToken`, `getFormByToken`, `serveExternalForm_`, the viewers, and `purgeExpiredFormData`) route through it, so the location is a single point of change. The invite-email builders (`buildCustomerEmailHtml_`/`buildProviderEmailHtml_`/`*Text_`) take only `(recipientName, message, formNames, formLinks)` and never read prefill — patient identifiers stay in the token, never the cleartext email body. Pinned by the `forms — invite email builders` Node guard | Subsystem: Server + Client (public forms)
 INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text; tables → GFM with row 0 as header and `\|`-escaped literal pipes) and reports lossy conversions (images, nested tables, multi-line cells, skipped elements) as `warnings[]` rather than silently dropping content — pinned by a Node round-trip tripwire that renders the converter's GFM through `kbMd_`. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissionId)` (the Intake Sent tab) are read-only and caller-scoped: a rep sees only rows whose stored `repId` matches their own; a manager sees all (parallels INV-90/91). The list is metadata-only (id, timestamp, rep, patientInfo, language, recipient — never the answers JSON), newest-first, capped at `INTAKE_LIST_CAP_`=100, and skips an unreachable form-type tab rather than failing the whole list. The detail is a bounded lookup — id-column scan, then one full-row fetch — and parses the answers/recommendations/selections JSON defensively (corrupt blob → `{}`). Timestamps and the ACCT dob cell route through Date-coercion guards (`intakeTsString_`). The submission tabs remain APPEND-ONLY — no edit endpoint exists. Pinned by `test_intake_sentViewer_callerScopedAndManager` | Subsystem: Server + Client (Intake views)
+INV-117 | `kbRecordView(itemId, context)` is rep-callable (requires `getEmployeeInfo_`), locked (INV-01), and append-only — one PHI-free row (timestamp, itemId, repId, sanitized context) per open into the `KbViews` tab of the KB spreadsheet; it never reads or returns other reps' data. The client fires it best-effort (fire-and-forget) so a failure never blocks or surfaces in the reading UX. `kbGetUsageStats()` is manager-gated (INV-02/31), read-only, bounded (last `KB_VIEWS_MAX_SCAN`=4000 rows), windowed to `KB_USAGE_WINDOW_DAYS`=30, and joins titles from the KB sheet so deleted items drop out; timestamp cells are recovered in the KB spreadsheet's OWN tz (the tz that coerced them — same discipline as `normalizeAuditTs_`). Pinned by `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -3118,6 +3167,21 @@ S63 | Reference tool — Doc→article converter (KB Phase 2) | Subsystem: Serve
     - Cancel an editor after converting → confirm the embed item is untouched (nothing saved)
     - As a non-manager, call `google.script.run...kbConvertDriveDoc({driveUrl:'…'})` from the console
   Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything; the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. Pinned by the `kb — Doc→markdown converter` Node stub tests (INV-115).
+
+S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, Client (Reference views), Client (shell), Client (Call Notes views)
+  Steps:
+    - As an enrolled rep, open Call Notes → Log; press **Ctrl/⌘+K** → confirm the drawer slides in from the right and focuses its search box; press Ctrl/⌘+K again (or Esc, or the X) → closes
+    - Confirm the vertical "Reference" edge tab shows on Call Notes / Intake views, NOT on Time Clock / Metrics / Manager views, and not in compact mode
+    - Type 2+ chars → results with snippets; click an ARTICLE → renders inline (app-styled, same .kb-article look as the Reference tab) with a Back button returning to the results
+    - Click an EMBED result → an open-in-new-tab card (no iframe in the drawer)
+    - Type some text into the note's Issue field, open the drawer → a "Suggested" section lists title-matching articles; toggle "suggest" off → section explains it's off; re-check after reload (persists via umsKbPanel)
+    - With the drawer open mid-read, save a note (Ctrl/⌘+Enter) → the drawer must NOT be wiped by the optimistic re-render
+    - Open a uiConfirm (e.g. delete a note) with the drawer open → first Esc closes the dialog, second Esc closes the drawer
+    - Navigate to another tool → drawer closes
+    - Re-open: previously opened articles appear under "Recent"
+    - As a manager, open Reference → confirm a "Most referenced · 30d" block atop the tree with open counts + in-call counts; as a rep confirm it does NOT render
+    - From a non-registered session, call `google.script.run...kbRecordView('x','y')`; as a non-manager call `...kbGetUsageStats()`
+  Expected: The drawer mounts on document.body (survives #view-area re-renders), closes on navigation/Esc-with-no-overlay, and never blocks modals (overlays stack above it). Suggestions are computed client-side from cached KB titles — the Issue text never leaves the browser; the toggle + recents persist in the single `umsKbPanel` localStorage blob. Every open writes a best-effort PHI-free KbViews row (`kbRecordView` — locked, append-only; "Not authorized." for non-employees); `kbGetUsageStats` is manager-gated, 30-day windowed, bounded tail scan. Pinned by the `kbRecentsPush_`/`kbSuggestMatches_` Node tests + `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` gate case (INV-117).
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)

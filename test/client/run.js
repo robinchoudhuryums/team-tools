@@ -649,6 +649,42 @@ test('renders images (http(s) only) with escaped alt + URL quotes', () => {
   assert.ok(uq.indexOf('"o.png') < 0 && uq.indexOf('%22') >= 0, 'quote in src percent-encoded');
 });
 
+console.log('\nkb — drawer pure helpers (recents list + title-match suggestions)');
+const kbRecentsPush_ = loadFunction(sb, 'kb/script_kb.html', 'kbRecentsPush_');
+const kbSuggestMatches_ = loadFunction(sb, 'kb/script_kb.html', 'kbSuggestMatches_');
+test('kbRecentsPush_: prepends, dedupes by id, caps at 5', () => {
+  const l1 = kbRecentsPush_([], { id: 'a', title: 'A' });
+  assert.strictEqual(l1.length, 1);
+  assert.strictEqual(l1[0].id, 'a');
+  // re-opening an item moves it to the front (no duplicate)
+  const l2 = kbRecentsPush_([{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }], { id: 'b', title: 'B' });
+  assert.strictEqual(l2.map((r) => r.id).join(','), 'b,a');
+  // cap: 5 entries max, oldest dropped
+  let list = [];
+  for (let i = 0; i < 8; i++) list = kbRecentsPush_(list, { id: 'i' + i, title: 'T' + i });
+  assert.strictEqual(list.length, 5);
+  assert.strictEqual(list[0].id, 'i7');
+  assert.strictEqual(list[4].id, 'i3');
+});
+test('kbSuggestMatches_: 4+ char tokens, scored by distinct title hits, capped', () => {
+  const tree = [
+    { id: '1', title: 'Wheelchair repair process' },
+    { id: '2', title: 'Repair escalation policy' },
+    { id: '3', title: 'PTO calendar' },
+  ];
+  const m = kbSuggestMatches_(tree, 'patient needs wheelchair repair asap', 3);
+  assert.strictEqual(m[0].id, '1', 'two token hits ranks first (wheelchair + repair)');
+  assert.strictEqual(m[1].id, '2', 'one token hit second');
+  assert.strictEqual(m.length, 2, 'non-matching items excluded');
+  // short words never match (no 1-3 char token noise like "pto" mid-word)
+  assert.strictEqual(kbSuggestMatches_(tree, 'the a of is to', 3).length, 0);
+  assert.strictEqual(kbSuggestMatches_(tree, '', 3).length, 0, 'empty text → no suggestions');
+  assert.strictEqual(kbSuggestMatches_(null, 'wheelchair', 3).length, 0, 'no tree → no suggestions');
+  // repeated tokens count once (distinct-token scoring)
+  const rep = kbSuggestMatches_(tree, 'repair repair repair', 3);
+  assert.strictEqual(rep.length, 2, 'duplicate tokens deduped before scoring');
+});
+
 console.log('\nCode.js — kbParseDriveUrl_() extracts {kind,fileId} from Drive URLs');
 const _kbCtx = vm.createContext({});
 vm.runInContext(extractRawFunction('Code.js', 'kbParseDriveUrl_'), _kbCtx, { filename: 'Code.js#kbParseDriveUrl_' });
