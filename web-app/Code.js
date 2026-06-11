@@ -10155,6 +10155,54 @@ function kbResolveDocImages_(bodyMd) {
   return { bodyMd: r.bodyMd, exported: exported, warnings: warnings };
 }
 
+// ── KB Phase 3 — paste-a-screenshot upload (article editor) ─────────────────
+// The editor textarea accepts a pasted image: the client reads it as a data
+// URL and calls kbUploadImage, which exports the blob to the same KB Images
+// folder Phase 2b provisions and returns the thumbnail URL the editor inserts
+// as markdown. The KB is PHI-free BY POLICY — the editor reminds the manager
+// to scrub patient data before pasting. Orphaned uploads (pasted but never
+// saved into an article) stay in the folder — trim manually if it bothers you
+// (same posture as KbViews growth).
+const KB_IMG_UPLOAD_MAX_CHARS = 4 * 1024 * 1024;   // base64 chars ≈ 3MB binary
+const KB_IMG_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+/** PURE: parse a data:image/…;base64,… URL → { contentType, base64 } or null.
+ *  The whitelist check happens at the caller (this just shape-parses). */
+function kbParseImageDataUrl_(dataUrl) {
+  const m = String(dataUrl || '').match(/^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+\/=\s]+)$/i);
+  if (!m) return null;
+  return { contentType: m[1].toLowerCase(), base64: m[2].replace(/\s+/g, '') };
+}
+
+/** Manager-gated (INV-02 — the editor is manager-only). Validates the data
+ *  URL (type whitelist + size cap), writes the blob to the KB Images folder
+ *  as kbpaste-<stamp>-<rand>, audits a PHI-free KbImageUpload row, and
+ *  returns the thumbnail URL. Deliberately NO ScriptLock: this writes only a
+ *  Drive file (atomic, no shared-sheet state) — holding the global lock
+ *  through a multi-second blob upload would stall every punch/note write. */
+function kbUploadImage(dataUrl) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    const raw = String(dataUrl || '');
+    if (raw.length > KB_IMG_UPLOAD_MAX_CHARS) {
+      return { success: false, error: 'Image too large (max ~3MB) — crop or downscale the screenshot.' };
+    }
+    const parsed = kbParseImageDataUrl_(raw);
+    if (!parsed || KB_IMG_UPLOAD_TYPES.indexOf(parsed.contentType) < 0) {
+      return { success: false, error: 'Paste a PNG/JPEG/GIF/WebP image.' };
+    }
+    const folder = getOrCreateKbImagesFolder_();
+    const stamp = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyyMMdd-HHmmss');
+    const name = 'kbpaste-' + stamp + '-' + Utilities.getUuid().substring(0, 8);
+    const blob = Utilities.newBlob(Utilities.base64Decode(parsed.base64), parsed.contentType, name);
+    const file = folder.createFile(blob);
+    writeAuditLog_(emp, 'KbImageUpload', '', '', false, 0,
+      'fileId=' + file.getId() + '; name=' + name + '; type=' + parsed.contentType, emp.email);
+    return { success: true, url: 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200' };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
 const KB_DOC_HEADING_PREFIX = {
   TITLE: '# ', HEADING1: '# ', HEADING2: '## ', HEADING3: '### ',
   HEADING4: '#### ', HEADING5: '##### ', HEADING6: '###### ', SUBTITLE: '## ',

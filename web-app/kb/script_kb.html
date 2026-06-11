@@ -592,11 +592,77 @@ function kbRenderEditorBody_() {
   } else {
     host.innerHTML = '<div class="field"><label>Body (markdown)</label>' +
       '<textarea id="kb-ed-bodymd" placeholder="# Heading&#10;&#10;**bold**, *italic*, `code`, [links](https://…)&#10;- bullet lists&#10;1. numbered&#10;> quote">' + esc(KB_EDIT.body) + '</textarea></div>' +
+      '<div style="font-size:.72rem;color:var(--muted);margin:-6px 0 6px;">Paste a screenshot directly into the body to upload it. The KB is PHI-free by policy — scrub patient data first.</div>' +
       '<div style="font-size:.76rem;color:var(--muted);margin-bottom:4px;">Live preview:</div><div class="kb-ed-prev kb-article" id="kb-ed-prev"></div>';
     var ta = document.getElementById('kb-ed-bodymd'), prev = document.getElementById('kb-ed-prev');
     var upd = function () { prev.innerHTML = kbMd_(ta.value); };
     upd(); ta.addEventListener('input', upd);
+    // Phase 3 — paste-a-screenshot upload. The listener is ELEMENT-scoped
+    // (this textarea), so it dies with the modal — structurally immune to the
+    // document-level leak class the Intake modal had (M7). Non-image pastes
+    // fall through to the browser default.
+    ta.addEventListener('paste', function (e) {
+      var items = (e.clipboardData || {}).items || [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image/') === 0) {
+          e.preventDefault();
+          kbPasteUploadImage_(ta, items[i].getAsFile(), upd);
+          return;
+        }
+      }
+    });
   }
+}
+
+// Phase 3 — upload a pasted screenshot via kbUploadImage and insert the
+// returned markdown. A UNIQUE placeholder token goes in at the cursor first
+// and is string-replaced when the upload resolves, so typing (or a type-
+// switch re-render) during the round trip can't misplace the final markdown:
+// the replacement targets the token wherever it now lives — the live
+// textarea, or the KB_EDIT snapshot if the body was re-rendered/snapshotted.
+var KB_PASTE_SEQ = 0;
+function kbPasteUploadImage_(ta, file, refreshPreview) {
+  if (!file) return;
+  var token = '![uploading-' + (++KB_PASTE_SEQ) + '…](kbpaste:pending)';
+  var start = (typeof ta.selectionStart === 'number') ? ta.selectionStart : ta.value.length;
+  var end = (typeof ta.selectionEnd === 'number') ? ta.selectionEnd : start;
+  ta.value = ta.value.substring(0, start) + token + ta.value.substring(end);
+  ta.selectionStart = ta.selectionEnd = start + token.length;
+  try { refreshPreview(); } catch (_) {}
+  var done = function (replacement) {
+    var el = document.getElementById('kb-ed-bodymd');
+    if (el && el.value.indexOf(token) >= 0) {
+      el.value = el.value.replace(token, replacement);
+      el.dispatchEvent(new Event('input'));   // refresh the live preview
+    } else if (KB_EDIT && typeof KB_EDIT.body === 'string' && KB_EDIT.body.indexOf(token) >= 0) {
+      KB_EDIT.body = KB_EDIT.body.replace(token, replacement);
+    }
+  };
+  var reader = new FileReader();
+  reader.onload = function (ev) {
+    var dataUrl = String((ev.target || {}).result || '');
+    if (dataUrl.length > 4 * 1024 * 1024) {   // mirrors KB_IMG_UPLOAD_MAX_CHARS
+      done('');
+      showToast('Image too large (max ~3MB) — crop or downscale, then paste again.', 'toast-warn');
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) {
+          done('');
+          showToast((res && res.error) || 'Image upload failed', 'toast-error');
+          return;
+        }
+        done('![Screenshot](' + res.url + ')');
+        showToast('Image uploaded', 'toast-success');
+      })
+      .withFailureHandler(function (err) {
+        done('');
+        showToast('Image upload failed: ' + ((err && err.message) || 'server error'), 'toast-error');
+      })
+      .kbUploadImage(dataUrl);
+  };
+  reader.readAsDataURL(file);
 }
 
 function kbSaveFromEditor_(btn) {

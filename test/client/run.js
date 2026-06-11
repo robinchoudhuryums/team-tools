@@ -1029,6 +1029,22 @@ test('kbCollectDocInlineImages_ mirrors the converter walk (paragraph images onl
     'document order, drawings skipped (string compare — vm-realm array)');
   assert.strictEqual(kbCollectDocInlineImages_(body, 2).length, 2, 'cap respected');
 });
+test('kbParseImageDataUrl_: shape-parses image data URLs, rejects everything else', () => {
+  const parse = (() => {
+    const ctx = vm.createContext({});
+    vm.runInContext(extractRawFunction('Code.js', 'kbParseImageDataUrl_'), ctx);
+    return ctx.kbParseImageDataUrl_;
+  })();
+  const ok = parse('data:image/png;base64,iVBOR\nw0KGgo=');
+  assert.strictEqual(ok.contentType, 'image/png');
+  assert.strictEqual(ok.base64, 'iVBORw0KGgo=', 'whitespace stripped from base64');
+  assert.strictEqual(parse('data:image/svg+xml;base64,AAAA').contentType, 'image/svg+xml',
+    'parser shape-accepts svg — the TYPE WHITELIST at the caller is what rejects it');
+  assert.strictEqual(parse('data:text/html;base64,AAAA'), null, 'non-image scheme rejected');
+  assert.strictEqual(parse('https://x/y.png'), null);
+  assert.strictEqual(parse('data:image/png;base64,!!!'), null, 'non-base64 payload rejected');
+  assert.strictEqual(parse(''), null);
+});
 test('kbMd_: kbdoc tokens demote to alt text in preview; the Drive thumbnail URL renders an <img>', () => {
   const prev = kbMd_('![Doc image 1](kbdoc:F1:1)');
   assert.strictEqual(prev.indexOf('<img'), -1, 'unresolved token never renders an img (non-http scheme)');

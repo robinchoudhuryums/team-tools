@@ -852,6 +852,7 @@ function _runAllTests() {
 
   // ── KB usage feedback loop ──────────────────────────────────────────────
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
+  _integrationTest('kb_uploadImage_rejectsInvalidPayloads',      test_kb_uploadImage_rejectsInvalidPayloads);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
@@ -3735,6 +3736,7 @@ function test_managerGates_rejectNonManager() {
     ['getCallNotesEnrollment',         function () { return getCallNotesEnrollment(); }],
     ['kbSaveItem',                     function () { return kbSaveItem({ title: 'gate-test', type: 'article', body: 'x' }); }],
     ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
+    ['kbUploadImage',                  function () { return kbUploadImage('data:image/png;base64,AAAA'); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -3748,6 +3750,25 @@ function test_managerGates_rejectNonManager() {
   // assert it never leaks a badge / data to a non-manager.
   const amb = _asUser(_TEST_INDIA_EMAIL, function () { return getMetricsAmbient(); });
   _assertTrue(!amb || amb.badge == null, 'getMetricsAmbient must not leak a badge to a non-manager');
+}
+
+// Phase 3 — kbUploadImage validation: malformed / non-image payloads are
+// rejected BEFORE any Drive write (no folder is provisioned, no file created),
+// so this is safe to run against production as the test manager.
+function test_kb_uploadImage_rejectsInvalidPayloads() {
+  _asUser(_TEST_MGR_EMAIL, function () {
+    const r1 = kbUploadImage('not a data url');
+    _assertEq(r1.success, false, 'non-data-URL rejected');
+    _assertContains(r1.error, 'PNG/JPEG', 'names the accepted types');
+    const r2 = kbUploadImage('data:text/html;base64,PHNjcmlwdD4=');
+    _assertEq(r2.success, false, 'non-image content type rejected');
+    const r3 = kbUploadImage('data:image/svg+xml;base64,AAAA');
+    _assertEq(r3.success, false, 'SVG rejected (script-capable format, not on the whitelist)');
+    const big = 'data:image/png;base64,' + new Array(4 * 1024 * 1024 + 2).join('A');
+    const r4 = kbUploadImage(big);
+    _assertEq(r4.success, false, 'over-cap payload rejected');
+    _assertContains(r4.error, 'too large');
+  });
 }
 
 // kbRecordView is rep-callable (append-only KbViews row) but must reject an

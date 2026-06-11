@@ -1899,6 +1899,21 @@ this section before touching the relevant area.
   toast, and the audit row carries `imagesExported=`. Pinned by the
   "kb — Phase 2b" Node tests (token emission, cap, extract/replace,
   walk mirror, preview/final kbMd_ render).
+- **KB Phase 3 — paste-a-screenshot upload in the article editor.** Pasting
+  an image into the editor textarea uploads it via `kbUploadImage`
+  (manager-gated; PNG/JPEG/GIF/WebP whitelist — NO SVG, it's
+  script-capable; ~3MB cap `KB_IMG_UPLOAD_MAX_CHARS`, mirrored
+  client-side) into the same Phase 2b **KB Images** folder
+  (`kbpaste-<stamp>-<rand>` names) and inserts
+  `![Screenshot](<thumbnail URL>)` markdown. The paste listener is
+  ELEMENT-scoped (the textarea — structurally immune to the Intake M7
+  document-listener leak class); a unique placeholder token goes in at
+  the cursor and is string-replaced when the upload resolves (live
+  textarea first, the `KB_EDIT` snapshot as fallback), so mid-upload
+  typing or a type-switch re-render can't misplace the markdown. No
+  ScriptLock (Drive-only write); PHI-free-by-policy reminder sits under
+  the textarea; orphaned uploads (pasted, never saved) stay in the
+  folder — trim manually. Audit row `KbImageUpload` (INV-118).
 - **KB reference drawer — mid-call lookup as a shell capability.** A
   slide-over panel (`#kb-drawer`, right edge, z-index 55 — ABOVE the
   `.overlay` layer (50) so it stays readable + usable while the email
@@ -2193,7 +2208,9 @@ manually for a fresh deploy or environment:
   share the folder with the team manually or images render only as their
   alt text + open-in-Drive link. Exported files are named
   `kbdoc-<fileId>-<n>` and are REUSED on re-save; delete a file to force a
-  re-export after the source Doc's image changed. The first export also
+  re-export after the source Doc's image changed. Phase 3 paste-uploads
+  land in the same folder as `kbpaste-<stamp>-<rand>` files (orphans from
+  never-saved pastes accumulate — trim manually). The first export also
   adds the Drive OAuth scope alongside the Docs scope — the deploying
   account may be prompted to re-authorize once.
 - **KB Phase 2 converter requires the Google Docs OAuth scope.**
@@ -2720,6 +2737,7 @@ INV-114 | `getFormsSS_()` resolves the forms PHI store: Script Property `FORMS_S
 INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text; tables → GFM with row 0 as header and `\|`-escaped literal pipes) and reports lossy conversions (drawings, nested tables, multi-line cells, skipped elements) as `warnings[]` rather than silently dropping content — pinned by a Node round-trip tripwire that renders the converter's GFM through `kbMd_`. Phase 2b: `INLINE_IMAGE`s emit `kbdoc:<fileId>:<n>` tokens (the converter remains read-only); `kbSaveItem` resolves them at save via `kbResolveDocImages_` — Doc re-walk in converter order (`kbCollectDocInlineImages_`, a mirrored-walk pair pinned by a Node test), idempotent export to the `KB_IMAGES_FOLDER_ID` Drive folder (deterministic `kbdoc-<fileId>-<n>` names, reused on re-save), token → thumbnail-URL swap, per-token degradation to the italic placeholder on any failure. Resolution runs OUTSIDE the ScriptLock; the lock wraps only the sheet write. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissionId)` (the Intake Sent tab) are read-only and caller-scoped: a rep sees only rows whose stored `repId` matches their own; a manager sees all (parallels INV-90/91). The list is metadata-only (id, timestamp, rep, patientInfo, language, recipient — never the answers JSON), newest-first, capped at `INTAKE_LIST_CAP_`=100, and skips an unreachable form-type tab rather than failing the whole list. The detail is a bounded lookup — id-column scan, then one full-row fetch — and parses the answers/recommendations/selections JSON defensively (corrupt blob → `{}`). Timestamps and the ACCT dob cell route through Date-coercion guards (`intakeTsString_`). The submission tabs remain APPEND-ONLY — no edit endpoint exists. Pinned by `test_intake_sentViewer_callerScopedAndManager` | Subsystem: Server + Client (Intake views)
 INV-117 | `kbRecordView(itemId, context)` is rep-callable (requires `getEmployeeInfo_`), locked (INV-01), and append-only — one PHI-free row (timestamp, itemId, repId, sanitized context) per open into the `KbViews` tab of the KB spreadsheet; it never reads or returns other reps' data. The client fires it best-effort (fire-and-forget) so a failure never blocks or surfaces in the reading UX. `kbGetUsageStats()` is manager-gated (INV-02/31), read-only, bounded (last `KB_VIEWS_MAX_SCAN`=4000 rows), windowed to `KB_USAGE_WINDOW_DAYS`=30, and joins titles from the KB sheet so deleted items drop out; timestamp cells are recovered in the KB spreadsheet's OWN tz (the tz that coerced them — same discipline as `normalizeAuditTs_`). Pinned by `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-118 | `kbUploadImage(dataUrl)` (KB Phase 3) is manager-gated (INV-02) and validates BEFORE any Drive work: data-URL shape via the pure `kbParseImageDataUrl_`, content-type whitelist `KB_IMG_UPLOAD_TYPES` (PNG/JPEG/GIF/WebP — SVG deliberately excluded, it's script-capable), and the `KB_IMG_UPLOAD_MAX_CHARS` (~3MB) cap mirrored client-side. On success it writes one file to the `KB_IMAGES_FOLDER_ID` folder (`kbpaste-<stamp>-<rand>`), writes a PHI-free `KbImageUpload` audit row with the manager as actor, and returns the Drive thumbnail URL. Deliberately NO ScriptLock — a Drive-only atomic write; holding the global lock through a multi-second upload would stall every punch/note write. Pinned by `test_kb_uploadImage_rejectsInvalidPayloads` + the `kbUploadImage` case in `test_managerGates_rejectNonManager` + the `kbParseImageDataUrl_` Node test | Subsystem: Server + Client (Reference views)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -3291,6 +3309,19 @@ S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, 
     - As a manager, open Reference → confirm a "Most referenced · 30d" block atop the tree with open counts + in-call counts; as a rep confirm it does NOT render
     - From a non-registered session, call `google.script.run...kbRecordView('x','y')`; as a non-manager call `...kbGetUsageStats()`
   Expected: The drawer mounts on document.body (survives #view-area re-renders), closes on navigation/Esc-with-no-overlay, and never blocks modals (overlays stack above it). Suggestions are computed client-side from cached KB titles — the Issue text never leaves the browser; the toggle + recents persist in the single `umsKbPanel` localStorage blob. Every open writes a best-effort PHI-free KbViews row (`kbRecordView` — locked, append-only; "Not authorized." for non-employees); `kbGetUsageStats` is manager-gated, 30-day windowed, bounded tail scan. Pinned by the `kbRecentsPush_`/`kbSuggestMatches_` Node tests + `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` gate case (INV-117).
+
+S65 | KB Phase 3 — paste-a-screenshot upload | Subsystem: Server, Client (Reference views)
+  Steps:
+    - As a manager, open Reference → Add item (or edit an article) → click into the Body textarea
+    - Paste a screenshot from the clipboard (⌘/Ctrl+V)
+    - Observe the placeholder `![uploading-1…](kbpaste:pending)` appear at the cursor and the live preview show its alt text
+    - Wait for the "Image uploaded" toast → confirm the placeholder was replaced by `![Screenshot](https://drive.google.com/thumbnail?id=…)` and the preview renders the image
+    - Type elsewhere in the body DURING a second paste's upload → confirm the replacement still lands where the placeholder is, not at the new cursor
+    - Save → re-open the article → image renders; the KB Images folder contains a `kbpaste-…` file; AuditLog has a `KbImageUpload` row
+    - Paste a >3MB image → warn toast, placeholder removed, nothing uploaded
+    - Paste plain text → normal paste (the handler only intercepts image items)
+    - As a non-manager, call `google.script.run...kbUploadImage('data:image/png;base64,AAAA')` from the console
+  Expected: Upload is manager-gated ("Manager access required." for the console call) and validates type whitelist (no SVG) + size cap BEFORE any Drive write. The paste listener is scoped to the textarea (dies with the modal — no app-wide paste interception). Failed/oversized uploads remove the placeholder and toast; the body is never left with a dangling pending token by the resolve path. PHI reminder text sits under the textarea. Pinned by INV-118's tests.
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
