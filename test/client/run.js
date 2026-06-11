@@ -434,6 +434,54 @@ test('removeAutomationTriggers TARGETS matches the install set (cleans up all it
     'install and remove TARGETS must list the same handlers');
 });
 
+console.log('\nCode.js — Sheets-coerced timestamp columns are read via normalizeAuditTs_ (M1 tripwire)');
+// The Sheets-coercion class has now bitten twice (AuditLog timestamps, then
+// TO.SUBMITTED_AT flattening the pending-trend sparkline to zero). Every read
+// of a "yyyy-MM-dd HH:mm:ss" column in the ADP spreadsheet must route through
+// normalizeAuditTs_ — a raw String(...) read of a coerced Date yields
+// "Thu Jun 11 2026 ...", which silently fails every parse / date filter /
+// chronological sort downstream.
+test('no raw String() reads of TO/PAR.SUBMITTED_AT remain in Code.js', () => {
+  const tsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const raw = [...tsSrc.matchAll(/String\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  assert.deepStrictEqual(raw.map((m) => m[0]), [],
+    'found raw String() read(s) of a SUBMITTED_AT cell — route through normalizeAuditTs_ (M1)');
+  // And the normalized reads actually exist (the tripwire stays armed).
+  const normalized = [...tsSrc.matchAll(/normalizeAuditTs_\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  assert.ok(normalized.length >= 8, 'expected ≥8 normalizeAuditTs_ SUBMITTED_AT reads, got ' + normalized.length);
+});
+test('Tests.js reads SUBMITTED_AT through normalizeAuditTs_ too', () => {
+  const tSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const raw = [...tSrc.matchAll(/String\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  assert.deepStrictEqual(raw.map((m) => m[0]), [], 'test helper must match the production read');
+});
+
+console.log('\nscript_core — view-key literals match the TOOLS registry (M3 tripwire)');
+// refreshViewIfCurrent('<tabKey>', …) guards every mutation refresh; a typo'd
+// key silently skips the refresh forever (the Manage tab's key is 'manage',
+// not 'manager' — exactly that mistake was caught in review). Check every
+// literal in the view partials against the LIVE registry from the sandbox.
+test("every refreshViewIfCurrent('…') literal is a registered tab key", () => {
+  const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
+    'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
+    'intake/script_intake.html', 'kb/script_kb.html', 'script_core.html'];
+  // TOOLS / VIEW_TO_TOOL are top-level consts (lexical, not on the sandbox
+  // global), so parse the tab keys from the registry source: every tab entry
+  // carries an `enter:` handler.
+  const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const toolsBlock = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/);
+  assert.ok(toolsBlock, 'TOOLS registry block found');
+  const validKeys = [...toolsBlock[0].matchAll(/(\w+):\s*\{[^}]*enter:\s*'/g)].map((m) => m[1]);
+  assert.ok(validKeys.length >= 10, 'TOOLS registry tab keys parsed (got ' + validKeys.length + ')');
+  partials.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+    [...src.matchAll(/refreshViewIfCurrent\('([^']+)'/g)].forEach((m) => {
+      assert.ok(validKeys.indexOf(m[1]) >= 0,
+        f + ": refreshViewIfCurrent('" + m[1] + "') is not a TOOLS tab key");
+    });
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Intake module — recommendation engine (PPD crown jewel) + layout coupling.
 // ─────────────────────────────────────────────────────────────────────────────

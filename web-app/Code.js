@@ -672,7 +672,7 @@ function cancelTimeOffRequest(date, submittedAt) {
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][TO.EMP_ID]).trim() === emp.id
           && normalizeDate_(rows[i][TO.DATE]) === date
-          && String(rows[i][TO.SUBMITTED_AT]).trim() === submittedAt) {
+          && normalizeAuditTs_(rows[i][TO.SUBMITTED_AT]) === submittedAt) {
         const status = String(rows[i][TO.STATUS]).toLowerCase().trim();
         if (status !== 'pending') {
           return { success: false, error: 'Only pending requests can be cancelled.' };
@@ -863,7 +863,12 @@ function getManagerDashboard() {
         date: normalizeDate_(toRows[i][TO.DATE]),
         type: reqType,
         notes: String(toRows[i][TO.NOTES]),
-        submittedAt: String(toRows[i][TO.SUBMITTED_AT]).trim(),
+        // SubmittedAt cells are Sheets-coerced Dates (written
+        // "yyyy-MM-dd HH:mm:ss") — normalizeAuditTs_ recovers the as-written
+        // digits. This value doubles as the row-match key for
+        // updateTimeOffStatus / cancelTimeOffRequest, whose matchers
+        // normalize identically (M1).
+        submittedAt: normalizeAuditTs_(toRows[i][TO.SUBMITTED_AT]),
         leaveBucket: dedu.bucket,
         leaveDays: dedu.days,
         currentBalance: currentBal,
@@ -1023,7 +1028,12 @@ function getManagerDashboard() {
     const pendingByDate = {};
     for (let i = 1; i < toRows.length; i++) {
       if (String(toRows[i][TO.STATUS]).toLowerCase().trim() !== 'pending') continue;
-      const submitted = String(toRows[i][TO.SUBMITTED_AT]).trim();
+      // SUBMITTED_AT cells are Sheets-coerced Dates; the raw String() read
+      // produced "Thu Jun 11 2026 ...", which failed the parseDate below and
+      // fell into a substring that never matched the window — the pending
+      // sparkline rendered all zeros since it shipped (M1). normalizeAuditTs_
+      // recovers the as-written digits.
+      const submitted = normalizeAuditTs_(toRows[i][TO.SUBMITTED_AT]);
       // SUBMITTED_AT is written in CONFIG.TIMEZONE ("yyyy-MM-dd HH:mm:ss").
       // The trend day-keys below are in mgrTz, so convert the submission
       // instant to the manager-tz calendar day before bucketing — otherwise
@@ -1101,7 +1111,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][TO.EMP_ID]).trim() === empId
           && normalizeDate_(rows[i][TO.DATE]) === date
-          && String(rows[i][TO.SUBMITTED_AT]).trim() === submittedAt) {
+          && normalizeAuditTs_(rows[i][TO.SUBMITTED_AT]) === submittedAt) {
         const oldStatus = String(rows[i][TO.STATUS]).trim();
         const type    = String(rows[i][TO.TYPE]);
         const notes   = String(rows[i][TO.NOTES]);
@@ -3444,9 +3454,37 @@ function getAutomationHealth() {
       cdr = { ok: false, error: cdrErr.message };
     }
 
+    // ── (d) digest heartbeats (Script Property — no audit rows by design) ──
+    // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
+    // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
+    // recorded yet (pre-heartbeat deploy or trigger never installed).
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192 };
+    let digestMap = {};
+    try {
+      digestMap = JSON.parse(PropertiesService.getScriptProperties()
+        .getProperty(DIGEST_LAST_RUN_PROP)) || {};
+    } catch (_) {}
+    if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
+    const digestHealth = ['eod', 'urgent', 'weekly'].map(function (k) {
+      const raw = String(digestMap[k] || '');
+      let stale = false;
+      if (raw) {
+        try {
+          const ms = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
+          stale = (Date.now() - ms) > DIGEST_STALE_HOURS[k] * 3600000;
+        } catch (_) { stale = true; }
+      }
+      return {
+        key: k,
+        last: raw ? convertAuditTs_(raw, CONFIG.TIMEZONE, mgrTz) : null,
+        stale: stale,
+      };
+    });
+
     return {
       syncFails: syncFails,
       automationLastRuns: automationLastRuns,
+      digests: digestHealth,
       cdr: cdr,
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
@@ -6520,6 +6558,27 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
 // Synthetic "employee" identity for system-initiated audit rows (no real actor).
 const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automation@system' };
 
+// ── Digest last-run heartbeats (Automation Health) ──────────────────────────
+// The three digest jobs deliberately write NO audit rows: the EOD digest runs
+// hourly, and 24 rows/day would crowd the bounded AuditLog tail scans that
+// back the compliance + health panels. Each run instead stamps a Script
+// Property heartbeat; getAutomationHealth surfaces it with a staleness flag —
+// closing the "silently dead digest trigger" blind spot.
+const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
+
+/** Best-effort heartbeat stamp ({ key: "yyyy-MM-dd HH:mm:ss" in
+ *  CONFIG.TIMEZONE }) — never blocks or fails the digest itself. */
+function stampDigestLastRun_(key) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let map = {};
+    try { map = JSON.parse(props.getProperty(DIGEST_LAST_RUN_PROP)) || {}; } catch (_) {}
+    if (!map || typeof map !== 'object' || Array.isArray(map)) map = {};
+    map[key] = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    props.setProperty(DIGEST_LAST_RUN_PROP, JSON.stringify(map));
+  } catch (e) { /* heartbeat is best-effort */ }
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  CALL NOTES — AUTOMATED EMAIL DIGESTS
@@ -6603,6 +6662,7 @@ function sendCallNotesEodDigest() {
         Logger.log(`Failed to email rep ${empObj.email} EOD digest: ${e.message}`);
       }
     }
+    stampDigestLastRun_('eod');
     Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
   } catch (err) {
     Logger.log('sendCallNotesEodDigest failed: ' + err.message);
@@ -6674,6 +6734,7 @@ function sendCallNotesWeeklyDigests() {
     if (review.results && review.results.length > 0) {
       sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results, dateRange);
     }
+    stampDigestLastRun_('weekly');
     Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
   } catch (err) {
     Logger.log('sendCallNotesWeeklyDigests failed: ' + err.message);
@@ -6708,6 +6769,7 @@ function sendCallNotesUrgentDigest() {
     if (urgent.results && urgent.results.length > 0) {
       sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results, dateRange);
     }
+    stampDigestLastRun_('urgent');
     Logger.log(`sendCallNotesUrgentDigest: urgent=${(urgent.results || []).length}`);
   } catch (err) {
     Logger.log('sendCallNotesUrgentDigest failed: ' + err.message);
@@ -6948,7 +7010,9 @@ function buildCalendarForEmployee_(emp, year, month) {
     if (rowId === emp.id) {
       timeOffRequests.push({ date: rowDate, type: String(toRows[i][TO.TYPE]),
         notes: String(toRows[i][TO.NOTES]), status,
-        submittedAt: String(toRows[i][TO.SUBMITTED_AT]) });
+        // Doubles as the cancelTimeOffRequest match key — normalized like the
+        // matcher (M1).
+        submittedAt: normalizeAuditTs_(toRows[i][TO.SUBMITTED_AT]) });
     } else {
       if (statusL !== 'pending' && statusL !== 'approved') continue;
       teammates.push({ date: rowDate, name: String(toRows[i][TO.EMP_NAME]),
@@ -6968,7 +7032,7 @@ function buildCalendarForEmployee_(emp, year, month) {
       date: rowDate, type: String(toRows[i][TO.TYPE]),
       notes: String(toRows[i][TO.NOTES]),
       status: String(toRows[i][TO.STATUS]),
-      submittedAt: String(toRows[i][TO.SUBMITTED_AT]),
+      submittedAt: normalizeAuditTs_(toRows[i][TO.SUBMITTED_AT]),
     });
   }
   allRequests.sort((a, b) => b.date.localeCompare(a.date));
@@ -7679,7 +7743,7 @@ function getMyPunchAdjustRequests() {
         time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
         reason: String(rows[i][PAR.REASON] || ''),
         status: String(rows[i][PAR.STATUS]).trim(),
-        submittedAt: String(rows[i][PAR.SUBMITTED_AT] || ''),
+        submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
       });
     }
     out.sort(function (a, b) { return String(b.submittedAt).localeCompare(String(a.submittedAt)); });
@@ -7705,7 +7769,7 @@ function managerGetPendingAdjustments() {
         punchType: String(rows[i][PAR.PUNCH_TYPE]).trim(),
         time: normalizeTime_(rows[i][PAR.REQ_TIME]).trim().substring(0, 5),
         reason: String(rows[i][PAR.REASON] || ''),
-        submittedAt: String(rows[i][PAR.SUBMITTED_AT] || ''),
+        submittedAt: normalizeAuditTs_(rows[i][PAR.SUBMITTED_AT]),
       });
     }
     out.sort(function (a, b) { return (a.date + a.empName).localeCompare(b.date + b.empName); });

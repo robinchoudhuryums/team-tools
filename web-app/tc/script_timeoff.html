@@ -294,8 +294,7 @@ function renderTimeOffView(area, data) {
               return;
             }
             showToast('Request cancelled', 'toast-success');
-            renderLoading(area, 'Loading calendar…');
-            loadCalendar(calYear, calMonth);
+            refreshViewIfCurrent('timeoff', 'Loading calendar…', function () { loadCalendar(calYear, calMonth); });
           })
           .withFailureHandler(err => {
             btn.disabled = false; btn.textContent = 'Cancel';
@@ -702,8 +701,7 @@ document.getElementById('day-submit').addEventListener('click', () => {
       document.getElementById('day-overlay').classList.remove('open');
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       showToast('Time off request submitted','toast-success');
-      renderLoading(document.getElementById('view-area'), 'Loading calendar…');
-      loadCalendar(calYear, calMonth);
+      refreshViewIfCurrent('timeoff', 'Loading calendar…', function () { loadCalendar(calYear, calMonth); });
     })
     .withFailureHandler(err => {
       btn.disabled = false;

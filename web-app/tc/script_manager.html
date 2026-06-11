@@ -526,16 +526,14 @@ function renderManagerView(area, data) {
           if (done === checked.length) {
             if (errors > 0) showToast(`${done - errors} succeeded, ${errors} failed`, 'toast-warn');
             else showToast(`${done} ${status.toLowerCase()}`, 'toast-success');
-            renderLoading(document.getElementById('view-area'), 'Refreshing…');
-            loadManagerDashboard();
+            refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
           }
         })
         .withFailureHandler(() => {
           done++; errors++;
           if (done === checked.length) {
             showToast(`${done - errors} succeeded, ${errors} failed`, 'toast-warn');
-            renderLoading(document.getElementById('view-area'), 'Refreshing…');
-            loadManagerDashboard();
+            refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
           }
         })
         .updateTimeOffStatus(c.dataset.empId, c.dataset.date, c.dataset.submittedAt, status);
@@ -593,8 +591,7 @@ function handleApprovalAction(empId, date, submittedAt, newStatus, btn) {
       const balMsg = result.newBalance !== null && result.newBalance !== undefined
         ? ` · balance: ${formatLeaveDays(result.newBalance)}` : '';
       showToast(`${newStatus}${balMsg}`, 'toast-success');
-      renderLoading(document.getElementById('view-area'), 'Refreshing…');
-      loadManagerDashboard();
+      refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
     })
     .withFailureHandler(err => {
       showToast((err.message||'Server error'),'toast-error');
@@ -618,8 +615,7 @@ function handleDeletePunch(empId, date, time, type, btn) {
         return;
       }
       showToast('Punch deleted', 'toast-success');
-      renderLoading(document.getElementById('view-area'), 'Refreshing…');
-      loadManagerDashboard();
+      refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
     })
     .withFailureHandler(err => {
       btn.disabled = false; btn.innerHTML = original;
@@ -737,8 +733,7 @@ document.getElementById('mto-submit').addEventListener('click', () => {
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       document.getElementById('mgr-timeoff-overlay').classList.remove('open');
       showToast(`Time off filed${result.status === 'Approved' ? ' & approved' : ''}`, 'toast-success');
-      renderLoading(document.getElementById('view-area'), 'Refreshing…');
-      loadManagerDashboard();
+      refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
     })
     .withFailureHandler(err => {
       btn.disabled = false;
@@ -839,8 +834,7 @@ document.getElementById('de-save').addEventListener('click', function () {
     showToast(rangeMode
       ? ('Applied ' + (result.punchesWritten || 0) + ' punch(es) across ' + (result.daysTouched || 0) + ' day(s)')
       : (result.changes > 0 ? result.summary : 'No changes needed'), 'toast-success');
-    renderLoading(document.getElementById('view-area'), 'Refreshing…');
-    loadManagerDashboard();
+    refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
   };
   var onErr = function (err) {
     btn.disabled = false;

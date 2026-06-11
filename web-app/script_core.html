@@ -464,6 +464,18 @@ function renderLoading(area, label) {
     <div class="state-label">${esc(label)}</div></div>`;
 }
 
+/** Refresh helper for mutation success handlers: shows the view-area loading
+ *  state + runs the reload ONLY if the user is still on the view the mutation
+ *  belongs to. Without the guard, a nav-away during the RPC got its NEW view
+ *  wiped to a spinner that nothing ever replaced (the follow-up data loader
+ *  is currentView-guarded, so the spinner stuck until the next tab click).
+ *  Skipping entirely is correct — every tab's enter handler reloads fresh. */
+function refreshViewIfCurrent(viewKey, loadingMsg, reloadFn) {
+  if (currentView !== viewKey) return;
+  renderLoading(document.getElementById('view-area'), loadingMsg);
+  reloadFn();
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  SHARED UTILITIES
 // ════════════════════════════════════════════════════════════════════════════
@@ -636,7 +648,16 @@ function uiConfirm(opts) {
     };
     const onKey = function (e) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(false); }
-      else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); cleanup(true); }
+      else if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter activates the FOCUSED button: a keyboard user who Tabs to
+        // Cancel and presses Enter must get cancel — confirming from the
+        // Cancel button fired destructive actions (delete punch, deny PTO)
+        // before this check. Enter anywhere else = OK (the default action,
+        // which also holds initial focus).
+        e.preventDefault();
+        const onCancel = e.target && e.target.closest && e.target.closest('.ui-dialog-cancel');
+        cleanup(!onCancel);
+      }
     };
     overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(false); });
     overlay.querySelector('.ui-dialog-ok').addEventListener('click', function () { cleanup(true); });
@@ -707,18 +728,74 @@ function uiPrompt(opts) {
   });
 }
 
+// ── Shared overlay lifecycle ───────────────────────────────────────────────
+// Dynamically-created overlays own real state (composer slots, document-level
+// listeners). Hiding one by stripping its `open` class — what the Escape
+// handler used to do — left it hidden-but-stateful: the Call Notes composers
+// re-rendered into the hidden node forever after one Esc, and the Intake
+// modal's document-level paste listener leaked app-wide. Overlays with module
+// cleanup register a close hook so EVERY close path (Escape, backdrop click,
+// programmatic) runs the same teardown.
+var OVERLAY_CLOSE_HOOKS = {};   // overlay element id → module close function
+
+/** Create-or-reuse a full-screen overlay mounted on document.body.
+ *  ALWAYS re-asserts `overlay open` (+ opts.extraClass) — the reuse path must
+ *  bring a previously-closed instance back visible, never render into a
+ *  hidden node. opts.onClose registers the module's close hook; backdrop
+ *  click-to-close is wired through it in the creation branch only, so the
+ *  listener never duplicates. New dynamic overlays should be created through
+ *  this helper rather than hand-rolling createElement + className. */
+function ensureOverlay(id, opts) {
+  opts = opts || {};
+  var overlay = document.getElementById(id);
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = id;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeOverlay(overlay);
+    });
+  }
+  overlay.className = 'overlay open' + (opts.extraClass ? ' ' + opts.extraClass : '');
+  if (opts.onClose) OVERLAY_CLOSE_HOOKS[id] = opts.onClose;
+  return overlay;
+}
+
+/** Close one overlay through its registered hook. Static modals with no hook
+ *  just lose the `open` class (their long-standing behavior — they hold no
+ *  module state). A throwing hook degrades to the plain hide so Escape can
+ *  never get stuck. */
+function closeOverlay(el) {
+  if (!el) return;
+  var hook = el.id && OVERLAY_CLOSE_HOOKS[el.id];
+  if (hook) {
+    try { hook(); return; } catch (err) { /* degrade to plain hide */ }
+  }
+  el.classList.remove('open');
+}
+
+/** Topmost open overlay = LAST `.overlay.open` in DOM order. Dynamic overlays
+ *  append to <body>, so DOM order is stacking order — the same rule the focus
+ *  trap below uses (the two previously disagreed: Escape closed the FIRST
+ *  match, i.e. a static base modal underneath a stacked dialog). */
+function topOpenOverlay_() {
+  var opens = document.querySelectorAll('.overlay.open');
+  return opens.length ? opens[opens.length - 1] : null;
+}
+
 // ── Modal accessibility: Escape-to-close + focus trap ─────────────────────
 document.addEventListener('keydown', function (e) {
-  // Escape closes any open overlay; with no overlay open it closes the KB
-  // drawer instead (overlays stack above the drawer, so they win).
+  // Escape closes the TOPMOST open overlay (through its close hook, so module
+  // cleanup runs); with no overlay open it closes the KB drawer instead
+  // (overlays stack above the drawer, so they win).
   if (e.key === 'Escape') {
-    var open = document.querySelector('.overlay.open');
+    var open = topOpenOverlay_();
     if (!open) {
       if (typeof kbDrawerCloseIfOpen_ === 'function' && kbDrawerCloseIfOpen_()) e.preventDefault();
       return;
     }
     e.preventDefault();
-    open.classList.remove('open');
+    closeOverlay(open);
     return;
   }
   // Ctrl/Cmd + K toggles the KB reference drawer — deliberately works even

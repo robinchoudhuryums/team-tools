@@ -530,8 +530,10 @@ function kbRenderEditor_() {
   var e = KB_EDIT;
   var depts = {}; (KB_STATE.tree || []).forEach(function (it) { depts[it.department] = 1; });
   var datalist = '<datalist id="kb-dept-list">' + Object.keys(depts).map(function (d) { return '<option value="' + esc(d) + '">'; }).join('') + '</datalist>';
-  var ov = document.createElement('div');
-  ov.className = 'overlay open'; ov.id = 'kb-ed-overlay';
+  // ensureOverlay (script_core) registers kbCloseModal_ as the close hook so
+  // the shell's Escape path removes the editor node instead of merely hiding
+  // it (a hidden-but-present editor would shadow the next open).
+  var ov = ensureOverlay('kb-ed-overlay', { onClose: kbCloseModal_ });
   ov.innerHTML = '<div class="modal kb-ed" role="dialog" aria-modal="true">' +
     '<div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><h3 style="margin:0;">' + (e.id ? 'Edit item' : 'Add item') + '</h3>' +
       '<button class="kb-btn" data-kb-close="1">' + icon('x', 15) + '</button></div>' +
@@ -547,8 +549,7 @@ function kbRenderEditor_() {
     '<div class="kb-ed-foot"><button class="kb-btn" data-kb-close="1">Cancel</button>' +
       '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_()">' + icon('check', 13) + ' Save</button></div>' +
   '</div>';
-  document.body.appendChild(ov);
-  ov.addEventListener('click', function (ev) { if (ev.target === ov || (ev.target.closest && ev.target.closest('[data-kb-close]'))) kbCloseModal_(); });
+  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-close]')) kbCloseModal_(); });
   kbRenderEditorBody_();
 }
 

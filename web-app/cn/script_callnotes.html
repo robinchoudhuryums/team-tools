@@ -1750,7 +1750,14 @@ function enterCallNotesView(area) {
   CN_STATE.filter = 'all';
   cnPrewarmScript_();
   renderLoading(area, 'Loading call notes…');
+  // Guard the config-fetch continuation too: cnLoadToday_'s own guard
+  // captures currentView only when THIS callback runs, so a nav-away during
+  // a slow first config fetch would otherwise pass the inner guard, clobber
+  // the new view's #view-area, and restart ambient polling on a non-CN tool
+  // (M5 — the late-callback class the loaders already guard one layer down).
+  const requestedView = currentView;
   cnFetchDeptConfigIfNeeded_(function () {
+    if (currentView !== requestedView) return;
     cnLoadToday_(function () {
       cnRenderNotesView(area);
       cnStartAmbientPolling_();
@@ -1790,7 +1797,9 @@ function enterCallNotesHistoryView(area) {
 
 function enterCallNotesSearchView(area) {
   stopClock();
+  const requestedView = currentView;   // M5 — same guard as enterCallNotesView
   cnFetchDeptConfigIfNeeded_(function () {
+    if (currentView !== requestedView) return;
     cnRenderSearchView(area);
   });
 }
@@ -2928,7 +2937,7 @@ function cnSubmitActiveForm_(opts) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res.success) {
-        cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed — note restored');
+        cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed');
         return;
       }
       const idx = CN_STATE.rollingNotes.findIndex(function (n) { return n.noteId === pendingId; });
@@ -2944,20 +2953,62 @@ function cnSubmitActiveForm_(opts) {
       }
     })
     .withFailureHandler(function (err) {
-      cnRevertPendingSubmit_(pendingId, restoreSnapshot, 'Save failed: ' + (err.message || 'unknown') + ' — note restored');
+      cnRevertPendingSubmit_(pendingId, restoreSnapshot, 'Save failed: ' + (err.message || 'unknown'));
     })
     .submitCallNote(payload);
 }
 
-/** Roll back an optimistic submit: drop the pending card from the stack,
- *  restore the form to what the rep had typed, and show an error toast. */
+/** Roll back an optimistic submit: drop the pending card from the stack and
+ *  show an error toast. The typed content is recovered WITHOUT ever clobbering
+ *  newer work (the rep may have started the next note during the in-flight
+ *  save, or navigated away):
+ *    - form present and still empty → restore the snapshot in place;
+ *    - form has new typing → leave it alone; the failed note stays on the
+ *      clipboard (set by the optimistic copy);
+ *    - form gone (navigated away) → park the snapshot in the sticky-draft
+ *      slot so the next Log view restores it ("Draft restored"). */
 function cnRevertPendingSubmit_(pendingId, snapshot, message) {
   CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== pendingId; });
   cnRenderStack_();
   cnRenderFilterBar_();
   cnUpdateNoteCounter_();
-  if (snapshot) cnRestoreFromSnapshot_(snapshot);
-  showToast(message, 'toast-error');
+  let outcome = '';
+  if (snapshot) {
+    const form = document.getElementById('cn-active-form');
+    // Same 5-field emptiness check as the Ctrl/⌘+Z restore path.
+    const formEmpty = !cnGetFieldValue_('cn-fld-callback').trim()
+      && !cnGetFieldValue_('cn-fld-caller').trim()
+      && !cnGetFieldValue_('cn-fld-patient').trim()
+      && !cnGetFieldValue_('cn-fld-issue').trim()
+      && !cnGetFieldValue_('cn-fld-resolution').trim();
+    if (form && formEmpty) {
+      cnRestoreFromSnapshot_(snapshot);
+      outcome = ' — note restored to the form';
+    } else if (form) {
+      outcome = ' — the unsaved note is on your clipboard (your current typing was left untouched)';
+    } else {
+      cnSaveSnapshotAsStickyDraft_(snapshot);
+      outcome = ' — the unsaved note was kept as a draft (restores on the Log view) and is on your clipboard';
+    }
+  }
+  showToast(message + outcome, 'toast-error');
+}
+
+/** Park a failed-submit snapshot in the sticky-draft slot (same shape
+ *  cnPersistActiveFormDraft_ writes / cnRestoreActiveFormDraft_ reads) so a
+ *  rep who navigated away mid-save gets the note back on their next Log view
+ *  enter instead of losing it. Carries an `at` stamp for the PHI TTL. */
+function cnSaveSnapshotAsStickyDraft_(snap) {
+  try {
+    localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify({
+      values: snap.values || {},
+      flags: Array.isArray(snap.flags) ? snap.flags : (snap.flag ? [snap.flag] : []),
+      tags: Array.isArray(snap.tags) ? snap.tags : [],
+      flag: snap.flag || '',
+      trainingQ: snap.trainingQ || '',
+      at: Date.now(),
+    }));
+  } catch (e) { /* localStorage unavailable — the clipboard copy is the fallback */ }
 }
 
 function cnAutoCopyNote_(note) {
@@ -3397,16 +3448,7 @@ function cnViewFormSubmission_(token) {
 }
 
 function cnRenderFormSubOverlay_(html) {
-  var overlay = document.getElementById('cn-form-sub-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'cn-form-sub-overlay';
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', function (e) {
-      if (e.target === overlay) cnCloseFormSubOverlay_();
-    });
-  }
-  overlay.className = 'overlay open';
+  var overlay = ensureOverlay('cn-form-sub-overlay', { onClose: cnCloseFormSubOverlay_ });
   overlay.innerHTML = html;
 }
 
@@ -4047,18 +4089,13 @@ function cnCloseComposerModal_() {
 }
 
 function cnRenderComposerModal_() {
-  let overlay = document.getElementById('cn-compose-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'cn-compose-overlay';
-    overlay.className = 'overlay open';
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', function (e) {
-      if (e.target === overlay) cnCloseComposerModal_();
-    });
-  }
+  // ensureOverlay (script_core) re-asserts `overlay open` on reuse and
+  // registers the close hook so the shell's Escape path runs OUR teardown —
+  // the prior class-strip-only Esc left this overlay hidden-but-stateful,
+  // permanently swallowing every later compose until a page reload.
+  const overlay = ensureOverlay('cn-compose-overlay', { onClose: cnCloseComposerModal_ });
   const c = CN_STATE.composer;
-  if (!c) { overlay.remove(); return; }
+  if (!c) { cnCloseComposerModal_(); return; }
   if (c.step === 'form')    overlay.innerHTML = cnRenderComposerFormStep_();
   if (c.step === 'preview') overlay.innerHTML = cnRenderComposerPreviewStep_();
   if (c.step === 'form')    cnWireComposerForm_();
@@ -6649,6 +6686,34 @@ function cnRenderHealthPanel_(res) {
   }
   var cdrHtml = cdrParts.join('<div style="height:6px"></div>');
 
+  // (d) Digest heartbeats — Script-Property stamps (the digests write no
+  // audit rows by design; the EOD digest runs hourly and would crowd the
+  // bounded AuditLog tail scans). `stale` = the trigger hasn't run within its
+  // expected cadence; `last: null` = no heartbeat recorded yet (pre-heartbeat
+  // deploy, or the trigger isn't installed).
+  var DIGEST_LABELS = {
+    eod:    { label: 'EOD unresolved-flag digest', expect: 'hourly trigger — stale past 2h' },
+    urgent: { label: 'Urgent-flag digest',         expect: 'daily 8am — stale past 26h' },
+    weekly: { label: 'Weekly training/review digests', expect: 'Friday 8am — stale past 8d' },
+  };
+  var digestsHtml = (res.digests || []).map(function (d) {
+    var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };
+    var when;
+    if (!d.last) {
+      when = '<span style="color:var(--muted)">no heartbeat recorded yet — check the trigger is installed</span>';
+    } else if (d.stale) {
+      when = '<span style="color:var(--warning-deep);font-weight:600">' + icon('warning', 11) + ' last ran ' +
+        esc(d.last) + (tz ? ' ' + esc(tz) : '') + ' — past its expected cadence; the trigger may be dead</span>';
+    } else {
+      when = '<span class="tabular" style="font-family:var(--mono)">' + esc(d.last) + (tz ? ' ' + esc(tz) : '') + '</span>';
+    }
+    return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="flex:0 0 200px;font-weight:600">' + esc(meta.label) + '</span>' +
+      '<span style="flex:1;min-width:200px">' + when + '</span>' +
+      '<span style="color:var(--muted);font-size:11px">' + esc(meta.expect) + '</span>' +
+    '</div>';
+  }).join('');
+
   // (c) Automation last-seen
   var runsHtml = (res.automationLastRuns || []).map(function (r) {
     var meta = CN_HEALTH_RUN_LABELS[r.action] || { label: r.action, expect: '' };
@@ -6669,6 +6734,7 @@ function cnRenderHealthPanel_(res) {
     secLabel('Personal-sheet sync') + sfHtml +
     secLabel('CDR data feed · last 7 days') + cdrHtml +
     secLabel('Automation last seen') + runsHtml +
+    secLabel('Digest heartbeats') + (digestsHtml || '<div style="font-size:12px;color:var(--muted)">No digest data (server pre-dates heartbeats).</div>') +
   '</div>';
 }
 
@@ -7206,18 +7272,12 @@ function cnCloseExternalEmailModal_() {
 }
 
 function cnRenderExternalEmailModal_() {
-  var overlay = document.getElementById('cn-ext-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'cn-ext-overlay';
-    overlay.className = 'overlay open';
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', function (e) {
-      if (e.target === overlay) cnCloseExternalEmailModal_();
-    });
-  }
+  // Same ensureOverlay rationale as cnRenderComposerModal_ — Esc must run
+  // cnCloseExternalEmailModal_ (clearing CN_STATE.extComposer), and a reused
+  // node must come back visible.
+  var overlay = ensureOverlay('cn-ext-overlay', { onClose: cnCloseExternalEmailModal_ });
   var c = CN_STATE.extComposer;
-  if (!c) { overlay.remove(); return; }
+  if (!c) { cnCloseExternalEmailModal_(); return; }
   overlay.innerHTML = cnBuildExternalEmailHtml_();
   cnWireExternalEmailModal_();
 }
@@ -7555,6 +7615,23 @@ function cnWireExternalEmailModal_() {
     });
   }
 
+  // M6 — sync the remaining typed fields into state on every keystroke. The
+  // PDF↔Fillable mode toggle does a full modal re-render from CN_STATE, so
+  // any field without a sync listener silently reverts to its last stored
+  // value (typed email/subject/message were wiped until this).
+  var emailInput = document.getElementById('cnX-email');
+  if (emailInput) {
+    emailInput.addEventListener('input', function () { c.recipientEmail = emailInput.value; });
+  }
+  var subjInput = document.getElementById('cnX-subject');
+  if (subjInput) {
+    subjInput.addEventListener('input', function () { c.subject = subjInput.value; });
+  }
+  var msgInput = document.getElementById('cnX-message');
+  if (msgInput) {
+    msgInput.addEventListener('input', function () { c.message = msgInput.value; });
+  }
+
   // Send button
   var sendBtn = document.getElementById('cnX-send-btn');
   if (sendBtn) {
@@ -7608,6 +7685,7 @@ function cnExtAutoUpdateSubject_() {
     subjectEl.value = c.recipientType === 'provider'
       ? 'UMS — Form Request for ' + nameForSubj
       : 'UMS — Documents for ' + nameForSubj;
+    c.subject = subjectEl.value;   // M6 — keep state in step for re-renders
   }
 }
 
