@@ -645,8 +645,7 @@ function cnDoSelfUndo_(btn, date, time, type) {
               // that the Clock view no longer hosts a timesheet section
               // below. getClockArea_ still resolves to view-area.
               const area = getClockArea_();
-              if (area && currentView === 'clock') renderClockView(area);
-              startClock();
+              if (area && currentView === 'clock') { renderClockView(area); startClock(); }
             })
             .withFailureHandler(()=>{})
             .getEmployeeState();
@@ -811,8 +810,7 @@ function submitPunch(punchType, custom) {
           // Round 2 · 8b — re-renders target view-area directly now that
           // the Clock view no longer hosts a timesheet section below.
           const area = getClockArea_();
-          if (area && currentView === 'clock') renderClockView(area);
-          startClock();
+          if (area && currentView === 'clock') { renderClockView(area); startClock(); }
         })
         .withFailureHandler(()=>{})
         .getEmployeeState();
@@ -924,10 +922,6 @@ function updateAdjReasonRequirement() {
   }
 }
 
-function daysBetweenIsoLocal(earlierIso, laterIso) {
-  // (kept for callers in this file; prefer shared daysBetweenIso from core)
-  return daysBetweenIso(earlierIso, laterIso);
-}
 
 document.getElementById('adj-cancel').addEventListener('click', () =>
   document.getElementById('adjust-overlay').classList.remove('open'));

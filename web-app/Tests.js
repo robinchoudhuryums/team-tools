@@ -3677,13 +3677,23 @@ function test_cn_renameCallNoteTag_managerRewritesTag() {
 
 function test_cn_archiveCallNoteTag_roundTrip() {
   const tag = 'testtag-archive-zzz';
-  const r1 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, true); });
-  _assertSuccess(r1, 'archive should succeed');
-  _assertTrue(!!getArchivedTagsSet_()[tag], 'tag flagged archived in Script Property');
-  // Archive must NOT touch any note rows — only the property.
-  const r2 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, false); });
-  _assertSuccess(r2, 'unarchive should succeed');
-  _assertFalse(!!getArchivedTagsSet_()[tag], 'tag no longer archived after unarchive (cleanup)');
+  // try/finally (T4): a mid-test assertion failure used to leave the test tag
+  // archived in the production CN_ARCHIVED_TAGS property (cosmetic — it showed
+  // in the Admin archivedOnlyTags list — but production state nonetheless).
+  try {
+    const r1 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, true); });
+    _assertSuccess(r1, 'archive should succeed');
+    _assertTrue(!!getArchivedTagsSet_()[tag], 'tag flagged archived in Script Property');
+    // Archive must NOT touch any note rows — only the property.
+    const r2 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, false); });
+    _assertSuccess(r2, 'unarchive should succeed');
+    _assertFalse(!!getArchivedTagsSet_()[tag], 'tag no longer archived after unarchive (cleanup)');
+  } finally {
+    try {
+      const set = getArchivedTagsSet_();
+      if (set[tag]) { delete set[tag]; setArchivedTagsSet_(set); }
+    } catch (e) {}
+  }
 }
 
 // ── F8: manager-gate coverage for the INV-31 / time-clock manager endpoints ──

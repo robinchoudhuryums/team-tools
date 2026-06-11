@@ -33,8 +33,10 @@ const DOW_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','
 //  area. The sidebar shows one button per tool — clicking it opens the
 //  tool with its default tab. The tab bar carries the sub-navigation.
 //
-//  The Time Clock "clock" tab is a combined view (clock UI on top, timesheet
-//  below) — handled by enterClockCombinedView in script_clock.html.
+//  The Time Clock "clock" tab is the standalone Clock view (Round 2 · 8b
+//  moved the timesheet content into the Time / PTO tab's side rail); its
+//  enter handler keeps the legacy name enterClockCombinedView in
+//  script_clock.html — the registry references it by that name.
 //
 //  managerOnly: true hides the tab from non-managers.
 //  Enter handlers live in the per-tool script_*.html partials; the registry
@@ -108,7 +110,6 @@ Object.keys(TOOLS).forEach(toolKey => {
 let empState = null;
 let currentView = 'clock';
 let tsData = null, tsViewMode = 'month', tsStart = null, tsEnd = null;
-let tsLayout = 'list'; // 'list' | 'calendar' — calendar grid only available in month range
 let calData = null, calYear = null, calMonth = null;
 let mgrData = null;
 let dayModalDate = null;
@@ -152,6 +153,13 @@ window.addEventListener('load', () => {
       adjustWindowDays = state.adjustWindowDays || 30;
       if (state.selfUndoWindowSeconds) SELF_UNDO_WINDOW_SECONDS = state.selfUndoWindowSeconds;
       document.getElementById('adj-days-disp').textContent = adjustWindowDays;
+      // L18 — the reason-threshold copy in both modals tracks the server
+      // CONFIG (the hardcoded "7" lied whenever OLD_ADJUST_ALERT_DAYS changed).
+      var reasonDays = state.adjustReasonThresholdDays || 7;
+      ['adj-reason-days', 'de-reason-days'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = reasonDays;
+      });
       tsViewMode = (empState.payCycle === 'Biweekly' && empState.payAnchor) ? 'period' : 'month';
       renderShell(state);
       // Deep-link via ?tool=<tabKey>, falling back to Time Clock + its default
@@ -554,19 +562,26 @@ function esc(s) {
 // ── Runtime feature toggles ────────────────────────────────────────────
 // Reads a resolved feature-flag value delivered by the server on
 // empState.flags (shell-wide, loaded first) or CN_STATE.deptConfig.flags
-// (Call Notes). Fails OPEN (true) only before either map has loaded — server-
-// scope kill-switches are enforced server-side regardless, so client fail-open
-// is safe for display-only gating. A flag flipped in Admin reaches the client
-// on its next config fetch (page load / view enter), not mid-action.
+// (Call Notes). Fails OPEN (true) ONLY while no flag map has loaded yet (boot
+// grace — server-scope kill-switches are enforced server-side regardless).
+// Once any map has loaded, an UNKNOWN key fails CLOSED (false), matching the
+// server's getFlag_ semantics — a typo'd client key should hide gated UI, not
+// show it (L8: the old code fell through to `true` even after the maps
+// loaded, contradicting this comment). A flag flipped in Admin reaches the
+// client on its next config fetch (page load / view enter / ambient poll).
 function flagOn_(key) {
   try {
     var maps = [
       (typeof empState !== 'undefined' && empState && empState.flags),
       (typeof CN_STATE !== 'undefined' && CN_STATE && CN_STATE.deptConfig && CN_STATE.deptConfig.flags),
     ];
+    var anyLoaded = false;
     for (var i = 0; i < maps.length; i++) {
-      if (maps[i] && Object.prototype.hasOwnProperty.call(maps[i], key)) return maps[i][key] === true;
+      if (!maps[i]) continue;
+      anyLoaded = true;
+      if (Object.prototype.hasOwnProperty.call(maps[i], key)) return maps[i][key] === true;
     }
+    if (anyLoaded) return false;
   } catch (e) {}
   return true;
 }

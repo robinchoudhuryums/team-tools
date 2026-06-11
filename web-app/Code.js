@@ -3579,6 +3579,12 @@ function exportCallNotesRange(startDate, endDate) {
     sh.setFrozenRows(1);
     SpreadsheetApp.flush();
 
+    // Share with the calling manager — same L3 rationale as generateExportSheet_.
+    try {
+      const owner = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+      if (callerEmp.email && String(callerEmp.email).toLowerCase() !== owner) newSs.addEditor(callerEmp.email);
+    } catch (shareErr) { console.warn('Export share failed: ' + shareErr.message); }
+
     writeAuditLog_(callerEmp, 'CallNotesExport', startDate + '..' + endDate, '', false, 0,
       `${allNotes.length} notes → ${newSs.getId()}`);
 
@@ -6903,6 +6909,16 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   sh.setFrozenRows(2);
   SpreadsheetApp.flush();
 
+  // The new Sheet is owned by the deployer (the web app runs as
+  // USER_DEPLOYING); share it with the calling manager so the returned URL
+  // opens without a Drive access request (L3). Best-effort — a sharing
+  // failure never fails the export, and the deployer can always open it.
+  try {
+    const viewer = getActiveUserEmail_();
+    const owner = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+    if (viewer && viewer !== owner) newSs.addEditor(viewer);
+  } catch (shareErr) { console.warn('Export share failed: ' + shareErr.message); }
+
   return { fileId: newSs.getId(), url: newSs.getUrl(), fileName: name,
     rowCount: matched.length, employeeCount };
 }
@@ -8741,7 +8757,7 @@ function getMetricsAmbient() {
     var pct = totalRung > 0 ? Math.round((totalAns / totalRung) * 1000) / 10 : null;
     var badge = (pct !== null && pct < ambientThreshold)
       ? { type: 'warn', label: pct + '%', date: yIso } : null;
-    var out = { badge: badge, pctAnswered: pct, date: yIso };
+    var out = { badge: badge, pctAnswered: pct, date: yIso, threshold: ambientThreshold };
     try { cache.put(ck, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     return out;
   } catch (_) { return { badge: null }; }
@@ -9342,7 +9358,12 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const subject = 'PPD for ' + patientInfo;
     // Re-build WITHOUT selections to verify the patient answers haven't drifted.
     const baseBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, null);
-    if (expectedBodyHash && intakeBodyHash_(baseBody, subject) !== expectedBodyHash) {
+    // The hash is REQUIRED (L2 — parity with emailFromCallNote/INV-41): a
+    // direct RPC without it must not bypass the preview gate.
+    if (!expectedBodyHash) {
+      return { success: false, error: 'Missing preview hash — open Preview and send from there.' };
+    }
+    if (intakeBodyHash_(baseBody, subject) !== expectedBodyHash) {
       return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
     }
     const recipient = intakeResolveRecipient_('PPD', recipientSpec);
@@ -9394,7 +9415,11 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   const subject = (formType === 'PAP' ? 'PAP' : 'PMD') + ' Account Creation for ' + patientInfo + (dob ? ' ' + dob : '');
 
   const body = intakeBuildAcctBodyHtml_(payload.rows || [], layout);
-  if (expectedBodyHash && intakeBodyHash_(body, subject) !== expectedBodyHash) {
+  // Hash REQUIRED (L2) — same preview-gate parity as intakeSendPPD.
+  if (!expectedBodyHash) {
+    return { success: false, error: 'Missing preview hash — open Preview and send from there.' };
+  }
+  if (intakeBodyHash_(body, subject) !== expectedBodyHash) {
     return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
   }
   const recipient = intakeResolveRecipient_(formType, recipientSpec);

@@ -1,32 +1,21 @@
 <script>
 // ════════════════════════════════════════════════════════════════════════════
-//  TIMESHEET VIEW
+//  TIMESHEET RANGE HELPERS
+//  ────────────────────────────────────────────────────────────────────────
+//  The standalone/combined Timesheet VIEW was dismantled in Round 2 · 8b —
+//  the pay-period content now lives in the Time / PTO tab's Timesheet-mode
+//  side rail (tc/script_timeoff.html :: loadTimesheetSideRail_), which loads
+//  its own data via getTimesheetData. What remains here are the two pure
+//  range helpers that side rail still uses. The orphaned render cluster
+//  (loadTimesheet / renderTimesheetView / renderTimesheetCalendar /
+//  renderDayCard / ptChip / rangeLabel / parseIso) was pruned in Cycle 2
+//  (L11) — it was unreachable, and its retained `currentView === 'clock'`
+//  guard could only ever fail, a tripwire pointing the wrong way.
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Load the timesheet for the given range and render into either the passed
- *  targetArea (combined Clock+Timesheet view passes its sub-section) or the
- *  full view-area otherwise. When the combined view is active the timesheet
- *  is rendered with `combined: true` so it omits the redundant app-bar (the
- *  tab already says "Clock"). */
-function loadTimesheet(startDate, endDate, targetArea) {
-  const combined = !!targetArea;
-  google.script.run
-    .withSuccessHandler(data => {
-      if (data.error) { showToast(data.error, 'toast-error'); return; }
-      tsData = data; tsStart = data.startDate; tsEnd = data.endDate;
-      // Round 2 · 8b note: loadTimesheet + renderTimesheetView are
-      // orphaned after the Clock view dropped its timesheet section.
-      // Kept on disk because computeRange (defined below) is still used
-      // by the new Time / PTO Timesheet-mode side rail. Reachable only
-      // if a future caller is added — gate stays as a defensive no-op.
-      if (currentView !== 'clock') return;
-      const area = targetArea && targetArea.isConnected ? targetArea : document.getElementById('view-area');
-      if (area) renderTimesheetView(area, data, { combined });
-    })
-    .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
-    .getTimesheetData(startDate, endDate);
-}
-
+/** Pay-period ('period', biweekly anchored to empState.payAnchor) or calendar
+ *  month range containing refDateIso, shifted by `offset` periods/months.
+ *  UTC-noon anchoring keeps the arithmetic DST-safe. */
 function computeRange(mode, refDateIso, offset) {
   const ref = new Date(refDateIso + 'T12:00:00Z');
   if (mode === 'period' && empState && empState.payAnchor) {
@@ -50,229 +39,5 @@ function computeRange(mode, refDateIso, offset) {
 function isoFromMs(ms) {
   const d = new Date(ms);
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
-}
-
-function rangeLabel(startIso, endIso, mode) {
-  const s = parseIso(startIso), e = parseIso(endIso);
-  if (mode === 'month') return { main: `${MONTH_NAMES[s.m]} ${s.y}`, sub: 'Calendar month' };
-  const sMo = MONTH_NAMES[s.m].slice(0,3), eMo = MONTH_NAMES[e.m].slice(0,3);
-  let main;
-  if (s.y !== e.y)       main = `${sMo} ${s.d}, ${s.y} – ${eMo} ${e.d}, ${e.y}`;
-  else if (s.m !== e.m)  main = `${sMo} ${s.d} – ${eMo} ${e.d}, ${s.y}`;
-  else                   main = `${sMo} ${s.d} – ${e.d}, ${s.y}`;
-  return { main, sub: 'Pay period (biweekly)' };
-}
-
-function parseIso(iso) {
-  const p = iso.split('-');
-  return { y: parseInt(p[0],10), m: parseInt(p[1],10)-1, d: parseInt(p[2],10) };
-}
-
-function renderTimesheetView(area, data, opts) {
-  const combined = !!(opts && opts.combined);
-  const tz = empTz();
-  const todayIso = isoDateTz(tz);
-  const showToggle = empState.payCycle === 'Biweekly' && !!empState.payAnchor;
-  const curRange = computeRange(tsViewMode, todayIso, 0);
-  const canNext = data.endDate < curRange.end;
-  // Six months back in employee's tz
-  const back = new Date(); back.setMonth(back.getMonth() - 6);
-  const sixMoBack = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(back);
-  const canPrev = data.startDate > sixMoBack;
-  const label = rangeLabel(data.startDate, data.endDate, tsViewMode);
-  const visibleDays = data.days.filter(d => d.hasData || (!d.isWeekend && !d.isFuture));
-  // Calendar grid is only meaningful for month range
-  const showLayoutToggle = tsViewMode === 'month';
-  const effectiveLayout = showLayoutToggle ? tsLayout : 'list';
-
-  let toggleHtml = '';
-  if (showToggle) {
-    toggleHtml = `<div class="view-mode-toggle" role="group" aria-label="Date range mode">
-      <button class="vmt-btn ${tsViewMode==='period'?'active':''}" id="vmt-period"
-              aria-pressed="${tsViewMode==='period'}">Pay Period</button>
-      <button class="vmt-btn ${tsViewMode==='month'?'active':''}" id="vmt-month"
-              aria-pressed="${tsViewMode==='month'}">Calendar Month</button>
-    </div>`;
-  }
-
-  const layoutToggleHtml = showLayoutToggle ? `
-    <div class="layout-toggle" role="group" aria-label="View layout">
-      <button class="layout-btn ${tsLayout==='list'?'active':''}" id="lo-list"
-              aria-pressed="${tsLayout==='list'}" title="List view" aria-label="List view">
-        <span class="lo-icon">${icon('list', 14)}</span>List
-      </button>
-      <button class="layout-btn ${tsLayout==='calendar'?'active':''}" id="lo-cal"
-              aria-pressed="${tsLayout==='calendar'}" title="Calendar view" aria-label="Calendar view">
-        <span class="lo-icon">${icon('grid', 14)}</span>Calendar
-      </button>
-    </div>` : '';
-
-  const bodyHtml = effectiveLayout === 'calendar'
-    ? renderTimesheetCalendar(data, todayIso)
-    : `<div class="day-list">
-        ${visibleDays.length === 0
-          ? '<div class="no-data" style="padding:20px 0">No records this period yet</div>'
-          : visibleDays.map(renderDayCard).join('')}
-       </div>`;
-
-  // In the combined Clock+Timesheet view the tab already says "Clock" and the
-  // section is preceded by a "Your Timesheet" divider — the app-bar would
-  // duplicate that. Skip the app-bar in combined mode; show just the layout
-  // toggle inline above the month-nav.
-  const appBarHtml = combined ? '' : `
-    <div class="app-bar">
-      <div class="app-bar-left">
-        <div class="breadcrumb">
-          <span>Time Clock</span><span class="crumb-sep">›</span><span class="crumb-current">Timesheet</span>
-        </div>
-        <h1 class="display-title">Timesheet</h1>
-      </div>
-      <div class="app-bar-right">${layoutToggleHtml}</div>
-    </div>`;
-  const inlineLayoutToggleHtml = combined && showLayoutToggle
-    ? `<div style="display:flex;justify-content:flex-end;margin-bottom:8px">${layoutToggleHtml}</div>`
-    : '';
-
-  area.innerHTML = `
-    ${appBarHtml}
-    ${inlineLayoutToggleHtml}
-    ${toggleHtml}
-    <div class="month-nav">
-      <button class="month-nav-btn" id="ts-prev" ${!canPrev?'disabled':''} aria-label="Previous period">${icon('chevronLeft', 16)}</button>
-      <div class="month-label">${label.main}<span class="ml-sub">${label.sub}</span></div>
-      <button class="month-nav-btn" id="ts-next" ${!canNext?'disabled':''} aria-label="Next period">${icon('chevronRight', 16)}</button>
-    </div>
-    <div class="ts-summary">
-      <div class="ts-stat"><div class="ts-stat-val">${data.daysWorked}</div><div class="ts-stat-lbl">Days Worked</div></div>
-      <div class="ts-stat"><div class="ts-stat-val">${fmtHrs(data.totalHours)}</div><div class="ts-stat-lbl">Total Hours</div></div>
-      <div class="ts-stat ${data.incompleteCount>0?'warn':''}"><div class="ts-stat-val">${data.incompleteCount}</div><div class="ts-stat-lbl">Incomplete</div></div>
-    </div>
-    ${bodyHtml}`;
-
-  // Target the same area on every re-load so the combined view's timesheet
-  // section refreshes in place (without wiping the clock above it). For the
-  // standalone view targetArea === undefined and loadTimesheet falls back to
-  // #view-area.
-  const targetArea = combined ? area : undefined;
-  if (showToggle) {
-    document.getElementById('vmt-period').addEventListener('click', () => {
-      if (tsViewMode === 'period') return;
-      tsViewMode = 'period';
-      const range = computeRange('period', todayIso, 0);
-      tsStart = range.start; tsEnd = range.end;
-      renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd, targetArea);
-    });
-    document.getElementById('vmt-month').addEventListener('click', () => {
-      if (tsViewMode === 'month') return;
-      tsViewMode = 'month';
-      const range = computeRange('month', todayIso, 0);
-      tsStart = range.start; tsEnd = range.end;
-      renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd, targetArea);
-    });
-  }
-  if (showLayoutToggle) {
-    document.getElementById('lo-list').addEventListener('click', () => {
-      if (tsLayout === 'list') return;
-      tsLayout = 'list';
-      renderTimesheetView(area, data, { combined });
-    });
-    document.getElementById('lo-cal').addEventListener('click', () => {
-      if (tsLayout === 'calendar') return;
-      tsLayout = 'calendar';
-      renderTimesheetView(area, data, { combined });
-    });
-  }
-  document.getElementById('ts-prev').addEventListener('click', () => {
-    if (!canPrev) return;
-    const range = computeRange(tsViewMode, data.startDate, -1);
-    tsStart = range.start; tsEnd = range.end;
-    renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd, targetArea);
-  });
-  document.getElementById('ts-next').addEventListener('click', () => {
-    if (!canNext) return;
-    const refDate = tsViewMode === 'period' ? data.endDate : data.startDate;
-    const range = computeRange(tsViewMode, refDate, 1);
-    tsStart = range.start; tsEnd = range.end;
-    renderLoading(area, 'Loading timesheet…'); loadTimesheet(tsStart, tsEnd, targetArea);
-  });
-}
-
-/** Render a calendar grid view of the month with hours-worked badges per day. */
-function renderTimesheetCalendar(data, todayIso) {
-  const start = new Date(data.startDate + 'T12:00:00Z');
-  const y = start.getUTCFullYear();
-  const m = start.getUTCMonth();
-  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-  const firstDow = new Date(Date.UTC(y, m, 1)).getUTCDay();
-  const dayMap = {};
-  data.days.forEach(d => { dayMap[d.date] = d; });
-
-  let html = '<div class="card cal-card"><div class="cal-grid">';
-  ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => { html += `<div class="cal-dow">${d}</div>`; });
-  for (let i = 0; i < firstDow; i++) html += '<div class="cal-cell"></div>';
-  for (let d = 1; d <= lastDay; d++) {
-    const dateStr = `${y}-${pad(m+1)}-${pad(d)}`;
-    const dd = dayMap[dateStr];
-    let cls = 'cal-cell ts-cal-cell';
-    let badge = '';
-    if (dd) {
-      if (dd.isWeekend) cls += ' weekend';
-      if (dd.isToday) cls += ' today';
-      if (dd.isFuture) cls += ' future';
-      if (dd.hoursWorked !== null && dd.hoursWorked !== undefined) {
-        cls += ' has-worked';
-        badge = `<div class="cal-hrs">${formatHoursShort(dd.hoursWorked)}</div>`;
-      } else if (dd.inProgress) {
-        cls += ' has-worked';
-        badge = `<div class="cal-hrs in-progress">●</div>`;
-      } else if (dd.isIncomplete) {
-        cls += ' has-pending';
-        badge = `<div class="cal-hrs warn">${icon('warning', 9)}</div>`;
-      }
-    }
-    html += `<div class="${cls}"><span class="cal-dn">${d}</span>${badge}</div>`;
-  }
-  html += '</div>';
-  html += `<div class="cal-legend" style="margin-top:12px">
-    <div class="leg-item"><div class="leg-dot" style="background:var(--good)"></div>Worked (hours shown)</div>
-    <div class="leg-item"><div class="leg-dot" style="background:var(--warn)"></div>Incomplete</div>
-    <div class="leg-item" style="color:var(--muted);font-size:11px">Switch to List for full punch detail</div>
-  </div></div>`;
-  return html;
-}
-
-function renderDayCard(d) {
-  let cls = 'day-card';
-  if (d.isWeekend) cls += ' weekend';
-  if (d.isToday) cls += ' today';
-  if (d.isIncomplete) cls += ' incomplete';
-  if (!d.hasData) cls += ' no-data';
-
-  let hoursHtml = '';
-  if (d.hoursWorked !== null) hoursHtml = `<span class="day-hours">${fmtHrs(d.hoursWorked)}</span>`;
-  else if (d.inProgress)      hoursHtml = `<span class="day-hours progress">In progress</span>`;
-  else if (d.isIncomplete)    hoursHtml = `<span class="day-hours incomplete">${icon('warning', 13)}Missing punch</span>`;
-  else if (d.isWeekend)       hoursHtml = `<span class="day-hours" style="color:var(--muted)">Weekend</span>`;
-
-  const chips = [];
-  if (d.clockIn)  chips.push(ptChip('In',         d.clockIn,  d.adjClockIn));
-  if (d.lunchOut) chips.push(ptChip('Lunch Out',  d.lunchOut, d.adjLunchOut));
-  if (d.lunchIn)  chips.push(ptChip('Return',     d.lunchIn,  d.adjLunchIn));
-  if (d.clockOut) chips.push(ptChip('Out',        d.clockOut, d.adjClockOut));
-
-  const todayTag = d.isToday ? ' <span class="kicker-pill" data-tone="accent">Today</span>' : '';
-  return `<div class="${cls}">
-    <div class="day-top">
-      <span class="day-name">${d.dayLabel}${todayTag}</span>
-      ${hoursHtml}
-    </div>
-    ${chips.length ? `<div class="punch-times">${chips.join('')}</div>` : ''}
-  </div>`;
-}
-
-function ptChip(label, time, adj) {
-  const cls = adj ? 'pt-chip adj' : 'pt-chip';
-  const mark = adj ? `<span class="adj-mark">${icon('adjust', 11)}</span>` : '';
-  return `<div class="${cls}"><span class="pt-lbl">${label}</span>${dispTime(time)}${mark}</div>`;
 }
 </script>

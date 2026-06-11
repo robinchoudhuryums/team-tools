@@ -2927,10 +2927,9 @@ function cnSubmitActiveForm_(opts) {
   cnClearActiveForm_({ skipSnapshot: true });
   cnFormTimerReset_();
   cnClearStickyFormDraft_();
-  // 4. Re-render and bump the counter
+  // 4. Re-render
   cnRenderStack_();
   cnRenderFilterBar_();
-  cnUpdateNoteCounter_();
   showToast('Saved · copied to clipboard', 'toast-success');
 
   // Server sync in background
@@ -2971,7 +2970,6 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
   CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== pendingId; });
   cnRenderStack_();
   cnRenderFilterBar_();
-  cnUpdateNoteCounter_();
   let outcome = '';
   if (snapshot) {
     const form = document.getElementById('cn-active-form');
@@ -3049,23 +3047,26 @@ function cnFormatNoteForCopy_(note) {
   // "no transfer" signal (most calls aren't escalated) — matches the email body
   // default in callDataFromNote_ server-side.
   const transferred = (note.transferredTo && note.transferredTo.trim()) || 'N/A';
-  return fmt
-    .replace(/\{timestamp\}/g,     cnFormatTimestampForCopy_(note.timestamp))
-    .replace(/\{callback\}/g,      note.callback || '')
-    .replace(/\{caller\}/g,        note.caller || '')
-    .replace(/\{relationship\}/g,  note.relationship || '')
-    .replace(/\{patientAndTrx\}/g, note.patientAndTrx || '')
-    .replace(/\{issue\}/g,         note.issue || '')
-    .replace(/\{transferredTo\}/g, transferred)
-    .replace(/\{resolution\}/g,    note.resolution || '');
+  // Single-pass substitution with a FUNCTION replacement (L12): user text fed
+  // to String.replace as a string replacement gets $-pattern expansion (`$$`
+  // collapsed to `$`, `$&` echoed the token), and the old chained replaces
+  // token-expanded a literal "{resolution}" typed into an earlier field.
+  // Unknown tokens pass through unchanged (operator template safety).
+  const map = {
+    timestamp:     cnFormatTimestampForCopy_(note.timestamp),
+    callback:      note.callback || '',
+    caller:        note.caller || '',
+    relationship:  note.relationship || '',
+    patientAndTrx: note.patientAndTrx || '',
+    issue:         note.issue || '',
+    transferredTo: transferred,
+    resolution:    note.resolution || '',
+  };
+  return fmt.replace(/\{(\w+)\}/g, function (m, key) {
+    return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : m;
+  });
 }
 
-/** Update the "X today" counter pill in the form header. Called after every
- *  rollingNotes mutation (submit / delete) and on rolling stack re-render. */
-function cnUpdateNoteCounter_() {
-  const num = document.getElementById('cn-note-counter-num');
-  if (num) num.textContent = String((CN_STATE.rollingNotes || []).length);
-}
 
 function cnFormatTimestampForCopy_(iso) {
   if (!iso) return '';
@@ -3106,7 +3107,6 @@ function cnRenderStack_() {
   }
   stack.innerHTML = html;
   cnWireCards_(stack);
-  cnUpdateNoteCounter_();
 }
 
 function cnInstallCardDelegation_(area) {
@@ -3601,7 +3601,6 @@ function cnDoDeleteNote_(noteId) {
       cnReRenderActiveView_();
       cnRenderFilterBar_();
       cnRenderPinnedTray_();
-      cnUpdateNoteCounter_();
       showToast('Deleted', 'toast-success');
     })
     .withFailureHandler(function (err) {
@@ -6153,6 +6152,7 @@ function cnStartDragModal_(e) {
 // ── Admin view (manager-only) ─────────────────────────────────────────
 
 function enterCallNotesAdminView(area) {
+  stopClock();   // F5 — every tab enter stops the Clock-view intervals; this one was missed
   var compactHeader = COMPACT_MODE ? cnCompactHeader_('Admin', 'settings') : '';
   area.innerHTML =
     compactHeader +

@@ -781,6 +781,11 @@ function openDayEditModal(empId, empName) {
 function loadDayEditPunches(empId, start, end) {
   google.script.run
     .withSuccessHandler(function (data) {
+      // Response-identity guard (L9): quickly reopening the modal for a
+      // different employee on the same default date let employee A's late
+      // response fill employee B's slots — saving would have written A's
+      // times to B. The date check alone can't catch that.
+      if (empId !== _deEmpId) return;
       if (data.error) return;
       var day = (data.days || []).find(function (d) { return d.date === _deDate; });
       if (!day) return;

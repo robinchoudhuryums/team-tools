@@ -331,9 +331,14 @@ function kbDoSearch_(q) {
   if (q.length < 2) { kbRenderTree_(); return; }
   var el = document.getElementById('kb-tree'); if (!el) return;
   var requested = currentView;
+  // L13 — sequence counter (the drawer's kbDrawerSearch_ pattern): two
+  // overlapping searches over 300–800ms RPCs can resolve out of order, and
+  // the stale response would render last under the newer query.
+  var seq = (KB_STATE.searchSeq = (KB_STATE.searchSeq || 0) + 1);
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
+      if (seq !== KB_STATE.searchSeq) return;   // a newer search superseded this one
       var results = (res && res.results) || [];
       var groups = kbGroupResults_(results);
       // Tree column: compact doc + section nav (clicks jump into the article)
@@ -511,14 +516,21 @@ function kbOpenEditor_(id) {
   KB_EDIT = { id: id || '', department: '', title: '', type: 'article', body: '', driveUrl: '' };
   if (id) {
     google.script.run.withSuccessHandler(function (res) {
-      if (res && !res.error) {
-        KB_EDIT.department = res.department || '';
-        KB_EDIT.title = res.title || '';
-        KB_EDIT.type = res.type || 'article';
-        KB_EDIT.body = res.bodyMd || '';
-        KB_EDIT.driveUrl = res.openUrl || '';
+      // L13 — a failed item load used to open a BLANK editor still carrying
+      // KB_EDIT.id: re-typing + Save would overwrite the existing row with
+      // from-scratch content. Surface the error and don't open the editor.
+      if (!res || res.error) {
+        showToast((res && res.error) || 'Could not load the item to edit', 'toast-error');
+        return;
       }
+      KB_EDIT.department = res.department || '';
+      KB_EDIT.title = res.title || '';
+      KB_EDIT.type = res.type || 'article';
+      KB_EDIT.body = res.bodyMd || '';
+      KB_EDIT.driveUrl = res.openUrl || '';
       kbRenderEditor_();
+    }).withFailureHandler(function (err) {
+      showToast('Could not load the item to edit: ' + ((err && err.message) || 'server error'), 'toast-error');
     }).getReferenceItem(id);
   } else {
     kbRenderEditor_();
@@ -547,7 +559,7 @@ function kbRenderEditor_() {
       '<div id="kb-ed-body"></div>' +
     '</div>' +
     '<div class="kb-ed-foot"><button class="kb-btn" data-kb-close="1">Cancel</button>' +
-      '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_()">' + icon('check', 13) + ' Save</button></div>' +
+      '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_(this)">' + icon('check', 13) + ' Save</button></div>' +
   '</div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-close]')) kbCloseModal_(); });
   kbRenderEditorBody_();
@@ -587,14 +599,21 @@ function kbRenderEditorBody_() {
   }
 }
 
-function kbSaveFromEditor_() {
+function kbSaveFromEditor_(btn) {
   kbSnapshotEditor_();
   var e = KB_EDIT;
   if (!String(e.title).trim()) { showToast('Title is required.', 'toast-warn'); return; }
   if (e.type === 'embed' && !String(e.driveUrl).trim()) { showToast('Paste a Drive share URL.', 'toast-warn'); return; }
   if (e.type !== 'embed' && !String(e.body).trim()) { showToast('Add some article text.', 'toast-warn'); return; }
+  // L13 — dedupe: double-clicking Save on a NEW item fired two kbSaveItem
+  // calls and created duplicate rows (the server lock serializes inserts but
+  // can't dedupe them). Disable for the round trip; re-enable on failure.
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  var reenable = function () { if (btn) btn.disabled = false; };
   google.script.run
     .withSuccessHandler(function (res) {
+      reenable();
       if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
       showToast('Saved', 'toast-success');
       var savedId = res.id;
@@ -602,7 +621,7 @@ function kbSaveFromEditor_() {
       kbReloadTree_();
       if (savedId) kbOpenItem_(savedId);
     })
-    .withFailureHandler(function (err) { showToast((err && err.message) || 'Save failed', 'toast-error'); })
+    .withFailureHandler(function (err) { reenable(); showToast((err && err.message) || 'Save failed', 'toast-error'); })
     .kbSaveItem({ id: e.id, department: e.department, title: e.title, type: e.type, body: e.body, driveUrl: e.driveUrl });
 }
 
