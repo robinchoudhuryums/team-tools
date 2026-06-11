@@ -96,11 +96,10 @@ Updated: 2026-06-11
 ## Open follow-on items
 - Esc on the KB editor still discards unsaved edits silently (KB-6 residual — a
   uiConfirm guard would be the polish; out of overlay-centralization scope).
-- Digest jobs (EOD/weekly/urgent) write no last-run audit rows — Automation Health
-  can't surface a silently-dead digest trigger (audit Stage 3, gap #1).
-- Audit Stage 3 suggestions on file: never-lose-typed-input invariant (route M4/M6/L19
-  through the sticky-draft machinery); universal timestamp-normalize shim + Node
-  tripwire; Automation Health staleness warnings.
+- Audit Stage 3 suggestions still open: never-lose-typed-input invariant for the
+  composer tab-switch path (L19 — M4/M6 are done); FT/FS timestamp columns
+  (T-format, stored as text today) excluded from the M1 tripwire — extend it if a
+  coercion ever shows up there.
 
 ## Decisions made (so the next session doesn't re-litigate)
 - Overlay lifecycle: hooks registry in script_core is the single close path; static
