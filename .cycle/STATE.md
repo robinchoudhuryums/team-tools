@@ -77,15 +77,25 @@ Updated: 2026-06-11
   Script Property AUTOMATION_DIGEST_LAST_RUNS on each eod/weekly/urgent run;
   getAutomationHealth returns digests[] w/ staleness (eod>2h, urgent>26h, weekly>8d);
   health panel renders a "Digest heartbeats" block. Commit 7981f2e.
+- LOW BATCH | Code.js, Tests.js, script_core, modals, tc/clock+manager+timesheet,
+  cn, metrics, kb partials | hygiene batch — see commit 6a89aaa message for the
+  per-item list. Notable contracts: intakeSend* bodyHash now REQUIRED (INV-111
+  amended); flagOn_ unknown-key fails closed after map load; tc/script_timesheet.html
+  is now ONLY computeRange/isoFromMs (INV-74 amended); kbSaveFromEditor_ takes the
+  button arg for dedupe.
 
 ## Pending / not yet done (Cycle 2 audit findings backlog)
-- ALL Medium findings (M1–M10) are now DONE — see Completed this cycle.
-- LOW backlog (selected): L2 intakeSend* optional bodyHash (carried); L9 Day-Edit
-  empId guard; L12 cnFormatNoteForCopy_ $-token corruption; L13 KB tab seq counter /
-  save dedupe / silent editor-load failure; L14 metrics tooltip dead CONFIG guard;
-  L11 dead timesheet cluster prune; L8 flagOn_ fail-open comment/behavior; F5
-  startClock unguarded restarts + enterCallNotesAdminView missing stopClock; L18
-  hardcoded 7-day hint in modals.html; T2–T4 test isolation notes.
+- ALL Medium findings (M1–M10) DONE; LOW hygiene batch DONE (6a89aaa: L2 bodyHash
+  required, L3 export sharing, L8 flagOn_ fail-closed, L9 Day-Edit empId guard,
+  L11 dead-code prune incl. timesheet cluster, L12 copy token substitution, L13 KB
+  tab polish, L14 metrics tooltip threshold, F5 interval hygiene, L18 dynamic
+  reason-threshold copy, T4 archive-test finally). Remaining audit Lows NOT taken
+  (accepted/deferred): T2 (reconcile runs for real in tests — benign by design),
+  T3 (finally-on-timeout — unfixable in Apps Script), L19 (composer tab-switch
+  typed-input loss), KB-6 residual (Esc discards editor edits without confirm),
+  X1/KB-5 inline-onclick JS-string contexts (inert, UUIDs), L16 signature canvas
+  rotate overflow, FP-4/FP-5 public-form niceties, M2-class Esc-ordering for
+  stacked static modals (covered by topmost fix).
 - (Carried from Cycle 1) KB AI Phase A plan (full spec in git history of this file @
   34835f5); KB Phase 2b/3 (image export — operator must first verify domain-shared
   Drive image renders in HtmlService iframe); P#17 Neon out of scope.
@@ -114,11 +124,12 @@ Updated: 2026-06-11
 
 ## Where I left off
 Cycle 2, implement phase. Done on `claude/affectionate-dijkstra-js8rlm`: overlay
-centralization (6bef94b — H1/M7/F6), M2/M4 (3ac6715), and the full remaining Medium
-slice M1/M3/M5/M6/M8/M9/M10 + digest heartbeats (7981f2e). Node harness 91/91.
-ALL audit Mediums are closed. Remaining: the Low backlog (L2/L9/L12/L13/L14/L11/
-L8/F5/L18, see LOW backlog above) and the Tier-4 roadmap (KB Phase 2b/3, KB AI
-Phase A). NEXT: operator deploy (clasp push -f + New version — now also picks up
-Code.js/Tests.js changes) + editor runAllTests() (~4 new integration tests incl.
-publicForm_tokenLifecycle); the pending-trend sparkline should show non-zero bars
-after the next PTO submission post-deploy.
+centralization (6bef94b), M2/M4 (3ac6715), Medium slice M1/M3/M5/M6/M8/M9/M10 +
+heartbeats (7981f2e + 2b2224e key fix + d075bad tripwire), LOW hygiene batch
+(6a89aaa). Node harness 92/92. The ENTIRE Cycle 2 audit backlog (High + Medium +
+selected Lows) is closed. Operator is running runAllTests() against the
+pre-this-session deploy — note the suite on disk now includes the new gate tests +
+publicForm_tokenLifecycle, which need a clasp push before they exist in the editor.
+NEXT: operator deploy (clasp push -f + New version) + a post-push runAllTests();
+then /reflect to close the implement phase, or proceed to Tier-4 roadmap (KB Phase
+2b iframe check → image export → Phase 3 → KB AI Phase A).
