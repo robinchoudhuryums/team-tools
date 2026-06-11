@@ -43,13 +43,15 @@ Updated: 2026-06-11
 - DOCS | CLAUDE.md | "Modals close on Escape" gotcha rewritten: topmost-overlay rule,
   ensureOverlay/closeOverlay contract, new-overlay requirement (never hand-roll
   createElement + className), idempotent onClose requirement.
+- M2 | web-app/script_core.html | uiConfirm Enter now resolves CANCEL when the Cancel
+  button is focused (closest('.ui-dialog-cancel') check); OK anywhere else. Commit 3ac6715.
+- M4 | web-app/cn/script_callnotes.html | cnRevertPendingSubmit_ restores only into an
+  EMPTY form (same 5-field check as Ctrl+Z); with new typing → leaves form alone
+  (clipboard holds the failed note); after nav-away → parks snapshot via NEW
+  cnSaveSnapshotAsStickyDraft_ (sticky-draft shape + at stamp, restores on next Log
+  enter). Callers' toast text moved into the function (outcome-specific). Commit 3ac6715.
 
 ## Pending / not yet done (Cycle 2 audit findings backlog)
-- M2 | script_core.html uiConfirm | Enter confirms even when Cancel focused (capture
-  handler ignores e.target) — destructive dialogs. Small fix: respect focus like uiPrompt.
-- M4 | cn partial ~2954 | cnRevertPendingSubmit_ restores snapshot unconditionally —
-  clobbers a newly-typed note B on note A's failure; add allEmpty check (Ctrl+Z path
-  at ~2372 already has the pattern).
 - M1 | Code.js ~1026 | pendingTrend reads TO.SUBMITTED_AT via raw String() — Sheets
   coerces (Tests.js:2180 acknowledges) → sparkline always zero. Needs a
   normalizeAuditTs_-style read. Same class (Low): PAR.SUBMITTED_AT / FT.CREATED_AT
@@ -101,8 +103,8 @@ Updated: 2026-06-11
   fixed at source; sticky drafts 24h TTL.
 
 ## Where I left off
-Cycle 2, implement phase. Overlay-lifecycle centralization is committed and pushed on
-`claude/affectionate-dijkstra-js8rlm` (fixes H1 + M7 + F6 ordering; CLAUDE.md gotcha
-rewritten). Node harness 89/89 after the change. Next: implement the remaining
-Medium findings (M2/M4/M1/M3/M5/M6/M9/M8/M10) as the operator directs; operator
-deploy + an editor runAllTests() pass are still pending for everything since 501ab67.
+Cycle 2, implement phase. Done on `claude/affectionate-dijkstra-js8rlm`: overlay
+centralization (6bef94b — H1/M7/F6) + M2/M4 (3ac6715). Node harness 89/89. Remaining
+Medium backlog: M1, M3, M5, M6, M8, M9, M10 (priority list given to operator
+2026-06-11). Operator deploy + an editor runAllTests() pass are still pending for
+everything since 501ab67.
