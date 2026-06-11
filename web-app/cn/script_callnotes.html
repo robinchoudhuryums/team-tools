@@ -2928,7 +2928,7 @@ function cnSubmitActiveForm_(opts) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res.success) {
-        cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed — note restored');
+        cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed');
         return;
       }
       const idx = CN_STATE.rollingNotes.findIndex(function (n) { return n.noteId === pendingId; });
@@ -2944,20 +2944,62 @@ function cnSubmitActiveForm_(opts) {
       }
     })
     .withFailureHandler(function (err) {
-      cnRevertPendingSubmit_(pendingId, restoreSnapshot, 'Save failed: ' + (err.message || 'unknown') + ' — note restored');
+      cnRevertPendingSubmit_(pendingId, restoreSnapshot, 'Save failed: ' + (err.message || 'unknown'));
     })
     .submitCallNote(payload);
 }
 
-/** Roll back an optimistic submit: drop the pending card from the stack,
- *  restore the form to what the rep had typed, and show an error toast. */
+/** Roll back an optimistic submit: drop the pending card from the stack and
+ *  show an error toast. The typed content is recovered WITHOUT ever clobbering
+ *  newer work (the rep may have started the next note during the in-flight
+ *  save, or navigated away):
+ *    - form present and still empty → restore the snapshot in place;
+ *    - form has new typing → leave it alone; the failed note stays on the
+ *      clipboard (set by the optimistic copy);
+ *    - form gone (navigated away) → park the snapshot in the sticky-draft
+ *      slot so the next Log view restores it ("Draft restored"). */
 function cnRevertPendingSubmit_(pendingId, snapshot, message) {
   CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== pendingId; });
   cnRenderStack_();
   cnRenderFilterBar_();
   cnUpdateNoteCounter_();
-  if (snapshot) cnRestoreFromSnapshot_(snapshot);
-  showToast(message, 'toast-error');
+  let outcome = '';
+  if (snapshot) {
+    const form = document.getElementById('cn-active-form');
+    // Same 5-field emptiness check as the Ctrl/⌘+Z restore path.
+    const formEmpty = !cnGetFieldValue_('cn-fld-callback').trim()
+      && !cnGetFieldValue_('cn-fld-caller').trim()
+      && !cnGetFieldValue_('cn-fld-patient').trim()
+      && !cnGetFieldValue_('cn-fld-issue').trim()
+      && !cnGetFieldValue_('cn-fld-resolution').trim();
+    if (form && formEmpty) {
+      cnRestoreFromSnapshot_(snapshot);
+      outcome = ' — note restored to the form';
+    } else if (form) {
+      outcome = ' — the unsaved note is on your clipboard (your current typing was left untouched)';
+    } else {
+      cnSaveSnapshotAsStickyDraft_(snapshot);
+      outcome = ' — the unsaved note was kept as a draft (restores on the Log view) and is on your clipboard';
+    }
+  }
+  showToast(message + outcome, 'toast-error');
+}
+
+/** Park a failed-submit snapshot in the sticky-draft slot (same shape
+ *  cnPersistActiveFormDraft_ writes / cnRestoreActiveFormDraft_ reads) so a
+ *  rep who navigated away mid-save gets the note back on their next Log view
+ *  enter instead of losing it. Carries an `at` stamp for the PHI TTL. */
+function cnSaveSnapshotAsStickyDraft_(snap) {
+  try {
+    localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify({
+      values: snap.values || {},
+      flags: Array.isArray(snap.flags) ? snap.flags : (snap.flag ? [snap.flag] : []),
+      tags: Array.isArray(snap.tags) ? snap.tags : [],
+      flag: snap.flag || '',
+      trainingQ: snap.trainingQ || '',
+      at: Date.now(),
+    }));
+  } catch (e) { /* localStorage unavailable — the clipboard copy is the fallback */ }
 }
 
 function cnAutoCopyNote_(note) {

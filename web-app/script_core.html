@@ -636,7 +636,16 @@ function uiConfirm(opts) {
     };
     const onKey = function (e) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(false); }
-      else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); cleanup(true); }
+      else if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter activates the FOCUSED button: a keyboard user who Tabs to
+        // Cancel and presses Enter must get cancel — confirming from the
+        // Cancel button fired destructive actions (delete punch, deny PTO)
+        // before this check. Enter anywhere else = OK (the default action,
+        // which also holds initial focus).
+        e.preventDefault();
+        const onCancel = e.target && e.target.closest && e.target.closest('.ui-dialog-cancel');
+        cleanup(!onCancel);
+      }
     };
     overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(false); });
     overlay.querySelector('.ui-dialog-ok').addEventListener('click', function () { cleanup(true); });
