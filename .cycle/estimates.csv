@@ -3,3 +3,7 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-06-11,1,KB drawer (mid-call lookup),M (~1 day),8,5,"Close: shell-capability mounting + usage loop added scope but reuse of kbMd_/search endpoints offset it"
 2026-06-11,1,Section-aware search (#1-3),M (~half day),4,5,"Slightly under: the kbSlug_ client/server parity pair + fence-aware splitting were unplanned but necessary"
 2026-06-11,1,runAllTests triage (15 failures),unplanned,0,4,"Unestimated reactive work; 4 production fixes surfaced (audit-ts coercion the headline) — first full editor run after Test Command=manual accumulation"
+2026-06-11,2,"Overlay lifecycle centralization (H1/M7/F6 root cause)",M (~1 day),8,2,"Overestimated: the hooks-registry shape made the per-module migrations mechanical"
+2026-06-11,2,"M2 + M4 (uiConfirm Enter, optimistic-revert guard)",S (<2h),2,1,"Close: sticky-draft park path reused existing machinery"
+2026-06-11,2,"Medium slice M1/M3/M5/M6/M8/M9/M10 + digest heartbeats",M (~1 day),8,4,"Under actual estimate but one near-miss (manage vs manager key) caught in regression check — the step that earns its keep"
+2026-06-11,2,"Low hygiene batch (10 items + T4)",M (~half day),4,2,"Overestimated: scripted exact-match edits batch well"

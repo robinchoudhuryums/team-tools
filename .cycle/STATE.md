@@ -2,23 +2,22 @@
 
 ## Current
 Cycle: 2
-Phase: implement
+Phase: idle (cycle 2 CLOSED — reflect recorded 2026-06-11)
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-06-11
 
 ## In progress (facts to carry forward — NOT judgments)
-- Cycle 2 opened with a fresh /broad-scan (2026-06-11): full Code.js read + 4 sub-audits
-  (tc/shell, CN, metrics/intake/kb/forms, tests). Node harness 89/89 at scan time.
-- First implementation slice DONE: overlay-lifecycle centralization (the audit's top
-  strategic suggestion — root-cause fix for findings H1, M7, F6/L7, and the KB editor
-  Esc bypass). Committed on `claude/affectionate-dijkstra-js8rlm`.
-- Next concrete step: operator picks the next findings slice (suggested order:
-  M2 uiConfirm Enter-on-Cancel; M4 optimistic-revert clobber; M1 pendingTrend
-  SubmittedAt coercion; M3 unguarded renderLoading; M5 cnFetchDeptConfigIfNeeded_
-  guard layering; M6 external-composer field loss; M9 form_public UTC sign date;
-  M8 intake send-success view clobber; M10 missing gate tests).
+- CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
+  PROJECT_HEALTH.md Current Standing + Score History updated). Net +8 (8 prod fixes
+  − 0 shipped new failure modes; ~13 defensive; 3 new tripwires). Operator ran
+  runAllTests() post-deploy: ALL PASSED (incl. publicForm_tokenLifecycle + the new
+  gate cases). Node harness 92/92.
+- NOW IN PROGRESS: KB Phase 2b (converter inline-image export) — operator gave the
+  go-ahead 2026-06-11; the domain-shared-Drive-image iframe render check becomes a
+  post-deploy spot-check (the kbMd_ image anchor wrapper degrades to alt text +
+  open-link if the thumbnail form doesn't render).
 
 ## Completed this cycle
 - AUDIT | (read-only) | Cycle 2 broad scan: 1 High (H1 Esc kills composers), 9 Medium
@@ -123,13 +122,10 @@ Updated: 2026-06-11
   fixed at source; sticky drafts 24h TTL.
 
 ## Where I left off
-Cycle 2, implement phase. Done on `claude/affectionate-dijkstra-js8rlm`: overlay
-centralization (6bef94b), M2/M4 (3ac6715), Medium slice M1/M3/M5/M6/M8/M9/M10 +
-heartbeats (7981f2e + 2b2224e key fix + d075bad tripwire), LOW hygiene batch
-(6a89aaa). Node harness 92/92. The ENTIRE Cycle 2 audit backlog (High + Medium +
-selected Lows) is closed. Operator is running runAllTests() against the
-pre-this-session deploy — note the suite on disk now includes the new gate tests +
-publicForm_tokenLifecycle, which need a clasp push before they exist in the editor.
-NEXT: operator deploy (clasp push -f + New version) + a post-push runAllTests();
-then /reflect to close the implement phase, or proceed to Tier-4 roadmap (KB Phase
-2b iframe check → image export → Phase 3 → KB AI Phase A).
+Cycle 2 is CLOSED. Building KB Phase 2b (converter image export) on
+`claude/affectionate-dijkstra-js8rlm`: converter emits kbdoc:<fileId>:<n> tokens
+for INLINE_IMAGEs (drawings stay placeholders — no blob API); kbSaveItem resolves
+tokens at save (re-walk Doc in converter order, export blobs to a deployer-owned
+"KB Images" Drive folder — Script Property KB_IMAGES_FOLDER_ID, auto-provisioned,
+domain-link-viewable; thumbnail URL form for <img>), cap 20 images/doc. After 2b:
+Phase 3 paste-upload (reuses folder plumbing), then KB AI Phase A.
