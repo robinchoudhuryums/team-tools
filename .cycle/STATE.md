@@ -14,10 +14,16 @@ Updated: 2026-06-11
   − 0 shipped new failure modes; ~13 defensive; 3 new tripwires). Operator ran
   runAllTests() post-deploy: ALL PASSED (incl. publicForm_tokenLifecycle + the new
   gate cases). Node harness 92/92.
-- NOW IN PROGRESS: KB Phase 2b (converter inline-image export) — operator gave the
-  go-ahead 2026-06-11; the domain-shared-Drive-image iframe render check becomes a
-  post-deploy spot-check (the kbMd_ image anchor wrapper degrades to alt text +
-  open-link if the thumbnail form doesn't render).
+- KB Phase 2b DONE (committed + pushed): converter emits kbdoc:<fileId>:<n> tokens
+  per INLINE_IMAGE (cap 20/doc; drawings stay placeholders); kbSaveItem resolves at
+  save via kbResolveDocImages_ (mirrored Doc re-walk kbCollectDocInlineImages_ —
+  Node-pinned pair; idempotent kbdoc-<fileId>-<n> exports to the KB_IMAGES_FOLDER_ID
+  folder, auto-provisioned domain-link-viewable; thumbnail-URL swap; per-token
+  placeholder degradation; resolution OUTSIDE the lock). kbMd_ untouched. Node
+  harness 98/98. CLAUDE.md: Phase 2b decision + INV-115 + S63 + operator
+  KB_IMAGES_FOLDER_ID entry. FIRST DriveApp use — deploy adds the Drive OAuth
+  scope (one-time re-auth) and S63's post-deploy spot-check covers the original
+  iframe-render gate.
 
 ## Completed this cycle
 - AUDIT | (read-only) | Cycle 2 broad scan: 1 High (H1 Esc kills composers), 9 Medium
@@ -96,8 +102,10 @@ Updated: 2026-06-11
   rotate overflow, FP-4/FP-5 public-form niceties, M2-class Esc-ordering for
   stacked static modals (covered by topmost fix).
 - (Carried from Cycle 1) KB AI Phase A plan (full spec in git history of this file @
-  34835f5); KB Phase 2b/3 (image export — operator must first verify domain-shared
-  Drive image renders in HtmlService iframe); P#17 Neon out of scope.
+  34835f5); KB Phase 3 (paste-a-screenshot upload in the article editor — reuses
+  Phase 2b's getOrCreateKbImagesFolder_ plumbing: client reads the pasted image as
+  base64 → a new manager-gated endpoint exports it to the folder and returns the
+  thumbnail URL to insert as markdown); P#17 Neon out of scope.
 - (Carried) Operator: deploy latest (clasp push -f + New version), run runAllTests()
   once; Script Properties INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID,
   FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
@@ -122,10 +130,9 @@ Updated: 2026-06-11
   fixed at source; sticky drafts 24h TTL.
 
 ## Where I left off
-Cycle 2 is CLOSED. Building KB Phase 2b (converter image export) on
-`claude/affectionate-dijkstra-js8rlm`: converter emits kbdoc:<fileId>:<n> tokens
-for INLINE_IMAGEs (drawings stay placeholders — no blob API); kbSaveItem resolves
-tokens at save (re-walk Doc in converter order, export blobs to a deployer-owned
-"KB Images" Drive folder — Script Property KB_IMAGES_FOLDER_ID, auto-provisioned,
-domain-link-viewable; thumbnail URL form for <img>), cap 20 images/doc. After 2b:
-Phase 3 paste-upload (reuses folder plumbing), then KB AI Phase A.
+Cycle 2 CLOSED; KB Phase 2b SHIPPED (commit on `claude/affectionate-dijkstra-js8rlm`,
+Node 98/98). NEXT: operator deploy (clasp push -f + New version + ONE-TIME re-auth
+for the new Drive scope) then the S63 walk incl. the post-deploy spot-check: as a
+REP, confirm a converted article's Drive-hosted image renders inside the HtmlService
+iframe (if org policy blocks domain-link sharing, share the KB Images folder
+manually). Then: KB Phase 3 (paste-upload), then KB AI Phase A (spec @ 34835f5).
