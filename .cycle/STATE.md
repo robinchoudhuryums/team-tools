@@ -50,25 +50,36 @@ Updated: 2026-06-11
   (clipboard holds the failed note); after nav-away → parks snapshot via NEW
   cnSaveSnapshotAsStickyDraft_ (sticky-draft shape + at stamp, restores on next Log
   enter). Callers' toast text moved into the function (outcome-specific). Commit 3ac6715.
+- M1 | Code.js, Tests.js, run.js | ALL TO/PAR.SUBMITTED_AT reads route through
+  normalizeAuditTs_ (incl. BOTH match-key sides in updateTimeOffStatus /
+  cancelTimeOffRequest + the Tests.js helper + the fixPto test read-back); fixes the
+  always-zero pending-trend sparkline + adjustment-queue sort. Node tripwire bans raw
+  String() reads of those columns. Commit 7981f2e.
+- M3 | script_core.html, tc/script_timeoff.html, tc/script_manager.html | NEW
+  refreshViewIfCurrent(viewKey,msg,reloadFn) helper; all 8 mutation success handlers
+  converted (no more stranded spinners on nav-away). Commit 7981f2e.
+- M5 | cn partial | enterCallNotesView / enterCallNotesSearchView guard the
+  cnFetchDeptConfigIfNeeded_ continuation on requestedView. Commit 7981f2e.
+- M6 | cn partial | cnX-email/subject/message input-sync listeners; cnExtAutoUpdateSubject_
+  writes c.subject back. Mode toggle no longer wipes typed fields. Commit 7981f2e.
+- M8+INT-3/4/5 | intake partial | send + sent-detail success handlers currentView-guarded
+  (state-only image reset on nav-away); image cap re-checked inside FileReader.onload;
+  agent-fetch failure toast. Commit 7981f2e.
+- M9+FP-2 | form_public.html | Date Signed = signer's LOCAL date; expiry display shows
+  the stored calendar day (no browser-tz reparse). Commit 7981f2e.
+- M10 | Tests.js | 8 new gate cases in test_managerGates_rejectNonManager
+  (saveEmailTemplates, saveExternalLinks, getFeatureFlags, saveFeatureFlags,
+  getCallNotesEnrollment, kbSaveItem, kbDeleteItem, verifyFormSubmissionIntegrity_);
+  2 new trigger-gate tests (purgeExpiredFormData, removeAutomationTriggers);
+  NEW test_publicForm_tokenLifecycle (consent enforcement, size caps, hash/consent
+  stamping, one-time use; self-cleaning). Commit 7981f2e.
+- #8 | Code.js, cn partial, CLAUDE.md | Digest heartbeats: stampDigestLastRun_ →
+  Script Property AUTOMATION_DIGEST_LAST_RUNS on each eod/weekly/urgent run;
+  getAutomationHealth returns digests[] w/ staleness (eod>2h, urgent>26h, weekly>8d);
+  health panel renders a "Digest heartbeats" block. Commit 7981f2e.
 
 ## Pending / not yet done (Cycle 2 audit findings backlog)
-- M1 | Code.js ~1026 | pendingTrend reads TO.SUBMITTED_AT via raw String() — Sheets
-  coerces (Tests.js:2180 acknowledges) → sparkline always zero. Needs a
-  normalizeAuditTs_-style read. Same class (Low): PAR.SUBMITTED_AT / FT.CREATED_AT
-  sorts in getMyPunchAdjustRequests / managerGetPendingAdjustments / getMySentForms.
-- M3 | tc/script_timeoff.html:297,705 + tc/script_manager.html:529,537,596,621,740,842 |
-  unguarded renderLoading in mutation success handlers strands navigated-away views.
-- M5 | cn partial ~1746-1796 | cnFetchDeptConfigIfNeeded_ continuations defeat the
-  currentView guard (enterCallNotesView/SearchView).
-- M6 | cn partial ~7323-7563 | external composer re-render loses cnX-email/subject/
-  message (no input-sync listeners).
-- M9 | form_public.html:460 | "Date Signed" is UTC date — wrong for US evening signers.
-- M8 | intake partial ~450,609 | send success handlers re-render #view-area without
-  currentView guard; also INT-3 image-cap race, INT-4 silent agent-fetch failure.
-- M10 | Tests.js | 8 missing manager/trigger gate tests (removeAutomationTriggers,
-  purgeExpiredFormData trigger gate, saveEmailTemplates, saveExternalLinks,
-  getFeatureFlags, saveFeatureFlags, getCallNotesEnrollment, kbSaveItem/kbDeleteItem);
-  zero public-token-endpoint coverage.
+- ALL Medium findings (M1–M10) are now DONE — see Completed this cycle.
 - LOW backlog (selected): L2 intakeSend* optional bodyHash (carried); L9 Day-Edit
   empId guard; L12 cnFormatNoteForCopy_ $-token corruption; L13 KB tab seq counter /
   save dedupe / silent editor-load failure; L14 metrics tooltip dead CONFIG guard;
@@ -104,7 +115,11 @@ Updated: 2026-06-11
 
 ## Where I left off
 Cycle 2, implement phase. Done on `claude/affectionate-dijkstra-js8rlm`: overlay
-centralization (6bef94b — H1/M7/F6) + M2/M4 (3ac6715). Node harness 89/89. Remaining
-Medium backlog: M1, M3, M5, M6, M8, M9, M10 (priority list given to operator
-2026-06-11). Operator deploy + an editor runAllTests() pass are still pending for
-everything since 501ab67.
+centralization (6bef94b — H1/M7/F6), M2/M4 (3ac6715), and the full remaining Medium
+slice M1/M3/M5/M6/M8/M9/M10 + digest heartbeats (7981f2e). Node harness 91/91.
+ALL audit Mediums are closed. Remaining: the Low backlog (L2/L9/L12/L13/L14/L11/
+L8/F5/L18, see LOW backlog above) and the Tier-4 roadmap (KB Phase 2b/3, KB AI
+Phase A). NEXT: operator deploy (clasp push -f + New version — now also picks up
+Code.js/Tests.js changes) + editor runAllTests() (~4 new integration tests incl.
+publicForm_tokenLifecycle); the pending-trend sparkline should show non-zero bars
+after the next PTO submission post-deploy.
