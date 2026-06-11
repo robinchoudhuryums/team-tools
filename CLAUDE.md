@@ -786,7 +786,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Seven client-side localStorage keys total.** All per-browser, all
+- **Eight client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -815,7 +815,13 @@ this section before touching the relevant area.
     default true — the context-suggestions toggle). Sanitized on read
     (corrupt blob → `{}`); deliberately a single key so drawer prefs
     don't multiply the key count.
-  Clearing browser data wipes all seven.
+  - `umsLastView` — the active tab key, written by `showView` on every
+    navigation. On boot (when no `?tool=` deep-link is present) the shell
+    re-enters this tab instead of defaulting to Time Clock, so an
+    accidental refresh mid-note lands back on the Log view where the
+    sticky form draft restores the typed fields. `enterTool`'s
+    managerOnly bump makes a stale manager-tab value safe for reps.
+  Clearing browser data wipes all eight.
 
 ## Key Design Decisions
 
@@ -1089,14 +1095,15 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Seven client-side localStorage keys total" entry in
+  authoritative "Eight client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
-  `umsKbPanel`) — all per-browser, all try/catch-wrapped. (An earlier
-  version of this decision listed only four; Round 2 · 8a/8b added the
-  sidebar-width and Time/PTO-mode keys, and the KB drawer added its
-  single `umsKbPanel` prefs blob.)
+  `umsKbPanel`, `umsLastView`) — all per-browser, all
+  try/catch-wrapped. (An earlier version of this decision listed only
+  four; Round 2 · 8a/8b added the sidebar-width and Time/PTO-mode keys,
+  the KB drawer added its single `umsKbPanel` prefs blob, and the
+  refresh-restore behavior added `umsLastView`.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -1850,11 +1857,17 @@ this section before touching the relevant area.
   harness drives it with plain-object stubs ("kb — Doc→markdown
   converter" tests).
 - **KB reference drawer — mid-call lookup as a shell capability.** A
-  slide-over panel (`#kb-drawer`, right edge, z-index 45 — UNDER the
-  `.overlay` layer so modals stack over it) giving reps searchable
+  slide-over panel (`#kb-drawer`, right edge, z-index 55 — ABOVE the
+  `.overlay` layer (50) so it stays readable + usable while the email
+  composer or other modals are open; the core focusin trap exempts
+  `#kb-drawer` so its search box keeps focus, and Esc still closes the
+  topmost overlay before the drawer) giving reps searchable
   Reference access without leaving the note form. Toggled by
   **Ctrl/⌘+K** (bound in `script_core.html`'s shared keydown — fires
-  even when focus is in a form field, that's the point) or a right-edge
+  even when focus is in a form field, that's the point; the prior Call
+  Notes V4 search-jump keybind on the same combo was REMOVED — both
+  handlers fired and the Search-tab nav closed the freshly opened
+  drawer) or a right-edge
   vertical tab shown only on the mid-task tools (Call Notes / Intake,
   per `VIEW_TO_TOOL`; hidden in compact mode). **Mounted on
   `document.body`, NOT `#view-area`** — Call Notes' optimistic
@@ -1871,11 +1884,16 @@ this section before touching the relevant area.
   an open-in-new-tab card** — a 400px drawer can't host an iframe
   usefully, which quietly reinforces native-first conversion. Home view
   = "Suggested" + "Recent": recents live in the single `umsKbPanel`
-  localStorage blob; suggestions match the in-progress Issue field text
-  against the cached KB tree TITLES client-side (`kbSuggestMatches_` —
-  4+ char tokens, distinct-token scoring, zero RPCs, note text never
-  leaves the browser), rendered only inside the drawer and behind a
-  per-rep toggle (`umsKbPanel.suggest`, default on). Reuses the three
+  localStorage blob; suggestions are CONTENT-AWARE — the in-progress
+  Issue field text is sent to `searchReference` (OUR server only — the
+  same enrolled-gated, read-only endpoint the search box uses, and the
+  same trust boundary the note itself is saved to; never any third
+  party) and the top section hits render as suggestion rows with
+  Open-¶ jumps. Cached per issue-text (`KB_DRAWER.suggestCache`) with a
+  sequence guard; instant first paint comes from the client-side TITLE
+  match (`kbSuggestMatches_`) while the content search runs, and a
+  failed RPC silently keeps the title matches. Rendered only inside the
+  drawer and behind a per-rep toggle (`umsKbPanel.suggest`, default on). Reuses the three
   enrolled-employee KB read endpoints — no new read surface. Pinned by
   the `kbRecentsPush_` / `kbSuggestMatches_` Node tests.
 - **KB usage feedback loop ("most referenced during calls").** Every
@@ -3195,9 +3213,11 @@ S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, 
     - Confirm the vertical "Reference" edge tab shows on Call Notes / Intake views, NOT on Time Clock / Metrics / Manager views, and not in compact mode
     - Type 2+ chars → matching SECTIONS render inline as chunk cards grouped by doc (readable without opening anything); a chunk's "Open ¶" opens the full article scrolled to that section; the Back button returns to the results
     - Click an EMBED result → an open-in-new-tab card (no iframe in the drawer)
-    - Type some text into the note's Issue field, open the drawer → a "Suggested" section lists title-matching articles; toggle "suggest" off → section explains it's off; re-check after reload (persists via umsKbPanel)
+    - Type some text into the note's Issue field (words that appear INSIDE an article body, not its title), open the drawer → a "Suggested" section first lists any title matches with a "Searching article content…" hint, then swaps to the content-matched sections (¶ heading shown; click jumps into the article); toggle "suggest" off → section explains it's off; re-check after reload (persists via umsKbPanel)
     - With the drawer open mid-read, save a note (Ctrl/⌘+Enter) → the drawer must NOT be wiped by the optimistic re-render
     - Open a uiConfirm (e.g. delete a note) with the drawer open → first Esc closes the dialog, second Esc closes the drawer
+    - With the drawer open on an article, open the email composer → the drawer stays SHARP and usable above the modal backdrop (type in its search box — focus is not yanked into the modal); the draggable composer can be moved aside if it overlaps
+    - Navigate to Time / PTO, hard-refresh the browser → the app returns to Time / PTO (not the Clock default); refresh mid-note on the Log view → returns to Log with the sticky draft restored
     - Navigate to another tool → drawer closes
     - Re-open: previously opened articles appear under "Recent"
     - As a manager, open Reference → confirm a "Most referenced · 30d" block atop the tree with open counts + in-call counts; as a rep confirm it does NOT render

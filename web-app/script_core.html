@@ -163,6 +163,20 @@ window.addEventListener('load', () => {
         initialTool = VIEW_TO_TOOL[INITIAL_VIEW_FROM_URL];
         initialTab = INITIAL_VIEW_FROM_URL;
       }
+      // Refresh-restore: with no explicit deep-link, land on the tab the rep
+      // was last on (persisted by showView) instead of bouncing to Time Clock
+      // — an accidental refresh mid-note returns to the Log view, where the
+      // sticky form draft restores the typed fields. enterTool still bumps
+      // non-managers off managerOnly tabs, so a stale stored view is safe.
+      if (!initialTab) {
+        try {
+          const lastView = localStorage.getItem('umsLastView');
+          if (lastView && VIEW_TO_TOOL[lastView]) {
+            initialTool = VIEW_TO_TOOL[lastView];
+            initialTab = lastView;
+          }
+        } catch (e) {}
+      }
       enterTool(initialTool, initialTab);
       // Start ambient pollers — badges update regardless of active tool
       if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
@@ -411,6 +425,8 @@ function showView(view) {
   // right-edge tab for the mid-task tools (Call Notes / Intake).
   if (typeof kbDrawerOnNavigate_ === 'function') kbDrawerOnNavigate_(view);
   currentView = view;
+  // Refresh-restore: remember the active tab so a reload lands back here.
+  try { localStorage.setItem('umsLastView', view); } catch (e) {}
   // Tab bar active state
   document.querySelectorAll('.tt-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === view);
@@ -735,6 +751,10 @@ document.addEventListener('focusin', function (e) {
   // Trap focus in the TOPMOST open overlay (last in DOM order) — ui-dialogs
   // are appended after base modals, so when one stacks over a still-open base
   // modal, focus must stay in the dialog, not the background modal.
+  // The KB drawer is exempt: it sits ABOVE the overlay layer (z 55) so reps
+  // can read reference material while composing — yanking focus out of its
+  // search box would make it unusable mid-modal.
+  if (e.target && e.target.closest && e.target.closest('#kb-drawer')) return;
   var opens = document.querySelectorAll('.overlay.open');
   if (!opens.length) return;
   var open = opens[opens.length - 1];

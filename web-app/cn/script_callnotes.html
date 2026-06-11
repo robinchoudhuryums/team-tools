@@ -2015,7 +2015,7 @@ function cnRenderNotesView(area) {
         <table class="cn-shortcuts-table">
           <tr><td>Save &amp; Copy</td><td><kbd>${esc(mod)}</kbd> + <kbd>Enter</kbd></td></tr>
           <tr><td>Save &amp; Compose</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
-          <tr><td>Jump to Search</td><td><kbd>${esc(mod)}</kbd> + <kbd>K</kbd></td></tr>
+          <tr><td>Reference Drawer</td><td><kbd>${esc(mod)}</kbd> + <kbd>K</kbd></td></tr>
           <tr><td>Flag: Action</td><td><kbd>${esc(mod)}</kbd> + <kbd>1</kbd></td></tr>
           <tr><td>Flag: Training</td><td><kbd>${esc(mod)}</kbd> + <kbd>2</kbd></td></tr>
           <tr><td>Flag: Review</td><td><kbd>${esc(mod)}</kbd> + <kbd>3</kbd></td></tr>
@@ -2043,10 +2043,9 @@ function cnRenderNotesView(area) {
   // V4 Phase 4 — populate stats-mini + quick-chip-row on first paint. The
   // 60s ambient poller (cnStartAmbientPolling_) keeps them fresh after that.
   cnPollAmbient_();
-  // V4 Phase 4 — install document-level Ctrl/⌘+K to jump to the Search tab.
-  // Sentinel-guarded so repeated renders don't stack handlers; the handler
-  // self-gates on currentView starting with "callNotes".
-  cnInstallSearchJumpKeybind_();
+  // Ctrl/⌘+K is owned by the KB reference drawer (bound in script_core).
+  // The prior V4 search-jump keybind was removed: both handlers fired, so
+  // the drawer opened and was immediately closed by the Search-tab nav.
   // V4 Phase 4 — apply any ?prefill=... query params from the URL (deep-link
   // contract from the Clock view's coverage strip CTA, future-ready even
   // though the strip doesn't pass prefill today — no per-call CDR data).
@@ -5844,23 +5843,6 @@ function cnConsumeNavHint_() {
     ? `Filing ${n} missing note${n > 1 ? 's' : ''}${dateLabel}`
     : `Note coverage${dateLabel}`;
   showToast(msg, 'toast-success');
-}
-
-/** V4 Phase 4 — document-level Ctrl/⌘+K handler that navigates to the
- *  Call Notes Search tab. Installed once (sentinel-guarded) and self-gates
- *  on currentView so other tools don't intercept the shortcut. */
-function cnInstallSearchJumpKeybind_() {
-  if (window._cnSearchJumpInstalled) return;
-  window._cnSearchJumpInstalled = true;
-  document.addEventListener('keydown', function (e) {
-    if (!(e.metaKey || e.ctrlKey)) return;
-    if (e.shiftKey || e.altKey) return;
-    if (e.key !== 'k' && e.key !== 'K') return;
-    // Only fire on Call Notes views; lets browsers handle ⌘K elsewhere
-    if (typeof currentView !== 'string' || currentView.indexOf('callNotes') !== 0) return;
-    e.preventDefault();
-    if (typeof showView === 'function') showView('callNotesSearch');
-  });
 }
 
 /** V4 Phase 4 — parse ?prefill=key:value;key:value... query params and

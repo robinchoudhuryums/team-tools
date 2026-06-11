@@ -60,10 +60,12 @@
   .kb-ed-prev { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: var(--paper); margin-top: 6px; max-height: 240px; overflow: auto; }
   .kb-ed-foot { display: flex; gap: 10px; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
   :root[data-compact] .kb-wrap { grid-template-columns: 1fr; height: auto; }
-  /* - KB slide-over drawer (shell capability) - sits UNDER overlays (z 50)
-     so modals stack over it; survives Call Notes' #view-area re-renders by
-     mounting on document.body. */
-  #kb-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw); background: var(--paper-card); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); z-index: 45; display: flex; flex-direction: column; transform: translateX(102%); transition: transform .22s var(--ease); }
+  /* - KB slide-over drawer (shell capability) - sits ABOVE the overlay layer
+     (z 50) so it stays readable + usable while the email composer or other
+     modals are open (the core focusin trap exempts it); survives Call Notes'
+     #view-area re-renders by mounting on document.body. Toasts (z 999) still
+     paint over it. */
+  #kb-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw); background: var(--paper-card); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); z-index: 55; display: flex; flex-direction: column; transform: translateX(102%); transition: transform .22s var(--ease); }
   #kb-drawer.open { transform: translateX(0); }
   .kbd-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
   .kbd-kicker { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); flex: 1; }
@@ -620,7 +622,7 @@ function kbCloseModal_() {
 //  Reads reuse the three enrolled-employee KB endpoints; opens are recorded
 //  best-effort via kbRecordView (fire-and-forget, never blocks the UI).
 // ============================================================================
-var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null };
+var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null };
 var KB_PANEL_LS_KEY = 'umsKbPanel';
 
 function kbPanelPrefs_() {
@@ -763,6 +765,21 @@ function kbDrawerRenderHome_() {
 /** "Suggested" block: matches the in-progress Call Notes Issue text against
  *  cached KB titles. Lives only inside the drawer (unobtrusive) and behind a
  *  per-rep toggle persisted to umsKbPanel.suggest (default ON). */
+function kbDrawerSuggestRowHtml_(r) {
+  return '<button class="kbd-item" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor || '') + '" ' +
+    'onclick="kbDrawerOpenItem_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+    '<span>' + icon(kbItemIcon_(r), 12) + ' ' + esc(r.title) +
+    (r.heading ? ' <span class="kb-snip">\u00b6 ' + esc(r.heading) + '</span>' : '') + '</span>' +
+    (r.snippet ? '<span class="kb-snip">' + esc(r.snippet) + '</span>' : '') + '</button>';
+}
+
+/** Suggestions match the in-progress Issue text against the FULL knowledge
+ *  base via the server section search (same enrolled-employee, read-only
+ *  endpoint the search box uses — the text goes to OUR server only, the same
+ *  trust boundary the note itself is saved to; it never reaches any third
+ *  party). Title matches from the cached tree render instantly while the
+ *  content search runs; the server results replace them when they arrive.
+ *  Cached per issue-text so re-renders don't refetch. */
 function kbDrawerRenderSuggest_() {
   var host = document.getElementById('kbd-suggest'); if (!host) return;
   var prefs = kbPanelPrefs_();
@@ -771,17 +788,39 @@ function kbDrawerRenderSuggest_() {
   try {
     if (typeof cnGetFieldValue_ === 'function' && typeof currentView !== 'undefined' &&
         (typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[currentView]) === 'callNotes') {
-      issue = cnGetFieldValue_('cn-fld-issue') || '';
+      issue = (cnGetFieldValue_('cn-fld-issue') || '').trim();
     }
   } catch (e) {}
   var tglHtml = '<label class="kbd-tgl"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="kbDrawerSuggestToggle_(this.checked)"> suggest</label>';
-  if (!issue.trim()) { host.innerHTML = on ? '' : '<div class="kbd-sec">Suggested' + tglHtml + '</div><div class="kbd-empty">Suggestions are off.</div>'; return; }
-  var matches = on ? kbSuggestMatches_(KB_DRAWER.tree, issue, 3) : [];
+  if (!issue) { host.innerHTML = on ? '' : '<div class="kbd-sec">Suggested' + tglHtml + '</div><div class="kbd-empty">Suggestions are off.</div>'; return; }
   var html = '<div class="kbd-sec">Suggested ' + tglHtml + '</div>';
-  if (!on) html += '<div class="kbd-empty">Suggestions are off.</div>';
-  else if (!matches.length) html += '<div class="kbd-empty">No title matches for this issue yet.</div>';
-  else matches.forEach(function (it) { html += kbDrawerItemBtnHtml_(it, ''); });
+  if (!on) { host.innerHTML = html + '<div class="kbd-empty">Suggestions are off.</div>'; return; }
+  var cache = KB_DRAWER.suggestCache;
+  if (cache && cache.text === issue) {
+    if (!cache.results.length) html += '<div class="kbd-empty">No matches for this issue yet.</div>';
+    else cache.results.forEach(function (r) { html += kbDrawerSuggestRowHtml_(r); });
+    host.innerHTML = html;
+    return;
+  }
+  // Instant first paint from cached titles; the content search replaces it.
+  var matches = kbSuggestMatches_(KB_DRAWER.tree, issue, 3);
+  matches.forEach(function (it) { html += kbDrawerItemBtnHtml_(it, ''); });
+  html += '<div class="kbd-empty">Searching article content\u2026</div>';
   host.innerHTML = html;
+  kbDrawerFetchSuggest_(issue);
+}
+
+function kbDrawerFetchSuggest_(issue) {
+  var seq = ++KB_DRAWER.suggestSeq;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== KB_DRAWER.suggestSeq || !KB_DRAWER.open || KB_DRAWER.view !== 'home') return;
+      var results = ((res && res.results) || []).slice(0, 3);
+      KB_DRAWER.suggestCache = { text: issue, results: results };
+      kbDrawerRenderSuggest_();
+    })
+    .withFailureHandler(function () {})   // keep the title matches on failure
+    .searchReference(issue.substring(0, 250));
 }
 function kbDrawerSuggestToggle_(on) {
   var prefs = kbPanelPrefs_();

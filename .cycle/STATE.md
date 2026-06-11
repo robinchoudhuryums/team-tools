@@ -2,15 +2,15 @@
 
 ## Current
 Cycle: 1
-Phase: implement
+Phase: idle
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-06-10
+Updated: 2026-06-11
 
 ## In progress (facts to carry forward — NOT judgments)
-- Cycle 1 broad-scan completed 2026-06-10 (findings A1–A10; A11 retracted). ALL selected backlog items are now implemented across this branch: A1–A4, A7 (4f0e170), P#1–P#4 (ac56aa1), P#5/P#6/P#14 (fa78c5e), KB Phase 2 / P#16 (cafad8f), and A8/A9 + P#7–P#13 + P#15 (c956a7d). P#17 (per-call CDR / Neon Option C) is NOT implementable in this repo — external datastore + call-data-reporting pipeline changes; CDR layer already isolated (INV-68).
-- Next concrete step: operator deploy + editor `runAllTests()` (first run creates the new `TEST_INTAKE_SS_ID` fixture; ~9 new integration tests haven't executed against a real spreadsheet yet), then `/reflect` to close Cycle 1.
+- CYCLE 1 CLOSED 2026-06-11 (reflect done: metrics.csv + estimates.csv rows appended, PROJECT_HEALTH.md Current Standing + Score History written). Net +4 (4 prod fixes − 0 new failure modes; 9 defensive). Editor suite 233/233 green; Node 89/89; S62–S64 operator-walked PASS (4 feedback items fixed as 501ab67: Cmd+K drawer ownership, content-aware suggestions, drawer z 55 above modals + focus-trap exemption, refresh-restore via umsLastView — key count 8).
+- Next concrete step: operator deploys 501ab67 (clasp push -f + New version) and spot-checks the four S64 fixes. Then the queue is: KB Phase 2b/3 (image export, paste-upload), KB AI Phase A (Tier 3 facet guidance, plan in Pending), or /broad-scan to open Cycle 2 with fresh eyes.
 
 ## Completed this cycle
 - A1 | web-app/Code.js | FormTokens CreatedAt/ExpiresAt written in CONFIG.TIMEZONE (fixes ±~12h expiry skew)
@@ -74,4 +74,4 @@ Updated: 2026-06-10
 - P#17 (Neon per-call CDR) is out of this repo's scope by design — the CDR data layer isolation (INV-68) is the only in-repo preparation possible.
 
 ## Where I left off
-Latest commit 72bbaf1 on `claude/gifted-hypatia-aee7wa` (Node 89/89): KB feature run complete through section-aware search. Operator: redeploy + runAllTests() re-run still pending; then walk S62/S63/S64. Queued: KB Phase 2b (image export) + Phase 3 (paste-upload); user is evaluating semantic/AI search (#5) — options assessment delivered in chat, no commitment yet. Then /reflect to close Cycle 1.
+Cycle 1 is CLOSED (reflect recorded 2026-06-11; net +4). Latest commit 501ab67 on `claude/gifted-hypatia-aee7wa` — the S64 walk-feedback fixes — awaits operator deploy + spot-check. Backlog in priority order: KB Phase 2b (image export — operator must first verify a domain-shared Drive image renders in the HtmlService iframe), Phase 3 (paste-upload), KB AI Phase A (Tier 3 facet guidance — full plan in Pending), then /broad-scan for Cycle 2 (fresh eyes; carry the 117-invariant substrate, not Cycle 1 judgments).
