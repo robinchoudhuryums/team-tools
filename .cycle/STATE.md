@@ -24,6 +24,12 @@ Updated: 2026-06-11
   KB_IMAGES_FOLDER_ID entry. FIRST DriveApp use — deploy adds the Drive OAuth
   scope (one-time re-auth) and S63's post-deploy spot-check covers the original
   iframe-render gate.
+- KB Phase 3 DONE (d5d5de4): kbUploadImage (manager-gated, PNG/JPEG/GIF/WebP — no
+  SVG, ~3MB cap mirrored client-side, validation before Drive work, NO ScriptLock,
+  KbImageUpload audit row) + element-scoped paste handler on the editor textarea
+  with placeholder-token insert/replace (textarea-first, KB_EDIT fallback). Shares
+  the Phase 2b KB Images folder (kbpaste-<stamp>-<rand>). INV-118 + S65 added.
+  Node harness 99/99.
 
 ## Completed this cycle
 - AUDIT | (read-only) | Cycle 2 broad scan: 1 High (H1 Esc kills composers), 9 Medium
@@ -102,10 +108,7 @@ Updated: 2026-06-11
   rotate overflow, FP-4/FP-5 public-form niceties, M2-class Esc-ordering for
   stacked static modals (covered by topmost fix).
 - (Carried from Cycle 1) KB AI Phase A plan (full spec in git history of this file @
-  34835f5); KB Phase 3 (paste-a-screenshot upload in the article editor — reuses
-  Phase 2b's getOrCreateKbImagesFolder_ plumbing: client reads the pasted image as
-  base64 → a new manager-gated endpoint exports it to the folder and returns the
-  thumbnail URL to insert as markdown); P#17 Neon out of scope.
+  34835f5) — now NEXT in the roadmap queue; P#17 Neon out of scope.
 - (Carried) Operator: deploy latest (clasp push -f + New version), run runAllTests()
   once; Script Properties INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID,
   FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
@@ -130,9 +133,11 @@ Updated: 2026-06-11
   fixed at source; sticky drafts 24h TTL.
 
 ## Where I left off
-Cycle 2 CLOSED; KB Phase 2b SHIPPED (commit on `claude/affectionate-dijkstra-js8rlm`,
-Node 98/98). NEXT: operator deploy (clasp push -f + New version + ONE-TIME re-auth
-for the new Drive scope) then the S63 walk incl. the post-deploy spot-check: as a
-REP, confirm a converted article's Drive-hosted image renders inside the HtmlService
-iframe (if org policy blocks domain-link sharing, share the KB Images folder
-manually). Then: KB Phase 3 (paste-upload), then KB AI Phase A (spec @ 34835f5).
+Cycle 2 CLOSED; KB Phase 2b AND Phase 3 SHIPPED on
+`claude/affectionate-dijkstra-js8rlm` (Node 99/99). NEXT: operator deploy
+(clasp push -f + New version + ONE-TIME re-auth for the new Drive scope), then the
+S63 + S65 walks — incl. the post-deploy spot-check: as a REP, confirm a Drive-hosted
+image renders inside the HtmlService iframe (if org policy blocks domain-link
+sharing, share the KB Images folder manually) — and one editor
+kb_uploadImage_rejectsInvalidPayloads run via runAllTests(). Then: KB AI Phase A
+(full spec @ 34835f5; operator decisions open: vendor confirm, cap values, model).
