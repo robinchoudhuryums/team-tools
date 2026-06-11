@@ -408,8 +408,12 @@ function renderForm() {
   if (FORM_DATA.recipientName) subtitleParts.push('For: ' + FORM_DATA.recipientName);
   if (FORM_DATA.expiresAt) {
     try {
-      var exp = new Date(FORM_DATA.expiresAt.replace("'", ''));
-      subtitleParts.push('Expires: ' + exp.toLocaleDateString());
+      // The stored value is a wall-time string in the app's timezone —
+      // parsing it with new Date() shifted the shown day by the recipient's
+      // browser-tz offset. Show the stored calendar date as written (the
+      // server enforces the real expiry instant regardless).
+      var expDay = String(FORM_DATA.expiresAt).substring(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(expDay)) subtitleParts.push('Expires: ' + expDay);
     } catch(_) {}
   }
   document.getElementById('form-subtitle').textContent = subtitleParts.join('  |  ');
@@ -456,8 +460,13 @@ function renderForm() {
   // Init signature pad
   initSignaturePad();
 
-  // Set signature date to today
-  document.getElementById('sig-date').value = new Date().toISOString().split('T')[0];
+  // Set signature date to today — the signer's LOCAL calendar date.
+  // (toISOString() is UTC: a recipient signing after ~6-7pm CST got
+  // TOMORROW's date stamped into the attested record.)
+  var sigNow = new Date();
+  document.getElementById('sig-date').value = sigNow.getFullYear() + '-' +
+    String(sigNow.getMonth() + 1).padStart(2, '0') + '-' +
+    String(sigNow.getDate()).padStart(2, '0');
 
   // Submit handler
   submitBtn.addEventListener('click', handleSubmit);

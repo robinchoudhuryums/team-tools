@@ -822,6 +822,7 @@ function _runAllTests() {
   _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
   _integrationTest('cn_getFormSubmission_callerScoped',      test_cn_getFormSubmission_callerScoped);
   _integrationTest('cn_managerGetFormSubmission_gatedAndScoped', test_cn_managerGetFormSubmission_gatedAndScoped);
+  _integrationTest('publicForm_tokenLifecycle',               test_publicForm_tokenLifecycle);
 
   // ── Call Notes — email two-stage send + bodyHash guard (F3 / INV-41/33) ──
   _integrationTest('cn_previewCallNoteEmail_returnsHashAndSubject', test_cn_previewCallNoteEmail_returnsHashAndSubject);
@@ -882,6 +883,8 @@ function _runAllTests() {
   _integrationTest('triggerGate_dailyExport_nonManagerThrows',  test_triggerGate_dailyExport_nonManagerThrows);
   _integrationTest('triggerGate_urgentDigest_nonManagerThrows', test_triggerGate_urgentDigest_nonManagerThrows);
   _integrationTest('triggerGate_purgeOldCallNotes_nonManagerThrows', test_triggerGate_purgeOldCallNotes_nonManagerThrows);
+  _integrationTest('triggerGate_purgeExpiredFormData_nonManagerThrows', test_triggerGate_purgeExpiredFormData_nonManagerThrows);
+  _integrationTest('triggerGate_removeAutomationTriggers_nonManagerThrows', test_triggerGate_removeAutomationTriggers_nonManagerThrows);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Audit row assertions ───────────────────────────────────────────────
@@ -1114,7 +1117,7 @@ function _findTimeOffRow(empId, date) {
         type:    String(rows[i][TO.TYPE]),
         notes:   String(rows[i][TO.NOTES]),
         status:  String(rows[i][TO.STATUS]),
-        submittedAt: String(rows[i][TO.SUBMITTED_AT]).trim(),
+        submittedAt: normalizeAuditTs_(rows[i][TO.SUBMITTED_AT]),
       };
     }
   }
@@ -2178,12 +2181,12 @@ function test_fixPtoReconciliation_creditsAndIdempotent() {
   sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', '2099-01-01 09:00:01']);
   SpreadsheetApp.flush();
   // Sheets coerces the appended SubmittedAt strings to Dates; updateTimeOffStatus
-  // matches String(cell).trim(), so read the keys BACK the same way the
-  // production flow does (the dashboard sends the coerced-cell string to the
-  // client, which echoes it on approve).
+  // now matches normalizeAuditTs_(cell) (M1), so read the keys BACK the same
+  // way the production flow does (the dashboard sends the normalized string to
+  // the client, which echoes it on approve).
   const lastRowIdx = sheet.getLastRow();
   const stored = sheet.getRange(lastRowIdx - 1, TO.SUBMITTED_AT + 1, 2, 1).getValues();
-  const sa1 = String(stored[0][0]).trim(), sa2 = String(stored[1][0]).trim();
+  const sa1 = normalizeAuditTs_(stored[0][0]), sa2 = normalizeAuditTs_(stored[1][0]);
   const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa1, 'Approved'));
@@ -3147,6 +3150,23 @@ function test_triggerGate_purgeOldCallNotes_nonManagerThrows() {
   }, 'manager access required', 'Non-manager should not be able to purge notes');
 }
 
+// M10 — the FormSubmissions/FormTokens PHI purge is the most destructive
+// trigger handler of all; its gate was the only one of the seven untested.
+function test_triggerGate_purgeExpiredFormData_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { purgeExpiredFormData(); });
+  }, 'manager access required', 'Non-manager should not be able to fire the PHI purge');
+}
+
+// M10 — without this gate a non-manager rep could silently disable every
+// automation trigger (INV-61). The gate throws BEFORE any trigger is touched,
+// so this is safe to run against production.
+function test_triggerGate_removeAutomationTriggers_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { removeAutomationTriggers(); });
+  }, 'manager access required', 'Non-manager must not be able to disable automation');
+}
+
 // Item 9 — manager comments on any note are manager-gated.
 function test_setCallNoteManagerComment_nonManagerRejected() {
   _asUser(_TEST_INDIA_EMAIL, function () {
@@ -3410,6 +3430,81 @@ function test_cn_getFormSubmission_callerScoped() {
   }
 }
 
+// M10 — first integration coverage of the two PUBLIC token endpoints
+// (getFormByToken / submitFormByToken take no employee identity, so they are
+// deliberately called WITHOUT _asUser): consent enforcement (A9/INV-113),
+// recipient-payload size caps (INV-96), server-authoritative hash + consent
+// stamping, and the one-time-use token transition.
+function test_publicForm_tokenLifecycle() {
+  const token = _asUser(_TEST_INDIA_EMAIL, function () {
+    const r = createFormToken({
+      formType: 'eaa',
+      recipientEmail: 'do-not-send-recipient@example.invalid',
+      recipientName: 'Test Recipient',
+      prefillData: { patientName: 'TEST Patient' },
+    });
+    _assertTrue(r.success, 'createFormToken should succeed for an enrolled rep');
+    return r.token;
+  });
+  _assertNotNull(token, 'A token should have been created');
+  try {
+    // Public read resolves the pending token to the form definition + prefill.
+    const def = getFormByToken(token);
+    _assertNull(def.error, 'pending token should resolve');
+    _assertEq(def.formType, 'eaa', 'form type round-trips');
+    _assertEq((def.prefillData || {}).patientName, 'TEST Patient', 'prefill rides the token');
+
+    // Consent is server-enforced: an absent _meta envelope is rejected and the
+    // token stays pending (the closed back-compat hole, A9).
+    const noConsent = submitFormByToken(token, { q1: 'answer', signature: 'data:image/png;base64,AAaa' });
+    _assertEq(noConsent.success, false, 'submit without _meta must be rejected');
+    _assertContains(noConsent.error, 'privacy notice', 'rejection names the consent gate');
+    _assertNull(getFormByToken(token).error, 'token still pending after consent rejection');
+
+    // Size cap: an oversized signature gets a specific, actionable error and
+    // the token stays pending for retry (INV-96).
+    const bigSig = new Array(45002).join('x');   // > FORM_CELL_CHAR_LIMIT
+    const tooBig = submitFormByToken(token, {
+      q1: 'answer', signature: bigSig,
+      _meta: { consentAgreed: true, openedAt: '2026-01-01T00:00:00' },
+    });
+    _assertEq(tooBig.success, false, 'oversized signature rejected');
+    _assertContains(tooBig.error, 'too large', 'size-cap error is specific');
+    _assertNull(getFormByToken(token).error, 'token still pending after size rejection');
+
+    // Valid consented submit: hash + server-authoritative consent version +
+    // certificate stamped; token flips to submitted (one-time use).
+    const ok = submitFormByToken(token, {
+      q1: 'answer one', q2: true,
+      signature: 'data:image/png;base64,AAaa',
+      _meta: { consentAgreed: true, openedAt: '2026-01-01T00:00:00' },
+    });
+    _assertTrue(ok.success, 'valid consented submit succeeds');
+    const sLoc = findFormSubmissionRow_(getOrCreateFormSubmissionsSheet_(), token);
+    _assertNotNull(sLoc, 'submission row written');
+    _assertTrue(/^[0-9a-f]{64}$/.test(String(sLoc.row[FS.SUBMISSION_HASH])), 'SubmissionHash is 64-hex');
+    _assertEq(String(sLoc.row[FS.CONSENT_VERSION]), String(CONFIG.FORM_CONSENT_VERSION),
+      'server-authoritative consent version stamped (never the client-sent one)');
+    const cert = JSON.parse(String(sLoc.row[FS.CERTIFICATE]));
+    _assertEq(cert.token, token, 'certificate carries the token');
+    const ver = _asUser(_TEST_MGR_EMAIL, function () { return verifyFormSubmissionIntegrity_(token); });
+    _assertEq(ver.match, true, 'integrity hash verifies (INV-113)');
+    _assertContains(String(getFormByToken(token).error || ''), 'already been submitted', 'read after submit refused');
+    _assertEq(submitFormByToken(token, { _meta: { consentAgreed: true } }).success, false, 'double-submit refused');
+  } finally {
+    // FormTokens / FormSubmissions aren't covered by the TEST_-prefix cleanup —
+    // remove both rows directly (same pattern as the caller-scoped form test).
+    try {
+      const ts = getOrCreateFormTokensSheet_();
+      const tLoc = findFormTokenRow_(ts, token);
+      if (tLoc) ts.deleteRow(tLoc.rowIndex);
+      const ss = getOrCreateFormSubmissionsSheet_();
+      const sLoc2 = findFormSubmissionRow_(ss, token);
+      if (sLoc2) ss.deleteRow(sLoc2.rowIndex);
+    } catch (e) {}
+  }
+}
+
 // managerGetFormSubmission is manager-gated and scoped to the rep being viewed:
 // the token must have been created by that rep.
 function test_cn_managerGetFormSubmission_gatedAndScoped() {
@@ -3622,6 +3717,17 @@ function test_managerGates_rejectNonManager() {
     ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
     ['getCallNotesAuditLog',           function () { return getCallNotesAuditLog({}); }],
     ['getCallNoteAuditHistory',        function () { return getCallNoteAuditHistory('no-such-note'); }],
+    // M10 — previously untested gates:
+    ['saveEmailTemplates',             function () { return saveEmailTemplates([]); }],
+    ['saveExternalLinks',              function () { return saveExternalLinks([]); }],
+    ['getFeatureFlags',                function () { return getFeatureFlags(); }],
+    ['saveFeatureFlags',               function () { return saveFeatureFlags({}); }],
+    ['getCallNotesEnrollment',         function () { return getCallNotesEnrollment(); }],
+    ['kbSaveItem',                     function () { return kbSaveItem({ title: 'gate-test', type: 'article', body: 'x' }); }],
+    ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
+    // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
+    // pin the gate anyway.
+    ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
   ];
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);

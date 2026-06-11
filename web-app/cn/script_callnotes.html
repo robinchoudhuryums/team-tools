@@ -1750,7 +1750,14 @@ function enterCallNotesView(area) {
   CN_STATE.filter = 'all';
   cnPrewarmScript_();
   renderLoading(area, 'Loading call notes…');
+  // Guard the config-fetch continuation too: cnLoadToday_'s own guard
+  // captures currentView only when THIS callback runs, so a nav-away during
+  // a slow first config fetch would otherwise pass the inner guard, clobber
+  // the new view's #view-area, and restart ambient polling on a non-CN tool
+  // (M5 — the late-callback class the loaders already guard one layer down).
+  const requestedView = currentView;
   cnFetchDeptConfigIfNeeded_(function () {
+    if (currentView !== requestedView) return;
     cnLoadToday_(function () {
       cnRenderNotesView(area);
       cnStartAmbientPolling_();
@@ -1790,7 +1797,9 @@ function enterCallNotesHistoryView(area) {
 
 function enterCallNotesSearchView(area) {
   stopClock();
+  const requestedView = currentView;   // M5 — same guard as enterCallNotesView
   cnFetchDeptConfigIfNeeded_(function () {
+    if (currentView !== requestedView) return;
     cnRenderSearchView(area);
   });
 }
@@ -6677,6 +6686,34 @@ function cnRenderHealthPanel_(res) {
   }
   var cdrHtml = cdrParts.join('<div style="height:6px"></div>');
 
+  // (d) Digest heartbeats — Script-Property stamps (the digests write no
+  // audit rows by design; the EOD digest runs hourly and would crowd the
+  // bounded AuditLog tail scans). `stale` = the trigger hasn't run within its
+  // expected cadence; `last: null` = no heartbeat recorded yet (pre-heartbeat
+  // deploy, or the trigger isn't installed).
+  var DIGEST_LABELS = {
+    eod:    { label: 'EOD unresolved-flag digest', expect: 'hourly trigger — stale past 2h' },
+    urgent: { label: 'Urgent-flag digest',         expect: 'daily 8am — stale past 26h' },
+    weekly: { label: 'Weekly training/review digests', expect: 'Friday 8am — stale past 8d' },
+  };
+  var digestsHtml = (res.digests || []).map(function (d) {
+    var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };
+    var when;
+    if (!d.last) {
+      when = '<span style="color:var(--muted)">no heartbeat recorded yet — check the trigger is installed</span>';
+    } else if (d.stale) {
+      when = '<span style="color:var(--warning-deep);font-weight:600">' + icon('warning', 11) + ' last ran ' +
+        esc(d.last) + (tz ? ' ' + esc(tz) : '') + ' — past its expected cadence; the trigger may be dead</span>';
+    } else {
+      when = '<span class="tabular" style="font-family:var(--mono)">' + esc(d.last) + (tz ? ' ' + esc(tz) : '') + '</span>';
+    }
+    return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="flex:0 0 200px;font-weight:600">' + esc(meta.label) + '</span>' +
+      '<span style="flex:1;min-width:200px">' + when + '</span>' +
+      '<span style="color:var(--muted);font-size:11px">' + esc(meta.expect) + '</span>' +
+    '</div>';
+  }).join('');
+
   // (c) Automation last-seen
   var runsHtml = (res.automationLastRuns || []).map(function (r) {
     var meta = CN_HEALTH_RUN_LABELS[r.action] || { label: r.action, expect: '' };
@@ -6697,6 +6734,7 @@ function cnRenderHealthPanel_(res) {
     secLabel('Personal-sheet sync') + sfHtml +
     secLabel('CDR data feed · last 7 days') + cdrHtml +
     secLabel('Automation last seen') + runsHtml +
+    secLabel('Digest heartbeats') + (digestsHtml || '<div style="font-size:12px;color:var(--muted)">No digest data (server pre-dates heartbeats).</div>') +
   '</div>';
 }
 
@@ -7577,6 +7615,23 @@ function cnWireExternalEmailModal_() {
     });
   }
 
+  // M6 — sync the remaining typed fields into state on every keystroke. The
+  // PDF↔Fillable mode toggle does a full modal re-render from CN_STATE, so
+  // any field without a sync listener silently reverts to its last stored
+  // value (typed email/subject/message were wiped until this).
+  var emailInput = document.getElementById('cnX-email');
+  if (emailInput) {
+    emailInput.addEventListener('input', function () { c.recipientEmail = emailInput.value; });
+  }
+  var subjInput = document.getElementById('cnX-subject');
+  if (subjInput) {
+    subjInput.addEventListener('input', function () { c.subject = subjInput.value; });
+  }
+  var msgInput = document.getElementById('cnX-message');
+  if (msgInput) {
+    msgInput.addEventListener('input', function () { c.message = msgInput.value; });
+  }
+
   // Send button
   var sendBtn = document.getElementById('cnX-send-btn');
   if (sendBtn) {
@@ -7630,6 +7685,7 @@ function cnExtAutoUpdateSubject_() {
     subjectEl.value = c.recipientType === 'provider'
       ? 'UMS — Form Request for ' + nameForSubj
       : 'UMS — Documents for ' + nameForSubj;
+    c.subject = subjectEl.value;   // M6 — keep state in step for re-renders
   }
 }
 

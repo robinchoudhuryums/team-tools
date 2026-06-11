@@ -446,11 +446,16 @@ function intakePpdSend_() {
   st.payload.selections = intakeGatherSelections_();
   var btn = document.getElementById('intk-ppd-send');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  var requestedView = currentView;   // M8 — late-success guard (CN loader pattern)
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
-      intakeClearForm_('ppd');
+      // Re-render the (now-cleared) form only if the rep is still on this
+      // view — a late success after nav-away must not clobber #view-area.
+      // State still resets so stale images can't ride into the next send.
+      if (currentView === requestedView) intakeClearForm_('ppd');
+      else INTAKE_STATE.ppd.images = [];
       showToast('PPD emailed to ' + res.recipient, 'toast-success');
     })
     .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
@@ -577,6 +582,10 @@ function intakeBuildAcctModal_(form, html) {
           sel.insertBefore(o, custom);
         });
       }
+    }).withFailureHandler(function (err) {
+      // INT-4 — surface the failure instead of a silently agent-less picker
+      // (Default / Custom recipients still work).
+      showToast('Could not load the agent list: ' + ((err && err.message) || 'server error'), 'toast-warn');
     }).getIntakeAgents();
   }
 
@@ -605,11 +614,13 @@ function intakeAcctSend_(form) {
   var fn = form === 'pap' ? 'intakeSendPAP' : 'intakeSendPMD';
   var btn = document.getElementById('intk-acct-send');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  var requestedView = currentView;   // M8 — late-success guard (CN loader pattern)
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
-      intakeClearForm_(form);
+      if (currentView === requestedView) intakeClearForm_(form);
+      else INTAKE_STATE[form].images = [];
       showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
     })
     .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
@@ -648,7 +659,14 @@ function intakeProcessImage_(form, file) {
   var max = 12;
   if ((INTAKE_STATE[form].images || []).length >= max) { showToast('Up to ' + max + ' images.', 'toast-warn'); return; }
   var reader = new FileReader();
-  reader.onload = function (e) { INTAKE_STATE[form].images.push(e.target.result); intakeRenderGallery_(form); };
+  reader.onload = function (e) {
+    // INT-3 — re-check inside the async callback: dropping >12 files at once
+    // passed every synchronous check while length was still 0, rendering a
+    // gallery the server then silently sliced to 12 at send.
+    if ((INTAKE_STATE[form].images || []).length >= max) { showToast('Up to ' + max + ' images — extra file skipped.', 'toast-warn'); return; }
+    INTAKE_STATE[form].images.push(e.target.result);
+    intakeRenderGallery_(form);
+  };
   reader.readAsDataURL(file);
 }
 
@@ -717,10 +735,12 @@ function intakeOpenSent_(btn) {
   var s = (INTAKE_STATE.sent || [])[parseInt(btn.getAttribute('data-sent-idx'), 10)];
   if (!s) return;
   btn.disabled = true;
+  var requestedView = currentView;   // INT-5 — don't pop the modal over another view
   google.script.run
     .withSuccessHandler(function (res) {
       btn.disabled = false;
       if (!res || res.error) { showToast((res && res.error) || 'Could not load the submission', 'toast-error'); return; }
+      if (currentView !== requestedView) return;
       intakeOpenModal_(res.formType + ' — ' + (res.patientInfo || res.submissionId), intakeRenderSentDetail_(res));
     })
     .withFailureHandler(function (err) {

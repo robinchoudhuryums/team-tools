@@ -464,6 +464,18 @@ function renderLoading(area, label) {
     <div class="state-label">${esc(label)}</div></div>`;
 }
 
+/** Refresh helper for mutation success handlers: shows the view-area loading
+ *  state + runs the reload ONLY if the user is still on the view the mutation
+ *  belongs to. Without the guard, a nav-away during the RPC got its NEW view
+ *  wiped to a spinner that nothing ever replaced (the follow-up data loader
+ *  is currentView-guarded, so the spinner stuck until the next tab click).
+ *  Skipping entirely is correct — every tab's enter handler reloads fresh. */
+function refreshViewIfCurrent(viewKey, loadingMsg, reloadFn) {
+  if (currentView !== viewKey) return;
+  renderLoading(document.getElementById('view-area'), loadingMsg);
+  reloadFn();
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  SHARED UTILITIES
 // ════════════════════════════════════════════════════════════════════════════

@@ -434,6 +434,28 @@ test('removeAutomationTriggers TARGETS matches the install set (cleans up all it
     'install and remove TARGETS must list the same handlers');
 });
 
+console.log('\nCode.js — Sheets-coerced timestamp columns are read via normalizeAuditTs_ (M1 tripwire)');
+// The Sheets-coercion class has now bitten twice (AuditLog timestamps, then
+// TO.SUBMITTED_AT flattening the pending-trend sparkline to zero). Every read
+// of a "yyyy-MM-dd HH:mm:ss" column in the ADP spreadsheet must route through
+// normalizeAuditTs_ — a raw String(...) read of a coerced Date yields
+// "Thu Jun 11 2026 ...", which silently fails every parse / date filter /
+// chronological sort downstream.
+test('no raw String() reads of TO/PAR.SUBMITTED_AT remain in Code.js', () => {
+  const tsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const raw = [...tsSrc.matchAll(/String\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  assert.deepStrictEqual(raw.map((m) => m[0]), [],
+    'found raw String() read(s) of a SUBMITTED_AT cell — route through normalizeAuditTs_ (M1)');
+  // And the normalized reads actually exist (the tripwire stays armed).
+  const normalized = [...tsSrc.matchAll(/normalizeAuditTs_\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  assert.ok(normalized.length >= 8, 'expected ≥8 normalizeAuditTs_ SUBMITTED_AT reads, got ' + normalized.length);
+});
+test('Tests.js reads SUBMITTED_AT through normalizeAuditTs_ too', () => {
+  const tSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const raw = [...tSrc.matchAll(/String\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  assert.deepStrictEqual(raw.map((m) => m[0]), [], 'test helper must match the production read');
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Intake module — recommendation engine (PPD crown jewel) + layout coupling.
 // ─────────────────────────────────────────────────────────────────────────────

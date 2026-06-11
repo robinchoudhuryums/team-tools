@@ -160,7 +160,14 @@ this section before touching the relevant area.
   in this state until the first full `runAllTests` exposed it.
   `getManagerDashboard` (recent audits), `cnReadCallNoteAuditRows_`, and
   `getAutomationHealth` all route through `normalizeAuditTs_` now —
-  any new AuditLog timestamp read must too.
+  any new AuditLog timestamp read must too. The SAME class applies to
+  every other `yyyy-MM-dd HH:mm:ss` column in the ADP spreadsheet:
+  `TO.SUBMITTED_AT` (a raw `String()` read flattened the manager
+  pending-trend sparkline to zero since it shipped, and it doubles as
+  the row-match key for `updateTimeOffStatus` / `cancelTimeOffRequest` —
+  BOTH the key-producing reads and the matchers normalize identically)
+  and `PAR.SUBMITTED_AT` (sort/display). A Node tripwire fails CI on any
+  raw `String(rows[i][TO|PAR.SUBMITTED_AT])` read in `Code.js`/`Tests.js`.
 - **Per-rep / fixture sheet timezones must match the ADP sheet's.**
   `normalizeDate_` recovers a coerced date cell by formatting in the
   ADP sheet's tz — but the cell was coerced in the tz of the sheet it
@@ -1979,8 +1986,13 @@ this section before touching the relevant area.
   aliases itself and every aliased agent would otherwise false-positive
   as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
   without taking down the rest of the panel. Every server string is
-  `esc()`'d before `innerHTML`. The EOD/weekly/urgent digests write no
-  audit rows, so the panel can't show their last run — a known gap.
+  `esc()`'d before `innerHTML`. The EOD/weekly/urgent digests still write
+  no audit rows (deliberate — the hourly EOD digest would crowd the
+  bounded AuditLog tail scans); instead each run stamps a Script-Property
+  heartbeat (`stampDigestLastRun_` → `AUTOMATION_DIGEST_LAST_RUNS`) and
+  the panel renders a "Digest heartbeats" block with per-digest staleness
+  flags (EOD stale > 2h, urgent > 26h, weekly > 8d), so a silently-dead
+  digest trigger is visible without reading logs.
 - **"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
@@ -2353,6 +2365,13 @@ manually for a fresh deploy or environment:
   when inspecting Script Properties. Only registry keys are honored; flips
   take effect server-side on the next request and client-side on the next
   config fetch.
+- **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
+  object `{ eod|urgent|weekly: "yyyy-MM-dd HH:mm:ss" }` (CONFIG.TIMEZONE
+  wall time) stamped by each digest run (`stampDigestLastRun_`) — the
+  heartbeat behind the Automation Health panel's "Digest heartbeats"
+  block. Created on the first post-deploy digest run; no manual setup.
+  Until each digest has run once, the panel shows "no heartbeat recorded
+  yet" — not an error.
 - **Call-notes EOD + weekly digest knobs** are
   `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17 — the local hour at
   which each rep gets the EOD digest) and the
