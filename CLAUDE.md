@@ -1804,8 +1804,26 @@ this section before touching the relevant area.
   manager writes are gated + locked + audited (`KbItemSave`/`KbItemDelete`).
   Native-primary + Drive-fallback was chosen so 100% of content is navigable on
   day one (embed everything) while the most-referenced docs migrate to fast
-  native articles over time. Pinned by `kbMd_` (escaping/links/tables/images) +
-  `kbParseDriveUrl_` Node tests.
+  native articles over time. **Search is section-aware:** `searchReference`
+  splits each article into heading-delimited sections (`kbSplitSections_`,
+  fence-masked, pure), scores them with weighted distinct-token matching
+  (`kbSearchScore_`: heading 2 / body 1 per token, +3 per title token on
+  qualifying sections, +2 exact phrase — a title-ONLY match emits a single
+  doc-level hit instead of flooding every section in), and returns the top 20
+  CHUNKS (≤3 per doc, ≤1200 chars each, paragraph-boundary truncated with
+  odd-fence repair) with a `heading` + `anchor`. Both the Reference tab
+  (compiled view in the main panel + doc/section nav in the tree column) and
+  the drawer render chunks inline via `kbMd_` grouped by doc
+  (`kbChunkGroupsHtml_`), with "Open ¶" jumping into the full article at the
+  section. The jump works because `kbMd_` stamps `id="kb-h-<slug>"` on
+  headings using a client `kbSlug_` that MUST stay identical to the server
+  `kbSlug_` (a parallel source-of-truth pair like `LEAVE_DEDUCTION_CLIENT`;
+  both de-escape kbMd_'s three entities so escaped-source and raw-markdown
+  slugs agree; duplicate headings suffix -2/-3 in the same walk order —
+  pinned by a Node parity test). Embeds have no stored content, so they
+  surface as title-only hits — another native-first nudge. Pinned by
+  `kbMd_` (escaping/links/tables/images/heading-ids) + `kbParseDriveUrl_` +
+  the `kbSplitSections_`/`kbChunkTruncate_`/`kbSearchScore_` Node tests.
 - **KB Phase 2: per-item Doc→article converter, review-before-save.**
   `kbConvertDriveDoc({itemId | driveUrl})` (manager-gated, READ-ONLY)
   opens a Google Doc with the DEPLOYER's access (same trust model as
@@ -1845,7 +1863,10 @@ this section before touching the relevant area.
   `kbDrawerOnNavigate_` (typeof-guarded, the `cnStopAmbientPolling_`
   pattern) to close it on any navigation; Esc closes it only when no
   overlay is open. Search-first UX (250ms debounce → `searchReference`,
-  stale responses dropped via a sequence counter); articles render
+  stale responses dropped via a sequence counter); results render as the
+  same compiled section-chunk view as the Reference tab (grouped by doc,
+  chunks readable inline, "Open ¶" jumps to the section in the full
+  article); articles render
   inline via `kbMd_` (sharing `.kb-article` styles); **Drive embeds get
   an open-in-new-tab card** — a 400px drawer can't host an iframe
   usefully, which quietly reinforces native-first conversion. Home view
@@ -3149,7 +3170,7 @@ S62 | Reference tool — browse, search, article + Drive embed, manager edit | S
     - As a manager, open **Reference** → "Add item" → type **Article**: set a department + title, write markdown (heading, bold, a list, a link, a `|`-table with a `|---|` separator, an `![alt](https://…)` image) → watch the live preview → Save
     - Confirm it appears under its department in the tree and renders as formatted HTML when opened
     - "Add item" → type **Embed Drive doc**: paste a Google Doc/Sheet/file share URL → Save → open it → confirm the Drive `/preview` iframe loads + "Open in new tab" works
-    - Type a 2+ char query in the search box → confirm title/body matches list with snippets; clear it → tree returns
+    - Type a 2+ char query in the search box → the tree column lists matching docs with their matching SECTIONS indented beneath; the main panel shows the compiled view (every matching section rendered inline, grouped by doc, best score first); click a section row or a chunk's "Open ¶" → the article opens scrolled to that heading (flash highlight); clear the query → tree returns
     - Edit an item, then Delete one (confirm the uiConfirm danger dialog)
     - As a non-manager rep: confirm browse + search work but NO add/edit/delete affordances appear; from the console call `google.script.run...kbSaveItem({})` and `...kbDeleteItem('x')`
     - Paste raw `<script>` / a `javascript:` link / a `![x](javascript:…)` image into an article body and Save → open it
@@ -3172,7 +3193,7 @@ S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, 
   Steps:
     - As an enrolled rep, open Call Notes → Log; press **Ctrl/⌘+K** → confirm the drawer slides in from the right and focuses its search box; press Ctrl/⌘+K again (or Esc, or the X) → closes
     - Confirm the vertical "Reference" edge tab shows on Call Notes / Intake views, NOT on Time Clock / Metrics / Manager views, and not in compact mode
-    - Type 2+ chars → results with snippets; click an ARTICLE → renders inline (app-styled, same .kb-article look as the Reference tab) with a Back button returning to the results
+    - Type 2+ chars → matching SECTIONS render inline as chunk cards grouped by doc (readable without opening anything); a chunk's "Open ¶" opens the full article scrolled to that section; the Back button returns to the results
     - Click an EMBED result → an open-in-new-tab card (no iframe in the drawer)
     - Type some text into the note's Issue field, open the drawer → a "Suggested" section lists title-matching articles; toggle "suggest" off → section explains it's off; re-check after reload (persists via umsKbPanel)
     - With the drawer open mid-read, save a note (Ctrl/⌘+Enter) → the drawer must NOT be wiped by the optimistic re-render

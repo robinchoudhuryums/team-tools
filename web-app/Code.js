@@ -9599,28 +9599,156 @@ function getReferenceItem(id) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── Section-aware search ──────────────────────────────────────────────────
+// Results are heading-delimited CHUNKS of articles (read inline, jump to the
+// section in the full doc), not just doc titles — multiple chunks from
+// multiple docs surface side by side. Embeds have no stored content, so they
+// match on title only (another native-first nudge).
+const KB_SEARCH_MAX_RESULTS = 20;
+const KB_SEARCH_MAX_PER_ITEM = 3;
+const KB_CHUNK_MAX_CHARS = 1200;
+
+/** Shared anchor slug — MUST stay identical to the client `kbSlug_` in
+ *  kb/script_kb.html (kbMd_ stamps id="kb-h-<slug>" on headings; search
+ *  results carry the server-computed anchor for the jump-to-section link).
+ *  The entity de-escape keeps the two identical even though the client slugs
+ *  ESCAPED source (kbMd_ escapes &/</> up front) while the server slugs raw
+ *  markdown. Pinned by a Node parity test. */
+function kbSlug_(text) {
+  return String(text || '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** PURE: split article markdown into heading-delimited sections —
+ *  [{heading, anchor, md}]. `md` EXCLUDES its heading line (chunk cards
+ *  render the heading separately). The preamble before the first heading is
+ *  a section with heading ''. Headings inside ``` fences don't split (kbMd_
+ *  masks fences before its heading rule — same contract). Duplicate-heading
+ *  anchors dedupe with -2/-3… in document order, matching kbMd_'s ids. */
+function kbSplitSections_(bodyMd) {
+  const lines = String(bodyMd || '').split(/\r?\n/);
+  const sections = [];
+  let cur = { heading: '', anchor: '', md: [] };
+  let inFence = false;
+  const seen = {};
+  const push = function () {
+    if (cur.heading || cur.md.join('\n').trim()) {
+      sections.push({ heading: cur.heading, anchor: cur.anchor, md: cur.md.join('\n').trim() });
+    }
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (/^\s*```/.test(ln)) inFence = !inFence;
+    const h = !inFence && ln.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      push();
+      let anchor = kbSlug_(h[2]);
+      if (anchor) {
+        seen[anchor] = (seen[anchor] || 0) + 1;
+        if (seen[anchor] > 1) anchor += '-' + seen[anchor];
+      }
+      cur = { heading: h[2].trim(), anchor: anchor, md: [] };
+    } else {
+      cur.md.push(ln);
+    }
+  }
+  push();
+  return sections;
+}
+
+/** PURE: cap a chunk at a paragraph boundary; repair an odd fence count so a
+ *  truncated chunk never renders a runaway <pre>. */
+function kbChunkTruncate_(md, cap) {
+  md = String(md || '');
+  cap = cap || KB_CHUNK_MAX_CHARS;
+  if (md.length <= cap) return { md: md, truncated: false };
+  let cut = md.lastIndexOf('\n\n', cap);
+  if (cut < cap * 0.4) cut = cap;
+  let out = md.substring(0, cut).trim();
+  const fences = (out.match(/^\s*```/gm) || []).length;
+  if (fences % 2 === 1) out += '\n```';
+  return { md: out, truncated: true };
+}
+
+/** PURE: weighted token score for one section. 0 unless the section's own
+ *  text (heading or body) matches at least one token — a title-only match
+ *  must NOT flood every section of that doc into the results (the caller
+ *  emits a single doc-level hit for that case instead). Heading hits (2)
+ *  outrank body hits (1); title hits add 3 per token on qualifying sections;
+ *  an exact-phrase hit adds 2. */
+function kbSearchScore_(tokens, q, titleLc, headLc, bodyLc) {
+  let score = 0;
+  let sectionHit = false;
+  tokens.forEach(function (t) {
+    if (headLc.indexOf(t) >= 0) { score += 2; sectionHit = true; }
+    else if (bodyLc.indexOf(t) >= 0) { score += 1; sectionHit = true; }
+  });
+  if (!sectionHit) return 0;
+  tokens.forEach(function (t) { if (titleLc.indexOf(t) >= 0) score += 3; });
+  if (q.length >= 4 && (headLc.indexOf(q) >= 0 || bodyLc.indexOf(q) >= 0)) score += 2;
+  return score;
+}
+
 function searchReference(query) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
     const q = String(query || '').trim().toLowerCase();
     if (q.length < 2) return { results: [] };
+    const tokens = [];
+    (q.match(/[a-z0-9]{2,}/g) || []).forEach(function (t) { if (tokens.indexOf(t) < 0) tokens.push(t); });
+    if (!tokens.length) return { results: [] };
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
     if (last < 2) return { results: [] };
     const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
-    const results = [];
-    for (let i = 0; i < rows.length && results.length < 50; i++) {
+    const hits = [];
+    const snippetOf = function (md) {
+      return md.replace(/[#*`>|\[\]()!]/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 120);
+    };
+    for (let i = 0; i < rows.length; i++) {
       if (!rows[i][KB.ID]) continue;
+      const id = String(rows[i][KB.ID]);
       const title = String(rows[i][KB.TITLE] || '');
-      const body = String(rows[i][KB.BODY_MD] || '');
-      if ((title + ' ' + body).toLowerCase().indexOf(q) < 0) continue;
-      let snippet = '';
-      const bidx = body.toLowerCase().indexOf(q);
-      if (bidx >= 0) { const s = Math.max(0, bidx - 40); snippet = (s > 0 ? '…' : '') + body.substring(s, bidx + q.length + 60).replace(/\s+/g, ' ').trim() + '…'; }
-      results.push({ id: String(rows[i][KB.ID]), title: title, department: String(rows[i][KB.DEPARTMENT] || ''), type: String(rows[i][KB.TYPE] || 'article'), snippet: snippet });
+      const dept = String(rows[i][KB.DEPARTMENT] || '');
+      const type = String(rows[i][KB.TYPE] || 'article');
+      const titleLc = title.toLowerCase();
+      let titleScore = 0;
+      tokens.forEach(function (t) { if (titleLc.indexOf(t) >= 0) titleScore += 3; });
+      if (type === 'embed') {
+        // No stored content to chunk — title-only hit.
+        if (titleScore > 0) {
+          hits.push({ id: id, title: title, department: dept, type: 'embed',
+            heading: '', anchor: '', chunkMd: '', truncated: false, score: titleScore, snippet: '' });
+        }
+        continue;
+      }
+      const sections = kbSplitSections_(String(rows[i][KB.BODY_MD] || ''));
+      const secHits = [];
+      sections.forEach(function (s) {
+        const score = kbSearchScore_(tokens, q, titleLc, s.heading.toLowerCase(), s.md.toLowerCase());
+        if (score > 0) secHits.push({ section: s, score: score });
+      });
+      if (!secHits.length) {
+        if (titleScore > 0) {
+          hits.push({ id: id, title: title, department: dept, type: 'article',
+            heading: '', anchor: '', chunkMd: '', truncated: false, score: titleScore, snippet: '' });
+        }
+        continue;
+      }
+      secHits.sort(function (a, b) { return b.score - a.score; });
+      secHits.slice(0, KB_SEARCH_MAX_PER_ITEM).forEach(function (sh) {
+        const cut = kbChunkTruncate_(sh.section.md, KB_CHUNK_MAX_CHARS);
+        hits.push({ id: id, title: title, department: dept, type: 'article',
+          heading: sh.section.heading, anchor: sh.section.anchor,
+          chunkMd: cut.md, truncated: cut.truncated, score: sh.score,
+          snippet: snippetOf(cut.md) });
+      });
     }
-    return { results: results };
+    hits.sort(function (a, b) { return b.score - a.score; });
+    if (hits.length > KB_SEARCH_MAX_RESULTS) hits.length = KB_SEARCH_MAX_RESULTS;
+    return { results: hits, sectioned: true };
   } catch (err) { return { error: err.message }; }
 }
 

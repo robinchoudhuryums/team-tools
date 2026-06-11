@@ -585,11 +585,15 @@ test('leaves an already-canonical /exec URL unchanged', () => {
 });
 
 console.log('\nkb — markdown renderer (kbMd_) escapes HTML + sanitizes links');
+loadFunction(sb, 'kb/script_kb.html', 'kbSlug_');   // kbMd_ heading ids depend on it
 const kbMd_ = loadFunction(sb, 'kb/script_kb.html', 'kbMd_');
-test('renders headings, bold, and lists', () => {
-  assert.ok(kbMd_('# Title').indexOf('<h1>Title</h1>') >= 0);
+test('renders headings (with anchor ids), bold, and lists', () => {
+  assert.ok(kbMd_('# Title').indexOf('<h1 id="kb-h-title">Title</h1>') >= 0);
   assert.ok(kbMd_('**b**').indexOf('<strong>b</strong>') >= 0);
   assert.ok(kbMd_('- one\n- two').indexOf('<li>one</li>') >= 0);
+  // duplicate headings get -2/-3 suffixed ids (same walk as kbSplitSections_)
+  const dup = kbMd_('## Dup\n\n## Dup');
+  assert.ok(dup.indexOf('id="kb-h-dup"') >= 0 && dup.indexOf('id="kb-h-dup-2"') >= 0);
 });
 test('escapes raw HTML / script in the source (no injection)', () => {
   const out = kbMd_('<script>alert(1)</script>');
@@ -647,6 +651,71 @@ test('renders images (http(s) only) with escaped alt + URL quotes', () => {
   assert.ok(q.indexOf('&quot;') >= 0, 'alt quote entity-escaped');
   const uq = kbMd_('![x](https://e.com/"o.png)');
   assert.ok(uq.indexOf('"o.png') < 0 && uq.indexOf('%22') >= 0, 'quote in src percent-encoded');
+});
+
+console.log('\nkb — section-aware search helpers (split / truncate / score / slug parity)');
+const _kbSearchCtx = vm.createContext({});
+['kbSlug_', 'kbSplitSections_', 'kbChunkTruncate_', 'kbSearchScore_'].forEach((fn) => {
+  vm.runInContext(extractRawFunction('Code.js', fn), _kbSearchCtx, { filename: 'Code.js#' + fn });
+});
+const srvKbSlug_ = _kbSearchCtx.kbSlug_;
+const kbSplitSections_ = _kbSearchCtx.kbSplitSections_;
+const kbChunkTruncate_ = _kbSearchCtx.kbChunkTruncate_;
+const kbSearchScore_ = _kbSearchCtx.kbSearchScore_;
+
+test('kbSplitSections_: preamble + heading sections, heading excluded from md', () => {
+  const secs = kbSplitSections_('intro text\n\n# One\nbody one\n\n## Two\nbody two');
+  assert.strictEqual(secs.length, 3);
+  assert.strictEqual(secs[0].heading, '');
+  assert.strictEqual(secs[0].md, 'intro text');
+  assert.strictEqual(secs[1].heading, 'One');
+  assert.strictEqual(secs[1].anchor, 'one');
+  assert.strictEqual(secs[1].md, 'body one');
+  assert.strictEqual(secs[2].anchor, 'two');
+});
+test('kbSplitSections_: fenced # lines do not split; duplicate anchors dedupe', () => {
+  const secs = kbSplitSections_('# Real\n```\n# not a heading\n```\nafter\n\n# Real\nx');
+  assert.strictEqual(secs.length, 2, 'fenced # stays inside its section');
+  assert.ok(secs[0].md.indexOf('# not a heading') >= 0);
+  assert.strictEqual(secs[0].anchor, 'real');
+  assert.strictEqual(secs[1].anchor, 'real-2', 'duplicate heading anchor suffixed');
+});
+test('anchor slugs: server kbSlug_ matches kbMd_\'s heading ids (parity pair)', () => {
+  // The server slugs RAW markdown; kbMd_ slugs the ESCAPED source — the
+  // entity de-escape inside both copies keeps them identical.
+  assert.strictEqual(srvKbSlug_('Q&A / Setup'), 'q-a-setup');
+  assert.ok(kbMd_('# Q&A / Setup').indexOf('id="kb-h-q-a-setup"') >= 0);
+  // and the dedup walks agree
+  const anchors = kbSplitSections_('## Dup\nx\n\n## Dup\ny').map((s) => s.anchor);
+  assert.strictEqual(anchors.join(','), 'dup,dup-2');
+});
+test('kbChunkTruncate_: paragraph-boundary cut + odd-fence repair', () => {
+  const short = kbChunkTruncate_('small', 100);
+  assert.strictEqual(short.truncated, false);
+  // boundary at ~44 chars is past the 40%-of-cap floor, so the cut lands there
+  const long = kbChunkTruncate_('p '.repeat(22) + '\n\n' + 'x'.repeat(200), 60);
+  assert.strictEqual(long.truncated, true);
+  assert.ok(long.md.indexOf('x') < 0, 'cut lands on the paragraph boundary before the cap');
+  const fence = kbChunkTruncate_('```\ncode\n' + 'y'.repeat(200), 50);
+  assert.ok((fence.md.match(/^\s*```/gm) || []).length % 2 === 0, 'odd fence count repaired');
+});
+test('kbSearchScore_: section-text hit required; heading > body; title + phrase boost', () => {
+  // title-only match scores 0 — the caller emits a doc-level hit instead of
+  // flooding every section of a title-matched doc into the results
+  assert.strictEqual(kbSearchScore_(['war'], 'war', 'warranty guide', 'intro', 'nothing here'), 0);
+  // (3-char query → below the 4-char phrase-bonus floor, isolating the weights)
+  assert.strictEqual(kbSearchScore_(['war'], 'war', '', '', 'warranty info'), 1, 'body hit = 1');
+  assert.strictEqual(kbSearchScore_(['war'], 'war', '', 'warranty terms', 'x'), 2, 'heading hit = 2');
+  assert.strictEqual(kbSearchScore_(['war'], 'war', 'warranty guide', '', 'warranty info'), 4, 'body 1 + title 3');
+  // a 4+ char single-token query that matches IS its own exact phrase (+2)
+  assert.strictEqual(kbSearchScore_(['warranty'], 'warranty', '', '', 'warranty info'), 3, 'body 1 + phrase 2');
+  // multi-token: each distinct token scores its best location (no phrase
+  // bonus here — the exact phrase appears in neither heading nor body)
+  assert.strictEqual(kbSearchScore_(['wheelchair', 'repair'], 'wheelchair repair', '', 'repair process', 'wheelchair steps'),
+    3, 'heading hit 2 + body hit 1');
+  // exact-phrase bonus when the full query appears
+  assert.strictEqual(kbSearchScore_(['return', 'policy'], 'return policy', '', '', 'our return policy is simple'),
+    1 + 1 + 2, 'two body hits + phrase bonus');
 });
 
 console.log('\nkb — drawer pure helpers (recents list + title-match suggestions)');

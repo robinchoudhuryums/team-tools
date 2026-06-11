@@ -84,6 +84,19 @@
   #kb-drawer-tab:hover { color: var(--ink); background: var(--paper-2); }
   #kb-drawer-tab.show { display: block; }
   :root[data-compact] #kb-drawer-tab { display: none !important; }
+  /* — section-aware search: compiled chunk view + section nav rows — */
+  .kb-item-sec { padding-left: 26px; font-size: .8rem; color: var(--muted); }
+  .kb-item-sec:hover { color: var(--ink); }
+  .kb-chunk-doc { margin-bottom: 14px; }
+  .kb-chunk-doc-h { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; font: inherit; font-size: .9rem; font-weight: 600; padding: 6px 2px; border: none; background: none; color: var(--ink); cursor: pointer; }
+  .kb-chunk-doc-h:hover .kb-chunk-doc-t { color: var(--accent); }
+  .kb-chunk-doc-h .kb-snip { font-weight: 400; margin-left: auto; }
+  .kb-chunk { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 4px 14px 10px; margin: 6px 0; }
+  .kb-chunk-h { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 8px 0 2px; }
+  .kb-chunk-go { margin-left: auto; font: inherit; font-size: .72rem; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--muted); cursor: pointer; padding: 2px 8px; }
+  .kb-chunk-go:hover { color: var(--ink); background: var(--paper-card); }
+  .kb-chunk-body { font-size: .9rem; }
+  .kb-h-flash { background: var(--accent-soft); border-radius: 4px; transition: background 1.2s ease; }
 </style>
 
 <script>
@@ -101,9 +114,20 @@ var KB_EDIT = null;
 // source are inert), then applies a safe subset: headings, bold/italic, inline
 // + fenced code, links (http(s)/mailto only), images (http(s) only), GFM
 // tables, ul/ol, blockquote, hr, paragraphs.
+// Anchor slug for heading ids - MUST stay identical to the server kbSlug_
+// in Code.js (searchReference computes the anchors that kbMd_'s ids must
+// match). The entity de-escape makes the two agree even though kbMd_ slugs
+// ESCAPED source while the server slugs raw markdown. Node parity test.
+function kbSlug_(text) {
+  return String(text || '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 function kbMd_(src) {
   src = String(src == null ? '' : src).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   var blocks = [];
+  var hSeen = {};   // duplicate-heading id dedup - same -2/-3 walk as kbSplitSections_
   src = src.replace(/```([\s\S]*?)```/g, function (_, code) { blocks.push(code); return ' C' + (blocks.length - 1) + ' '; });
   function inline(t) {
     // Images BEFORE links (otherwise the link rule renders the [alt](url)
@@ -145,7 +169,13 @@ function kbMd_(src) {
     if (cm) { html += '<pre><code>' + blocks[+cm[1]] + '</code></pre>'; i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
-    if (h) { var lvl = h[1].length; html += '<h' + lvl + '>' + inline(h[2]) + '</h' + lvl + '>'; i++; continue; }
+    if (h) {
+      var lvl = h[1].length;
+      var hid = kbSlug_(h[2]);
+      if (hid) { hSeen[hid] = (hSeen[hid] || 0) + 1; if (hSeen[hid] > 1) hid += '-' + hSeen[hid]; }
+      html += '<h' + lvl + (hid ? ' id="kb-h-' + hid + '"' : '') + '>' + inline(h[2]) + '</h' + lvl + '>';
+      i++; continue;
+    }
     // GFM table: a |-prefixed header line followed by a |---|:---:| separator
     // line (dashes/colons/pipes/spaces only, at least one dash). Body rows
     // clamp to the header's column count.
@@ -245,6 +275,55 @@ function kbRenderTree_() {
   el.innerHTML = html;
 }
 
+// Group section-level results by doc (insertion order = best-score-first).
+function kbGroupResults_(results) {
+  var groups = [], byId = {};
+  (results || []).forEach(function (r) {
+    if (!byId[r.id]) { byId[r.id] = { id: r.id, title: r.title, department: r.department, type: r.type, chunks: [] }; groups.push(byId[r.id]); }
+    if (r.chunkMd || r.heading) byId[r.id].chunks.push(r);
+  });
+  return groups;
+}
+
+// The compiled view: every matching section rendered inline, grouped by doc.
+// `openFn` is the click handler name ('kbOpenItem_' in the tab,
+// 'kbDrawerOpenItem_' in the drawer) - both accept (id, anchor) and jump to
+// the section in the full article. chunkMd renders through kbMd_ (escape-
+// first, same safety boundary as the article reader).
+function kbChunkGroupsHtml_(results, openFn) {
+  var html = '';
+  kbGroupResults_(results).forEach(function (g) {
+    html += '<div class="kb-chunk-doc">' +
+      '<button class="kb-chunk-doc-h" onclick="' + openFn + '(this.getAttribute(\'data-kb-id\'))" data-kb-id="' + esc(g.id) + '">' +
+      icon(kbItemIcon_(g), 13) + ' <span class="kb-chunk-doc-t">' + esc(g.title) + '</span>' +
+      '<span class="kb-snip">' + esc(g.department) + (g.type === 'embed' ? ' \u00b7 Drive' : '') + '</span></button>';
+    g.chunks.forEach(function (c) {
+      html += '<div class="kb-chunk">' +
+        '<div class="kb-chunk-h"><span>' + (c.heading ? esc(c.heading) : 'Intro') + '</span>' +
+        '<button class="kb-chunk-go" data-kb-id="' + esc(c.id) + '" data-kb-anchor="' + esc(c.anchor || '') + '" ' +
+        'onclick="' + openFn + '(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">Open \u00b6</button></div>' +
+        (c.chunkMd ? '<div class="kb-article kb-chunk-body">' + kbMd_(c.chunkMd) +
+          (c.truncated ? '<div class="kb-snip">\u2026 continues in the article</div>' : '') + '</div>' : '') +
+        '</div>';
+    });
+    html += '</div>';
+  });
+  return html;
+}
+
+/** Scroll the opened article to a section anchor (slug charset [a-z0-9-],
+ *  query-safe) and flash the heading so the eye lands on it. */
+function kbScrollToAnchor_(host, anchor) {
+  if (!host || !anchor) return;
+  try {
+    var el = host.querySelector('#kb-h-' + anchor);
+    if (!el) return;
+    el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    el.classList.add('kb-h-flash');
+    setTimeout(function () { el.classList.remove('kb-h-flash'); }, 1600);
+  } catch (e) {}
+}
+
 function kbDoSearch_(q) {
   q = String(q || '').trim();
   if (q.length < 2) { kbRenderTree_(); return; }
@@ -254,19 +333,33 @@ function kbDoSearch_(q) {
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
       var results = (res && res.results) || [];
-      var html = kbAddBtnHtml_() + '<div class="kb-dept-h">Search · ' + esc(q) + ' (' + results.length + ')</div>';
+      var groups = kbGroupResults_(results);
+      // Tree column: compact doc + section nav (clicks jump into the article)
+      var html = kbAddBtnHtml_() + '<div class="kb-dept-h">Search · ' + esc(q) + ' (' + groups.length + ')</div>';
       if (!results.length) html += '<div class="kb-empty">No matches.</div>';
-      results.forEach(function (r) {
-        html += '<button class="kb-item" data-kb-id="' + esc(r.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))"><span>' + esc(r.title) + '</span>' +
-          (r.snippet ? '<span class="kb-snip">' + esc(r.snippet) + '</span>' : '') + '</button>';
+      groups.forEach(function (g) {
+        html += '<button class="kb-item" data-kb-id="' + esc(g.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))"><span>' + esc(g.title) + '</span></button>';
+        g.chunks.forEach(function (c) {
+          html += '<button class="kb-item kb-item-sec" data-kb-id="' + esc(c.id) + '" data-kb-anchor="' + esc(c.anchor || '') + '" ' +
+            'onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))"><span>' +
+            (c.heading ? esc(c.heading) : 'Intro') + '</span></button>';
+        });
       });
       el.innerHTML = html;
+      // Main panel: the compiled view — every matching section, readable in
+      // one scroll without opening any doc.
+      var main = document.getElementById('kb-main');
+      if (main) {
+        KB_STATE.currentId = null;
+        main.innerHTML = '<div class="kb-item-head"><h2>Results for "' + esc(q) + '"</h2></div>' +
+          (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_') : '<div class="kb-empty">No matches.</div>');
+      }
     })
     .withFailureHandler(function () {})
     .searchReference(q);
 }
 
-function kbOpenItem_(id) {
+function kbOpenItem_(id, anchor) {
   KB_STATE.currentId = id;
   document.querySelectorAll('.kb-item').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-kb-id') === id); });
   var main = document.getElementById('kb-main'); if (!main) return;
@@ -278,6 +371,7 @@ function kbOpenItem_(id) {
       if (!res || res.error) { main.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed') + '</div>'; return; }
       kbPanelRecordOpen_(res, 'reference');
       kbRenderItem_(res);
+      if (anchor) kbScrollToAnchor_(document.getElementById('kb-main'), anchor);
     })
     .withFailureHandler(function (err) { if (currentView === requested) main.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; })
     .getReferenceItem(id);
@@ -707,16 +801,17 @@ function kbDrawerSearch_(q) {
       if (seq !== KB_DRAWER.searchSeq || !KB_DRAWER.open) return;
       KB_DRAWER.view = 'results';
       var results = (res && res.results) || [];
-      var html = '<div class="kbd-sec">Results (' + results.length + ')</div>';
+      var groups = kbGroupResults_(results);
+      var html = '<div class="kbd-sec">Results (' + groups.length + ')</div>';
       if (!results.length) html += '<div class="kbd-empty">No matches.</div>';
-      results.forEach(function (r) { html += kbDrawerItemBtnHtml_(r, r.snippet || ''); });
+      else html += kbChunkGroupsHtml_(results, 'kbDrawerOpenItem_');
       body.innerHTML = html;
     })
     .withFailureHandler(function () {})
     .searchReference(q);
 }
 
-function kbDrawerOpenItem_(id) {
+function kbDrawerOpenItem_(id, anchor) {
   var body = document.getElementById('kbd-body'); if (!body) return;
   body.innerHTML = '<div class="kb-loading"><div class="spinner"></div></div>';
   KB_DRAWER.view = 'item';
@@ -734,6 +829,7 @@ function kbDrawerOpenItem_(id) {
           '<a class="kb-btn" href="' + esc(res.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a></div>';
       } else {
         body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>';
+        if (anchor) kbScrollToAnchor_(body, anchor);
       }
     })
     .withFailureHandler(function (err) {
