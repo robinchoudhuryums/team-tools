@@ -9936,8 +9936,6 @@ function kbGetUsageStats() {
 
 // ── Manager-gated writes (locked + audited) ──────────────────────────────
 function kbSaveItem(payload) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
@@ -9947,32 +9945,49 @@ function kbSaveItem(payload) {
     const type = (payload.type === 'embed') ? 'embed' : 'article';
     if (!title) return { success: false, error: 'Title is required.' };
     let bodyMd = '', driveKind = '', driveFileId = '';
+    let imagesExported = 0, imageWarnings = [];
     if (type === 'embed') {
       const parsed = kbParseDriveUrl_(payload.driveUrl);
       if (!parsed) return { success: false, error: 'Could not read that Drive link — paste a Google Doc, Sheet, or file share URL.' };
       driveKind = parsed.kind; driveFileId = parsed.fileId;
     } else {
       bodyMd = String(payload.body || '');
+      // Phase 2b — resolve converter image tokens (kbdoc:<fileId>:<n>) to
+      // Drive-hosted URLs BEFORE acquiring the lock: the Doc re-walk + blob
+      // exports can take seconds and must not stall the global ScriptLock
+      // (every punch / call-note write shares it). Length-check the RESOLVED
+      // body — that's what the cell stores.
+      if (bodyMd.indexOf('](kbdoc:') >= 0) {
+        const resolved = kbResolveDocImages_(bodyMd);
+        bodyMd = resolved.bodyMd;
+        imagesExported = resolved.exported;
+        imageWarnings = resolved.warnings;
+      }
       if (bodyMd.length > KB_BODY_MAX) return { success: false, error: 'Article is too long (max ~49,000 chars). Split it into multiple articles.' };
     }
     const sortOrder = Number(payload.sortOrder || 0) || 0;
-    const sheet = getOrCreateKbSheet_();
-    const id = String(payload.id || '').trim() || Utilities.getUuid();
-    const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email];
-    const last = sheet.getLastRow();
-    let found = -1;
-    if (last >= 2 && payload.id) {
-      const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
-      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
-    }
-    if (found > 0) sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([rowVals]);
-    else sheet.appendRow(rowVals);
-    invalidateKbCache_();
-    writeAuditLog_(emp, 'KbItemSave', '', '', false, 0, 'id=' + id + '; dept=' + department + '; type=' + type, emp.email);
-    return { success: true, id: id };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const sheet = getOrCreateKbSheet_();
+      const id = String(payload.id || '').trim() || Utilities.getUuid();
+      const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+      const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email];
+      const last = sheet.getLastRow();
+      let found = -1;
+      if (last >= 2 && payload.id) {
+        const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+      }
+      if (found > 0) sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([rowVals]);
+      else sheet.appendRow(rowVals);
+      invalidateKbCache_();
+      writeAuditLog_(emp, 'KbItemSave', '', '', false, 0,
+        'id=' + id + '; dept=' + department + '; type=' + type +
+        (imagesExported ? '; imagesExported=' + imagesExported : ''), emp.email);
+      return { success: true, id: id, imagesExported: imagesExported, imageWarnings: imageWarnings };
+    } finally { lock.releaseLock(); }
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
 }
 
 function kbDeleteItem(id) {
@@ -10009,6 +10024,136 @@ function kbDeleteItem(id) {
 // String(getGlyphType()) against enum NAMES (DocumentApp enums stringify to
 // their names) so the Node harness can drive it with plain-object stubs —
 // see the "kb — Doc→markdown converter" tests in test/client/run.js.
+
+// ── KB Phase 2b — converter image export ────────────────────────────────────
+// The converter emits kbdoc:<fileId>:<n> image tokens (read-only, INV-115);
+// kbSaveItem resolves them at save: re-walk the Doc in the SAME order, export
+// the blobs to a deployer-owned "KB Images" Drive folder (Script Property
+// KB_IMAGES_FOLDER_ID, auto-provisioned, domain-link-viewable), and swap each
+// token for the Drive thumbnail URL kbMd_ renders. Exported files use the
+// deterministic name kbdoc-<fileId>-<n> and are REUSED on re-save (idempotent,
+// no folder litter) — delete the exported file to force a refresh after the
+// Doc's image changed.
+const KB_IMAGES_FOLDER_PROP = 'KB_IMAGES_FOLDER_ID';
+const KB_DOC_IMAGE_CAP = 20;   // per-doc export cap — extras stay placeholders
+
+/** PURE: unique {fileId, ord} refs from kbdoc image tokens in an article body. */
+function kbExtractDocImageRefs_(bodyMd) {
+  const out = [];
+  const seen = {};
+  const re = /!\[[^\]]*\]\(kbdoc:([a-zA-Z0-9_-]+):(\d+)\)/g;
+  let m;
+  while ((m = re.exec(String(bodyMd || ''))) !== null) {
+    const key = m[1] + ':' + m[2];
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push({ fileId: m[1], ord: parseInt(m[2], 10) });
+  }
+  return out;
+}
+
+/** PURE: swap each kbdoc image token via resolve(fileId, ord) → https URL.
+ *  null / a throwing resolver degrades that token to the italic placeholder;
+ *  the caller reports `failed` as a warning. */
+function kbReplaceDocImageTokens_(bodyMd, resolve) {
+  let failed = 0;
+  const out = String(bodyMd || '').replace(
+    /!\[([^\]]*)\]\(kbdoc:([a-zA-Z0-9_-]+):(\d+)\)/g,
+    function (whole, alt, fileId, ordStr) {
+      let url = null;
+      try { url = resolve(fileId, parseInt(ordStr, 10)); } catch (e) { url = null; }
+      if (!url) { failed++; return '*[image — see the original Doc]*'; }
+      return '![' + alt + '](' + url + ')';
+    });
+  return { bodyMd: out, failed: failed };
+}
+
+/** Collects a Doc body's INLINE_IMAGE blobs in the SAME walk order the
+ *  converter assigns ordinals: paragraph children, document order. Drawings
+ *  and images inside tables/list items are never tokenized, so they are not
+ *  collected either — the two walks MUST stay mirrored or ordinals drift and
+ *  the wrong image exports. 1-based ordinal ord reads blobs[ord-1]. */
+function kbCollectDocInlineImages_(body, cap) {
+  const blobs = [];
+  const n = body.getNumChildren();
+  for (let i = 0; i < n && blobs.length < cap; i++) {
+    const el = body.getChild(i);
+    if (String(el.getType()) !== 'PARAGRAPH') continue;
+    const m = el.getNumChildren();
+    for (let c = 0; c < m && blobs.length < cap; c++) {
+      const child = el.getChild(c);
+      if (String(child.getType()) !== 'INLINE_IMAGE') continue;
+      blobs.push(child.getBlob());
+    }
+  }
+  return blobs;
+}
+
+/** KB Images folder: Script Property first, else create + share domain-link-
+ *  viewable (so <img> tags render for any signed-in rep) + store the id.
+ *  Workspace policy may forbid link sharing — degrades with a console warning;
+ *  images then render only for accounts the folder is visible to, and the
+ *  kbMd_ image anchor still gives every rep the open-in-Drive path. */
+function getOrCreateKbImagesFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty(KB_IMAGES_FOLDER_PROP);
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* fall through — recreate */ }
+  }
+  const folder = DriveApp.createFolder('KB Images');
+  try { folder.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW); }
+  catch (e) { console.warn('KB Images folder sharing failed (' + e.message + ') — images may not render for reps until shared.'); }
+  props.setProperty(KB_IMAGES_FOLDER_PROP, folder.getId());
+  return folder;
+}
+
+/** Resolves kbdoc image tokens at SAVE time. Runs OUTSIDE the script lock —
+ *  Drive exports are slow and only the sheet write needs the lock. Every
+ *  failure degrades per-token to the placeholder (warned), never throws. */
+function kbResolveDocImages_(bodyMd) {
+  const refs = kbExtractDocImageRefs_(bodyMd);
+  if (refs.length === 0) return { bodyMd: bodyMd, exported: 0, warnings: [] };
+  const warnings = [];
+  let folder = null;
+  try { folder = getOrCreateKbImagesFolder_(); }
+  catch (e) {
+    const r0 = kbReplaceDocImageTokens_(bodyMd, function () { return null; });
+    warnings.push('Could not open or create the KB Images folder (' + e.message + ') — image(s) left as placeholders.');
+    return { bodyMd: r0.bodyMd, exported: 0, warnings: warnings };
+  }
+  const blobsByDoc = {};   // fileId → blobs[] | null (Doc unreachable)
+  const urlCache = {};     // "fileId:ord" → resolved URL
+  let exported = 0;
+  const resolve = function (fileId, ord) {
+    const key = fileId + ':' + ord;
+    if (urlCache[key]) return urlCache[key];
+    if (!(fileId in blobsByDoc)) {
+      try {
+        blobsByDoc[fileId] = kbCollectDocInlineImages_(DocumentApp.openById(fileId).getBody(), KB_DOC_IMAGE_CAP);
+      } catch (e) {
+        blobsByDoc[fileId] = null;
+        warnings.push('Could not open the source Doc to export its image(s): ' + e.message);
+      }
+    }
+    const blobs = blobsByDoc[fileId];
+    if (!blobs || ord < 1 || ord > blobs.length) return null;
+    const name = 'kbdoc-' + fileId + '-' + ord;
+    let file = null;
+    const existing = folder.getFilesByName(name);
+    if (existing.hasNext()) {
+      file = existing.next();   // reuse — idempotent re-saves, stable URLs
+    } else {
+      file = folder.createFile(blobs[ord - 1].copyBlob().setName(name));
+      exported++;
+    }
+    const url = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200';
+    urlCache[key] = url;
+    return url;
+  };
+  const r = kbReplaceDocImageTokens_(bodyMd, resolve);
+  if (r.failed > 0) warnings.push(r.failed + ' image token(s) could not be resolved — left as placeholders.');
+  return { bodyMd: r.bodyMd, exported: exported, warnings: warnings };
+}
 
 const KB_DOC_HEADING_PREFIX = {
   TITLE: '# ', HEADING1: '# ', HEADING2: '## ', HEADING3: '### ',
@@ -10069,10 +10214,13 @@ function kbRunsToMarkdown_(runs) {
  *  through the runs pipeline so bold/links survive); images become an
  *  italic placeholder — each lossy conversion adds a warning so the reviewing
  *  manager knows to keep the original Doc when visuals matter. */
-function kbDocBodyToMarkdown_(body) {
+function kbDocBodyToMarkdown_(body, docId) {
   const out = [];
   const warnings = [];
-  let imageCount = 0;
+  let imageCount = 0;   // placeholder-degraded: drawings, over-cap, or no docId
+  let imageTokens = 0;  // kbdoc:<docId>:<n> tokens emitted (exported on save)
+  let imageOrd = 0;     // document-order INLINE_IMAGE ordinal — MUST match
+                        // kbCollectDocInlineImages_'s walk (paragraphs only)
   let tableCellLineBreaks = false, nestedTables = false;
   const skippedTypes = {};
   let listBuf = [];
@@ -10086,17 +10234,34 @@ function kbDocBodyToMarkdown_(body) {
     if (t === 'PARAGRAPH') {
       flushList();
       let isHr = false;
-      let parImages = 0;
+      let parImages = 0;        // → italic placeholder
+      const parTokens = [];     // → kbdoc image tokens (Phase 2b)
       const m = el.getNumChildren();
       for (let c = 0; c < m; c++) {
         const ct = String(el.getChild(c).getType());
         if (ct === 'HORIZONTAL_RULE') isHr = true;
-        else if (ct === 'INLINE_IMAGE' || ct === 'INLINE_DRAWING') parImages++;
+        else if (ct === 'INLINE_IMAGE') {
+          // Phase 2b — emit an export token instead of a placeholder. The
+          // token resolves to a Drive-hosted image when the manager SAVES
+          // (kbSaveItem → kbResolveDocImages_); the converter stays
+          // read-only. Drawings keep the placeholder (no blob API), as do
+          // images past the per-doc cap or a docId-less call (Node stubs).
+          imageOrd++;
+          if (docId && imageOrd <= KB_DOC_IMAGE_CAP) parTokens.push(imageOrd);
+          else parImages++;
+        }
+        else if (ct === 'INLINE_DRAWING') parImages++;
       }
       if (isHr) { out.push('---'); continue; }
       const text = kbRunsToMarkdown_(kbTextToRuns_(el.editAsText())).trim();
       const prefix = KB_DOC_HEADING_PREFIX[String(el.getHeading())] || '';
       let line = text ? prefix + text : '';
+      if (parTokens.length > 0) {
+        imageTokens += parTokens.length;
+        line = (line ? line + ' ' : '') + parTokens.map(function (ord) {
+          return '![Doc image ' + ord + '](kbdoc:' + docId + ':' + ord + ')';
+        }).join(' ');
+      }
       if (parImages > 0) {
         imageCount += parImages;
         line = (line ? line + ' ' : '') + '*[image — see the original Doc]*';
@@ -10155,8 +10320,11 @@ function kbDocBodyToMarkdown_(body) {
     }
   }
   flushList();
+  if (imageTokens > 0) {
+    warnings.push(imageTokens + ' image(s) marked for export — they upload to the KB Images Drive folder when you press Save (the preview shows their alt text until then).');
+  }
   if (imageCount > 0) {
-    warnings.push(imageCount + ' image(s) could not be converted — placeholders inserted; keep the original Doc if the visuals matter.');
+    warnings.push(imageCount + ' image(s)/drawing(s) could not be converted — placeholders inserted; keep the original Doc if the visuals matter.');
   }
   if (nestedTables) {
     warnings.push('Nested table(s) flattened into their parent cell — review the converted table(s).');
@@ -10218,7 +10386,7 @@ function kbConvertDriveDoc(payload) {
     catch (e) {
       return { error: 'Could not open the Doc — the deploying account needs at least Viewer access. (' + e.message + ')' };
     }
-    const res = kbDocBodyToMarkdown_(doc.getBody());
+    const res = kbDocBodyToMarkdown_(doc.getBody(), fileId);
     if (res.markdown.length > KB_BODY_MAX) {
       res.warnings.push('Converted article is over the ~49,000-character limit — trim it before saving, or split into multiple articles.');
     }

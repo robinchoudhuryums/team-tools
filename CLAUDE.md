@@ -1860,9 +1860,9 @@ this section before touching the relevant area.
   header since Docs tables have no header concept; cell formatting goes
   through the runs pipeline so bold/links survive; literal pipes escape
   as `\|`; ragged rows pad to the widest row). Lossy parts degrade
-  explicitly with warnings: images → italic placeholder, nested tables →
-  flattened into the parent cell, multi-line cells → joined with spaces,
-  unsupported elements skipped by name; bold+italic collapses to bold
+  explicitly with warnings: nested tables → flattened into the parent
+  cell, multi-line cells → joined with spaces, unsupported elements
+  skipped by name, drawings → italic placeholder; bold+italic collapses to bold
   and link URLs get `()`/whitespace percent-encoded so the output is
   always `kbMd_`-render-safe (a Node round-trip tripwire feeds the
   converter's GFM back through `kbMd_` and asserts a `<table>` renders —
@@ -1876,6 +1876,29 @@ this section before touching the relevant area.
   compares `String(getType())` etc. against enum NAMES so the Node
   harness drives it with plain-object stubs ("kb — Doc→markdown
   converter" tests).
+- **KB Phase 2b — converter images export to Drive at SAVE time.** The
+  converter (still strictly READ-ONLY, INV-115) emits a
+  `![Doc image n](kbdoc:<fileId>:<n>)` token per `INLINE_IMAGE`
+  (paragraph children, document order, cap `KB_DOC_IMAGE_CAP`=20/doc;
+  drawings have no blob API and keep the italic placeholder). The editor
+  preview shows the token's alt text (`kbMd_` demotes non-http image
+  schemes — unchanged security boundary). When the manager presses Save,
+  `kbSaveItem` → `kbResolveDocImages_` re-walks the Doc with
+  `kbCollectDocInlineImages_` (a walk that MUST stay mirrored with the
+  converter's ordinal assignment or the wrong image exports — pinned by
+  a Node walk-mirror test), exports each referenced blob to the
+  deployer-owned **KB Images** Drive folder (Script Property
+  `KB_IMAGES_FOLDER_ID`, auto-provisioned, domain-link-viewable), and
+  swaps the token for the `drive.google.com/thumbnail?id=…&sz=w1200`
+  URL `kbMd_` renders. Exports are **idempotent**: files are named
+  `kbdoc-<fileId>-<n>` and REUSED on re-save (stable URLs, no folder
+  litter) — delete the exported file to force a refresh after the Doc's
+  image changed. Resolution runs BEFORE the ScriptLock (Drive exports
+  are slow; only the sheet write holds the lock), every failure degrades
+  per-token to the placeholder with a warning surfaced in the save
+  toast, and the audit row carries `imagesExported=`. Pinned by the
+  "kb — Phase 2b" Node tests (token emission, cap, extract/replace,
+  walk mirror, preview/final kbMd_ render).
 - **KB reference drawer — mid-call lookup as a shell capability.** A
   slide-over panel (`#kb-drawer`, right edge, z-index 55 — ABOVE the
   `.overlay` layer (50) so it stays readable + usable while the email
@@ -2161,6 +2184,18 @@ manually for a fresh deploy or environment:
   (INV-117). It grows one tiny row per open with no purge yet; the stats scan
   is bounded (last 4000 rows) so growth never slows reads — trim it manually
   if it ever bothers you.
+- **Script Property `KB_IMAGES_FOLDER_ID`** (auto-managed, Phase 2b). The
+  deployer-owned "KB Images" Drive folder that converted-article images
+  export into on save. Auto-provisioned on the first image-bearing save:
+  created in the deployer's Drive, set domain-link-viewable (so `<img>`
+  tags render for any signed-in rep), id stored here. If Workspace policy
+  blocks link sharing, the create still succeeds with a console warning —
+  share the folder with the team manually or images render only as their
+  alt text + open-in-Drive link. Exported files are named
+  `kbdoc-<fileId>-<n>` and are REUSED on re-save; delete a file to force a
+  re-export after the source Doc's image changed. The first export also
+  adds the Drive OAuth scope alongside the Docs scope — the deploying
+  account may be prompted to re-authorize once.
 - **KB Phase 2 converter requires the Google Docs OAuth scope.**
   `kbConvertDriveDoc` is the project's first `DocumentApp` call, so the deploy
   that ships it adds the `documents` scope to the auto-detected scope set. The
@@ -2682,7 +2717,7 @@ INV-111 | The Intake send endpoints (`intakeSendPPD`, `intakeSendPMD`, `intakeSe
 INV-112 | `intakeFilterRecommendations_(answers, allProducts)` is a PURE, self-contained port of the bound tool's recommendation engine — `answers` keyed by bare question number (`'38'` weight, `'43'` neuro, `'31a'` stroke, `'34'` amputation, `'33'` ulcers, `'32'` spasticity, `'35'` spine, `'36'` swelling, `'30'` catheters, `'44'` oxygen, `'25'` numbness, `'13'` falls); `allProducts` is the raw `Offerings!A2:F` 2D array. It applies weight-cap, solid-seat/captain, Group-3/SPO/MPO eligibility, the `K0856→K0861` / `K0843→K0862` neuro substitutions, and justification building. Pinned by `test_intake_engine_*` (Tests.js) + the Node harness (`intake — PPD engine`). The PMD/PAP email STRUCTURAL layout (`INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT`, server-authoritative) is mirrored by the client render layouts (`INTAKE_PMD_CLIENT` / `INTAKE_PAP_CLIENT`) for input rendering only; the two are pinned equal by the Node coupling tripwire (`intake — client render layout mirrors the server`) — same parallel-source discipline as `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_` | Subsystem: Server + Client (Intake views)
 INV-113 | `submitFormByToken` (public, token-only) extracts `signature` AND `_meta` before persisting responses, **server-enforces consent** (requires `_meta.consentAgreed === true`; an absent `_meta` is rejected — the prior back-compat tolerance let a hand-crafted payload skip the consent record entirely), stamps the server-authoritative `CONFIG.FORM_CONSENT_VERSION` (never a client-sent version), and writes a tamper-evident `SubmissionHash` (`computeFormSubmissionHash_` over responses+signature+token+consentVersion — NOT `submittedAt`, which Sheets may coerce to a Date) + a `Certificate` JSON into trailing `FS` columns. The `FormSubmissionReceived` audit row carries `hash=` + `submittedAt=` as the append-only independent witness. `verifyFormSubmissionIntegrity_(token)` (manager-gated, read-only) recomputes + compares; a legacy row with no stored hash returns `match:null` (not a failure). `FS_HEADERS` grew by TRAILING columns only (back-compat like `CN_HEADERS`). `FormSubmissions` remains **append-only — no edit endpoint exists** (the immutability is a HIPAA §164.312(c) integrity control, and the hash makes any out-of-band alteration detectable) | Subsystem: Server + Client (public forms)
 INV-114 | `getFormsSS_()` resolves the forms PHI store: Script Property `FORMS_SS_ID` first (segregates PHI off the ADP/payroll sheet — point it at `INTAKE_SS_ID`), else `getAdpSS_()` for back-compat; honors `_TEST_OVERRIDE_FORMS_SS_ID`. Both `getOrCreateFormTokensSheet_` / `getOrCreateFormSubmissionsSheet_` (and therefore `submitFormByToken`, `getFormByToken`, `serveExternalForm_`, the viewers, and `purgeExpiredFormData`) route through it, so the location is a single point of change. The invite-email builders (`buildCustomerEmailHtml_`/`buildProviderEmailHtml_`/`*Text_`) take only `(recipientName, message, formNames, formLinks)` and never read prefill — patient identifiers stay in the token, never the cleartext email body. Pinned by the `forms — invite email builders` Node guard | Subsystem: Server + Client (public forms)
-INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text; tables → GFM with row 0 as header and `\|`-escaped literal pipes) and reports lossy conversions (images, nested tables, multi-line cells, skipped elements) as `warnings[]` rather than silently dropping content — pinned by a Node round-trip tripwire that renders the converter's GFM through `kbMd_`. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text; tables → GFM with row 0 as header and `\|`-escaped literal pipes) and reports lossy conversions (drawings, nested tables, multi-line cells, skipped elements) as `warnings[]` rather than silently dropping content — pinned by a Node round-trip tripwire that renders the converter's GFM through `kbMd_`. Phase 2b: `INLINE_IMAGE`s emit `kbdoc:<fileId>:<n>` tokens (the converter remains read-only); `kbSaveItem` resolves them at save via `kbResolveDocImages_` — Doc re-walk in converter order (`kbCollectDocInlineImages_`, a mirrored-walk pair pinned by a Node test), idempotent export to the `KB_IMAGES_FOLDER_ID` Drive folder (deterministic `kbdoc-<fileId>-<n>` names, reused on re-save), token → thumbnail-URL swap, per-token degradation to the italic placeholder on any failure. Resolution runs OUTSIDE the ScriptLock; the lock wraps only the sheet write. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissionId)` (the Intake Sent tab) are read-only and caller-scoped: a rep sees only rows whose stored `repId` matches their own; a manager sees all (parallels INV-90/91). The list is metadata-only (id, timestamp, rep, patientInfo, language, recipient — never the answers JSON), newest-first, capped at `INTAKE_LIST_CAP_`=100, and skips an unreachable form-type tab rather than failing the whole list. The detail is a bounded lookup — id-column scan, then one full-row fetch — and parses the answers/recommendations/selections JSON defensively (corrupt blob → `{}`). Timestamps and the ACCT dob cell route through Date-coercion guards (`intakeTsString_`). The submission tabs remain APPEND-ONLY — no edit endpoint exists. Pinned by `test_intake_sentViewer_callerScopedAndManager` | Subsystem: Server + Client (Intake views)
 INV-117 | `kbRecordView(itemId, context)` is rep-callable (requires `getEmployeeInfo_`), locked (INV-01), and append-only — one PHI-free row (timestamp, itemId, repId, sanitized context) per open into the `KbViews` tab of the KB spreadsheet; it never reads or returns other reps' data. The client fires it best-effort (fire-and-forget) so a failure never blocks or surfaces in the reading UX. `kbGetUsageStats()` is manager-gated (INV-02/31), read-only, bounded (last `KB_VIEWS_MAX_SCAN`=4000 rows), windowed to `KB_USAGE_WINDOW_DAYS`=30, and joins titles from the KB sheet so deleted items drop out; timestamp cells are recovered in the KB spreadsheet's OWN tz (the tz that coerced them — same discipline as `normalizeAuditTs_`). Pinned by `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 
@@ -3231,14 +3266,14 @@ S63 | Reference tool — Doc→article converter (KB Phase 2) | Subsystem: Serve
   Steps:
     - As a manager, embed a Google Doc (with a heading, bold text, a bullet list, a link, a table, and an image) the deployer account can read
     - Open the embed in the reader → click **Convert to article** → confirm the uiConfirm explains review-before-save → Convert
-    - Confirm the EDITOR opens in article mode pre-filled with markdown + live preview; toasts list the lossy conversions (image placeholder; nested/multi-line table cells if present)
-    - Confirm headings/bold/list/link render in the preview; the table renders as a REAL table (first Doc row as the header); the image is an italic placeholder
-    - Press Save → the item re-opens as a native article; open the original Doc in Drive → confirm it is UNCHANGED
+    - Confirm the EDITOR opens in article mode pre-filled with markdown + live preview; toasts list the conversions (N image(s) marked for export; nested/multi-line table cells if present)
+    - Confirm headings/bold/list/link render in the preview; the table renders as a REAL table (first Doc row as the header); the image shows as its alt text ("Doc image 1") until save
+    - Press Save → toast reads "Saved · N image(s) exported to Drive"; the article re-opens with the image RENDERED (Drive thumbnail URL); a "KB Images" folder exists in the deployer's Drive with a `kbdoc-<fileId>-1` file; re-saving the article re-uses the file (no duplicate); open the original Doc in Drive → confirm it is UNCHANGED
     - Add item → Embed mode → paste a Doc URL → click **Convert this Doc to an article instead** → confirm the editor flips to article mode with the body filled and the Doc's name as title (when title was blank)
     - Try converting a Sheet/file embed (no Convert button should render) and a Sheets URL from the editor (server rejects: "Only Google Docs convert…")
     - Cancel an editor after converting → confirm the embed item is untouched (nothing saved)
     - As a non-manager, call `google.script.run...kbConvertDriveDoc({driveUrl:'…'})` from the console
-  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything; the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. Pinned by the `kb — Doc→markdown converter` Node stub tests (INV-115).
+  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything (and, Phase 2b, exports the tokenized images to the KB Images folder at that moment); the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. POST-DEPLOY SPOT-CHECK (the original Phase 2b gate): as a REP, open the converted article and confirm the Drive-hosted image actually renders inside the HtmlService iframe — if the org's sharing policy blocks domain-link visibility, the image degrades to alt text + the open-full-size link, and the operator should share the KB Images folder with the team manually. Pinned by the `kb — Doc→markdown converter` + `kb — Phase 2b` Node tests (INV-115).
 
 S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, Client (Reference views), Client (shell), Client (Call Notes views)
   Steps:

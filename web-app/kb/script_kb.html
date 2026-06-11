@@ -615,7 +615,10 @@ function kbSaveFromEditor_(btn) {
     .withSuccessHandler(function (res) {
       reenable();
       if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
-      showToast('Saved', 'toast-success');
+      // Phase 2b — converter image tokens export to Drive during save;
+      // surface the count + any per-image degradations.
+      showToast(res.imagesExported ? ('Saved · ' + res.imagesExported + ' image(s) exported to Drive') : 'Saved', 'toast-success');
+      (res.imageWarnings || []).forEach(function (w) { showToast(w, 'toast-warn'); });
       var savedId = res.id;
       kbCloseModal_();
       kbReloadTree_();

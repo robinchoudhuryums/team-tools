@@ -824,12 +824,17 @@ const _kbConvCtx = vm.createContext({
     TITLE: '# ', HEADING1: '# ', HEADING2: '## ', HEADING3: '### ',
     HEADING4: '#### ', HEADING5: '##### ', HEADING6: '###### ', SUBTITLE: '## ',
   },
+  KB_DOC_IMAGE_CAP: 20,   // mirrors Code.js (Phase 2b export cap)
 });
-['kbTextToRuns_', 'kbRunsToMarkdown_', 'kbDocBodyToMarkdown_'].forEach((fn) => {
+['kbTextToRuns_', 'kbRunsToMarkdown_', 'kbDocBodyToMarkdown_',
+ 'kbExtractDocImageRefs_', 'kbReplaceDocImageTokens_', 'kbCollectDocInlineImages_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), _kbConvCtx, { filename: 'Code.js#' + fn });
 });
 const kbRunsToMarkdown_ = _kbConvCtx.kbRunsToMarkdown_;
 const kbDocBodyToMarkdown_ = _kbConvCtx.kbDocBodyToMarkdown_;
+const kbExtractDocImageRefs_ = _kbConvCtx.kbExtractDocImageRefs_;
+const kbReplaceDocImageTokens_ = _kbConvCtx.kbReplaceDocImageTokens_;
+const kbCollectDocInlineImages_ = _kbConvCtx.kbCollectDocInlineImages_;
 
 function mkText(runs) {  // runs: [{text, bold, italic, link}]
   const full = runs.map((r) => r.text).join('');
@@ -921,7 +926,7 @@ test('converts headings, paragraphs, lists, and hr', () => {
   assert.strictEqual(res.warnings.length, 0);
 });
 
-test('converts tables to GFM (row 0 = header); images still placeholder + warn', () => {
+test('converts tables to GFM (row 0 = header); images placeholder + warn WITHOUT a docId', () => {
   const res = kbDocBodyToMarkdown_(mkBody([
     mkTable([['H1', 'H2'], ['a', 'b']]),
     mkPara({ runs: [{ text: 'caption' }], children: ['INLINE_IMAGE'] }),
@@ -964,6 +969,72 @@ test('skips unsupported elements with a warning; null glyph defaults to bullet',
   ]));
   assert.strictEqual(res.markdown, '- item');
   assert.ok(/TABLE_OF_CONTENTS/.test(res.warnings.join(' ')), 'skipped type named in warnings');
+});
+
+console.log('\nkb — Phase 2b converter image export (tokens, resolution, walk mirror)');
+test('with a docId, INLINE_IMAGE emits a kbdoc token; INLINE_DRAWING stays a placeholder', () => {
+  const res = kbDocBodyToMarkdown_(mkBody([
+    mkPara({ runs: [{ text: 'pic' }], children: ['INLINE_IMAGE'] }),
+    mkPara({ runs: [{ text: 'sketch' }], children: ['INLINE_DRAWING'] }),
+  ]), 'DOC123_-x');
+  assert.ok(res.markdown.indexOf('pic ![Doc image 1](kbdoc:DOC123_-x:1)') >= 0, 'image token emitted');
+  assert.ok(res.markdown.indexOf('sketch *[image — see the original Doc]*') >= 0, 'drawing keeps placeholder (no blob API)');
+  assert.ok(res.warnings.some((w) => /1 image\(s\) marked for export/.test(w)), 'export warning');
+  assert.ok(res.warnings.some((w) => /could not be converted/.test(w)), 'drawing placeholder warning');
+});
+test('per-doc cap: images past KB_DOC_IMAGE_CAP degrade to placeholders', () => {
+  const paras = [];
+  for (let i = 0; i < 21; i++) paras.push(mkPara({ runs: [{ text: 'p' + i }], children: ['INLINE_IMAGE'] }));
+  const res = kbDocBodyToMarkdown_(mkBody(paras), 'CAPDOC');
+  const tokens = res.markdown.match(/kbdoc:CAPDOC:\d+/g) || [];
+  assert.strictEqual(tokens.length, 20, '20 tokens');
+  assert.strictEqual((res.markdown.match(/\[image — see the original Doc\]/g) || []).length, 1, '21st is a placeholder');
+});
+test('kbExtractDocImageRefs_ dedupes and parses {fileId, ord}', () => {
+  const refs = kbExtractDocImageRefs_(
+    '![a](kbdoc:F1:1) text ![b](kbdoc:F1:2) ![dup](kbdoc:F1:1) ![c](kbdoc:F2_x-9:3) ![not](http://x/y.png) kbdoc:F9:9');
+  // JSON compare — the refs are vm-realm objects, so deepStrictEqual fails
+  // on cross-realm prototypes even when the values match.
+  assert.strictEqual(JSON.stringify(refs),
+    JSON.stringify([{ fileId: 'F1', ord: 1 }, { fileId: 'F1', ord: 2 }, { fileId: 'F2_x-9', ord: 3 }]),
+    'unique image tokens only — bare kbdoc text and http images ignored');
+});
+test('kbReplaceDocImageTokens_ swaps resolved tokens, degrades failures to placeholders', () => {
+  const r = kbReplaceDocImageTokens_(
+    '![Doc image 1](kbdoc:F1:1) and ![two](kbdoc:F1:2) and ![boom](kbdoc:F1:3)',
+    (fileId, ord) => {
+      if (ord === 1) return 'https://drive.google.com/thumbnail?id=ABC&sz=w1200';
+      if (ord === 3) throw new Error('nope');
+      return null;
+    });
+  assert.ok(r.bodyMd.indexOf('![Doc image 1](https://drive.google.com/thumbnail?id=ABC&sz=w1200)') >= 0, 'alt preserved, URL swapped');
+  assert.strictEqual((r.bodyMd.match(/\[image — see the original Doc\]/g) || []).length, 2, 'null + throw both degrade');
+  assert.strictEqual(r.failed, 2);
+});
+test('kbCollectDocInlineImages_ mirrors the converter walk (paragraph images only, in order, capped)', () => {
+  const img = (tag) => ({ getType: () => 'INLINE_IMAGE', getBlob: () => ({ tag }) });
+  const para = (kids) => ({
+    getType: () => 'PARAGRAPH', getHeading: () => 'NORMAL',
+    getNumChildren: () => kids.length, getChild: (i) => kids[i],
+    editAsText: () => mkText([]),
+  });
+  const body = mkBody([
+    para([img('a'), { getType: () => 'INLINE_DRAWING' }, img('b')]),
+    mkList({ runs: [{ text: 'li' }] }),                     // list images never tokenized → never collected
+    mkTable([['x']]),                                        // table images likewise
+    para([img('c')]),
+  ]);
+  const blobs = kbCollectDocInlineImages_(body, 20);
+  assert.strictEqual(Array.prototype.map.call(blobs, (b) => b.tag).join(','), 'a,b,c',
+    'document order, drawings skipped (string compare — vm-realm array)');
+  assert.strictEqual(kbCollectDocInlineImages_(body, 2).length, 2, 'cap respected');
+});
+test('kbMd_: kbdoc tokens demote to alt text in preview; the Drive thumbnail URL renders an <img>', () => {
+  const prev = kbMd_('![Doc image 1](kbdoc:F1:1)');
+  assert.strictEqual(prev.indexOf('<img'), -1, 'unresolved token never renders an img (non-http scheme)');
+  assert.ok(prev.indexOf('Doc image 1') >= 0, 'alt text shows in the editor preview');
+  const final = kbMd_('![Doc image 1](https://drive.google.com/thumbnail?id=ABC&sz=w1200)');
+  assert.ok(/<img[^>]+src="https:\/\/drive\.google\.com\/thumbnail\?id=ABC&(amp;)?sz=w1200"/.test(final), 'resolved URL renders');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
