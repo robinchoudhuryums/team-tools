@@ -631,14 +631,27 @@ this section before touching the relevant area.
   `.sb-link[data-tool="..."]`, not `data-view`. A prior mismatch
   caused the CN stale-flag badge to silently never render. The
   Metrics alert badge follows the same `data-tool` pattern.
-- **Modals close on Escape and trap focus.** A shared keydown handler
-  in `script_core.html` closes any `.overlay.open` on Escape. A
-  `focusin` handler returns focus to the **topmost** open overlay's
-  first focusable element if focus escapes (it picks the last
-  `.overlay.open` in DOM order, so a ui-dialog stacked over a base
-  modal keeps focus). Both are generic — they cover the Adjust,
-  Day Detail, Day Edit, Export, Manager Time-Off, and Call Notes
-  Export modals.
+- **Modals close on Escape THROUGH their close hook — dynamic overlays
+  must be created via `ensureOverlay`.** The shared keydown handler in
+  `script_core.html` closes the **topmost** `.overlay.open` (last in
+  DOM order, matching the focus trap) via `closeOverlay(el)`, which
+  runs the close function registered in `OVERLAY_CLOSE_HOOKS` and only
+  falls back to a plain `open`-class strip for static modals with no
+  module state (Adjust, Day Detail, Day Edit, Export, Manager
+  Time-Off, Call Notes Export). Dynamically-created overlays (CN
+  dept/external composers, CN form-sub viewer, Intake preview, KB
+  editor) are created via `ensureOverlay(id, { onClose })`, which
+  ALWAYS re-asserts `overlay open` on reuse and registers the module's
+  close function. This closed a real bug class: Esc used to strip only
+  the class, leaving the node hidden-but-stateful — the CN composers
+  then rendered into the hidden node forever (email flow dead until
+  reload) and the Intake modal's document-level paste listener leaked
+  app-wide, silently swallowing image pastes. Any NEW dynamic overlay
+  must use `ensureOverlay` (never hand-roll `createElement` +
+  `className = 'overlay open'`), and its `onClose` must be idempotent
+  (safe to call when already closed). The `focusin` handler still
+  returns focus to the topmost open overlay's first focusable element
+  (the KB drawer is exempt).
 - **Public form endpoints have no employee auth — token is the
   credential.** `getFormByToken` and `submitFormByToken` are the
   only server functions accessible without `getEmployeeInfo_()`

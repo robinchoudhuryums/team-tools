@@ -832,19 +832,19 @@ function intakeClearForm_(form) {
 
 function intakeStripTags_(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, ''); }
 
-// Minimal modal built on the shared .overlay vocabulary (Escape-close + focus
-// trap handled in script_core). Single instance; cleans up its paste listener.
+// Minimal modal built on the shared .overlay vocabulary. Created via
+// ensureOverlay (script_core) with intakeCloseModal_ as the close hook, so
+// EVERY close path — Escape included — removes the document-level paste
+// listener. (Esc previously only hid the node, leaking the listener app-wide:
+// any image pasted anywhere kept accumulating into INTAKE_STATE silently.)
 function intakeOpenModal_(title, bodyHtml) {
   intakeCloseModal_();
-  var ov = document.createElement('div');
-  ov.className = 'overlay open';
-  ov.id = 'intk-modal-overlay';
+  var ov = ensureOverlay('intk-modal-overlay', { onClose: intakeCloseModal_ });
   ov.innerHTML = '<div class="modal intk-modal" role="dialog" aria-modal="true">' +
     '<div class="head"><h3>' + esc(title) + '</h3><button class="xclose" data-intk-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
     '<div class="body">' + bodyHtml + '</div></div>';
-  document.body.appendChild(ov);
   ov.addEventListener('click', function (e) {
-    if (e.target === ov || (e.target.closest && e.target.closest('[data-intk-close]'))) intakeCloseModal_();
+    if (e.target.closest && e.target.closest('[data-intk-close]')) intakeCloseModal_();
   });
 }
 
