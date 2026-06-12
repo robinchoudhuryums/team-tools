@@ -11,7 +11,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
-    rep writes to their own per-rep Google Sheet; Ctrl/⌘+Enter saves
+    rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
     are a separate two-stage flow with preview gate. Three flag
     types (action / training / review) with EOD reminders for

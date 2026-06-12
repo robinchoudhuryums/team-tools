@@ -14,7 +14,7 @@ Apps Script project under its own directory, synced via `clasp`.
    - **Call Notes** — rolling-note panel for CSR call logging. Each
      rep writes to their own per-rep Google Sheet (`Notes` tab in the
      spreadsheet whose ID is in `EMP.CALL_NOTES_SHEET_ID`, column L
-     of the Employees roster). Ctrl/⌘+Enter saves + auto-copies a
+     of the Employees roster). Ctrl/⌘+Shift+C saves + auto-copies a
      CRM-friendly serialization; email composer is a separate
      two-stage flow with preview gate. Three flag types
      (action / training / review) with EOD reminders for unresolved
@@ -1422,7 +1422,9 @@ this section before touching the relevant area.
   `position: fixed`. The modal also has `resize: both` for the
   browser's native resize grip.
 - **Keyboard shortcuts accelerate the Call Notes hot path.**
-  Ctrl/⌘+Enter saves & copies (existing). Ctrl/⌘+Shift+Enter
+  Ctrl/⌘+Shift+C saves & copies (moved off plain Ctrl/⌘+Enter in the
+  2026-06-12 r3 feedback round — too close to the Enter-nav muscle
+  memory; plain Ctrl/⌘+Enter is now unbound). Ctrl/⌘+Shift+Enter
   saves & opens the email composer. Ctrl/⌘+1/2/3 toggle
   action/training/review flags on the active form. Ctrl/⌘+Backspace
   clears the form. Ctrl/⌘+/ or bare ? opens a shortcuts help
@@ -2227,8 +2229,8 @@ this section before touching the relevant area.
   the field boundaries); flag buttons tint their icons per type even when
   OFF; the Clear button uses the danger style (`.cn-form-clear-btn`).
   Input flow: **Enter advances to the next field** (CN_FIELD_NAV_ORDER,
-  ending at the tag input; Shift+Enter = newline; Ctrl/⌘+Enter still
-  saves), and a **fresh focus selects the field's content** (Sheets-style
+  ending at the tag input; Shift+Enter = newline; Ctrl/⌘+Shift+C saves
+  as of r3), and a **fresh focus selects the field's content** (Sheets-style
   overwrite — `cnSelectAllIn_`; a drag-select on the focusing click wins,
   a second click collapses to a caret). **Ctrl/⌘+Z after a save is a TRUE
   undo**: the submit path arms `CN_STATE.lastSaveUndo` (live note ref +
@@ -2274,6 +2276,29 @@ this section before touching the relevant area.
   only). An interactive onboarding tour was assessed as feasible
   (coach-marks overlay + per-rep seen flag) but deferred to its own
   pass; AI auto-tagging stays deferred on the INV-119 privacy decision.
+  **Round 3 (same day):** **Save & Compose is TRANSACTIONAL** — the form
+  KEEPS its text while the composer is open (`opts.keepForm` +
+  `CN_STATE.composeFlow`); send success completes the action (form
+  clears then); cancelling/Esc-ing the composer ROLLS THE SAVE BACK
+  (the just-saved note is deleted via `cnDoDeleteNote_` — server 5-min
+  window — with the text still in the form; a cancel while the save is
+  in flight sets `_deleteOnConfirm`, honored when the server confirms;
+  the Department→External tab-switch detaches the flow first — it is
+  NOT a cancel). The confirm handler also RE-POINTS held references
+  (`lastSaveUndo.note` / `composeFlow.note`) at the server's confirmed
+  note object — the array slot is REPLACED on confirm, so the prior
+  round's undo-save held a stale pending object and reported "still
+  saving" forever (fixed). **Save & Copy moved to Ctrl/⌘+Shift+C**
+  (plain Ctrl/⌘+Enter unbound; Ctrl/⌘+Shift+Enter keeps Save &
+  Compose; the inline-edit save keybind is untouched). Deleting a note
+  shows an in-flight state (`.is-deleting` — dim + desaturate +
+  breathe pulse, pointer-events off so the RPC can't double-fire; both
+  the rep path and the manager per-rep path). The Review flag icon is
+  now `thumbsUp` (was `star`). Loader/animation vocabulary so far:
+  CSS-keyframe micro-animations only (spinner, envelope `cnEnvFly`,
+  card `cnCardDeleting`, drawer `kbdSpin`) — deliberately no Lottie/
+  GIF deps; new loaders should extend this set with thematic
+  keyframes.
 
 ## Deferred Follow-ons
 
@@ -3073,7 +3098,7 @@ S17 | Call Notes — enrollment-missing splash | Subsystem: Server, Client (Call
 S18 | Call Notes — submit, auto-copy, rolling stack appends | Subsystem: Client (Call Notes), Server
   Steps:
     - As an enrolled rep, open Call Notes
-    - Fill all 7 fields, press Ctrl/⌘+Enter
+    - Fill all 7 fields, press Ctrl/⌘+Shift+C
     - Inspect clipboard, the rolling stack, and the rep's `Notes` tab
     - Press the copy button on the just-saved card and re-inspect clipboard
   Expected: A new card appears at the top of the rolling stack with animation; clipboard holds the serialized note matching `CONFIG.CALL_NOTES.AUTO_COPY_FORMAT`; the form cleared and re-focused on Callback; AuditLog has a `CallNoteCreate` row with `noteId=<uuid>`. Manual copy re-renders the same string.
@@ -3100,7 +3125,7 @@ S20 | Call Notes — flag trio + resolved state | Subsystem: Server, Client (Cal
 S21 | Call Notes — inline-edit-in-place from rolling card | Subsystem: Client (Call Notes), Server
   Steps:
     - Click the pencil/edit icon on a saved note
-    - Card expands; modify Issue + Resolution; press Ctrl/⌘+Enter
+    - Card expands; modify Issue + Resolution; press Ctrl/⌘+Enter (inline-edit save keybind unchanged)
     - Inspect the Notes tab + AuditLog
   Expected: Card collapses to the new content; row in `Notes` reflects the diff; AuditLog has a `CallNoteEdit` row enumerating which fields changed. Cancel button discards edits without writing.
 
@@ -3184,7 +3209,7 @@ S30 | Trigger handlers reject non-manager callers via google.script.run | Subsys
 S31 | Optimistic submit + failure revert | Subsystem: Client (Call Notes views), Server
   Steps:
     - Open Chrome DevTools → Network → throttle to "Slow 3G"
-    - As an enrolled rep, fill out a note and press Ctrl/⌘+Enter
+    - As an enrolled rep, fill out a note and press Ctrl/⌘+Shift+C
     - Observe the rolling stack DURING the in-flight request
     - Wait for the server response
     - Repeat with the spreadsheet ID temporarily wrong (force an RPC failure)
