@@ -2252,6 +2252,28 @@ this section before touching the relevant area.
   itself can't be "integrated" (it's an OS utility) — the pop-out button's
   tooltip now carries the Win+Ctrl+T tip; an in-app 8x8 queue-status
   widget would need the 8x8 realtime API (future spec, on demand).
+  **Round 2 (same day):** the save card is a 2×2 quadrant grid (Save &
+  Copy / Save & Compose / Open Email / Clear; kbd-chips hidden — tooltips
+  carry the hints) with the **?** shortcuts button moved to a circular
+  `.cn-help-fab` in the Log header, shortening the rail so the filter bar
+  + notes sit higher; saved-note card action icons carry the same
+  per-type tints as the form's flag toolbar; the composer's department
+  chips use an adaptive `repeat(auto-fit, minmax(140px,1fr))` grid (3-up
+  at default width); **Save & Compose mounts the composer overlay
+  immediately with an envelope animation** (`cnShowComposerLoading_` —
+  same `cn-compose-overlay` id, so the real composer replaces it on
+  confirm and `cnRevertPendingSubmit_` tears it down on failure — no
+  re-click ambiguity); **arrow keys hop fields at text boundaries**
+  (`cnCaretAtEdge_` — Down at end → next, Up at start → previous;
+  line-by-line behavior inside multi-line text is untouched); the
+  Reference drawer shows an in-flight auto-search spinner
+  (`kbDrawerSetSearching_`, sequence-guarded), and KB links get a
+  **Docs-style hover card** (`kbLinkCardShow_` — singleton fixed div,
+  URL via textContent + Copy link / Open ↗; document-level delegated
+  mouseover scoped to `.kb-article`/`.kb-chunk-body`/`#kbd-body` links
+  only). An interactive onboarding tour was assessed as feasible
+  (coach-marks overlay + per-rep seen flag) but deferred to its own
+  pass; AI auto-tagging stays deferred on the INV-119 privacy decision.
 
 ## Deferred Follow-ons
 

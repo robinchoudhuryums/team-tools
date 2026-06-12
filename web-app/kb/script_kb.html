@@ -103,6 +103,29 @@
   /* Operator feedback (2026-06-12): search-term highlight in result chunks
      (drawer + Reference compiled view). */
   mark.kb-hl { background: var(--selection-bg); color: inherit; border-radius: 3px; padding: 0 1px; }
+  /* Operator feedback (2026-06-12 r2): Docs-style link hover card — shows
+     the destination + Copy link / Open. Singleton, fixed, above the drawer. */
+  #kb-linkcard {
+    position: fixed; z-index: 60; display: none;
+    max-width: 340px; background: var(--paper-card);
+    border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg);
+    padding: 8px 10px; font-size: .8rem;
+  }
+  #kb-linkcard.show { display: block; }
+  #kb-linkcard .lc-url { color: var(--muted); word-break: break-all; font-family: var(--mono); font-size: 10.5px; margin-bottom: 6px; }
+  #kb-linkcard .lc-row { display: flex; gap: 6px; }
+  #kb-linkcard .lc-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  #kb-linkcard .lc-btn:hover { background: var(--paper); border-color: var(--border-strong); }
+  /* drawer auto-search in-flight indicator */
+  .kbd-search { position: relative; }
+  .kbd-spin {
+    position: absolute; right: 24px; top: 50%; margin-top: 1px;
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 2px solid var(--line); border-top-color: var(--accent);
+    display: none; transform: translateY(-50%);
+  }
+  .kbd-spin.on { display: block; animation: kbdSpin .7s linear infinite; }
+  @keyframes kbdSpin { to { transform: translateY(-50%) rotate(360deg); } }
 </style>
 
 <script>
@@ -301,6 +324,78 @@ function kbGroupResults_(results) {
 // wrapper walks TEXT NODES of already-rendered (kbMd_-escaped) DOM and
 // wraps matches in <mark> — never string-level HTML surgery, so it cannot
 // re-open the escaping boundary.
+// Operator feedback (2026-06-12 r2) — Docs-style hover card on links inside
+// rendered KB content (Reference article/chunks + the drawer). Shows the
+// destination URL with Copy link / Open actions. Delegated document-level
+// mouseover bound ONCE; only fires for links inside .kb-article, .kb-chunk-body
+// or the drawer body, so it can't affect the rest of the app.
+var KB_LINKCARD = { el: null, hideTimer: null, href: '' };
+function kbLinkCardEl_() {
+  if (KB_LINKCARD.el) return KB_LINKCARD.el;
+  var el = document.createElement('div');
+  el.id = 'kb-linkcard';
+  document.body.appendChild(el);
+  el.addEventListener('mouseenter', function () { clearTimeout(KB_LINKCARD.hideTimer); });
+  el.addEventListener('mouseleave', function () { kbLinkCardHide_(); });
+  KB_LINKCARD.el = el;
+  return el;
+}
+function kbLinkCardShow_(a) {
+  var href = a.getAttribute('href') || '';
+  if (!/^https?:|^mailto:/i.test(href)) return;
+  var el = kbLinkCardEl_();
+  clearTimeout(KB_LINKCARD.hideTimer);
+  KB_LINKCARD.href = href;
+  var shown = href.length > 110 ? href.substring(0, 107) + '…' : href;
+  el.innerHTML =
+    '<div class="lc-url"></div>' +
+    '<div class="lc-row">' +
+      '<button type="button" class="lc-btn" data-lc-copy>Copy link</button>' +
+      '<a class="lc-btn" target="_blank" rel="noopener noreferrer">Open ↗</a>' +
+    '</div>';
+  el.querySelector('.lc-url').textContent = shown;           // textContent — no injection surface
+  el.querySelector('a.lc-btn').setAttribute('href', href);
+  el.querySelector('[data-lc-copy]').addEventListener('click', function () {
+    var done = function () { this.textContent = 'Copied ✓'; }.bind(this);
+    try {
+      navigator.clipboard.writeText(href).then(done, function () { kbLinkCardCopyFallback_(href); done(); });
+    } catch (_) { kbLinkCardCopyFallback_(href); done(); }
+  });
+  var r = a.getBoundingClientRect();
+  el.classList.add('show');
+  var w = el.offsetWidth, h = el.offsetHeight;
+  var left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+  var top = r.bottom + 6 + h > window.innerHeight ? r.top - h - 6 : r.bottom + 6;
+  el.style.left = left + 'px';
+  el.style.top = Math.max(8, top) + 'px';
+}
+function kbLinkCardHide_() {
+  KB_LINKCARD.hideTimer = setTimeout(function () {
+    if (KB_LINKCARD.el) KB_LINKCARD.el.classList.remove('show');
+  }, 180);
+}
+function kbLinkCardCopyFallback_(text) {
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  } catch (_) {}
+}
+(function kbBindLinkCard_() {
+  document.addEventListener('mouseover', function (e) {
+    var a = e.target.closest && e.target.closest('.kb-article a, .kb-chunk-body a, #kbd-body a');
+    if (a && !a.closest('#kb-linkcard') && !a.classList.contains('kb-img-lnk') && !a.classList.contains('lc-btn')) {
+      kbLinkCardShow_(a);
+    } else if (!e.target.closest || !e.target.closest('#kb-linkcard')) {
+      if (KB_LINKCARD.el && KB_LINKCARD.el.classList.contains('show')) kbLinkCardHide_();
+    }
+  });
+})();
+
 function kbHlRegex_(q) {
   var toks = String(q || '').toLowerCase().split(/\s+/)
     .map(function (t) { return t.trim(); })
@@ -814,7 +909,7 @@ function kbDrawerMount_() {
     '<div class="kbd-head">' + icon('list', 14) +
       '<span class="kbd-kicker">Reference</span>' +
       '<button class="kbd-x" onclick="kbDrawerClose_()" aria-label="Close">' + icon('x', 15) + '</button></div>' +
-    '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off"></div>' +
+    '<div class="kbd-search"><input type="text" id="kbd-q" placeholder="Search reference\u2026 (Ctrl/\u2318+K)" autocomplete="off"><span class="kbd-spin" id="kbd-spin"></span></div>' +
     '<div class="kbd-body" id="kbd-body"></div>';
   document.body.appendChild(d);
   var tab = document.createElement('button');
@@ -1046,15 +1141,21 @@ function kbDrawerSuggestToggle_(on) {
   kbDrawerRenderSuggest_();
 }
 
+function kbDrawerSetSearching_(on) {
+  var sp = document.getElementById('kbd-spin');
+  if (sp) sp.classList.toggle('on', !!on);
+}
 function kbDrawerSearch_(q) {
   q = String(q || '').trim();
   KB_DRAWER.lastQuery = q;
-  if (q.length < 2) { kbDrawerRenderHome_(); return; }
+  if (q.length < 2) { kbDrawerSetSearching_(false); kbDrawerRenderHome_(); return; }
   var body = document.getElementById('kbd-body'); if (!body) return;
   var seq = ++KB_DRAWER.searchSeq;
+  kbDrawerSetSearching_(true);   // operator feedback (2026-06-12 r2): show the in-flight auto-search
   google.script.run
     .withSuccessHandler(function (res) {
       if (seq !== KB_DRAWER.searchSeq || !KB_DRAWER.open) return;
+      kbDrawerSetSearching_(false);
       KB_DRAWER.view = 'results';
       var results = (res && res.results) || [];
       var groups = kbGroupResults_(results);
@@ -1064,7 +1165,7 @@ function kbDrawerSearch_(q) {
       body.innerHTML = html;
       kbHighlightTerms_(body, q);
     })
-    .withFailureHandler(function () {})
+    .withFailureHandler(function () { if (seq === KB_DRAWER.searchSeq) kbDrawerSetSearching_(false); })
     .searchReference(q);
 }
 
