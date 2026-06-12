@@ -1,0 +1,481 @@
+<style>
+  /* ── Employee Docs — T3 (My Docs + Issue Docs) ──────────────────────── */
+  .ed-reader { width: min(760px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
+  .ed-reader .body { overflow-y: auto; padding: 4px 2px; }
+  .ed-reader .foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 10px; flex-wrap: wrap; }
+  .ed-ack { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 12px 14px; margin-top: 14px; }
+  .ed-ack label.ack { display: flex; align-items: flex-start; gap: 8px; font-size: .86rem; cursor: pointer; }
+  .ed-sig-section { display: none; margin-top: 12px; }
+  .ed-sig-section.show { display: block; }
+  .ed-sig-wrap { position: relative; border: 1px dashed var(--border-strong); border-radius: 8px; background: var(--paper-card); }
+  .ed-sig-wrap canvas { display: block; border-radius: 8px; touch-action: none; }
+  .ed-sig-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: .82rem; pointer-events: none; }
+  .ed-sig-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+  .ed-void-note { border-left: 3px solid var(--danger-deep, #c13030); background: var(--danger-soft, #fce5e5); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: .84rem; margin-bottom: 12px; }
+  .ed-issue { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 14px 16px; margin-bottom: 18px; max-width: 860px; }
+  .ed-issue h3 { margin: 0 0 10px; font-size: .95rem; }
+  .ed-issue .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 10px; }
+  .ed-issue label { display: block; font-size: .76rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .ed-issue select, .ed-issue input[type=text], .ed-issue input[type=date] { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+  .ed-issue input[type=text] { width: min(420px, 100%); box-sizing: border-box; }
+  .ed-issue textarea { font-family: var(--mono, monospace); font-size: .85rem; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; min-height: 180px; resize: vertical; }
+  .ed-issue .hint { font-size: .74rem; color: var(--muted); margin-top: 3px; }
+  .ed-verify { font-size: .82rem; }
+  .ed-verify .ok { color: var(--accent-deep, var(--accent)); font-weight: 600; }
+  .ed-verify .bad { color: var(--danger-deep, #c13030); font-weight: 600; }
+</style>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  EMPLOYEE DOCS — client, T3 (My Docs + Issue Docs).
+//  Per-employee signable documents: frozen markdown rendered via the global
+//  kbMd_; acknowledgment signature on a canvas pad (adapted from
+//  form_public.html — same ≤600px export cap so the base64 stays under the
+//  INV-96 cell cap; capture stays full-res). Reader/sign modals are
+//  ensureOverlay dynamic overlays. Spec: docs/training-employee-docs-spec.md.
+// ════════════════════════════════════════════════════════════════════════════
+var ED_STATE = { my: null, dash: null, emps: null, readerDocId: null, sigPad: null };
+
+/** Pure chip markup — Node-pinned. */
+function edChipHtml_(doc) {
+  var s, label;
+  if (doc.status === 'void') { s = 'pending'; label = 'Void'; }
+  else if (doc.status === 'signed') { s = 'done'; label = 'Signed'; }
+  else if (doc.requiresSignature) {
+    s = 'overdue';
+    label = doc.overdue ? 'Overdue' : 'Needs signature';
+  } else { s = 'pending'; label = 'For review'; }
+  return '<span class="tr-chip ' + s + '">' + label + '</span>';
+}
+
+// ── Signature pad (adapted from form_public.html initSignaturePad) ────────
+function edInitSigPad_(canvas, placeholderEl) {
+  var ctx = canvas.getContext('2d');
+  var drawing = false, hasDrawn = false;
+  function resizeCanvas() {
+    var rect = canvas.parentElement.getBoundingClientRect();
+    if (!rect.width) return;             // hidden — re-run on reveal (S61 gotcha)
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = 140 * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = '140px';
+    ctx.scale(dpr, dpr);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink') || '#101418';
+  }
+  resizeCanvas();
+  function getPos(e) {
+    var rect = canvas.getBoundingClientRect();
+    var t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  }
+  function start(e) {
+    drawing = true;
+    if (placeholderEl) placeholderEl.style.display = 'none';
+    var p = getPos(e);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    e.preventDefault();
+  }
+  function move(e) {
+    if (!drawing) return;
+    hasDrawn = true;
+    var p = getPos(e);
+    ctx.lineTo(p.x, p.y); ctx.stroke();
+    e.preventDefault();
+  }
+  function end() { drawing = false; }
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  canvas.addEventListener('mouseup', end);
+  canvas.addEventListener('mouseleave', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  canvas.addEventListener('touchend', end);
+  return {
+    isEmpty: function () { return !hasDrawn; },
+    clear: function () {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      hasDrawn = false;
+      resizeCanvas();
+      if (placeholderEl) placeholderEl.style.display = '';
+    },
+    resize: function () { if (!hasDrawn) resizeCanvas(); },
+    // Export capped at 600px wide — same INV-96 reasoning as form_public's
+    // SIG_PAD.toDataURL (retina capture canvases yield base64 large enough
+    // to trip the server's per-cell cap; line art downscales crisply).
+    toDataURL: function () {
+      var MAX_W = 600;
+      if (!hasDrawn || canvas.width <= MAX_W) return canvas.toDataURL('image/png');
+      try {
+        var scale = MAX_W / canvas.width;
+        var tmp = document.createElement('canvas');
+        tmp.width = MAX_W;
+        tmp.height = Math.max(1, Math.round(canvas.height * scale));
+        tmp.getContext('2d').drawImage(canvas, 0, 0, tmp.width, tmp.height);
+        return tmp.toDataURL('image/png');
+      } catch (e) { return canvas.toDataURL('image/png'); }
+    },
+  };
+}
+
+// ── Rep view: My Docs ──────────────────────────────────────────────────────
+function enterMyDocsView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('paperclip', 16) + ' My Docs</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>My Documents</h2></div>' +
+    '<div id="ed-my-content"><div class="m-loading"><div class="spinner"></div> Loading documents&hellip;</div></div>';
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      ED_STATE.my = data;
+      if (currentView !== requestedView) return;
+      edRenderMy_();
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var el = document.getElementById('ed-my-content');
+      if (el) el.innerHTML = '<div class="tr-empty">' + esc(err.message) + '</div>';
+    })
+    .getMyDocs();
+}
+
+function edRenderMy_() {
+  var el = document.getElementById('ed-my-content');
+  if (!el) return;
+  var data = ED_STATE.my || {};
+  if (data.error) { el.innerHTML = '<div class="tr-empty">' + esc(data.error) + '</div>'; return; }
+  var docs = data.docs || [];
+  if (!docs.length) { el.innerHTML = '<div class="tr-empty">No documents on file.</div>'; return; }
+  var h = '<div class="tr-list">';
+  docs.forEach(function (d) {
+    h += '<div class="tr-row' + (d.status === 'signed' ? ' done' : '') + '">' +
+      edChipHtml_(d) +
+      '<div><button class="tr-title" data-ed-open="' + esc(d.docId) + '">' + esc(d.title) + '</button>' +
+      '<div class="tr-meta">' + esc(d.docType) + ' · issued ' + esc(String(d.issuedAt).substring(0, 10)) +
+        (d.dueAt ? ' · due ' + esc(d.dueAt) : '') +
+        (d.signedAt ? ' · signed ' + esc(String(d.signedAt).substring(0, 10)) : '') +
+      '</div></div>' +
+      '<div class="tr-spacer"></div>' +
+      (d.status === 'issued' && d.requiresSignature
+        ? '<button class="tr-complete-btn" data-ed-open="' + esc(d.docId) + '">' + icon('adjust', 13) + ' Review &amp; sign</button>' : '') +
+      '</div>';
+  });
+  h += '</div>';
+  el.innerHTML = h;
+  if (!el._edDelegated) {
+    el._edDelegated = true;
+    el.addEventListener('click', function (e) {
+      var open = e.target.closest('[data-ed-open]');
+      if (open) edOpenDoc_(open.getAttribute('data-ed-open'));
+    });
+  }
+}
+
+// ── Doc reader / sign modal (shared by rep + manager dashboard View) ──────
+function edOpenDoc_(docId) {
+  ED_STATE.readerDocId = docId;
+  ED_STATE.sigPad = null;
+  var overlay = ensureOverlay('ed-reader-overlay', { onClose: edCloseDoc_ });
+  overlay.innerHTML = '<div class="modal ed-reader"><div class="body"><div class="m-loading"><div class="spinner"></div> Loading&hellip;</div></div></div>';
+  google.script.run
+    .withSuccessHandler(function (doc) {
+      if (ED_STATE.readerDocId !== docId) return;
+      edRenderDoc_(doc);
+    })
+    .withFailureHandler(function (err) {
+      if (ED_STATE.readerDocId !== docId) return;
+      var o = document.getElementById('ed-reader-overlay');
+      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc(err.message) + '</div>';
+    })
+    .getMyDoc(docId);
+}
+
+function edRenderDoc_(doc) {
+  var overlay = document.getElementById('ed-reader-overlay');
+  if (!overlay) return;
+  if (!doc || doc.error) {
+    overlay.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((doc && doc.error) || 'Not found.') + '</div>';
+    return;
+  }
+  var body = '';
+  if (doc.status === 'void') {
+    body += '<div class="ed-void-note">This document was voided' + (doc.voidReason ? ': ' + esc(doc.voidReason) : '.') + '</div>';
+  }
+  body += '<div class="kb-article"><h1>' + esc(doc.title) + '</h1>' + kbMd_(doc.bodyMd || '') + '</div>';
+  var canSign = !!doc.ackText;   // server includes it only for owner + issued + requiresSignature
+  if (canSign) {
+    body += '<div class="ed-ack">' +
+      '<label class="ack"><input type="checkbox" id="ed-ack-check"> <span>' + esc(doc.ackText) + '</span></label>' +
+      '<div class="ed-sig-section" id="ed-sig-section">' +
+        '<div class="ed-sig-wrap"><canvas id="ed-sig-canvas"></canvas><div class="ed-sig-ph" id="ed-sig-ph">Tap or click and drag here to sign</div></div>' +
+        '<div class="ed-sig-row">' +
+          '<button class="kb-btn" id="ed-sig-clear">Clear</button>' +
+          '<div class="tr-spacer" style="flex:1"></div>' +
+          '<button class="tr-complete-btn" id="ed-sign-btn">' + icon('check', 13) + ' Sign document</button>' +
+        '</div>' +
+      '</div></div>';
+  }
+  if (doc.status === 'signed') {
+    body += '<p class="tr-meta" style="margin-top:14px;">' + icon('checkCircle', 13) + ' Signed ' + esc(String(doc.signedAt).substring(0, 10)) + '</p>';
+  }
+  overlay.innerHTML =
+    '<div class="modal ed-reader">' +
+      '<div class="body">' + body + '</div>' +
+      '<div class="foot"><button class="kb-btn" onclick="edCloseDoc_()">Close</button></div>' +
+    '</div>';
+  if (canSign) {
+    var canvas = document.getElementById('ed-sig-canvas');
+    ED_STATE.sigPad = edInitSigPad_(canvas, document.getElementById('ed-sig-ph'));
+    document.getElementById('ed-ack-check').addEventListener('change', function () {
+      var sec = document.getElementById('ed-sig-section');
+      sec.classList.toggle('show', this.checked);
+      // The canvas had a 0-width box while hidden — re-size on reveal,
+      // guarded so an uncheck→recheck can't wipe a drawn signature (S61).
+      if (this.checked && ED_STATE.sigPad && ED_STATE.sigPad.isEmpty()) ED_STATE.sigPad.resize();
+    });
+    document.getElementById('ed-sig-clear').addEventListener('click', function () {
+      if (ED_STATE.sigPad) ED_STATE.sigPad.clear();
+    });
+    document.getElementById('ed-sign-btn').addEventListener('click', function () { edSubmitSignature_(doc.docId, this); });
+  }
+}
+
+function edSubmitSignature_(docId, btn) {
+  if (!ED_STATE.sigPad || ED_STATE.sigPad.isEmpty()) {
+    showToast('Draw your signature first.', 'error');
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing…'; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Sign document'; }
+        showToast((res && res.error) || 'Could not sign.', 'error');
+        return;
+      }
+      showToast('Document signed.', 'success');
+      var docs = (ED_STATE.my && ED_STATE.my.docs) || [];
+      for (var i = 0; i < docs.length; i++) {
+        if (docs[i].docId === docId) { docs[i].status = 'signed'; docs[i].signedAt = res.signedAt; }
+      }
+      edCloseDoc_();
+      if (currentView === 'myDocs') edRenderMy_();
+    })
+    .withFailureHandler(function (err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Sign document'; }
+      showToast('Could not sign: ' + err.message, 'error');
+    })
+    .acknowledgeDoc(docId, ED_STATE.sigPad.toDataURL());
+}
+
+/** Idempotent (ensureOverlay contract). */
+function edCloseDoc_() {
+  ED_STATE.readerDocId = null;
+  ED_STATE.sigPad = null;
+  var o = document.getElementById('ed-reader-overlay');
+  if (o) { o.classList.remove('open'); o.innerHTML = ''; }
+}
+
+// ── Manager view: Issue Docs ───────────────────────────────────────────────
+function enterDocsManageView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('manage', 16) + ' Issue Docs</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>Employee Documents</h2></div>' +
+    '<div id="ed-mgr-content"><div class="m-loading"><div class="spinner"></div> Loading&hellip;</div></div>';
+  edLoadMgr_();
+}
+
+function edLoadMgr_() {
+  var requestedView = currentView;
+  var got = 0, failed = false;
+  function done() {
+    got++;
+    if (got < 2 || failed || currentView !== requestedView) return;
+    edRenderMgr_();
+  }
+  function onFail(err) {
+    if (failed) return;
+    failed = true;
+    if (currentView !== requestedView) return;
+    var el = document.getElementById('ed-mgr-content');
+    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc(err.message) + '</div>';
+  }
+  google.script.run.withSuccessHandler(function (d) { ED_STATE.dash = d; done(); }).withFailureHandler(onFail).getDocsDashboard();
+  google.script.run.withSuccessHandler(function (d) { ED_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
+}
+
+function edRenderMgr_() {
+  var el = document.getElementById('ed-mgr-content');
+  if (!el) return;
+  var dash = ED_STATE.dash || {};
+  if (dash.error) { el.innerHTML = '<div class="tr-empty">' + esc(dash.error) + '</div>'; return; }
+  var emps = (ED_STATE.emps && ED_STATE.emps.employees) || [];
+
+  var empSel = '<select id="ed-is-emp"><option value="">Pick an employee…</option>';
+  emps.forEach(function (e) { empSel += '<option value="' + esc(e.id) + '">' + esc(e.name) + '</option>'; });
+  empSel += '</select>';
+
+  var h = '<div class="ed-issue"><h3>Issue a document</h3>' +
+    '<div class="row">' +
+      '<div><label>Employee</label>' + empSel + '</div>' +
+      '<div><label>Type</label><select id="ed-is-type">' +
+        '<option value="review">Performance review</option>' +
+        '<option value="pip">Performance improvement plan</option>' +
+        '<option value="policy">Policy acknowledgment</option>' +
+        '<option value="other">Other</option></select></div>' +
+      '<div><label>Due date (optional)</label><input type="date" id="ed-is-due"></div>' +
+      '<div><label>Signature</label><label style="font-weight:400;font-size:.84rem;display:flex;align-items:center;gap:6px;margin-top:8px;"><input type="checkbox" id="ed-is-sig" checked> Require signature</label></div>' +
+    '</div>' +
+    '<div class="row"><div style="flex:1;min-width:280px;"><label>Title</label><input type="text" id="ed-is-title" maxlength="200" placeholder="e.g. 2026 Annual Performance Review"></div></div>' +
+    '<div class="row"><div style="flex:1;width:100%;"><label>Body (markdown — frozen at issue)</label>' +
+      '<textarea id="ed-is-body" placeholder="Write the document here, or convert a Google Doc below."></textarea>' +
+      '<div class="hint">Content is hashed and locked when you issue — a correction means voiding and re-issuing. ' +
+      '<button class="tr-link" id="ed-is-convert">Convert a Google Doc to markdown</button></div></div></div>' +
+    '<div class="row"><button class="tr-complete-btn" id="ed-is-go">' + icon('send', 13) + ' Issue document</button></div>' +
+    '</div>';
+
+  var docs = dash.docs || [];
+  if (docs.length) {
+    h += '<div class="tr-section-h">Issued documents (your team)</div>' +
+      '<table class="tr-table"><thead><tr><th>Employee</th><th>Type</th><th>Title</th><th>Status</th><th>Due</th><th>Signed</th><th></th></tr></thead><tbody>';
+    docs.forEach(function (d) {
+      h += '<tr><td>' + esc(d.empName) + '</td><td>' + esc(d.docType) + '</td>' +
+        '<td><button class="tr-title" data-ed-open="' + esc(d.docId) + '">' + esc(d.title) + '</button></td>' +
+        '<td>' + edChipHtml_(d) + '</td>' +
+        '<td>' + esc(d.dueAt || '—') + (d.overdue ? ' <span class="tr-cell-overdue">!</span>' : '') + '</td>' +
+        '<td>' + esc(d.signedAt ? String(d.signedAt).substring(0, 10) : '—') + '</td>' +
+        '<td>' +
+          (d.requiresSignature ? '<button class="kb-btn" data-ed-verify="' + esc(d.docId) + '">Verify</button> ' : '') +
+          (d.status !== 'void' ? '<button class="tr-revoke-btn" data-ed-void="' + esc(d.docId) + '">Void</button>' : '') +
+        '</td></tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div class="tr-empty">No documents visible to you yet. You see docs you issued plus docs for employees whose roster ManagerEmail (column M) is you.</div>';
+  }
+  el.innerHTML = h;
+
+  document.getElementById('ed-is-go').addEventListener('click', edSubmitIssue_);
+  document.getElementById('ed-is-convert').addEventListener('click', edConvertDoc_);
+  if (!el._edMgrDelegated) {
+    el._edMgrDelegated = true;
+    el.addEventListener('click', function (e) {
+      var t;
+      if ((t = e.target.closest('[data-ed-open]'))) { edOpenDoc_(t.getAttribute('data-ed-open')); return; }
+      if ((t = e.target.closest('[data-ed-verify]'))) { edVerify_(t.getAttribute('data-ed-verify')); return; }
+      if ((t = e.target.closest('[data-ed-void]'))) edVoid_(t.getAttribute('data-ed-void'));
+    });
+  }
+}
+
+/** Reuses the manager-gated KB Phase-2 converter to pre-fill the body. */
+function edConvertDoc_() {
+  uiPrompt({
+    title: 'Convert a Google Doc',
+    message: 'Paste the Doc share URL. The converted markdown fills the body for your review — the Doc itself is never modified.',
+    placeholder: 'https://docs.google.com/document/d/…',
+  }).then(function (url) {
+    if (!url) return;
+    showToast('Converting…', 'info');
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || res.error) { showToast((res && res.error) || 'Conversion failed.', 'error'); return; }
+        var body = document.getElementById('ed-is-body');
+        if (body) body.value = res.markdown || '';
+        var title = document.getElementById('ed-is-title');
+        if (title && !title.value && res.docTitle) title.value = res.docTitle;
+        showToast('Converted' + (res.warnings && res.warnings.length ? ' with ' + res.warnings.length + ' warning(s) — review the body' : '') + '.', 'success');
+      })
+      .withFailureHandler(function (err) { showToast('Conversion failed: ' + err.message, 'error'); })
+      .kbConvertDriveDoc({ driveUrl: url });
+  });
+}
+
+function edSubmitIssue_() {
+  var payload = {
+    empId: (document.getElementById('ed-is-emp') || {}).value || '',
+    docType: (document.getElementById('ed-is-type') || {}).value || '',
+    title: (document.getElementById('ed-is-title') || {}).value || '',
+    bodyMd: (document.getElementById('ed-is-body') || {}).value || '',
+    dueAt: (document.getElementById('ed-is-due') || {}).value || '',
+    requiresSignature: !!(document.getElementById('ed-is-sig') || {}).checked,
+  };
+  if (!payload.empId) { showToast('Pick an employee.', 'error'); return; }
+  if (!payload.title.trim()) { showToast('Title is required.', 'error'); return; }
+  if (!payload.bodyMd.trim()) { showToast('Document body is required.', 'error'); return; }
+  uiConfirm({
+    title: 'Issue document?',
+    message: 'The content is frozen and hashed at issue. The employee is notified by email' + (payload.requiresSignature ? ' and asked to sign' : '') + '.',
+    confirmLabel: 'Issue',
+  }).then(function (ok) {
+    if (!ok) return;
+    var btn = document.getElementById('ed-is-go');
+    if (btn) btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (btn) btn.disabled = false;
+        if (!res || !res.success) { showToast((res && res.error) || 'Issue failed.', 'error'); return; }
+        showToast('Document issued.', 'success');
+        if (currentView === 'docsManage') edLoadMgr_();
+      })
+      .withFailureHandler(function (err) {
+        if (btn) btn.disabled = false;
+        showToast('Issue failed: ' + err.message, 'error');
+      })
+      .issueDoc(payload);
+  });
+}
+
+function edVerify_(docId) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) { showToast((res && res.error) || 'Verify failed.', 'error'); return; }
+      if (!res.signed) { showToast('Not signed yet' + (res.contentMatch === false ? ' — CONTENT HASH MISMATCH (row altered after issue!)' : '.'), res.contentMatch === false ? 'error' : 'info'); return; }
+      if (res.match === true && res.contentMatch !== false) {
+        showToast('✓ Integrity verified — signature and content hashes match (signed ' + String(res.signedAt).substring(0, 10) + ').', 'success');
+      } else if (res.match === null) {
+        showToast('Signed (legacy row — no stored hash to verify).', 'info');
+      } else {
+        showToast('✗ INTEGRITY MISMATCH — the stored record was altered after signing. Investigate via the AuditLog witness row.', 'error');
+      }
+    })
+    .withFailureHandler(function (err) { showToast('Verify failed: ' + err.message, 'error'); })
+    .verifyDocSignature(docId);
+}
+
+function edVoid_(docId) {
+  uiConfirm({
+    title: 'Void this document?',
+    message: 'It stays on record marked void (never deleted); a signed doc keeps its signature. Issue a new doc for a corrected version.',
+    confirmLabel: 'Void', tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    uiPrompt({
+      title: 'Reason (optional)',
+      message: 'Stored on the doc row for context — e.g. "superseded by corrected version".',
+      placeholder: 'Reason…',
+    }).then(function (reason) {
+      if (reason === null) return;   // Esc/cancel on the prompt aborts the void
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success) { showToast((res && res.error) || 'Void failed.', 'error'); return; }
+          showToast('Document voided.', 'success');
+          if (currentView === 'docsManage') edLoadMgr_();
+        })
+        .withFailureHandler(function (err) { showToast('Void failed: ' + err.message, 'error'); })
+        .voidDoc(docId, reason || '');
+    });
+  });
+}
+</script>

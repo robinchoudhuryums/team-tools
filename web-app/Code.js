@@ -243,6 +243,7 @@ const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6,
 const EMP = {
   EMAIL:0, ID:1, NAME:2, SHEET_ID:3, PAY_CYCLE:4, PAY_ANCHOR:5, IS_MANAGER:6,
   TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10, CALL_NOTES_SHEET_ID:11,
+  MANAGER_EMAIL:12,   // column M — the rep's manager (Employee Docs team scoping, T3)
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
@@ -377,7 +378,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v5';   // bumped: CallNotesSheetId column
+const ROSTER_CACHE_KEY = 'employee_roster_v6';   // bumped: ManagerEmail column (T3)
 const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
@@ -7571,6 +7572,7 @@ function getEmployeeInfo_() {
         payCycle: cycle, payAnchor: anchor, isManager, timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
+        managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
       };
     }
   }
@@ -7599,6 +7601,7 @@ function lookupEmployeeById_(empId) {
       annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       ptoEnabled,
+      managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
     };
   }
   return null;
@@ -11465,4 +11468,388 @@ function deleteQuiz(quizId) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+
+// ── T3: Employee Docs (per-employee signable documents) ────────────────────
+// docs/training-employee-docs-spec.md §3b/§4/§5. A DEDICATED spreadsheet
+// (Script Property HR_DOCS_SS_ID — NEVER co-located with the KB, ADP, or PHI
+// sheets; there is deliberately NO fallback store) holds per-employee docs
+// (reviews, PIPs, policy acks). Content is FROZEN at issue (markdown +
+// contentHash in the row); signatures are append-only + tamper-evident
+// (hash excludes the timestamp — the INV-113 lesson; the audit row is the
+// independent witness). Manager visibility is PER-TEAM and FAIL-CLOSED
+// (§9.3): owner + issuer + the employee's roster ManagerEmail (column M) —
+// a blank column M narrows to owner+issuer, never widens. These tabs are
+// EXCLUDED from every retention purge: HR records are keep-forever.
+const EMPDOC_TAB = 'EmpDocs';
+const EMPDOC_SIG_TAB = 'DocSignatures';
+const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason'];
+const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
+const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12 };
+const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6 };
+const EMPDOC_TYPES = ['review','pip','policy','other'];
+const EMPDOC_TITLE_MAX = 200;
+const EMPDOC_BODY_MAX = 49000;        // under the 50k Sheets cell limit
+const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales to <=600px
+// Bump when the acknowledgment copy below changes, so stored signatures
+// prove which language the signer saw (the FORM_CONSENT_VERSION pattern).
+const EMPDOC_ACK_VERSION = 1;
+const EMPDOC_ACK_TEXT = 'I acknowledge that I have read and understood this document. ' +
+  'I understand this electronic acknowledgment has the same effect as a handwritten signature.';
+
+function getHrDocsSS_() {
+  if (typeof _TEST_OVERRIDE_HRDOCS_SS_ID !== 'undefined' && _TEST_OVERRIDE_HRDOCS_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_HRDOCS_SS_ID);
+  }
+  const id = PropertiesService.getScriptProperties().getProperty('HR_DOCS_SS_ID');
+  if (!id) throw new Error('Employee Docs is not configured — set Script Property HR_DOCS_SS_ID to a dedicated spreadsheet.');
+  return SpreadsheetApp.openById(id);
+}
+function getOrCreateEmpDocSheet_(tabName, headers) {
+  const ss = getHrDocsSS_();
+  let sheet = ss.getSheetByName(tabName);
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function empDocSha256Hex_(payload) {
+  const buf = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, payload);
+  let out = '';
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i] < 0 ? buf[i] + 256 : buf[i];
+    out += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return out;
+}
+/** Content hash — freezes what was issued (body+title+type+empId). */
+function empDocContentHash_(bodyMd, title, docType, empId) {
+  return empDocSha256Hex_(String(bodyMd || '') + ' ' + String(title || '') + ' ' + String(docType || '') + ' ' + String(empId || ''));
+}
+/** Signature hash — covers the frozen content hash + identity + the ack
+ *  version. Deliberately NOT the timestamp (Sheets coerces datetime cells to
+ *  Dates on read, which would break recompute — INV-113); the EmpDocSigned
+ *  audit row is the independent timestamp witness. */
+function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion) {
+  return empDocSha256Hex_(String(contentHash || '') + ' ' + String(empId || '') + ' ' + String(docId || '') + ' ' + String(signatureDataUrl || '') + ' ' + String(ackVersion || ''));
+}
+
+/** Pure — issueDoc payload validation (Node-pinned). Returns {ok, doc} or
+ *  {ok:false, error}. Whitelist-built. */
+function empDocValidateIssue_(payload) {
+  payload = payload || {};
+  const empId = String(payload.empId || '').trim();
+  if (!empId) return { ok: false, error: 'Pick an employee.' };
+  const docType = String(payload.docType || '').trim().toLowerCase();
+  if (EMPDOC_TYPES.indexOf(docType) < 0) return { ok: false, error: 'Invalid document type.' };
+  const title = String(payload.title || '').trim();
+  if (!title || title.length > EMPDOC_TITLE_MAX) return { ok: false, error: 'Title is required (max ' + EMPDOC_TITLE_MAX + ' chars).' };
+  const bodyMd = String(payload.bodyMd || '');
+  if (!bodyMd.trim()) return { ok: false, error: 'Document body is required.' };
+  if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
+  const dueAt = String(payload.dueAt || '').trim();
+  if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
+  return { ok: true, doc: { empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt, requiresSignature: payload.requiresSignature !== false } };
+}
+
+function empDocRowToObj_(row, ssTz) {
+  return {
+    docId: String(row[ED.DOC_ID] || '').trim(),
+    empId: String(row[ED.EMP_ID] || '').trim(),
+    docType: String(row[ED.DOC_TYPE] || '').trim(),
+    title: String(row[ED.TITLE] || ''),
+    bodyMd: String(row[ED.BODY_MD] || ''),
+    contentHash: String(row[ED.CONTENT_HASH] || '').trim(),
+    requiresSignature: String(row[ED.REQUIRES_SIG]).toLowerCase() === 'true',
+    status: String(row[ED.STATUS] || 'issued').trim(),
+    issuedBy: String(row[ED.ISSUED_BY] || '').toLowerCase().trim(),
+    issuedAt: trainCellTs_(row[ED.ISSUED_AT], ssTz),
+    dueAt: trainCellDate_(row[ED.DUE_AT], ssTz),
+    signedAt: trainCellTs_(row[ED.SIGNED_AT], ssTz),
+    voidReason: String(row[ED.VOID_REASON] || ''),
+  };
+}
+
+/** Bounded id-column lookup → { rowIdx, doc } or null. */
+function findEmpDocRow_(docId) {
+  docId = String(docId || '').trim();
+  if (!docId) return null;
+  const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const ids = sheet.getRange(2, ED.DOC_ID + 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() !== docId) continue;
+    const row = sheet.getRange(i + 2, 1, 1, EMPDOC_HEADERS.length).getValues()[0];
+    return { rowIdx: i + 2, doc: empDocRowToObj_(row, getHrDocsSS_().getSpreadsheetTimeZone()) };
+  }
+  return null;
+}
+
+/** The §9.3 FAIL-CLOSED team-scoping rule: a manager sees a doc only when
+ *  they ISSUED it or they are the employee's roster ManagerEmail (column M).
+ *  Membership in MANAGER_EMAILS alone grants NOTHING here; a blank column M
+ *  narrows visibility to owner+issuer. */
+function empDocCanManagerSee_(callerEmp, doc) {
+  if (!callerEmp || !callerEmp.isManager) return false;
+  const caller = String(callerEmp.email || '').toLowerCase().trim();
+  if (caller && caller === doc.issuedBy) return true;
+  const target = lookupEmployeeById_(doc.empId);
+  return !!(target && target.managerEmail && target.managerEmail === caller);
+}
+
+/** Rep-callable, caller-scoped, read-only — METADATA only (no body). */
+function getMyDocs() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { docs: [] };
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, EMPDOC_HEADERS.length).getValues();
+    const docs = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][ED.EMP_ID]).trim() !== emp.id) continue;
+      const d = empDocRowToObj_(rows[i], ssTz);
+      docs.push({
+        docId: d.docId, docType: d.docType, title: d.title, status: d.status,
+        requiresSignature: d.requiresSignature, issuedAt: d.issuedAt,
+        dueAt: d.dueAt, signedAt: d.signedAt,
+      });
+    }
+    docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
+    return { docs: docs };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Owner-or-AUTHORIZED-manager scoped (§3b) — the full doc incl. the frozen
+ *  body. Includes the ack text/version when a signature is still needed. */
+function getMyDoc(docId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const found = findEmpDocRow_(docId);
+    if (!found) return { error: 'Document not found.' };
+    const d = found.doc;
+    const isOwner = d.empId === emp.id;
+    if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
+    const out = {
+      docId: d.docId, empId: d.empId, docType: d.docType, title: d.title,
+      bodyMd: d.bodyMd, status: d.status, requiresSignature: d.requiresSignature,
+      issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
+      voidReason: d.voidReason, isOwner: isOwner,
+    };
+    if (isOwner && d.requiresSignature && d.status === 'issued') {
+      out.ackText = EMPDOC_ACK_TEXT;
+      out.ackVersion = EMPDOC_ACK_VERSION;
+    }
+    return out;
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-callable, locked (INV-01), OWNER-only — managers cannot sign on an
+ *  employee's behalf (the signature's value is that the employee made it).
+ *  Verifies the stored contentHash BEFORE accepting (a tampered row refuses
+ *  to sign), bounds the signature payload (INV-96), writes the append-only
+ *  DocSignatures row + flips the EmpDocs status in the same lock. Audit:
+ *  EmpDocSigned (docId + hash + signedAt — the independent witness). */
+function acknowledgeDoc(docId, signatureDataUrl) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const found = findEmpDocRow_(docId);
+    if (!found || found.doc.empId !== emp.id) return { success: false, error: 'Document not found.' };
+    const d = found.doc;
+    if (!d.requiresSignature) return { success: false, error: 'This document does not require a signature.' };
+    if (d.status === 'signed') return { success: false, error: 'Already signed.' };
+    if (d.status !== 'issued') return { success: false, error: 'This document is no longer active.' };
+    const sig = String(signatureDataUrl || '');
+    if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
+    if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
+    // Integrity gate: the row must still hash to what was issued.
+    const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId);
+    if (d.contentHash && d.contentHash !== expect) {
+      return { success: false, error: 'Integrity check failed — this document was altered after issue. Ask your manager to re-issue it.' };
+    }
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION);
+    const cert = JSON.stringify({
+      docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION,
+      alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion',
+    });
+    getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
+      .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
+    sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
+    writeAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
+      'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
+    notifyEmpDocSigned_(d, emp);
+    return { success: true, signedAt: ts };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Issues a doc with FROZEN
+ *  markdown content + contentHash. Any manager may issue to any employee
+ *  (issuing reveals nothing); READING stays team-scoped. Audit: EmpDocIssue
+ *  (docId/empId/type — never the title or body). */
+function issueDoc(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const v = empDocValidateIssue_(payload);
+    if (!v.ok) return { success: false, error: v.error };
+    const target = lookupEmployeeById_(v.doc.empId);
+    if (!target) return { success: false, error: 'Unknown employee.' };
+    const docId = Utilities.getUuid();
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const contentHash = empDocContentHash_(v.doc.bodyMd, v.doc.title, v.doc.docType, v.doc.empId);
+    getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS).appendRow([
+      docId, v.doc.empId, v.doc.docType, v.doc.title, v.doc.bodyMd, contentHash,
+      v.doc.requiresSignature ? 'TRUE' : 'FALSE', 'issued',
+      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '',
+    ]);
+    writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
+      'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType, callerEmp.email);
+    notifyEmpDocIssued_(target, v.doc);
+    return { success: true, docId: docId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated, TEAM-scoped (§3b): only docs the caller issued or where
+ *  the caller is the employee's roster ManagerEmail. Read-only. */
+function getDocsDashboard() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { docs: [] };
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    const rows = sheet.getRange(2, 1, last - 1, EMPDOC_HEADERS.length).getValues();
+    const docs = [];
+    for (let i = 0; i < rows.length; i++) {
+      const d = empDocRowToObj_(rows[i], ssTz);
+      if (!d.docId) continue;
+      if (!empDocCanManagerSee_(callerEmp, d)) continue;
+      const target = lookupEmployeeById_(d.empId);
+      docs.push({
+        docId: d.docId, empId: d.empId,
+        empName: target ? target.name : 'former employee',
+        docType: d.docType, title: d.title, status: d.status,
+        requiresSignature: d.requiresSignature, issuedBy: d.issuedBy,
+        issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
+        overdue: d.status === 'issued' && d.requiresSignature && !!d.dueAt && todayIso > d.dueAt,
+      });
+    }
+    docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
+    return { docs: docs, ackVersion: EMPDOC_ACK_VERSION };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated + team-scoped, locked. Sets status='void' — NEVER deletes
+ *  and never edits the frozen body; a correction is a NEW issued doc. A
+ *  signed doc keeps its DocSignatures row ("signed, later voided"). Audit:
+ *  EmpDocVoid (docId only — the reason lives in the scoped HR sheet). */
+function voidDoc(docId, reason) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findEmpDocRow_(docId);
+    if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
+    if (found.doc.status === 'void') return { success: true, alreadyVoid: true };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('void');
+    sheet.getRange(found.rowIdx, ED.VOID_REASON + 1).setValue(String(reason || '').substring(0, 500));
+    const now = new Date();
+    writeAuditLog_(callerEmp, 'EmpDocVoid', fmtDate_(now), '', false, 0,
+      'docId=' + found.doc.docId, callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated + team-scoped, read-only — the verifyFormSubmissionIntegrity_
+ *  twin. Recomputes the content hash from the stored row AND the signature
+ *  hash from the stored DocSignatures row; a mismatch means out-of-band
+ *  alteration. Legacy/unsigned rows report explicitly, never as failures. */
+function verifyDocSignature(docId) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const found = findEmpDocRow_(docId);
+    if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { error: 'Document not found.' };
+    const d = found.doc;
+    const contentMatch = !d.contentHash ? null : (empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId) === d.contentHash);
+    // Newest signature row for the doc (bottom-up id-column scan).
+    const sigSheet = getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS);
+    const sigLast = sigSheet.getLastRow();
+    let sigRow = null;
+    if (sigLast >= 2) {
+      const ids = sigSheet.getRange(2, EDS.DOC_ID + 1, sigLast - 1, 1).getValues();
+      for (let i = ids.length - 1; i >= 0; i--) {
+        if (String(ids[i][0]).trim() === d.docId) {
+          sigRow = sigSheet.getRange(i + 2, 1, 1, EMPDOC_SIG_HEADERS.length).getValues()[0];
+          break;
+        }
+      }
+    }
+    if (!sigRow) return { signed: false, contentMatch: contentMatch };
+    const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
+    const recomputed = empDocSignatureHash_(
+      d.contentHash, d.empId, d.docId,
+      String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''));
+    return {
+      signed: true,
+      contentMatch: contentMatch,
+      match: storedHash ? storedHash === recomputed : null,
+      signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()),
+      ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Best-effort (INV-14) — employee notification on issue. Title only; the
+ *  recipient is the doc's subject, so the title is theirs to see. */
+function notifyEmpDocIssued_(target, doc) {
+  try {
+    if (!target.email) return;
+    const action = doc.requiresSignature ? 'review and sign' : 'review';
+    const body = 'Hi ' + target.name + ',\n\nA document has been issued to you: ' + doc.title +
+      (doc.dueAt ? '\nDue: ' + doc.dueAt : '') +
+      '\n\nOpen the web app -> Training & Employee Docs -> My Docs to ' + action + ' it.';
+    const htmlBody = buildBrandedEmailHtml_('Document for your ' + (doc.requiresSignature ? 'signature' : 'review'),
+      '<p style="margin:0 0 12px;">Hi ' + esc_(target.name) + ',</p>' +
+      brandedKvRows_([['Document', doc.title]].concat(doc.dueAt ? [['Due', doc.dueAt]] : [])) +
+      '<p style="margin:12px 0 0;">Open the web app &rarr; <strong>Training &amp; Employee Docs &rarr; My Docs</strong> to ' + action + ' it.</p>');
+    MailApp.sendEmail({ to: target.email, subject: 'Document for your ' + (doc.requiresSignature ? 'signature' : 'review') + ': ' + doc.title, body: body, htmlBody: htmlBody });
+  } catch (e) { console.warn('notifyEmpDocIssued_ failed: ' + e.message); }
+}
+
+/** Best-effort (INV-14) — issuer notification on signature. */
+function notifyEmpDocSigned_(doc, signer) {
+  try {
+    if (!doc.issuedBy) return;
+    const body = signer.name + ' signed "' + doc.title + '".';
+    const htmlBody = buildBrandedEmailHtml_('Document signed',
+      brandedKvRows_([['Document', doc.title], ['Signed by', signer.name]]));
+    MailApp.sendEmail({ to: doc.issuedBy, subject: 'Signed: ' + doc.title, body: body, htmlBody: htmlBody });
+  } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
 }

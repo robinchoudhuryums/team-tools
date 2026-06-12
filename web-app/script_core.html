@@ -102,8 +102,8 @@ const TOOLS = {
     tabs: {
       trainingHome:   { label: 'My Training',   icon: 'check',  enter: 'enterTrainingHomeView' },
       trainingManage: { label: 'Team Training', icon: 'manage', enter: 'enterTrainingManageView', managerOnly: true },
-      // T3 adds: myDocs + docsManage (per-employee signable docs — see
-      // docs/training-employee-docs-spec.md).
+      myDocs:         { label: 'My Docs',       icon: 'paperclip', enter: 'enterMyDocsView' },
+      docsManage:     { label: 'Issue Docs',    icon: 'send',   enter: 'enterDocsManageView', managerOnly: true },
     },
   },
 };

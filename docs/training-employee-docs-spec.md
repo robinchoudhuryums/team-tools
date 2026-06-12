@@ -1,10 +1,12 @@
 # Spec — Training & Employee Docs module
 
-Status: **APPROVED 2026-06-12 — all §9 operator decisions resolved (see §9).
-T1 SHIPPED 2026-06-12 (training core — CLAUDE.md INV-120 / S67).
-T2 SHIPPED 2026-06-12 (quizzes — CLAUDE.md INV-121 / S68; per §9.4 answers
-are never revealed and attempts are tracked per assignment round).
-T3 (employee docs) is next — fill roster column M (`ManagerEmail`) first.**
+Status: **COMPLETE — all phases shipped 2026-06-12.
+T1 (training core — CLAUDE.md INV-120 / S67), T2 (quizzes — INV-121 / S68),
+T3 (employee docs — INV-122 / S69). Operator prerequisites for T3 going
+live: set Script Property `HR_DOCS_SS_ID` (dedicated spreadsheet) and fill
+roster column M (`ManagerEmail`). T4 items (overdue digests, Drive
+snapshot-to-PDF signing, quiz analytics) remain on-demand. The shipped
+reality is documented in CLAUDE.md; this file is historical context.**
 Authored 2026-06-12, from the feasibility discussion in-session. This is a
 design document; nothing here is built. When implementation ships, the
 shipped reality gets documented in CLAUDE.md (decisions, gotchas,

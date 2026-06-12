@@ -47,8 +47,11 @@ Script project synced via [clasp](https://github.com/google/clasp).
     quizzes: manager-authored, graded server-side (answer keys never
     reach the browser), unlimited retries with attempt tracking — a
     pass completes the item. Per-employee signable documents (reviews,
-    PIPs) are spec'd as the next phase
-    (`docs/training-employee-docs-spec.md`).
+    PIPs, policy acknowledgments) live in a dedicated HR spreadsheet:
+    content is frozen and hashed at issue, employees sign on a canvas
+    pad, signature records are append-only and tamper-evident, and
+    manager visibility is per-team (fail-closed via the roster's
+    ManagerEmail column).
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in

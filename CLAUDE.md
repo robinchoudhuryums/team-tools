@@ -96,9 +96,19 @@ Apps Script project under its own directory, synced via `clasp`.
      append-only `QuizAttempts`; a pass auto-writes the completion,
      `via='quiz'`). Per §9.4: unlimited retries, correct answers are
      NEVER revealed (only per-question right/wrong), attempt counts
-     surface on the checklist + matrix. T3 (per-employee signable docs,
-     NEW `HR_DOCS_SS_ID`, team-scoped via roster column M
-     `ManagerEmail`) is spec'd, not built. See INV-120/INV-121.
+     surface on the checklist + matrix. **T3 (shipped):** per-employee
+     signable docs (reviews, PIPs, policy acks) in a DEDICATED
+     `HR_DOCS_SS_ID` spreadsheet (never co-located with KB/ADP/PHI; NO
+     fallback store): **My Docs** (rep — read, acknowledge+sign on a
+     canvas pad) and **Issue Docs** (manager — issue with markdown
+     frozen-at-issue + contentHash, optional Doc→markdown convert via
+     `kbConvertDriveDoc`, dashboard, verify, void). Manager visibility
+     is PER-TEAM and FAIL-CLOSED via roster column M `ManagerEmail`
+     (owner + issuer + listed manager only; blank narrows, never
+     widens). Signatures are append-only + tamper-evident
+     (`DocSignatures`, hash excludes the timestamp — the audit row is
+     the witness); the store is EXCLUDED from every retention purge.
+     See INV-120/INV-121/INV-122.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -240,7 +250,7 @@ this section before touching the relevant area.
   `'ClockIn'` will silently miss adjustments. Always go through
   `normalizeType_()`.
 - **Roster cache invalidation + key bump.** Employee data is cached
-  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v5`).
+  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v6`).
   After editing any Employees-sheet column (`adjustLeaveBalance_`,
   manual edits for test setup, etc.) call `invalidateRosterCache_()`
   or subsequent reads will return stale balances for up to 5
@@ -283,7 +293,10 @@ this section before touching the relevant area.
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
   `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`,
   `getTrainingDashboard`, `saveTrainingAssignment`,
-  `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`.
+  `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`,
+  `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`
+  (the last four are ALSO team-scoped per INV-122 — the gate alone is
+  not the boundary).
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -2464,10 +2477,27 @@ manually for a fresh deploy or environment:
   the enrollment-missing splash. Pre-existing rows are blank until
   provisioned/filled (the schema bump in
   `EMP.CALL_NOTES_SHEET_ID = 11` doesn't auto-fill).
-- **`ROSTER_CACHE_KEY` = `'employee_roster_v5'`** — bumped when
-  CallNotesSheetId column landed. After deploying, run `clearCaches_()`
-  once from the Apps Script editor to flush any stale `_v4` cache
-  entries (or wait 5 min for natural TTL expiry).
+- **`Employees` sheet column M = `ManagerEmail`** — each employee's
+  manager (an email from `MANAGER_EMAILS`). Drives the FAIL-CLOSED
+  Employee Docs team scoping (INV-122): a manager sees a doc only if
+  they issued it OR they are this column's value for that employee.
+  Blank = only the issuer (and the employee) can see the doc — fill
+  the column for every employee who will receive docs. Header row 1;
+  no other module reads it yet.
+- **Set Script Property `HR_DOCS_SS_ID`** to a DEDICATED spreadsheet for
+  Employee Docs (create an empty one; tabs `EmpDocs` + `DocSignatures`
+  auto-provision). There is deliberately NO fallback — without the
+  property every Employee Docs endpoint returns a friendly
+  "not configured" error. Keep it separate from the KB (broadly
+  rep-readable), the ADP sheet (payroll), and the PHI sheets; the
+  deployer needs edit access. NEVER point a retention purge at it —
+  HR records are keep-forever (INV-122). `TEST_HRDOCS_SS_ID` is the
+  auto-managed test fixture twin (created on first `runAllTests`).
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v6'`** — bumped when the
+  `ManagerEmail` column (M) landed for Employee Docs team scoping
+  (previously v5 for CallNotesSheetId). After deploying, stale v5
+  cache entries expire naturally within 5 min (or run `clearCaches_()`
+  from the editor).
 - **Call-notes department list + state tax rates** are read by
   `getDepartmentEmails_()` and `getStateTaxRates_()`, which check
   Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`)
@@ -2718,7 +2748,7 @@ Client (Intake views):
 Client (Reference views):
   web-app/kb/script_kb.html
 Client (Training views):
-  web-app/train/script_training.html
+  web-app/train/script_training.html, web-app/train/script_empdocs.html
 Client (public forms):
   web-app/form_public.html
 Test Suite:
@@ -2752,7 +2782,7 @@ INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }
 INV-25 | `managerSubmitTimeOff` requires `callerEmp.isManager`; when `autoApprove=true` it skips the Pending stage, applies the PTO deduction in the same call, and emails the employee a decision notice | Subsystem: Server
 INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) go through `normalizeTime_`, which detects Date objects and re-formats via the spreadsheet's timezone | Subsystem: Server
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
-INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
+INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v6`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
 INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`, `kbGetUsageStats`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
@@ -2847,6 +2877,8 @@ INV-119 | **No free text ever enters the KB AI vendor payload.** `kbGetFacetGuid
 INV-120 | Training T1 endpoints follow the established families: `getMyTraining` / `markTrainingComplete` are caller-scoped (the rep's own assignments/completions only; complete requires a LIVE effective assignment — `'kb:'+itemId` in `trainEffectiveForEmp_` — so a rep can't write completion rows for unassigned items, and is idempotent on an already-complete item); `markTrainingComplete` / `saveTrainingAssignment` / `revokeTrainingAssignment` are locked (INV-01); the three manager endpoints are gated (INV-02). `TrainingCompletions` is append-only; `TrainingAssignments` rows are never deleted — revoke sets `RevokedAt`. Completion semantics: an item is complete iff some completion row's `CompletedAt` is STRICTLY after the latest non-revoked matching assignment row's `AssignedAt` (re-assign = reset, the re-certification mechanism; `'*'` rows match every employee). All four timestamp/date cells are Sheets-coercion-guarded (`trainCellTs_`/`trainCellDate_`, recovered in the KB spreadsheet's OWN tz — the normalizeAuditTs_ discipline; lexicographic compare = chronological). Status derivation is the pure `trainDeriveStatus_` (Node-pinned), shared by checklist + dashboard; "today" is the rep's roster tz in `getMyTraining` (F6 discipline) and manager tz in the dashboard. Audit rows `TrainingAssign`/`TrainingRevoke`/`TrainingComplete` are content-free (itemId/assignId/counts only). Assignment notifications are best-effort per-recipient (INV-14). Training dashboards are deliberately NOT team-scoped (every manager sees all reps, matching managerGetShiftStats); only the T3 Employee Docs carry per-team scoping. Pinned by `test_training_assignCompleteFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
 INV-121 | **Quiz answer keys never leave the server.** The `Quizzes` tab's `QuestionsJson` (including `correct` indices) is readable only by the manager-gated `getQuizzes` (managers author the keys); the rep-facing `getQuiz` returns ONLY the WHITELIST-built `trainStripQuizForRep_` shape (never a delete-key copy — a missed field can't leak), requires a live `quiz:` assignment (or manager caller), and `submitQuizAttempt` (rep-callable, locked INV-01, assignment-required) grades server-side via the pure `trainGradeQuiz_` and returns only `scorePct`/`passed`/per-question right-wrong booleans — correct options are NEVER revealed, pass or fail (operator decision §9.4; unlimited retries; attempt counts per assignment round ride back for display). A pass appends the `TrainingCompletions` row (`via='quiz'`, once per assignment round — the INV-120 reset semantics apply to attempts too); `QuizAttempts` is append-only and `PerQuestionJson` stores booleans only, never the rep's answers paired with a key. `saveQuiz` validates via the pure `trainValidateQuizDef_` (1–50 questions, 2–6 options, correct in range, passPct 0–100) and bounds the stored JSON under the Sheets cell cap (INV-96 spirit); `deleteQuiz` removes only the quiz row (attempt/completion history stays; orphaned assignments drop off via the title join, same as a deleted KB item). Audit rows `QuizSave`/`QuizDelete`/`QuizAttempt` carry ids/counts/scores — never question text. Pinned by the `training — quiz` Node tests (validator / grader / strip + the `getQuiz` source tripwire) + `test_training_quizFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+
+INV-122 | **Employee Docs are team-scoped (fail-closed), frozen at issue, and tamper-evident.** All Employee Docs data lives ONLY in the dedicated `HR_DOCS_SS_ID` spreadsheet (`getHrDocsSS_` has NO fallback store — unset property → friendly error, never a silent write to the ADP/KB/PHI sheets), and the `EmpDocs`/`DocSignatures` tabs are EXCLUDED from every retention purge (HR records are keep-forever — the opposite of the PHI-minimization posture). **Scoping:** `getMyDocs`/`getMyDoc`/`acknowledgeDoc` are owner-scoped; manager read access (`getMyDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`) requires `empDocCanManagerSee_` — caller issued the doc OR caller is the employee's roster `ManagerEmail` (column M); membership in `MANAGER_EMAILS` alone grants NOTHING, and a blank column M NARROWS visibility to owner+issuer (fail-closed, operator decision §9.3). Any manager may ISSUE to any employee (issuing reveals nothing). `acknowledgeDoc` is OWNER-only — managers cannot sign on behalf. **Integrity:** content is frozen at issue (`bodyMd` + `empDocContentHash_` over body+title+type+empId); signing re-verifies the content hash first (a tampered row refuses to sign), bounds the signature payload (INV-96; the pad export caps at 600px — Node-pinned parity with `form_public.html`), and writes an append-only `DocSignatures` row whose `SignatureHash` covers contentHash+empId+docId+signature+ackVersion but NOT the timestamp (Sheets coercion, INV-113 lesson) — the `EmpDocSigned` audit row (`hash=`+`signedAt=`) is the independent witness, and the server-authoritative `EMPDOC_ACK_VERSION` stamps which ack language was shown (bump it when `EMPDOC_ACK_TEXT` changes). `voidDoc` only flips status (never deletes, never edits the frozen body — a correction is a NEW doc; a signed doc keeps its signature row); `verifyDocSignature` recomputes both hashes (legacy/unsigned report explicitly, never as failures). Audit rows `EmpDocIssue`/`EmpDocSigned`/`EmpDocVoid` are content-free (docId/empId/type/hash — never the title or body; the void reason lives only in the scoped HR sheet). Pinned by `test_empdocs_issueSignVerifyFlow` (incl. the fail-closed `empDocCanManagerSee_` cases + tamper detection) + the four gate cases in `test_managerGates_rejectNonManager` + the `empDocValidateIssue_`/`edChipHtml_`/pad-cap Node tests | Subsystem: Server + Client (Training views)
 
 
 ### Policy Configuration
@@ -3473,6 +3505,20 @@ S68 | Training T2 — quiz author, take, fail/pass, attempt tracking | Subsystem
     - As a non-manager, call `...getQuizzes()`, `...saveQuiz({...})`, `...deleteQuiz('x')` → all "Manager access required."
     - As the manager, delete the quiz → uiConfirm danger; assignments referencing it drop off the rep checklist; QuizAttempts history rows remain
   Expected: Grading is server-side; the answer key exists only in the Quizzes tab + manager endpoints (INV-121). Re-assigning the quiz resets completion AND the attempt counter (counts are per assignment round). AuditLog rows QuizSave / QuizAttempt (score+attempt) / QuizDelete are content-free. Pinned by `test_training_quizFlow` + the quiz Node tests.
+
+S69 | Employee Docs T3 — issue, scope, sign, verify, tamper, void | Subsystem: Server, Client (Training views)
+  Steps:
+    - Operator prep: set Script Property `HR_DOCS_SS_ID` to a fresh dedicated spreadsheet; fill Employees column M (`ManagerEmail`) for a test employee
+    - As a manager, Training & Employee Docs → Issue Docs: pick the employee, type = Policy acknowledgment, set a due date, write a markdown body (or use "Convert a Google Doc"), leave Require signature checked → Issue (uiConfirm explains content freezing)
+    - Confirm the employee receives the branded "Document for your signature" email; the `EmpDocs` tab gains a row with a 64-hex ContentHash
+    - As the employee, My Docs shows the doc with a "Needs signature" chip → open it → the markdown renders; check the acknowledgment box → the signature pad REVEALS and is drawable immediately (0-width-canvas regression check); draw + Sign
+    - Confirm the issuer gets the "Signed" email; the row flips to signed; `DocSignatures` gains an append-only row (SignatureHash + Certificate)
+    - As a DIFFERENT rep, try `google.script.run...getMyDoc('<docId>')` and `...acknowledgeDoc('<docId>', 'data:image/png;base64,AAAA')` → both "Document not found."
+    - As a manager who neither issued the doc nor is the employee's column-M manager → the doc must NOT appear in their Issue Docs dashboard (fail-closed)
+    - As the issuing manager, click Verify → "Integrity verified"; hand-edit the doc's Title cell in the sheet → Verify now reports a content mismatch
+    - Void the doc (danger confirm + optional reason) → employee's My Docs shows Void; the signature row survives; Verify still reports signed
+    - As a non-manager, call `...issueDoc({...})`, `...getDocsDashboard()`, `...voidDoc('x','')`, `...verifyDocSignature('x')` → all "Manager access required."
+  Expected: Owner-only signing (managers cannot sign on behalf); double-sign rejected; the AuditLog carries content-free `EmpDocIssue`/`EmpDocSigned` (hash= + signedAt= witness)/`EmpDocVoid` rows; no purge ever touches the HR store. Pinned by `test_empdocs_issueSignVerifyFlow` + the gate cases + the T3 Node tests (INV-122).
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)

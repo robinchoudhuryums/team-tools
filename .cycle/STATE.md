@@ -157,10 +157,26 @@ Updated: 2026-06-11
   retake-on-fail) + quiz editor modal (snapshot-before-rerender, the
   cnRenderSubforms_ lesson) + Quizzes table + quiz optgroup in the assign
   picker + attempt counts on checklist/matrix. test_training_quizFlow;
-  Node 109→113. INV-121 + S68 + CLAUDE.md/README/spec updated. NEXT: T3
-  (employee docs — HR_DOCS_SS_ID, EMP.MANAGER_EMAIL col M + roster cache
-  v6, frozen-content signing, team-scoped reads; operator must fill
-  column M first). Operator: deploy + runAllTests() + S67/S68 walks.
+  Node 109→113. INV-121 + S68 + CLAUDE.md/README/spec updated. **T3
+  SHIPPED** (employee docs — module COMPLETE): EMP.MANAGER_EMAIL col M +
+  ROSTER_CACHE_KEY v6; HR_DOCS_SS_ID dedicated store (getHrDocsSS_ NO
+  fallback — friendly error when unset); EmpDocs/DocSignatures tabs
+  auto-provision; issueDoc (frozen markdown + contentHash; reuses
+  kbConvertDriveDoc for Doc-authored bodies) / getMyDocs+getMyDoc
+  (owner-or-authorized-manager) / acknowledgeDoc (OWNER-only, locked,
+  content-hash gate, ≤600px pad export, append-only DocSignatures w/
+  SignatureHash excl. timestamp — audit row is the witness, ack version
+  stamped) / getDocsDashboard+voidDoc+verifyDocSignature (manager-gated
+  AND team-scoped via empDocCanManagerSee_ — issuer OR column-M manager,
+  FAIL-CLOSED on blank). Client train/script_empdocs.html (myDocs +
+  docsManage tabs; sign modal w/ reveal-resize canvas; issue form;
+  verify/void). test_empdocs_issueSignVerifyFlow (fixture
+  TEST_HRDOCS_SS_ID) + 4 gate cases; Node 113→117 (validator/chip/
+  pad-cap parity). INV-122 + S69; CLAUDE.md operator entries
+  (HR_DOCS_SS_ID + column M + v6 cache note). Spec status: COMPLETE.
+  Operator BEFORE T3 use: set HR_DOCS_SS_ID + fill column M; then
+  deploy + runAllTests() + S67/S68/S69 walks. T4 (overdue digests,
+  snapshot-PDF signing, quiz analytics) stays on-demand.
 
 ## Open follow-on items
 - Esc on the KB editor still discards unsaved edits silently (KB-6 residual — a

@@ -32,6 +32,7 @@ console.log('\nclient — all partials parse (<script> syntax guard)');
   'intake/script_intake.html',
   'kb/script_kb.html',
   'train/script_training.html',
+  'train/script_empdocs.html',
 ].forEach((f) => {
   test(f + ' parses', () => {
     const src = extractScript(f);
@@ -465,7 +466,7 @@ console.log('\nscript_core — view-key literals match the TOOLS registry (M3 tr
 test("every refreshViewIfCurrent('…') literal is a registered tab key", () => {
   const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
     'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
-    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'script_core.html'];
+    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'train/script_empdocs.html', 'script_core.html'];
   // TOOLS / VIEW_TO_TOOL are top-level consts (lexical, not on the sandbox
   // global), so parse the tab keys from the registry source: every tab entry
   // carries an `enter:` handler.
@@ -1196,6 +1197,44 @@ test('getQuiz source tripwire: the rep response is built ONLY by trainStripQuizF
   const src = extractRawFunction('Code.js', 'getQuiz');
   assert.ok(src.indexOf('return trainStripQuizForRep_(') >= 0, 'getQuiz returns the stripped shape');
   assert.strictEqual(src.indexOf('questionsJson'), -1, 'raw questions JSON never returned');
+});
+
+// T3 — Employee Docs: issue-payload validator (pure, from Code.js), the
+// status-chip renderer, and the signature-pad export-cap parity tripwire.
+console.log('\nempdocs — validator / chip / pad export cap (T3)');
+['EMPDOC_TYPES', 'EMPDOC_TITLE_MAX', 'EMPDOC_BODY_MAX'].forEach((name) => {
+  const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*[^;]+);'));
+  assert.ok(m, name + ' declaration found in Code.js');
+  vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
+});
+vm.runInContext(extractRawFunction('Code.js', 'empDocValidateIssue_'), sb,
+  { filename: 'Code.js#empDocValidateIssue_' });
+test('empDocValidateIssue_: accepts a good payload; whitelists type; bounds title/body/date', () => {
+  const ok = sb.empDocValidateIssue_({ empId: 'E1', docType: 'review', title: 'T', bodyMd: 'body', dueAt: '2026-07-01' });
+  assert.ok(ok.ok);
+  assert.strictEqual(ok.doc.requiresSignature, true, 'signature defaults on');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'memo', title: 'T', bodyMd: 'b' }).ok, false, 'unknown docType rejected');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'pip', title: '', bodyMd: 'b' }).ok, false, 'empty title rejected');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'pip', title: 'T', bodyMd: '' }).ok, false, 'empty body rejected');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'pip', title: 'T', bodyMd: 'b', dueAt: '07/01/2026' }).ok, false, 'bad date shape rejected');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: '', docType: 'pip', title: 'T', bodyMd: 'b' }).ok, false, 'missing empId rejected');
+});
+const edChipHtml_ = loadFunction(sb, 'train/script_empdocs.html', 'edChipHtml_');
+test('edChipHtml_: signed/void/needs-signature/for-review chips', () => {
+  assert.ok(edChipHtml_({ status: 'signed' }).indexOf('Signed') >= 0);
+  assert.ok(edChipHtml_({ status: 'void' }).indexOf('Void') >= 0);
+  assert.ok(edChipHtml_({ status: 'issued', requiresSignature: true }).indexOf('Needs signature') >= 0);
+  assert.ok(edChipHtml_({ status: 'issued', requiresSignature: true, overdue: true }).indexOf('Overdue') >= 0);
+  assert.ok(edChipHtml_({ status: 'issued', requiresSignature: false }).indexOf('For review') >= 0);
+});
+test('signature-pad export cap parity: both pads cap the export at 600px (INV-96)', () => {
+  // The empdocs pad is adapted (parameterized) from form_public's — the
+  // load-bearing shared rule is the <=600px export downscale that keeps the
+  // base64 under the per-cell cap. Pin it in BOTH files.
+  ['form_public.html', 'train/script_empdocs.html'].forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+    assert.ok(/MAX_W = 600/.test(src), f + ' caps the signature export at 600px');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

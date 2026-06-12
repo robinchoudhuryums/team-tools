@@ -46,6 +46,7 @@ const _TEST_CDR_DATE = '2026-05-15';  // a Friday, in the past relative to test 
 // (consumed in Code.js). Reused across runs via Script Property TEST_INTAKE_SS_ID.
 var _TEST_INTAKE_SS_ID = null;
 var _TEST_OVERRIDE_INTAKE_SS_ID = null;
+var _TEST_OVERRIDE_HRDOCS_SS_ID = null;   // consumed by Code.js:getHrDocsSS_ (T3)
 
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
@@ -490,6 +491,15 @@ function cleanupTestData() {
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ATTEMPT_TAB), 'TEST_', TQA.EMP_ID, 2);
   } catch (e) { Logger.log('cleanupTestData: training tabs cleanup skipped: ' + e.message); }
+  // Employee Docs fixture (T3) — sweep TEST_-employee rows if the fixture exists.
+  try {
+    const hrId = PropertiesService.getScriptProperties().getProperty('TEST_HRDOCS_SS_ID');
+    if (hrId) {
+      const hrSs = SpreadsheetApp.openById(hrId);
+      _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_TAB), 'TEST_', ED.EMP_ID, 2);
+      _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_SIG_TAB), 'TEST_', EDS.EMP_ID, 2);
+    }
+  } catch (e) { Logger.log('cleanupTestData: empdocs cleanup skipped: ' + e.message); }
 
   invalidateRosterCache_();
   Logger.log('cleanupTestData: TEST_* rows removed, balances reset.');
@@ -869,6 +879,7 @@ function _runAllTests() {
   // ── Training & Employee Docs — T1 (spec: docs/training-employee-docs-spec.md) ──
   _integrationTest('training_assignCompleteFlow',               test_training_assignCompleteFlow);
   _integrationTest('training_quizFlow',                         test_training_quizFlow);
+  _integrationTest('empdocs_issueSignVerifyFlow',               test_empdocs_issueSignVerifyFlow);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
@@ -3762,6 +3773,12 @@ function test_managerGates_rejectNonManager() {
     ['getQuizzes',                     function () { return getQuizzes(); }],
     ['saveQuiz',                       function () { return saveQuiz({ title: 'gate', passPct: 80, questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] }); }],
     ['deleteQuiz',                     function () { return deleteQuiz('no-such-quiz'); }],
+    // T3 Employee Docs gates (the gate fires BEFORE any HR_DOCS_SS_ID access,
+    // so these run safely even where the property is unset).
+    ['issueDoc',                       function () { return issueDoc({ empId: _TEST_INDIA_ID, docType: 'policy', title: 'gate', bodyMd: 'x' }); }],
+    ['getDocsDashboard',               function () { return getDocsDashboard(); }],
+    ['voidDoc',                        function () { return voidDoc('no-such-doc', ''); }],
+    ['verifyDocSignature',             function () { return verifyDocSignature('no-such-doc'); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -4050,6 +4067,116 @@ function test_training_quizFlow() {
       _asUser(_TEST_MGR_EMAIL, function () { return deleteQuiz(quizId); });
     }
   }
+}
+
+// T3 — Employee Docs fixture + lifecycle.
+function _withTestHrDocs_(fn) {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('TEST_HRDOCS_SS_ID');
+  let ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = SpreadsheetApp.create('TEST_HRDOCS_Fixture');
+    props.setProperty('TEST_HRDOCS_SS_ID', ss.getId());
+  }
+  _TEST_OVERRIDE_HRDOCS_SS_ID = ss.getId();
+  try { return fn(); }
+  finally { _TEST_OVERRIDE_HRDOCS_SS_ID = null; }
+}
+
+function _cleanupEmpDocRows_(docId) {
+  [[EMPDOC_TAB, ED.DOC_ID], [EMPDOC_SIG_TAB, EDS.DOC_ID]].forEach(function (pair) {
+    try {
+      const sheet = getHrDocsSS_().getSheetByName(pair[0]);
+      if (!sheet || sheet.getLastRow() < 2) return;
+      const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, pair[1] + 1).getValues();
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (String(data[i][pair[1]]).trim() === docId) sheet.deleteRow(i + 2);
+      }
+    } catch (e) { Logger.log('empdocs cleanup (' + pair[0] + ') failed: ' + e.message); }
+  });
+}
+
+// Issue → scoped reads → sign (owner-only, integrity-gated) → verify →
+// tamper-detect → void. The §9.3 fail-closed team-scoping rule is asserted
+// directly against empDocCanManagerSee_ (the test roster has no second
+// manager to impersonate).
+function test_empdocs_issueSignVerifyFlow() {
+  _withTestHrDocs_(function () {
+    let docId = null;
+    try {
+      // Invalid type rejected before any write.
+      const badType = _asUser(_TEST_MGR_EMAIL, function () {
+        return issueDoc({ empId: _TEST_INDIA_ID, docType: 'memo', title: 'T', bodyMd: 'b' });
+      });
+      _assertFailure(badType, 'Invalid document type', 'docType whitelist enforced');
+
+      const due = fmtDate_(new Date(Date.now() + 7 * 86400000));
+      const issued = _asUser(_TEST_MGR_EMAIL, function () {
+        return issueDoc({ empId: _TEST_INDIA_ID, docType: 'policy', title: 'TEST_EMPDOC Policy', bodyMd: '# Policy\n\nRead this.', dueAt: due, requiresSignature: true });
+      });
+      _assertTrue(issued && issued.success, 'doc issued');
+      docId = issued.docId;
+
+      // Owner metadata list — no body in the payload.
+      const mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyDocs(); });
+      const meta = (mine.docs || []).filter(function (d) { return d.docId === docId; })[0];
+      _assertNotNull(meta, 'owner sees the doc');
+      _assertTrue(JSON.stringify(mine).indexOf('bodyMd') < 0, 'list payload is metadata-only');
+
+      // Cross-rep read rejected; cross-rep sign rejected.
+      const phRead = _asUser(_TEST_PH_EMAIL, function () { return getMyDoc(docId); });
+      _assertNotNull(phRead && phRead.error, 'another rep cannot read the doc');
+      const phSign = _asUser(_TEST_PH_EMAIL, function () { return acknowledgeDoc(docId, 'data:image/png;base64,AAAA'); });
+      _assertNotNull(phSign && phSign.error, 'another rep cannot sign the doc');
+
+      // §9.3 fail-closed: a manager who is neither issuer nor the roster
+      // ManagerEmail sees NOTHING (column M is blank for the test rep).
+      const stranger = { isManager: true, email: 'some-other-manager@example.invalid' };
+      const doc = findEmpDocRow_(docId).doc;
+      _assertEq(empDocCanManagerSee_(stranger, doc), false, 'non-issuer/non-listed manager is denied (fail-closed)');
+      _assertEq(empDocCanManagerSee_({ isManager: true, email: doc.issuedBy }, doc), true, 'issuer is allowed');
+
+      // Owner full read carries the body + ack text.
+      const full = _asUser(_TEST_INDIA_EMAIL, function () { return getMyDoc(docId); });
+      _assertTrue(!full.error && full.bodyMd.indexOf('Policy') >= 0, 'owner reads the frozen body');
+      _assertNotNull(full.ackText, 'ack text present while unsigned');
+
+      // Bad signature payload rejected; valid 1x1 PNG accepted.
+      const badSig = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, 'not-a-data-url'); });
+      _assertFailure(badSig, 'signature', 'non-PNG payload rejected');
+      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
+      _assertTrue(signed && signed.success, 'owner signs');
+      const again = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
+      _assertFailure(again, 'Already signed', 'double-sign rejected');
+
+      // Verify: both hashes match.
+      let v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertTrue(v.signed === true && v.match === true && v.contentMatch === true, 'integrity verified after sign');
+
+      // Tamper with the frozen content → contentMatch flips false.
+      const found = findEmpDocRow_(docId);
+      getHrDocsSS_().getSheetByName(EMPDOC_TAB).getRange(found.rowIdx, ED.TITLE + 1).setValue('TAMPERED');
+      v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertEq(v.contentMatch, false, 'content tamper detected');
+
+      // Void: kept on record, never deleted; signature row remains.
+      const voided = _asUser(_TEST_MGR_EMAIL, function () { return voidDoc(docId, 'test void'); });
+      _assertTrue(voided && voided.success, 'voided');
+      const mine2 = _asUser(_TEST_INDIA_EMAIL, function () { return getMyDocs(); });
+      const meta2 = (mine2.docs || []).filter(function (d) { return d.docId === docId; })[0];
+      _assertEq(meta2 && meta2.status, 'void', 'owner sees void status');
+      const v2 = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertTrue(v2.signed === true, 'signature record survives the void');
+
+      // Dashboard (issuer-scoped) lists it.
+      const dash = _asUser(_TEST_MGR_EMAIL, function () { return getDocsDashboard(); });
+      _assertNotNull((dash.docs || []).filter(function (d) { return d.docId === docId; })[0], 'dashboard lists the doc for the issuer');
+    } finally {
+      if (docId) _cleanupEmpDocRows_(docId);
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
