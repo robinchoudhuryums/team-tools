@@ -1053,5 +1053,76 @@ test('kbMd_: kbdoc tokens demote to alt text in preview; the Drive thumbnail URL
   assert.ok(/<img[^>]+src="https:\/\/drive\.google\.com\/thumbnail\?id=ABC&(amp;)?sz=w1200"/.test(final), 'resolved URL renders');
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\nkb — AI Phase A facet guidance (whitelist / canonical hash / prompt — INV-119)');
+// The pure pipeline between the client's raw facets and the vendor payload.
+// kbAiSanitizeFacets_ is the privacy boundary: only vocabulary values
+// survive, so the prompt builder (which takes ONLY sanitized facets + KB
+// chunks) cannot carry free-typed note text to the vendor.
+const _aiCtx = vm.createContext({});
+['kbAiSanitizeFacets_', 'kbAiCanonicalFacets_', 'kbAiQueryTerms_', 'kbAiBuildPrompt_'].forEach((fn) => {
+  vm.runInContext(extractRawFunction('Code.js', fn), _aiCtx, { filename: 'Code.js#' + fn });
+});
+const _aiVocab = {
+  departments: ['Sales', 'Billing'],
+  updateTypes: ['Verified Shipping', 'Close Order'],
+  flagTypes: ['action', 'training', 'review', 'urgent'],
+  tags: ['battery-swap', 'warranty'],
+};
+test('kbAiSanitizeFacets_: drops every non-vocabulary value (novel facets never survive)', () => {
+  const clean = _aiCtx.kbAiSanitizeFacets_({
+    department: 'NotADept',
+    updateType: 'PATIENT JOHN DOE called about TRX-12345',   // free text masquerading as a facet
+    flagType: 'banana',
+    tags: ['warranty', 'totally-new-tag', 'warranty'],
+  }, _aiVocab);
+  assert.strictEqual(clean.department, '');
+  assert.strictEqual(clean.updateType, '');
+  assert.strictEqual(clean.flagType, '');
+  assert.strictEqual(JSON.stringify(clean.tags), '["warranty"]', 'novel tag dropped, dup deduped (vm-realm array — string compare)');
+});
+test('kbAiSanitizeFacets_: case-insensitive match returns canonical vocab casing; tags cap at 8', () => {
+  const clean = _aiCtx.kbAiSanitizeFacets_(
+    { department: 'sales', updateType: 'close order', flagType: 'URGENT', tags: ['Battery-Swap'] }, _aiVocab);
+  assert.strictEqual(clean.department, 'Sales');
+  assert.strictEqual(clean.updateType, 'Close Order');
+  assert.strictEqual(clean.flagType, 'urgent');
+  assert.strictEqual(JSON.stringify(clean.tags), '["battery-swap"]');
+  const manyVocab = { tags: 'abcdefghij'.split('').map((c) => 't-' + c) };
+  const many = _aiCtx.kbAiSanitizeFacets_({ tags: manyVocab.tags }, manyVocab);
+  assert.strictEqual(many.tags.length, 8, 'tag cap');
+});
+test('kbAiCanonicalFacets_: order-insensitive, lowercased, empties omitted', () => {
+  const a = _aiCtx.kbAiCanonicalFacets_({ department: 'Sales', updateType: 'Close Order', flagType: 'action', tags: ['warranty', 'battery-swap'] });
+  const b = _aiCtx.kbAiCanonicalFacets_({ tags: ['battery-swap', 'warranty'], flagType: 'action', updateType: 'Close Order', department: 'Sales' });
+  assert.strictEqual(a, b, 'tag order does not change the hash payload');
+  assert.strictEqual(a, 'dept=sales|update=close order|flag=action|tags=battery-swap,warranty');
+  assert.strictEqual(_aiCtx.kbAiCanonicalFacets_({ flagType: 'action' }), 'flag=action', 'empty facets omitted');
+});
+test('kbAiQueryTerms_: kebab tags split to words; joins update/flag/dept', () => {
+  const q = _aiCtx.kbAiQueryTerms_({ department: 'Sales', updateType: 'Close Order', flagType: 'action', tags: ['battery-swap'] });
+  assert.strictEqual(q, 'Close Order battery swap action Sales');
+});
+test('kbAiBuildPrompt_: payload = sanitized facets + chunks only (INV-119 — free text cannot pass through)', () => {
+  const raw = { department: 'Sales', flagType: 'action', tags: ['warranty'],
+                issue: 'PATIENT JOHN DOE TRX-9 wheelchair broke', updateType: '' };
+  const clean = _aiCtx.kbAiSanitizeFacets_(raw, _aiVocab);
+  const prompt = _aiCtx.kbAiBuildPrompt_(clean, [
+    { title: 'Warranty guide', heading: 'Swaps', chunkMd: 'Always file a swap ticket first.' },
+  ]);
+  const all = prompt.system + '\n' + prompt.user;
+  assert.ok(all.indexOf('Department: Sales') >= 0 && all.indexOf('Tags: warranty') >= 0, 'facets present');
+  assert.ok(all.indexOf('Always file a swap ticket first.') >= 0, 'KB chunk present');
+  assert.strictEqual(all.indexOf('JOHN DOE'), -1, 'free-typed text never reaches the prompt');
+  assert.strictEqual(all.indexOf('TRX-9'), -1);
+});
+test('kbGetFacetGuidance source tripwire: the vendor prompt is built from (clean, chunks) only', () => {
+  const src = extractRawFunction('Code.js', 'kbGetFacetGuidance');
+  assert.ok(src.indexOf('kbAiBuildPrompt_(clean, chunks)') >= 0,
+    'prompt builder must be fed the SANITIZED facets, never the raw client payload');
+  assert.strictEqual(/kbAiBuildPrompt_\((?!clean, chunks\))/.test(src), false,
+    'no alternate kbAiBuildPrompt_ callsite with different inputs');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

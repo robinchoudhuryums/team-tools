@@ -853,6 +853,7 @@ function _runAllTests() {
   // ── KB usage feedback loop ──────────────────────────────────────────────
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
   _integrationTest('kb_uploadImage_rejectsInvalidPayloads',      test_kb_uploadImage_rejectsInvalidPayloads);
+  _integrationTest('kbAi_gatesAndSettingsValidation',            test_kbAi_gatesAndSettingsValidation);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
@@ -3737,6 +3738,7 @@ function test_managerGates_rejectNonManager() {
     ['kbSaveItem',                     function () { return kbSaveItem({ title: 'gate-test', type: 'article', body: 'x' }); }],
     ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
     ['kbUploadImage',                  function () { return kbUploadImage('data:image/png;base64,AAAA'); }],
+    ['saveKbAiSettings',               function () { return saveKbAiSettings({ dailyCap: 3, model: 'claude-haiku-4-5' }); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -3778,6 +3780,54 @@ function test_kb_recordView_requiresEmployee() {
     return kbRecordView('some-item', 'drawer:callNotes');
   });
   _assertFailure(r, 'Not authorized', 'unregistered caller rejected before any KbViews write');
+}
+
+// KB AI Phase A — kbGetFacetGuidance auth + flag gate + saveKbAiSettings
+// validation. No vendor key is configured in tests, and the flag is forced
+// OFF for the gate case, so no UrlFetchApp call can ever fire from here.
+function test_kbAi_gatesAndSettingsValidation() {
+  // Unregistered caller → hard auth error (before any flag/vocab work).
+  const rAuth = _asUser('not-a-registered-user@example.invalid', function () {
+    return kbGetFacetGuidance({ flagType: 'action' });
+  });
+  _assertNotNull(rAuth && rAuth.error, 'unregistered caller rejected');
+  _assertContains(rAuth.error, 'Not authorized', 'auth precedes the flag gate');
+
+  // Flag off (the shipped default) → { none, reason: disabled } — and never
+  // an exception, matching the drawer's best-effort posture.
+  _withFeatureFlags_({ kbAiGuidance: false }, function () {
+    const r = _asUser(_TEST_INDIA_EMAIL, function () {
+      return kbGetFacetGuidance({ flagType: 'action', tags: ['anything'] });
+    });
+    _assertEq(r.none, true, 'flag-off returns none, not an error');
+    _assertEq(r.reason, 'disabled');
+  });
+
+  // Flag on but no meaningful facets → none/no-facets (dept alone is too
+  // thin); novel facet values are dropped by the whitelist, so a payload of
+  // pure free text degrades to the same no-facets none — nothing proceeds
+  // toward retrieval or the vendor.
+  _withFeatureFlags_({ kbAiGuidance: true }, function () {
+    const r = _asUser(_TEST_INDIA_EMAIL, function () {
+      return kbGetFacetGuidance({ department: 'NotARealDept', updateType: 'PATIENT JOHN DOE TRX-9', flagType: 'banana', tags: ['brand-new-tag'] });
+    });
+    _assertEq(r.none, true, 'whitelist drops every novel value → no-facets none');
+    _assertEq(r.reason, 'no-facets');
+  });
+
+  // saveKbAiSettings validation (as manager): cap range + model whitelist.
+  _asUser(_TEST_MGR_EMAIL, function () {
+    const bad1 = saveKbAiSettings({ dailyCap: 'lots', model: 'claude-haiku-4-5' });
+    _assertEq(bad1.success, false, 'non-numeric cap rejected');
+    const bad2 = saveKbAiSettings({ dailyCap: 500, model: 'claude-haiku-4-5' });
+    _assertEq(bad2.success, false, 'cap above 100 rejected');
+    const bad3 = saveKbAiSettings({ dailyCap: 3, model: 'gpt-totally-unknown' });
+    _assertEq(bad3.success, false, 'unknown model rejected');
+    _assertContains(bad3.error, 'Unknown model');
+  });
+  // NOTE: the success path writes Script Properties KB_AI_DAILY_CAP /
+  // KB_AI_MODEL — exercised manually (S66) to avoid mutating operator
+  // settings from a test run.
 }
 
 // ════════════════════════════════════════════════════════════════════════════

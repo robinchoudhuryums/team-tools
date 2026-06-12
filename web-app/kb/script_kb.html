@@ -82,6 +82,7 @@
   .kbd-empty { color: var(--muted); font-size: .84rem; padding: 6px 0; }
   .kbd-back { font: inherit; font-size: .8rem; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--ink); cursor: pointer; padding: 4px 10px; display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px; }
   .kbd-embed-card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 14px; margin-top: 8px; }
+  .kbd-guid-card { border: 1px solid var(--accent-soft); border-radius: 10px; background: var(--paper); padding: 10px 12px; font-size: .84rem; line-height: 1.5; color: var(--ink); margin-bottom: 4px; }
   #kb-drawer-tab { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 44; writing-mode: vertical-rl; font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); background: var(--paper-card); border: 1px solid var(--line); border-right: none; border-radius: 8px 0 0 8px; padding: 10px 4px; cursor: pointer; display: none; }
   #kb-drawer-tab:hover { color: var(--ink); background: var(--paper-2); }
   #kb-drawer-tab.show { display: block; }
@@ -711,7 +712,7 @@ function kbCloseModal_() {
 //  Reads reuse the three enrolled-employee KB endpoints; opens are recorded
 //  best-effort via kbRecordView (fire-and-forget, never blocks the UI).
 // ============================================================================
-var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null };
+var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null, guidanceSeq: 0, guidanceCache: null };
 var KB_PANEL_LS_KEY = 'umsKbPanel';
 
 function kbPanelPrefs_() {
@@ -838,7 +839,7 @@ function kbDrawerRenderHome_() {
   KB_DRAWER.view = 'home';
   var body = document.getElementById('kbd-body'); if (!body) return;
   var prefs = kbPanelPrefs_();
-  var html = '<div id="kbd-suggest"></div>';
+  var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
   var recents = prefs.recents || [];
   if (recents.length) {
     html += '<div class="kbd-sec">Recent</div>';
@@ -848,7 +849,85 @@ function kbDrawerRenderHome_() {
   }
   if (!recents.length) html += '<div class="kbd-empty">Type 2+ characters to search the knowledge base.</div>';
   body.innerHTML = html;
+  kbDrawerRenderGuidance_();
   kbDrawerRenderSuggest_();
+}
+
+// ── AI guidance card (Phase A) ──────────────────────────────────────────────
+// Fires kbGetFacetGuidance with ONLY enum facets gathered from the
+// in-progress note (multi-select flags, established tags, the rep's last
+// composer department) — never any typed text. The server re-validates every
+// facet against its own vocabularies (INV-119), so this gather is a
+// convenience, not the privacy boundary. Best-effort: any none / failure
+// renders nothing and the existing Suggested block stands alone.
+function kbAiGatherFacets_() {
+  var facets = { department: '', updateType: '', flagType: '', tags: [] };
+  try { facets.department = localStorage.getItem('umsCallNotesLastDept') || ''; } catch (e) {}
+  try {
+    if (typeof cnGetFormFlags_ === 'function' && typeof currentView !== 'undefined' &&
+        (typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[currentView]) === 'callNotes') {
+      var form = document.getElementById('cn-active-form');
+      if (form) {
+        var flags = cnGetFormFlags_(form) || [];
+        facets.flagType = flags[0] || '';
+        facets.tags = (typeof cnGetFormTags_ === 'function' && cnGetFormTags_(form)) || [];
+      }
+    }
+  } catch (e) {}
+  return facets;
+}
+
+function kbDrawerRenderGuidance_() {
+  var host = document.getElementById('kbd-guidance'); if (!host) return;
+  if (typeof flagOn_ !== 'function' || !flagOn_('kbAiGuidance')) { host.innerHTML = ''; return; }
+  var facets = kbAiGatherFacets_();
+  if (!facets.flagType && !(facets.tags && facets.tags.length)) { host.innerHTML = ''; return; }
+  var key = JSON.stringify([facets.department, facets.flagType, (facets.tags || []).slice().sort()]);
+  var cached = KB_DRAWER.guidanceCache;
+  if (cached && cached.key === key) { kbDrawerPaintGuidance_(host, cached.res); return; }
+  var seq = ++KB_DRAWER.guidanceSeq;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== KB_DRAWER.guidanceSeq || !KB_DRAWER.open || KB_DRAWER.view !== 'home') return;
+      KB_DRAWER.guidanceCache = { key: key, res: res };
+      var h = document.getElementById('kbd-guidance');
+      if (h) kbDrawerPaintGuidance_(h, res);
+    })
+    .withFailureHandler(function () {})   // silent — suggestions still render
+    .kbGetFacetGuidance(facets);
+}
+
+function kbDrawerPaintGuidance_(host, res) {
+  if (!res || res.none || res.error || !res.guidance) { host.innerHTML = ''; return; }
+  var prefs = kbPanelPrefs_();
+  var today = new Date().toISOString().substring(0, 10);
+  var seen = prefs.aiSeen || {};
+  var collapsed = res.facetHash && seen.hash === res.facetHash && seen.date === today;
+  var html = '<div class="kbd-sec">Guidance <span class="kb-snip" style="text-transform:none;letter-spacing:0">AI · from your reference docs</span></div>';
+  if (collapsed) {
+    html += '<button class="kbd-item" onclick="kbDrawerExpandGuidance_()"><span>' +
+      icon('chevronDown', 12) + ' Show guidance for this call type</span></button>';
+    host.innerHTML = html;
+    return;
+  }
+  html += '<div class="kbd-guid-card">' + esc(res.guidance) + '</div>';
+  (res.sources || []).forEach(function (s) {
+    html += '<button class="kbd-item" data-kb-id="' + esc(s.id) + '" data-kb-anchor="' + esc(s.anchor || '') + '" ' +
+      'onclick="kbDrawerOpenItem_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+      '<span>' + icon('list', 12) + ' ' + esc(s.title) +
+      (s.heading ? ' <span class="kb-snip">¶ ' + esc(s.heading) + '</span>' : '') + '</span></button>';
+  });
+  host.innerHTML = html;
+  // Collapse-after-seen: the same facet combo renders collapsed for the rest
+  // of the day so the card doesn't repeat itself on every drawer open.
+  try { prefs.aiSeen = { hash: res.facetHash, date: today }; kbPanelSave_(prefs); } catch (e) {}
+}
+
+function kbDrawerExpandGuidance_() {
+  var prefs = kbPanelPrefs_();
+  delete prefs.aiSeen;
+  kbPanelSave_(prefs);
+  kbDrawerRenderGuidance_();
 }
 
 /** "Suggested" block: matches the in-progress Call Notes Issue text against

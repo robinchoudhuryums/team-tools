@@ -3066,6 +3066,12 @@ function getAdminConfig() {
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
       featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
+      kbAi: (function () {
+        const c = getKbAiConfig_();
+        // Never the key itself — only whether one is set.
+        return { dailyCap: c.dailyCap, model: c.model, models: Object.keys(KB_AI_MODEL_PRICES),
+                 hasKey: !!c.apiKey, spend: kbAiReadSpend_() };
+      })(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -3185,6 +3191,35 @@ function saveExternalLinks(links) {
     PropertiesService.getScriptProperties().setProperty('CN_EXTERNAL_LINKS', JSON.stringify(clean));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated external quick links (' + clean.length + ')', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Manager-gated (Phase A). Admin-adjustable KB AI settings: the daily
+ *  org-wide spend cap (USD) + the vendor model. Persists Script Properties
+ *  KB_AI_DAILY_CAP / KB_AI_MODEL; AdminConfigChange audit row (INV-57
+ *  family; same single-property-write pattern as the sibling saves). The
+ *  model must be a KB_AI_MODEL_PRICES key so the cap accounting always has
+ *  real rates. The API key itself is NEVER set or returned through any
+ *  endpoint — set Script Property KB_AI_API_KEY in the Apps Script editor. */
+function saveKbAiSettings(settings) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    settings = settings || {};
+    const cap = parseFloat(settings.dailyCap);
+    if (!isFinite(cap) || cap < 0 || cap > 100) {
+      return { success: false, error: 'Daily cap must be a number between 0 and 100 (USD).' };
+    }
+    const model = String(settings.model || '').trim();
+    if (!KB_AI_MODEL_PRICES[model]) {
+      return { success: false, error: 'Unknown model: ' + (model || '(blank)') + '. Pick one of: ' + Object.keys(KB_AI_MODEL_PRICES).join(', ') };
+    }
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty('KB_AI_DAILY_CAP', String(cap));
+    props.setProperty('KB_AI_MODEL', model);
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated KB AI settings: dailyCap=$' + cap + '; model=' + model, callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -7251,6 +7286,10 @@ const FEATURE_FLAGS = [
   { key: 'employeeImmediateAdjust', label: 'Employee immediate punch fix',
     description: 'Let employees apply punch adjustments instantly (an "Apply now" button alongside the approval-request flow). Off = all employee adjustments require manager approval (#4a).',
     default: false, scope: 'both' },
+  { key: 'kbAiGuidance', label: 'AI guidance (Reference drawer)',
+    description: 'Show an AI-generated guidance card in the Reference drawer, built from whitelisted call facets (department / update type / tags / flag) + excerpts from your own KB articles. Configure the cap + model in the "AI Guidance" section below; set Script Property KB_AI_API_KEY first.',
+    default: false, scope: 'both',
+    danger: 'External AI vendor — whitelisted facet enums + your own (PHI-free-by-policy) KB excerpts are sent to the Anthropic API. No free-typed note text or patient data ever enters the payload (INV-119), but confirm the org’s stance on the vendor before enabling.' },
 ];
 
 function featureFlagDef_(key) {
@@ -9605,7 +9644,16 @@ function getOrCreateKbSheet_() {
   }
   return sheet;
 }
-function invalidateKbCache_() { try { CacheService.getScriptCache().remove(KB_CACHE_KEY); } catch (_) {} }
+function invalidateKbCache_() {
+  try { CacheService.getScriptCache().remove(KB_CACHE_KEY); } catch (_) {}
+  // Phase A — bump the AI-guidance generation salt so cached guidance built
+  // on the pre-edit KB content stops being served (the cache key embeds it).
+  try {
+    const p = PropertiesService.getScriptProperties();
+    const g = parseInt(p.getProperty(KB_AI_GEN_PROP) || '0', 10) || 0;
+    p.setProperty(KB_AI_GEN_PROP, String(g + 1));
+  } catch (_) {}
+}
 
 // Parse a Google Drive/Docs/Sheets share URL into { kind, fileId }. kind ∈
 // doc | sheet | file. Returns null when no file id can be extracted.
@@ -10201,6 +10249,291 @@ function kbUploadImage(dataUrl) {
       'fileId=' + file.getId() + '; name=' + name + '; type=' + parsed.contentType, emp.email);
     return { success: true, url: 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200' };
   } catch (err) { return { success: false, error: err.message }; }
+}
+
+// ── KB AI Phase A — facet-based guidance (Reference drawer) ─────────────────
+// kbGetFacetGuidance(facets): rep-callable. Sends ONLY whitelisted enum
+// facets (department / update type / tags / flag type) plus excerpts from our
+// own PHI-free-by-policy KB articles to the Anthropic Messages API, and
+// returns a short guidance blurb with section sources for the drawer's
+// Guidance card. The load-bearing privacy invariant (INV-119): no free-typed
+// note text, patient data, or any non-enum value ever enters the vendor
+// payload — every facet is validated against the server-side vocabularies
+// (novel values DROPPED, never errored), and the prompt builder takes only
+// the sanitized facets + KB chunks, so there is no parameter through which
+// free text could reach the wire. Best-effort posture throughout: ANY
+// failure (flag off, no key, thin retrieval, daily cap reached, vendor
+// error) returns { none: true } and the drawer silently falls back to its
+// existing suggestions. Results are cached org-wide for 6h per canonical
+// facet hash; the cache key embeds a generation salt bumped by every KB
+// save/delete (invalidateKbCache_) so edited articles invalidate at once.
+const KB_AI_CACHE_PREFIX = 'kb_ai_guid_v1:';
+const KB_AI_CACHE_TTL = 21600;            // 6h — the CacheService maximum
+const KB_AI_GEN_PROP = 'KB_AI_GENERATION';
+const KB_AI_SPEND_PROP = 'KB_AI_SPEND';   // {date, usd, calls} — daily org spend
+const KB_AI_MAX_CHUNKS = 4;
+const KB_AI_SCORE_FLOOR = 4;              // top-chunk minimum — thin matches never hit the API
+const KB_AI_DEFAULT_MODEL = 'claude-haiku-4-5';
+const KB_AI_DEFAULT_DAILY_CAP = 3;        // USD/day org-wide; Admin-adjustable (KB_AI_DAILY_CAP)
+// $/MTok per model — the Admin model <select> renders from these keys (via
+// getAdminConfig), so client and server can't drift. An unknown model id
+// (operator typo in KB_AI_MODEL) is costed at the most expensive known rates
+// so the daily cap can never be silently undercounted.
+const KB_AI_MODEL_PRICES = {
+  'claude-haiku-4-5':  { input: 1.0,  output: 5.0  },
+  'claude-sonnet-4-6': { input: 3.0,  output: 15.0 },
+  'claude-opus-4-8':   { input: 5.0,  output: 25.0 },
+};
+
+/** PURE: whitelist-validate raw client facets against the server-side
+ *  vocabularies. Anything not in the vocab is DROPPED (never an error), so
+ *  the result can only contain values the server already knows — the vendor
+ *  payload is enum-only by construction (INV-119). Matching is
+ *  case-insensitive; the canonical (vocab) casing is returned. Tags dedupe
+ *  and cap at 8. */
+function kbAiSanitizeFacets_(facets, vocab) {
+  facets = facets || {}; vocab = vocab || {};
+  const out = { department: '', updateType: '', flagType: '', tags: [] };
+  const deptIn = String(facets.department || '').trim().toLowerCase();
+  (vocab.departments || []).forEach(function (d) {
+    if (deptIn && String(d).trim().toLowerCase() === deptIn) out.department = String(d);
+  });
+  const updIn = String(facets.updateType || '').trim().toLowerCase();
+  (vocab.updateTypes || []).forEach(function (u) {
+    if (updIn && String(u).trim().toLowerCase() === updIn) out.updateType = String(u);
+  });
+  const flagIn = String(facets.flagType || '').trim().toLowerCase();
+  if ((vocab.flagTypes || []).indexOf(flagIn) >= 0) out.flagType = flagIn;
+  const known = {};
+  (vocab.tags || []).forEach(function (t) { known[String(t).trim().toLowerCase()] = true; });
+  const seen = {};
+  (Array.isArray(facets.tags) ? facets.tags : []).forEach(function (t) {
+    const tag = String(t || '').trim().toLowerCase();
+    if (tag && known[tag] && !seen[tag] && out.tags.length < 8) { seen[tag] = true; out.tags.push(tag); }
+  });
+  return out;
+}
+
+/** PURE: canonical, order-insensitive serialization of sanitized facets —
+ *  the cache-key payload (and the client's collapse-after-seen key). Tags
+ *  sort; casing lowers; empty facets are omitted. */
+function kbAiCanonicalFacets_(clean) {
+  clean = clean || {};
+  const parts = [];
+  if (clean.department) parts.push('dept=' + String(clean.department).toLowerCase());
+  if (clean.updateType) parts.push('update=' + String(clean.updateType).toLowerCase());
+  if (clean.flagType) parts.push('flag=' + String(clean.flagType).toLowerCase());
+  const tags = (clean.tags || []).map(function (t) { return String(t).toLowerCase(); }).sort();
+  if (tags.length) parts.push('tags=' + tags.join(','));
+  return parts.join('|');
+}
+
+/** PURE: search-query terms derived from sanitized facets — feeds the
+ *  existing section search (kebab-case tags split into words). */
+function kbAiQueryTerms_(clean) {
+  clean = clean || {};
+  const parts = [];
+  if (clean.updateType) parts.push(String(clean.updateType));
+  (clean.tags || []).forEach(function (t) { parts.push(String(t).replace(/-/g, ' ')); });
+  if (clean.flagType) parts.push(String(clean.flagType));
+  if (clean.department) parts.push(String(clean.department));
+  return parts.join(' ').trim();
+}
+
+/** PURE: assemble the vendor prompt from sanitized facets + KB chunks ONLY.
+ *  Deliberately takes no other inputs (INV-119) — there is no parameter
+ *  through which free-typed note text could reach the payload. */
+function kbAiBuildPrompt_(clean, chunks) {
+  const facetLines = [];
+  if (clean.department) facetLines.push('Department: ' + clean.department);
+  if (clean.updateType) facetLines.push('Update type: ' + clean.updateType);
+  if (clean.flagType) facetLines.push('Flag: ' + clean.flagType);
+  if (clean.tags && clean.tags.length) facetLines.push('Tags: ' + clean.tags.join(', '));
+  let excerpts = '';
+  (chunks || []).forEach(function (c, i) {
+    excerpts += '\n--- Excerpt ' + (i + 1) + ' — "' + c.title + '"' +
+      (c.heading ? ' § "' + c.heading + '"' : '') + ' ---\n' + c.chunkMd + '\n';
+  });
+  return {
+    system: 'You are a concise assistant for a medical-supply customer-service team’s internal knowledge base. ' +
+      'You receive call attributes (enums only) and excerpts from the team’s own reference articles. ' +
+      'Write 2-4 short sentences of practical guidance for the rep handling this kind of call, based ONLY on the excerpts. ' +
+      'If the excerpts do not cover the situation, reply with exactly: NOT_COVERED. ' +
+      'Plain text only — no markdown, no preamble.',
+    user: 'Call attributes:\n' + facetLines.join('\n') + '\n\nReference excerpts:\n' + excerpts,
+  };
+}
+
+/** Script-Property-backed runtime config. The API key is the only secret;
+ *  model + daily cap are Admin-adjustable (saveKbAiSettings). */
+function getKbAiConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const cap = parseFloat(props.getProperty('KB_AI_DAILY_CAP'));
+  return {
+    apiKey: props.getProperty('KB_AI_API_KEY') || '',
+    model: String(props.getProperty('KB_AI_MODEL') || KB_AI_DEFAULT_MODEL),
+    dailyCap: (isFinite(cap) && cap >= 0) ? cap : KB_AI_DEFAULT_DAILY_CAP,
+  };
+}
+
+function kbAiGeneration_() {
+  try { return PropertiesService.getScriptProperties().getProperty(KB_AI_GEN_PROP) || '0'; }
+  catch (_) { return '0'; }
+}
+
+/** Today's org-wide vendor spend — {date, usd, calls}; resets on date roll. */
+function kbAiReadSpend_() {
+  const today = fmtDate_(new Date());
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(KB_AI_SPEND_PROP);
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && o.date === today) return { date: today, usd: Number(o.usd) || 0, calls: Number(o.calls) || 0 };
+    }
+  } catch (_) {}
+  return { date: today, usd: 0, calls: 0 };
+}
+
+/** Records one call's cost. Brief tryLock so parallel cache misses don't
+ *  lose an increment; on contention the write still applies best-effort —
+ *  the cap is a soft budget guard, and the vendor-console hard spend cap is
+ *  the backstop (set one there too). */
+function kbAiRecordSpend_(usd) {
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(3000); } catch (_) {}
+  try {
+    const s = kbAiReadSpend_();
+    s.usd += usd; s.calls += 1;
+    PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
+  } catch (_) {}
+  finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
+}
+
+/** Estimated cost (USD) of one call from the response's usage tokens.
+ *  Unknown model → most expensive known rates (never undercounts the cap). */
+function kbAiEstimateCostUsd_(model, usage) {
+  let price = KB_AI_MODEL_PRICES[model];
+  if (!price) {
+    price = { input: 0, output: 0 };
+    Object.keys(KB_AI_MODEL_PRICES).forEach(function (k) {
+      price.input = Math.max(price.input, KB_AI_MODEL_PRICES[k].input);
+      price.output = Math.max(price.output, KB_AI_MODEL_PRICES[k].output);
+    });
+  }
+  const inTok = (usage && Number(usage.input_tokens)) || 0;
+  const outTok = (usage && Number(usage.output_tokens)) || 0;
+  return (inTok * price.input + outTok * price.output) / 1e6;
+}
+
+/** One UrlFetchApp POST to the Anthropic Messages API. Returns
+ *  { text, usage } or null on any failure (the caller degrades to none). */
+function kbAiCallVendor_(cfg, prompt) {
+  const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
+    payload: JSON.stringify({
+      model: cfg.model,
+      max_tokens: 400,
+      system: prompt.system,
+      messages: [{ role: 'user', content: prompt.user }],
+    }),
+    muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) {
+    Logger.log('kbAiCallVendor_ HTTP ' + res.getResponseCode() + ': ' + String(res.getContentText()).substring(0, 300));
+    return null;
+  }
+  const body = JSON.parse(res.getContentText());
+  let text = '';
+  (body.content || []).forEach(function (b) { if (b && b.type === 'text') text += b.text; });
+  return { text: text.trim(), usage: body.usage || {} };
+}
+
+/** Rep-callable (requires an enrolled employee), gated by the kbAiGuidance
+ *  feature flag (scope both — the server check here is the enforcement).
+ *  See the section comment above for the full posture. Never throws to the
+ *  client: every failure path returns { none: true, reason }. */
+function kbGetFacetGuidance(facets) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    if (!getFlag_('kbAiGuidance')) return { none: true, reason: 'disabled' };
+
+    // Vocabularies: departments + update types are org config; tags are the
+    // CALLER's own established tag vocabulary (tags already on their saved
+    // notes — the same source as the tag-autocomplete datalist), so a novel
+    // tag typed this minute never reaches the vendor.
+    const updByDept = getUpdateSuggestions_() || {};
+    const updateTypes = (CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT || []).slice();
+    Object.keys(updByDept).forEach(function (d) {
+      (updByDept[d] || []).forEach(function (u) { if (updateTypes.indexOf(u) < 0) updateTypes.push(u); });
+    });
+    let ownTags = [];
+    try { const ts = getCallNoteTagSuggestions(); ownTags = (ts && ts.tags) || []; } catch (_) {}
+    const clean = kbAiSanitizeFacets_(facets, {
+      departments: Object.keys(getDepartmentEmails_() || {}),
+      updateTypes: updateTypes,
+      flagTypes: CN_FLAG_TYPES.concat(['urgent']),
+      tags: ownTags,
+    });
+    // Department alone is too generic to guide on — require a real signal.
+    if (!clean.updateType && !clean.flagType && !clean.tags.length) {
+      return { none: true, reason: 'no-facets' };
+    }
+
+    const canonical = kbAiCanonicalFacets_(clean);
+    const cacheKey = KB_AI_CACHE_PREFIX + kbAiGeneration_() + ':' +
+      Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, canonical)
+        .map(function (b) { return ((b & 0xff) + 0x100).toString(16).substring(1); }).join('');
+    const cache = CacheService.getScriptCache();
+    try {
+      const hit = cache.get(cacheKey);
+      if (hit) { const o = JSON.parse(hit); o.cached = true; return o; }
+    } catch (_) {}
+    const noneOut = function (reason, cacheIt) {
+      const o = { none: true, reason: reason, facetHash: canonical };
+      if (cacheIt) { try { cache.put(cacheKey, JSON.stringify(o), KB_AI_CACHE_TTL); } catch (_) {} }
+      return o;
+    };
+
+    // Retrieval over our own KB (the existing section search). A thin match
+    // never reaches the vendor — the score floor keeps low-signal facet
+    // combos free, and the none is cached so they STAY free. A search ERROR
+    // (KB sheet unreachable) is NOT cached — transient outages shouldn't
+    // pin a 6h none.
+    const search = searchReference(kbAiQueryTerms_(clean));
+    if (search && search.error) return noneOut('search-failed', false);
+    const chunks = (((search && search.results) || [])
+      .filter(function (r) { return r.type === 'article' && r.chunkMd; })
+      .slice(0, KB_AI_MAX_CHUNKS));
+    if (!chunks.length || chunks[0].score < KB_AI_SCORE_FLOOR) return noneOut('thin', true);
+
+    const cfg = getKbAiConfig_();
+    if (!cfg.apiKey) return noneOut('no-key', false);
+    if (kbAiReadSpend_().usd >= cfg.dailyCap) return noneOut('cap', false);
+
+    let vendor = null;
+    try { vendor = kbAiCallVendor_(cfg, kbAiBuildPrompt_(clean, chunks)); }
+    catch (e) { Logger.log('kbGetFacetGuidance vendor: ' + e.message); }
+    if (!vendor) return noneOut('vendor-failed', false);
+
+    const cost = kbAiEstimateCostUsd_(cfg.model, vendor.usage);
+    kbAiRecordSpend_(cost);
+    // PHI-free audit row — facets are validated enums, never note content.
+    writeAuditLog_(emp, 'KbAiGuidance', '', '', false, 0,
+      'facets=' + canonical + '; model=' + cfg.model + '; usd=' + cost.toFixed(4), emp.email);
+    if (!vendor.text || vendor.text.indexOf('NOT_COVERED') >= 0) return noneOut('not-covered', true);
+
+    const out = {
+      guidance: vendor.text.substring(0, 2000),
+      sources: chunks.map(function (c) { return { id: c.id, title: c.title, heading: c.heading, anchor: c.anchor }; }),
+      facetHash: canonical,
+    };
+    try { cache.put(cacheKey, JSON.stringify(out), KB_AI_CACHE_TTL); } catch (_) {}
+    return out;
+  } catch (err) { return { none: true, reason: 'error', error: err.message }; }
 }
 
 const KB_DOC_HEADING_PREFIX = {

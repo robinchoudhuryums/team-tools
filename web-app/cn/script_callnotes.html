@@ -6848,6 +6848,7 @@ function cnRenderAdminBody_(cfg) {
   var ffValues   = (cfg.featureFlags && cfg.featureFlags.values) || {};
   var ffDanger   = {};
   ffRegistry.forEach(function (f) { if (f.danger) ffDanger[f.key] = f.danger; });
+  var kbAi = cfg.kbAi || null;
 
   var deptRows = Object.keys(cfg.departmentEmails).map(function (dept) {
     return '<div class="field-row" style="gap:8px;margin-bottom:6px">' +
@@ -6915,6 +6916,27 @@ function cnRenderAdminBody_(cfg) {
       '</div>' +
     '</div>' +
 
+    // Phase A — KB AI guidance settings (cap + model; the on/off switch is
+    // the kbAiGuidance feature toggle above; the API key stays editor-only).
+    (kbAi ?
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' AI Guidance (Reference)</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Settings for the Reference drawer’s AI guidance card — turn it on/off with the “AI guidance” feature toggle above. ' +
+        (kbAi.hasKey ? 'API key: <strong>set</strong>.'
+                     : '<strong>API key not set</strong> — set Script Property <code>KB_AI_API_KEY</code> in the Apps Script editor (the card stays silent until then).') +
+        ' Today’s spend: $' + esc(Number((kbAi.spend && kbAi.spend.usd) || 0).toFixed(2)) +
+        ' across ' + esc(String((kbAi.spend && kbAi.spend.calls) || 0)) + ' call(s). When the daily cap is reached, the card silently stops for the rest of the day.</div>' +
+      '<div class="field-row" style="gap:8px">' +
+        '<div class="field" style="flex:1"><label>Daily cap (USD, org-wide)</label>' +
+          '<input type="number" id="cn-admin-kbai-cap" min="0" max="100" step="0.5" value="' + esc(String(kbAi.dailyCap)) + '"></div>' +
+        '<div class="field" style="flex:1.4"><label>Model</label><select id="cn-admin-kbai-model">' +
+          (kbAi.models || []).map(function (m) {
+            return '<option value="' + esc(m) + '"' + (m === kbAi.model ? ' selected' : '') + '>' + esc(m) + '</option>';
+          }).join('') + '</select></div>' +
+      '</div>' +
+      '<button class="btn-modal-ok" id="cn-admin-save-kbai" style="margin:10px 0 0">Save AI Settings</button>' +
+    '</div>' : '') +
+
     // #8 — reconcile hand-entered Sheet rows
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('refresh', 14) + ' Sheet Reconciliation</div>' +
@@ -6952,6 +6974,26 @@ function cnRenderAdminBody_(cfg) {
         .withFailureHandler(function (err) { btn.disabled = false; btn.textContent = 'Reconcile Sheets'; showToast((err && err.message) || 'Reconcile failed', 'toast-error'); })
         .reconcileCallNotes();
     });
+  });
+
+  var kbaiBtn = document.getElementById('cn-admin-save-kbai');
+  if (kbaiBtn) kbaiBtn.addEventListener('click', function () {
+    var btn = this;
+    var cap = parseFloat((document.getElementById('cn-admin-kbai-cap') || {}).value);
+    var model = (document.getElementById('cn-admin-kbai-model') || {}).value || '';
+    if (!isFinite(cap) || cap < 0 || cap > 100) { showToast('Daily cap must be 0–100 (USD)', 'toast-error'); return; }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save AI Settings';
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+        showToast('AI settings saved', 'toast-success');
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save AI Settings';
+        showToast((err && err.message) || 'Save failed', 'toast-error');
+      })
+      .saveKbAiSettings({ dailyCap: cap, model: model });
   });
 
   document.getElementById('cn-admin-save-flags').addEventListener('click', function () {

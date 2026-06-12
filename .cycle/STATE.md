@@ -30,6 +30,25 @@ Updated: 2026-06-11
   with placeholder-token insert/replace (textarea-first, KB_EDIT fallback). Shares
   the Phase 2b KB Images folder (kbpaste-<stamp>-<rand>). INV-118 + S65 added.
   Node harness 99/99.
+- KB AI Phase A DONE (operator decisions confirmed: vendor=Anthropic, cap $3/day
+  Admin-adjustable, model claude-haiku-4-5 Admin-adjustable): kbGetFacetGuidance
+  (rep-callable, kbAiGuidance flag scope-both default-OFF danger, whitelist-only
+  facets via kbAiSanitizeFacets_ — dept/updateType/flag/own-tags vocabularies,
+  novel values DROPPED; canonical facet-hash 6h cache generation-salted by
+  invalidateKbCache_; searchReference retrieval + KB_AI_SCORE_FLOOR; UrlFetchApp
+  → Anthropic /v1/messages; usage-token costing via KB_AI_MODEL_PRICES, unknown
+  model billed at dearest rates; KB_AI_SPEND daily counter vs KB_AI_DAILY_CAP;
+  PHI-free KbAiGuidance audit row; every failure → {none}) + saveKbAiSettings
+  (manager-gated, cap 0–100 + model whitelist) + Admin "AI Guidance (Reference)"
+  section (cap/model/spend/key-status; model <select> renders from server's
+  KB_AI_MODEL_PRICES keys) + drawer Guidance card (kbAiGatherFacets_ — enum
+  facets only; collapse-after-seen via umsKbPanel.aiSeen). INV-119 + S66 +
+  operator entries (KB_AI_API_KEY / KB_AI_MODEL / KB_AI_DAILY_CAP /
+  KB_AI_GENERATION / KB_AI_SPEND). Node harness 105/105 (6 new: whitelist,
+  canonical hash, query terms, prompt INV-119 guard, source tripwire); editor
+  test test_kbAi_gatesAndSettingsValidation + saveKbAiSettings gate case.
+  Operator setup before flipping the flag: set KB_AI_API_KEY + a hard spend cap
+  in the Anthropic console.
 
 ## Completed this cycle
 - AUDIT | (read-only) | Cycle 2 broad scan: 1 High (H1 Esc kills composers), 9 Medium
@@ -107,8 +126,9 @@ Updated: 2026-06-11
   X1/KB-5 inline-onclick JS-string contexts (inert, UUIDs), L16 signature canvas
   rotate overflow, FP-4/FP-5 public-form niceties, M2-class Esc-ordering for
   stacked static modals (covered by topmost fix).
-- (Carried from Cycle 1) KB AI Phase A plan (full spec in git history of this file @
-  34835f5) — now NEXT in the roadmap queue; P#17 Neon out of scope.
+- KB AI Phase A SHIPPED (see In progress above). Phase B (Tier-2 ask box, spec @
+  34835f5) stays NOT BUILT — gated on observed demand (zero-result/question
+  signal); P#17 Neon out of scope.
 - (Carried) Operator: deploy latest (clasp push -f + New version), run runAllTests()
   once; Script Properties INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID,
   FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
@@ -133,11 +153,11 @@ Updated: 2026-06-11
   fixed at source; sticky drafts 24h TTL.
 
 ## Where I left off
-Cycle 2 CLOSED; KB Phase 2b AND Phase 3 SHIPPED on
-`claude/affectionate-dijkstra-js8rlm` (Node 99/99). NEXT: operator deploy
-(clasp push -f + New version + ONE-TIME re-auth for the new Drive scope), then the
-S63 + S65 walks — incl. the post-deploy spot-check: as a REP, confirm a Drive-hosted
-image renders inside the HtmlService iframe (if org policy blocks domain-link
-sharing, share the KB Images folder manually) — and one editor
-kb_uploadImage_rejectsInvalidPayloads run via runAllTests(). Then: KB AI Phase A
-(full spec @ 34835f5; operator decisions open: vendor confirm, cap values, model).
+Cycle 2 CLOSED; KB Phase 2b + Phase 3 + KB AI Phase A all SHIPPED on
+`claude/affectionate-dijkstra-js8rlm` (Node 105/105). NEXT: operator deploy
+(clasp push -f + New version + ONE-TIME re-auth for the Drive scope), run
+runAllTests() once (new: kbAi_gatesAndSettingsValidation + the saveKbAiSettings
+gate case), then the S63 + S65 walks. For Phase A (S66): set Script Property
+KB_AI_API_KEY + a hard spend cap in the Anthropic console, flip the kbAiGuidance
+feature toggle in Admin, and walk S66. Roadmap after that: KB AI Phase B (gated
+on demand) or /broad-scan to open Cycle 3.

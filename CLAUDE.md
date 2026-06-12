@@ -253,7 +253,7 @@ this section before touching the relevant area.
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
-  `kbConvertDriveDoc`, `kbGetUsageStats`.
+  `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -832,9 +832,11 @@ this section before touching the relevant area.
     segmented toggle's active state.
   - `umsKbPanel` — KB drawer preferences as ONE JSON blob:
     `recents[]` ({id, title}, capped 5, deduped) + `suggest` (bool,
-    default true — the context-suggestions toggle). Sanitized on read
-    (corrupt blob → `{}`); deliberately a single key so drawer prefs
-    don't multiply the key count.
+    default true — the context-suggestions toggle) + `aiSeen`
+    ({hash, date} — the Phase A guidance card's collapse-after-seen
+    marker; same facet combo renders collapsed for the rest of the
+    day). Sanitized on read (corrupt blob → `{}`); deliberately a
+    single key so drawer prefs don't multiply the key count.
   - `umsLastView` — the active tab key, written by `showView` on every
     navigation. On boot (when no `?tool=` deep-link is present) the shell
     re-enters this tab instead of defaulting to Time Clock, so an
@@ -1914,6 +1916,36 @@ this section before touching the relevant area.
   ScriptLock (Drive-only write); PHI-free-by-policy reminder sits under
   the textarea; orphaned uploads (pasted, never saved) stay in the
   folder — trim manually. Audit row `KbImageUpload` (INV-118).
+- **KB AI Phase A — facet-based guidance card in the Reference drawer.**
+  `kbGetFacetGuidance(facets)` sends ONLY whitelisted enum facets
+  (department / update type / tags / flag type) + excerpts from our own
+  PHI-free-by-policy KB articles to the **Anthropic Messages API**
+  (`UrlFetchApp` → `/v1/messages`; key in Script Property
+  `KB_AI_API_KEY`) and returns `{guidance, sources[]}` rendered as a
+  "Guidance" card atop the drawer home with Open-¶ source links. The
+  load-bearing privacy invariant is **INV-119: no free text ever enters
+  the vendor payload** — `kbAiSanitizeFacets_` drops every
+  non-vocabulary value (novel tags, typo'd enums, smuggled free text),
+  and `kbAiBuildPrompt_(clean, chunks)` has no parameter through which
+  note text could pass; the client's facet gather
+  (`kbAiGatherFacets_`: form flags + tags + `umsCallNotesLastDept`) is a
+  convenience, not the boundary. Cost funnel: canonical facet-hash cache
+  (6h, generation-salted by KB edits) → retrieval score floor (thin
+  matches never call the API, cached as none) → daily org spend cap
+  (`KB_AI_DAILY_CAP`, default $3; costed from usage tokens via
+  `KB_AI_MODEL_PRICES`, unknown model billed at the dearest known
+  rates) → vendor. Everything is best-effort: any failure returns
+  `{none}` and the drawer's existing Suggested block stands alone.
+  Gated by the `kbAiGuidance` feature flag (default OFF, scope `both`,
+  danger-marked: external AI vendor). Admin tab "AI Guidance
+  (Reference)" section edits the cap + model (`saveKbAiSettings`,
+  manager-gated; the model `<select>` renders from the server's
+  `KB_AI_MODEL_PRICES` keys so client/server can't drift) and shows
+  today's spend + key status; the key itself is editor-only.
+  Collapse-after-seen: the card collapses for the rest of the day per
+  facet-hash (`umsKbPanel.aiSeen`). Model default `claude-haiku-4-5`
+  ($1/$5 per MTok). Phase B (ask box) is deliberately NOT built —
+  gated on observed demand. See INV-119 + S66.
 - **KB reference drawer — mid-call lookup as a shell capability.** A
   slide-over panel (`#kb-drawer`, right edge, z-index 55 — ABOVE the
   `.overlay` layer (50) so it stays readable + usable while the email
@@ -2220,6 +2252,27 @@ manually for a fresh deploy or environment:
   / deploy — accept the new scope) or every conversion fails with an auth
   error. The converter reads Docs with the deployer's access, the same trust
   boundary as embedding them.
+- **Set Script Property `KB_AI_API_KEY` to enable the KB AI guidance card
+  (Phase A).** An Anthropic API key (console.anthropic.com); without it,
+  `kbGetFacetGuidance` silently returns `{none}` even with the `kbAiGuidance`
+  feature flag on. The key is deliberately NOT settable or readable through
+  any endpoint — editor-only, same posture as `ADP_SS_ID`. Also set a **hard
+  spend cap in the Anthropic console** as the backstop behind the app's soft
+  daily cap. Then flip the `kbAiGuidance` feature toggle (Admin tab; default
+  OFF, danger confirm names the external vendor) — INV-119 documents the
+  privacy boundary (whitelisted enum facets + own KB excerpts only).
+- **Script Properties `KB_AI_DAILY_CAP` / `KB_AI_MODEL`** (Admin-managed).
+  Written by the Call Notes → Admin → "AI Guidance (Reference)" section
+  (`saveKbAiSettings`, manager-gated). Defaults when unset: $3/day org-wide,
+  `claude-haiku-4-5`. The model must be a `KB_AI_MODEL_PRICES` key (Code.js)
+  so spend accounting always has real rates — adding a new model option means
+  adding its $/MTok rates there and redeploying.
+- **Script Properties `KB_AI_GENERATION` / `KB_AI_SPEND`** (auto-managed).
+  The guidance-cache generation salt (bumped by every KB save/delete via
+  `invalidateKbCache_`) and the `{date, usd, calls}` daily spend counter.
+  No manual setup — documented so they're recognizable when inspecting
+  Script Properties. Delete `KB_AI_SPEND` to reset today's budget; bump
+  `KB_AI_GENERATION` to force-invalidate all cached guidance.
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
@@ -2738,6 +2791,7 @@ INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and
 INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissionId)` (the Intake Sent tab) are read-only and caller-scoped: a rep sees only rows whose stored `repId` matches their own; a manager sees all (parallels INV-90/91). The list is metadata-only (id, timestamp, rep, patientInfo, language, recipient — never the answers JSON), newest-first, capped at `INTAKE_LIST_CAP_`=100, and skips an unreachable form-type tab rather than failing the whole list. The detail is a bounded lookup — id-column scan, then one full-row fetch — and parses the answers/recommendations/selections JSON defensively (corrupt blob → `{}`). Timestamps and the ACCT dob cell route through Date-coercion guards (`intakeTsString_`). The submission tabs remain APPEND-ONLY — no edit endpoint exists. Pinned by `test_intake_sentViewer_callerScopedAndManager` | Subsystem: Server + Client (Intake views)
 INV-117 | `kbRecordView(itemId, context)` is rep-callable (requires `getEmployeeInfo_`), locked (INV-01), and append-only — one PHI-free row (timestamp, itemId, repId, sanitized context) per open into the `KbViews` tab of the KB spreadsheet; it never reads or returns other reps' data. The client fires it best-effort (fire-and-forget) so a failure never blocks or surfaces in the reading UX. `kbGetUsageStats()` is manager-gated (INV-02/31), read-only, bounded (last `KB_VIEWS_MAX_SCAN`=4000 rows), windowed to `KB_USAGE_WINDOW_DAYS`=30, and joins titles from the KB sheet so deleted items drop out; timestamp cells are recovered in the KB spreadsheet's OWN tz (the tz that coerced them — same discipline as `normalizeAuditTs_`). Pinned by `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-118 | `kbUploadImage(dataUrl)` (KB Phase 3) is manager-gated (INV-02) and validates BEFORE any Drive work: data-URL shape via the pure `kbParseImageDataUrl_`, content-type whitelist `KB_IMG_UPLOAD_TYPES` (PNG/JPEG/GIF/WebP — SVG deliberately excluded, it's script-capable), and the `KB_IMG_UPLOAD_MAX_CHARS` (~3MB) cap mirrored client-side. On success it writes one file to the `KB_IMAGES_FOLDER_ID` folder (`kbpaste-<stamp>-<rand>`), writes a PHI-free `KbImageUpload` audit row with the manager as actor, and returns the Drive thumbnail URL. Deliberately NO ScriptLock — a Drive-only atomic write; holding the global lock through a multi-second upload would stall every punch/note write. Pinned by `test_kb_uploadImage_rejectsInvalidPayloads` + the `kbUploadImage` case in `test_managerGates_rejectNonManager` + the `kbParseImageDataUrl_` Node test | Subsystem: Server + Client (Reference views)
+INV-119 | **No free text ever enters the KB AI vendor payload.** `kbGetFacetGuidance(facets)` (Phase A) is rep-callable (requires `getEmployeeInfo_`), gated server-side by the `kbAiGuidance` feature flag (scope `both`, default OFF, danger-marked), and best-effort — every failure path (flag off, no facets, thin retrieval, missing `KB_AI_API_KEY`, daily cap reached, vendor error) returns `{ none: true, reason }` and never throws to the client. The privacy boundary is `kbAiSanitizeFacets_`: every facet is whitelist-validated against server-side vocabularies (departments ∈ `getDepartmentEmails_()` keys; update types ∈ `UPDATE_SUGGESTIONS_DEFAULT` ∪ `getUpdateSuggestions_()`; flag ∈ `CN_FLAG_TYPES`+`urgent`; tags ∈ the CALLER's own established tag vocabulary from `getCallNoteTagSuggestions` — a novel tag typed this minute is DROPPED, never sent), and the prompt builder `kbAiBuildPrompt_(clean, chunks)` takes ONLY the sanitized facets + our own PHI-free-by-policy KB chunk excerpts — there is no parameter through which free-typed note text or patient data can reach the wire. Retrieval reuses `searchReference` over `kbAiQueryTerms_(clean)` with a score floor (`KB_AI_SCORE_FLOOR` — thin matches never hit the API and the none is cached). Results cache org-wide (`KB_AI_CACHE_PREFIX`, 6h) keyed by generation salt (`KB_AI_GENERATION`, bumped by `invalidateKbCache_` on every KB save/delete) + MD5 of the canonical order-insensitive facet string (`kbAiCanonicalFacets_`). Spend: each vendor call is costed from usage tokens via `KB_AI_MODEL_PRICES` (unknown model → most expensive known rates, the cap can never be undercounted) into the `KB_AI_SPEND` daily counter; at `KB_AI_DAILY_CAP` (default $3, Admin-adjustable) the endpoint returns none until the date rolls. Each vendor call writes a PHI-free `KbAiGuidance` audit row (canonical facets + model + cost). `saveKbAiSettings` (manager-gated, INV-57 family) validates cap 0–100 + model ∈ `KB_AI_MODEL_PRICES` and persists `KB_AI_DAILY_CAP`/`KB_AI_MODEL`; the API key is NEVER settable or readable through any endpoint. Pinned by the `kb — AI Phase A` Node tests (whitelist / canonical hash / prompt / source tripwire) + `test_kbAi_gatesAndSettingsValidation` + the `saveKbAiSettings` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -3322,6 +3376,20 @@ S65 | KB Phase 3 — paste-a-screenshot upload | Subsystem: Server, Client (Refe
     - Paste plain text → normal paste (the handler only intercepts image items)
     - As a non-manager, call `google.script.run...kbUploadImage('data:image/png;base64,AAAA')` from the console
   Expected: Upload is manager-gated ("Manager access required." for the console call) and validates type whitelist (no SVG) + size cap BEFORE any Drive write. The paste listener is scoped to the textarea (dies with the modal — no app-wide paste interception). Failed/oversized uploads remove the placeholder and toast; the body is never left with a dangling pending token by the resolve path. PHI reminder text sits under the textarea. Pinned by INV-118's tests.
+
+S66 | KB AI Phase A — facet guidance card (drawer) | Subsystem: Server, Client (Reference views), Client (Call Notes views)
+  Steps:
+    - Set Script Property `KB_AI_API_KEY` to a real Anthropic API key; as a manager, Call Notes → Admin → Feature Toggles → enable "AI guidance (Reference drawer)" → confirm the danger dialog names the external vendor → Save
+    - In the new "AI Guidance (Reference)" Admin section: confirm it shows "API key: set", today's spend ($0.00 initially), a Daily cap input (default 3), and a Model select (default `claude-haiku-4-5`); change the cap to 5 → Save → reload Admin → persists
+    - As an enrolled rep with KB articles covering a known topic: open Call Notes → Log, add an established tag (one already on a prior saved note) and/or a flag to the form → press Ctrl/⌘+K
+    - Confirm a "Guidance" card renders at the top of the drawer home: 2–4 sentences + source rows with ¶ headings; click a source → opens the article scrolled to that section
+    - Close + reopen the drawer with the same facets → the card renders COLLAPSED ("Show guidance for this call type"); click it → expands (collapse-after-seen per facet-hash/day via `umsKbPanel.aiSeen`)
+    - Type a BRAND-NEW tag (never used before) with no flag → no Guidance card (novel tag dropped by the whitelist → no-facets)
+    - Edit/save any KB article, reopen the drawer → a fresh vendor call fires (generation salt invalidated the cache); check the AuditLog for `KbAiGuidance` rows carrying `facets=…; model=…; usd=…` (never note content)
+    - Set the Daily cap to 0 → Save → reopen the drawer → no card (cap reached); restore the cap
+    - Disable the feature toggle → no card, and `google.script.run...kbGetFacetGuidance({flagType:'action'})` returns `{none, reason:'disabled'}`
+    - As a non-manager, call `google.script.run...saveKbAiSettings({dailyCap:3, model:'claude-haiku-4-5'})` from the console
+  Expected: The card only ever renders from whitelisted enum facets + the team's own KB excerpts — the vendor payload never carries typed note text or patient data (INV-119; Node-pinned prompt-builder tests + source tripwire). Every failure path (flag off, no key, thin retrieval, cap, vendor error) silently yields no card and the existing Suggested block stands. Cached guidance serves for 6h per facet combo org-wide. `saveKbAiSettings` rejects the non-manager ("Manager access required."), caps outside 0–100, and unknown models. Pinned by the `kb — AI Phase A` Node tests + `test_kbAi_gatesAndSettingsValidation`.
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
