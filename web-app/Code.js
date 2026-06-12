@@ -473,6 +473,7 @@ function doGet(e) {
   // window.SERVER_QUERY_PARAMS so client code can read them reliably.
   const tpl = HtmlService.createTemplateFromFile('index');
   tpl.serverQueryParams = (e && e.parameter) || {};
+  try { tpl.webAppUrl = getWebAppExecUrl_(); } catch (_) { tpl.webAppUrl = ''; }
   return tpl
     .evaluate()
     .setTitle('UMS Team Tools')
@@ -5207,10 +5208,19 @@ function generateFormToken_() {
  *  /exec over a /dev head URL) so the emailed link is the canonical anonymous
  *  form. Script Property WEB_APP_URL (set to the published /exec URL) overrides
  *  the resolved base. */
-function buildFormUrl_(token) {
+/** The canonical public /exec base URL (WEB_APP_URL property override,
+ *  else the service URL), normalized. Shared by the form links AND the
+ *  client pop-out (shipped via doGet as SERVER_WEB_APP_URL — the iframe's
+ *  own window.location is a session-bound googleusercontent.com URL that
+ *  renders BLANK when opened as a top-level window). */
+function getWebAppExecUrl_() {
   const base = PropertiesService.getScriptProperties().getProperty('WEB_APP_URL')
             || ScriptApp.getService().getUrl();
-  return normalizeWebAppExecUrl_(base) + '?form=' + encodeURIComponent(token);
+  return normalizeWebAppExecUrl_(base);
+}
+
+function buildFormUrl_(token) {
+  return getWebAppExecUrl_() + '?form=' + encodeURIComponent(token);
 }
 
 /** Normalizes an Apps Script web-app URL to its canonical public /exec form:

@@ -1227,6 +1227,19 @@ test('edChipHtml_: signed/void/needs-signature/for-review chips', () => {
   assert.ok(edChipHtml_({ status: 'issued', requiresSignature: true, overdue: true }).indexOf('Overdue') >= 0);
   assert.ok(edChipHtml_({ status: 'issued', requiresSignature: false }).indexOf('For review') >= 0);
 });
+test('popOutCurrentView opens SERVER_WEB_APP_URL, never the iframe location (INV-78 class)', () => {
+  // The iframe's own window.location is a session-bound googleusercontent
+  // URL that renders BLANK as a top-level window — the pop-out shipped
+  // broken on exactly this until the operator caught it. Pin: the function
+  // must consult the doGet-injected real /exec URL, and index.html must
+  // inject it via the unescaped scriptlet.
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const fn = core.match(/function popOutCurrentView\(\) \{[\s\S]*?\n\}/);
+  assert.ok(fn, 'popOutCurrentView found');
+  assert.ok(fn[0].indexOf('SERVER_WEB_APP_URL') >= 0, 'pop-out uses the injected deploy URL');
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  assert.ok(idx.indexOf('window.SERVER_WEB_APP_URL = <?!=') >= 0, 'index.html injects SERVER_WEB_APP_URL unescaped (INV-78)');
+});
 test('signature-pad export cap parity: both pads cap the export at 600px (INV-96)', () => {
   // The empdocs pad is adapted (parameterized) from form_public's — the
   // load-bearing shared rule is the <=600px export downscale that keeps the

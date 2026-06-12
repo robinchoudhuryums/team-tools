@@ -209,8 +209,13 @@ window.addEventListener('load', () => {
  *  to the front instead of spawning duplicates. */
 function popOutCurrentView() {
   try {
-    const url = window.location.origin + window.location.pathname +
-      '?compact=1&tool=' + encodeURIComponent(currentView);
+    // The iframe's own origin+pathname is the sandboxed googleusercontent
+    // URL — session-bound, renders BLANK as a top-level window (the same
+    // iframe-sandbox class as INV-78). Open the real deploy URL shipped by
+    // doGet; the location fallback only matters for local dev.
+    const base = window.SERVER_WEB_APP_URL ||
+      (window.location.origin + window.location.pathname);
+    const url = base + '?compact=1&tool=' + encodeURIComponent(currentView);
     window.open(url, 'umsTeamToolsCompact',
       'width=380,height=780,menubar=no,toolbar=no,location=no,status=no,resizable=yes');
   } catch (e) { showToast('Pop-out blocked by browser', 'toast-warn'); }

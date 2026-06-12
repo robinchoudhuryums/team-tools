@@ -26,6 +26,11 @@
     // this script block. The escape is JSON-valid and round-trips
     // through JSON.parse to the original `<` character.
     window.SERVER_QUERY_PARAMS = <?!= JSON.stringify(serverQueryParams || {}).replace(/</g, '\\u003c') ?>;
+    // The user-facing /exec URL — the pop-out must open THIS, never the
+    // iframe's own location (a session-bound googleusercontent.com URL
+    // that loads blank as a top-level window). Server-controlled value;
+    // same escape guard for consistency.
+    window.SERVER_WEB_APP_URL = <?!= JSON.stringify(webAppUrl || '').replace(/</g, '\\u003c') ?>;
     (function () {
       try {
         if (window.SERVER_QUERY_PARAMS && window.SERVER_QUERY_PARAMS.compact === '1') {
