@@ -480,6 +480,16 @@ function cleanupTestData() {
     } catch (e) { Logger.log('cleanupTestData: CN sheet cleanup skipped: ' + e.message); }
   }
 
+  // Training tabs (KB spreadsheet) — drop TEST_-employee rows left by an
+  // aborted test_training_assignCompleteFlow run (its finally normally cleans
+  // by itemId; this is the belt-and-suspenders sweep). Best-effort: the KB
+  // spreadsheet may not be configured in a bare test environment.
+  try {
+    const kbSs = getKbSS_();
+    _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ASSIGN_TAB), 'TEST_', TA.EMP_ID, 2);
+    _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
+  } catch (e) { Logger.log('cleanupTestData: training tabs cleanup skipped: ' + e.message); }
+
   invalidateRosterCache_();
   Logger.log('cleanupTestData: TEST_* rows removed, balances reset.');
 }
@@ -854,6 +864,9 @@ function _runAllTests() {
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
   _integrationTest('kb_uploadImage_rejectsInvalidPayloads',      test_kb_uploadImage_rejectsInvalidPayloads);
   _integrationTest('kbAi_gatesAndSettingsValidation',            test_kbAi_gatesAndSettingsValidation);
+
+  // ── Training & Employee Docs — T1 (spec: docs/training-employee-docs-spec.md) ──
+  _integrationTest('training_assignCompleteFlow',               test_training_assignCompleteFlow);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
@@ -3739,6 +3752,10 @@ function test_managerGates_rejectNonManager() {
     ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
     ['kbUploadImage',                  function () { return kbUploadImage('data:image/png;base64,AAAA'); }],
     ['saveKbAiSettings',               function () { return saveKbAiSettings({ dailyCap: 3, model: 'claude-haiku-4-5' }); }],
+    // Training & Employee Docs — T1 manager gates (spec §5).
+    ['getTrainingDashboard',           function () { return getTrainingDashboard(); }],
+    ['saveTrainingAssignment',         function () { return saveTrainingAssignment({ itemId: 'no-such-item', empIds: ['x'] }); }],
+    ['revokeTrainingAssignment',       function () { return revokeTrainingAssignment('no-such-assign'); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -3828,6 +3845,111 @@ function test_kbAi_gatesAndSettingsValidation() {
   // NOTE: the success path writes Script Properties KB_AI_DAILY_CAP /
   // KB_AI_MODEL — exercised manually (S66) to avoid mutating operator
   // settings from a test run.
+}
+
+// ── Training & Employee Docs — T1 lifecycle (spec: docs/training-employee-docs-spec.md) ──
+// Assign → rep sees pending → complete → done; RE-ASSIGN resets to pending
+// (the §3a re-certification rule); revoke removes it from the checklist.
+// Fixture: a throwaway KB article (created/deleted via the manager-gated KB
+// endpoints); training rows referencing it are deleted in the finally.
+function _cleanupTrainingRowsForItem_(itemId) {
+  [TRAIN_ASSIGN_TAB, TRAIN_COMPLETE_TAB].forEach(function (tabName) {
+    try {
+      const sheet = getKbSS_().getSheetByName(tabName);
+      if (!sheet) return;
+      const last = sheet.getLastRow();
+      if (last < 2) return;
+      const idCol = tabName === TRAIN_ASSIGN_TAB ? TA.ITEM_ID : TCMP.ITEM_ID;
+      const data = sheet.getRange(2, 1, last - 1, idCol + 1).getValues();
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (String(data[i][idCol]).trim() === itemId) sheet.deleteRow(i + 2);
+      }
+    } catch (e) { Logger.log('training cleanup (' + tabName + ') failed: ' + e.message); }
+  });
+}
+
+function test_training_assignCompleteFlow() {
+  let kbId = null;
+  try {
+    // Fixture KB article (manager-gated create — also exercises the content link).
+    const saved = _asUser(_TEST_MGR_EMAIL, function () {
+      return kbSaveItem({ title: 'TEST_TRAINING_ITEM', type: 'article', body: 'training fixture body', department: 'TEST' });
+    });
+    _assertTrue(saved && saved.success, 'fixture KB article created');
+    kbId = saved.id;
+
+    // Assign to the India test rep with a future due date.
+    const due = fmtDate_(new Date(Date.now() + 7 * 86400000));
+    const asg = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: kbId, empIds: [_TEST_INDIA_ID], dueDate: due });
+    });
+    _assertTrue(asg && asg.success, 'assignment saved');
+    _assertEq(asg.assigned, 1, 'one employee assigned');
+
+    // Unknown item / empty targets are rejected.
+    const badItem = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: 'no-such-item', empIds: [_TEST_INDIA_ID] });
+    });
+    _assertFailure(badItem, 'no longer exists', 'unknown KB item rejected');
+    const badEmps = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: kbId, empIds: ['NOT_A_ROSTER_ID'] });
+    });
+    _assertFailure(badEmps, 'at least one employee', 'invalid roster ids rejected');
+
+    // Rep checklist: pending, with the due date.
+    let mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    let item = (mine.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertNotNull(item, 'rep sees the assigned item');
+    _assertEq(item.status, 'pending', 'starts pending');
+    _assertEq(item.dueDate, due, 'due date round-trips');
+
+    // A rep can't complete an item that isn't assigned to them.
+    const notMine = _asUser(_TEST_PH_EMAIL, function () { return markTrainingComplete(kbId); });
+    _assertFailure(notMine, 'not assigned', 'completion requires a live assignment (caller-scoped)');
+
+    // Complete it (1.1s later — completedAt must be strictly after assignedAt
+    // at the tabs' second resolution).
+    Utilities.sleep(1100);
+    const done = _asUser(_TEST_INDIA_EMAIL, function () { return markTrainingComplete(kbId); });
+    _assertTrue(done && done.success, 'marked complete');
+    const again = _asUser(_TEST_INDIA_EMAIL, function () { return markTrainingComplete(kbId); });
+    _assertTrue(again && again.success && again.alreadyComplete, 'second complete is idempotent');
+
+    mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    item = (mine.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertEq(item && item.status, 'done', 'checklist shows done');
+
+    // Manager dashboard reflects it.
+    const dash = _asUser(_TEST_MGR_EMAIL, function () { return getTrainingDashboard(); });
+    const dItem = (dash.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertNotNull(dItem, 'dashboard lists the item');
+    _assertTrue(dItem.done >= 1, 'dashboard counts the completion');
+
+    // RE-ASSIGN resets: a newer assignedAt requires a fresh completion (§3a).
+    Utilities.sleep(1100);
+    const re = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: kbId, empIds: [_TEST_INDIA_ID], dueDate: '' });
+    });
+    _assertTrue(re && re.success, 're-assigned');
+    mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    item = (mine.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertEq(item && item.status, 'pending', 're-assignment resets completion');
+
+    // Revoke every active row for the item → gone from the checklist.
+    const dash2 = _asUser(_TEST_MGR_EMAIL, function () { return getTrainingDashboard(); });
+    (dash2.assignments || []).filter(function (a) { return a.itemId === kbId; }).forEach(function (a) {
+      const rv = _asUser(_TEST_MGR_EMAIL, function () { return revokeTrainingAssignment(a.assignId); });
+      _assertTrue(rv && rv.success, 'revoked ' + a.assignId);
+    });
+    mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    item = (mine.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertTrue(!item, 'revoked item leaves the checklist');
+  } finally {
+    if (kbId) {
+      _cleanupTrainingRowsForItem_(kbId);
+      _asUser(_TEST_MGR_EMAIL, function () { return kbDeleteItem(kbId); });
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

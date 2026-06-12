@@ -10781,3 +10781,384 @@ function kbConvertDriveDoc(payload) {
     };
   } catch (err) { return { error: err.message }; }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  TRAINING & EMPLOYEE DOCS — T1: training assignments + completion tracking
+//  (docs/training-employee-docs-spec.md). Training CONTENT is KB items; the
+//  tracking tabs live in the KB spreadsheet (PHI-free, deployer-only sheet
+//  access, server-mediated reads — the KbViews posture). Quizzes are T2;
+//  per-employee signable docs (HR_DOCS_SS_ID) are T3.
+// ════════════════════════════════════════════════════════════════════════════
+const TRAIN_ASSIGN_TAB = 'TrainingAssignments';
+const TRAIN_COMPLETE_TAB = 'TrainingCompletions';
+const TRAIN_ASSIGN_HEADERS = ['AssignId','ItemType','ItemId','EmpId','AssignedBy','AssignedAt','DueDate','RevokedAt'];
+const TRAIN_COMPLETE_HEADERS = ['EmpId','ItemType','ItemId','CompletedAt','Via','QuizAttemptId'];
+const TA = { ASSIGN_ID:0, ITEM_TYPE:1, ITEM_ID:2, EMP_ID:3, ASSIGNED_BY:4, ASSIGNED_AT:5, DUE_DATE:6, REVOKED_AT:7 };
+const TCMP = { EMP_ID:0, ITEM_TYPE:1, ITEM_ID:2, COMPLETED_AT:3, VIA:4, QUIZ_ATTEMPT_ID:5 };
+const TRAIN_ASSIGN_MAX_EMPS = 100;   // per saveTrainingAssignment call
+
+function getOrCreateTrainSheet_(tabName, headers) {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(tabName);
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+// ── Sheets-coercion read guards ───────────────────────────────────────────
+// AssignedAt / CompletedAt are written as 'yyyy-MM-dd HH:mm:ss' strings
+// (CONFIG.TIMEZONE wall time, the writeAuditLog_ convention) and DueDate as
+// 'yyyy-MM-dd' — Sheets coerces both to Dates on read. Recover them in the
+// KB spreadsheet's OWN tz (the tz that coerced them — the normalizeAuditTs_
+// / kbGetUsageStats discipline). String compares on the recovered values
+// are chronological (lexicographic == chronological for these formats).
+function trainCellTs_(v, ssTz) {
+  if (v instanceof Date) return Utilities.formatDate(v, ssTz, 'yyyy-MM-dd HH:mm:ss');
+  return String(v || '').trim();
+}
+function trainCellDate_(v, ssTz) {
+  if (v instanceof Date) return Utilities.formatDate(v, ssTz, 'yyyy-MM-dd');
+  return String(v || '').trim().substring(0, 10);
+}
+
+/** Pure status derivation — shared by getMyTraining + getTrainingDashboard
+ *  and pinned by a Node test. */
+function trainDeriveStatus_(completed, dueDate, todayIso) {
+  if (completed) return 'done';
+  if (dueDate && todayIso > dueDate) return 'overdue';
+  return 'pending';
+}
+
+/** Reads every assignment row into plain objects (small tab — assignments
+ *  are rare; full read like the KB tree). */
+function trainReadAssignments_() {
+  const sheet = getOrCreateTrainSheet_(TRAIN_ASSIGN_TAB, TRAIN_ASSIGN_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const ssTz = getKbSS_().getSpreadsheetTimeZone();
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_ASSIGN_HEADERS.length).getValues();
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i][TA.ASSIGN_ID]) continue;
+    out.push({
+      assignId: String(rows[i][TA.ASSIGN_ID]).trim(),
+      itemType: String(rows[i][TA.ITEM_TYPE] || 'kb').trim(),
+      itemId: String(rows[i][TA.ITEM_ID] || '').trim(),
+      empId: String(rows[i][TA.EMP_ID] || '').trim(),
+      assignedBy: String(rows[i][TA.ASSIGNED_BY] || '').trim(),
+      assignedAt: trainCellTs_(rows[i][TA.ASSIGNED_AT], ssTz),
+      dueDate: trainCellDate_(rows[i][TA.DUE_DATE], ssTz),
+      revoked: !!trainCellTs_(rows[i][TA.REVOKED_AT], ssTz),
+    });
+  }
+  return out;
+}
+
+function trainReadCompletions_(empIdFilter) {
+  const sheet = getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const ssTz = getKbSS_().getSpreadsheetTimeZone();
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_COMPLETE_HEADERS.length).getValues();
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const empId = String(rows[i][TCMP.EMP_ID] || '').trim();
+    if (!empId) continue;
+    if (empIdFilter && empId !== empIdFilter) continue;
+    out.push({
+      empId: empId,
+      itemType: String(rows[i][TCMP.ITEM_TYPE] || 'kb').trim(),
+      itemId: String(rows[i][TCMP.ITEM_ID] || '').trim(),
+      completedAt: trainCellTs_(rows[i][TCMP.COMPLETED_AT], ssTz),
+      via: String(rows[i][TCMP.VIA] || '').trim(),
+    });
+  }
+  return out;
+}
+
+/** Effective assignment per item for one employee: rows matching the empId
+ *  or '*', non-revoked; the LATEST assignedAt wins (re-assign = reset, the
+ *  re-certification mechanism — spec §3a). Returns { itemKey: {itemType,
+ *  itemId, assignedAt, dueDate} }. */
+function trainEffectiveForEmp_(assignments, empId) {
+  const eff = {};
+  for (let i = 0; i < assignments.length; i++) {
+    const a = assignments[i];
+    if (a.revoked || !a.itemId) continue;
+    if (a.empId !== empId && a.empId !== '*') continue;
+    const key = a.itemType + ':' + a.itemId;
+    if (!eff[key] || a.assignedAt > eff[key].assignedAt) {
+      eff[key] = { itemType: a.itemType, itemId: a.itemId, assignedAt: a.assignedAt, dueDate: a.dueDate };
+    }
+  }
+  return eff;
+}
+
+/** Bounded KB title join: id → {title, kbType}. */
+function trainKbTitles_() {
+  const sheet = getOrCreateKbSheet_();
+  const last = sheet.getLastRow();
+  const map = {};
+  if (last < 2) return map;
+  const rows = sheet.getRange(2, 1, last - 1, 4).getValues();  // Id, Department, Title, Type
+  rows.forEach(function (r) {
+    if (r[0]) map[String(r[0])] = { title: String(r[2] || '(untitled)'), kbType: String(r[3] || 'article') };
+  });
+  return map;
+}
+
+/** Rep-callable, caller-scoped, read-only — the rep's training checklist. */
+function getMyTraining() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const assignments = trainReadAssignments_();
+    const eff = trainEffectiveForEmp_(assignments, emp.id);
+    const keys = Object.keys(eff);
+    if (!keys.length) return { items: [] };
+    const completions = trainReadCompletions_(emp.id);
+    const titles = trainKbTitles_();
+    const todayIso = Utilities.formatDate(new Date(), safeTimezone_(emp.timezone), 'yyyy-MM-dd');
+    const items = [];
+    keys.forEach(function (key) {
+      const a = eff[key];
+      if (a.itemType !== 'kb') return;            // quizzes land in T2
+      const kb = titles[a.itemId];
+      if (!kb) return;                            // KB item deleted — unactionable, drop
+      let completedAt = '';
+      for (let i = 0; i < completions.length; i++) {
+        const c = completions[i];
+        if (c.itemType === a.itemType && c.itemId === a.itemId && c.completedAt > a.assignedAt) {
+          if (c.completedAt > completedAt) completedAt = c.completedAt;
+        }
+      }
+      items.push({
+        itemType: a.itemType, itemId: a.itemId,
+        title: kb.title, kbType: kb.kbType,
+        assignedAt: a.assignedAt, dueDate: a.dueDate,
+        completed: !!completedAt, completedAt: completedAt,
+        status: trainDeriveStatus_(!!completedAt, a.dueDate, todayIso),
+      });
+    });
+    const rank = { overdue: 0, pending: 1, done: 2 };
+    items.sort(function (x, y) {
+      if (rank[x.status] !== rank[y.status]) return rank[x.status] - rank[y.status];
+      const dx = x.dueDate || '9999', dy = y.dueDate || '9999';
+      return dx < dy ? -1 : dx > dy ? 1 : x.title.localeCompare(y.title);
+    });
+    return { items: items };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-callable, locked (INV-01). Marks a kb-type training item complete for
+ *  the CALLER (via='read' — honor system; kbRecordView rows corroborate).
+ *  Requires a live effective assignment; idempotent on an already-complete
+ *  item. Audit: TrainingComplete (itemId only — never content). */
+function markTrainingComplete(itemId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    itemId = String(itemId || '').trim();
+    if (!itemId) return { success: false, error: 'Missing item id.' };
+    const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
+    const a = eff['kb:' + itemId];
+    if (!a) return { success: false, error: 'That item is not assigned to you.' };
+    const completions = trainReadCompletions_(emp.id);
+    for (let i = 0; i < completions.length; i++) {
+      const c = completions[i];
+      if (c.itemType === 'kb' && c.itemId === itemId && c.completedAt > a.assignedAt) {
+        return { success: true, alreadyComplete: true, completedAt: c.completedAt };
+      }
+    }
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS)
+      .appendRow([emp.id, 'kb', itemId, ts, 'read', '']);
+    writeAuditLog_(emp, 'TrainingComplete', fmtDate_(now), '', false, 0,
+      'itemId=' + itemId + '; via=read');
+    return { success: true, completedAt: ts };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), read-only. Completion matrix (reps × items) +
+ *  the active assignment list for the revoke UI. Deliberately NOT
+ *  team-scoped — training visibility matches every other manager surface
+ *  (managerGetShiftStats, getTeamMetrics); only Employee Docs (T3) carry
+ *  the elevated per-team confidentiality (spec §3b). */
+function getTrainingDashboard() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const assignments = trainReadAssignments_();
+    const completions = trainReadCompletions_(null);
+    const titles = trainKbTitles_();
+    const rows = getEmployeeRosterRows_();
+    const emps = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][EMP.EMAIL]) continue;
+      emps.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
+    }
+    emps.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    // Items = distinct itemKeys across live assignments that still exist in the KB.
+    const itemMap = {};
+    const reps = [];
+    emps.forEach(function (e) {
+      const eff = trainEffectiveForEmp_(assignments, e.id);
+      const cell = {};
+      Object.keys(eff).forEach(function (key) {
+        const a = eff[key];
+        if (a.itemType !== 'kb' || !titles[a.itemId]) return;
+        if (!itemMap[key]) itemMap[key] = { key: key, itemType: a.itemType, itemId: a.itemId, title: titles[a.itemId].title, assigned: 0, done: 0, overdue: 0 };
+        let completedAt = '';
+        for (let i = 0; i < completions.length; i++) {
+          const c = completions[i];
+          if (c.empId === e.id && c.itemType === a.itemType && c.itemId === a.itemId && c.completedAt > a.assignedAt) {
+            if (c.completedAt > completedAt) completedAt = c.completedAt;
+          }
+        }
+        const status = trainDeriveStatus_(!!completedAt, a.dueDate, todayIso);
+        cell[key] = status;
+        itemMap[key].assigned++;
+        if (status === 'done') itemMap[key].done++;
+        if (status === 'overdue') itemMap[key].overdue++;
+      });
+      if (Object.keys(cell).length) reps.push({ id: e.id, name: e.name, items: cell });
+    });
+    const items = Object.keys(itemMap).map(function (k) { return itemMap[k]; })
+      .sort(function (a, b) { return a.title.localeCompare(b.title); });
+    // Active (non-revoked) assignment rows for the revoke UI.
+    const empName = {};
+    emps.forEach(function (e) { empName[e.id] = e.name; });
+    const active = assignments.filter(function (a) { return !a.revoked && a.itemType === 'kb' && titles[a.itemId]; })
+      .map(function (a) {
+        return {
+          assignId: a.assignId, itemId: a.itemId, title: titles[a.itemId].title,
+          empId: a.empId, empLabel: a.empId === '*' ? 'All employees' : (empName[a.empId] || a.empId),
+          assignedBy: a.assignedBy, assignedAt: a.assignedAt, dueDate: a.dueDate,
+        };
+      })
+      .sort(function (x, y) { return x.assignedAt < y.assignedAt ? 1 : -1; });
+    return { items: items, reps: reps, assignments: active };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Assigns one KB item to one or
+ *  more employees (or '*' = everyone). Always APPENDS — a duplicate
+ *  assignment for the same (item, emp) is the deliberate "reset" path (the
+ *  newer assignedAt requires a fresh completion, spec §3a). Best-effort
+ *  branded notification per employee (INV-14). Audit: TrainingAssign. */
+function saveTrainingAssignment(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    payload = payload || {};
+    const itemId = String(payload.itemId || '').trim();
+    if (!itemId) return { success: false, error: 'Pick a Reference item to assign.' };
+    const kb = trainKbTitles_()[itemId];
+    if (!kb) return { success: false, error: 'That Reference item no longer exists.' };
+    const dueDate = String(payload.dueDate || '').trim();
+    if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return { success: false, error: 'Invalid due date.' };
+    // Resolve targets: '*' or a validated, deduped list of roster ids.
+    let targets = [];
+    let allMode = false;
+    if (payload.empIds === '*' || (Array.isArray(payload.empIds) && payload.empIds.indexOf('*') >= 0)) {
+      allMode = true;
+    } else if (Array.isArray(payload.empIds)) {
+      const rows = getEmployeeRosterRows_();
+      const valid = {};
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][EMP.EMAIL]) valid[String(rows[i][EMP.ID]).trim()] = true;
+      }
+      const seen = {};
+      payload.empIds.forEach(function (id) {
+        id = String(id || '').trim();
+        if (id && valid[id] && !seen[id]) { seen[id] = true; targets.push(id); }
+      });
+    }
+    if (!allMode && !targets.length) return { success: false, error: 'Pick at least one employee.' };
+    if (targets.length > TRAIN_ASSIGN_MAX_EMPS) return { success: false, error: 'Too many employees in one assignment (max ' + TRAIN_ASSIGN_MAX_EMPS + ').' };
+    const sheet = getOrCreateTrainSheet_(TRAIN_ASSIGN_TAB, TRAIN_ASSIGN_HEADERS);
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const writeIds = allMode ? ['*'] : targets;
+    writeIds.forEach(function (empId) {
+      sheet.appendRow([Utilities.getUuid(), 'kb', itemId, empId, callerEmp.email, ts, dueDate, '']);
+    });
+    writeAuditLog_(callerEmp, 'TrainingAssign', fmtDate_(now), '', false, 0,
+      'itemId=' + itemId + '; targets=' + (allMode ? 'all' : targets.length) + (dueDate ? '; due=' + dueDate : ''),
+      callerEmp.email);
+    notifyTrainingAssigned_(allMode ? null : targets, kb.title, dueDate);
+    return { success: true, assigned: allMode ? 'all' : targets.length };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Revokes one assignment row
+ *  (sets RevokedAt — never deletes; the history stays legible). Idempotent.
+ *  Audit: TrainingRevoke. */
+function revokeTrainingAssignment(assignId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    assignId = String(assignId || '').trim();
+    if (!assignId) return { success: false, error: 'Missing assignment id.' };
+    const sheet = getOrCreateTrainSheet_(TRAIN_ASSIGN_TAB, TRAIN_ASSIGN_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { success: false, error: 'Assignment not found.' };
+    const ids = sheet.getRange(2, TA.ASSIGN_ID + 1, last - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() !== assignId) continue;
+      const rowIdx = i + 2;
+      const revokedCell = sheet.getRange(rowIdx, TA.REVOKED_AT + 1);
+      const ssTz = getKbSS_().getSpreadsheetTimeZone();
+      if (trainCellTs_(revokedCell.getValue(), ssTz)) return { success: true, alreadyRevoked: true };
+      const now = new Date();
+      revokedCell.setValue(fmtDate_(now) + ' ' + fmtTime_(now));
+      writeAuditLog_(callerEmp, 'TrainingRevoke', fmtDate_(now), '', false, 0,
+        'assignId=' + assignId, callerEmp.email);
+      return { success: true };
+    }
+    return { success: false, error: 'Assignment not found.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Best-effort (INV-14): branded "training assigned" email to each target
+ *  employee (null targets = everyone on the roster with an email). Failures
+ *  log and never block the assignment. */
+function notifyTrainingAssigned_(targetIds, itemTitle, dueDate) {
+  try {
+    const rows = getEmployeeRosterRows_();
+    const wanted = targetIds ? {} : null;
+    if (targetIds) targetIds.forEach(function (id) { wanted[id] = true; });
+    for (let i = 1; i < rows.length; i++) {
+      const email = String(rows[i][EMP.EMAIL] || '').trim();
+      const id = String(rows[i][EMP.ID] || '').trim();
+      if (!email) continue;
+      if (wanted && !wanted[id]) continue;
+      try {
+        const name = String(rows[i][EMP.NAME] || '').trim();
+        const body = 'Hi ' + name + ',\n\nNew training has been assigned to you: ' + itemTitle +
+          (dueDate ? '\nDue: ' + dueDate : '') +
+          '\n\nOpen the web app → Training & Employee Docs → My Training to review and mark it complete.';
+        const htmlBody = buildBrandedEmailHtml_('New training assigned',
+          '<p style="margin:0 0 12px;">Hi ' + esc_(name) + ',</p>' +
+          brandedKvRows_([['Training item', itemTitle]].concat(dueDate ? [['Due', dueDate]] : [])) +
+          '<p style="margin:12px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → My Training</strong> to review and mark it complete.</p>');
+        MailApp.sendEmail({ to: email, subject: '📚 New training assigned: ' + itemTitle, body: body, htmlBody: htmlBody });
+      } catch (e) { console.warn('notifyTrainingAssigned_ to one recipient failed: ' + e.message); }
+    }
+  } catch (e) { console.warn('notifyTrainingAssigned_ failed: ' + e.message); }
+}

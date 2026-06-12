@@ -95,6 +95,17 @@ const TOOLS = {
       reference: { label: 'Browse', icon: 'list', enter: 'enterReferenceView' },
     },
   },
+  develop: {
+    label: 'Training & Employee Docs',
+    sidebarIcon: 'checkCircle',
+    defaultTab: 'trainingHome',
+    tabs: {
+      trainingHome:   { label: 'My Training',   icon: 'check',  enter: 'enterTrainingHomeView' },
+      trainingManage: { label: 'Team Training', icon: 'manage', enter: 'enterTrainingManageView', managerOnly: true },
+      // T3 adds: myDocs + docsManage (per-employee signable docs — see
+      // docs/training-employee-docs-spec.md).
+    },
+  },
 };
 // tabKey → toolKey lookup. Tab keys are globally unique by convention so
 // existing call sites that compare `currentView === 'callNotes'` continue

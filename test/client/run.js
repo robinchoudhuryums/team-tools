@@ -31,6 +31,7 @@ console.log('\nclient — all partials parse (<script> syntax guard)');
   'tc/script_timeoff.html', 'tc/script_manager.html', 'index.html', 'form_public.html',
   'intake/script_intake.html',
   'kb/script_kb.html',
+  'train/script_training.html',
 ].forEach((f) => {
   test(f + ' parses', () => {
     const src = extractScript(f);
@@ -464,7 +465,7 @@ console.log('\nscript_core — view-key literals match the TOOLS registry (M3 tr
 test("every refreshViewIfCurrent('…') literal is a registered tab key", () => {
   const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
     'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
-    'intake/script_intake.html', 'kb/script_kb.html', 'script_core.html'];
+    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'script_core.html'];
   // TOOLS / VIEW_TO_TOOL are top-level consts (lexical, not on the sandbox
   // global), so parse the tab keys from the registry source: every tab entry
   // carries an `enter:` handler.
@@ -1122,6 +1123,31 @@ test('kbGetFacetGuidance source tripwire: the vendor prompt is built from (clean
     'prompt builder must be fed the SANITIZED facets, never the raw client payload');
   assert.strictEqual(/kbAiBuildPrompt_\((?!clean, chunks\))/.test(src), false,
     'no alternate kbAiBuildPrompt_ callsite with different inputs');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Training & Employee Docs — T1 (docs/training-employee-docs-spec.md).
+// trainDeriveStatus_ is the pure status rule shared by getMyTraining +
+// getTrainingDashboard (server); trainChipHtml_ is its client render twin.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\ntraining — status derivation + chip render (T1)');
+vm.runInContext(extractRawFunction('Code.js', 'trainDeriveStatus_'), sb,
+  { filename: 'Code.js#trainDeriveStatus_' });
+const trainDeriveStatus_ = sb.trainDeriveStatus_;
+const trainChipHtml_ = loadFunction(sb, 'train/script_training.html', 'trainChipHtml_');
+test('trainDeriveStatus_: done wins regardless of due date', () => {
+  assert.strictEqual(trainDeriveStatus_(true, '2026-01-01', '2026-06-12'), 'done');
+  assert.strictEqual(trainDeriveStatus_(true, '', '2026-06-12'), 'done');
+});
+test('trainDeriveStatus_: overdue only past a non-empty due date', () => {
+  assert.strictEqual(trainDeriveStatus_(false, '2026-06-11', '2026-06-12'), 'overdue');
+  assert.strictEqual(trainDeriveStatus_(false, '2026-06-12', '2026-06-12'), 'pending', 'due today is not overdue');
+  assert.strictEqual(trainDeriveStatus_(false, '', '2026-06-12'), 'pending', 'no due date never goes overdue');
+});
+test('trainChipHtml_: renders the three statuses; unknown degrades to pending', () => {
+  assert.ok(trainChipHtml_('done').indexOf('tr-chip done') >= 0);
+  assert.ok(trainChipHtml_('overdue').indexOf('Overdue') >= 0);
+  assert.ok(trainChipHtml_('<script>').indexOf('tr-chip pending') >= 0, 'unknown status falls back to pending (no injection)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

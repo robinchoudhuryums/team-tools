@@ -6,7 +6,7 @@ Apps Script project under its own directory, synced via `clasp`.
 ## Projects
 
 - **web-app/** — Multi-module browser web app deployed at one Web App
-  URL. Hosts five modules today, registered side-by-side in the
+  URL. Hosts six modules today, registered side-by-side in the
   `TOOLS` registry in `script_core.html`:
    - **Time Clock** — cross-timezone time tracking, PTO requests,
      manager dashboard, ADP-format export. Backs a shared Google
@@ -78,6 +78,21 @@ Apps Script project under its own directory, synced via `clasp`.
      block), and an optional **AI guidance card** (Phase A —
      `kbGetFacetGuidance`, Anthropic API, whitelisted enum facets
      only, feature-flagged OFF by default; INV-119).
+   - **Training & Employee Docs** — phased module
+     (`docs/training-employee-docs-spec.md`). **T1 (shipped):**
+     manager-assigned training built ON the Reference/KB content layer —
+     a KB article/embed is assigned to employees (or `'*'` = everyone)
+     with an optional due date; reps get a **My Training** checklist
+     (status chips, reader modal reusing `kbMd_`/the Drive preview,
+     "Mark complete"); managers get a **Team Training** completion
+     matrix + assign/revoke. Tracking lives in two auto-provisioned
+     tabs in the KB spreadsheet (`TrainingAssignments` append-+-revoke,
+     `TrainingCompletions` append-only); re-assigning an item RESETS
+     its completion (latest `assignedAt` wins — the re-certification
+     mechanism). T2 (quizzes, server-graded, answer keys never ship to
+     the client) and T3 (per-employee signable docs, NEW
+     `HR_DOCS_SS_ID`, team-scoped via roster column M `ManagerEmail`)
+     are spec'd, not built. See INV-120.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -260,7 +275,9 @@ this section before touching the relevant area.
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
-  `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`.
+  `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`,
+  `getTrainingDashboard`, `saveTrainingAssignment`,
+  `revokeTrainingAssignment`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -2150,6 +2167,25 @@ this section before touching the relevant area.
   (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`,
   `handleBulkActionConfirmed_`) so the click-handler signatures stay
   synchronous from the dispatcher's perspective.
+- **Training rides ON the Reference/KB layer (T1).** Training content is
+  just KB items — no second content store, editor, or renderer. The
+  tracking overlay is two auto-provisioned tabs in the KB spreadsheet
+  (`TrainingAssignments`, `TrainingCompletions` — PHI-free, deployer-only
+  sheet access, the KbViews posture; zero new operator state).
+  Assignment targets are roster ids or `'*'` (everyone); rows are never
+  deleted (revoke stamps `RevokedAt`). **Completion = a completion row
+  strictly newer than the latest live assignment row**, so re-assigning
+  an item resets it — annual re-certification with no extra machinery
+  (an edited KB article does NOT auto-reset; re-assign if a re-read is
+  required). The rep checklist's reader modal reuses the global `kbMd_`
+  / Drive `/preview` and fires `kbRecordView(itemId,'training')` into
+  the existing usage loop. Mark-complete is honor-system by design
+  (`via='read'`; KbViews corroborates) until T2 quizzes add
+  server-graded completion (`via='quiz'`). The full module phasing
+  (T2 quizzes, T3 per-employee signable docs with `HR_DOCS_SS_ID` +
+  roster column M team scoping) lives in
+  `docs/training-employee-docs-spec.md`; operator decisions are resolved
+  in its §9. See INV-120 / S67.
 
 ## Deferred Follow-ons
 
@@ -2675,6 +2711,8 @@ Client (Intake views):
   web-app/intake/script_intake.html
 Client (Reference views):
   web-app/kb/script_kb.html
+Client (Training views):
+  web-app/train/script_training.html
 Client (public forms):
   web-app/form_public.html
 Test Suite:
@@ -2800,6 +2838,8 @@ INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissio
 INV-117 | `kbRecordView(itemId, context)` is rep-callable (requires `getEmployeeInfo_`), locked (INV-01), and append-only — one PHI-free row (timestamp, itemId, repId, sanitized context) per open into the `KbViews` tab of the KB spreadsheet; it never reads or returns other reps' data. The client fires it best-effort (fire-and-forget) so a failure never blocks or surfaces in the reading UX. `kbGetUsageStats()` is manager-gated (INV-02/31), read-only, bounded (last `KB_VIEWS_MAX_SCAN`=4000 rows), windowed to `KB_USAGE_WINDOW_DAYS`=30, and joins titles from the KB sheet so deleted items drop out; timestamp cells are recovered in the KB spreadsheet's OWN tz (the tz that coerced them — same discipline as `normalizeAuditTs_`). Pinned by `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-118 | `kbUploadImage(dataUrl)` (KB Phase 3) is manager-gated (INV-02) and validates BEFORE any Drive work: data-URL shape via the pure `kbParseImageDataUrl_`, content-type whitelist `KB_IMG_UPLOAD_TYPES` (PNG/JPEG/GIF/WebP — SVG deliberately excluded, it's script-capable), and the `KB_IMG_UPLOAD_MAX_CHARS` (~3MB) cap mirrored client-side. On success it writes one file to the `KB_IMAGES_FOLDER_ID` folder (`kbpaste-<stamp>-<rand>`), writes a PHI-free `KbImageUpload` audit row with the manager as actor, and returns the Drive thumbnail URL. Deliberately NO ScriptLock — a Drive-only atomic write; holding the global lock through a multi-second upload would stall every punch/note write. Pinned by `test_kb_uploadImage_rejectsInvalidPayloads` + the `kbUploadImage` case in `test_managerGates_rejectNonManager` + the `kbParseImageDataUrl_` Node test | Subsystem: Server + Client (Reference views)
 INV-119 | **No free text ever enters the KB AI vendor payload.** `kbGetFacetGuidance(facets)` (Phase A) is rep-callable (requires `getEmployeeInfo_`), gated server-side by the `kbAiGuidance` feature flag (scope `both`, default OFF, danger-marked), and best-effort — every failure path (flag off, no facets, thin retrieval, missing `KB_AI_API_KEY`, daily cap reached, vendor error) returns `{ none: true, reason }` and never throws to the client. The privacy boundary is `kbAiSanitizeFacets_`: every facet is whitelist-validated against server-side vocabularies (departments ∈ `getDepartmentEmails_()` keys; update types ∈ `UPDATE_SUGGESTIONS_DEFAULT` ∪ `getUpdateSuggestions_()`; flag ∈ `CN_FLAG_TYPES`+`urgent`; tags ∈ the CALLER's own established tag vocabulary from `getCallNoteTagSuggestions` — a novel tag typed this minute is DROPPED, never sent), and the prompt builder `kbAiBuildPrompt_(clean, chunks)` takes ONLY the sanitized facets + our own PHI-free-by-policy KB chunk excerpts — there is no parameter through which free-typed note text or patient data can reach the wire. Retrieval reuses `searchReference` over `kbAiQueryTerms_(clean)` with a score floor (`KB_AI_SCORE_FLOOR` — thin matches never hit the API and the none is cached). Results cache org-wide (`KB_AI_CACHE_PREFIX`, 6h) keyed by generation salt (`KB_AI_GENERATION`, bumped by `invalidateKbCache_` on every KB save/delete) + MD5 of the canonical order-insensitive facet string (`kbAiCanonicalFacets_`). Spend: each vendor call is costed from usage tokens via `KB_AI_MODEL_PRICES` (unknown model → most expensive known rates, the cap can never be undercounted) into the `KB_AI_SPEND` daily counter; at `KB_AI_DAILY_CAP` (default $3, Admin-adjustable) the endpoint returns none until the date rolls. Each vendor call writes a PHI-free `KbAiGuidance` audit row (canonical facets + model + cost). `saveKbAiSettings` (manager-gated, INV-57 family) validates cap 0–100 + model ∈ `KB_AI_MODEL_PRICES` and persists `KB_AI_DAILY_CAP`/`KB_AI_MODEL`; the API key is NEVER settable or readable through any endpoint. Pinned by the `kb — AI Phase A` Node tests (whitelist / canonical hash / prompt / source tripwire) + `test_kbAi_gatesAndSettingsValidation` + the `saveKbAiSettings` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-120 | Training T1 endpoints follow the established families: `getMyTraining` / `markTrainingComplete` are caller-scoped (the rep's own assignments/completions only; complete requires a LIVE effective assignment — `'kb:'+itemId` in `trainEffectiveForEmp_` — so a rep can't write completion rows for unassigned items, and is idempotent on an already-complete item); `markTrainingComplete` / `saveTrainingAssignment` / `revokeTrainingAssignment` are locked (INV-01); the three manager endpoints are gated (INV-02). `TrainingCompletions` is append-only; `TrainingAssignments` rows are never deleted — revoke sets `RevokedAt`. Completion semantics: an item is complete iff some completion row's `CompletedAt` is STRICTLY after the latest non-revoked matching assignment row's `AssignedAt` (re-assign = reset, the re-certification mechanism; `'*'` rows match every employee). All four timestamp/date cells are Sheets-coercion-guarded (`trainCellTs_`/`trainCellDate_`, recovered in the KB spreadsheet's OWN tz — the normalizeAuditTs_ discipline; lexicographic compare = chronological). Status derivation is the pure `trainDeriveStatus_` (Node-pinned), shared by checklist + dashboard; "today" is the rep's roster tz in `getMyTraining` (F6 discipline) and manager tz in the dashboard. Audit rows `TrainingAssign`/`TrainingRevoke`/`TrainingComplete` are content-free (itemId/assignId/counts only). Assignment notifications are best-effort per-recipient (INV-14). Training dashboards are deliberately NOT team-scoped (every manager sees all reps, matching managerGetShiftStats); only the T3 Employee Docs carry per-team scoping. Pinned by `test_training_assignCompleteFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -3399,10 +3439,23 @@ S66 | KB AI Phase A — facet guidance card (drawer) | Subsystem: Server, Client
     - As a non-manager, call `google.script.run...saveKbAiSettings({dailyCap:3, model:'claude-haiku-4-5'})` from the console
   Expected: The card only ever renders from whitelisted enum facets + the team's own KB excerpts — the vendor payload never carries typed note text or patient data (INV-119; Node-pinned prompt-builder tests + source tripwire). Every failure path (flag off, no key, thin retrieval, cap, vendor error) silently yields no card and the existing Suggested block stands. Cached guidance serves for 6h per facet combo org-wide. `saveKbAiSettings` rejects the non-manager ("Manager access required."), caps outside 0–100, and unknown models. Pinned by the `kb — AI Phase A` Node tests + `test_kbAi_gatesAndSettingsValidation`.
 
+S67 | Training T1 — assign, complete, matrix, re-assign reset | Subsystem: Server, Client (Training views)
+  Steps:
+    - As a manager, open Training & Employee Docs → Team Training
+    - In "Assign training": pick a Reference item, check one employee, set a due date a week out, click Assign
+    - As that employee, open Training & Employee Docs → My Training — confirm the item shows Pending with the due date; click the title → the reader modal renders the article (or Drive embed) — confirm a KbViews row is logged with context `training`
+    - Click "Mark complete" (row or reader footer) → status flips to Done; the summary strip updates
+    - As the manager, refresh Team Training → the matrix cell shows ✓ and the item header counts done/assigned
+    - Re-assign the SAME item to the same employee → the rep's checklist returns to Pending (re-certification reset)
+    - Revoke the assignment rows from the "Active assignments" table (uiConfirm danger) → the item leaves the rep's checklist
+    - Assign with "All employees" checked → every roster employee sees it; spot-check one
+    - As a non-manager, call `google.script.run...getTrainingDashboard()`, `...saveTrainingAssignment({})`, `...revokeTrainingAssignment('x')` from the console
+  Expected: All three non-manager calls return "Manager access required." (INV-02). Assignment emails arrive best-effort (branded, INV-105). A rep cannot complete an unassigned item ("not assigned to you"). Past-due pending items render the Overdue chip (warn in the summary). The two tracking tabs auto-provision in the KB spreadsheet on first use. Pinned by `test_training_assignCompleteFlow` + the gate cases + the `trainDeriveStatus_`/`trainChipHtml_` Node tests (INV-120).
+
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
-Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
+Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (Training views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
 Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end).

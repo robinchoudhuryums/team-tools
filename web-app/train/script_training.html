@@ -1,0 +1,386 @@
+<style>
+  /* ── Training & Employee Docs — T1 (training) ───────────────────────── */
+  .tr-sum { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tr-sum .cell { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 10px 16px; min-width: 96px; }
+  .tr-sum .cell-label { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .tr-sum .cell-val { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tr-sum .cell-val.warn { color: var(--warning-deep, #b86e00); }
+  .tr-list { display: flex; flex-direction: column; gap: 8px; max-width: 860px; }
+  .tr-row { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 10px 14px; }
+  .tr-row.done { opacity: .72; }
+  .tr-row .tr-title { font: inherit; font-size: .92rem; font-weight: 600; background: none; border: none; color: var(--ink); cursor: pointer; text-align: left; padding: 0; }
+  .tr-row .tr-title:hover { color: var(--accent); }
+  .tr-row .tr-meta { font-size: .76rem; color: var(--muted); }
+  .tr-row .tr-spacer { flex: 1; }
+  .tr-chip { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; flex-shrink: 0; }
+  .tr-chip.done { background: var(--accent-soft); color: var(--accent-deep, var(--accent)); }
+  .tr-chip.pending { background: var(--paper-2); color: var(--muted); }
+  .tr-chip.overdue { background: var(--danger-soft, #fce5e5); color: var(--danger-deep, #c13030); }
+  .tr-complete-btn { font: inherit; font-size: .78rem; padding: 5px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--accent-soft); color: var(--accent-deep, var(--accent)); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  .tr-complete-btn[disabled] { opacity: .5; cursor: default; }
+  .tr-empty { color: var(--muted); font-size: .9rem; padding: 24px 0; }
+  /* reader modal */
+  .tr-reader { width: min(760px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
+  .tr-reader .body { overflow-y: auto; padding: 4px 2px; }
+  .tr-reader .foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 10px; }
+  .tr-reader iframe { width: 100%; min-height: 55vh; border: 1px solid var(--line); border-radius: 8px; }
+  /* manager: assign form + matrix */
+  .tr-assign { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 14px 16px; margin-bottom: 18px; max-width: 860px; }
+  .tr-assign h3 { margin: 0 0 10px; font-size: .95rem; }
+  .tr-assign .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+  .tr-assign label { display: block; font-size: .76rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .tr-assign select, .tr-assign input[type=date] { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+  .tr-emp-box { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 8px 10px; max-height: 160px; overflow-y: auto; min-width: 220px; }
+  .tr-emp-box label { display: flex; align-items: center; gap: 7px; font-size: .84rem; font-weight: 400; color: var(--ink); margin: 0 0 4px; cursor: pointer; }
+  .tr-table { border-collapse: collapse; font-size: .84rem; max-width: 100%; overflow-x: auto; display: block; }
+  .tr-table th { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 6px 14px 6px 0; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
+  .tr-table td { padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tr-table tbody tr:last-child td { border-bottom: none; }
+  .tr-cell-done { color: var(--accent-deep, var(--accent)); font-weight: 700; }
+  .tr-cell-overdue { color: var(--danger-deep, #c13030); font-weight: 700; }
+  .tr-cell-pending { color: var(--muted); }
+  .tr-revoke-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--danger-deep, #c13030); cursor: pointer; }
+  .tr-section-h { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
+  :root[data-compact] .tr-row { flex-wrap: wrap; }
+</style>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  TRAINING & EMPLOYEE DOCS — client, T1 (training checklist + manager matrix).
+//  Content is KB items rendered via the global kbMd_ (articles) or the Drive
+//  /preview iframe (embeds) in a reader modal — no Reference-partial changes
+//  needed. Employee Docs tabs land in T3.
+//  Spec: docs/training-employee-docs-spec.md.
+// ════════════════════════════════════════════════════════════════════════════
+var TRAIN_STATE = { my: null, dash: null, kbTree: null, emps: null, readerItemId: null };
+
+/** Pure chip markup — pinned by the Node harness. */
+function trainChipHtml_(status) {
+  var s = (status === 'done' || status === 'overdue') ? status : 'pending';
+  var label = s === 'done' ? 'Done' : s === 'overdue' ? 'Overdue' : 'Pending';
+  return '<span class="tr-chip ' + s + '">' + label + '</span>';
+}
+
+// ── Rep view: My Training ──────────────────────────────────────────────────
+function enterTrainingHomeView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('check', 16) + ' My Training</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>My Training</h2></div>' +
+    '<div id="tr-home-content"><div class="m-loading"><div class="spinner"></div> Loading training&hellip;</div></div>';
+  trainLoadMy_();
+}
+
+function trainLoadMy_() {
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      TRAIN_STATE.my = data;                       // state updates unconditionally (cache stays warm)
+      if (currentView !== requestedView) return;   // late-callback guard (CN loader pattern)
+      trainRenderMy_();
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var el = document.getElementById('tr-home-content');
+      if (el) el.innerHTML = '<div class="tr-empty">Could not load training: ' + esc(err.message) + '</div>';
+    })
+    .getMyTraining();
+}
+
+function trainRenderMy_() {
+  var el = document.getElementById('tr-home-content');
+  if (!el) return;
+  var data = TRAIN_STATE.my || {};
+  if (data.error) { el.innerHTML = '<div class="tr-empty">' + esc(data.error) + '</div>'; return; }
+  var items = data.items || [];
+  if (!items.length) {
+    el.innerHTML = '<div class="tr-empty">Nothing assigned right now — you’re all caught up.</div>';
+    return;
+  }
+  var done = 0, overdue = 0;
+  items.forEach(function (it) { if (it.status === 'done') done++; if (it.status === 'overdue') overdue++; });
+  var h = '<div class="tr-sum">' +
+    '<div class="cell"><div class="cell-label">Assigned</div><div class="cell-val">' + items.length + '</div></div>' +
+    '<div class="cell"><div class="cell-label">Done</div><div class="cell-val">' + done + '</div></div>' +
+    '<div class="cell"><div class="cell-label">Overdue</div><div class="cell-val' + (overdue ? ' warn' : '') + '">' + overdue + '</div></div>' +
+    '</div><div class="tr-list">';
+  items.forEach(function (it) {
+    h += '<div class="tr-row ' + esc(it.status) + '" data-item-id="' + esc(it.itemId) + '">' +
+      trainChipHtml_(it.status) +
+      '<div><button class="tr-title" data-tr-open="' + esc(it.itemId) + '">' + esc(it.title) + '</button>' +
+      '<div class="tr-meta">' +
+        (it.dueDate ? 'Due ' + esc(it.dueDate) : 'No due date') +
+        (it.completed ? ' · completed ' + esc(String(it.completedAt).substring(0, 10)) : '') +
+      '</div></div>' +
+      '<div class="tr-spacer"></div>' +
+      (it.completed ? '' :
+        '<button class="tr-complete-btn" data-tr-complete="' + esc(it.itemId) + '">' + icon('check', 13) + ' Mark complete</button>') +
+      '</div>';
+  });
+  h += '</div>';
+  el.innerHTML = h;
+  if (!el._trDelegated) {
+    el._trDelegated = true;
+    el.addEventListener('click', function (e) {
+      var open = e.target.closest('[data-tr-open]');
+      if (open) { trainOpenReader_(open.getAttribute('data-tr-open')); return; }
+      var comp = e.target.closest('[data-tr-complete]');
+      if (comp) trainMarkComplete_(comp.getAttribute('data-tr-complete'), comp);
+    });
+  }
+}
+
+function trainItemById_(itemId) {
+  var items = (TRAIN_STATE.my && TRAIN_STATE.my.items) || [];
+  for (var i = 0; i < items.length; i++) if (items[i].itemId === itemId) return items[i];
+  return null;
+}
+
+/** Pessimistic (low-frequency; server state is the deliverable). */
+function trainMarkComplete_(itemId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Mark complete'; }
+        showToast((res && res.error) || 'Could not mark complete.', 'error');
+        return;
+      }
+      var it = trainItemById_(itemId);
+      if (it) { it.completed = true; it.completedAt = res.completedAt || ''; it.status = 'done'; }
+      showToast('Training marked complete.', 'success');
+      if (currentView === 'trainingHome') trainRenderMy_();
+      trainSyncReaderFoot_(itemId);
+    })
+    .withFailureHandler(function (err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Mark complete'; }
+      showToast('Could not mark complete: ' + err.message, 'error');
+    })
+    .markTrainingComplete(itemId);
+}
+
+// ── Reader modal (article via global kbMd_; embed via Drive /preview) ─────
+function trainOpenReader_(itemId) {
+  TRAIN_STATE.readerItemId = itemId;
+  var overlay = ensureOverlay('train-reader-overlay', { onClose: trainCloseReader_ });
+  overlay.innerHTML = '<div class="modal tr-reader"><div class="body"><div class="m-loading"><div class="spinner"></div> Loading…</div></div></div>';
+  // Usage loop (INV-117) — fire-and-forget, same as the Reference surfaces.
+  try { google.script.run.kbRecordView(itemId, 'training'); } catch (_) {}
+  google.script.run
+    .withSuccessHandler(function (item) {
+      if (TRAIN_STATE.readerItemId !== itemId) return;   // closed / replaced meanwhile
+      trainRenderReader_(item);
+    })
+    .withFailureHandler(function (err) {
+      if (TRAIN_STATE.readerItemId !== itemId) return;
+      var o = document.getElementById('train-reader-overlay');
+      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc(err.message) + '</div>';
+    })
+    .getReferenceItem(itemId);
+}
+
+function trainRenderReader_(item) {
+  var overlay = document.getElementById('train-reader-overlay');
+  if (!overlay) return;
+  if (!item || item.error) {
+    overlay.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((item && item.error) || 'Not found.') + '</div>';
+    return;
+  }
+  var body;
+  if (item.type === 'embed') {
+    body = '<h2 style="margin:0 0 10px;">' + esc(item.title) + '</h2>' +
+      '<iframe src="' + esc(item.embedUrl) + '" loading="lazy"></iframe>' +
+      '<p style="margin:10px 0 0;"><a class="kb-btn" href="' + esc(item.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a></p>';
+  } else {
+    body = '<div class="kb-article"><h1>' + esc(item.title) + '</h1>' + kbMd_(item.bodyMd || '') + '</div>';
+  }
+  overlay.innerHTML =
+    '<div class="modal tr-reader">' +
+      '<div class="body">' + body + '</div>' +
+      '<div class="foot" id="tr-reader-foot"></div>' +
+    '</div>';
+  trainSyncReaderFoot_(item.id);
+}
+
+function trainSyncReaderFoot_(itemId) {
+  var foot = document.getElementById('tr-reader-foot');
+  if (!foot || TRAIN_STATE.readerItemId !== itemId) return;
+  var it = trainItemById_(itemId);
+  var h = '<button class="kb-btn" onclick="trainCloseReader_()">Close</button>';
+  if (it && !it.completed) {
+    h = '<button class="tr-complete-btn" data-tr-complete-reader="1">' + icon('check', 13) + ' Mark complete</button>' + h;
+  } else if (it && it.completed) {
+    h = '<span class="tr-meta" style="margin-right:auto;color:var(--muted);font-size:.8rem;">' + icon('checkCircle', 13) + ' Completed</span>' + h;
+  }
+  foot.innerHTML = h;
+  var btn = foot.querySelector('[data-tr-complete-reader]');
+  if (btn) btn.addEventListener('click', function () { trainMarkComplete_(itemId, btn); });
+}
+
+/** Idempotent (ensureOverlay contract — safe to call when already closed). */
+function trainCloseReader_() {
+  TRAIN_STATE.readerItemId = null;
+  var o = document.getElementById('train-reader-overlay');
+  if (o) { o.classList.remove('open'); o.innerHTML = ''; }
+}
+
+// ── Manager view: Team Training ────────────────────────────────────────────
+function enterTrainingManageView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('manage', 16) + ' Team Training</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>Team Training</h2></div>' +
+    '<div id="tr-mgr-content"><div class="m-loading"><div class="spinner"></div> Loading dashboard&hellip;</div></div>';
+  trainLoadMgr_();
+}
+
+function trainLoadMgr_() {
+  var requestedView = currentView;
+  var got = 0, failed = false;
+  function done() {
+    got++;
+    if (got < 3 || failed || currentView !== requestedView) return;
+    trainRenderMgr_();
+  }
+  function onFail(err) {
+    if (failed) return;
+    failed = true;
+    if (currentView !== requestedView) return;
+    var el = document.getElementById('tr-mgr-content');
+    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc(err.message) + '</div>';
+  }
+  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.dash = d; done(); }).withFailureHandler(onFail).getTrainingDashboard();
+  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.kbTree = d; done(); }).withFailureHandler(onFail).getReferenceTree();
+  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
+}
+
+function trainRenderMgr_() {
+  var el = document.getElementById('tr-mgr-content');
+  if (!el) return;
+  var dash = TRAIN_STATE.dash || {};
+  if (dash.error) { el.innerHTML = '<div class="tr-empty">' + esc(dash.error) + '</div>'; return; }
+  var kbItems = (TRAIN_STATE.kbTree && TRAIN_STATE.kbTree.items) || [];
+  var emps = (TRAIN_STATE.emps && TRAIN_STATE.emps.employees) || [];
+
+  // Assign form — KB item select grouped by department + employee checklist.
+  var byDept = {};
+  kbItems.forEach(function (it) { (byDept[it.department] = byDept[it.department] || []).push(it); });
+  var sel = '<select id="tr-as-item"><option value="">Pick a Reference item…</option>';
+  Object.keys(byDept).sort().forEach(function (d) {
+    sel += '<optgroup label="' + esc(d) + '">';
+    byDept[d].forEach(function (it) { sel += '<option value="' + esc(it.id) + '">' + esc(it.title) + '</option>'; });
+    sel += '</optgroup>';
+  });
+  sel += '</select>';
+  var empBox = '<div class="tr-emp-box"><label><input type="checkbox" id="tr-as-all"> <strong>All employees</strong></label>';
+  emps.forEach(function (e) {
+    empBox += '<label><input type="checkbox" class="tr-as-emp" value="' + esc(e.id) + '"> ' + esc(e.name) + '</label>';
+  });
+  empBox += '</div>';
+
+  var h = '<div class="tr-assign"><h3>Assign training</h3><div class="row">' +
+    '<div><label>Reference item</label>' + sel + '</div>' +
+    '<div><label>Employees</label>' + empBox + '</div>' +
+    '<div><label>Due date (optional)</label><input type="date" id="tr-as-due"></div>' +
+    '<div><label>&nbsp;</label><button class="tr-complete-btn" id="tr-as-go">' + icon('plus', 13) + ' Assign</button></div>' +
+    '</div></div>';
+
+  // Completion matrix.
+  var items = dash.items || [], reps = dash.reps || [];
+  if (items.length) {
+    h += '<div class="tr-section-h">Completion matrix</div><table class="tr-table"><thead><tr><th>Employee</th>';
+    items.forEach(function (it) {
+      h += '<th title="' + esc(it.title) + '">' + esc(it.title.length > 22 ? it.title.substring(0, 20) + '…' : it.title) +
+        '<br><span style="font-weight:400;">' + it.done + '/' + it.assigned + (it.overdue ? ' · ' + it.overdue + ' late' : '') + '</span></th>';
+    });
+    h += '</tr></thead><tbody>';
+    reps.forEach(function (r) {
+      h += '<tr><td>' + esc(r.name) + '</td>';
+      items.forEach(function (it) {
+        var s = r.items[it.key];
+        h += '<td>' + (s === 'done' ? '<span class="tr-cell-done">✓</span>'
+          : s === 'overdue' ? '<span class="tr-cell-overdue">!</span>'
+          : s === 'pending' ? '<span class="tr-cell-pending">–</span>' : '') + '</td>';
+      });
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div class="tr-empty">No training assigned yet — use the form above to assign a Reference item.</div>';
+  }
+
+  // Active assignments (revoke).
+  var assigns = dash.assignments || [];
+  if (assigns.length) {
+    h += '<div class="tr-section-h">Active assignments</div><table class="tr-table"><thead><tr>' +
+      '<th>Item</th><th>Assigned to</th><th>Due</th><th>Assigned</th><th></th></tr></thead><tbody>';
+    assigns.forEach(function (a) {
+      h += '<tr><td>' + esc(a.title) + '</td><td>' + esc(a.empLabel) + '</td>' +
+        '<td>' + esc(a.dueDate || '—') + '</td><td>' + esc(String(a.assignedAt).substring(0, 10)) + '</td>' +
+        '<td><button class="tr-revoke-btn" data-tr-revoke="' + esc(a.assignId) + '">Revoke</button></td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  el.innerHTML = h;
+
+  document.getElementById('tr-as-go').addEventListener('click', trainSubmitAssign_);
+  if (!el._trMgrDelegated) {
+    el._trMgrDelegated = true;
+    el.addEventListener('click', function (e) {
+      var rv = e.target.closest('[data-tr-revoke]');
+      if (rv) trainRevoke_(rv.getAttribute('data-tr-revoke'));
+    });
+  }
+}
+
+function trainSubmitAssign_() {
+  var itemId = (document.getElementById('tr-as-item') || {}).value || '';
+  if (!itemId) { showToast('Pick a Reference item to assign.', 'error'); return; }
+  var empIds;
+  if ((document.getElementById('tr-as-all') || {}).checked) {
+    empIds = '*';
+  } else {
+    empIds = Array.prototype.slice.call(document.querySelectorAll('.tr-as-emp:checked')).map(function (c) { return c.value; });
+    if (!empIds.length) { showToast('Pick at least one employee (or All employees).', 'error'); return; }
+  }
+  var dueDate = (document.getElementById('tr-as-due') || {}).value || '';
+  var btn = document.getElementById('tr-as-go');
+  if (btn) btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (btn) btn.disabled = false;
+      if (!res || !res.success) { showToast((res && res.error) || 'Assignment failed.', 'error'); return; }
+      showToast('Training assigned.', 'success');
+      if (currentView === 'trainingManage') trainLoadMgr_();
+    })
+    .withFailureHandler(function (err) {
+      if (btn) btn.disabled = false;
+      showToast('Assignment failed: ' + err.message, 'error');
+    })
+    .saveTrainingAssignment({ itemId: itemId, empIds: empIds, dueDate: dueDate });
+}
+
+function trainRevoke_(assignId) {
+  uiConfirm({
+    title: 'Revoke assignment?',
+    message: 'The item disappears from the assignee’s checklist. Completion history is kept.',
+    confirmLabel: 'Revoke', tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { showToast((res && res.error) || 'Revoke failed.', 'error'); return; }
+        showToast('Assignment revoked.', 'success');
+        if (currentView === 'trainingManage') trainLoadMgr_();
+      })
+      .withFailureHandler(function (err) { showToast('Revoke failed: ' + err.message, 'error'); })
+      .revokeTrainingAssignment(assignId);
+  });
+}
+</script>

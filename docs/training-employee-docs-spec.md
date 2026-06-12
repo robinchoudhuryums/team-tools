@@ -1,6 +1,9 @@
 # Spec — Training & Employee Docs module
 
-Status: **DRAFT — awaiting operator decisions (§9) before implementation.**
+Status: **APPROVED 2026-06-12 — all §9 operator decisions resolved (see §9).
+T1 SHIPPED 2026-06-12 (training core: assignments, completions, checklist,
+matrix — see CLAUDE.md INV-120 / S67 for the shipped reality). T2 (quizzes)
+and T3 (employee docs) are next.**
 Authored 2026-06-12, from the feasibility discussion in-session. This is a
 design document; nothing here is built. When implementation ships, the
 shipped reality gets documented in CLAUDE.md (decisions, gotchas,
@@ -27,8 +30,8 @@ decisions in §9 (ADP overlap, signature legal weight).
 
 ## 2. Tool registry & client shape
 
-New `TOOLS` entry (working name `develop`, label **"Training & Docs"** —
-naming is operator's call, §9.5). Four tabs, keys globally unique:
+New `TOOLS` entry (key `develop`, label **"Training & Employee Docs"** —
+per §9.5). Four tabs, keys globally unique:
 
 | Tab key | Label | Audience | Enter handler |
 |---|---|---|---|
@@ -108,6 +111,26 @@ sheet (payroll), or the PHI sheets. New Script Property
   as the independent timestamp witness, exactly like
   `FormSubmissionReceived`.
 
+**Team scoping (per §9.3):** manager visibility into employee docs is
+PER-TEAM, not all-managers. The roster gains a new column —
+**Employees column M = `ManagerEmail`** (`EMP.MANAGER_EMAIL = 12`) —
+mapping each employee to their manager. This is an `EMP` enum shape
+change, so `ROSTER_CACHE_KEY` bumps (v5 → v6, INV-28) and the column is
+a new Operator State item (fill it for every employee who will receive
+docs). The visibility rule is **fail-closed**: a doc is readable by
+(a) the employee it belongs to, (b) the manager who issued it
+(`issuedBy`), and (c) the manager listed in the employee's
+`ManagerEmail` cell. A blank `ManagerEmail` does NOT widen to all
+managers — it narrows to (a)+(b) only. Any manager can still ISSUE a
+doc to any employee (issuing reveals nothing about existing docs);
+reading and the dashboard are scoped. The deployer can always open the
+spreadsheet itself — this scoping governs the app surface, which is
+where accidental exposure would happen. Training dashboards (§5) are
+deliberately NOT team-scoped — they stay all-managers-see-all-reps,
+matching every other manager surface in the app (`managerGetShiftStats`,
+`getTeamMetrics`, etc.); only Employee Docs carry the elevated
+confidentiality.
+
 **Retention is the OPPOSITE of the PHI sheets:** HR records must be
 kept, not minimized. `EmpDocs` / `DocSignatures` are explicitly
 EXCLUDED from every purge job; no retention trigger is ever pointed at
@@ -172,9 +195,12 @@ change (INV-08/32), best-effort email (INV-14).
 - `submitQuizAttempt(quizId, answers[])` — locked. Grades server-side
   against `questionsJson`; appends `QuizAttempts`; on `scorePct >=
   passPct` also appends a `TrainingCompletions` row (`via='quiz'`).
-  Returns score + per-question right/wrong — NOT the correct options on
-  a fail (memorize-and-retry guard; default per §9.4, reveal-on-pass).
-  Audit `QuizAttempt` (quizId, score, passed — never question text).
+  Returns score + per-question right/wrong booleans ONLY — correct
+  options are NEVER revealed, pass or fail (§9.4). Unlimited retries;
+  attempt counts are tracked per (quiz, emp) and surfaced on both the
+  rep's checklist ("passed on attempt 3") and the manager matrix.
+  Audit `QuizAttempt` (quizId, score, passed, attempt # — never
+  question text).
 
 ### Training (manager-gated)
 - `getTrainingDashboard()` — completion matrix (reps × items),
@@ -189,7 +215,8 @@ change (INV-08/32), best-effort email (INV-14).
 ### Employee Docs (rep-callable)
 - `getMyDocs()` — caller-scoped to `empId`: metadata list only (docId,
   type, title, status, issuedAt, dueAt) — never another rep's rows.
-- `getMyDoc(docId)` — owner-or-manager scoped (the INV-116 pattern);
+- `getMyDoc(docId)` — owner-or-AUTHORIZED-manager scoped (§3b team
+  rule: owner, issuer, or the employee's roster `ManagerEmail`);
   returns the frozen `bodyMd` + status + (if signed) the signature
   record summary.
 - `acknowledgeDoc(docId, signatureDataUrl)` — locked, OWNER-only
@@ -208,7 +235,9 @@ change (INV-08/32), best-effort email (INV-14).
   (docId + empId + docType — never the title or body, which can carry
   employment-sensitive content; same minimization instinct as the
   PHI-free CallNoteEmail row).
-- `getDocsDashboard()` — all docs, signature status, overdue unsigned.
+- `getDocsDashboard()` — TEAM-scoped (§3b): only docs the caller is
+  authorized for (issuer or roster `ManagerEmail` match); signature
+  status, overdue unsigned.
 - `voidDoc(docId, reason)` — locked; sets `status='void'` (NEVER
   deletes, never edits `bodyMd` after issue — a correction is a new
   issued doc); audit `EmpDocVoid`. A signed doc cannot be voided
@@ -228,10 +257,13 @@ change (INV-08/32), best-effort email (INV-14).
 ## 6. Privacy / integrity invariants (to be numbered INV-120+ at implementation)
 
 1. **HR-docs caller-scoping** — `getMyDocs`/`getMyDoc`/`acknowledgeDoc`
-   are owner-scoped (read also manager); NO endpoint returns another
-   rep's doc metadata or content to a non-manager. The scoping tests
-   are written BEFORE the endpoints (this module's leak blast radius —
-   a coworker reading a PIP — is the highest in the app outside PHI).
+   are owner-scoped; manager read access is TEAM-scoped per §3b
+   (issuer or roster `ManagerEmail`, fail-closed on blank — being in
+   `MANAGER_EMAILS` alone does NOT grant read). NO endpoint returns
+   another rep's doc metadata or content outside that set. The scoping
+   tests are written BEFORE the endpoints (this module's leak blast
+   radius — a coworker OR an unrelated manager reading a PIP — is the
+   highest in the app outside PHI).
 2. **Signature records are append-only + tamper-evident** — hash
    excludes the timestamp (Sheets coercion); the audit row is the
    independent witness; no edit endpoint exists for `DocSignatures` or
@@ -271,27 +303,27 @@ change (INV-08/32), best-effort email (INV-14).
 | T3 | Employee Docs: issue (markdown-frozen + converter reuse), view, sign, verify, dashboard | ~1–1.5 sessions |
 | T4 (optional) | Overdue digests, Drive snapshot-to-PDF signing, quiz analytics, re-certification schedules | on demand |
 
-T1/T2 have no external dependencies and can start immediately after
-spec approval. T3 is gated on §9.1–9.3.
+All gates cleared 2026-06-12 (§9). Build order: T1 → T2 → T3.
+One operator prerequisite for T3: fill the new Employees column M
+(`ManagerEmail`) for every employee who will receive docs (§3b).
 
-## 9. Operator decisions required before implementation
+## 9. Operator decisions — RESOLVED 2026-06-12
 
-1. **ADP overlap (gates T3).** Does the org's ADP plan include document
-   acknowledgment / performance-doc features? If yes, decide which
-   system is the source of record for reviews/PIPs before building a
-   parallel one. Training (T1/T2) is unaffected.
-2. **Legal weight for PIP signatures (gates T3).** Confirm with
-   HR/legal that an authenticated-session acknowledgment signature
-   (hash + audit trail, not a certified e-sign vendor) is acceptable
-   for PIPs. If not: keep reviews/policies in-app, route PIPs through
-   a certified vendor.
-3. **Manager visibility (T3 default: yes).** All `MANAGER_EMAILS` see
-   all employee docs — acceptable at current team size? The
-   alternative (issuer-only or named-HR-only visibility) is a bigger
-   build.
-4. **Quiz answer reveal (T2 default: reveal-on-pass).** On a failed
-   attempt, show which questions were wrong but not the correct
-   options; full answers + explanations after a pass. Unlimited
-   retries.
-5. **Naming.** Tool label ("Training & Docs"?) and the `docType`
-   vocabulary for employee docs.
+1. **ADP overlap — NO overlap; T3 cleared.** ADP's document
+   acknowledgment only covers US employees; this module's audience is
+   the non-US team, which ADP cannot serve. No parallel
+   source-of-record risk. (Corollary: signers are offshore — the
+   timestamp/timezone discipline in §3b matters, and ack-language
+   should be plain English suitable for non-US-jurisdiction staff.)
+2. **PIP signature legal weight — CONFIRMED acceptable.** The in-house
+   authenticated-session acknowledgment (hash + audit trail) is
+   sufficient; no certified e-sign vendor required.
+3. **Manager visibility — PER-TEAM, not all-managers.** Resolved as
+   the §3b team-scoping rule: new roster column M `ManagerEmail`
+   (`EMP.MANAGER_EMAIL`), visibility = owner + issuer + listed
+   manager, fail-closed on blank. `ROSTER_CACHE_KEY` bumps v5 → v6.
+4. **Quiz policy — unlimited retries; NEVER reveal correct answers**
+   (pass or fail — only per-question right/wrong is shown); attempt
+   counts tracked and surfaced to rep + manager.
+5. **Naming — "Training & Employee Docs"** (tool label). `docType`
+   vocabulary stays `'review' | 'pip' | 'policy' | 'other'`.

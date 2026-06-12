@@ -6,7 +6,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
 ## Projects
 
 - **web-app/** — Multi-module browser app deployed at one Web App URL.
-  Hosts five modules today, registered side-by-side in the `TOOLS`
+  Hosts six modules today, registered side-by-side in the `TOOLS`
   registry in `script_core.html`:
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export.
@@ -38,6 +38,14 @@ Script project synced via [clasp](https://github.com/google/clasp).
     (Anthropic API, whitelisted call facets only — no note text ever
     leaves the app; feature-flagged off by default). Managers edit
     inline; reps browse read-only. PHI-free by policy.
+  - **Training & Employee Docs** — manager-assigned training built on
+    the Reference content layer: assign any KB article/embed to
+    employees (or everyone) with an optional due date; reps work a
+    My Training checklist with an in-app reader and mark items
+    complete; managers see a per-rep completion matrix. Re-assigning
+    an item resets its completion (re-certification). Quizzes and
+    per-employee signable documents (reviews, PIPs) are spec'd as the
+    next phases (`docs/training-employee-docs-spec.md`).
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in
