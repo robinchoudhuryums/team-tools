@@ -6,7 +6,7 @@ Apps Script project under its own directory, synced via `clasp`.
 ## Projects
 
 - **web-app/** — Multi-module browser web app deployed at one Web App
-  URL. Hosts three modules today, registered side-by-side in the
+  URL. Hosts six modules today, registered side-by-side in the
   `TOOLS` registry in `script_core.html`:
    - **Time Clock** — cross-timezone time tracking, PTO requests,
      manager dashboard, ADP-format export. Backs a shared Google
@@ -70,7 +70,45 @@ Apps Script project under its own directory, synced via `clasp`.
      read via the server and never open it. Phase 2 (shipped): a
      per-item Google-Doc→article converter (`kbConvertDriveDoc`) —
      review-before-save in the editor, for migrating embeds to fast
-     native articles.
+     native articles. Also shipped since: converter images export to
+     Drive at save time (Phase 2b) + paste-a-screenshot upload in the
+     editor (Phase 3), a Ctrl/⌘+K slide-over **drawer** for mid-call
+     lookup (mounted on `document.body`, with content-aware
+     suggestions + a usage log behind the manager "Most referenced"
+     block), and an optional **AI guidance card** (Phase A —
+     `kbGetFacetGuidance`, Anthropic API, whitelisted enum facets
+     only, feature-flagged OFF by default; INV-119).
+   - **Training & Employee Docs** — phased module
+     (`docs/training-employee-docs-spec.md`). **T1 (shipped):**
+     manager-assigned training built ON the Reference/KB content layer —
+     a KB article/embed is assigned to employees (or `'*'` = everyone)
+     with an optional due date; reps get a **My Training** checklist
+     (status chips, reader modal reusing `kbMd_`/the Drive preview,
+     "Mark complete"); managers get a **Team Training** completion
+     matrix + assign/revoke. Tracking lives in two auto-provisioned
+     tabs in the KB spreadsheet (`TrainingAssignments` append-+-revoke,
+     `TrainingCompletions` append-only); re-assigning an item RESETS
+     its completion (latest `assignedAt` wins — the re-certification
+     mechanism). **T2 (shipped):** interactive quizzes — manager-authored
+     in a Team Training editor (`Quizzes` tab, answer keys in
+     `QuestionsJson` are SERVER-ONLY), assignable like KB items
+     (`itemType='quiz'`), graded server-side (`submitQuizAttempt` →
+     append-only `QuizAttempts`; a pass auto-writes the completion,
+     `via='quiz'`). Per §9.4: unlimited retries, correct answers are
+     NEVER revealed (only per-question right/wrong), attempt counts
+     surface on the checklist + matrix. **T3 (shipped):** per-employee
+     signable docs (reviews, PIPs, policy acks) in a DEDICATED
+     `HR_DOCS_SS_ID` spreadsheet (never co-located with KB/ADP/PHI; NO
+     fallback store): **My Docs** (rep — read, acknowledge+sign on a
+     canvas pad) and **Issue Docs** (manager — issue with markdown
+     frozen-at-issue + contentHash, optional Doc→markdown convert via
+     `kbConvertDriveDoc`, dashboard, verify, void). Manager visibility
+     is PER-TEAM and FAIL-CLOSED via roster column M `ManagerEmail`
+     (owner + issuer + listed manager only; blank narrows, never
+     widens). Signatures are append-only + tamper-evident
+     (`DocSignatures`, hash excludes the timestamp — the audit row is
+     the witness); the store is EXCLUDED from every retention purge.
+     See INV-120/INV-121/INV-122.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -212,7 +250,7 @@ this section before touching the relevant area.
   `'ClockIn'` will silently miss adjustments. Always go through
   `normalizeType_()`.
 - **Roster cache invalidation + key bump.** Employee data is cached
-  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v5`).
+  for 300s under `ROSTER_CACHE_KEY` (currently `employee_roster_v6`).
   After editing any Employees-sheet column (`adjustLeaveBalance_`,
   manual edits for test setup, etc.) call `invalidateRosterCache_()`
   or subsequent reads will return stale balances for up to 5
@@ -242,6 +280,7 @@ this section before touching the relevant area.
   `managerGetReviewCandidates`, `getEnrolledCallNotesReps`,
   `exportCallNotesRange`, `setCallNoteTrainingReply`,
   `managerGetShiftStats`, `managerGetUnresolvedActionCount`,
+  `managerDeleteCallNote`,
   `getTeamMetrics`, `getMetricsAmbient`,
   `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`,
   `saveUpdateSuggestions`, `removeAutomationTriggers`,
@@ -253,7 +292,12 @@ this section before touching the relevant area.
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
-  `kbConvertDriveDoc`, `kbGetUsageStats`.
+  `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`,
+  `getTrainingDashboard`, `saveTrainingAssignment`,
+  `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`,
+  `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`
+  (the last four are ALSO team-scoped per INV-122 — the gate alone is
+  not the boundary).
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -744,7 +788,16 @@ this section before touching the relevant area.
   `script_core.html` consumes it with a `window.location.search`
   fallback for local dev. Pre-Round-2 deep-link contracts (compact
   pop-out, `?tool` deep-link) silently no-op'd in production because
-  of this; the fix unblocked them all simultaneously.
+  of this; the fix unblocked them all simultaneously. The SAME sandbox
+  also poisons `window.location.origin + pathname`: it's the
+  session-bound `googleusercontent.com` iframe URL, which renders a
+  BLANK page when opened as a top-level window — the pop-out button
+  shipped broken on exactly this until operator testing caught it.
+  `doGet` now also injects `window.SERVER_WEB_APP_URL` (the normalized
+  `/exec` base via `getWebAppExecUrl_`, shared with `buildFormUrl_`) and
+  `popOutCurrentView` opens THAT. Any future client code that needs the
+  app's own URL must use `SERVER_WEB_APP_URL`, never `window.location`.
+  Pinned by a Node tripwire.
 - **`form_public.html` must inject `FORM_TOKEN` via the unescaped
   `<?!=` scriptlet.** The standalone public form page receives its
   token through `serveExternalForm_`'s `tpl.formToken`. It must print
@@ -832,9 +885,11 @@ this section before touching the relevant area.
     segmented toggle's active state.
   - `umsKbPanel` — KB drawer preferences as ONE JSON blob:
     `recents[]` ({id, title}, capped 5, deduped) + `suggest` (bool,
-    default true — the context-suggestions toggle). Sanitized on read
-    (corrupt blob → `{}`); deliberately a single key so drawer prefs
-    don't multiply the key count.
+    default true — the context-suggestions toggle) + `aiSeen`
+    ({hash, date} — the Phase A guidance card's collapse-after-seen
+    marker; same facet combo renders collapsed for the rest of the
+    day). Sanitized on read (corrupt blob → `{}`); deliberately a
+    single key so drawer prefs don't multiply the key count.
   - `umsLastView` — the active tab key, written by `showView` on every
     navigation. On boot (when no `?tool=` deep-link is present) the shell
     re-enters this tab instead of defaulting to Time Clock, so an
@@ -990,9 +1045,11 @@ this section before touching the relevant area.
   `var(--mono)`, etc.). Hardcoded hex/rgba is reserved for the
   canonical token declarations inside that file; outside it the
   only acceptable "raw" colors are `rgba(0,0,0,X)` for
-  invariant-across-modes scrims and overlays. Five derived semantic
+  invariant-across-modes scrims and overlays. Six derived semantic
   aliases (`--border-strong`, `--success-deep`, `--warning-deep`,
-  `--danger-deep`, `--info-deep`) are also declared in the partial
+  `--danger-deep`, `--info-deep`, `--selection-bg` — the text-selection
+  highlight, deliberately STRONGER than `--accent-soft`, which was
+  invisible against field backgrounds) are also declared in the partial
   because they appear too often to be worth repeating the
   underlying `color-mix(in oklch, …)` everywhere. Fallback hex
   values are declared first; `@supports (color: color-mix(...))`
@@ -1146,7 +1203,8 @@ this section before touching the relevant area.
   PTO badges); the side rail swaps content: Time Off mode renders the
   rectangular `.pto-tile` + upcoming-request context, Timesheet mode
   lazy-loads tsData via `loadTimesheetSideRail_` (its own
-  `getTimesheetData` call — NOT through `loadTimesheet`) and renders
+  `getTimesheetData` call — the legacy `loadTimesheet` render cluster
+  was deleted in Cycle 2 · L11, see INV-74) and renders
   a pay-period `.pto-tile` mirror + recent-activity list. TOOLS
   registry tab key stays `timeoff` so `?tool=timeoff` deep-links +
   `currentView === 'timeoff'` guards across the codebase keep working;
@@ -1860,9 +1918,9 @@ this section before touching the relevant area.
   header since Docs tables have no header concept; cell formatting goes
   through the runs pipeline so bold/links survive; literal pipes escape
   as `\|`; ragged rows pad to the widest row). Lossy parts degrade
-  explicitly with warnings: images → italic placeholder, nested tables →
-  flattened into the parent cell, multi-line cells → joined with spaces,
-  unsupported elements skipped by name; bold+italic collapses to bold
+  explicitly with warnings: nested tables → flattened into the parent
+  cell, multi-line cells → joined with spaces, unsupported elements
+  skipped by name, drawings → italic placeholder; bold+italic collapses to bold
   and link URLs get `()`/whitespace percent-encoded so the output is
   always `kbMd_`-render-safe (a Node round-trip tripwire feeds the
   converter's GFM back through `kbMd_` and asserts a `<table>` renders —
@@ -1876,6 +1934,74 @@ this section before touching the relevant area.
   compares `String(getType())` etc. against enum NAMES so the Node
   harness drives it with plain-object stubs ("kb — Doc→markdown
   converter" tests).
+- **KB Phase 2b — converter images export to Drive at SAVE time.** The
+  converter (still strictly READ-ONLY, INV-115) emits a
+  `![Doc image n](kbdoc:<fileId>:<n>)` token per `INLINE_IMAGE`
+  (paragraph children, document order, cap `KB_DOC_IMAGE_CAP`=20/doc;
+  drawings have no blob API and keep the italic placeholder). The editor
+  preview shows the token's alt text (`kbMd_` demotes non-http image
+  schemes — unchanged security boundary). When the manager presses Save,
+  `kbSaveItem` → `kbResolveDocImages_` re-walks the Doc with
+  `kbCollectDocInlineImages_` (a walk that MUST stay mirrored with the
+  converter's ordinal assignment or the wrong image exports — pinned by
+  a Node walk-mirror test), exports each referenced blob to the
+  deployer-owned **KB Images** Drive folder (Script Property
+  `KB_IMAGES_FOLDER_ID`, auto-provisioned, domain-link-viewable), and
+  swaps the token for the `drive.google.com/thumbnail?id=…&sz=w1200`
+  URL `kbMd_` renders. Exports are **idempotent**: files are named
+  `kbdoc-<fileId>-<n>` and REUSED on re-save (stable URLs, no folder
+  litter) — delete the exported file to force a refresh after the Doc's
+  image changed. Resolution runs BEFORE the ScriptLock (Drive exports
+  are slow; only the sheet write holds the lock), every failure degrades
+  per-token to the placeholder with a warning surfaced in the save
+  toast, and the audit row carries `imagesExported=`. Pinned by the
+  "kb — Phase 2b" Node tests (token emission, cap, extract/replace,
+  walk mirror, preview/final kbMd_ render).
+- **KB Phase 3 — paste-a-screenshot upload in the article editor.** Pasting
+  an image into the editor textarea uploads it via `kbUploadImage`
+  (manager-gated; PNG/JPEG/GIF/WebP whitelist — NO SVG, it's
+  script-capable; ~3MB cap `KB_IMG_UPLOAD_MAX_CHARS`, mirrored
+  client-side) into the same Phase 2b **KB Images** folder
+  (`kbpaste-<stamp>-<rand>` names) and inserts
+  `![Screenshot](<thumbnail URL>)` markdown. The paste listener is
+  ELEMENT-scoped (the textarea — structurally immune to the Intake M7
+  document-listener leak class); a unique placeholder token goes in at
+  the cursor and is string-replaced when the upload resolves (live
+  textarea first, the `KB_EDIT` snapshot as fallback), so mid-upload
+  typing or a type-switch re-render can't misplace the markdown. No
+  ScriptLock (Drive-only write); PHI-free-by-policy reminder sits under
+  the textarea; orphaned uploads (pasted, never saved) stay in the
+  folder — trim manually. Audit row `KbImageUpload` (INV-118).
+- **KB AI Phase A — facet-based guidance card in the Reference drawer.**
+  `kbGetFacetGuidance(facets)` sends ONLY whitelisted enum facets
+  (department / update type / tags / flag type) + excerpts from our own
+  PHI-free-by-policy KB articles to the **Anthropic Messages API**
+  (`UrlFetchApp` → `/v1/messages`; key in Script Property
+  `KB_AI_API_KEY`) and returns `{guidance, sources[]}` rendered as a
+  "Guidance" card atop the drawer home with Open-¶ source links. The
+  load-bearing privacy invariant is **INV-119: no free text ever enters
+  the vendor payload** — `kbAiSanitizeFacets_` drops every
+  non-vocabulary value (novel tags, typo'd enums, smuggled free text),
+  and `kbAiBuildPrompt_(clean, chunks)` has no parameter through which
+  note text could pass; the client's facet gather
+  (`kbAiGatherFacets_`: form flags + tags + `umsCallNotesLastDept`) is a
+  convenience, not the boundary. Cost funnel: canonical facet-hash cache
+  (6h, generation-salted by KB edits) → retrieval score floor (thin
+  matches never call the API, cached as none) → daily org spend cap
+  (`KB_AI_DAILY_CAP`, default $3; costed from usage tokens via
+  `KB_AI_MODEL_PRICES`, unknown model billed at the dearest known
+  rates) → vendor. Everything is best-effort: any failure returns
+  `{none}` and the drawer's existing Suggested block stands alone.
+  Gated by the `kbAiGuidance` feature flag (default OFF, scope `both`,
+  danger-marked: external AI vendor). Admin tab "AI Guidance
+  (Reference)" section edits the cap + model (`saveKbAiSettings`,
+  manager-gated; the model `<select>` renders from the server's
+  `KB_AI_MODEL_PRICES` keys so client/server can't drift) and shows
+  today's spend + key status; the key itself is editor-only.
+  Collapse-after-seen: the card collapses for the rest of the day per
+  facet-hash (`umsKbPanel.aiSeen`). Model default `claude-haiku-4-5`
+  ($1/$5 per MTok). Phase B (ask box) is deliberately NOT built —
+  gated on observed demand. See INV-119 + S66.
 - **KB reference drawer — mid-call lookup as a shell capability.** A
   slide-over panel (`#kb-drawer`, right edge, z-index 55 — ABOVE the
   `.overlay` layer (50) so it stays readable + usable while the email
@@ -2072,6 +2198,60 @@ this section before touching the relevant area.
   (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`,
   `handleBulkActionConfirmed_`) so the click-handler signatures stay
   synchronous from the dispatcher's perspective.
+- **Training rides ON the Reference/KB layer (T1).** Training content is
+  just KB items — no second content store, editor, or renderer. The
+  tracking overlay is two auto-provisioned tabs in the KB spreadsheet
+  (`TrainingAssignments`, `TrainingCompletions` — PHI-free, deployer-only
+  sheet access, the KbViews posture; zero new operator state).
+  Assignment targets are roster ids or `'*'` (everyone); rows are never
+  deleted (revoke stamps `RevokedAt`). **Completion = a completion row
+  strictly newer than the latest live assignment row**, so re-assigning
+  an item resets it — annual re-certification with no extra machinery
+  (an edited KB article does NOT auto-reset; re-assign if a re-read is
+  required). The rep checklist's reader modal reuses the global `kbMd_`
+  / Drive `/preview` and fires `kbRecordView(itemId,'training')` into
+  the existing usage loop. Mark-complete is honor-system by design
+  (`via='read'`; KbViews corroborates) until T2 quizzes add
+  server-graded completion (`via='quiz'`). The full module phasing
+  (T2 quizzes, T3 per-employee signable docs with `HR_DOCS_SS_ID` +
+  roster column M team scoping) lives in
+  `docs/training-employee-docs-spec.md`; operator decisions are resolved
+  in its §9. See INV-120 / S67.
+- **Operator feedback round (2026-06-12) — note-template ergonomics for the
+  pinned pop-out workflow.** The operator runs the compact pop-out pinned
+  via PowerToys "Always On Top" beside the CRM, which drove a density +
+  input-flow batch on the Call Notes form: Callback/Caller/Relationship
+  share one `.cnv-trio` row (labels above values; 2-up in compact);
+  Issue/Resolution default to ONE line and auto-grow; every field carries a
+  visible `var(--line)` border (the old transparent-until-focus styling hid
+  the field boundaries); flag buttons tint their icons per type even when
+  OFF; the Clear button uses the danger style (`.cn-form-clear-btn`).
+  Input flow: **Enter advances to the next field** (CN_FIELD_NAV_ORDER,
+  ending at the tag input; Shift+Enter = newline; Ctrl/⌘+Enter still
+  saves), and a **fresh focus selects the field's content** (Sheets-style
+  overwrite — `cnSelectAllIn_`; a drag-select on the focusing click wins,
+  a second click collapses to a caret). **Ctrl/⌘+Z after a save is a TRUE
+  undo**: the submit path arms `CN_STATE.lastSaveUndo` (live note ref +
+  restore snapshot); within 30s on an empty form, undo deletes the
+  just-saved note (server 5-min delete window applies; pending notes ask
+  you to retry in a second) and restores the text — the manual-Clear
+  snapshot keeps precedence. **Heuristic tag suggestions**
+  (`cnSuggestTagsFromText_`, Node-pinned): the rep's OWN tag vocabulary
+  (from `getCallNoteTagSuggestions`) matched against Issue/Resolution
+  text renders one-click chips under the tag input — the AI version is
+  deliberately NOT built (it would send note text to a vendor, the exact
+  INV-119 boundary; revisit only with an explicit operator privacy
+  decision). **Search-term highlight** in KB results (`kbHlRegex_`
+  Node-pinned + `kbHighlightTerms_`): walks TEXT NODES of the rendered
+  chunks and wraps matches in `<mark class="kb-hl">` (var(--selection-bg))
+  — DOM-walk, never string-level HTML surgery, so the kbMd_ escaping
+  boundary stays intact. **`managerDeleteCallNote(repEmpId, noteId)`**
+  (manager-gated, locked, NO time window — the rep window stays 5 min
+  INV-60): the path `deleteCallNote`'s error always pointed at; surfaced
+  as an audited danger button on the Team Notes per-rep card. PowerToys
+  itself can't be "integrated" (it's an OS utility) — the pop-out button's
+  tooltip now carries the Win+Ctrl+T tip; an in-app 8x8 queue-status
+  widget would need the 8x8 realtime API (future spec, on demand).
 
 ## Deferred Follow-ons
 
@@ -2161,6 +2341,20 @@ manually for a fresh deploy or environment:
   (INV-117). It grows one tiny row per open with no purge yet; the stats scan
   is bounded (last 4000 rows) so growth never slows reads — trim it manually
   if it ever bothers you.
+- **Script Property `KB_IMAGES_FOLDER_ID`** (auto-managed, Phase 2b). The
+  deployer-owned "KB Images" Drive folder that converted-article images
+  export into on save. Auto-provisioned on the first image-bearing save:
+  created in the deployer's Drive, set domain-link-viewable (so `<img>`
+  tags render for any signed-in rep), id stored here. If Workspace policy
+  blocks link sharing, the create still succeeds with a console warning —
+  share the folder with the team manually or images render only as their
+  alt text + open-in-Drive link. Exported files are named
+  `kbdoc-<fileId>-<n>` and are REUSED on re-save; delete a file to force a
+  re-export after the source Doc's image changed. Phase 3 paste-uploads
+  land in the same folder as `kbpaste-<stamp>-<rand>` files (orphans from
+  never-saved pastes accumulate — trim manually). The first export also
+  adds the Drive OAuth scope alongside the Docs scope — the deploying
+  account may be prompted to re-authorize once.
 - **KB Phase 2 converter requires the Google Docs OAuth scope.**
   `kbConvertDriveDoc` is the project's first `DocumentApp` call, so the deploy
   that ships it adds the `documents` scope to the auto-detected scope set. The
@@ -2168,6 +2362,27 @@ manually for a fresh deploy or environment:
   / deploy — accept the new scope) or every conversion fails with an auth
   error. The converter reads Docs with the deployer's access, the same trust
   boundary as embedding them.
+- **Set Script Property `KB_AI_API_KEY` to enable the KB AI guidance card
+  (Phase A).** An Anthropic API key (console.anthropic.com); without it,
+  `kbGetFacetGuidance` silently returns `{none}` even with the `kbAiGuidance`
+  feature flag on. The key is deliberately NOT settable or readable through
+  any endpoint — editor-only, same posture as `ADP_SS_ID`. Also set a **hard
+  spend cap in the Anthropic console** as the backstop behind the app's soft
+  daily cap. Then flip the `kbAiGuidance` feature toggle (Admin tab; default
+  OFF, danger confirm names the external vendor) — INV-119 documents the
+  privacy boundary (whitelisted enum facets + own KB excerpts only).
+- **Script Properties `KB_AI_DAILY_CAP` / `KB_AI_MODEL`** (Admin-managed).
+  Written by the Call Notes → Admin → "AI Guidance (Reference)" section
+  (`saveKbAiSettings`, manager-gated). Defaults when unset: $3/day org-wide,
+  `claude-haiku-4-5`. The model must be a `KB_AI_MODEL_PRICES` key (Code.js)
+  so spend accounting always has real rates — adding a new model option means
+  adding its $/MTok rates there and redeploying.
+- **Script Properties `KB_AI_GENERATION` / `KB_AI_SPEND`** (auto-managed).
+  The guidance-cache generation salt (bumped by every KB save/delete via
+  `invalidateKbCache_`) and the `{date, usd, calls}` daily spend counter.
+  No manual setup — documented so they're recognizable when inspecting
+  Script Properties. Delete `KB_AI_SPEND` to reset today's budget; bump
+  `KB_AI_GENERATION` to force-invalidate all cached guidance.
 - **`CDR_ALERT_THRESHOLD`** in CONFIG (default 85) sets the
   % Answered cutoff for the Metrics sidebar alert badge. Below
   this value, `getMetricsAmbient()` returns a warn badge showing
@@ -2309,10 +2524,27 @@ manually for a fresh deploy or environment:
   the enrollment-missing splash. Pre-existing rows are blank until
   provisioned/filled (the schema bump in
   `EMP.CALL_NOTES_SHEET_ID = 11` doesn't auto-fill).
-- **`ROSTER_CACHE_KEY` = `'employee_roster_v5'`** — bumped when
-  CallNotesSheetId column landed. After deploying, run `clearCaches_()`
-  once from the Apps Script editor to flush any stale `_v4` cache
-  entries (or wait 5 min for natural TTL expiry).
+- **`Employees` sheet column M = `ManagerEmail`** — each employee's
+  manager (an email from `MANAGER_EMAILS`). Drives the FAIL-CLOSED
+  Employee Docs team scoping (INV-122): a manager sees a doc only if
+  they issued it OR they are this column's value for that employee.
+  Blank = only the issuer (and the employee) can see the doc — fill
+  the column for every employee who will receive docs. Header row 1;
+  no other module reads it yet.
+- **Set Script Property `HR_DOCS_SS_ID`** to a DEDICATED spreadsheet for
+  Employee Docs (create an empty one; tabs `EmpDocs` + `DocSignatures`
+  auto-provision). There is deliberately NO fallback — without the
+  property every Employee Docs endpoint returns a friendly
+  "not configured" error. Keep it separate from the KB (broadly
+  rep-readable), the ADP sheet (payroll), and the PHI sheets; the
+  deployer needs edit access. NEVER point a retention purge at it —
+  HR records are keep-forever (INV-122). `TEST_HRDOCS_SS_ID` is the
+  auto-managed test fixture twin (created on first `runAllTests`).
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v6'`** — bumped when the
+  `ManagerEmail` column (M) landed for Employee Docs team scoping
+  (previously v5 for CallNotesSheetId). After deploying, stale v5
+  cache entries expire naturally within 5 min (or run `clearCaches_()`
+  from the editor).
 - **Call-notes department list + state tax rates** are read by
   `getDepartmentEmails_()` and `getStateTaxRates_()`, which check
   Script Properties (`CN_DEPARTMENT_EMAILS`, `CN_STATE_TAX_RATES`)
@@ -2562,6 +2794,8 @@ Client (Intake views):
   web-app/intake/script_intake.html
 Client (Reference views):
   web-app/kb/script_kb.html
+Client (Training views):
+  web-app/train/script_training.html, web-app/train/script_empdocs.html
 Client (public forms):
   web-app/form_public.html
 Test Suite:
@@ -2595,7 +2829,7 @@ INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }
 INV-25 | `managerSubmitTimeOff` requires `callerEmp.isManager`; when `autoApprove=true` it skips the Pending stage, applies the PTO deduction in the same call, and emails the employee a decision notice | Subsystem: Server
 INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) go through `normalizeTime_`, which detects Date objects and re-formats via the spreadsheet's timezone | Subsystem: Server
 INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (global) AND `emp.ptoEnabled` (per-row, defaulting to TRUE when column K is blank/missing) — applied in `getEmployeeState` and `buildCalendarForEmployee_` | Subsystem: Server
-INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v5`) so old cached entries with the wrong column shape are not served | Subsystem: Server
+INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v6`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
 INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`, `kbGetUsageStats`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
@@ -2641,13 +2875,13 @@ INV-70 | `getManagerDashboard` attaches `recentHours[]` (7 entries `{date, hours
 INV-71 | Clock view's "until end of shift" countdown (in `buildStatusSentence_`) and the day ribbon's scheduled band (in `renderDayRibbon_`) both anchor to the rep's first `ClockIn` + the scheduled length once they've clocked in; before that, both fall back to the rep's configured shift from `CONFIG.SHIFT_SCHEDULE` (default 8:00–17:00 CST, per-timezone overrides — e.g. PH `Asia/Manila` 8:30–17:00). The schedule is resolved server-side by `getShiftSchedule_(timezone)` → `{startMin, lengthMin}`, shipped on `getEmployeeState`, and read client-side via `CLK_SCHEDULE` (`clkSchedStartMin_` / `clkSchedLenMin_`, falling back to `RIBBON_DEFAULT_*` if absent). Per-rep (vs. per-tz) schedules still aren't supported | Subsystem: Server + Client (Time Clock views)
 INV-72 | `LEAVE_DEDUCTION_CLIENT` in `tc/script_timeoff.html` must mirror server's `getLeaveDeduction_` (Code.js) for the PTO day modal's balance-after preview to compute correctly. The server still performs the actual deduction on submit (via `updateTimeOffStatus`'s Pending→Approved transition), so a drift causes UI mis-preview but not balance corruption. Adding a new leave type requires updating BOTH maps | Subsystem: Client (Time Clock views) + Server
 INV-73 | Day-ribbon now-cursor refresh interval (`_ribbonNowInterval`, 60s) is bound to the `startClock` / `stopClock` lifecycle via `startRibbonNowCursor_` / `stopRibbonNowCursor_`. When the Clock view is exited via tab navigation (Time Off / Manager / Call Notes / Metrics enters all call `stopClock` at the top), the interval clears alongside the 1Hz live-time interval | Subsystem: Client (Time Clock views)
-INV-74 | (Removed in Round 2 · 8b.) The Clock view's pay-period ledger cell + the `lazyUpdatePayPeriodCell_` lazy hook were both removed when the timesheet section moved to the Time / PTO tab. `loadTimesheet`'s success handler retains a `typeof === 'function'` guarded call as a defensive no-op | Subsystem: Client (Time Clock views)
+INV-74 | (Removed in Round 2 · 8b.) The Clock view's pay-period ledger cell + the `lazyUpdatePayPeriodCell_` lazy hook were both removed when the timesheet section moved to the Time / PTO tab. The orphaned timesheet render cluster (`loadTimesheet` / `renderTimesheetView` / calendar+card renderers) was fully pruned in Cycle 2 (L11) — `tc/script_timesheet.html` now holds only the live `computeRange` / `isoFromMs` range helpers used by the Time / PTO side rail | Subsystem: Client (Time Clock views)
 INV-75 | `submitCallNote` accepts `payload.flags[]` (multi-select via `sanitizeFlagsArray_`) and `payload.tags[]` (free-text kebab-case via `sanitizeTagsArray_`) in addition to the legacy `payload.flagType` single string. Server folds both into `subformData` (no new Sheet column required) and derives the `FlagType` column from `flags[]` via priority order (`action` > `training` > `review` > `urgent`). `urgent` never enters the `FlagType` column (INV-37 preserved — `sanitizeFlagType_` still rejects it); it lives in `subformData.flags` only so existing manager digests / queues are unaffected. Pin stays in `subformData.pinned` with its 3-cap (INV-50) — not in flags[] | Subsystem: Server
 INV-76 | `appendCallNoteFeedback(noteId, message, kind)` (Round 2 · 8g) is rep-callable (operates on caller's own per-rep Sheet), locked, and rejects calls on non-training-flagged notes (parallels INV-34 + INV-49). Appends `{role:'agent', kind:'ack'\|'clarification', message, at, by}` to `subformData.feedback[]`. `kind='ack'` with empty message renders as 👍 Got it; `kind='clarification'` requires a non-empty message. Writes a `CallNoteFeedback` audit row | Subsystem: Server
 INV-77 | `setCallNoteFlag(noteId, flagType)` accepts `'urgent'` as a card-level toggle (Round 2 deferred 8e). Urgent bypasses the `FlagType` column entirely (`sanitizeFlagType_` still rejects it, INV-37 preserved) — toggles membership in `subformData.flags` only. `action`/`training`/`review`/`''` paths still flow through `FlagType` + reset `Resolved` on transition (INV-40); after writing `FlagType` the new primary value is also mirrored into `subformData.flags` (pruning conflicting `CN_FLAG_TYPES` entries but preserving `'urgent'`) so the form's multi-flag state stays consistent with the column | Subsystem: Server
-INV-78 | URL query params (`?compact=1`, `?tool=<tabKey>`, `?prefill=...`) are passed from `doGet` to the client via template evaluation (`tpl.serverQueryParams = e.parameter`) and exposed as `window.SERVER_QUERY_PARAMS` in `index.html`'s `<head>`. `__URL_PARAMS` in `script_core.html` reads from `SERVER_QUERY_PARAMS` first, falls back to `window.location.search` for local dev. Required because Apps Script's HtmlService iframe sandboxes `window.location.search` to the iframe's own URL — the user-facing deploy URL's query string is never visible to client JS through that path. The injected JSON is `<` → `<` escaped to prevent XSS via attacker-controlled query values containing `</script>`. Also applies to `form_public.html`'s `FORM_TOKEN` injection via `serveExternalForm_` (`tpl.formToken`): it uses the same unescaped `<?!=` print with the `<`→`<` guard — the escaping `<?=` mangles the token's JSON quotes, breaking the public form ("Form not found"). A related foot-gun: the literal scriptlet delimiters (`<?`/`?>`) or a literal `</script>` written inside a JS *comment* in these templates open a spurious scriptlet at `tpl.evaluate()` (the template engine ignores JS-comment boundaries), throwing a server-side "Unexpected token" — so comments must not contain those literals. Pinned by `test_tpl_formToken_usesUnescapedScriptlet` + `test_tpl_noEscapedJsonInjection` + `test_tpl_formPublic_evaluatesWithoutError` (the last actually `.evaluate()`s the template, catching the comment-delimiter case) | Subsystem: Server + Client (shell)
+INV-78 | URL query params (`?compact=1`, `?tool=<tabKey>`, `?prefill=...`) are passed from `doGet` to the client via template evaluation (`tpl.serverQueryParams = e.parameter`) and exposed as `window.SERVER_QUERY_PARAMS` in `index.html`'s `<head>`. `__URL_PARAMS` in `script_core.html` reads from `SERVER_QUERY_PARAMS` first, falls back to `window.location.search` for local dev. Required because Apps Script's HtmlService iframe sandboxes `window.location.search` to the iframe's own URL — the user-facing deploy URL's query string is never visible to client JS through that path. The injected JSON is `<` → `<` escaped to prevent XSS via attacker-controlled query values containing `</script>`. Also applies to `form_public.html`'s `FORM_TOKEN` injection via `serveExternalForm_` (`tpl.formToken`): it uses the same unescaped `<?!=` print with the `<`→`<` guard — the escaping `<?=` mangles the token's JSON quotes, breaking the public form ("Form not found"). A related foot-gun: the literal scriptlet delimiters (`<?`/`?>`) or a literal `</script>` written inside a JS *comment* in these templates open a spurious scriptlet at `tpl.evaluate()` (the template engine ignores JS-comment boundaries), throwing a server-side "Unexpected token" — so comments must not contain those literals. The same injection path now also carries `window.SERVER_WEB_APP_URL` (the canonical `/exec` base from `getWebAppExecUrl_`) — `window.location.origin+pathname` inside the iframe is the session-bound googleusercontent URL, which renders BLANK as a top-level window and broke the pop-out until fixed; `popOutCurrentView` must use `SERVER_WEB_APP_URL` (Node-pinned). Pinned by `test_tpl_formToken_usesUnescapedScriptlet` + `test_tpl_noEscapedJsonInjection` + `test_tpl_formPublic_evaluatesWithoutError` (the last actually `.evaluate()`s the template, catching the comment-delimiter case) | Subsystem: Server + Client (shell)
 INV-79 | Resizable sidebar width persists to `localStorage.umsSidebarW` (range 56–280px on restore — out-of-range values fall back to the default). Default 168px; snap threshold 100px determines the collapsed (icon-only) state. `initResizableSidebar_` sets `--sidebar-w` on both the `.sidebar` element AND `documentElement` so the `.app-shell` grid template recomputes. `.sidebar.collapsed` hides `.sb-lbl` labels + brand sub-name + user info text + section labels via CSS | Subsystem: Client (shell)
-INV-80 | Time / PTO mode (`localStorage.umsMergeMode`, `'timeoff'` \| `'timesheet'`, default `'timeoff'`) persists across reloads. `'timeoff'` mode renders the `.pto-tile` + upcoming-requests in the side rail; `'timesheet'` mode lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call, NOT via `loadTimesheet`) and renders a pay-period `.pto-tile` mirror + recent-activity list. The TOOLS registry tab key stays `'timeoff'` even though the label changed to `'Time / PTO'` so `?tool=timeoff` deep-links + `currentView === 'timeoff'` guards keep working | Subsystem: Client (Time Clock views)
+INV-80 | Time / PTO mode (`localStorage.umsMergeMode`, `'timeoff'` \| `'timesheet'`, default `'timeoff'`) persists across reloads. `'timeoff'` mode renders the `.pto-tile` + upcoming-requests in the side rail; `'timesheet'` mode lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call; the legacy `loadTimesheet` cluster was deleted in Cycle 2 · L11 — INV-74) and renders a pay-period `.pto-tile` mirror + recent-activity list. The TOOLS registry tab key stays `'timeoff'` even though the label changed to `'Time / PTO'` so `?tool=timeoff` deep-links + `currentView === 'timeoff'` guards keep working | Subsystem: Client (Time Clock views)
 INV-81 | The Clock view's coverage-strip "File N missing" CTA fires `fileMissingCalls_(date, missingCount)` which sets `window.CLK_NAV_HINT { source: 'coverageStrip', date, missingCount }` before calling `enterTool('callNotes')`. `cnConsumeNavHint_` on Log-view enter reads + nulls the hint and surfaces a confirmation toast. Per-call CDR data doesn't exist today (DQE Historical Data is per-(agent, date) aggregated only), so unmatched call IDs can't be passed via the hint yet — when a per-call source lands, extend the hint with `hint.calls[]` for prefill | Subsystem: Client (Time Clock views) + Client (Call Notes views)
 INV-82 | Tag taxonomy admin endpoints (`renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) are manager-gated (INV-02) and acquire `LockService.getScriptLock` with `waitLock(15000)` (INV-01). Rename and merge use `applyTagTransformAcrossReps_` to iterate every enrolled rep's per-rep Sheet and rewrite `subformData.tags[]` in place; dedupe handles the case where the target tag is already present on a note. Archive only mutates the `CN_ARCHIVED_TAGS` Script Property (JSON-encoded array of lowercase tags) — existing note tags are unchanged, so archive does NOT remove the tag from cards already in production. All three write a `CallNoteTagAdmin` audit row (INV-32 extension) with the manager's email + `{action, oldTag/newTag, repsTouched, notesUpdated}` summary. Per-rep Sheet failures are isolated via try/catch in the loop so one broken Sheet doesn't fail the whole rename. All three call `invalidateCnTaxonomyCache_()` after their audit write so the Admin table reflects the change immediately. `getCallNotesTagTaxonomy` returns the `archived` flag on each in-use tag plus an `archivedOnlyTags[]` array for archived tags no longer in active use, and is itself whole-result cached (`CN_TAXONOMY_CACHE_KEY`, 5 min) | Subsystem: Server
 INV-83 | `uiConfirm({title?, message?, confirmLabel?, cancelLabel?, tone?})` and `uiPrompt({title?, message?, initialValue?, placeholder?, validator?, confirmLabel?, cancelLabel?})` in `script_core.html` are Promise-returning replacements for `window.confirm` / `window.prompt`. All 14 native-dialog callsites across `tc/script_clock.html`, `tc/script_manager.html`, `tc/script_timeoff.html`, and `cn/script_callnotes.html` are converted — no `window.confirm` / `window.prompt` usage remains in the codebase. Esc + click-outside resolve `false`/`null`; Enter on a confirm fires OK unless the Cancel button is focused (a keyboard user who Tabs to Cancel and presses Enter gets cancel — confirming from Cancel fired destructive actions until fixed); Enter inside the prompt input submits. `tone:'danger'` paints the OK button destructive via `.ui-dialog-ok.is-danger`. `validator` on uiPrompt returns an error string and the dialog shows it inline WITHOUT closing so the rep can fix and retry. A `resolved` sentinel inside each helper prevents double-resolution if Esc + click-outside fire in quick succession. Multi-statement continuations are extracted into helpers (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`, `handleBulkActionConfirmed_`) so click-handler signatures stay synchronous from the dispatcher's perspective | Subsystem: Client (shell)
@@ -2678,13 +2912,21 @@ INV-107 | `managerGetPendingAdjustments` + `updatePunchAdjustStatus(reqId, newSt
 INV-108 | `managerSaveDayRange(empId, fromDate, toDate, slots, reason)` (#4b) is manager-gated (INV-02), locked (INV-01), span-capped (≤31 days), and window-bounded (no future date; none beyond `ADJUST_WINDOW_DAYS`; reason required if the oldest date is beyond `OLD_ADJUST_ALERT_DAYS`). It applies each NON-EMPTY slot to every date in the inclusive range via `writeAdjustPunchForEmployee_` — purely ADDITIVE (set/update that punch type only), so a blank slot is left untouched and other punch types are never deleted. It must NOT reuse `managerSaveDay` (full-day reconcile deletes blank slots). The immediate employee adjust path (`recordPunch` `custom`) is gated for non-managers by the `employeeImmediateAdjust` flag (default off). Pinned by `test_managerSaveDayRange_appliesAcrossDays` + `_nonManagerRejected` + `test_recordPunch_immediateAdjustGatedByFlag` | Subsystem: Server + Client (Time Clock views)
 INV-109 | `reconcileCallNotes` (#8) is manager-gated (INV-02) and locked (INV-01). It scans every enrolled rep's `Notes` tab and, for rows with content but NO `noteId` (hand-entered directly in the Sheet), backfills a UUID `noteId` + a `Timestamp` + a yyyy-MM-dd `DateLocal` (derived from the human's values, else rep-tz now/today via `safeTimezone_`/`normalizeDate_`) so the row becomes flaggable/searchable/coverage-counted. Content columns are NEVER modified. Idempotent (a row with a `noteId` is skipped → re-run is a no-op). Per-rep Sheet failures are skipped; writes a `CallNotesReconcile` audit row. Runs both manually (Admin → "Reconcile Sheets") and as a daily manager-tz 5am trigger wired by `installAutomationTriggers`; the `isManager`-returns-`{error}` gate (not `assertManagerCaller_`) passes in a trigger context because the installer is a manager. Pinned by `test_reconcileCallNotes_backfillsHandEntered` + `_nonManagerRejected` | Subsystem: Server + Client (Call Notes views)
 INV-110 | `provisionCallNotesSheet(repEmpId)` (auto-provision) is manager-gated (INV-02) and locked (INV-01, mutates the Employees sheet). It `SpreadsheetApp.create`s a fresh per-rep Sheet owned by the deploying account (the web app runs as `USER_DEPLOYING`), pins the new Sheet's timezone to the ADP sheet's (the `normalizeDate_` DateLocal round-trip only holds when the coercing sheet shares the ADP tz), renames the default sheet to the `Notes` tab + writes the canonical `CN_HEADERS` header, writes the new spreadsheet ID into `EMP.CALL_NOTES_SHEET_ID` (column L) of the rep's roster row, calls `invalidateRosterCache_()` (INV-10), and writes a `CallNotesProvision` audit row with the manager's email. **Idempotent / no-clobber:** a rep who already has a non-empty `callNotesSheetId` is returned `{success, alreadyEnrolled:true, sheetId}` unchanged — it NEVER creates a second Sheet or overwrites column L (that would orphan the rep's note history). The companion read-only `getCallNotesEnrollment` (manager-gated) returns `{enrolled[], unenrolled[]}` for the Admin enrollment panel. Pinned by `test_provisionCallNotesSheet_nonManagerRejected` + `_idempotentNoClobber` (the create branch is exercised manually to avoid littering Drive in CI) | Subsystem: Server + Client (Call Notes views)
-INV-111 | The Intake send endpoints (`intakeSendPPD`, `intakeSendPMD`, `intakeSendPAP`) require an enrolled rep (`getEmployeeInfo_`), build the email body server-side with every user field `esc_`'d (INV-89 discipline; pinned by `test_intake_buildPpdBody_escapesAnswers`), and re-render + hash-check the patient-answer body against the `expectedBodyHash` returned by the matching `intakePreview*` — rejecting the send when the form changed since preview (INV-41 pattern; selections/images ride at send and are NOT part of the hash). Patient answers persist to the append-only per-form submission tab in `INTAKE_SS_ID`; the shared AuditLog `IntakeSent` row is PHI-free (`type`, `submissionId`, recipient **domain** only — never the patient name or recipient address, same discipline as the `ExternalEmailSent` row). Recipients are resolved server-side via `intakeResolveRecipient_` (roster id→email, dept default, or validated custom), so agent addresses never reach the client | Subsystem: Server + Client (Intake views)
+INV-111 | The Intake send endpoints (`intakeSendPPD`, `intakeSendPMD`, `intakeSendPAP`) require an enrolled rep (`getEmployeeInfo_`), build the email body server-side with every user field `esc_`'d (INV-89 discipline; pinned by `test_intake_buildPpdBody_escapesAnswers`), and re-render + hash-check the patient-answer body against the `expectedBodyHash` returned by the matching `intakePreview*` — the hash is REQUIRED (a send without one is rejected, so a direct RPC can't bypass the preview gate — L2 parity with `emailFromCallNote`) and the send is rejected when the form changed since preview (INV-41 pattern; selections/images ride at send and are NOT part of the hash). Patient answers persist to the append-only per-form submission tab in `INTAKE_SS_ID`; the shared AuditLog `IntakeSent` row is PHI-free (`type`, `submissionId`, recipient **domain** only — never the patient name or recipient address, same discipline as the `ExternalEmailSent` row). Recipients are resolved server-side via `intakeResolveRecipient_` (roster id→email, dept default, or validated custom), so agent addresses never reach the client | Subsystem: Server + Client (Intake views)
 INV-112 | `intakeFilterRecommendations_(answers, allProducts)` is a PURE, self-contained port of the bound tool's recommendation engine — `answers` keyed by bare question number (`'38'` weight, `'43'` neuro, `'31a'` stroke, `'34'` amputation, `'33'` ulcers, `'32'` spasticity, `'35'` spine, `'36'` swelling, `'30'` catheters, `'44'` oxygen, `'25'` numbness, `'13'` falls); `allProducts` is the raw `Offerings!A2:F` 2D array. It applies weight-cap, solid-seat/captain, Group-3/SPO/MPO eligibility, the `K0856→K0861` / `K0843→K0862` neuro substitutions, and justification building. Pinned by `test_intake_engine_*` (Tests.js) + the Node harness (`intake — PPD engine`). The PMD/PAP email STRUCTURAL layout (`INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT`, server-authoritative) is mirrored by the client render layouts (`INTAKE_PMD_CLIENT` / `INTAKE_PAP_CLIENT`) for input rendering only; the two are pinned equal by the Node coupling tripwire (`intake — client render layout mirrors the server`) — same parallel-source discipline as `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_` | Subsystem: Server + Client (Intake views)
 INV-113 | `submitFormByToken` (public, token-only) extracts `signature` AND `_meta` before persisting responses, **server-enforces consent** (requires `_meta.consentAgreed === true`; an absent `_meta` is rejected — the prior back-compat tolerance let a hand-crafted payload skip the consent record entirely), stamps the server-authoritative `CONFIG.FORM_CONSENT_VERSION` (never a client-sent version), and writes a tamper-evident `SubmissionHash` (`computeFormSubmissionHash_` over responses+signature+token+consentVersion — NOT `submittedAt`, which Sheets may coerce to a Date) + a `Certificate` JSON into trailing `FS` columns. The `FormSubmissionReceived` audit row carries `hash=` + `submittedAt=` as the append-only independent witness. `verifyFormSubmissionIntegrity_(token)` (manager-gated, read-only) recomputes + compares; a legacy row with no stored hash returns `match:null` (not a failure). `FS_HEADERS` grew by TRAILING columns only (back-compat like `CN_HEADERS`). `FormSubmissions` remains **append-only — no edit endpoint exists** (the immutability is a HIPAA §164.312(c) integrity control, and the hash makes any out-of-band alteration detectable) | Subsystem: Server + Client (public forms)
 INV-114 | `getFormsSS_()` resolves the forms PHI store: Script Property `FORMS_SS_ID` first (segregates PHI off the ADP/payroll sheet — point it at `INTAKE_SS_ID`), else `getAdpSS_()` for back-compat; honors `_TEST_OVERRIDE_FORMS_SS_ID`. Both `getOrCreateFormTokensSheet_` / `getOrCreateFormSubmissionsSheet_` (and therefore `submitFormByToken`, `getFormByToken`, `serveExternalForm_`, the viewers, and `purgeExpiredFormData`) route through it, so the location is a single point of change. The invite-email builders (`buildCustomerEmailHtml_`/`buildProviderEmailHtml_`/`*Text_`) take only `(recipientName, message, formNames, formLinks)` and never read prefill — patient identifiers stay in the token, never the cleartext email body. Pinned by the `forms — invite email builders` Node guard | Subsystem: Server + Client (public forms)
-INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text; tables → GFM with row 0 as header and `\|`-escaped literal pipes) and reports lossy conversions (images, nested tables, multi-line cells, skipped elements) as `warnings[]` rather than silently dropping content — pinned by a Node round-trip tripwire that renders the converter's GFM through `kbMd_`. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-115 | `kbConvertDriveDoc({itemId | driveUrl})` is manager-gated (INV-02) and strictly READ-ONLY — it never writes a KB row or modifies the Drive Doc; persisting the converted article happens only through the existing `kbSaveItem` after manager review in the editor. The `itemId` path accepts only `type=embed` + `driveKind=doc` rows; the `driveUrl` path accepts only URLs `kbParseDriveUrl_` resolves to `kind=doc`. The converter emits ONLY the `kbMd_`-renderable subset (bold+italic→bold, link `()`/whitespace percent-encoded, `[]` stripped from link text, non-http(s)/mailto links demoted to plain text; tables → GFM with row 0 as header and `\|`-escaped literal pipes) and reports lossy conversions (drawings, nested tables, multi-line cells, skipped elements) as `warnings[]` rather than silently dropping content — pinned by a Node round-trip tripwire that renders the converter's GFM through `kbMd_`. Phase 2b: `INLINE_IMAGE`s emit `kbdoc:<fileId>:<n>` tokens (the converter remains read-only); `kbSaveItem` resolves them at save via `kbResolveDocImages_` — Doc re-walk in converter order (`kbCollectDocInlineImages_`, a mirrored-walk pair pinned by a Node test), idempotent export to the `KB_IMAGES_FOLDER_ID` Drive folder (deterministic `kbdoc-<fileId>-<n>` names, reused on re-save), token → thumbnail-URL swap, per-token degradation to the italic placeholder on any failure. Resolution runs OUTSIDE the ScriptLock; the lock wraps only the sheet write. The Doc is opened with the deployer's access (DocumentApp) — same trust boundary as embedding it. Pinned by the `kb — Doc→markdown converter` Node stub tests + the `kbConvertDriveDoc` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-116 | `intakeListMySubmissions()` / `intakeGetSubmission(formType, submissionId)` (the Intake Sent tab) are read-only and caller-scoped: a rep sees only rows whose stored `repId` matches their own; a manager sees all (parallels INV-90/91). The list is metadata-only (id, timestamp, rep, patientInfo, language, recipient — never the answers JSON), newest-first, capped at `INTAKE_LIST_CAP_`=100, and skips an unreachable form-type tab rather than failing the whole list. The detail is a bounded lookup — id-column scan, then one full-row fetch — and parses the answers/recommendations/selections JSON defensively (corrupt blob → `{}`). Timestamps and the ACCT dob cell route through Date-coercion guards (`intakeTsString_`). The submission tabs remain APPEND-ONLY — no edit endpoint exists. Pinned by `test_intake_sentViewer_callerScopedAndManager` | Subsystem: Server + Client (Intake views)
 INV-117 | `kbRecordView(itemId, context)` is rep-callable (requires `getEmployeeInfo_`), locked (INV-01), and append-only — one PHI-free row (timestamp, itemId, repId, sanitized context) per open into the `KbViews` tab of the KB spreadsheet; it never reads or returns other reps' data. The client fires it best-effort (fire-and-forget) so a failure never blocks or surfaces in the reading UX. `kbGetUsageStats()` is manager-gated (INV-02/31), read-only, bounded (last `KB_VIEWS_MAX_SCAN`=4000 rows), windowed to `KB_USAGE_WINDOW_DAYS`=30, and joins titles from the KB sheet so deleted items drop out; timestamp cells are recovered in the KB spreadsheet's OWN tz (the tz that coerced them — same discipline as `normalizeAuditTs_`). Pinned by `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-118 | `kbUploadImage(dataUrl)` (KB Phase 3) is manager-gated (INV-02) and validates BEFORE any Drive work: data-URL shape via the pure `kbParseImageDataUrl_`, content-type whitelist `KB_IMG_UPLOAD_TYPES` (PNG/JPEG/GIF/WebP — SVG deliberately excluded, it's script-capable), and the `KB_IMG_UPLOAD_MAX_CHARS` (~3MB) cap mirrored client-side. On success it writes one file to the `KB_IMAGES_FOLDER_ID` folder (`kbpaste-<stamp>-<rand>`), writes a PHI-free `KbImageUpload` audit row with the manager as actor, and returns the Drive thumbnail URL. Deliberately NO ScriptLock — a Drive-only atomic write; holding the global lock through a multi-second upload would stall every punch/note write. Pinned by `test_kb_uploadImage_rejectsInvalidPayloads` + the `kbUploadImage` case in `test_managerGates_rejectNonManager` + the `kbParseImageDataUrl_` Node test | Subsystem: Server + Client (Reference views)
+INV-119 | **No free text ever enters the KB AI vendor payload.** `kbGetFacetGuidance(facets)` (Phase A) is rep-callable (requires `getEmployeeInfo_`), gated server-side by the `kbAiGuidance` feature flag (scope `both`, default OFF, danger-marked), and best-effort — every failure path (flag off, no facets, thin retrieval, missing `KB_AI_API_KEY`, daily cap reached, vendor error) returns `{ none: true, reason }` and never throws to the client. The privacy boundary is `kbAiSanitizeFacets_`: every facet is whitelist-validated against server-side vocabularies (departments ∈ `getDepartmentEmails_()` keys; update types ∈ `UPDATE_SUGGESTIONS_DEFAULT` ∪ `getUpdateSuggestions_()`; flag ∈ `CN_FLAG_TYPES`+`urgent`; tags ∈ the CALLER's own established tag vocabulary from `getCallNoteTagSuggestions` — a novel tag typed this minute is DROPPED, never sent), and the prompt builder `kbAiBuildPrompt_(clean, chunks)` takes ONLY the sanitized facets + our own PHI-free-by-policy KB chunk excerpts — there is no parameter through which free-typed note text or patient data can reach the wire. Retrieval reuses `searchReference` over `kbAiQueryTerms_(clean)` with a score floor (`KB_AI_SCORE_FLOOR` — thin matches never hit the API and the none is cached). Results cache org-wide (`KB_AI_CACHE_PREFIX`, 6h) keyed by generation salt (`KB_AI_GENERATION`, bumped by `invalidateKbCache_` on every KB save/delete) + MD5 of the canonical order-insensitive facet string (`kbAiCanonicalFacets_`). Spend: each vendor call is costed from usage tokens via `KB_AI_MODEL_PRICES` (unknown model → most expensive known rates, the cap can never be undercounted) into the `KB_AI_SPEND` daily counter; at `KB_AI_DAILY_CAP` (default $3, Admin-adjustable) the endpoint returns none until the date rolls. Each vendor call writes a PHI-free `KbAiGuidance` audit row (canonical facets + model + cost). `saveKbAiSettings` (manager-gated, INV-57 family) validates cap 0–100 + model ∈ `KB_AI_MODEL_PRICES` and persists `KB_AI_DAILY_CAP`/`KB_AI_MODEL`; the API key is NEVER settable or readable through any endpoint. Pinned by the `kb — AI Phase A` Node tests (whitelist / canonical hash / prompt / source tripwire) + `test_kbAi_gatesAndSettingsValidation` + the `saveKbAiSettings` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-120 | Training T1 endpoints follow the established families: `getMyTraining` / `markTrainingComplete` are caller-scoped (the rep's own assignments/completions only; complete requires a LIVE effective assignment — `'kb:'+itemId` in `trainEffectiveForEmp_` — so a rep can't write completion rows for unassigned items, and is idempotent on an already-complete item); `markTrainingComplete` / `saveTrainingAssignment` / `revokeTrainingAssignment` are locked (INV-01); the three manager endpoints are gated (INV-02). `TrainingCompletions` is append-only; `TrainingAssignments` rows are never deleted — revoke sets `RevokedAt`. Completion semantics: an item is complete iff some completion row's `CompletedAt` is STRICTLY after the latest non-revoked matching assignment row's `AssignedAt` (re-assign = reset, the re-certification mechanism; `'*'` rows match every employee). All four timestamp/date cells are Sheets-coercion-guarded (`trainCellTs_`/`trainCellDate_`, recovered in the KB spreadsheet's OWN tz — the normalizeAuditTs_ discipline; lexicographic compare = chronological). Status derivation is the pure `trainDeriveStatus_` (Node-pinned), shared by checklist + dashboard; "today" is the rep's roster tz in `getMyTraining` (F6 discipline) and manager tz in the dashboard. Audit rows `TrainingAssign`/`TrainingRevoke`/`TrainingComplete` are content-free (itemId/assignId/counts only). Assignment notifications are best-effort per-recipient (INV-14). Training dashboards are deliberately NOT team-scoped (every manager sees all reps, matching managerGetShiftStats); only the T3 Employee Docs carry per-team scoping. Pinned by `test_training_assignCompleteFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+
+INV-121 | **Quiz answer keys never leave the server.** The `Quizzes` tab's `QuestionsJson` (including `correct` indices) is readable only by the manager-gated `getQuizzes` (managers author the keys); the rep-facing `getQuiz` returns ONLY the WHITELIST-built `trainStripQuizForRep_` shape (never a delete-key copy — a missed field can't leak), requires a live `quiz:` assignment (or manager caller), and `submitQuizAttempt` (rep-callable, locked INV-01, assignment-required) grades server-side via the pure `trainGradeQuiz_` and returns only `scorePct`/`passed`/per-question right-wrong booleans — correct options are NEVER revealed, pass or fail (operator decision §9.4; unlimited retries; attempt counts per assignment round ride back for display). A pass appends the `TrainingCompletions` row (`via='quiz'`, once per assignment round — the INV-120 reset semantics apply to attempts too); `QuizAttempts` is append-only and `PerQuestionJson` stores booleans only, never the rep's answers paired with a key. `saveQuiz` validates via the pure `trainValidateQuizDef_` (1–50 questions, 2–6 options, correct in range, passPct 0–100) and bounds the stored JSON under the Sheets cell cap (INV-96 spirit); `deleteQuiz` removes only the quiz row (attempt/completion history stays; orphaned assignments drop off via the title join, same as a deleted KB item). Audit rows `QuizSave`/`QuizDelete`/`QuizAttempt` carry ids/counts/scores — never question text. Pinned by the `training — quiz` Node tests (validator / grader / strip + the `getQuiz` source tripwire) + `test_training_quizFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+
+INV-122 | **Employee Docs are team-scoped (fail-closed), frozen at issue, and tamper-evident.** All Employee Docs data lives ONLY in the dedicated `HR_DOCS_SS_ID` spreadsheet (`getHrDocsSS_` has NO fallback store — unset property → friendly error, never a silent write to the ADP/KB/PHI sheets), and the `EmpDocs`/`DocSignatures` tabs are EXCLUDED from every retention purge (HR records are keep-forever — the opposite of the PHI-minimization posture). **Scoping:** `getMyDocs`/`getMyDoc`/`acknowledgeDoc` are owner-scoped; manager read access (`getMyDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`) requires `empDocCanManagerSee_` — caller issued the doc OR caller is the employee's roster `ManagerEmail` (column M); membership in `MANAGER_EMAILS` alone grants NOTHING, and a blank column M NARROWS visibility to owner+issuer (fail-closed, operator decision §9.3). Any manager may ISSUE to any employee (issuing reveals nothing). `acknowledgeDoc` is OWNER-only — managers cannot sign on behalf. **Integrity:** content is frozen at issue (`bodyMd` + `empDocContentHash_` over body+title+type+empId); signing re-verifies the content hash first (a tampered row refuses to sign), bounds the signature payload (INV-96; the pad export caps at 600px — Node-pinned parity with `form_public.html`), and writes an append-only `DocSignatures` row whose `SignatureHash` covers contentHash+empId+docId+signature+ackVersion but NOT the timestamp (Sheets coercion, INV-113 lesson) — the `EmpDocSigned` audit row (`hash=`+`signedAt=`) is the independent witness, and the server-authoritative `EMPDOC_ACK_VERSION` stamps which ack language was shown (bump it when `EMPDOC_ACK_TEXT` changes). `voidDoc` only flips status (never deletes, never edits the frozen body — a correction is a NEW doc; a signed doc keeps its signature row); `verifyDocSignature` recomputes both hashes (legacy/unsigned report explicitly, never as failures). Audit rows `EmpDocIssue`/`EmpDocSigned`/`EmpDocVoid` are content-free (docId/empId/type/hash — never the title or body; the void reason lives only in the scoped HR sheet). Pinned by `test_empdocs_issueSignVerifyFlow` (incl. the fail-closed `empDocCanManagerSee_` cases + tamper detection) + the four gate cases in `test_managerGates_rejectNonManager` + the `empDocValidateIssue_`/`edChipHtml_`/pad-cap Node tests | Subsystem: Server + Client (Training views)
+
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -3061,7 +3303,7 @@ S46 | Time / PTO mode toggle (Round 2 · 8b) | Subsystem: Client (Time Clock vie
     - Refresh; confirm the last-chosen mode persists
     - In DevTools, set `localStorage.umsMergeMode = 'timesheet'`; refresh; confirm Timesheet mode loads by default
     - Confirm the calendar itself is unchanged across modes (worked-hours badges + PTO state both render)
-  Expected: Mode toggle is instant (no calendar reload); persistence to `localStorage.umsMergeMode`. Timesheet-mode side rail lazy-loads tsData via `loadTimesheetSideRail_` (NOT `loadTimesheet`).
+  Expected: Mode toggle is instant (no calendar reload); persistence to `localStorage.umsMergeMode`. Timesheet-mode side rail lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call; the legacy `loadTimesheet` cluster no longer exists — INV-74).
 
 S47 | Hover-triggered day modal (Round 2 · 8c) | Subsystem: Client (Time Clock views)
   Steps:
@@ -3231,14 +3473,14 @@ S63 | Reference tool — Doc→article converter (KB Phase 2) | Subsystem: Serve
   Steps:
     - As a manager, embed a Google Doc (with a heading, bold text, a bullet list, a link, a table, and an image) the deployer account can read
     - Open the embed in the reader → click **Convert to article** → confirm the uiConfirm explains review-before-save → Convert
-    - Confirm the EDITOR opens in article mode pre-filled with markdown + live preview; toasts list the lossy conversions (image placeholder; nested/multi-line table cells if present)
-    - Confirm headings/bold/list/link render in the preview; the table renders as a REAL table (first Doc row as the header); the image is an italic placeholder
-    - Press Save → the item re-opens as a native article; open the original Doc in Drive → confirm it is UNCHANGED
+    - Confirm the EDITOR opens in article mode pre-filled with markdown + live preview; toasts list the conversions (N image(s) marked for export; nested/multi-line table cells if present)
+    - Confirm headings/bold/list/link render in the preview; the table renders as a REAL table (first Doc row as the header); the image shows as its alt text ("Doc image 1") until save
+    - Press Save → toast reads "Saved · N image(s) exported to Drive"; the article re-opens with the image RENDERED (Drive thumbnail URL); a "KB Images" folder exists in the deployer's Drive with a `kbdoc-<fileId>-1` file; re-saving the article re-uses the file (no duplicate); open the original Doc in Drive → confirm it is UNCHANGED
     - Add item → Embed mode → paste a Doc URL → click **Convert this Doc to an article instead** → confirm the editor flips to article mode with the body filled and the Doc's name as title (when title was blank)
     - Try converting a Sheet/file embed (no Convert button should render) and a Sheets URL from the editor (server rejects: "Only Google Docs convert…")
     - Cancel an editor after converting → confirm the embed item is untouched (nothing saved)
     - As a non-manager, call `google.script.run...kbConvertDriveDoc({driveUrl:'…'})` from the console
-  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything; the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. Pinned by the `kb — Doc→markdown converter` Node stub tests (INV-115).
+  Expected: Conversion is manager-gated ("Manager access required." for the non-manager call) and read-only — only the manager's explicit Save (kbSaveItem) persists anything (and, Phase 2b, exports the tokenized images to the KB Images folder at that moment); the Drive Doc is never modified. Lossy parts degrade with explicit warnings, never silently. A Doc the deployer can't open returns a friendly access error. POST-DEPLOY SPOT-CHECK (the original Phase 2b gate): as a REP, open the converted article and confirm the Drive-hosted image actually renders inside the HtmlService iframe — if the org's sharing policy blocks domain-link visibility, the image degrades to alt text + the open-full-size link, and the operator should share the KB Images folder with the team manually. Pinned by the `kb — Doc→markdown converter` + `kb — Phase 2b` Node tests (INV-115).
 
 S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, Client (Reference views), Client (shell), Client (Call Notes views)
   Steps:
@@ -3257,10 +3499,78 @@ S64 | KB reference drawer — mid-call lookup + usage loop | Subsystem: Server, 
     - From a non-registered session, call `google.script.run...kbRecordView('x','y')`; as a non-manager call `...kbGetUsageStats()`
   Expected: The drawer mounts on document.body (survives #view-area re-renders), closes on navigation/Esc-with-no-overlay, and never blocks modals (overlays stack above it). Suggestions are computed client-side from cached KB titles — the Issue text never leaves the browser; the toggle + recents persist in the single `umsKbPanel` localStorage blob. Every open writes a best-effort PHI-free KbViews row (`kbRecordView` — locked, append-only; "Not authorized." for non-employees); `kbGetUsageStats` is manager-gated, 30-day windowed, bounded tail scan. Pinned by the `kbRecentsPush_`/`kbSuggestMatches_` Node tests + `test_kb_recordView_requiresEmployee` + the `kbGetUsageStats` gate case (INV-117).
 
+S65 | KB Phase 3 — paste-a-screenshot upload | Subsystem: Server, Client (Reference views)
+  Steps:
+    - As a manager, open Reference → Add item (or edit an article) → click into the Body textarea
+    - Paste a screenshot from the clipboard (⌘/Ctrl+V)
+    - Observe the placeholder `![uploading-1…](kbpaste:pending)` appear at the cursor and the live preview show its alt text
+    - Wait for the "Image uploaded" toast → confirm the placeholder was replaced by `![Screenshot](https://drive.google.com/thumbnail?id=…)` and the preview renders the image
+    - Type elsewhere in the body DURING a second paste's upload → confirm the replacement still lands where the placeholder is, not at the new cursor
+    - Save → re-open the article → image renders; the KB Images folder contains a `kbpaste-…` file; AuditLog has a `KbImageUpload` row
+    - Paste a >3MB image → warn toast, placeholder removed, nothing uploaded
+    - Paste plain text → normal paste (the handler only intercepts image items)
+    - As a non-manager, call `google.script.run...kbUploadImage('data:image/png;base64,AAAA')` from the console
+  Expected: Upload is manager-gated ("Manager access required." for the console call) and validates type whitelist (no SVG) + size cap BEFORE any Drive write. The paste listener is scoped to the textarea (dies with the modal — no app-wide paste interception). Failed/oversized uploads remove the placeholder and toast; the body is never left with a dangling pending token by the resolve path. PHI reminder text sits under the textarea. Pinned by INV-118's tests.
+
+S66 | KB AI Phase A — facet guidance card (drawer) | Subsystem: Server, Client (Reference views), Client (Call Notes views)
+  Steps:
+    - Set Script Property `KB_AI_API_KEY` to a real Anthropic API key; as a manager, Call Notes → Admin → Feature Toggles → enable "AI guidance (Reference drawer)" → confirm the danger dialog names the external vendor → Save
+    - In the new "AI Guidance (Reference)" Admin section: confirm it shows "API key: set", today's spend ($0.00 initially), a Daily cap input (default 3), and a Model select (default `claude-haiku-4-5`); change the cap to 5 → Save → reload Admin → persists
+    - As an enrolled rep with KB articles covering a known topic: open Call Notes → Log, add an established tag (one already on a prior saved note) and/or a flag to the form → press Ctrl/⌘+K
+    - Confirm a "Guidance" card renders at the top of the drawer home: 2–4 sentences + source rows with ¶ headings; click a source → opens the article scrolled to that section
+    - Close + reopen the drawer with the same facets → the card renders COLLAPSED ("Show guidance for this call type"); click it → expands (collapse-after-seen per facet-hash/day via `umsKbPanel.aiSeen`)
+    - Type a BRAND-NEW tag (never used before) with no flag → no Guidance card (novel tag dropped by the whitelist → no-facets)
+    - Edit/save any KB article, reopen the drawer → a fresh vendor call fires (generation salt invalidated the cache); check the AuditLog for `KbAiGuidance` rows carrying `facets=…; model=…; usd=…` (never note content)
+    - Set the Daily cap to 0 → Save → reopen the drawer → no card (cap reached); restore the cap
+    - Disable the feature toggle → no card, and `google.script.run...kbGetFacetGuidance({flagType:'action'})` returns `{none, reason:'disabled'}`
+    - As a non-manager, call `google.script.run...saveKbAiSettings({dailyCap:3, model:'claude-haiku-4-5'})` from the console
+  Expected: The card only ever renders from whitelisted enum facets + the team's own KB excerpts — the vendor payload never carries typed note text or patient data (INV-119; Node-pinned prompt-builder tests + source tripwire). Every failure path (flag off, no key, thin retrieval, cap, vendor error) silently yields no card and the existing Suggested block stands. Cached guidance serves for 6h per facet combo org-wide. `saveKbAiSettings` rejects the non-manager ("Manager access required."), caps outside 0–100, and unknown models. Pinned by the `kb — AI Phase A` Node tests + `test_kbAi_gatesAndSettingsValidation`.
+
+S67 | Training T1 — assign, complete, matrix, re-assign reset | Subsystem: Server, Client (Training views)
+  Steps:
+    - As a manager, open Training & Employee Docs → Team Training
+    - In "Assign training": pick a Reference item, check one employee, set a due date a week out, click Assign
+    - As that employee, open Training & Employee Docs → My Training — confirm the item shows Pending with the due date; click the title → the reader modal renders the article (or Drive embed) — confirm a KbViews row is logged with context `training`
+    - Click "Mark complete" (row or reader footer) → status flips to Done; the summary strip updates
+    - As the manager, refresh Team Training → the matrix cell shows ✓ and the item header counts done/assigned
+    - Re-assign the SAME item to the same employee → the rep's checklist returns to Pending (re-certification reset)
+    - Revoke the assignment rows from the "Active assignments" table (uiConfirm danger) → the item leaves the rep's checklist
+    - Assign with "All employees" checked → every roster employee sees it; spot-check one
+    - As a non-manager, call `google.script.run...getTrainingDashboard()`, `...saveTrainingAssignment({})`, `...revokeTrainingAssignment('x')` from the console
+  Expected: All three non-manager calls return "Manager access required." (INV-02). Assignment emails arrive best-effort (branded, INV-105). A rep cannot complete an unassigned item ("not assigned to you"). Past-due pending items render the Overdue chip (warn in the summary). The two tracking tabs auto-provision in the KB spreadsheet on first use. Pinned by `test_training_assignCompleteFlow` + the gate cases + the `trainDeriveStatus_`/`trainChipHtml_` Node tests (INV-120).
+
+S68 | Training T2 — quiz author, take, fail/pass, attempt tracking | Subsystem: Server, Client (Training views)
+  Steps:
+    - As a manager, Training & Employee Docs → Team Training → "New quiz": title, pass threshold 100%, link a Reference item, add 2 questions (2–3 options each, mark the correct radio) → Save
+    - Confirm the quiz appears in the Quizzes table and in the assignment picker's "Quizzes" group; assign it to one employee
+    - As that employee, My Training shows the quiz row ("Quiz · N questions · pass ≥100%") with a "Take quiz" button + a "Review the material first" link when a Reference item is linked
+    - Take the quiz with one wrong answer → the result view shows score %, "Not passed", attempt 1, and per-question ✓/✗ WITHOUT revealing any correct option; the checklist stays Pending with "attempts: 1 · last score …"
+    - Leave a question unanswered and submit → a confirm warns it counts as wrong
+    - Retake with all correct → "Passed", attempt 2; the checklist flips to Done; Team Training's matrix cell shows ✓ with the attempt count "(2)"
+    - Inspect the rep payloads in DevTools (getQuiz + submitQuizAttempt responses) → no `correct` key anywhere
+    - Try `google.script.run...markTrainingComplete('<quizId>')` as the rep → rejected ("completed by passing its quiz")
+    - As a non-manager, call `...getQuizzes()`, `...saveQuiz({...})`, `...deleteQuiz('x')` → all "Manager access required."
+    - As the manager, delete the quiz → uiConfirm danger; assignments referencing it drop off the rep checklist; QuizAttempts history rows remain
+  Expected: Grading is server-side; the answer key exists only in the Quizzes tab + manager endpoints (INV-121). Re-assigning the quiz resets completion AND the attempt counter (counts are per assignment round). AuditLog rows QuizSave / QuizAttempt (score+attempt) / QuizDelete are content-free. Pinned by `test_training_quizFlow` + the quiz Node tests.
+
+S69 | Employee Docs T3 — issue, scope, sign, verify, tamper, void | Subsystem: Server, Client (Training views)
+  Steps:
+    - Operator prep: set Script Property `HR_DOCS_SS_ID` to a fresh dedicated spreadsheet; fill Employees column M (`ManagerEmail`) for a test employee
+    - As a manager, Training & Employee Docs → Issue Docs: pick the employee, type = Policy acknowledgment, set a due date, write a markdown body (or use "Convert a Google Doc"), leave Require signature checked → Issue (uiConfirm explains content freezing)
+    - Confirm the employee receives the branded "Document for your signature" email; the `EmpDocs` tab gains a row with a 64-hex ContentHash
+    - As the employee, My Docs shows the doc with a "Needs signature" chip → open it → the markdown renders; check the acknowledgment box → the signature pad REVEALS and is drawable immediately (0-width-canvas regression check); draw + Sign
+    - Confirm the issuer gets the "Signed" email; the row flips to signed; `DocSignatures` gains an append-only row (SignatureHash + Certificate)
+    - As a DIFFERENT rep, try `google.script.run...getMyDoc('<docId>')` and `...acknowledgeDoc('<docId>', 'data:image/png;base64,AAAA')` → both "Document not found."
+    - As a manager who neither issued the doc nor is the employee's column-M manager → the doc must NOT appear in their Issue Docs dashboard (fail-closed)
+    - As the issuing manager, click Verify → "Integrity verified"; hand-edit the doc's Title cell in the sheet → Verify now reports a content mismatch
+    - Void the doc (danger confirm + optional reason) → employee's My Docs shows Void; the signature row survives; Verify still reports signed
+    - As a non-manager, call `...issueDoc({...})`, `...getDocsDashboard()`, `...voidDoc('x','')`, `...verifyDocSignature('x')` → all "Manager access required."
+  Expected: Owner-only signing (managers cannot sign on behalf); double-sign rejected; the AuditLog carries content-free `EmpDocIssue`/`EmpDocSigned` (hash= + signedAt= witness)/`EmpDocVoid` rows; no purge ever touches the HR store. Pinned by `test_empdocs_issueSignVerifyFlow` + the gate cases + the T3 Node tests (INV-122).
+
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.
-Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
+Client (shell), Client (Time Clock views), Client (Call Notes views), Client (Metrics views), Client (Intake views), Client (Reference views), Client (Training views), Client (public forms): same single `clasp push -f` ships all HTML partials alongside `Code.js`; same New-version deploy step.
 Test Suite: same `clasp push -f`. Tests don't ship to end users — run them from the editor with `runSmokeTests()` (safe on prod) or `runAllTests()` (writes TEST_ rows, cleans up at end).

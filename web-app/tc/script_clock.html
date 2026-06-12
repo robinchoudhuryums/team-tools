@@ -199,8 +199,9 @@ function renderLedger_(s, stats) {
 
 // lazyUpdatePayPeriodCell_ removed in Round 2 · 8b — the pay-period
 // ledger cell was deleted along with the Clock view's timesheet section.
-// The guard `typeof === 'function'` in loadTimesheet's success handler
-// (tc/script_timesheet.html) makes the now-missing call a safe no-op.
+// (The loadTimesheet render cluster that once referenced it was itself
+// pruned in Cycle 2 · L11 — tc/script_timesheet.html now holds only the
+// computeRange / isoFromMs range helpers; see INV-74.)
 
 /** Round 2 · 8z — Coverage-strip CTA handler. Sets an in-memory nav hint
  *  with the source date + missing count before navigating to Call Notes.
@@ -645,8 +646,7 @@ function cnDoSelfUndo_(btn, date, time, type) {
               // that the Clock view no longer hosts a timesheet section
               // below. getClockArea_ still resolves to view-area.
               const area = getClockArea_();
-              if (area && currentView === 'clock') renderClockView(area);
-              startClock();
+              if (area && currentView === 'clock') { renderClockView(area); startClock(); }
             })
             .withFailureHandler(()=>{})
             .getEmployeeState();
@@ -811,8 +811,7 @@ function submitPunch(punchType, custom) {
           // Round 2 · 8b — re-renders target view-area directly now that
           // the Clock view no longer hosts a timesheet section below.
           const area = getClockArea_();
-          if (area && currentView === 'clock') renderClockView(area);
-          startClock();
+          if (area && currentView === 'clock') { renderClockView(area); startClock(); }
         })
         .withFailureHandler(()=>{})
         .getEmployeeState();
@@ -924,10 +923,6 @@ function updateAdjReasonRequirement() {
   }
 }
 
-function daysBetweenIsoLocal(earlierIso, laterIso) {
-  // (kept for callers in this file; prefer shared daysBetweenIso from core)
-  return daysBetweenIso(earlierIso, laterIso);
-}
 
 document.getElementById('adj-cancel').addEventListener('click', () =>
   document.getElementById('adjust-overlay').classList.remove('open'));

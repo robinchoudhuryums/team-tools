@@ -243,6 +243,7 @@ const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6,
 const EMP = {
   EMAIL:0, ID:1, NAME:2, SHEET_ID:3, PAY_CYCLE:4, PAY_ANCHOR:5, IS_MANAGER:6,
   TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10, CALL_NOTES_SHEET_ID:11,
+  MANAGER_EMAIL:12,   // column M — the rep's manager (Employee Docs team scoping, T3)
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
@@ -377,7 +378,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v5';   // bumped: CallNotesSheetId column
+const ROSTER_CACHE_KEY = 'employee_roster_v6';   // bumped: ManagerEmail column (T3)
 const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
@@ -472,6 +473,7 @@ function doGet(e) {
   // window.SERVER_QUERY_PARAMS so client code can read them reliably.
   const tpl = HtmlService.createTemplateFromFile('index');
   tpl.serverQueryParams = (e && e.parameter) || {};
+  try { tpl.webAppUrl = getWebAppExecUrl_(); } catch (_) { tpl.webAppUrl = ''; }
   return tpl
     .evaluate()
     .setTitle('UMS Team Tools')
@@ -1939,6 +1941,31 @@ function deleteCallNote(noteId) {
   finally { lock.releaseLock(); }
 }
 
+/** Manager delete from a rep's history (operator feedback 2026-06-12) —
+ *  the path deleteCallNote's own error message always pointed at ("ask
+ *  your manager"). Manager-gated (INV-02), locked (INV-01); NO time window
+ *  (that's the point — the rep window is 5 min, INV-60). Audit row carries
+ *  the manager as actor + a deletedBy marker; PHI-free (noteId only). */
+function managerDeleteCallNote(repEmpId, noteId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const emp = lookupEmployeeById_(String(repEmpId || '').trim());
+    if (!emp || !emp.callNotesSheetId) return { success: false, error: 'Rep not found or not enrolled.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    sheet.deleteRow(located.rowIndex);
+    writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
+      'noteId=' + noteId + '; deletedBy=manager', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
 
 /** Toggle the "pinned" state on one of the calling rep's notes. Pinned
@@ -3066,6 +3093,12 @@ function getAdminConfig() {
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
       featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
+      kbAi: (function () {
+        const c = getKbAiConfig_();
+        // Never the key itself — only whether one is set.
+        return { dailyCap: c.dailyCap, model: c.model, models: Object.keys(KB_AI_MODEL_PRICES),
+                 hasKey: !!c.apiKey, spend: kbAiReadSpend_() };
+      })(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -3185,6 +3218,35 @@ function saveExternalLinks(links) {
     PropertiesService.getScriptProperties().setProperty('CN_EXTERNAL_LINKS', JSON.stringify(clean));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
       'Updated external quick links (' + clean.length + ')', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Manager-gated (Phase A). Admin-adjustable KB AI settings: the daily
+ *  org-wide spend cap (USD) + the vendor model. Persists Script Properties
+ *  KB_AI_DAILY_CAP / KB_AI_MODEL; AdminConfigChange audit row (INV-57
+ *  family; same single-property-write pattern as the sibling saves). The
+ *  model must be a KB_AI_MODEL_PRICES key so the cap accounting always has
+ *  real rates. The API key itself is NEVER set or returned through any
+ *  endpoint — set Script Property KB_AI_API_KEY in the Apps Script editor. */
+function saveKbAiSettings(settings) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    settings = settings || {};
+    const cap = parseFloat(settings.dailyCap);
+    if (!isFinite(cap) || cap < 0 || cap > 100) {
+      return { success: false, error: 'Daily cap must be a number between 0 and 100 (USD).' };
+    }
+    const model = String(settings.model || '').trim();
+    if (!KB_AI_MODEL_PRICES[model]) {
+      return { success: false, error: 'Unknown model: ' + (model || '(blank)') + '. Pick one of: ' + Object.keys(KB_AI_MODEL_PRICES).join(', ') };
+    }
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty('KB_AI_DAILY_CAP', String(cap));
+    props.setProperty('KB_AI_MODEL', model);
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated KB AI settings: dailyCap=$' + cap + '; model=' + model, callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -3578,6 +3640,12 @@ function exportCallNotesRange(startDate, endDate) {
     sh.getRange(2, 1, data.length, headers.length).setValues(data);
     sh.setFrozenRows(1);
     SpreadsheetApp.flush();
+
+    // Share with the calling manager — same L3 rationale as generateExportSheet_.
+    try {
+      const owner = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+      if (callerEmp.email && String(callerEmp.email).toLowerCase() !== owner) newSs.addEditor(callerEmp.email);
+    } catch (shareErr) { console.warn('Export share failed: ' + shareErr.message); }
 
     writeAuditLog_(callerEmp, 'CallNotesExport', startDate + '..' + endDate, '', false, 0,
       `${allNotes.length} notes → ${newSs.getId()}`);
@@ -5165,10 +5233,19 @@ function generateFormToken_() {
  *  /exec over a /dev head URL) so the emailed link is the canonical anonymous
  *  form. Script Property WEB_APP_URL (set to the published /exec URL) overrides
  *  the resolved base. */
-function buildFormUrl_(token) {
+/** The canonical public /exec base URL (WEB_APP_URL property override,
+ *  else the service URL), normalized. Shared by the form links AND the
+ *  client pop-out (shipped via doGet as SERVER_WEB_APP_URL — the iframe's
+ *  own window.location is a session-bound googleusercontent.com URL that
+ *  renders BLANK when opened as a top-level window). */
+function getWebAppExecUrl_() {
   const base = PropertiesService.getScriptProperties().getProperty('WEB_APP_URL')
             || ScriptApp.getService().getUrl();
-  return normalizeWebAppExecUrl_(base) + '?form=' + encodeURIComponent(token);
+  return normalizeWebAppExecUrl_(base);
+}
+
+function buildFormUrl_(token) {
+  return getWebAppExecUrl_() + '?form=' + encodeURIComponent(token);
 }
 
 /** Normalizes an Apps Script web-app URL to its canonical public /exec form:
@@ -6903,6 +6980,16 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   sh.setFrozenRows(2);
   SpreadsheetApp.flush();
 
+  // The new Sheet is owned by the deployer (the web app runs as
+  // USER_DEPLOYING); share it with the calling manager so the returned URL
+  // opens without a Drive access request (L3). Best-effort — a sharing
+  // failure never fails the export, and the deployer can always open it.
+  try {
+    const viewer = getActiveUserEmail_();
+    const owner = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+    if (viewer && viewer !== owner) newSs.addEditor(viewer);
+  } catch (shareErr) { console.warn('Export share failed: ' + shareErr.message); }
+
   return { fileId: newSs.getId(), url: newSs.getUrl(), fileName: name,
     rowCount: matched.length, employeeCount };
 }
@@ -7235,6 +7322,10 @@ const FEATURE_FLAGS = [
   { key: 'employeeImmediateAdjust', label: 'Employee immediate punch fix',
     description: 'Let employees apply punch adjustments instantly (an "Apply now" button alongside the approval-request flow). Off = all employee adjustments require manager approval (#4a).',
     default: false, scope: 'both' },
+  { key: 'kbAiGuidance', label: 'AI guidance (Reference drawer)',
+    description: 'Show an AI-generated guidance card in the Reference drawer, built from whitelisted call facets (department / update type / tags / flag) + excerpts from your own KB articles. Configure the cap + model in the "AI Guidance" section below; set Script Property KB_AI_API_KEY first.',
+    default: false, scope: 'both',
+    danger: 'External AI vendor — whitelisted facet enums + your own (PHI-free-by-policy) KB excerpts are sent to the Anthropic API. No free-typed note text or patient data ever enters the payload (INV-119), but confirm the org’s stance on the vendor before enabling.' },
 ];
 
 function featureFlagDef_(key) {
@@ -7516,6 +7607,7 @@ function getEmployeeInfo_() {
         payCycle: cycle, payAnchor: anchor, isManager, timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
+        managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
       };
     }
   }
@@ -7544,6 +7636,7 @@ function lookupEmployeeById_(empId) {
       annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       ptoEnabled,
+      managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
     };
   }
   return null;
@@ -8741,7 +8834,7 @@ function getMetricsAmbient() {
     var pct = totalRung > 0 ? Math.round((totalAns / totalRung) * 1000) / 10 : null;
     var badge = (pct !== null && pct < ambientThreshold)
       ? { type: 'warn', label: pct + '%', date: yIso } : null;
-    var out = { badge: badge, pctAnswered: pct, date: yIso };
+    var out = { badge: badge, pctAnswered: pct, date: yIso, threshold: ambientThreshold };
     try { cache.put(ck, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     return out;
   } catch (_) { return { badge: null }; }
@@ -9342,7 +9435,12 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const subject = 'PPD for ' + patientInfo;
     // Re-build WITHOUT selections to verify the patient answers haven't drifted.
     const baseBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, null);
-    if (expectedBodyHash && intakeBodyHash_(baseBody, subject) !== expectedBodyHash) {
+    // The hash is REQUIRED (L2 — parity with emailFromCallNote/INV-41): a
+    // direct RPC without it must not bypass the preview gate.
+    if (!expectedBodyHash) {
+      return { success: false, error: 'Missing preview hash — open Preview and send from there.' };
+    }
+    if (intakeBodyHash_(baseBody, subject) !== expectedBodyHash) {
       return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
     }
     const recipient = intakeResolveRecipient_('PPD', recipientSpec);
@@ -9394,7 +9492,11 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   const subject = (formType === 'PAP' ? 'PAP' : 'PMD') + ' Account Creation for ' + patientInfo + (dob ? ' ' + dob : '');
 
   const body = intakeBuildAcctBodyHtml_(payload.rows || [], layout);
-  if (expectedBodyHash && intakeBodyHash_(body, subject) !== expectedBodyHash) {
+  // Hash REQUIRED (L2) — same preview-gate parity as intakeSendPPD.
+  if (!expectedBodyHash) {
+    return { success: false, error: 'Missing preview hash — open Preview and send from there.' };
+  }
+  if (intakeBodyHash_(body, subject) !== expectedBodyHash) {
     return { success: false, error: 'The form changed since you previewed it. Please preview again before sending.' };
   }
   const recipient = intakeResolveRecipient_(formType, recipientSpec);
@@ -9580,7 +9682,16 @@ function getOrCreateKbSheet_() {
   }
   return sheet;
 }
-function invalidateKbCache_() { try { CacheService.getScriptCache().remove(KB_CACHE_KEY); } catch (_) {} }
+function invalidateKbCache_() {
+  try { CacheService.getScriptCache().remove(KB_CACHE_KEY); } catch (_) {}
+  // Phase A — bump the AI-guidance generation salt so cached guidance built
+  // on the pre-edit KB content stops being served (the cache key embeds it).
+  try {
+    const p = PropertiesService.getScriptProperties();
+    const g = parseInt(p.getProperty(KB_AI_GEN_PROP) || '0', 10) || 0;
+    p.setProperty(KB_AI_GEN_PROP, String(g + 1));
+  } catch (_) {}
+}
 
 // Parse a Google Drive/Docs/Sheets share URL into { kind, fileId }. kind ∈
 // doc | sheet | file. Returns null when no file id can be extracted.
@@ -9911,8 +10022,6 @@ function kbGetUsageStats() {
 
 // ── Manager-gated writes (locked + audited) ──────────────────────────────
 function kbSaveItem(payload) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
@@ -9922,32 +10031,49 @@ function kbSaveItem(payload) {
     const type = (payload.type === 'embed') ? 'embed' : 'article';
     if (!title) return { success: false, error: 'Title is required.' };
     let bodyMd = '', driveKind = '', driveFileId = '';
+    let imagesExported = 0, imageWarnings = [];
     if (type === 'embed') {
       const parsed = kbParseDriveUrl_(payload.driveUrl);
       if (!parsed) return { success: false, error: 'Could not read that Drive link — paste a Google Doc, Sheet, or file share URL.' };
       driveKind = parsed.kind; driveFileId = parsed.fileId;
     } else {
       bodyMd = String(payload.body || '');
+      // Phase 2b — resolve converter image tokens (kbdoc:<fileId>:<n>) to
+      // Drive-hosted URLs BEFORE acquiring the lock: the Doc re-walk + blob
+      // exports can take seconds and must not stall the global ScriptLock
+      // (every punch / call-note write shares it). Length-check the RESOLVED
+      // body — that's what the cell stores.
+      if (bodyMd.indexOf('](kbdoc:') >= 0) {
+        const resolved = kbResolveDocImages_(bodyMd);
+        bodyMd = resolved.bodyMd;
+        imagesExported = resolved.exported;
+        imageWarnings = resolved.warnings;
+      }
       if (bodyMd.length > KB_BODY_MAX) return { success: false, error: 'Article is too long (max ~49,000 chars). Split it into multiple articles.' };
     }
     const sortOrder = Number(payload.sortOrder || 0) || 0;
-    const sheet = getOrCreateKbSheet_();
-    const id = String(payload.id || '').trim() || Utilities.getUuid();
-    const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-    const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email];
-    const last = sheet.getLastRow();
-    let found = -1;
-    if (last >= 2 && payload.id) {
-      const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
-      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
-    }
-    if (found > 0) sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([rowVals]);
-    else sheet.appendRow(rowVals);
-    invalidateKbCache_();
-    writeAuditLog_(emp, 'KbItemSave', '', '', false, 0, 'id=' + id + '; dept=' + department + '; type=' + type, emp.email);
-    return { success: true, id: id };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const sheet = getOrCreateKbSheet_();
+      const id = String(payload.id || '').trim() || Utilities.getUuid();
+      const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+      const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email];
+      const last = sheet.getLastRow();
+      let found = -1;
+      if (last >= 2 && payload.id) {
+        const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+      }
+      if (found > 0) sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([rowVals]);
+      else sheet.appendRow(rowVals);
+      invalidateKbCache_();
+      writeAuditLog_(emp, 'KbItemSave', '', '', false, 0,
+        'id=' + id + '; dept=' + department + '; type=' + type +
+        (imagesExported ? '; imagesExported=' + imagesExported : ''), emp.email);
+      return { success: true, id: id, imagesExported: imagesExported, imageWarnings: imageWarnings };
+    } finally { lock.releaseLock(); }
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
 }
 
 function kbDeleteItem(id) {
@@ -9984,6 +10110,469 @@ function kbDeleteItem(id) {
 // String(getGlyphType()) against enum NAMES (DocumentApp enums stringify to
 // their names) so the Node harness can drive it with plain-object stubs —
 // see the "kb — Doc→markdown converter" tests in test/client/run.js.
+
+// ── KB Phase 2b — converter image export ────────────────────────────────────
+// The converter emits kbdoc:<fileId>:<n> image tokens (read-only, INV-115);
+// kbSaveItem resolves them at save: re-walk the Doc in the SAME order, export
+// the blobs to a deployer-owned "KB Images" Drive folder (Script Property
+// KB_IMAGES_FOLDER_ID, auto-provisioned, domain-link-viewable), and swap each
+// token for the Drive thumbnail URL kbMd_ renders. Exported files use the
+// deterministic name kbdoc-<fileId>-<n> and are REUSED on re-save (idempotent,
+// no folder litter) — delete the exported file to force a refresh after the
+// Doc's image changed.
+const KB_IMAGES_FOLDER_PROP = 'KB_IMAGES_FOLDER_ID';
+const KB_DOC_IMAGE_CAP = 20;   // per-doc export cap — extras stay placeholders
+
+/** PURE: unique {fileId, ord} refs from kbdoc image tokens in an article body. */
+function kbExtractDocImageRefs_(bodyMd) {
+  const out = [];
+  const seen = {};
+  const re = /!\[[^\]]*\]\(kbdoc:([a-zA-Z0-9_-]+):(\d+)\)/g;
+  let m;
+  while ((m = re.exec(String(bodyMd || ''))) !== null) {
+    const key = m[1] + ':' + m[2];
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push({ fileId: m[1], ord: parseInt(m[2], 10) });
+  }
+  return out;
+}
+
+/** PURE: swap each kbdoc image token via resolve(fileId, ord) → https URL.
+ *  null / a throwing resolver degrades that token to the italic placeholder;
+ *  the caller reports `failed` as a warning. */
+function kbReplaceDocImageTokens_(bodyMd, resolve) {
+  let failed = 0;
+  const out = String(bodyMd || '').replace(
+    /!\[([^\]]*)\]\(kbdoc:([a-zA-Z0-9_-]+):(\d+)\)/g,
+    function (whole, alt, fileId, ordStr) {
+      let url = null;
+      try { url = resolve(fileId, parseInt(ordStr, 10)); } catch (e) { url = null; }
+      if (!url) { failed++; return '*[image — see the original Doc]*'; }
+      return '![' + alt + '](' + url + ')';
+    });
+  return { bodyMd: out, failed: failed };
+}
+
+/** Collects a Doc body's INLINE_IMAGE blobs in the SAME walk order the
+ *  converter assigns ordinals: paragraph children, document order. Drawings
+ *  and images inside tables/list items are never tokenized, so they are not
+ *  collected either — the two walks MUST stay mirrored or ordinals drift and
+ *  the wrong image exports. 1-based ordinal ord reads blobs[ord-1]. */
+function kbCollectDocInlineImages_(body, cap) {
+  const blobs = [];
+  const n = body.getNumChildren();
+  for (let i = 0; i < n && blobs.length < cap; i++) {
+    const el = body.getChild(i);
+    if (String(el.getType()) !== 'PARAGRAPH') continue;
+    const m = el.getNumChildren();
+    for (let c = 0; c < m && blobs.length < cap; c++) {
+      const child = el.getChild(c);
+      if (String(child.getType()) !== 'INLINE_IMAGE') continue;
+      blobs.push(child.getBlob());
+    }
+  }
+  return blobs;
+}
+
+/** KB Images folder: Script Property first, else create + share domain-link-
+ *  viewable (so <img> tags render for any signed-in rep) + store the id.
+ *  Workspace policy may forbid link sharing — degrades with a console warning;
+ *  images then render only for accounts the folder is visible to, and the
+ *  kbMd_ image anchor still gives every rep the open-in-Drive path. */
+function getOrCreateKbImagesFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty(KB_IMAGES_FOLDER_PROP);
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* fall through — recreate */ }
+  }
+  const folder = DriveApp.createFolder('KB Images');
+  try { folder.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW); }
+  catch (e) { console.warn('KB Images folder sharing failed (' + e.message + ') — images may not render for reps until shared.'); }
+  props.setProperty(KB_IMAGES_FOLDER_PROP, folder.getId());
+  return folder;
+}
+
+/** Resolves kbdoc image tokens at SAVE time. Runs OUTSIDE the script lock —
+ *  Drive exports are slow and only the sheet write needs the lock. Every
+ *  failure degrades per-token to the placeholder (warned), never throws. */
+function kbResolveDocImages_(bodyMd) {
+  const refs = kbExtractDocImageRefs_(bodyMd);
+  if (refs.length === 0) return { bodyMd: bodyMd, exported: 0, warnings: [] };
+  const warnings = [];
+  let folder = null;
+  try { folder = getOrCreateKbImagesFolder_(); }
+  catch (e) {
+    const r0 = kbReplaceDocImageTokens_(bodyMd, function () { return null; });
+    warnings.push('Could not open or create the KB Images folder (' + e.message + ') — image(s) left as placeholders.');
+    return { bodyMd: r0.bodyMd, exported: 0, warnings: warnings };
+  }
+  const blobsByDoc = {};   // fileId → blobs[] | null (Doc unreachable)
+  const urlCache = {};     // "fileId:ord" → resolved URL
+  let exported = 0;
+  const resolve = function (fileId, ord) {
+    const key = fileId + ':' + ord;
+    if (urlCache[key]) return urlCache[key];
+    if (!(fileId in blobsByDoc)) {
+      try {
+        blobsByDoc[fileId] = kbCollectDocInlineImages_(DocumentApp.openById(fileId).getBody(), KB_DOC_IMAGE_CAP);
+      } catch (e) {
+        blobsByDoc[fileId] = null;
+        warnings.push('Could not open the source Doc to export its image(s): ' + e.message);
+      }
+    }
+    const blobs = blobsByDoc[fileId];
+    if (!blobs || ord < 1 || ord > blobs.length) return null;
+    const name = 'kbdoc-' + fileId + '-' + ord;
+    let file = null;
+    const existing = folder.getFilesByName(name);
+    if (existing.hasNext()) {
+      file = existing.next();   // reuse — idempotent re-saves, stable URLs
+    } else {
+      file = folder.createFile(blobs[ord - 1].copyBlob().setName(name));
+      exported++;
+    }
+    const url = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200';
+    urlCache[key] = url;
+    return url;
+  };
+  const r = kbReplaceDocImageTokens_(bodyMd, resolve);
+  if (r.failed > 0) warnings.push(r.failed + ' image token(s) could not be resolved — left as placeholders.');
+  return { bodyMd: r.bodyMd, exported: exported, warnings: warnings };
+}
+
+// ── KB Phase 3 — paste-a-screenshot upload (article editor) ─────────────────
+// The editor textarea accepts a pasted image: the client reads it as a data
+// URL and calls kbUploadImage, which exports the blob to the same KB Images
+// folder Phase 2b provisions and returns the thumbnail URL the editor inserts
+// as markdown. The KB is PHI-free BY POLICY — the editor reminds the manager
+// to scrub patient data before pasting. Orphaned uploads (pasted but never
+// saved into an article) stay in the folder — trim manually if it bothers you
+// (same posture as KbViews growth).
+const KB_IMG_UPLOAD_MAX_CHARS = 4 * 1024 * 1024;   // base64 chars ≈ 3MB binary
+const KB_IMG_UPLOAD_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+/** PURE: parse a data:image/…;base64,… URL → { contentType, base64 } or null.
+ *  The whitelist check happens at the caller (this just shape-parses). */
+function kbParseImageDataUrl_(dataUrl) {
+  const m = String(dataUrl || '').match(/^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+\/=\s]+)$/i);
+  if (!m) return null;
+  return { contentType: m[1].toLowerCase(), base64: m[2].replace(/\s+/g, '') };
+}
+
+/** Manager-gated (INV-02 — the editor is manager-only). Validates the data
+ *  URL (type whitelist + size cap), writes the blob to the KB Images folder
+ *  as kbpaste-<stamp>-<rand>, audits a PHI-free KbImageUpload row, and
+ *  returns the thumbnail URL. Deliberately NO ScriptLock: this writes only a
+ *  Drive file (atomic, no shared-sheet state) — holding the global lock
+ *  through a multi-second blob upload would stall every punch/note write. */
+function kbUploadImage(dataUrl) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    const raw = String(dataUrl || '');
+    if (raw.length > KB_IMG_UPLOAD_MAX_CHARS) {
+      return { success: false, error: 'Image too large (max ~3MB) — crop or downscale the screenshot.' };
+    }
+    const parsed = kbParseImageDataUrl_(raw);
+    if (!parsed || KB_IMG_UPLOAD_TYPES.indexOf(parsed.contentType) < 0) {
+      return { success: false, error: 'Paste a PNG/JPEG/GIF/WebP image.' };
+    }
+    const folder = getOrCreateKbImagesFolder_();
+    const stamp = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyyMMdd-HHmmss');
+    const name = 'kbpaste-' + stamp + '-' + Utilities.getUuid().substring(0, 8);
+    const blob = Utilities.newBlob(Utilities.base64Decode(parsed.base64), parsed.contentType, name);
+    const file = folder.createFile(blob);
+    writeAuditLog_(emp, 'KbImageUpload', '', '', false, 0,
+      'fileId=' + file.getId() + '; name=' + name + '; type=' + parsed.contentType, emp.email);
+    return { success: true, url: 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200' };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+// ── KB AI Phase A — facet-based guidance (Reference drawer) ─────────────────
+// kbGetFacetGuidance(facets): rep-callable. Sends ONLY whitelisted enum
+// facets (department / update type / tags / flag type) plus excerpts from our
+// own PHI-free-by-policy KB articles to the Anthropic Messages API, and
+// returns a short guidance blurb with section sources for the drawer's
+// Guidance card. The load-bearing privacy invariant (INV-119): no free-typed
+// note text, patient data, or any non-enum value ever enters the vendor
+// payload — every facet is validated against the server-side vocabularies
+// (novel values DROPPED, never errored), and the prompt builder takes only
+// the sanitized facets + KB chunks, so there is no parameter through which
+// free text could reach the wire. Best-effort posture throughout: ANY
+// failure (flag off, no key, thin retrieval, daily cap reached, vendor
+// error) returns { none: true } and the drawer silently falls back to its
+// existing suggestions. Results are cached org-wide for 6h per canonical
+// facet hash; the cache key embeds a generation salt bumped by every KB
+// save/delete (invalidateKbCache_) so edited articles invalidate at once.
+const KB_AI_CACHE_PREFIX = 'kb_ai_guid_v1:';
+const KB_AI_CACHE_TTL = 21600;            // 6h — the CacheService maximum
+const KB_AI_GEN_PROP = 'KB_AI_GENERATION';
+const KB_AI_SPEND_PROP = 'KB_AI_SPEND';   // {date, usd, calls} — daily org spend
+const KB_AI_MAX_CHUNKS = 4;
+const KB_AI_SCORE_FLOOR = 4;              // top-chunk minimum — thin matches never hit the API
+const KB_AI_DEFAULT_MODEL = 'claude-haiku-4-5';
+const KB_AI_DEFAULT_DAILY_CAP = 3;        // USD/day org-wide; Admin-adjustable (KB_AI_DAILY_CAP)
+// $/MTok per model — the Admin model <select> renders from these keys (via
+// getAdminConfig), so client and server can't drift. An unknown model id
+// (operator typo in KB_AI_MODEL) is costed at the most expensive known rates
+// so the daily cap can never be silently undercounted.
+const KB_AI_MODEL_PRICES = {
+  'claude-haiku-4-5':  { input: 1.0,  output: 5.0  },
+  'claude-sonnet-4-6': { input: 3.0,  output: 15.0 },
+  'claude-opus-4-8':   { input: 5.0,  output: 25.0 },
+};
+
+/** PURE: whitelist-validate raw client facets against the server-side
+ *  vocabularies. Anything not in the vocab is DROPPED (never an error), so
+ *  the result can only contain values the server already knows — the vendor
+ *  payload is enum-only by construction (INV-119). Matching is
+ *  case-insensitive; the canonical (vocab) casing is returned. Tags dedupe
+ *  and cap at 8. */
+function kbAiSanitizeFacets_(facets, vocab) {
+  facets = facets || {}; vocab = vocab || {};
+  const out = { department: '', updateType: '', flagType: '', tags: [] };
+  const deptIn = String(facets.department || '').trim().toLowerCase();
+  (vocab.departments || []).forEach(function (d) {
+    if (deptIn && String(d).trim().toLowerCase() === deptIn) out.department = String(d);
+  });
+  const updIn = String(facets.updateType || '').trim().toLowerCase();
+  (vocab.updateTypes || []).forEach(function (u) {
+    if (updIn && String(u).trim().toLowerCase() === updIn) out.updateType = String(u);
+  });
+  const flagIn = String(facets.flagType || '').trim().toLowerCase();
+  if ((vocab.flagTypes || []).indexOf(flagIn) >= 0) out.flagType = flagIn;
+  const known = {};
+  (vocab.tags || []).forEach(function (t) { known[String(t).trim().toLowerCase()] = true; });
+  const seen = {};
+  (Array.isArray(facets.tags) ? facets.tags : []).forEach(function (t) {
+    const tag = String(t || '').trim().toLowerCase();
+    if (tag && known[tag] && !seen[tag] && out.tags.length < 8) { seen[tag] = true; out.tags.push(tag); }
+  });
+  return out;
+}
+
+/** PURE: canonical, order-insensitive serialization of sanitized facets —
+ *  the cache-key payload (and the client's collapse-after-seen key). Tags
+ *  sort; casing lowers; empty facets are omitted. */
+function kbAiCanonicalFacets_(clean) {
+  clean = clean || {};
+  const parts = [];
+  if (clean.department) parts.push('dept=' + String(clean.department).toLowerCase());
+  if (clean.updateType) parts.push('update=' + String(clean.updateType).toLowerCase());
+  if (clean.flagType) parts.push('flag=' + String(clean.flagType).toLowerCase());
+  const tags = (clean.tags || []).map(function (t) { return String(t).toLowerCase(); }).sort();
+  if (tags.length) parts.push('tags=' + tags.join(','));
+  return parts.join('|');
+}
+
+/** PURE: search-query terms derived from sanitized facets — feeds the
+ *  existing section search (kebab-case tags split into words). */
+function kbAiQueryTerms_(clean) {
+  clean = clean || {};
+  const parts = [];
+  if (clean.updateType) parts.push(String(clean.updateType));
+  (clean.tags || []).forEach(function (t) { parts.push(String(t).replace(/-/g, ' ')); });
+  if (clean.flagType) parts.push(String(clean.flagType));
+  if (clean.department) parts.push(String(clean.department));
+  return parts.join(' ').trim();
+}
+
+/** PURE: assemble the vendor prompt from sanitized facets + KB chunks ONLY.
+ *  Deliberately takes no other inputs (INV-119) — there is no parameter
+ *  through which free-typed note text could reach the payload. */
+function kbAiBuildPrompt_(clean, chunks) {
+  const facetLines = [];
+  if (clean.department) facetLines.push('Department: ' + clean.department);
+  if (clean.updateType) facetLines.push('Update type: ' + clean.updateType);
+  if (clean.flagType) facetLines.push('Flag: ' + clean.flagType);
+  if (clean.tags && clean.tags.length) facetLines.push('Tags: ' + clean.tags.join(', '));
+  let excerpts = '';
+  (chunks || []).forEach(function (c, i) {
+    excerpts += '\n--- Excerpt ' + (i + 1) + ' — "' + c.title + '"' +
+      (c.heading ? ' § "' + c.heading + '"' : '') + ' ---\n' + c.chunkMd + '\n';
+  });
+  return {
+    system: 'You are a concise assistant for a medical-supply customer-service team’s internal knowledge base. ' +
+      'You receive call attributes (enums only) and excerpts from the team’s own reference articles. ' +
+      'Write 2-4 short sentences of practical guidance for the rep handling this kind of call, based ONLY on the excerpts. ' +
+      'If the excerpts do not cover the situation, reply with exactly: NOT_COVERED. ' +
+      'Plain text only — no markdown, no preamble.',
+    user: 'Call attributes:\n' + facetLines.join('\n') + '\n\nReference excerpts:\n' + excerpts,
+  };
+}
+
+/** Script-Property-backed runtime config. The API key is the only secret;
+ *  model + daily cap are Admin-adjustable (saveKbAiSettings). */
+function getKbAiConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const cap = parseFloat(props.getProperty('KB_AI_DAILY_CAP'));
+  return {
+    apiKey: props.getProperty('KB_AI_API_KEY') || '',
+    model: String(props.getProperty('KB_AI_MODEL') || KB_AI_DEFAULT_MODEL),
+    dailyCap: (isFinite(cap) && cap >= 0) ? cap : KB_AI_DEFAULT_DAILY_CAP,
+  };
+}
+
+function kbAiGeneration_() {
+  try { return PropertiesService.getScriptProperties().getProperty(KB_AI_GEN_PROP) || '0'; }
+  catch (_) { return '0'; }
+}
+
+/** Today's org-wide vendor spend — {date, usd, calls}; resets on date roll. */
+function kbAiReadSpend_() {
+  const today = fmtDate_(new Date());
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(KB_AI_SPEND_PROP);
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && o.date === today) return { date: today, usd: Number(o.usd) || 0, calls: Number(o.calls) || 0 };
+    }
+  } catch (_) {}
+  return { date: today, usd: 0, calls: 0 };
+}
+
+/** Records one call's cost. Brief tryLock so parallel cache misses don't
+ *  lose an increment; on contention the write still applies best-effort —
+ *  the cap is a soft budget guard, and the vendor-console hard spend cap is
+ *  the backstop (set one there too). */
+function kbAiRecordSpend_(usd) {
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(3000); } catch (_) {}
+  try {
+    const s = kbAiReadSpend_();
+    s.usd += usd; s.calls += 1;
+    PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
+  } catch (_) {}
+  finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
+}
+
+/** Estimated cost (USD) of one call from the response's usage tokens.
+ *  Unknown model → most expensive known rates (never undercounts the cap). */
+function kbAiEstimateCostUsd_(model, usage) {
+  let price = KB_AI_MODEL_PRICES[model];
+  if (!price) {
+    price = { input: 0, output: 0 };
+    Object.keys(KB_AI_MODEL_PRICES).forEach(function (k) {
+      price.input = Math.max(price.input, KB_AI_MODEL_PRICES[k].input);
+      price.output = Math.max(price.output, KB_AI_MODEL_PRICES[k].output);
+    });
+  }
+  const inTok = (usage && Number(usage.input_tokens)) || 0;
+  const outTok = (usage && Number(usage.output_tokens)) || 0;
+  return (inTok * price.input + outTok * price.output) / 1e6;
+}
+
+/** One UrlFetchApp POST to the Anthropic Messages API. Returns
+ *  { text, usage } or null on any failure (the caller degrades to none). */
+function kbAiCallVendor_(cfg, prompt) {
+  const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01' },
+    payload: JSON.stringify({
+      model: cfg.model,
+      max_tokens: 400,
+      system: prompt.system,
+      messages: [{ role: 'user', content: prompt.user }],
+    }),
+    muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) {
+    Logger.log('kbAiCallVendor_ HTTP ' + res.getResponseCode() + ': ' + String(res.getContentText()).substring(0, 300));
+    return null;
+  }
+  const body = JSON.parse(res.getContentText());
+  let text = '';
+  (body.content || []).forEach(function (b) { if (b && b.type === 'text') text += b.text; });
+  return { text: text.trim(), usage: body.usage || {} };
+}
+
+/** Rep-callable (requires an enrolled employee), gated by the kbAiGuidance
+ *  feature flag (scope both — the server check here is the enforcement).
+ *  See the section comment above for the full posture. Never throws to the
+ *  client: every failure path returns { none: true, reason }. */
+function kbGetFacetGuidance(facets) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    if (!getFlag_('kbAiGuidance')) return { none: true, reason: 'disabled' };
+
+    // Vocabularies: departments + update types are org config; tags are the
+    // CALLER's own established tag vocabulary (tags already on their saved
+    // notes — the same source as the tag-autocomplete datalist), so a novel
+    // tag typed this minute never reaches the vendor.
+    const updByDept = getUpdateSuggestions_() || {};
+    const updateTypes = (CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT || []).slice();
+    Object.keys(updByDept).forEach(function (d) {
+      (updByDept[d] || []).forEach(function (u) { if (updateTypes.indexOf(u) < 0) updateTypes.push(u); });
+    });
+    let ownTags = [];
+    try { const ts = getCallNoteTagSuggestions(); ownTags = (ts && ts.tags) || []; } catch (_) {}
+    const clean = kbAiSanitizeFacets_(facets, {
+      departments: Object.keys(getDepartmentEmails_() || {}),
+      updateTypes: updateTypes,
+      flagTypes: CN_FLAG_TYPES.concat(['urgent']),
+      tags: ownTags,
+    });
+    // Department alone is too generic to guide on — require a real signal.
+    if (!clean.updateType && !clean.flagType && !clean.tags.length) {
+      return { none: true, reason: 'no-facets' };
+    }
+
+    const canonical = kbAiCanonicalFacets_(clean);
+    const cacheKey = KB_AI_CACHE_PREFIX + kbAiGeneration_() + ':' +
+      Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, canonical)
+        .map(function (b) { return ((b & 0xff) + 0x100).toString(16).substring(1); }).join('');
+    const cache = CacheService.getScriptCache();
+    try {
+      const hit = cache.get(cacheKey);
+      if (hit) { const o = JSON.parse(hit); o.cached = true; return o; }
+    } catch (_) {}
+    const noneOut = function (reason, cacheIt) {
+      const o = { none: true, reason: reason, facetHash: canonical };
+      if (cacheIt) { try { cache.put(cacheKey, JSON.stringify(o), KB_AI_CACHE_TTL); } catch (_) {} }
+      return o;
+    };
+
+    // Retrieval over our own KB (the existing section search). A thin match
+    // never reaches the vendor — the score floor keeps low-signal facet
+    // combos free, and the none is cached so they STAY free. A search ERROR
+    // (KB sheet unreachable) is NOT cached — transient outages shouldn't
+    // pin a 6h none.
+    const search = searchReference(kbAiQueryTerms_(clean));
+    if (search && search.error) return noneOut('search-failed', false);
+    const chunks = (((search && search.results) || [])
+      .filter(function (r) { return r.type === 'article' && r.chunkMd; })
+      .slice(0, KB_AI_MAX_CHUNKS));
+    if (!chunks.length || chunks[0].score < KB_AI_SCORE_FLOOR) return noneOut('thin', true);
+
+    const cfg = getKbAiConfig_();
+    if (!cfg.apiKey) return noneOut('no-key', false);
+    if (kbAiReadSpend_().usd >= cfg.dailyCap) return noneOut('cap', false);
+
+    let vendor = null;
+    try { vendor = kbAiCallVendor_(cfg, kbAiBuildPrompt_(clean, chunks)); }
+    catch (e) { Logger.log('kbGetFacetGuidance vendor: ' + e.message); }
+    if (!vendor) return noneOut('vendor-failed', false);
+
+    const cost = kbAiEstimateCostUsd_(cfg.model, vendor.usage);
+    kbAiRecordSpend_(cost);
+    // PHI-free audit row — facets are validated enums, never note content.
+    writeAuditLog_(emp, 'KbAiGuidance', '', '', false, 0,
+      'facets=' + canonical + '; model=' + cfg.model + '; usd=' + cost.toFixed(4), emp.email);
+    if (!vendor.text || vendor.text.indexOf('NOT_COVERED') >= 0) return noneOut('not-covered', true);
+
+    const out = {
+      guidance: vendor.text.substring(0, 2000),
+      sources: chunks.map(function (c) { return { id: c.id, title: c.title, heading: c.heading, anchor: c.anchor }; }),
+      facetHash: canonical,
+    };
+    try { cache.put(cacheKey, JSON.stringify(out), KB_AI_CACHE_TTL); } catch (_) {}
+    return out;
+  } catch (err) { return { none: true, reason: 'error', error: err.message }; }
+}
 
 const KB_DOC_HEADING_PREFIX = {
   TITLE: '# ', HEADING1: '# ', HEADING2: '## ', HEADING3: '### ',
@@ -10044,10 +10633,13 @@ function kbRunsToMarkdown_(runs) {
  *  through the runs pipeline so bold/links survive); images become an
  *  italic placeholder — each lossy conversion adds a warning so the reviewing
  *  manager knows to keep the original Doc when visuals matter. */
-function kbDocBodyToMarkdown_(body) {
+function kbDocBodyToMarkdown_(body, docId) {
   const out = [];
   const warnings = [];
-  let imageCount = 0;
+  let imageCount = 0;   // placeholder-degraded: drawings, over-cap, or no docId
+  let imageTokens = 0;  // kbdoc:<docId>:<n> tokens emitted (exported on save)
+  let imageOrd = 0;     // document-order INLINE_IMAGE ordinal — MUST match
+                        // kbCollectDocInlineImages_'s walk (paragraphs only)
   let tableCellLineBreaks = false, nestedTables = false;
   const skippedTypes = {};
   let listBuf = [];
@@ -10061,17 +10653,34 @@ function kbDocBodyToMarkdown_(body) {
     if (t === 'PARAGRAPH') {
       flushList();
       let isHr = false;
-      let parImages = 0;
+      let parImages = 0;        // → italic placeholder
+      const parTokens = [];     // → kbdoc image tokens (Phase 2b)
       const m = el.getNumChildren();
       for (let c = 0; c < m; c++) {
         const ct = String(el.getChild(c).getType());
         if (ct === 'HORIZONTAL_RULE') isHr = true;
-        else if (ct === 'INLINE_IMAGE' || ct === 'INLINE_DRAWING') parImages++;
+        else if (ct === 'INLINE_IMAGE') {
+          // Phase 2b — emit an export token instead of a placeholder. The
+          // token resolves to a Drive-hosted image when the manager SAVES
+          // (kbSaveItem → kbResolveDocImages_); the converter stays
+          // read-only. Drawings keep the placeholder (no blob API), as do
+          // images past the per-doc cap or a docId-less call (Node stubs).
+          imageOrd++;
+          if (docId && imageOrd <= KB_DOC_IMAGE_CAP) parTokens.push(imageOrd);
+          else parImages++;
+        }
+        else if (ct === 'INLINE_DRAWING') parImages++;
       }
       if (isHr) { out.push('---'); continue; }
       const text = kbRunsToMarkdown_(kbTextToRuns_(el.editAsText())).trim();
       const prefix = KB_DOC_HEADING_PREFIX[String(el.getHeading())] || '';
       let line = text ? prefix + text : '';
+      if (parTokens.length > 0) {
+        imageTokens += parTokens.length;
+        line = (line ? line + ' ' : '') + parTokens.map(function (ord) {
+          return '![Doc image ' + ord + '](kbdoc:' + docId + ':' + ord + ')';
+        }).join(' ');
+      }
       if (parImages > 0) {
         imageCount += parImages;
         line = (line ? line + ' ' : '') + '*[image — see the original Doc]*';
@@ -10130,8 +10739,11 @@ function kbDocBodyToMarkdown_(body) {
     }
   }
   flushList();
+  if (imageTokens > 0) {
+    warnings.push(imageTokens + ' image(s) marked for export — they upload to the KB Images Drive folder when you press Save (the preview shows their alt text until then).');
+  }
   if (imageCount > 0) {
-    warnings.push(imageCount + ' image(s) could not be converted — placeholders inserted; keep the original Doc if the visuals matter.');
+    warnings.push(imageCount + ' image(s)/drawing(s) could not be converted — placeholders inserted; keep the original Doc if the visuals matter.');
   }
   if (nestedTables) {
     warnings.push('Nested table(s) flattened into their parent cell — review the converted table(s).');
@@ -10193,7 +10805,7 @@ function kbConvertDriveDoc(payload) {
     catch (e) {
       return { error: 'Could not open the Doc — the deploying account needs at least Viewer access. (' + e.message + ')' };
     }
-    const res = kbDocBodyToMarkdown_(doc.getBody());
+    const res = kbDocBodyToMarkdown_(doc.getBody(), fileId);
     if (res.markdown.length > KB_BODY_MAX) {
       res.warnings.push('Converted article is over the ~49,000-character limit — trim it before saving, or split into multiple articles.');
     }
@@ -10206,4 +10818,1073 @@ function kbConvertDriveDoc(payload) {
       department: department,
     };
   } catch (err) { return { error: err.message }; }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  TRAINING & EMPLOYEE DOCS — T1: training assignments + completion tracking
+//  (docs/training-employee-docs-spec.md). Training CONTENT is KB items; the
+//  tracking tabs live in the KB spreadsheet (PHI-free, deployer-only sheet
+//  access, server-mediated reads — the KbViews posture). Quizzes are T2;
+//  per-employee signable docs (HR_DOCS_SS_ID) are T3.
+// ════════════════════════════════════════════════════════════════════════════
+const TRAIN_ASSIGN_TAB = 'TrainingAssignments';
+const TRAIN_COMPLETE_TAB = 'TrainingCompletions';
+const TRAIN_ASSIGN_HEADERS = ['AssignId','ItemType','ItemId','EmpId','AssignedBy','AssignedAt','DueDate','RevokedAt'];
+const TRAIN_COMPLETE_HEADERS = ['EmpId','ItemType','ItemId','CompletedAt','Via','QuizAttemptId'];
+const TA = { ASSIGN_ID:0, ITEM_TYPE:1, ITEM_ID:2, EMP_ID:3, ASSIGNED_BY:4, ASSIGNED_AT:5, DUE_DATE:6, REVOKED_AT:7 };
+const TCMP = { EMP_ID:0, ITEM_TYPE:1, ITEM_ID:2, COMPLETED_AT:3, VIA:4, QUIZ_ATTEMPT_ID:5 };
+const TRAIN_ASSIGN_MAX_EMPS = 100;   // per saveTrainingAssignment call
+
+function getOrCreateTrainSheet_(tabName, headers) {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(tabName);
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+// ── Sheets-coercion read guards ───────────────────────────────────────────
+// AssignedAt / CompletedAt are written as 'yyyy-MM-dd HH:mm:ss' strings
+// (CONFIG.TIMEZONE wall time, the writeAuditLog_ convention) and DueDate as
+// 'yyyy-MM-dd' — Sheets coerces both to Dates on read. Recover them in the
+// KB spreadsheet's OWN tz (the tz that coerced them — the normalizeAuditTs_
+// / kbGetUsageStats discipline). String compares on the recovered values
+// are chronological (lexicographic == chronological for these formats).
+function trainCellTs_(v, ssTz) {
+  if (v instanceof Date) return Utilities.formatDate(v, ssTz, 'yyyy-MM-dd HH:mm:ss');
+  return String(v || '').trim();
+}
+function trainCellDate_(v, ssTz) {
+  if (v instanceof Date) return Utilities.formatDate(v, ssTz, 'yyyy-MM-dd');
+  return String(v || '').trim().substring(0, 10);
+}
+
+/** Pure status derivation — shared by getMyTraining + getTrainingDashboard
+ *  and pinned by a Node test. */
+function trainDeriveStatus_(completed, dueDate, todayIso) {
+  if (completed) return 'done';
+  if (dueDate && todayIso > dueDate) return 'overdue';
+  return 'pending';
+}
+
+/** Reads every assignment row into plain objects (small tab — assignments
+ *  are rare; full read like the KB tree). */
+function trainReadAssignments_() {
+  const sheet = getOrCreateTrainSheet_(TRAIN_ASSIGN_TAB, TRAIN_ASSIGN_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const ssTz = getKbSS_().getSpreadsheetTimeZone();
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_ASSIGN_HEADERS.length).getValues();
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i][TA.ASSIGN_ID]) continue;
+    out.push({
+      assignId: String(rows[i][TA.ASSIGN_ID]).trim(),
+      itemType: String(rows[i][TA.ITEM_TYPE] || 'kb').trim(),
+      itemId: String(rows[i][TA.ITEM_ID] || '').trim(),
+      empId: String(rows[i][TA.EMP_ID] || '').trim(),
+      assignedBy: String(rows[i][TA.ASSIGNED_BY] || '').trim(),
+      assignedAt: trainCellTs_(rows[i][TA.ASSIGNED_AT], ssTz),
+      dueDate: trainCellDate_(rows[i][TA.DUE_DATE], ssTz),
+      revoked: !!trainCellTs_(rows[i][TA.REVOKED_AT], ssTz),
+    });
+  }
+  return out;
+}
+
+function trainReadCompletions_(empIdFilter) {
+  const sheet = getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const ssTz = getKbSS_().getSpreadsheetTimeZone();
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_COMPLETE_HEADERS.length).getValues();
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const empId = String(rows[i][TCMP.EMP_ID] || '').trim();
+    if (!empId) continue;
+    if (empIdFilter && empId !== empIdFilter) continue;
+    out.push({
+      empId: empId,
+      itemType: String(rows[i][TCMP.ITEM_TYPE] || 'kb').trim(),
+      itemId: String(rows[i][TCMP.ITEM_ID] || '').trim(),
+      completedAt: trainCellTs_(rows[i][TCMP.COMPLETED_AT], ssTz),
+      via: String(rows[i][TCMP.VIA] || '').trim(),
+    });
+  }
+  return out;
+}
+
+/** Effective assignment per item for one employee: rows matching the empId
+ *  or '*', non-revoked; the LATEST assignedAt wins (re-assign = reset, the
+ *  re-certification mechanism — spec §3a). Returns { itemKey: {itemType,
+ *  itemId, assignedAt, dueDate} }. */
+function trainEffectiveForEmp_(assignments, empId) {
+  const eff = {};
+  for (let i = 0; i < assignments.length; i++) {
+    const a = assignments[i];
+    if (a.revoked || !a.itemId) continue;
+    if (a.empId !== empId && a.empId !== '*') continue;
+    const key = a.itemType + ':' + a.itemId;
+    if (!eff[key] || a.assignedAt > eff[key].assignedAt) {
+      eff[key] = { itemType: a.itemType, itemId: a.itemId, assignedAt: a.assignedAt, dueDate: a.dueDate };
+    }
+  }
+  return eff;
+}
+
+/** Bounded KB title join: id → {title, kbType}. */
+function trainKbTitles_() {
+  const sheet = getOrCreateKbSheet_();
+  const last = sheet.getLastRow();
+  const map = {};
+  if (last < 2) return map;
+  const rows = sheet.getRange(2, 1, last - 1, 4).getValues();  // Id, Department, Title, Type
+  rows.forEach(function (r) {
+    if (r[0]) map[String(r[0])] = { title: String(r[2] || '(untitled)'), kbType: String(r[3] || 'article') };
+  });
+  return map;
+}
+
+/** Rep-callable, caller-scoped, read-only — the rep's training checklist. */
+function getMyTraining() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const assignments = trainReadAssignments_();
+    const eff = trainEffectiveForEmp_(assignments, emp.id);
+    const keys = Object.keys(eff);
+    if (!keys.length) return { items: [] };
+    const completions = trainReadCompletions_(emp.id);
+    const titles = trainKbTitles_();
+    const quizzes = trainReadQuizzes_();
+    let attempts = null;   // lazy — only read when a quiz item is assigned
+    const todayIso = Utilities.formatDate(new Date(), safeTimezone_(emp.timezone), 'yyyy-MM-dd');
+    const items = [];
+    keys.forEach(function (key) {
+      const a = eff[key];
+      let title, kbType = '', quizMeta = null;
+      if (a.itemType === 'kb') {
+        const kb = titles[a.itemId];
+        if (!kb) return;                          // KB item deleted — unactionable, drop
+        title = kb.title; kbType = kb.kbType;
+      } else if (a.itemType === 'quiz') {
+        const q = quizzes[a.itemId];
+        if (!q) return;                           // quiz deleted — drop (same rule)
+        title = q.title;
+        if (attempts === null) attempts = trainReadAttempts_(emp.id);
+        const stats = trainAttemptStats_(attempts, a.itemId, a.assignedAt);
+        quizMeta = { questionCount: q.questionCount, passPct: q.passPct, kbItemId: q.kbItemId, attempts: stats.count, lastScorePct: stats.lastScorePct };
+      } else return;
+      let completedAt = '';
+      for (let i = 0; i < completions.length; i++) {
+        const c = completions[i];
+        if (c.itemType === a.itemType && c.itemId === a.itemId && c.completedAt > a.assignedAt) {
+          if (c.completedAt > completedAt) completedAt = c.completedAt;
+        }
+      }
+      items.push({
+        itemType: a.itemType, itemId: a.itemId,
+        title: title, kbType: kbType, quiz: quizMeta,
+        assignedAt: a.assignedAt, dueDate: a.dueDate,
+        completed: !!completedAt, completedAt: completedAt,
+        status: trainDeriveStatus_(!!completedAt, a.dueDate, todayIso),
+      });
+    });
+    const rank = { overdue: 0, pending: 1, done: 2 };
+    items.sort(function (x, y) {
+      if (rank[x.status] !== rank[y.status]) return rank[x.status] - rank[y.status];
+      const dx = x.dueDate || '9999', dy = y.dueDate || '9999';
+      return dx < dy ? -1 : dx > dy ? 1 : x.title.localeCompare(y.title);
+    });
+    return { items: items };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-callable, locked (INV-01). Marks a kb-type training item complete for
+ *  the CALLER (via='read' — honor system; kbRecordView rows corroborate).
+ *  Requires a live effective assignment; idempotent on an already-complete
+ *  item. Audit: TrainingComplete (itemId only — never content). */
+function markTrainingComplete(itemId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    itemId = String(itemId || '').trim();
+    if (!itemId) return { success: false, error: 'Missing item id.' };
+    const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
+    if (eff['quiz:' + itemId]) return { success: false, error: 'This item is completed by passing its quiz.' };
+    const a = eff['kb:' + itemId];
+    if (!a) return { success: false, error: 'That item is not assigned to you.' };
+    const completions = trainReadCompletions_(emp.id);
+    for (let i = 0; i < completions.length; i++) {
+      const c = completions[i];
+      if (c.itemType === 'kb' && c.itemId === itemId && c.completedAt > a.assignedAt) {
+        return { success: true, alreadyComplete: true, completedAt: c.completedAt };
+      }
+    }
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS)
+      .appendRow([emp.id, 'kb', itemId, ts, 'read', '']);
+    writeAuditLog_(emp, 'TrainingComplete', fmtDate_(now), '', false, 0,
+      'itemId=' + itemId + '; via=read');
+    return { success: true, completedAt: ts };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), read-only. Completion matrix (reps × items) +
+ *  the active assignment list for the revoke UI. Deliberately NOT
+ *  team-scoped — training visibility matches every other manager surface
+ *  (managerGetShiftStats, getTeamMetrics); only Employee Docs (T3) carry
+ *  the elevated per-team confidentiality (spec §3b). */
+function getTrainingDashboard() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const assignments = trainReadAssignments_();
+    const completions = trainReadCompletions_(null);
+    const titles = trainKbTitles_();
+    const quizzes = trainReadQuizzes_();
+    const allAttempts = trainReadAttempts_(null);
+    function itemTitle_(a) {
+      if (a.itemType === 'kb') return titles[a.itemId] ? titles[a.itemId].title : null;
+      if (a.itemType === 'quiz') return quizzes[a.itemId] ? quizzes[a.itemId].title : null;
+      return null;
+    }
+    const rows = getEmployeeRosterRows_();
+    const emps = [];
+    for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][EMP.EMAIL]) continue;
+      emps.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
+    }
+    emps.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    // Items = distinct itemKeys across live assignments that still exist in the KB.
+    const itemMap = {};
+    const reps = [];
+    emps.forEach(function (e) {
+      const eff = trainEffectiveForEmp_(assignments, e.id);
+      const cell = {};
+      const attemptsByKey = {};
+      Object.keys(eff).forEach(function (key) {
+        const a = eff[key];
+        const title = itemTitle_(a);
+        if (!title) return;   // kb item / quiz deleted — drop (same rule as the checklist)
+        if (!itemMap[key]) itemMap[key] = { key: key, itemType: a.itemType, itemId: a.itemId, title: title, assigned: 0, done: 0, overdue: 0 };
+        let completedAt = '';
+        for (let i = 0; i < completions.length; i++) {
+          const c = completions[i];
+          if (c.empId === e.id && c.itemType === a.itemType && c.itemId === a.itemId && c.completedAt > a.assignedAt) {
+            if (c.completedAt > completedAt) completedAt = c.completedAt;
+          }
+        }
+        const status = trainDeriveStatus_(!!completedAt, a.dueDate, todayIso);
+        cell[key] = status;
+        if (a.itemType === 'quiz') {
+          const stats = trainAttemptStats_(allAttempts.filter(function (at) { return at.empId === e.id; }), a.itemId, a.assignedAt);
+          if (stats.count) attemptsByKey[key] = stats.count;
+        }
+        itemMap[key].assigned++;
+        if (status === 'done') itemMap[key].done++;
+        if (status === 'overdue') itemMap[key].overdue++;
+      });
+      if (Object.keys(cell).length) reps.push({ id: e.id, name: e.name, items: cell, attempts: attemptsByKey });
+    });
+    const items = Object.keys(itemMap).map(function (k) { return itemMap[k]; })
+      .sort(function (a, b) { return a.title.localeCompare(b.title); });
+    // Active (non-revoked) assignment rows for the revoke UI.
+    const empName = {};
+    emps.forEach(function (e) { empName[e.id] = e.name; });
+    const active = assignments.filter(function (a) { return !a.revoked && itemTitle_(a); })
+      .map(function (a) {
+        return {
+          assignId: a.assignId, itemType: a.itemType, itemId: a.itemId, title: itemTitle_(a),
+          empId: a.empId, empLabel: a.empId === '*' ? 'All employees' : (empName[a.empId] || a.empId),
+          assignedBy: a.assignedBy, assignedAt: a.assignedAt, dueDate: a.dueDate,
+        };
+      })
+      .sort(function (x, y) { return x.assignedAt < y.assignedAt ? 1 : -1; });
+    return { items: items, reps: reps, assignments: active };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Assigns one KB item to one or
+ *  more employees (or '*' = everyone). Always APPENDS — a duplicate
+ *  assignment for the same (item, emp) is the deliberate "reset" path (the
+ *  newer assignedAt requires a fresh completion, spec §3a). Best-effort
+ *  branded notification per employee (INV-14). Audit: TrainingAssign. */
+function saveTrainingAssignment(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    payload = payload || {};
+    const itemType = payload.itemType === 'quiz' ? 'quiz' : 'kb';
+    const itemId = String(payload.itemId || '').trim();
+    if (!itemId) return { success: false, error: 'Pick an item to assign.' };
+    let itemTitle;
+    if (itemType === 'quiz') {
+      const q = trainReadQuizzes_()[itemId];
+      if (!q) return { success: false, error: 'That quiz no longer exists.' };
+      itemTitle = q.title;
+    } else {
+      const kb = trainKbTitles_()[itemId];
+      if (!kb) return { success: false, error: 'That Reference item no longer exists.' };
+      itemTitle = kb.title;
+    }
+    const dueDate = String(payload.dueDate || '').trim();
+    if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return { success: false, error: 'Invalid due date.' };
+    // Resolve targets: '*' or a validated, deduped list of roster ids.
+    let targets = [];
+    let allMode = false;
+    if (payload.empIds === '*' || (Array.isArray(payload.empIds) && payload.empIds.indexOf('*') >= 0)) {
+      allMode = true;
+    } else if (Array.isArray(payload.empIds)) {
+      const rows = getEmployeeRosterRows_();
+      const valid = {};
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i][EMP.EMAIL]) valid[String(rows[i][EMP.ID]).trim()] = true;
+      }
+      const seen = {};
+      payload.empIds.forEach(function (id) {
+        id = String(id || '').trim();
+        if (id && valid[id] && !seen[id]) { seen[id] = true; targets.push(id); }
+      });
+    }
+    if (!allMode && !targets.length) return { success: false, error: 'Pick at least one employee.' };
+    if (targets.length > TRAIN_ASSIGN_MAX_EMPS) return { success: false, error: 'Too many employees in one assignment (max ' + TRAIN_ASSIGN_MAX_EMPS + ').' };
+    const sheet = getOrCreateTrainSheet_(TRAIN_ASSIGN_TAB, TRAIN_ASSIGN_HEADERS);
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const writeIds = allMode ? ['*'] : targets;
+    writeIds.forEach(function (empId) {
+      sheet.appendRow([Utilities.getUuid(), itemType, itemId, empId, callerEmp.email, ts, dueDate, '']);
+    });
+    writeAuditLog_(callerEmp, 'TrainingAssign', fmtDate_(now), '', false, 0,
+      'itemType=' + itemType + '; itemId=' + itemId + '; targets=' + (allMode ? 'all' : targets.length) + (dueDate ? '; due=' + dueDate : ''),
+      callerEmp.email);
+    notifyTrainingAssigned_(allMode ? null : targets, itemTitle, dueDate);
+    return { success: true, assigned: allMode ? 'all' : targets.length };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Revokes one assignment row
+ *  (sets RevokedAt — never deletes; the history stays legible). Idempotent.
+ *  Audit: TrainingRevoke. */
+function revokeTrainingAssignment(assignId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    assignId = String(assignId || '').trim();
+    if (!assignId) return { success: false, error: 'Missing assignment id.' };
+    const sheet = getOrCreateTrainSheet_(TRAIN_ASSIGN_TAB, TRAIN_ASSIGN_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { success: false, error: 'Assignment not found.' };
+    const ids = sheet.getRange(2, TA.ASSIGN_ID + 1, last - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim() !== assignId) continue;
+      const rowIdx = i + 2;
+      const revokedCell = sheet.getRange(rowIdx, TA.REVOKED_AT + 1);
+      const ssTz = getKbSS_().getSpreadsheetTimeZone();
+      if (trainCellTs_(revokedCell.getValue(), ssTz)) return { success: true, alreadyRevoked: true };
+      const now = new Date();
+      revokedCell.setValue(fmtDate_(now) + ' ' + fmtTime_(now));
+      writeAuditLog_(callerEmp, 'TrainingRevoke', fmtDate_(now), '', false, 0,
+        'assignId=' + assignId, callerEmp.email);
+      return { success: true };
+    }
+    return { success: false, error: 'Assignment not found.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Best-effort (INV-14): branded "training assigned" email to each target
+ *  employee (null targets = everyone on the roster with an email). Failures
+ *  log and never block the assignment. */
+function notifyTrainingAssigned_(targetIds, itemTitle, dueDate) {
+  try {
+    const rows = getEmployeeRosterRows_();
+    const wanted = targetIds ? {} : null;
+    if (targetIds) targetIds.forEach(function (id) { wanted[id] = true; });
+    for (let i = 1; i < rows.length; i++) {
+      const email = String(rows[i][EMP.EMAIL] || '').trim();
+      const id = String(rows[i][EMP.ID] || '').trim();
+      if (!email) continue;
+      if (wanted && !wanted[id]) continue;
+      try {
+        const name = String(rows[i][EMP.NAME] || '').trim();
+        const body = 'Hi ' + name + ',\n\nNew training has been assigned to you: ' + itemTitle +
+          (dueDate ? '\nDue: ' + dueDate : '') +
+          '\n\nOpen the web app → Training & Employee Docs → My Training to review and mark it complete.';
+        const htmlBody = buildBrandedEmailHtml_('New training assigned',
+          '<p style="margin:0 0 12px;">Hi ' + esc_(name) + ',</p>' +
+          brandedKvRows_([['Training item', itemTitle]].concat(dueDate ? [['Due', dueDate]] : [])) +
+          '<p style="margin:12px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → My Training</strong> to review and mark it complete.</p>');
+        MailApp.sendEmail({ to: email, subject: '📚 New training assigned: ' + itemTitle, body: body, htmlBody: htmlBody });
+      } catch (e) { console.warn('notifyTrainingAssigned_ to one recipient failed: ' + e.message); }
+    }
+  } catch (e) { console.warn('notifyTrainingAssigned_ failed: ' + e.message); }
+}
+
+// ── T2: Quizzes (server-graded; answer keys NEVER ship to the client) ──────
+// docs/training-employee-docs-spec.md §5 + §9.4 (unlimited retries, never
+// reveal correct answers — only per-question right/wrong; attempts tracked).
+const TRAIN_QUIZ_TAB = 'Quizzes';
+const TRAIN_ATTEMPT_TAB = 'QuizAttempts';
+const TRAIN_QUIZ_HEADERS = ['QuizId','Title','KbItemId','PassPct','QuestionsJson','UpdatedBy','UpdatedAt'];
+const TRAIN_ATTEMPT_HEADERS = ['AttemptId','QuizId','EmpId','SubmittedAt','ScorePct','Passed','PerQuestionJson'];
+const TQ = { QUIZ_ID:0, TITLE:1, KB_ITEM_ID:2, PASS_PCT:3, QUESTIONS_JSON:4, UPDATED_BY:5, UPDATED_AT:6 };
+const TQA = { ATTEMPT_ID:0, QUIZ_ID:1, EMP_ID:2, SUBMITTED_AT:3, SCORE_PCT:4, PASSED:5, PER_QUESTION_JSON:6 };
+const TRAIN_QUIZ_MAX_QUESTIONS = 50;
+const TRAIN_QUIZ_MAX_OPTIONS = 6;
+const TRAIN_QUIZ_JSON_MAX = 45000;   // under the 50k Sheets cell limit (INV-96 spirit)
+
+/** Pure — validates + normalizes a quiz definition. Returns { ok, quiz } or
+ *  { ok:false, error }. Whitelist-built: only known fields survive. */
+function trainValidateQuizDef_(def) {
+  def = def || {};
+  const title = String(def.title || '').trim();
+  if (!title || title.length > 120) return { ok: false, error: 'Quiz title is required (max 120 chars).' };
+  const passPct = Math.round(Number(def.passPct));
+  if (!(passPct >= 0 && passPct <= 100)) return { ok: false, error: 'Pass threshold must be 0–100.' };
+  const kbItemId = String(def.kbItemId || '').trim();
+  if (!Array.isArray(def.questions) || def.questions.length < 1 || def.questions.length > TRAIN_QUIZ_MAX_QUESTIONS) {
+    return { ok: false, error: 'A quiz needs 1–' + TRAIN_QUIZ_MAX_QUESTIONS + ' questions.' };
+  }
+  const questions = [];
+  for (let i = 0; i < def.questions.length; i++) {
+    const q = def.questions[i] || {};
+    const text = String(q.q || '').trim();
+    if (!text || text.length > 500) return { ok: false, error: 'Question ' + (i + 1) + ': text is required (max 500 chars).' };
+    if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > TRAIN_QUIZ_MAX_OPTIONS) {
+      return { ok: false, error: 'Question ' + (i + 1) + ': needs 2–' + TRAIN_QUIZ_MAX_OPTIONS + ' options.' };
+    }
+    const options = [];
+    for (let j = 0; j < q.options.length; j++) {
+      const opt = String(q.options[j] || '').trim();
+      if (!opt || opt.length > 200) return { ok: false, error: 'Question ' + (i + 1) + ', option ' + (j + 1) + ': text is required (max 200 chars).' };
+      options.push(opt);
+    }
+    const correct = Math.round(Number(q.correct));
+    if (!(correct >= 0 && correct < options.length)) return { ok: false, error: 'Question ' + (i + 1) + ': pick the correct option.' };
+    questions.push({ q: text, options: options, correct: correct });
+  }
+  return { ok: true, quiz: { title: title, kbItemId: kbItemId, passPct: passPct, questions: questions } };
+}
+
+/** Pure — grades answers (option indices; missing/invalid = wrong) against
+ *  the full question defs. Returns { scorePct, passed-less data }: right,
+ *  total, perQuestion booleans. NEVER returns the correct indices. */
+function trainGradeQuiz_(questions, answers) {
+  const perQuestion = [];
+  let right = 0;
+  for (let i = 0; i < questions.length; i++) {
+    const a = (answers && answers.length > i) ? Math.round(Number(answers[i])) : -1;
+    const ok = a === questions[i].correct;
+    perQuestion.push(ok);
+    if (ok) right++;
+  }
+  const total = questions.length || 1;
+  return { right: right, total: questions.length, perQuestion: perQuestion, scorePct: Math.round(100 * right / total) };
+}
+
+/** Pure — the rep-facing shape. WHITELIST-constructed (never a delete-key
+ *  copy), so `correct` cannot leak through a missed field (the privacy
+ *  boundary — pinned by a Node test + a getQuiz source tripwire). */
+function trainStripQuizForRep_(quizId, quiz) {
+  return {
+    quizId: quizId, title: quiz.title, passPct: quiz.passPct,
+    kbItemId: quiz.kbItemId || '',
+    questions: (quiz.questions || []).map(function (q) { return { q: q.q, options: q.options.slice() }; }),
+  };
+}
+
+/** All quiz rows as { quizId: {title, kbItemId, passPct, questions[], questionCount} }.
+ *  Corrupt QuestionsJson → quiz skipped (callNoteRowToObject_ discipline). */
+function trainReadQuizzes_() {
+  const sheet = getOrCreateTrainSheet_(TRAIN_QUIZ_TAB, TRAIN_QUIZ_HEADERS);
+  const last = sheet.getLastRow();
+  const map = {};
+  if (last < 2) return map;
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_QUIZ_HEADERS.length).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const id = String(rows[i][TQ.QUIZ_ID] || '').trim();
+    if (!id) continue;
+    let questions = null;
+    try { questions = JSON.parse(String(rows[i][TQ.QUESTIONS_JSON] || '')); } catch (_) {}
+    if (!Array.isArray(questions) || !questions.length) continue;
+    map[id] = {
+      title: String(rows[i][TQ.TITLE] || '(untitled quiz)'),
+      kbItemId: String(rows[i][TQ.KB_ITEM_ID] || '').trim(),
+      passPct: Math.round(Number(rows[i][TQ.PASS_PCT])) || 0,
+      questions: questions,
+      questionCount: questions.length,
+      rowIdx: i + 2,
+    };
+  }
+  return map;
+}
+
+/** Attempts for one rep (or all when empIdFilter is null), coercion-guarded. */
+function trainReadAttempts_(empIdFilter) {
+  const sheet = getOrCreateTrainSheet_(TRAIN_ATTEMPT_TAB, TRAIN_ATTEMPT_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const ssTz = getKbSS_().getSpreadsheetTimeZone();
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_ATTEMPT_HEADERS.length).getValues();
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const empId = String(rows[i][TQA.EMP_ID] || '').trim();
+    if (!empId) continue;
+    if (empIdFilter && empId !== empIdFilter) continue;
+    out.push({
+      quizId: String(rows[i][TQA.QUIZ_ID] || '').trim(),
+      empId: empId,
+      submittedAt: trainCellTs_(rows[i][TQA.SUBMITTED_AT], ssTz),
+      scorePct: Math.round(Number(rows[i][TQA.SCORE_PCT])) || 0,
+      passed: String(rows[i][TQA.PASSED]).toLowerCase() === 'true',
+    });
+  }
+  return out;
+}
+
+/** Attempts since the current assignment round (the §3a reset semantics —
+ *  a re-assign starts the attempt count over too). */
+function trainAttemptStats_(attempts, quizId, assignedAt) {
+  let count = 0, lastScore = null;
+  for (let i = 0; i < attempts.length; i++) {
+    const a = attempts[i];
+    if (a.quizId !== quizId || a.submittedAt <= assignedAt) continue;
+    count++;
+    if (lastScore === null || a.submittedAt >= lastScore.at) lastScore = { at: a.submittedAt, scorePct: a.scorePct };
+  }
+  return { count: count, lastScorePct: lastScore ? lastScore.scorePct : null };
+}
+
+/** Rep-callable — the quiz WITHOUT its answer key (trainStripQuizForRep_ is
+ *  the only shape that leaves the server; the caller must hold a live
+ *  assignment, same scoping rule as markTrainingComplete). */
+function getQuiz(quizId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    quizId = String(quizId || '').trim();
+    const quiz = trainReadQuizzes_()[quizId];
+    if (!quiz) return { error: 'Quiz not found.' };
+    const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
+    if (!eff['quiz:' + quizId] && !emp.isManager) return { error: 'That quiz is not assigned to you.' };
+    return trainStripQuizForRep_(quizId, quiz);
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-callable, locked (INV-01). Grades server-side, appends the attempt,
+ *  and on a pass appends the TrainingCompletions row (via='quiz'). Returns
+ *  score + per-question right/wrong ONLY — never the correct options
+ *  (spec §9.4). Unlimited retries; attempt # rides back for display. */
+function submitQuizAttempt(quizId, answers) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    quizId = String(quizId || '').trim();
+    const quiz = trainReadQuizzes_()[quizId];
+    if (!quiz) return { success: false, error: 'Quiz not found.' };
+    const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
+    const a = eff['quiz:' + quizId];
+    if (!a) return { success: false, error: 'That quiz is not assigned to you.' };
+    if (!Array.isArray(answers)) answers = [];
+    const graded = trainGradeQuiz_(quiz.questions, answers);
+    const passed = graded.scorePct >= quiz.passPct;
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const attemptId = Utilities.getUuid();
+    getOrCreateTrainSheet_(TRAIN_ATTEMPT_TAB, TRAIN_ATTEMPT_HEADERS).appendRow([
+      attemptId, quizId, emp.id, ts, graded.scorePct, passed ? 'TRUE' : 'FALSE',
+      JSON.stringify(graded.perQuestion),
+    ]);
+    const stats = trainAttemptStats_(trainReadAttempts_(emp.id), quizId, a.assignedAt);
+    // Completion: only on a pass, and only once per assignment round.
+    let alreadyComplete = false;
+    if (passed) {
+      const completions = trainReadCompletions_(emp.id);
+      for (let i = 0; i < completions.length; i++) {
+        const c = completions[i];
+        if (c.itemType === 'quiz' && c.itemId === quizId && c.completedAt > a.assignedAt) { alreadyComplete = true; break; }
+      }
+      if (!alreadyComplete) {
+        getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS)
+          .appendRow([emp.id, 'quiz', quizId, ts, 'quiz', attemptId]);
+      }
+    }
+    writeAuditLog_(emp, 'QuizAttempt', fmtDate_(now), '', false, 0,
+      'quizId=' + quizId + '; score=' + graded.scorePct + '; passed=' + passed + '; attempt=' + stats.count);
+    return {
+      success: true, scorePct: graded.scorePct, passed: passed,
+      right: graded.right, total: graded.total,
+      perQuestion: graded.perQuestion, attempt: stats.count, passPct: quiz.passPct,
+    };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated — full quiz defs INCLUDING answer keys (managers author
+ *  them); feeds the editor + the assignment form's quiz picker. */
+function getQuizzes() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const map = trainReadQuizzes_();
+    const quizzes = Object.keys(map).map(function (id) {
+      const q = map[id];
+      return { quizId: id, title: q.title, kbItemId: q.kbItemId, passPct: q.passPct, questionCount: q.questionCount, questions: q.questions };
+    }).sort(function (a, b) { return a.title.localeCompare(b.title); });
+    return { quizzes: quizzes };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Create-or-update by quizId.
+ *  Validates via the pure trainValidateQuizDef_; bounds the stored JSON
+ *  (INV-96 spirit). Audit: QuizSave (id + question count — never text). */
+function saveQuiz(def) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const v = trainValidateQuizDef_(def);
+    if (!v.ok) return { success: false, error: v.error };
+    if (v.quiz.kbItemId && !trainKbTitles_()[v.quiz.kbItemId]) {
+      return { success: false, error: 'The linked Reference item no longer exists.' };
+    }
+    const qJson = JSON.stringify(v.quiz.questions);
+    if (qJson.length > TRAIN_QUIZ_JSON_MAX) return { success: false, error: 'Quiz is too large — split it into two quizzes.' };
+    const sheet = getOrCreateTrainSheet_(TRAIN_QUIZ_TAB, TRAIN_QUIZ_HEADERS);
+    const quizId = String((def && def.quizId) || '').trim() || Utilities.getUuid();
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const rowVals = [quizId, v.quiz.title, v.quiz.kbItemId, v.quiz.passPct, qJson, callerEmp.email, ts];
+    const existing = trainReadQuizzes_()[quizId];
+    if (existing) sheet.getRange(existing.rowIdx, 1, 1, TRAIN_QUIZ_HEADERS.length).setValues([rowVals]);
+    else sheet.appendRow(rowVals);
+    writeAuditLog_(callerEmp, 'QuizSave', fmtDate_(now), '', false, 0,
+      'quizId=' + quizId + '; questions=' + v.quiz.questions.length + '; passPct=' + v.quiz.passPct, callerEmp.email);
+    return { success: true, quizId: quizId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Deletes the quiz ROW (attempts
+ *  + completions stay — append-only history); live assignments referencing
+ *  it drop off checklists/dashboards via the title join, same as a deleted
+ *  KB item. Audit: QuizDelete. */
+function deleteQuiz(quizId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    quizId = String(quizId || '').trim();
+    const existing = trainReadQuizzes_()[quizId];
+    if (!existing) return { success: false, error: 'Quiz not found.' };
+    getOrCreateTrainSheet_(TRAIN_QUIZ_TAB, TRAIN_QUIZ_HEADERS).deleteRow(existing.rowIdx);
+    const now = new Date();
+    writeAuditLog_(callerEmp, 'QuizDelete', fmtDate_(now), '', false, 0, 'quizId=' + quizId, callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+
+// ── T3: Employee Docs (per-employee signable documents) ────────────────────
+// docs/training-employee-docs-spec.md §3b/§4/§5. A DEDICATED spreadsheet
+// (Script Property HR_DOCS_SS_ID — NEVER co-located with the KB, ADP, or PHI
+// sheets; there is deliberately NO fallback store) holds per-employee docs
+// (reviews, PIPs, policy acks). Content is FROZEN at issue (markdown +
+// contentHash in the row); signatures are append-only + tamper-evident
+// (hash excludes the timestamp — the INV-113 lesson; the audit row is the
+// independent witness). Manager visibility is PER-TEAM and FAIL-CLOSED
+// (§9.3): owner + issuer + the employee's roster ManagerEmail (column M) —
+// a blank column M narrows to owner+issuer, never widens. These tabs are
+// EXCLUDED from every retention purge: HR records are keep-forever.
+const EMPDOC_TAB = 'EmpDocs';
+const EMPDOC_SIG_TAB = 'DocSignatures';
+const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason'];
+const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
+const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12 };
+const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6 };
+const EMPDOC_TYPES = ['review','pip','policy','other'];
+const EMPDOC_TITLE_MAX = 200;
+const EMPDOC_BODY_MAX = 49000;        // under the 50k Sheets cell limit
+const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales to <=600px
+// Bump when the acknowledgment copy below changes, so stored signatures
+// prove which language the signer saw (the FORM_CONSENT_VERSION pattern).
+const EMPDOC_ACK_VERSION = 1;
+const EMPDOC_ACK_TEXT = 'I acknowledge that I have read and understood this document. ' +
+  'I understand this electronic acknowledgment has the same effect as a handwritten signature.';
+
+function getHrDocsSS_() {
+  if (typeof _TEST_OVERRIDE_HRDOCS_SS_ID !== 'undefined' && _TEST_OVERRIDE_HRDOCS_SS_ID) {
+    return SpreadsheetApp.openById(_TEST_OVERRIDE_HRDOCS_SS_ID);
+  }
+  const id = PropertiesService.getScriptProperties().getProperty('HR_DOCS_SS_ID');
+  if (!id) throw new Error('Employee Docs is not configured — set Script Property HR_DOCS_SS_ID to a dedicated spreadsheet.');
+  return SpreadsheetApp.openById(id);
+}
+function getOrCreateEmpDocSheet_(tabName, headers) {
+  const ss = getHrDocsSS_();
+  let sheet = ss.getSheetByName(tabName);
+  if (!sheet) {
+    sheet = ss.insertSheet(tabName);
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+function empDocSha256Hex_(payload) {
+  const buf = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, payload);
+  let out = '';
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i] < 0 ? buf[i] + 256 : buf[i];
+    out += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return out;
+}
+/** Content hash — freezes what was issued (body+title+type+empId). */
+function empDocContentHash_(bodyMd, title, docType, empId) {
+  return empDocSha256Hex_(String(bodyMd || '') + ' ' + String(title || '') + ' ' + String(docType || '') + ' ' + String(empId || ''));
+}
+/** Signature hash — covers the frozen content hash + identity + the ack
+ *  version. Deliberately NOT the timestamp (Sheets coerces datetime cells to
+ *  Dates on read, which would break recompute — INV-113); the EmpDocSigned
+ *  audit row is the independent timestamp witness. */
+function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion) {
+  return empDocSha256Hex_(String(contentHash || '') + ' ' + String(empId || '') + ' ' + String(docId || '') + ' ' + String(signatureDataUrl || '') + ' ' + String(ackVersion || ''));
+}
+
+/** Pure — issueDoc payload validation (Node-pinned). Returns {ok, doc} or
+ *  {ok:false, error}. Whitelist-built. */
+function empDocValidateIssue_(payload) {
+  payload = payload || {};
+  const empId = String(payload.empId || '').trim();
+  if (!empId) return { ok: false, error: 'Pick an employee.' };
+  const docType = String(payload.docType || '').trim().toLowerCase();
+  if (EMPDOC_TYPES.indexOf(docType) < 0) return { ok: false, error: 'Invalid document type.' };
+  const title = String(payload.title || '').trim();
+  if (!title || title.length > EMPDOC_TITLE_MAX) return { ok: false, error: 'Title is required (max ' + EMPDOC_TITLE_MAX + ' chars).' };
+  const bodyMd = String(payload.bodyMd || '');
+  if (!bodyMd.trim()) return { ok: false, error: 'Document body is required.' };
+  if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
+  const dueAt = String(payload.dueAt || '').trim();
+  if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
+  return { ok: true, doc: { empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt, requiresSignature: payload.requiresSignature !== false } };
+}
+
+function empDocRowToObj_(row, ssTz) {
+  return {
+    docId: String(row[ED.DOC_ID] || '').trim(),
+    empId: String(row[ED.EMP_ID] || '').trim(),
+    docType: String(row[ED.DOC_TYPE] || '').trim(),
+    title: String(row[ED.TITLE] || ''),
+    bodyMd: String(row[ED.BODY_MD] || ''),
+    contentHash: String(row[ED.CONTENT_HASH] || '').trim(),
+    requiresSignature: String(row[ED.REQUIRES_SIG]).toLowerCase() === 'true',
+    status: String(row[ED.STATUS] || 'issued').trim(),
+    issuedBy: String(row[ED.ISSUED_BY] || '').toLowerCase().trim(),
+    issuedAt: trainCellTs_(row[ED.ISSUED_AT], ssTz),
+    dueAt: trainCellDate_(row[ED.DUE_AT], ssTz),
+    signedAt: trainCellTs_(row[ED.SIGNED_AT], ssTz),
+    voidReason: String(row[ED.VOID_REASON] || ''),
+  };
+}
+
+/** Bounded id-column lookup → { rowIdx, doc } or null. */
+function findEmpDocRow_(docId) {
+  docId = String(docId || '').trim();
+  if (!docId) return null;
+  const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const ids = sheet.getRange(2, ED.DOC_ID + 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() !== docId) continue;
+    const row = sheet.getRange(i + 2, 1, 1, EMPDOC_HEADERS.length).getValues()[0];
+    return { rowIdx: i + 2, doc: empDocRowToObj_(row, getHrDocsSS_().getSpreadsheetTimeZone()) };
+  }
+  return null;
+}
+
+/** The §9.3 FAIL-CLOSED team-scoping rule: a manager sees a doc only when
+ *  they ISSUED it or they are the employee's roster ManagerEmail (column M).
+ *  Membership in MANAGER_EMAILS alone grants NOTHING here; a blank column M
+ *  narrows visibility to owner+issuer. */
+function empDocCanManagerSee_(callerEmp, doc) {
+  if (!callerEmp || !callerEmp.isManager) return false;
+  const caller = String(callerEmp.email || '').toLowerCase().trim();
+  if (caller && caller === doc.issuedBy) return true;
+  const target = lookupEmployeeById_(doc.empId);
+  return !!(target && target.managerEmail && target.managerEmail === caller);
+}
+
+/** Rep-callable, caller-scoped, read-only — METADATA only (no body). */
+function getMyDocs() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { docs: [] };
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, EMPDOC_HEADERS.length).getValues();
+    const docs = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][ED.EMP_ID]).trim() !== emp.id) continue;
+      const d = empDocRowToObj_(rows[i], ssTz);
+      docs.push({
+        docId: d.docId, docType: d.docType, title: d.title, status: d.status,
+        requiresSignature: d.requiresSignature, issuedAt: d.issuedAt,
+        dueAt: d.dueAt, signedAt: d.signedAt,
+      });
+    }
+    docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
+    return { docs: docs };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Owner-or-AUTHORIZED-manager scoped (§3b) — the full doc incl. the frozen
+ *  body. Includes the ack text/version when a signature is still needed. */
+function getMyDoc(docId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const found = findEmpDocRow_(docId);
+    if (!found) return { error: 'Document not found.' };
+    const d = found.doc;
+    const isOwner = d.empId === emp.id;
+    if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
+    const out = {
+      docId: d.docId, empId: d.empId, docType: d.docType, title: d.title,
+      bodyMd: d.bodyMd, status: d.status, requiresSignature: d.requiresSignature,
+      issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
+      voidReason: d.voidReason, isOwner: isOwner,
+    };
+    if (isOwner && d.requiresSignature && d.status === 'issued') {
+      out.ackText = EMPDOC_ACK_TEXT;
+      out.ackVersion = EMPDOC_ACK_VERSION;
+    }
+    return out;
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-callable, locked (INV-01), OWNER-only — managers cannot sign on an
+ *  employee's behalf (the signature's value is that the employee made it).
+ *  Verifies the stored contentHash BEFORE accepting (a tampered row refuses
+ *  to sign), bounds the signature payload (INV-96), writes the append-only
+ *  DocSignatures row + flips the EmpDocs status in the same lock. Audit:
+ *  EmpDocSigned (docId + hash + signedAt — the independent witness). */
+function acknowledgeDoc(docId, signatureDataUrl) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const found = findEmpDocRow_(docId);
+    if (!found || found.doc.empId !== emp.id) return { success: false, error: 'Document not found.' };
+    const d = found.doc;
+    if (!d.requiresSignature) return { success: false, error: 'This document does not require a signature.' };
+    if (d.status === 'signed') return { success: false, error: 'Already signed.' };
+    if (d.status !== 'issued') return { success: false, error: 'This document is no longer active.' };
+    const sig = String(signatureDataUrl || '');
+    if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
+    if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
+    // Integrity gate: the row must still hash to what was issued.
+    const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId);
+    if (d.contentHash && d.contentHash !== expect) {
+      return { success: false, error: 'Integrity check failed — this document was altered after issue. Ask your manager to re-issue it.' };
+    }
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION);
+    const cert = JSON.stringify({
+      docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION,
+      alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion',
+    });
+    getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
+      .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
+    sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
+    writeAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
+      'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
+    notifyEmpDocSigned_(d, emp);
+    return { success: true, signedAt: ts };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Issues a doc with FROZEN
+ *  markdown content + contentHash. Any manager may issue to any employee
+ *  (issuing reveals nothing); READING stays team-scoped. Audit: EmpDocIssue
+ *  (docId/empId/type — never the title or body). */
+function issueDoc(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const v = empDocValidateIssue_(payload);
+    if (!v.ok) return { success: false, error: v.error };
+    const target = lookupEmployeeById_(v.doc.empId);
+    if (!target) return { success: false, error: 'Unknown employee.' };
+    const docId = Utilities.getUuid();
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const contentHash = empDocContentHash_(v.doc.bodyMd, v.doc.title, v.doc.docType, v.doc.empId);
+    getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS).appendRow([
+      docId, v.doc.empId, v.doc.docType, v.doc.title, v.doc.bodyMd, contentHash,
+      v.doc.requiresSignature ? 'TRUE' : 'FALSE', 'issued',
+      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '',
+    ]);
+    writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
+      'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType, callerEmp.email);
+    notifyEmpDocIssued_(target, v.doc);
+    return { success: true, docId: docId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated, TEAM-scoped (§3b): only docs the caller issued or where
+ *  the caller is the employee's roster ManagerEmail. Read-only. */
+function getDocsDashboard() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { docs: [] };
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    const rows = sheet.getRange(2, 1, last - 1, EMPDOC_HEADERS.length).getValues();
+    const docs = [];
+    for (let i = 0; i < rows.length; i++) {
+      const d = empDocRowToObj_(rows[i], ssTz);
+      if (!d.docId) continue;
+      if (!empDocCanManagerSee_(callerEmp, d)) continue;
+      const target = lookupEmployeeById_(d.empId);
+      docs.push({
+        docId: d.docId, empId: d.empId,
+        empName: target ? target.name : 'former employee',
+        docType: d.docType, title: d.title, status: d.status,
+        requiresSignature: d.requiresSignature, issuedBy: d.issuedBy,
+        issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
+        overdue: d.status === 'issued' && d.requiresSignature && !!d.dueAt && todayIso > d.dueAt,
+      });
+    }
+    docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
+    return { docs: docs, ackVersion: EMPDOC_ACK_VERSION };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated + team-scoped, locked. Sets status='void' — NEVER deletes
+ *  and never edits the frozen body; a correction is a NEW issued doc. A
+ *  signed doc keeps its DocSignatures row ("signed, later voided"). Audit:
+ *  EmpDocVoid (docId only — the reason lives in the scoped HR sheet). */
+function voidDoc(docId, reason) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findEmpDocRow_(docId);
+    if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
+    if (found.doc.status === 'void') return { success: true, alreadyVoid: true };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('void');
+    sheet.getRange(found.rowIdx, ED.VOID_REASON + 1).setValue(String(reason || '').substring(0, 500));
+    const now = new Date();
+    writeAuditLog_(callerEmp, 'EmpDocVoid', fmtDate_(now), '', false, 0,
+      'docId=' + found.doc.docId, callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated + team-scoped, read-only — the verifyFormSubmissionIntegrity_
+ *  twin. Recomputes the content hash from the stored row AND the signature
+ *  hash from the stored DocSignatures row; a mismatch means out-of-band
+ *  alteration. Legacy/unsigned rows report explicitly, never as failures. */
+function verifyDocSignature(docId) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const found = findEmpDocRow_(docId);
+    if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { error: 'Document not found.' };
+    const d = found.doc;
+    const contentMatch = !d.contentHash ? null : (empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId) === d.contentHash);
+    // Newest signature row for the doc (bottom-up id-column scan).
+    const sigSheet = getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS);
+    const sigLast = sigSheet.getLastRow();
+    let sigRow = null;
+    if (sigLast >= 2) {
+      const ids = sigSheet.getRange(2, EDS.DOC_ID + 1, sigLast - 1, 1).getValues();
+      for (let i = ids.length - 1; i >= 0; i--) {
+        if (String(ids[i][0]).trim() === d.docId) {
+          sigRow = sigSheet.getRange(i + 2, 1, 1, EMPDOC_SIG_HEADERS.length).getValues()[0];
+          break;
+        }
+      }
+    }
+    if (!sigRow) return { signed: false, contentMatch: contentMatch };
+    const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
+    const recomputed = empDocSignatureHash_(
+      d.contentHash, d.empId, d.docId,
+      String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''));
+    return {
+      signed: true,
+      contentMatch: contentMatch,
+      match: storedHash ? storedHash === recomputed : null,
+      signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()),
+      ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Best-effort (INV-14) — employee notification on issue. Title only; the
+ *  recipient is the doc's subject, so the title is theirs to see. */
+function notifyEmpDocIssued_(target, doc) {
+  try {
+    if (!target.email) return;
+    const action = doc.requiresSignature ? 'review and sign' : 'review';
+    const body = 'Hi ' + target.name + ',\n\nA document has been issued to you: ' + doc.title +
+      (doc.dueAt ? '\nDue: ' + doc.dueAt : '') +
+      '\n\nOpen the web app -> Training & Employee Docs -> My Docs to ' + action + ' it.';
+    const htmlBody = buildBrandedEmailHtml_('Document for your ' + (doc.requiresSignature ? 'signature' : 'review'),
+      '<p style="margin:0 0 12px;">Hi ' + esc_(target.name) + ',</p>' +
+      brandedKvRows_([['Document', doc.title]].concat(doc.dueAt ? [['Due', doc.dueAt]] : [])) +
+      '<p style="margin:12px 0 0;">Open the web app &rarr; <strong>Training &amp; Employee Docs &rarr; My Docs</strong> to ' + action + ' it.</p>');
+    MailApp.sendEmail({ to: target.email, subject: 'Document for your ' + (doc.requiresSignature ? 'signature' : 'review') + ': ' + doc.title, body: body, htmlBody: htmlBody });
+  } catch (e) { console.warn('notifyEmpDocIssued_ failed: ' + e.message); }
+}
+
+/** Best-effort (INV-14) — issuer notification on signature. */
+function notifyEmpDocSigned_(doc, signer) {
+  try {
+    if (!doc.issuedBy) return;
+    const body = signer.name + ' signed "' + doc.title + '".';
+    const htmlBody = buildBrandedEmailHtml_('Document signed',
+      brandedKvRows_([['Document', doc.title], ['Signed by', signer.name]]));
+    MailApp.sendEmail({ to: doc.issuedBy, subject: 'Signed: ' + doc.title, body: body, htmlBody: htmlBody });
+  } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
 }

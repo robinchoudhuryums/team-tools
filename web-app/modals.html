@@ -6,7 +6,8 @@
     <div class="modal-hint">
       Request a missed or corrected punch within the last <span id="adj-days-disp">30</span>
       days. Requests are sent to your manager for approval — your timesheet changes only
-      once approved. More than 7 days back requires a reason. Add several at once, then submit.
+      once approved. More than <span id="adj-reason-days">7</span> days back requires a reason.
+      Add several at once, then submit.
     </div>
     <div class="field"><label>Date</label><input type="date" id="adj-date"></div>
     <div class="field"><label>Punch Type</label>
@@ -73,8 +74,9 @@
     <div class="modal-sub" id="day-edit-subtitle">—</div>
     <div class="modal-hint">
       Set each punch's time in 24-hour format. Leave a field blank to remove that punch.
-      Edits more than 7 days back require a reason. Fill <b>To</b> to apply the times across a
-      date range — range mode is additive: a blank punch is left unchanged (not removed).
+      Edits more than <span id="de-reason-days">7</span> days back require a reason. Fill <b>To</b>
+      to apply the times across a date range — range mode is additive: a blank punch is left
+      unchanged (not removed).
     </div>
     <div class="field-row">
       <div class="field"><label>Date</label><input type="date" id="de-date"></div>

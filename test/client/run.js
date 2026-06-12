@@ -31,6 +31,8 @@ console.log('\nclient — all partials parse (<script> syntax guard)');
   'tc/script_timeoff.html', 'tc/script_manager.html', 'index.html', 'form_public.html',
   'intake/script_intake.html',
   'kb/script_kb.html',
+  'train/script_training.html',
+  'train/script_empdocs.html',
 ].forEach((f) => {
   test(f + ' parses', () => {
     const src = extractScript(f);
@@ -464,7 +466,7 @@ console.log('\nscript_core — view-key literals match the TOOLS registry (M3 tr
 test("every refreshViewIfCurrent('…') literal is a registered tab key", () => {
   const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
     'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
-    'intake/script_intake.html', 'kb/script_kb.html', 'script_core.html'];
+    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'train/script_empdocs.html', 'script_core.html'];
   // TOOLS / VIEW_TO_TOOL are top-level consts (lexical, not on the sandbox
   // global), so parse the tab keys from the registry source: every tab entry
   // carries an `enter:` handler.
@@ -824,12 +826,17 @@ const _kbConvCtx = vm.createContext({
     TITLE: '# ', HEADING1: '# ', HEADING2: '## ', HEADING3: '### ',
     HEADING4: '#### ', HEADING5: '##### ', HEADING6: '###### ', SUBTITLE: '## ',
   },
+  KB_DOC_IMAGE_CAP: 20,   // mirrors Code.js (Phase 2b export cap)
 });
-['kbTextToRuns_', 'kbRunsToMarkdown_', 'kbDocBodyToMarkdown_'].forEach((fn) => {
+['kbTextToRuns_', 'kbRunsToMarkdown_', 'kbDocBodyToMarkdown_',
+ 'kbExtractDocImageRefs_', 'kbReplaceDocImageTokens_', 'kbCollectDocInlineImages_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), _kbConvCtx, { filename: 'Code.js#' + fn });
 });
 const kbRunsToMarkdown_ = _kbConvCtx.kbRunsToMarkdown_;
 const kbDocBodyToMarkdown_ = _kbConvCtx.kbDocBodyToMarkdown_;
+const kbExtractDocImageRefs_ = _kbConvCtx.kbExtractDocImageRefs_;
+const kbReplaceDocImageTokens_ = _kbConvCtx.kbReplaceDocImageTokens_;
+const kbCollectDocInlineImages_ = _kbConvCtx.kbCollectDocInlineImages_;
 
 function mkText(runs) {  // runs: [{text, bold, italic, link}]
   const full = runs.map((r) => r.text).join('');
@@ -921,7 +928,7 @@ test('converts headings, paragraphs, lists, and hr', () => {
   assert.strictEqual(res.warnings.length, 0);
 });
 
-test('converts tables to GFM (row 0 = header); images still placeholder + warn', () => {
+test('converts tables to GFM (row 0 = header); images placeholder + warn WITHOUT a docId', () => {
   const res = kbDocBodyToMarkdown_(mkBody([
     mkTable([['H1', 'H2'], ['a', 'b']]),
     mkPara({ runs: [{ text: 'caption' }], children: ['INLINE_IMAGE'] }),
@@ -964,6 +971,305 @@ test('skips unsupported elements with a warning; null glyph defaults to bullet',
   ]));
   assert.strictEqual(res.markdown, '- item');
   assert.ok(/TABLE_OF_CONTENTS/.test(res.warnings.join(' ')), 'skipped type named in warnings');
+});
+
+console.log('\nkb — Phase 2b converter image export (tokens, resolution, walk mirror)');
+test('with a docId, INLINE_IMAGE emits a kbdoc token; INLINE_DRAWING stays a placeholder', () => {
+  const res = kbDocBodyToMarkdown_(mkBody([
+    mkPara({ runs: [{ text: 'pic' }], children: ['INLINE_IMAGE'] }),
+    mkPara({ runs: [{ text: 'sketch' }], children: ['INLINE_DRAWING'] }),
+  ]), 'DOC123_-x');
+  assert.ok(res.markdown.indexOf('pic ![Doc image 1](kbdoc:DOC123_-x:1)') >= 0, 'image token emitted');
+  assert.ok(res.markdown.indexOf('sketch *[image — see the original Doc]*') >= 0, 'drawing keeps placeholder (no blob API)');
+  assert.ok(res.warnings.some((w) => /1 image\(s\) marked for export/.test(w)), 'export warning');
+  assert.ok(res.warnings.some((w) => /could not be converted/.test(w)), 'drawing placeholder warning');
+});
+test('per-doc cap: images past KB_DOC_IMAGE_CAP degrade to placeholders', () => {
+  const paras = [];
+  for (let i = 0; i < 21; i++) paras.push(mkPara({ runs: [{ text: 'p' + i }], children: ['INLINE_IMAGE'] }));
+  const res = kbDocBodyToMarkdown_(mkBody(paras), 'CAPDOC');
+  const tokens = res.markdown.match(/kbdoc:CAPDOC:\d+/g) || [];
+  assert.strictEqual(tokens.length, 20, '20 tokens');
+  assert.strictEqual((res.markdown.match(/\[image — see the original Doc\]/g) || []).length, 1, '21st is a placeholder');
+});
+test('kbExtractDocImageRefs_ dedupes and parses {fileId, ord}', () => {
+  const refs = kbExtractDocImageRefs_(
+    '![a](kbdoc:F1:1) text ![b](kbdoc:F1:2) ![dup](kbdoc:F1:1) ![c](kbdoc:F2_x-9:3) ![not](http://x/y.png) kbdoc:F9:9');
+  // JSON compare — the refs are vm-realm objects, so deepStrictEqual fails
+  // on cross-realm prototypes even when the values match.
+  assert.strictEqual(JSON.stringify(refs),
+    JSON.stringify([{ fileId: 'F1', ord: 1 }, { fileId: 'F1', ord: 2 }, { fileId: 'F2_x-9', ord: 3 }]),
+    'unique image tokens only — bare kbdoc text and http images ignored');
+});
+test('kbReplaceDocImageTokens_ swaps resolved tokens, degrades failures to placeholders', () => {
+  const r = kbReplaceDocImageTokens_(
+    '![Doc image 1](kbdoc:F1:1) and ![two](kbdoc:F1:2) and ![boom](kbdoc:F1:3)',
+    (fileId, ord) => {
+      if (ord === 1) return 'https://drive.google.com/thumbnail?id=ABC&sz=w1200';
+      if (ord === 3) throw new Error('nope');
+      return null;
+    });
+  assert.ok(r.bodyMd.indexOf('![Doc image 1](https://drive.google.com/thumbnail?id=ABC&sz=w1200)') >= 0, 'alt preserved, URL swapped');
+  assert.strictEqual((r.bodyMd.match(/\[image — see the original Doc\]/g) || []).length, 2, 'null + throw both degrade');
+  assert.strictEqual(r.failed, 2);
+});
+test('kbCollectDocInlineImages_ mirrors the converter walk (paragraph images only, in order, capped)', () => {
+  const img = (tag) => ({ getType: () => 'INLINE_IMAGE', getBlob: () => ({ tag }) });
+  const para = (kids) => ({
+    getType: () => 'PARAGRAPH', getHeading: () => 'NORMAL',
+    getNumChildren: () => kids.length, getChild: (i) => kids[i],
+    editAsText: () => mkText([]),
+  });
+  const body = mkBody([
+    para([img('a'), { getType: () => 'INLINE_DRAWING' }, img('b')]),
+    mkList({ runs: [{ text: 'li' }] }),                     // list images never tokenized → never collected
+    mkTable([['x']]),                                        // table images likewise
+    para([img('c')]),
+  ]);
+  const blobs = kbCollectDocInlineImages_(body, 20);
+  assert.strictEqual(Array.prototype.map.call(blobs, (b) => b.tag).join(','), 'a,b,c',
+    'document order, drawings skipped (string compare — vm-realm array)');
+  assert.strictEqual(kbCollectDocInlineImages_(body, 2).length, 2, 'cap respected');
+});
+test('kbParseImageDataUrl_: shape-parses image data URLs, rejects everything else', () => {
+  const parse = (() => {
+    const ctx = vm.createContext({});
+    vm.runInContext(extractRawFunction('Code.js', 'kbParseImageDataUrl_'), ctx);
+    return ctx.kbParseImageDataUrl_;
+  })();
+  const ok = parse('data:image/png;base64,iVBOR\nw0KGgo=');
+  assert.strictEqual(ok.contentType, 'image/png');
+  assert.strictEqual(ok.base64, 'iVBORw0KGgo=', 'whitespace stripped from base64');
+  assert.strictEqual(parse('data:image/svg+xml;base64,AAAA').contentType, 'image/svg+xml',
+    'parser shape-accepts svg — the TYPE WHITELIST at the caller is what rejects it');
+  assert.strictEqual(parse('data:text/html;base64,AAAA'), null, 'non-image scheme rejected');
+  assert.strictEqual(parse('https://x/y.png'), null);
+  assert.strictEqual(parse('data:image/png;base64,!!!'), null, 'non-base64 payload rejected');
+  assert.strictEqual(parse(''), null);
+});
+test('kbMd_: kbdoc tokens demote to alt text in preview; the Drive thumbnail URL renders an <img>', () => {
+  const prev = kbMd_('![Doc image 1](kbdoc:F1:1)');
+  assert.strictEqual(prev.indexOf('<img'), -1, 'unresolved token never renders an img (non-http scheme)');
+  assert.ok(prev.indexOf('Doc image 1') >= 0, 'alt text shows in the editor preview');
+  const final = kbMd_('![Doc image 1](https://drive.google.com/thumbnail?id=ABC&sz=w1200)');
+  assert.ok(/<img[^>]+src="https:\/\/drive\.google\.com\/thumbnail\?id=ABC&(amp;)?sz=w1200"/.test(final), 'resolved URL renders');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\nkb — AI Phase A facet guidance (whitelist / canonical hash / prompt — INV-119)');
+// The pure pipeline between the client's raw facets and the vendor payload.
+// kbAiSanitizeFacets_ is the privacy boundary: only vocabulary values
+// survive, so the prompt builder (which takes ONLY sanitized facets + KB
+// chunks) cannot carry free-typed note text to the vendor.
+const _aiCtx = vm.createContext({});
+['kbAiSanitizeFacets_', 'kbAiCanonicalFacets_', 'kbAiQueryTerms_', 'kbAiBuildPrompt_'].forEach((fn) => {
+  vm.runInContext(extractRawFunction('Code.js', fn), _aiCtx, { filename: 'Code.js#' + fn });
+});
+const _aiVocab = {
+  departments: ['Sales', 'Billing'],
+  updateTypes: ['Verified Shipping', 'Close Order'],
+  flagTypes: ['action', 'training', 'review', 'urgent'],
+  tags: ['battery-swap', 'warranty'],
+};
+test('kbAiSanitizeFacets_: drops every non-vocabulary value (novel facets never survive)', () => {
+  const clean = _aiCtx.kbAiSanitizeFacets_({
+    department: 'NotADept',
+    updateType: 'PATIENT JOHN DOE called about TRX-12345',   // free text masquerading as a facet
+    flagType: 'banana',
+    tags: ['warranty', 'totally-new-tag', 'warranty'],
+  }, _aiVocab);
+  assert.strictEqual(clean.department, '');
+  assert.strictEqual(clean.updateType, '');
+  assert.strictEqual(clean.flagType, '');
+  assert.strictEqual(JSON.stringify(clean.tags), '["warranty"]', 'novel tag dropped, dup deduped (vm-realm array — string compare)');
+});
+test('kbAiSanitizeFacets_: case-insensitive match returns canonical vocab casing; tags cap at 8', () => {
+  const clean = _aiCtx.kbAiSanitizeFacets_(
+    { department: 'sales', updateType: 'close order', flagType: 'URGENT', tags: ['Battery-Swap'] }, _aiVocab);
+  assert.strictEqual(clean.department, 'Sales');
+  assert.strictEqual(clean.updateType, 'Close Order');
+  assert.strictEqual(clean.flagType, 'urgent');
+  assert.strictEqual(JSON.stringify(clean.tags), '["battery-swap"]');
+  const manyVocab = { tags: 'abcdefghij'.split('').map((c) => 't-' + c) };
+  const many = _aiCtx.kbAiSanitizeFacets_({ tags: manyVocab.tags }, manyVocab);
+  assert.strictEqual(many.tags.length, 8, 'tag cap');
+});
+test('kbAiCanonicalFacets_: order-insensitive, lowercased, empties omitted', () => {
+  const a = _aiCtx.kbAiCanonicalFacets_({ department: 'Sales', updateType: 'Close Order', flagType: 'action', tags: ['warranty', 'battery-swap'] });
+  const b = _aiCtx.kbAiCanonicalFacets_({ tags: ['battery-swap', 'warranty'], flagType: 'action', updateType: 'Close Order', department: 'Sales' });
+  assert.strictEqual(a, b, 'tag order does not change the hash payload');
+  assert.strictEqual(a, 'dept=sales|update=close order|flag=action|tags=battery-swap,warranty');
+  assert.strictEqual(_aiCtx.kbAiCanonicalFacets_({ flagType: 'action' }), 'flag=action', 'empty facets omitted');
+});
+test('kbAiQueryTerms_: kebab tags split to words; joins update/flag/dept', () => {
+  const q = _aiCtx.kbAiQueryTerms_({ department: 'Sales', updateType: 'Close Order', flagType: 'action', tags: ['battery-swap'] });
+  assert.strictEqual(q, 'Close Order battery swap action Sales');
+});
+test('kbAiBuildPrompt_: payload = sanitized facets + chunks only (INV-119 — free text cannot pass through)', () => {
+  const raw = { department: 'Sales', flagType: 'action', tags: ['warranty'],
+                issue: 'PATIENT JOHN DOE TRX-9 wheelchair broke', updateType: '' };
+  const clean = _aiCtx.kbAiSanitizeFacets_(raw, _aiVocab);
+  const prompt = _aiCtx.kbAiBuildPrompt_(clean, [
+    { title: 'Warranty guide', heading: 'Swaps', chunkMd: 'Always file a swap ticket first.' },
+  ]);
+  const all = prompt.system + '\n' + prompt.user;
+  assert.ok(all.indexOf('Department: Sales') >= 0 && all.indexOf('Tags: warranty') >= 0, 'facets present');
+  assert.ok(all.indexOf('Always file a swap ticket first.') >= 0, 'KB chunk present');
+  assert.strictEqual(all.indexOf('JOHN DOE'), -1, 'free-typed text never reaches the prompt');
+  assert.strictEqual(all.indexOf('TRX-9'), -1);
+});
+test('kbGetFacetGuidance source tripwire: the vendor prompt is built from (clean, chunks) only', () => {
+  const src = extractRawFunction('Code.js', 'kbGetFacetGuidance');
+  assert.ok(src.indexOf('kbAiBuildPrompt_(clean, chunks)') >= 0,
+    'prompt builder must be fed the SANITIZED facets, never the raw client payload');
+  assert.strictEqual(/kbAiBuildPrompt_\((?!clean, chunks\))/.test(src), false,
+    'no alternate kbAiBuildPrompt_ callsite with different inputs');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Training & Employee Docs — T1 (docs/training-employee-docs-spec.md).
+// trainDeriveStatus_ is the pure status rule shared by getMyTraining +
+// getTrainingDashboard (server); trainChipHtml_ is its client render twin.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\ntraining — status derivation + chip render (T1)');
+vm.runInContext(extractRawFunction('Code.js', 'trainDeriveStatus_'), sb,
+  { filename: 'Code.js#trainDeriveStatus_' });
+const trainDeriveStatus_ = sb.trainDeriveStatus_;
+const trainChipHtml_ = loadFunction(sb, 'train/script_training.html', 'trainChipHtml_');
+test('trainDeriveStatus_: done wins regardless of due date', () => {
+  assert.strictEqual(trainDeriveStatus_(true, '2026-01-01', '2026-06-12'), 'done');
+  assert.strictEqual(trainDeriveStatus_(true, '', '2026-06-12'), 'done');
+});
+test('trainDeriveStatus_: overdue only past a non-empty due date', () => {
+  assert.strictEqual(trainDeriveStatus_(false, '2026-06-11', '2026-06-12'), 'overdue');
+  assert.strictEqual(trainDeriveStatus_(false, '2026-06-12', '2026-06-12'), 'pending', 'due today is not overdue');
+  assert.strictEqual(trainDeriveStatus_(false, '', '2026-06-12'), 'pending', 'no due date never goes overdue');
+});
+test('trainChipHtml_: renders the three statuses; unknown degrades to pending', () => {
+  assert.ok(trainChipHtml_('done').indexOf('tr-chip done') >= 0);
+  assert.ok(trainChipHtml_('overdue').indexOf('Overdue') >= 0);
+  assert.ok(trainChipHtml_('<script>').indexOf('tr-chip pending') >= 0, 'unknown status falls back to pending (no injection)');
+});
+
+// T2 — quizzes. The three pure helpers (validate / grade / strip) plus the
+// answer-key privacy boundary: the rep-facing shape is WHITELIST-built and
+// getQuiz must route through it (source tripwire).
+console.log('\ntraining — quiz validate / grade / strip (T2)');
+['TRAIN_QUIZ_MAX_QUESTIONS', 'TRAIN_QUIZ_MAX_OPTIONS'].forEach((name) => {
+  const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*\\d+);'));
+  assert.ok(m, name + ' declaration found in Code.js');
+  vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
+});
+['trainValidateQuizDef_', 'trainGradeQuiz_', 'trainStripQuizForRep_'].forEach((fn) => {
+  vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
+});
+const Q2 = { title: 'T', passPct: 80, questions: [
+  { q: 'A?', options: ['x', 'y', 'z'], correct: 2 },
+  { q: 'B?', options: ['t', 'f'], correct: 0 },
+] };
+test('trainValidateQuizDef_: normalizes a good def; rejects bad shapes', () => {
+  const ok = sb.trainValidateQuizDef_(Q2);
+  assert.ok(ok.ok, 'valid def accepted');
+  assert.strictEqual(ok.quiz.questions.length, 2);
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, title: '' }).ok, false, 'empty title rejected');
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, passPct: 101 }).ok, false, 'passPct > 100 rejected');
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, questions: [] }).ok, false, 'no questions rejected');
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, questions: [{ q: 'A?', options: ['x'], correct: 0 }] }).ok, false, '1 option rejected');
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, questions: [{ q: 'A?', options: ['x', 'y'], correct: 5 }] }).ok, false, 'correct out of range rejected');
+});
+test('trainGradeQuiz_: grades right/wrong; missing answers count wrong; never returns correct indices', () => {
+  const g = sb.trainGradeQuiz_(Q2.questions, [2, 1]);
+  assert.strictEqual(g.scorePct, 50);
+  // JSON-compare: sandbox arrays have a different realm prototype, which
+  // deepStrictEqual rejects.
+  assert.strictEqual(JSON.stringify(g.perQuestion), '[true,false]');
+  const g2 = sb.trainGradeQuiz_(Q2.questions, [2]);   // second unanswered
+  assert.strictEqual(JSON.stringify(g2.perQuestion), '[true,false]');
+  assert.strictEqual(JSON.stringify(g).indexOf('correct'), -1, 'graded result carries no answer key');
+});
+test('trainStripQuizForRep_: whitelist-built — no correct key anywhere in the rep shape', () => {
+  const stripped = sb.trainStripQuizForRep_('q1', sb.trainValidateQuizDef_(Q2).quiz);
+  assert.strictEqual(JSON.stringify(stripped).indexOf('correct'), -1, 'answer key never leaves the server');
+  assert.strictEqual(stripped.questions.length, 2);
+  assert.strictEqual(JSON.stringify(stripped.questions[0].options), '["x","y","z"]');
+});
+test('getQuiz source tripwire: the rep response is built ONLY by trainStripQuizForRep_', () => {
+  const src = extractRawFunction('Code.js', 'getQuiz');
+  assert.ok(src.indexOf('return trainStripQuizForRep_(') >= 0, 'getQuiz returns the stripped shape');
+  assert.strictEqual(src.indexOf('questionsJson'), -1, 'raw questions JSON never returned');
+});
+
+// Operator feedback round (2026-06-12) — heuristic tag suggester (Call
+// Notes) + search-term highlight tokenizer (KB drawer/Reference).
+console.log('\noperator feedback — tag suggest + highlight tokenizer');
+const cnSuggestTagsFromText_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnSuggestTagsFromText_');
+test('cnSuggestTagsFromText_: matches own-vocabulary tags whose words appear; skips current; caps 4', () => {
+  const vocab = ['battery-swap', 'warranty', 'shipping-delay', 'oop', 'a-b'];
+  const got = cnSuggestTagsFromText_('Customer asked about a battery swap under warranty', vocab, []);
+  assert.strictEqual(JSON.stringify(got), '["battery-swap","warranty"]');
+  assert.strictEqual(cnSuggestTagsFromText_('battery swap', vocab, ['battery-swap']).indexOf('battery-swap'), -1, 'already-added tag skipped');
+  assert.strictEqual(cnSuggestTagsFromText_('a b', vocab, []).length, 0, 'sub-3-char tag words never match');
+  assert.strictEqual(cnSuggestTagsFromText_('', vocab, []).length, 0);
+});
+const kbHlRegex_ = loadFunction(sb, 'kb/script_kb.html', 'kbHlRegex_');
+test('kbHlRegex_: token regex matches case-insensitively; escapes regex chars; null on empty', () => {
+  const re = kbHlRegex_('Battery c(1)');
+  assert.ok(re.test('the BATTERY light'), 'case-insensitive token');
+  re.lastIndex = 0;
+  assert.ok(re.test('code c(1) here'), 'regex metachars escaped, matched literally');
+  assert.strictEqual(kbHlRegex_('   '), null);
+  assert.strictEqual(kbHlRegex_('a'), null, 'single 1-char token yields no regex');
+});
+
+// T3 — Employee Docs: issue-payload validator (pure, from Code.js), the
+// status-chip renderer, and the signature-pad export-cap parity tripwire.
+console.log('\nempdocs — validator / chip / pad export cap (T3)');
+['EMPDOC_TYPES', 'EMPDOC_TITLE_MAX', 'EMPDOC_BODY_MAX'].forEach((name) => {
+  const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*[^;]+);'));
+  assert.ok(m, name + ' declaration found in Code.js');
+  vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
+});
+vm.runInContext(extractRawFunction('Code.js', 'empDocValidateIssue_'), sb,
+  { filename: 'Code.js#empDocValidateIssue_' });
+test('empDocValidateIssue_: accepts a good payload; whitelists type; bounds title/body/date', () => {
+  const ok = sb.empDocValidateIssue_({ empId: 'E1', docType: 'review', title: 'T', bodyMd: 'body', dueAt: '2026-07-01' });
+  assert.ok(ok.ok);
+  assert.strictEqual(ok.doc.requiresSignature, true, 'signature defaults on');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'memo', title: 'T', bodyMd: 'b' }).ok, false, 'unknown docType rejected');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'pip', title: '', bodyMd: 'b' }).ok, false, 'empty title rejected');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'pip', title: 'T', bodyMd: '' }).ok, false, 'empty body rejected');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'pip', title: 'T', bodyMd: 'b', dueAt: '07/01/2026' }).ok, false, 'bad date shape rejected');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: '', docType: 'pip', title: 'T', bodyMd: 'b' }).ok, false, 'missing empId rejected');
+});
+const edChipHtml_ = loadFunction(sb, 'train/script_empdocs.html', 'edChipHtml_');
+test('edChipHtml_: signed/void/needs-signature/for-review chips', () => {
+  assert.ok(edChipHtml_({ status: 'signed' }).indexOf('Signed') >= 0);
+  assert.ok(edChipHtml_({ status: 'void' }).indexOf('Void') >= 0);
+  assert.ok(edChipHtml_({ status: 'issued', requiresSignature: true }).indexOf('Needs signature') >= 0);
+  assert.ok(edChipHtml_({ status: 'issued', requiresSignature: true, overdue: true }).indexOf('Overdue') >= 0);
+  assert.ok(edChipHtml_({ status: 'issued', requiresSignature: false }).indexOf('For review') >= 0);
+});
+test('popOutCurrentView opens SERVER_WEB_APP_URL, never the iframe location (INV-78 class)', () => {
+  // The iframe's own window.location is a session-bound googleusercontent
+  // URL that renders BLANK as a top-level window — the pop-out shipped
+  // broken on exactly this until the operator caught it. Pin: the function
+  // must consult the doGet-injected real /exec URL, and index.html must
+  // inject it via the unescaped scriptlet.
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const fn = core.match(/function popOutCurrentView\(\) \{[\s\S]*?\n\}/);
+  assert.ok(fn, 'popOutCurrentView found');
+  assert.ok(fn[0].indexOf('SERVER_WEB_APP_URL') >= 0, 'pop-out uses the injected deploy URL');
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  assert.ok(idx.indexOf('window.SERVER_WEB_APP_URL = <?!=') >= 0, 'index.html injects SERVER_WEB_APP_URL unescaped (INV-78)');
+});
+test('signature-pad export cap parity: both pads cap the export at 600px (INV-96)', () => {
+  // The empdocs pad is adapted (parameterized) from form_public's — the
+  // load-bearing shared rule is the <=600px export downscale that keeps the
+  // base64 under the per-cell cap. Pin it in BOTH files.
+  ['form_public.html', 'train/script_empdocs.html'].forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+    assert.ok(/MAX_W = 600/.test(src), f + ' caps the signature export at 600px');
+  });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

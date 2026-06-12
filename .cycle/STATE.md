@@ -2,23 +2,53 @@
 
 ## Current
 Cycle: 2
-Phase: implement
+Phase: idle (cycle 2 CLOSED — reflect recorded 2026-06-11)
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-06-11
 
 ## In progress (facts to carry forward — NOT judgments)
-- Cycle 2 opened with a fresh /broad-scan (2026-06-11): full Code.js read + 4 sub-audits
-  (tc/shell, CN, metrics/intake/kb/forms, tests). Node harness 89/89 at scan time.
-- First implementation slice DONE: overlay-lifecycle centralization (the audit's top
-  strategic suggestion — root-cause fix for findings H1, M7, F6/L7, and the KB editor
-  Esc bypass). Committed on `claude/affectionate-dijkstra-js8rlm`.
-- Next concrete step: operator picks the next findings slice (suggested order:
-  M2 uiConfirm Enter-on-Cancel; M4 optimistic-revert clobber; M1 pendingTrend
-  SubmittedAt coercion; M3 unguarded renderLoading; M5 cnFetchDeptConfigIfNeeded_
-  guard layering; M6 external-composer field loss; M9 form_public UTC sign date;
-  M8 intake send-success view clobber; M10 missing gate tests).
+- CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
+  PROJECT_HEALTH.md Current Standing + Score History updated). Net +8 (8 prod fixes
+  − 0 shipped new failure modes; ~13 defensive; 3 new tripwires). Operator ran
+  runAllTests() post-deploy: ALL PASSED (incl. publicForm_tokenLifecycle + the new
+  gate cases). Node harness 92/92.
+- KB Phase 2b DONE (committed + pushed): converter emits kbdoc:<fileId>:<n> tokens
+  per INLINE_IMAGE (cap 20/doc; drawings stay placeholders); kbSaveItem resolves at
+  save via kbResolveDocImages_ (mirrored Doc re-walk kbCollectDocInlineImages_ —
+  Node-pinned pair; idempotent kbdoc-<fileId>-<n> exports to the KB_IMAGES_FOLDER_ID
+  folder, auto-provisioned domain-link-viewable; thumbnail-URL swap; per-token
+  placeholder degradation; resolution OUTSIDE the lock). kbMd_ untouched. Node
+  harness 98/98. CLAUDE.md: Phase 2b decision + INV-115 + S63 + operator
+  KB_IMAGES_FOLDER_ID entry. FIRST DriveApp use — deploy adds the Drive OAuth
+  scope (one-time re-auth) and S63's post-deploy spot-check covers the original
+  iframe-render gate.
+- KB Phase 3 DONE (d5d5de4): kbUploadImage (manager-gated, PNG/JPEG/GIF/WebP — no
+  SVG, ~3MB cap mirrored client-side, validation before Drive work, NO ScriptLock,
+  KbImageUpload audit row) + element-scoped paste handler on the editor textarea
+  with placeholder-token insert/replace (textarea-first, KB_EDIT fallback). Shares
+  the Phase 2b KB Images folder (kbpaste-<stamp>-<rand>). INV-118 + S65 added.
+  Node harness 99/99.
+- KB AI Phase A DONE (operator decisions confirmed: vendor=Anthropic, cap $3/day
+  Admin-adjustable, model claude-haiku-4-5 Admin-adjustable): kbGetFacetGuidance
+  (rep-callable, kbAiGuidance flag scope-both default-OFF danger, whitelist-only
+  facets via kbAiSanitizeFacets_ — dept/updateType/flag/own-tags vocabularies,
+  novel values DROPPED; canonical facet-hash 6h cache generation-salted by
+  invalidateKbCache_; searchReference retrieval + KB_AI_SCORE_FLOOR; UrlFetchApp
+  → Anthropic /v1/messages; usage-token costing via KB_AI_MODEL_PRICES, unknown
+  model billed at dearest rates; KB_AI_SPEND daily counter vs KB_AI_DAILY_CAP;
+  PHI-free KbAiGuidance audit row; every failure → {none}) + saveKbAiSettings
+  (manager-gated, cap 0–100 + model whitelist) + Admin "AI Guidance (Reference)"
+  section (cap/model/spend/key-status; model <select> renders from server's
+  KB_AI_MODEL_PRICES keys) + drawer Guidance card (kbAiGatherFacets_ — enum
+  facets only; collapse-after-seen via umsKbPanel.aiSeen). INV-119 + S66 +
+  operator entries (KB_AI_API_KEY / KB_AI_MODEL / KB_AI_DAILY_CAP /
+  KB_AI_GENERATION / KB_AI_SPEND). Node harness 105/105 (6 new: whitelist,
+  canonical hash, query terms, prompt INV-119 guard, source tripwire); editor
+  test test_kbAi_gatesAndSettingsValidation + saveKbAiSettings gate case.
+  Operator setup before flipping the flag: set KB_AI_API_KEY + a hard spend cap
+  in the Anthropic console.
 
 ## Completed this cycle
 - AUDIT | (read-only) | Cycle 2 broad scan: 1 High (H1 Esc kills composers), 9 Medium
@@ -77,21 +107,76 @@ Updated: 2026-06-11
   Script Property AUTOMATION_DIGEST_LAST_RUNS on each eod/weekly/urgent run;
   getAutomationHealth returns digests[] w/ staleness (eod>2h, urgent>26h, weekly>8d);
   health panel renders a "Digest heartbeats" block. Commit 7981f2e.
+- LOW BATCH | Code.js, Tests.js, script_core, modals, tc/clock+manager+timesheet,
+  cn, metrics, kb partials | hygiene batch — see commit 6a89aaa message for the
+  per-item list. Notable contracts: intakeSend* bodyHash now REQUIRED (INV-111
+  amended); flagOn_ unknown-key fails closed after map load; tc/script_timesheet.html
+  is now ONLY computeRange/isoFromMs (INV-74 amended); kbSaveFromEditor_ takes the
+  button arg for dedupe.
 
 ## Pending / not yet done (Cycle 2 audit findings backlog)
-- ALL Medium findings (M1–M10) are now DONE — see Completed this cycle.
-- LOW backlog (selected): L2 intakeSend* optional bodyHash (carried); L9 Day-Edit
-  empId guard; L12 cnFormatNoteForCopy_ $-token corruption; L13 KB tab seq counter /
-  save dedupe / silent editor-load failure; L14 metrics tooltip dead CONFIG guard;
-  L11 dead timesheet cluster prune; L8 flagOn_ fail-open comment/behavior; F5
-  startClock unguarded restarts + enterCallNotesAdminView missing stopClock; L18
-  hardcoded 7-day hint in modals.html; T2–T4 test isolation notes.
-- (Carried from Cycle 1) KB AI Phase A plan (full spec in git history of this file @
-  34835f5); KB Phase 2b/3 (image export — operator must first verify domain-shared
-  Drive image renders in HtmlService iframe); P#17 Neon out of scope.
+- ALL Medium findings (M1–M10) DONE; LOW hygiene batch DONE (6a89aaa: L2 bodyHash
+  required, L3 export sharing, L8 flagOn_ fail-closed, L9 Day-Edit empId guard,
+  L11 dead-code prune incl. timesheet cluster, L12 copy token substitution, L13 KB
+  tab polish, L14 metrics tooltip threshold, F5 interval hygiene, L18 dynamic
+  reason-threshold copy, T4 archive-test finally). Remaining audit Lows NOT taken
+  (accepted/deferred): T2 (reconcile runs for real in tests — benign by design),
+  T3 (finally-on-timeout — unfixable in Apps Script), L19 (composer tab-switch
+  typed-input loss), KB-6 residual (Esc discards editor edits without confirm),
+  X1/KB-5 inline-onclick JS-string contexts (inert, UUIDs), L16 signature canvas
+  rotate overflow, FP-4/FP-5 public-form niceties, M2-class Esc-ordering for
+  stacked static modals (covered by topmost fix).
+- KB AI Phase A SHIPPED (see In progress above). Phase B (Tier-2 ask box, spec @
+  34835f5) stays NOT BUILT — gated on observed demand (zero-result/question
+  signal); P#17 Neon out of scope.
 - (Carried) Operator: deploy latest (clasp push -f + New version), run runAllTests()
   once; Script Properties INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID,
   FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
+- THREAD (2026-06-12): Training & Employee Docs. Spec APPROVED — all §9
+  operator decisions resolved IN the spec (no ADP overlap — audience is
+  non-US; PIP ack signature confirmed OK; manager visibility = PER-TEAM via
+  NEW roster column M `ManagerEmail`, fail-closed, ROSTER_CACHE_KEY v5→v6 at
+  T3; quizzes = unlimited retries, NEVER reveal answers, track attempts;
+  label "Training & Employee Docs"). **T1 SHIPPED** (training core): server
+  layer at the end of Code.js (TrainingAssignments/TrainingCompletions tabs
+  auto-provision in KB_SS_ID; getMyTraining/markTrainingComplete caller-scoped;
+  getTrainingDashboard/saveTrainingAssignment/revokeTrainingAssignment
+  manager-gated; re-assign resets completion; coercion-guarded reads), client
+  `train/script_training.html` (trainingHome + trainingManage tabs, reader
+  modal reuses kbMd_ + kbRecordView('training')), TOOLS entry `develop`,
+  INV-120 + S67 + design decision in CLAUDE.md, gate cases + 
+  test_training_assignCompleteFlow in Tests.js, Node 105→109. **T2 SHIPPED**
+  (quizzes): Quizzes/QuizAttempts tabs (auto-provision, KB_SS_ID); pure
+  trainValidateQuizDef_/trainGradeQuiz_/trainStripQuizForRep_ (Node-pinned;
+  the strip is WHITELIST-built and getQuiz has a source tripwire — INV-121
+  answer keys never leave the server); getQuiz/submitQuizAttempt rep-callable
+  assignment-required (grades server-side, pass → completion via='quiz' once
+  per assignment round, attempt counts per round — reset semantics extend to
+  attempts); getQuizzes/saveQuiz/deleteQuiz manager-gated (+gate cases);
+  client quiz-taking modal (never shows correct answers, unanswered-confirm,
+  retake-on-fail) + quiz editor modal (snapshot-before-rerender, the
+  cnRenderSubforms_ lesson) + Quizzes table + quiz optgroup in the assign
+  picker + attempt counts on checklist/matrix. test_training_quizFlow;
+  Node 109→113. INV-121 + S68 + CLAUDE.md/README/spec updated. **T3
+  SHIPPED** (employee docs — module COMPLETE): EMP.MANAGER_EMAIL col M +
+  ROSTER_CACHE_KEY v6; HR_DOCS_SS_ID dedicated store (getHrDocsSS_ NO
+  fallback — friendly error when unset); EmpDocs/DocSignatures tabs
+  auto-provision; issueDoc (frozen markdown + contentHash; reuses
+  kbConvertDriveDoc for Doc-authored bodies) / getMyDocs+getMyDoc
+  (owner-or-authorized-manager) / acknowledgeDoc (OWNER-only, locked,
+  content-hash gate, ≤600px pad export, append-only DocSignatures w/
+  SignatureHash excl. timestamp — audit row is the witness, ack version
+  stamped) / getDocsDashboard+voidDoc+verifyDocSignature (manager-gated
+  AND team-scoped via empDocCanManagerSee_ — issuer OR column-M manager,
+  FAIL-CLOSED on blank). Client train/script_empdocs.html (myDocs +
+  docsManage tabs; sign modal w/ reveal-resize canvas; issue form;
+  verify/void). test_empdocs_issueSignVerifyFlow (fixture
+  TEST_HRDOCS_SS_ID) + 4 gate cases; Node 113→117 (validator/chip/
+  pad-cap parity). INV-122 + S69; CLAUDE.md operator entries
+  (HR_DOCS_SS_ID + column M + v6 cache note). Spec status: COMPLETE.
+  Operator BEFORE T3 use: set HR_DOCS_SS_ID + fill column M; then
+  deploy + runAllTests() + S67/S68/S69 walks. T4 (overdue digests,
+  snapshot-PDF signing, quiz analytics) stays on-demand.
 
 ## Open follow-on items
 - Esc on the KB editor still discards unsaved edits silently (KB-6 residual — a
@@ -113,12 +198,11 @@ Updated: 2026-06-11
   fixed at source; sticky drafts 24h TTL.
 
 ## Where I left off
-Cycle 2, implement phase. Done on `claude/affectionate-dijkstra-js8rlm`: overlay
-centralization (6bef94b — H1/M7/F6), M2/M4 (3ac6715), and the full remaining Medium
-slice M1/M3/M5/M6/M8/M9/M10 + digest heartbeats (7981f2e). Node harness 91/91.
-ALL audit Mediums are closed. Remaining: the Low backlog (L2/L9/L12/L13/L14/L11/
-L8/F5/L18, see LOW backlog above) and the Tier-4 roadmap (KB Phase 2b/3, KB AI
-Phase A). NEXT: operator deploy (clasp push -f + New version — now also picks up
-Code.js/Tests.js changes) + editor runAllTests() (~4 new integration tests incl.
-publicForm_tokenLifecycle); the pending-trend sparkline should show non-zero bars
-after the next PTO submission post-deploy.
+Cycle 2 CLOSED; KB Phase 2b + Phase 3 + KB AI Phase A all SHIPPED on
+`claude/affectionate-dijkstra-js8rlm` (Node 105/105). NEXT: operator deploy
+(clasp push -f + New version + ONE-TIME re-auth for the Drive scope), run
+runAllTests() once (new: kbAi_gatesAndSettingsValidation + the saveKbAiSettings
+gate case), then the S63 + S65 walks. For Phase A (S66): set Script Property
+KB_AI_API_KEY + a hard spend cap in the Anthropic console, flip the kbAiGuidance
+feature toggle in Admin, and walk S66. Roadmap after that: KB AI Phase B (gated
+on demand) or /broad-scan to open Cycle 3.

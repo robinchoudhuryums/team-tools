@@ -312,38 +312,6 @@ function mDaysAgo_(n) {
   } catch (_) { return ''; }
 }
 
-function mBuildSparkline_(trend, metric) {
-  if (!trend || trend.length === 0) return '';
-  metric = metric || 'pctAnswered';
-  var pts = [];
-  for (var i = 0; i < trend.length; i++) {
-    var v = trend[i][metric];
-    if (v != null) pts.push({ i: i, v: v });
-  }
-  if (pts.length < 2) return '';
-  var maxV = 0;
-  for (var j = 0; j < pts.length; j++) { if (pts[j].v > maxV) maxV = pts[j].v; }
-  if (maxV === 0) maxV = 1;
-  var w = 300, h = 50, pad = 4;
-  var xScale = (w - pad * 2) / (trend.length - 1);
-  var yScale = (h - pad * 2) / maxV;
-  var coords = pts.map(function (p) {
-    return (pad + p.i * xScale).toFixed(1) + ',' + (h - pad - p.v * yScale).toFixed(1);
-  });
-  var last = pts[pts.length - 1];
-  var lx = (pad + last.i * xScale).toFixed(1);
-  var ly = (h - pad - last.v * yScale).toFixed(1);
-  var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
-  var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
-  return '<div class="m-sparkline-wrap">' +
-    '<h3>30-Day % Answered Trend</h3>' +
-    '<svg class="m-sparkline-svg" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
-    '<polyline points="' + coords.join(' ') + '"/>' +
-    '<circle cx="' + lx + '" cy="' + ly + '" r="2.5"/>' +
-    '</svg>' +
-    '<div class="m-sparkline-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>' +
-    '</div>';
-}
 
 function mCoverageBadge_(pct) {
   if (pct == null) return '';
@@ -484,9 +452,8 @@ function mTrendAvg_(trend, metric) {
   return n > 0 ? sum / n : null;
 }
 
-/** Hero sparkline — same data shape as mBuildSparkline_ but inlined with
- *  a dashed baseline at the trend average (visual anchor for the
- *  "vs avg" comparison in the hero delta line). */
+/** Hero sparkline with a dashed baseline at the trend average (visual
+ *  anchor for the "vs avg" comparison in the hero delta line). */
 function mBuildHeroSparkSvg_(trend, metric, avg) {
   metric = metric || 'pctAnswered';
   var pts = [];
@@ -767,7 +734,9 @@ function mPollAmbient_() {
         link.appendChild(badge);
       }
       badge.textContent = res.badge.label;
-      badge.title = 'Yesterday (' + res.badge.date + '): ' + res.badge.label + ' answered — below ' + (typeof CONFIG !== 'undefined' ? CONFIG.CDR_ALERT_THRESHOLD : 85) + '% threshold';
+      // L14 — the threshold rides the server response (CONFIG is server-only;
+      // the old `typeof CONFIG` guard was dead and the tooltip always said 85).
+      badge.title = 'Yesterday (' + res.badge.date + '): ' + res.badge.label + ' answered — below ' + (res.threshold || 85) + '% threshold';
     })
     .withFailureHandler(function () { mClearBadge_(); })
     .getMetricsAmbient();

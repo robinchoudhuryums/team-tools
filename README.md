@@ -6,7 +6,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
 ## Projects
 
 - **web-app/** — Multi-module browser app deployed at one Web App URL.
-  Hosts five modules today, registered side-by-side in the `TOOLS`
+  Hosts six modules today, registered side-by-side in the `TOOLS`
   registry in `script_core.html`:
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export.
@@ -29,10 +29,29 @@ Script project synced via [clasp](https://github.com/google/clasp).
     bodyHash-guarded) and persists a PHI backup row to the Intake
     spreadsheet; the shared AuditLog row stays PHI-free.
   - **Reference** — in-app knowledge base: a per-department tree +
-    full-text search + reader for training/policy docs. Markdown
-    articles (rendered with HTML-escape-first) and embedded Drive
-    Doc/Sheet/file previews. Managers edit inline; reps browse read-only.
-    PHI-free by policy.
+    section-aware full-text search + reader for training/policy docs.
+    Markdown articles (rendered with HTML-escape-first) and embedded
+    Drive Doc/Sheet/file previews, plus a per-item Doc→article
+    converter with Drive image export and paste-a-screenshot upload
+    in the editor. A Ctrl/⌘+K slide-over drawer gives reps mid-call
+    lookup from any tool, with an optional AI guidance card
+    (Anthropic API, whitelisted call facets only — no note text ever
+    leaves the app; feature-flagged off by default). Managers edit
+    inline; reps browse read-only. PHI-free by policy.
+  - **Training & Employee Docs** — manager-assigned training built on
+    the Reference content layer: assign any KB article/embed to
+    employees (or everyone) with an optional due date; reps work a
+    My Training checklist with an in-app reader and mark items
+    complete; managers see a per-rep completion matrix. Re-assigning
+    an item resets its completion (re-certification). Interactive
+    quizzes: manager-authored, graded server-side (answer keys never
+    reach the browser), unlimited retries with attempt tracking — a
+    pass completes the item. Per-employee signable documents (reviews,
+    PIPs, policy acknowledgments) live in a dedicated HR spreadsheet:
+    content is frozen and hashed at issue, employees sign on a canvas
+    pad, signature records are append-only and tamper-evident, and
+    manager visibility is per-team (fail-closed via the roster's
+    ManagerEmail column).
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in
@@ -64,4 +83,7 @@ The Apps Script test suite (`web-app/Tests.js`) runs from the editor
 (`runSmokeTests()` / `runAllTests()`). Pure client-side helpers also have
 unit tests that run off-editor with no dependencies: `npm test` (or
 `node test/client/run.js`). The harness lives outside `web-app/`, so
-`clasp` never pushes it.
+`clasp` never pushes it. A GitHub Action
+(`.github/workflows/client-tests.yml`) runs that harness plus a
+`node --check` of `Code.js` / `Tests.js` on every push and PR — the
+project's only automated check.

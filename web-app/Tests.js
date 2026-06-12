@@ -46,6 +46,7 @@ const _TEST_CDR_DATE = '2026-05-15';  // a Friday, in the past relative to test 
 // (consumed in Code.js). Reused across runs via Script Property TEST_INTAKE_SS_ID.
 var _TEST_INTAKE_SS_ID = null;
 var _TEST_OVERRIDE_INTAKE_SS_ID = null;
+var _TEST_OVERRIDE_HRDOCS_SS_ID = null;   // consumed by Code.js:getHrDocsSS_ (T3)
 
 // Sentinel dates used by integration tests. Cleanup keys off these.
 const _TEST_DATE_RECENT = (() => {
@@ -480,6 +481,26 @@ function cleanupTestData() {
     } catch (e) { Logger.log('cleanupTestData: CN sheet cleanup skipped: ' + e.message); }
   }
 
+  // Training tabs (KB spreadsheet) — drop TEST_-employee rows left by an
+  // aborted test_training_assignCompleteFlow run (its finally normally cleans
+  // by itemId; this is the belt-and-suspenders sweep). Best-effort: the KB
+  // spreadsheet may not be configured in a bare test environment.
+  try {
+    const kbSs = getKbSS_();
+    _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ASSIGN_TAB), 'TEST_', TA.EMP_ID, 2);
+    _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
+    _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ATTEMPT_TAB), 'TEST_', TQA.EMP_ID, 2);
+  } catch (e) { Logger.log('cleanupTestData: training tabs cleanup skipped: ' + e.message); }
+  // Employee Docs fixture (T3) — sweep TEST_-employee rows if the fixture exists.
+  try {
+    const hrId = PropertiesService.getScriptProperties().getProperty('TEST_HRDOCS_SS_ID');
+    if (hrId) {
+      const hrSs = SpreadsheetApp.openById(hrId);
+      _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_TAB), 'TEST_', ED.EMP_ID, 2);
+      _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_SIG_TAB), 'TEST_', EDS.EMP_ID, 2);
+    }
+  } catch (e) { Logger.log('cleanupTestData: empdocs cleanup skipped: ' + e.message); }
+
   invalidateRosterCache_();
   Logger.log('cleanupTestData: TEST_* rows removed, balances reset.');
 }
@@ -852,6 +873,13 @@ function _runAllTests() {
 
   // ── KB usage feedback loop ──────────────────────────────────────────────
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
+  _integrationTest('kb_uploadImage_rejectsInvalidPayloads',      test_kb_uploadImage_rejectsInvalidPayloads);
+  _integrationTest('kbAi_gatesAndSettingsValidation',            test_kbAi_gatesAndSettingsValidation);
+
+  // ── Training & Employee Docs — T1 (spec: docs/training-employee-docs-spec.md) ──
+  _integrationTest('training_assignCompleteFlow',               test_training_assignCompleteFlow);
+  _integrationTest('training_quizFlow',                         test_training_quizFlow);
+  _integrationTest('empdocs_issueSignVerifyFlow',               test_empdocs_issueSignVerifyFlow);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
@@ -3677,13 +3705,23 @@ function test_cn_renameCallNoteTag_managerRewritesTag() {
 
 function test_cn_archiveCallNoteTag_roundTrip() {
   const tag = 'testtag-archive-zzz';
-  const r1 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, true); });
-  _assertSuccess(r1, 'archive should succeed');
-  _assertTrue(!!getArchivedTagsSet_()[tag], 'tag flagged archived in Script Property');
-  // Archive must NOT touch any note rows — only the property.
-  const r2 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, false); });
-  _assertSuccess(r2, 'unarchive should succeed');
-  _assertFalse(!!getArchivedTagsSet_()[tag], 'tag no longer archived after unarchive (cleanup)');
+  // try/finally (T4): a mid-test assertion failure used to leave the test tag
+  // archived in the production CN_ARCHIVED_TAGS property (cosmetic — it showed
+  // in the Admin archivedOnlyTags list — but production state nonetheless).
+  try {
+    const r1 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, true); });
+    _assertSuccess(r1, 'archive should succeed');
+    _assertTrue(!!getArchivedTagsSet_()[tag], 'tag flagged archived in Script Property');
+    // Archive must NOT touch any note rows — only the property.
+    const r2 = _asUser(_TEST_MGR_EMAIL, function () { return archiveCallNoteTag(tag, false); });
+    _assertSuccess(r2, 'unarchive should succeed');
+    _assertFalse(!!getArchivedTagsSet_()[tag], 'tag no longer archived after unarchive (cleanup)');
+  } finally {
+    try {
+      const set = getArchivedTagsSet_();
+      if (set[tag]) { delete set[tag]; setArchivedTagsSet_(set); }
+    } catch (e) {}
+  }
 }
 
 // ── F8: manager-gate coverage for the INV-31 / time-clock manager endpoints ──
@@ -3702,6 +3740,7 @@ function test_managerGates_rejectNonManager() {
     ['getEnrolledCallNotesReps',       function () { return getEnrolledCallNotesReps(); }],
     ['exportCallNotesRange',           function () { return exportCallNotesRange(D, D); }],
     ['setCallNoteTrainingReply',       function () { return setCallNoteTrainingReply(_TEST_INDIA_ID, 'no-such-note', 'r'); }],
+    ['managerDeleteCallNote',          function () { return managerDeleteCallNote(_TEST_INDIA_ID, 'no-such-note'); }],
     ['getCallNotesTagTaxonomy',        function () { return getCallNotesTagTaxonomy(); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
@@ -3725,6 +3764,22 @@ function test_managerGates_rejectNonManager() {
     ['getCallNotesEnrollment',         function () { return getCallNotesEnrollment(); }],
     ['kbSaveItem',                     function () { return kbSaveItem({ title: 'gate-test', type: 'article', body: 'x' }); }],
     ['kbDeleteItem',                   function () { return kbDeleteItem('no-such-id'); }],
+    ['kbUploadImage',                  function () { return kbUploadImage('data:image/png;base64,AAAA'); }],
+    ['saveKbAiSettings',               function () { return saveKbAiSettings({ dailyCap: 3, model: 'claude-haiku-4-5' }); }],
+    // Training & Employee Docs — T1 manager gates (spec §5).
+    ['getTrainingDashboard',           function () { return getTrainingDashboard(); }],
+    ['saveTrainingAssignment',         function () { return saveTrainingAssignment({ itemId: 'no-such-item', empIds: ['x'] }); }],
+    ['revokeTrainingAssignment',       function () { return revokeTrainingAssignment('no-such-assign'); }],
+    // T2 quiz gates.
+    ['getQuizzes',                     function () { return getQuizzes(); }],
+    ['saveQuiz',                       function () { return saveQuiz({ title: 'gate', passPct: 80, questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] }); }],
+    ['deleteQuiz',                     function () { return deleteQuiz('no-such-quiz'); }],
+    // T3 Employee Docs gates (the gate fires BEFORE any HR_DOCS_SS_ID access,
+    // so these run safely even where the property is unset).
+    ['issueDoc',                       function () { return issueDoc({ empId: _TEST_INDIA_ID, docType: 'policy', title: 'gate', bodyMd: 'x' }); }],
+    ['getDocsDashboard',               function () { return getDocsDashboard(); }],
+    ['voidDoc',                        function () { return voidDoc('no-such-doc', ''); }],
+    ['verifyDocSignature',             function () { return verifyDocSignature('no-such-doc'); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -3740,6 +3795,25 @@ function test_managerGates_rejectNonManager() {
   _assertTrue(!amb || amb.badge == null, 'getMetricsAmbient must not leak a badge to a non-manager');
 }
 
+// Phase 3 — kbUploadImage validation: malformed / non-image payloads are
+// rejected BEFORE any Drive write (no folder is provisioned, no file created),
+// so this is safe to run against production as the test manager.
+function test_kb_uploadImage_rejectsInvalidPayloads() {
+  _asUser(_TEST_MGR_EMAIL, function () {
+    const r1 = kbUploadImage('not a data url');
+    _assertEq(r1.success, false, 'non-data-URL rejected');
+    _assertContains(r1.error, 'PNG/JPEG', 'names the accepted types');
+    const r2 = kbUploadImage('data:text/html;base64,PHNjcmlwdD4=');
+    _assertEq(r2.success, false, 'non-image content type rejected');
+    const r3 = kbUploadImage('data:image/svg+xml;base64,AAAA');
+    _assertEq(r3.success, false, 'SVG rejected (script-capable format, not on the whitelist)');
+    const big = 'data:image/png;base64,' + new Array(4 * 1024 * 1024 + 2).join('A');
+    const r4 = kbUploadImage(big);
+    _assertEq(r4.success, false, 'over-cap payload rejected');
+    _assertContains(r4.error, 'too large');
+  });
+}
+
 // kbRecordView is rep-callable (append-only KbViews row) but must reject an
 // unregistered caller BEFORE touching the KB spreadsheet.
 function test_kb_recordView_requiresEmployee() {
@@ -3747,6 +3821,363 @@ function test_kb_recordView_requiresEmployee() {
     return kbRecordView('some-item', 'drawer:callNotes');
   });
   _assertFailure(r, 'Not authorized', 'unregistered caller rejected before any KbViews write');
+}
+
+// KB AI Phase A — kbGetFacetGuidance auth + flag gate + saveKbAiSettings
+// validation. No vendor key is configured in tests, and the flag is forced
+// OFF for the gate case, so no UrlFetchApp call can ever fire from here.
+function test_kbAi_gatesAndSettingsValidation() {
+  // Unregistered caller → hard auth error (before any flag/vocab work).
+  const rAuth = _asUser('not-a-registered-user@example.invalid', function () {
+    return kbGetFacetGuidance({ flagType: 'action' });
+  });
+  _assertNotNull(rAuth && rAuth.error, 'unregistered caller rejected');
+  _assertContains(rAuth.error, 'Not authorized', 'auth precedes the flag gate');
+
+  // Flag off (the shipped default) → { none, reason: disabled } — and never
+  // an exception, matching the drawer's best-effort posture.
+  _withFeatureFlags_({ kbAiGuidance: false }, function () {
+    const r = _asUser(_TEST_INDIA_EMAIL, function () {
+      return kbGetFacetGuidance({ flagType: 'action', tags: ['anything'] });
+    });
+    _assertEq(r.none, true, 'flag-off returns none, not an error');
+    _assertEq(r.reason, 'disabled');
+  });
+
+  // Flag on but no meaningful facets → none/no-facets (dept alone is too
+  // thin); novel facet values are dropped by the whitelist, so a payload of
+  // pure free text degrades to the same no-facets none — nothing proceeds
+  // toward retrieval or the vendor.
+  _withFeatureFlags_({ kbAiGuidance: true }, function () {
+    const r = _asUser(_TEST_INDIA_EMAIL, function () {
+      return kbGetFacetGuidance({ department: 'NotARealDept', updateType: 'PATIENT JOHN DOE TRX-9', flagType: 'banana', tags: ['brand-new-tag'] });
+    });
+    _assertEq(r.none, true, 'whitelist drops every novel value → no-facets none');
+    _assertEq(r.reason, 'no-facets');
+  });
+
+  // saveKbAiSettings validation (as manager): cap range + model whitelist.
+  _asUser(_TEST_MGR_EMAIL, function () {
+    const bad1 = saveKbAiSettings({ dailyCap: 'lots', model: 'claude-haiku-4-5' });
+    _assertEq(bad1.success, false, 'non-numeric cap rejected');
+    const bad2 = saveKbAiSettings({ dailyCap: 500, model: 'claude-haiku-4-5' });
+    _assertEq(bad2.success, false, 'cap above 100 rejected');
+    const bad3 = saveKbAiSettings({ dailyCap: 3, model: 'gpt-totally-unknown' });
+    _assertEq(bad3.success, false, 'unknown model rejected');
+    _assertContains(bad3.error, 'Unknown model');
+  });
+  // NOTE: the success path writes Script Properties KB_AI_DAILY_CAP /
+  // KB_AI_MODEL — exercised manually (S66) to avoid mutating operator
+  // settings from a test run.
+}
+
+// ── Training & Employee Docs — T1 lifecycle (spec: docs/training-employee-docs-spec.md) ──
+// Assign → rep sees pending → complete → done; RE-ASSIGN resets to pending
+// (the §3a re-certification rule); revoke removes it from the checklist.
+// Fixture: a throwaway KB article (created/deleted via the manager-gated KB
+// endpoints); training rows referencing it are deleted in the finally.
+function _cleanupTrainingRowsForItem_(itemId) {
+  [TRAIN_ASSIGN_TAB, TRAIN_COMPLETE_TAB, TRAIN_ATTEMPT_TAB].forEach(function (tabName) {
+    try {
+      const sheet = getKbSS_().getSheetByName(tabName);
+      if (!sheet) return;
+      const last = sheet.getLastRow();
+      if (last < 2) return;
+      const idCol = tabName === TRAIN_ASSIGN_TAB ? TA.ITEM_ID
+        : tabName === TRAIN_ATTEMPT_TAB ? TQA.QUIZ_ID : TCMP.ITEM_ID;
+      const data = sheet.getRange(2, 1, last - 1, idCol + 1).getValues();
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (String(data[i][idCol]).trim() === itemId) sheet.deleteRow(i + 2);
+      }
+    } catch (e) { Logger.log('training cleanup (' + tabName + ') failed: ' + e.message); }
+  });
+}
+
+function test_training_assignCompleteFlow() {
+  let kbId = null;
+  try {
+    // Fixture KB article (manager-gated create — also exercises the content link).
+    const saved = _asUser(_TEST_MGR_EMAIL, function () {
+      return kbSaveItem({ title: 'TEST_TRAINING_ITEM', type: 'article', body: 'training fixture body', department: 'TEST' });
+    });
+    _assertTrue(saved && saved.success, 'fixture KB article created');
+    kbId = saved.id;
+
+    // Assign to the India test rep with a future due date.
+    const due = fmtDate_(new Date(Date.now() + 7 * 86400000));
+    const asg = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: kbId, empIds: [_TEST_INDIA_ID], dueDate: due });
+    });
+    _assertTrue(asg && asg.success, 'assignment saved');
+    _assertEq(asg.assigned, 1, 'one employee assigned');
+
+    // Unknown item / empty targets are rejected.
+    const badItem = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: 'no-such-item', empIds: [_TEST_INDIA_ID] });
+    });
+    _assertFailure(badItem, 'no longer exists', 'unknown KB item rejected');
+    const badEmps = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: kbId, empIds: ['NOT_A_ROSTER_ID'] });
+    });
+    _assertFailure(badEmps, 'at least one employee', 'invalid roster ids rejected');
+
+    // Rep checklist: pending, with the due date.
+    let mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    let item = (mine.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertNotNull(item, 'rep sees the assigned item');
+    _assertEq(item.status, 'pending', 'starts pending');
+    _assertEq(item.dueDate, due, 'due date round-trips');
+
+    // A rep can't complete an item that isn't assigned to them.
+    const notMine = _asUser(_TEST_PH_EMAIL, function () { return markTrainingComplete(kbId); });
+    _assertFailure(notMine, 'not assigned', 'completion requires a live assignment (caller-scoped)');
+
+    // Complete it (1.1s later — completedAt must be strictly after assignedAt
+    // at the tabs' second resolution).
+    Utilities.sleep(1100);
+    const done = _asUser(_TEST_INDIA_EMAIL, function () { return markTrainingComplete(kbId); });
+    _assertTrue(done && done.success, 'marked complete');
+    const again = _asUser(_TEST_INDIA_EMAIL, function () { return markTrainingComplete(kbId); });
+    _assertTrue(again && again.success && again.alreadyComplete, 'second complete is idempotent');
+
+    mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    item = (mine.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertEq(item && item.status, 'done', 'checklist shows done');
+
+    // Manager dashboard reflects it.
+    const dash = _asUser(_TEST_MGR_EMAIL, function () { return getTrainingDashboard(); });
+    const dItem = (dash.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertNotNull(dItem, 'dashboard lists the item');
+    _assertTrue(dItem.done >= 1, 'dashboard counts the completion');
+
+    // RE-ASSIGN resets: a newer assignedAt requires a fresh completion (§3a).
+    Utilities.sleep(1100);
+    const re = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: kbId, empIds: [_TEST_INDIA_ID], dueDate: '' });
+    });
+    _assertTrue(re && re.success, 're-assigned');
+    mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    item = (mine.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertEq(item && item.status, 'pending', 're-assignment resets completion');
+
+    // Revoke every active row for the item → gone from the checklist.
+    const dash2 = _asUser(_TEST_MGR_EMAIL, function () { return getTrainingDashboard(); });
+    (dash2.assignments || []).filter(function (a) { return a.itemId === kbId; }).forEach(function (a) {
+      const rv = _asUser(_TEST_MGR_EMAIL, function () { return revokeTrainingAssignment(a.assignId); });
+      _assertTrue(rv && rv.success, 'revoked ' + a.assignId);
+    });
+    mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    item = (mine.items || []).filter(function (i) { return i.itemId === kbId; })[0];
+    _assertTrue(!item, 'revoked item leaves the checklist');
+  } finally {
+    if (kbId) {
+      _cleanupTrainingRowsForItem_(kbId);
+      _asUser(_TEST_MGR_EMAIL, function () { return kbDeleteItem(kbId); });
+    }
+  }
+}
+
+// T2 — quiz lifecycle: author → assign → stripped fetch → fail → pass →
+// completion + attempt counts; the answer key never reaches a rep response.
+function test_training_quizFlow() {
+  let quizId = null;
+  try {
+    // Author (manager). passPct 100 → both questions must be right to pass.
+    const def = { title: 'TEST_TRAINING_QUIZ', passPct: 100, questions: [
+      { q: 'Pick B', options: ['A', 'B'], correct: 1 },
+      { q: 'Pick X', options: ['X', 'Y', 'Z'], correct: 0 },
+    ] };
+    const saved = _asUser(_TEST_MGR_EMAIL, function () { return saveQuiz(def); });
+    _assertTrue(saved && saved.success, 'quiz saved');
+    quizId = saved.quizId;
+
+    // Invalid defs rejected by the pure validator.
+    const bad = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveQuiz({ title: 'x', passPct: 80, questions: [{ q: 'q', options: ['only-one'], correct: 0 }] });
+    });
+    _assertFailure(bad, 'options', 'one-option question rejected');
+
+    // Assign the quiz to the India rep.
+    const asg = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemType: 'quiz', itemId: quizId, empIds: [_TEST_INDIA_ID], dueDate: '' });
+    });
+    _assertTrue(asg && asg.success, 'quiz assigned');
+
+    // Unassigned rep can't fetch or submit.
+    const phGet = _asUser(_TEST_PH_EMAIL, function () { return getQuiz(quizId); });
+    _assertNotNull(phGet && phGet.error, 'unassigned rep cannot fetch the quiz');
+    const phSub = _asUser(_TEST_PH_EMAIL, function () { return submitQuizAttempt(quizId, [1, 0]); });
+    _assertFailure(phSub, 'not assigned', 'unassigned rep cannot submit an attempt');
+
+    // Assigned rep fetch: stripped — the serialized response NEVER carries
+    // the answer key (INV: keys never leave the server).
+    const got = _asUser(_TEST_INDIA_EMAIL, function () { return getQuiz(quizId); });
+    _assertTrue(!got.error, 'assigned rep can fetch the quiz');
+    _assertEq(got.questions.length, 2, 'questions present');
+    _assertTrue(JSON.stringify(got).indexOf('correct') < 0, 'no correct key anywhere in the rep payload');
+
+    // markTrainingComplete must NOT work on a quiz item.
+    const mc = _asUser(_TEST_INDIA_EMAIL, function () { return markTrainingComplete(quizId); });
+    _assertFailure(mc, 'quiz', 'quiz items complete only via a passing attempt');
+
+    // Fail (one wrong), strictly after assignedAt at second resolution.
+    Utilities.sleep(1100);
+    const fail = _asUser(_TEST_INDIA_EMAIL, function () { return submitQuizAttempt(quizId, [1, 2]); });
+    _assertTrue(fail && fail.success, 'failing attempt accepted');
+    _assertEq(fail.passed, false, '50% < 100% does not pass');
+    _assertEq(fail.scorePct, 50, 'score graded server-side');
+    _assertEq(fail.attempt, 1, 'attempt counter = 1');
+    _assertTrue(JSON.stringify(fail).indexOf('correct') < 0, 'graded response carries no answer key');
+
+    let mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    let item = (mine.items || []).filter(function (i) { return i.itemId === quizId; })[0];
+    _assertNotNull(item, 'quiz item on the checklist');
+    _assertEq(item.status, 'pending', 'still pending after a fail');
+    _assertEq(item.quiz.attempts, 1, 'checklist shows the attempt count');
+
+    // Pass.
+    const pass = _asUser(_TEST_INDIA_EMAIL, function () { return submitQuizAttempt(quizId, [1, 0]); });
+    _assertTrue(pass && pass.success && pass.passed, 'passing attempt');
+    _assertEq(pass.attempt, 2, 'attempt counter = 2');
+    mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    item = (mine.items || []).filter(function (i) { return i.itemId === quizId; })[0];
+    _assertEq(item && item.status, 'done', 'pass completes the item');
+
+    // A second pass appends an attempt but NOT a second completion row.
+    const pass2 = _asUser(_TEST_INDIA_EMAIL, function () { return submitQuizAttempt(quizId, [1, 0]); });
+    _assertTrue(pass2 && pass2.success && pass2.passed, 'retake after pass allowed');
+    const compSheet = getKbSS_().getSheetByName(TRAIN_COMPLETE_TAB);
+    let compCount = 0;
+    if (compSheet && compSheet.getLastRow() >= 2) {
+      compSheet.getRange(2, 1, compSheet.getLastRow() - 1, TRAIN_COMPLETE_HEADERS.length).getValues()
+        .forEach(function (r) { if (String(r[TCMP.ITEM_ID]).trim() === quizId) compCount++; });
+    }
+    _assertEq(compCount, 1, 'exactly one completion row per assignment round');
+
+    // Dashboard: quiz item present with done + attempts surfaced.
+    const dash = _asUser(_TEST_MGR_EMAIL, function () { return getTrainingDashboard(); });
+    const dItem = (dash.items || []).filter(function (i) { return i.itemId === quizId; })[0];
+    _assertNotNull(dItem, 'dashboard lists the quiz');
+    _assertTrue(dItem.done >= 1, 'dashboard counts the pass');
+    const dRep = (dash.reps || []).filter(function (r) { return r.id === _TEST_INDIA_ID; })[0];
+    _assertNotNull(dRep, 'rep row present');
+    _assertEq(dRep.attempts['quiz:' + quizId], 3, 'dashboard shows the attempt count');
+  } finally {
+    if (quizId) {
+      _cleanupTrainingRowsForItem_(quizId);
+      _asUser(_TEST_MGR_EMAIL, function () { return deleteQuiz(quizId); });
+    }
+  }
+}
+
+// T3 — Employee Docs fixture + lifecycle.
+function _withTestHrDocs_(fn) {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('TEST_HRDOCS_SS_ID');
+  let ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
+  if (!ss) {
+    ss = SpreadsheetApp.create('TEST_HRDOCS_Fixture');
+    props.setProperty('TEST_HRDOCS_SS_ID', ss.getId());
+  }
+  _TEST_OVERRIDE_HRDOCS_SS_ID = ss.getId();
+  try { return fn(); }
+  finally { _TEST_OVERRIDE_HRDOCS_SS_ID = null; }
+}
+
+function _cleanupEmpDocRows_(docId) {
+  [[EMPDOC_TAB, ED.DOC_ID], [EMPDOC_SIG_TAB, EDS.DOC_ID]].forEach(function (pair) {
+    try {
+      const sheet = getHrDocsSS_().getSheetByName(pair[0]);
+      if (!sheet || sheet.getLastRow() < 2) return;
+      const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, pair[1] + 1).getValues();
+      for (let i = data.length - 1; i >= 0; i--) {
+        if (String(data[i][pair[1]]).trim() === docId) sheet.deleteRow(i + 2);
+      }
+    } catch (e) { Logger.log('empdocs cleanup (' + pair[0] + ') failed: ' + e.message); }
+  });
+}
+
+// Issue → scoped reads → sign (owner-only, integrity-gated) → verify →
+// tamper-detect → void. The §9.3 fail-closed team-scoping rule is asserted
+// directly against empDocCanManagerSee_ (the test roster has no second
+// manager to impersonate).
+function test_empdocs_issueSignVerifyFlow() {
+  _withTestHrDocs_(function () {
+    let docId = null;
+    try {
+      // Invalid type rejected before any write.
+      const badType = _asUser(_TEST_MGR_EMAIL, function () {
+        return issueDoc({ empId: _TEST_INDIA_ID, docType: 'memo', title: 'T', bodyMd: 'b' });
+      });
+      _assertFailure(badType, 'Invalid document type', 'docType whitelist enforced');
+
+      const due = fmtDate_(new Date(Date.now() + 7 * 86400000));
+      const issued = _asUser(_TEST_MGR_EMAIL, function () {
+        return issueDoc({ empId: _TEST_INDIA_ID, docType: 'policy', title: 'TEST_EMPDOC Policy', bodyMd: '# Policy\n\nRead this.', dueAt: due, requiresSignature: true });
+      });
+      _assertTrue(issued && issued.success, 'doc issued');
+      docId = issued.docId;
+
+      // Owner metadata list — no body in the payload.
+      const mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyDocs(); });
+      const meta = (mine.docs || []).filter(function (d) { return d.docId === docId; })[0];
+      _assertNotNull(meta, 'owner sees the doc');
+      _assertTrue(JSON.stringify(mine).indexOf('bodyMd') < 0, 'list payload is metadata-only');
+
+      // Cross-rep read rejected; cross-rep sign rejected.
+      const phRead = _asUser(_TEST_PH_EMAIL, function () { return getMyDoc(docId); });
+      _assertNotNull(phRead && phRead.error, 'another rep cannot read the doc');
+      const phSign = _asUser(_TEST_PH_EMAIL, function () { return acknowledgeDoc(docId, 'data:image/png;base64,AAAA'); });
+      _assertNotNull(phSign && phSign.error, 'another rep cannot sign the doc');
+
+      // §9.3 fail-closed: a manager who is neither issuer nor the roster
+      // ManagerEmail sees NOTHING (column M is blank for the test rep).
+      const stranger = { isManager: true, email: 'some-other-manager@example.invalid' };
+      const doc = findEmpDocRow_(docId).doc;
+      _assertEq(empDocCanManagerSee_(stranger, doc), false, 'non-issuer/non-listed manager is denied (fail-closed)');
+      _assertEq(empDocCanManagerSee_({ isManager: true, email: doc.issuedBy }, doc), true, 'issuer is allowed');
+
+      // Owner full read carries the body + ack text.
+      const full = _asUser(_TEST_INDIA_EMAIL, function () { return getMyDoc(docId); });
+      _assertTrue(!full.error && full.bodyMd.indexOf('Policy') >= 0, 'owner reads the frozen body');
+      _assertNotNull(full.ackText, 'ack text present while unsigned');
+
+      // Bad signature payload rejected; valid 1x1 PNG accepted.
+      const badSig = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, 'not-a-data-url'); });
+      _assertFailure(badSig, 'signature', 'non-PNG payload rejected');
+      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
+      _assertTrue(signed && signed.success, 'owner signs');
+      const again = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
+      _assertFailure(again, 'Already signed', 'double-sign rejected');
+
+      // Verify: both hashes match.
+      let v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertTrue(v.signed === true && v.match === true && v.contentMatch === true, 'integrity verified after sign');
+
+      // Tamper with the frozen content → contentMatch flips false.
+      const found = findEmpDocRow_(docId);
+      getHrDocsSS_().getSheetByName(EMPDOC_TAB).getRange(found.rowIdx, ED.TITLE + 1).setValue('TAMPERED');
+      v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertEq(v.contentMatch, false, 'content tamper detected');
+
+      // Void: kept on record, never deleted; signature row remains.
+      const voided = _asUser(_TEST_MGR_EMAIL, function () { return voidDoc(docId, 'test void'); });
+      _assertTrue(voided && voided.success, 'voided');
+      const mine2 = _asUser(_TEST_INDIA_EMAIL, function () { return getMyDocs(); });
+      const meta2 = (mine2.docs || []).filter(function (d) { return d.docId === docId; })[0];
+      _assertEq(meta2 && meta2.status, 'void', 'owner sees void status');
+      const v2 = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertTrue(v2.signed === true, 'signature record survives the void');
+
+      // Dashboard (issuer-scoped) lists it.
+      const dash = _asUser(_TEST_MGR_EMAIL, function () { return getDocsDashboard(); });
+      _assertNotNull((dash.docs || []).filter(function (d) { return d.docId === docId; })[0], 'dashboard lists the doc for the issuer');
+    } finally {
+      if (docId) _cleanupEmpDocRows_(docId);
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════

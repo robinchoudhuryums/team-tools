@@ -82,6 +82,7 @@
   .kbd-empty { color: var(--muted); font-size: .84rem; padding: 6px 0; }
   .kbd-back { font: inherit; font-size: .8rem; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--ink); cursor: pointer; padding: 4px 10px; display: inline-flex; align-items: center; gap: 5px; margin-bottom: 10px; }
   .kbd-embed-card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 14px; margin-top: 8px; }
+  .kbd-guid-card { border: 1px solid var(--accent-soft); border-radius: 10px; background: var(--paper); padding: 10px 12px; font-size: .84rem; line-height: 1.5; color: var(--ink); margin-bottom: 4px; }
   #kb-drawer-tab { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 44; writing-mode: vertical-rl; font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); background: var(--paper-card); border: 1px solid var(--line); border-right: none; border-radius: 8px 0 0 8px; padding: 10px 4px; cursor: pointer; display: none; }
   #kb-drawer-tab:hover { color: var(--ink); background: var(--paper-2); }
   #kb-drawer-tab.show { display: block; }
@@ -99,6 +100,9 @@
   .kb-chunk-go:hover { color: var(--ink); background: var(--paper-card); }
   .kb-chunk-body { font-size: .9rem; }
   .kb-h-flash { background: var(--accent-soft); border-radius: 4px; transition: background 1.2s ease; }
+  /* Operator feedback (2026-06-12): search-term highlight in result chunks
+     (drawer + Reference compiled view). */
+  mark.kb-hl { background: var(--selection-bg); color: inherit; border-radius: 3px; padding: 0 1px; }
 </style>
 
 <script>
@@ -292,6 +296,51 @@ function kbGroupResults_(results) {
 // 'kbDrawerOpenItem_' in the drawer) - both accept (id, anchor) and jump to
 // the section in the full article. chunkMd renders through kbMd_ (escape-
 // first, same safety boundary as the article reader).
+// Operator feedback (2026-06-12) — highlight the query terms inside the
+// rendered result chunks. Token regex is the pure, Node-pinned part; the
+// wrapper walks TEXT NODES of already-rendered (kbMd_-escaped) DOM and
+// wraps matches in <mark> — never string-level HTML surgery, so it cannot
+// re-open the escaping boundary.
+function kbHlRegex_(q) {
+  var toks = String(q || '').toLowerCase().split(/\s+/)
+    .map(function (t) { return t.trim(); })
+    .filter(function (t) { return t.length >= 2; });
+  if (!toks.length) return null;
+  var escd = toks.map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+  return new RegExp('(' + escd.join('|') + ')', 'gi');
+}
+function kbHighlightTerms_(rootEl, query) {
+  try {
+    var re = kbHlRegex_(query);
+    if (!re || !rootEl) return;
+    var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+    var targets = [];
+    var n;
+    while ((n = walker.nextNode())) {
+      var p = n.parentElement;
+      if (!p || p.closest('mark, button, a.kb-btn, code, pre')) continue;
+      re.lastIndex = 0;
+      if (re.test(n.nodeValue)) targets.push(n);
+    }
+    targets.forEach(function (textNode) {
+      var s = textNode.nodeValue;
+      var frag = document.createDocumentFragment();
+      var last = 0, m;
+      re.lastIndex = 0;
+      while ((m = re.exec(s))) {
+        if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+        var mk = document.createElement('mark');
+        mk.className = 'kb-hl';
+        mk.textContent = m[0];
+        frag.appendChild(mk);
+        last = m.index + m[0].length;
+      }
+      if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+  } catch (_) {}
+}
+
 function kbChunkGroupsHtml_(results, openFn) {
   var html = '';
   kbGroupResults_(results).forEach(function (g) {
@@ -331,9 +380,14 @@ function kbDoSearch_(q) {
   if (q.length < 2) { kbRenderTree_(); return; }
   var el = document.getElementById('kb-tree'); if (!el) return;
   var requested = currentView;
+  // L13 — sequence counter (the drawer's kbDrawerSearch_ pattern): two
+  // overlapping searches over 300–800ms RPCs can resolve out of order, and
+  // the stale response would render last under the newer query.
+  var seq = (KB_STATE.searchSeq = (KB_STATE.searchSeq || 0) + 1);
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
+      if (seq !== KB_STATE.searchSeq) return;   // a newer search superseded this one
       var results = (res && res.results) || [];
       var groups = kbGroupResults_(results);
       // Tree column: compact doc + section nav (clicks jump into the article)
@@ -355,6 +409,7 @@ function kbDoSearch_(q) {
         KB_STATE.currentId = null;
         main.innerHTML = '<div class="kb-item-head"><h2>Results for "' + esc(q) + '"</h2></div>' +
           (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_') : '<div class="kb-empty">No matches.</div>');
+        kbHighlightTerms_(main, q);
       }
     })
     .withFailureHandler(function () {})
@@ -511,14 +566,21 @@ function kbOpenEditor_(id) {
   KB_EDIT = { id: id || '', department: '', title: '', type: 'article', body: '', driveUrl: '' };
   if (id) {
     google.script.run.withSuccessHandler(function (res) {
-      if (res && !res.error) {
-        KB_EDIT.department = res.department || '';
-        KB_EDIT.title = res.title || '';
-        KB_EDIT.type = res.type || 'article';
-        KB_EDIT.body = res.bodyMd || '';
-        KB_EDIT.driveUrl = res.openUrl || '';
+      // L13 — a failed item load used to open a BLANK editor still carrying
+      // KB_EDIT.id: re-typing + Save would overwrite the existing row with
+      // from-scratch content. Surface the error and don't open the editor.
+      if (!res || res.error) {
+        showToast((res && res.error) || 'Could not load the item to edit', 'toast-error');
+        return;
       }
+      KB_EDIT.department = res.department || '';
+      KB_EDIT.title = res.title || '';
+      KB_EDIT.type = res.type || 'article';
+      KB_EDIT.body = res.bodyMd || '';
+      KB_EDIT.driveUrl = res.openUrl || '';
       kbRenderEditor_();
+    }).withFailureHandler(function (err) {
+      showToast('Could not load the item to edit: ' + ((err && err.message) || 'server error'), 'toast-error');
     }).getReferenceItem(id);
   } else {
     kbRenderEditor_();
@@ -547,7 +609,7 @@ function kbRenderEditor_() {
       '<div id="kb-ed-body"></div>' +
     '</div>' +
     '<div class="kb-ed-foot"><button class="kb-btn" data-kb-close="1">Cancel</button>' +
-      '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_()">' + icon('check', 13) + ' Save</button></div>' +
+      '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_(this)">' + icon('check', 13) + ' Save</button></div>' +
   '</div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-close]')) kbCloseModal_(); });
   kbRenderEditorBody_();
@@ -580,29 +642,105 @@ function kbRenderEditorBody_() {
   } else {
     host.innerHTML = '<div class="field"><label>Body (markdown)</label>' +
       '<textarea id="kb-ed-bodymd" placeholder="# Heading&#10;&#10;**bold**, *italic*, `code`, [links](https://…)&#10;- bullet lists&#10;1. numbered&#10;> quote">' + esc(KB_EDIT.body) + '</textarea></div>' +
+      '<div style="font-size:.72rem;color:var(--muted);margin:-6px 0 6px;">Paste a screenshot directly into the body to upload it. The KB is PHI-free by policy — scrub patient data first.</div>' +
       '<div style="font-size:.76rem;color:var(--muted);margin-bottom:4px;">Live preview:</div><div class="kb-ed-prev kb-article" id="kb-ed-prev"></div>';
     var ta = document.getElementById('kb-ed-bodymd'), prev = document.getElementById('kb-ed-prev');
     var upd = function () { prev.innerHTML = kbMd_(ta.value); };
     upd(); ta.addEventListener('input', upd);
+    // Phase 3 — paste-a-screenshot upload. The listener is ELEMENT-scoped
+    // (this textarea), so it dies with the modal — structurally immune to the
+    // document-level leak class the Intake modal had (M7). Non-image pastes
+    // fall through to the browser default.
+    ta.addEventListener('paste', function (e) {
+      var items = (e.clipboardData || {}).items || [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image/') === 0) {
+          e.preventDefault();
+          kbPasteUploadImage_(ta, items[i].getAsFile(), upd);
+          return;
+        }
+      }
+    });
   }
 }
 
-function kbSaveFromEditor_() {
+// Phase 3 — upload a pasted screenshot via kbUploadImage and insert the
+// returned markdown. A UNIQUE placeholder token goes in at the cursor first
+// and is string-replaced when the upload resolves, so typing (or a type-
+// switch re-render) during the round trip can't misplace the final markdown:
+// the replacement targets the token wherever it now lives — the live
+// textarea, or the KB_EDIT snapshot if the body was re-rendered/snapshotted.
+var KB_PASTE_SEQ = 0;
+function kbPasteUploadImage_(ta, file, refreshPreview) {
+  if (!file) return;
+  var token = '![uploading-' + (++KB_PASTE_SEQ) + '…](kbpaste:pending)';
+  var start = (typeof ta.selectionStart === 'number') ? ta.selectionStart : ta.value.length;
+  var end = (typeof ta.selectionEnd === 'number') ? ta.selectionEnd : start;
+  ta.value = ta.value.substring(0, start) + token + ta.value.substring(end);
+  ta.selectionStart = ta.selectionEnd = start + token.length;
+  try { refreshPreview(); } catch (_) {}
+  var done = function (replacement) {
+    var el = document.getElementById('kb-ed-bodymd');
+    if (el && el.value.indexOf(token) >= 0) {
+      el.value = el.value.replace(token, replacement);
+      el.dispatchEvent(new Event('input'));   // refresh the live preview
+    } else if (KB_EDIT && typeof KB_EDIT.body === 'string' && KB_EDIT.body.indexOf(token) >= 0) {
+      KB_EDIT.body = KB_EDIT.body.replace(token, replacement);
+    }
+  };
+  var reader = new FileReader();
+  reader.onload = function (ev) {
+    var dataUrl = String((ev.target || {}).result || '');
+    if (dataUrl.length > 4 * 1024 * 1024) {   // mirrors KB_IMG_UPLOAD_MAX_CHARS
+      done('');
+      showToast('Image too large (max ~3MB) — crop or downscale, then paste again.', 'toast-warn');
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) {
+          done('');
+          showToast((res && res.error) || 'Image upload failed', 'toast-error');
+          return;
+        }
+        done('![Screenshot](' + res.url + ')');
+        showToast('Image uploaded', 'toast-success');
+      })
+      .withFailureHandler(function (err) {
+        done('');
+        showToast('Image upload failed: ' + ((err && err.message) || 'server error'), 'toast-error');
+      })
+      .kbUploadImage(dataUrl);
+  };
+  reader.readAsDataURL(file);
+}
+
+function kbSaveFromEditor_(btn) {
   kbSnapshotEditor_();
   var e = KB_EDIT;
   if (!String(e.title).trim()) { showToast('Title is required.', 'toast-warn'); return; }
   if (e.type === 'embed' && !String(e.driveUrl).trim()) { showToast('Paste a Drive share URL.', 'toast-warn'); return; }
   if (e.type !== 'embed' && !String(e.body).trim()) { showToast('Add some article text.', 'toast-warn'); return; }
+  // L13 — dedupe: double-clicking Save on a NEW item fired two kbSaveItem
+  // calls and created duplicate rows (the server lock serializes inserts but
+  // can't dedupe them). Disable for the round trip; re-enable on failure.
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  var reenable = function () { if (btn) btn.disabled = false; };
   google.script.run
     .withSuccessHandler(function (res) {
+      reenable();
       if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
-      showToast('Saved', 'toast-success');
+      // Phase 2b — converter image tokens export to Drive during save;
+      // surface the count + any per-image degradations.
+      showToast(res.imagesExported ? ('Saved · ' + res.imagesExported + ' image(s) exported to Drive') : 'Saved', 'toast-success');
+      (res.imageWarnings || []).forEach(function (w) { showToast(w, 'toast-warn'); });
       var savedId = res.id;
       kbCloseModal_();
       kbReloadTree_();
       if (savedId) kbOpenItem_(savedId);
     })
-    .withFailureHandler(function (err) { showToast((err && err.message) || 'Save failed', 'toast-error'); })
+    .withFailureHandler(function (err) { reenable(); showToast((err && err.message) || 'Save failed', 'toast-error'); })
     .kbSaveItem({ id: e.id, department: e.department, title: e.title, type: e.type, body: e.body, driveUrl: e.driveUrl });
 }
 
@@ -623,7 +761,7 @@ function kbCloseModal_() {
 //  Reads reuse the three enrolled-employee KB endpoints; opens are recorded
 //  best-effort via kbRecordView (fire-and-forget, never blocks the UI).
 // ============================================================================
-var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null };
+var KB_DRAWER = { open: false, tree: null, view: 'home', lastQuery: '', searchSeq: 0, item: null, suggestSeq: 0, suggestCache: null, guidanceSeq: 0, guidanceCache: null };
 var KB_PANEL_LS_KEY = 'umsKbPanel';
 
 function kbPanelPrefs_() {
@@ -750,7 +888,7 @@ function kbDrawerRenderHome_() {
   KB_DRAWER.view = 'home';
   var body = document.getElementById('kbd-body'); if (!body) return;
   var prefs = kbPanelPrefs_();
-  var html = '<div id="kbd-suggest"></div>';
+  var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
   var recents = prefs.recents || [];
   if (recents.length) {
     html += '<div class="kbd-sec">Recent</div>';
@@ -760,7 +898,85 @@ function kbDrawerRenderHome_() {
   }
   if (!recents.length) html += '<div class="kbd-empty">Type 2+ characters to search the knowledge base.</div>';
   body.innerHTML = html;
+  kbDrawerRenderGuidance_();
   kbDrawerRenderSuggest_();
+}
+
+// ── AI guidance card (Phase A) ──────────────────────────────────────────────
+// Fires kbGetFacetGuidance with ONLY enum facets gathered from the
+// in-progress note (multi-select flags, established tags, the rep's last
+// composer department) — never any typed text. The server re-validates every
+// facet against its own vocabularies (INV-119), so this gather is a
+// convenience, not the privacy boundary. Best-effort: any none / failure
+// renders nothing and the existing Suggested block stands alone.
+function kbAiGatherFacets_() {
+  var facets = { department: '', updateType: '', flagType: '', tags: [] };
+  try { facets.department = localStorage.getItem('umsCallNotesLastDept') || ''; } catch (e) {}
+  try {
+    if (typeof cnGetFormFlags_ === 'function' && typeof currentView !== 'undefined' &&
+        (typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[currentView]) === 'callNotes') {
+      var form = document.getElementById('cn-active-form');
+      if (form) {
+        var flags = cnGetFormFlags_(form) || [];
+        facets.flagType = flags[0] || '';
+        facets.tags = (typeof cnGetFormTags_ === 'function' && cnGetFormTags_(form)) || [];
+      }
+    }
+  } catch (e) {}
+  return facets;
+}
+
+function kbDrawerRenderGuidance_() {
+  var host = document.getElementById('kbd-guidance'); if (!host) return;
+  if (typeof flagOn_ !== 'function' || !flagOn_('kbAiGuidance')) { host.innerHTML = ''; return; }
+  var facets = kbAiGatherFacets_();
+  if (!facets.flagType && !(facets.tags && facets.tags.length)) { host.innerHTML = ''; return; }
+  var key = JSON.stringify([facets.department, facets.flagType, (facets.tags || []).slice().sort()]);
+  var cached = KB_DRAWER.guidanceCache;
+  if (cached && cached.key === key) { kbDrawerPaintGuidance_(host, cached.res); return; }
+  var seq = ++KB_DRAWER.guidanceSeq;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== KB_DRAWER.guidanceSeq || !KB_DRAWER.open || KB_DRAWER.view !== 'home') return;
+      KB_DRAWER.guidanceCache = { key: key, res: res };
+      var h = document.getElementById('kbd-guidance');
+      if (h) kbDrawerPaintGuidance_(h, res);
+    })
+    .withFailureHandler(function () {})   // silent — suggestions still render
+    .kbGetFacetGuidance(facets);
+}
+
+function kbDrawerPaintGuidance_(host, res) {
+  if (!res || res.none || res.error || !res.guidance) { host.innerHTML = ''; return; }
+  var prefs = kbPanelPrefs_();
+  var today = new Date().toISOString().substring(0, 10);
+  var seen = prefs.aiSeen || {};
+  var collapsed = res.facetHash && seen.hash === res.facetHash && seen.date === today;
+  var html = '<div class="kbd-sec">Guidance <span class="kb-snip" style="text-transform:none;letter-spacing:0">AI · from your reference docs</span></div>';
+  if (collapsed) {
+    html += '<button class="kbd-item" onclick="kbDrawerExpandGuidance_()"><span>' +
+      icon('chevronDown', 12) + ' Show guidance for this call type</span></button>';
+    host.innerHTML = html;
+    return;
+  }
+  html += '<div class="kbd-guid-card">' + esc(res.guidance) + '</div>';
+  (res.sources || []).forEach(function (s) {
+    html += '<button class="kbd-item" data-kb-id="' + esc(s.id) + '" data-kb-anchor="' + esc(s.anchor || '') + '" ' +
+      'onclick="kbDrawerOpenItem_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+      '<span>' + icon('list', 12) + ' ' + esc(s.title) +
+      (s.heading ? ' <span class="kb-snip">¶ ' + esc(s.heading) + '</span>' : '') + '</span></button>';
+  });
+  host.innerHTML = html;
+  // Collapse-after-seen: the same facet combo renders collapsed for the rest
+  // of the day so the card doesn't repeat itself on every drawer open.
+  try { prefs.aiSeen = { hash: res.facetHash, date: today }; kbPanelSave_(prefs); } catch (e) {}
+}
+
+function kbDrawerExpandGuidance_() {
+  var prefs = kbPanelPrefs_();
+  delete prefs.aiSeen;
+  kbPanelSave_(prefs);
+  kbDrawerRenderGuidance_();
 }
 
 /** "Suggested" block: matches the in-progress Call Notes Issue text against
@@ -846,6 +1062,7 @@ function kbDrawerSearch_(q) {
       if (!results.length) html += '<div class="kbd-empty">No matches.</div>';
       else html += kbChunkGroupsHtml_(results, 'kbDrawerOpenItem_');
       body.innerHTML = html;
+      kbHighlightTerms_(body, q);
     })
     .withFailureHandler(function () {})
     .searchReference(q);

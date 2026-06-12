@@ -19,7 +19,11 @@
     -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   }
   button, input, select, textarea { font-family: inherit; font-size: inherit; }
-  ::selection { background: var(--accent-soft); color: var(--ink); }
+  /* Selection must be clearly visible — --selection-bg is a mid-strength
+     accent tint (the old --accent-soft was invisible against field
+     backgrounds). No color override: the translucent tint keeps each
+     surface's own text color readable in both modes. */
+  ::selection { background: var(--selection-bg); }
 
   /* ─── APP SHELL ──────────────────────────────────────────────── */
   #app { min-height: 100vh; display: flex; flex-direction: column; }

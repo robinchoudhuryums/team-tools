@@ -40,6 +40,11 @@
     --accent-2:     #0b6e40;
     --accent-soft:  #e4f5ec;
     --accent-glow:  rgba(15, 138, 82, 0.16);
+    /* Text-selection highlight. --accent-soft was used here originally but
+       is nearly indistinguishable from the field background in both modes
+       (operator-reported: selecting text in the note template showed no
+       visible highlight). Mid-strength tint, distinct from --accent-soft. */
+    --selection-bg: #abdfc4;
 
     /* `--good` is intentionally aliased to `--accent` — the redesign
        collapses primary and success into one green. Future code that
@@ -106,6 +111,7 @@
   }
   @supports (color: color-mix(in oklch, red, blue)) {
     :root {
+      --selection-bg: color-mix(in oklch, var(--accent) 30%, transparent);
       --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
       --success-deep: color-mix(in oklch, var(--good),        var(--ink) 45%);
       --warning-deep: color-mix(in oklch, var(--warn),        var(--ink) 45%);
@@ -135,6 +141,7 @@
     --accent-2:     #4fd683;
     --accent-soft:  rgba(122, 242, 161, 0.12);
     --accent-glow:  rgba(122, 242, 161, 0.22);
+    --selection-bg: rgba(122, 242, 161, 0.32);
 
     --good:         #7af2a1;
     --good-soft:    rgba(122, 242, 161, 0.12);
@@ -163,6 +170,7 @@
     :root[data-mode="dark"],
     body[data-mode="dark"] {
       --ring-focus: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 70%);
+      --selection-bg: color-mix(in oklch, var(--accent) 32%, transparent);
       --success-deep: color-mix(in oklch, var(--good),        var(--paper-card) 25%);
       --warning-deep: color-mix(in oklch, var(--warn),        var(--paper-card) 25%);
       --danger-deep:  color-mix(in oklch, var(--destructive), var(--paper-card) 25%);
