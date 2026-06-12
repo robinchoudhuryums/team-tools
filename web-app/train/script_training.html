@@ -42,6 +42,39 @@
   .tr-revoke-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--danger-deep, #c13030); cursor: pointer; }
   .tr-section-h { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
   :root[data-compact] .tr-row { flex-wrap: wrap; }
+  .tr-link { font: inherit; font-size: .76rem; background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  /* quiz-taking modal */
+  .tr-quiz { width: min(680px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
+  .tr-quiz .body { overflow-y: auto; padding: 4px 2px; }
+  .tr-quiz .foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 10px; }
+  .tr-q { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 12px 14px; margin-bottom: 10px; }
+  .tr-q .tr-q-text { font-weight: 600; font-size: .92rem; margin-bottom: 8px; }
+  .tr-q label { display: flex; align-items: flex-start; gap: 8px; font-size: .88rem; padding: 4px 2px; cursor: pointer; border-radius: 6px; }
+  .tr-q label:hover { background: var(--paper-2); }
+  .tr-q.right { border-color: var(--accent); background: var(--accent-soft); }
+  .tr-q.wrong { border-color: var(--danger-soft, #fce5e5); background: var(--danger-soft, #fce5e5); }
+  .tr-q .tr-q-verdict { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 6px; }
+  .tr-q.right .tr-q-verdict { color: var(--accent-deep, var(--accent)); }
+  .tr-q.wrong .tr-q-verdict { color: var(--danger-deep, #c13030); }
+  .tr-score { text-align: center; padding: 14px 0 6px; }
+  .tr-score .big { font-size: 2.2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tr-score.pass .big { color: var(--accent-deep, var(--accent)); }
+  .tr-score.fail .big { color: var(--danger-deep, #c13030); }
+  .tr-score .sub { font-size: .86rem; color: var(--muted); }
+  /* quiz editor modal */
+  .tr-qed { width: min(720px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
+  .tr-qed .body { overflow-y: auto; padding: 4px 2px; }
+  .tr-qed .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .tr-qed label { font-size: .76rem; font-weight: 600; color: var(--muted); }
+  .tr-qed input[type=text], .tr-qed input[type=number], .tr-qed select, .tr-qed textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
+  .tr-qed .foot { display: flex; gap: 10px; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
+  .tr-qed-q { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 12px 14px; margin-bottom: 10px; }
+  .tr-qed-q .opt-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .tr-qed-q .opt-row input[type=text] { flex: 1; }
+  .tr-qed-q .qhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .tr-qed-q .qhead .qn { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); flex: 1; }
+  .tr-qed-hint { font-size: .74rem; color: var(--muted); margin-top: 2px; }
+  .tr-cell-att { font-size: .68rem; color: var(--muted); }
 </style>
 
 <script>
@@ -108,16 +141,31 @@ function trainRenderMy_() {
     '<div class="cell"><div class="cell-label">Overdue</div><div class="cell-val' + (overdue ? ' warn' : '') + '">' + overdue + '</div></div>' +
     '</div><div class="tr-list">';
   items.forEach(function (it) {
+    var isQuiz = it.itemType === 'quiz';
+    var meta = (it.dueDate ? 'Due ' + esc(it.dueDate) : 'No due date') +
+      (it.completed ? ' · completed ' + esc(String(it.completedAt).substring(0, 10)) : '');
+    if (isQuiz && it.quiz) {
+      meta = 'Quiz · ' + it.quiz.questionCount + ' question' + (it.quiz.questionCount === 1 ? '' : 's') +
+        ' · pass ≥' + it.quiz.passPct + '%' +
+        (it.quiz.attempts ? ' · attempt' + (it.quiz.attempts === 1 ? '' : 's') + ': ' + it.quiz.attempts : '') +
+        (it.quiz.lastScorePct !== null && it.quiz.lastScorePct !== undefined && it.quiz.attempts ? ' · last score ' + it.quiz.lastScorePct + '%' : '') +
+        ' · ' + meta;
+    }
+    var action = '';
+    if (!it.completed) {
+      action = isQuiz
+        ? '<button class="tr-complete-btn" data-tr-quiz="' + esc(it.itemId) + '">' + icon('list', 13) + ' Take quiz</button>'
+        : '<button class="tr-complete-btn" data-tr-complete="' + esc(it.itemId) + '">' + icon('check', 13) + ' Mark complete</button>';
+    }
+    var titleAttr = isQuiz ? 'data-tr-quiz="' + esc(it.itemId) + '"' : 'data-tr-open="' + esc(it.itemId) + '"';
     h += '<div class="tr-row ' + esc(it.status) + '" data-item-id="' + esc(it.itemId) + '">' +
       trainChipHtml_(it.status) +
-      '<div><button class="tr-title" data-tr-open="' + esc(it.itemId) + '">' + esc(it.title) + '</button>' +
-      '<div class="tr-meta">' +
-        (it.dueDate ? 'Due ' + esc(it.dueDate) : 'No due date') +
-        (it.completed ? ' · completed ' + esc(String(it.completedAt).substring(0, 10)) : '') +
-      '</div></div>' +
-      '<div class="tr-spacer"></div>' +
-      (it.completed ? '' :
-        '<button class="tr-complete-btn" data-tr-complete="' + esc(it.itemId) + '">' + icon('check', 13) + ' Mark complete</button>') +
+      '<div><button class="tr-title" ' + titleAttr + '>' + esc(it.title) + '</button>' +
+      '<div class="tr-meta">' + meta + '</div>' +
+      (isQuiz && it.quiz && it.quiz.kbItemId
+        ? '<div class="tr-meta"><button class="tr-link" data-tr-open="' + esc(it.quiz.kbItemId) + '">Review the material first</button></div>' : '') +
+      '</div>' +
+      '<div class="tr-spacer"></div>' + action +
       '</div>';
   });
   h += '</div>';
@@ -127,6 +175,8 @@ function trainRenderMy_() {
     el.addEventListener('click', function (e) {
       var open = e.target.closest('[data-tr-open]');
       if (open) { trainOpenReader_(open.getAttribute('data-tr-open')); return; }
+      var quiz = e.target.closest('[data-tr-quiz]');
+      if (quiz) { trainOpenQuiz_(quiz.getAttribute('data-tr-quiz')); return; }
       var comp = e.target.closest('[data-tr-complete]');
       if (comp) trainMarkComplete_(comp.getAttribute('data-tr-complete'), comp);
     });
@@ -227,6 +277,131 @@ function trainCloseReader_() {
   if (o) { o.classList.remove('open'); o.innerHTML = ''; }
 }
 
+// ── Quiz-taking modal (T2) ─────────────────────────────────────────────────
+// The server never sends correct answers (getQuiz returns the stripped
+// shape; submitQuizAttempt returns only per-question right/wrong — §9.4).
+function trainOpenQuiz_(quizId) {
+  TRAIN_STATE.quizTaking = quizId;
+  var overlay = ensureOverlay('train-quiz-overlay', { onClose: trainCloseQuiz_ });
+  overlay.innerHTML = '<div class="modal tr-quiz"><div class="body"><div class="m-loading"><div class="spinner"></div> Loading quiz&hellip;</div></div></div>';
+  google.script.run
+    .withSuccessHandler(function (quiz) {
+      if (TRAIN_STATE.quizTaking !== quizId) return;
+      if (!quiz || quiz.error) {
+        var o = document.getElementById('train-quiz-overlay');
+        if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((quiz && quiz.error) || 'Quiz not found.') + '</div>';
+        return;
+      }
+      TRAIN_STATE.quizDef = quiz;
+      trainRenderQuizForm_(quiz);
+    })
+    .withFailureHandler(function (err) {
+      if (TRAIN_STATE.quizTaking !== quizId) return;
+      var o = document.getElementById('train-quiz-overlay');
+      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc(err.message) + '</div>';
+    })
+    .getQuiz(quizId);
+}
+
+function trainRenderQuizForm_(quiz) {
+  var overlay = document.getElementById('train-quiz-overlay');
+  if (!overlay) return;
+  var h = '<div class="modal tr-quiz"><div class="body">' +
+    '<h2 style="margin:0 0 4px;">' + esc(quiz.title) + '</h2>' +
+    '<div class="tr-meta" style="margin-bottom:12px;">' + quiz.questions.length + ' question' + (quiz.questions.length === 1 ? '' : 's') + ' · pass ≥' + quiz.passPct + '%</div>';
+  quiz.questions.forEach(function (q, qi) {
+    h += '<div class="tr-q" data-qi="' + qi + '"><div class="tr-q-text">' + (qi + 1) + '. ' + esc(q.q) + '</div>';
+    q.options.forEach(function (opt, oi) {
+      h += '<label><input type="radio" name="tr-q-' + qi + '" value="' + oi + '"> <span>' + esc(opt) + '</span></label>';
+    });
+    h += '</div>';
+  });
+  h += '</div><div class="foot">' +
+    '<button class="kb-btn" onclick="trainCloseQuiz_()">Cancel</button>' +
+    '<button class="tr-complete-btn" id="tr-quiz-submit">' + icon('check', 13) + ' Submit answers</button>' +
+    '</div></div>';
+  overlay.innerHTML = h;
+  document.getElementById('tr-quiz-submit').addEventListener('click', trainSubmitQuiz_);
+}
+
+function trainSubmitQuiz_() {
+  var quiz = TRAIN_STATE.quizDef;
+  var quizId = TRAIN_STATE.quizTaking;
+  if (!quiz || !quizId) return;
+  var answers = [], unanswered = 0;
+  quiz.questions.forEach(function (q, qi) {
+    var sel = document.querySelector('input[name="tr-q-' + qi + '"]:checked');
+    if (!sel) unanswered++;
+    answers.push(sel ? Number(sel.value) : -1);
+  });
+  var go = function () {
+    var btn = document.getElementById('tr-quiz-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Grading…'; }
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (TRAIN_STATE.quizTaking !== quizId) return;
+        if (!res || !res.success) {
+          if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Submit answers'; }
+          showToast((res && res.error) || 'Could not grade the quiz.', 'error');
+          return;
+        }
+        trainRenderQuizResult_(quiz, answers, res);
+        var it = trainItemById_(quizId);
+        if (it) {
+          if (it.quiz) { it.quiz.attempts = res.attempt; it.quiz.lastScorePct = res.scorePct; }
+          if (res.passed) { it.completed = true; it.status = 'done'; }
+        }
+        if (currentView === 'trainingHome') trainRenderMy_();
+      })
+      .withFailureHandler(function (err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Submit answers'; }
+        showToast('Could not grade the quiz: ' + err.message, 'error');
+      })
+      .submitQuizAttempt(quizId, answers);
+  };
+  if (unanswered) {
+    uiConfirm({
+      title: 'Unanswered questions',
+      message: unanswered + ' question' + (unanswered === 1 ? ' is' : 's are') + ' unanswered and will count as wrong. Submit anyway?',
+      confirmLabel: 'Submit',
+    }).then(function (ok) { if (ok) go(); });
+  } else { go(); }
+}
+
+function trainRenderQuizResult_(quiz, answers, res) {
+  var overlay = document.getElementById('train-quiz-overlay');
+  if (!overlay) return;
+  var h = '<div class="modal tr-quiz"><div class="body">' +
+    '<div class="tr-score ' + (res.passed ? 'pass' : 'fail') + '">' +
+      '<div class="big">' + res.scorePct + '%</div>' +
+      '<div class="sub">' + (res.passed ? 'Passed' : 'Not passed') + ' · ' + res.right + '/' + res.total + ' correct · pass ≥' + res.passPct + '% · attempt ' + res.attempt + '</div>' +
+    '</div>';
+  quiz.questions.forEach(function (q, qi) {
+    var ok = !!res.perQuestion[qi];
+    var your = answers[qi] >= 0 ? q.options[answers[qi]] : '(no answer)';
+    h += '<div class="tr-q ' + (ok ? 'right' : 'wrong') + '">' +
+      '<div class="tr-q-text">' + (qi + 1) + '. ' + esc(q.q) + '</div>' +
+      '<div class="tr-meta">Your answer: ' + esc(your) + '</div>' +
+      '<div class="tr-q-verdict">' + (ok ? '✓ Correct' : '✗ Incorrect — review the material and retake') + '</div>' +
+      '</div>';
+  });
+  h += '</div><div class="foot">' +
+    (res.passed ? '' : '<button class="kb-btn" id="tr-quiz-retake">' + icon('refresh', 13) + ' Retake</button>') +
+    '<button class="tr-complete-btn" onclick="trainCloseQuiz_()">Done</button>' +
+    '</div></div>';
+  overlay.innerHTML = h;
+  var rt = document.getElementById('tr-quiz-retake');
+  if (rt) rt.addEventListener('click', function () { trainRenderQuizForm_(quiz); });
+}
+
+/** Idempotent (ensureOverlay contract). */
+function trainCloseQuiz_() {
+  TRAIN_STATE.quizTaking = null;
+  TRAIN_STATE.quizDef = null;
+  var o = document.getElementById('train-quiz-overlay');
+  if (o) { o.classList.remove('open'); o.innerHTML = ''; }
+}
+
 // ── Manager view: Team Training ────────────────────────────────────────────
 function enterTrainingManageView() {
   if (typeof stopClock === 'function') stopClock();
@@ -245,7 +420,7 @@ function trainLoadMgr_() {
   var got = 0, failed = false;
   function done() {
     got++;
-    if (got < 3 || failed || currentView !== requestedView) return;
+    if (got < 4 || failed || currentView !== requestedView) return;
     trainRenderMgr_();
   }
   function onFail(err) {
@@ -258,6 +433,7 @@ function trainLoadMgr_() {
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.dash = d; done(); }).withFailureHandler(onFail).getTrainingDashboard();
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.kbTree = d; done(); }).withFailureHandler(onFail).getReferenceTree();
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
+  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.quizzes = d; done(); }).withFailureHandler(onFail).getQuizzes();
 }
 
 function trainRenderMgr_() {
@@ -268,13 +444,20 @@ function trainRenderMgr_() {
   var kbItems = (TRAIN_STATE.kbTree && TRAIN_STATE.kbTree.items) || [];
   var emps = (TRAIN_STATE.emps && TRAIN_STATE.emps.employees) || [];
 
-  // Assign form — KB item select grouped by department + employee checklist.
+  // Assign form — KB items grouped by department + a Quizzes group. The
+  // option value carries the itemType prefix ('kb:' / 'quiz:').
   var byDept = {};
   kbItems.forEach(function (it) { (byDept[it.department] = byDept[it.department] || []).push(it); });
-  var sel = '<select id="tr-as-item"><option value="">Pick a Reference item…</option>';
+  var quizzes = (TRAIN_STATE.quizzes && TRAIN_STATE.quizzes.quizzes) || [];
+  var sel = '<select id="tr-as-item"><option value="">Pick an item…</option>';
+  if (quizzes.length) {
+    sel += '<optgroup label="Quizzes">';
+    quizzes.forEach(function (q) { sel += '<option value="quiz:' + esc(q.quizId) + '">' + esc(q.title) + '</option>'; });
+    sel += '</optgroup>';
+  }
   Object.keys(byDept).sort().forEach(function (d) {
     sel += '<optgroup label="' + esc(d) + '">';
-    byDept[d].forEach(function (it) { sel += '<option value="' + esc(it.id) + '">' + esc(it.title) + '</option>'; });
+    byDept[d].forEach(function (it) { sel += '<option value="kb:' + esc(it.id) + '">' + esc(it.title) + '</option>'; });
     sel += '</optgroup>';
   });
   sel += '</select>';
@@ -304,9 +487,11 @@ function trainRenderMgr_() {
       h += '<tr><td>' + esc(r.name) + '</td>';
       items.forEach(function (it) {
         var s = r.items[it.key];
-        h += '<td>' + (s === 'done' ? '<span class="tr-cell-done">✓</span>'
-          : s === 'overdue' ? '<span class="tr-cell-overdue">!</span>'
-          : s === 'pending' ? '<span class="tr-cell-pending">–</span>' : '') + '</td>';
+        var att = (r.attempts && r.attempts[it.key])
+          ? ' <span class="tr-cell-att" title="quiz attempts this round">(' + r.attempts[it.key] + ')</span>' : '';
+        h += '<td>' + (s === 'done' ? '<span class="tr-cell-done">✓</span>' + att
+          : s === 'overdue' ? '<span class="tr-cell-overdue">!</span>' + att
+          : s === 'pending' ? '<span class="tr-cell-pending">–</span>' + att : '') + '</td>';
       });
       h += '</tr>';
     });
@@ -327,21 +512,44 @@ function trainRenderMgr_() {
     });
     h += '</tbody></table>';
   }
+  // Quizzes — authoring (T2).
+  h += '<div class="tr-section-h">Quizzes</div>';
+  if (quizzes.length) {
+    h += '<table class="tr-table"><thead><tr><th>Quiz</th><th>Questions</th><th>Pass</th><th>Linked item</th><th></th></tr></thead><tbody>';
+    var kbTitleById = {};
+    kbItems.forEach(function (it) { kbTitleById[it.id] = it.title; });
+    quizzes.forEach(function (q) {
+      h += '<tr><td>' + esc(q.title) + '</td><td>' + q.questionCount + '</td><td>≥' + q.passPct + '%</td>' +
+        '<td>' + esc(q.kbItemId ? (kbTitleById[q.kbItemId] || '(deleted item)') : '—') + '</td>' +
+        '<td><button class="kb-btn" data-tr-quiz-edit="' + esc(q.quizId) + '">Edit</button> ' +
+        '<button class="tr-revoke-btn" data-tr-quiz-del="' + esc(q.quizId) + '">Delete</button></td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  h += '<p><button class="tr-complete-btn" id="tr-quiz-new">' + icon('plus', 13) + ' New quiz</button></p>';
+
   el.innerHTML = h;
 
   document.getElementById('tr-as-go').addEventListener('click', trainSubmitAssign_);
+  document.getElementById('tr-quiz-new').addEventListener('click', function () { trainOpenQuizEditor_(null); });
   if (!el._trMgrDelegated) {
     el._trMgrDelegated = true;
     el.addEventListener('click', function (e) {
       var rv = e.target.closest('[data-tr-revoke]');
-      if (rv) trainRevoke_(rv.getAttribute('data-tr-revoke'));
+      if (rv) { trainRevoke_(rv.getAttribute('data-tr-revoke')); return; }
+      var qe = e.target.closest('[data-tr-quiz-edit]');
+      if (qe) { trainOpenQuizEditor_(qe.getAttribute('data-tr-quiz-edit')); return; }
+      var qd = e.target.closest('[data-tr-quiz-del]');
+      if (qd) trainDeleteQuiz_(qd.getAttribute('data-tr-quiz-del'));
     });
   }
 }
 
 function trainSubmitAssign_() {
-  var itemId = (document.getElementById('tr-as-item') || {}).value || '';
-  if (!itemId) { showToast('Pick a Reference item to assign.', 'error'); return; }
+  var raw = (document.getElementById('tr-as-item') || {}).value || '';
+  if (!raw) { showToast('Pick an item to assign.', 'error'); return; }
+  var sep = raw.indexOf(':');
+  var itemType = raw.substring(0, sep), itemId = raw.substring(sep + 1);
   var empIds;
   if ((document.getElementById('tr-as-all') || {}).checked) {
     empIds = '*';
@@ -363,7 +571,158 @@ function trainSubmitAssign_() {
       if (btn) btn.disabled = false;
       showToast('Assignment failed: ' + err.message, 'error');
     })
-    .saveTrainingAssignment({ itemId: itemId, empIds: empIds, dueDate: dueDate });
+    .saveTrainingAssignment({ itemType: itemType, itemId: itemId, empIds: empIds, dueDate: dueDate });
+}
+
+// ── Quiz editor (manager, T2) ──────────────────────────────────────────────
+function trainQuizById_(quizId) {
+  var qs = (TRAIN_STATE.quizzes && TRAIN_STATE.quizzes.quizzes) || [];
+  for (var i = 0; i < qs.length; i++) if (qs[i].quizId === quizId) return qs[i];
+  return null;
+}
+
+function trainOpenQuizEditor_(quizId) {
+  var existing = quizId ? trainQuizById_(quizId) : null;
+  TRAIN_STATE.qed = existing
+    ? { quizId: quizId, title: existing.title, kbItemId: existing.kbItemId, passPct: existing.passPct,
+        questions: existing.questions.map(function (q) { return { q: q.q, options: q.options.slice(), correct: q.correct }; }) }
+    : { quizId: '', title: '', kbItemId: '', passPct: 80, questions: [{ q: '', options: ['', ''], correct: 0 }] };
+  var overlay = ensureOverlay('train-qed-overlay', { onClose: trainCloseQuizEditor_ });
+  trainRenderQuizEditor_(overlay);
+}
+
+function trainRenderQuizEditor_(overlay) {
+  overlay = overlay || document.getElementById('train-qed-overlay');
+  var st = TRAIN_STATE.qed;
+  if (!overlay || !st) return;
+  var kbItems = (TRAIN_STATE.kbTree && TRAIN_STATE.kbTree.items) || [];
+  var kbSel = '<select id="tr-qed-kb"><option value="">(none)</option>';
+  kbItems.forEach(function (it) {
+    kbSel += '<option value="' + esc(it.id) + '"' + (it.id === st.kbItemId ? ' selected' : '') + '>' + esc(it.title) + '</option>';
+  });
+  kbSel += '</select>';
+  var h = '<div class="modal tr-qed"><div class="body">' +
+    '<h2 style="margin:0 0 12px;">' + (st.quizId ? 'Edit quiz' : 'New quiz') + '</h2>' +
+    '<div class="field"><label>Title</label><input type="text" id="tr-qed-title" maxlength="120" value="' + esc(st.title) + '"></div>' +
+    '<div class="field"><label>Pass threshold (%)</label><input type="number" id="tr-qed-pass" min="0" max="100" value="' + Number(st.passPct) + '"></div>' +
+    '<div class="field"><label>Linked Reference item (optional — shown as "review the material")</label>' + kbSel + '</div>';
+  st.questions.forEach(function (q, qi) {
+    h += '<div class="tr-qed-q"><div class="qhead"><span class="qn">Question ' + (qi + 1) + '</span>' +
+      (st.questions.length > 1 ? '<button class="tr-revoke-btn" data-qed-delq="' + qi + '">Remove</button>' : '') + '</div>' +
+      '<div class="field"><textarea data-qed-q="' + qi + '" rows="2" maxlength="500" placeholder="Question text">' + esc(q.q) + '</textarea></div>';
+    q.options.forEach(function (opt, oi) {
+      h += '<div class="opt-row">' +
+        '<input type="radio" name="tr-qed-correct-' + qi + '" value="' + oi + '"' + (q.correct === oi ? ' checked' : '') + ' title="Correct answer">' +
+        '<input type="text" data-qed-opt="' + qi + ':' + oi + '" maxlength="200" placeholder="Option ' + (oi + 1) + '" value="' + esc(opt) + '">' +
+        (q.options.length > 2 ? '<button class="tr-revoke-btn" data-qed-delopt="' + qi + ':' + oi + '">×</button>' : '') +
+        '</div>';
+    });
+    if (q.options.length < 6) h += '<button class="kb-btn" data-qed-addopt="' + qi + '">+ Option</button>';
+    h += '<div class="tr-qed-hint">Pick the radio next to the correct option. Reps never see which it is.</div></div>';
+  });
+  h += (st.questions.length < 50 ? '<button class="kb-btn" id="tr-qed-addq">+ Question</button>' : '') +
+    '</div><div class="foot">' +
+    '<button class="kb-btn" onclick="trainCloseQuizEditor_()">Cancel</button>' +
+    '<button class="tr-complete-btn" id="tr-qed-save">' + icon('check', 13) + ' Save quiz</button>' +
+    '</div></div>';
+  overlay.innerHTML = h;
+
+  var aq = document.getElementById('tr-qed-addq');
+  if (aq) aq.addEventListener('click', function () {
+    trainQedSnapshot_();
+    TRAIN_STATE.qed.questions.push({ q: '', options: ['', ''], correct: 0 });
+    trainRenderQuizEditor_();
+  });
+  document.getElementById('tr-qed-save').addEventListener('click', trainSaveQuizFromEditor_);
+  if (!overlay._qedDelegated) {
+    overlay._qedDelegated = true;
+    overlay.addEventListener('click', function (e) {
+      var t;
+      if ((t = e.target.closest('[data-qed-addopt]'))) {
+        trainQedSnapshot_();
+        TRAIN_STATE.qed.questions[Number(t.getAttribute('data-qed-addopt'))].options.push('');
+        trainRenderQuizEditor_();
+      } else if ((t = e.target.closest('[data-qed-delopt]'))) {
+        trainQedSnapshot_();
+        var p = t.getAttribute('data-qed-delopt').split(':');
+        var qq = TRAIN_STATE.qed.questions[Number(p[0])];
+        qq.options.splice(Number(p[1]), 1);
+        if (qq.correct >= qq.options.length) qq.correct = 0;
+        trainRenderQuizEditor_();
+      } else if ((t = e.target.closest('[data-qed-delq]'))) {
+        trainQedSnapshot_();
+        TRAIN_STATE.qed.questions.splice(Number(t.getAttribute('data-qed-delq')), 1);
+        trainRenderQuizEditor_();
+      }
+    });
+  }
+}
+
+/** Snapshot the editor DOM into state before any structural re-render so
+ *  in-progress typing survives (the cnRenderSubforms_ lesson). */
+function trainQedSnapshot_() {
+  var st = TRAIN_STATE.qed;
+  if (!st || !document.getElementById('train-qed-overlay')) return;
+  var v = function (id) { var el = document.getElementById(id); return el ? el.value : null; };
+  if (v('tr-qed-title') !== null) st.title = v('tr-qed-title');
+  if (v('tr-qed-pass') !== null) st.passPct = Number(v('tr-qed-pass'));
+  if (v('tr-qed-kb') !== null) st.kbItemId = v('tr-qed-kb');
+  st.questions.forEach(function (q, qi) {
+    var qEl = document.querySelector('[data-qed-q="' + qi + '"]');
+    if (qEl) q.q = qEl.value;
+    q.options.forEach(function (_, oi) {
+      var oEl = document.querySelector('[data-qed-opt="' + qi + ':' + oi + '"]');
+      if (oEl) q.options[oi] = oEl.value;
+    });
+    var sel = document.querySelector('input[name="tr-qed-correct-' + qi + '"]:checked');
+    if (sel) q.correct = Number(sel.value);
+  });
+}
+
+function trainSaveQuizFromEditor_() {
+  trainQedSnapshot_();
+  var st = TRAIN_STATE.qed;
+  if (!st) return;
+  var btn = document.getElementById('tr-qed-save');
+  if (btn) btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (btn) btn.disabled = false;
+      if (!res || !res.success) { showToast((res && res.error) || 'Save failed.', 'error'); return; }
+      showToast('Quiz saved.', 'success');
+      trainCloseQuizEditor_();
+      if (currentView === 'trainingManage') trainLoadMgr_();
+    })
+    .withFailureHandler(function (err) {
+      if (btn) btn.disabled = false;
+      showToast('Save failed: ' + err.message, 'error');
+    })
+    .saveQuiz({ quizId: st.quizId, title: st.title, kbItemId: st.kbItemId, passPct: st.passPct, questions: st.questions });
+}
+
+/** Idempotent (ensureOverlay contract). */
+function trainCloseQuizEditor_() {
+  TRAIN_STATE.qed = null;
+  var o = document.getElementById('train-qed-overlay');
+  if (o) { o.classList.remove('open'); o.innerHTML = ''; }
+}
+
+function trainDeleteQuiz_(quizId) {
+  uiConfirm({
+    title: 'Delete quiz?',
+    message: 'Assignments pointing at it drop off checklists; past attempts and completions are kept.',
+    confirmLabel: 'Delete', tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { showToast((res && res.error) || 'Delete failed.', 'error'); return; }
+        showToast('Quiz deleted.', 'success');
+        if (currentView === 'trainingManage') trainLoadMgr_();
+      })
+      .withFailureHandler(function (err) { showToast('Delete failed: ' + err.message, 'error'); })
+      .deleteQuiz(quizId);
+  });
 }
 
 function trainRevoke_(assignId) {

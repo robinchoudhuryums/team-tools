@@ -89,10 +89,16 @@ Apps Script project under its own directory, synced via `clasp`.
      tabs in the KB spreadsheet (`TrainingAssignments` append-+-revoke,
      `TrainingCompletions` append-only); re-assigning an item RESETS
      its completion (latest `assignedAt` wins — the re-certification
-     mechanism). T2 (quizzes, server-graded, answer keys never ship to
-     the client) and T3 (per-employee signable docs, NEW
-     `HR_DOCS_SS_ID`, team-scoped via roster column M `ManagerEmail`)
-     are spec'd, not built. See INV-120.
+     mechanism). **T2 (shipped):** interactive quizzes — manager-authored
+     in a Team Training editor (`Quizzes` tab, answer keys in
+     `QuestionsJson` are SERVER-ONLY), assignable like KB items
+     (`itemType='quiz'`), graded server-side (`submitQuizAttempt` →
+     append-only `QuizAttempts`; a pass auto-writes the completion,
+     `via='quiz'`). Per §9.4: unlimited retries, correct answers are
+     NEVER revealed (only per-question right/wrong), attempt counts
+     surface on the checklist + matrix. T3 (per-employee signable docs,
+     NEW `HR_DOCS_SS_ID`, team-scoped via roster column M
+     `ManagerEmail`) is spec'd, not built. See INV-120/INV-121.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -277,7 +283,7 @@ this section before touching the relevant area.
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
   `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`,
   `getTrainingDashboard`, `saveTrainingAssignment`,
-  `revokeTrainingAssignment`.
+  `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`.
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -2840,6 +2846,8 @@ INV-118 | `kbUploadImage(dataUrl)` (KB Phase 3) is manager-gated (INV-02) and va
 INV-119 | **No free text ever enters the KB AI vendor payload.** `kbGetFacetGuidance(facets)` (Phase A) is rep-callable (requires `getEmployeeInfo_`), gated server-side by the `kbAiGuidance` feature flag (scope `both`, default OFF, danger-marked), and best-effort — every failure path (flag off, no facets, thin retrieval, missing `KB_AI_API_KEY`, daily cap reached, vendor error) returns `{ none: true, reason }` and never throws to the client. The privacy boundary is `kbAiSanitizeFacets_`: every facet is whitelist-validated against server-side vocabularies (departments ∈ `getDepartmentEmails_()` keys; update types ∈ `UPDATE_SUGGESTIONS_DEFAULT` ∪ `getUpdateSuggestions_()`; flag ∈ `CN_FLAG_TYPES`+`urgent`; tags ∈ the CALLER's own established tag vocabulary from `getCallNoteTagSuggestions` — a novel tag typed this minute is DROPPED, never sent), and the prompt builder `kbAiBuildPrompt_(clean, chunks)` takes ONLY the sanitized facets + our own PHI-free-by-policy KB chunk excerpts — there is no parameter through which free-typed note text or patient data can reach the wire. Retrieval reuses `searchReference` over `kbAiQueryTerms_(clean)` with a score floor (`KB_AI_SCORE_FLOOR` — thin matches never hit the API and the none is cached). Results cache org-wide (`KB_AI_CACHE_PREFIX`, 6h) keyed by generation salt (`KB_AI_GENERATION`, bumped by `invalidateKbCache_` on every KB save/delete) + MD5 of the canonical order-insensitive facet string (`kbAiCanonicalFacets_`). Spend: each vendor call is costed from usage tokens via `KB_AI_MODEL_PRICES` (unknown model → most expensive known rates, the cap can never be undercounted) into the `KB_AI_SPEND` daily counter; at `KB_AI_DAILY_CAP` (default $3, Admin-adjustable) the endpoint returns none until the date rolls. Each vendor call writes a PHI-free `KbAiGuidance` audit row (canonical facets + model + cost). `saveKbAiSettings` (manager-gated, INV-57 family) validates cap 0–100 + model ∈ `KB_AI_MODEL_PRICES` and persists `KB_AI_DAILY_CAP`/`KB_AI_MODEL`; the API key is NEVER settable or readable through any endpoint. Pinned by the `kb — AI Phase A` Node tests (whitelist / canonical hash / prompt / source tripwire) + `test_kbAi_gatesAndSettingsValidation` + the `saveKbAiSettings` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-120 | Training T1 endpoints follow the established families: `getMyTraining` / `markTrainingComplete` are caller-scoped (the rep's own assignments/completions only; complete requires a LIVE effective assignment — `'kb:'+itemId` in `trainEffectiveForEmp_` — so a rep can't write completion rows for unassigned items, and is idempotent on an already-complete item); `markTrainingComplete` / `saveTrainingAssignment` / `revokeTrainingAssignment` are locked (INV-01); the three manager endpoints are gated (INV-02). `TrainingCompletions` is append-only; `TrainingAssignments` rows are never deleted — revoke sets `RevokedAt`. Completion semantics: an item is complete iff some completion row's `CompletedAt` is STRICTLY after the latest non-revoked matching assignment row's `AssignedAt` (re-assign = reset, the re-certification mechanism; `'*'` rows match every employee). All four timestamp/date cells are Sheets-coercion-guarded (`trainCellTs_`/`trainCellDate_`, recovered in the KB spreadsheet's OWN tz — the normalizeAuditTs_ discipline; lexicographic compare = chronological). Status derivation is the pure `trainDeriveStatus_` (Node-pinned), shared by checklist + dashboard; "today" is the rep's roster tz in `getMyTraining` (F6 discipline) and manager tz in the dashboard. Audit rows `TrainingAssign`/`TrainingRevoke`/`TrainingComplete` are content-free (itemId/assignId/counts only). Assignment notifications are best-effort per-recipient (INV-14). Training dashboards are deliberately NOT team-scoped (every manager sees all reps, matching managerGetShiftStats); only the T3 Employee Docs carry per-team scoping. Pinned by `test_training_assignCompleteFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
+INV-121 | **Quiz answer keys never leave the server.** The `Quizzes` tab's `QuestionsJson` (including `correct` indices) is readable only by the manager-gated `getQuizzes` (managers author the keys); the rep-facing `getQuiz` returns ONLY the WHITELIST-built `trainStripQuizForRep_` shape (never a delete-key copy — a missed field can't leak), requires a live `quiz:` assignment (or manager caller), and `submitQuizAttempt` (rep-callable, locked INV-01, assignment-required) grades server-side via the pure `trainGradeQuiz_` and returns only `scorePct`/`passed`/per-question right-wrong booleans — correct options are NEVER revealed, pass or fail (operator decision §9.4; unlimited retries; attempt counts per assignment round ride back for display). A pass appends the `TrainingCompletions` row (`via='quiz'`, once per assignment round — the INV-120 reset semantics apply to attempts too); `QuizAttempts` is append-only and `PerQuestionJson` stores booleans only, never the rep's answers paired with a key. `saveQuiz` validates via the pure `trainValidateQuizDef_` (1–50 questions, 2–6 options, correct in range, passPct 0–100) and bounds the stored JSON under the Sheets cell cap (INV-96 spirit); `deleteQuiz` removes only the quiz row (attempt/completion history stays; orphaned assignments drop off via the title join, same as a deleted KB item). Audit rows `QuizSave`/`QuizDelete`/`QuizAttempt` carry ids/counts/scores — never question text. Pinned by the `training — quiz` Node tests (validator / grader / strip + the `getQuiz` source tripwire) + `test_training_quizFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -3451,6 +3459,20 @@ S67 | Training T1 — assign, complete, matrix, re-assign reset | Subsystem: Ser
     - Assign with "All employees" checked → every roster employee sees it; spot-check one
     - As a non-manager, call `google.script.run...getTrainingDashboard()`, `...saveTrainingAssignment({})`, `...revokeTrainingAssignment('x')` from the console
   Expected: All three non-manager calls return "Manager access required." (INV-02). Assignment emails arrive best-effort (branded, INV-105). A rep cannot complete an unassigned item ("not assigned to you"). Past-due pending items render the Overdue chip (warn in the summary). The two tracking tabs auto-provision in the KB spreadsheet on first use. Pinned by `test_training_assignCompleteFlow` + the gate cases + the `trainDeriveStatus_`/`trainChipHtml_` Node tests (INV-120).
+
+S68 | Training T2 — quiz author, take, fail/pass, attempt tracking | Subsystem: Server, Client (Training views)
+  Steps:
+    - As a manager, Training & Employee Docs → Team Training → "New quiz": title, pass threshold 100%, link a Reference item, add 2 questions (2–3 options each, mark the correct radio) → Save
+    - Confirm the quiz appears in the Quizzes table and in the assignment picker's "Quizzes" group; assign it to one employee
+    - As that employee, My Training shows the quiz row ("Quiz · N questions · pass ≥100%") with a "Take quiz" button + a "Review the material first" link when a Reference item is linked
+    - Take the quiz with one wrong answer → the result view shows score %, "Not passed", attempt 1, and per-question ✓/✗ WITHOUT revealing any correct option; the checklist stays Pending with "attempts: 1 · last score …"
+    - Leave a question unanswered and submit → a confirm warns it counts as wrong
+    - Retake with all correct → "Passed", attempt 2; the checklist flips to Done; Team Training's matrix cell shows ✓ with the attempt count "(2)"
+    - Inspect the rep payloads in DevTools (getQuiz + submitQuizAttempt responses) → no `correct` key anywhere
+    - Try `google.script.run...markTrainingComplete('<quizId>')` as the rep → rejected ("completed by passing its quiz")
+    - As a non-manager, call `...getQuizzes()`, `...saveQuiz({...})`, `...deleteQuiz('x')` → all "Manager access required."
+    - As the manager, delete the quiz → uiConfirm danger; assignments referencing it drop off the rep checklist; QuizAttempts history rows remain
+  Expected: Grading is server-side; the answer key exists only in the Quizzes tab + manager endpoints (INV-121). Re-assigning the quiz resets completion AND the attempt counter (counts are per assignment round). AuditLog rows QuizSave / QuizAttempt (score+attempt) / QuizDelete are content-free. Pinned by `test_training_quizFlow` + the quiz Node tests.
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)

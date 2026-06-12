@@ -43,9 +43,12 @@ Script project synced via [clasp](https://github.com/google/clasp).
     employees (or everyone) with an optional due date; reps work a
     My Training checklist with an in-app reader and mark items
     complete; managers see a per-rep completion matrix. Re-assigning
-    an item resets its completion (re-certification). Quizzes and
-    per-employee signable documents (reviews, PIPs) are spec'd as the
-    next phases (`docs/training-employee-docs-spec.md`).
+    an item resets its completion (re-certification). Interactive
+    quizzes: manager-authored, graded server-side (answer keys never
+    reach the browser), unlimited retries with attempt tracking — a
+    pass completes the item. Per-employee signable documents (reviews,
+    PIPs) are spec'd as the next phase
+    (`docs/training-employee-docs-spec.md`).
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in

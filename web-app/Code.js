@@ -10922,13 +10922,25 @@ function getMyTraining() {
     if (!keys.length) return { items: [] };
     const completions = trainReadCompletions_(emp.id);
     const titles = trainKbTitles_();
+    const quizzes = trainReadQuizzes_();
+    let attempts = null;   // lazy — only read when a quiz item is assigned
     const todayIso = Utilities.formatDate(new Date(), safeTimezone_(emp.timezone), 'yyyy-MM-dd');
     const items = [];
     keys.forEach(function (key) {
       const a = eff[key];
-      if (a.itemType !== 'kb') return;            // quizzes land in T2
-      const kb = titles[a.itemId];
-      if (!kb) return;                            // KB item deleted — unactionable, drop
+      let title, kbType = '', quizMeta = null;
+      if (a.itemType === 'kb') {
+        const kb = titles[a.itemId];
+        if (!kb) return;                          // KB item deleted — unactionable, drop
+        title = kb.title; kbType = kb.kbType;
+      } else if (a.itemType === 'quiz') {
+        const q = quizzes[a.itemId];
+        if (!q) return;                           // quiz deleted — drop (same rule)
+        title = q.title;
+        if (attempts === null) attempts = trainReadAttempts_(emp.id);
+        const stats = trainAttemptStats_(attempts, a.itemId, a.assignedAt);
+        quizMeta = { questionCount: q.questionCount, passPct: q.passPct, kbItemId: q.kbItemId, attempts: stats.count, lastScorePct: stats.lastScorePct };
+      } else return;
       let completedAt = '';
       for (let i = 0; i < completions.length; i++) {
         const c = completions[i];
@@ -10938,7 +10950,7 @@ function getMyTraining() {
       }
       items.push({
         itemType: a.itemType, itemId: a.itemId,
-        title: kb.title, kbType: kb.kbType,
+        title: title, kbType: kbType, quiz: quizMeta,
         assignedAt: a.assignedAt, dueDate: a.dueDate,
         completed: !!completedAt, completedAt: completedAt,
         status: trainDeriveStatus_(!!completedAt, a.dueDate, todayIso),
@@ -10967,6 +10979,7 @@ function markTrainingComplete(itemId) {
     itemId = String(itemId || '').trim();
     if (!itemId) return { success: false, error: 'Missing item id.' };
     const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
+    if (eff['quiz:' + itemId]) return { success: false, error: 'This item is completed by passing its quiz.' };
     const a = eff['kb:' + itemId];
     if (!a) return { success: false, error: 'That item is not assigned to you.' };
     const completions = trainReadCompletions_(emp.id);
@@ -10999,6 +11012,13 @@ function getTrainingDashboard() {
     const assignments = trainReadAssignments_();
     const completions = trainReadCompletions_(null);
     const titles = trainKbTitles_();
+    const quizzes = trainReadQuizzes_();
+    const allAttempts = trainReadAttempts_(null);
+    function itemTitle_(a) {
+      if (a.itemType === 'kb') return titles[a.itemId] ? titles[a.itemId].title : null;
+      if (a.itemType === 'quiz') return quizzes[a.itemId] ? quizzes[a.itemId].title : null;
+      return null;
+    }
     const rows = getEmployeeRosterRows_();
     const emps = [];
     for (let i = 1; i < rows.length; i++) {
@@ -11013,10 +11033,12 @@ function getTrainingDashboard() {
     emps.forEach(function (e) {
       const eff = trainEffectiveForEmp_(assignments, e.id);
       const cell = {};
+      const attemptsByKey = {};
       Object.keys(eff).forEach(function (key) {
         const a = eff[key];
-        if (a.itemType !== 'kb' || !titles[a.itemId]) return;
-        if (!itemMap[key]) itemMap[key] = { key: key, itemType: a.itemType, itemId: a.itemId, title: titles[a.itemId].title, assigned: 0, done: 0, overdue: 0 };
+        const title = itemTitle_(a);
+        if (!title) return;   // kb item / quiz deleted — drop (same rule as the checklist)
+        if (!itemMap[key]) itemMap[key] = { key: key, itemType: a.itemType, itemId: a.itemId, title: title, assigned: 0, done: 0, overdue: 0 };
         let completedAt = '';
         for (let i = 0; i < completions.length; i++) {
           const c = completions[i];
@@ -11026,21 +11048,25 @@ function getTrainingDashboard() {
         }
         const status = trainDeriveStatus_(!!completedAt, a.dueDate, todayIso);
         cell[key] = status;
+        if (a.itemType === 'quiz') {
+          const stats = trainAttemptStats_(allAttempts.filter(function (at) { return at.empId === e.id; }), a.itemId, a.assignedAt);
+          if (stats.count) attemptsByKey[key] = stats.count;
+        }
         itemMap[key].assigned++;
         if (status === 'done') itemMap[key].done++;
         if (status === 'overdue') itemMap[key].overdue++;
       });
-      if (Object.keys(cell).length) reps.push({ id: e.id, name: e.name, items: cell });
+      if (Object.keys(cell).length) reps.push({ id: e.id, name: e.name, items: cell, attempts: attemptsByKey });
     });
     const items = Object.keys(itemMap).map(function (k) { return itemMap[k]; })
       .sort(function (a, b) { return a.title.localeCompare(b.title); });
     // Active (non-revoked) assignment rows for the revoke UI.
     const empName = {};
     emps.forEach(function (e) { empName[e.id] = e.name; });
-    const active = assignments.filter(function (a) { return !a.revoked && a.itemType === 'kb' && titles[a.itemId]; })
+    const active = assignments.filter(function (a) { return !a.revoked && itemTitle_(a); })
       .map(function (a) {
         return {
-          assignId: a.assignId, itemId: a.itemId, title: titles[a.itemId].title,
+          assignId: a.assignId, itemType: a.itemType, itemId: a.itemId, title: itemTitle_(a),
           empId: a.empId, empLabel: a.empId === '*' ? 'All employees' : (empName[a.empId] || a.empId),
           assignedBy: a.assignedBy, assignedAt: a.assignedAt, dueDate: a.dueDate,
         };
@@ -11062,10 +11088,19 @@ function saveTrainingAssignment(payload) {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     payload = payload || {};
+    const itemType = payload.itemType === 'quiz' ? 'quiz' : 'kb';
     const itemId = String(payload.itemId || '').trim();
-    if (!itemId) return { success: false, error: 'Pick a Reference item to assign.' };
-    const kb = trainKbTitles_()[itemId];
-    if (!kb) return { success: false, error: 'That Reference item no longer exists.' };
+    if (!itemId) return { success: false, error: 'Pick an item to assign.' };
+    let itemTitle;
+    if (itemType === 'quiz') {
+      const q = trainReadQuizzes_()[itemId];
+      if (!q) return { success: false, error: 'That quiz no longer exists.' };
+      itemTitle = q.title;
+    } else {
+      const kb = trainKbTitles_()[itemId];
+      if (!kb) return { success: false, error: 'That Reference item no longer exists.' };
+      itemTitle = kb.title;
+    }
     const dueDate = String(payload.dueDate || '').trim();
     if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return { success: false, error: 'Invalid due date.' };
     // Resolve targets: '*' or a validated, deduped list of roster ids.
@@ -11092,12 +11127,12 @@ function saveTrainingAssignment(payload) {
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const writeIds = allMode ? ['*'] : targets;
     writeIds.forEach(function (empId) {
-      sheet.appendRow([Utilities.getUuid(), 'kb', itemId, empId, callerEmp.email, ts, dueDate, '']);
+      sheet.appendRow([Utilities.getUuid(), itemType, itemId, empId, callerEmp.email, ts, dueDate, '']);
     });
     writeAuditLog_(callerEmp, 'TrainingAssign', fmtDate_(now), '', false, 0,
-      'itemId=' + itemId + '; targets=' + (allMode ? 'all' : targets.length) + (dueDate ? '; due=' + dueDate : ''),
+      'itemType=' + itemType + '; itemId=' + itemId + '; targets=' + (allMode ? 'all' : targets.length) + (dueDate ? '; due=' + dueDate : ''),
       callerEmp.email);
-    notifyTrainingAssigned_(allMode ? null : targets, kb.title, dueDate);
+    notifyTrainingAssigned_(allMode ? null : targets, itemTitle, dueDate);
     return { success: true, assigned: allMode ? 'all' : targets.length };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -11161,4 +11196,273 @@ function notifyTrainingAssigned_(targetIds, itemTitle, dueDate) {
       } catch (e) { console.warn('notifyTrainingAssigned_ to one recipient failed: ' + e.message); }
     }
   } catch (e) { console.warn('notifyTrainingAssigned_ failed: ' + e.message); }
+}
+
+// ── T2: Quizzes (server-graded; answer keys NEVER ship to the client) ──────
+// docs/training-employee-docs-spec.md §5 + §9.4 (unlimited retries, never
+// reveal correct answers — only per-question right/wrong; attempts tracked).
+const TRAIN_QUIZ_TAB = 'Quizzes';
+const TRAIN_ATTEMPT_TAB = 'QuizAttempts';
+const TRAIN_QUIZ_HEADERS = ['QuizId','Title','KbItemId','PassPct','QuestionsJson','UpdatedBy','UpdatedAt'];
+const TRAIN_ATTEMPT_HEADERS = ['AttemptId','QuizId','EmpId','SubmittedAt','ScorePct','Passed','PerQuestionJson'];
+const TQ = { QUIZ_ID:0, TITLE:1, KB_ITEM_ID:2, PASS_PCT:3, QUESTIONS_JSON:4, UPDATED_BY:5, UPDATED_AT:6 };
+const TQA = { ATTEMPT_ID:0, QUIZ_ID:1, EMP_ID:2, SUBMITTED_AT:3, SCORE_PCT:4, PASSED:5, PER_QUESTION_JSON:6 };
+const TRAIN_QUIZ_MAX_QUESTIONS = 50;
+const TRAIN_QUIZ_MAX_OPTIONS = 6;
+const TRAIN_QUIZ_JSON_MAX = 45000;   // under the 50k Sheets cell limit (INV-96 spirit)
+
+/** Pure — validates + normalizes a quiz definition. Returns { ok, quiz } or
+ *  { ok:false, error }. Whitelist-built: only known fields survive. */
+function trainValidateQuizDef_(def) {
+  def = def || {};
+  const title = String(def.title || '').trim();
+  if (!title || title.length > 120) return { ok: false, error: 'Quiz title is required (max 120 chars).' };
+  const passPct = Math.round(Number(def.passPct));
+  if (!(passPct >= 0 && passPct <= 100)) return { ok: false, error: 'Pass threshold must be 0–100.' };
+  const kbItemId = String(def.kbItemId || '').trim();
+  if (!Array.isArray(def.questions) || def.questions.length < 1 || def.questions.length > TRAIN_QUIZ_MAX_QUESTIONS) {
+    return { ok: false, error: 'A quiz needs 1–' + TRAIN_QUIZ_MAX_QUESTIONS + ' questions.' };
+  }
+  const questions = [];
+  for (let i = 0; i < def.questions.length; i++) {
+    const q = def.questions[i] || {};
+    const text = String(q.q || '').trim();
+    if (!text || text.length > 500) return { ok: false, error: 'Question ' + (i + 1) + ': text is required (max 500 chars).' };
+    if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > TRAIN_QUIZ_MAX_OPTIONS) {
+      return { ok: false, error: 'Question ' + (i + 1) + ': needs 2–' + TRAIN_QUIZ_MAX_OPTIONS + ' options.' };
+    }
+    const options = [];
+    for (let j = 0; j < q.options.length; j++) {
+      const opt = String(q.options[j] || '').trim();
+      if (!opt || opt.length > 200) return { ok: false, error: 'Question ' + (i + 1) + ', option ' + (j + 1) + ': text is required (max 200 chars).' };
+      options.push(opt);
+    }
+    const correct = Math.round(Number(q.correct));
+    if (!(correct >= 0 && correct < options.length)) return { ok: false, error: 'Question ' + (i + 1) + ': pick the correct option.' };
+    questions.push({ q: text, options: options, correct: correct });
+  }
+  return { ok: true, quiz: { title: title, kbItemId: kbItemId, passPct: passPct, questions: questions } };
+}
+
+/** Pure — grades answers (option indices; missing/invalid = wrong) against
+ *  the full question defs. Returns { scorePct, passed-less data }: right,
+ *  total, perQuestion booleans. NEVER returns the correct indices. */
+function trainGradeQuiz_(questions, answers) {
+  const perQuestion = [];
+  let right = 0;
+  for (let i = 0; i < questions.length; i++) {
+    const a = (answers && answers.length > i) ? Math.round(Number(answers[i])) : -1;
+    const ok = a === questions[i].correct;
+    perQuestion.push(ok);
+    if (ok) right++;
+  }
+  const total = questions.length || 1;
+  return { right: right, total: questions.length, perQuestion: perQuestion, scorePct: Math.round(100 * right / total) };
+}
+
+/** Pure — the rep-facing shape. WHITELIST-constructed (never a delete-key
+ *  copy), so `correct` cannot leak through a missed field (the privacy
+ *  boundary — pinned by a Node test + a getQuiz source tripwire). */
+function trainStripQuizForRep_(quizId, quiz) {
+  return {
+    quizId: quizId, title: quiz.title, passPct: quiz.passPct,
+    kbItemId: quiz.kbItemId || '',
+    questions: (quiz.questions || []).map(function (q) { return { q: q.q, options: q.options.slice() }; }),
+  };
+}
+
+/** All quiz rows as { quizId: {title, kbItemId, passPct, questions[], questionCount} }.
+ *  Corrupt QuestionsJson → quiz skipped (callNoteRowToObject_ discipline). */
+function trainReadQuizzes_() {
+  const sheet = getOrCreateTrainSheet_(TRAIN_QUIZ_TAB, TRAIN_QUIZ_HEADERS);
+  const last = sheet.getLastRow();
+  const map = {};
+  if (last < 2) return map;
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_QUIZ_HEADERS.length).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    const id = String(rows[i][TQ.QUIZ_ID] || '').trim();
+    if (!id) continue;
+    let questions = null;
+    try { questions = JSON.parse(String(rows[i][TQ.QUESTIONS_JSON] || '')); } catch (_) {}
+    if (!Array.isArray(questions) || !questions.length) continue;
+    map[id] = {
+      title: String(rows[i][TQ.TITLE] || '(untitled quiz)'),
+      kbItemId: String(rows[i][TQ.KB_ITEM_ID] || '').trim(),
+      passPct: Math.round(Number(rows[i][TQ.PASS_PCT])) || 0,
+      questions: questions,
+      questionCount: questions.length,
+      rowIdx: i + 2,
+    };
+  }
+  return map;
+}
+
+/** Attempts for one rep (or all when empIdFilter is null), coercion-guarded. */
+function trainReadAttempts_(empIdFilter) {
+  const sheet = getOrCreateTrainSheet_(TRAIN_ATTEMPT_TAB, TRAIN_ATTEMPT_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const ssTz = getKbSS_().getSpreadsheetTimeZone();
+  const rows = sheet.getRange(2, 1, last - 1, TRAIN_ATTEMPT_HEADERS.length).getValues();
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const empId = String(rows[i][TQA.EMP_ID] || '').trim();
+    if (!empId) continue;
+    if (empIdFilter && empId !== empIdFilter) continue;
+    out.push({
+      quizId: String(rows[i][TQA.QUIZ_ID] || '').trim(),
+      empId: empId,
+      submittedAt: trainCellTs_(rows[i][TQA.SUBMITTED_AT], ssTz),
+      scorePct: Math.round(Number(rows[i][TQA.SCORE_PCT])) || 0,
+      passed: String(rows[i][TQA.PASSED]).toLowerCase() === 'true',
+    });
+  }
+  return out;
+}
+
+/** Attempts since the current assignment round (the §3a reset semantics —
+ *  a re-assign starts the attempt count over too). */
+function trainAttemptStats_(attempts, quizId, assignedAt) {
+  let count = 0, lastScore = null;
+  for (let i = 0; i < attempts.length; i++) {
+    const a = attempts[i];
+    if (a.quizId !== quizId || a.submittedAt <= assignedAt) continue;
+    count++;
+    if (lastScore === null || a.submittedAt >= lastScore.at) lastScore = { at: a.submittedAt, scorePct: a.scorePct };
+  }
+  return { count: count, lastScorePct: lastScore ? lastScore.scorePct : null };
+}
+
+/** Rep-callable — the quiz WITHOUT its answer key (trainStripQuizForRep_ is
+ *  the only shape that leaves the server; the caller must hold a live
+ *  assignment, same scoping rule as markTrainingComplete). */
+function getQuiz(quizId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    quizId = String(quizId || '').trim();
+    const quiz = trainReadQuizzes_()[quizId];
+    if (!quiz) return { error: 'Quiz not found.' };
+    const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
+    if (!eff['quiz:' + quizId] && !emp.isManager) return { error: 'That quiz is not assigned to you.' };
+    return trainStripQuizForRep_(quizId, quiz);
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-callable, locked (INV-01). Grades server-side, appends the attempt,
+ *  and on a pass appends the TrainingCompletions row (via='quiz'). Returns
+ *  score + per-question right/wrong ONLY — never the correct options
+ *  (spec §9.4). Unlimited retries; attempt # rides back for display. */
+function submitQuizAttempt(quizId, answers) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    quizId = String(quizId || '').trim();
+    const quiz = trainReadQuizzes_()[quizId];
+    if (!quiz) return { success: false, error: 'Quiz not found.' };
+    const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
+    const a = eff['quiz:' + quizId];
+    if (!a) return { success: false, error: 'That quiz is not assigned to you.' };
+    if (!Array.isArray(answers)) answers = [];
+    const graded = trainGradeQuiz_(quiz.questions, answers);
+    const passed = graded.scorePct >= quiz.passPct;
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const attemptId = Utilities.getUuid();
+    getOrCreateTrainSheet_(TRAIN_ATTEMPT_TAB, TRAIN_ATTEMPT_HEADERS).appendRow([
+      attemptId, quizId, emp.id, ts, graded.scorePct, passed ? 'TRUE' : 'FALSE',
+      JSON.stringify(graded.perQuestion),
+    ]);
+    const stats = trainAttemptStats_(trainReadAttempts_(emp.id), quizId, a.assignedAt);
+    // Completion: only on a pass, and only once per assignment round.
+    let alreadyComplete = false;
+    if (passed) {
+      const completions = trainReadCompletions_(emp.id);
+      for (let i = 0; i < completions.length; i++) {
+        const c = completions[i];
+        if (c.itemType === 'quiz' && c.itemId === quizId && c.completedAt > a.assignedAt) { alreadyComplete = true; break; }
+      }
+      if (!alreadyComplete) {
+        getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS)
+          .appendRow([emp.id, 'quiz', quizId, ts, 'quiz', attemptId]);
+      }
+    }
+    writeAuditLog_(emp, 'QuizAttempt', fmtDate_(now), '', false, 0,
+      'quizId=' + quizId + '; score=' + graded.scorePct + '; passed=' + passed + '; attempt=' + stats.count);
+    return {
+      success: true, scorePct: graded.scorePct, passed: passed,
+      right: graded.right, total: graded.total,
+      perQuestion: graded.perQuestion, attempt: stats.count, passPct: quiz.passPct,
+    };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated — full quiz defs INCLUDING answer keys (managers author
+ *  them); feeds the editor + the assignment form's quiz picker. */
+function getQuizzes() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const map = trainReadQuizzes_();
+    const quizzes = Object.keys(map).map(function (id) {
+      const q = map[id];
+      return { quizId: id, title: q.title, kbItemId: q.kbItemId, passPct: q.passPct, questionCount: q.questionCount, questions: q.questions };
+    }).sort(function (a, b) { return a.title.localeCompare(b.title); });
+    return { quizzes: quizzes };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Create-or-update by quizId.
+ *  Validates via the pure trainValidateQuizDef_; bounds the stored JSON
+ *  (INV-96 spirit). Audit: QuizSave (id + question count — never text). */
+function saveQuiz(def) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const v = trainValidateQuizDef_(def);
+    if (!v.ok) return { success: false, error: v.error };
+    if (v.quiz.kbItemId && !trainKbTitles_()[v.quiz.kbItemId]) {
+      return { success: false, error: 'The linked Reference item no longer exists.' };
+    }
+    const qJson = JSON.stringify(v.quiz.questions);
+    if (qJson.length > TRAIN_QUIZ_JSON_MAX) return { success: false, error: 'Quiz is too large — split it into two quizzes.' };
+    const sheet = getOrCreateTrainSheet_(TRAIN_QUIZ_TAB, TRAIN_QUIZ_HEADERS);
+    const quizId = String((def && def.quizId) || '').trim() || Utilities.getUuid();
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const rowVals = [quizId, v.quiz.title, v.quiz.kbItemId, v.quiz.passPct, qJson, callerEmp.email, ts];
+    const existing = trainReadQuizzes_()[quizId];
+    if (existing) sheet.getRange(existing.rowIdx, 1, 1, TRAIN_QUIZ_HEADERS.length).setValues([rowVals]);
+    else sheet.appendRow(rowVals);
+    writeAuditLog_(callerEmp, 'QuizSave', fmtDate_(now), '', false, 0,
+      'quizId=' + quizId + '; questions=' + v.quiz.questions.length + '; passPct=' + v.quiz.passPct, callerEmp.email);
+    return { success: true, quizId: quizId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Deletes the quiz ROW (attempts
+ *  + completions stay — append-only history); live assignments referencing
+ *  it drop off checklists/dashboards via the title join, same as a deleted
+ *  KB item. Audit: QuizDelete. */
+function deleteQuiz(quizId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    quizId = String(quizId || '').trim();
+    const existing = trainReadQuizzes_()[quizId];
+    if (!existing) return { success: false, error: 'Quiz not found.' };
+    getOrCreateTrainSheet_(TRAIN_QUIZ_TAB, TRAIN_QUIZ_HEADERS).deleteRow(existing.rowIdx);
+    const now = new Date();
+    writeAuditLog_(callerEmp, 'QuizDelete', fmtDate_(now), '', false, 0, 'quizId=' + quizId, callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }

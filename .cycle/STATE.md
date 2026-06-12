@@ -145,10 +145,22 @@ Updated: 2026-06-11
   `train/script_training.html` (trainingHome + trainingManage tabs, reader
   modal reuses kbMd_ + kbRecordView('training')), TOOLS entry `develop`,
   INV-120 + S67 + design decision in CLAUDE.md, gate cases + 
-  test_training_assignCompleteFlow in Tests.js, Node 105→109. NEXT: T2
-  (quizzes — Quizzes/QuizAttempts tabs, saveQuiz/getQuiz strip-keys/
-  submitQuizAttempt server-graded, attempt counts in checklist+matrix), then
-  T3 (employee docs — operator must fill roster column M first).
+  test_training_assignCompleteFlow in Tests.js, Node 105→109. **T2 SHIPPED**
+  (quizzes): Quizzes/QuizAttempts tabs (auto-provision, KB_SS_ID); pure
+  trainValidateQuizDef_/trainGradeQuiz_/trainStripQuizForRep_ (Node-pinned;
+  the strip is WHITELIST-built and getQuiz has a source tripwire — INV-121
+  answer keys never leave the server); getQuiz/submitQuizAttempt rep-callable
+  assignment-required (grades server-side, pass → completion via='quiz' once
+  per assignment round, attempt counts per round — reset semantics extend to
+  attempts); getQuizzes/saveQuiz/deleteQuiz manager-gated (+gate cases);
+  client quiz-taking modal (never shows correct answers, unanswered-confirm,
+  retake-on-fail) + quiz editor modal (snapshot-before-rerender, the
+  cnRenderSubforms_ lesson) + Quizzes table + quiz optgroup in the assign
+  picker + attempt counts on checklist/matrix. test_training_quizFlow;
+  Node 109→113. INV-121 + S68 + CLAUDE.md/README/spec updated. NEXT: T3
+  (employee docs — HR_DOCS_SS_ID, EMP.MANAGER_EMAIL col M + roster cache
+  v6, frozen-content signing, team-scoped reads; operator must fill
+  column M first). Operator: deploy + runAllTests() + S67/S68 walks.
 
 ## Open follow-on items
 - Esc on the KB editor still discards unsaved edits silently (KB-6 residual — a

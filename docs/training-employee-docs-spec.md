@@ -1,9 +1,10 @@
 # Spec — Training & Employee Docs module
 
 Status: **APPROVED 2026-06-12 — all §9 operator decisions resolved (see §9).
-T1 SHIPPED 2026-06-12 (training core: assignments, completions, checklist,
-matrix — see CLAUDE.md INV-120 / S67 for the shipped reality). T2 (quizzes)
-and T3 (employee docs) are next.**
+T1 SHIPPED 2026-06-12 (training core — CLAUDE.md INV-120 / S67).
+T2 SHIPPED 2026-06-12 (quizzes — CLAUDE.md INV-121 / S68; per §9.4 answers
+are never revealed and attempts are tracked per assignment round).
+T3 (employee docs) is next — fill roster column M (`ManagerEmail`) first.**
 Authored 2026-06-12, from the feasibility discussion in-session. This is a
 design document; nothing here is built. When implementation ships, the
 shipped reality gets documented in CLAUDE.md (decisions, gotchas,

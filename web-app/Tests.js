@@ -488,6 +488,7 @@ function cleanupTestData() {
     const kbSs = getKbSS_();
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ASSIGN_TAB), 'TEST_', TA.EMP_ID, 2);
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
+    _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ATTEMPT_TAB), 'TEST_', TQA.EMP_ID, 2);
   } catch (e) { Logger.log('cleanupTestData: training tabs cleanup skipped: ' + e.message); }
 
   invalidateRosterCache_();
@@ -867,6 +868,7 @@ function _runAllTests() {
 
   // ── Training & Employee Docs — T1 (spec: docs/training-employee-docs-spec.md) ──
   _integrationTest('training_assignCompleteFlow',               test_training_assignCompleteFlow);
+  _integrationTest('training_quizFlow',                         test_training_quizFlow);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
@@ -3756,6 +3758,10 @@ function test_managerGates_rejectNonManager() {
     ['getTrainingDashboard',           function () { return getTrainingDashboard(); }],
     ['saveTrainingAssignment',         function () { return saveTrainingAssignment({ itemId: 'no-such-item', empIds: ['x'] }); }],
     ['revokeTrainingAssignment',       function () { return revokeTrainingAssignment('no-such-assign'); }],
+    // T2 quiz gates.
+    ['getQuizzes',                     function () { return getQuizzes(); }],
+    ['saveQuiz',                       function () { return saveQuiz({ title: 'gate', passPct: 80, questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] }); }],
+    ['deleteQuiz',                     function () { return deleteQuiz('no-such-quiz'); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -3853,13 +3859,14 @@ function test_kbAi_gatesAndSettingsValidation() {
 // Fixture: a throwaway KB article (created/deleted via the manager-gated KB
 // endpoints); training rows referencing it are deleted in the finally.
 function _cleanupTrainingRowsForItem_(itemId) {
-  [TRAIN_ASSIGN_TAB, TRAIN_COMPLETE_TAB].forEach(function (tabName) {
+  [TRAIN_ASSIGN_TAB, TRAIN_COMPLETE_TAB, TRAIN_ATTEMPT_TAB].forEach(function (tabName) {
     try {
       const sheet = getKbSS_().getSheetByName(tabName);
       if (!sheet) return;
       const last = sheet.getLastRow();
       if (last < 2) return;
-      const idCol = tabName === TRAIN_ASSIGN_TAB ? TA.ITEM_ID : TCMP.ITEM_ID;
+      const idCol = tabName === TRAIN_ASSIGN_TAB ? TA.ITEM_ID
+        : tabName === TRAIN_ATTEMPT_TAB ? TQA.QUIZ_ID : TCMP.ITEM_ID;
       const data = sheet.getRange(2, 1, last - 1, idCol + 1).getValues();
       for (let i = data.length - 1; i >= 0; i--) {
         if (String(data[i][idCol]).trim() === itemId) sheet.deleteRow(i + 2);
@@ -3948,6 +3955,99 @@ function test_training_assignCompleteFlow() {
     if (kbId) {
       _cleanupTrainingRowsForItem_(kbId);
       _asUser(_TEST_MGR_EMAIL, function () { return kbDeleteItem(kbId); });
+    }
+  }
+}
+
+// T2 — quiz lifecycle: author → assign → stripped fetch → fail → pass →
+// completion + attempt counts; the answer key never reaches a rep response.
+function test_training_quizFlow() {
+  let quizId = null;
+  try {
+    // Author (manager). passPct 100 → both questions must be right to pass.
+    const def = { title: 'TEST_TRAINING_QUIZ', passPct: 100, questions: [
+      { q: 'Pick B', options: ['A', 'B'], correct: 1 },
+      { q: 'Pick X', options: ['X', 'Y', 'Z'], correct: 0 },
+    ] };
+    const saved = _asUser(_TEST_MGR_EMAIL, function () { return saveQuiz(def); });
+    _assertTrue(saved && saved.success, 'quiz saved');
+    quizId = saved.quizId;
+
+    // Invalid defs rejected by the pure validator.
+    const bad = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveQuiz({ title: 'x', passPct: 80, questions: [{ q: 'q', options: ['only-one'], correct: 0 }] });
+    });
+    _assertFailure(bad, 'options', 'one-option question rejected');
+
+    // Assign the quiz to the India rep.
+    const asg = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemType: 'quiz', itemId: quizId, empIds: [_TEST_INDIA_ID], dueDate: '' });
+    });
+    _assertTrue(asg && asg.success, 'quiz assigned');
+
+    // Unassigned rep can't fetch or submit.
+    const phGet = _asUser(_TEST_PH_EMAIL, function () { return getQuiz(quizId); });
+    _assertNotNull(phGet && phGet.error, 'unassigned rep cannot fetch the quiz');
+    const phSub = _asUser(_TEST_PH_EMAIL, function () { return submitQuizAttempt(quizId, [1, 0]); });
+    _assertFailure(phSub, 'not assigned', 'unassigned rep cannot submit an attempt');
+
+    // Assigned rep fetch: stripped — the serialized response NEVER carries
+    // the answer key (INV: keys never leave the server).
+    const got = _asUser(_TEST_INDIA_EMAIL, function () { return getQuiz(quizId); });
+    _assertTrue(!got.error, 'assigned rep can fetch the quiz');
+    _assertEq(got.questions.length, 2, 'questions present');
+    _assertTrue(JSON.stringify(got).indexOf('correct') < 0, 'no correct key anywhere in the rep payload');
+
+    // markTrainingComplete must NOT work on a quiz item.
+    const mc = _asUser(_TEST_INDIA_EMAIL, function () { return markTrainingComplete(quizId); });
+    _assertFailure(mc, 'quiz', 'quiz items complete only via a passing attempt');
+
+    // Fail (one wrong), strictly after assignedAt at second resolution.
+    Utilities.sleep(1100);
+    const fail = _asUser(_TEST_INDIA_EMAIL, function () { return submitQuizAttempt(quizId, [1, 2]); });
+    _assertTrue(fail && fail.success, 'failing attempt accepted');
+    _assertEq(fail.passed, false, '50% < 100% does not pass');
+    _assertEq(fail.scorePct, 50, 'score graded server-side');
+    _assertEq(fail.attempt, 1, 'attempt counter = 1');
+    _assertTrue(JSON.stringify(fail).indexOf('correct') < 0, 'graded response carries no answer key');
+
+    let mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    let item = (mine.items || []).filter(function (i) { return i.itemId === quizId; })[0];
+    _assertNotNull(item, 'quiz item on the checklist');
+    _assertEq(item.status, 'pending', 'still pending after a fail');
+    _assertEq(item.quiz.attempts, 1, 'checklist shows the attempt count');
+
+    // Pass.
+    const pass = _asUser(_TEST_INDIA_EMAIL, function () { return submitQuizAttempt(quizId, [1, 0]); });
+    _assertTrue(pass && pass.success && pass.passed, 'passing attempt');
+    _assertEq(pass.attempt, 2, 'attempt counter = 2');
+    mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyTraining(); });
+    item = (mine.items || []).filter(function (i) { return i.itemId === quizId; })[0];
+    _assertEq(item && item.status, 'done', 'pass completes the item');
+
+    // A second pass appends an attempt but NOT a second completion row.
+    const pass2 = _asUser(_TEST_INDIA_EMAIL, function () { return submitQuizAttempt(quizId, [1, 0]); });
+    _assertTrue(pass2 && pass2.success && pass2.passed, 'retake after pass allowed');
+    const compSheet = getKbSS_().getSheetByName(TRAIN_COMPLETE_TAB);
+    let compCount = 0;
+    if (compSheet && compSheet.getLastRow() >= 2) {
+      compSheet.getRange(2, 1, compSheet.getLastRow() - 1, TRAIN_COMPLETE_HEADERS.length).getValues()
+        .forEach(function (r) { if (String(r[TCMP.ITEM_ID]).trim() === quizId) compCount++; });
+    }
+    _assertEq(compCount, 1, 'exactly one completion row per assignment round');
+
+    // Dashboard: quiz item present with done + attempts surfaced.
+    const dash = _asUser(_TEST_MGR_EMAIL, function () { return getTrainingDashboard(); });
+    const dItem = (dash.items || []).filter(function (i) { return i.itemId === quizId; })[0];
+    _assertNotNull(dItem, 'dashboard lists the quiz');
+    _assertTrue(dItem.done >= 1, 'dashboard counts the pass');
+    const dRep = (dash.reps || []).filter(function (r) { return r.id === _TEST_INDIA_ID; })[0];
+    _assertNotNull(dRep, 'rep row present');
+    _assertEq(dRep.attempts['quiz:' + quizId], 3, 'dashboard shows the attempt count');
+  } finally {
+    if (quizId) {
+      _cleanupTrainingRowsForItem_(quizId);
+      _asUser(_TEST_MGR_EMAIL, function () { return deleteQuiz(quizId); });
     }
   }
 }

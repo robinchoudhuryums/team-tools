@@ -1150,5 +1150,53 @@ test('trainChipHtml_: renders the three statuses; unknown degrades to pending', 
   assert.ok(trainChipHtml_('<script>').indexOf('tr-chip pending') >= 0, 'unknown status falls back to pending (no injection)');
 });
 
+// T2 — quizzes. The three pure helpers (validate / grade / strip) plus the
+// answer-key privacy boundary: the rep-facing shape is WHITELIST-built and
+// getQuiz must route through it (source tripwire).
+console.log('\ntraining — quiz validate / grade / strip (T2)');
+['TRAIN_QUIZ_MAX_QUESTIONS', 'TRAIN_QUIZ_MAX_OPTIONS'].forEach((name) => {
+  const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*\\d+);'));
+  assert.ok(m, name + ' declaration found in Code.js');
+  vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
+});
+['trainValidateQuizDef_', 'trainGradeQuiz_', 'trainStripQuizForRep_'].forEach((fn) => {
+  vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
+});
+const Q2 = { title: 'T', passPct: 80, questions: [
+  { q: 'A?', options: ['x', 'y', 'z'], correct: 2 },
+  { q: 'B?', options: ['t', 'f'], correct: 0 },
+] };
+test('trainValidateQuizDef_: normalizes a good def; rejects bad shapes', () => {
+  const ok = sb.trainValidateQuizDef_(Q2);
+  assert.ok(ok.ok, 'valid def accepted');
+  assert.strictEqual(ok.quiz.questions.length, 2);
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, title: '' }).ok, false, 'empty title rejected');
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, passPct: 101 }).ok, false, 'passPct > 100 rejected');
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, questions: [] }).ok, false, 'no questions rejected');
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, questions: [{ q: 'A?', options: ['x'], correct: 0 }] }).ok, false, '1 option rejected');
+  assert.strictEqual(sb.trainValidateQuizDef_({ ...Q2, questions: [{ q: 'A?', options: ['x', 'y'], correct: 5 }] }).ok, false, 'correct out of range rejected');
+});
+test('trainGradeQuiz_: grades right/wrong; missing answers count wrong; never returns correct indices', () => {
+  const g = sb.trainGradeQuiz_(Q2.questions, [2, 1]);
+  assert.strictEqual(g.scorePct, 50);
+  // JSON-compare: sandbox arrays have a different realm prototype, which
+  // deepStrictEqual rejects.
+  assert.strictEqual(JSON.stringify(g.perQuestion), '[true,false]');
+  const g2 = sb.trainGradeQuiz_(Q2.questions, [2]);   // second unanswered
+  assert.strictEqual(JSON.stringify(g2.perQuestion), '[true,false]');
+  assert.strictEqual(JSON.stringify(g).indexOf('correct'), -1, 'graded result carries no answer key');
+});
+test('trainStripQuizForRep_: whitelist-built — no correct key anywhere in the rep shape', () => {
+  const stripped = sb.trainStripQuizForRep_('q1', sb.trainValidateQuizDef_(Q2).quiz);
+  assert.strictEqual(JSON.stringify(stripped).indexOf('correct'), -1, 'answer key never leaves the server');
+  assert.strictEqual(stripped.questions.length, 2);
+  assert.strictEqual(JSON.stringify(stripped.questions[0].options), '["x","y","z"]');
+});
+test('getQuiz source tripwire: the rep response is built ONLY by trainStripQuizForRep_', () => {
+  const src = extractRawFunction('Code.js', 'getQuiz');
+  assert.ok(src.indexOf('return trainStripQuizForRep_(') >= 0, 'getQuiz returns the stripped shape');
+  assert.strictEqual(src.indexOf('questionsJson'), -1, 'raw questions JSON never returned');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
