@@ -1941,6 +1941,31 @@ function deleteCallNote(noteId) {
   finally { lock.releaseLock(); }
 }
 
+/** Manager delete from a rep's history (operator feedback 2026-06-12) —
+ *  the path deleteCallNote's own error message always pointed at ("ask
+ *  your manager"). Manager-gated (INV-02), locked (INV-01); NO time window
+ *  (that's the point — the rep window is 5 min, INV-60). Audit row carries
+ *  the manager as actor + a deletedBy marker; PHI-free (noteId only). */
+function managerDeleteCallNote(repEmpId, noteId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const emp = lookupEmployeeById_(String(repEmpId || '').trim());
+    if (!emp || !emp.callNotesSheetId) return { success: false, error: 'Rep not found or not enrolled.' };
+    const sheet = getCallNotesSheet_(emp);
+    const located = findCallNoteRow_(sheet, noteId);
+    if (!located) return { success: false, error: 'Note not found.' };
+    const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
+    sheet.deleteRow(located.rowIndex);
+    writeAuditLog_(emp, 'CallNoteDelete', dateLocal, '', false, 0,
+      'noteId=' + noteId + '; deletedBy=manager', callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
 
 /** Toggle the "pinned" state on one of the calling rep's notes. Pinned

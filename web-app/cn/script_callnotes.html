@@ -61,8 +61,8 @@
   .cnv-row input,
   .cnv-row textarea,
   .cnv-row .ce {
-    appearance: none; border: 1px solid transparent;
-    background: transparent;
+    appearance: none; border: 1px solid var(--line);
+    background: var(--paper);
     font-family: var(--ui); font-size: 13px; color: var(--ink);
     padding: 5px 8px; margin: 0; width: 100%;
     border-radius: var(--radius-sm); outline: none; resize: none;
@@ -78,10 +78,11 @@
     background: var(--accent-soft);
     box-shadow: 0 0 0 3px var(--accent-glow);
   }
+  /* Operator feedback (2026-06-12): tall fields default to ONE line and
+     auto-grow with content — keeps the template short for small/pinned
+     pop-out windows. */
   .cnv-row textarea,
-  .cnv-row .ce.ce-tall { min-height: 60px; line-height: 1.4; }
-  .cnv-row.full textarea,
-  .cnv-row.full .ce.ce-tall { min-height: 80px; }
+  .cnv-row .ce.ce-tall { min-height: 22px; line-height: 1.4; }
   /* Round 2 deferred 8e — contenteditable empty-state placeholder. The
      `.empty` class is toggled by cnSetFieldValue_ / blur / input handlers
      based on whether textContent.trim() is empty. */
@@ -93,6 +94,37 @@
     color: var(--muted-2);
     pointer-events: none;
   }
+  /* Operator feedback (2026-06-12): Callback / Caller / Relationship share
+     one horizontal row (labels above values) so the template fits a small
+     always-on-top pop-out. Falls back to 2-up in compact mode. */
+  .cnv-trio {
+    display: grid; grid-template-columns: 1.1fr 1fr .9fr; gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid color-mix(in oklch, var(--line), transparent 60%);
+  }
+  .cnv-trio .lbl {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 3px; display: flex; align-items: center; gap: 6px;
+  }
+  .cnv-trio .ce {
+    appearance: none; border: 1px solid var(--line); background: var(--paper);
+    font-family: var(--ui); font-size: 13px; color: var(--ink);
+    padding: 5px 8px; width: 100%; box-sizing: border-box;
+    border-radius: var(--radius-sm); outline: none;
+    min-height: 22px; cursor: text; white-space: pre-wrap; word-break: break-word;
+    transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+  }
+  .cnv-trio .ce:focus {
+    border-color: var(--accent); background: var(--accent-soft);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .cnv-trio .ce.empty::before {
+    content: attr(data-placeholder); color: var(--muted-2); pointer-events: none;
+  }
+  :root[data-compact] .cnv-trio { grid-template-columns: 1fr 1fr; gap: 8px; }
+  :root[data-compact] .cnv-doc-frame { padding: 10px 10px 6px; }
+  :root[data-compact] .cnv-row { grid-template-columns: 84px 1fr; padding: 5px 0; }
   /* below-doc copy hint sits just under the frame */
   .below-doc {
     font-family: var(--mono); font-size: 9px; font-weight: 500;
@@ -144,6 +176,12 @@
     transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
   }
   .flag-btn:hover { background: var(--paper-2); color: var(--ink); }
+  /* Operator feedback (2026-06-12): color-code the flags even when OFF so
+     the vocabulary reads at a glance (icon tint only; ON state unchanged). */
+  .flag-btn.action svg   { color: var(--warn); }
+  .flag-btn.training svg { color: var(--info); }
+  .flag-btn.review svg   { color: var(--accent); }
+  .flag-btn.urgent svg   { color: var(--destructive); }
   .flag-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
   .flag-btn.on { border-color: transparent; }
   .flag-btn.action.on   { background: var(--warn-soft);        color: var(--warning-deep); }
@@ -841,6 +879,19 @@
   .cn-form-clear-btn:hover {
     background: var(--danger-deep); border-color: var(--danger-deep); color: white;
   }
+
+  /* Suggested tags (heuristic — rep's own vocabulary matched against the
+     Issue/Resolution text; the AI version is deliberately NOT built, it
+     would send note text to a vendor — INV-119 posture). */
+  .rail-tag-suggest { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; }
+  .rail-tag-suggest .sug-lbl { font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
+  .rail-tag-suggest .sug-tag { font: inherit; font-size: 11px; border: 1px dashed var(--line); border-radius: 999px; background: var(--paper); color: var(--muted); padding: 2px 9px; cursor: pointer; }
+  .rail-tag-suggest .sug-tag:hover { color: var(--accent-2); border-color: var(--accent); background: var(--accent-soft); }
+
+  /* Manager per-rep card actions (item: manager delete from history) */
+  .cn-mgr-card-actions { display: flex; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .cn-mgr-del-btn { font: inherit; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--danger-deep); cursor: pointer; padding: 4px 10px; }
+  .cn-mgr-del-btn:hover { background: var(--danger-soft); border-color: var(--danger-deep); }
 
   /* ── Filter chips bar ───────────────────────────────────────────── */
   .cn-filter-bar {
@@ -2029,7 +2080,9 @@ function cnRenderNotesView(area) {
           <tr><td>Flag: Training</td><td><kbd>${esc(mod)}</kbd> + <kbd>2</kbd></td></tr>
           <tr><td>Flag: Review</td><td><kbd>${esc(mod)}</kbd> + <kbd>3</kbd></td></tr>
           <tr><td>Clear Note</td><td><kbd>${esc(mod)}</kbd> + <kbd>Backspace</kbd></td></tr>
-          <tr><td>Restore Cleared</td><td><kbd>${esc(mod)}</kbd> + <kbd>Z</kbd></td></tr>
+          <tr><td>Undo Clear / Undo Save</td><td><kbd>${esc(mod)}</kbd> + <kbd>Z</kbd> <span style="color:var(--muted)">(30s, empty form)</span></td></tr>
+          <tr><td>Next Field</td><td><kbd>Tab</kbd> or <kbd>Enter</kbd></td></tr>
+          <tr><td>New Line (same field)</td><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
           <tr><td>Show Shortcuts</td><td><kbd>${esc(mod)}</kbd> + <kbd>/</kbd>&nbsp; or &nbsp;<kbd>?</kbd></td></tr>
         </table>
       </div>
@@ -2101,22 +2154,24 @@ function cnRenderActiveForm_() {
             <span class="meta">· EDIT INLINE</span>
             <span class="copyhint">SELECTABLE — ${esc(mod)}C ANYWHERE INSIDE</span>
           </div>
-          <div class="cnv-row">
-            <div class="lbl">Callback</div>
-            <div class="ce empty" contenteditable="true" id="cn-fld-callback"
-                 data-field="callback" data-placeholder="(555) 123-4567"
-                 autocapitalize="off" autocorrect="off" spellcheck="false"
-                 tabindex="1"></div>
-          </div>
-          <div class="cnv-row">
-            <div class="lbl">Caller</div>
-            <div class="ce empty" contenteditable="true" id="cn-fld-caller"
-                 data-field="caller" data-placeholder="Caller name" tabindex="2"></div>
-          </div>
-          <div class="cnv-row">
-            <div class="lbl">Relationship</div>
-            <div class="ce empty" contenteditable="true" id="cn-fld-relationship"
-                 data-field="relationship" data-placeholder="self / spouse / parent / …" tabindex="3"></div>
+          <div class="cnv-trio">
+            <div>
+              <div class="lbl">Callback</div>
+              <div class="ce empty" contenteditable="true" id="cn-fld-callback"
+                   data-field="callback" data-placeholder="(555) 123-4567"
+                   autocapitalize="off" autocorrect="off" spellcheck="false"
+                   tabindex="1"></div>
+            </div>
+            <div>
+              <div class="lbl">Caller</div>
+              <div class="ce empty" contenteditable="true" id="cn-fld-caller"
+                   data-field="caller" data-placeholder="Caller name" tabindex="2"></div>
+            </div>
+            <div>
+              <div class="lbl">Relationship</div>
+              <div class="ce empty" contenteditable="true" id="cn-fld-relationship"
+                   data-field="relationship" data-placeholder="self / spouse / …" tabindex="3"></div>
+            </div>
           </div>
           <div class="cnv-row">
             <div class="lbl">Patient &amp; TRX</div>
@@ -2166,6 +2221,7 @@ function cnRenderActiveForm_() {
                  placeholder="type a tag and press ⏎" tabindex="8"
                  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
           <datalist id="cn-tag-suggestions"></datalist>
+          <div class="rail-tag-suggest" id="cn-tag-suggest"></div>
         </div>
 
         <div class="rail-card">
@@ -2180,7 +2236,7 @@ function cnRenderActiveForm_() {
             <button type="button" class="cn-action-sec" id="cn-ext-email-btn" title="Open the email composer without saving (for customer / provider emails)">
               <span>${icon('send', 13)}Open Email</span>
             </button>
-            <button type="button" class="cn-action-sec" id="cn-form-clear" title="Clear note (${esc(mod)}+Z to undo)">
+            <button type="button" class="cn-form-clear-btn" id="cn-form-clear" title="Clear note (${esc(mod)}+Z to undo)">
               <span>${icon('x', 13)}Clear</span><span class="kbd-chip">Esc</span>
             </button>
             <button type="button" class="cn-action-sec" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/)" style="flex:0 0 auto;min-width:42px">?</button>
@@ -2251,6 +2307,22 @@ function cnWireActiveForm_() {
     });
     cnLoadTagSuggestions_();   // populate the autocomplete datalist (B3)
   }
+  // Suggested-tag clicks — adds the tag (same path as typing + Enter).
+  const tagSuggest = document.getElementById('cn-tag-suggest');
+  if (tagSuggest) {
+    tagSuggest.addEventListener('click', function (e) {
+      const btn = e.target.closest('[data-sug-tag]');
+      if (!btn) return;
+      const tag = btn.getAttribute('data-sug-tag');
+      const cur = cnGetFormTags_(form);
+      if (cur.indexOf(tag) < 0 && cur.length < 8) {
+        cur.push(tag);
+        cnSetFormTags_(form, cur);
+        cnPersistActiveFormDraft_();
+      }
+      cnRefreshTagSuggest_();
+    });
+  }
   // Tag chip clicks (× removal) — event delegation on the chip container.
   const tagChips = document.getElementById('cn-tag-chips');
   if (tagChips) {
@@ -2299,15 +2371,54 @@ function cnWireActiveForm_() {
         if (e.key === 'Backspace') { e.preventDefault(); cnClearActiveForm_(); return; }
         if (e.key === '/') { e.preventDefault(); cnOpenShortcutsOverlay_(); return; }
       }
+      // Operator feedback (2026-06-12): Enter advances to the next field
+      // (like Tab); Shift+Enter inserts a newline in the same field.
+      // Ctrl/Cmd+Enter (save) was handled above.
+      if (e.key === 'Enter' && !e.shiftKey && !e.altKey && el.isContentEditable) {
+        e.preventDefault();
+        cnFocusNextField_(el.id);
+        return;
+      }
       if (e.key === 'Escape' && !e.defaultPrevented) {
         if (document.querySelector('.overlay.open')) return;
         e.preventDefault();
         cnClearActiveForm_();
       }
     });
+    // Operator feedback (2026-06-12): Sheets-style overwrite — a FRESH focus
+    // selects the field's content so typing replaces it. A drag-select on the
+    // focusing click wins (we only select-all when the click left a collapsed
+    // caret); a second click inside collapses to a caret as usual.
+    if (el.isContentEditable) {
+      el.addEventListener('mousedown', function () {
+        el._cnMouseFocus = document.activeElement !== el;
+      });
+      el.addEventListener('focus', function () {
+        if (!el.textContent.trim()) return;
+        if (el._cnMouseFocus) {
+          var once = function () {
+            document.removeEventListener('mouseup', once);
+            el._cnMouseFocus = false;
+            setTimeout(function () {
+              if (document.activeElement !== el) return;
+              var sel = window.getSelection();
+              if (sel && !sel.isCollapsed) return;   // drag-select wins
+              cnSelectAllIn_(el);
+            }, 0);
+          };
+          document.addEventListener('mouseup', once);
+        } else {
+          cnSelectAllIn_(el);   // keyboard focus (Tab / Enter-nav)
+        }
+      });
+    }
     el.addEventListener('input', function () {
       cnFormTimerStartIfNeeded_();
       persistDebounced();
+      if (el.id === 'cn-fld-issue' || el.id === 'cn-fld-resolution') {
+        clearTimeout(_cnTagSuggestTimer);
+        _cnTagSuggestTimer = setTimeout(cnRefreshTagSuggest_, 500);
+      }
       // Sync .empty class on contenteditable so the data-placeholder pseudo
       // shows/hides correctly. No-op for input/textarea.
       if (el.isContentEditable) {
@@ -2371,22 +2482,38 @@ function cnWireActiveForm_() {
   // Bound at the form level so it doesn't fight with the native input undo
   // stack outside of the post-clear state.
   form.addEventListener('keydown', function (e) {
-    if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
-      const snap = CN_STATE.lastClearedSnapshot;
-      if (!snap) return;
-      if (Date.now() - snap.at > CN_CLEAR_UNDO_WINDOW_MS) return;
-      // Only restore if the form is currently empty (= still in cleared state).
-      // Round 2 deferred 8e — read via cnGetFieldValue_ so the check works
-      // for both contenteditable .ce divs and legacy input/textarea elements.
-      const allEmpty = !cnGetFieldValue_('cn-fld-callback').trim()
-        && !cnGetFieldValue_('cn-fld-caller').trim()
-        && !cnGetFieldValue_('cn-fld-patient').trim()
-        && !cnGetFieldValue_('cn-fld-issue').trim()
-        && !cnGetFieldValue_('cn-fld-resolution').trim();
-      if (!allEmpty) return;
+    if (!((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey)) return;
+    // Only act when the form is empty (= a cleared/just-saved state); a
+    // non-empty form keeps the browser's native text-undo. Round 2 deferred
+    // 8e — read via cnGetFieldValue_ so the check works for both
+    // contenteditable .ce divs and legacy input/textarea elements.
+    const allEmpty = !cnGetFieldValue_('cn-fld-callback').trim()
+      && !cnGetFieldValue_('cn-fld-caller').trim()
+      && !cnGetFieldValue_('cn-fld-patient').trim()
+      && !cnGetFieldValue_('cn-fld-issue').trim()
+      && !cnGetFieldValue_('cn-fld-resolution').trim();
+    if (!allEmpty) return;
+    const snap = CN_STATE.lastClearedSnapshot;
+    if (snap && Date.now() - snap.at <= CN_CLEAR_UNDO_WINDOW_MS) {
       e.preventDefault();
       cnRestoreFromSnapshot_(snap);
       CN_STATE.lastClearedSnapshot = null;
+      return;
+    }
+    // Operator feedback (2026-06-12): Ctrl/Cmd+Z after Ctrl+Enter is a TRUE
+    // undo of the save — deletes the just-saved note (the server's 5-min
+    // delete window applies; audit row written) and restores the text.
+    const su = CN_STATE.lastSaveUndo;
+    if (su && Date.now() - su.at <= CN_CLEAR_UNDO_WINDOW_MS) {
+      e.preventDefault();
+      if (su.note && su.note._pending) {
+        showToast('Still saving — try undo again in a second', 'toast-warn');
+        return;
+      }
+      CN_STATE.lastSaveUndo = null;
+      if (cnFindNoteAnywhere_(su.note.noteId)) cnDoDeleteNote_(su.note.noteId);
+      cnRestoreFromSnapshot_(su.snap);
+      showToast('Save undone — note deleted, text restored', 'toast-success');
     }
   });
   document.getElementById('cn-form-submit').addEventListener('click', function () { cnSubmitActiveForm_(); });
@@ -2671,6 +2798,57 @@ function cnPersistActiveFormDraft_() {
 /** B3 — populate the tag-input autocomplete datalist from the rep's own
  *  non-archived tag history (best-effort; silent on failure). Every option
  *  value is esc()'d before innerHTML. */
+// Operator feedback (2026-06-12) — Enter-nav order through the template,
+// ending at the tag input. Focus triggers the select-all-on-fresh-focus
+// behavior, so Enter-Enter-Enter walks the form overwriting as you go.
+const CN_FIELD_NAV_ORDER = ['cn-fld-callback','cn-fld-caller','cn-fld-relationship',
+  'cn-fld-patient','cn-fld-issue','cn-fld-resolution','cn-fld-transferred','cn-tag-input'];
+function cnFocusNextField_(currentId) {
+  const i = CN_FIELD_NAV_ORDER.indexOf(currentId);
+  const nextId = CN_FIELD_NAV_ORDER[(i + 1) % CN_FIELD_NAV_ORDER.length] || CN_FIELD_NAV_ORDER[0];
+  const el = document.getElementById(nextId);
+  if (el) el.focus();
+}
+function cnSelectAllIn_(el) {
+  try {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  } catch (_) {}
+}
+
+// Heuristic tag suggestions — the rep's OWN tag vocabulary matched against
+// the Issue/Resolution text (every word of a kebab-tag must appear). Pure;
+// Node-pinned. The AI version is deliberately NOT built: it would send
+// free-typed note text (PHI) to a vendor — the exact boundary INV-119 draws.
+function cnSuggestTagsFromText_(text, vocab, current) {
+  const t = ' ' + String(text || '').toLowerCase() + ' ';
+  const out = [];
+  (vocab || []).forEach(function (tag) {
+    if ((current || []).indexOf(tag) >= 0) return;
+    const words = String(tag).split('-').filter(function (w) { return w.length >= 3; });
+    if (!words.length) return;
+    if (words.every(function (w) { return t.indexOf(w) >= 0; })) out.push(tag);
+  });
+  return out.slice(0, 4);
+}
+let _cnTagSuggestTimer = null;
+function cnRefreshTagSuggest_() {
+  const host = document.getElementById('cn-tag-suggest');
+  if (!host) return;
+  const form = document.getElementById('cn-active-form');
+  if (!form) return;
+  const text = cnGetFieldValue_('cn-fld-issue') + ' ' + cnGetFieldValue_('cn-fld-resolution');
+  const sugg = cnSuggestTagsFromText_(text, CN_STATE.tagVocab || [], cnGetFormTags_(form));
+  host.innerHTML = sugg.length
+    ? '<span class="sug-lbl">suggested</span>' + sugg.map(function (t) {
+        return '<button type="button" class="sug-tag" data-sug-tag="' + esc(t) + '">+ ' + esc(t) + '</button>';
+      }).join('')
+    : '';
+}
+
 function cnLoadTagSuggestions_() {
   const dl = document.getElementById('cn-tag-suggestions');
   if (!dl) return;
@@ -2678,6 +2856,7 @@ function cnLoadTagSuggestions_() {
     .withSuccessHandler(function (res) {
       const d = document.getElementById('cn-tag-suggestions');
       if (!d || !res || res.error || !Array.isArray(res.tags)) return;
+      CN_STATE.tagVocab = res.tags.slice();   // heuristic tag-suggest vocabulary
       d.innerHTML = res.tags.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('');
     })
     .withFailureHandler(function () { /* best-effort — no datalist on failure */ })
@@ -2925,6 +3104,9 @@ function cnSubmitActiveForm_(opts) {
   cnAutoCopyNote_(pendingNote);
   // 3. Clear the form so the rep can start the next call
   cnClearActiveForm_({ skipSnapshot: true });
+  // Arm Ctrl/Cmd+Z undo-of-save: holds the live note REFERENCE (its noteId
+  // is swapped in place when the server confirms) + the restore snapshot.
+  CN_STATE.lastSaveUndo = { note: pendingNote, snap: restoreSnapshot, at: Date.now() };
   cnFormTimerReset_();
   cnClearStickyFormDraft_();
   // 4. Re-render
@@ -5390,8 +5572,42 @@ function cnMgrRenderReadonlyCard_(note) {
         </div>
       </div>
       ${editor}
+      <div class="cn-mgr-card-actions">
+        <button type="button" class="cn-mgr-del-btn" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}"
+                onclick="cnMgrDeleteNote_(this)" title="Delete this note from the rep's history (manager — audited)">${icon('trash', 12)} Delete</button>
+      </div>
     </div>
   `;
+}
+
+/** Operator feedback (2026-06-12) — manager delete from history. The rep
+ *  self-delete window is 5 min (INV-60); this is the manager path its error
+ *  message always pointed at ("ask your manager"). Audited with the manager
+ *  as actor; uiConfirm danger gate. */
+function cnMgrDeleteNote_(btn) {
+  const noteId = btn.dataset.noteId;
+  const repId = btn.dataset.repId;
+  if (!noteId || !repId) return;
+  uiConfirm({
+    title: 'Delete this note?',
+    message: 'Permanently removes it from the rep\'s history. This cannot be undone (an audit row records the deletion).',
+    confirmLabel: 'Delete', tone: 'danger',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false;
+        if (!res.success) { showToast(res.error || 'Delete failed', 'toast-error'); return; }
+        showToast('Note deleted', 'toast-success');
+        cnMgrLoadRepNotes_();
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false;
+        showToast('Delete failed: ' + err.message, 'toast-error');
+      })
+      .managerDeleteCallNote(repId, noteId);
+  });
 }
 
 /** Click handler for the manager's training-reply save button. Reads the

@@ -270,7 +270,9 @@ function renderShell(state) {
   // pop-out target, so hiding the button there keeps the chrome quiet.
   const popOutBtn = COMPACT_MODE ? '' : `
     <button type="button" class="sb-popout-btn" title="Pop out to small window"
-            aria-label="Pop out to small window" onclick="popOutCurrentView()">
+            aria-label="Pop out to small window"
+            title="Pop out a compact panel — tip: PowerToys 'Always On Top' (Win+Ctrl+T) keeps it above other windows"
+            onclick="popOutCurrentView()">
       ${icon('popOut', 14)}
     </button>`;
 

@@ -100,6 +100,9 @@
   .kb-chunk-go:hover { color: var(--ink); background: var(--paper-card); }
   .kb-chunk-body { font-size: .9rem; }
   .kb-h-flash { background: var(--accent-soft); border-radius: 4px; transition: background 1.2s ease; }
+  /* Operator feedback (2026-06-12): search-term highlight in result chunks
+     (drawer + Reference compiled view). */
+  mark.kb-hl { background: var(--selection-bg); color: inherit; border-radius: 3px; padding: 0 1px; }
 </style>
 
 <script>
@@ -293,6 +296,51 @@ function kbGroupResults_(results) {
 // 'kbDrawerOpenItem_' in the drawer) - both accept (id, anchor) and jump to
 // the section in the full article. chunkMd renders through kbMd_ (escape-
 // first, same safety boundary as the article reader).
+// Operator feedback (2026-06-12) — highlight the query terms inside the
+// rendered result chunks. Token regex is the pure, Node-pinned part; the
+// wrapper walks TEXT NODES of already-rendered (kbMd_-escaped) DOM and
+// wraps matches in <mark> — never string-level HTML surgery, so it cannot
+// re-open the escaping boundary.
+function kbHlRegex_(q) {
+  var toks = String(q || '').toLowerCase().split(/\s+/)
+    .map(function (t) { return t.trim(); })
+    .filter(function (t) { return t.length >= 2; });
+  if (!toks.length) return null;
+  var escd = toks.map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+  return new RegExp('(' + escd.join('|') + ')', 'gi');
+}
+function kbHighlightTerms_(rootEl, query) {
+  try {
+    var re = kbHlRegex_(query);
+    if (!re || !rootEl) return;
+    var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+    var targets = [];
+    var n;
+    while ((n = walker.nextNode())) {
+      var p = n.parentElement;
+      if (!p || p.closest('mark, button, a.kb-btn, code, pre')) continue;
+      re.lastIndex = 0;
+      if (re.test(n.nodeValue)) targets.push(n);
+    }
+    targets.forEach(function (textNode) {
+      var s = textNode.nodeValue;
+      var frag = document.createDocumentFragment();
+      var last = 0, m;
+      re.lastIndex = 0;
+      while ((m = re.exec(s))) {
+        if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+        var mk = document.createElement('mark');
+        mk.className = 'kb-hl';
+        mk.textContent = m[0];
+        frag.appendChild(mk);
+        last = m.index + m[0].length;
+      }
+      if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+  } catch (_) {}
+}
+
 function kbChunkGroupsHtml_(results, openFn) {
   var html = '';
   kbGroupResults_(results).forEach(function (g) {
@@ -361,6 +409,7 @@ function kbDoSearch_(q) {
         KB_STATE.currentId = null;
         main.innerHTML = '<div class="kb-item-head"><h2>Results for "' + esc(q) + '"</h2></div>' +
           (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_') : '<div class="kb-empty">No matches.</div>');
+        kbHighlightTerms_(main, q);
       }
     })
     .withFailureHandler(function () {})
@@ -1013,6 +1062,7 @@ function kbDrawerSearch_(q) {
       if (!results.length) html += '<div class="kbd-empty">No matches.</div>';
       else html += kbChunkGroupsHtml_(results, 'kbDrawerOpenItem_');
       body.innerHTML = html;
+      kbHighlightTerms_(body, q);
     })
     .withFailureHandler(function () {})
     .searchReference(q);

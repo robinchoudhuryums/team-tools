@@ -280,6 +280,7 @@ this section before touching the relevant area.
   `managerGetReviewCandidates`, `getEnrolledCallNotesReps`,
   `exportCallNotesRange`, `setCallNoteTrainingReply`,
   `managerGetShiftStats`, `managerGetUnresolvedActionCount`,
+  `managerDeleteCallNote`,
   `getTeamMetrics`, `getMetricsAmbient`,
   `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`,
   `saveUpdateSuggestions`, `removeAutomationTriggers`,
@@ -2216,6 +2217,41 @@ this section before touching the relevant area.
   roster column M team scoping) lives in
   `docs/training-employee-docs-spec.md`; operator decisions are resolved
   in its §9. See INV-120 / S67.
+- **Operator feedback round (2026-06-12) — note-template ergonomics for the
+  pinned pop-out workflow.** The operator runs the compact pop-out pinned
+  via PowerToys "Always On Top" beside the CRM, which drove a density +
+  input-flow batch on the Call Notes form: Callback/Caller/Relationship
+  share one `.cnv-trio` row (labels above values; 2-up in compact);
+  Issue/Resolution default to ONE line and auto-grow; every field carries a
+  visible `var(--line)` border (the old transparent-until-focus styling hid
+  the field boundaries); flag buttons tint their icons per type even when
+  OFF; the Clear button uses the danger style (`.cn-form-clear-btn`).
+  Input flow: **Enter advances to the next field** (CN_FIELD_NAV_ORDER,
+  ending at the tag input; Shift+Enter = newline; Ctrl/⌘+Enter still
+  saves), and a **fresh focus selects the field's content** (Sheets-style
+  overwrite — `cnSelectAllIn_`; a drag-select on the focusing click wins,
+  a second click collapses to a caret). **Ctrl/⌘+Z after a save is a TRUE
+  undo**: the submit path arms `CN_STATE.lastSaveUndo` (live note ref +
+  restore snapshot); within 30s on an empty form, undo deletes the
+  just-saved note (server 5-min delete window applies; pending notes ask
+  you to retry in a second) and restores the text — the manual-Clear
+  snapshot keeps precedence. **Heuristic tag suggestions**
+  (`cnSuggestTagsFromText_`, Node-pinned): the rep's OWN tag vocabulary
+  (from `getCallNoteTagSuggestions`) matched against Issue/Resolution
+  text renders one-click chips under the tag input — the AI version is
+  deliberately NOT built (it would send note text to a vendor, the exact
+  INV-119 boundary; revisit only with an explicit operator privacy
+  decision). **Search-term highlight** in KB results (`kbHlRegex_`
+  Node-pinned + `kbHighlightTerms_`): walks TEXT NODES of the rendered
+  chunks and wraps matches in `<mark class="kb-hl">` (var(--selection-bg))
+  — DOM-walk, never string-level HTML surgery, so the kbMd_ escaping
+  boundary stays intact. **`managerDeleteCallNote(repEmpId, noteId)`**
+  (manager-gated, locked, NO time window — the rep window stays 5 min
+  INV-60): the path `deleteCallNote`'s error always pointed at; surfaced
+  as an audited danger button on the Team Notes per-rep card. PowerToys
+  itself can't be "integrated" (it's an OS utility) — the pop-out button's
+  tooltip now carries the Win+Ctrl+T tip; an in-app 8x8 queue-status
+  widget would need the 8x8 realtime API (future spec, on demand).
 
 ## Deferred Follow-ons
 

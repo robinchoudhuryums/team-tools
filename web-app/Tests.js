@@ -3740,6 +3740,7 @@ function test_managerGates_rejectNonManager() {
     ['getEnrolledCallNotesReps',       function () { return getEnrolledCallNotesReps(); }],
     ['exportCallNotesRange',           function () { return exportCallNotesRange(D, D); }],
     ['setCallNoteTrainingReply',       function () { return setCallNoteTrainingReply(_TEST_INDIA_ID, 'no-such-note', 'r'); }],
+    ['managerDeleteCallNote',          function () { return managerDeleteCallNote(_TEST_INDIA_ID, 'no-such-note'); }],
     ['getCallNotesTagTaxonomy',        function () { return getCallNotesTagTaxonomy(); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],

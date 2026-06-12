@@ -1199,6 +1199,28 @@ test('getQuiz source tripwire: the rep response is built ONLY by trainStripQuizF
   assert.strictEqual(src.indexOf('questionsJson'), -1, 'raw questions JSON never returned');
 });
 
+// Operator feedback round (2026-06-12) — heuristic tag suggester (Call
+// Notes) + search-term highlight tokenizer (KB drawer/Reference).
+console.log('\noperator feedback — tag suggest + highlight tokenizer');
+const cnSuggestTagsFromText_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnSuggestTagsFromText_');
+test('cnSuggestTagsFromText_: matches own-vocabulary tags whose words appear; skips current; caps 4', () => {
+  const vocab = ['battery-swap', 'warranty', 'shipping-delay', 'oop', 'a-b'];
+  const got = cnSuggestTagsFromText_('Customer asked about a battery swap under warranty', vocab, []);
+  assert.strictEqual(JSON.stringify(got), '["battery-swap","warranty"]');
+  assert.strictEqual(cnSuggestTagsFromText_('battery swap', vocab, ['battery-swap']).indexOf('battery-swap'), -1, 'already-added tag skipped');
+  assert.strictEqual(cnSuggestTagsFromText_('a b', vocab, []).length, 0, 'sub-3-char tag words never match');
+  assert.strictEqual(cnSuggestTagsFromText_('', vocab, []).length, 0);
+});
+const kbHlRegex_ = loadFunction(sb, 'kb/script_kb.html', 'kbHlRegex_');
+test('kbHlRegex_: token regex matches case-insensitively; escapes regex chars; null on empty', () => {
+  const re = kbHlRegex_('Battery c(1)');
+  assert.ok(re.test('the BATTERY light'), 'case-insensitive token');
+  re.lastIndex = 0;
+  assert.ok(re.test('code c(1) here'), 'regex metachars escaped, matched literally');
+  assert.strictEqual(kbHlRegex_('   '), null);
+  assert.strictEqual(kbHlRegex_('a'), null, 'single 1-char token yields no regex');
+});
+
 // T3 — Employee Docs: issue-payload validator (pure, from Code.js), the
 // status-chip renderer, and the signature-pad export-cap parity tripwire.
 console.log('\nempdocs — validator / chip / pad export cap (T3)');
