@@ -6,7 +6,7 @@ Apps Script project under its own directory, synced via `clasp`.
 ## Projects
 
 - **web-app/** — Multi-module browser web app deployed at one Web App
-  URL. Hosts three modules today, registered side-by-side in the
+  URL. Hosts five modules today, registered side-by-side in the
   `TOOLS` registry in `script_core.html`:
    - **Time Clock** — cross-timezone time tracking, PTO requests,
      manager dashboard, ADP-format export. Backs a shared Google
@@ -70,7 +70,14 @@ Apps Script project under its own directory, synced via `clasp`.
      read via the server and never open it. Phase 2 (shipped): a
      per-item Google-Doc→article converter (`kbConvertDriveDoc`) —
      review-before-save in the editor, for migrating embeds to fast
-     native articles.
+     native articles. Also shipped since: converter images export to
+     Drive at save time (Phase 2b) + paste-a-screenshot upload in the
+     editor (Phase 3), a Ctrl/⌘+K slide-over **drawer** for mid-call
+     lookup (mounted on `document.body`, with content-aware
+     suggestions + a usage log behind the manager "Most referenced"
+     block), and an optional **AI guidance card** (Phase A —
+     `kbGetFacetGuidance`, Anthropic API, whitelisted enum facets
+     only, feature-flagged OFF by default; INV-119).
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -1148,7 +1155,8 @@ this section before touching the relevant area.
   PTO badges); the side rail swaps content: Time Off mode renders the
   rectangular `.pto-tile` + upcoming-request context, Timesheet mode
   lazy-loads tsData via `loadTimesheetSideRail_` (its own
-  `getTimesheetData` call — NOT through `loadTimesheet`) and renders
+  `getTimesheetData` call — the legacy `loadTimesheet` render cluster
+  was deleted in Cycle 2 · L11, see INV-74) and renders
   a pay-period `.pto-tile` mirror + recent-activity list. TOOLS
   registry tab key stays `timeoff` so `?tool=timeoff` deep-links +
   `currentView === 'timeoff'` guards across the codebase keep working;
@@ -2752,7 +2760,7 @@ INV-76 | `appendCallNoteFeedback(noteId, message, kind)` (Round 2 · 8g) is rep-
 INV-77 | `setCallNoteFlag(noteId, flagType)` accepts `'urgent'` as a card-level toggle (Round 2 deferred 8e). Urgent bypasses the `FlagType` column entirely (`sanitizeFlagType_` still rejects it, INV-37 preserved) — toggles membership in `subformData.flags` only. `action`/`training`/`review`/`''` paths still flow through `FlagType` + reset `Resolved` on transition (INV-40); after writing `FlagType` the new primary value is also mirrored into `subformData.flags` (pruning conflicting `CN_FLAG_TYPES` entries but preserving `'urgent'`) so the form's multi-flag state stays consistent with the column | Subsystem: Server
 INV-78 | URL query params (`?compact=1`, `?tool=<tabKey>`, `?prefill=...`) are passed from `doGet` to the client via template evaluation (`tpl.serverQueryParams = e.parameter`) and exposed as `window.SERVER_QUERY_PARAMS` in `index.html`'s `<head>`. `__URL_PARAMS` in `script_core.html` reads from `SERVER_QUERY_PARAMS` first, falls back to `window.location.search` for local dev. Required because Apps Script's HtmlService iframe sandboxes `window.location.search` to the iframe's own URL — the user-facing deploy URL's query string is never visible to client JS through that path. The injected JSON is `<` → `<` escaped to prevent XSS via attacker-controlled query values containing `</script>`. Also applies to `form_public.html`'s `FORM_TOKEN` injection via `serveExternalForm_` (`tpl.formToken`): it uses the same unescaped `<?!=` print with the `<`→`<` guard — the escaping `<?=` mangles the token's JSON quotes, breaking the public form ("Form not found"). A related foot-gun: the literal scriptlet delimiters (`<?`/`?>`) or a literal `</script>` written inside a JS *comment* in these templates open a spurious scriptlet at `tpl.evaluate()` (the template engine ignores JS-comment boundaries), throwing a server-side "Unexpected token" — so comments must not contain those literals. Pinned by `test_tpl_formToken_usesUnescapedScriptlet` + `test_tpl_noEscapedJsonInjection` + `test_tpl_formPublic_evaluatesWithoutError` (the last actually `.evaluate()`s the template, catching the comment-delimiter case) | Subsystem: Server + Client (shell)
 INV-79 | Resizable sidebar width persists to `localStorage.umsSidebarW` (range 56–280px on restore — out-of-range values fall back to the default). Default 168px; snap threshold 100px determines the collapsed (icon-only) state. `initResizableSidebar_` sets `--sidebar-w` on both the `.sidebar` element AND `documentElement` so the `.app-shell` grid template recomputes. `.sidebar.collapsed` hides `.sb-lbl` labels + brand sub-name + user info text + section labels via CSS | Subsystem: Client (shell)
-INV-80 | Time / PTO mode (`localStorage.umsMergeMode`, `'timeoff'` \| `'timesheet'`, default `'timeoff'`) persists across reloads. `'timeoff'` mode renders the `.pto-tile` + upcoming-requests in the side rail; `'timesheet'` mode lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call, NOT via `loadTimesheet`) and renders a pay-period `.pto-tile` mirror + recent-activity list. The TOOLS registry tab key stays `'timeoff'` even though the label changed to `'Time / PTO'` so `?tool=timeoff` deep-links + `currentView === 'timeoff'` guards keep working | Subsystem: Client (Time Clock views)
+INV-80 | Time / PTO mode (`localStorage.umsMergeMode`, `'timeoff'` \| `'timesheet'`, default `'timeoff'`) persists across reloads. `'timeoff'` mode renders the `.pto-tile` + upcoming-requests in the side rail; `'timesheet'` mode lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call; the legacy `loadTimesheet` cluster was deleted in Cycle 2 · L11 — INV-74) and renders a pay-period `.pto-tile` mirror + recent-activity list. The TOOLS registry tab key stays `'timeoff'` even though the label changed to `'Time / PTO'` so `?tool=timeoff` deep-links + `currentView === 'timeoff'` guards keep working | Subsystem: Client (Time Clock views)
 INV-81 | The Clock view's coverage-strip "File N missing" CTA fires `fileMissingCalls_(date, missingCount)` which sets `window.CLK_NAV_HINT { source: 'coverageStrip', date, missingCount }` before calling `enterTool('callNotes')`. `cnConsumeNavHint_` on Log-view enter reads + nulls the hint and surfaces a confirmation toast. Per-call CDR data doesn't exist today (DQE Historical Data is per-(agent, date) aggregated only), so unmatched call IDs can't be passed via the hint yet — when a per-call source lands, extend the hint with `hint.calls[]` for prefill | Subsystem: Client (Time Clock views) + Client (Call Notes views)
 INV-82 | Tag taxonomy admin endpoints (`renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) are manager-gated (INV-02) and acquire `LockService.getScriptLock` with `waitLock(15000)` (INV-01). Rename and merge use `applyTagTransformAcrossReps_` to iterate every enrolled rep's per-rep Sheet and rewrite `subformData.tags[]` in place; dedupe handles the case where the target tag is already present on a note. Archive only mutates the `CN_ARCHIVED_TAGS` Script Property (JSON-encoded array of lowercase tags) — existing note tags are unchanged, so archive does NOT remove the tag from cards already in production. All three write a `CallNoteTagAdmin` audit row (INV-32 extension) with the manager's email + `{action, oldTag/newTag, repsTouched, notesUpdated}` summary. Per-rep Sheet failures are isolated via try/catch in the loop so one broken Sheet doesn't fail the whole rename. All three call `invalidateCnTaxonomyCache_()` after their audit write so the Admin table reflects the change immediately. `getCallNotesTagTaxonomy` returns the `archived` flag on each in-use tag plus an `archivedOnlyTags[]` array for archived tags no longer in active use, and is itself whole-result cached (`CN_TAXONOMY_CACHE_KEY`, 5 min) | Subsystem: Server
 INV-83 | `uiConfirm({title?, message?, confirmLabel?, cancelLabel?, tone?})` and `uiPrompt({title?, message?, initialValue?, placeholder?, validator?, confirmLabel?, cancelLabel?})` in `script_core.html` are Promise-returning replacements for `window.confirm` / `window.prompt`. All 14 native-dialog callsites across `tc/script_clock.html`, `tc/script_manager.html`, `tc/script_timeoff.html`, and `cn/script_callnotes.html` are converted — no `window.confirm` / `window.prompt` usage remains in the codebase. Esc + click-outside resolve `false`/`null`; Enter on a confirm fires OK unless the Cancel button is focused (a keyboard user who Tabs to Cancel and presses Enter gets cancel — confirming from Cancel fired destructive actions until fixed); Enter inside the prompt input submits. `tone:'danger'` paints the OK button destructive via `.ui-dialog-ok.is-danger`. `validator` on uiPrompt returns an error string and the dialog shows it inline WITHOUT closing so the rep can fix and retry. A `resolved` sentinel inside each helper prevents double-resolution if Esc + click-outside fire in quick succession. Multi-statement continuations are extracted into helpers (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`, `handleBulkActionConfirmed_`) so click-handler signatures stay synchronous from the dispatcher's perspective | Subsystem: Client (shell)
@@ -3168,7 +3176,7 @@ S46 | Time / PTO mode toggle (Round 2 · 8b) | Subsystem: Client (Time Clock vie
     - Refresh; confirm the last-chosen mode persists
     - In DevTools, set `localStorage.umsMergeMode = 'timesheet'`; refresh; confirm Timesheet mode loads by default
     - Confirm the calendar itself is unchanged across modes (worked-hours badges + PTO state both render)
-  Expected: Mode toggle is instant (no calendar reload); persistence to `localStorage.umsMergeMode`. Timesheet-mode side rail lazy-loads tsData via `loadTimesheetSideRail_` (NOT `loadTimesheet`).
+  Expected: Mode toggle is instant (no calendar reload); persistence to `localStorage.umsMergeMode`. Timesheet-mode side rail lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call; the legacy `loadTimesheet` cluster no longer exists — INV-74).
 
 S47 | Hover-triggered day modal (Round 2 · 8c) | Subsystem: Client (Time Clock views)
   Steps:

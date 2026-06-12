@@ -29,10 +29,15 @@ Script project synced via [clasp](https://github.com/google/clasp).
     bodyHash-guarded) and persists a PHI backup row to the Intake
     spreadsheet; the shared AuditLog row stays PHI-free.
   - **Reference** — in-app knowledge base: a per-department tree +
-    full-text search + reader for training/policy docs. Markdown
-    articles (rendered with HTML-escape-first) and embedded Drive
-    Doc/Sheet/file previews. Managers edit inline; reps browse read-only.
-    PHI-free by policy.
+    section-aware full-text search + reader for training/policy docs.
+    Markdown articles (rendered with HTML-escape-first) and embedded
+    Drive Doc/Sheet/file previews, plus a per-item Doc→article
+    converter with Drive image export and paste-a-screenshot upload
+    in the editor. A Ctrl/⌘+K slide-over drawer gives reps mid-call
+    lookup from any tool, with an optional AI guidance card
+    (Anthropic API, whitelisted call facets only — no note text ever
+    leaves the app; feature-flagged off by default). Managers edit
+    inline; reps browse read-only. PHI-free by policy.
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in
@@ -64,4 +69,7 @@ The Apps Script test suite (`web-app/Tests.js`) runs from the editor
 (`runSmokeTests()` / `runAllTests()`). Pure client-side helpers also have
 unit tests that run off-editor with no dependencies: `npm test` (or
 `node test/client/run.js`). The harness lives outside `web-app/`, so
-`clasp` never pushes it.
+`clasp` never pushes it. A GitHub Action
+(`.github/workflows/client-tests.yml`) runs that harness plus a
+`node --check` of `Code.js` / `Tests.js` on every push and PR — the
+project's only automated check.

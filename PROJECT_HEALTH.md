@@ -24,11 +24,11 @@ client-lifecycle axes):
   Net +8 production fixes, 0 shipped new failure modes, ~13 defensive hardenings,
   3 new CI tripwires (SUBMITTED_AT reads, view-key registry, M1 test parity).
   Editor suite green post-deploy; Node harness 89 → 92.
-- **Known gaps carried forward** — KB Phase 2b/3 (image export, paste-upload — 2b in
-  progress); KB AI Phase A/B (approved, not started); L19 composer tab-switch typed
-  input; KB-6 Esc-discards-editor-edits confirm; DOM-lifecycle harness; P#17 out of
-  repo scope.
-- Last updated: 2026-06-11
+- **Known gaps carried forward** — L19 composer tab-switch typed input; KB-6
+  Esc-discards-editor-edits confirm; DOM-lifecycle harness; P#17 out of repo
+  scope. (KB Phase 2b/3 and KB AI Phase A all SHIPPED post-close on 2026-06-12 —
+  Node harness 99→105; KB AI Phase B stays gated on observed demand.)
+- Last updated: 2026-06-12 (gaps line updated post-cycle; scores unchanged from the 2026-06-11 close)
 
 ## Score History
 | Date | Cycle | Overall | Notes |
