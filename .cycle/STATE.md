@@ -132,6 +132,14 @@ Updated: 2026-06-11
 - (Carried) Operator: deploy latest (clasp push -f + New version), run runAllTests()
   once; Script Properties INTAKE_SS_ID, INTAKE_*_EMAIL, FORMS_SS_ID,
   FORM_DATA_RETENTION_DAYS=90, WEB_APP_URL, KB_SS_ID.
+- NEW THREAD (2026-06-12): Training & Employee Docs module SPEC'D —
+  `docs/training-employee-docs-spec.md` (DRAFT). Two areas: training
+  assignments/completions/quizzes (tracking tabs in KB_SS_ID; quiz keys
+  server-only) + per-employee signable docs (NEW HR_DOCS_SS_ID; content frozen
+  at issue, FormSubmissions-style hash, append-only, NO purge). Phased T1
+  training core → T2 quizzes → T3 employee docs. T1/T2 can start on spec
+  approval; T3 is GATED on operator decisions §9.1–9.3 (ADP overlap, PIP
+  signature legal weight, manager visibility). Do not start T3 without them.
 
 ## Open follow-on items
 - Esc on the KB editor still discards unsaved edits silently (KB-6 residual — a
