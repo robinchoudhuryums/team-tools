@@ -2135,6 +2135,10 @@ function cnRenderNotesView(area) {
           <tr><td>New Line (same field)</td><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
           <tr><td>Show Shortcuts</td><td><kbd>${esc(mod)}</kbd> + <kbd>/</kbd>&nbsp; or &nbsp;<kbd>?</kbd></td></tr>
         </table>
+        <button class="tour-btn primary" style="margin-top:14px;width:100%;justify-content:center"
+                onclick="document.getElementById('cn-shortcuts-overlay').classList.remove('open'); if (typeof tourStart==='function') tourStart();">
+          ${icon('info', 14)} Replay the app tour
+        </button>
       </div>
     </div>
   `;

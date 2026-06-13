@@ -79,6 +79,10 @@ deploy changes. After `clasp push`, cut a new deployment version in
 the Apps Script editor (Deploy → Manage deployments → Edit → Version:
 New version) so users see the change on next load.
 
+A first-load onboarding tour (hand-rolled coach-marks in
+`script_tour.html`) walks new reps through the shell and the core tools;
+it auto-starts once and is replayable from the Call Notes **?** menu.
+
 The Apps Script test suite (`web-app/Tests.js`) runs from the editor
 (`runSmokeTests()` / `runAllTests()`). Pure client-side helpers also have
 unit tests that run off-editor with no dependencies: `npm test` (or

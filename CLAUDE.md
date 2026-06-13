@@ -859,7 +859,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Eight client-side localStorage keys total.** All per-browser, all
+- **Nine client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -896,7 +896,11 @@ this section before touching the relevant area.
     accidental refresh mid-note lands back on the Log view where the
     sticky form draft restores the typed fields. `enterTool`'s
     managerOnly bump makes a stale manager-tab value safe for reps.
-  Clearing browser data wipes all eight.
+  - `umsTour` — onboarding-tour state: `{seenVersion}`. The coach-marks
+    tour auto-starts once per `TOUR_VERSION` (bump to re-offer after a
+    material UI change); stamped on finish/skip. Replayable anytime from
+    the Call Notes ? menu regardless of this flag.
+  Clearing browser data wipes all nine.
 
 ## Key Design Decisions
 
@@ -1172,11 +1176,11 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Eight client-side localStorage keys total" entry in
+  authoritative "Nine client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
-  `umsKbPanel`, `umsLastView`) — all per-browser, all
+  `umsKbPanel`, `umsLastView`, `umsTour`) — all per-browser, all
   try/catch-wrapped. (An earlier version of this decision listed only
   four; Round 2 · 8a/8b added the sidebar-width and Time/PTO-mode keys,
   the KB drawer added its single `umsKbPanel` prefs blob, and the
@@ -2299,6 +2303,28 @@ this section before touching the relevant area.
   card `cnCardDeleting`, drawer `kbdSpin`) — deliberately no Lottie/
   GIF deps; new loaders should extend this set with thematic
   keyframes.
+- **Onboarding tour — hand-rolled coach-marks (`script_tour.html`).** A
+  spotlight overlay (`#tour-block` click-catcher + `#tour-spot` box-shadow
+  ring that dims everything but the target + `#tour-pop` tooltip) walks a
+  declarative `TOUR_STEPS` registry (`{tool, view, selector, title, body,
+  managerOnly?}`). The engine navigates to each step's tab via `enterTool`
+  then spotlights its selector; a step whose target isn't in the DOM is
+  SKIPPED (never strands), and `managerOnly` steps are filtered for
+  non-managers (the tab-gating pattern). Mounted on `document.body` (the
+  KB-drawer lesson — Call Notes' `#view-area` re-renders would wipe it).
+  **Auto-starts once per `TOUR_VERSION`** on first load (gated on
+  `umsTour.seenVersion`; never in the compact pop-out, never on a
+  deep-link); **replayable** from the Call Notes ? (shortcuts) overlay via
+  `tourStart()`. Bump `TOUR_VERSION` to re-offer after a material UI
+  change. Adding a step = one `TOUR_STEPS` entry; a Node tripwire asserts
+  every step's `view` is a registered TOOLS tab key (a tab-key rename
+  can't silently orphan a step — the M3 view-key discipline). v1 covers
+  Time Clock (clock hero / actions / ribbon, Time-off tab), the shell
+  (sidebar / tab bar / pop-out with the PowerToys pin tip), Call Notes
+  (template / flags / tags / save quadrant / filter bar / ?+drawer), and
+  a managers-only closing step. Interactive gating ("now type here…") was
+  deliberately deferred — the passive spotlight teaches the same things
+  without fighting the optimistic re-renders.
 
 ## Deferred Follow-ons
 
@@ -2830,7 +2856,7 @@ Test Coverage Quality | whether tests actually guard regressions; the client DOM
 Server:
   web-app/Code.js, web-app/appsscript.json, web-app/.clasp.json
 Client (shell):
-  web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html
+  web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html, web-app/script_tour.html
 Client (Time Clock views):
   web-app/tc/script_clock.html, web-app/tc/script_timesheet.html, web-app/tc/script_timeoff.html, web-app/tc/script_manager.html
 Client (Call Notes views):
