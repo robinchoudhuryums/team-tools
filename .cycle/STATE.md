@@ -33,6 +33,34 @@ NEXT: operator deploy (clasp push -f + New version) — client-only, no Script
 Properties / operator-state change. Then optionally pick up F6 (_clkRemindedBreaks
 unbounded, Low) or proceed to /reflect to close Cycle 3.
 
+## jsdom DOM-lifecycle test harness (L item, in progress) — 5-phase plan APPROVED
+Operator picked jsdom (over happy-dom / zero-dep) — adds the FIRST dev dependency
+(npm ci now required for the DOM harness; pure run.js stays the zero-install floor).
+- Phase 0 (spike + decision gate) DONE — GO. jsdom loads the 8k-line CN partial +
+  core into a real window via getInternalVMContext (window===globalThis, with a
+  REAL document). runScripts:'outside-only' doesn't auto-fire DOMContentLoaded, so
+  module-top init listeners stay dormant — load-time side effects tamed for free.
+- Phase 1 (foundation) DONE — test/client/harness-dom.js + run-dom.js, 15/15 green.
+  Key mechanics: partials share lexical scope across runInContext calls (browser
+  <script> semantics), so a trailing BRIDGE (window.__t / h.t) get/sets the
+  const/let module state (CN_STATE const, currentView/empState let — NOT reachable
+  as ctx props). Programmable google.script.run mock (run.resolve/reject/lastFor/
+  countFor). extractMarkup() added to harness.js to mount modals.html for tc views
+  (their module-top listeners bind modal nodes). package.json: test:dom + `test`
+  runs both. CI workflow wired (npm ci + run-dom.js as a second step; pure step
+  stays first as the floor).
+- Phases REMAINING:
+  - Phase 2 (M ~1d): overlay lifecycle (Esc/ensureOverlay reopen-renders) + escape
+    discipline (drive cnRenderCardCore_/metrics/health/stats with hostile fields →
+    pin the F2 class as regressions) + focus trap.
+  - Phase 3 (M ~1d): optimistic-UI submit/revert (INV-48), _flagInFlight double-fire
+    (INV-56), late-callback currentView guards (cnLoadToday_ + intake/train).
+  - Phase 4 (S ~½d): docs polish + determinism hardening (mostly DONE early — README
+    + CI already wired in Phase 1).
+WHERE I LEFT OFF: Phases 0-1 committed + green (122 pure + 15 DOM). Resume at
+Phase 2 — escape-discipline tests first (they pin the just-shipped F2 fixes), then
+overlay lifecycle.
+
 ## In progress (facts to carry forward — NOT judgments)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
   PROJECT_HEALTH.md Current Standing + Score History updated). Net +8 (8 prod fixes
