@@ -77,6 +77,22 @@ has CI regression coverage. NEXT options: deploy the pending F1-F7 batch, pick u
 F6 (_clkRemindedBreaks), extend DOM coverage to more partials (intake/kb/train
 optimistic paths) as they change, or /reflect to close Cycle 3.
 
+## F6 + opportunistic DOM coverage (2026-06-15)
+- F6 DONE | tc/script_clock.html | clkUpdateBreak_ now resets _clkRemindedBreaks on
+  day rollover (new _clkRemindedDay guard) so the per-break-per-day dedupe map can't
+  grow unbounded in a long-lived pinned pop-out. Same-day behavior unchanged.
+- DOM coverage extended (run-dom.js 29→32): F3 regression pin (intakeClearForm_
+  nulls INTAKE_STATE.preview — patient PHI), intake Sent-list escape
+  (intakeRenderSentList_ hostile patientInfo), training reader escape
+  (trainRenderReader_ hostile embed title). F6 itself is NOT DOM-tested (time/date
+  dependent — would need clock mocking; the parse-guard + manual S39 cover it).
+- ALL scan findings now closed: F1,F2,F3,F5,F7 (prior batch) + F6 (this). F4
+  retracted (false positive). jsdom harness complete.
+WHERE I LEFT OFF: F6 + DOM extensions committed + green (122 pure + 32 DOM). Cycle 3
+implementation work done. NEXT: operator deploy the F1-F7 client batch (clasp push
+-f + New version; client-only, no operator-state change), then /reflect to close
+Cycle 3 (Test Coverage dimension should rise materially with the DOM harness).
+
 ## In progress (facts to carry forward — NOT judgments)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
   PROJECT_HEALTH.md Current Standing + Score History updated). Net +8 (8 prod fixes

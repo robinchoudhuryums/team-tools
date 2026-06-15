@@ -439,10 +439,16 @@ function clkNextBreak_(nowMin) {
   return null;
 }
 var _clkRemindedBreaks = {};
+var _clkRemindedDay = '';
 function clkUpdateBreak_() {
   const host = document.getElementById('clk-next-break');
   if (!host) return;
   const tz = empTz();
+  // Reset the reminded-set on day rollover so it can't grow unbounded across
+  // days in a long-lived pinned pop-out (days without a reload). Keyed by
+  // today, so the map only ever holds the current day's breaks (F6).
+  const _today = isoDateTz(tz);
+  if (_today !== _clkRemindedDay) { _clkRemindedDay = _today; _clkRemindedBreaks = {}; }
   const next = clkNextBreak_(clkNowMin_(tz));
   if (!next) { host.innerHTML = ''; return; }
   const b = next.brk;

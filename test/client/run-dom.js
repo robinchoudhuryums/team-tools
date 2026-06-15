@@ -336,5 +336,37 @@ test('late-callback guard: cnLoadToday_ resolving after nav-away updates state b
   assert.strictEqual(rendered2, 1, 'render runs when the view is unchanged');
 });
 
+// ── Opportunistic coverage: other partials' escape + a shipped-fix regression ─
+console.log('\ndom-harness — opportunistic coverage (intake / training)');
+
+test('F3 regression: intakeClearForm_ nulls INTAKE_STATE.preview (drops patient PHI)', () => {
+  const h = buildDomWindow(['intake/script_intake.html']);
+  const st = h.ctx.INTAKE_STATE;   // declared with `var` → reachable as a context prop
+  st.preview = { formType: 'PPD', payload: { patientInfo: 'Jane PHI', answers: { 38: '250' } }, bodyHash: 'abc' };
+  h.ctx.intakeClearForm_('ppd');   // re-renders the PPD view into #view-area (default shell)
+  assert.strictEqual(st.preview, null, 'cached preview (patient answers) cleared on form clear');
+});
+
+test('intakeRenderSentList_: hostile patientInfo renders escaped (INV-89/116 class)', () => {
+  const h = buildDomWindow(['intake/script_intake.html']);
+  const html = h.ctx.intakeRenderSentList_(
+    [{ formType: 'PPD', patientInfo: XSS, timestamp: '2026-06-15', recipient: 'x@y.com', repName: 'r' }], true);
+  h.$('#view-area').innerHTML = html;
+  const el = h.$('#view-area');
+  assert.strictEqual(el.querySelectorAll('script,img').length, 0, 'no live node from a Sent-list patient label');
+  assert.ok(el.textContent.indexOf('onerror') >= 0, 'hostile patientInfo survives as inert text');
+});
+
+test('trainRenderReader_: hostile embed title renders escaped (no live node)', () => {
+  const h = buildDomWindow(['train/script_training.html'], { html: '<div id="train-reader-overlay"></div>' });
+  h.ctx.trainRenderReader_({ id: 'i1', type: 'embed', title: XSS,
+    embedUrl: 'https://docs.google.com/document/d/x/preview', openUrl: 'https://docs.google.com/document/d/x/edit' });
+  const ov = h.$('#train-reader-overlay');
+  assert.strictEqual(ov.querySelectorAll('script').length, 0, 'no <script> from the embed title');
+  assert.strictEqual(ov.querySelectorAll('img').length, 0, 'hostile title did not create an <img>');
+  assert.strictEqual(ov.querySelectorAll('iframe').length, 1, 'the intended embed iframe is present');
+  assert.ok(ov.textContent.indexOf('onerror') >= 0, 'hostile title survives as inert text');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
