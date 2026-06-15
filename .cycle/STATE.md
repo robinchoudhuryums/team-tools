@@ -59,14 +59,23 @@ Operator picked jsdom (over happy-dom / zero-dep) — adds the FIRST dev depende
     topmost via its hook (stacking), closeOverlay degrades to plain-hide on a
     hookless/throwing hook. Focus trap: focusin outside the topmost modal pulls
     focus to its first focusable (jsdom sets activeElement correctly).
-  - Phase 3 (M ~1d): optimistic-UI submit/revert (INV-48), _flagInFlight double-fire
-    (INV-56), late-callback currentView guards (cnLoadToday_ + intake/train).
-  - Phase 4 (S ~½d): docs polish + determinism hardening (mostly DONE early — README
-    + CI already wired in Phase 1).
-WHERE I LEFT OFF: Phases 0-2 committed + green (122 pure + 23 DOM). Resume at
-Phase 3 — optimistic submit/revert first (drive cnSubmitActiveForm_ via mockRun;
-reject → cnRevertPendingSubmit_; assert pending card + revert-into-empty-form /
-park-to-sticky-draft), then _flagInFlight double-fire + late-callback guards.
+  - Phase 3 (optimistic-UI + late-callback guards) DONE — run-dom.js now 29/29.
+    6 tests: INV-48 optimistic submit (pending card → confirmed swap, drives the
+    FULL cnSubmitActiveForm_ via mockRun) + the 3 revert branches (form empty →
+    cnRestoreFromSnapshot_; new typing → untouched; form gone → sticky-draft
+    localStorage); INV-56 _flagInFlight double-fire (cnToggleFlag_ — proven to
+    bite: removing the guard fails the test); late-callback guard (cnLoadToday_
+    resolving after nav-away updates state but skips the render `then`).
+  - Phase 4 (docs polish) DONE — README documents the harness; CLAUDE.md Test
+    Command section now describes run-dom.js + the bridge/mockRun mechanics; CI
+    wired in Phase 1. Determinism: mockRun handlers fire synchronously on
+    run.resolve/reject (no real timers in the lifecycle tests).
+JSDOM HARNESS COMPLETE (Phases 0-4). Final: 122 pure + 29 DOM green; jsdom is the
+only (dev) dependency; clasp never pushes test/. The client overlay/lifecycle bug
+class — every prior cycle's High/Med client findings + this cycle's F2 fixes — now
+has CI regression coverage. NEXT options: deploy the pending F1-F7 batch, pick up
+F6 (_clkRemindedBreaks), extend DOM coverage to more partials (intake/kb/train
+optimistic paths) as they change, or /reflect to close Cycle 3.
 
 ## In progress (facts to carry forward — NOT judgments)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,

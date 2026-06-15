@@ -2841,6 +2841,26 @@ project's only automated check. Use
 the Regression Scenarios below as the canonical full-system
 verification path.
 
+A second, **DOM-lifecycle** harness now sits alongside the pure one:
+`node test/client/run-dom.js` (or `npm run test:dom`; `npm test` runs BOTH).
+It loads the FULL `<script>` of the chosen partials into a real **jsdom**
+window — the project's only dependency, dev-only, so `clasp` still never
+pushes it — and tests the layer the pure harness can't reach: innerHTML
+render/escape, overlay lifecycle (`ensureOverlay`/Esc), optimistic-UI
+submit + revert (INV-48), `_flagInFlight` double-fire (INV-56), late-callback
+`currentView` guards, and the focus trap. Mechanics (see
+`test/client/README.md`): `runScripts:'outside-only'` →
+`getInternalVMContext()` (window === globalThis, real document; no auto
+`DOMContentLoaded`, so module-top init stays dormant); partials share lexical
+scope so a trailing **bridge** (`h.t`) get/sets the `const`/`let` module state
+(`CN_STATE`, `currentView`, `empState`); a programmable `google.script.run`
+mock (`run.resolve`/`reject`/`lastFor`/`countFor`) drives the RPC paths;
+`opts.markup:['modals.html']` mounts shared modal DOM for the `tc/` views. The
+escape-discipline tests are proven to bite (reverting an `esc()` fails them) —
+this is the regression net for the client overlay/lifecycle bug class that
+every prior cycle shipped blind. The CI workflow runs it as a second step
+(after `npm ci`); the zero-install pure step stays first as the always-on floor.
+
 ### Health Dimensions
 Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability
 

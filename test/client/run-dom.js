@@ -224,5 +224,117 @@ test('focusin outside the topmost modal pulls focus to its first focusable', () 
   assert.strictEqual(h.document.activeElement, h.$('#mb1'), 'focus trapped to first focusable in the modal');
 });
 
+// ── Phase 3: optimistic-UI + late-callback guards (the Call Notes hot path) ──
+// Drives the real functions through the programmable mockRun. Pins INV-48
+// (optimistic submit + the three revert branches), INV-56 (_flagInFlight
+// double-fire), and the late-callback currentView guard.
+console.log('\ndom-harness — optimistic UI + late-callback guards');
+
+// Build the active-form DOM (7 contenteditable fields + training-q input). We
+// populate/read fields through the code's own cnSetFieldValue_/cnGetFieldValue_
+// so the test is consistent with how the app branches on isContentEditable.
+const CN_FIELD_KEYS = ['callback', 'caller', 'relationship', 'patient', 'issue', 'transferred', 'resolution'];
+function activeFormDom() {
+  return '<div id="cn-active-form">' +
+    CN_FIELD_KEYS.map((k) => '<div contenteditable="true" id="cn-fld-' + k + '"></div>').join('') +
+    '<input id="cn-fld-training-q"></div>' +
+    '<div id="cn-stack"></div><div id="cn-filter-bar"></div>';
+}
+function fullNote(over) {
+  return Object.assign({
+    noteId: 'n1', timestamp: '2026-06-15T10:00:00', dateLocal: '2026-06-15',
+    callback: '', caller: 'Jane', relationship: '', patientAndTrx: '', issue: 'Wheelchair',
+    transferredTo: '', resolution: '', flagType: '', resolved: false,
+    emailedAt: '', emailDepartments: '', subform: '', subformData: {},
+  }, over || {});
+}
+
+test('INV-48 optimistic submit: pending card appears, then swaps to the confirmed note', () => {
+  const h = buildDomWindow(['cn/script_callnotes.html'], { html: activeFormDom() });
+  const cn = h.t.getCN_STATE();
+  cn.rollingNotes = []; cn.pinnedNotes = [];
+  h.t.setCurrentView('callNotes');
+  h.ctx.cnSetFieldValue_('cn-fld-caller', 'Jane');
+  h.ctx.cnSetFieldValue_('cn-fld-issue', 'Wheelchair sizing');
+
+  h.ctx.cnSubmitActiveForm_();
+  // Optimistic: pending note in the stack BEFORE the server responds.
+  assert.strictEqual(cn.rollingNotes.length, 1, 'pending note added optimistically');
+  assert.strictEqual(cn.rollingNotes[0]._pending, true, 'marked _pending');
+  assert.strictEqual(h.run.countFor('submitCallNote'), 1, 'one submit RPC fired');
+  assert.ok(h.$('#cn-stack').innerHTML.indexOf('Jane') >= 0, 'pending card rendered into the stack');
+
+  // Server confirms — the slot is REPLACED with the real note (no _pending).
+  const confirmed = fullNote({ noteId: 'srv1' });
+  h.run.resolveLastFor('submitCallNote', { success: true, note: confirmed });
+  assert.strictEqual(cn.rollingNotes[0].noteId, 'srv1', 'pending slot replaced by confirmed note');
+  assert.ok(!cn.rollingNotes[0]._pending, '_pending cleared');
+});
+
+test('INV-48 revert (form empty): pending dropped + snapshot restored into the form', () => {
+  const h = buildDomWindow(['cn/script_callnotes.html'], { html: activeFormDom() });
+  const cn = h.t.getCN_STATE();
+  cn.rollingNotes = [{ noteId: 'pending_x', _pending: true }];
+  h.t.setCurrentView('callNotes');
+  const snap = { values: { caller: 'Jane', issue: 'Wheelchair' }, flag: '', flags: null, tags: null, trainingQ: '' };
+  h.ctx.cnRevertPendingSubmit_('pending_x', snap, 'Save failed');
+  assert.ok(!cn.rollingNotes.some((n) => n.noteId === 'pending_x'), 'pending note removed from the stack');
+  assert.strictEqual(h.ctx.cnGetFieldValue_('cn-fld-caller'), 'Jane', 'snapshot restored into the empty form');
+});
+
+test('INV-48 revert (form has new typing): the rep\'s current text is left untouched', () => {
+  const h = buildDomWindow(['cn/script_callnotes.html'], { html: activeFormDom() });
+  const cn = h.t.getCN_STATE();
+  cn.rollingNotes = [{ noteId: 'pending_z', _pending: true }];
+  h.t.setCurrentView('callNotes');
+  h.ctx.cnSetFieldValue_('cn-fld-caller', 'NEW TYPING');   // rep started the next note
+  h.ctx.cnRevertPendingSubmit_('pending_z', { values: { caller: 'OldNote' }, flag: '', flags: null, tags: null, trainingQ: '' }, 'fail');
+  assert.strictEqual(h.ctx.cnGetFieldValue_('cn-fld-caller'), 'NEW TYPING', 'newer typing NOT clobbered by the revert');
+});
+
+test('INV-48 revert (form gone): snapshot parked in the sticky-draft localStorage slot', () => {
+  const h = buildDomWindow(['cn/script_callnotes.html']);   // no #cn-active-form mounted
+  const cn = h.t.getCN_STATE();
+  cn.rollingNotes = [{ noteId: 'pending_y', _pending: true }];
+  const key = h.t.eval('CN_FORM_STICKY_LS_KEY');
+  h.window.localStorage.removeItem(key);
+  h.ctx.cnRevertPendingSubmit_('pending_y', { values: { caller: 'Bob' }, flag: '', flags: null, tags: null, trainingQ: '' }, 'fail');
+  const draft = JSON.parse(h.window.localStorage.getItem(key) || 'null');
+  assert.ok(draft && draft.values && draft.values.caller === 'Bob', 'snapshot parked as a sticky draft for next Log enter');
+});
+
+test('INV-56 double-fire guard: a second flag toggle while the first RPC is in flight is dropped', () => {
+  const h = buildDomWindow(['cn/script_callnotes.html'], { html: '<div id="cn-stack"></div><div id="cn-filter-bar"></div>' });
+  const cn = h.t.getCN_STATE();
+  cn.rollingNotes = [fullNote({ noteId: 'n1' })];
+  h.t.setCurrentView('callNotes');
+  h.ctx.cnToggleFlag_('n1', 'action');   // fires RPC #1, sets _flagInFlight
+  h.ctx.cnToggleFlag_('n1', 'action');   // in flight → dropped
+  assert.strictEqual(h.run.countFor('setCallNoteFlag'), 1, 'second click dropped while first RPC in flight');
+  // Resolve → guard clears; a fresh toggle fires again.
+  h.run.resolveLastFor('setCallNoteFlag', { success: true, note: fullNote({ noteId: 'n1', flagType: 'action' }) });
+  h.ctx.cnToggleFlag_('n1', 'action');
+  assert.strictEqual(h.run.countFor('setCallNoteFlag'), 2, 'guard cleared on resolve — next toggle fires');
+});
+
+test('late-callback guard: cnLoadToday_ resolving after nav-away updates state but skips render', () => {
+  const h = buildDomWindow(['cn/script_callnotes.html']);
+  const cn = h.t.getCN_STATE();
+  h.t.setCurrentView('callNotes');
+  let rendered = 0;
+  h.ctx.cnLoadToday_(function () { rendered++; });
+  h.t.setCurrentView('clock');   // rep navigated away during the round trip
+  h.run.resolveLastFor('getMyCallNotes', { notes: [{ noteId: 'a' }], autoCopyFormat: '', timezone: 'UTC' });
+  assert.strictEqual(cn.rollingNotes.length, 1, 'state updated unconditionally (cache stays warm)');
+  assert.strictEqual(rendered, 0, 'render callback SKIPPED because the view changed');
+
+  // Contrast: staying on the view fires the render callback.
+  let rendered2 = 0;
+  h.t.setCurrentView('callNotes');
+  h.ctx.cnLoadToday_(function () { rendered2++; });
+  h.run.resolveLastFor('getMyCallNotes', { notes: [], autoCopyFormat: '', timezone: 'UTC' });
+  assert.strictEqual(rendered2, 1, 'render runs when the view is unchanged');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
