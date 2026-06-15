@@ -1194,6 +1194,16 @@ test('trainStripQuizForRep_: whitelist-built — no correct key anywhere in the 
   assert.strictEqual(stripped.questions.length, 2);
   assert.strictEqual(JSON.stringify(stripped.questions[0].options), '["x","y","z"]');
 });
+test('trainParseFormId_: edit URL → id; bare id; /d/e/ published → error; junk → empty', () => {
+  vm.runInContext(extractRawFunction('Code.js', 'trainParseFormId_'), sb, { filename: 'Code.js#trainParseFormId_' });
+  const f = sb.trainParseFormId_;
+  assert.strictEqual(f('https://docs.google.com/forms/d/1AbC_dEF-23/edit').id, '1AbC_dEF-23');
+  assert.strictEqual(f('https://docs.google.com/forms/d/1AbC_dEF-23/viewform').id, '1AbC_dEF-23');
+  assert.strictEqual(f('1AbCdefGhiJklmnopqrstuv').id, '1AbCdefGhiJklmnopqrstuv', 'bare drive-id-shaped string');
+  assert.strictEqual(f('https://docs.google.com/forms/d/e/1FAIpQLSxxxxxxxxxxxx/viewform').error, 'published-link');
+  assert.strictEqual(f('not a url').id, '');
+  assert.strictEqual(f('').id, '');
+});
 test('getQuiz source tripwire: the rep response is built ONLY by trainStripQuizForRep_', () => {
   const src = extractRawFunction('Code.js', 'getQuiz');
   assert.ok(src.indexOf('return trainStripQuizForRep_(') >= 0, 'getQuiz returns the stripped shape');

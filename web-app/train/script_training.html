@@ -17,6 +17,9 @@
   .tr-chip.pending { background: var(--paper-2); color: var(--muted); }
   .tr-chip.overdue { background: var(--danger-soft, #fce5e5); color: var(--danger-deep, #c13030); }
   .tr-complete-btn { font: inherit; font-size: .78rem; padding: 5px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--accent-soft); color: var(--accent-deep, var(--accent)); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  /* inline button spinner — quiz save/delete in-flight (operator feedback r4) */
+  .tr-spin { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; opacity: .8; animation: trSpin .7s linear infinite; vertical-align: -1px; }
+  @keyframes trSpin { to { transform: rotate(360deg); } }
   .tr-complete-btn[disabled] { opacity: .5; cursor: default; }
   .tr-empty { color: var(--muted); font-size: .9rem; padding: 24px 0; }
   /* reader modal */
@@ -68,6 +71,10 @@
   .tr-qed label { font-size: .76rem; font-weight: 600; color: var(--muted); }
   .tr-qed input[type=text], .tr-qed input[type=number], .tr-qed select, .tr-qed textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
   .tr-qed .foot { display: flex; gap: 10px; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
+  .tr-qed-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tr-qed-warn { border-left: 3px solid var(--warning-deep, #b86e00); background: var(--warn-soft); border-radius: 0 8px 8px 0; padding: 8px 12px; margin-bottom: 12px; font-size: .8rem; color: var(--ink); }
+  .tr-qed-warn ul { margin: 4px 0 0; padding-left: 18px; }
+  .tr-qed-warn li { margin: 2px 0; }
   .tr-qed-q { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 12px 14px; margin-bottom: 10px; }
   .tr-qed-q .opt-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
   .tr-qed-q .opt-row input[type=text] { flex: 1; }
@@ -540,7 +547,7 @@ function trainRenderMgr_() {
       var qe = e.target.closest('[data-tr-quiz-edit]');
       if (qe) { trainOpenQuizEditor_(qe.getAttribute('data-tr-quiz-edit')); return; }
       var qd = e.target.closest('[data-tr-quiz-del]');
-      if (qd) trainDeleteQuiz_(qd.getAttribute('data-tr-quiz-del'));
+      if (qd) trainDeleteQuiz_(qd.getAttribute('data-tr-quiz-del'), qd);
     });
   }
 }
@@ -601,8 +608,15 @@ function trainRenderQuizEditor_(overlay) {
     kbSel += '<option value="' + esc(it.id) + '"' + (it.id === st.kbItemId ? ' selected' : '') + '>' + esc(it.title) + '</option>';
   });
   kbSel += '</select>';
+  var warnHtml = (st._importWarnings && st._importWarnings.length)
+    ? '<div class="tr-qed-warn">' + icon('warning', 13) + ' <strong>Imported with notes:</strong><ul>' +
+        st._importWarnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></div>'
+    : '';
   var h = '<div class="modal tr-qed"><div class="body">' +
-    '<h2 style="margin:0 0 12px;">' + (st.quizId ? 'Edit quiz' : 'New quiz') + '</h2>' +
+    '<div class="tr-qed-head"><h2 style="margin:0;">' + (st.quizId ? 'Edit quiz' : 'New quiz') + '</h2>' +
+      (st.quizId ? '' : '<button class="kb-btn" id="tr-qed-import" title="Pull questions + correct answers from a Google Forms quiz">' + icon('download', 12) + ' Import from Google Forms</button>') +
+    '</div>' +
+    warnHtml +
     '<div class="field"><label>Title</label><input type="text" id="tr-qed-title" maxlength="120" value="' + esc(st.title) + '"></div>' +
     '<div class="field"><label>Pass threshold (%)</label><input type="number" id="tr-qed-pass" min="0" max="100" value="' + Number(st.passPct) + '"></div>' +
     '<div class="field"><label>Linked Reference item (optional — shown as "review the material")</label>' + kbSel + '</div>';
@@ -627,6 +641,8 @@ function trainRenderQuizEditor_(overlay) {
     '</div></div>';
   overlay.innerHTML = h;
 
+  var imp = document.getElementById('tr-qed-import');
+  if (imp) imp.addEventListener('click', trainImportQuizFromForm_);
   var aq = document.getElementById('tr-qed-addq');
   if (aq) aq.addEventListener('click', function () {
     trainQedSnapshot_();
@@ -679,22 +695,56 @@ function trainQedSnapshot_() {
   });
 }
 
+/** Operator feedback (2026-06-15) — import an existing Google Forms quiz.
+ *  READ-ONLY on the server; fills the editor for review (nothing saves until
+ *  the manager clicks Save quiz). Only on NEW quizzes (the button is hidden
+ *  when editing an existing one). */
+function trainImportQuizFromForm_() {
+  trainQedSnapshot_();   // preserve anything already typed (title/pass/kb link)
+  uiPrompt({
+    title: 'Import from Google Forms',
+    message: 'Paste the EDIT url of a Google Forms quiz (it contains /forms/d/<id>/edit). Multiple-choice questions and their marked correct answers are imported for your review — nothing is saved until you click Save quiz.',
+    placeholder: 'https://docs.google.com/forms/d/…/edit',
+  }).then(function (url) {
+    if (!url) return;
+    showToast('Importing…', 'info');
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || res.error) { showToast((res && res.error) || 'Import failed.', 'error'); return; }
+        var st = TRAIN_STATE.qed || (TRAIN_STATE.qed = { quizId: '', kbItemId: '', passPct: 80, questions: [] });
+        if (res.title) st.title = res.title;
+        if (typeof res.passPct === 'number') st.passPct = res.passPct;
+        if (res.questions && res.questions.length) st.questions = res.questions;
+        st._importWarnings = res.warnings || [];
+        trainRenderQuizEditor_();
+        var w = (res.warnings || []).length;
+        showToast('Imported ' + res.questions.length + ' question' + (res.questions.length === 1 ? '' : 's') +
+          (w ? ' · ' + w + ' note' + (w === 1 ? '' : 's') + ' — review below' : '') + '.', w ? 'warn' : 'success');
+      })
+      .withFailureHandler(function (err) { showToast('Import failed: ' + err.message, 'error'); })
+      .importQuizFromForm(url);
+  });
+}
+
 function trainSaveQuizFromEditor_() {
   trainQedSnapshot_();
   var st = TRAIN_STATE.qed;
   if (!st) return;
   var btn = document.getElementById('tr-qed-save');
-  if (btn) btn.disabled = true;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="tr-spin"></span> Saving…'; }
   google.script.run
     .withSuccessHandler(function (res) {
-      if (btn) btn.disabled = false;
-      if (!res || !res.success) { showToast((res && res.error) || 'Save failed.', 'error'); return; }
+      if (!res || !res.success) {
+        if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Save quiz'; }
+        showToast((res && res.error) || 'Save failed.', 'error');
+        return;
+      }
       showToast('Quiz saved.', 'success');
       trainCloseQuizEditor_();
       if (currentView === 'trainingManage') trainLoadMgr_();
     })
     .withFailureHandler(function (err) {
-      if (btn) btn.disabled = false;
+      if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Save quiz'; }
       showToast('Save failed: ' + err.message, 'error');
     })
     .saveQuiz({ quizId: st.quizId, title: st.title, kbItemId: st.kbItemId, passPct: st.passPct, questions: st.questions });
@@ -707,20 +757,28 @@ function trainCloseQuizEditor_() {
   if (o) { o.classList.remove('open'); o.innerHTML = ''; }
 }
 
-function trainDeleteQuiz_(quizId) {
+function trainDeleteQuiz_(quizId, btn) {
   uiConfirm({
     title: 'Delete quiz?',
     message: 'Assignments pointing at it drop off checklists; past attempts and completions are kept.',
     confirmLabel: 'Delete', tone: 'danger',
   }).then(function (ok) {
     if (!ok) return;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="tr-spin"></span> Deleting…'; }
     google.script.run
       .withSuccessHandler(function (res) {
-        if (!res || !res.success) { showToast((res && res.error) || 'Delete failed.', 'error'); return; }
+        if (!res || !res.success) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+          showToast((res && res.error) || 'Delete failed.', 'error');
+          return;
+        }
         showToast('Quiz deleted.', 'success');
         if (currentView === 'trainingManage') trainLoadMgr_();
       })
-      .withFailureHandler(function (err) { showToast('Delete failed: ' + err.message, 'error'); })
+      .withFailureHandler(function (err) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+        showToast('Delete failed: ' + err.message, 'error');
+      })
       .deleteQuiz(quizId);
   });
 }
