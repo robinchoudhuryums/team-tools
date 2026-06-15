@@ -197,6 +197,26 @@ Updated: 2026-06-11
   absent `_meta` rejected; FormTokens timestamps in CONFIG.TIMEZONE; punch ordering
   fixed at source; sticky drafts 24h TTL.
 
+- ONBOARDING TOUR SHIPPED (2026-06-13): hand-rolled coach-marks in
+  web-app/script_tour.html (new Client-shell partial). Spotlight engine
+  (#tour-block/#tour-spot/#tour-pop on document.body), declarative
+  TOUR_STEPS registry (tool/view/selector/title/body/managerOnly?),
+  enterTool navigation per step, absent-target skip, managerOnly filter.
+  Auto-starts once per TOUR_VERSION (umsTour.seenVersion; not in compact
+  pop-out / deep-link) via tourMaybeAutoStart_ in the boot handler;
+  replay button in the cn-shortcuts (?) overlay. v1 = 14 steps across
+  Time Clock + shell + Call Notes + a managers-only closer. Node tripwire
+  pins every step view to a TOOLS tab key (122/122). localStorage key
+  count 8→9 (umsTour); CLAUDE.md decision + key-list + subsystem + README.
+  Also this session: r1 ergonomics (trio row, 1-line autogrow fields,
+  borders, flag tints, red Clear, Enter-nav, select-on-focus, undo-save,
+  heuristic tag suggest, managerDeleteCallNote), r2 (2×2 save quadrant +
+  ? fab, card icon tints, 3-up dept grid, Save&Compose envelope, arrow
+  field-hop, KB link hover card, drawer search spinner), r3 (transactional
+  Save&Compose + stale-ref fix, Ctrl+Shift+C, delete loader, thumbsUp).
+  Plus the two operator bugfixes (invisible ::selection → --selection-bg;
+  blank pop-out → SERVER_WEB_APP_URL).
+
 ## Where I left off
 Cycle 2 CLOSED; KB Phase 2b + Phase 3 + KB AI Phase A all SHIPPED on
 `claude/affectionate-dijkstra-js8rlm` (Node 105/105). NEXT: operator deploy

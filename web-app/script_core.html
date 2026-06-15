@@ -199,6 +199,9 @@ window.addEventListener('load', () => {
       enterTool(initialTool, initialTab);
       // Start ambient pollers — badges update regardless of active tool
       if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
+      // First-load onboarding tour (auto-starts once per TOUR_VERSION; never
+      // in the compact pop-out). Replayable from the Call Notes ? menu.
+      if (typeof tourMaybeAutoStart_ === 'function') tourMaybeAutoStart_();
     })
     .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
     .getEmployeeState();

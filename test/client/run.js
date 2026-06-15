@@ -33,6 +33,7 @@ console.log('\nclient — all partials parse (<script> syntax guard)');
   'kb/script_kb.html',
   'train/script_training.html',
   'train/script_empdocs.html',
+  'script_tour.html',
 ].forEach((f) => {
   test(f + ' parses', () => {
     const src = extractScript(f);
@@ -1269,6 +1270,28 @@ test('signature-pad export cap parity: both pads cap the export at 600px (INV-96
   ['form_public.html', 'train/script_empdocs.html'].forEach((f) => {
     const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
     assert.ok(/MAX_W = 600/.test(src), f + ' caps the signature export at 600px');
+  });
+});
+
+// Onboarding tour — every step's `view` must be a registered TOOLS tab key
+// (a tab-key rename would otherwise silently orphan a step). The selector is
+// resolved at runtime against the live DOM; the view key is the static
+// coupling we can pin here, mirroring the M3 view-key tripwire.
+console.log('\nscript_tour — every step view is a registered TOOLS tab key');
+test('TOUR_STEPS view keys all resolve in the TOOLS registry', () => {
+  const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const toolsBlock = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/);
+  assert.ok(toolsBlock, 'TOOLS registry block found');
+  // [^{}]* (not [^}]*) so the match can't cross into a nested object — it
+  // captures the leaf TAB keys (clock, timeoff, …), not the tool wrappers.
+  const validKeys = [...toolsBlock[0].matchAll(/(\w+):\s*\{[^{}]*enter:\s*'/g)].map((m) => m[1]);
+  const tourSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_tour.html'), 'utf8');
+  const block = tourSrc.match(/const TOUR_STEPS = \[[\s\S]*?\n\];/);
+  assert.ok(block, 'TOUR_STEPS block found');
+  const views = [...block[0].matchAll(/view:\s*'([^']+)'/g)].map((m) => m[1]);
+  assert.ok(views.length >= 10, 'parsed the step view keys (got ' + views.length + ')');
+  views.forEach((v) => {
+    assert.ok(validKeys.indexOf(v) >= 0, "TOUR step view '" + v + "' is not a TOOLS tab key");
   });
 });
 

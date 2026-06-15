@@ -11,7 +11,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
-    rep writes to their own per-rep Google Sheet; Ctrl/⌘+Enter saves
+    rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
     are a separate two-stage flow with preview gate. Three flag
     types (action / training / review) with EOD reminders for
@@ -78,6 +78,10 @@ From any project folder: `clasp pull` to sync down, `clasp push -f` to
 deploy changes. After `clasp push`, cut a new deployment version in
 the Apps Script editor (Deploy → Manage deployments → Edit → Version:
 New version) so users see the change on next load.
+
+A first-load onboarding tour (hand-rolled coach-marks in
+`script_tour.html`) walks new reps through the shell and the core tools;
+it auto-starts once and is replayable from the Call Notes **?** menu.
 
 The Apps Script test suite (`web-app/Tests.js`) runs from the editor
 (`runSmokeTests()` / `runAllTests()`). Pure client-side helpers also have

@@ -14,7 +14,7 @@ Apps Script project under its own directory, synced via `clasp`.
    - **Call Notes** — rolling-note panel for CSR call logging. Each
      rep writes to their own per-rep Google Sheet (`Notes` tab in the
      spreadsheet whose ID is in `EMP.CALL_NOTES_SHEET_ID`, column L
-     of the Employees roster). Ctrl/⌘+Enter saves + auto-copies a
+     of the Employees roster). Ctrl/⌘+Shift+C saves + auto-copies a
      CRM-friendly serialization; email composer is a separate
      two-stage flow with preview gate. Three flag types
      (action / training / review) with EOD reminders for unresolved
@@ -859,7 +859,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Eight client-side localStorage keys total.** All per-browser, all
+- **Nine client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -896,7 +896,11 @@ this section before touching the relevant area.
     accidental refresh mid-note lands back on the Log view where the
     sticky form draft restores the typed fields. `enterTool`'s
     managerOnly bump makes a stale manager-tab value safe for reps.
-  Clearing browser data wipes all eight.
+  - `umsTour` — onboarding-tour state: `{seenVersion}`. The coach-marks
+    tour auto-starts once per `TOUR_VERSION` (bump to re-offer after a
+    material UI change); stamped on finish/skip. Replayable anytime from
+    the Call Notes ? menu regardless of this flag.
+  Clearing browser data wipes all nine.
 
 ## Key Design Decisions
 
@@ -1172,11 +1176,11 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Eight client-side localStorage keys total" entry in
+  authoritative "Nine client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
-  `umsKbPanel`, `umsLastView`) — all per-browser, all
+  `umsKbPanel`, `umsLastView`, `umsTour`) — all per-browser, all
   try/catch-wrapped. (An earlier version of this decision listed only
   four; Round 2 · 8a/8b added the sidebar-width and Time/PTO-mode keys,
   the KB drawer added its single `umsKbPanel` prefs blob, and the
@@ -1422,7 +1426,9 @@ this section before touching the relevant area.
   `position: fixed`. The modal also has `resize: both` for the
   browser's native resize grip.
 - **Keyboard shortcuts accelerate the Call Notes hot path.**
-  Ctrl/⌘+Enter saves & copies (existing). Ctrl/⌘+Shift+Enter
+  Ctrl/⌘+Shift+C saves & copies (moved off plain Ctrl/⌘+Enter in the
+  2026-06-12 r3 feedback round — too close to the Enter-nav muscle
+  memory; plain Ctrl/⌘+Enter is now unbound). Ctrl/⌘+Shift+Enter
   saves & opens the email composer. Ctrl/⌘+1/2/3 toggle
   action/training/review flags on the active form. Ctrl/⌘+Backspace
   clears the form. Ctrl/⌘+/ or bare ? opens a shortcuts help
@@ -2227,8 +2233,8 @@ this section before touching the relevant area.
   the field boundaries); flag buttons tint their icons per type even when
   OFF; the Clear button uses the danger style (`.cn-form-clear-btn`).
   Input flow: **Enter advances to the next field** (CN_FIELD_NAV_ORDER,
-  ending at the tag input; Shift+Enter = newline; Ctrl/⌘+Enter still
-  saves), and a **fresh focus selects the field's content** (Sheets-style
+  ending at the tag input; Shift+Enter = newline; Ctrl/⌘+Shift+C saves
+  as of r3), and a **fresh focus selects the field's content** (Sheets-style
   overwrite — `cnSelectAllIn_`; a drag-select on the focusing click wins,
   a second click collapses to a caret). **Ctrl/⌘+Z after a save is a TRUE
   undo**: the submit path arms `CN_STATE.lastSaveUndo` (live note ref +
@@ -2252,6 +2258,73 @@ this section before touching the relevant area.
   itself can't be "integrated" (it's an OS utility) — the pop-out button's
   tooltip now carries the Win+Ctrl+T tip; an in-app 8x8 queue-status
   widget would need the 8x8 realtime API (future spec, on demand).
+  **Round 2 (same day):** the save card is a 2×2 quadrant grid (Save &
+  Copy / Save & Compose / Open Email / Clear; kbd-chips hidden — tooltips
+  carry the hints) with the **?** shortcuts button moved to a circular
+  `.cn-help-fab` in the Log header, shortening the rail so the filter bar
+  + notes sit higher; saved-note card action icons carry the same
+  per-type tints as the form's flag toolbar; the composer's department
+  chips use an adaptive `repeat(auto-fit, minmax(140px,1fr))` grid (3-up
+  at default width); **Save & Compose mounts the composer overlay
+  immediately with an envelope animation** (`cnShowComposerLoading_` —
+  same `cn-compose-overlay` id, so the real composer replaces it on
+  confirm and `cnRevertPendingSubmit_` tears it down on failure — no
+  re-click ambiguity); **arrow keys hop fields at text boundaries**
+  (`cnCaretAtEdge_` — Down at end → next, Up at start → previous;
+  line-by-line behavior inside multi-line text is untouched); the
+  Reference drawer shows an in-flight auto-search spinner
+  (`kbDrawerSetSearching_`, sequence-guarded), and KB links get a
+  **Docs-style hover card** (`kbLinkCardShow_` — singleton fixed div,
+  URL via textContent + Copy link / Open ↗; document-level delegated
+  mouseover scoped to `.kb-article`/`.kb-chunk-body`/`#kbd-body` links
+  only). An interactive onboarding tour was assessed as feasible
+  (coach-marks overlay + per-rep seen flag) but deferred to its own
+  pass; AI auto-tagging stays deferred on the INV-119 privacy decision.
+  **Round 3 (same day):** **Save & Compose is TRANSACTIONAL** — the form
+  KEEPS its text while the composer is open (`opts.keepForm` +
+  `CN_STATE.composeFlow`); send success completes the action (form
+  clears then); cancelling/Esc-ing the composer ROLLS THE SAVE BACK
+  (the just-saved note is deleted via `cnDoDeleteNote_` — server 5-min
+  window — with the text still in the form; a cancel while the save is
+  in flight sets `_deleteOnConfirm`, honored when the server confirms;
+  the Department→External tab-switch detaches the flow first — it is
+  NOT a cancel). The confirm handler also RE-POINTS held references
+  (`lastSaveUndo.note` / `composeFlow.note`) at the server's confirmed
+  note object — the array slot is REPLACED on confirm, so the prior
+  round's undo-save held a stale pending object and reported "still
+  saving" forever (fixed). **Save & Copy moved to Ctrl/⌘+Shift+C**
+  (plain Ctrl/⌘+Enter unbound; Ctrl/⌘+Shift+Enter keeps Save &
+  Compose; the inline-edit save keybind is untouched). Deleting a note
+  shows an in-flight state (`.is-deleting` — dim + desaturate +
+  breathe pulse, pointer-events off so the RPC can't double-fire; both
+  the rep path and the manager per-rep path). The Review flag icon is
+  now `thumbsUp` (was `star`). Loader/animation vocabulary so far:
+  CSS-keyframe micro-animations only (spinner, envelope `cnEnvFly`,
+  card `cnCardDeleting`, drawer `kbdSpin`) — deliberately no Lottie/
+  GIF deps; new loaders should extend this set with thematic
+  keyframes.
+- **Onboarding tour — hand-rolled coach-marks (`script_tour.html`).** A
+  spotlight overlay (`#tour-block` click-catcher + `#tour-spot` box-shadow
+  ring that dims everything but the target + `#tour-pop` tooltip) walks a
+  declarative `TOUR_STEPS` registry (`{tool, view, selector, title, body,
+  managerOnly?}`). The engine navigates to each step's tab via `enterTool`
+  then spotlights its selector; a step whose target isn't in the DOM is
+  SKIPPED (never strands), and `managerOnly` steps are filtered for
+  non-managers (the tab-gating pattern). Mounted on `document.body` (the
+  KB-drawer lesson — Call Notes' `#view-area` re-renders would wipe it).
+  **Auto-starts once per `TOUR_VERSION`** on first load (gated on
+  `umsTour.seenVersion`; never in the compact pop-out, never on a
+  deep-link); **replayable** from the Call Notes ? (shortcuts) overlay via
+  `tourStart()`. Bump `TOUR_VERSION` to re-offer after a material UI
+  change. Adding a step = one `TOUR_STEPS` entry; a Node tripwire asserts
+  every step's `view` is a registered TOOLS tab key (a tab-key rename
+  can't silently orphan a step — the M3 view-key discipline). v1 covers
+  Time Clock (clock hero / actions / ribbon, Time-off tab), the shell
+  (sidebar / tab bar / pop-out with the PowerToys pin tip), Call Notes
+  (template / flags / tags / save quadrant / filter bar / ?+drawer), and
+  a managers-only closing step. Interactive gating ("now type here…") was
+  deliberately deferred — the passive spotlight teaches the same things
+  without fighting the optimistic re-renders.
 
 ## Deferred Follow-ons
 
@@ -2783,7 +2856,7 @@ Test Coverage Quality | whether tests actually guard regressions; the client DOM
 Server:
   web-app/Code.js, web-app/appsscript.json, web-app/.clasp.json
 Client (shell):
-  web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html
+  web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html, web-app/script_tour.html
 Client (Time Clock views):
   web-app/tc/script_clock.html, web-app/tc/script_timesheet.html, web-app/tc/script_timeoff.html, web-app/tc/script_manager.html
 Client (Call Notes views):
@@ -3051,7 +3124,7 @@ S17 | Call Notes — enrollment-missing splash | Subsystem: Server, Client (Call
 S18 | Call Notes — submit, auto-copy, rolling stack appends | Subsystem: Client (Call Notes), Server
   Steps:
     - As an enrolled rep, open Call Notes
-    - Fill all 7 fields, press Ctrl/⌘+Enter
+    - Fill all 7 fields, press Ctrl/⌘+Shift+C
     - Inspect clipboard, the rolling stack, and the rep's `Notes` tab
     - Press the copy button on the just-saved card and re-inspect clipboard
   Expected: A new card appears at the top of the rolling stack with animation; clipboard holds the serialized note matching `CONFIG.CALL_NOTES.AUTO_COPY_FORMAT`; the form cleared and re-focused on Callback; AuditLog has a `CallNoteCreate` row with `noteId=<uuid>`. Manual copy re-renders the same string.
@@ -3078,7 +3151,7 @@ S20 | Call Notes — flag trio + resolved state | Subsystem: Server, Client (Cal
 S21 | Call Notes — inline-edit-in-place from rolling card | Subsystem: Client (Call Notes), Server
   Steps:
     - Click the pencil/edit icon on a saved note
-    - Card expands; modify Issue + Resolution; press Ctrl/⌘+Enter
+    - Card expands; modify Issue + Resolution; press Ctrl/⌘+Enter (inline-edit save keybind unchanged)
     - Inspect the Notes tab + AuditLog
   Expected: Card collapses to the new content; row in `Notes` reflects the diff; AuditLog has a `CallNoteEdit` row enumerating which fields changed. Cancel button discards edits without writing.
 
@@ -3162,7 +3235,7 @@ S30 | Trigger handlers reject non-manager callers via google.script.run | Subsys
 S31 | Optimistic submit + failure revert | Subsystem: Client (Call Notes views), Server
   Steps:
     - Open Chrome DevTools → Network → throttle to "Slow 3G"
-    - As an enrolled rep, fill out a note and press Ctrl/⌘+Enter
+    - As an enrolled rep, fill out a note and press Ctrl/⌘+Shift+C
     - Observe the rolling stack DURING the in-flight request
     - Wait for the server response
     - Repeat with the spreadsheet ID temporarily wrong (force an RPC failure)

@@ -1,0 +1,308 @@
+<style>
+  /* ── Onboarding tour — coach-marks (operator feedback 2026-06-12) ───────
+     Hand-rolled spotlight (no library): a fixed click-catcher blocks the app
+     while the tour runs, a spotlight box draws a huge box-shadow "ring" that
+     dims everything except the target, and a tooltip card carries the copy.
+     Mounted on document.body so Call Notes' #view-area re-renders never wipe
+     it; z-index sits ABOVE the overlay/drawer layer (50/55) but below toasts
+     (999). */
+  #tour-block { position: fixed; inset: 0; z-index: 200; display: none; background: transparent; }
+  #tour-block.dim { background: rgba(0,0,0,.55); }
+  #tour-block.show { display: block; }
+  #tour-spot {
+    position: fixed; z-index: 201; border-radius: 10px; pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,.55), 0 0 0 3px var(--accent);
+    transition: top .25s var(--ease), left .25s var(--ease), width .25s var(--ease), height .25s var(--ease);
+    display: none;
+  }
+  #tour-spot.show { display: block; }
+  #tour-pop {
+    position: fixed; z-index: 202; width: min(340px, 92vw);
+    background: var(--paper-card); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg);
+    padding: 16px 18px; display: none;
+    transition: top .25s var(--ease), left .25s var(--ease);
+  }
+  #tour-pop.show { display: block; }
+  .tour-kicker { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 4px; }
+  .tour-title { font-family: var(--display); font-size: 1.05rem; font-weight: 700; margin: 0 0 6px; line-height: 1.25; }
+  .tour-body { font-size: .88rem; line-height: 1.55; color: var(--ink); }
+  .tour-body kbd { font-family: var(--mono); font-size: .78em; background: var(--paper-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+  .tour-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .tour-dots { display: flex; gap: 5px; flex: 1; flex-wrap: wrap; }
+  .tour-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2, var(--line)); transition: background var(--t) var(--ease); }
+  .tour-dot.on { background: var(--accent); }
+  .tour-btn { font: inherit; font-size: .82rem; padding: 6px 13px; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: var(--paper-2); color: var(--ink); }
+  .tour-btn:hover { border-color: var(--border-strong); }
+  .tour-btn.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+  .tour-btn.ghost { border-color: transparent; background: transparent; color: var(--muted); padding: 6px 8px; }
+  .tour-btn.ghost:hover { color: var(--ink); }
+  .tour-skip { position: absolute; top: 10px; right: 12px; font-size: .74rem; }
+</style>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  ONBOARDING TOUR — interactive coach-marks (operator feedback 2026-06-12).
+//  Auto-starts on a rep's first load; replayable from the Call Notes "?" menu.
+//  Steps are a declarative registry; the engine navigates to each step's tool/
+//  tab via enterTool, then spotlights its selector. A step whose target isn't
+//  in the DOM is SKIPPED (never strands the tour). managerOnly steps are
+//  filtered out for non-managers (the tab-gating pattern). Pinned by a Node
+//  tripwire that asserts every step's `view` is a registered TOOLS tab key.
+// ════════════════════════════════════════════════════════════════════════════
+const TOUR_LS_KEY = 'umsTour';
+// Bump to RE-OFFER the tour to everyone after a material UI change (the
+// localStorage `seen` is version-stamped, like FORM_CONSENT_VERSION).
+const TOUR_VERSION = 1;
+
+// Each step: { tool, view, selector|null, title, body, placement?, managerOnly? }.
+// selector null = a centered card with a full dim (intro / abstract concepts).
+const TOUR_STEPS = [
+  { tool: 'timeClock', view: 'clock', selector: null,
+    title: 'Welcome to Team Tools',
+    body: 'A 90-second tour of the essentials. You can skip any time, and replay it later from the <strong>?</strong> button on the Call Notes page.' },
+  { tool: 'timeClock', view: 'clock', selector: '.sidebar',
+    title: 'Your tools',
+    body: 'Each icon here is a tool — Time Clock, Call Notes, Metrics, and more. Drag the right edge to resize, or double-click it to collapse to icons.' },
+  { tool: 'timeClock', view: 'clock', selector: '#tool-tab-bar',
+    title: 'Tabs within a tool',
+    body: 'Every tool has its own tabs along this bar. Managers see extra tabs (Team Notes, Manage, etc.) that reps don’t.' },
+  { tool: 'timeClock', view: 'clock', selector: '.sb-popout-btn',
+    title: 'Pop-out panel',
+    body: 'Pops the current view into a small always-handy window. Tip: pin it above other windows with PowerToys <kbd>Win</kbd>+<kbd>Ctrl</kbd>+<kbd>T</kbd> so you can log notes over the CRM.' },
+  { tool: 'timeClock', view: 'clock', selector: '.actions',
+    title: 'Clock in & out',
+    body: 'Punch in, go to lunch, and clock out from here. The big button always shows your next action; your times convert to your manager’s timezone automatically.' },
+  { tool: 'timeClock', view: 'clock', selector: '.ribbon-wrap',
+    title: 'Your shift at a glance',
+    body: 'This ribbon shows your scheduled shift, your punches, and a live cursor through the day — a quick read on where you are in your shift.' },
+  { tool: 'timeClock', view: 'timeoff', selector: null,
+    title: 'Time off & timesheet',
+    body: 'Request PTO and review your timesheet on the <strong>Time / PTO</strong> tab. The calendar shows worked hours and any approved days off; toggle between Time Off and Timesheet modes in the rail.' },
+  { tool: 'callNotes', view: 'callNotes', selector: '#cn-frame',
+    title: 'The note template',
+    body: 'Log a call by filling these fields. <kbd>Tab</kbd> or <kbd>Enter</kbd> moves to the next field; a fresh click selects the field so you can type right over it; arrow keys hop fields at the edges.' },
+  { tool: 'callNotes', view: 'callNotes', selector: '.rail-flags',
+    title: 'Flags',
+    body: 'Flag a note <strong>Action</strong> (follow-up), <strong>Training</strong> (ask a manager), <strong>Review</strong> (great call), or <strong>Urgent</strong>. Each has its own color so your flagged notes read at a glance.' },
+  { tool: 'callNotes', view: 'callNotes', selector: '#cn-tag-suggest',
+    title: 'Tags',
+    body: 'Add freeform tags (press <kbd>Enter</kbd> to add). As you type the Issue and Resolution, tags you’ve used before are suggested here — one click to apply.' },
+  { tool: 'callNotes', view: 'callNotes', selector: '.rail-actions',
+    title: 'Saving a note',
+    body: '<strong>Save &amp; Copy</strong> (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>) saves and copies a CRM-ready version to your clipboard. <strong>Save &amp; Compose</strong> also opens the email composer. Drag-select anywhere in the template and copy — you always get the full note.' },
+  { tool: 'callNotes', view: 'callNotes', selector: '.cn-filter-bar',
+    title: 'Find past notes',
+    body: 'Filter today’s notes by flag here, or jump into History and Search (the tabs above) to find any past call by caller, patient/TRX, or text.' },
+  { tool: 'callNotes', view: 'callNotes', selector: '#cn-help-btn',
+    title: 'Reference & shortcuts',
+    body: 'Press <kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> anytime to open the Reference drawer for mid-call lookups — it stays open while you work. This <strong>?</strong> button lists every shortcut, and lets you replay this tour.' },
+  { tool: 'callNotes', view: 'callNotesManage', selector: '#tool-tab-bar', managerOnly: true,
+    title: 'Managers: your team',
+    body: 'Team Notes, Stats, the compliance audit log, and enrollment live under your manager-only tabs. Training & Employee Docs (in the sidebar) is where you assign training, build quizzes, and issue signable documents.' },
+];
+
+let TOUR_I = -1;
+let TOUR_ACTIVE = false;
+
+function tourPrefs_() {
+  try { return JSON.parse(localStorage.getItem(TOUR_LS_KEY) || '{}') || {}; }
+  catch (_) { return {}; }
+}
+function tourSave_(p) {
+  try { localStorage.setItem(TOUR_LS_KEY, JSON.stringify(p)); } catch (_) {}
+}
+function tourShouldAutoStart_() {
+  const p = tourPrefs_();
+  return p.seenVersion !== TOUR_VERSION;   // never seen, or seen an older version
+}
+/** Called from the boot sequence after enterTool. Best-effort, typeof-guarded
+ *  there. Doesn't run in the compact pop-out or on a deep-link landing. */
+function tourMaybeAutoStart_() {
+  if (COMPACT_MODE) return;
+  if (!tourShouldAutoStart_()) return;
+  // Let the first view settle a beat before spotlighting it.
+  setTimeout(function () { tourStart(); }, 600);
+}
+
+/** The steps this user actually sees (managerOnly filtered like tabs). */
+function tourVisibleSteps_() {
+  const isMgr = !!(empState && empState.isManager);
+  return TOUR_STEPS.filter(function (s) { return !s.managerOnly || isMgr; });
+}
+
+function tourStart() {
+  if (TOUR_ACTIVE) return;
+  TOUR_ACTIVE = true;
+  TOUR_VISIBLE = tourVisibleSteps_();
+  TOUR_I = -1;
+  tourEnsureNodes_();
+  window.addEventListener('resize', tourReposition_);
+  document.addEventListener('keydown', tourKeydown_, true);
+  tourNext_();
+}
+
+let TOUR_VISIBLE = [];
+
+function tourEnsureNodes_() {
+  if (document.getElementById('tour-root')) return;
+  const block = document.createElement('div'); block.id = 'tour-block';
+  const spot = document.createElement('div'); spot.id = 'tour-spot';
+  const pop = document.createElement('div'); pop.id = 'tour-pop';
+  document.body.appendChild(block);
+  document.body.appendChild(spot);
+  document.body.appendChild(pop);
+}
+
+function tourNext_() {
+  // Advance to the next step whose target resolves (or has no target).
+  let i = TOUR_I + 1;
+  while (i < TOUR_VISIBLE.length) {
+    if (tourShowStep_(i)) { TOUR_I = i; return; }
+    i++;
+  }
+  tourEnd_(true);
+}
+function tourPrev_() {
+  let i = TOUR_I - 1;
+  while (i >= 0) {
+    if (tourShowStep_(i)) { TOUR_I = i; return; }
+    i--;
+  }
+}
+
+/** Navigate to the step's view, then position the spotlight + tooltip.
+ *  Returns false (without showing) when a selector step's target is absent
+ *  so the caller can skip it. Navigation is synchronous (showView sets the
+ *  innerHTML in-line), but we measure after a tick so layout settles. */
+function tourShowStep_(i) {
+  const step = TOUR_VISIBLE[i];
+  if (!step) return false;
+  // Navigate if needed. enterTool bumps non-managers off managerOnly tabs,
+  // but we've already filtered those out of TOUR_VISIBLE.
+  if (currentView !== step.view) {
+    const toolKey = VIEW_TO_TOOL[step.view];
+    if (toolKey) enterTool(toolKey, step.view);
+  }
+  // For a selector step, the target must exist NOW (after the synchronous
+  // render). If it doesn't, signal skip.
+  if (step.selector && !document.querySelector(step.selector)) return false;
+  // Defer the measure so a freshly-entered view has laid out.
+  TOUR_I = i;
+  setTimeout(function () { tourPaint_(step); }, 70);
+  return true;
+}
+
+function tourPaint_(step) {
+  if (!TOUR_ACTIVE) return;
+  const block = document.getElementById('tour-block');
+  const spot = document.getElementById('tour-spot');
+  const pop = document.getElementById('tour-pop');
+  if (!block || !spot || !pop) return;
+  block.classList.add('show');
+  const target = step.selector ? document.querySelector(step.selector) : null;
+
+  pop.innerHTML = tourPopHtml_(step);
+  tourWirePop_();
+
+  if (target) {
+    block.classList.remove('dim');
+    try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
+    // Re-measure after the scroll settles.
+    setTimeout(function () {
+      const r = target.getBoundingClientRect();
+      const pad = 6;
+      spot.style.top = (r.top - pad) + 'px';
+      spot.style.left = (r.left - pad) + 'px';
+      spot.style.width = (r.width + pad * 2) + 'px';
+      spot.style.height = (r.height + pad * 2) + 'px';
+      spot.classList.add('show');
+      tourPlacePop_(pop, r, step.placement);
+    }, 180);
+  } else {
+    // Centered step — full dim, no spotlight.
+    spot.classList.remove('show');
+    block.classList.add('dim');
+    pop.classList.add('show');
+    pop.style.left = Math.max(8, (window.innerWidth - pop.offsetWidth) / 2) + 'px';
+    pop.style.top = Math.max(8, (window.innerHeight - pop.offsetHeight) / 2) + 'px';
+  }
+}
+
+/** Place the tooltip near the target — below if there's room, else above,
+ *  else to the side; always clamped on-screen. */
+function tourPlacePop_(pop, r, placement) {
+  pop.classList.add('show');
+  const pw = pop.offsetWidth, ph = pop.offsetHeight, gap = 12, vw = window.innerWidth, vh = window.innerHeight;
+  let top, left;
+  const below = r.bottom + gap + ph <= vh;
+  const above = r.top - gap - ph >= 0;
+  if (placement === 'above' ? above : (below || !above)) {
+    top = below ? r.bottom + gap : Math.max(8, (vh - ph) / 2);
+  } else {
+    top = r.top - gap - ph;
+  }
+  left = r.left + r.width / 2 - pw / 2;
+  left = Math.min(Math.max(8, left), vw - pw - 8);
+  top = Math.min(Math.max(8, top), vh - ph - 8);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+}
+
+function tourPopHtml_(step) {
+  const total = TOUR_VISIBLE.length;
+  const dots = TOUR_VISIBLE.map(function (_, j) {
+    return '<span class="tour-dot' + (j === TOUR_I ? ' on' : '') + '"></span>';
+  }).join('');
+  const last = TOUR_I >= total - 1;
+  const first = TOUR_I <= 0;
+  return '' +
+    '<button class="tour-btn ghost tour-skip" data-tour="skip">Skip</button>' +
+    '<div class="tour-kicker">Step ' + (TOUR_I + 1) + ' of ' + total + '</div>' +
+    '<div class="tour-title">' + step.title + '</div>' +
+    '<div class="tour-body">' + step.body + '</div>' +
+    '<div class="tour-foot">' +
+      '<div class="tour-dots">' + dots + '</div>' +
+      (first ? '' : '<button class="tour-btn" data-tour="prev">Back</button>') +
+      '<button class="tour-btn primary" data-tour="next">' + (last ? 'Done' : 'Next') + '</button>' +
+    '</div>';
+}
+function tourWirePop_() {
+  const pop = document.getElementById('tour-pop');
+  if (!pop) return;
+  pop.querySelectorAll('[data-tour]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      const a = b.getAttribute('data-tour');
+      if (a === 'skip') tourEnd_(false);
+      else if (a === 'prev') tourPrev_();
+      else tourNext_();
+    });
+  });
+}
+
+function tourReposition_() {
+  if (!TOUR_ACTIVE || TOUR_I < 0) return;
+  tourPaint_(TOUR_VISIBLE[TOUR_I]);
+}
+function tourKeydown_(e) {
+  if (!TOUR_ACTIVE) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tourEnd_(false); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); tourNext_(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); tourPrev_(); }
+}
+
+function tourEnd_(completed) {
+  TOUR_ACTIVE = false;
+  window.removeEventListener('resize', tourReposition_);
+  document.removeEventListener('keydown', tourKeydown_, true);
+  ['tour-block', 'tour-spot', 'tour-pop'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  });
+  // Stamp seen so auto-start won't fire again (until TOUR_VERSION bumps).
+  const p = tourPrefs_();
+  p.seenVersion = TOUR_VERSION;
+  tourSave_(p);
+  if (completed) showToast('Tour complete — replay it anytime from the ? button', 'toast-success');
+}
+</script>

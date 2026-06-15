@@ -218,13 +218,40 @@
   .rail-tag-input:focus { border-color: var(--accent); }
 
   /* Action buttons in the rail */
+  /* Operator feedback (2026-06-12 r2): quadrant layout — four compact
+     buttons instead of five full-width rows, so the rail (and the whole
+     form block) is shorter and the filter bar + notes move up. */
   .rail-actions {
-    display: flex; flex-direction: column; gap: 6px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
   }
   .rail-actions .cn-action-prime,
-  .rail-actions .cn-action-sec {
-    width: 100%; justify-content: space-between; padding: 8px 12px;
-    font-size: 12px;
+  .rail-actions .cn-action-sec,
+  .rail-actions .cn-form-clear-btn {
+    width: 100%; justify-content: center; padding: 9px 8px;
+    font-size: 12px; display: inline-flex; align-items: center; gap: 5px;
+  }
+  .rail-actions .kbd-chip { display: none; }   /* chips crowd the quadrants — the card sub + tooltips carry the hints */
+  /* circular shortcuts button in the page header (was the 5th rail button) */
+  .cn-help-fab {
+    appearance: none; width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--paper-card);
+    color: var(--muted); font: inherit; font-size: 14px; font-weight: 600;
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0; align-self: center; margin-left: 10px;
+    transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .cn-help-fab:hover { color: var(--ink); border-color: var(--border-strong); }
+  /* Save & Compose loading state — envelope bobs while the save confirms */
+  .cn-compose-loading {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding: 44px 36px; text-align: center;
+  }
+  .cn-compose-loading .env { color: var(--accent); animation: cnEnvFly 1.1s ease-in-out infinite; }
+  .cn-compose-loading .msg { font-size: 13px; color: var(--muted); }
+  @keyframes cnEnvFly {
+    0%   { transform: translateY(0) rotate(0deg); opacity: .9; }
+    50%  { transform: translateY(-9px) rotate(-6deg); opacity: 1; }
+    100% { transform: translateY(0) rotate(0deg); opacity: .9; }
   }
 
   /* Compact reflow */
@@ -880,6 +907,20 @@
     background: var(--danger-deep); border-color: var(--danger-deep); color: white;
   }
 
+  /* Operator feedback (2026-06-12 r3): delete-in-flight state — the card
+     dims, desaturates, and "breathes" until the server confirms; clicks
+     are blocked so the RPC can't be double-fired. */
+  .cn-card.is-deleting, .tr-row.is-deleting {
+    pointer-events: none;
+    animation: cnCardDeleting 1s ease-in-out infinite;
+    filter: grayscale(.7);
+  }
+  @keyframes cnCardDeleting {
+    0%   { opacity: .55; transform: scale(1); }
+    50%  { opacity: .3;  transform: scale(.985); }
+    100% { opacity: .55; transform: scale(1); }
+  }
+
   /* Suggested tags (heuristic — rep's own vocabulary matched against the
      Issue/Resolution text; the AI version is deliberately NOT built, it
      would send note text to a vendor — INV-119 posture). */
@@ -1033,6 +1074,11 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     display: inline-block; vertical-align: middle;
   }
+  /* Operator feedback (2026-06-12 r2): same per-type icon tint as the
+     form's flag toolbar, applied to saved-note card actions even when OFF. */
+  .cn-card-actions .cn-act-btn.action svg   { color: var(--warn); }
+  .cn-card-actions .cn-act-btn.training svg { color: var(--info); }
+  .cn-card-actions .cn-act-btn.review svg   { color: var(--accent); }
   .cn-card-actions .cn-act-btn.action.is-on   { background: var(--warn-soft);   color: var(--warning-deep); }
   .cn-card-actions .cn-act-btn.training.is-on { background: var(--accent-soft); color: var(--info-deep);    }
   .cn-card-actions .cn-act-btn.review.is-on   { background: var(--good-soft);   color: var(--success-deep); }
@@ -1194,7 +1240,10 @@
   .cn-compose-note-ref dd::after { content: '\A'; white-space: pre; }
   .cn-compose-dept-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* Operator feedback (2026-06-12 r2): adaptive columns — 3-up at the
+       default modal width, gracefully fewer as the (resizable) modal
+       narrows. The chips were two wide columns of mostly whitespace. */
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 6px;
   }
   .cn-dept-chip {
@@ -2039,7 +2088,7 @@ function cnRenderNotesView(area) {
   // cn-quick-chip-row at the bottom navigates to History filtered by tag.
   // Existing pinned tray, Q&A tray, filter bar, and rolling stack are
   // preserved beneath the new structure so reps still see their work.
-  const eyebrow = `Log a call · all fields visible · ${mod}+↵ saves &amp; copies for CRM`;
+  const eyebrow = `Log a call · all fields visible · ${mod}+⇧+C saves &amp; copies for CRM`;
   area.innerHTML = `
     ${compactHeader}
     ${COMPACT_MODE ? '' : `
@@ -2053,6 +2102,7 @@ function cnRenderNotesView(area) {
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-week">0</div><div class="cn-stat-lbl">Week</div></div>
           <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-flag">0</div><div class="cn-stat-lbl">Unresolved</div></div>
         </div>
+        <button type="button" class="cn-help-fab" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/ or ?)">?</button>
       </div>
     `}
     <div class="cn-rolling">
@@ -2073,7 +2123,7 @@ function cnRenderNotesView(area) {
         <button class="cn-shortcuts-close" onclick="document.getElementById('cn-shortcuts-overlay').classList.remove('open')">${icon('x', 16)}</button>
         <div class="cn-shortcuts-title">Keyboard Shortcuts</div>
         <table class="cn-shortcuts-table">
-          <tr><td>Save &amp; Copy</td><td><kbd>${esc(mod)}</kbd> + <kbd>Enter</kbd></td></tr>
+          <tr><td>Save &amp; Copy</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd></td></tr>
           <tr><td>Save &amp; Compose</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
           <tr><td>Reference Drawer</td><td><kbd>${esc(mod)}</kbd> + <kbd>K</kbd></td></tr>
           <tr><td>Flag: Action</td><td><kbd>${esc(mod)}</kbd> + <kbd>1</kbd></td></tr>
@@ -2085,6 +2135,10 @@ function cnRenderNotesView(area) {
           <tr><td>New Line (same field)</td><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
           <tr><td>Show Shortcuts</td><td><kbd>${esc(mod)}</kbd> + <kbd>/</kbd>&nbsp; or &nbsp;<kbd>?</kbd></td></tr>
         </table>
+        <button class="tour-btn primary" style="margin-top:14px;width:100%;justify-content:center"
+                onclick="document.getElementById('cn-shortcuts-overlay').classList.remove('open'); if (typeof tourStart==='function') tourStart();">
+          ${icon('info', 14)} Replay the app tour
+        </button>
       </div>
     </div>
   `;
@@ -2208,7 +2262,7 @@ function cnRenderActiveForm_() {
           <div class="rail-flags" role="group" aria-label="Flag this note">
             <button type="button" class="flag-btn action"   data-flag="action"   title="Flag for action (follow-up)">${icon('flag', 12)} Action</button>
             <button type="button" class="flag-btn training" data-flag="training" title="Flag for training (need clarification)">${icon('bulb', 12)} Training</button>
-            <button type="button" class="flag-btn review"   data-flag="review"   title="Review candidate (5-star)">${icon('star', 12)} Review</button>
+            <button type="button" class="flag-btn review"   data-flag="review"   title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)} Review</button>
             <button type="button" class="flag-btn urgent"   data-flag="urgent"   title="Mark urgent">${icon('warning', 12)} Urgent</button>
           </div>
         </div>
@@ -2225,10 +2279,10 @@ function cnRenderActiveForm_() {
         </div>
 
         <div class="rail-card">
-          <h4><span>Save the note</span><span class="sub">${esc(mod)}↵ default</span></h4>
+          <h4><span>Save the note</span><span class="sub">${esc(mod)}⇧C saves</span></h4>
           <div class="rail-actions">
-            <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM">
-              <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}↵</span>
+            <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM (${esc(mod)}+Shift+C)">
+              <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}⇧C</span>
             </button>
             <button type="button" class="cn-action-sec" id="cn-form-submit-compose" title="Save, copy, and open the email composer">
               <span>${icon('mail', 13)}Save &amp; Compose</span><span class="kbd-chip">${esc(mod)}⇧↵</span>
@@ -2236,10 +2290,9 @@ function cnRenderActiveForm_() {
             <button type="button" class="cn-action-sec" id="cn-ext-email-btn" title="Open the email composer without saving (for customer / provider emails)">
               <span>${icon('send', 13)}Open Email</span>
             </button>
-            <button type="button" class="cn-form-clear-btn" id="cn-form-clear" title="Clear note (${esc(mod)}+Z to undo)">
-              <span>${icon('x', 13)}Clear</span><span class="kbd-chip">Esc</span>
+            <button type="button" class="cn-form-clear-btn" id="cn-form-clear" title="Clear note (Esc · ${esc(mod)}+Z to undo)">
+              <span>${icon('x', 13)}Clear</span>
             </button>
-            <button type="button" class="cn-action-sec" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/)" style="flex:0 0 auto;min-width:42px">?</button>
           </div>
         </div>
       </div>
@@ -2353,15 +2406,21 @@ function cnWireActiveForm_() {
   const editables = Array.prototype.slice.call(form.querySelectorAll('.ce[contenteditable], input, textarea'));
   editables.forEach(function (el) {
     el.addEventListener('keydown', function (e) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      // Operator feedback (2026-06-12 r3): Save & Copy moved to ${mod}+Shift+C
+      // (off plain ${mod}+Enter — too close to the Enter-nav muscle memory).
+      // ${mod}+Shift+Enter keeps Save & Compose.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
         e.preventDefault();
-        if (e.shiftKey) {
-          cnSubmitActiveForm_({
-            onConfirmed: function (note) { cnOpenEmailComposer_(note.noteId); },
-          });
-        } else {
-          cnSubmitActiveForm_();
-        }
+        cnSubmitActiveForm_();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        cnShowComposerLoading_();
+        cnSubmitActiveForm_({
+          keepForm: true,
+          onConfirmed: function (note) { cnOpenEmailComposer_(note.noteId); },
+        });
         return;
       }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
@@ -2378,6 +2437,19 @@ function cnWireActiveForm_() {
         e.preventDefault();
         cnFocusNextField_(el.id);
         return;
+      }
+      // Operator feedback (2026-06-12 r2): arrow keys hop fields when the
+      // caret is at the field's boundary — Down at the very end goes to the
+      // next field, Up at the very start goes back. Inside multi-line text
+      // the arrows keep their normal line-by-line behavior.
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && el.isContentEditable
+          && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+        var fwd = e.key === 'ArrowDown';
+        if (cnCaretAtEdge_(el, fwd ? 'end' : 'start')) {
+          e.preventDefault();
+          if (fwd) cnFocusNextField_(el.id); else cnFocusPrevField_(el.id);
+          return;
+        }
       }
       if (e.key === 'Escape' && !e.defaultPrevented) {
         if (document.querySelector('.overlay.open')) return;
@@ -2523,9 +2595,12 @@ function cnWireActiveForm_() {
   // can paste the note into the CRM during the brief wait — clipboard is
   // already set by the optimistic submit path.
   const composeBtn = document.getElementById('cn-form-submit-compose');
+  // (compose click handler below shows the loading envelope first)
   if (composeBtn) {
     composeBtn.addEventListener('click', function () {
+      cnShowComposerLoading_();
       cnSubmitActiveForm_({
+        keepForm: true,
         onConfirmed: function (note) { cnOpenEmailComposer_(note.noteId); },
       });
     });
@@ -2808,6 +2883,30 @@ function cnFocusNextField_(currentId) {
   const nextId = CN_FIELD_NAV_ORDER[(i + 1) % CN_FIELD_NAV_ORDER.length] || CN_FIELD_NAV_ORDER[0];
   const el = document.getElementById(nextId);
   if (el) el.focus();
+}
+function cnFocusPrevField_(currentId) {
+  const i = CN_FIELD_NAV_ORDER.indexOf(currentId);
+  const prevId = CN_FIELD_NAV_ORDER[(i - 1 + CN_FIELD_NAV_ORDER.length) % CN_FIELD_NAV_ORDER.length];
+  const el = document.getElementById(prevId);
+  if (el) el.focus();
+}
+/** True when the collapsed caret sits at the very start/end of the field's
+ *  text — the arrow-key field-hop trigger. A non-collapsed selection never
+ *  hops (arrowing out of a selection should behave natively). */
+function cnCaretAtEdge_(el, edge) {
+  try {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+    const r = sel.getRangeAt(0);
+    if (!el.contains(r.startContainer)) return false;
+    const pre = r.cloneRange();
+    pre.selectNodeContents(el);
+    pre.setEnd(r.startContainer, r.startOffset);
+    const at = pre.toString().length;
+    const total = el.textContent.length;
+    if (total === 0) return true;          // empty field — hop either way
+    return edge === 'start' ? at === 0 : at === total;
+  } catch (_) { return false; }
 }
 function cnSelectAllIn_(el) {
   try {
@@ -3102,13 +3201,23 @@ function cnSubmitActiveForm_(opts) {
   CN_STATE.rollingNotes.unshift(pendingNote);
   // 2. Copy to clipboard NOW so the rep can paste into the CRM without waiting
   cnAutoCopyNote_(pendingNote);
-  // 3. Clear the form so the rep can start the next call
-  cnClearActiveForm_({ skipSnapshot: true });
-  // Arm Ctrl/Cmd+Z undo-of-save: holds the live note REFERENCE (its noteId
-  // is swapped in place when the server confirms) + the restore snapshot.
-  CN_STATE.lastSaveUndo = { note: pendingNote, snap: restoreSnapshot, at: Date.now() };
-  cnFormTimerReset_();
-  cnClearStickyFormDraft_();
+  if (opts && opts.keepForm) {
+    // Operator feedback (2026-06-12 r3): Save & Compose is TRANSACTIONAL —
+    // the form keeps its text while the composer is open. Send success
+    // completes the action (form clears then); cancelling the composer
+    // rolls the save back (the saved note is deleted, text stays put).
+    CN_STATE.composeFlow = { note: pendingNote, snap: restoreSnapshot };
+  } else {
+    // 3. Clear the form so the rep can start the next call
+    cnClearActiveForm_({ skipSnapshot: true });
+    // Arm Ctrl/Cmd+Z undo-of-save: holds the live note reference + the
+    // restore snapshot. (The reference is re-pointed at the server's
+    // confirmed note object in the success handler below — the array slot
+    // is REPLACED, not mutated, so holding pendingNote alone goes stale.)
+    CN_STATE.lastSaveUndo = { note: pendingNote, snap: restoreSnapshot, at: Date.now() };
+    cnFormTimerReset_();
+    cnClearStickyFormDraft_();
+  }
   // 4. Re-render
   cnRenderStack_();
   cnRenderFilterBar_();
@@ -3129,11 +3238,28 @@ function cnSubmitActiveForm_(opts) {
           cnRenderFilterBar_();
         }
       }
+      // The array slot was REPLACED — re-point any held references at the
+      // confirmed note so undo-save / the compose flow see the real noteId
+      // (holding the stale pending object reported "_pending" forever).
+      if (CN_STATE.lastSaveUndo && CN_STATE.lastSaveUndo.note === pendingNote) {
+        CN_STATE.lastSaveUndo.note = res.note;
+      }
+      if (CN_STATE.composeFlow && CN_STATE.composeFlow.note === pendingNote) {
+        CN_STATE.composeFlow.note = res.note;
+      }
+      // Composer was cancelled while the save was still in flight → finish
+      // the rollback now that the server row exists, and skip the composer.
+      if (pendingNote._deleteOnConfirm) {
+        cnDoDeleteNote_(res.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
+        return;
+      }
       if (opts && typeof opts.onConfirmed === 'function' && currentView === requestedView) {
         try { opts.onConfirmed(res.note); } catch (e) {}
       }
     })
     .withFailureHandler(function (err) {
+      CN_STATE.composeFlow = null;          // save failed — nothing to roll back
+      cnCloseComposerLoadingIfPending_();   // tear down a waiting Save & Compose envelope
       cnRevertPendingSubmit_(pendingId, restoreSnapshot, 'Save failed: ' + (err.message || 'unknown'));
     })
     .submitCallNote(payload);
@@ -3557,7 +3683,7 @@ function cnRenderCardCore_(note, expandable) {
                 var urgentBtn = '<button class="cn-act-btn cn-urgent-toggle' + (isUrgent ? ' is-on' : '') +
                   '" title="' + (isUrgent ? 'Remove urgent flag' : 'Mark urgent') +
                   '" data-cn-action="flag-urgent">' + icon('warning', 14) + '</button>';
-                var sec = urgentBtn + flagBtn('review', 'star', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
+                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
                 if (!sec) return '';
                 return '<button class="cn-act-btn" title="More actions" data-cn-action="more">' + icon('chevronDown', 14) + '</button>' +
                   '<span class="cn-more-menu" style="display:none">' + sec + '</span>';
@@ -3772,10 +3898,19 @@ function cnDeleteNote_(noteId) {
     cnDoDeleteNote_(noteId);
   });
 }
-function cnDoDeleteNote_(noteId) {
+function cnDoDeleteNote_(noteId, opts) {
+  // Mark every rendering of the note (stack / history / pinned tray) as
+  // deleting — visible feedback for the ~1s RPC (r3).
+  document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) {
+    c.classList.add('is-deleting');
+  });
   google.script.run
     .withSuccessHandler(function (res) {
-      if (!res.success) { showToast(res.error || 'Delete failed', 'toast-error'); return; }
+      if (!res.success) {
+        document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
+        showToast(res.error || 'Delete failed', 'toast-error');
+        return;
+      }
       CN_STATE.rollingNotes = CN_STATE.rollingNotes.filter(function (n) { return n.noteId !== noteId; });
       CN_STATE.historyNotes = CN_STATE.historyNotes.filter(function (n) { return n.noteId !== noteId; });
       CN_STATE.pinnedNotes = (CN_STATE.pinnedNotes || []).filter(function (n) { return n.noteId !== noteId; });
@@ -3783,9 +3918,10 @@ function cnDoDeleteNote_(noteId) {
       cnReRenderActiveView_();
       cnRenderFilterBar_();
       cnRenderPinnedTray_();
-      showToast('Deleted', 'toast-success');
+      showToast((opts && opts.toast) || 'Deleted', 'toast-success');
     })
     .withFailureHandler(function (err) {
+      document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
       showToast('Delete failed: ' + err.message, 'toast-error');
     })
     .deleteCallNote(noteId);
@@ -4222,8 +4358,31 @@ function cnSwitchComposerTab_(target) {
   } else if (target === 'external') {
     // Mount ext (may be async on first open), removing dept only once ext is
     // actually in the DOM — never an empty-backdrop frame.
+    // Tab-switch is NOT a cancel: the rep is continuing the email in the
+    // External composer. Detach the Save&Compose transaction first (note
+    // stays saved, form keeps its text) so the dept-composer teardown
+    // below doesn't roll the save back (r3).
+    CN_STATE.composeFlow = null;
     cnOpenExternalEmailModal_(noteId || null, cnCloseComposerModal_);
   }
+}
+
+/* Operator feedback (2026-06-12 r2): Save & Compose previously gave no
+   feedback while the server assigned a noteId — reps re-clicked. Mount the
+   composer overlay IMMEDIATELY with an envelope animation; the real
+   composer renders into the same overlay when the save confirms, and the
+   submit failure funnel (cnRevertPendingSubmit_) tears it down. */
+function cnShowComposerLoading_() {
+  const overlay = ensureOverlay('cn-compose-overlay', { onClose: cnCloseComposerModal_ });
+  overlay.innerHTML =
+    '<div class="modal cn-compose-loading">' +
+      '<div class="env">' + icon('mail', 34) + '</div>' +
+      '<div class="msg">Saving the note&hellip; the composer opens automatically.</div>' +
+    '</div>';
+}
+function cnCloseComposerLoadingIfPending_() {
+  const o = document.getElementById('cn-compose-overlay');
+  if (o && o.querySelector('.cn-compose-loading')) cnCloseComposerModal_();
 }
 
 function cnOpenEmailComposer_(noteId) {
@@ -4267,6 +4426,21 @@ function cnCloseComposerModal_() {
   CN_STATE.composer = null;
   const overlay = document.getElementById('cn-compose-overlay');
   if (overlay) overlay.remove();
+  // Operator feedback (2026-06-12 r3): closing a Save&Compose-opened
+  // composer WITHOUT sending rolls the whole action back — the just-saved
+  // note is deleted (server 5-min window covers it) and the text is still
+  // sitting in the form. Send success clears composeFlow BEFORE closing,
+  // so this only fires on a genuine cancel/Esc.
+  const fl = CN_STATE.composeFlow;
+  if (fl) {
+    CN_STATE.composeFlow = null;
+    if (fl.note._pending) {
+      fl.note._deleteOnConfirm = true;   // finish the rollback when the save confirms
+      showToast('Compose cancelled — undoing the save…', 'toast-warn');
+    } else if (cnFindNoteAnywhere_(fl.note.noteId)) {
+      cnDoDeleteNote_(fl.note.noteId, { toast: 'Compose cancelled — save undone, your text is still in the form' });
+    }
+  }
 }
 
 function cnRenderComposerModal_() {
@@ -4902,6 +5076,17 @@ function cnComposerSend_() {
         // them from the in-memory card until a reload.
         sentNote.subformData = Object.assign({}, sentNote.subformData || {}, c.selections);
         cnReplaceNoteInState_(sentNote);
+      }
+      // Save & Compose transaction completes on SEND: clear the form now
+      // (it was kept populated while composing — r3), then close.
+      if (CN_STATE.composeFlow && CN_STATE.composeFlow.note &&
+          CN_STATE.composeFlow.note.noteId === c.noteId) {
+        CN_STATE.composeFlow = null;
+        if (document.getElementById('cn-active-form')) {
+          cnClearActiveForm_({ skipSnapshot: true });
+          cnFormTimerReset_();
+          cnClearStickyFormDraft_();
+        }
       }
       cnCloseComposerModal_();
       cnReRenderActiveView_();
@@ -5595,15 +5780,22 @@ function cnMgrDeleteNote_(btn) {
   }).then(function (ok) {
     if (!ok) return;
     btn.disabled = true;
+    const card = btn.closest('.cn-card') || btn.closest('[data-note-id]');
+    if (card) card.classList.add('is-deleting');
     google.script.run
       .withSuccessHandler(function (res) {
         btn.disabled = false;
-        if (!res.success) { showToast(res.error || 'Delete failed', 'toast-error'); return; }
+        if (!res.success) {
+          if (card) card.classList.remove('is-deleting');
+          showToast(res.error || 'Delete failed', 'toast-error');
+          return;
+        }
         showToast('Note deleted', 'toast-success');
         cnMgrLoadRepNotes_();
       })
       .withFailureHandler(function (err) {
         btn.disabled = false;
+        if (card) card.classList.remove('is-deleting');
         showToast('Delete failed: ' + err.message, 'toast-error');
       })
       .managerDeleteCallNote(repId, noteId);
