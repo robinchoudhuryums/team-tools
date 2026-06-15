@@ -5997,9 +5997,9 @@ function cnMgrRenderStats_(host, res) {
           <div class="cn-stats-row"><span class="cn-stats-k">Emails sent</span><span class="cn-stats-v">${r.emailsSent}</span></div>
           ${medianRow}
           ${r.cdr ? `
-          <div class="cn-stats-row" style="border-top:1px solid var(--line);padding-top:6px;margin-top:4px"><span class="cn-stats-k" style="color:var(--accent)">Calls answered</span><span class="cn-stats-v">${r.cdr.totalAnswered}</span></div>
-          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">Calls missed</span><span class="cn-stats-v">${r.cdr.totalMissed > 0 ? '<span style="color:var(--warn)">' + r.cdr.totalMissed + '</span>' : '0'}</span></div>
-          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">% Answered</span><span class="cn-stats-v">${r.cdr.pctAnswered}%</span></div>
+          <div class="cn-stats-row" style="border-top:1px solid var(--line);padding-top:6px;margin-top:4px"><span class="cn-stats-k" style="color:var(--accent)">Calls answered</span><span class="cn-stats-v">${esc(r.cdr.totalAnswered)}</span></div>
+          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">Calls missed</span><span class="cn-stats-v">${r.cdr.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.cdr.totalMissed) + '</span>' : '0'}</span></div>
+          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">% Answered</span><span class="cn-stats-v">${esc(r.cdr.pctAnswered)}%</span></div>
           <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">Avg Talk Time</span><span class="cn-stats-v">${esc(r.cdr.attFormatted)}</span></div>
           ` : ''}
           ${r.noteCoverage != null ? `
@@ -6181,6 +6181,12 @@ function cnPollAmbient_() {
         link.appendChild(badge);
       }
       badge.textContent = String(count);
+    })
+    .withFailureHandler(function (err) {
+      // Benign: the next 60s tick retries. Log only (matches the
+      // failure-handler discipline of every other RPC in this file) — the
+      // badge/stats simply stay at their last value rather than failing silently.
+      console.warn('cnPollAmbient_ failed: ' + ((err && err.message) || err));
     })
     .getCallNotesAmbient();
 }
@@ -7081,7 +7087,7 @@ function cnRenderHealthPanel_(res) {
   } else {
     cdrParts.push(cdr.columnWarning
       ? warnBox(icon('warning', 11) + ' Column drift in DQE Historical Data: ' + esc(cdr.columnWarning))
-      : okLine('CDR reachable · column layout OK · ' + (cdr.rowsMatched || 0) + ' row(s) ' + esc(cdr.from || '') + ' → ' + esc(cdr.to || '') + '.'));
+      : okLine('CDR reachable · column layout OK · ' + esc(cdr.rowsMatched || 0) + ' row(s) ' + esc(cdr.from || '') + ' → ' + esc(cdr.to || '') + '.'));
     if (cdr.unmatchedAgents && cdr.unmatchedAgents.length > 0) {
       cdrParts.push(warnBox(icon('warning', 11) + ' ' + cdr.unmatchedAgents.length +
         ' CDR agent(s) not matched to the roster (add an Agent Alias Override or fix the Employees name): ' +

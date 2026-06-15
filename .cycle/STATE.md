@@ -1,12 +1,37 @@
 # Cycle State
 
 ## Current
-Cycle: 2
-Phase: idle (cycle 2 CLOSED — reflect recorded 2026-06-11)
+Cycle: 3
+Phase: implement (broad-scan + targeted hardening batch)
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 0
-Updated: 2026-06-11
+Subsystem cycles since last Seams audit: 1
+Updated: 2026-06-15
+
+## Cycle 3 broad-scan (2026-06-15) — defensive hardening batch
+Fresh /broad-scan: codebase exceptionally clean (122 invariants, 2 prior cycles).
+NO Critical/High found. Top findings were all Low (defense-in-depth / consistency).
+Implemented F1,F2,F3,F5,F7 via /broad-implement; skipped F4 (false positive on
+close read), F6 (out of requested scope). Node harness 122/122 post-change.
+- F1 | form_public.html | null-guard the boot()/submit success handlers (resolved-
+  but-null res doesn't trigger withFailureHandler → was a silent frozen-spinner).
+- F2 | metrics/script_metrics.html + cn/script_callnotes.html | esc() the CDR-
+  boundary fields into innerHTML (hero pct, per-rep table incl. attFormatted, date
+  strings, Stats-card CDR numbers, health-panel rowsMatched) — honors the documented
+  "Metrics must esc() every server string" invariant. Numbers → output-identical.
+- F3 | intake/script_intake.html | null INTAKE_STATE.preview (holds patient-answer
+  PHI) on clear + after both send paths (PPD + acct). st captured into a local before
+  the RPC, so INV-111 send/hash unaffected.
+- F5 | train/script_training.html + train/script_empdocs.html | guard every
+  err.message in failure handlers → (err && err.message) || err (ALL occurrences,
+  not just the agent subset).
+- F7 | cn/script_callnotes.html | add withFailureHandler (console.warn) to
+  cnPollAmbient_ — the only RPC in the file lacking one.
+RETRACTED: F4 (Day-Edit picker UTC min) — pure calendar arithmetic on the tz-derived
+`today` string, no browser-now drift; equivalent to the Adjust modal. Not a bug.
+NEXT: operator deploy (clasp push -f + New version) — client-only, no Script
+Properties / operator-state change. Then optionally pick up F6 (_clkRemindedBreaks
+unbounded, Low) or proceed to /reflect to close Cycle 3.
 
 ## In progress (facts to carry forward — NOT judgments)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,

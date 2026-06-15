@@ -455,7 +455,7 @@ function intakePpdSend_() {
       // view — a late success after nav-away must not clobber #view-area.
       // State still resets so stale images can't ride into the next send.
       if (currentView === requestedView) intakeClearForm_('ppd');
-      else INTAKE_STATE.ppd.images = [];
+      else { INTAKE_STATE.ppd.images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
       showToast('PPD emailed to ' + res.recipient, 'toast-success');
     })
     .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
@@ -620,7 +620,7 @@ function intakeAcctSend_(form) {
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
       if (currentView === requestedView) intakeClearForm_(form);
-      else INTAKE_STATE[form].images = [];
+      else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
       showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
     })
     .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
@@ -846,6 +846,9 @@ function intakeRestoreAnswers_(form, snapshot) {
 
 function intakeClearForm_(form) {
   INTAKE_STATE[form].images = [];
+  // Drop the cached preview too — it holds the full patient-answer payload
+  // (PHI). Clearing the form must not leave it resident in memory (F3).
+  INTAKE_STATE.preview = null;
   if (form === 'ppd') enterIntakePpdView();
   else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account Creation' : 'PMD Account Creation');
 }

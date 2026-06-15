@@ -118,7 +118,7 @@ function trainLoadMy_() {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var el = document.getElementById('tr-home-content');
-      if (el) el.innerHTML = '<div class="tr-empty">Could not load training: ' + esc(err.message) + '</div>';
+      if (el) el.innerHTML = '<div class="tr-empty">Could not load training: ' + esc((err && err.message) || err) + '</div>';
     })
     .getMyTraining();
 }
@@ -207,7 +207,7 @@ function trainMarkComplete_(itemId, btn) {
     })
     .withFailureHandler(function (err) {
       if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Mark complete'; }
-      showToast('Could not mark complete: ' + err.message, 'error');
+      showToast('Could not mark complete: ' + ((err && err.message) || err), 'error');
     })
     .markTrainingComplete(itemId);
 }
@@ -227,7 +227,7 @@ function trainOpenReader_(itemId) {
     .withFailureHandler(function (err) {
       if (TRAIN_STATE.readerItemId !== itemId) return;
       var o = document.getElementById('train-reader-overlay');
-      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc(err.message) + '</div>';
+      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
     })
     .getReferenceItem(itemId);
 }
@@ -298,7 +298,7 @@ function trainOpenQuiz_(quizId) {
     .withFailureHandler(function (err) {
       if (TRAIN_STATE.quizTaking !== quizId) return;
       var o = document.getElementById('train-quiz-overlay');
-      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc(err.message) + '</div>';
+      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
     })
     .getQuiz(quizId);
 }
@@ -355,7 +355,7 @@ function trainSubmitQuiz_() {
       })
       .withFailureHandler(function (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Submit answers'; }
-        showToast('Could not grade the quiz: ' + err.message, 'error');
+        showToast('Could not grade the quiz: ' + ((err && err.message) || err), 'error');
       })
       .submitQuizAttempt(quizId, answers);
   };
@@ -428,7 +428,7 @@ function trainLoadMgr_() {
     failed = true;
     if (currentView !== requestedView) return;
     var el = document.getElementById('tr-mgr-content');
-    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc(err.message) + '</div>';
+    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc((err && err.message) || err) + '</div>';
   }
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.dash = d; done(); }).withFailureHandler(onFail).getTrainingDashboard();
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.kbTree = d; done(); }).withFailureHandler(onFail).getReferenceTree();
@@ -569,7 +569,7 @@ function trainSubmitAssign_() {
     })
     .withFailureHandler(function (err) {
       if (btn) btn.disabled = false;
-      showToast('Assignment failed: ' + err.message, 'error');
+      showToast('Assignment failed: ' + ((err && err.message) || err), 'error');
     })
     .saveTrainingAssignment({ itemType: itemType, itemId: itemId, empIds: empIds, dueDate: dueDate });
 }
@@ -695,7 +695,7 @@ function trainSaveQuizFromEditor_() {
     })
     .withFailureHandler(function (err) {
       if (btn) btn.disabled = false;
-      showToast('Save failed: ' + err.message, 'error');
+      showToast('Save failed: ' + ((err && err.message) || err), 'error');
     })
     .saveQuiz({ quizId: st.quizId, title: st.title, kbItemId: st.kbItemId, passPct: st.passPct, questions: st.questions });
 }
@@ -720,7 +720,7 @@ function trainDeleteQuiz_(quizId) {
         showToast('Quiz deleted.', 'success');
         if (currentView === 'trainingManage') trainLoadMgr_();
       })
-      .withFailureHandler(function (err) { showToast('Delete failed: ' + err.message, 'error'); })
+      .withFailureHandler(function (err) { showToast('Delete failed: ' + ((err && err.message) || err), 'error'); })
       .deleteQuiz(quizId);
   });
 }
@@ -738,7 +738,7 @@ function trainRevoke_(assignId) {
         showToast('Assignment revoked.', 'success');
         if (currentView === 'trainingManage') trainLoadMgr_();
       })
-      .withFailureHandler(function (err) { showToast('Revoke failed: ' + err.message, 'error'); })
+      .withFailureHandler(function (err) { showToast('Revoke failed: ' + ((err && err.message) || err), 'error'); })
       .revokeTrainingAssignment(assignId);
   });
 }
