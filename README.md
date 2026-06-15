@@ -44,9 +44,10 @@ Script project synced via [clasp](https://github.com/google/clasp).
     My Training checklist with an in-app reader and mark items
     complete; managers see a per-rep completion matrix. Re-assigning
     an item resets its completion (re-certification). Interactive
-    quizzes: manager-authored, graded server-side (answer keys never
-    reach the browser), unlimited retries with attempt tracking — a
-    pass completes the item. Per-employee signable documents (reviews,
+    quizzes: manager-authored (or imported from a Google Forms quiz),
+    graded server-side (answer keys never reach the browser), unlimited
+    retries with attempt tracking — a pass completes the item.
+    Per-employee signable documents (reviews,
     PIPs, policy acknowledgments) live in a dedicated HR spreadsheet:
     content is frozen and hashed at issue, employees sign on a canvas
     pad, signature records are append-only and tamper-evident, and

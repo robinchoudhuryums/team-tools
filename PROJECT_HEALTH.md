@@ -26,9 +26,17 @@ client-lifecycle axes):
   Editor suite green post-deploy; Node harness 89 → 92.
 - **Known gaps carried forward** — L19 composer tab-switch typed input; KB-6
   Esc-discards-editor-edits confirm; DOM-lifecycle harness; P#17 out of repo
-  scope. (KB Phase 2b/3 and KB AI Phase A all SHIPPED post-close on 2026-06-12 —
-  Node harness 99→105; KB AI Phase B stays gated on observed demand.)
-- Last updated: 2026-06-12 (gaps line updated post-cycle; scores unchanged from the 2026-06-11 close)
+  scope. (Shipped post-close: KB Phase 2b/3 + KB AI Phase A on 2026-06-12, then
+  the full Training & Employee Docs module T1–T3, the onboarding tour, the
+  Google Forms quiz import, and four operator-feedback ergonomics rounds + two
+  bugfixes through 2026-06-15 — Node harness 99→123. KB AI Phase B + Training
+  T4 stay gated on observed demand.)
+- **Per-dimension scores below are FROZEN at the 2026-06-11 audit close** — the
+  post-close work above was feature/feedback work, not an audit, so the scored
+  standing intentionally hasn't moved. A fresh `/broad-scan` (Cycle 3) would
+  re-score; the new Training/Docs + tour surface has not yet had a fresh-eyes
+  audit pass.
+- Last updated: 2026-06-15 (gaps line refreshed post-feature-work; scores unchanged from the 2026-06-11 close)
 
 ## Score History
 | Date | Cycle | Overall | Notes |
