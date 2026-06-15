@@ -50,16 +50,23 @@ Operator picked jsdom (over happy-dom / zero-dep) — adds the FIRST dev depende
   runs both. CI workflow wired (npm ci + run-dom.js as a second step; pure step
   stays first as the floor).
 - Phases REMAINING:
-  - Phase 2 (M ~1d): overlay lifecycle (Esc/ensureOverlay reopen-renders) + escape
-    discipline (drive cnRenderCardCore_/metrics/health/stats with hostile fields →
-    pin the F2 class as regressions) + focus trap.
+  - Phase 2 (overlay lifecycle + escape + focus trap) DONE — run-dom.js now 23/23.
+    Escape-discipline tests drive mRenderTeamMetrics_ / mRenderMyStats_ /
+    cnRenderCardCore_ with a hostile `<img onerror><script>` field and assert NO
+    live node + text-survives — PINS the F2/INV-89 class (proven to bite: reverting
+    esc(repName) fails the test). Overlay lifecycle: ensureOverlay reuse re-asserts
+    `open` (the hidden-but-stateful composer-dead class), Esc closes only the
+    topmost via its hook (stacking), closeOverlay degrades to plain-hide on a
+    hookless/throwing hook. Focus trap: focusin outside the topmost modal pulls
+    focus to its first focusable (jsdom sets activeElement correctly).
   - Phase 3 (M ~1d): optimistic-UI submit/revert (INV-48), _flagInFlight double-fire
     (INV-56), late-callback currentView guards (cnLoadToday_ + intake/train).
   - Phase 4 (S ~½d): docs polish + determinism hardening (mostly DONE early — README
     + CI already wired in Phase 1).
-WHERE I LEFT OFF: Phases 0-1 committed + green (122 pure + 15 DOM). Resume at
-Phase 2 — escape-discipline tests first (they pin the just-shipped F2 fixes), then
-overlay lifecycle.
+WHERE I LEFT OFF: Phases 0-2 committed + green (122 pure + 23 DOM). Resume at
+Phase 3 — optimistic submit/revert first (drive cnSubmitActiveForm_ via mockRun;
+reject → cnRevertPendingSubmit_; assert pending card + revert-into-empty-form /
+park-to-sticky-draft), then _flagInFlight double-fire + late-callback guards.
 
 ## In progress (facts to carry forward — NOT judgments)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,

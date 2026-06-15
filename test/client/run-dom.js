@@ -111,5 +111,118 @@ test('a real CN render helper produces queryable, escaped markup', () => {
   assert.strictEqual(h.$$('#view-area script').length, 0, 'no script node in rendered pill');
 });
 
+// ── Phase 2a: escape discipline (drive real renderers with hostile input) ────
+// Pins the F2 / INV-89 class as regressions: a server/CDR field that reaches
+// innerHTML must never materialize a live node. We assert BOTH that no <script>
+// / <img> node appears AND that the hostile text survives as inert text.
+console.log('\ndom-harness — escape discipline (render with hostile input)');
+
+const XSS = '<img src=x onerror=alert(1)><script>alert(2)<\/script>';
+
+function fullTeamData(overrides) {
+  return Object.assign({
+    from: '2026-06-15', to: '2026-06-15', date: '2026-06-15',
+    teamTotals: { pctAnswered: 50, rung: 2, answered: 1, missed: 1,
+      tttFormatted: '0:00:20', noteCount: 1, noteCoverage: 100 },
+    reps: [], trend: null, unmatchedAgents: [], rosterWithNoCdr: [],
+  }, overrides || {});
+}
+
+test('mRenderTeamMetrics_: hostile repName in the per-rep table renders escaped (F2)', () => {
+  const h = buildDomWindow(['metrics/script_metrics.html'], { html: '<div id="m-team-content"></div>' });
+  h.ctx.mRenderTeamMetrics_(fullTeamData({
+    reps: [{ repName: XSS, totalRung: 1, totalAnswered: 1, totalMissed: 0,
+      pctAnswered: 100, attFormatted: '0:00:10', noteCount: 1, noteCoverage: 100 }],
+  }));
+  const el = h.$('#m-team-content');
+  assert.strictEqual(el.querySelectorAll('script').length, 0, 'no <script> node from repName');
+  assert.strictEqual(el.querySelectorAll('img').length, 0, 'no <img> node from repName');
+  assert.ok(el.textContent.indexOf('onerror') >= 0, 'hostile repName survives as inert text');
+});
+
+test('mRenderTeamMetrics_: hostile CDR agent name (cross-repo boundary) renders escaped', () => {
+  const h = buildDomWindow(['metrics/script_metrics.html'], { html: '<div id="m-team-content"></div>' });
+  h.ctx.mRenderTeamMetrics_(fullTeamData({ unmatchedAgents: [XSS] }));
+  const el = h.$('#m-team-content');
+  assert.strictEqual(el.querySelectorAll('script,img').length, 0, 'no live node from an unmatched CDR agent name');
+  assert.ok(el.textContent.indexOf('onerror') >= 0, 'agent name survives as inert text');
+});
+
+test('mRenderMyStats_: hostile server error string renders escaped', () => {
+  const h = buildDomWindow(['metrics/script_metrics.html'], { html: '<div id="m-my-content"></div>' });
+  h.ctx.mRenderMyStats_({ error: XSS });
+  const el = h.$('#m-my-content');
+  assert.strictEqual(el.querySelectorAll('script,img').length, 0, 'no live node from data.error');
+  assert.ok(el.textContent.indexOf('onerror') >= 0);
+});
+
+test('cnRenderCardCore_: hostile note fields render escaped (INV-89 card class)', () => {
+  const h = buildDomWindow(['cn/script_callnotes.html']);
+  const note = {
+    noteId: 'n1', timestamp: '2026-06-15T10:00:00', dateLocal: '2026-06-15',
+    callback: '', caller: XSS, relationship: '', patientAndTrx: '"><script>x<\/script>',
+    issue: XSS, transferredTo: '', resolution: '', flagType: '', resolved: false,
+    emailedAt: '', emailDepartments: '', subform: '', subformData: {},
+  };
+  h.$('#view-area').innerHTML = h.ctx.cnRenderCardCore_(note, false);
+  const el = h.$('#view-area');
+  assert.strictEqual(el.querySelectorAll('script').length, 0, 'no <script> node from note fields');
+  assert.strictEqual(el.querySelectorAll('img').length, 0, 'no <img> node from note fields');
+  assert.ok(el.textContent.indexOf('onerror') >= 0, 'hostile caller/issue survives as inert text');
+});
+
+// ── Phase 2b: overlay lifecycle (ensureOverlay / closeOverlay / Esc) ──────────
+// Pins the documented "Esc left the node hidden-but-stateful → composer dead
+// until reload" bug class: a reused overlay must come back VISIBLE.
+console.log('\ndom-harness — overlay lifecycle (ensureOverlay / Esc)');
+
+test('ensureOverlay reuse re-asserts `overlay open` (never hidden-but-stateful)', () => {
+  const h = buildDomWindow([]);
+  let closed = 0;
+  const ov = h.ctx.ensureOverlay('t-ov', { onClose: () => { closed++; h.document.getElementById('t-ov').classList.remove('open'); } });
+  assert.ok(ov.classList.contains('open'), 'created open');
+  h.ctx.closeOverlay(ov);
+  assert.strictEqual(closed, 1, 'closeOverlay ran the registered hook');
+  assert.ok(!ov.classList.contains('open'), 'hook removed open');
+  const ov2 = h.ctx.ensureOverlay('t-ov', { onClose: () => {} });
+  assert.strictEqual(ov2, ov, 'reused the same node');
+  assert.ok(ov.classList.contains('open'), 'reopen re-asserted open — renders into a VISIBLE node');
+});
+
+test('Escape closes only the TOPMOST open overlay, through its hook (stacking)', () => {
+  const h = buildDomWindow([]);
+  let aClosed = 0, bClosed = 0;
+  h.ctx.ensureOverlay('ov-a', { onClose: () => { aClosed++; h.document.getElementById('ov-a').classList.remove('open'); } });
+  h.ctx.ensureOverlay('ov-b', { onClose: () => { bClosed++; h.document.getElementById('ov-b').classList.remove('open'); } });
+  h.dispatchKey('Escape');
+  assert.strictEqual(bClosed, 1, 'topmost (last in DOM order) closed');
+  assert.strictEqual(aClosed, 0, 'underlying overlay untouched');
+  h.dispatchKey('Escape');
+  assert.strictEqual(aClosed, 1, 'second Escape closes the now-topmost overlay');
+});
+
+test('closeOverlay degrades to a plain hide for a hookless modal AND a throwing hook', () => {
+  const h = buildDomWindow([]);
+  const s = h.document.createElement('div');
+  s.id = 'static-ov'; s.className = 'overlay open'; h.document.body.appendChild(s);
+  h.ctx.closeOverlay(s);   // no hook registered
+  assert.ok(!s.classList.contains('open'), 'hookless static modal just loses open');
+  const t = h.ctx.ensureOverlay('throw-ov', { onClose: () => { throw new Error('boom'); } });
+  h.ctx.closeOverlay(t);   // hook throws
+  assert.ok(!t.classList.contains('open'), 'throwing hook degrades to plain hide so Esc never gets stuck');
+});
+
+// ── Phase 2c: focus trap ─────────────────────────────────────────────────────
+console.log('\ndom-harness — focus trap');
+
+test('focusin outside the topmost modal pulls focus to its first focusable', () => {
+  const h = buildDomWindow([], { html: '<div id="outside"><button id="ob">out</button></div>' });
+  const ov = h.ctx.ensureOverlay('ft-ov', {});
+  ov.innerHTML = '<div class="modal"><button id="mb1">one</button><button id="mb2">two</button></div>';
+  // A focusin whose target is OUTSIDE the overlay must be pulled back to mb1.
+  h.$('#ob').dispatchEvent(new h.window.FocusEvent('focusin', { bubbles: true }));
+  assert.strictEqual(h.document.activeElement, h.$('#mb1'), 'focus trapped to first focusable in the modal');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
