@@ -1230,7 +1230,7 @@ test('trainQuizAnalytics_: per-quiz counts, distinct reps, pass rate, averages; 
 
 // T4 #5/#6 — metrics anonymized team-avg + transfers data layer (pure helpers).
 console.log('\nmetrics — percent parse + anonymized team-avg cohort guard (T4 #5/#6)');
-['metricsParsePercent_', 'metricsTeamAvgSeries_'].forEach((fn) => {
+['metricsParsePercent_', 'metricsTeamAvgSeries_', 'metricsBuildKpiSeries_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
 });
 test('metricsParsePercent_: strips %, commas; null on empty/garbage', () => {
@@ -1254,6 +1254,18 @@ test('metricsTeamAvgSeries_: per-day mean, suppressed below the cohort minimum (
   assert.strictEqual(out[1].avg, null, 'cohort 2 < 3 → suppressed (anonymity)'); assert.strictEqual(out[1].cohort, 2);
   assert.strictEqual(out[2].avg, 60, '(50+70+60)/3, null skipped'); assert.strictEqual(out[2].cohort, 3);
   assert.strictEqual(out[3].avg, null, 'no data → null'); assert.strictEqual(out[3].cohort, 0);
+});
+test('metricsBuildKpiSeries_: own value alongside the cohort-guarded team avg', () => {
+  const perRepDaily = {
+    '2026-05-15': { me: { v: 70 }, b: { v: 90 }, c: { v: 100 } },   // team cohort 3 → avg 86.7
+    '2026-05-16': { me: { v: 55 }, b: { v: 65 } },                  // team cohort 2 → suppressed; own still shown
+    '2026-05-17': { b: { v: 80 }, c: { v: 60 }, d: { v: 40 } },     // own absent
+  };
+  const dates = ['2026-05-15', '2026-05-16', '2026-05-17'];
+  const out = sb.metricsBuildKpiSeries_(perRepDaily, dates, 'me', 'v', 3);
+  assert.strictEqual(out[0].own, 70); assert.ok(Math.abs(out[0].team - 86.7) < 0.05); assert.strictEqual(out[0].cohort, 3);
+  assert.strictEqual(out[1].own, 55, 'own shown even when team is suppressed'); assert.strictEqual(out[1].team, null);
+  assert.strictEqual(out[2].own, null, 'own null when the rep had no data that day'); assert.strictEqual(out[2].team, 60);
 });
 
 // Operator feedback round (2026-06-12) — heuristic tag suggester (Call

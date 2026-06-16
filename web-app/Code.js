@@ -8679,6 +8679,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
 
   var daily = {};
   var agents = {};
+  var perRepDaily = {};   // T4 #5/#6: { dateIso: { agent: {rung,answered,missed,pctAnswered,attSeconds} } }
 
   for (var i = 0; i < values.length; i++) {
     var rawAgent = String(values[i][CDR.AGENT - 1] || '').trim();
@@ -8712,6 +8713,14 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     a.tttSeconds += cdrParseHms_(displays[i][CDR.TTT - 1]);
     if (attSec > 0) { a.attSum += attSec; a.attCount++; }
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
+
+    // T4 #5/#6 — per-rep-per-day matrix for the anonymized team-avg + own
+    // trend (metricsTeamAvgSeries_ / metricsBuildKpiSeries_ consume this).
+    if (!perRepDaily[dateIso]) perRepDaily[dateIso] = {};
+    var prd = perRepDaily[dateIso][agent] ||
+      (perRepDaily[dateIso][agent] = { rung: 0, answered: 0, missed: 0, _attSum: 0, _attCount: 0 });
+    prd.rung += rung; prd.answered += ans; prd.missed += missed;
+    if (attSec > 0) { prd._attSum += attSec; prd._attCount++; }
   }
 
   Object.keys(daily).forEach(function (d) {
@@ -8727,8 +8736,16 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     a.attFormatted = cdrFmtHms_(a.attSeconds);
     delete a._dates; delete a.attSum; delete a.attCount;
   });
+  Object.keys(perRepDaily).forEach(function (d) {
+    Object.keys(perRepDaily[d]).forEach(function (ag) {
+      var p = perRepDaily[d][ag];
+      p.pctAnswered = p.rung > 0 ? Math.round((p.answered / p.rung) * 1000) / 10 : 0;
+      p.attSeconds = p._attCount > 0 ? Math.round(p._attSum / p._attCount) : 0;
+      delete p._attSum; delete p._attCount;
+    });
+  });
 
-  return { daily: daily, agents: agents };
+  return { daily: daily, agents: agents, perRepDaily: perRepDaily };
 }
 
 // ── T4 #5/#6: anonymized team-avg + Transfers data layer ──────────────────
@@ -8761,6 +8778,20 @@ function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort) {
       if (v != null && isFinite(v)) { sum += Number(v); count++; }
     });
     return { date: d, cohort: count, avg: count >= min ? Math.round((sum / count) * 10) / 10 : null };
+  });
+}
+
+/** Pure — combine the rep's OWN per-day value with the anonymized team-avg
+ *  (metricsTeamAvgSeries_) for one KPI, aligned to `dates`. Returns
+ *  [{ date, own, team, cohort }] (own/team null when absent / cohort-suppressed).
+ *  Pinned by a Node test. */
+function metricsBuildKpiSeries_(perRepDaily, dates, empName, key, minCohort) {
+  var team = metricsTeamAvgSeries_(perRepDaily, dates, key, minCohort);
+  return (dates || []).map(function (d, i) {
+    var byRep = (perRepDaily && perRepDaily[d]) || {};
+    var raw = byRep[empName] ? byRep[empName][key] : null;
+    var own = (raw != null && isFinite(raw)) ? Number(raw) : null;
+    return { date: d, own: own, team: team[i].avg, cohort: team[i].cohort };
   });
 }
 
@@ -8868,29 +8899,50 @@ function getMyMetrics(date) {
     var trendFrom = isoFromUtc_(startD);
     var trendTo = date;
 
-    var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, [emp.name]);
-    var cdr = breakdown.agents[emp.name] || null;
-    var todayCdr = null;
-    var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
-    todayCdr = todayResult.agents[emp.name] || null;
-
-    // Build 30-day trend array (one entry per day, null if no data)
-    var trend = [];
-    for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
-      var iso = isoFromUtc_(d);
-      var day = breakdown.daily[iso];
-      var agentDay = null;
-      // For per-agent trend, we need per-agent-per-day data — use the daily
-      // breakdown filtered to this agent. Since getCdrDailyBreakdown_ already
-      // filtered by rosterNames=[emp.name], daily totals ARE the agent's data.
-      trend.push({
-        date: iso,
-        pctAnswered: day ? day.pctAnswered : null,
-        rung: day ? day.rung : 0,
-        answered: day ? day.answered : 0,
-        missed: day ? day.missed : 0,
-      });
+    // T4 #5/#6 — read the WHOLE roster's per-rep-per-day matrix so the team
+    // average can be computed (anonymized, cohort-guarded). Only AGGREGATES
+    // leave the server; no individual rep's row is ever returned to the caller.
+    var roster = getEmployeeRosterRows_();
+    var allNames = [];
+    for (var r = 1; r < roster.length; r++) {
+      var nm = String(roster[r][EMP.NAME] || '').trim();
+      if (nm) allNames.push(nm);
     }
+    var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, allNames);
+    var transfer = getCsrTransferPerRepDaily_(trendFrom, trendTo, allNames);
+    var dqPRD = breakdown.perRepDaily || {};
+    var trPRD = transfer.perRepDaily || {};
+
+    var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
+    var todayCdr = todayResult.agents[emp.name] || null;
+
+    // Date axis for the 30-day window.
+    var dates = [];
+    for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) dates.push(isoFromUtc_(d));
+
+    // Legacy own % Answered trend (back-compat for the current client) — now
+    // sourced from the rep's own row in the all-reps perRepDaily matrix.
+    var trend = dates.map(function (iso) {
+      var own = dqPRD[iso] && dqPRD[iso][emp.name];
+      return {
+        date: iso,
+        pctAnswered: own ? own.pctAnswered : null,
+        rung: own ? own.rung : 0,
+        answered: own ? own.answered : 0,
+        missed: own ? own.missed : 0,
+      };
+    });
+
+    // 5-KPI own-vs-team series (#6); team values are anonymized via the N=3
+    // cohort guard (#5). Transfers come from the separate Transfer sheet.
+    var MIN_COHORT = 3;
+    var series = {
+      pctAnswered: metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'pctAnswered', MIN_COHORT),
+      answered:    metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'answered', MIN_COHORT),
+      missed:      metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'missed', MIN_COHORT),
+      attSeconds:  metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'attSeconds', MIN_COHORT),
+      transferPct: metricsBuildKpiSeries_(trPRD, dates, emp.name, 'transferPct', MIN_COHORT),
+    };
 
     var noteCount = countCallNotesInRange_(emp, date, date);
 
@@ -8910,6 +8962,8 @@ function getMyMetrics(date) {
       noteCount: noteCount,
       noteCoverage: cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
       trend: trend,
+      series: series,
+      kpiMinCohort: MIN_COHORT,
     };
   } catch (err) { return { error: err.message }; }
 }
