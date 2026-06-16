@@ -20,10 +20,14 @@
     position: fixed; z-index: 202; width: min(340px, 92vw);
     background: var(--paper-card); color: var(--ink);
     border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg);
-    padding: 16px 18px; display: none;
-    transition: top .25s var(--ease), left .25s var(--ease);
+    padding: 16px 18px; display: none; opacity: 0;
+    transition: opacity .18s var(--ease);
   }
   #tour-pop.show { display: block; }
+  /* .in drives the fade — the tooltip stays invisible (opacity 0) while its
+     content swaps + it repositions, then fades in at the new spot, so the
+     new text never flashes at the previous position. */
+  #tour-pop.in { opacity: 1; }
   .tour-kicker { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 4px; }
   .tour-title { font-family: var(--display); font-size: 1.05rem; font-weight: 700; margin: 0 0 6px; line-height: 1.25; }
   .tour-body { font-size: .88rem; line-height: 1.55; color: var(--ink); }
@@ -154,43 +158,37 @@ function tourEnsureNodes_() {
   document.body.appendChild(pop);
 }
 
-function tourNext_() {
-  // Advance to the next step whose target resolves (or has no target).
-  let i = TOUR_I + 1;
-  while (i < TOUR_VISIBLE.length) {
-    if (tourShowStep_(i)) { TOUR_I = i; return; }
-    i++;
-  }
-  tourEnd_(true);
-}
-function tourPrev_() {
-  let i = TOUR_I - 1;
-  while (i >= 0) {
-    if (tourShowStep_(i)) { TOUR_I = i; return; }
-    i--;
-  }
-}
+function tourNext_() { tourGoTo_(TOUR_I + 1, +1); }
+function tourPrev_() { tourGoTo_(TOUR_I - 1, -1); }
 
-/** Navigate to the step's view, then position the spotlight + tooltip.
- *  Returns false (without showing) when a selector step's target is absent
- *  so the caller can skip it. Navigation is synchronous (showView sets the
- *  innerHTML in-line), but we measure after a tick so layout settles. */
-function tourShowStep_(i) {
+/** Navigate to step `i`, then WAIT for its target to appear before painting.
+ *  Views render asynchronously (e.g. enterCallNotesView shows a spinner and
+ *  only builds #cn-frame after its RPCs return), so a synchronous querySelector
+ *  right after enterTool would miss every async-rendered target and wrongly
+ *  skip the step — the Step-7→14 jump. We poll for up to ~1.8s; only a real
+ *  timeout skips the step, advancing in `dir` so Back still works. */
+function tourGoTo_(i, dir) {
+  if (i < 0) return;
+  if (i >= TOUR_VISIBLE.length) { tourEnd_(true); return; }
   const step = TOUR_VISIBLE[i];
-  if (!step) return false;
-  // Navigate if needed. enterTool bumps non-managers off managerOnly tabs,
-  // but we've already filtered those out of TOUR_VISIBLE.
+  TOUR_I = i;
+  // Fade the tooltip out before navigating so the content swap + spotlight
+  // move happen behind a quick fade (no "text changes before the box moves").
+  const pop = document.getElementById('tour-pop');
+  if (pop) pop.classList.remove('in');
   if (currentView !== step.view) {
     const toolKey = VIEW_TO_TOOL[step.view];
     if (toolKey) enterTool(toolKey, step.view);
   }
-  // For a selector step, the target must exist NOW (after the synchronous
-  // render). If it doesn't, signal skip.
-  if (step.selector && !document.querySelector(step.selector)) return false;
-  // Defer the measure so a freshly-entered view has laid out.
-  TOUR_I = i;
-  setTimeout(function () { tourPaint_(step); }, 70);
-  return true;
+  if (!step.selector) { setTimeout(function () { tourPaint_(step); }, 90); return; }
+  let tries = 0;
+  const MAX = 24;   // ~1.9s at 80ms
+  (function poll() {
+    if (!TOUR_ACTIVE || TOUR_I !== i) return;   // superseded by a faster click
+    if (document.querySelector(step.selector)) { tourPaint_(step); return; }
+    if (++tries >= MAX) { tourGoTo_(i + dir, dir); return; }   // genuinely absent → skip
+    setTimeout(poll, 80);
+  })();
 }
 
 function tourPaint_(step) {
@@ -202,14 +200,20 @@ function tourPaint_(step) {
   block.classList.add('show');
   const target = step.selector ? document.querySelector(step.selector) : null;
 
+  // Swap the content while the tooltip is faded out (tourGoTo_ removed .in),
+  // so the new text is never visible at the old position — it fades in only
+  // once repositioned. Keep .show (display) on; .in drives opacity.
+  pop.classList.add('show');
   pop.innerHTML = tourPopHtml_(step);
   tourWirePop_();
 
   if (target) {
     block.classList.remove('dim');
     try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
-    // Re-measure after the scroll settles.
+    // Re-measure after the scroll settles, move the spotlight, place + fade
+    // the tooltip in at its destination.
     setTimeout(function () {
+      if (!TOUR_ACTIVE) return;
       const r = target.getBoundingClientRect();
       const pad = 6;
       spot.style.top = (r.top - pad) + 'px';
@@ -218,14 +222,15 @@ function tourPaint_(step) {
       spot.style.height = (r.height + pad * 2) + 'px';
       spot.classList.add('show');
       tourPlacePop_(pop, r, step.placement);
+      requestAnimationFrame(function () { pop.classList.add('in'); });
     }, 180);
   } else {
     // Centered step — full dim, no spotlight.
     spot.classList.remove('show');
     block.classList.add('dim');
-    pop.classList.add('show');
     pop.style.left = Math.max(8, (window.innerWidth - pop.offsetWidth) / 2) + 'px';
     pop.style.top = Math.max(8, (window.innerHeight - pop.offsetHeight) / 2) + 'px';
+    requestAnimationFrame(function () { pop.classList.add('in'); });
   }
 }
 

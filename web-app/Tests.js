@@ -3774,6 +3774,7 @@ function test_managerGates_rejectNonManager() {
     ['getQuizzes',                     function () { return getQuizzes(); }],
     ['saveQuiz',                       function () { return saveQuiz({ title: 'gate', passPct: 80, questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] }); }],
     ['deleteQuiz',                     function () { return deleteQuiz('no-such-quiz'); }],
+    ['importQuizFromForm',             function () { return importQuizFromForm('https://docs.google.com/forms/d/x/edit'); }],
     // T3 Employee Docs gates (the gate fires BEFORE any HR_DOCS_SS_ID access,
     // so these run safely even where the property is unset).
     ['issueDoc',                       function () { return issueDoc({ empId: _TEST_INDIA_ID, docType: 'policy', title: 'gate', bodyMd: 'x' }); }],
