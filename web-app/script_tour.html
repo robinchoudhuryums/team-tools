@@ -120,6 +120,12 @@ function tourShouldAutoStart_() {
  *  there. Doesn't run in the compact pop-out or on a deep-link landing. */
 function tourMaybeAutoStart_() {
   if (COMPACT_MODE) return;
+  // Don't hijack a deep-link landing (?tool=<tabKey>): a recipient/bookmark
+  // arriving on a specific tab shouldn't be yanked to step 0. Same predicate
+  // the boot caller uses to honor the deep-link (script_core). Replay from the
+  // ? menu is unaffected (it calls tourStart directly).
+  if (typeof INITIAL_VIEW_FROM_URL !== 'undefined' && INITIAL_VIEW_FROM_URL &&
+      typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[INITIAL_VIEW_FROM_URL]) return;
   if (!tourShouldAutoStart_()) return;
   // Let the first view settle a beat before spotlighting it.
   setTimeout(function () { tourStart(); }, 600);
@@ -131,9 +137,15 @@ function tourVisibleSteps_() {
   return TOUR_STEPS.filter(function (s) { return !s.managerOnly || isMgr; });
 }
 
+let _tourReturnView = '';
+
 function tourStart() {
   if (TOUR_ACTIVE) return;
   TOUR_ACTIVE = true;
+  // Remember where the rep was so tourEnd_ can return them (the tour navigates
+  // through several tabs; without this it strands the rep on the last step's
+  // view — Call Notes / Team Notes — instead of where they invoked it).
+  _tourReturnView = (typeof currentView !== 'undefined') ? currentView : '';
   TOUR_VISIBLE = tourVisibleSteps_();
   TOUR_I = -1;
   tourEnsureNodes_();
@@ -145,7 +157,11 @@ function tourStart() {
 let TOUR_VISIBLE = [];
 
 function tourEnsureNodes_() {
-  if (document.getElementById('tour-root')) return;
+  // Guard against duplicate nodes on a re-entry. (Idempotency also holds via
+  // tourEnd_'s teardown + the TOUR_ACTIVE re-entry guard, but check a node we
+  // actually create — the prior `tour-root` id was never created, so the guard
+  // was dead.)
+  if (document.getElementById('tour-block')) return;
   const block = document.createElement('div'); block.id = 'tour-block';
   const spot = document.createElement('div'); spot.id = 'tour-spot';
   const pop = document.createElement('div'); pop.id = 'tour-pop';
@@ -303,6 +319,13 @@ function tourEnd_(completed) {
   const p = tourPrefs_();
   p.seenVersion = TOUR_VERSION;
   tourSave_(p);
+  // Return the rep to where they started (the tour navigated them away).
+  if (_tourReturnView && _tourReturnView !== currentView &&
+      typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[_tourReturnView] &&
+      typeof enterTool === 'function') {
+    enterTool(VIEW_TO_TOOL[_tourReturnView], _tourReturnView);
+  }
+  _tourReturnView = '';
   if (completed) showToast('Tour complete — replay it anytime from the ? button', 'toast-success');
 }
 </script>

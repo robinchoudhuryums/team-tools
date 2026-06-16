@@ -88,10 +88,30 @@ optimistic paths) as they change, or /reflect to close Cycle 3.
   dependent — would need clock mocking; the parse-guard + manual S39 cover it).
 - ALL scan findings now closed: F1,F2,F3,F5,F7 (prior batch) + F6 (this). F4
   retracted (false positive). jsdom harness complete.
-WHERE I LEFT OFF: F6 + DOM extensions committed + green (122 pure + 32 DOM). Cycle 3
-implementation work done. NEXT: operator deploy the F1-F7 client batch (clasp push
--f + New version; client-only, no operator-state change), then /reflect to close
-Cycle 3 (Test Coverage dimension should rise materially with the DOM harness).
+## Targeted audit + implement: script_tour.html + appsscript.json (2026-06-16)
+Audited the two never-individually-scanned subsystems. appsscript.json CLEAN
+(executeAs USER_DEPLOYING / ANYONE_ANONYMOUS as designed). script_tour.html:
+XSS-clean (step.title/body are static registry strings). 4 Low findings, all
+implemented except T-3:
+- T-1 DONE | script_tour.html | tourEnsureNodes_ guard checked `tour-root` (an id
+  never created → dead guard). Fixed to check `tour-block`. Proven to bite.
+- T-2 DONE | script_tour.html | auto-start now gated on a deep-link landing
+  (?tool=) inside tourMaybeAutoStart_ — closes the doc/impl drift (the comment +
+  CLAUDE.md claimed "never on a deep-link" but only COMPACT_MODE was checked).
+  Same predicate as the boot caller. Replay (tourStart) unaffected.
+- T-4 DONE | script_tour.html | tourStart captures _tourReturnView=currentView;
+  tourEnd_ restores it via enterTool so the tour no longer strands the rep on the
+  last step's view (Call Notes / Team Notes).
+- T-3 NOT DONE (inherent + benign) | skipped selector steps call enterTool before
+  the skip-check — unavoidable (must be on the view to test its selector), and
+  skipped steps schedule NO paint (setTimeout only on the show path), so it's
+  synchronous + never painted; only cost is wasted re-render for rare skips.
+DOM coverage 32→36: script_tour added to the meta-load list; T-1 idempotency +
+T-2 gated/contrast tests (setTimeout-spy detects the auto-start schedule).
+WHERE I LEFT OFF: T-1/T-2/T-4 + tour DOM tests committed + green (122 pure + 36
+DOM). All scan + targeted findings closed (F1-F7 minus F4 retracted; T-1/T-2/T-4;
+T-3 noted benign). NEXT: operator deploy the client batch (clasp push -f + New
+version; client-only), then close Cycle 3.
 
 ## In progress (facts to carry forward — NOT judgments)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,

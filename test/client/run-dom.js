@@ -33,6 +33,7 @@ console.log('\ndom-harness — every tool partial loads into a real jsdom window
   { files: ['kb/script_kb.html'] },
   { files: ['train/script_training.html'] },
   { files: ['train/script_empdocs.html'] },
+  { files: ['script_tour.html'] },
 ].forEach((spec) => {
   test(spec.files.join(' + ') + ' loads', () => {
     const h = buildDomWindow(spec.files, { markup: spec.markup });
@@ -366,6 +367,34 @@ test('trainRenderReader_: hostile embed title renders escaped (no live node)', (
   assert.strictEqual(ov.querySelectorAll('img').length, 0, 'hostile title did not create an <img>');
   assert.strictEqual(ov.querySelectorAll('iframe').length, 1, 'the intended embed iframe is present');
   assert.ok(ov.textContent.indexOf('onerror') >= 0, 'hostile title survives as inert text');
+});
+
+// ── Onboarding tour (T-1 idempotency, T-2 deep-link gate) ────────────────────
+console.log('\ndom-harness — onboarding tour (script_tour)');
+
+test('T-1: tourEnsureNodes_ is idempotent — no duplicate nodes on re-entry', () => {
+  const h = buildDomWindow(['script_tour.html']);
+  h.ctx.tourEnsureNodes_();
+  h.ctx.tourEnsureNodes_();   // with the old `tour-root` guard this created a 2nd set
+  assert.strictEqual(h.$$('#tour-block').length, 1, 'guard prevents a duplicate tour-block');
+});
+
+test('T-2: auto-start is SUPPRESSED on a deep-link landing (?tool=…)', () => {
+  const h = buildDomWindow(['script_tour.html'], { serverQueryParams: { tool: 'callNotes' } });
+  let scheduled = 0;
+  h.window.setTimeout = function () { scheduled++; return 0; };   // spy: did it schedule tourStart?
+  h.window.localStorage.removeItem('umsTour');                    // unseen → would start if not gated
+  h.ctx.tourMaybeAutoStart_();
+  assert.strictEqual(scheduled, 0, 'deep-link landing suppresses the auto-start');
+});
+
+test('T-2 contrast: no deep-link + unseen → auto-start IS scheduled', () => {
+  const h = buildDomWindow(['script_tour.html'], { serverQueryParams: {} });
+  let scheduled = 0;
+  h.window.setTimeout = function () { scheduled++; return 0; };
+  h.window.localStorage.removeItem('umsTour');
+  h.ctx.tourMaybeAutoStart_();
+  assert.strictEqual(scheduled, 1, 'no deep-link → auto-start scheduled');
 });
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
