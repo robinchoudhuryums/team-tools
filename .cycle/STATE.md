@@ -135,6 +135,19 @@ Updated: 2026-06-16
   S4c (client, ~3-4h, jsdom-unverifiable visual): My Stats own-vs-team trend
   charts for the 5 KPIs + the team-avg comparison line (reuse mBuildHeroSparkSvg_
   helpers). Then docs (INV for #5 anonymization + getMyMetrics shape).
+- STEP 4b+4c DONE (this branch) — STEP 4 COMPLETE. 4b: getCdrDailyBreakdown_ +
+  perRepDaily (additive); pure metricsBuildKpiSeries_; getMyMetrics now reads
+  the whole roster's per-rep-per-day matrix (DQE + Transfer) and returns
+  series.{pctAnswered,answered,missed,attSeconds,transferPct}=[{date,own,team,
+  cohort}] with team N=3 cohort-guarded (aggregates only leave the server) +
+  kpiMinCohort; all legacy fields kept. 4c: My Stats mRenderTrendSection_ +
+  mKpiTrendCard_ + mBuildDualSparkSvg_ + mFmtSecs_ (own accent line vs team
+  muted-dashed; cohort note; "—" on suppressed/absent) + CSS; esc()'d. INV-124
+  + CLAUDE.md Metrics-module bullet + CSR Transfer operator note. Pure 127 /
+  DOM 39. The My Stats CHART VISUAL is jsdom-unverifiable — needs operator
+  eyeball after deploy. Operator: ensure the real CDR ss has the
+  "CSR Transfer Historical Data" tab (it does). ALL operator-feedback steps
+  (S1 diag, S2 #2/#3, S3 #4, S4 #5/#6) now DONE — ready for deploy + eyeball.
 
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,

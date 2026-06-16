@@ -505,4 +505,32 @@ test('live refresh is skipped during an open inline edit (no clobber)', () => {
   assert.strictEqual(h.run.pending('getMyCallNotes').length, 0, 'no fetch while editing');
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// STEP 4c — Metrics My Stats own-vs-team trend section (#5/#6 client render)
+// ═════════════════════════════════════════════════════════════════════════════
+section('DOM harness — Metrics own-vs-team trend (#5/#6)');
+
+test('mRenderTrendSection_: 5 KPI cards, dual lines, cohort note; suppressed team reads "—"/last-non-null', () => {
+  const h = boot();
+  const data = { kpiMinCohort: 3, series: {
+    pctAnswered: [{ date: '2026-05-14', own: 80, team: 84, cohort: 4 }, { date: '2026-05-15', own: 88, team: null, cohort: 2 }],
+    answered:    [{ date: '2026-05-14', own: 8, team: 7, cohort: 4 }, { date: '2026-05-15', own: 9, team: 8, cohort: 3 }],
+    missed:      [{ date: '2026-05-14', own: 2, team: 1, cohort: 4 }, { date: '2026-05-15', own: 1, team: 1, cohort: 3 }],
+    attSeconds:  [{ date: '2026-05-14', own: 150, team: 140, cohort: 4 }, { date: '2026-05-15', own: 160, team: null, cohort: 2 }],
+    transferPct: [{ date: '2026-05-14', own: 29.8, team: 25, cohort: 4 }, { date: '2026-05-15', own: 30, team: 26, cohort: 3 }],
+  } };
+  const html = h.window.mRenderTrendSection_(data);
+  assert.ok(/Trends · you vs team avg/.test(html), 'section header');
+  assert.ok(/% Answered/.test(html) && /Avg Talk/.test(html) && /Transfer %/.test(html), 'KPI cards rendered');
+  assert.ok(/fewer than 3 reporting reps/.test(html), 'cohort/anonymity note present');
+  assert.ok(/own-line/.test(html) && /team-line/.test(html), 'own + team lines drawn');
+  assert.ok(/2:40/.test(html), 'avg talk own formatted m:ss (160s)');
+  assert.ok(/team 2:20/.test(html), 'team avg talk falls back to the last non-null day (140s)');
+});
+
+test('mRenderTrendSection_ degrades to empty when series is absent (old server)', () => {
+  const h = boot();
+  assert.strictEqual(h.window.mRenderTrendSection_({}), '', 'no series → no section');
+});
+
 

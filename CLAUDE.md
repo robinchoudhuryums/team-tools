@@ -22,11 +22,16 @@ Apps Script project under its own directory, synced via `clasp`.
    - **Metrics** — CDR integration module that reads DQE Historical
      Data from the CDR Report spreadsheet (the same sheet backing the
      `call-data-reporting` repo's Department Dashboard). Two tabs:
-     "My Stats" (self-view for all reps — today's KPIs, 30-day
-     % Answered trend sparkline, note-to-call coverage ratio) and
-     "Team Metrics" (manager-only — per-rep table with date-range
-     support and preset chips). The CDR data layer (`getCdrSS_()`,
-     `getCdrAgentMetrics_()`, `getCdrDailyBreakdown_()`) is isolated
+     "My Stats" (self-view for all reps — today's KPIs, note-to-call
+     coverage ratio, and **own-vs-team-avg 30-day trend charts** for 5
+     KPIs — % Answered / Answered / Missed / Avg Talk / Transfer % —
+     where the team line is **anonymized**: hidden on any day with fewer
+     than 3 reporting reps, so peers can benchmark without singling
+     anyone out, INV-124) and "Team Metrics" (manager-only — per-rep
+     table with date-range support and preset chips). The CDR data layer
+     (`getCdrSS_()`, `getCdrAgentMetrics_()`, `getCdrDailyBreakdown_()`,
+     plus `getCsrTransferPerRepDaily_()` reading the separate
+     `CSR Transfer Historical Data` tab for the Transfer KPI) is isolated
      behind helpers so a future swap to Neon Postgres (Option C)
      replaces only those functions. CDR metrics also enrich the
      Call Notes Stats tab (`managerGetShiftStats`) via a best-effort
@@ -2391,6 +2396,12 @@ manually for a fresh deploy or environment:
   The CDR spreadsheet's `Agent Alias Overrides` sheet (if present)
   is read by `getCdrNameMap_()` to resolve name mismatches between
   the team-tools Employees roster and CDR canonical names.
+  The My Stats **Transfer %** trend additionally reads a
+  **`CSR Transfer Historical Data`** tab in this same spreadsheet
+  (headers A1:S1: Month-Year, Week, Date `M/D/YYYY`, CSR Rep Name,
+  Transfer %, Total Calls, Total Calls Transferred, per-queue `A_Q_*`,
+  Comments — read via `getCsrTransferPerRepDaily_`). Missing tab → the
+  Transfer trend is simply absent (other KPIs unaffected).
 - **Script Property `TEST_CDR_SS_ID`** (test-only, auto-managed). The
   CDR fixture spreadsheet `setupTestEnvironment` / `_setupTestCdrFixture_`
   creates (or reuses) for the Metrics integration tests. Created on
@@ -3030,6 +3041,8 @@ INV-121 | **Quiz answer keys never leave the server.** The `Quizzes` tab's `Ques
 INV-122 | **Employee Docs are team-scoped (fail-closed), frozen at issue, and tamper-evident.** All Employee Docs data lives ONLY in the dedicated `HR_DOCS_SS_ID` spreadsheet (`getHrDocsSS_` has NO fallback store — unset property → friendly error, never a silent write to the ADP/KB/PHI sheets), and the `EmpDocs`/`DocSignatures` tabs are EXCLUDED from every retention purge (HR records are keep-forever — the opposite of the PHI-minimization posture). **Scoping:** `getMyDocs`/`getMyDoc`/`acknowledgeDoc` are owner-scoped; manager read access (`getMyDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`) requires `empDocCanManagerSee_` — caller issued the doc OR caller is the employee's roster `ManagerEmail` (column M); membership in `MANAGER_EMAILS` alone grants NOTHING, and a blank column M NARROWS visibility to owner+issuer (fail-closed, operator decision §9.3). Any manager may ISSUE to any employee (issuing reveals nothing). `acknowledgeDoc` is OWNER-only — managers cannot sign on behalf. **Integrity:** content is frozen at issue (`bodyMd` + `empDocContentHash_` over body+title+type+empId); signing re-verifies the content hash first (a tampered row refuses to sign), bounds the signature payload (INV-96; the pad export caps at 600px — Node-pinned parity with `form_public.html`), and writes an append-only `DocSignatures` row whose `SignatureHash` covers contentHash+empId+docId+signature+ackVersion but NOT the timestamp (Sheets coercion, INV-113 lesson) — the `EmpDocSigned` audit row (`hash=`+`signedAt=`) is the independent witness, and the server-authoritative `EMPDOC_ACK_VERSION` stamps which ack language was shown (bump it when `EMPDOC_ACK_TEXT` changes). `voidDoc` only flips status (never deletes, never edits the frozen body — a correction is a NEW doc; a signed doc keeps its signature row); `verifyDocSignature` recomputes both hashes (legacy/unsigned report explicitly, never as failures). Audit rows `EmpDocIssue`/`EmpDocSigned`/`EmpDocVoid` are content-free (docId/empId/type/hash — never the title or body; the void reason lives only in the scoped HR sheet). Pinned by `test_empdocs_issueSignVerifyFlow` (incl. the fail-closed `empDocCanManagerSee_` cases + tamper detection) + the four gate cases in `test_managerGates_rejectNonManager` + the `empDocValidateIssue_`/`edChipHtml_`/pad-cap Node tests | Subsystem: Server + Client (Training views)
 
 INV-123 | **Training T4 — overdue digest + quiz analytics.** `sendTrainingOverdueDigest` is a top-level trigger handler (reachable via `google.script.run`) gated with `assertManagerCaller_` (INV-44 family) and best-effort (INV-14 — wrapped in try/catch, never throws). It builds the nudge PER MANAGER: the overdue-TRAINING list is org-wide (training dashboards are NOT team-scoped, INV-120, so every manager sees every rep's overdue training), but the overdue unsigned-DOCS list is TEAM-SCOPED via `empDocCanManagerSee_({email,isManager:true}, doc)` (INV-122 fail-closed — a manager only sees docs they issued or are the employee's roster `ManagerEmail` for). A manager with nothing overdue in their scope is not emailed. `empDocsOverdueAll_` returns `[]` (never throws) when `HR_DOCS_SS_ID` is unset so the training portion still sends. Heartbeat-stamped (`stampDigestLastRun_('trainingOverdue')`); surfaced in the Automation Health "Digest heartbeats" block (stale > 26h). Wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS arrays (the trigger-wiring tripwire pins this). `getQuizAnalytics` is manager-gated (INV-02), read-only, and returns ONLY the per-quiz aggregate from the pure `trainQuizAnalytics_(quizzesMap, attempts)` (attempt counts, distinct reps attempted/passed, pass rate, avg score, avg tries) — no answer keys, no per-question booleans, no per-rep rows, so INV-121's "answer key never leaves the server" boundary is untouched. Pinned by `trainQuizAnalytics_` + the trigger-wiring Node tests, `test_triggerGate_trainingOverdue_nonManagerThrows`, and the `getQuizAnalytics` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+
+INV-124 | **Metrics anonymized team-avg is cohort-guarded; only aggregates leave the server.** `getMyMetrics` (rep-callable, caller-identified) reads the WHOLE roster's per-rep-per-day matrix (`getCdrDailyBreakdown_().perRepDaily` for DQE + `getCsrTransferPerRepDaily_()` for the separate **`CSR Transfer Historical Data`** tab) to compute a team benchmark, but returns ONLY aggregates: `series.{pctAnswered,answered,missed,attSeconds,transferPct}` as `[{date, own, team, cohort}]`. The `team` value is the pure `metricsTeamAvgSeries_` mean over reporting reps and is **null whenever that day's cohort < `kpiMinCohort` (3)** — so a small team can't be back-solved to an individual (the #5 privacy boundary). No individual rep's row is ever returned. The Transfer reader uses `getDisplayValues()` + the shared `cdrRowDateIso_` (Date is `M/D/YYYY`) + `metricsParsePercent_` (`"29.79%"`) per the CDR spreadsheet-tz discipline (INV-64). The legacy `cdr`/`trend`/`noteCount`/`noteCoverage` fields are preserved (back-compat). Client (`metrics/script_metrics.html`) renders own (accent) vs team (muted dashed) sparklines per KPI with the cohort note; every server string is `esc()`'d (the Metrics-`esc()` gotcha). Pinned by `metricsParsePercent_` / `metricsTeamAvgSeries_` / `metricsBuildKpiSeries_` Node tests + `test_metrics_csrTransferFixture_parsesDateAndPercent` + the `mRenderTrendSection_` DOM test | Subsystem: Server + Client (Metrics views)
 
 
 ### Policy Configuration
