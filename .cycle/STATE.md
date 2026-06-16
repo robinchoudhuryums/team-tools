@@ -2,7 +2,7 @@
 
 ## Current
 Cycle: 3
-Phase: implement (DOM-lifecycle test harness — Phase 1 done)
+Phase: implement (DOM-lifecycle test harness — Phases 1+2 done)
 Scope: Test Suite (test/client/dom/) — building out the DOM-lifecycle harness
 Test Command: manual (+ `npm test` now runs BOTH client harnesses)
 Subsystem cycles since last Seams audit: 1
@@ -28,8 +28,17 @@ Updated: 2026-06-16
   harnesses; CI does npm ci + both suites. Pure harness unchanged (122/122).
   Two stubs needed for load: window.setTimeClockMode / syncThemeToggleState
   (index.html <head> globals renderShell calls by bare name).
-  NEXT: Phase 2 (overlay + uiConfirm/uiPrompt lifecycle suite), then Phase 3
-  (optimistic-UI / RPC-sequencing suite). See the plan in this session's chat.
+  PHASE 2 DONE (this branch): overlay + dialog lifecycle suite in dom/runDom.js
+  (15 tests) — ensureOverlay create/reuse (hidden-but-stateful guard), Esc
+  closes TOPMOST through its hook, throwing-hook degrade, Esc-with-no-overlay →
+  KB drawer; uiConfirm Esc/backdrop/Enter-on-OK/Enter-on-Cancel(INV-83)/resolved
+  sentinel, uiPrompt validator keep-open, dialog-over-base owns Esc
+  (stopPropagation, base hook not run); focus-trap pull-back, #kb-drawer trap
+  exemption, drawer survives a #view-area rewrite. dispatchKey default target →
+  document.body (real capture→bubble path the capture-phase dialog handlers
+  need). DOM suite 7→22; pure harness still 122. These pin the Cycle-2 audit's
+  H1/M2/topmost-Esc/drawer findings as automated regressions.
+  NEXT: Phase 3 (optimistic-UI / RPC-sequencing suite). See the plan in chat.
 
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
@@ -244,8 +253,8 @@ Updated: 2026-06-16
 Cycle 3 OPENED (/broad-scan). DOM-lifecycle harness Phase 1 (boot infra)
 SHIPPED on `claude/affectionate-cori-90q3ap`: test/client/dom/{boot,runDom}.js,
 jsdom devDependency, CI wired, README + package-lock. `npm test` green (122 pure
-+ 7 DOM). NEXT: Phase 2 (overlay/uiConfirm lifecycle suite) then Phase 3
-(optimistic-UI/RPC-sequencing suite) in dom/runDom.js. Audit findings backlog
++ 22 DOM after Phase 2). NEXT: Phase 3 (optimistic-UI/RPC-sequencing suite) in
+dom/runDom.js. Audit findings backlog
 (S1.1 tz coupling, S2.1 fail-open expiry, S1.3, C1, C4) NOT yet implemented —
 awaiting operator selection.
 

@@ -244,13 +244,17 @@ function boot() {
     read(expr) { return vm.runInContext(expr, ctx); },
     $(sel) { return window.document.querySelector(sel); },
     $$(sel) { return Array.from(window.document.querySelectorAll(sel)); },
-    /** Dispatch a real KeyboardEvent (default keydown) on a target (default document). */
+    /** Dispatch a real KeyboardEvent (default keydown) on a target. Default
+     *  target is document.body so the event traverses a real capture→bubble
+     *  path through document — the shell's bubble-phase keydown handler and the
+     *  ui-dialog capture-phase handlers both depend on that propagation (a bare
+     *  dispatch ON document collapses the phases and is not representative). */
     dispatchKey(key, opts) {
       const o = opts || {};
       const ev = new window.KeyboardEvent(o.type || 'keydown', {
         key, bubbles: true, cancelable: true, ctrlKey: !!o.ctrl, metaKey: !!o.meta, shiftKey: !!o.shift,
       });
-      (o.target || window.document).dispatchEvent(ev);
+      (o.target || window.document.body).dispatchEvent(ev);
       return ev;
     },
     /** Click a target by selector or element (real bubbling MouseEvent). */
