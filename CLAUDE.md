@@ -2754,6 +2754,11 @@ carries the same number. `/cycle-status` surfaces it.
   implement commands' CHECKPOINT step, read by `/cycle-resume` + `/cycle-status`.
 - `.cycle/metrics.csv` — per-cycle metrics appended by `/reflect` / synthesis.
   Header: `date,cycle,subsystem,phase,net_score,prod_fixes,new_failure_modes,category_d_ratio,axis_b_lowest,notes,defensive_count`
+  **Local convention:** the canonical `/reflect` leaves `category_d_ratio` +
+  `axis_b_lowest` blank (a separate `/synthesis` step fills them), but this
+  project has no `/synthesis` command, so fill both at reflect time (cycles 1–3
+  did) — `category_d_ratio` = the Category-D/Low share of the cycle's findings,
+  `axis_b_lowest` = the weakest Axis-B horizontal category that cycle.
 - `.cycle/estimates.csv` — estimate-vs-actual calibration, appended by `/reflect`.
   Header: `date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note`
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
