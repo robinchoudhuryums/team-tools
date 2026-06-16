@@ -419,6 +419,39 @@ function _setupTestCdrFixture_() {
     sheet.getRange(rr, CDR.TTT).setNumberFormat('h:mm:ss').setValue(tttSec / 86400);
     sheet.getRange(rr, CDR.ATT).setNumberFormat('h:mm:ss').setValue(attSec / 86400);
   }
+
+  // T4 #6 — CSR Transfer Historical Data fixture (the separate transfers tab).
+  // Date is written M/D/YYYY and Transfer % as a "%" string — exactly the real
+  // sheet's shapes — to exercise cdrRowDateIso_ + metricsParsePercent_ in the
+  // getCsrTransferPerRepDaily_ integration test. Plain text avoids coercion.
+  let tsheet = ss.getSheetByName(CSR_TRANSFER_TAB);
+  if (!tsheet) tsheet = ss.insertSheet(CSR_TRANSFER_TAB);
+  tsheet.clear();
+  if (tsheet.getMaxColumns() < CSR_TRANSFER_NUM_COLS) {
+    tsheet.insertColumnsAfter(tsheet.getMaxColumns(), CSR_TRANSFER_NUM_COLS - tsheet.getMaxColumns());
+  }
+  const mdyyyy = _TEST_CDR_DATE.replace(/^(\d{4})-(\d{2})-(\d{2})$/, function (m, y, mo, d) {
+    return parseInt(mo, 10) + '/' + parseInt(d, 10) + '/' + y;   // 2026-05-15 -> 5/15/2026
+  });
+  const mkTRow = function (name, pctStr, totalCalls, transferred) {
+    const r = new Array(CSR_TRANSFER_NUM_COLS).fill('');
+    r[CSRT.DATE] = mdyyyy; r[CSRT.NAME] = name; r[CSRT.TRANSFER_PCT] = pctStr;
+    r[CSRT.TOTAL_CALLS] = totalCalls; r[CSRT.TRANSFERRED] = transferred;
+    return r;
+  };
+  const theader = new Array(CSR_TRANSFER_NUM_COLS).fill('');
+  theader[CSRT.DATE] = 'Date'; theader[CSRT.NAME] = 'CSR Rep Name';
+  theader[CSRT.TRANSFER_PCT] = 'Transfer %'; theader[CSRT.TOTAL_CALLS] = 'Total Calls';
+  theader[CSRT.TRANSFERRED] = 'Total Calls Transferred';
+  const trows = [
+    theader,
+    mkTRow(_TEST_INDIA_NAME, '29.79%', 47, 14),
+    mkTRow(_TEST_PH_NAME,    '10.00%', 20, 2),
+  ];
+  const trange = tsheet.getRange(1, 1, trows.length, CSR_TRANSFER_NUM_COLS);
+  trange.setNumberFormat('@');
+  trange.setValues(trows);
+
   SpreadsheetApp.flush();
 }
 
@@ -865,6 +898,7 @@ function _runAllTests() {
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
   _integrationTest('metrics_getTeamMetrics_cdrIntegration',     test_metrics_getTeamMetrics_cdrIntegration);
   _integrationTest('metrics_cdrFixture_durationsUseDisplayValues', test_metrics_cdrFixture_durationsUseDisplayValues);
+  _integrationTest('metrics_csrTransferFixture_parsesDateAndPercent', test_metrics_csrTransferFixture_parsesDateAndPercent);
   _integrationTest('metrics_getTeamMetrics_nonManagerRejected', test_metrics_getTeamMetrics_nonManagerRejected);
   _integrationTest('metrics_getMyMetrics_cdrUnavailableErrors', test_metrics_getMyMetrics_cdrUnavailableErrors);
 
@@ -4286,6 +4320,22 @@ function test_metrics_cdrFixture_durationsUseDisplayValues() {
     "getDisplayValues() parses ATT to the correct seconds (the INV-64 path)");
   _assertTrue(cdrParseHms_(rawAtt) !== 150,
     "cdrParseHms_ on the raw getValues() Date does NOT yield 150 — proving getValues is the wrong path");
+}
+
+function test_metrics_csrTransferFixture_parsesDateAndPercent() {
+  // T4 #6: the Transfer reader parses the M/D/YYYY Date + "%"-string columns
+  // (the real sheet shapes) and honors the roster filter.
+  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  _withTestCdr_(function () {
+    const res = getCsrTransferPerRepDaily_(_TEST_CDR_DATE, _TEST_CDR_DATE, [_TEST_INDIA_NAME, _TEST_PH_NAME]);
+    const day = res.perRepDaily[_TEST_CDR_DATE];
+    _assertTrue(!!day, "transfer row's M/D/YYYY date parsed back to the ISO key");
+    _assertEq(day[_TEST_INDIA_NAME].transferred, 14, "transferred count read");
+    _assertEq(day[_TEST_INDIA_NAME].totalCalls, 47, "total calls read");
+    _assertEq(day[_TEST_INDIA_NAME].transferPct, 29.79, "Transfer % string parsed to a number");
+    const filtered = getCsrTransferPerRepDaily_(_TEST_CDR_DATE, _TEST_CDR_DATE, ['Nobody Here']);
+    _assertTrue(!filtered.perRepDaily[_TEST_CDR_DATE], "roster filter drops non-matching reps");
+  });
 }
 
 function test_metrics_getTeamMetrics_cdrIntegration() {

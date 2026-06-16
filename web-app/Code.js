@@ -374,6 +374,17 @@ const CDR_EXPECTED_HEADERS = {
   8: 'Answered', 9: 'TTT', 10: 'ATT',
 };
 
+// CSR Transfer Historical Data — a SEPARATE tab in the CDR Report spreadsheet
+// (T4 #6 transfers trend). Headers A1:S1: Month-Year, Week, Date, CSR Rep Name,
+// Transfer %, Total Calls, Total Calls Transferred, then per-queue A_Q_* counts
+// (H:R), Comments. Date is M/D/YYYY (handled by cdrRowDateIso_) and Transfer %
+// is a "29.79%" string — both read via getDisplayValues() per the CDR
+// spreadsheet-tz gotcha (INV-64). Only the first columns feed the trend; the
+// per-queue breakdown is read-but-ignored for now.
+const CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
+const CSRT = { DATE: 2, NAME: 3, TRANSFER_PCT: 4, TOTAL_CALLS: 5, TRANSFERRED: 6 };
+const CSR_TRANSFER_NUM_COLS = 19;   // A:S
+
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -8718,6 +8729,88 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   });
 
   return { daily: daily, agents: agents };
+}
+
+// ── T4 #5/#6: anonymized team-avg + Transfers data layer ──────────────────
+// All NEW metrics surfaces (the rep-facing team benchmark + the 5-KPI trends)
+// build on these. The two pure helpers are Node-pinned; the reader is the
+// isolated parallel to getCdrDailyBreakdown_ for the separate Transfer sheet.
+
+/** Pure — parse a "29.79%" (or bare "29.79", or number) into a Number, else
+ *  null. Pinned by a Node test. */
+function metricsParsePercent_(s) {
+  if (s == null || s === '') return null;
+  const str = String(s).replace('%', '').replace(/,/g, '').trim();
+  if (str === '') return null;
+  const n = Number(str);
+  return isFinite(n) ? n : null;
+}
+
+/** Pure — anonymized team-average series with a minimum-cohort guard (the #5
+ *  privacy boundary). `perRepDaily` is { dateIso: { repName: {<valueKey>:num} } };
+ *  for each date in `dates` it averages valueKey over the reps that reported,
+ *  returning { date, cohort, avg } with avg=null when cohort < minCohort so a
+ *  small team can't be back-solved to an individual. Pinned by a Node test. */
+function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort) {
+  const min = minCohort || 3;
+  return (dates || []).map(function (d) {
+    const byRep = (perRepDaily && perRepDaily[d]) || {};
+    let sum = 0, count = 0;
+    Object.keys(byRep).forEach(function (rep) {
+      const v = byRep[rep] ? byRep[rep][valueKey] : null;
+      if (v != null && isFinite(v)) { sum += Number(v); count++; }
+    });
+    return { date: d, cohort: count, avg: count >= min ? Math.round((sum / count) * 10) / 10 : null };
+  });
+}
+
+/** Isolated reader for the CSR Transfer Historical Data tab — the
+ *  getCdrDailyBreakdown_ parallel for transfers. Returns per-rep-per-day
+ *  { perRepDaily: { dateIso: { agent: {totalCalls, transferred, transferPct} } },
+ *  agents: { agent: {totalCalls, transferred, transferPct, daysActive} } }.
+ *  Reads via getDisplayValues() (Date is M/D/YYYY, Transfer % is a string —
+ *  the CDR spreadsheet-tz gotcha, INV-64), parses the date with the shared
+ *  cdrRowDateIso_, canonicalizes names through the alias map, and filters to
+ *  rosterNames when supplied. A future data-source swap touches only this. */
+function getCsrTransferPerRepDaily_(from, to, rosterNames) {
+  const ss = getCdrSS_();
+  const sheet = ss.getSheetByName(CSR_TRANSFER_TAB);
+  if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
+  const tz = ss.getSpreadsheetTimeZone();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { perRepDaily: {}, agents: {} };
+  const range = sheet.getRange(2, 1, lastRow - 1, CSR_TRANSFER_NUM_COLS);
+  const displays = range.getDisplayValues();
+  const aliasMap = getCdrNameMap_();
+  const useRoster = rosterNames && rosterNames.length > 0;
+  const nameSet = {};
+  if (useRoster) for (let n = 0; n < rosterNames.length; n++) nameSet[rosterNames[n]] = true;
+  const perRepDaily = {};
+  const agents = {};
+  for (let i = 0; i < displays.length; i++) {
+    const rawName = String(displays[i][CSRT.NAME] || '').trim();
+    if (!rawName) continue;
+    const name = (aliasMap[rawName] && useRoster && nameSet[aliasMap[rawName]]) ? aliasMap[rawName] : rawName;
+    if (useRoster && !nameSet[name]) continue;
+    const dateIso = cdrRowDateIso_(displays[i][CSRT.DATE], tz);
+    if (!dateIso || dateIso < from || dateIso > to) continue;
+    const totalCalls = Number(String(displays[i][CSRT.TOTAL_CALLS] || '').replace(/,/g, '')) || 0;
+    const transferred = Number(String(displays[i][CSRT.TRANSFERRED] || '').replace(/,/g, '')) || 0;
+    let pct = metricsParsePercent_(displays[i][CSRT.TRANSFER_PCT]);
+    if (pct == null) pct = totalCalls > 0 ? Math.round((transferred / totalCalls) * 1000) / 10 : null;
+    if (!perRepDaily[dateIso]) perRepDaily[dateIso] = {};
+    perRepDaily[dateIso][name] = { totalCalls: totalCalls, transferred: transferred, transferPct: pct };
+    if (!agents[name]) agents[name] = { agent: name, totalCalls: 0, transferred: 0, daysActive: 0, _days: {} };
+    const a = agents[name];
+    a.totalCalls += totalCalls; a.transferred += transferred;
+    if (!a._days[dateIso]) { a._days[dateIso] = true; a.daysActive++; }
+  }
+  Object.keys(agents).forEach(function (k) {
+    const a = agents[k];
+    a.transferPct = a.totalCalls > 0 ? Math.round((a.transferred / a.totalCalls) * 1000) / 10 : null;
+    delete a._days;
+  });
+  return { perRepDaily: perRepDaily, agents: agents };
 }
 
 // ── Metrics public endpoints ──────────────────────────────────────────

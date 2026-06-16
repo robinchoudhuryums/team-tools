@@ -112,8 +112,29 @@ Updated: 2026-06-16
   (icon rail + sticky bar) are jsdom-unverifiable (no layout) — need operator
   eyeball in the real pop-out; the geometry helper + widen are solid/tested.
   Docs: CLAUDE.md key-count 9->10 + umsPopoutGeom entry + pop-out 380->480
-  decision rewrite. NEXT: S4 metrics (#5/#6) — operator to provide "CSR Transfer
-  Historical Data" sheet schema.
+  decision rewrite.
+- S4 SCHEMA (operator-provided 2026-06-16): "CSR Transfer Historical Data" tab
+  in the CDR Report ss, headers A1:S1 = Month-Year, Week, Date(M/D/YYYY),
+  CSR Rep Name, Transfer %(string "29.79%"), Total Calls, Total Calls
+  Transferred, A_Q_Sales..A_Q_Eligibility_MM&R (per-queue H:R), Comments.
+- STEP 4a DONE (this branch — metrics data FOUNDATION, server+tested): new
+  CSR_TRANSFER_TAB + CSRT enum; pure metricsParsePercent_ ("29.79%"->29.79) +
+  metricsTeamAvgSeries_(perRepDaily,dates,key,minCohort) anonymized team-avg
+  with N>=cohort suppression (the #5 privacy core) — both Node-pinned;
+  getCsrTransferPerRepDaily_ isolated reader (getDisplayValues + cdrRowDateIso_
+  reused for M/D/YYYY + alias canon + roster filter, INV-64 discipline). Fixture:
+  "CSR Transfer Historical Data" tab added to _setupTestCdrFixture_ (M/D/YYYY +
+  "%"-string to exercise the parse path) + editor integration test
+  test_metrics_csrTransferFixture_parsesDateAndPercent (registered). Pure 126 /
+  DOM 37.
+  NEXT — S4b (server, ~2-3h): extend getCdrDailyBreakdown_ with perRepDaily
+  (additive) + extend getMyMetrics to return own 5-KPI 30-day series (%Answered,
+  Answered, Missed, Transfers, AvgTalk) + a team-avg series via
+  metricsTeamAvgSeries_(N=3) reading ALL roster reps (aggregate-only leaves the
+  server — INV-66/privacy); join transfers from getCsrTransferPerRepDaily_.
+  S4c (client, ~3-4h, jsdom-unverifiable visual): My Stats own-vs-team trend
+  charts for the 5 KPIs + the team-avg comparison line (reuse mBuildHeroSparkSvg_
+  helpers). Then docs (INV for #5 anonymization + getMyMetrics shape).
 
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,

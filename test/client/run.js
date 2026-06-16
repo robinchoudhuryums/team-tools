@@ -1228,6 +1228,34 @@ test('trainQuizAnalytics_: per-quiz counts, distinct reps, pass rate, averages; 
   assert.strictEqual(JSON.stringify(out).indexOf('correct'), -1, 'aggregate carries no answer key');
 });
 
+// T4 #5/#6 — metrics anonymized team-avg + transfers data layer (pure helpers).
+console.log('\nmetrics — percent parse + anonymized team-avg cohort guard (T4 #5/#6)');
+['metricsParsePercent_', 'metricsTeamAvgSeries_'].forEach((fn) => {
+  vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
+});
+test('metricsParsePercent_: strips %, commas; null on empty/garbage', () => {
+  assert.strictEqual(sb.metricsParsePercent_('29.79%'), 29.79);
+  assert.strictEqual(sb.metricsParsePercent_('10.00%'), 10);
+  assert.strictEqual(sb.metricsParsePercent_('5'), 5, 'bare number ok');
+  assert.strictEqual(sb.metricsParsePercent_('1,234'), 1234, 'commas stripped');
+  assert.strictEqual(sb.metricsParsePercent_(''), null);
+  assert.strictEqual(sb.metricsParsePercent_(null), null);
+  assert.strictEqual(sb.metricsParsePercent_('n/a'), null, 'garbage → null');
+});
+test('metricsTeamAvgSeries_: per-day mean, suppressed below the cohort minimum (N=3)', () => {
+  const perRepDaily = {
+    '2026-05-15': { a: { v: 80 }, b: { v: 90 }, c: { v: 100 } },   // cohort 3 → avg 90
+    '2026-05-16': { a: { v: 60 }, b: { v: 80 } },                  // cohort 2 → suppressed
+    '2026-05-17': { a: { v: 50 }, b: { v: null }, c: { v: 70 }, d: { v: 60 } },  // null skipped → cohort 3
+  };
+  const dates = ['2026-05-15', '2026-05-16', '2026-05-17', '2026-05-18'];
+  const out = sb.metricsTeamAvgSeries_(perRepDaily, dates, 'v', 3);
+  assert.strictEqual(out[0].avg, 90); assert.strictEqual(out[0].cohort, 3);
+  assert.strictEqual(out[1].avg, null, 'cohort 2 < 3 → suppressed (anonymity)'); assert.strictEqual(out[1].cohort, 2);
+  assert.strictEqual(out[2].avg, 60, '(50+70+60)/3, null skipped'); assert.strictEqual(out[2].cohort, 3);
+  assert.strictEqual(out[3].avg, null, 'no data → null'); assert.strictEqual(out[3].cohort, 0);
+});
+
 // Operator feedback round (2026-06-12) — heuristic tag suggester (Call
 // Notes) + search-term highlight tokenizer (KB drawer/Reference).
 console.log('\noperator feedback — tag suggest + highlight tokenizer');
