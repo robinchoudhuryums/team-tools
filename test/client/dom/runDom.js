@@ -457,3 +457,52 @@ test('cross-context staleness: a note added elsewhere is absent until Log re-fet
   assert.ok(/from pop-out/.test(h.$('#cn-stack').innerHTML), 're-fetch surfaces the other context\'s note');
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// STEP 2 — #2 caller-format helper + #3 live-refresh of the rolling stack
+// ═════════════════════════════════════════════════════════════════════════════
+section('DOM harness — caller display format (#2)');
+
+test('cnCallerDisplay_: bold name + (relation), suppressed for self/blank; XSS-escaped', () => {
+  const h = boot();
+  const f = h.window.cnCallerDisplay_;
+  assert.ok(/\(spouse\)/.test(f({ caller: 'Bob', relationship: 'spouse' })), 'relation shown in parens');
+  assert.ok(/Bob/.test(f({ caller: 'Bob', relationship: 'spouse' })), 'caller name present');
+  assert.strictEqual(/\(/.test(f({ caller: 'Bob', relationship: 'self' })), false, 'self relation suppressed');
+  assert.strictEqual(/\(/.test(f({ caller: 'Bob', relationship: 'SELF' })), false, 'self is case-insensitive');
+  assert.strictEqual(/\(/.test(f({ caller: 'Bob', relationship: '' })), false, 'blank relation suppressed');
+  assert.ok(/TRX123/.test(f({ caller: '', patientAndTrx: 'TRX123' })), 'falls back to patient/TRX');
+  assert.ok(/unnamed/.test(f({})), 'falls back to unnamed');
+  assert.ok(f({ caller: '<img src=x>' }).indexOf('<img src=x>') === -1, 'caller HTML-escaped (no raw tag)');
+});
+
+section('DOM harness — rolling-stack live refresh (#3)');
+
+test('cnRefreshRollingStack_ re-fetches + surfaces another context\'s note WITHOUT a manual nav', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', issue: 'mine' })]);
+  h.window.cnRefreshRollingStack_();                       // ambient/focus trigger
+  assert.strictEqual(h.run.pending('getMyCallNotes').length, 1, 'live refresh fired a fetch');
+  h.run.flushSuccess({ notes: [
+    noteFixture({ noteId: 'n2', issue: 'from pop-out' }),
+    noteFixture({ noteId: 'n1', issue: 'mine' }),
+  ], autoCopyFormat: '', timezone: 'Asia/Kolkata' }, 'getMyCallNotes');
+  assert.ok(/from pop-out/.test(h.$('#cn-stack').innerHTML), 'other context\'s note now visible without re-entering Log');
+});
+
+test('live refresh PRESERVES an in-flight optimistic note (not yet on the server)', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', issue: 'mine' })]);
+  h.setField('cn-fld-issue', 'still saving');
+  h.window.cnSubmitActiveForm_();                          // optimistic pending note; submitCallNote queued (unflushed)
+  h.window.cnRefreshRollingStack_();
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'mine' })], autoCopyFormat: '', timezone: 'Asia/Kolkata' }, 'getMyCallNotes');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 2, 'pending note kept alongside the server set');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes[0]._pending'), true, 'pending note stays on top');
+});
+
+test('live refresh is skipped during an open inline edit (no clobber)', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', issue: 'mine' })]);
+  h.read('CN_STATE.editingNoteId = "n1"');
+  h.window.cnRefreshRollingStack_();
+  assert.strictEqual(h.run.pending('getMyCallNotes').length, 0, 'no fetch while editing');
+});
+
+

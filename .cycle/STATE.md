@@ -89,7 +89,17 @@ Updated: 2026-06-16
   Pure 123 / DOM 33. NEXT: operator redeploys current code + retests #1; if it
   still repros same-day, capture steps+times+rep tz (server today-derivation);
   if only across midnight, product decision (strict-today vs rolling window).
-  Then S2.
+- STEP 2 DONE (this branch): #2 cnCallerDisplay_ helper (bold caller + (relation)
+  muted, suppressed for self/blank, XSS-escaped) wired into BOTH card renderers
+  (rep + manager read-only); CRM paste/email structure UNCHANGED (card aesthetic
+  only). #3 live-refresh: cnRefreshRollingStack_ (re-fetch today's notes + merge,
+  preserving optimistic _pending, skipped mid inline-edit, requestedView-guarded)
+  called from the 60s ambient poll on the Log view + bound to window focus/
+  visibilitychange (2s throttle, no-op off Log, idempotent bind). 4 DOM tests
+  (caller format + refresh surfaces other-context note + pending preserved +
+  edit-guard). Pure 123 / DOM 37. Minor follow-on: refresh re-renders #cn-stack
+  every 60s — could diff-before-render to avoid a scroll jump (stack is small,
+  accepted for now). NEXT: S3 pop-out (#4).
 
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
