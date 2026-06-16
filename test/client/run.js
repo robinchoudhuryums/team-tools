@@ -1200,6 +1200,34 @@ test('getQuiz source tripwire: the rep response is built ONLY by trainStripQuizF
   assert.strictEqual(src.indexOf('questionsJson'), -1, 'raw questions JSON never returned');
 });
 
+// T4 — quiz analytics aggregate (pure; manager-gated endpoint wraps it).
+console.log('\ntraining — quiz analytics aggregate (T4)');
+vm.runInContext(extractRawFunction('Code.js', 'trainQuizAnalytics_'), sb,
+  { filename: 'Code.js#trainQuizAnalytics_' });
+test('trainQuizAnalytics_: per-quiz counts, distinct reps, pass rate, averages; no answer keys', () => {
+  const quizzes = { q1: { title: 'Safety', passPct: 80 }, q2: { title: 'Billing', passPct: 70 } };
+  const attempts = [
+    { quizId: 'q1', empId: 'A', scorePct: 100, passed: true },
+    { quizId: 'q1', empId: 'A', scorePct: 60, passed: false },   // same rep, second try
+    { quizId: 'q1', empId: 'B', scorePct: 50, passed: false },
+    { quizId: 'qX', empId: 'C', scorePct: 90, passed: true },    // attempt for a deleted quiz — dropped
+  ];
+  const out = sb.trainQuizAnalytics_(quizzes, attempts);
+  assert.strictEqual(out.length, 2, 'one row per existing quiz; deleted-quiz attempts dropped');
+  const billing = out[0], safety = out[1];            // sorted by title: Billing, Safety
+  assert.strictEqual(safety.title, 'Safety');
+  assert.strictEqual(safety.attemptCount, 3);
+  assert.strictEqual(safety.repsAttempted, 2, 'distinct reps');
+  assert.strictEqual(safety.repsPassed, 1, 'A passed (once is enough), B did not');
+  assert.strictEqual(safety.passRate, 50);
+  assert.strictEqual(safety.avgScore, 70, '(100+60+50)/3 rounded');
+  assert.strictEqual(safety.avgAttemptsPerRep, 1.5);
+  assert.strictEqual(billing.attemptCount, 0, 'a quiz with no attempts still appears');
+  assert.strictEqual(billing.passRate, null);
+  assert.strictEqual(billing.avgScore, null);
+  assert.strictEqual(JSON.stringify(out).indexOf('correct'), -1, 'aggregate carries no answer key');
+});
+
 // Operator feedback round (2026-06-12) — heuristic tag suggester (Call
 // Notes) + search-term highlight tokenizer (KB drawer/Reference).
 console.log('\noperator feedback — tag suggest + highlight tokenizer');

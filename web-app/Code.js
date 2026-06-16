@@ -3520,14 +3520,14 @@ function getAutomationHealth() {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly'].map(function (k) {
+    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue'].map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -6304,6 +6304,7 @@ function installAutomationTriggers() {
     'purgeExpiredFormData',
     'purgeOldCallNotes',
     'reconcileCallNotes',
+    'sendTrainingOverdueDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -6351,6 +6352,12 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('reconcileCallNotes')
     .timeBased().atHour(5).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Training & Employee Docs overdue digest (T4) — daily manager-tz 7am.
+  // Org-wide overdue training + per-manager team-scoped overdue unsigned docs.
+  // Sends nothing to a manager with nothing overdue in their scope.
+  ScriptApp.newTrigger('sendTrainingOverdueDigest')
+    .timeBased().atHour(7).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -6393,6 +6400,7 @@ function removeAutomationTriggers() {
     'purgeExpiredFormData',
     'purgeOldCallNotes',
     'reconcileCallNotes',
+    'sendTrainingOverdueDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -6851,6 +6859,165 @@ function sendCallNotesUrgentDigest() {
   } catch (err) {
     Logger.log('sendCallNotesUrgentDigest failed: ' + err.message);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  TRAINING & EMPLOYEE DOCS — OVERDUE DIGEST (T4)
+//  ────────────────────────────────────────────────────────────────────────
+//  docs/training-employee-docs-spec.md §5: "Overdue nudges are Phase 4 (a
+//  digest-style trigger, heartbeat-stamped like the existing digests)."
+//
+//  Daily manager-tz trigger. Two overdue signals, with DIFFERENT visibility:
+//    • Overdue TRAINING — org-wide (training dashboards are NOT team-scoped,
+//      INV-120; every manager sees every rep's training), so the same training
+//      list goes to all managers.
+//    • Overdue unsigned DOCS — TEAM-SCOPED (INV-122 fail-closed): each manager
+//      sees only docs they issued or are the employee's roster ManagerEmail
+//      for. So the digest is built PER MANAGER, never one broadcast.
+//  Sends nothing to a manager with no overdue training AND no overdue docs in
+//  their scope. Best-effort throughout (INV-14); never throws.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Overdue training items across the whole roster (org-wide; not team-scoped).
+ *  Mirrors getTrainingDashboard's per-(emp,item) loop but collects the overdue
+ *  rows. Returns [{ empId, empName, title, dueDate }]. */
+function trainOverdueForRoster_(todayIso) {
+  const assignments = trainReadAssignments_();
+  const completions = trainReadCompletions_(null);
+  const titles = trainKbTitles_();
+  const quizzes = trainReadQuizzes_();
+  function itemTitle_(a) {
+    if (a.itemType === 'kb') return titles[a.itemId] ? titles[a.itemId].title : null;
+    if (a.itemType === 'quiz') return quizzes[a.itemId] ? quizzes[a.itemId].title : null;
+    return null;
+  }
+  const rows = getEmployeeRosterRows_();
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    if (!rows[r][EMP.EMAIL]) continue;
+    const empId = String(rows[r][EMP.ID]).trim();
+    const empName = String(rows[r][EMP.NAME]).trim();
+    const eff = trainEffectiveForEmp_(assignments, empId);
+    Object.keys(eff).forEach(function (key) {
+      const a = eff[key];
+      const title = itemTitle_(a);
+      if (!title) return;
+      let completedAt = '';
+      for (let i = 0; i < completions.length; i++) {
+        const c = completions[i];
+        if (c.empId === empId && c.itemType === a.itemType && c.itemId === a.itemId && c.completedAt > a.assignedAt) {
+          if (c.completedAt > completedAt) completedAt = c.completedAt;
+        }
+      }
+      if (trainDeriveStatus_(!!completedAt, a.dueDate, todayIso) === 'overdue') {
+        out.push({ empId: empId, empName: empName, title: title, dueDate: a.dueDate });
+      }
+    });
+  }
+  out.sort(function (x, y) {
+    if (x.dueDate !== y.dueDate) return x.dueDate < y.dueDate ? -1 : 1;
+    return x.empName.localeCompare(y.empName);
+  });
+  return out;
+}
+
+/** All overdue unsigned employee docs (status='issued' + requiresSignature +
+ *  past dueAt). Returns [{ doc, empName }] with the FULL doc object so the
+ *  caller can apply per-manager team scoping (empDocCanManagerSee_). Returns
+ *  [] (never throws) when HR_DOCS_SS_ID is unset — the training portion of the
+ *  digest must still send. */
+function empDocsOverdueAll_(todayIso) {
+  try {
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return [];
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, EMPDOC_HEADERS.length).getValues();
+    const out = [];
+    for (let i = 0; i < rows.length; i++) {
+      const d = empDocRowToObj_(rows[i], ssTz);
+      if (!d.docId) continue;
+      if (!(d.status === 'issued' && d.requiresSignature && d.dueAt && todayIso > d.dueAt)) continue;
+      const target = lookupEmployeeById_(d.empId);
+      out.push({ doc: d, empName: target ? target.name : 'former employee' });
+    }
+    out.sort(function (x, y) {
+      if (x.doc.dueAt !== y.doc.dueAt) return x.doc.dueAt < y.doc.dueAt ? -1 : 1;
+      return x.empName.localeCompare(y.empName);
+    });
+    return out;
+  } catch (e) {
+    Logger.log('empDocsOverdueAll_ skipped (HR docs store unavailable): ' + e.message);
+    return [];
+  }
+}
+
+/** Top-level trigger handler (reachable via google.script.run) → gated with
+ *  assertManagerCaller_ (INV-44). Daily manager-tz nudge of overdue training
+ *  (org-wide) + overdue unsigned docs (team-scoped per manager). */
+function sendTrainingOverdueDigest() {
+  assertManagerCaller_('sendTrainingOverdueDigest');  // see sendDailyMissedPunchAlerts note
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping training overdue digest.'); return; }
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const todayIso = Utilities.formatDate(new Date(), mgrTz, 'yyyy-MM-dd');
+    const overdueTraining = trainOverdueForRoster_(todayIso);   // org-wide
+    const overdueDocs = empDocsOverdueAll_(todayIso);           // scope per manager below
+    let sent = 0;
+    mgrEmails.forEach(function (email) {
+      const scopedDocs = overdueDocs.filter(function (od) {
+        return empDocCanManagerSee_({ email: email, isManager: true }, od.doc);
+      });
+      if (!overdueTraining.length && !scopedDocs.length) return;   // nothing for this manager
+      try {
+        sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, todayIso);
+        sent++;
+      } catch (e) { console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + e.message); }
+    });
+    stampDigestLastRun_('trainingOverdue');
+    Logger.log('sendTrainingOverdueDigest: training=' + overdueTraining.length +
+      ' docs=' + overdueDocs.length + ' managersEmailed=' + sent);
+  } catch (err) {
+    Logger.log('sendTrainingOverdueDigest failed: ' + err.message);
+  }
+}
+
+/** Branded overdue-digest email to one manager (INV-105 — heading esc_'d in
+ *  the wrapper, every user field esc_'d here; plain-text body fallback). */
+function sendTrainingOverdueEmail_(toEmail, training, docs, todayIso) {
+  const P = CN_EMAIL_PALETTE;
+  function section_(label, rowsHtml) {
+    return '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:' + P.muted +
+        ';letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px;">' + esc_(label) + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;">' + rowsHtml + '</table>';
+  }
+  let html = '<p style="margin:0 0 4px;">These items are past their due date and still incomplete.</p>';
+  let text = 'Overdue training & documents (as of ' + todayIso + ')\n';
+  if (training.length) {
+    const rows = training.map(function (t) {
+      return '<tr>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(t.empName) + '</strong> · ' + esc_(t.title) + '</td>' +
+        '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">due ' + esc_(t.dueDate) + '</td>' +
+        '</tr>';
+    }).join('');
+    html += section_('Overdue training (' + training.length + ')', rows);
+    text += '\nOverdue training:\n' + training.map(function (t) { return '  ' + t.empName + ' · ' + t.title + ' (due ' + t.dueDate + ')'; }).join('\n');
+  }
+  if (docs.length) {
+    const rows = docs.map(function (od) {
+      return '<tr>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(od.empName) + '</strong> · ' + esc_(od.doc.title) + '</td>' +
+        '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">due ' + esc_(od.doc.dueAt) + '</td>' +
+        '</tr>';
+    }).join('');
+    html += section_('Unsigned documents (' + docs.length + ')', rows);
+    text += '\n\nUnsigned documents:\n' + docs.map(function (od) { return '  ' + od.empName + ' · ' + od.doc.title + ' (due ' + od.doc.dueAt + ')'; }).join('\n');
+  }
+  html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs</strong> to follow up.</p>';
+  text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
+  const htmlBody = buildBrandedEmailHtml_('Overdue training & documents', html, { accent: P.warnDeep });
+  MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training & documents', body: text, htmlBody: htmlBody });
 }
 
 function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
@@ -11503,6 +11670,64 @@ function deleteQuiz(quizId) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+// ── T4: Quiz analytics (manager-gated, read-only aggregate) ────────────────
+// docs/training-employee-docs-spec.md §5 ("quiz score summaries"). A bounded
+// full read of the small Quizzes + QuizAttempts tabs, aggregated per quiz.
+// Returns ONLY counts/averages — no answer keys, no per-question booleans, no
+// rep-identifying detail beyond distinct counts (INV-121 stays intact: the
+// answer key never leaves the server, and this surface adds nothing per-rep).
+
+/** Pure — per-quiz aggregate over all attempt rows. Pinned by a Node test.
+ *  `quizzesMap` is trainReadQuizzes_()'s shape ({id:{title,passPct,...}});
+ *  `attempts` is trainReadAttempts_(null)'s shape ([{quizId,empId,scorePct,
+ *  passed}]). Quizzes with zero attempts still appear (passRate/avgScore
+ *  null) so the manager sees an assigned-but-untaken quiz. */
+function trainQuizAnalytics_(quizzesMap, attempts) {
+  const acc = {};
+  Object.keys(quizzesMap || {}).forEach(function (id) {
+    acc[id] = {
+      quizId: id, title: quizzesMap[id].title, passPct: quizzesMap[id].passPct,
+      attemptCount: 0, scoreSum: 0,
+      attemptedReps: {}, passedReps: {},
+    };
+  });
+  (attempts || []).forEach(function (a) {
+    const e = acc[a.quizId];
+    if (!e) return;                       // attempt for a since-deleted quiz — drop
+    e.attemptCount++;
+    e.scoreSum += (Number(a.scorePct) || 0);
+    if (a.empId) {
+      e.attemptedReps[a.empId] = true;
+      if (a.passed) e.passedReps[a.empId] = true;
+    }
+  });
+  return Object.keys(acc).map(function (id) {
+    const e = acc[id];
+    const repsAttempted = Object.keys(e.attemptedReps).length;
+    const repsPassed = Object.keys(e.passedReps).length;
+    return {
+      quizId: e.quizId, title: e.title, passPct: e.passPct,
+      attemptCount: e.attemptCount,
+      repsAttempted: repsAttempted,
+      repsPassed: repsPassed,
+      passRate: repsAttempted ? Math.round(100 * repsPassed / repsAttempted) : null,
+      avgScore: e.attemptCount ? Math.round(e.scoreSum / e.attemptCount) : null,
+      avgAttemptsPerRep: repsAttempted ? Math.round(10 * e.attemptCount / repsAttempted) / 10 : null,
+    };
+  }).sort(function (a, b) { return a.title.localeCompare(b.title); });
+}
+
+/** Manager-gated (INV-02), read-only. Quiz score summaries for the Team
+ *  Training analytics panel. Aggregate-only — no answer keys, no per-rep
+ *  rows (INV-121). */
+function getQuizAnalytics() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    return { quizzes: trainQuizAnalytics_(trainReadQuizzes_(), trainReadAttempts_(null)) };
+  } catch (err) { return { error: err.message }; }
 }
 
 

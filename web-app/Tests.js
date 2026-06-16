@@ -913,6 +913,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_purgeOldCallNotes_nonManagerThrows', test_triggerGate_purgeOldCallNotes_nonManagerThrows);
   _integrationTest('triggerGate_purgeExpiredFormData_nonManagerThrows', test_triggerGate_purgeExpiredFormData_nonManagerThrows);
   _integrationTest('triggerGate_removeAutomationTriggers_nonManagerThrows', test_triggerGate_removeAutomationTriggers_nonManagerThrows);
+  _integrationTest('triggerGate_trainingOverdue_nonManagerThrows', test_triggerGate_trainingOverdue_nonManagerThrows);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Audit row assertions ───────────────────────────────────────────────
@@ -3222,6 +3223,12 @@ function test_triggerGate_urgentDigest_nonManagerThrows() {
   }, 'manager access required');
 }
 
+function test_triggerGate_trainingOverdue_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendTrainingOverdueDigest(); });
+  }, 'manager access required');
+}
+
 // Aggregation behind the urgent digest — finds urgent-flagged notes (urgent
 // lives in subformData.flags[], NOT the FlagType column). Read-only, no email.
 function test_cn_managerAggregateUrgent_findsUrgentNotOthers() {
@@ -3774,6 +3781,8 @@ function test_managerGates_rejectNonManager() {
     ['getQuizzes',                     function () { return getQuizzes(); }],
     ['saveQuiz',                       function () { return saveQuiz({ title: 'gate', passPct: 80, questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] }); }],
     ['deleteQuiz',                     function () { return deleteQuiz('no-such-quiz'); }],
+    // T4 quiz analytics gate.
+    ['getQuizAnalytics',               function () { return getQuizAnalytics(); }],
     // T3 Employee Docs gates (the gate fires BEFORE any HR_DOCS_SS_ID access,
     // so these run safely even where the property is unset).
     ['issueDoc',                       function () { return issueDoc({ empId: _TEST_INDIA_ID, docType: 'policy', title: 'gate', bodyMd: 'x' }); }],

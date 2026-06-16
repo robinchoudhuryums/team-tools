@@ -2,7 +2,7 @@
 
 ## Current
 Cycle: 3
-Phase: implement (DOM-lifecycle test harness — Phases 1+2+3 DONE)
+Phase: implement (DOM harness Phases 1-3 DONE; Training T4 partial DONE)
 Scope: Test Suite (test/client/dom/) — building out the DOM-lifecycle harness
 Test Command: manual (+ `npm test` now runs BOTH client harnesses)
 Subsystem cycles since last Seams audit: 1
@@ -51,6 +51,24 @@ Updated: 2026-06-16
   on it for the .ce divs). DOM suite 22→31; pure harness still 122. Harness
   build-out COMPLETE (all 3 phases). NEXT: Cycle 3 audit-findings backlog
   (S1.1/S2.1/S1.3/C1/C4) awaiting operator selection, or close the cycle.
+
+- TRAINING T4 (partial) DONE 2026-06-16 (this branch, committed + pushed) —
+  operator chose Overdue digests + Quiz analytics; snapshot-PDF signing
+  deferred. Server: getQuizAnalytics (manager-gated, read-only) + pure
+  trainQuizAnalytics_ (per-quiz attempts/distinct-reps/passRate/avgScore/
+  avgTries, no answer keys — INV-121 intact); sendTrainingOverdueDigest
+  (top-level trigger, assertManagerCaller_ INV-44, best-effort INV-14) built
+  PER MANAGER — org-wide overdue training (INV-120 not team-scoped) + overdue
+  unsigned docs scoped via empDocCanManagerSee_ (INV-122), empDocsOverdueAll_
+  returns [] if HR_DOCS_SS_ID unset; heartbeat 'trainingOverdue' (stale>26h);
+  wired into install+remove TARGETS (now 9 triggers, daily mgr-tz 7am).
+  Client: Team Training fires a 5th RPC (getQuizAnalytics) + renders an
+  analytics table below Quizzes (degrades to no-panel on error). Tests: Node
+  trainQuizAnalytics_ (123), trigger-wiring tripwire still green; editor
+  test_triggerGate_trainingOverdue + getQuizAnalytics gate case added.
+  INV-123 added; CLAUDE.md (gate list, trigger gotcha, INV-44 7→8, operator
+  triggers 8→9, heartbeat note, Training module T4 status) + spec T4 row.
+  OPERATOR: re-run installAutomationTriggers() to add the 9th trigger; deploy.
 
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
