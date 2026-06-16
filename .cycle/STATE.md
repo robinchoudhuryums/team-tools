@@ -1,14 +1,37 @@
 # Cycle State
 
 ## Current
-Cycle: 2
-Phase: idle (cycle 2 CLOSED — reflect recorded 2026-06-11)
-Scope: broad
-Test Command: manual
-Subsystem cycles since last Seams audit: 0
-Updated: 2026-06-11
+Cycle: 3
+Phase: implement (DOM-lifecycle test harness — Phase 1 done)
+Scope: Test Suite (test/client/dom/) — building out the DOM-lifecycle harness
+Test Command: manual (+ `npm test` now runs BOTH client harnesses)
+Subsystem cycles since last Seams audit: 1
+Updated: 2026-06-16
 
 ## In progress (facts to carry forward — NOT judgments)
+- CYCLE 3 OPENED 2026-06-16 (/broad-scan). Fresh full read (3 server + 2 client
+  sub-audits + personal verify): NO Critical/High production bugs. Top finding
+  S1.1 (Medium, latent): AuditLog/SUBMITTED_AT timestamps are WRITTEN in
+  CONFIG.TIMEZONE (Asia/Kolkata) but RECOVERED by normalizeAuditTs_ in the
+  ADP-sheet tz — a coupling that only round-trips while those two tzs match.
+  Other Lows: S2.1 submitFormByToken fail-OPEN on unparseable ExpiresAt (PHI
+  write); S1.3 Reconciled→Approved re-deduct; C1 KB-AI "today" via UTC
+  toISOString; S1.2 dashboard punchDate raw String(); C4 no escaping test-pin
+  for buildFormSubmissionCardHtml_. Full report in this session's chat.
+- DOM-LIFECYCLE HARNESS — PHASE 1 DONE (this branch, committed + pushed):
+  test/client/dom/boot.js (jsdom boot — real shell skeleton from modals.html +
+  #app/#toast-stack, loads all 13 partials, controllable google.script.run with
+  independent chains + flushSuccess/flushFailure/respond/drain, bootShell,
+  dispatchKey/click/setField, read() for lexical bindings, flushTimers) +
+  dom/runDom.js (run-mock unit checks + all-partials-load + full shell boot +
+  Call Notes Log render smoke = 7/7). jsdom devDependency; npm test runs both
+  harnesses; CI does npm ci + both suites. Pure harness unchanged (122/122).
+  Two stubs needed for load: window.setTimeClockMode / syncThemeToggleState
+  (index.html <head> globals renderShell calls by bare name).
+  NEXT: Phase 2 (overlay + uiConfirm/uiPrompt lifecycle suite), then Phase 3
+  (optimistic-UI / RPC-sequencing suite). See the plan in this session's chat.
+
+### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
   PROJECT_HEALTH.md Current Standing + Score History updated). Net +8 (8 prod fixes
   − 0 shipped new failure modes; ~13 defensive; 3 new tripwires). Operator ran
@@ -218,6 +241,16 @@ Updated: 2026-06-11
   blank pop-out → SERVER_WEB_APP_URL).
 
 ## Where I left off
+Cycle 3 OPENED (/broad-scan). DOM-lifecycle harness Phase 1 (boot infra)
+SHIPPED on `claude/affectionate-cori-90q3ap`: test/client/dom/{boot,runDom}.js,
+jsdom devDependency, CI wired, README + package-lock. `npm test` green (122 pure
++ 7 DOM). NEXT: Phase 2 (overlay/uiConfirm lifecycle suite) then Phase 3
+(optimistic-UI/RPC-sequencing suite) in dom/runDom.js. Audit findings backlog
+(S1.1 tz coupling, S2.1 fail-open expiry, S1.3, C1, C4) NOT yet implemented —
+awaiting operator selection.
+
+---
+(Below: prior Cycle 2 close note, retained.)
 Cycle 2 CLOSED; KB Phase 2b + Phase 3 + KB AI Phase A all SHIPPED on
 `claude/affectionate-dijkstra-js8rlm` (Node 105/105). NEXT: operator deploy
 (clasp push -f + New version + ONE-TIME re-auth for the Drive scope), run
