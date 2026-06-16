@@ -99,7 +99,21 @@ Updated: 2026-06-16
   (caller format + refresh surfaces other-context note + pending preserved +
   edit-guard). Pure 123 / DOM 37. Minor follow-on: refresh re-renders #cn-stack
   every 60s — could diff-before-render to avoid a scroll jump (stack is small,
-  accepted for now). NEXT: S3 pop-out (#4).
+  accepted for now).
+- STEP 3 DONE (this branch): #4 pop-out. Robust core: popOutCurrentView widened
+  default 380x780 -> 480x800 + reads persisted geometry; pure popoutParseGeom_
+  (range-guarded, Node-pinned) + popoutPersistGeometryInit_ (compact only,
+  resize-debounced + beforeunload, writes umsPopoutGeom — NEW 10th localStorage
+  key). Compact-only additive CSS (data-compact gated, wide mode untouched):
+  icon-only 4-across flag rail (.flag-lbl wrapped + hidden, title/aria carry
+  meaning), sticky collapsible save card (#cn-save-card position:sticky bottom +
+  .cn-save-collapse chevron toggles .collapsed). stats-mini already hidden in
+  compact (no-op, confirmed). Pure 124 / DOM 37. NOTE: the compact VISUAL bits
+  (icon rail + sticky bar) are jsdom-unverifiable (no layout) — need operator
+  eyeball in the real pop-out; the geometry helper + widen are solid/tested.
+  Docs: CLAUDE.md key-count 9->10 + umsPopoutGeom entry + pop-out 380->480
+  decision rewrite. NEXT: S4 metrics (#5/#6) — operator to provide "CSR Transfer
+  Historical Data" sheet schema.
 
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,

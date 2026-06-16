@@ -259,7 +259,29 @@
     .cnv-layout { grid-template-columns: 1fr; }
   }
   :root[data-compact] .cnv-layout { grid-template-columns: 1fr; gap: 10px; }
-  :root[data-compact] .rail-flags { grid-template-columns: 1fr; }
+
+  /* #4 — compact pop-out optimization: icon-only flag rail + a sticky,
+     collapsible save bar so the note template stays "anchored" and the tools
+     are reachable without a manual resize. All gated to data-compact; normal
+     (wide) mode is untouched. The collapse chevron only exists in compact. */
+  .cn-save-collapse { display: none; }
+  :root[data-compact] .rail-flags { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  :root[data-compact] .flag-btn { justify-content: center; padding: 8px 4px; }
+  :root[data-compact] .flag-btn .flag-lbl { display: none; }   /* icon-only — title + aria-label carry the meaning */
+  :root[data-compact] .flag-btn svg { width: 15px; height: 15px; }
+  :root[data-compact] .cn-save-collapse {
+    display: inline-flex; align-items: center; justify-content: center;
+    appearance: none; cursor: pointer; border: none; background: transparent;
+    color: var(--muted); padding: 0 2px; margin-left: 4px;
+  }
+  :root[data-compact] .cn-save-collapse:hover { color: var(--ink); }
+  :root[data-compact] #cn-save-card {
+    position: sticky; bottom: 8px; z-index: 5;
+    box-shadow: var(--shadow-md);
+  }
+  :root[data-compact] #cn-save-card.collapsed .rail-actions { display: none; }
+  :root[data-compact] #cn-save-card.collapsed .sub { display: none; }
+  :root[data-compact] #cn-save-card.collapsed .cn-save-collapse svg { transform: rotate(180deg); }
 
   /* ─── EMAIL COMPOSER TAB STRIP (Round 2 modal-tab merge) ──────────
      Shared segmented control rendered at the top of BOTH the department
@@ -2260,10 +2282,10 @@ function cnRenderActiveForm_() {
         <div class="rail-card">
           <h4><span>Flags</span><span class="sub">categorize</span></h4>
           <div class="rail-flags" role="group" aria-label="Flag this note">
-            <button type="button" class="flag-btn action"   data-flag="action"   title="Flag for action (follow-up)">${icon('flag', 12)} Action</button>
-            <button type="button" class="flag-btn training" data-flag="training" title="Flag for training (need clarification)">${icon('bulb', 12)} Training</button>
-            <button type="button" class="flag-btn review"   data-flag="review"   title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)} Review</button>
-            <button type="button" class="flag-btn urgent"   data-flag="urgent"   title="Mark urgent">${icon('warning', 12)} Urgent</button>
+            <button type="button" class="flag-btn action"   data-flag="action"   aria-label="Flag for action" title="Flag for action (follow-up)">${icon('flag', 12)}<span class="flag-lbl">Action</span></button>
+            <button type="button" class="flag-btn training" data-flag="training" aria-label="Flag for training" title="Flag for training (need clarification)">${icon('bulb', 12)}<span class="flag-lbl">Training</span></button>
+            <button type="button" class="flag-btn review"   data-flag="review"   aria-label="Review candidate" title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)}<span class="flag-lbl">Review</span></button>
+            <button type="button" class="flag-btn urgent"   data-flag="urgent"   aria-label="Mark urgent" title="Mark urgent">${icon('warning', 12)}<span class="flag-lbl">Urgent</span></button>
           </div>
         </div>
 
@@ -2278,8 +2300,12 @@ function cnRenderActiveForm_() {
           <div class="rail-tag-suggest" id="cn-tag-suggest"></div>
         </div>
 
-        <div class="rail-card">
-          <h4><span>Save the note</span><span class="sub">${esc(mod)}⇧C saves</span></h4>
+        <div class="rail-card" id="cn-save-card">
+          <h4><span>Save the note</span><span class="sub">${esc(mod)}⇧C saves</span>
+            <button type="button" class="cn-save-collapse" title="Collapse / expand actions"
+                    aria-label="Collapse or expand the save actions"
+                    onclick="document.getElementById('cn-save-card').classList.toggle('collapsed')">${icon('chevronDown', 14)}</button>
+          </h4>
           <div class="rail-actions">
             <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM (${esc(mod)}+Shift+C)">
               <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}⇧C</span>

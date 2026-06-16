@@ -1291,6 +1291,19 @@ test('popOutCurrentView opens SERVER_WEB_APP_URL, never the iframe location (INV
   const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
   assert.ok(idx.indexOf('window.SERVER_WEB_APP_URL = <?!=') >= 0, 'index.html injects SERVER_WEB_APP_URL unescaped (INV-78)');
 });
+// #4 — pop-out geometry persistence: the pure parse/range-guard helper.
+const popoutParseGeom_ = loadFunction(sb, 'script_core.html', 'popoutParseGeom_');
+test('popoutParseGeom_: parses valid geometry, range-guards, drops bad position', () => {
+  // JSON-compare: sandbox objects have a different realm prototype (deepStrictEqual rejects).
+  assert.strictEqual(JSON.stringify(popoutParseGeom_('{"w":520,"h":820,"x":100,"y":40}')), '{"w":520,"h":820,"x":100,"y":40}');
+  assert.strictEqual(JSON.stringify(popoutParseGeom_('{"w":480,"h":800}')), '{"w":480,"h":800}', 'position optional');
+  assert.strictEqual(popoutParseGeom_(null), null, 'missing → null');
+  assert.strictEqual(popoutParseGeom_('not json'), null, 'corrupt → null');
+  assert.strictEqual(popoutParseGeom_('{"w":100,"h":800}'), null, 'too-narrow width rejected');
+  assert.strictEqual(popoutParseGeom_('{"w":9999,"h":800}'), null, 'absurd width rejected');
+  // valid size but negative position → keep size, drop position (fail-safe)
+  assert.strictEqual(JSON.stringify(popoutParseGeom_('{"w":480,"h":800,"x":-5,"y":10}')), '{"w":480,"h":800}');
+});
 test('signature-pad export cap parity: both pads cap the export at 600px (INV-96)', () => {
   // The empdocs pad is adapted (parameterized) from form_public's — the
   // load-bearing shared rule is the <=600px export downscale that keeps the

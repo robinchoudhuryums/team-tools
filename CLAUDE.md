@@ -868,7 +868,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Nine client-side localStorage keys total.** All per-browser, all
+- **Ten client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -909,7 +909,14 @@ this section before touching the relevant area.
     tour auto-starts once per `TOUR_VERSION` (bump to re-offer after a
     material UI change); stamped on finish/skip. Replayable anytime from
     the Call Notes ? menu regardless of this flag.
-  Clearing browser data wipes all nine.
+  - `umsPopoutGeom` — compact pop-out window geometry `{w,h,x,y}` (#4).
+    Written by `popoutPersistGeometryInit_` (compact window only, debounced
+    on resize + on `beforeunload`); read by `popOutCurrentView` (in either
+    window — same-origin localStorage is shared) via the pure, range-guarded
+    `popoutParseGeom_` (corrupt/out-of-range → null → default 480×800). So the
+    rep's manual resize/reposition sticks across launches. Position is
+    best-effort (browsers restrict programmatic move of an existing window).
+  Clearing browser data wipes all ten.
 
 ## Key Design Decisions
 
@@ -1185,15 +1192,16 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Nine client-side localStorage keys total" entry in
+  authoritative "Ten client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
-  `umsKbPanel`, `umsLastView`, `umsTour`) — all per-browser, all
-  try/catch-wrapped. (An earlier version of this decision listed only
-  four; Round 2 · 8a/8b added the sidebar-width and Time/PTO-mode keys,
-  the KB drawer added its single `umsKbPanel` prefs blob, and the
-  refresh-restore behavior added `umsLastView`.)
+  `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`) — all
+  per-browser, all try/catch-wrapped. (An earlier version of this decision
+  listed only four; Round 2 · 8a/8b added the sidebar-width and Time/PTO-mode
+  keys, the KB drawer added its single `umsKbPanel` prefs blob, the
+  refresh-restore behavior added `umsLastView`, and #4 added
+  `umsPopoutGeom`.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -1725,13 +1733,23 @@ this section before touching the relevant area.
   `adjustWindowDays` field (falls back to 30 only if absent), so the
   picker tracks the real window if the CONFIG changes. The server stays
   authoritative regardless.
-- **Compact pop-out is 380px wide.** `popOutCurrentView()` opens
-  the named `umsTeamToolsCompact` window at 380×780 (narrowed from
-  the prior 440 in the Console redesign — sized to fit the rep's
-  live clock + actions + ribbon + ledger comfortably without
-  horizontal overflow at the new density). The named target means
-  subsequent clicks focus the existing window rather than spawning
-  duplicates.
+- **Compact pop-out defaults to 480×800, then remembers (#4).**
+  `popOutCurrentView()` opens the named `umsTeamToolsCompact` window at
+  **480×800 by default** (widened from the prior 380×780 so the Call Notes
+  note template + its flags/tags/save rail sit side-by-side on launch instead
+  of collapsing to one column), overridden by the rep's last persisted
+  geometry (`umsPopoutGeom` via `popoutParseGeom_`). The named target means
+  subsequent clicks focus the existing window rather than spawning duplicates
+  — and because open-features are honored only on first open, later resizes
+  are captured by `popoutPersistGeometryInit_` and restored next launch.
+  **Compact Call Notes form (`:root[data-compact]`):** the `cn-head`
+  stats-mini is not rendered, the flag toolbar collapses to an **icon-only**
+  4-across rail (`.flag-lbl` hidden; title + `aria-label` carry meaning), and
+  the **save card (`#cn-save-card`) is `position:sticky; bottom`** with a
+  compact-only collapse chevron (`.cn-save-collapse` → toggles `.collapsed`)
+  so Save & Copy / Compose stay reachable without a manual resize. All
+  compact rules are additive and gated to `data-compact`; wide mode is
+  untouched.
 - **Resizable sidebar with snap (Round 2 · 8a).** The sidebar's
   width is rep-adjustable: drag the right-edge `.sidebar-grip`,
   double-click to snap between icon-only (~56px) and labeled
