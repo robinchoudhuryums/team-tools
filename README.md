@@ -84,10 +84,13 @@ A first-load onboarding tour (hand-rolled coach-marks in
 it auto-starts once and is replayable from the Call Notes **?** menu.
 
 The Apps Script test suite (`web-app/Tests.js`) runs from the editor
-(`runSmokeTests()` / `runAllTests()`). Pure client-side helpers also have
-unit tests that run off-editor with no dependencies: `npm test` (or
-`node test/client/run.js`). The harness lives outside `web-app/`, so
-`clasp` never pushes it. A GitHub Action
-(`.github/workflows/client-tests.yml`) runs that harness plus a
-`node --check` of `Code.js` / `Tests.js` on every push and PR — the
-project's only automated check.
+(`runSmokeTests()` / `runAllTests()`). Client-side helpers have two
+off-editor harnesses (both outside `web-app/`, so `clasp` never pushes
+them): a **dependency-free** pure-helper + parse-guard harness
+(`node test/client/run.js`, zero install) and a **DOM-lifecycle** harness
+that loads the partials into a real `jsdom` window
+(`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
+first). `npm test` runs both. A GitHub Action
+(`.github/workflows/client-tests.yml`) runs the pure harness, then
+`npm ci` + the DOM harness, plus a `node --check` of `Code.js` /
+`Tests.js` on every push and PR — the project's only automated check.

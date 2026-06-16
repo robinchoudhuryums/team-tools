@@ -2,11 +2,25 @@
 
 ## Current
 Cycle: 3
-Phase: implement (broad-scan + targeted hardening batch)
+Phase: idle (cycle 3 CLOSED — reflect recorded 2026-06-16)
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 1
-Updated: 2026-06-15
+Subsystem cycles since last Seams audit: 2
+Updated: 2026-06-16
+
+## Cycle 3 CLOSED (2026-06-16)
+Reflect recorded: metrics.csv + estimates.csv rows appended; PROJECT_HEALTH
+Current Standing + Score History updated (Overall 7.5→8.5, Test Coverage 7→8.5
+on the jsdom harness; Security held 9). Fresh scan found NO Critical/High (mature
+codebase). net 0 fired-bug fixes − 0 new failure modes; ~9 defensive hardenings;
+1 doc/impl drift closed (tour deep-link gate). Docs synced (sync-docs): Subsystems
+Test Suite list +harness-dom/run-dom; README test paragraph (npm test runs both,
+jsdom dev dep); CLAUDE.md tour decision (T-4 restore + deep-link gate) + break-
+reminder F6 note. 122 pure + 36 DOM green. Branch claude/dreamy-hamilton-4i7kvr,
+all pushed. ONLY OPEN ITEM = operator deploy: cd web-app && clasp push -f + cut a
+New version (client-only, no Script Properties / operator-state change). NEXT cycle
+options: deploy-then-verify, a Seams audit (2 subsystem-cycles elapsed), or a new
+/broad-scan to open Cycle 4.
 
 ## Cycle 3 broad-scan (2026-06-15) — defensive hardening batch
 Fresh /broad-scan: codebase exceptionally clean (122 invariants, 2 prior cycles).

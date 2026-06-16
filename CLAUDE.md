@@ -2314,8 +2314,10 @@ this section before touching the relevant area.
   KB-drawer lesson — Call Notes' `#view-area` re-renders would wipe it).
   **Auto-starts once per `TOUR_VERSION`** on first load (gated on
   `umsTour.seenVersion`; never in the compact pop-out, never on a
-  deep-link); **replayable** from the Call Notes ? (shortcuts) overlay via
-  `tourStart()`. Bump `TOUR_VERSION` to re-offer after a material UI
+  deep-link — the `?tool=` landing is honored instead); **replayable** from
+  the Call Notes ? (shortcuts) overlay via `tourStart()`. On finish/skip the
+  tour **restores the rep's entry view** (`tourStart` captures `currentView`,
+  `tourEnd_` re-enters it) so it doesn't strand them on the last step's tab. Bump `TOUR_VERSION` to re-offer after a material UI
   change. Adding a step = one `TOUR_STEPS` entry; a Node tripwire asserts
   every step's `view` is a registered TOOLS tab key (a tab-key rename
   can't silently orphan a step — the M3 view-key discipline). v1 covers
@@ -2586,7 +2588,8 @@ manually for a fresh deploy or environment:
   The Clock view shows a "Next break" chip (`#clk-next-break`) and fires a
   one-time reminder toast `breakReminderMin` before each break — but ONLY
   while the Clock tab is open (Apps Script web apps have no background
-  push); the reminded-set dedupes per break per day.
+  push); the reminded-set dedupes per break per day (and is cleared on day
+  rollover so it can't grow unbounded in a long-lived pinned pop-out — F6).
 - **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
   call-notes Spreadsheet ID. Easiest path: **Call Notes → Admin →
   Call Notes Enrollment → Provision Sheet** (one click — creates the
@@ -2892,7 +2895,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/harness-dom.js, test/client/run-dom.js
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server
