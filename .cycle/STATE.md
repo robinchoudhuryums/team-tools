@@ -336,6 +336,24 @@ version; client-only), then close Cycle 3.
   Plus the two operator bugfixes (invisible ::selection → --selection-bg;
   blank pop-out → SERVER_WEB_APP_URL).
 
+- OPERATOR FEEDBACK r4 (2026-06-15, post-deploy): (1) TOUR BUG FIX — the
+  Step-7→14 jump was the engine checking selectors synchronously after
+  enterTool, but Call Notes/Time Off views render async (spinner → RPC →
+  #cn-frame), so all 6 CN steps were skipped; tourGoTo_ now POLLS for the
+  target (~1.9s) and only a real timeout skips. (2) Tour tooltip fades
+  out/in across transitions (.in opacity class) so text no longer flashes
+  at the old position before the spotlight moves. (3) Quiz save + delete
+  inline spinners (.tr-spin / trSpin keyframe). (4) GOOGLE FORMS QUIZ
+  IMPORT — importQuizFromForm (manager-gated, READ-ONLY, review-before-save
+  like kbConvertDriveDoc; FormApp.openById with the deployer's access;
+  reads MC + single-answer CHECKBOX + isCorrectAnswer(); skips other item
+  types with warnings; trainParseFormId_ pure/Node-pinned, rejects the
+  /forms/d/e/ published link). Editor gets an "Import from Google Forms"
+  button (new-quiz only) + a warnings banner. FormApp = first Forms scope →
+  ONE-TIME re-auth on deploy (operator note added). Gate case + parser Node
+  test; Node 122→123. CLAUDE.md: tour decision (async-poll note), gate
+  list, INV-121, Forms-scope operator entry.
+
 ## Where I left off
 Cycle 2 CLOSED; KB Phase 2b + Phase 3 + KB AI Phase A all SHIPPED on
 `claude/affectionate-dijkstra-js8rlm` (Node 105/105). NEXT: operator deploy
