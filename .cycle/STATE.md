@@ -70,6 +70,27 @@ Updated: 2026-06-16
   triggers 8→9, heartbeat note, Training module T4 status) + spec T4 row.
   OPERATOR: re-run installAutomationTriggers() to add the 9th trigger; deploy.
 
+- OPERATOR FEEDBACK THREAD (2026-06-16) — Log + Metrics polish, planning
+  APPROVED. Sequence (~14-18h): S1 diagnose #1 (DONE); S2 #2 caller-format
+  `Name (relation)` card-only, hide when self + #3 live-refresh rolling stack
+  (ambient + focus, merge pending); S3 #4 pop-out (widen default 380->~480,
+  persist geometry NEW 10th localStorage key umsPopoutGeom, sticky collapsible
+  bottom action bar, compact icon-only flag rail, collapse cn-head stats-mini
+  in compact); S4 #5 anonymized team-avg on My Stats (rep-callable aggregate,
+  N=3 min-cohort guard) + #6 own-vs-team trend overlay for % Answered/Answered/
+  Missed/Transfers/Avg Talk — Transfers from a SEPARATE "CSR Transfer
+  Historical Data" tab in the CDR Report ss (schema TBD from operator).
+  Decisions: #2 keep paste/email structure unchanged (card aesthetic only);
+  #4 sticky bar collapsible + icon flag rail approved.
+- STEP 1 DONE (this branch, committed 765bc6d): 2 DOM-harness diagnostic tests
+  prove the CLIENT re-fetch-on-Log-enter + render path is sound (notes do NOT
+  vanish on nav-back in current code). => #1 is midnight-rollover (Log is
+  strictly today; History is ranges) OR deployed-version lag, NOT a client bug.
+  Pure 123 / DOM 33. NEXT: operator redeploys current code + retests #1; if it
+  still repros same-day, capture steps+times+rep tz (server today-derivation);
+  if only across midnight, product decision (strict-today vs rolling window).
+  Then S2.
+
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
   PROJECT_HEALTH.md Current Standing + Score History updated). Net +8 (8 prod fixes
