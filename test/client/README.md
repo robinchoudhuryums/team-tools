@@ -35,11 +35,43 @@ exposes the loaded functions so `run.js` can call them and assert.
 In scope: **pure** string/date/format helpers — `esc`, `empTz`, `isoDateTz`,
 `mTodayIso_`/`mDaysAgo_`, `cnExtEmailPillHtml_`, etc.
 
-Out of scope: functions that genuinely drive the DOM, fire `google.script.run`
-RPCs, or depend on cross-file `const`/`let` module state (vm scripts don't share
-block-scoped bindings across files — only function declarations / explicit
-globals cross). Those still rely on the manual Regression Scenarios. A future
-upgrade to jsdom would widen coverage to DOM-rendering functions.
+Out of scope **for this (pure) harness**: functions that genuinely drive the
+DOM, fire `google.script.run` RPCs, or depend on lexically-scoped module state.
+Those are covered by the **DOM-lifecycle harness** below.
+
+## DOM-lifecycle harness (`harness-dom.js` / `run-dom.js`)
+
+```bash
+node test/client/run-dom.js   # or: npm run test:dom   (needs `npm ci` first)
+npm test                      # runs BOTH harnesses
+```
+
+Loads the **full** `<script>` of the chosen partials into a real
+[`jsdom`](https://github.com/jsdom/jsdom) window (a dev dependency — the only one)
+so tests can exercise what the pure harness can't: innerHTML render/escape,
+overlay lifecycle (Esc/`ensureOverlay`), optimistic-UI revert, late-callback
+`currentView` guards, focus traps, double-fire guards.
+
+- `buildDomWindow(files, opts)` → `{ window, document, ctx, run, t, flush, dispatchKey, $, $$ }`.
+  - `runScripts:'outside-only'` ⇒ `getInternalVMContext()` where `window === globalThis`
+    (bare-name resolution like the pure harness) **with a real document**;
+    `DOMContentLoaded` is not auto-fired, so module-top init listeners stay dormant.
+  - Partials load in order and **share** the global lexical scope (browser
+    `<script>` semantics), so a trailing **bridge** (`window.__t` / `h.t`) can
+    get/set the `const`/`let` module state (`CN_STATE`, `currentView`, `empState`).
+  - `opts.markup: ['modals.html']` mounts shared markup into `<body>` before the
+    tool scripts run (mirrors `index.html`) — needed by partials whose module-top
+    listeners bind to modal nodes (the `tc/` views).
+- `run` = the programmable `google.script.run` mock. Each terminal
+  `.method(args)` is **recorded** with its registered handlers; the test drives
+  the server response with `run.resolve(value)` / `run.reject(err)` (or
+  `run.resolveLastFor(method, value)`). Inspect with `run.last()`, `run.lastFor(m)`,
+  `run.countFor(m)`, `run.pending()`.
+- `dispatchKey('Escape')` fires a real `keydown`; `flush()` drains microtasks.
+
+This harness needs the `jsdom` dev dependency (`npm ci`); the pure harness above
+stays the always-on, zero-install floor. Both live outside `web-app/`, so
+`clasp push` never sees them.
 
 ## Extending
 

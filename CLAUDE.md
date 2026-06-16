@@ -2322,8 +2322,10 @@ this section before touching the relevant area.
   KB-drawer lesson — Call Notes' `#view-area` re-renders would wipe it).
   **Auto-starts once per `TOUR_VERSION`** on first load (gated on
   `umsTour.seenVersion`; never in the compact pop-out, never on a
-  deep-link); **replayable** from the Call Notes ? (shortcuts) overlay via
-  `tourStart()`. Bump `TOUR_VERSION` to re-offer after a material UI
+  deep-link — the `?tool=` landing is honored instead); **replayable** from
+  the Call Notes ? (shortcuts) overlay via `tourStart()`. On finish/skip the
+  tour **restores the rep's entry view** (`tourStart` captures `currentView`,
+  `tourEnd_` re-enters it) so it doesn't strand them on the last step's tab. Bump `TOUR_VERSION` to re-offer after a material UI
   change. Adding a step = one `TOUR_STEPS` entry; a Node tripwire asserts
   every step's `view` is a registered TOOLS tab key (a tab-key rename
   can't silently orphan a step — the M3 view-key discipline). v1 covers
@@ -2607,7 +2609,8 @@ manually for a fresh deploy or environment:
   The Clock view shows a "Next break" chip (`#clk-next-break`) and fires a
   one-time reminder toast `breakReminderMin` before each break — but ONLY
   while the Clock tab is open (Apps Script web apps have no background
-  push); the reminded-set dedupes per break per day.
+  push); the reminded-set dedupes per break per day (and is cleared on day
+  rollover so it can't grow unbounded in a long-lived pinned pop-out — F6).
 - **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
   call-notes Spreadsheet ID. Easiest path: **Call Notes → Admin →
   Call Notes Enrollment → Provision Sheet** (one click — creates the
@@ -2772,6 +2775,11 @@ carries the same number. `/cycle-status` surfaces it.
   implement commands' CHECKPOINT step, read by `/cycle-resume` + `/cycle-status`.
 - `.cycle/metrics.csv` — per-cycle metrics appended by `/reflect` / synthesis.
   Header: `date,cycle,subsystem,phase,net_score,prod_fixes,new_failure_modes,category_d_ratio,axis_b_lowest,notes,defensive_count`
+  **Local convention:** the canonical `/reflect` leaves `category_d_ratio` +
+  `axis_b_lowest` blank (a separate `/synthesis` step fills them), but this
+  project has no `/synthesis` command, so fill both at reflect time (cycles 1–3
+  did) — `category_d_ratio` = the Category-D/Low share of the cycle's findings,
+  `axis_b_lowest` = the weakest Axis-B horizontal category that cycle.
 - `.cycle/estimates.csv` — estimate-vs-actual calibration, appended by `/reflect`.
   Header: `date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note`
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
@@ -2862,6 +2870,26 @@ project's only automated check. Use
 the Regression Scenarios below as the canonical full-system
 verification path.
 
+A second, **DOM-lifecycle** harness now sits alongside the pure one:
+`node test/client/run-dom.js` (or `npm run test:dom`; `npm test` runs BOTH).
+It loads the FULL `<script>` of the chosen partials into a real **jsdom**
+window — the project's only dependency, dev-only, so `clasp` still never
+pushes it — and tests the layer the pure harness can't reach: innerHTML
+render/escape, overlay lifecycle (`ensureOverlay`/Esc), optimistic-UI
+submit + revert (INV-48), `_flagInFlight` double-fire (INV-56), late-callback
+`currentView` guards, and the focus trap. Mechanics (see
+`test/client/README.md`): `runScripts:'outside-only'` →
+`getInternalVMContext()` (window === globalThis, real document; no auto
+`DOMContentLoaded`, so module-top init stays dormant); partials share lexical
+scope so a trailing **bridge** (`h.t`) get/sets the `const`/`let` module state
+(`CN_STATE`, `currentView`, `empState`); a programmable `google.script.run`
+mock (`run.resolve`/`reject`/`lastFor`/`countFor`) drives the RPC paths;
+`opts.markup:['modals.html']` mounts shared modal DOM for the `tc/` views. The
+escape-discipline tests are proven to bite (reverting an `esc()` fails them) —
+this is the regression net for the client overlay/lifecycle bug class that
+every prior cycle shipped blind. The CI workflow runs it as a second step
+(after `npm ci`); the zero-install pure step stays first as the always-on floor.
+
 ### Health Dimensions
 Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability
 
@@ -2893,7 +2921,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/harness-dom.js, test/client/run-dom.js
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server

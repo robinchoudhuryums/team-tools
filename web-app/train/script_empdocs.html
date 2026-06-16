@@ -141,7 +141,7 @@ function enterMyDocsView() {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var el = document.getElementById('ed-my-content');
-      if (el) el.innerHTML = '<div class="tr-empty">' + esc(err.message) + '</div>';
+      if (el) el.innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
     })
     .getMyDocs();
 }
@@ -192,7 +192,7 @@ function edOpenDoc_(docId) {
     .withFailureHandler(function (err) {
       if (ED_STATE.readerDocId !== docId) return;
       var o = document.getElementById('ed-reader-overlay');
-      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc(err.message) + '</div>';
+      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
     })
     .getMyDoc(docId);
 }
@@ -270,7 +270,7 @@ function edSubmitSignature_(docId, btn) {
     })
     .withFailureHandler(function (err) {
       if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Sign document'; }
-      showToast('Could not sign: ' + err.message, 'error');
+      showToast('Could not sign: ' + ((err && err.message) || err), 'error');
     })
     .acknowledgeDoc(docId, ED_STATE.sigPad.toDataURL());
 }
@@ -309,7 +309,7 @@ function edLoadMgr_() {
     failed = true;
     if (currentView !== requestedView) return;
     var el = document.getElementById('ed-mgr-content');
-    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc(err.message) + '</div>';
+    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc((err && err.message) || err) + '</div>';
   }
   google.script.run.withSuccessHandler(function (d) { ED_STATE.dash = d; done(); }).withFailureHandler(onFail).getDocsDashboard();
   google.script.run.withSuccessHandler(function (d) { ED_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
@@ -397,7 +397,7 @@ function edConvertDoc_() {
         if (title && !title.value && res.docTitle) title.value = res.docTitle;
         showToast('Converted' + (res.warnings && res.warnings.length ? ' with ' + res.warnings.length + ' warning(s) — review the body' : '') + '.', 'success');
       })
-      .withFailureHandler(function (err) { showToast('Conversion failed: ' + err.message, 'error'); })
+      .withFailureHandler(function (err) { showToast('Conversion failed: ' + ((err && err.message) || err), 'error'); })
       .kbConvertDriveDoc({ driveUrl: url });
   });
 }
@@ -431,7 +431,7 @@ function edSubmitIssue_() {
       })
       .withFailureHandler(function (err) {
         if (btn) btn.disabled = false;
-        showToast('Issue failed: ' + err.message, 'error');
+        showToast('Issue failed: ' + ((err && err.message) || err), 'error');
       })
       .issueDoc(payload);
   });
@@ -450,7 +450,7 @@ function edVerify_(docId) {
         showToast('✗ INTEGRITY MISMATCH — the stored record was altered after signing. Investigate via the AuditLog witness row.', 'error');
       }
     })
-    .withFailureHandler(function (err) { showToast('Verify failed: ' + err.message, 'error'); })
+    .withFailureHandler(function (err) { showToast('Verify failed: ' + ((err && err.message) || err), 'error'); })
     .verifyDocSignature(docId);
 }
 
@@ -473,7 +473,7 @@ function edVoid_(docId) {
           showToast('Document voided.', 'success');
           if (currentView === 'docsManage') edLoadMgr_();
         })
-        .withFailureHandler(function (err) { showToast('Void failed: ' + err.message, 'error'); })
+        .withFailureHandler(function (err) { showToast('Void failed: ' + ((err && err.message) || err), 'error'); })
         .voidDoc(docId, reason || '');
     });
   });

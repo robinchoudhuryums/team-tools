@@ -7,3 +7,6 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-06-11,2,"M2 + M4 (uiConfirm Enter, optimistic-revert guard)",S (<2h),2,1,"Close: sticky-draft park path reused existing machinery"
 2026-06-11,2,"Medium slice M1/M3/M5/M6/M8/M9/M10 + digest heartbeats",M (~1 day),8,4,"Under actual estimate but one near-miss (manage vs manager key) caught in regression check — the step that earns its keep"
 2026-06-11,2,"Low hygiene batch (10 items + T4)",M (~half day),4,2,"Overestimated: scripted exact-match edits batch well"
+2026-06-16,3,jsdom DOM-lifecycle test harness (Phases 0-4),L (3+ days),24,4,"Overestimated ~6x: getInternalVMContext + reuse of extractScript + the lexical-scope bridge (for const/let module state) made it tractable in one session. The 3+ day price assumed building DOM fidelity by hand; jsdom + the spike-first gate de-risked it. 36 tests across 9 partials."
+2026-06-16,3,Broad-scan F1-F7 fix batch,S (<2h),2,1.5,"Close: surgical esc()/guard/null edits; F4 retracted on the implementation read (correct UTC calendar math)."
+2026-06-16,3,Targeted audit+fix script_tour (T-1/T-2/T-4),S (<2h),2,1.5,"Close: small focused edits; the deep-link gate reused the boot caller's predicate; T-3 stop-and-described as inherent."

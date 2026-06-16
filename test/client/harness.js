@@ -32,6 +32,17 @@ function extractScript(file) {
   return blocks.join('\n;\n').replace(/<\?[\s\S]*?\?>/g, '""');
 }
 
+/** Return the NON-<script> markup of an HtmlService partial (strips <script>
+ *  blocks and GAS scriptlets), for mounting shared DOM (e.g. modals.html) into
+ *  the DOM harness — mirroring how index.html includes these partials before the
+ *  tool scripts run. */
+function extractMarkup(file) {
+  const src = fs.readFileSync(path.join(WEB_APP, file), 'utf8');
+  return src
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<\?[\s\S]*?\?>/g, '');
+}
+
 /** Brace-match a single top-level `function NAME(...) { … }` out of a partial,
  *  for cases where loading the whole (large) file isn't worth the risk. Safe
  *  only for functions whose bodies contain no `{`/`}` inside string literals. */
@@ -144,4 +155,4 @@ function loadFunction(sandbox, file, name) {
   return sandbox[name];
 }
 
-module.exports = { extractScript, extractFunction, extractRawFunction, buildSandbox, loadFunction, fakeEl };
+module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, buildSandbox, loadFunction, fakeEl };

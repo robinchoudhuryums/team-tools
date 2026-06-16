@@ -1,13 +1,14 @@
 name: Client tests
 
-# Runs the dependency-free client-side test harness (and a server-JS syntax
-# check) on every push / PR. The harness loads the web-app HtmlService <script>
-# partials into a Node vm sandbox and unit-tests the pure helpers — see
-# test/client/README.md. No npm install: the harness has no dependencies.
+# Runs the client-side test harnesses (and a server-JS syntax check) on every
+# push / PR. Two harnesses, see test/client/README.md:
+#   • run.js     — dependency-free pure-helper + parse-guard net (vm sandbox).
+#   • run-dom.js — DOM-lifecycle tests in a real jsdom window (needs `npm ci`).
 #
 # This is the only automated check for the project (the Apps Script suite in
-# web-app/Tests.js runs only inside the editor). It guards the client helpers
-# and catches gross syntax errors in Code.js / Tests.js.
+# web-app/Tests.js runs only inside the editor). It guards the client helpers,
+# the render/escape + lifecycle layer, and catches gross syntax errors in
+# Code.js / Tests.js.
 
 on:
   push:
@@ -29,5 +30,14 @@ jobs:
           node --check web-app/Code.js
           node --check web-app/Tests.js
 
-      - name: Run client unit tests
+      # Zero-dependency pure harness runs first (the always-on floor — green even
+      # if the jsdom install ever fails).
+      - name: Run client unit tests (pure)
         run: node test/client/run.js
+
+      # DOM-lifecycle harness needs the jsdom dev dependency.
+      - name: Install dev dependencies
+        run: npm ci
+
+      - name: Run client DOM-lifecycle tests
+        run: node test/client/run-dom.js

@@ -1,12 +1,131 @@
 # Cycle State
 
 ## Current
-Cycle: 2
-Phase: idle (cycle 2 CLOSED — reflect recorded 2026-06-11)
+Cycle: 3
+Phase: idle (cycle 3 CLOSED — reflect recorded 2026-06-16)
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 0
-Updated: 2026-06-11
+Subsystem cycles since last Seams audit: 2
+Updated: 2026-06-16
+
+## Cycle 3 CLOSED (2026-06-16)
+Reflect recorded: metrics.csv + estimates.csv rows appended; PROJECT_HEALTH
+Current Standing + Score History updated (Overall 7.5→8.5, Test Coverage 7→8.5
+on the jsdom harness; Security held 9). Fresh scan found NO Critical/High (mature
+codebase). net 0 fired-bug fixes − 0 new failure modes; ~9 defensive hardenings;
+1 doc/impl drift closed (tour deep-link gate). Docs synced (sync-docs): Subsystems
+Test Suite list +harness-dom/run-dom; README test paragraph (npm test runs both,
+jsdom dev dep); CLAUDE.md tour decision (T-4 restore + deep-link gate) + break-
+reminder F6 note. 122 pure + 36 DOM green. Branch claude/dreamy-hamilton-4i7kvr,
+all pushed. ONLY OPEN ITEM = operator deploy: cd web-app && clasp push -f + cut a
+New version (client-only, no Script Properties / operator-state change). NEXT cycle
+options: deploy-then-verify, a Seams audit (2 subsystem-cycles elapsed), or a new
+/broad-scan to open Cycle 4.
+
+## Cycle 3 broad-scan (2026-06-15) — defensive hardening batch
+Fresh /broad-scan: codebase exceptionally clean (122 invariants, 2 prior cycles).
+NO Critical/High found. Top findings were all Low (defense-in-depth / consistency).
+Implemented F1,F2,F3,F5,F7 via /broad-implement; skipped F4 (false positive on
+close read), F6 (out of requested scope). Node harness 122/122 post-change.
+- F1 | form_public.html | null-guard the boot()/submit success handlers (resolved-
+  but-null res doesn't trigger withFailureHandler → was a silent frozen-spinner).
+- F2 | metrics/script_metrics.html + cn/script_callnotes.html | esc() the CDR-
+  boundary fields into innerHTML (hero pct, per-rep table incl. attFormatted, date
+  strings, Stats-card CDR numbers, health-panel rowsMatched) — honors the documented
+  "Metrics must esc() every server string" invariant. Numbers → output-identical.
+- F3 | intake/script_intake.html | null INTAKE_STATE.preview (holds patient-answer
+  PHI) on clear + after both send paths (PPD + acct). st captured into a local before
+  the RPC, so INV-111 send/hash unaffected.
+- F5 | train/script_training.html + train/script_empdocs.html | guard every
+  err.message in failure handlers → (err && err.message) || err (ALL occurrences,
+  not just the agent subset).
+- F7 | cn/script_callnotes.html | add withFailureHandler (console.warn) to
+  cnPollAmbient_ — the only RPC in the file lacking one.
+RETRACTED: F4 (Day-Edit picker UTC min) — pure calendar arithmetic on the tz-derived
+`today` string, no browser-now drift; equivalent to the Adjust modal. Not a bug.
+NEXT: operator deploy (clasp push -f + New version) — client-only, no Script
+Properties / operator-state change. Then optionally pick up F6 (_clkRemindedBreaks
+unbounded, Low) or proceed to /reflect to close Cycle 3.
+
+## jsdom DOM-lifecycle test harness (L item, in progress) — 5-phase plan APPROVED
+Operator picked jsdom (over happy-dom / zero-dep) — adds the FIRST dev dependency
+(npm ci now required for the DOM harness; pure run.js stays the zero-install floor).
+- Phase 0 (spike + decision gate) DONE — GO. jsdom loads the 8k-line CN partial +
+  core into a real window via getInternalVMContext (window===globalThis, with a
+  REAL document). runScripts:'outside-only' doesn't auto-fire DOMContentLoaded, so
+  module-top init listeners stay dormant — load-time side effects tamed for free.
+- Phase 1 (foundation) DONE — test/client/harness-dom.js + run-dom.js, 15/15 green.
+  Key mechanics: partials share lexical scope across runInContext calls (browser
+  <script> semantics), so a trailing BRIDGE (window.__t / h.t) get/sets the
+  const/let module state (CN_STATE const, currentView/empState let — NOT reachable
+  as ctx props). Programmable google.script.run mock (run.resolve/reject/lastFor/
+  countFor). extractMarkup() added to harness.js to mount modals.html for tc views
+  (their module-top listeners bind modal nodes). package.json: test:dom + `test`
+  runs both. CI workflow wired (npm ci + run-dom.js as a second step; pure step
+  stays first as the floor).
+- Phases REMAINING:
+  - Phase 2 (overlay lifecycle + escape + focus trap) DONE — run-dom.js now 23/23.
+    Escape-discipline tests drive mRenderTeamMetrics_ / mRenderMyStats_ /
+    cnRenderCardCore_ with a hostile `<img onerror><script>` field and assert NO
+    live node + text-survives — PINS the F2/INV-89 class (proven to bite: reverting
+    esc(repName) fails the test). Overlay lifecycle: ensureOverlay reuse re-asserts
+    `open` (the hidden-but-stateful composer-dead class), Esc closes only the
+    topmost via its hook (stacking), closeOverlay degrades to plain-hide on a
+    hookless/throwing hook. Focus trap: focusin outside the topmost modal pulls
+    focus to its first focusable (jsdom sets activeElement correctly).
+  - Phase 3 (optimistic-UI + late-callback guards) DONE — run-dom.js now 29/29.
+    6 tests: INV-48 optimistic submit (pending card → confirmed swap, drives the
+    FULL cnSubmitActiveForm_ via mockRun) + the 3 revert branches (form empty →
+    cnRestoreFromSnapshot_; new typing → untouched; form gone → sticky-draft
+    localStorage); INV-56 _flagInFlight double-fire (cnToggleFlag_ — proven to
+    bite: removing the guard fails the test); late-callback guard (cnLoadToday_
+    resolving after nav-away updates state but skips the render `then`).
+  - Phase 4 (docs polish) DONE — README documents the harness; CLAUDE.md Test
+    Command section now describes run-dom.js + the bridge/mockRun mechanics; CI
+    wired in Phase 1. Determinism: mockRun handlers fire synchronously on
+    run.resolve/reject (no real timers in the lifecycle tests).
+JSDOM HARNESS COMPLETE (Phases 0-4). Final: 122 pure + 29 DOM green; jsdom is the
+only (dev) dependency; clasp never pushes test/. The client overlay/lifecycle bug
+class — every prior cycle's High/Med client findings + this cycle's F2 fixes — now
+has CI regression coverage. NEXT options: deploy the pending F1-F7 batch, pick up
+F6 (_clkRemindedBreaks), extend DOM coverage to more partials (intake/kb/train
+optimistic paths) as they change, or /reflect to close Cycle 3.
+
+## F6 + opportunistic DOM coverage (2026-06-15)
+- F6 DONE | tc/script_clock.html | clkUpdateBreak_ now resets _clkRemindedBreaks on
+  day rollover (new _clkRemindedDay guard) so the per-break-per-day dedupe map can't
+  grow unbounded in a long-lived pinned pop-out. Same-day behavior unchanged.
+- DOM coverage extended (run-dom.js 29→32): F3 regression pin (intakeClearForm_
+  nulls INTAKE_STATE.preview — patient PHI), intake Sent-list escape
+  (intakeRenderSentList_ hostile patientInfo), training reader escape
+  (trainRenderReader_ hostile embed title). F6 itself is NOT DOM-tested (time/date
+  dependent — would need clock mocking; the parse-guard + manual S39 cover it).
+- ALL scan findings now closed: F1,F2,F3,F5,F7 (prior batch) + F6 (this). F4
+  retracted (false positive). jsdom harness complete.
+## Targeted audit + implement: script_tour.html + appsscript.json (2026-06-16)
+Audited the two never-individually-scanned subsystems. appsscript.json CLEAN
+(executeAs USER_DEPLOYING / ANYONE_ANONYMOUS as designed). script_tour.html:
+XSS-clean (step.title/body are static registry strings). 4 Low findings, all
+implemented except T-3:
+- T-1 DONE | script_tour.html | tourEnsureNodes_ guard checked `tour-root` (an id
+  never created → dead guard). Fixed to check `tour-block`. Proven to bite.
+- T-2 DONE | script_tour.html | auto-start now gated on a deep-link landing
+  (?tool=) inside tourMaybeAutoStart_ — closes the doc/impl drift (the comment +
+  CLAUDE.md claimed "never on a deep-link" but only COMPACT_MODE was checked).
+  Same predicate as the boot caller. Replay (tourStart) unaffected.
+- T-4 DONE | script_tour.html | tourStart captures _tourReturnView=currentView;
+  tourEnd_ restores it via enterTool so the tour no longer strands the rep on the
+  last step's view (Call Notes / Team Notes).
+- T-3 NOT DONE (inherent + benign) | skipped selector steps call enterTool before
+  the skip-check — unavoidable (must be on the view to test its selector), and
+  skipped steps schedule NO paint (setTimeout only on the show path), so it's
+  synchronous + never painted; only cost is wasted re-render for rare skips.
+DOM coverage 32→36: script_tour added to the meta-load list; T-1 idempotency +
+T-2 gated/contrast tests (setTimeout-spy detects the auto-start schedule).
+WHERE I LEFT OFF: T-1/T-2/T-4 + tour DOM tests committed + green (122 pure + 36
+DOM). All scan + targeted findings closed (F1-F7 minus F4 retracted; T-1/T-2/T-4;
+T-3 noted benign). NEXT: operator deploy the client batch (clasp push -f + New
+version; client-only), then close Cycle 3.
 
 ## In progress (facts to carry forward — NOT judgments)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
