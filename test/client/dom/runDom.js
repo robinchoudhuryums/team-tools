@@ -403,3 +403,57 @@ test('Save & Compose: cancelling the composer while the save is in flight rolls 
   h.run.flushSuccess({ success: true }, 'deleteCallNote');
   assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 0, 'rolled-back note removed from the stack');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// STEP 1 — Log persistence on nav-away/return (diagnose the operator report
+// "short-term notes reset when navigating back"). The Log is a today-only view
+// re-fetched on every enter (getMyCallNotes); History uses ranges. These tests
+// pin whether the CLIENT re-fetches AND re-renders on return — if they pass, the
+// client persistence path is sound and the report points at the server "today"
+// boundary (midnight rollover) or a deployed-version lag, not a client bug.
+// ═════════════════════════════════════════════════════════════════════════════
+section('DOM harness — Log persistence on nav-away/return (Step 1 diagnosis)');
+
+test('returning to Log re-fetches today\'s notes (does not render a stale/empty stack)', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', issue: 'first call' })]);
+  assert.ok(/first call/.test(h.$('#cn-stack').innerHTML), 'n1 shows on first Log entry');
+
+  // Log a second note (optimistic + server confirm).
+  h.setField('cn-fld-issue', 'second call');
+  h.window.cnSubmitActiveForm_();
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'n2', issue: 'second call', _pending: false }) }, 'submitCallNote');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 2, 'both notes in the stack after submit');
+
+  // Navigate away, then back to Log (the operator's "navigating back from other pages").
+  h.read('currentView = "clock"');
+  h.window.enterTool('callNotes');
+  // The Log MUST re-fetch on re-entry (not render a stale/empty in-memory stack).
+  assert.strictEqual(h.run.pending('getMyCallNotes').length, 1, 're-entry re-fetched today\'s notes');
+
+  // Server still has both (they persisted — same as History would show).
+  h.run.flushSuccess({ notes: [
+    noteFixture({ noteId: 'n2', issue: 'second call' }),
+    noteFixture({ noteId: 'n1', issue: 'first call' }),
+  ], autoCopyFormat: '', timezone: 'Asia/Kolkata' }, 'getMyCallNotes');
+
+  const stack = h.$('#cn-stack').innerHTML;
+  assert.ok(/first call/.test(stack) && /second call/.test(stack), 'both notes re-render after nav-back');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 2, 'rolling stack repopulated from the server');
+});
+
+test('cross-context staleness: a note added elsewhere is absent until Log re-fetches (motivates #3 live-refresh)', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', issue: 'mine' })]);
+  // Another browser context (pop-out) logs a note to the same Sheet — THIS
+  // context's in-memory stack does not change without a re-fetch.
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 1, 'no live sync: stack unchanged while sitting on Log');
+  // A re-enter (the only refresh trigger today) would pick it up — proving the
+  // fix surface for #3 is "refresh the stack without a manual nav".
+  h.read('currentView = "clock"');
+  h.window.enterTool('callNotes');
+  h.run.flushSuccess({ notes: [
+    noteFixture({ noteId: 'n2', issue: 'from pop-out' }),
+    noteFixture({ noteId: 'n1', issue: 'mine' }),
+  ], autoCopyFormat: '', timezone: 'Asia/Kolkata' }, 'getMyCallNotes');
+  assert.ok(/from pop-out/.test(h.$('#cn-stack').innerHTML), 're-fetch surfaces the other context\'s note');
+});
+
