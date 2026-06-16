@@ -208,6 +208,24 @@ function boot() {
   }
   window.open = () => null;
   window.scrollTo = () => {};
+  // jsdom does not implement HTMLElement.isContentEditable (returns undefined),
+  // but the Call Notes form fields are contenteditable `.ce` divs and the
+  // shipped cnGetFieldValue_/cnSetFieldValue_ branch on it. Provide a
+  // spec-accurate getter (nearest contenteditable ancestor wins) so the
+  // SHIPPED accessors behave exactly as in a real browser.
+  Object.defineProperty(window.HTMLElement.prototype, 'isContentEditable', {
+    configurable: true,
+    get() {
+      let el = this;
+      while (el && el.nodeType === 1) {
+        const v = el.getAttribute && el.getAttribute('contenteditable');
+        if (v === 'true' || v === '') return true;
+        if (v === 'false') return false;
+        el = el.parentElement;
+      }
+      return false;
+    },
+  });
   // Globals defined in index.html's <head> (not a partial, so not loaded here)
   // that renderShell / theme toggles call by bare name.
   window.setTimeClockMode = () => {};

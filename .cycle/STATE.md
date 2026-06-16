@@ -2,7 +2,7 @@
 
 ## Current
 Cycle: 3
-Phase: implement (DOM-lifecycle test harness — Phases 1+2 done)
+Phase: implement (DOM-lifecycle test harness — Phases 1+2+3 DONE)
 Scope: Test Suite (test/client/dom/) — building out the DOM-lifecycle harness
 Test Command: manual (+ `npm test` now runs BOTH client harnesses)
 Subsystem cycles since last Seams audit: 1
@@ -38,7 +38,19 @@ Updated: 2026-06-16
   document.body (real capture→bubble path the capture-phase dialog handlers
   need). DOM suite 7→22; pure harness still 122. These pin the Cycle-2 audit's
   H1/M2/topmost-Esc/drawer findings as automated regressions.
-  NEXT: Phase 3 (optimistic-UI / RPC-sequencing suite). See the plan in chat.
+  PHASE 3 DONE (this branch): optimistic-UI / RPC-sequencing suite (9 tests) —
+  empty-form no-RPC; optimistic submit (pending card + form clear before RPC);
+  submit success replaces the array slot AND re-points lastSaveUndo.note at the
+  confirmed note (the stale-pending-object regression); failure revert into an
+  empty form vs. leave-new-typing-untouched; _flagInFlight drops a double
+  toggle to ONE RPC (INV-56) + flag-failure revert; M5 nav-away-during-dept-
+  fetch suppresses the notes load; transactional Save & Compose cancel sets
+  _deleteOnConfirm and the save-confirm fires the rollback deleteCallNote.
+  Harness add: spec-accurate isContentEditable getter on HTMLElement.prototype
+  (jsdom returns undefined; the shipped cnGetFieldValue_/cnSetFieldValue_ branch
+  on it for the .ce divs). DOM suite 22→31; pure harness still 122. Harness
+  build-out COMPLETE (all 3 phases). NEXT: Cycle 3 audit-findings backlog
+  (S1.1/S2.1/S1.3/C1/C4) awaiting operator selection, or close the cycle.
 
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
@@ -253,8 +265,7 @@ Updated: 2026-06-16
 Cycle 3 OPENED (/broad-scan). DOM-lifecycle harness Phase 1 (boot infra)
 SHIPPED on `claude/affectionate-cori-90q3ap`: test/client/dom/{boot,runDom}.js,
 jsdom devDependency, CI wired, README + package-lock. `npm test` green (122 pure
-+ 22 DOM after Phase 2). NEXT: Phase 3 (optimistic-UI/RPC-sequencing suite) in
-dom/runDom.js. Audit findings backlog
++ 31 DOM after Phase 3 — harness COMPLETE). NEXT: Cycle 3 audit-findings backlog
 (S1.1 tz coupling, S2.1 fail-open expiry, S1.3, C1, C4) NOT yet implemented —
 awaiting operator selection.
 

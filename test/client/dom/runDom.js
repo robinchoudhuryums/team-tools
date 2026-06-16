@@ -285,3 +285,121 @@ test('KB drawer survives a #view-area re-render (mounted on body, not #view-area
   assert.ok(h.$('#kb-drawer'), 'drawer node still present after #view-area was rewritten');
   assert.strictEqual(h.read('KB_DRAWER.open'), true, 'drawer still open');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PHASE 3 — optimistic-UI / RPC sequencing (Call Notes hot path)
+// ═════════════════════════════════════════════════════════════════════════════
+// Render the Call Notes Log view with an optional set of confirmed notes.
+function bootLog(notes) {
+  const h = boot();
+  h.bootShell();
+  h.window.enterTool('callNotes');
+  h.run.flushSuccess({ departments: [], suggestionsByDept: {}, defaultSuggestions: [], flags: {}, emailTemplates: [], externalLinks: [] }, 'getCallNotesDepartments');
+  h.run.flushSuccess({ notes: notes || [], autoCopyFormat: '', timezone: 'Asia/Kolkata' }, 'getMyCallNotes');
+  return h;
+}
+function noteFixture(over) {
+  return Object.assign({
+    noteId: 'n1', timestamp: '2026-06-16 10:00:00', dateLocal: '2026-06-16',
+    callback: '', caller: 'Jane', relationship: '', patientAndTrx: 'P1',
+    issue: 'orig issue', transferredTo: '', resolution: 'done',
+    flagType: '', resolved: false, emailedAt: '', emailDepartments: '',
+    subform: '', subformData: null,
+  }, over || {});
+}
+
+section('DOM harness — optimistic submit (Call Notes)');
+
+test('empty form: submit shows a warning and fires NO RPC', () => {
+  const h = bootLog();
+  h.window.cnSubmitActiveForm_();
+  assert.strictEqual(h.run.pending('submitCallNote').length, 0, 'no submitCallNote queued');
+});
+
+test('submit is optimistic: pending card appears + form clears BEFORE the RPC resolves', () => {
+  const h = bootLog();
+  h.setField('cn-fld-issue', 'Patient called about a refill');
+  h.window.cnSubmitActiveForm_();
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 1, 'pending note in the stack');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes[0]._pending'), true, 'marked _pending');
+  assert.ok(/^pending_/.test(h.read('CN_STATE.rollingNotes[0].noteId')), 'temp pending_ id');
+  assert.strictEqual(h.run.pending('submitCallNote').length, 1, 'submitCallNote queued');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'form cleared optimistically');
+});
+
+test('submit success: array slot REPLACED + held undo ref re-pointed (stale-pending bug)', () => {
+  const h = bootLog();
+  h.setField('cn-fld-issue', 'Refill request');
+  h.window.cnSubmitActiveForm_();
+  // The regression: lastSaveUndo held the pending object; the array slot is
+  // replaced on confirm, so the held ref must be re-pointed at res.note.
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-1', issue: 'Refill request', _pending: false }) }, 'submitCallNote');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes[0].noteId'), 'real-1', 'confirmed note in the slot');
+  assert.ok(!h.read('CN_STATE.rollingNotes[0]._pending'), 'no longer pending');
+  assert.strictEqual(h.read('CN_STATE.lastSaveUndo.note.noteId'), 'real-1', 'undo ref re-pointed at the confirmed note');
+});
+
+test('submit failure: reverts and restores the snapshot into an EMPTY form', () => {
+  const h = bootLog();
+  h.setField('cn-fld-issue', 'Snapshot me');
+  h.window.cnSubmitActiveForm_();
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 1);
+  h.run.flushFailure(new Error('network down'), 'submitCallNote');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 0, 'pending card removed');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Snapshot me', 'typed note restored to the (empty) form');
+});
+
+test('submit failure: does NOT clobber new typing started during the in-flight save', () => {
+  const h = bootLog();
+  h.setField('cn-fld-issue', 'First note');
+  h.window.cnSubmitActiveForm_();                  // optimistic clear
+  h.setField('cn-fld-issue', 'Second note in progress');   // rep starts the next call
+  h.run.flushFailure(new Error('boom'), 'submitCallNote');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Second note in progress', 'in-progress typing left untouched');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 0, 'failed pending card still removed');
+});
+
+section('DOM harness — flag toggle in-flight guard + revert (INV-56)');
+
+test('double flag-toggle while the first RPC is in flight fires exactly ONE RPC', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', flagType: '' })]);
+  h.window.cnToggleFlag_('n1', 'action');
+  h.window.cnToggleFlag_('n1', 'action');   // dropped by _flagInFlight
+  assert.strictEqual(h.run.pending('setCallNoteFlag').length, 1, 'only one setCallNoteFlag in flight');
+  assert.strictEqual(h.read("CN_STATE.rollingNotes[0]._flagInFlight"), true, 'guard set');
+});
+
+test('flag toggle reverts the optimistic flagType on server failure', () => {
+  const h = bootLog([noteFixture({ noteId: 'n1', flagType: '' })]);
+  h.window.cnToggleFlag_('n1', 'action');
+  assert.strictEqual(h.read("CN_STATE.rollingNotes[0].flagType"), 'action', 'optimistically flagged');
+  h.run.flushFailure(new Error('save fail'), 'setCallNoteFlag');
+  assert.strictEqual(h.read("CN_STATE.rollingNotes[0].flagType"), '', 'reverted to prior flagType');
+  assert.ok(!h.read("CN_STATE.rollingNotes[0]._flagInFlight"), 'in-flight guard cleared');
+});
+
+section('DOM harness — stale-callback + transactional Save & Compose');
+
+test('nav-away during the dept-config fetch suppresses the notes load (M5 guard)', () => {
+  const h = boot();
+  h.bootShell();
+  h.window.enterTool('callNotes');           // requestedView captured = 'callNotes'
+  h.read('currentView = "clock"');           // simulate nav-away mid fetch
+  h.run.flushSuccess({ departments: [], suggestionsByDept: {}, defaultSuggestions: [], flags: {}, emailTemplates: [], externalLinks: [] }, 'getCallNotesDepartments');
+  assert.strictEqual(h.run.pending('getMyCallNotes').length, 0, 'notes load never fired after nav-away');
+});
+
+test('Save & Compose: cancelling the composer while the save is in flight rolls the save back', () => {
+  const h = bootLog();
+  h.setField('cn-fld-issue', 'Compose me');
+  h.window.cnSubmitActiveForm_({ keepForm: true });   // transactional: composeFlow set, form KEPT
+  assert.ok(h.read('CN_STATE.composeFlow') , 'composeFlow armed');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Compose me', 'form text kept (transactional)');
+  h.window.cnCloseComposerModal_();                   // cancel while save in flight
+  assert.strictEqual(h.read('CN_STATE.rollingNotes[0]._deleteOnConfirm'), true, 'rollback deferred to save-confirm');
+  assert.strictEqual(h.read('CN_STATE.composeFlow'), null, 'composeFlow detached');
+  h.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'real-x', _pending: false }) }, 'submitCallNote');
+  assert.strictEqual(h.run.pending('deleteCallNote').length, 1, 'rollback delete fired on confirm');
+  h.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 0, 'rolled-back note removed from the stack');
+});
