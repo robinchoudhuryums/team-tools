@@ -2,11 +2,36 @@
 
 ## Current
 Cycle: 4
-Phase: implement (broad-implement complete — pushed, awaiting deploy/verify)
-Scope: broad (Cycle 4 audit findings M-1, L-1, L-2, L-3, L-11)
+Phase: implement (broad-implement + 3 feature builds complete — pushed)
+Scope: broad findings (M-1,L-1,L-2,L-3,L-11) + features #5/#4/#3
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
 Updated: 2026-06-17
+
+## Feature builds this session (all on claude/affectionate-cori-q4d2hf, pushed)
+- #5 Tag-trend analytics — getCallNotesTagTrends (mgr-gated, cached, PHI-free);
+  pure cnTrendWeekStarts_/cnTagTrendsFromEvents_ (Node-pinned); Admin "Tag Trends"
+  panel (#cn-admin-trends). Commit 3be0017.
+- #4 KB review-due — KB schema +ReviewedAt/ReviewedBy (back-compat header widen);
+  kbSaveItem stamps review on save (edit=review); kbMarkReviewed (gated+locked);
+  kbGetReviewDue (gated, usage-sorted via factored kbUsageCounts_); 90-day
+  threshold (CONFIG.KB.REVIEW_DUE_DAYS); manager "Review due" block. Commit a31ff86.
+- #3 Coverage planner — getCoveragePlan (gated, 1–14d, PHI-free, per-tz v1,
+  Pending=tentative); pure coverageBucketHours_ (Node-pinned); managerOnly
+  `coverage` tab + enterCoverageView. CONFIG.COVERAGE_MIN_STAFF=2. Commit b876e0a.
+- All four new endpoints added to test_managerGates_rejectNonManager. Pure
+  harness 128→133 green. DOM harness needs npm ci (CI runs it).
+
+## DOC UPDATES NEEDED (run /sync-docs) — beyond the M-1/L-1/L-2 items below
+- Add getCallNotesTagTrends / kbGetReviewDue / kbMarkReviewed / getCoveragePlan to
+  the INV-31 manager-gated list + the "Manager-only operations" gotcha list.
+- New invariants worth adding: tag-trends (cached/bounded/PHI-free), KB review-due
+  (edit=review semantics, 90d, legacy UpdatedAt fallback), coverage planner
+  (per-tz v1, Pending=tentative, pure bucketing).
+- New operator/CONFIG knobs: CONFIG.KB.REVIEW_DUE_DAYS (90), CONFIG.COVERAGE_MIN_STAFF
+  (2); new Script Property cache key cn_tag_trends_v1; KB schema gained
+  ReviewedAt/ReviewedBy (header self-heals on first post-deploy KB read/save).
+- New regression scenarios for #3/#4/#5.
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 4 /broad-scan ran 2026-06-17: NO Critical/High (mature-codebase signal,
