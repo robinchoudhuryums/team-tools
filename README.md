@@ -9,13 +9,18 @@ Script project synced via [clasp](https://github.com/google/clasp).
   Hosts six modules today, registered side-by-side in the `TOOLS`
   registry in `script_core.html`:
   - **Time Clock** — cross-timezone time tracking, PTO requests,
-    manager dashboard, ADP-format export.
+    manager dashboard, ADP-format export, and a manager-only Coverage
+    planner (forward staffing across timezones with PTO overlaid and
+    understaffed manager-tz hours flagged).
   - **Call Notes** — rolling-note panel for CSR call logging. Each
     rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
     are a separate two-stage flow with preview gate. Three flag
     types (action / training / review) with EOD reminders for
-    unresolved action flags and weekly manager digests.
+    unresolved action flags and weekly manager digests. A manager
+    Admin tab adds tag taxonomy + a weekly tag-trend panel (which
+    issue types are spiking), department/tax config, and compliance
+    audit.
   - **Metrics** — CDR integration reading DQE Historical Data from
     the CDR Report spreadsheet. Two tabs: "My Stats" (self-view —
     today's KPIs, 30-day % Answered trend, note-to-call coverage)
@@ -37,7 +42,8 @@ Script project synced via [clasp](https://github.com/google/clasp).
     lookup from any tool, with an optional AI guidance card
     (Anthropic API, whitelisted call facets only — no note text ever
     leaves the app; feature-flagged off by default). Managers edit
-    inline; reps browse read-only. PHI-free by policy.
+    inline; reps browse read-only, and get a usage-sorted "Review due"
+    queue for re-confirming stale articles. PHI-free by policy.
   - **Training & Employee Docs** — manager-assigned training built on
     the Reference content layer: assign any KB article/embed to
     employees (or everyone) with an optional due date; reps work a
