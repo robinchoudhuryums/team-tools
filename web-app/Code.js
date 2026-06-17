@@ -2587,11 +2587,148 @@ function getCallNotesTagTaxonomy() {
 
 /** Drops the tag-taxonomy whole-result cache so the next Admin-tab load
  *  recomputes. Called by the tag-admin endpoints (rename/merge/archive) so a
- *  manager sees their change reflected immediately rather than after the TTL. */
+ *  manager sees their change reflected immediately rather than after the TTL.
+ *  Also drops the tag-TRENDS cache (#5) since a rename/merge/archive
+ *  re-attributes counts there too. */
 function invalidateCnTaxonomyCache_() {
-  try { CacheService.getScriptCache().remove(CN_TAXONOMY_CACHE_KEY); }
-  catch (e) { /* best-effort */ }
+  try {
+    const c = CacheService.getScriptCache();
+    c.remove(CN_TAXONOMY_CACHE_KEY);
+    c.remove(CN_TAG_TRENDS_CACHE_KEY);
+  } catch (e) { /* best-effort */ }
 }
+
+// ── Tag-trend analytics (#5 — manager Admin "Tag Trends" panel) ─────────────
+// Turns the same per-rep tag scan the taxonomy uses into a weekly time series
+// so a manager can see which issue types are spiking. Manager-gated, read-only,
+// cached, PHI-free (tags + dates only). The week-bucketing math is factored
+// into the pure cnTrendWeekStarts_ / cnTagTrendsFromEvents_ (Node-pinned).
+const CN_TAG_TRENDS_CACHE_KEY = 'cn_tag_trends_v1';
+const CN_TAG_TRENDS_CACHE_TTL = 300;   // 5 min — same cadence as the taxonomy
+const CN_TAG_TRENDS_WEEKS = 12;        // trailing window
+const CN_TAG_TRENDS_TOPK = 12;         // top tags by total (bounds payload + chart)
+
+/** yyyy-MM-dd → integer days since the Unix epoch (UTC, tz-safe — never a
+ *  local-time Date), or null on a malformed date. The inverse is
+ *  cnDayNumToIso_. Pure. */
+function cnIsoToDayNum_(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000) : null;
+}
+function cnDayNumToIso_(n) {
+  const d = new Date(n * 86400000);
+  return d.getUTCFullYear() + '-' +
+    ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' +
+    ('0' + d.getUTCDate()).slice(-2);
+}
+
+/** Returns `weeks` Monday-anchored week-start day-numbers (oldest→newest), the
+ *  last being the Monday of refIso's week. Pure. */
+function cnTrendWeekStarts_(refIso, weeks) {
+  const ref = cnIsoToDayNum_(refIso);
+  if (ref == null) return [];
+  const wd = (((ref + 4) % 7) + 7) % 7;       // 0=Sun … 6=Sat (epoch day 0 = Thu)
+  const monday = ref - ((wd + 6) % 7);        // Monday of ref's week
+  const out = [];
+  for (let i = (weeks | 0) - 1; i >= 0; i--) out.push(monday - i * 7);
+  return out;
+}
+
+/** Buckets {tag,date} events into `weeks` Monday weeks ending at refIso's week.
+ *  Returns { weekStarts:[iso…], series:[{tag, counts:[…], total, delta}] }
+ *  sorted by total desc, truncated to topK. Events outside the window are
+ *  dropped. Pure (no Sheets / Date-local). */
+function cnTagTrendsFromEvents_(events, refIso, weeks, topK) {
+  weeks = Math.max(1, weeks | 0);
+  const starts = cnTrendWeekStarts_(refIso, weeks);
+  if (!starts.length) return { weekStarts: [], series: [] };
+  const first = starts[0];
+  const counts = {};   // tag → int[weeks]
+  (events || []).forEach(function (ev) {
+    const d = cnIsoToDayNum_(ev && ev.date);
+    if (d == null) return;
+    const idx = Math.floor((d - first) / 7);
+    if (idx < 0 || idx >= weeks) return;
+    const tag = String((ev && ev.tag) || '').trim().toLowerCase();
+    if (!tag) return;
+    if (!counts[tag]) { counts[tag] = []; for (let k = 0; k < weeks; k++) counts[tag].push(0); }
+    counts[tag][idx]++;
+  });
+  let series = Object.keys(counts).map(function (tag) {
+    const c = counts[tag];
+    let total = 0;
+    for (let i = 0; i < c.length; i++) total += c[i];
+    const delta = c[weeks - 1] - (weeks >= 2 ? c[weeks - 2] : 0);
+    return { tag: tag, counts: c, total: total, delta: delta };
+  });
+  series.sort(function (a, b) { return b.total - a.total || a.tag.localeCompare(b.tag); });
+  if (topK > 0) series = series.slice(0, topK);
+  return { weekStarts: starts.map(cnDayNumToIso_), series: series };
+}
+
+/** Manager Admin "Tag Trends" — weekly per-tag counts over the trailing
+ *  CN_TAG_TRENDS_WEEKS. Manager-gated (INV-02/31), read-only, cached, PHI-free.
+ *  Reuses the taxonomy's 2-column scan (SubformData tags + DateLocal) but
+ *  buckets by week instead of total+lastSeen; archived tags are excluded; the
+ *  scan is window-pre-filtered so the events array stays bounded. */
+function getCallNotesTagTrends() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(CN_TAG_TRENDS_CACHE_KEY);
+    if (cached) { try { return JSON.parse(cached); } catch (e) { /* recompute */ } }
+
+    const weeks = CN_TAG_TRENDS_WEEKS;
+    const refIso = fmtDate_(new Date());   // CONFIG.TIMEZONE "today" — manager-facing aggregate
+    const starts = cnTrendWeekStarts_(refIso, weeks);
+    const windowStartIso = starts.length ? cnDayNumToIso_(starts[0]) : refIso;
+    const archivedSet = getArchivedTagsSet_();
+    const roster = getEmployeeRosterRows_();
+    const events = [];
+    let repsScanned = 0;
+    for (let i = 1; i < roster.length; i++) {
+      const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      try {
+        const repEmp = { id: String(roster[i][EMP.ID]).trim(), callNotesSheetId: String(sheetId).trim() };
+        const sheet = getCallNotesSheet_(repEmp);
+        repsScanned++;
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          const rowN = lastRow - 1;
+          const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, rowN, 1).getValues();
+          const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, rowN, 1).getValues();
+          for (let j = 0; j < rowN; j++) {
+            const subRaw = subCol[j][0];
+            if (!subRaw) continue;
+            let sub = null;
+            try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+            if (!sub || !Array.isArray(sub.tags) || !sub.tags.length) continue;
+            const dateLocal = normalizeDate_(dateCol[j][0]);
+            // Window pre-filter (yyyy-MM-dd lexicographic = chronological) keeps
+            // the events array bounded to the trailing window.
+            if (!dateLocal || dateLocal < windowStartIso) continue;
+            sub.tags.forEach(function (t) {
+              const tag = String(t || '').trim().toLowerCase();
+              if (!tag || archivedSet[tag]) return;   // archived tags excluded from trends
+              events.push({ tag: tag, date: dateLocal });
+            });
+          }
+        }
+      } catch (e) { /* skip unreachable rep sheet */ }
+    }
+    const out = cnTagTrendsFromEvents_(events, refIso, weeks, CN_TAG_TRENDS_TOPK);
+    out.weeks = weeks;
+    out.repsScanned = repsScanned;
+    try {
+      const payload = JSON.stringify(out);
+      if (payload.length <= 90000) cache.put(CN_TAG_TRENDS_CACHE_KEY, payload, CN_TAG_TRENDS_CACHE_TTL);
+    } catch (e) { /* return uncached */ }
+    return out;
+  } catch (err) { return { error: err.message }; }
+}
+
 
 /** Rep-callable (caller-scoped, read-only) tag-suggestion source for the Log
  *  view's autocomplete datalist (B3). Returns the UNIQUE, non-archived tags the

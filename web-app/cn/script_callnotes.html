@@ -377,6 +377,46 @@
     .cn-tax-actions { justify-content: flex-start; }
   }
 
+  /* ─── ADMIN TAG TRENDS PANEL (#5) ────────────────────────────────── */
+  .cn-trend-head,
+  .cn-trend-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 50px 70px;
+    gap: 12px; align-items: center;
+    padding: 6px 0;
+    font-family: var(--ui); font-size: 12px;
+  }
+  .cn-trend-head {
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 4px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+  }
+  .cn-trend-row { border-bottom: 1px dashed var(--line); }
+  .cn-trend-row:last-child { border-bottom: none; }
+  .cn-trend-tag {
+    font-family: var(--mono); font-weight: 600; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cn-trend-spark-cell { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+  .cn-trend-spark { display: block; width: 100%; height: 22px; }
+  .cn-trend-total {
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    text-align: right; color: var(--ink);
+  }
+  .cn-trend-deltacell { text-align: right; }
+  .cn-trend-delta {
+    font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums;
+  }
+  .cn-trend-delta.up   { color: var(--danger-deep); }   /* a rising issue-tag is a WARNING signal */
+  .cn-trend-delta.down { color: var(--success-deep); }
+  .cn-trend-delta.flat { color: var(--muted-2); }
+  @media (max-width: 720px) {
+    .cn-trend-head,
+    .cn-trend-row { grid-template-columns: 1fr auto; }
+    .cn-trend-spark-cell { display: none; }
+  }
+
   /* ─── COMPLIANCE AUDIT PANEL (#3) ────────────────────────────────── */
   .cn-audit-list { display: flex; flex-direction: column; }
   .cn-audit-row {
@@ -6665,6 +6705,7 @@ function enterCallNotesAdminView(area) {
     compactHeader +
     (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'KPIs, tag taxonomy, and department/tax config. Changes take effect immediately (no redeploy needed).')) +
     '<div id="cn-admin-augment"></div>' +
+    '<div id="cn-admin-trends"></div>' +
     '<div id="cn-admin-audit"></div>' +
     '<div id="cn-admin-health"></div>' +
     '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>';
@@ -6683,6 +6724,8 @@ function enterCallNotesAdminView(area) {
   // alongside the existing dept/tax body. Two parallel server calls; either
   // can fail without taking down the existing controls.
   cnLoadAdminAugment_();
+  // #5 — tag-trend analytics panel. Independent load; failure stays contained.
+  cnLoadTagTrends_();
   // #3 — compliance audit panel (call-note AuditLog search). Independent of
   // the augment + body loads; failure stays contained to its own slot.
   cnLoadAuditPanel_();
@@ -6809,6 +6852,82 @@ function cnRenderTagRow_(t, maxCount) {
     + '<div class="cn-tax-last">' + esc(t.lastSeen || '—') + '</div>'
     + '<div class="cn-tax-actions">' + actionsHtml + '</div>'
   + '</div>';
+}
+
+/** #5 — fetch + render the Tag Trends panel into #cn-admin-trends. Independent
+ *  of the augment/audit/health loads; a failure leaves the panel empty rather
+ *  than taking down the rest of the Admin tab (the contained-failure pattern). */
+function cnLoadTagTrends_() {
+  const slot = document.getElementById('cn-admin-trends');
+  if (!slot) return;
+  slot.innerHTML = '<div class="spinner" style="margin:14px auto"></div>';
+  google.script.run
+    .withSuccessHandler(function (data) {
+      if (currentView !== 'callNotesAdmin') return;
+      slot.innerHTML = cnRenderTagTrendsHtml_(data);
+    })
+    .withFailureHandler(function () {
+      if (currentView !== 'callNotesAdmin') return;
+      slot.innerHTML = '';   // contained failure — no panel, no error noise
+    })
+    .getCallNotesTagTrends();
+}
+
+/** #5 — inline sparkline (SVG polyline) of a tag's weekly counts, scaled to the
+ *  panel-wide max so rows are comparable. Self-contained (doesn't couple to the
+ *  Metrics partial's sparkline helper). */
+function cnTrendSparkSvg_(counts, maxVal) {
+  const W = 120, H = 22, n = counts.length;
+  if (n < 2) return '';
+  const max = maxVal > 0 ? maxVal : 1;
+  const pts = counts.map(function (v, i) {
+    const x = (i / (n - 1)) * (W - 2) + 1;
+    const y = H - 1 - (Math.max(0, v) / max) * (H - 2);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  return '<svg class="cn-trend-spark" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+    '<polyline points="' + pts + '" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
+    '</svg>';
+}
+
+/** #5 — render the Tag Trends panel: per-tag sparkline + total + this-week-vs-
+ *  prior delta over the trailing window. Stays quiet (empty) when there's
+ *  nothing to show — the taxonomy table above already covers the empty case.
+ *  Every tag label esc()'d (rep free-text → the Metrics/CN escaping gotcha). */
+function cnRenderTagTrendsHtml_(data) {
+  if (!data || !Array.isArray(data.series) || data.series.length === 0) {
+    if (data && data.error) {
+      return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:14px 20px;margin-bottom:20px;max-width:900px;font-size:12px;color:var(--muted)">Tag trends unavailable: ' + esc(data.error) + '</div>';
+    }
+    return '';
+  }
+  const weeks = data.weeks || (data.weekStarts ? data.weekStarts.length : 0);
+  const ws = data.weekStarts || [];
+  const firstLabel = ws.length ? String(ws[0]).substring(5) : '';
+  const lastLabel = ws.length ? String(ws[ws.length - 1]).substring(5) : '';
+  const maxVal = data.series.reduce(function (m, s) {
+    const sm = (s.counts || []).reduce(function (a, b) { return Math.max(a, b); }, 0);
+    return Math.max(m, sm);
+  }, 0);
+  const rows = data.series.map(function (s) {
+    const d = s.delta || 0;
+    const deltaHtml = d > 0
+      ? '<span class="cn-trend-delta up">▲ ' + d + '</span>'
+      : (d < 0 ? '<span class="cn-trend-delta down">▼ ' + Math.abs(d) + '</span>'
+               : '<span class="cn-trend-delta flat">±0</span>');
+    return '<div class="cn-trend-row">' +
+      '<div class="cn-trend-tag" title="' + esc(s.tag) + '">' + esc(s.tag) + '</div>' +
+      '<div class="cn-trend-spark-cell">' + cnTrendSparkSvg_(s.counts || [], maxVal) + '</div>' +
+      '<div class="cn-trend-total">' + (s.total || 0) + '</div>' +
+      '<div class="cn-trend-deltacell">' + deltaHtml + '</div>' +
+    '</div>';
+  }).join('');
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+    '<div class="day-section-label" style="margin-bottom:10px">' + icon('chart', 14) + ' Tag Trends · last ' + esc(String(weeks)) + ' weeks</div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Weekly count of each tag across all enrolled reps (archived tags excluded). Δ compares this week to the prior week — a rising tag flags an emerging issue type.</div>' +
+    '<div class="cn-trend-head"><div class="cn-trend-tag">Tag</div><div class="cn-trend-spark-cell">' + esc(firstLabel) + ' → ' + esc(lastLabel) + '</div><div class="cn-trend-total">Total</div><div class="cn-trend-deltacell">Δ wk</div></div>' +
+    rows +
+  '</div>';
 }
 
 /** Round 2 follow-on — wires click delegation for the tag-table action

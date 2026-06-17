@@ -1386,5 +1386,50 @@ test('TOUR_STEPS view keys all resolve in the TOOLS registry', () => {
   });
 });
 
+// Tag-trend bucketing (#5) — the pure week-bucketing math behind the manager
+// Admin "Tag Trends" panel. Factored out of getCallNotesTagTrends so the
+// boundary + bucketing + sort logic is pinnable without a spreadsheet.
+console.log('\nCode.js — tag-trend bucketing (#5: cnTrendWeekStarts_ / cnTagTrendsFromEvents_)');
+['cnIsoToDayNum_', 'cnDayNumToIso_', 'cnTrendWeekStarts_', 'cnTagTrendsFromEvents_'].forEach((fn) =>
+  vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn }));
+const cnTrendWeekStarts_ = sb.cnTrendWeekStarts_;
+const cnTagTrendsFromEvents_ = sb.cnTagTrendsFromEvents_;
+
+test('cnTrendWeekStarts_ returns N Monday-anchored, 7-apart, ascending starts', () => {
+  // 2026-06-17 is a Wednesday → its week's Monday is 2026-06-15.
+  const ws = cnTrendWeekStarts_('2026-06-17', 4);
+  assert.strictEqual(ws.length, 4);
+  for (let i = 1; i < ws.length; i++) assert.strictEqual(ws[i] - ws[i - 1], 7, 'weeks are 7 days apart');
+  assert.strictEqual(sb.cnDayNumToIso_(ws[ws.length - 1]), '2026-06-15', 'last start = Monday of ref week');
+});
+
+test('cnTagTrendsFromEvents_ buckets by week, sorts by total, computes delta, drops out-of-window', () => {
+  const ref = '2026-06-17';                  // week Monday = 2026-06-15 (idx 3 of 4)
+  const events = [
+    { tag: 'shipping', date: '2026-06-16' }, // this week
+    { tag: 'shipping', date: '2026-06-15' }, // this week
+    { tag: 'shipping', date: '2026-06-09' }, // prior week
+    { tag: 'billing',  date: '2026-06-16' }, // this week
+    { tag: 'old',      date: '2026-01-01' }, // outside the 4-week window → dropped
+    { tag: '',         date: '2026-06-16' }, // blank tag → ignored
+  ];
+  const out = cnTagTrendsFromEvents_(events, ref, 4, 12);
+  assert.strictEqual(out.weekStarts.length, 4);
+  assert.strictEqual(out.series.length, 2, 'only in-window, non-blank tags');
+  assert.strictEqual(out.series[0].tag, 'shipping', 'highest total sorts first');
+  assert.strictEqual(out.series[0].total, 3);
+  assert.strictEqual(out.series[0].counts[3], 2, 'this-week bucket');
+  assert.strictEqual(out.series[0].counts[2], 1, 'prior-week bucket');
+  assert.strictEqual(out.series[0].delta, 1, 'delta = this wk − prior wk');
+  assert.ok(!out.series.some((s) => s.tag === 'old' || s.tag === ''), 'out-of-window / blank excluded');
+});
+
+test('cnTagTrendsFromEvents_ honors topK and tolerates empty input', () => {
+  assert.deepStrictEqual(cnTagTrendsFromEvents_([], '2026-06-17', 4, 12).series, []);
+  const many = [];
+  for (let i = 0; i < 20; i++) many.push({ tag: 'tag' + ('0' + i).slice(-2), date: '2026-06-16' });
+  assert.strictEqual(cnTagTrendsFromEvents_(many, '2026-06-17', 4, 5).series.length, 5, 'topK caps the series');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
