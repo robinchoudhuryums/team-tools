@@ -24,9 +24,26 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
 - INV-128/129/130 proposed for the next verification pass (M-1 per-row gate,
   KB-AI race-safe spend, getMyMetrics endpoint cache).
 
+## Post-reflect additions (pushed, on q4d2hf — merge when ready)
+- runAllTests triage (operator ran it; ADP sheet tz = America/Los_Angeles ≠
+  CONFIG Asia/Kolkata): #3 metrics_getMyMetrics_cdrUnavailableErrors FIXED
+  (L-1 endpoint cache now bypassed under _TEST_OVERRIDE_CDR_SS_ID, commit
+  0557169); #1/#2/#4 (config_adpSheetTzMatchesConfig / publicForm_tokenLifecycle
+  / training_assignCompleteFlow) are ONE environmental root cause — the ADP
+  sheet tz ≠ CONFIG.TIMEZONE → OPERATOR sets the sheet tz to Asia/Kolkata (or
+  reconciles CONFIG), re-run setupTestEnvironment + runAllTests.
+- Storage Health panel (#1, commit dee6d96): getStorageHealth (mgr-gated,
+  read-only, PHI-free) — all 7 stores' configured/reachable/tz-vs-CONFIG in the
+  Admin tab; + operator spreadsheet-map table (#3) in CLAUDE.md. Spreadsheet
+  consolidation assessed = NOT advised (boundaries deliberate); consolidated the
+  MANAGEMENT surface instead. Operator doing the Drive-folder grouping (#2).
+
 ## Pending / not yet done
 - OPERATOR DEPLOY (still): `cd web-app && clasp push -f` + New version; then
-  runAllTests() in the editor (exercises the new gate cases + M-1 test).
+  runAllTests() in the editor.
+- OPERATOR: fix the ADP spreadsheet timezone (Asia/Kolkata) to clear the 3
+  tz-drift test failures; confirm whether the failing run was a TEST copy or
+  prod (if prod, the LA tz is a live data-integrity hazard).
 - 90q3ap straggler 196948c (cycle-4 metrics row) — reconcile if/when merged.
 
 ## P1 hardening batch (commit 1732fa2)
