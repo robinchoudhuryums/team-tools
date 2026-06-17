@@ -304,7 +304,7 @@ change (INV-08/32), best-effort email (INV-14).
 | T1 | Training core: assignments, mark-complete, rep checklist, manager matrix, notifications | ~1 session |
 | T2 | Quizzes: schema + editor, server grading, attempts, auto-completion | ~1 session |
 | T3 | Employee Docs: issue (markdown-frozen + converter reuse), view, sign, verify, dashboard | ~1–1.5 sessions |
-| T4 (optional) | Overdue digests, Drive snapshot-to-PDF signing, quiz analytics, re-certification schedules | on demand |
+| T4 (optional) | Overdue digests ✅ + quiz analytics ✅ (shipped); Drive snapshot-to-PDF signing + re-certification schedules still on demand | partial |
 
 All gates cleared 2026-06-12 (§9). Build order: T1 → T2 → T3.
 One operator prerequisite for T3: fill the new Employees column M

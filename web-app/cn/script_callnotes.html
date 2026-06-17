@@ -259,7 +259,29 @@
     .cnv-layout { grid-template-columns: 1fr; }
   }
   :root[data-compact] .cnv-layout { grid-template-columns: 1fr; gap: 10px; }
-  :root[data-compact] .rail-flags { grid-template-columns: 1fr; }
+
+  /* #4 — compact pop-out optimization: icon-only flag rail + a sticky,
+     collapsible save bar so the note template stays "anchored" and the tools
+     are reachable without a manual resize. All gated to data-compact; normal
+     (wide) mode is untouched. The collapse chevron only exists in compact. */
+  .cn-save-collapse { display: none; }
+  :root[data-compact] .rail-flags { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  :root[data-compact] .flag-btn { justify-content: center; padding: 8px 4px; }
+  :root[data-compact] .flag-btn .flag-lbl { display: none; }   /* icon-only — title + aria-label carry the meaning */
+  :root[data-compact] .flag-btn svg { width: 15px; height: 15px; }
+  :root[data-compact] .cn-save-collapse {
+    display: inline-flex; align-items: center; justify-content: center;
+    appearance: none; cursor: pointer; border: none; background: transparent;
+    color: var(--muted); padding: 0 2px; margin-left: 4px;
+  }
+  :root[data-compact] .cn-save-collapse:hover { color: var(--ink); }
+  :root[data-compact] #cn-save-card {
+    position: sticky; bottom: 8px; z-index: 5;
+    box-shadow: var(--shadow-md);
+  }
+  :root[data-compact] #cn-save-card.collapsed .rail-actions { display: none; }
+  :root[data-compact] #cn-save-card.collapsed .sub { display: none; }
+  :root[data-compact] #cn-save-card.collapsed .cn-save-collapse svg { transform: rotate(180deg); }
 
   /* ─── EMAIL COMPOSER TAB STRIP (Round 2 modal-tab merge) ──────────
      Shared segmented control rendered at the top of BOTH the department
@@ -2260,10 +2282,10 @@ function cnRenderActiveForm_() {
         <div class="rail-card">
           <h4><span>Flags</span><span class="sub">categorize</span></h4>
           <div class="rail-flags" role="group" aria-label="Flag this note">
-            <button type="button" class="flag-btn action"   data-flag="action"   title="Flag for action (follow-up)">${icon('flag', 12)} Action</button>
-            <button type="button" class="flag-btn training" data-flag="training" title="Flag for training (need clarification)">${icon('bulb', 12)} Training</button>
-            <button type="button" class="flag-btn review"   data-flag="review"   title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)} Review</button>
-            <button type="button" class="flag-btn urgent"   data-flag="urgent"   title="Mark urgent">${icon('warning', 12)} Urgent</button>
+            <button type="button" class="flag-btn action"   data-flag="action"   aria-label="Flag for action" title="Flag for action (follow-up)">${icon('flag', 12)}<span class="flag-lbl">Action</span></button>
+            <button type="button" class="flag-btn training" data-flag="training" aria-label="Flag for training" title="Flag for training (need clarification)">${icon('bulb', 12)}<span class="flag-lbl">Training</span></button>
+            <button type="button" class="flag-btn review"   data-flag="review"   aria-label="Review candidate" title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)}<span class="flag-lbl">Review</span></button>
+            <button type="button" class="flag-btn urgent"   data-flag="urgent"   aria-label="Mark urgent" title="Mark urgent">${icon('warning', 12)}<span class="flag-lbl">Urgent</span></button>
           </div>
         </div>
 
@@ -2278,8 +2300,12 @@ function cnRenderActiveForm_() {
           <div class="rail-tag-suggest" id="cn-tag-suggest"></div>
         </div>
 
-        <div class="rail-card">
-          <h4><span>Save the note</span><span class="sub">${esc(mod)}⇧C saves</span></h4>
+        <div class="rail-card" id="cn-save-card">
+          <h4><span>Save the note</span><span class="sub">${esc(mod)}⇧C saves</span>
+            <button type="button" class="cn-save-collapse" title="Collapse / expand actions"
+                    aria-label="Collapse or expand the save actions"
+                    onclick="document.getElementById('cn-save-card').classList.toggle('collapsed')">${icon('chevronDown', 14)}</button>
+          </h4>
           <div class="rail-actions">
             <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM (${esc(mod)}+Shift+C)">
               <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}⇧C</span>
@@ -3537,6 +3563,21 @@ function cnToggleMoreMenu_(btn) {
   menu.style.display = open ? 'none' : 'inline-flex';
 }
 
+/** Caller display for note cards (view-only — the CRM paste/email keep
+ *  Relationship as its own structured line). Bold caller name, then the
+ *  relationship in parentheses (muted, non-bold), suppressed when blank or
+ *  "self" (case-insensitive). Falls back to patient/TRX, then "unnamed".
+ *  Shared by the rep card + the manager read-only card. */
+function cnCallerDisplay_(note) {
+  if (!note.caller) {
+    return note.patientAndTrx ? esc(note.patientAndTrx) : '<em style="color:var(--muted)">unnamed</em>';
+  }
+  const rel = (note.relationship || '').trim();
+  const relBit = (rel && rel.toLowerCase() !== 'self')
+    ? ` <span class="cn-card-rel" style="color:var(--muted);font-weight:400;">(${esc(rel)})</span>` : '';
+  return esc(note.caller) + relBit;
+}
+
 function cnRenderCard_(note) {
   return cnRenderCardCore_(note, /*expandable*/ true);
 }
@@ -3581,7 +3622,7 @@ function cnRenderCardCore_(note, expandable) {
     `;
   }
 
-  const callerLine = note.caller ? esc(note.caller) : (note.patientAndTrx ? esc(note.patientAndTrx) : '<em style="color:var(--muted)">unnamed</em>');
+  const callerLine = cnCallerDisplay_(note);
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
   const issue = note.issue ? esc(note.issue) : '<em>—</em>';
   // Training notes carry a free-text question in subformData; surface it as a
@@ -5687,7 +5728,7 @@ function cnMgrLoadRepNotes_() {
 function cnMgrRenderReadonlyCard_(note) {
   const time = cnFormatTimestampForCopy_(note.timestamp);
   const flagCls = note.flagType ? ' flag-' + note.flagType : '';
-  const callerLine = note.caller ? esc(note.caller) : (note.patientAndTrx ? esc(note.patientAndTrx) : '<em style="color:var(--muted)">unnamed</em>');
+  const callerLine = cnCallerDisplay_(note);
   const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
   const issue = note.issue ? esc(note.issue) : '<em>—</em>';
   // Render the multi-turn thread (read-only) for ANY note that has one — a
@@ -6123,8 +6164,56 @@ function cnMgrRenderSearchResults_() {
 
 function cnStartAmbientPolling_() {
   if (CN_STATE.ambientTimer) clearInterval(CN_STATE.ambientTimer);
+  cnEnsureLiveRefreshBound_();
   cnPollAmbient_();
   CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
+}
+
+/** #3 live-sync: re-fetch today's notes and re-render the rolling stack so a
+ *  note logged in ANOTHER context (the pop-out, or the rep's other window) —
+ *  or any drift from the in-memory stack — surfaces without a manual nav.
+ *  Log view only; skipped mid inline-edit so an open editor isn't wiped.
+ *  Optimistic `_pending` notes not yet on the server are preserved on top. */
+function cnRefreshRollingStack_() {
+  if (currentView !== 'callNotes' || !CN_STATE.enrolled) return;
+  if (CN_STATE.editingNoteId) return;            // don't clobber an open inline edit
+  const requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error || res.enrolled === false) return;
+      if (currentView !== requestedView) return;
+      const server = res.notes || [];
+      const serverIds = {};
+      server.forEach(function (n) { serverIds[n.noteId] = true; });
+      const pending = (CN_STATE.rollingNotes || []).filter(function (n) {
+        return n._pending && !serverIds[n.noteId];
+      });
+      CN_STATE.rollingNotes = pending.concat(server);
+      CN_STATE.autoCopyFormat = res.autoCopyFormat || CN_STATE.autoCopyFormat || '';
+      cnRenderStack_();
+      cnRenderFilterBar_();
+    })
+    .withFailureHandler(function () { /* live-refresh is best-effort */ })
+    .getMyCallNotes({ filter: 'all' });
+}
+
+/** Bind window focus + visibility refresh ONCE (idempotent). Both fire on a
+ *  tab/window switch; a 2s throttle collapses the focus+visibilitychange
+ *  double-fire. No-op off the Log view, so the listeners can stay bound for
+ *  the page lifetime (matches the ambient-poll "no-op when not mounted"
+ *  posture). */
+function cnEnsureLiveRefreshBound_() {
+  if (CN_STATE._liveRefreshBound) return;
+  CN_STATE._liveRefreshBound = true;
+  const onWake = function () {
+    if (document.hidden || currentView !== 'callNotes') return;
+    const now = Date.now();
+    if (now - (CN_STATE._lastLiveRefresh || 0) < 2000) return;
+    CN_STATE._lastLiveRefresh = now;
+    cnRefreshRollingStack_();
+  };
+  window.addEventListener('focus', onWake);
+  document.addEventListener('visibilitychange', onWake);
 }
 
 function cnStopAmbientPolling_() {
@@ -6168,6 +6257,10 @@ function cnPollAmbient_() {
       // the DOM (rep is on a different view).
       cnUpdateStatsMini_(res);
       cnUpdateQuickChipRow_(res);
+      // #3 live-sync — re-fetch + re-render today's rolling stack on the Log
+      // view so a note logged in another context (pop-out / second window)
+      // appears within the 60s poll without a manual nav. Log only.
+      if (currentView === 'callNotes') cnRefreshRollingStack_();
       // Update sidebar badge on the Call Notes nav link
       const link = document.querySelector('.sb-link[data-tool="callNotes"]')
                 || document.querySelector('.nav-btn[data-tool="callNotes"]');

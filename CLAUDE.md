@@ -22,11 +22,16 @@ Apps Script project under its own directory, synced via `clasp`.
    - **Metrics** — CDR integration module that reads DQE Historical
      Data from the CDR Report spreadsheet (the same sheet backing the
      `call-data-reporting` repo's Department Dashboard). Two tabs:
-     "My Stats" (self-view for all reps — today's KPIs, 30-day
-     % Answered trend sparkline, note-to-call coverage ratio) and
-     "Team Metrics" (manager-only — per-rep table with date-range
-     support and preset chips). The CDR data layer (`getCdrSS_()`,
-     `getCdrAgentMetrics_()`, `getCdrDailyBreakdown_()`) is isolated
+     "My Stats" (self-view for all reps — today's KPIs, note-to-call
+     coverage ratio, and **own-vs-team-avg 30-day trend charts** for 5
+     KPIs — % Answered / Answered / Missed / Avg Talk / Transfer % —
+     where the team line is **anonymized**: hidden on any day with fewer
+     than 3 reporting reps, so peers can benchmark without singling
+     anyone out, INV-124) and "Team Metrics" (manager-only — per-rep
+     table with date-range support and preset chips). The CDR data layer
+     (`getCdrSS_()`, `getCdrAgentMetrics_()`, `getCdrDailyBreakdown_()`,
+     plus `getCsrTransferPerRepDaily_()` reading the separate
+     `CSR Transfer Historical Data` tab for the Transfer KPI) is isolated
      behind helpers so a future swap to Neon Postgres (Option C)
      replaces only those functions. CDR metrics also enrich the
      Call Notes Stats tab (`managerGetShiftStats`) via a best-effort
@@ -108,7 +113,14 @@ Apps Script project under its own directory, synced via `clasp`.
      widens). Signatures are append-only + tamper-evident
      (`DocSignatures`, hash excludes the timestamp — the audit row is
      the witness); the store is EXCLUDED from every retention purge.
-     See INV-120/INV-121/INV-122.
+     See INV-120/INV-121/INV-122. **T4 (partial — shipped):** an
+     **overdue digest** (`sendTrainingOverdueDigest`, daily manager-tz
+     7am trigger — org-wide overdue training + team-scoped overdue
+     unsigned docs, heartbeat-stamped) and a **quiz-analytics** panel
+     (`getQuizAnalytics`, manager-gated aggregate — pass rate / avg
+     score / attempts, no answer keys) in Team Training. The remaining
+     T4 item (Drive snapshot-to-PDF signing for signable embeds) stays
+     on-demand. See INV-123.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -295,16 +307,17 @@ this section before touching the relevant area.
   `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`,
   `getTrainingDashboard`, `saveTrainingAssignment`,
   `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`,
-  `importQuizFromForm`,
+  `getQuizAnalytics`, `importQuizFromForm`,
   `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`
   (the last four are ALSO team-scoped per INV-122 — the gate alone is
   not the boundary).
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
-  The six time-based trigger handlers — `sendDailyMissedPunchAlerts`,
+  The time-based trigger handlers — `sendDailyMissedPunchAlerts`,
   `runDailyExportCheck`, `sendCallNotesEodDigest`,
-  `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, and
+  `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`,
+  `sendTrainingOverdueDigest` (the T4 overdue-training/-docs nudge), and
   `purgeExpiredFormData` (the
   destructive PHI-retention purge) — are top-level (required: Apps Script
   time-based triggers won't bind to underscore-suffix functions), which
@@ -677,6 +690,20 @@ this section before touching the relevant area.
   tool. Without this, the 60-second `getCallNotesAmbient` interval
   fired continuously even in Time Clock views.
   `cnStartAmbientPolling_()` restarts it on return to any CN tab.
+- **The Log rolling stack live-refreshes (#3).** The Log view is a
+  today-only, fetch-on-enter view (`getMyCallNotes` returns one day);
+  `cnRefreshRollingStack_` re-fetches today's notes + re-renders so a note
+  logged in ANOTHER context (the pop-out / a second window — they share the
+  server Sheet but NOT in-memory `CN_STATE`) surfaces without a manual nav.
+  Triggered from the 60s ambient poll (Log only) + window `focus`/
+  `visibilitychange` (`cnEnsureLiveRefreshBound_`, 2s throttle, idempotent
+  bind). It preserves optimistic `_pending` notes (filters them back on top of
+  the server set) and is SKIPPED while an inline edit is open
+  (`CN_STATE.editingNoteId`) so it can't wipe an editor. It re-renders only
+  `#cn-stack` + the filter bar, not the form/modals. (NOTE: nav-back already
+  re-fetched; this closes the cross-window staleness gap. The whole-stack
+  re-render could diff-before-render to avoid a scroll jump — accepted as-is
+  since the stack is small.)
 - **Sidebar badge selectors use `data-tool`, not `data-view`.**
   The sidebar renders `data-tool="callNotes"` / `data-tool="metrics"`
   on its buttons. Badge pollers that query the sidebar must use
@@ -860,7 +887,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Nine client-side localStorage keys total.** All per-browser, all
+- **Ten client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -901,7 +928,14 @@ this section before touching the relevant area.
     tour auto-starts once per `TOUR_VERSION` (bump to re-offer after a
     material UI change); stamped on finish/skip. Replayable anytime from
     the Call Notes ? menu regardless of this flag.
-  Clearing browser data wipes all nine.
+  - `umsPopoutGeom` — compact pop-out window geometry `{w,h,x,y}` (#4).
+    Written by `popoutPersistGeometryInit_` (compact window only, debounced
+    on resize + on `beforeunload`); read by `popOutCurrentView` (in either
+    window — same-origin localStorage is shared) via the pure, range-guarded
+    `popoutParseGeom_` (corrupt/out-of-range → null → default 480×800). So the
+    rep's manual resize/reposition sticks across launches. Position is
+    best-effort (browsers restrict programmatic move of an existing window).
+  Clearing browser data wipes all ten.
 
 ## Key Design Decisions
 
@@ -1177,15 +1211,16 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Nine client-side localStorage keys total" entry in
+  authoritative "Ten client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
-  `umsKbPanel`, `umsLastView`, `umsTour`) — all per-browser, all
-  try/catch-wrapped. (An earlier version of this decision listed only
-  four; Round 2 · 8a/8b added the sidebar-width and Time/PTO-mode keys,
-  the KB drawer added its single `umsKbPanel` prefs blob, and the
-  refresh-restore behavior added `umsLastView`.)
+  `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`) — all
+  per-browser, all try/catch-wrapped. (An earlier version of this decision
+  listed only four; Round 2 · 8a/8b added the sidebar-width and Time/PTO-mode
+  keys, the KB drawer added its single `umsKbPanel` prefs blob, the
+  refresh-restore behavior added `umsLastView`, and #4 added
+  `umsPopoutGeom`.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -1717,13 +1752,23 @@ this section before touching the relevant area.
   `adjustWindowDays` field (falls back to 30 only if absent), so the
   picker tracks the real window if the CONFIG changes. The server stays
   authoritative regardless.
-- **Compact pop-out is 380px wide.** `popOutCurrentView()` opens
-  the named `umsTeamToolsCompact` window at 380×780 (narrowed from
-  the prior 440 in the Console redesign — sized to fit the rep's
-  live clock + actions + ribbon + ledger comfortably without
-  horizontal overflow at the new density). The named target means
-  subsequent clicks focus the existing window rather than spawning
-  duplicates.
+- **Compact pop-out defaults to 480×800, then remembers (#4).**
+  `popOutCurrentView()` opens the named `umsTeamToolsCompact` window at
+  **480×800 by default** (widened from the prior 380×780 so the Call Notes
+  note template + its flags/tags/save rail sit side-by-side on launch instead
+  of collapsing to one column), overridden by the rep's last persisted
+  geometry (`umsPopoutGeom` via `popoutParseGeom_`). The named target means
+  subsequent clicks focus the existing window rather than spawning duplicates
+  — and because open-features are honored only on first open, later resizes
+  are captured by `popoutPersistGeometryInit_` and restored next launch.
+  **Compact Call Notes form (`:root[data-compact]`):** the `cn-head`
+  stats-mini is not rendered, the flag toolbar collapses to an **icon-only**
+  4-across rail (`.flag-lbl` hidden; title + `aria-label` carry meaning), and
+  the **save card (`#cn-save-card`) is `position:sticky; bottom`** with a
+  compact-only collapse chevron (`.cn-save-collapse` → toggles `.collapsed`)
+  so Save & Copy / Compose stay reachable without a manual resize. All
+  compact rules are additive and gated to `data-compact`; wide mode is
+  untouched.
 - **Resizable sidebar with snap (Round 2 · 8a).** The sidebar's
   width is rep-adjustable: drag the right-edge `.sidebar-grip`,
   double-click to snap between icon-only (~56px) and labeled
@@ -2119,13 +2164,14 @@ this section before touching the relevant area.
   aliases itself and every aliased agent would otherwise false-positive
   as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
   without taking down the rest of the panel. Every server string is
-  `esc()`'d before `innerHTML`. The EOD/weekly/urgent digests still write
+  `esc()`'d before `innerHTML`. The EOD/weekly/urgent/training-overdue
+  digests still write
   no audit rows (deliberate — the hourly EOD digest would crowd the
   bounded AuditLog tail scans); instead each run stamps a Script-Property
   heartbeat (`stampDigestLastRun_` → `AUTOMATION_DIGEST_LAST_RUNS`) and
   the panel renders a "Digest heartbeats" block with per-digest staleness
-  flags (EOD stale > 2h, urgent > 26h, weekly > 8d), so a silently-dead
-  digest trigger is visible without reading logs.
+  flags (EOD stale > 2h, urgent > 26h, weekly > 8d, trainingOverdue > 26h),
+  so a silently-dead digest trigger is visible without reading logs.
 - **"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
@@ -2373,6 +2419,12 @@ manually for a fresh deploy or environment:
   The CDR spreadsheet's `Agent Alias Overrides` sheet (if present)
   is read by `getCdrNameMap_()` to resolve name mismatches between
   the team-tools Employees roster and CDR canonical names.
+  The My Stats **Transfer %** trend additionally reads a
+  **`CSR Transfer Historical Data`** tab in this same spreadsheet
+  (headers A1:S1: Month-Year, Week, Date `M/D/YYYY`, CSR Rep Name,
+  Transfer %, Total Calls, Total Calls Transferred, per-queue `A_Q_*`,
+  Comments — read via `getCsrTransferPerRepDaily_`). Missing tab → the
+  Transfer trend is simply absent (other KPIs unaffected).
 - **Script Property `TEST_CDR_SS_ID`** (test-only, auto-managed). The
   CDR fixture spreadsheet `setupTestEnvironment` / `_setupTestCdrFixture_`
   creates (or reuses) for the Metrics integration tests. Created on
@@ -2531,7 +2583,7 @@ manually for a fresh deploy or environment:
   need it set manually.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
-  installer now wires eight triggers:
+  installer now wires nine triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm)
     - `sendCallNotesEodDigest` (call-notes, hourly — emails each rep at their local EOD hour)
@@ -2540,7 +2592,8 @@ manually for a fresh deploy or environment:
     - `purgeExpiredFormData` (forms, daily manager-tz 3am — no-ops while retention is disabled)
     - `purgeOldCallNotes` (call-notes, daily manager-tz 4am — no-ops while note retention is disabled)
     - `reconcileCallNotes` (call-notes, daily manager-tz 5am — two-way Sheets back-fill of NoteId/Timestamp/DateLocal on rows added directly in a rep's Sheet; non-destructive + idempotent, so it's harmless to run daily)
-  The install + remove TARGETS arrays both list all eight, so re-running
+    - `sendTrainingOverdueDigest` (training, daily manager-tz 7am — per-manager nudge of overdue training (org-wide) + overdue unsigned employee docs (team-scoped per INV-122); sends nothing to a manager with nothing overdue in their scope)
+  The install + remove TARGETS arrays both list all nine, so re-running
   install dedupes cleanly (a missing entry would silently duplicate that
   trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
@@ -2871,7 +2924,7 @@ the Regression Scenarios below as the canonical full-system
 verification path.
 
 A second, **DOM-lifecycle** harness now sits alongside the pure one:
-`node test/client/run-dom.js` (or `npm run test:dom`; `npm test` runs BOTH).
+`node test/client/dom/runDom.js` (or `npm run test:dom`; `npm test` runs BOTH).
 It loads the FULL `<script>` of the chosen partials into a real **jsdom**
 window — the project's only dependency, dev-only, so `clasp` still never
 pushes it — and tests the layer the pure harness can't reach: innerHTML
@@ -2921,7 +2974,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/harness-dom.js, test/client/run-dom.js
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server
@@ -2967,7 +3020,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The seven trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` and `purgeOldCallNotes` are destructive (delete FormSubmissions/FormTokens and per-rep Notes rows past their retention windows) so the gate is load-bearing, not just defensive | Subsystem: Server
+INV-44 | The eight trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` and `purgeOldCallNotes` are destructive (delete FormSubmissions/FormTokens and per-rep Notes rows past their retention windows) so the gate is load-bearing, not just defensive | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise substring matching across (caller, callback, patientAndTrx) for `field='caller'|'all'` and (issue, resolution) for `field='issue'|'all'`. Used by the "Find prior calls for this TRX" card button | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
@@ -3048,6 +3101,10 @@ INV-120 | Training T1 endpoints follow the established families: `getMyTraining`
 INV-121 | **Quiz answer keys never leave the server.** The `Quizzes` tab's `QuestionsJson` (including `correct` indices) is readable only by the manager-gated `getQuizzes` (managers author the keys); the rep-facing `getQuiz` returns ONLY the WHITELIST-built `trainStripQuizForRep_` shape (never a delete-key copy — a missed field can't leak), requires a live `quiz:` assignment (or manager caller), and `submitQuizAttempt` (rep-callable, locked INV-01, assignment-required) grades server-side via the pure `trainGradeQuiz_` and returns only `scorePct`/`passed`/per-question right-wrong booleans — correct options are NEVER revealed, pass or fail (operator decision §9.4; unlimited retries; attempt counts per assignment round ride back for display). A pass appends the `TrainingCompletions` row (`via='quiz'`, once per assignment round — the INV-120 reset semantics apply to attempts too); `QuizAttempts` is append-only and `PerQuestionJson` stores booleans only, never the rep's answers paired with a key. `saveQuiz` validates via the pure `trainValidateQuizDef_` (1–50 questions, 2–6 options, correct in range, passPct 0–100) and bounds the stored JSON under the Sheets cell cap (INV-96 spirit); `deleteQuiz` removes only the quiz row (attempt/completion history stays; orphaned assignments drop off via the title join, same as a deleted KB item). Audit rows `QuizSave`/`QuizDelete`/`QuizAttempt` carry ids/counts/scores — never question text. `importQuizFromForm` (manager-gated, READ-ONLY, review-before-save — FormApp opens the form with the deployer's access; only MC + single-answer checkbox items + their marked correct answers are read; the form is never modified and nothing persists until the manager saves) reuses the same `saveQuiz` validation path on save. Pinned by the `training — quiz` Node tests (validator / grader / strip + the `getQuiz` source tripwire + the `trainParseFormId_` URL parser) + `test_training_quizFlow` + the four gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
 INV-122 | **Employee Docs are team-scoped (fail-closed), frozen at issue, and tamper-evident.** All Employee Docs data lives ONLY in the dedicated `HR_DOCS_SS_ID` spreadsheet (`getHrDocsSS_` has NO fallback store — unset property → friendly error, never a silent write to the ADP/KB/PHI sheets), and the `EmpDocs`/`DocSignatures` tabs are EXCLUDED from every retention purge (HR records are keep-forever — the opposite of the PHI-minimization posture). **Scoping:** `getMyDocs`/`getMyDoc`/`acknowledgeDoc` are owner-scoped; manager read access (`getMyDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`) requires `empDocCanManagerSee_` — caller issued the doc OR caller is the employee's roster `ManagerEmail` (column M); membership in `MANAGER_EMAILS` alone grants NOTHING, and a blank column M NARROWS visibility to owner+issuer (fail-closed, operator decision §9.3). Any manager may ISSUE to any employee (issuing reveals nothing). `acknowledgeDoc` is OWNER-only — managers cannot sign on behalf. **Integrity:** content is frozen at issue (`bodyMd` + `empDocContentHash_` over body+title+type+empId); signing re-verifies the content hash first (a tampered row refuses to sign), bounds the signature payload (INV-96; the pad export caps at 600px — Node-pinned parity with `form_public.html`), and writes an append-only `DocSignatures` row whose `SignatureHash` covers contentHash+empId+docId+signature+ackVersion but NOT the timestamp (Sheets coercion, INV-113 lesson) — the `EmpDocSigned` audit row (`hash=`+`signedAt=`) is the independent witness, and the server-authoritative `EMPDOC_ACK_VERSION` stamps which ack language was shown (bump it when `EMPDOC_ACK_TEXT` changes). `voidDoc` only flips status (never deletes, never edits the frozen body — a correction is a NEW doc; a signed doc keeps its signature row); `verifyDocSignature` recomputes both hashes (legacy/unsigned report explicitly, never as failures). Audit rows `EmpDocIssue`/`EmpDocSigned`/`EmpDocVoid` are content-free (docId/empId/type/hash — never the title or body; the void reason lives only in the scoped HR sheet). Pinned by `test_empdocs_issueSignVerifyFlow` (incl. the fail-closed `empDocCanManagerSee_` cases + tamper detection) + the four gate cases in `test_managerGates_rejectNonManager` + the `empDocValidateIssue_`/`edChipHtml_`/pad-cap Node tests | Subsystem: Server + Client (Training views)
+
+INV-123 | **Training T4 — overdue digest + quiz analytics.** `sendTrainingOverdueDigest` is a top-level trigger handler (reachable via `google.script.run`) gated with `assertManagerCaller_` (INV-44 family) and best-effort (INV-14 — wrapped in try/catch, never throws). It builds the nudge PER MANAGER: the overdue-TRAINING list is org-wide (training dashboards are NOT team-scoped, INV-120, so every manager sees every rep's overdue training), but the overdue unsigned-DOCS list is TEAM-SCOPED via `empDocCanManagerSee_({email,isManager:true}, doc)` (INV-122 fail-closed — a manager only sees docs they issued or are the employee's roster `ManagerEmail` for). A manager with nothing overdue in their scope is not emailed. `empDocsOverdueAll_` returns `[]` (never throws) when `HR_DOCS_SS_ID` is unset so the training portion still sends. Heartbeat-stamped (`stampDigestLastRun_('trainingOverdue')`); surfaced in the Automation Health "Digest heartbeats" block (stale > 26h). Wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS arrays (the trigger-wiring tripwire pins this). `getQuizAnalytics` is manager-gated (INV-02), read-only, and returns ONLY the per-quiz aggregate from the pure `trainQuizAnalytics_(quizzesMap, attempts)` (attempt counts, distinct reps attempted/passed, pass rate, avg score, avg tries) — no answer keys, no per-question booleans, no per-rep rows, so INV-121's "answer key never leaves the server" boundary is untouched. Pinned by `trainQuizAnalytics_` + the trigger-wiring Node tests, `test_triggerGate_trainingOverdue_nonManagerThrows`, and the `getQuizAnalytics` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+
+INV-124 | **Metrics anonymized team-avg is cohort-guarded; only aggregates leave the server.** `getMyMetrics` (rep-callable, caller-identified) reads the WHOLE roster's per-rep-per-day matrix (`getCdrDailyBreakdown_().perRepDaily` for DQE + `getCsrTransferPerRepDaily_()` for the separate **`CSR Transfer Historical Data`** tab) to compute a team benchmark, but returns ONLY aggregates: `series.{pctAnswered,answered,missed,attSeconds,transferPct}` as `[{date, own, team, cohort}]`. The `team` value is the pure `metricsTeamAvgSeries_` mean over reporting reps and is **null whenever that day's cohort < `kpiMinCohort` (3)** — so a small team can't be back-solved to an individual (the #5 privacy boundary). No individual rep's row is ever returned. The Transfer reader uses `getDisplayValues()` + the shared `cdrRowDateIso_` (Date is `M/D/YYYY`) + `metricsParsePercent_` (`"29.79%"`) per the CDR spreadsheet-tz discipline (INV-64). The legacy `cdr`/`trend`/`noteCount`/`noteCoverage` fields are preserved (back-compat). Client (`metrics/script_metrics.html`) renders own (accent) vs team (muted dashed) sparklines per KPI with the cohort note; every server string is `esc()`'d (the Metrics-`esc()` gotcha). Pinned by `metricsParsePercent_` / `metricsTeamAvgSeries_` / `metricsBuildKpiSeries_` Node tests + `test_metrics_csrTransferFixture_parsesDateAndPercent` + the `mRenderTrendSection_` DOM test | Subsystem: Server + Client (Metrics views)
 
 
 ### Policy Configuration

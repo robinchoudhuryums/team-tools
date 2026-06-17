@@ -4,9 +4,9 @@
   "private": true,
   "description": "Dev-only tooling for team-tools (client-side test harness). NOT deployed — clasp pushes from web-app/ only.",
   "scripts": {
-    "test": "node test/client/run.js && node test/client/run-dom.js",
+    "test": "node test/client/run.js && node test/client/dom/runDom.js",
     "test:client": "node test/client/run.js",
-    "test:dom": "node test/client/run-dom.js"
+    "test:dom": "node test/client/dom/runDom.js"
   },
   "devDependencies": {
     "jsdom": "^29.1.1"

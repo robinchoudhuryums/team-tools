@@ -1,20 +1,32 @@
 # Client-side test harness
 
-Dependency-free unit tests for the web-app's **pure client helper functions**
-(the JS inside `web-app/*.html` HtmlService partials). Closes the long-standing
-gap where every client fix (F1/F2/F5/F6/F7/F20, …) was guarded only by the
-manual Regression Scenarios because there was no way to run client JS off-browser.
+Unit tests for the web-app's client JS (inside `web-app/*.html` HtmlService
+partials). Two harnesses, by what they reach:
+
+1. **Pure-helper harness** (`run.js` + `harness.js`) — dependency-free, a Node
+   `vm` sandbox over a no-op Proxy DOM. Pure string/date/format helpers + a
+   parse-guard net over every JS-bearing partial.
+2. **DOM-lifecycle harness** (`dom/runDom.js` + `dom/boot.js`) — a real
+   [jsdom](https://github.com/jsdom/jsdom) window with the **whole shell**
+   booted and a **controllable `google.script.run`**. Reaches the
+   render/escape + overlay/optimistic-UI/re-render lifecycle the pure harness
+   can't — the bug class prior cycles shipped into (Esc closing the wrong
+   overlay, document-listener leaks, optimistic-revert clobbers, stale-callback
+   clobbers, hostile-input render escaping, KB-drawer-wiped-by-re-render).
 
 ## Run
 
 ```bash
-node test/client/run.js      # or: npm test  (from repo root)
+npm test            # both harnesses (from repo root)
+npm run test:client # pure-helper harness only (no deps)
+npm run test:dom    # DOM-lifecycle harness only (needs `npm ci` for jsdom)
 ```
 
-No `npm install` needed — uses only Node's built-in `vm`/`fs` + native
-`Intl`/`URLSearchParams`. Exit code is non-zero if any test fails (CI-ready).
+The pure harness needs no `npm install`. The DOM harness needs the `jsdom`
+devDependency (`npm ci`). Neither ships — `clasp push` only touches `web-app/`.
+Both exit non-zero on failure (CI runs both — see `.github/workflows/client-tests.yml`).
 
-## How it works
+## How the pure harness works
 
 `harness.js` extracts the `<script>` bodies from a partial, evaluates them in a
 Node `vm` sandbox that stubs the browser/GAS globals (`window` (= `globalThis`,
@@ -23,62 +35,61 @@ exposes the loaded functions so `run.js` can call them and assert.
 
 - `buildSandbox(files, extraGlobals)` — load whole partials (foundational ones:
   `script_icons`, `script_core`, tool views). A load failure throws with the
-  file name — itself a useful signal (the partial has a load-time side effect
-  the stubs don't cover).
+  file name — itself a useful signal (a load-time side effect the stubs don't
+  cover).
 - `loadFunction(sandbox, file, name)` — brace-match and eval a single function
-  out of a large partial (e.g. the 6500-line Call Notes file) without loading
-  the whole thing. Safe only for functions with no `{`/`}` inside string
-  literals.
+  out of a large partial without loading the whole thing. Safe only for
+  functions with no `{`/`}` inside string literals.
+- `extractRawFunction('Code.js', name)` — pull a server function source for a
+  pure unit test (e.g. `metricsTeamAvgSeries_`, `trainQuizAnalytics_`).
 
-## Scope (and limits)
+Out of scope for the pure harness: functions that genuinely drive the DOM, fire
+`google.script.run` RPCs, or depend on cross-file `const`/`let` module state —
+those are the DOM-lifecycle harness's job.
 
-In scope: **pure** string/date/format helpers — `esc`, `empTz`, `isoDateTz`,
-`mTodayIso_`/`mDaysAgo_`, `cnExtEmailPillHtml_`, etc.
+## DOM-lifecycle harness (`dom/`)
 
-Out of scope **for this (pure) harness**: functions that genuinely drive the
-DOM, fire `google.script.run` RPCs, or depend on lexically-scoped module state.
-Those are covered by the **DOM-lifecycle harness** below.
+`dom/boot.js`'s `boot(opts?)` seeds a jsdom window with the **real shell
+skeleton** (`#app` + `#toast-stack` + the `modals.html` overlays), loads
+**every** partial's `<script>` (so the SHIPPED functions wire to that
+document), and installs a controllable `google.script.run`. `dom/runDom.js`
+holds the suites. `opts.serverQueryParams` seeds `window.SERVER_QUERY_PARAMS`
+before load (e.g. a `?tool=` deep-link for the tour gate).
 
-## DOM-lifecycle harness (`harness-dom.js` / `run-dom.js`)
+`boot()` returns:
 
-```bash
-node test/client/run-dom.js   # or: npm run test:dom   (needs `npm ci` first)
-npm test                      # runs BOTH harnesses
-```
+- `run` — controllable RPC: `run.calls`, `run.pending(method?)`,
+  `run.flushSuccess(value, method?)`, `run.flushFailure(err, method?)`,
+  `run.respond(method, fn)` (auto-answer), `run.drain()`. Each
+  `google.script.run` access is an independent chain; nothing auto-resolves
+  unless you `respond()` — so optimistic-UI timing is fully controllable.
+- `bootShell(stateOverrides?)` — fires the shell `load` handler + satisfies
+  `getEmployeeState`, so `renderShell` builds `#view-area` + the initial tool
+  renders. Other enter-fired RPCs stay PENDING for the test to flush/drain.
+- `dispatchKey(key, {ctrl,meta,shift,type,target})`, `click(selOrEl)`,
+  `setField(id, value)` (fires `input`; handles `[contenteditable]`), `$`/`$$`,
+  `flushTimers()`.
+- `read(expr)` — evaluate an expression in the window's global scope (read
+  top-level `let`/`const` bindings like `currentView`, `CN_STATE`). Top-level
+  `function`/`var` declarations are window globals (`h.window.fn`).
 
-Loads the **full** `<script>` of the chosen partials into a real
-[`jsdom`](https://github.com/jsdom/jsdom) window (a dev dependency — the only one)
-so tests can exercise what the pure harness can't: innerHTML render/escape,
-overlay lifecycle (Esc/`ensureOverlay`), optimistic-UI revert, late-callback
-`currentView` guards, focus traps, double-fire guards.
+For a render-function test that targets a specific container, mount it first
+(`document.createElement` + append) — e.g. `m-team-content`, `view-area`.
 
-- `buildDomWindow(files, opts)` → `{ window, document, ctx, run, t, flush, dispatchKey, $, $$ }`.
-  - `runScripts:'outside-only'` ⇒ `getInternalVMContext()` where `window === globalThis`
-    (bare-name resolution like the pure harness) **with a real document**;
-    `DOMContentLoaded` is not auto-fired, so module-top init listeners stay dormant.
-  - Partials load in order and **share** the global lexical scope (browser
-    `<script>` semantics), so a trailing **bridge** (`window.__t` / `h.t`) can
-    get/set the `const`/`let` module state (`CN_STATE`, `currentView`, `empState`).
-  - `opts.markup: ['modals.html']` mounts shared markup into `<body>` before the
-    tool scripts run (mirrors `index.html`) — needed by partials whose module-top
-    listeners bind to modal nodes (the `tc/` views).
-- `run` = the programmable `google.script.run` mock. Each terminal
-  `.method(args)` is **recorded** with its registered handlers; the test drives
-  the server response with `run.resolve(value)` / `run.reject(err)` (or
-  `run.resolveLastFor(method, value)`). Inspect with `run.last()`, `run.lastFor(m)`,
-  `run.countFor(m)`, `run.pending()`.
-- `dispatchKey('Escape')` fires a real `keydown`; `flush()` drains microtasks.
-
-This harness needs the `jsdom` dev dependency (`npm ci`); the pure harness above
-stays the always-on, zero-install floor. Both live outside `web-app/`, so
-`clasp push` never sees them.
+Out of scope even here: anything needing real layout/paint —
+`getBoundingClientRect` is 0 under jsdom, so position/canvas-resize cases (the
+signature-pad 0-width bug, drag/resize geometry, hover-grace timing) stay in the
+manual Regression Scenarios.
 
 ## Extending
 
-Add a pure helper to `run.js`: either it's already a global after
-`buildSandbox` (function declaration), or pull it with `loadFunction(...)`. If a
-helper resolves a global by free-variable name (e.g. the metrics date helpers
-call `empTz()`), you can override that global on the sandbox to control inputs:
-`sb.empTz = () => 'Asia/Kolkata';`.
+Pure harness: add a helper to `run.js` — already a global after `buildSandbox`,
+or pull it with `loadFunction(...)` / `extractRawFunction(...)`.
 
-This harness lives outside `web-app/`, so `clasp push` never sees it.
+DOM harness: add a `test(...)` to `dom/runDom.js` — `boot()`, drive the real
+functions (`bootShell`, `enterTool`, `dispatchKey`, `click`, `setField`), flush
+the RPCs you want resolved, and assert on the DOM + `read('CN_STATE…')`. Every
+future client fix should land its regression test here instead of relying on a
+manual S-scenario.
+
+Both harnesses live outside `web-app/`, so `clasp push` never sees them.

@@ -427,7 +427,7 @@ function trainLoadMgr_() {
   var got = 0, failed = false;
   function done() {
     got++;
-    if (got < 4 || failed || currentView !== requestedView) return;
+    if (got < 5 || failed || currentView !== requestedView) return;
     trainRenderMgr_();
   }
   function onFail(err) {
@@ -441,6 +441,7 @@ function trainLoadMgr_() {
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.kbTree = d; done(); }).withFailureHandler(onFail).getReferenceTree();
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.quizzes = d; done(); }).withFailureHandler(onFail).getQuizzes();
+  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.quizAnalytics = d; done(); }).withFailureHandler(onFail).getQuizAnalytics();
 }
 
 function trainRenderMgr_() {
@@ -534,6 +535,23 @@ function trainRenderMgr_() {
     h += '</tbody></table>';
   }
   h += '<p><button class="tr-complete-btn" id="tr-quiz-new">' + icon('plus', 13) + ' New quiz</button></p>';
+
+  // Quiz analytics (T4) — read-only aggregate; no answer keys, no per-rep rows.
+  var qa = (TRAIN_STATE.quizAnalytics && TRAIN_STATE.quizAnalytics.quizzes) || [];
+  if (qa.length) {
+    h += '<div class="tr-section-h">Quiz analytics</div>' +
+      '<table class="tr-table"><thead><tr><th>Quiz</th><th>Attempts</th><th>Passed</th><th>Pass rate</th><th>Avg score</th><th>Avg tries</th></tr></thead><tbody>';
+    qa.forEach(function (q) {
+      var passCls = (q.passRate === null) ? '' : (q.passRate >= 80 ? 'tr-cell-done' : q.passRate >= 50 ? 'tr-cell-pending' : 'tr-cell-overdue');
+      h += '<tr><td>' + esc(q.title) + '</td>' +
+        '<td>' + q.attemptCount + '</td>' +
+        '<td>' + q.repsPassed + '/' + q.repsAttempted + '</td>' +
+        '<td>' + (q.passRate === null ? '—' : '<span class="' + passCls + '">' + q.passRate + '%</span>') + '</td>' +
+        '<td>' + (q.avgScore === null ? '—' : q.avgScore + '%') + '</td>' +
+        '<td>' + (q.avgAttemptsPerRep === null ? '—' : q.avgAttemptsPerRep) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
 
   el.innerHTML = h;
 

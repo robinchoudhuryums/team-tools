@@ -199,6 +199,9 @@ window.addEventListener('load', () => {
       enterTool(initialTool, initialTab);
       // Start ambient pollers — badges update regardless of active tool
       if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
+      // #4 — in the compact pop-out, persist the window's size/position so the
+      // rep's manual resize/reposition sticks across launches.
+      popoutPersistGeometryInit_();
       // First-load onboarding tour (auto-starts once per TOUR_VERSION; never
       // in the compact pop-out). Replayable from the Call Notes ? menu.
       if (typeof tourMaybeAutoStart_ === 'function') tourMaybeAutoStart_();
@@ -219,9 +222,60 @@ function popOutCurrentView() {
     const base = window.SERVER_WEB_APP_URL ||
       (window.location.origin + window.location.pathname);
     const url = base + '?compact=1&tool=' + encodeURIComponent(currentView);
-    window.open(url, 'umsTeamToolsCompact',
-      'width=380,height=780,menubar=no,toolbar=no,location=no,status=no,resizable=yes');
+    // #4 — default 480×800 (wide enough that the note template + its rail sit
+    // side-by-side on launch), overridden by the rep's last persisted
+    // size/position (umsPopoutGeom). Features are honored only on FIRST open
+    // of the named window; subsequent clicks just focus it (browser rule), and
+    // the pop-out itself persists any later resize via
+    // popoutPersistGeometryInit_.
+    let geom = null;
+    try { geom = popoutParseGeom_(localStorage.getItem('umsPopoutGeom')); } catch (e) {}
+    const w = geom ? geom.w : 480;
+    const h = geom ? geom.h : 800;
+    let feat = 'width=' + w + ',height=' + h + ',menubar=no,toolbar=no,location=no,status=no,resizable=yes';
+    if (geom && geom.x != null && geom.y != null) feat += ',left=' + geom.x + ',top=' + geom.y;
+    window.open(url, 'umsTeamToolsCompact', feat);
   } catch (e) { showToast('Pop-out blocked by browser', 'toast-warn'); }
+}
+
+/** Pure — parse + range-guard the persisted pop-out geometry blob
+ *  (localStorage.umsPopoutGeom). Returns {w,h[,x,y]} or null on missing /
+ *  corrupt / out-of-range input (fail-safe: a bad value falls back to the
+ *  default size). Position is optional and dropped unless both x,y are sane.
+ *  Pinned by a Node test. */
+function popoutParseGeom_(raw) {
+  if (!raw) return null;
+  let g;
+  try { g = JSON.parse(raw); } catch (e) { return null; }
+  if (!g || typeof g !== 'object') return null;
+  const w = Math.round(Number(g.w));
+  const h = Math.round(Number(g.h));
+  if (!isFinite(w) || !isFinite(h) || w < 320 || h < 360 || w > 4000 || h > 4000) return null;
+  const out = { w: w, h: h };
+  const x = Math.round(Number(g.x));
+  const y = Math.round(Number(g.y));
+  if (isFinite(x) && isFinite(y) && x >= 0 && y >= 0 && x < 10000 && y < 10000) { out.x = x; out.y = y; }
+  return out;
+}
+
+/** In the compact pop-out only: persist the window's size + position to
+ *  localStorage.umsPopoutGeom (debounced on resize, flushed on unload) so the
+ *  next pop-out launch restores it. No-op outside compact mode. localStorage is
+ *  shared across the same-origin windows, so popOutCurrentView (in EITHER
+ *  window) reads what the pop-out last wrote. */
+function popoutPersistGeometryInit_() {
+  if (!COMPACT_MODE) return;
+  const save = function () {
+    try {
+      localStorage.setItem('umsPopoutGeom', JSON.stringify({
+        w: window.outerWidth, h: window.outerHeight,
+        x: window.screenX, y: window.screenY,
+      }));
+    } catch (e) { /* private mode — geometry just won't persist */ }
+  };
+  let t;
+  window.addEventListener('resize', function () { clearTimeout(t); t = setTimeout(save, 400); });
+  window.addEventListener('beforeunload', save);
 }
 
 function renderError(msg) {

@@ -419,6 +419,39 @@ function _setupTestCdrFixture_() {
     sheet.getRange(rr, CDR.TTT).setNumberFormat('h:mm:ss').setValue(tttSec / 86400);
     sheet.getRange(rr, CDR.ATT).setNumberFormat('h:mm:ss').setValue(attSec / 86400);
   }
+
+  // T4 #6 — CSR Transfer Historical Data fixture (the separate transfers tab).
+  // Date is written M/D/YYYY and Transfer % as a "%" string — exactly the real
+  // sheet's shapes — to exercise cdrRowDateIso_ + metricsParsePercent_ in the
+  // getCsrTransferPerRepDaily_ integration test. Plain text avoids coercion.
+  let tsheet = ss.getSheetByName(CSR_TRANSFER_TAB);
+  if (!tsheet) tsheet = ss.insertSheet(CSR_TRANSFER_TAB);
+  tsheet.clear();
+  if (tsheet.getMaxColumns() < CSR_TRANSFER_NUM_COLS) {
+    tsheet.insertColumnsAfter(tsheet.getMaxColumns(), CSR_TRANSFER_NUM_COLS - tsheet.getMaxColumns());
+  }
+  const mdyyyy = _TEST_CDR_DATE.replace(/^(\d{4})-(\d{2})-(\d{2})$/, function (m, y, mo, d) {
+    return parseInt(mo, 10) + '/' + parseInt(d, 10) + '/' + y;   // 2026-05-15 -> 5/15/2026
+  });
+  const mkTRow = function (name, pctStr, totalCalls, transferred) {
+    const r = new Array(CSR_TRANSFER_NUM_COLS).fill('');
+    r[CSRT.DATE] = mdyyyy; r[CSRT.NAME] = name; r[CSRT.TRANSFER_PCT] = pctStr;
+    r[CSRT.TOTAL_CALLS] = totalCalls; r[CSRT.TRANSFERRED] = transferred;
+    return r;
+  };
+  const theader = new Array(CSR_TRANSFER_NUM_COLS).fill('');
+  theader[CSRT.DATE] = 'Date'; theader[CSRT.NAME] = 'CSR Rep Name';
+  theader[CSRT.TRANSFER_PCT] = 'Transfer %'; theader[CSRT.TOTAL_CALLS] = 'Total Calls';
+  theader[CSRT.TRANSFERRED] = 'Total Calls Transferred';
+  const trows = [
+    theader,
+    mkTRow(_TEST_INDIA_NAME, '29.79%', 47, 14),
+    mkTRow(_TEST_PH_NAME,    '10.00%', 20, 2),
+  ];
+  const trange = tsheet.getRange(1, 1, trows.length, CSR_TRANSFER_NUM_COLS);
+  trange.setNumberFormat('@');
+  trange.setValues(trows);
+
   SpreadsheetApp.flush();
 }
 
@@ -809,6 +842,8 @@ function _runAllTests() {
   _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
   _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
   _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
+  _smokeTest('cn_formSubmissionCard_escapes', test_cn_formSubmissionCard_escapes);
+  _smokeTest('config_adpSheetTzMatchesConfig', test_config_adpSheetTzMatchesConfig);
   _smokeTest('cn_extractAuditNoteId_parses',       test_cn_extractAuditNoteId_parses);
   _smokeTest('cn_extractAuditNoteId_noMatch',      test_cn_extractAuditNoteId_noMatch);
   _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
@@ -865,6 +900,7 @@ function _runAllTests() {
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
   _integrationTest('metrics_getTeamMetrics_cdrIntegration',     test_metrics_getTeamMetrics_cdrIntegration);
   _integrationTest('metrics_cdrFixture_durationsUseDisplayValues', test_metrics_cdrFixture_durationsUseDisplayValues);
+  _integrationTest('metrics_csrTransferFixture_parsesDateAndPercent', test_metrics_csrTransferFixture_parsesDateAndPercent);
   _integrationTest('metrics_getTeamMetrics_nonManagerRejected', test_metrics_getTeamMetrics_nonManagerRejected);
   _integrationTest('metrics_getMyMetrics_cdrUnavailableErrors', test_metrics_getMyMetrics_cdrUnavailableErrors);
 
@@ -913,6 +949,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_purgeOldCallNotes_nonManagerThrows', test_triggerGate_purgeOldCallNotes_nonManagerThrows);
   _integrationTest('triggerGate_purgeExpiredFormData_nonManagerThrows', test_triggerGate_purgeExpiredFormData_nonManagerThrows);
   _integrationTest('triggerGate_removeAutomationTriggers_nonManagerThrows', test_triggerGate_removeAutomationTriggers_nonManagerThrows);
+  _integrationTest('triggerGate_trainingOverdue_nonManagerThrows', test_triggerGate_trainingOverdue_nonManagerThrows);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Audit row assertions ───────────────────────────────────────────────
@@ -2853,6 +2890,34 @@ function test_cn_buildEmailHtml_escapesUserFields() {
   _assertContains(html, 'a &amp; b &lt; c', 'issue ampersand/angle-bracket escaped');
 }
 
+function test_cn_formSubmissionCard_escapes() {
+  // C4 — the in-app submission viewer injects buildFormSubmissionCardHtml_ via
+  // innerHTML (INV-89 class). Pin that recipient-supplied values are esc_'d.
+  const data = {
+    'patient_name': '<script>alert(1)</script>',
+    'free_notes':   'a & b < c',
+  };
+  const html = buildFormSubmissionCardHtml_(data, '');
+  _assertFalse(html.indexOf('<script>alert(1)</script>') >= 0, 'raw script tag must NOT appear in the card');
+  _assertContains(html, '&lt;script&gt;', 'value rendered escaped');
+  _assertContains(html, 'a &amp; b &lt; c', 'ampersand/angle-bracket escaped');
+}
+
+function test_config_adpSheetTzMatchesConfig() {
+  // S1.1 — the AuditLog / TO.SUBMITTED_AT coercion round-trip relies on the ADP
+  // spreadsheet's tz matching CONFIG.TIMEZONE: writes use CONFIG.TIMEZONE
+  // (fmtDate_/fmtTime_) while normalizeAuditTs_/normalizeDate_ recover coerced
+  // Date cells in the SHEET's tz. The wall-clock string round-trips only when
+  // the two are equal; a drift silently shifts every date-filtered audit/PTO
+  // read by the offset. Pin the assumption so an operator tz change surfaces.
+  let ssTz;
+  try { ssTz = getAdpSS_().getSpreadsheetTimeZone(); }
+  catch (e) { _assertTrue(true, 'ADP spreadsheet unavailable — skipped (' + e.message + ')'); return; }
+  _assertEq(ssTz, CONFIG.TIMEZONE,
+    'ADP sheet tz (' + ssTz + ') must equal CONFIG.TIMEZONE (' + CONFIG.TIMEZONE +
+    ') or coerced-date audit/PTO reads drift — see S1.1');
+}
+
 // ── Template scriptlet hygiene (regression guard) ──
 // form_public.html once injected the form token via the HTML-escaping `<?= ?>`
 // print scriptlet, which turns JSON.stringify's double-quotes into &quot; and
@@ -3219,6 +3284,12 @@ function test_triggerGate_missedPunch_nonManagerThrows() {
 function test_triggerGate_urgentDigest_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendCallNotesUrgentDigest(); });
+  }, 'manager access required');
+}
+
+function test_triggerGate_trainingOverdue_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendTrainingOverdueDigest(); });
   }, 'manager access required');
 }
 
@@ -3774,6 +3845,8 @@ function test_managerGates_rejectNonManager() {
     ['getQuizzes',                     function () { return getQuizzes(); }],
     ['saveQuiz',                       function () { return saveQuiz({ title: 'gate', passPct: 80, questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] }); }],
     ['deleteQuiz',                     function () { return deleteQuiz('no-such-quiz'); }],
+    // T4 quiz analytics gate + main's Google-Forms quiz import gate.
+    ['getQuizAnalytics',               function () { return getQuizAnalytics(); }],
     ['importQuizFromForm',             function () { return importQuizFromForm('https://docs.google.com/forms/d/x/edit'); }],
     // T3 Employee Docs gates (the gate fires BEFORE any HR_DOCS_SS_ID access,
     // so these run safely even where the property is unset).
@@ -4278,6 +4351,22 @@ function test_metrics_cdrFixture_durationsUseDisplayValues() {
     "getDisplayValues() parses ATT to the correct seconds (the INV-64 path)");
   _assertTrue(cdrParseHms_(rawAtt) !== 150,
     "cdrParseHms_ on the raw getValues() Date does NOT yield 150 — proving getValues is the wrong path");
+}
+
+function test_metrics_csrTransferFixture_parsesDateAndPercent() {
+  // T4 #6: the Transfer reader parses the M/D/YYYY Date + "%"-string columns
+  // (the real sheet shapes) and honors the roster filter.
+  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  _withTestCdr_(function () {
+    const res = getCsrTransferPerRepDaily_(_TEST_CDR_DATE, _TEST_CDR_DATE, [_TEST_INDIA_NAME, _TEST_PH_NAME]);
+    const day = res.perRepDaily[_TEST_CDR_DATE];
+    _assertTrue(!!day, "transfer row's M/D/YYYY date parsed back to the ISO key");
+    _assertEq(day[_TEST_INDIA_NAME].transferred, 14, "transferred count read");
+    _assertEq(day[_TEST_INDIA_NAME].totalCalls, 47, "total calls read");
+    _assertEq(day[_TEST_INDIA_NAME].transferPct, 29.79, "Transfer % string parsed to a number");
+    const filtered = getCsrTransferPerRepDaily_(_TEST_CDR_DATE, _TEST_CDR_DATE, ['Nobody Here']);
+    _assertTrue(!filtered.perRepDaily[_TEST_CDR_DATE], "roster filter drops non-matching reps");
+  });
 }
 
 function test_metrics_getTeamMetrics_cdrIntegration() {

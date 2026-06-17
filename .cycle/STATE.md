@@ -1,5 +1,28 @@
 # Cycle State
 
+## MERGE NOTE (2026-06-16) — main ← affectionate-cori
+`main` closed Cycle 3 via a parallel session (PRs #50/#51: its own DOM harness
+`run-dom.js`/`harness-dom.js`, F1/F2/F3/F5/F7 hardening, tour/quiz-import). The
+`claude/affectionate-cori-90q3ap` branch was merged IN, adding work main lacked:
+ - Training T4 — overdue digest (`sendTrainingOverdueDigest`) + quiz analytics
+   (`getQuizAnalytics`); INV-123.
+ - Operator-feedback batch — #2 caller `Name (relation)` cards, #3 Log
+   rolling-stack live-refresh, #4 pop-out (480 default + `umsPopoutGeom` 10th
+   localStorage key + compact icon-rail + sticky save card), #5/#6 Metrics
+   anonymized team-avg (N=3 cohort) + own-vs-team 5-KPI trends incl. the
+   `CSR Transfer Historical Data` reader; INV-124.
+ - Cycle-3 audit findings S1.2 (dashboard punchDate normalize), S1.3 (Reconciled
+   re-deduct guard), S2.1 (form-token expiry fail-closed), C1 (KB-AI rep-tz day),
+   S1.1 (ADP-tz smoke tripwire), C4 (submission-card escape pin).
+ - DOM harnesses CONSOLIDATED to one (Option A): kept this branch's
+   `test/client/dom/{boot,runDom}.js` (capability superset — bootShell/setField/
+   read/controllable-run); removed main's `run-dom.js` + `harness-dom.js` after
+   porting its unique coverage onto boot() (escape-discipline renders, intake/
+   training opportunistic, onboarding-tour gates). `boot(opts)` gained
+   `serverQueryParams`. CI + package.json now run the two entrypoints
+   (run.js + dom/runDom.js).
+INV count after merge: 124. `npm test` green (run.js 128 + dom/runDom.js 48).
+
 ## Current
 Cycle: 3
 Phase: idle (cycle 3 CLOSED — reflect recorded 2026-06-16)

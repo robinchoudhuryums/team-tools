@@ -374,6 +374,17 @@ const CDR_EXPECTED_HEADERS = {
   8: 'Answered', 9: 'TTT', 10: 'ATT',
 };
 
+// CSR Transfer Historical Data — a SEPARATE tab in the CDR Report spreadsheet
+// (T4 #6 transfers trend). Headers A1:S1: Month-Year, Week, Date, CSR Rep Name,
+// Transfer %, Total Calls, Total Calls Transferred, then per-queue A_Q_* counts
+// (H:R), Comments. Date is M/D/YYYY (handled by cdrRowDateIso_) and Transfer %
+// is a "29.79%" string — both read via getDisplayValues() per the CDR
+// spreadsheet-tz gotcha (INV-64). Only the first columns feed the trend; the
+// per-queue breakdown is read-but-ignored for now.
+const CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
+const CSRT = { DATE: 2, NAME: 3, TRANSFER_PCT: 4, TOTAL_CALLS: 5, TRANSFERRED: 6 };
+const CSR_TRANSFER_NUM_COLS = 19;   // A:S
+
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -971,7 +982,7 @@ function getManagerDashboard() {
           timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
           empName:      String(auditData[i][2]),
           action:       String(auditData[i][4]),
-          punchDate:    String(auditData[i][5]),
+          punchDate:    normalizeDate_(auditData[i][5]),
           punchTime:    String(auditData[i][6]),
           isAdjustment: String(auditData[i][7]) === 'TRUE',
           daysBack:     parseInt(auditData[i][8], 10) || 0,
@@ -1118,6 +1129,15 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         const type    = String(rows[i][TO.TYPE]);
         const notes   = String(rows[i][TO.NOTES]);
         const empName = String(rows[i][TO.EMP_NAME]);
+
+        // S1.3 — 'Reconciled' rows are neutralized duplicates (fixPtoReconciliation
+        // already credited their over-charge back). Re-approving one would
+        // RE-DEDUCT via the transition below (oldStatus !== 'Approved' &&
+        // newStatus === 'Approved'), undoing the credit. Treat Reconciled as
+        // terminal — refuse any status change on it.
+        if (oldStatus === 'Reconciled') {
+          return { success: false, error: 'This request was reconciled (a duplicate already credited back) and can no longer change status.' };
+        }
 
         sheet.getRange(i + 1, TO.STATUS + 1).setValue(newStatus);
 
@@ -3520,14 +3540,14 @@ function getAutomationHealth() {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly'].map(function (k) {
+    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue'].map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -5370,7 +5390,12 @@ function getFormByToken(token) {
           } catch(_) {}
           return { error: 'This form link has expired. Please contact UMS to request a new one.' };
         }
-      } catch(_) { /* unparseable — allow access rather than lock out */ }
+      } catch (_) {
+        // S2.1 — fail CLOSED: a non-empty expiry we can't parse is treated as
+        // expired, not allowed. We write ExpiresAt ourselves in a fixed format,
+        // so an unparseable value means a corrupt/tampered token — don't serve it.
+        return { error: 'This form link has expired. Please contact UMS to request a new one.' };
+      }
     }
 
     if (status === 'expired') {
@@ -5436,7 +5461,11 @@ function submitFormByToken(token, formData) {
           tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
           return { success: false, error: 'This form link has expired.' };
         }
-      } catch(_) {}
+      } catch (_) {
+        // S2.1 — fail CLOSED: never accept a PHI submission against a token
+        // whose (non-empty) expiry can't be parsed.
+        return { success: false, error: 'This form link has expired.' };
+      }
     }
 
     const formType = String(row[FT.FORM_TYPE]).trim();
@@ -6304,6 +6333,7 @@ function installAutomationTriggers() {
     'purgeExpiredFormData',
     'purgeOldCallNotes',
     'reconcileCallNotes',
+    'sendTrainingOverdueDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -6351,6 +6381,12 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('reconcileCallNotes')
     .timeBased().atHour(5).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Training & Employee Docs overdue digest (T4) — daily manager-tz 7am.
+  // Org-wide overdue training + per-manager team-scoped overdue unsigned docs.
+  // Sends nothing to a manager with nothing overdue in their scope.
+  ScriptApp.newTrigger('sendTrainingOverdueDigest')
+    .timeBased().atHour(7).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -6393,6 +6429,7 @@ function removeAutomationTriggers() {
     'purgeExpiredFormData',
     'purgeOldCallNotes',
     'reconcileCallNotes',
+    'sendTrainingOverdueDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -6851,6 +6888,165 @@ function sendCallNotesUrgentDigest() {
   } catch (err) {
     Logger.log('sendCallNotesUrgentDigest failed: ' + err.message);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  TRAINING & EMPLOYEE DOCS — OVERDUE DIGEST (T4)
+//  ────────────────────────────────────────────────────────────────────────
+//  docs/training-employee-docs-spec.md §5: "Overdue nudges are Phase 4 (a
+//  digest-style trigger, heartbeat-stamped like the existing digests)."
+//
+//  Daily manager-tz trigger. Two overdue signals, with DIFFERENT visibility:
+//    • Overdue TRAINING — org-wide (training dashboards are NOT team-scoped,
+//      INV-120; every manager sees every rep's training), so the same training
+//      list goes to all managers.
+//    • Overdue unsigned DOCS — TEAM-SCOPED (INV-122 fail-closed): each manager
+//      sees only docs they issued or are the employee's roster ManagerEmail
+//      for. So the digest is built PER MANAGER, never one broadcast.
+//  Sends nothing to a manager with no overdue training AND no overdue docs in
+//  their scope. Best-effort throughout (INV-14); never throws.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Overdue training items across the whole roster (org-wide; not team-scoped).
+ *  Mirrors getTrainingDashboard's per-(emp,item) loop but collects the overdue
+ *  rows. Returns [{ empId, empName, title, dueDate }]. */
+function trainOverdueForRoster_(todayIso) {
+  const assignments = trainReadAssignments_();
+  const completions = trainReadCompletions_(null);
+  const titles = trainKbTitles_();
+  const quizzes = trainReadQuizzes_();
+  function itemTitle_(a) {
+    if (a.itemType === 'kb') return titles[a.itemId] ? titles[a.itemId].title : null;
+    if (a.itemType === 'quiz') return quizzes[a.itemId] ? quizzes[a.itemId].title : null;
+    return null;
+  }
+  const rows = getEmployeeRosterRows_();
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    if (!rows[r][EMP.EMAIL]) continue;
+    const empId = String(rows[r][EMP.ID]).trim();
+    const empName = String(rows[r][EMP.NAME]).trim();
+    const eff = trainEffectiveForEmp_(assignments, empId);
+    Object.keys(eff).forEach(function (key) {
+      const a = eff[key];
+      const title = itemTitle_(a);
+      if (!title) return;
+      let completedAt = '';
+      for (let i = 0; i < completions.length; i++) {
+        const c = completions[i];
+        if (c.empId === empId && c.itemType === a.itemType && c.itemId === a.itemId && c.completedAt > a.assignedAt) {
+          if (c.completedAt > completedAt) completedAt = c.completedAt;
+        }
+      }
+      if (trainDeriveStatus_(!!completedAt, a.dueDate, todayIso) === 'overdue') {
+        out.push({ empId: empId, empName: empName, title: title, dueDate: a.dueDate });
+      }
+    });
+  }
+  out.sort(function (x, y) {
+    if (x.dueDate !== y.dueDate) return x.dueDate < y.dueDate ? -1 : 1;
+    return x.empName.localeCompare(y.empName);
+  });
+  return out;
+}
+
+/** All overdue unsigned employee docs (status='issued' + requiresSignature +
+ *  past dueAt). Returns [{ doc, empName }] with the FULL doc object so the
+ *  caller can apply per-manager team scoping (empDocCanManagerSee_). Returns
+ *  [] (never throws) when HR_DOCS_SS_ID is unset — the training portion of the
+ *  digest must still send. */
+function empDocsOverdueAll_(todayIso) {
+  try {
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return [];
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, EMPDOC_HEADERS.length).getValues();
+    const out = [];
+    for (let i = 0; i < rows.length; i++) {
+      const d = empDocRowToObj_(rows[i], ssTz);
+      if (!d.docId) continue;
+      if (!(d.status === 'issued' && d.requiresSignature && d.dueAt && todayIso > d.dueAt)) continue;
+      const target = lookupEmployeeById_(d.empId);
+      out.push({ doc: d, empName: target ? target.name : 'former employee' });
+    }
+    out.sort(function (x, y) {
+      if (x.doc.dueAt !== y.doc.dueAt) return x.doc.dueAt < y.doc.dueAt ? -1 : 1;
+      return x.empName.localeCompare(y.empName);
+    });
+    return out;
+  } catch (e) {
+    Logger.log('empDocsOverdueAll_ skipped (HR docs store unavailable): ' + e.message);
+    return [];
+  }
+}
+
+/** Top-level trigger handler (reachable via google.script.run) → gated with
+ *  assertManagerCaller_ (INV-44). Daily manager-tz nudge of overdue training
+ *  (org-wide) + overdue unsigned docs (team-scoped per manager). */
+function sendTrainingOverdueDigest() {
+  assertManagerCaller_('sendTrainingOverdueDigest');  // see sendDailyMissedPunchAlerts note
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping training overdue digest.'); return; }
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const todayIso = Utilities.formatDate(new Date(), mgrTz, 'yyyy-MM-dd');
+    const overdueTraining = trainOverdueForRoster_(todayIso);   // org-wide
+    const overdueDocs = empDocsOverdueAll_(todayIso);           // scope per manager below
+    let sent = 0;
+    mgrEmails.forEach(function (email) {
+      const scopedDocs = overdueDocs.filter(function (od) {
+        return empDocCanManagerSee_({ email: email, isManager: true }, od.doc);
+      });
+      if (!overdueTraining.length && !scopedDocs.length) return;   // nothing for this manager
+      try {
+        sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, todayIso);
+        sent++;
+      } catch (e) { console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + e.message); }
+    });
+    stampDigestLastRun_('trainingOverdue');
+    Logger.log('sendTrainingOverdueDigest: training=' + overdueTraining.length +
+      ' docs=' + overdueDocs.length + ' managersEmailed=' + sent);
+  } catch (err) {
+    Logger.log('sendTrainingOverdueDigest failed: ' + err.message);
+  }
+}
+
+/** Branded overdue-digest email to one manager (INV-105 — heading esc_'d in
+ *  the wrapper, every user field esc_'d here; plain-text body fallback). */
+function sendTrainingOverdueEmail_(toEmail, training, docs, todayIso) {
+  const P = CN_EMAIL_PALETTE;
+  function section_(label, rowsHtml) {
+    return '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:' + P.muted +
+        ';letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px;">' + esc_(label) + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;">' + rowsHtml + '</table>';
+  }
+  let html = '<p style="margin:0 0 4px;">These items are past their due date and still incomplete.</p>';
+  let text = 'Overdue training & documents (as of ' + todayIso + ')\n';
+  if (training.length) {
+    const rows = training.map(function (t) {
+      return '<tr>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(t.empName) + '</strong> · ' + esc_(t.title) + '</td>' +
+        '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">due ' + esc_(t.dueDate) + '</td>' +
+        '</tr>';
+    }).join('');
+    html += section_('Overdue training (' + training.length + ')', rows);
+    text += '\nOverdue training:\n' + training.map(function (t) { return '  ' + t.empName + ' · ' + t.title + ' (due ' + t.dueDate + ')'; }).join('\n');
+  }
+  if (docs.length) {
+    const rows = docs.map(function (od) {
+      return '<tr>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(od.empName) + '</strong> · ' + esc_(od.doc.title) + '</td>' +
+        '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">due ' + esc_(od.doc.dueAt) + '</td>' +
+        '</tr>';
+    }).join('');
+    html += section_('Unsigned documents (' + docs.length + ')', rows);
+    text += '\n\nUnsigned documents:\n' + docs.map(function (od) { return '  ' + od.empName + ' · ' + od.doc.title + ' (due ' + od.doc.dueAt + ')'; }).join('\n');
+  }
+  html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs</strong> to follow up.</p>';
+  text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
+  const htmlBody = buildBrandedEmailHtml_('Overdue training & documents', html, { accent: P.warnDeep });
+  MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training & documents', body: text, htmlBody: htmlBody });
 }
 
 function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
@@ -8501,6 +8697,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
 
   var daily = {};
   var agents = {};
+  var perRepDaily = {};   // T4 #5/#6: { dateIso: { agent: {rung,answered,missed,pctAnswered,attSeconds} } }
 
   for (var i = 0; i < values.length; i++) {
     var rawAgent = String(values[i][CDR.AGENT - 1] || '').trim();
@@ -8534,6 +8731,14 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     a.tttSeconds += cdrParseHms_(displays[i][CDR.TTT - 1]);
     if (attSec > 0) { a.attSum += attSec; a.attCount++; }
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
+
+    // T4 #5/#6 — per-rep-per-day matrix for the anonymized team-avg + own
+    // trend (metricsTeamAvgSeries_ / metricsBuildKpiSeries_ consume this).
+    if (!perRepDaily[dateIso]) perRepDaily[dateIso] = {};
+    var prd = perRepDaily[dateIso][agent] ||
+      (perRepDaily[dateIso][agent] = { rung: 0, answered: 0, missed: 0, _attSum: 0, _attCount: 0 });
+    prd.rung += rung; prd.answered += ans; prd.missed += missed;
+    if (attSec > 0) { prd._attSum += attSec; prd._attCount++; }
   }
 
   Object.keys(daily).forEach(function (d) {
@@ -8549,8 +8754,112 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     a.attFormatted = cdrFmtHms_(a.attSeconds);
     delete a._dates; delete a.attSum; delete a.attCount;
   });
+  Object.keys(perRepDaily).forEach(function (d) {
+    Object.keys(perRepDaily[d]).forEach(function (ag) {
+      var p = perRepDaily[d][ag];
+      p.pctAnswered = p.rung > 0 ? Math.round((p.answered / p.rung) * 1000) / 10 : 0;
+      p.attSeconds = p._attCount > 0 ? Math.round(p._attSum / p._attCount) : 0;
+      delete p._attSum; delete p._attCount;
+    });
+  });
 
-  return { daily: daily, agents: agents };
+  return { daily: daily, agents: agents, perRepDaily: perRepDaily };
+}
+
+// ── T4 #5/#6: anonymized team-avg + Transfers data layer ──────────────────
+// All NEW metrics surfaces (the rep-facing team benchmark + the 5-KPI trends)
+// build on these. The two pure helpers are Node-pinned; the reader is the
+// isolated parallel to getCdrDailyBreakdown_ for the separate Transfer sheet.
+
+/** Pure — parse a "29.79%" (or bare "29.79", or number) into a Number, else
+ *  null. Pinned by a Node test. */
+function metricsParsePercent_(s) {
+  if (s == null || s === '') return null;
+  const str = String(s).replace('%', '').replace(/,/g, '').trim();
+  if (str === '') return null;
+  const n = Number(str);
+  return isFinite(n) ? n : null;
+}
+
+/** Pure — anonymized team-average series with a minimum-cohort guard (the #5
+ *  privacy boundary). `perRepDaily` is { dateIso: { repName: {<valueKey>:num} } };
+ *  for each date in `dates` it averages valueKey over the reps that reported,
+ *  returning { date, cohort, avg } with avg=null when cohort < minCohort so a
+ *  small team can't be back-solved to an individual. Pinned by a Node test. */
+function metricsTeamAvgSeries_(perRepDaily, dates, valueKey, minCohort) {
+  const min = minCohort || 3;
+  return (dates || []).map(function (d) {
+    const byRep = (perRepDaily && perRepDaily[d]) || {};
+    let sum = 0, count = 0;
+    Object.keys(byRep).forEach(function (rep) {
+      const v = byRep[rep] ? byRep[rep][valueKey] : null;
+      if (v != null && isFinite(v)) { sum += Number(v); count++; }
+    });
+    return { date: d, cohort: count, avg: count >= min ? Math.round((sum / count) * 10) / 10 : null };
+  });
+}
+
+/** Pure — combine the rep's OWN per-day value with the anonymized team-avg
+ *  (metricsTeamAvgSeries_) for one KPI, aligned to `dates`. Returns
+ *  [{ date, own, team, cohort }] (own/team null when absent / cohort-suppressed).
+ *  Pinned by a Node test. */
+function metricsBuildKpiSeries_(perRepDaily, dates, empName, key, minCohort) {
+  var team = metricsTeamAvgSeries_(perRepDaily, dates, key, minCohort);
+  return (dates || []).map(function (d, i) {
+    var byRep = (perRepDaily && perRepDaily[d]) || {};
+    var raw = byRep[empName] ? byRep[empName][key] : null;
+    var own = (raw != null && isFinite(raw)) ? Number(raw) : null;
+    return { date: d, own: own, team: team[i].avg, cohort: team[i].cohort };
+  });
+}
+
+/** Isolated reader for the CSR Transfer Historical Data tab — the
+ *  getCdrDailyBreakdown_ parallel for transfers. Returns per-rep-per-day
+ *  { perRepDaily: { dateIso: { agent: {totalCalls, transferred, transferPct} } },
+ *  agents: { agent: {totalCalls, transferred, transferPct, daysActive} } }.
+ *  Reads via getDisplayValues() (Date is M/D/YYYY, Transfer % is a string —
+ *  the CDR spreadsheet-tz gotcha, INV-64), parses the date with the shared
+ *  cdrRowDateIso_, canonicalizes names through the alias map, and filters to
+ *  rosterNames when supplied. A future data-source swap touches only this. */
+function getCsrTransferPerRepDaily_(from, to, rosterNames) {
+  const ss = getCdrSS_();
+  const sheet = ss.getSheetByName(CSR_TRANSFER_TAB);
+  if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
+  const tz = ss.getSpreadsheetTimeZone();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { perRepDaily: {}, agents: {} };
+  const range = sheet.getRange(2, 1, lastRow - 1, CSR_TRANSFER_NUM_COLS);
+  const displays = range.getDisplayValues();
+  const aliasMap = getCdrNameMap_();
+  const useRoster = rosterNames && rosterNames.length > 0;
+  const nameSet = {};
+  if (useRoster) for (let n = 0; n < rosterNames.length; n++) nameSet[rosterNames[n]] = true;
+  const perRepDaily = {};
+  const agents = {};
+  for (let i = 0; i < displays.length; i++) {
+    const rawName = String(displays[i][CSRT.NAME] || '').trim();
+    if (!rawName) continue;
+    const name = (aliasMap[rawName] && useRoster && nameSet[aliasMap[rawName]]) ? aliasMap[rawName] : rawName;
+    if (useRoster && !nameSet[name]) continue;
+    const dateIso = cdrRowDateIso_(displays[i][CSRT.DATE], tz);
+    if (!dateIso || dateIso < from || dateIso > to) continue;
+    const totalCalls = Number(String(displays[i][CSRT.TOTAL_CALLS] || '').replace(/,/g, '')) || 0;
+    const transferred = Number(String(displays[i][CSRT.TRANSFERRED] || '').replace(/,/g, '')) || 0;
+    let pct = metricsParsePercent_(displays[i][CSRT.TRANSFER_PCT]);
+    if (pct == null) pct = totalCalls > 0 ? Math.round((transferred / totalCalls) * 1000) / 10 : null;
+    if (!perRepDaily[dateIso]) perRepDaily[dateIso] = {};
+    perRepDaily[dateIso][name] = { totalCalls: totalCalls, transferred: transferred, transferPct: pct };
+    if (!agents[name]) agents[name] = { agent: name, totalCalls: 0, transferred: 0, daysActive: 0, _days: {} };
+    const a = agents[name];
+    a.totalCalls += totalCalls; a.transferred += transferred;
+    if (!a._days[dateIso]) { a._days[dateIso] = true; a.daysActive++; }
+  }
+  Object.keys(agents).forEach(function (k) {
+    const a = agents[k];
+    a.transferPct = a.totalCalls > 0 ? Math.round((a.transferred / a.totalCalls) * 1000) / 10 : null;
+    delete a._days;
+  });
+  return { perRepDaily: perRepDaily, agents: agents };
 }
 
 // ── Metrics public endpoints ──────────────────────────────────────────
@@ -8608,29 +8917,50 @@ function getMyMetrics(date) {
     var trendFrom = isoFromUtc_(startD);
     var trendTo = date;
 
-    var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, [emp.name]);
-    var cdr = breakdown.agents[emp.name] || null;
-    var todayCdr = null;
-    var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
-    todayCdr = todayResult.agents[emp.name] || null;
-
-    // Build 30-day trend array (one entry per day, null if no data)
-    var trend = [];
-    for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
-      var iso = isoFromUtc_(d);
-      var day = breakdown.daily[iso];
-      var agentDay = null;
-      // For per-agent trend, we need per-agent-per-day data — use the daily
-      // breakdown filtered to this agent. Since getCdrDailyBreakdown_ already
-      // filtered by rosterNames=[emp.name], daily totals ARE the agent's data.
-      trend.push({
-        date: iso,
-        pctAnswered: day ? day.pctAnswered : null,
-        rung: day ? day.rung : 0,
-        answered: day ? day.answered : 0,
-        missed: day ? day.missed : 0,
-      });
+    // T4 #5/#6 — read the WHOLE roster's per-rep-per-day matrix so the team
+    // average can be computed (anonymized, cohort-guarded). Only AGGREGATES
+    // leave the server; no individual rep's row is ever returned to the caller.
+    var roster = getEmployeeRosterRows_();
+    var allNames = [];
+    for (var r = 1; r < roster.length; r++) {
+      var nm = String(roster[r][EMP.NAME] || '').trim();
+      if (nm) allNames.push(nm);
     }
+    var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, allNames);
+    var transfer = getCsrTransferPerRepDaily_(trendFrom, trendTo, allNames);
+    var dqPRD = breakdown.perRepDaily || {};
+    var trPRD = transfer.perRepDaily || {};
+
+    var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
+    var todayCdr = todayResult.agents[emp.name] || null;
+
+    // Date axis for the 30-day window.
+    var dates = [];
+    for (var d = new Date(startD); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) dates.push(isoFromUtc_(d));
+
+    // Legacy own % Answered trend (back-compat for the current client) — now
+    // sourced from the rep's own row in the all-reps perRepDaily matrix.
+    var trend = dates.map(function (iso) {
+      var own = dqPRD[iso] && dqPRD[iso][emp.name];
+      return {
+        date: iso,
+        pctAnswered: own ? own.pctAnswered : null,
+        rung: own ? own.rung : 0,
+        answered: own ? own.answered : 0,
+        missed: own ? own.missed : 0,
+      };
+    });
+
+    // 5-KPI own-vs-team series (#6); team values are anonymized via the N=3
+    // cohort guard (#5). Transfers come from the separate Transfer sheet.
+    var MIN_COHORT = 3;
+    var series = {
+      pctAnswered: metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'pctAnswered', MIN_COHORT),
+      answered:    metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'answered', MIN_COHORT),
+      missed:      metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'missed', MIN_COHORT),
+      attSeconds:  metricsBuildKpiSeries_(dqPRD, dates, emp.name, 'attSeconds', MIN_COHORT),
+      transferPct: metricsBuildKpiSeries_(trPRD, dates, emp.name, 'transferPct', MIN_COHORT),
+    };
 
     var noteCount = countCallNotesInRange_(emp, date, date);
 
@@ -8650,6 +8980,8 @@ function getMyMetrics(date) {
       noteCount: noteCount,
       noteCoverage: cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
       trend: trend,
+      series: series,
+      kpiMinCohort: MIN_COHORT,
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -11503,6 +11835,64 @@ function deleteQuiz(quizId) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+// ── T4: Quiz analytics (manager-gated, read-only aggregate) ────────────────
+// docs/training-employee-docs-spec.md §5 ("quiz score summaries"). A bounded
+// full read of the small Quizzes + QuizAttempts tabs, aggregated per quiz.
+// Returns ONLY counts/averages — no answer keys, no per-question booleans, no
+// rep-identifying detail beyond distinct counts (INV-121 stays intact: the
+// answer key never leaves the server, and this surface adds nothing per-rep).
+
+/** Pure — per-quiz aggregate over all attempt rows. Pinned by a Node test.
+ *  `quizzesMap` is trainReadQuizzes_()'s shape ({id:{title,passPct,...}});
+ *  `attempts` is trainReadAttempts_(null)'s shape ([{quizId,empId,scorePct,
+ *  passed}]). Quizzes with zero attempts still appear (passRate/avgScore
+ *  null) so the manager sees an assigned-but-untaken quiz. */
+function trainQuizAnalytics_(quizzesMap, attempts) {
+  const acc = {};
+  Object.keys(quizzesMap || {}).forEach(function (id) {
+    acc[id] = {
+      quizId: id, title: quizzesMap[id].title, passPct: quizzesMap[id].passPct,
+      attemptCount: 0, scoreSum: 0,
+      attemptedReps: {}, passedReps: {},
+    };
+  });
+  (attempts || []).forEach(function (a) {
+    const e = acc[a.quizId];
+    if (!e) return;                       // attempt for a since-deleted quiz — drop
+    e.attemptCount++;
+    e.scoreSum += (Number(a.scorePct) || 0);
+    if (a.empId) {
+      e.attemptedReps[a.empId] = true;
+      if (a.passed) e.passedReps[a.empId] = true;
+    }
+  });
+  return Object.keys(acc).map(function (id) {
+    const e = acc[id];
+    const repsAttempted = Object.keys(e.attemptedReps).length;
+    const repsPassed = Object.keys(e.passedReps).length;
+    return {
+      quizId: e.quizId, title: e.title, passPct: e.passPct,
+      attemptCount: e.attemptCount,
+      repsAttempted: repsAttempted,
+      repsPassed: repsPassed,
+      passRate: repsAttempted ? Math.round(100 * repsPassed / repsAttempted) : null,
+      avgScore: e.attemptCount ? Math.round(e.scoreSum / e.attemptCount) : null,
+      avgAttemptsPerRep: repsAttempted ? Math.round(10 * e.attemptCount / repsAttempted) / 10 : null,
+    };
+  }).sort(function (a, b) { return a.title.localeCompare(b.title); });
+}
+
+/** Manager-gated (INV-02), read-only. Quiz score summaries for the Team
+ *  Training analytics panel. Aggregate-only — no answer keys, no per-rep
+ *  rows (INV-121). */
+function getQuizAnalytics() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    return { quizzes: trainQuizAnalytics_(trainReadQuizzes_(), trainReadAttempts_(null)) };
+  } catch (err) { return { error: err.message }; }
 }
 
 

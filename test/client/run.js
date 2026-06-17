@@ -1210,6 +1210,74 @@ test('getQuiz source tripwire: the rep response is built ONLY by trainStripQuizF
   assert.strictEqual(src.indexOf('questionsJson'), -1, 'raw questions JSON never returned');
 });
 
+// T4 — quiz analytics aggregate (pure; manager-gated endpoint wraps it).
+console.log('\ntraining — quiz analytics aggregate (T4)');
+vm.runInContext(extractRawFunction('Code.js', 'trainQuizAnalytics_'), sb,
+  { filename: 'Code.js#trainQuizAnalytics_' });
+test('trainQuizAnalytics_: per-quiz counts, distinct reps, pass rate, averages; no answer keys', () => {
+  const quizzes = { q1: { title: 'Safety', passPct: 80 }, q2: { title: 'Billing', passPct: 70 } };
+  const attempts = [
+    { quizId: 'q1', empId: 'A', scorePct: 100, passed: true },
+    { quizId: 'q1', empId: 'A', scorePct: 60, passed: false },   // same rep, second try
+    { quizId: 'q1', empId: 'B', scorePct: 50, passed: false },
+    { quizId: 'qX', empId: 'C', scorePct: 90, passed: true },    // attempt for a deleted quiz — dropped
+  ];
+  const out = sb.trainQuizAnalytics_(quizzes, attempts);
+  assert.strictEqual(out.length, 2, 'one row per existing quiz; deleted-quiz attempts dropped');
+  const billing = out[0], safety = out[1];            // sorted by title: Billing, Safety
+  assert.strictEqual(safety.title, 'Safety');
+  assert.strictEqual(safety.attemptCount, 3);
+  assert.strictEqual(safety.repsAttempted, 2, 'distinct reps');
+  assert.strictEqual(safety.repsPassed, 1, 'A passed (once is enough), B did not');
+  assert.strictEqual(safety.passRate, 50);
+  assert.strictEqual(safety.avgScore, 70, '(100+60+50)/3 rounded');
+  assert.strictEqual(safety.avgAttemptsPerRep, 1.5);
+  assert.strictEqual(billing.attemptCount, 0, 'a quiz with no attempts still appears');
+  assert.strictEqual(billing.passRate, null);
+  assert.strictEqual(billing.avgScore, null);
+  assert.strictEqual(JSON.stringify(out).indexOf('correct'), -1, 'aggregate carries no answer key');
+});
+
+// T4 #5/#6 — metrics anonymized team-avg + transfers data layer (pure helpers).
+console.log('\nmetrics — percent parse + anonymized team-avg cohort guard (T4 #5/#6)');
+['metricsParsePercent_', 'metricsTeamAvgSeries_', 'metricsBuildKpiSeries_'].forEach((fn) => {
+  vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
+});
+test('metricsParsePercent_: strips %, commas; null on empty/garbage', () => {
+  assert.strictEqual(sb.metricsParsePercent_('29.79%'), 29.79);
+  assert.strictEqual(sb.metricsParsePercent_('10.00%'), 10);
+  assert.strictEqual(sb.metricsParsePercent_('5'), 5, 'bare number ok');
+  assert.strictEqual(sb.metricsParsePercent_('1,234'), 1234, 'commas stripped');
+  assert.strictEqual(sb.metricsParsePercent_(''), null);
+  assert.strictEqual(sb.metricsParsePercent_(null), null);
+  assert.strictEqual(sb.metricsParsePercent_('n/a'), null, 'garbage → null');
+});
+test('metricsTeamAvgSeries_: per-day mean, suppressed below the cohort minimum (N=3)', () => {
+  const perRepDaily = {
+    '2026-05-15': { a: { v: 80 }, b: { v: 90 }, c: { v: 100 } },   // cohort 3 → avg 90
+    '2026-05-16': { a: { v: 60 }, b: { v: 80 } },                  // cohort 2 → suppressed
+    '2026-05-17': { a: { v: 50 }, b: { v: null }, c: { v: 70 }, d: { v: 60 } },  // null skipped → cohort 3
+  };
+  const dates = ['2026-05-15', '2026-05-16', '2026-05-17', '2026-05-18'];
+  const out = sb.metricsTeamAvgSeries_(perRepDaily, dates, 'v', 3);
+  assert.strictEqual(out[0].avg, 90); assert.strictEqual(out[0].cohort, 3);
+  assert.strictEqual(out[1].avg, null, 'cohort 2 < 3 → suppressed (anonymity)'); assert.strictEqual(out[1].cohort, 2);
+  assert.strictEqual(out[2].avg, 60, '(50+70+60)/3, null skipped'); assert.strictEqual(out[2].cohort, 3);
+  assert.strictEqual(out[3].avg, null, 'no data → null'); assert.strictEqual(out[3].cohort, 0);
+});
+test('metricsBuildKpiSeries_: own value alongside the cohort-guarded team avg', () => {
+  const perRepDaily = {
+    '2026-05-15': { me: { v: 70 }, b: { v: 90 }, c: { v: 100 } },   // team cohort 3 → avg 86.7
+    '2026-05-16': { me: { v: 55 }, b: { v: 65 } },                  // team cohort 2 → suppressed; own still shown
+    '2026-05-17': { b: { v: 80 }, c: { v: 60 }, d: { v: 40 } },     // own absent
+  };
+  const dates = ['2026-05-15', '2026-05-16', '2026-05-17'];
+  const out = sb.metricsBuildKpiSeries_(perRepDaily, dates, 'me', 'v', 3);
+  assert.strictEqual(out[0].own, 70); assert.ok(Math.abs(out[0].team - 86.7) < 0.05); assert.strictEqual(out[0].cohort, 3);
+  assert.strictEqual(out[1].own, 55, 'own shown even when team is suppressed'); assert.strictEqual(out[1].team, null);
+  assert.strictEqual(out[2].own, null, 'own null when the rep had no data that day'); assert.strictEqual(out[2].team, 60);
+});
+
 // Operator feedback round (2026-06-12) — heuristic tag suggester (Call
 // Notes) + search-term highlight tokenizer (KB drawer/Reference).
 console.log('\noperator feedback — tag suggest + highlight tokenizer');
@@ -1272,6 +1340,19 @@ test('popOutCurrentView opens SERVER_WEB_APP_URL, never the iframe location (INV
   assert.ok(fn[0].indexOf('SERVER_WEB_APP_URL') >= 0, 'pop-out uses the injected deploy URL');
   const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
   assert.ok(idx.indexOf('window.SERVER_WEB_APP_URL = <?!=') >= 0, 'index.html injects SERVER_WEB_APP_URL unescaped (INV-78)');
+});
+// #4 — pop-out geometry persistence: the pure parse/range-guard helper.
+const popoutParseGeom_ = loadFunction(sb, 'script_core.html', 'popoutParseGeom_');
+test('popoutParseGeom_: parses valid geometry, range-guards, drops bad position', () => {
+  // JSON-compare: sandbox objects have a different realm prototype (deepStrictEqual rejects).
+  assert.strictEqual(JSON.stringify(popoutParseGeom_('{"w":520,"h":820,"x":100,"y":40}')), '{"w":520,"h":820,"x":100,"y":40}');
+  assert.strictEqual(JSON.stringify(popoutParseGeom_('{"w":480,"h":800}')), '{"w":480,"h":800}', 'position optional');
+  assert.strictEqual(popoutParseGeom_(null), null, 'missing → null');
+  assert.strictEqual(popoutParseGeom_('not json'), null, 'corrupt → null');
+  assert.strictEqual(popoutParseGeom_('{"w":100,"h":800}'), null, 'too-narrow width rejected');
+  assert.strictEqual(popoutParseGeom_('{"w":9999,"h":800}'), null, 'absurd width rejected');
+  // valid size but negative position → keep size, drop position (fail-safe)
+  assert.strictEqual(JSON.stringify(popoutParseGeom_('{"w":480,"h":800,"x":-5,"y":10}')), '{"w":480,"h":800}');
 });
 test('signature-pad export cap parity: both pads cap the export at 600px (INV-96)', () => {
   // The empdocs pad is adapted (parameterized) from form_public's — the
