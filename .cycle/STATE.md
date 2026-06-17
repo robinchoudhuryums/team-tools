@@ -8,6 +8,25 @@ Test Command: manual
 Subsystem cycles since last Seams audit: 4
 Updated: 2026-06-17 (Cycle 5 reflect)
 
+## Design redesign thread (ACTIVE — non-audit, does NOT bump Cycle)
+Operator-driven visual/interaction redesign from the design handoff in
+`docs/design_handoff_team_tools_redesign/`. Plan + conflict register committed at
+`docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md` (commit ee5fa96).
+Executing as 7 separate per-module commits on branch claude/practical-gauss-yycwkz.
+- Operator decisions: C1 remove Sick (confirmed real — UI surfaces only this pass,
+  backend deduction/reconcile left dormant); C2 ribbon histogram re-sourced to LIVE
+  logged-note volume (CDR has no hourly data); C3 add Phone/TRX search tabs (server
+  change, touches INV-45); C4–C7 + all 5 improvements accepted.
+- DONE — commit #1 foundation (95516d6): 5 new icons + Intake tab-icon repoint +
+  kbItemIcon_→fileText; --accent-deep→--success-deep + soft-fallback hygiene (also
+  the 2 --warning-soft uses in cn/ + tc/manager); NEW token-hygiene CI tripwire in
+  test/client/run.js (form_public excluded; --brand allowlisted until commit #2).
+  Pure 134/0, DOM 48/0, node --check clean. Operator: clasp push -f + New version.
+- NEXT: commit #2 Intake redesign (shell→shared app-bar/tt-btn/toolbar-tabs; PPD
+  Option A inline-structured controls + progress header + draft autosave; PMD/PAP
+  panels; Sent filter/search; a11y radio groups). On commit #2, remove --brand from
+  the tripwire allowlist when intake/script_intake.html drops --brand.
+
 ## Cycle 5 CLOSED (2026-06-17)
 Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
 (PR #53). Numbered 5 (a parallel session claimed Cycle 4 for a non-audit
