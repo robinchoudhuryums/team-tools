@@ -1,40 +1,41 @@
 # Project Health — team-tools
 
 ## Current Standing
-Cycle 3 (broad) closed 2026-06-16. Scores are post-implementation (the cycle's
-backlog + the jsdom harness all shipped). The headline is structural: the
-client DOM/overlay/lifecycle layer — flagged the top coverage gap in cycles 1
-AND 2 — now has an automated CI regression net, so Test Coverage moves the most.
+Cycle 5 (broad) closed 2026-06-17. Audit-opened broad-scan of the mature codebase
+again found NO Critical/High — one Medium (M-1) + Lows — and the full backlog plus
+three manager features shipped and merged (PR #53). Numbered 5 because a parallel
+session had claimed Cycle 4 for a non-audit operator-feedback batch (kept distinct).
 
-- Overall 8.5 · Correctness 8 · Security & Access Control 9 · Data Integrity 9 ·
+- Overall 8.5 · Correctness 8.5 · Security & Access Control 9 · Data Integrity 9 ·
   Timezone Correctness 8.5 · Concurrency Safety 9 · Test Coverage 8.5 ·
-  Code Clarity & Docs 9 · Apps Script Best Practices 9 · Manager UX 8 ·
+  Code Clarity & Docs 9 · Apps Script Best Practices 9 · Manager UX 8.5 ·
   Employee UX 7.5 · Automation Reliability 8
 
-- **Movement from the cycle-2 scan-time baseline** (→ values): Overall 7.5→8.5,
-  Correctness 7.5→8, Data Integrity 8→9, Timezone 8→8.5, Concurrency 8.5→9,
-  **Test Coverage 7→8.5** (the jsdom DOM-lifecycle harness: 36 tests pinning
-  innerHTML escape, overlay/Esc lifecycle, optimistic submit+revert, double-fire
-  guards, late-callback guards, focus trap — proven to bite), Code Clarity
-  8.5→9, Apps Script 8.5→9, Manager UX 7.5→8, Employee UX 7→7.5, Automation
-  7.5→8; Security held at 9. Two dimensions still trail: **Employee UX (7.5)** —
-  feature-rich but the external fillable-form route is admin-blocked and several
-  T4-class polish items remain; **Correctness (8)** — only Low UI-consistency
-  items found, server logic is solid.
-- **Fresh scan found NO Critical/High** — a mature-codebase signal. All findings
-  were Low: F1 public-form null-res guard, F2 metrics+CN CDR-field escaping
-  (pins the documented invariant), F3 intake client-memory PHI drop, F5 guarded
-  err.message, F6 bounded break-reminder map, F7 ambient-poll failure handler;
-  F4 retracted (correct on close read). Targeted audit of the two never-scanned
-  subsystems: appsscript.json clean; script_tour T-1/T-2/T-4 fixed, T-3 benign.
-- **Net fired-bug fixes = 0** (honest: there were no live production bugs to
-  fix this cycle) **− 0 new failure modes**. Value is the regression net + ~9
-  defensive hardenings + a doc/impl drift closed (the tour deep-link gate). Both
-  harnesses green: 122 pure + 36 DOM.
-- jsdom is the project's first (dev-only) dependency; `clasp` never pushes
-  `test/`. CI now runs the zero-dep pure harness first (always-on floor), then
-  `npm ci` + the DOM harness.
-- Last updated: 2026-06-16 (Cycle 3 close).
+- **Movement this cycle:** Correctness 8→8.5 (M-1 — the one real correctness bug,
+  a doc/impl drift where adjustLeaveBalance_ gated only on the global PTO flag and
+  silently drove `PtoEnabled=FALSE` contractor balances negative, contradicting
+  S15/INV-27 — fixed + regression-tested), Manager UX 8→8.5 (three new manager
+  tools: Coverage planner, Tag-trend analytics, KB Review-due). All other
+  dimensions held: the cycle was mostly feature + hardening on a solid base.
+- **One Medium, zero High/Critical** — third consecutive audit with no Critical/High
+  (mature-codebase signal). M-1's realistic this-month trigger was narrow
+  (manager filing PTO on behalf of a contractor / direct RPC), but it's a real
+  contract violation that the existing tests missed (they checked display-hiding,
+  not the no-deduct).
+- **3 new features** (all manager-gated, read-only, PHI-free, pure Node-pinned
+  cores): #5 tag-trend analytics (INV-125), #4 KB review-due (INV-126), #3 coverage
+  planner (INV-127). **13 defensive hardenings** — headline ones: getMyMetrics
+  endpoint cache (the only rep-facing CDR read, was uncached), KB-AI race-safe spend
+  cap, three bounded CN reads, a definitive `verifyDocSignature` tamper flag.
+- **Net +1 (1 prod fix − 0 new failure modes; 13 defensive).** Pure harness
+  128→133 green; node --check clean; DOM harness unchanged (CI runs it).
+- **Still trailing:** Employee UX (7.5) — the new features are manager-facing; the
+  highest rep-value roadmap items (#2 follow-up-date on the action flag, #1
+  patient/TRX timeline) and the admin-blocked external-form route remain.
+- INV-128/129/130 proposed for the next verification pass.
+- **Operator deploy of the merged batch is still pending** (`clasp push -f` + New
+  version + `runAllTests()`).
+- Last updated: 2026-06-17 (Cycle 5 close).
 
 ## Prior baseline (Cycle 2 scan-time)
 First numeric per-dimension baseline, scored at SCAN time (before the cycle-2
@@ -79,3 +80,4 @@ backlog was implemented):
 | 2026-06-11 | 1 | net +4 (4 prod fixes − 0 new failure modes; 9 defensive) | Broad scan A1–A10 → full backlog implemented (A1–A9, P#1–P#16; P#17 out of scope). Headline: AuditLog ts coercion had blanked the compliance panel in production. KB feature run (tables/images, drawer, section search, usage loop) shipped and operator-verified S62–S64. Editor suite 233/233; Node 89/89. |
 | 2026-06-11 | 2 | net +8 (8 prod fixes − 0 new failure modes; ~13 defensive; overall 7.5/10 at scan) | Fresh broad scan (full Code.js read + 4 sub-audits) → entire backlog closed same-cycle: overlay-lifecycle centralization (Esc killed composers / intake paste-listener PHI leak), uiConfirm Enter-on-Cancel, optimistic-revert clobber, SUBMITTED_AT coercion (pending-trend flat zero since ship), stranded spinners, 8 untested manager gates + first public-endpoint tests, digest heartbeats, 11-item Low hygiene batch. Node 89→92 with 3 new tripwires. |
 | 2026-06-16 | 3 | net 0 (0 fired-bug fixes − 0 new failure modes; ~9 defensive; overall 8.5/10) | Fresh broad scan of a now-mature codebase found NO Critical/High — all Low (F1 public-form null-res, F2 CDR-field escaping, F3 intake client-PHI drop, F5 err.message guards, F6 bounded break map, F7 ambient-poll handler; F4 retracted) + targeted audit of the two never-scanned subsystems (appsscript.json clean; script_tour T-1/T-2/T-4). HEADLINE structural: built the **jsdom DOM-lifecycle test harness** (the cycle-1+2 top gap) — 36 DOM tests pinning innerHTML escape (proven to bite), overlay/Esc lifecycle, optimistic submit+revert (INV-48), _flagInFlight (INV-56), late-callback guards, focus trap. Test Coverage 7→8.5, Overall →8.5. jsdom = first dev dependency; CI runs pure (zero-dep floor) then npm ci + DOM. 122 pure + 36 DOM green. Deploy of the client batch pending (operator). |
+| 2026-06-17 | 5 | net +1 (1 prod fix − 0 new failure modes; 3 features; 13 defensive; overall 8.5/10) | Audit-opened broad-scan of the mature base — again NO Critical/High; one Medium (**M-1**: adjustLeaveBalance_ gated only on the global PTO flag not the per-employee PtoEnabled column → silently deducted `FALSE` contractors, contradicting S15/INV-27; the ptoEnabled tests only checked display-hiding → undetected; fixed + test). Shipped 3 manager features (**#5** tag-trend analytics INV-125, **#4** KB review-due INV-126, **#3** coverage planner INV-127) + 13 hardenings (getMyMetrics endpoint cache, KB-AI race-safe spend, bounded CN reads L-7/L-8/L-10, verifyDocSignature `tampered` flag, tz boundary, comments). Correctness 8→8.5, Manager UX 8→8.5. Numbered 5 (parallel session held Cycle 4). Pure 128→133 green; node --check clean. Merged PR #53; operator deploy pending. INV-128/129/130 proposed. |
