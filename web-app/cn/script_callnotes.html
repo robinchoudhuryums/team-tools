@@ -4349,6 +4349,12 @@ function cnNoteMatchesFilter_(note, filter) {
     case 'review':     return note.flagType === 'review';
     case 'unresolved': return note.flagType === 'action' && !note.resolved;
     case 'unsent':     return !note.emailedAt;
+    // N-2 — INTENTIONALLY keys off the legacy `trainingReply` (the clearable
+    // "current answer" pointer), NOT feedback[]. cnLatestManagerReply_ prefers
+    // feedback[] for RENDERING, so a feedback[]-only reply can render an answer
+    // line yet not match this chip — that's by design per INV-49 (a *cleared*
+    // reply must disappear from this filter / the QA count). Do not "fix" it to
+    // read feedback[] without first redefining clear as a retraction marker.
     case 'answered':   return note.flagType === 'training' && note.subformData && !!note.subformData.trainingReply;
     case 'all':
     default:           return true;

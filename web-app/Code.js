@@ -1365,6 +1365,12 @@ function fixPtoReconciliation(empId) {
     toReconcile.forEach(function (ri) {
       sheet.getRange(ri, TO.STATUS + 1).setValue('Reconciled');
     });
+    // Note (M-1 interaction): adjustLeaveBalance_ now no-ops for a PtoEnabled=FALSE
+    // contractor, so the rows are still neutralized (status→Reconciled) but the
+    // credit returns null. That's the right call going forward (contractors no
+    // longer accrue drift). Any pre-M-1 contractor over-charge that needs an
+    // actual balance credit must be corrected by a manual sheet edit — surface
+    // it via the balance line in the dashboard rather than re-enabling PTO.
     let newAnnual = null, newSick = null;
     if (creditAnnual > 0) newAnnual = adjustLeaveBalance_(empId, 'annual', creditAnnual);
     if (creditSick > 0)   newSick   = adjustLeaveBalance_(empId, 'sick', creditSick);
@@ -1798,6 +1804,13 @@ function updateCallNote(noteId, payload) {
     if (!located) return { success: false, error: 'Note not found.' };
 
     const oldRow = located.row;
+    // L-9 — updateCallNote is TEXT-ONLY by design: it writes the 7 content
+    // columns only. `sanitizeCallNotePayload_` also derives flags/tags into a
+    // subformData blob, but that is intentionally NOT written here — flag/tag
+    // changes go through `setCallNoteFlag` (card toggles) and the submit path's
+    // multi-flag toolbar, never the inline text editor. If a future caller
+    // passes flags/tags to updateCallNote expecting them to persist, surface a
+    // dedicated endpoint instead of silently widening this write.
     sheet.getRange(located.rowIndex, CN.CALLBACK + 1).setValue(cleaned.callback);
     sheet.getRange(located.rowIndex, CN.CALLER + 1).setValue(cleaned.caller);
     sheet.getRange(located.rowIndex, CN.RELATIONSHIP + 1).setValue(cleaned.relationship);
@@ -2016,20 +2029,28 @@ function setCallNotePinned(noteId, pinned) {
 
     const willPin = !!pinned;
 
-    // If pinning, scan all rows for existing pin count and reject if at
-    // limit. Scan happens inside the lock so two parallel pin requests
-    // can't both squeak past the limit.
+    // If pinning, count existing pins and reject if at limit. Scan happens
+    // inside the lock so two parallel pin requests can't both squeak past the
+    // limit. Bounded read (L-7): scan only the NoteId + SubformData columns
+    // with a cheap `"pinned"` substring pre-filter before JSON.parse — matches
+    // getMyPinnedCallNotes' discipline instead of pulling the rep's full
+    // history at full width.
     if (willPin) {
-      const allRows = sheet.getDataRange().getValues();
+      const lastRow = sheet.getLastRow();
       let pinnedCount = 0;
-      for (let i = 1; i < allRows.length; i++) {
-        if (String(allRows[i][CN.NOTE_ID]).trim() === noteId) continue;
-        const sfd = allRows[i][CN.SUBFORM_DATA];
-        if (!sfd) continue;
-        try {
-          const parsed = JSON.parse(sfd);
-          if (parsed && parsed.pinned) pinnedCount++;
-        } catch (e) { /* corrupt blob — skip */ }
+      if (lastRow >= 2) {
+        const rowN = lastRow - 1;
+        const idCol  = sheet.getRange(2, CN.NOTE_ID + 1, rowN, 1).getValues();
+        const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, rowN, 1).getValues();
+        for (let i = 0; i < rowN; i++) {
+          if (String(idCol[i][0]).trim() === noteId) continue;
+          const sfd = subCol[i][0];
+          if (!sfd || String(sfd).indexOf('"pinned"') < 0) continue;
+          try {
+            const parsed = JSON.parse(sfd);
+            if (parsed && parsed.pinned) pinnedCount++;
+          } catch (e) { /* corrupt blob — skip */ }
+        }
       }
       if (pinnedCount >= CN_PIN_LIMIT) {
         return { success: false, error:
@@ -2161,12 +2182,15 @@ function getMyCallNotes(options) {
     const filter = String(opts.filter || 'all').toLowerCase();
 
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    // Bounded read (L-8): single-day contiguous slice via the shared reader
+    // (INV-46 append-order assumption) instead of the rep's full history at
+    // full width. The per-row date re-check stays as a defensive guard.
+    const located = readCallNoteRowsInRange_(sheet, date, date);
     const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+    for (let i = 0; i < located.length; i++) {
+      const rowDate = normalizeDate_(located[i].row[CN.DATE_LOCAL]);
       if (rowDate !== date) continue;
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      const note = callNoteRowToObject_(located[i]);
       if (!callNoteMatchesFilter_(note, filter)) continue;
       notes.push(note);
     }
@@ -2201,12 +2225,15 @@ function getMyCallNotesRange(startDate, endDate) {
 
     const empTz = empTz_(emp);
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    // Bounded read (L-8): contiguous date-range slice via the shared reader
+    // (INV-46) instead of the full history. Per-row date re-checks stay
+    // defensive.
+    const located = readCallNoteRowsInRange_(sheet, startDate, endDate);
     const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+    for (let i = 0; i < located.length; i++) {
+      const rowDate = normalizeDate_(located[i].row[CN.DATE_LOCAL]);
       if (rowDate < startDate || rowDate > endDate) continue;
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      const note = callNoteRowToObject_(located[i]);
       notes.push(note);
     }
     notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
@@ -2367,13 +2394,18 @@ function searchMyCallNotes(query, field, dateRange, exact) {
     const empTz = empTz_(emp);
     const f = String(field || 'all').toLowerCase();
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    // Bounded read (L-8): a supplied full date range slices to the contiguous
+    // block via the shared reader (INV-46); open-ended search still scans the
+    // whole history but column-bounded to CN_HEADERS.length (no stray columns).
+    const rangeStart = (dateRange && dateRange.start) || null;
+    const rangeEnd   = (dateRange && dateRange.end)   || null;
+    const located = readCallNoteRowsInRange_(sheet, rangeStart, rangeEnd);
 
     const qLower = q.toLowerCase();
     const isExact = exact === true;
     const results = [];
-    for (let i = 1; i < rows.length; i++) {
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+    for (let i = 0; i < located.length; i++) {
+      const note = callNoteRowToObject_(located[i]);
       if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
       if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
       let hit = false;
@@ -4150,7 +4182,10 @@ function findCallNoteRow_(sheet, noteId) {
   for (let i = 0; i < ids.length; i++) {
     if (String(ids[i][0]).trim() === noteId) {
       const rowIndex = i + 2;
-      const row = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+      // Fetch just the known schema width (L-10) — not getLastColumn(), which
+      // would pull any stray/human-added trailing columns in the rep's Sheet.
+      // All consumers index by CN.* (< CN_HEADERS.length).
+      const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
       return { rowIndex: rowIndex, row: row };
     }
   }
@@ -5520,8 +5555,9 @@ function getFormByToken(token) {
     }
 
     // Check expiration — compare stored expiresAt with current time.
-    // ExpiresAt is in the creating rep's tz, but for comparison we parse
-    // it generously — if it's in the past by any reading, it's expired.
+    // ExpiresAt is stored in CONFIG.TIMEZONE (createFormToken writes it there;
+    // L-13 — the prior "creating rep's tz" note was stale and a tz-"fix" off it
+    // would re-introduce the ±~12h expiry skew), so we parse it in the same tz.
     const expiresAtStr = String(row[FT.EXPIRES_AT] || '');
     if (expiresAtStr) {
       try {
@@ -5668,6 +5704,11 @@ function submitFormByToken(token, formData) {
     const now = new Date();
     const submittedAt = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
     const consentVersion = CONFIG.FORM_CONSENT_VERSION || '';
+    // L-12 — consentAt is the submit time, not the moment the box was ticked:
+    // the consent checkbox gates submission (you can't submit without it), and
+    // the client sends `_meta.openedAt` but no separate consent-tick timestamp,
+    // so ConsentAt is effectively SubmittedAt. The server-authoritative
+    // `consentVersion` (which language was shown) is the load-bearing record.
     const consentAt = submittedAt; // consent precedes the submit (checkbox-gated)
     const openedAt = String(meta.openedAt || '');
     // Hash over coercion-stable content only (dataJson / signature / token /
@@ -10657,7 +10698,10 @@ function kbUsageCounts_(windowDays) {
     const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_VIEWS_HEADERS.length).getValues();
     const cutD = new Date();
     cutD.setDate(cutD.getDate() - windowDays);
-    const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
+    // L-5 — build the cutoff in the KB spreadsheet's OWN tz, the same tz the
+    // coerced-Date row timestamps are recovered in below; mixing tzs here
+    // could shift the 30-day boundary by a day for rows near the edge.
+    const cutoff = fmtDateTz_(cutD, ssTz);
     for (let i = 0; i < data.length; i++) {
       const tsRaw = (data[i][0] instanceof Date)
         ? Utilities.formatDate(data[i][0], ssTz, 'yyyy-MM-dd')
@@ -12701,15 +12745,24 @@ function verifyDocSignature(docId) {
         }
       }
     }
-    if (!sigRow) return { signed: false, contentMatch: contentMatch };
+    if (!sigRow) return { signed: false, contentMatch: contentMatch, tampered: (contentMatch === false) };
     const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
     const recomputed = empDocSignatureHash_(
       d.contentHash, d.empId, d.docId,
       String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''));
+    const match = storedHash ? storedHash === recomputed : null;
+    // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
+    // consistent body+contentHash rewrite trips `match` (the signature hash
+    // bound the sign-time contentHash). EITHER being false means tamper, so
+    // expose a single definitive flag — a consumer checking `match` alone
+    // would miss the body-only case. The append-only `EmpDocSigned` audit row
+    // remains the deeper independent witness. (legacy/unsigned → null, not
+    // tampered.)
     return {
       signed: true,
       contentMatch: contentMatch,
-      match: storedHash ? storedHash === recomputed : null,
+      match: match,
+      tampered: (contentMatch === false || match === false),
       signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()),
       ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
     };
