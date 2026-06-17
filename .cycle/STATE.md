@@ -30,9 +30,16 @@ Executing as 7 separate per-module commits on branch claude/practical-gauss-yycw
   radiogroups; draft autosave (umsIntakeDrafts, 24h expiry). --brand removed from
   tripwire allowlist. Pure 134/0, DOM 48/0. NEW localStorage key umsIntakeDrafts
   (CLAUDE.md "Ten ... keys" list now 11 — /sync-docs).
-- NEXT: commit #3 Training redesign (completion ring + checklist rows; manager
-  matrix → CSS-grid status grid + coverage % col). Token-hygiene already applied
-  to train/* in commit #1.
+- DONE — commit #3 Training redesign (df073df): §3a completion-ring header card +
+  Done/Left cells + overdue inset rail + primary quiz action; §3b manager matrix →
+  reps×items CSS-grid status squares + numbered item key + coverage% column
+  (trainCoverageClass_ tones), reps sorted least-covered first. New helpers
+  trainRingHtml_/trainCoverageClass_. Pure 134/0, DOM 48/0. Minor: per-cell quiz
+  attempt count dropped from the matrix (still in analytics table).
+- NEXT: commit #4 Reference/KB redesign (collapsible departments w/ chevron+count
+  persisted; item icons fileText/grid/paperclip — fileText already wired in #1;
+  .kb-btn→shared tokens; landing panel = Recently viewed / Most used / Review-due).
+  Leave reader/markdown/search/drawer.
 
 ## Cycle 5 CLOSED (2026-06-17)
 Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
