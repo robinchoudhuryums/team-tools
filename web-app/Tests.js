@@ -3848,6 +3848,7 @@ function test_managerGates_rejectNonManager() {
     ['getEmployeesList',               function () { return getEmployeesList(); }],
     ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
     ['getAutomationHealth',            function () { return getAutomationHealth(); }],
+    ['getStorageHealth',               function () { return getStorageHealth(); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
     ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
     ['getCallNotesAuditLog',           function () { return getCallNotesAuditLog({}); }],

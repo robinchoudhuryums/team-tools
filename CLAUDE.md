@@ -317,6 +317,7 @@ this section before touching the relevant area.
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
+  `getStorageHealth`,
   `kbConvertDriveDoc`, `kbGetUsageStats`, `kbGetReviewDue`,
   `kbMarkReviewed`, `saveKbAiSettings`,
   `getTrainingDashboard`, `saveTrainingAssignment`,
@@ -2197,6 +2198,21 @@ this section before touching the relevant area.
   before `innerHTML`. Note IDs/dates/rep IDs pass via `data-*`
   attributes read in the handler (the `cnStatsDrillDown_` pattern), not
   inline string interpolation.
+- **Storage Health panel (Admin tab, #1).** Manager-only, read-only
+  one-pane-of-glass over every spreadsheet the app uses (`getStorageHealth`,
+  rendered by `cnLoadStoragePanel_` beside Automation Health). For each of the
+  seven stores (see the Operator State Checklist's storage map) it reports which
+  Script Property resolves it, whether it's configured + reachable
+  (`SpreadsheetApp.openById` in try/catch), and — the headline — whether the
+  spreadsheet's timezone equals `CONFIG.TIMEZONE` (a mismatch silently drifts
+  every coerced date/time read; the S1.1 tripwire only covers the ADP sheet,
+  this covers all of them). It also flags the `FORMS_SS_ID`-unset → form-PHI-on-
+  the-ADP-sheet case (the recommended consolidation) and probes each enrolled
+  rep's per-rep Notes Sheet for reachability + tz drift (the established
+  cross-rep walk cost). PHI-free: returns store metadata + names/urls + tz only,
+  never row content. Every server string is `esc()`'d before `innerHTML`. The
+  management surface is consolidated here without consolidating the data stores
+  (whose PHI/payroll/HR/retention boundaries are deliberate).
 - **Automation Health panel (Admin tab).** Manager-only, read-only
   surfacing of the silent-degradation signals (`getAutomationHealth`,
   rendered by `cnLoadHealthPanel_` below the compliance panel). One
@@ -2450,6 +2466,32 @@ pick them up without re-deriving the context.
   a short-TTL cached cross-rep variant.
 
 ## Operator State Checklist
+
+### Spreadsheet / storage map (one-screen reference)
+
+Seven distinct spreadsheets, split deliberately along PHI / payroll / HR /
+PHI-free / external lines and by retention policy — **consolidation is NOT
+advised** (the boundaries are the point); manage them as a set instead. The
+manager **Call Notes → Admin → Storage Health** panel (`getStorageHealth`)
+shows each store's configured / reachable / **tz-vs-CONFIG** status live — the
+one-pane-of-glass for this table. Keep all seven in one Drive folder for sanity.
+
+| Store | Script Property (fallback) | Tabs | Class | Retention | Resolver |
+|-------|----------------------------|------|-------|-----------|----------|
+| Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimeOffRequests, AuditLog, PunchAdjustRequests | Payroll + shared audit | kept | `getAdpSS_` |
+| CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
+| Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
+| Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions | **PHI** | 90-day purge (if enabled) | `getFormsSS_` |
+| Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts | PHI-free by policy | kept | `getKbSS_` |
+| Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures | HR — keep-forever | **never purged** (INV-122) | `getHrDocsSS_` |
+| Call Notes (per-rep) | `Employees` col L (`CallNotesSheetId`) | Notes (one Sheet **per rep**) | **PHI** | optional purge | `getCallNotesSheet_` |
+
+**Every store's timezone MUST equal `CONFIG.TIMEZONE`** (coerced date/time reads
+drift otherwise — the S1.1 tripwire `config_adpSheetTzMatchesConfig` enforces it
+for the ADP sheet; Storage Health surfaces it for all). **Recommended
+consolidation (the only one):** set `FORMS_SS_ID` to the Intake spreadsheet so
+form PHI isn't co-located with the ADP/payroll sheet (the back-compat fallback).
+Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`.
 
 State that exists outside the codebase and must be set up
 manually for a fresh deploy or environment:

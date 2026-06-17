@@ -377,6 +377,21 @@
     .cn-tax-actions { justify-content: flex-start; }
   }
 
+  /* ─── ADMIN STORAGE HEALTH PANEL (#1) ────────────────────────────── */
+  .cn-storage-row {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+    padding: 9px 0; border-bottom: 1px dashed var(--line);
+  }
+  .cn-storage-row:last-child { border-bottom: none; }
+  .cn-storage-main { min-width: 0; flex: 1; }
+  .cn-storage-label { font-weight: 600; color: var(--ink); font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cn-storage-role { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .cn-storage-meta { text-align: right; flex-shrink: 0; white-space: nowrap; }
+  @media (max-width: 720px) {
+    .cn-storage-row { flex-direction: column; gap: 4px; }
+    .cn-storage-meta { text-align: left; white-space: normal; }
+  }
+
   /* ─── ADMIN TAG TRENDS PANEL (#5) ────────────────────────────────── */
   .cn-trend-head,
   .cn-trend-row {
@@ -6714,6 +6729,7 @@ function enterCallNotesAdminView(area) {
     '<div id="cn-admin-trends"></div>' +
     '<div id="cn-admin-audit"></div>' +
     '<div id="cn-admin-health"></div>' +
+    '<div id="cn-admin-storage"></div>' +
     '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
@@ -6738,6 +6754,9 @@ function enterCallNotesAdminView(area) {
   // Automation Health — sync-failure / CDR-drift / last-run surfacing.
   // Independent load; failure stays contained to its own slot.
   cnLoadHealthPanel_();
+  // #1 — Storage Health: one pane over every spreadsheet (configured /
+  // reachable / tz-vs-CONFIG). Independent load; failure stays contained.
+  cnLoadStoragePanel_();
 }
 
 /** Round 2 · 8h — fetch + render the new Admin sections (KPI strip + tag
@@ -7244,6 +7263,83 @@ var CN_HEALTH_RUN_LABELS = {
   FormDataPurge:      { label: 'Form-data retention purge',  expect: 'writes a row only when retention is enabled' },
   CallNotesPurge:     { label: 'Call-note retention purge',  expect: 'writes a row only when retention is enabled' },
 };
+
+/** #1 — Storage Health panel. Independent load (contained failure), mirrors
+ *  cnLoadHealthPanel_. Renders one row per spreadsheet the app uses with a
+ *  configured/reachable/tz badge — the tz-mismatch row is the headline (it's
+ *  the exact misconfig the runAllTests S1.1 tripwire flags). */
+function cnLoadStoragePanel_() {
+  var slot = document.getElementById('cn-admin-storage');
+  if (!slot) return;
+  slot.innerHTML = '<div class="spinner" style="margin:18px auto"></div>';
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-admin-storage');
+      if (!live) return;
+      if (!res || res.error) {
+        live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Storage health unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
+        return;
+      }
+      live.innerHTML = cnRenderStoragePanel_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-admin-storage');
+      if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Storage health unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
+    })
+    .getStorageHealth();
+}
+
+function cnRenderStoragePanel_(res) {
+  var stores = (res && res.stores) || [];
+  if (!stores.length) return '';
+  var pill = function (txt, tone) {
+    var color = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep,var(--warn))' : tone === 'crit' ? 'var(--danger-deep)' : 'var(--muted)';
+    var bg = tone === 'ok' ? 'var(--accent-soft)' : tone === 'warn' ? 'var(--warning-soft,var(--warn-soft))' : tone === 'crit' ? 'var(--destructive-soft)' : 'var(--paper-2)';
+    return '<span style="font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;color:' + color + ';background:' + bg + '">' + esc(txt) + '</span>';
+  };
+  var rows = stores.map(function (s) {
+    // Status pill
+    var statusPill;
+    if (!s.configured) statusPill = pill('not set', s.cls === 'External' || /Employee Docs/.test(s.label) ? 'muted' : 'warn');
+    else if (s.reachable === false) statusPill = pill('unreachable', 'crit');
+    else statusPill = pill('ok', 'ok');
+    // tz pill
+    var tzPill;
+    if (s.tzMatch === true) tzPill = pill(esc(s.tz || 'tz ✓'), 'ok');
+    else if (s.tzMatch === false) tzPill = pill('tz ' + esc(s.tz || '?') + ' ≠ CONFIG', 'crit');
+    else tzPill = pill('—', 'muted');
+    var openLink = s.url ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" style="font-size:11px">Open ↗</a>' : '';
+    var perRep = '';
+    if (s.perRep && s.perRep.problems && s.perRep.problems.length) {
+      perRep = '<div style="font-size:11px;color:var(--danger-deep);margin-top:3px">' +
+        s.perRep.problems.map(function (p) { return esc(p.name) + ' (' + esc(p.issue) + ')'; }).join(', ') + '</div>';
+    }
+    var noteHtml = s.note ? '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + esc(s.note) + '</div>' : '';
+    return '<div class="cn-storage-row">' +
+      '<div class="cn-storage-main">' +
+        '<div class="cn-storage-label">' + esc(s.label) + ' ' + pill(esc(s.cls), 'muted') + '</div>' +
+        '<div class="cn-storage-role">' + esc(s.role) + (s.name ? ' · ' + esc(s.name) : '') + '</div>' +
+        noteHtml + perRep +
+      '</div>' +
+      '<div class="cn-storage-meta">' +
+        '<div>' + statusPill + ' ' + tzPill + '</div>' +
+        '<div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-top:3px">' + esc(s.prop) + ' · ' + esc(s.source) + ' · ' + esc(s.retention) + '</div>' +
+        (openLink ? '<div style="margin-top:3px">' + openLink + '</div>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+  var anyTzDrift = stores.some(function (s) { return s.tzMatch === false; });
+  var hdr = anyTzDrift
+    ? '<div style="font-size:12px;color:var(--danger-deep);margin-bottom:10px">' + icon('warning', 12) + ' A store’s timezone differs from CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ') — coerced date/time reads will drift. Set the sheet’s File → Settings → Time zone to match.</div>'
+    : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">All reachable stores match CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ').</div>';
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
+    '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' Storage Health</div>' +
+    hdr + rows +
+  '</div>';
+}
 
 function cnLoadHealthPanel_() {
   var slot = document.getElementById('cn-admin-health');

@@ -1,22 +1,62 @@
 # Cycle State
 
 ## Current
-Cycle: 4
-Phase: implement (broad-implement + 3 features + P1 hardening — pushed)
-Scope: broad findings (M-1,L-1,L-2,L-3,L-11) + features #5/#4/#3 + P1 (L-4/5/7/8/9/10/12/13,N-2)
+Cycle: 5
+Phase: idle (Cycle 5 CLOSED — reflect recorded 2026-06-17)
+Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 3
-Updated: 2026-06-17
+Subsystem cycles since last Seams audit: 4
+Updated: 2026-06-17 (Cycle 5 reflect)
 
-## P1 hardening batch this session (pushed, commit 1732fa2)
+## Cycle 5 CLOSED (2026-06-17)
+Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
+(PR #53). Numbered 5 (a parallel session claimed Cycle 4 for a non-audit
+operator-feedback+T4 batch — its straggler reflect commit 196948c stays only on
+`claude/affectionate-cori-90q3ap`, unmerged; renumber/fold it if ever merged).
+- Production fix=1 (M-1, Medium narrow trigger): adjustLeaveBalance_ per-row
+  PtoEnabled gate (was global-flag-only; contradicted S15/INV-27) + regression test.
+- Features=3: #5 tag trends (INV-125), #4 KB review-due (INV-126), #3 coverage
+  planner (INV-127).
+- Defensive=13: L-1 getMyMetrics cache, L-2 KB-AI spend race, L-3 intake data-URL,
+  L-11 metrics null-guard, L-4 verifyDocSignature `tampered`, L-5 KB usage tz,
+  L-7/L-8/L-10 bounded CN reads, L-9/L-12/L-13/N-2 comments.
+- New failure modes=0. net=1. Pure harness 128→133 green; node --check clean.
+- INV-128/129/130 proposed for the next verification pass (M-1 per-row gate,
+  KB-AI race-safe spend, getMyMetrics endpoint cache).
+
+## Post-reflect additions (pushed, on q4d2hf — merge when ready)
+- runAllTests triage (operator ran it; ADP sheet tz = America/Los_Angeles ≠
+  CONFIG Asia/Kolkata): #3 metrics_getMyMetrics_cdrUnavailableErrors FIXED
+  (L-1 endpoint cache now bypassed under _TEST_OVERRIDE_CDR_SS_ID, commit
+  0557169); #1/#2/#4 (config_adpSheetTzMatchesConfig / publicForm_tokenLifecycle
+  / training_assignCompleteFlow) are ONE environmental root cause — the ADP
+  sheet tz ≠ CONFIG.TIMEZONE → OPERATOR sets the sheet tz to Asia/Kolkata (or
+  reconciles CONFIG), re-run setupTestEnvironment + runAllTests.
+- Storage Health panel (#1, commit dee6d96): getStorageHealth (mgr-gated,
+  read-only, PHI-free) — all 7 stores' configured/reachable/tz-vs-CONFIG in the
+  Admin tab; + operator spreadsheet-map table (#3) in CLAUDE.md. Spreadsheet
+  consolidation assessed = NOT advised (boundaries deliberate); consolidated the
+  MANAGEMENT surface instead. Operator doing the Drive-folder grouping (#2).
+
+## Pending / not yet done
+- OPERATOR DEPLOY (still): `cd web-app && clasp push -f` + New version; then
+  runAllTests() in the editor.
+- OPERATOR: fix the ADP spreadsheet timezone (Asia/Kolkata) to clear the 3
+  tz-drift test failures; confirm whether the failing run was a TEST copy or
+  prod (if prod, the LA tz is a live data-integrity hazard).
+- 90q3ap straggler 196948c (cycle-4 metrics row) — reconcile if/when merged.
+
+## P1 hardening batch (commit 1732fa2)
 - L-8: getMyCallNotes/Range/searchMyCallNotes → readCallNoteRowsInRange_ (bounded;
-  now share the INV-46 append-order contiguity assumption the module already makes).
+  correctness-preserving — the reader finds first/last match across the full date
+  column then reads the inclusive block, so order-independent; contiguity is
+  efficiency-only).
 - L-7: setCallNotePinned pin-count via 2-column scan + "pinned" pre-filter.
 - L-10: findCallNoteRow_ row fetch at CN_HEADERS.length (not getLastColumn()).
 - L-5: kbUsageCounts_ cutoff in KB ss tz (boundary align). L-4: verifyDocSignature
   `tampered` flag + empdocs client uses it. L-9/L-12/L-13/N-2/M-1-edge: comments.
-- Pure harness 133 green. NOT taken: forms findFormTokenRow_ getLastColumn() (same
-  class as L-10, out of P1 scope) — follow-on.
+- NOT taken: forms findFormTokenRow_ getLastColumn() (same class as L-10, out of
+  P1 scope) — follow-on.
 
 ## Feature builds this session (all on claude/affectionate-cori-q4d2hf, pushed)
 - #5 Tag-trend analytics — getCallNotesTagTrends (mgr-gated, cached, PHI-free);
