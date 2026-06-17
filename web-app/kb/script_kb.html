@@ -11,6 +11,12 @@
   .kb-item:hover { background: var(--paper-2); }
   .kb-item.on { background: var(--accent-soft); color: var(--accent-deep, var(--accent)); }
   .kb-item .kb-snip { font-size: .74rem; color: var(--muted); }
+  /* #4 — review-due row: the kb-item button + a small Mark-reviewed action. */
+  .kb-reviewdue-row { display: flex; align-items: center; gap: 2px; }
+  .kb-reviewdue-row .kb-item { flex: 1; min-width: 0; }
+  .kb-review-btn { flex-shrink: 0; appearance: none; cursor: pointer; border: 1px solid var(--line); background: var(--paper-card); color: var(--success-deep, var(--accent)); border-radius: 7px; padding: 5px 7px; display: inline-flex; align-items: center; transition: background var(--t) var(--ease), border-color var(--t) var(--ease); }
+  .kb-review-btn:hover { background: var(--paper-2); border-color: var(--border-strong); }
+  .kb-review-btn svg { width: 13px; height: 13px; }
   .kb-main { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; }
   .kb-empty, .kb-loading { color: var(--muted); font-size: .9rem; margin: auto; text-align: center; }
   .kb-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 14px; }
@@ -268,7 +274,7 @@ function enterReferenceView(area) {
       if (!res || res.error) { el.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
       KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager;
       kbRenderTree_();
-      if (KB_STATE.isManager) kbLoadUsageBlock_();
+      if (KB_STATE.isManager) { kbLoadUsageBlock_(); kbLoadReviewDueBlock_(); }
     })
     .withFailureHandler(function (err) { if (currentView === requested) { var el = document.getElementById('kb-tree'); if (el) el.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; } })
     .getReferenceTree();
@@ -1243,6 +1249,56 @@ function kbLoadUsageBlock_() {
     })
     .withFailureHandler(function () {})
     .kbGetUsageStats();
+}
+
+/** #4 — manager-only "Review due" block, prepended to the tree. Lists KB items
+ *  whose last review/edit is older than the threshold, most-used first, each
+ *  with a Mark-reviewed button. Best-effort: any error renders nothing. */
+function kbLoadReviewDueBlock_() {
+  var requested = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      if (!res || res.error || !res.items || !res.items.length) return;
+      kbRenderReviewDueBlock_(res);
+    })
+    .withFailureHandler(function () {})
+    .kbGetReviewDue();
+}
+
+function kbRenderReviewDueBlock_(res) {
+  var el = document.getElementById('kb-tree'); if (!el) return;
+  // Remove any prior render so a Mark-reviewed reload doesn't stack blocks.
+  var prior = document.getElementById('kb-reviewdue-block'); if (prior) prior.remove();
+  var html = '<div class="kb-dept" id="kb-reviewdue-block"><div class="kb-dept-h">Review due · ' + esc(String(res.dueDays || 90)) + 'd+</div>';
+  res.items.forEach(function (it) {
+    var age = (it.ageDays == null) ? 'never reviewed'
+      : (it.basedOnUpdate ? ('edited ' + it.ageDays + 'd ago') : ('reviewed ' + it.ageDays + 'd ago'));
+    var views = it.views ? (' · ' + it.views + ' view' + (it.views === 1 ? '' : 's')) : '';
+    html += '<div class="kb-reviewdue-row">' +
+      '<button class="kb-item" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+        '<span>' + esc(it.title) + '</span>' +
+        '<span class="kb-snip">' + esc(age) + views + '</span>' +
+      '</button>' +
+      '<button class="kb-review-btn" data-kb-id="' + esc(it.id) + '" title="Mark reviewed (resets the staleness clock without editing)" ' +
+        'onclick="kbMarkReviewedClick_(this.getAttribute(\'data-kb-id\'))" aria-label="Mark reviewed">' + icon('check', 13) + '</button>' +
+    '</div>';
+  });
+  html += '</div>';
+  var hostDiv = document.createElement('div');
+  hostDiv.innerHTML = html;
+  el.insertBefore(hostDiv.firstChild, el.firstChild);
+}
+
+function kbMarkReviewedClick_(id) {
+  if (!id) return;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (r && r.success) { if (typeof showToast === 'function') showToast('Marked reviewed', 'success'); kbLoadReviewDueBlock_(); }
+      else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not mark reviewed', 'error');
+    })
+    .withFailureHandler(function (e) { if (typeof showToast === 'function') showToast((e && e.message) || 'Could not mark reviewed', 'error'); })
+    .kbMarkReviewed(id);
 }
 
 function kbRecordViewFireAndForget_(itemId, context) {

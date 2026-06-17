@@ -708,6 +708,7 @@ function _runAllTests() {
   _integrationTest('adjustLeaveBalance_restore',        test_adjustLeaveBalance_restore);
   _integrationTest('adjustLeaveBalance_invalidatesCache', test_adjustLeaveBalance_invalidatesCache);
   _integrationTest('adjustLeaveBalance_disabledNoOp',   test_adjustLeaveBalance_disabledNoOp);
+  _integrationTest('adjustLeaveBalance_perEmpDisabledNoOp', test_adjustLeaveBalance_perEmpDisabledNoOp);
 
   _integrationTest('recordPunch_basic',                 test_recordPunch_basic);
   _integrationTest('recordPunch_adjustDedup',           test_recordPunch_adjustDedup);
@@ -1292,6 +1293,26 @@ function test_adjustLeaveBalance_disabledNoOp() {
     _assertNull(result);
     _assertEqClose(_getBalance(_TEST_INDIA_ID, 'sick'), before, 'No change when PTO disabled');
   });
+}
+
+// M-1 — a contractor marked PtoEnabled=FALSE (column K) must NOT have their
+// balance mutated even when PTO tracking is globally ON. Before the fix,
+// adjustLeaveBalance_ gated only on the global flag, so approving a request
+// (or a manager filing on their behalf) silently drove the balance negative —
+// contradicting S15 / the per-employee opt-out (INV-27). The prior
+// ptoEnabled tests only checked that the UI flag is hidden, never the
+// deduction, which is how this lived undetected (audit finding N-1).
+function test_adjustLeaveBalance_perEmpDisabledNoOp() {
+  const original = _setEmpPtoEnabled(_TEST_INDIA_ID, 'FALSE');
+  try {
+    const before = _getBalance(_TEST_INDIA_ID, 'annual');
+    const result = adjustLeaveBalance_(_TEST_INDIA_ID, 'annual', -1);
+    _assertNull(result, 'Per-employee PTO disable returns null (no balance change)');
+    _assertEqClose(_getBalance(_TEST_INDIA_ID, 'annual'), before,
+      'Contractor (PtoEnabled=FALSE) balance is never deducted');
+  } finally {
+    _setEmpPtoEnabled(_TEST_INDIA_ID, original);
+  }
 }
 
 // ── recordPunch ──
@@ -3813,6 +3834,10 @@ function test_managerGates_rejectNonManager() {
     ['setCallNoteTrainingReply',       function () { return setCallNoteTrainingReply(_TEST_INDIA_ID, 'no-such-note', 'r'); }],
     ['managerDeleteCallNote',          function () { return managerDeleteCallNote(_TEST_INDIA_ID, 'no-such-note'); }],
     ['getCallNotesTagTaxonomy',        function () { return getCallNotesTagTaxonomy(); }],
+    ['getCallNotesTagTrends',          function () { return getCallNotesTagTrends(); }],
+    ['kbGetReviewDue',                 function () { return kbGetReviewDue(); }],
+    ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
+    ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],

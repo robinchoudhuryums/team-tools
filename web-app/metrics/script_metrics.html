@@ -729,7 +729,17 @@ function mRenderTeamMetrics_(data) {
     return;
   }
 
+  // Defensive: a degraded-but-non-{error} response (e.g. a partial CDR read
+  // that didn't populate teamTotals/reps) would otherwise throw on the
+  // t.pctAnswered / data.reps.length dereferences below and leave the view
+  // stuck on its spinner with no surfaced error. Treat a missing shape as
+  // "no data" rather than a thrown success handler.
   var t = data.teamTotals;
+  if (!t || !data.reps) {
+    el.innerHTML = '<div class="m-empty">No metrics available for this range.</div>';
+    return;
+  }
+
   var html = '';
 
   // V4·E4 — Hero + Rail. Hero = team % Answered + 30-day trend (single-day

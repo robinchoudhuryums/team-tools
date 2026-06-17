@@ -35,6 +35,9 @@ const CONFIG = {
 
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
+  COVERAGE_MIN_STAFF: 2,   // #3 — manager Coverage planner highlights any
+                           // manager-tz hour with fewer than this many reps
+                           // scheduled (after the PTO overlay) as understaffed.
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
@@ -234,6 +237,9 @@ const CONFIG = {
   KB: {
     SS_ID: 'YOUR_KB_SPREADSHEET_ID',
     TAB:   'KB',
+    REVIEW_DUE_DAYS: 90,   // #4 — an article/embed is "review due" when its last
+                           // review (or, for legacy rows, its last edit) is older
+                           // than this. Editing an item counts as reviewing it.
   },
 };
 
@@ -1359,6 +1365,12 @@ function fixPtoReconciliation(empId) {
     toReconcile.forEach(function (ri) {
       sheet.getRange(ri, TO.STATUS + 1).setValue('Reconciled');
     });
+    // Note (M-1 interaction): adjustLeaveBalance_ now no-ops for a PtoEnabled=FALSE
+    // contractor, so the rows are still neutralized (status→Reconciled) but the
+    // credit returns null. That's the right call going forward (contractors no
+    // longer accrue drift). Any pre-M-1 contractor over-charge that needs an
+    // actual balance credit must be corrected by a manual sheet edit — surface
+    // it via the balance line in the dashboard rather than re-enabling PTO.
     let newAnnual = null, newSick = null;
     if (creditAnnual > 0) newAnnual = adjustLeaveBalance_(empId, 'annual', creditAnnual);
     if (creditSick > 0)   newSick   = adjustLeaveBalance_(empId, 'sick', creditSick);
@@ -1792,6 +1804,13 @@ function updateCallNote(noteId, payload) {
     if (!located) return { success: false, error: 'Note not found.' };
 
     const oldRow = located.row;
+    // L-9 — updateCallNote is TEXT-ONLY by design: it writes the 7 content
+    // columns only. `sanitizeCallNotePayload_` also derives flags/tags into a
+    // subformData blob, but that is intentionally NOT written here — flag/tag
+    // changes go through `setCallNoteFlag` (card toggles) and the submit path's
+    // multi-flag toolbar, never the inline text editor. If a future caller
+    // passes flags/tags to updateCallNote expecting them to persist, surface a
+    // dedicated endpoint instead of silently widening this write.
     sheet.getRange(located.rowIndex, CN.CALLBACK + 1).setValue(cleaned.callback);
     sheet.getRange(located.rowIndex, CN.CALLER + 1).setValue(cleaned.caller);
     sheet.getRange(located.rowIndex, CN.RELATIONSHIP + 1).setValue(cleaned.relationship);
@@ -2010,20 +2029,28 @@ function setCallNotePinned(noteId, pinned) {
 
     const willPin = !!pinned;
 
-    // If pinning, scan all rows for existing pin count and reject if at
-    // limit. Scan happens inside the lock so two parallel pin requests
-    // can't both squeak past the limit.
+    // If pinning, count existing pins and reject if at limit. Scan happens
+    // inside the lock so two parallel pin requests can't both squeak past the
+    // limit. Bounded read (L-7): scan only the NoteId + SubformData columns
+    // with a cheap `"pinned"` substring pre-filter before JSON.parse — matches
+    // getMyPinnedCallNotes' discipline instead of pulling the rep's full
+    // history at full width.
     if (willPin) {
-      const allRows = sheet.getDataRange().getValues();
+      const lastRow = sheet.getLastRow();
       let pinnedCount = 0;
-      for (let i = 1; i < allRows.length; i++) {
-        if (String(allRows[i][CN.NOTE_ID]).trim() === noteId) continue;
-        const sfd = allRows[i][CN.SUBFORM_DATA];
-        if (!sfd) continue;
-        try {
-          const parsed = JSON.parse(sfd);
-          if (parsed && parsed.pinned) pinnedCount++;
-        } catch (e) { /* corrupt blob — skip */ }
+      if (lastRow >= 2) {
+        const rowN = lastRow - 1;
+        const idCol  = sheet.getRange(2, CN.NOTE_ID + 1, rowN, 1).getValues();
+        const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, rowN, 1).getValues();
+        for (let i = 0; i < rowN; i++) {
+          if (String(idCol[i][0]).trim() === noteId) continue;
+          const sfd = subCol[i][0];
+          if (!sfd || String(sfd).indexOf('"pinned"') < 0) continue;
+          try {
+            const parsed = JSON.parse(sfd);
+            if (parsed && parsed.pinned) pinnedCount++;
+          } catch (e) { /* corrupt blob — skip */ }
+        }
       }
       if (pinnedCount >= CN_PIN_LIMIT) {
         return { success: false, error:
@@ -2155,12 +2182,15 @@ function getMyCallNotes(options) {
     const filter = String(opts.filter || 'all').toLowerCase();
 
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    // Bounded read (L-8): single-day contiguous slice via the shared reader
+    // (INV-46 append-order assumption) instead of the rep's full history at
+    // full width. The per-row date re-check stays as a defensive guard.
+    const located = readCallNoteRowsInRange_(sheet, date, date);
     const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+    for (let i = 0; i < located.length; i++) {
+      const rowDate = normalizeDate_(located[i].row[CN.DATE_LOCAL]);
       if (rowDate !== date) continue;
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      const note = callNoteRowToObject_(located[i]);
       if (!callNoteMatchesFilter_(note, filter)) continue;
       notes.push(note);
     }
@@ -2195,12 +2225,15 @@ function getMyCallNotesRange(startDate, endDate) {
 
     const empTz = empTz_(emp);
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    // Bounded read (L-8): contiguous date-range slice via the shared reader
+    // (INV-46) instead of the full history. Per-row date re-checks stay
+    // defensive.
+    const located = readCallNoteRowsInRange_(sheet, startDate, endDate);
     const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+    for (let i = 0; i < located.length; i++) {
+      const rowDate = normalizeDate_(located[i].row[CN.DATE_LOCAL]);
       if (rowDate < startDate || rowDate > endDate) continue;
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      const note = callNoteRowToObject_(located[i]);
       notes.push(note);
     }
     notes.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
@@ -2361,13 +2394,18 @@ function searchMyCallNotes(query, field, dateRange, exact) {
     const empTz = empTz_(emp);
     const f = String(field || 'all').toLowerCase();
     const sheet = getCallNotesSheet_(emp);
-    const rows = sheet.getDataRange().getValues();
+    // Bounded read (L-8): a supplied full date range slices to the contiguous
+    // block via the shared reader (INV-46); open-ended search still scans the
+    // whole history but column-bounded to CN_HEADERS.length (no stray columns).
+    const rangeStart = (dateRange && dateRange.start) || null;
+    const rangeEnd   = (dateRange && dateRange.end)   || null;
+    const located = readCallNoteRowsInRange_(sheet, rangeStart, rangeEnd);
 
     const qLower = q.toLowerCase();
     const isExact = exact === true;
     const results = [];
-    for (let i = 1; i < rows.length; i++) {
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+    for (let i = 0; i < located.length; i++) {
+      const note = callNoteRowToObject_(located[i]);
       if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
       if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
       let hit = false;
@@ -2587,11 +2625,148 @@ function getCallNotesTagTaxonomy() {
 
 /** Drops the tag-taxonomy whole-result cache so the next Admin-tab load
  *  recomputes. Called by the tag-admin endpoints (rename/merge/archive) so a
- *  manager sees their change reflected immediately rather than after the TTL. */
+ *  manager sees their change reflected immediately rather than after the TTL.
+ *  Also drops the tag-TRENDS cache (#5) since a rename/merge/archive
+ *  re-attributes counts there too. */
 function invalidateCnTaxonomyCache_() {
-  try { CacheService.getScriptCache().remove(CN_TAXONOMY_CACHE_KEY); }
-  catch (e) { /* best-effort */ }
+  try {
+    const c = CacheService.getScriptCache();
+    c.remove(CN_TAXONOMY_CACHE_KEY);
+    c.remove(CN_TAG_TRENDS_CACHE_KEY);
+  } catch (e) { /* best-effort */ }
 }
+
+// ── Tag-trend analytics (#5 — manager Admin "Tag Trends" panel) ─────────────
+// Turns the same per-rep tag scan the taxonomy uses into a weekly time series
+// so a manager can see which issue types are spiking. Manager-gated, read-only,
+// cached, PHI-free (tags + dates only). The week-bucketing math is factored
+// into the pure cnTrendWeekStarts_ / cnTagTrendsFromEvents_ (Node-pinned).
+const CN_TAG_TRENDS_CACHE_KEY = 'cn_tag_trends_v1';
+const CN_TAG_TRENDS_CACHE_TTL = 300;   // 5 min — same cadence as the taxonomy
+const CN_TAG_TRENDS_WEEKS = 12;        // trailing window
+const CN_TAG_TRENDS_TOPK = 12;         // top tags by total (bounds payload + chart)
+
+/** yyyy-MM-dd → integer days since the Unix epoch (UTC, tz-safe — never a
+ *  local-time Date), or null on a malformed date. The inverse is
+ *  cnDayNumToIso_. Pure. */
+function cnIsoToDayNum_(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000) : null;
+}
+function cnDayNumToIso_(n) {
+  const d = new Date(n * 86400000);
+  return d.getUTCFullYear() + '-' +
+    ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' +
+    ('0' + d.getUTCDate()).slice(-2);
+}
+
+/** Returns `weeks` Monday-anchored week-start day-numbers (oldest→newest), the
+ *  last being the Monday of refIso's week. Pure. */
+function cnTrendWeekStarts_(refIso, weeks) {
+  const ref = cnIsoToDayNum_(refIso);
+  if (ref == null) return [];
+  const wd = (((ref + 4) % 7) + 7) % 7;       // 0=Sun … 6=Sat (epoch day 0 = Thu)
+  const monday = ref - ((wd + 6) % 7);        // Monday of ref's week
+  const out = [];
+  for (let i = (weeks | 0) - 1; i >= 0; i--) out.push(monday - i * 7);
+  return out;
+}
+
+/** Buckets {tag,date} events into `weeks` Monday weeks ending at refIso's week.
+ *  Returns { weekStarts:[iso…], series:[{tag, counts:[…], total, delta}] }
+ *  sorted by total desc, truncated to topK. Events outside the window are
+ *  dropped. Pure (no Sheets / Date-local). */
+function cnTagTrendsFromEvents_(events, refIso, weeks, topK) {
+  weeks = Math.max(1, weeks | 0);
+  const starts = cnTrendWeekStarts_(refIso, weeks);
+  if (!starts.length) return { weekStarts: [], series: [] };
+  const first = starts[0];
+  const counts = {};   // tag → int[weeks]
+  (events || []).forEach(function (ev) {
+    const d = cnIsoToDayNum_(ev && ev.date);
+    if (d == null) return;
+    const idx = Math.floor((d - first) / 7);
+    if (idx < 0 || idx >= weeks) return;
+    const tag = String((ev && ev.tag) || '').trim().toLowerCase();
+    if (!tag) return;
+    if (!counts[tag]) { counts[tag] = []; for (let k = 0; k < weeks; k++) counts[tag].push(0); }
+    counts[tag][idx]++;
+  });
+  let series = Object.keys(counts).map(function (tag) {
+    const c = counts[tag];
+    let total = 0;
+    for (let i = 0; i < c.length; i++) total += c[i];
+    const delta = c[weeks - 1] - (weeks >= 2 ? c[weeks - 2] : 0);
+    return { tag: tag, counts: c, total: total, delta: delta };
+  });
+  series.sort(function (a, b) { return b.total - a.total || a.tag.localeCompare(b.tag); });
+  if (topK > 0) series = series.slice(0, topK);
+  return { weekStarts: starts.map(cnDayNumToIso_), series: series };
+}
+
+/** Manager Admin "Tag Trends" — weekly per-tag counts over the trailing
+ *  CN_TAG_TRENDS_WEEKS. Manager-gated (INV-02/31), read-only, cached, PHI-free.
+ *  Reuses the taxonomy's 2-column scan (SubformData tags + DateLocal) but
+ *  buckets by week instead of total+lastSeen; archived tags are excluded; the
+ *  scan is window-pre-filtered so the events array stays bounded. */
+function getCallNotesTagTrends() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(CN_TAG_TRENDS_CACHE_KEY);
+    if (cached) { try { return JSON.parse(cached); } catch (e) { /* recompute */ } }
+
+    const weeks = CN_TAG_TRENDS_WEEKS;
+    const refIso = fmtDate_(new Date());   // CONFIG.TIMEZONE "today" — manager-facing aggregate
+    const starts = cnTrendWeekStarts_(refIso, weeks);
+    const windowStartIso = starts.length ? cnDayNumToIso_(starts[0]) : refIso;
+    const archivedSet = getArchivedTagsSet_();
+    const roster = getEmployeeRosterRows_();
+    const events = [];
+    let repsScanned = 0;
+    for (let i = 1; i < roster.length; i++) {
+      const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      if (!sheetId) continue;
+      try {
+        const repEmp = { id: String(roster[i][EMP.ID]).trim(), callNotesSheetId: String(sheetId).trim() };
+        const sheet = getCallNotesSheet_(repEmp);
+        repsScanned++;
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          const rowN = lastRow - 1;
+          const subCol  = sheet.getRange(2, CN.SUBFORM_DATA + 1, rowN, 1).getValues();
+          const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, rowN, 1).getValues();
+          for (let j = 0; j < rowN; j++) {
+            const subRaw = subCol[j][0];
+            if (!subRaw) continue;
+            let sub = null;
+            try { sub = JSON.parse(subRaw); } catch (e) { continue; }
+            if (!sub || !Array.isArray(sub.tags) || !sub.tags.length) continue;
+            const dateLocal = normalizeDate_(dateCol[j][0]);
+            // Window pre-filter (yyyy-MM-dd lexicographic = chronological) keeps
+            // the events array bounded to the trailing window.
+            if (!dateLocal || dateLocal < windowStartIso) continue;
+            sub.tags.forEach(function (t) {
+              const tag = String(t || '').trim().toLowerCase();
+              if (!tag || archivedSet[tag]) return;   // archived tags excluded from trends
+              events.push({ tag: tag, date: dateLocal });
+            });
+          }
+        }
+      } catch (e) { /* skip unreachable rep sheet */ }
+    }
+    const out = cnTagTrendsFromEvents_(events, refIso, weeks, CN_TAG_TRENDS_TOPK);
+    out.weeks = weeks;
+    out.repsScanned = repsScanned;
+    try {
+      const payload = JSON.stringify(out);
+      if (payload.length <= 90000) cache.put(CN_TAG_TRENDS_CACHE_KEY, payload, CN_TAG_TRENDS_CACHE_TTL);
+    } catch (e) { /* return uncached */ }
+    return out;
+  } catch (err) { return { error: err.message }; }
+}
+
 
 /** Rep-callable (caller-scoped, read-only) tag-suggestion source for the Log
  *  view's autocomplete datalist (B3). Returns the UNIQUE, non-archived tags the
@@ -4007,7 +4182,10 @@ function findCallNoteRow_(sheet, noteId) {
   for (let i = 0; i < ids.length; i++) {
     if (String(ids[i][0]).trim() === noteId) {
       const rowIndex = i + 2;
-      const row = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+      // Fetch just the known schema width (L-10) — not getLastColumn(), which
+      // would pull any stray/human-added trailing columns in the rep's Sheet.
+      // All consumers index by CN.* (< CN_HEADERS.length).
+      const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
       return { rowIndex: rowIndex, row: row };
     }
   }
@@ -5377,8 +5555,9 @@ function getFormByToken(token) {
     }
 
     // Check expiration — compare stored expiresAt with current time.
-    // ExpiresAt is in the creating rep's tz, but for comparison we parse
-    // it generously — if it's in the past by any reading, it's expired.
+    // ExpiresAt is stored in CONFIG.TIMEZONE (createFormToken writes it there;
+    // L-13 — the prior "creating rep's tz" note was stale and a tz-"fix" off it
+    // would re-introduce the ±~12h expiry skew), so we parse it in the same tz.
     const expiresAtStr = String(row[FT.EXPIRES_AT] || '');
     if (expiresAtStr) {
       try {
@@ -5525,6 +5704,11 @@ function submitFormByToken(token, formData) {
     const now = new Date();
     const submittedAt = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
     const consentVersion = CONFIG.FORM_CONSENT_VERSION || '';
+    // L-12 — consentAt is the submit time, not the moment the box was ticked:
+    // the consent checkbox gates submission (you can't submit without it), and
+    // the client sends `_meta.openedAt` but no separate consent-tick timestamp,
+    // so ConsentAt is effectively SubmittedAt. The server-authoritative
+    // `consentVersion` (which language was shown) is the load-bearing record.
     const consentAt = submittedAt; // consent precedes the submit (checkbox-gated)
     const openedAt = String(meta.openedAt || '');
     // Hash over coercion-stable content only (dataJson / signature / token /
@@ -7441,6 +7625,17 @@ function adjustLeaveBalance_(empId, bucket, delta) {
   const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][EMP.ID]).trim() !== empId) continue;
+    // Per-employee PTO opt-out (column K). Contractors marked FALSE don't
+    // accrue or spend paid leave — skip the balance math entirely so an
+    // approval (or a manager filing on their behalf) can't drive their
+    // balance negative. The global enablePtoTracking flag is the master
+    // switch (checked above); this is the per-row gate that S15 / INV-27
+    // promise. Sheets coerces 'TRUE'/'FALSE' to native booleans on read, so
+    // parse defensively (mirrors getEmployeeInfo_ / lookupEmployeeById_).
+    const ptoVal = rows[i][EMP.PTO_ENABLED];
+    const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
+      ? '' : String(ptoVal).trim().toLowerCase();
+    if (ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0') return null;
     const col = bucket === 'sick' ? EMP.SICK_LEAVE : EMP.ANNUAL_LEAVE;
     const current = parseFloat(rows[i][col]) || 0;
     const next = +(current + delta).toFixed(2);
@@ -7708,6 +7903,150 @@ function getShiftSchedule_(timezone) {
 }
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
+
+// ── #3 Coverage planner (manager, forward staffing view) ────────────────────
+// getCoveragePlan(from,to): for each manager-tz day, lists every rep's shift
+// (per-tz schedule, converted to the manager's tz) with a PTO overlay
+// (Approved = off, Pending = tentative), plus an hourly concurrency strip that
+// flags understaffed hours (< CONFIG.COVERAGE_MIN_STAFF). Manager-gated,
+// read-only, PHI-free (names + schedule + PTO status only — never balances).
+// v1 LIMITATION: schedules are per-TIMEZONE, not per-rep (CLAUDE.md — there's
+// no per-rep schedule UI), so coverage assumes everyone in a tz works that tz's
+// shift. The hourly math is the pure, Node-pinned coverageBucketHours_.
+
+/** PURE: buckets shift intervals (minutes from the manager-tz midnight of the
+ *  range's first day) into a per-day × 24-hour concurrency grid, counting
+ *  DISTINCT reps per slot. Returns days[numDays] each = [24]{hour, confirmed,
+ *  tentative}; a rep with a confirmed interval in a slot isn't double-counted
+ *  as tentative there. Intervals outside [0, numDays*24h) are clipped. */
+function coverageBucketHours_(intervals, numDays) {
+  const days = [];
+  for (let d = 0; d < numDays; d++) {
+    const hours = [];
+    for (let h = 0; h < 24; h++) hours.push({ confirmed: {}, tentative: {} });
+    days.push(hours);
+  }
+  (intervals || []).forEach(function (iv) {
+    const rep = String(iv && iv.rep == null ? '' : iv.rep);
+    const s = iv && iv.absStart, e = iv && iv.absEnd;
+    if (!(e > s)) return;
+    const firstSlot = Math.floor(s / 60);
+    const lastSlot = Math.ceil(e / 60) - 1;
+    for (let slot = firstSlot; slot <= lastSlot; slot++) {
+      if (slot < 0) continue;
+      const d = Math.floor(slot / 24);
+      if (d >= numDays) break;
+      const h = slot % 24;
+      (iv.tentative ? days[d][h].tentative : days[d][h].confirmed)[rep] = true;
+    }
+  });
+  return days.map(function (hours) {
+    return hours.map(function (hh, h) {
+      const confirmed = Object.keys(hh.confirmed).length;
+      let tentative = 0;
+      Object.keys(hh.tentative).forEach(function (r) { if (!hh.confirmed[r]) tentative++; });
+      return { hour: h, confirmed: confirmed, tentative: tentative };
+    });
+  });
+}
+
+function getCoveragePlan(fromDate, toDate) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fromDate)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toDate)))
+      return { error: 'Invalid date (expected yyyy-MM-dd).' };
+    if (toDate < fromDate) { const t = fromDate; fromDate = toDate; toDate = t; }
+    const numDays = daysBetween_(fromDate, toDate) + 1;
+    if (numDays < 1 || numDays > 14) return { error: 'Range must be 1–14 days.' };
+
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const minStaff = (CONFIG.COVERAGE_MIN_STAFF != null) ? CONFIG.COVERAGE_MIN_STAFF : 2;
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    // Roster → reps (name + tz + resolved per-tz shift).
+    const roster = getEmployeeRosterRows_();
+    const reps = [];
+    for (let i = 1; i < roster.length; i++) {
+      const name = String(roster[i][EMP.NAME] || '').trim();
+      if (!name) continue;
+      const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
+      reps.push({ id: String(roster[i][EMP.ID]).trim(), name: name, tz: tz, sched: getShiftSchedule_(tz) });
+    }
+
+    // PTO overlay map {empId: {dateIso: 'Approved'|'Pending'}} over a padded
+    // window (a shift's local date can straddle into an adjacent manager day).
+    const padStart = addDaysIso_(fromDate, -1);
+    const padEnd = addDaysIso_(toDate, 1);
+    const ptoMap = {};
+    try {
+      const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+      for (let i = 1; i < trows.length; i++) {
+        const eid = String(trows[i][TO.EMP_ID]).trim();
+        const dt = normalizeDate_(trows[i][TO.DATE]);
+        const st = String(trows[i][TO.STATUS] || '').trim().toLowerCase();
+        if (!eid || !dt || dt < padStart || dt > padEnd) continue;
+        if (st !== 'approved' && st !== 'pending') continue;
+        if (!ptoMap[eid]) ptoMap[eid] = {};
+        if (ptoMap[eid][dt] !== 'Approved') ptoMap[eid][dt] = (st === 'approved') ? 'Approved' : 'Pending';
+      }
+    } catch (e) { /* PTO overlay best-effort — coverage still renders */ }
+
+    // Holidays for the years spanned.
+    const holMap = {};
+    const yrs = {}; yrs[fromDate.substring(0, 4)] = true; yrs[toDate.substring(0, 4)] = true;
+    Object.keys(yrs).forEach(function (y) {
+      try { getUsHolidays_(parseInt(y, 10)).forEach(function (h) { if (h && h.date) holMap[h.date] = h.name; }); }
+      catch (e) { /* ignore */ }
+    });
+
+    const hhmm = function (mins) {
+      const m = ((mins % 1440) + 1440) % 1440;
+      return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2) + ':00';
+    };
+
+    const days = [];
+    for (let d = 0; d < numDays; d++) {
+      const dateIso = addDaysIso_(fromDate, d);
+      const dow = new Date(dateIso + 'T12:00:00Z').getUTCDay();
+      days.push({ date: dateIso, weekday: DOW[dow], holidayName: holMap[dateIso] || null, reps: [] });
+    }
+
+    // For each rep × each padded local date, convert the shift to the manager
+    // tz, push an absolute interval for the hourly strip, and (when the local
+    // date is one of the displayed days) add the rep row.
+    const intervals = [];
+    reps.forEach(function (r) {
+      const startHH = hhmm(r.sched.startMin);
+      const endHH = hhmm(r.sched.startMin + r.sched.lengthMin);
+      for (let dd = -1; dd <= numDays; dd++) {
+        const localDate = addDaysIso_(fromDate, dd);
+        const pto = (ptoMap[r.id] && ptoMap[r.id][localDate]) || '';
+        const off = (pto === 'Approved');
+        const tentative = (pto === 'Pending');
+        const conv = convertDateTime_(localDate, startHH, r.tz, mgrTz);
+        const dayDelta = daysBetween_(fromDate, conv.date);
+        const absStart = dayDelta * 1440 + timeToMins_(conv.time);
+        if (!off) intervals.push({ rep: r.id, absStart: absStart, absEnd: absStart + r.sched.lengthMin, tentative: tentative });
+        if (dd >= 0 && dd < numDays) {
+          const endConv = convertDateTime_(localDate, endHH, r.tz, mgrTz);
+          days[dd].reps.push({
+            name: r.name, tz: r.tz,
+            status: off ? 'off' : (tentative ? 'tentative' : 'working'),
+            ptoType: pto || null,
+            startMgr: conv.displayTime,
+            endMgr: endConv.displayTime,
+          });
+        }
+      }
+    });
+
+    const bucketed = coverageBucketHours_(intervals, numDays);
+    for (let d = 0; d < numDays; d++) days[d].hours = bucketed[d];
+
+    return { from: fromDate, to: toDate, managerTz: mgrTz, minStaff: minStaff, days: days };
+  } catch (err) { return { error: err.message }; }
+}
 function safeTimezone_(tz) {
   if (!tz) return CONFIG.TIMEZONE;
   const t = String(tz).trim();
@@ -8911,6 +9250,20 @@ function getMyMetrics(date) {
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { error: 'Invalid date (expected yyyy-MM-dd).' };
 
+    // L-1 — this self-view is the only rep-facing CDR read, and it scans the
+    // WHOLE roster's per-rep matrix (INV-124 team average) PLUS the Transfer
+    // sheet, UNCACHED, on every open. Cache the assembled result per
+    // (rep, date) for CDR_CACHE_TTL so a tab re-enter / date toggle doesn't
+    // re-scan. Same staleness tradeoff as getMetricsAmbient and the Clock
+    // coverage strip — a just-filed note surfaces within the TTL. Keyed by
+    // emp.id so no rep ever reads another rep's cached self-view.
+    var metricsCache = CacheService.getScriptCache();
+    var myCacheKey = 'metrics_my_v1:' + emp.id + ':' + date;
+    try {
+      var cachedMy = metricsCache.get(myCacheKey);
+      if (cachedMy) { var co = JSON.parse(cachedMy); co.cached = true; return co; }
+    } catch (_) {}
+
     // Compute 30-day window ending on `date`
     var endD = new Date(date + 'T12:00:00Z');
     var startD = new Date(endD.getTime() - 29 * 86400000);
@@ -8964,7 +9317,7 @@ function getMyMetrics(date) {
 
     var noteCount = countCallNotesInRange_(emp, date, date);
 
-    return {
+    var result = {
       date: date,
       repName: emp.name,
       cdr: todayCdr ? {
@@ -8983,6 +9336,8 @@ function getMyMetrics(date) {
       series: series,
       kpiMinCohort: MIN_COHORT,
     };
+    try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    return result;
   } catch (err) { return { error: err.message }; }
 }
 
@@ -9725,8 +10080,17 @@ function intakeDecodeImages_(images) {
     if (str.length > CONFIG.INTAKE.MAX_IMAGE_CHARS) throw new Error('An attached image is too large (max ~5MB each).');
     if (str.indexOf('data:') !== 0 || str.indexOf(',') < 0) return;
     const cid = 'attachedImage' + index;
-    const contentType = str.substring(5, str.indexOf(';'));
-    const data = str.split(',')[1];
+    // Parse the data URL robustly: data:[<mediatype>][;base64],<payload>.
+    // The mediatype runs from after 'data:' to the first ','; a naive
+    // substring(5, indexOf(';')) yields a garbage type (or "data:") when the
+    // URL has no ';' marker — and Utilities.base64Decode then throws on a
+    // non-base64 payload. We only inline base64 data URLs (what the client
+    // sends); anything else is skipped rather than crashing the whole send.
+    const comma = str.indexOf(',');
+    const meta = str.substring(5, comma);            // between 'data:' and ','
+    if (!/;base64$/i.test(meta)) return;             // not a base64 data URL — skip
+    const contentType = meta.replace(/;base64$/i, '') || 'application/octet-stream';
+    const data = str.substring(comma + 1);
     const blob = Utilities.newBlob(Utilities.base64Decode(data), contentType, cid);
     inlineImagesObj[cid] = blob;
     sectionHtml += '<img src="cid:' + cid + '" style="max-width:100%;border:1px solid #ddd;border-radius:4px;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />';
@@ -9990,8 +10354,8 @@ function intakeGetSubmission(formType, submissionId) {
 //  in-app KB. PHI-free by policy. Backed by a dedicated KB spreadsheet
 //  (KB_SS_ID), read by the server; reps never open the sheet directly.
 // ════════════════════════════════════════════════════════════════════════════
-const KB = { ID:0, DEPARTMENT:1, TITLE:2, TYPE:3, BODY_MD:4, DRIVE_KIND:5, DRIVE_FILE_ID:6, SORT_ORDER:7, UPDATED_AT:8, UPDATED_BY:9 };
-const KB_HEADERS = ['Id','Department','Title','Type','BodyMd','DriveKind','DriveFileId','SortOrder','UpdatedAt','UpdatedBy'];
+const KB = { ID:0, DEPARTMENT:1, TITLE:2, TYPE:3, BODY_MD:4, DRIVE_KIND:5, DRIVE_FILE_ID:6, SORT_ORDER:7, UPDATED_AT:8, UPDATED_BY:9, REVIEWED_AT:10, REVIEWED_BY:11 };
+const KB_HEADERS = ['Id','Department','Title','Type','BodyMd','DriveKind','DriveFileId','SortOrder','UpdatedAt','UpdatedBy','ReviewedAt','ReviewedBy'];
 const KB_CACHE_KEY = 'kb_tree_v1';
 const KB_CACHE_TTL = 300;
 const KB_BODY_MAX = 49000; // under the 50k Sheets cell limit
@@ -10011,6 +10375,17 @@ function getOrCreateKbSheet_() {
     sheet.appendRow(KB_HEADERS);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, KB_HEADERS.length).setFontWeight('bold');
+  } else {
+    // #4 back-compat — widen the header row if new trailing columns
+    // (ReviewedAt/ReviewedBy) were appended to KB_HEADERS since this sheet was
+    // provisioned. Code indexes by the KB enum so header names are decorative,
+    // but this keeps the sheet self-documenting. One-time + self-healing (the
+    // guard passes once migrated) — same "provision on first touch" pattern as
+    // getCallNotesSheet_.
+    const hdr = sheet.getRange(1, 1, 1, KB_HEADERS.length).getValues()[0];
+    if (String(hdr[KB_HEADERS.length - 1]) !== KB_HEADERS[KB_HEADERS.length - 1]) {
+      sheet.getRange(1, 1, 1, KB_HEADERS.length).setValues([KB_HEADERS]).setFontWeight('bold');
+    }
   }
   return sheet;
 }
@@ -10307,21 +10682,26 @@ function kbRecordView(itemId, context) {
  *  tail scan of KbViews (the tab is append-only/chronological). Timestamp
  *  cells are Sheets-coerced Dates — recovered in the KB spreadsheet's OWN tz
  *  (the tz that coerced them; same discipline as normalizeAuditTs_). */
-function kbGetUsageStats() {
+/** KbViews open-counts per item id over the last `windowDays`. Bounded tail
+ *  scan (KB_VIEWS_MAX_SCAN). Returns { id: {count, drawerCount} } (empty map
+ *  when the tab is missing/empty or on any failure). Shared by kbGetUsageStats
+ *  and kbGetReviewDue (#4 prioritizes review-due items by usage). */
+function kbUsageCounts_(windowDays) {
+  const out = {};
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const ss = getKbSS_();
     const sheet = ss.getSheetByName(KB_VIEWS_TAB);
-    if (!sheet || sheet.getLastRow() < 2) return { items: [] };
+    if (!sheet || sheet.getLastRow() < 2) return out;
     const ssTz = ss.getSpreadsheetTimeZone();
     const lastRow = sheet.getLastRow();
     const startRow = Math.max(2, lastRow - KB_VIEWS_MAX_SCAN + 1);
     const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_VIEWS_HEADERS.length).getValues();
     const cutD = new Date();
-    cutD.setDate(cutD.getDate() - KB_USAGE_WINDOW_DAYS);
-    const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
-    const counts = {};
+    cutD.setDate(cutD.getDate() - windowDays);
+    // L-5 — build the cutoff in the KB spreadsheet's OWN tz, the same tz the
+    // coerced-Date row timestamps are recovered in below; mixing tzs here
+    // could shift the 30-day boundary by a day for rows near the edge.
+    const cutoff = fmtDateTz_(cutD, ssTz);
     for (let i = 0; i < data.length; i++) {
       const tsRaw = (data[i][0] instanceof Date)
         ? Utilities.formatDate(data[i][0], ssTz, 'yyyy-MM-dd')
@@ -10329,10 +10709,19 @@ function kbGetUsageStats() {
       if (tsRaw < cutoff) continue;
       const id = String(data[i][1] || '').trim();
       if (!id) continue;
-      if (!counts[id]) counts[id] = { count: 0, drawerCount: 0 };
-      counts[id].count++;
-      if (String(data[i][3] || '').indexOf('drawer') === 0) counts[id].drawerCount++;
+      if (!out[id]) out[id] = { count: 0, drawerCount: 0 };
+      out[id].count++;
+      if (String(data[i][3] || '').indexOf('drawer') === 0) out[id].drawerCount++;
     }
+  } catch (e) { /* best-effort — empty map on any failure */ }
+  return out;
+}
+
+function kbGetUsageStats() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const counts = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
     const ids = Object.keys(counts);
     if (!ids.length) return { items: [] };
     // Join titles from the KB sheet (small — one bounded read).
@@ -10349,6 +10738,89 @@ function kbGetUsageStats() {
       .sort(function (a, b) { return b.count - a.count; })
       .slice(0, KB_USAGE_TOP_N);
     return { items: items, windowDays: KB_USAGE_WINDOW_DAYS };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Recovers a KB timestamp cell to a yyyy-MM-dd string. Sheets coerces the
+ *  'yyyy-MM-dd HH:mm:ss' strings kbSaveItem writes into Date objects on read,
+ *  so recover Dates in the KB SPREADSHEET's own tz (the tz that coerced them —
+ *  the kbGetUsageStats / normalizeAuditTs_ discipline; NOT the ADP tz). */
+function kbCellDateIso_(v, ssTz) {
+  if (v instanceof Date) return Utilities.formatDate(v, ssTz, 'yyyy-MM-dd');
+  return String(v == null ? '' : v).substring(0, 10);
+}
+
+/** #4 — manager "Mark reviewed": bumps ReviewedAt/ReviewedBy without touching
+ *  content (the "still accurate, no edit needed" path). Manager-gated (INV-02),
+ *  locked (INV-01), audited (KbItemReviewed). No cache invalidation needed —
+ *  the tree cache doesn't carry review state and kbGetReviewDue reads live. */
+function kbMarkReviewed(id) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    id = String(id || '').trim();
+    if (!id) return { success: false, error: 'Missing item id.' };
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    let found = -1;
+    if (last >= 2) {
+      const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+    }
+    if (found < 0) return { success: false, error: 'Item not found.' };
+    const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    sheet.getRange(found, KB.REVIEWED_AT + 1, 1, 2).setValues([[now, emp.email]]);
+    writeAuditLog_(emp, 'KbItemReviewed', '', '', false, 0, 'id=' + id, emp.email);
+    return { success: true, reviewedAt: now };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** #4 — manager review-due queue: KB items whose last review (or, for legacy
+ *  rows with no ReviewedAt, last edit) is older than CONFIG.KB.REVIEW_DUE_DAYS,
+ *  sorted by 30-day usage desc (polish the most-leaned-on stale guides first).
+ *  Manager-gated (INV-02), read-only, PHI-free. */
+function kbGetReviewDue() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const dueDays = (CONFIG.KB && CONFIG.KB.REVIEW_DUE_DAYS) || 90;
+    const ss = getKbSS_();
+    const ssTz = ss.getSpreadsheetTimeZone();
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { items: [], dueDays: dueDays };
+    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
+    const usage = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
+    const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
+    const items = [];
+    rows.forEach(function (r) {
+      const id = String(r[KB.ID] || '').trim();
+      if (!id) return;
+      const reviewedIso = kbCellDateIso_(r[KB.REVIEWED_AT], ssTz);
+      const updatedIso  = kbCellDateIso_(r[KB.UPDATED_AT], ssTz);
+      const baseIso = reviewedIso || updatedIso;   // legacy rows fall back to last edit
+      let ageDays = null;
+      if (baseIso) { const n = cnIsoToDayNum_(baseIso); if (n != null && todayNum != null) ageDays = todayNum - n; }
+      const due = (ageDays == null) || (ageDays >= dueDays);
+      if (!due) return;
+      items.push({
+        id: id,
+        title: String(r[KB.TITLE] || '(untitled)'),
+        department: String(r[KB.DEPARTMENT] || ''),
+        type: String(r[KB.TYPE] || 'article'),
+        lastReviewedIso: reviewedIso || null,
+        basedOnUpdate: !reviewedIso,     // true = never explicitly reviewed (age is since last edit)
+        ageDays: ageDays,
+        views: (usage[id] && usage[id].count) || 0,
+      });
+    });
+    items.sort(function (a, b) {
+      return (b.views - a.views) || ((b.ageDays || 0) - (a.ageDays || 0)) || a.title.localeCompare(b.title);
+    });
+    return { items: items.slice(0, 50), dueDays: dueDays };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -10390,7 +10862,11 @@ function kbSaveItem(payload) {
       const sheet = getOrCreateKbSheet_();
       const id = String(payload.id || '').trim() || Utilities.getUuid();
       const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-      const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email];
+      // #4 — saving an item (new or edited) counts as reviewing it: stamp
+      // ReviewedAt/ReviewedBy alongside UpdatedAt/UpdatedBy so a fresh edit
+      // clears the staleness clock. A no-edit "still accurate" confirmation
+      // goes through kbMarkReviewed instead.
+      const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email, now, emp.email];
       const last = sheet.getLastRow();
       let found = -1;
       if (last >= 2 && payload.id) {
@@ -10645,6 +11121,9 @@ const KB_AI_MAX_CHUNKS = 4;
 const KB_AI_SCORE_FLOOR = 4;              // top-chunk minimum — thin matches never hit the API
 const KB_AI_DEFAULT_MODEL = 'claude-haiku-4-5';
 const KB_AI_DEFAULT_DAILY_CAP = 3;        // USD/day org-wide; Admin-adjustable (KB_AI_DAILY_CAP)
+const KB_AI_CALL_RESERVE_USD = 0.02;      // L-2 — conservative per-call reservation held while a
+                                          // vendor call is in flight, reconciled to actual cost
+                                          // after. Bounds concurrent-miss overshoot of the daily cap.
 // $/MTok per model — the Admin model <select> renders from these keys (via
 // getAdminConfig), so client and server can't drift. An unknown model id
 // (operator typo in KB_AI_MODEL) is costed at the most expensive known rates
@@ -10764,19 +11243,45 @@ function kbAiReadSpend_() {
   return { date: today, usd: 0, calls: 0 };
 }
 
-/** Records one call's cost. Brief tryLock so parallel cache misses don't
- *  lose an increment; on contention the write still applies best-effort —
- *  the cap is a soft budget guard, and the vendor-console hard spend cap is
- *  the backstop (set one there too). */
-function kbAiRecordSpend_(usd) {
+/** Atomically applies a spend delta under a brief lock: usdDelta (clamped so
+ *  the counter never goes negative) and callDelta. Used for reconcile
+ *  (actualCost − reserve, +1 call) and refund (−reserve, 0 calls). On lock
+ *  contention the write still applies best-effort — the cap is a soft budget
+ *  guard, and the vendor-console hard spend cap is the backstop (set one
+ *  there too). */
+function kbAiApplySpend_(usdDelta, callDelta) {
   const lock = LockService.getScriptLock();
   let locked = false;
   try { locked = lock.tryLock(3000); } catch (_) {}
   try {
     const s = kbAiReadSpend_();
-    s.usd += usd; s.calls += 1;
+    s.usd = Math.max(0, s.usd + usdDelta);
+    s.calls += (callDelta || 0);
     PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
   } catch (_) {}
+  finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
+}
+
+/** L-2 — atomic cap check + reservation. Reads today's spend and, in the SAME
+ *  lock, reserves `reserve` USD if under the cap. Returns true if the caller
+ *  may proceed (reservation applied), false if the cap is already reached.
+ *  Doing the read+check+reserve atomically closes the lost-update window where
+ *  several concurrent cache misses each read spend < cap and all call the
+ *  vendor before any increment lands. The caller reconciles to the real cost
+ *  (or refunds the reservation on a failed/empty call) via kbAiApplySpend_.
+ *  On lock contention it fails OPEN (returns true) — matching the prior
+ *  best-effort posture; the vendor-console hard cap remains the true backstop. */
+function kbAiTryReserveSpend_(cap, reserve) {
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(3000); } catch (_) {}
+  try {
+    const s = kbAiReadSpend_();
+    if (s.usd >= cap) return false;
+    s.usd += reserve;
+    PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
+    return true;
+  } catch (_) { return true; }
   finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
 }
 
@@ -10882,15 +11387,19 @@ function kbGetFacetGuidance(facets) {
 
     const cfg = getKbAiConfig_();
     if (!cfg.apiKey) return noneOut('no-key', false);
-    if (kbAiReadSpend_().usd >= cfg.dailyCap) return noneOut('cap', false);
+    // Atomic cap check + reservation (L-2). Holding the lock across the slow
+    // vendor fetch is deliberately avoided (the kbResolveDocImages_ lesson);
+    // instead we reserve up front so concurrent misses see the bump, then
+    // reconcile to the real cost / refund the reservation below.
+    if (!kbAiTryReserveSpend_(cfg.dailyCap, KB_AI_CALL_RESERVE_USD)) return noneOut('cap', false);
 
     let vendor = null;
     try { vendor = kbAiCallVendor_(cfg, kbAiBuildPrompt_(clean, chunks)); }
     catch (e) { Logger.log('kbGetFacetGuidance vendor: ' + e.message); }
-    if (!vendor) return noneOut('vendor-failed', false);
+    if (!vendor) { kbAiApplySpend_(-KB_AI_CALL_RESERVE_USD, 0); return noneOut('vendor-failed', false); }
 
     const cost = kbAiEstimateCostUsd_(cfg.model, vendor.usage);
-    kbAiRecordSpend_(cost);
+    kbAiApplySpend_(cost - KB_AI_CALL_RESERVE_USD, 1);
     // PHI-free audit row — facets are validated enums, never note content.
     writeAuditLog_(emp, 'KbAiGuidance', '', '', false, 0,
       'facets=' + canonical + '; model=' + cfg.model + '; usd=' + cost.toFixed(4), emp.email);
@@ -12236,15 +12745,24 @@ function verifyDocSignature(docId) {
         }
       }
     }
-    if (!sigRow) return { signed: false, contentMatch: contentMatch };
+    if (!sigRow) return { signed: false, contentMatch: contentMatch, tampered: (contentMatch === false) };
     const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
     const recomputed = empDocSignatureHash_(
       d.contentHash, d.empId, d.docId,
       String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''));
+    const match = storedHash ? storedHash === recomputed : null;
+    // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
+    // consistent body+contentHash rewrite trips `match` (the signature hash
+    // bound the sign-time contentHash). EITHER being false means tamper, so
+    // expose a single definitive flag — a consumer checking `match` alone
+    // would miss the body-only case. The append-only `EmpDocSigned` audit row
+    // remains the deeper independent witness. (legacy/unsigned → null, not
+    // tampered.)
     return {
       signed: true,
       contentMatch: contentMatch,
-      match: storedHash ? storedHash === recomputed : null,
+      match: match,
+      tampered: (contentMatch === false || match === false),
       signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()),
       ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
     };

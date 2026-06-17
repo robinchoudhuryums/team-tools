@@ -442,7 +442,7 @@ function edVerify_(docId) {
     .withSuccessHandler(function (res) {
       if (!res || res.error) { showToast((res && res.error) || 'Verify failed.', 'error'); return; }
       if (!res.signed) { showToast('Not signed yet' + (res.contentMatch === false ? ' — CONTENT HASH MISMATCH (row altered after issue!)' : '.'), res.contentMatch === false ? 'error' : 'info'); return; }
-      if (res.match === true && res.contentMatch !== false) {
+      if (!res.tampered && res.match === true) {
         showToast('✓ Integrity verified — signature and content hashes match (signed ' + String(res.signedAt).substring(0, 10) + ').', 'success');
       } else if (res.match === null) {
         showToast('Signed (legacy row — no stored hash to verify).', 'info');

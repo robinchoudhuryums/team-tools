@@ -1,3 +1,22 @@
+<style>
+  /* #3 — Coverage planner */
+  .cov-strip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; margin: 10px 0 2px; }
+  .cov-h { height: 26px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9px; color: var(--ink); background: var(--paper-2); }
+  .cov-h i { font-style: normal; opacity: .75; }
+  .cov-h.ok   { background: var(--accent-soft); }
+  .cov-h.risk { background: var(--warning-soft, var(--warn-soft)); }
+  .cov-h.low  { background: var(--destructive-soft); }
+  .cov-h.none { background: var(--paper-2); }
+  .cov-hours-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--muted); margin-bottom: 10px; }
+  .cov-reps { display: flex; flex-direction: column; gap: 2px; }
+  .cov-rep { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 12px; }
+  .cov-rep:last-child { border-bottom: none; }
+  .cov-rep-name { font-weight: 600; color: var(--ink); }
+  .cov-rep-tz { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .cov-rep-status { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+  .cov-rep.off .cov-rep-name, .cov-rep.off .cov-rep-status { color: var(--muted); }
+  .cov-rep.tentative .cov-rep-status { color: var(--warning-deep, var(--warn)); }
+</style>
 <script>
 // ════════════════════════════════════════════════════════════════════════════
 //  MANAGER VIEW
@@ -937,5 +956,97 @@ function renderAnalyticsSection(data) {
         <div style="font-size:13px;margin-top:8px;display:flex;gap:12px">${toParts.join('')}</div>
       </div>
     </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  COVERAGE PLANNER (#3 — manager forward staffing view, managerOnly tab)
+// ════════════════════════════════════════════════════════════════════════════
+var COV_STATE = { from: '', to: '' };
+
+function enterCoverageView(area) {
+  if (typeof stopClock === 'function') stopClock();
+  area = area || document.getElementById('view-area');
+  if (!area) return;
+  var isoLocal = function (d) {
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  };
+  if (!COV_STATE.from) {
+    var today = new Date();
+    COV_STATE.from = isoLocal(today);
+    COV_STATE.to = isoLocal(new Date(today.getTime() + 6 * 86400000));
+  }
+  area.innerHTML =
+    (COMPACT_MODE
+      ? '<div class="compact-header"><div class="ch-title">' + icon('chart', 16) + ' Coverage</div></div>'
+      : '<div class="view-title-row"><h2>Coverage</h2><p>Forward staffing across timezones with PTO overlaid — understaffed manager-tz hours are flagged.</p></div>') +
+    '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
+      '<div class="field"><label>From</label><input type="date" id="cov-from" value="' + esc(COV_STATE.from) + '"></div>' +
+      '<div class="field"><label>To</label><input type="date" id="cov-to" value="' + esc(COV_STATE.to) + '"></div>' +
+      '<button class="btn-modal-ok" id="cov-load" style="margin:0">Load</button>' +
+    '</div>' +
+    '<div id="cov-body"><div class="spinner" style="margin:24px auto"></div></div>';
+  var loadBtn = document.getElementById('cov-load');
+  if (loadBtn) loadBtn.onclick = function () {
+    COV_STATE.from = document.getElementById('cov-from').value;
+    COV_STATE.to = document.getElementById('cov-to').value;
+    covLoad_();
+  };
+  covLoad_();
+}
+
+function covLoad_() {
+  var body = document.getElementById('cov-body'); if (!body) return;
+  var requested = currentView;
+  body.innerHTML = '<div class="spinner" style="margin:24px auto"></div>';
+  google.script.run
+    .withSuccessHandler(function (data) { if (currentView !== requested) return; covRender_(data); })
+    .withFailureHandler(function (err) {
+      if (currentView !== requested) return;
+      body.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load coverage') + '</div>';
+    })
+    .getCoveragePlan(COV_STATE.from, COV_STATE.to);
+}
+
+function covRender_(data) {
+  var body = document.getElementById('cov-body'); if (!body) return;
+  if (!data || data.error) { body.innerHTML = '<div class="no-data">' + esc((data && data.error) || 'No data') + '</div>'; return; }
+  if (!data.days || !data.days.length) { body.innerHTML = '<div class="no-data">No coverage in range.</div>'; return; }
+  var minStaff = data.minStaff || 2;
+  var html = '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Times shown in ' + esc(data.managerTz || '') +
+    '. Shifts use each rep’s timezone schedule (per-tz, v1). Hours with fewer than ' + esc(String(minStaff)) + ' working reps are flagged.</div>';
+  data.days.forEach(function (day) {
+    html += '<div class="card" style="margin-bottom:14px">';
+    html += '<div class="card-label">' + esc(day.weekday) + ' · ' + esc(day.date) +
+      (day.holidayName ? ' · <span style="color:var(--warning-deep,var(--warn))">' + esc(day.holidayName) + '</span>' : '') + '</div>';
+    html += '<div class="cov-strip">';
+    (day.hours || []).forEach(function (h) {
+      var c = h.confirmed || 0, t = h.tentative || 0;
+      var cls = (c >= minStaff) ? 'ok' : ((c + t) >= minStaff ? 'risk' : ((c + t) > 0 ? 'low' : 'none'));
+      var title = h.hour + ':00 — ' + c + ' working' + (t ? (' (+' + t + ' tentative)') : '');
+      html += '<div class="cov-h ' + cls + '" title="' + esc(title) + '"><i>' + (c || '') + '</i></div>';
+    });
+    html += '</div>';
+    html += '<div class="cov-hours-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>23</span></div>';
+    if (day.reps && day.reps.length) {
+      html += '<div class="cov-reps">';
+      day.reps.forEach(function (r) {
+        var statusCls = (r.status === 'off') ? 'off' : (r.status === 'tentative' ? 'tentative' : 'working');
+        var lbl = (r.status === 'off')
+          ? ('Off' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
+          : (r.status === 'tentative'
+              ? ('Tentative' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
+              : (esc(r.startMgr) + ' – ' + esc(r.endMgr)));
+        html += '<div class="cov-rep ' + statusCls + '">' +
+          '<span class="cov-rep-name">' + esc(r.name) + '</span>' +
+          '<span class="cov-rep-tz">' + esc(r.tz) + '</span>' +
+          '<span class="cov-rep-status">' + lbl + '</span></div>';
+      });
+      html += '</div>';
+    } else {
+      html += '<div style="font-size:12px;color:var(--muted)">No reps scheduled.</div>';
+    }
+    html += '</div>';
+  });
+  body.innerHTML = html;
 }
 </script>

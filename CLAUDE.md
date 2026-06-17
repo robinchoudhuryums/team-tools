@@ -9,8 +9,10 @@ Apps Script project under its own directory, synced via `clasp`.
   URL. Hosts six modules today, registered side-by-side in the
   `TOOLS` registry in `script_core.html`:
    - **Time Clock** — cross-timezone time tracking, PTO requests,
-     manager dashboard, ADP-format export. Backs a shared Google
-     Sheet (`CONFIG.ADP_SS_ID` in `web-app/Code.js`).
+     manager dashboard, ADP-format export, and a manager-only
+     **Coverage** planner (forward staffing across timezones with PTO
+     overlaid + understaffed-hour flagging — `getCoveragePlan`, INV-127).
+     Backs a shared Google Sheet (`CONFIG.ADP_SS_ID` in `web-app/Code.js`).
    - **Call Notes** — rolling-note panel for CSR call logging. Each
      rep writes to their own per-rep Google Sheet (`Notes` tab in the
      spreadsheet whose ID is in `EMP.CALL_NOTES_SHEET_ID`, column L
@@ -80,7 +82,11 @@ Apps Script project under its own directory, synced via `clasp`.
      editor (Phase 3), a Ctrl/⌘+K slide-over **drawer** for mid-call
      lookup (mounted on `document.body`, with content-aware
      suggestions + a usage log behind the manager "Most referenced"
-     block), and an optional **AI guidance card** (Phase A —
+     block + a manager **"Review due"** queue — items older than
+     `CONFIG.KB.REVIEW_DUE_DAYS` (90), usage-sorted, with a one-click
+     "Mark reviewed"; editing an item also counts as reviewing it —
+     `kbGetReviewDue`/`kbMarkReviewed`, INV-126), and an optional
+     **AI guidance card** (Phase A —
      `kbGetFacetGuidance`, Anthropic API, whitelisted enum facets
      only, feature-flagged OFF by default; INV-119).
    - **Training & Employee Docs** — phased module
@@ -274,7 +280,14 @@ this section before touching the relevant area.
   added before the column existed. Contractors who don't accrue
   paid leave need an explicit `FALSE` / `no` / `n` / `0` in this
   column. The PTO UI then hides for them entirely (employee Calendar
-  ring, decision email balance line, etc.).
+  ring, decision email balance line, etc.). **The per-row gate also
+  guards the DEDUCTION, not just display** — `adjustLeaveBalance_`
+  returns `null` (no change) for a `FALSE` employee even when the
+  global `enablePtoTracking` flag is on, so approving / manager-filing
+  a request for a contractor can't drive their balance negative. (Until
+  the M-1 fix the deduction gated only on the global flag, silently
+  contradicting S15; the read-side `getEmployeeInfo_`/`lookupEmployeeById_`
+  parse the same coercion-safe `FALSE`/`no`/`n`/`0` values.)
 - **`_TEST_OVERRIDE_EMAIL` only intercepts `getActiveUserEmail_()`.**
   Any code path that calls `Session.getActiveUser()` directly will
   bypass the test impersonation and use the real running user.
@@ -293,10 +306,10 @@ this section before touching the relevant area.
   `exportCallNotesRange`, `setCallNoteTrainingReply`,
   `managerGetShiftStats`, `managerGetUnresolvedActionCount`,
   `managerDeleteCallNote`,
-  `getTeamMetrics`, `getMetricsAmbient`,
+  `getTeamMetrics`, `getMetricsAmbient`, `getCoveragePlan`,
   `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`,
   `saveUpdateSuggestions`, `removeAutomationTriggers`,
-  `getCallNotesTagTaxonomy`, `renameCallNoteTag`,
+  `getCallNotesTagTaxonomy`, `getCallNotesTagTrends`, `renameCallNoteTag`,
   `mergeCallNoteTags`, `archiveCallNoteTag`,
   `saveEmailTemplates`, `getCallNotesAuditLog`,
   `getCallNoteAuditHistory`, `getPtoReconciliation`,
@@ -304,7 +317,8 @@ this section before touching the relevant area.
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
-  `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`,
+  `kbConvertDriveDoc`, `kbGetUsageStats`, `kbGetReviewDue`,
+  `kbMarkReviewed`, `saveKbAiSettings`,
   `getTrainingDashboard`, `saveTrainingAssignment`,
   `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`,
   `getQuizAnalytics`, `importQuizFromForm`,
@@ -795,6 +809,18 @@ this section before touching the relevant area.
   back, or the day rolls over. Acceptable for the use case; if
   real-time-ish freshness is ever required, invalidate the cache
   from `submitCallNote`'s success handler.
+- **`getMyMetrics` is ALSO server-result-cached (L-1).** Independent
+  of the client cache above, the endpoint caches its assembled result
+  in `CacheService` for `CONFIG.CDR_CACHE_TTL` (5 min) keyed by
+  `metrics_my_v1:<emp.id>:<date>`. It's the only rep-facing CDR read
+  and per INV-124 it scans the WHOLE roster's per-rep matrix +
+  the Transfer sheet UNCACHED on every open — the result cache keeps a
+  Metrics-tab re-enter / date toggle from re-scanning. The cache is at
+  the ENDPOINT layer, so INV-67 ("`getCdrDailyBreakdown_` is uncached")
+  stays literally true — the helper just isn't re-called on a hit. Keyed
+  by `emp.id` so no rep reads another rep's cached self-view; error
+  results are never cached; same ≤5-min staleness tradeoff as
+  `getMetricsAmbient` and the Clock strip.
 - **Metrics enters call `stopClock` to avoid an interval leak.**
   `enterMetricsMyStatsView` and `enterMetricsTeamView` call
   `stopClock()` at the top (guarded by `typeof`) so the Clock view's
@@ -1740,7 +1766,16 @@ this section before touching the relevant area.
   `"pinned"` substring pre-filter then fetches only the pinned rows;
   `getMyTrainingQA` picks the 5 newest answered training notes from
   column scans and fetches just those; the EOD digest reads only the
-  rep's today-slice via `readCallNoteRowsInRange_`. `FormSubmissions`
+  rep's today-slice via `readCallNoteRowsInRange_`. The date/search
+  self-reads `getMyCallNotes` / `getMyCallNotesRange` / `searchMyCallNotes`
+  route through `readCallNoteRowsInRange_` too (L-8 — a contiguous
+  date-slice when a date/range is given, a column-bounded full scan
+  otherwise), so they now share the INV-46 append-order contiguity
+  assumption the rest of the module already makes (the per-row date
+  re-checks stay as defensive guards); `setCallNotePinned`'s pin-count
+  uses the same `"pinned"` 2-column pre-filter (L-7), and
+  `findCallNoteRow_` fetches its located row at `CN_HEADERS.length`
+  rather than `getLastColumn()` (L-10). `FormSubmissions`
   lookups (`buildFormSubmissionResult_`, `verifyFormSubmissionIntegrity_`)
   go through `findFormSubmissionRow_` (token-column scan, newest row
   wins) rather than reading every submission's responses + signature.
@@ -1879,7 +1914,11 @@ this section before touching the relevant area.
   per-rep Sheet for `subformData.tags[]` entries and marks each
   with an `archived` flag from the `CN_ARCHIVED_TAGS` Script
   Property. An `archivedOnlyTags[]` array surfaces archived tags
-  no longer in active use so admins can still restore them.
+  no longer in active use so admins can still restore them. A
+  **"Tag Trends" panel** (`#cn-admin-trends`) sits below the taxonomy:
+  a per-tag weekly sparkline + total + this-week-vs-prior delta over the
+  trailing 12 weeks (`getCallNotesTagTrends`, archived tags excluded),
+  so a rising issue-tag surfaces as an early warning — INV-125.
 - **External-email message template library (Admin tab).** Manager-
   curated canned message bodies for the external (customer/provider)
   email composer — resolving the deferred "template library Admin
@@ -2042,7 +2081,17 @@ this section before touching the relevant area.
   matches never call the API, cached as none) → daily org spend cap
   (`KB_AI_DAILY_CAP`, default $3; costed from usage tokens via
   `KB_AI_MODEL_PRICES`, unknown model billed at the dearest known
-  rates) → vendor. Everything is best-effort: any failure returns
+  rates) → vendor. **The cap is race-safe (L-2):** the check + a
+  per-call reservation (`KB_AI_CALL_RESERVE_USD`, $0.02) are applied
+  atomically under a brief lock (`kbAiTryReserveSpend_`) BEFORE the
+  vendor fetch, then reconciled to the real cost — or the reservation
+  refunded on a failed/empty call — via `kbAiApplySpend_` (renamed from
+  the old `kbAiRecordSpend_`). This closes the lost-update window where
+  concurrent cache-misses each read spend < cap and all called the
+  vendor. The lock is deliberately NOT held across the (slow) fetch (the
+  `kbResolveDocImages_` lesson), and reservation fails OPEN on lock
+  contention — the Anthropic-console hard cap remains the true backstop.
+  Everything is best-effort: any failure returns
   `{none}` and the drawer's existing Suggested block stands alone.
   Gated by the `kbAiGuidance` feature flag (default OFF, scope `both`,
   danger-marked: external AI vendor). Admin tab "AI Guidance
@@ -2649,6 +2698,16 @@ manually for a fresh deploy or environment:
   shown. Change requires a redeploy (CONFIG, no Script Property override).
 - **`MANAGER_TIMEZONE`** in CONFIG drives manager-dashboard
   display tz; change requires a redeploy.
+- **`CONFIG.COVERAGE_MIN_STAFF`** (default 2) sets the understaffed
+  threshold for the manager Coverage planner (#3) — any manager-tz hour
+  with fewer working reps is flagged. CONFIG-only; change requires a
+  redeploy. The planner reuses `CONFIG.SHIFT_SCHEDULE` (per-tz) for each
+  rep's shift — there is still no per-rep schedule (INV-127).
+- **`CONFIG.KB.REVIEW_DUE_DAYS`** (default 90) sets the KB review-due
+  staleness window (#4). CONFIG-only; change requires a redeploy. The KB
+  sheet gained trailing `ReviewedAt`/`ReviewedBy` columns — the header
+  **self-heals on the first post-deploy KB read/save** (no manual
+  migration); legacy rows fall back to `UpdatedAt` until first reviewed.
 - **`CONFIG.SHIFT_SCHEDULE`** sets the Clock-view ribbon/countdown
   shift: `DEFAULT` 8:00–17:00 CST + `BY_TIMEZONE` overrides (PH
   `Asia/Manila` 8:30–17:00). Resolved per the rep's roster timezone
@@ -3007,7 +3066,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v6`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`, `kbGetUsageStats`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`) verify `callerEmp.isManager` before any side effect (INV-02 generalized) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
@@ -3100,11 +3159,14 @@ INV-120 | Training T1 endpoints follow the established families: `getMyTraining`
 
 INV-121 | **Quiz answer keys never leave the server.** The `Quizzes` tab's `QuestionsJson` (including `correct` indices) is readable only by the manager-gated `getQuizzes` (managers author the keys); the rep-facing `getQuiz` returns ONLY the WHITELIST-built `trainStripQuizForRep_` shape (never a delete-key copy — a missed field can't leak), requires a live `quiz:` assignment (or manager caller), and `submitQuizAttempt` (rep-callable, locked INV-01, assignment-required) grades server-side via the pure `trainGradeQuiz_` and returns only `scorePct`/`passed`/per-question right-wrong booleans — correct options are NEVER revealed, pass or fail (operator decision §9.4; unlimited retries; attempt counts per assignment round ride back for display). A pass appends the `TrainingCompletions` row (`via='quiz'`, once per assignment round — the INV-120 reset semantics apply to attempts too); `QuizAttempts` is append-only and `PerQuestionJson` stores booleans only, never the rep's answers paired with a key. `saveQuiz` validates via the pure `trainValidateQuizDef_` (1–50 questions, 2–6 options, correct in range, passPct 0–100) and bounds the stored JSON under the Sheets cell cap (INV-96 spirit); `deleteQuiz` removes only the quiz row (attempt/completion history stays; orphaned assignments drop off via the title join, same as a deleted KB item). Audit rows `QuizSave`/`QuizDelete`/`QuizAttempt` carry ids/counts/scores — never question text. `importQuizFromForm` (manager-gated, READ-ONLY, review-before-save — FormApp opens the form with the deployer's access; only MC + single-answer checkbox items + their marked correct answers are read; the form is never modified and nothing persists until the manager saves) reuses the same `saveQuiz` validation path on save. Pinned by the `training — quiz` Node tests (validator / grader / strip + the `getQuiz` source tripwire + the `trainParseFormId_` URL parser) + `test_training_quizFlow` + the four gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
-INV-122 | **Employee Docs are team-scoped (fail-closed), frozen at issue, and tamper-evident.** All Employee Docs data lives ONLY in the dedicated `HR_DOCS_SS_ID` spreadsheet (`getHrDocsSS_` has NO fallback store — unset property → friendly error, never a silent write to the ADP/KB/PHI sheets), and the `EmpDocs`/`DocSignatures` tabs are EXCLUDED from every retention purge (HR records are keep-forever — the opposite of the PHI-minimization posture). **Scoping:** `getMyDocs`/`getMyDoc`/`acknowledgeDoc` are owner-scoped; manager read access (`getMyDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`) requires `empDocCanManagerSee_` — caller issued the doc OR caller is the employee's roster `ManagerEmail` (column M); membership in `MANAGER_EMAILS` alone grants NOTHING, and a blank column M NARROWS visibility to owner+issuer (fail-closed, operator decision §9.3). Any manager may ISSUE to any employee (issuing reveals nothing). `acknowledgeDoc` is OWNER-only — managers cannot sign on behalf. **Integrity:** content is frozen at issue (`bodyMd` + `empDocContentHash_` over body+title+type+empId); signing re-verifies the content hash first (a tampered row refuses to sign), bounds the signature payload (INV-96; the pad export caps at 600px — Node-pinned parity with `form_public.html`), and writes an append-only `DocSignatures` row whose `SignatureHash` covers contentHash+empId+docId+signature+ackVersion but NOT the timestamp (Sheets coercion, INV-113 lesson) — the `EmpDocSigned` audit row (`hash=`+`signedAt=`) is the independent witness, and the server-authoritative `EMPDOC_ACK_VERSION` stamps which ack language was shown (bump it when `EMPDOC_ACK_TEXT` changes). `voidDoc` only flips status (never deletes, never edits the frozen body — a correction is a NEW doc; a signed doc keeps its signature row); `verifyDocSignature` recomputes both hashes (legacy/unsigned report explicitly, never as failures). Audit rows `EmpDocIssue`/`EmpDocSigned`/`EmpDocVoid` are content-free (docId/empId/type/hash — never the title or body; the void reason lives only in the scoped HR sheet). Pinned by `test_empdocs_issueSignVerifyFlow` (incl. the fail-closed `empDocCanManagerSee_` cases + tamper detection) + the four gate cases in `test_managerGates_rejectNonManager` + the `empDocValidateIssue_`/`edChipHtml_`/pad-cap Node tests | Subsystem: Server + Client (Training views)
+INV-122 | **Employee Docs are team-scoped (fail-closed), frozen at issue, and tamper-evident.** All Employee Docs data lives ONLY in the dedicated `HR_DOCS_SS_ID` spreadsheet (`getHrDocsSS_` has NO fallback store — unset property → friendly error, never a silent write to the ADP/KB/PHI sheets), and the `EmpDocs`/`DocSignatures` tabs are EXCLUDED from every retention purge (HR records are keep-forever — the opposite of the PHI-minimization posture). **Scoping:** `getMyDocs`/`getMyDoc`/`acknowledgeDoc` are owner-scoped; manager read access (`getMyDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`) requires `empDocCanManagerSee_` — caller issued the doc OR caller is the employee's roster `ManagerEmail` (column M); membership in `MANAGER_EMAILS` alone grants NOTHING, and a blank column M NARROWS visibility to owner+issuer (fail-closed, operator decision §9.3). Any manager may ISSUE to any employee (issuing reveals nothing). `acknowledgeDoc` is OWNER-only — managers cannot sign on behalf. **Integrity:** content is frozen at issue (`bodyMd` + `empDocContentHash_` over body+title+type+empId); signing re-verifies the content hash first (a tampered row refuses to sign), bounds the signature payload (INV-96; the pad export caps at 600px — Node-pinned parity with `form_public.html`), and writes an append-only `DocSignatures` row whose `SignatureHash` covers contentHash+empId+docId+signature+ackVersion but NOT the timestamp (Sheets coercion, INV-113 lesson) — the `EmpDocSigned` audit row (`hash=`+`signedAt=`) is the independent witness, and the server-authoritative `EMPDOC_ACK_VERSION` stamps which ack language was shown (bump it when `EMPDOC_ACK_TEXT` changes). `voidDoc` only flips status (never deletes, never edits the frozen body — a correction is a NEW doc; a signed doc keeps its signature row); `verifyDocSignature` recomputes both hashes (legacy/unsigned report explicitly, never as failures) and returns a definitive `tampered` flag (`contentMatch === false || match === false`) so a consumer can't check `match` alone and miss a body-only rewrite (L-4); the client surfaces tamper off that flag, and the append-only `EmpDocSigned` audit row is still the deeper witness. Audit rows `EmpDocIssue`/`EmpDocSigned`/`EmpDocVoid` are content-free (docId/empId/type/hash — never the title or body; the void reason lives only in the scoped HR sheet). Pinned by `test_empdocs_issueSignVerifyFlow` (incl. the fail-closed `empDocCanManagerSee_` cases + tamper detection) + the four gate cases in `test_managerGates_rejectNonManager` + the `empDocValidateIssue_`/`edChipHtml_`/pad-cap Node tests | Subsystem: Server + Client (Training views)
 
 INV-123 | **Training T4 — overdue digest + quiz analytics.** `sendTrainingOverdueDigest` is a top-level trigger handler (reachable via `google.script.run`) gated with `assertManagerCaller_` (INV-44 family) and best-effort (INV-14 — wrapped in try/catch, never throws). It builds the nudge PER MANAGER: the overdue-TRAINING list is org-wide (training dashboards are NOT team-scoped, INV-120, so every manager sees every rep's overdue training), but the overdue unsigned-DOCS list is TEAM-SCOPED via `empDocCanManagerSee_({email,isManager:true}, doc)` (INV-122 fail-closed — a manager only sees docs they issued or are the employee's roster `ManagerEmail` for). A manager with nothing overdue in their scope is not emailed. `empDocsOverdueAll_` returns `[]` (never throws) when `HR_DOCS_SS_ID` is unset so the training portion still sends. Heartbeat-stamped (`stampDigestLastRun_('trainingOverdue')`); surfaced in the Automation Health "Digest heartbeats" block (stale > 26h). Wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS arrays (the trigger-wiring tripwire pins this). `getQuizAnalytics` is manager-gated (INV-02), read-only, and returns ONLY the per-quiz aggregate from the pure `trainQuizAnalytics_(quizzesMap, attempts)` (attempt counts, distinct reps attempted/passed, pass rate, avg score, avg tries) — no answer keys, no per-question booleans, no per-rep rows, so INV-121's "answer key never leaves the server" boundary is untouched. Pinned by `trainQuizAnalytics_` + the trigger-wiring Node tests, `test_triggerGate_trainingOverdue_nonManagerThrows`, and the `getQuizAnalytics` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
 INV-124 | **Metrics anonymized team-avg is cohort-guarded; only aggregates leave the server.** `getMyMetrics` (rep-callable, caller-identified) reads the WHOLE roster's per-rep-per-day matrix (`getCdrDailyBreakdown_().perRepDaily` for DQE + `getCsrTransferPerRepDaily_()` for the separate **`CSR Transfer Historical Data`** tab) to compute a team benchmark, but returns ONLY aggregates: `series.{pctAnswered,answered,missed,attSeconds,transferPct}` as `[{date, own, team, cohort}]`. The `team` value is the pure `metricsTeamAvgSeries_` mean over reporting reps and is **null whenever that day's cohort < `kpiMinCohort` (3)** — so a small team can't be back-solved to an individual (the #5 privacy boundary). No individual rep's row is ever returned. The Transfer reader uses `getDisplayValues()` + the shared `cdrRowDateIso_` (Date is `M/D/YYYY`) + `metricsParsePercent_` (`"29.79%"`) per the CDR spreadsheet-tz discipline (INV-64). The legacy `cdr`/`trend`/`noteCount`/`noteCoverage` fields are preserved (back-compat). Client (`metrics/script_metrics.html`) renders own (accent) vs team (muted dashed) sparklines per KPI with the cohort note; every server string is `esc()`'d (the Metrics-`esc()` gotcha). Pinned by `metricsParsePercent_` / `metricsTeamAvgSeries_` / `metricsBuildKpiSeries_` Node tests + `test_metrics_csrTransferFixture_parsesDateAndPercent` + the `mRenderTrendSection_` DOM test | Subsystem: Server + Client (Metrics views)
+INV-125 | **Tag-trend analytics (#5).** `getCallNotesTagTrends()` is manager-gated (INV-02/31), read-only, cached (`cn_tag_trends_v1`, 5 min — invalidated alongside the taxonomy cache by the tag-admin ops via `invalidateCnTaxonomyCache_`), and PHI-free (tags + dates only). It reuses the taxonomy's bounded 2-column scan (`SubformData` tags + `DateLocal`) across enrolled reps but buckets by ISO week over the trailing `CN_TAG_TRENDS_WEEKS` (12) instead of total+lastSeen; archived tags are excluded and a window pre-filter (yyyy-MM-dd lexical = chronological) bounds the events array. The week-bucketing is the pure, Node-pinned `cnTrendWeekStarts_` (Monday-anchored, tz-safe day math via `cnIsoToDayNum_`/`cnDayNumToIso_`) + `cnTagTrendsFromEvents_` (bucket → sort by total → top-`CN_TAG_TRENDS_TOPK` (12) → this-wk-vs-prior delta). Client renders a per-tag sparkline + total + delta in the Admin "Tag Trends" panel (`#cn-admin-trends`), every tag label `esc()`'d (the Metrics/CN gotcha). Pinned by the `cnTrendWeekStarts_`/`cnTagTrendsFromEvents_` Node tests + the `getCallNotesTagTrends` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Call Notes views)
+INV-126 | **KB review-due workflow (#4).** The KB schema gained trailing `ReviewedAt`/`ReviewedBy` columns (KB enum + `KB_HEADERS`); back-compat like `CN_HEADERS` (legacy rows read undefined and fall back to `UpdatedAt`), and `getOrCreateKbSheet_` self-heals the header width once post-deploy. **Editing counts as reviewing** — `kbSaveItem` stamps `ReviewedAt`/`ReviewedBy` on every save. `kbMarkReviewed(id)` is the no-edit "still accurate" path: manager-gated (INV-02), locked (INV-01), audited (`KbItemReviewed`), bumps only the two cells (no cache invalidation — the tree cache doesn't carry review state and `kbGetReviewDue` reads live). `kbGetReviewDue()` is manager-gated, read-only, PHI-free: items whose last review (or legacy last-edit) is older than `CONFIG.KB.REVIEW_DUE_DAYS` (90), sorted by 30-day usage desc via the factored `kbUsageCounts_` (shared with `kbGetUsageStats`). KB timestamp cells are recovered in the KB spreadsheet's OWN tz via `kbCellDateIso_` (Sheets-coercion discipline). Client renders a manager-only "Review due" block atop the Reference tree with Open + Mark-reviewed. Pinned by the `kbGetReviewDue`/`kbMarkReviewed` cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
+INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's per-TIMEZONE shift (`getShiftSchedule_`, v1 limitation: per-tz not per-rep) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped). Understaffed hours (< `CONFIG.COVERAGE_MIN_STAFF`, default 2) are flagged. Surfaced as the managerOnly `coverage` tab under Time Clock (`enterCoverageView` in `tc/script_manager.html`); every server string `esc()`'d. Pinned by the `coverageBucketHours_` Node tests + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
 
 
 ### Policy Configuration
@@ -3745,6 +3807,31 @@ S69 | Employee Docs T3 — issue, scope, sign, verify, tamper, void | Subsystem:
     - Void the doc (danger confirm + optional reason) → employee's My Docs shows Void; the signature row survives; Verify still reports signed
     - As a non-manager, call `...issueDoc({...})`, `...getDocsDashboard()`, `...voidDoc('x','')`, `...verifyDocSignature('x')` → all "Manager access required."
   Expected: Owner-only signing (managers cannot sign on behalf); double-sign rejected; the AuditLog carries content-free `EmpDocIssue`/`EmpDocSigned` (hash= + signedAt= witness)/`EmpDocVoid` rows; no purge ever touches the HR store. Pinned by `test_empdocs_issueSignVerifyFlow` + the gate cases + the T3 Node tests (INV-122).
+
+S70 | Tag-trend analytics panel (#5) | Subsystem: Server, Client (Call Notes views)
+  Steps:
+    - As a manager, open Call Notes → Admin → scroll to "Tag Trends" (below the tag taxonomy table)
+    - Confirm a per-tag row with a weekly sparkline + total + a Δ-week badge (▲ red rising / ▼ green falling / ±0), trailing 12 weeks
+    - Confirm archived tags do NOT appear; confirm tags reps applied across enrolled Sheets do
+    - As a non-manager, call `google.script.run...getCallNotesTagTrends()` from the console
+  Expected: `getCallNotesTagTrends` is manager-gated (non-manager → "Manager access required."), cached (`cn_tag_trends_v1`, 5 min; dropped by rename/merge/archive), PHI-free. The bucketing matches the pure `cnTrendWeekStarts_`/`cnTagTrendsFromEvents_` (Node-pinned); every tag label is `esc()`'d. INV-125.
+
+S71 | KB review-due workflow (#4) | Subsystem: Server, Client (Reference views)
+  Steps:
+    - As a manager, open Reference; confirm a "Review due · 90d+" block atop the tree listing items whose last review/edit is ≥90 days old, most-used first, each with a Mark-reviewed (✓) button (reps never see it)
+    - Click an item's ✓ → confirm a "Marked reviewed" toast and the item drops off the list on reload
+    - Edit any KB item and Save → confirm it is NOT review-due afterward (editing == reviewing)
+    - As a non-manager, call `google.script.run...kbGetReviewDue()` and `...kbMarkReviewed('x')` from the console
+  Expected: `kbGetReviewDue` (read-only) + `kbMarkReviewed` (locked, audited `KbItemReviewed`) are manager-gated (non-manager → "Manager access required."). Items older than `CONFIG.KB.REVIEW_DUE_DAYS` (90); legacy rows with no `ReviewedAt` fall back to `UpdatedAt`. The KB header self-heals to include `ReviewedAt`/`ReviewedBy`. INV-126.
+
+S72 | Coverage planner (#3) | Subsystem: Server, Client (Time Clock views)
+  Steps:
+    - As a manager, open Time Clock → Coverage (managerOnly tab); confirm a From/To range (default today..+6) and a per-day card list
+    - Each day shows an hourly heat strip (manager tz) + per-rep rows: working reps show their shift converted to the manager's tz; an Approved-PTO rep shows "Off · <type>"; a Pending-PTO rep shows "Tentative · <type>"
+    - Confirm understaffed hours (< `CONFIG.COVERAGE_MIN_STAFF`, default 2) render in the warn/low tone; confirm a US holiday is labeled
+    - Confirm an offshore (IST/PHT) rep's shift lands on the correct manager-tz hours (cross-tz straddle)
+    - As a non-manager: the Coverage tab is hidden; calling `google.script.run...getCoveragePlan('2026-06-17','2026-06-17')` returns "Manager access required."
+  Expected: `getCoveragePlan` is manager-gated, read-only, range-capped (1–14 days), PHI-free (names + schedule + PTO status). Per-tz shifts (v1). The hourly distinct-rep math matches the pure `coverageBucketHours_` (Node-pinned); every server string `esc()`'d. INV-127.
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
