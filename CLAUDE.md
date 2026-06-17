@@ -690,6 +690,20 @@ this section before touching the relevant area.
   tool. Without this, the 60-second `getCallNotesAmbient` interval
   fired continuously even in Time Clock views.
   `cnStartAmbientPolling_()` restarts it on return to any CN tab.
+- **The Log rolling stack live-refreshes (#3).** The Log view is a
+  today-only, fetch-on-enter view (`getMyCallNotes` returns one day);
+  `cnRefreshRollingStack_` re-fetches today's notes + re-renders so a note
+  logged in ANOTHER context (the pop-out / a second window — they share the
+  server Sheet but NOT in-memory `CN_STATE`) surfaces without a manual nav.
+  Triggered from the 60s ambient poll (Log only) + window `focus`/
+  `visibilitychange` (`cnEnsureLiveRefreshBound_`, 2s throttle, idempotent
+  bind). It preserves optimistic `_pending` notes (filters them back on top of
+  the server set) and is SKIPPED while an inline edit is open
+  (`CN_STATE.editingNoteId`) so it can't wipe an editor. It re-renders only
+  `#cn-stack` + the filter bar, not the form/modals. (NOTE: nav-back already
+  re-fetched; this closes the cross-window staleness gap. The whole-stack
+  re-render could diff-before-render to avoid a scroll jump — accepted as-is
+  since the stack is small.)
 - **Sidebar badge selectors use `data-tool`, not `data-view`.**
   The sidebar renders `data-tool="callNotes"` / `data-tool="metrics"`
   on its buttons. Badge pollers that query the sidebar must use
