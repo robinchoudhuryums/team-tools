@@ -42,6 +42,60 @@ console.log('\nclient — all partials parse (<script> syntax guard)');
   });
 });
 
+// Design-token hygiene tripwire: every `var(--x)` in the SHARED design-token
+// partials must resolve to a custom property defined somewhere in those same
+// partials. Catches the `--accent-deep` bug class (an undefined token that
+// silently falls back to a flatter shade / its `var(...)` fallback, so dark
+// mode never inverts and the intended deeper tone never renders) — it shipped
+// undetected precisely because nothing scanned for it.
+//   • `form_public.html` is a STANDALONE page with its own complete :root
+//     palette (it does NOT include styles_design_tokens.html), so it neither
+//     contributes definitions to the shared set nor is checked against it.
+//   • TOKEN_ALLOWLIST holds intentional, pending exceptions (each with a
+//     literal fallback so it renders correctly until removed).
+console.log('\nclient — design-token hygiene (no undefined var(--x) in shared partials)');
+test('every var(--token) resolves to a defined custom property', () => {
+  const WEB_APP = path.resolve(__dirname, '../../web-app');
+  const STANDALONE = new Set(['form_public.html']); // own palette — excluded
+  // Pending-removal exceptions. Remove an entry when its module migration lands.
+  const TOKEN_ALLOWLIST = {
+    '--brand': 'intake/script_intake.html — removed in the Intake redesign (carries a literal fallback)',
+  };
+  const htmlFiles = [];
+  (function walk(dir, rel) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, e.name);
+      const r = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) walk(abs, r);
+      else if (e.name.endsWith('.html')) htmlFiles.push(r);
+    }
+  })(WEB_APP, '');
+  const shared = htmlFiles.filter((f) => !STANDALONE.has(f));
+  const defined = new Set();
+  const defRe = /(--[a-z0-9-]+)\s*:/gi;
+  const srcByFile = {};
+  for (const f of shared) {
+    const t = fs.readFileSync(path.join(WEB_APP, f), 'utf8');
+    srcByFile[f] = t;
+    let m; while ((m = defRe.exec(t))) defined.add(m[1]);
+  }
+  const useRe = /var\(\s*(--[a-z0-9-]+)/gi;
+  const violations = [];
+  for (const f of shared) {
+    let m; while ((m = useRe.exec(srcByFile[f]))) {
+      const name = m[1];
+      if (defined.has(name)) continue;
+      if (Object.prototype.hasOwnProperty.call(TOKEN_ALLOWLIST, name)) continue;
+      violations.push(name + '  <-  ' + f);
+    }
+  }
+  assert.strictEqual(
+    violations.length, 0,
+    'undefined design tokens used in shared partials (define them in ' +
+    'styles_design_tokens.html, or fix the name):\n      ' +
+    [...new Set(violations)].join('\n      '));
+});
+
 // Foundational partials: script_icons (icon), script_core (esc, empTz,
 // isoDateTz, __URL_PARAMS), metrics (mTodayIso_, mDaysAgo_). These eval cleanly
 // because their top-level is declarations + an init listener (stubbed).

@@ -7297,7 +7297,7 @@ function cnRenderStoragePanel_(res) {
   if (!stores.length) return '';
   var pill = function (txt, tone) {
     var color = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep,var(--warn))' : tone === 'crit' ? 'var(--danger-deep)' : 'var(--muted)';
-    var bg = tone === 'ok' ? 'var(--accent-soft)' : tone === 'warn' ? 'var(--warning-soft,var(--warn-soft))' : tone === 'crit' ? 'var(--destructive-soft)' : 'var(--paper-2)';
+    var bg = tone === 'ok' ? 'var(--accent-soft)' : tone === 'warn' ? 'var(--warn-soft)' : tone === 'crit' ? 'var(--destructive-soft)' : 'var(--paper-2)';
     return '<span style="font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;color:' + color + ';background:' + bg + '">' + esc(txt) + '</span>';
   };
   var rows = stores.map(function (s) {
