@@ -7441,6 +7441,17 @@ function adjustLeaveBalance_(empId, bucket, delta) {
   const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][EMP.ID]).trim() !== empId) continue;
+    // Per-employee PTO opt-out (column K). Contractors marked FALSE don't
+    // accrue or spend paid leave — skip the balance math entirely so an
+    // approval (or a manager filing on their behalf) can't drive their
+    // balance negative. The global enablePtoTracking flag is the master
+    // switch (checked above); this is the per-row gate that S15 / INV-27
+    // promise. Sheets coerces 'TRUE'/'FALSE' to native booleans on read, so
+    // parse defensively (mirrors getEmployeeInfo_ / lookupEmployeeById_).
+    const ptoVal = rows[i][EMP.PTO_ENABLED];
+    const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
+      ? '' : String(ptoVal).trim().toLowerCase();
+    if (ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0') return null;
     const col = bucket === 'sick' ? EMP.SICK_LEAVE : EMP.ANNUAL_LEAVE;
     const current = parseFloat(rows[i][col]) || 0;
     const next = +(current + delta).toFixed(2);
@@ -8911,6 +8922,20 @@ function getMyMetrics(date) {
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { error: 'Invalid date (expected yyyy-MM-dd).' };
 
+    // L-1 — this self-view is the only rep-facing CDR read, and it scans the
+    // WHOLE roster's per-rep matrix (INV-124 team average) PLUS the Transfer
+    // sheet, UNCACHED, on every open. Cache the assembled result per
+    // (rep, date) for CDR_CACHE_TTL so a tab re-enter / date toggle doesn't
+    // re-scan. Same staleness tradeoff as getMetricsAmbient and the Clock
+    // coverage strip — a just-filed note surfaces within the TTL. Keyed by
+    // emp.id so no rep ever reads another rep's cached self-view.
+    var metricsCache = CacheService.getScriptCache();
+    var myCacheKey = 'metrics_my_v1:' + emp.id + ':' + date;
+    try {
+      var cachedMy = metricsCache.get(myCacheKey);
+      if (cachedMy) { var co = JSON.parse(cachedMy); co.cached = true; return co; }
+    } catch (_) {}
+
     // Compute 30-day window ending on `date`
     var endD = new Date(date + 'T12:00:00Z');
     var startD = new Date(endD.getTime() - 29 * 86400000);
@@ -8964,7 +8989,7 @@ function getMyMetrics(date) {
 
     var noteCount = countCallNotesInRange_(emp, date, date);
 
-    return {
+    var result = {
       date: date,
       repName: emp.name,
       cdr: todayCdr ? {
@@ -8983,6 +9008,8 @@ function getMyMetrics(date) {
       series: series,
       kpiMinCohort: MIN_COHORT,
     };
+    try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    return result;
   } catch (err) { return { error: err.message }; }
 }
 
@@ -9725,8 +9752,17 @@ function intakeDecodeImages_(images) {
     if (str.length > CONFIG.INTAKE.MAX_IMAGE_CHARS) throw new Error('An attached image is too large (max ~5MB each).');
     if (str.indexOf('data:') !== 0 || str.indexOf(',') < 0) return;
     const cid = 'attachedImage' + index;
-    const contentType = str.substring(5, str.indexOf(';'));
-    const data = str.split(',')[1];
+    // Parse the data URL robustly: data:[<mediatype>][;base64],<payload>.
+    // The mediatype runs from after 'data:' to the first ','; a naive
+    // substring(5, indexOf(';')) yields a garbage type (or "data:") when the
+    // URL has no ';' marker — and Utilities.base64Decode then throws on a
+    // non-base64 payload. We only inline base64 data URLs (what the client
+    // sends); anything else is skipped rather than crashing the whole send.
+    const comma = str.indexOf(',');
+    const meta = str.substring(5, comma);            // between 'data:' and ','
+    if (!/;base64$/i.test(meta)) return;             // not a base64 data URL — skip
+    const contentType = meta.replace(/;base64$/i, '') || 'application/octet-stream';
+    const data = str.substring(comma + 1);
     const blob = Utilities.newBlob(Utilities.base64Decode(data), contentType, cid);
     inlineImagesObj[cid] = blob;
     sectionHtml += '<img src="cid:' + cid + '" style="max-width:100%;border:1px solid #ddd;border-radius:4px;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />';
@@ -10645,6 +10681,9 @@ const KB_AI_MAX_CHUNKS = 4;
 const KB_AI_SCORE_FLOOR = 4;              // top-chunk minimum — thin matches never hit the API
 const KB_AI_DEFAULT_MODEL = 'claude-haiku-4-5';
 const KB_AI_DEFAULT_DAILY_CAP = 3;        // USD/day org-wide; Admin-adjustable (KB_AI_DAILY_CAP)
+const KB_AI_CALL_RESERVE_USD = 0.02;      // L-2 — conservative per-call reservation held while a
+                                          // vendor call is in flight, reconciled to actual cost
+                                          // after. Bounds concurrent-miss overshoot of the daily cap.
 // $/MTok per model — the Admin model <select> renders from these keys (via
 // getAdminConfig), so client and server can't drift. An unknown model id
 // (operator typo in KB_AI_MODEL) is costed at the most expensive known rates
@@ -10764,19 +10803,45 @@ function kbAiReadSpend_() {
   return { date: today, usd: 0, calls: 0 };
 }
 
-/** Records one call's cost. Brief tryLock so parallel cache misses don't
- *  lose an increment; on contention the write still applies best-effort —
- *  the cap is a soft budget guard, and the vendor-console hard spend cap is
- *  the backstop (set one there too). */
-function kbAiRecordSpend_(usd) {
+/** Atomically applies a spend delta under a brief lock: usdDelta (clamped so
+ *  the counter never goes negative) and callDelta. Used for reconcile
+ *  (actualCost − reserve, +1 call) and refund (−reserve, 0 calls). On lock
+ *  contention the write still applies best-effort — the cap is a soft budget
+ *  guard, and the vendor-console hard spend cap is the backstop (set one
+ *  there too). */
+function kbAiApplySpend_(usdDelta, callDelta) {
   const lock = LockService.getScriptLock();
   let locked = false;
   try { locked = lock.tryLock(3000); } catch (_) {}
   try {
     const s = kbAiReadSpend_();
-    s.usd += usd; s.calls += 1;
+    s.usd = Math.max(0, s.usd + usdDelta);
+    s.calls += (callDelta || 0);
     PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
   } catch (_) {}
+  finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
+}
+
+/** L-2 — atomic cap check + reservation. Reads today's spend and, in the SAME
+ *  lock, reserves `reserve` USD if under the cap. Returns true if the caller
+ *  may proceed (reservation applied), false if the cap is already reached.
+ *  Doing the read+check+reserve atomically closes the lost-update window where
+ *  several concurrent cache misses each read spend < cap and all call the
+ *  vendor before any increment lands. The caller reconciles to the real cost
+ *  (or refunds the reservation on a failed/empty call) via kbAiApplySpend_.
+ *  On lock contention it fails OPEN (returns true) — matching the prior
+ *  best-effort posture; the vendor-console hard cap remains the true backstop. */
+function kbAiTryReserveSpend_(cap, reserve) {
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(3000); } catch (_) {}
+  try {
+    const s = kbAiReadSpend_();
+    if (s.usd >= cap) return false;
+    s.usd += reserve;
+    PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
+    return true;
+  } catch (_) { return true; }
   finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
 }
 
@@ -10882,15 +10947,19 @@ function kbGetFacetGuidance(facets) {
 
     const cfg = getKbAiConfig_();
     if (!cfg.apiKey) return noneOut('no-key', false);
-    if (kbAiReadSpend_().usd >= cfg.dailyCap) return noneOut('cap', false);
+    // Atomic cap check + reservation (L-2). Holding the lock across the slow
+    // vendor fetch is deliberately avoided (the kbResolveDocImages_ lesson);
+    // instead we reserve up front so concurrent misses see the bump, then
+    // reconcile to the real cost / refund the reservation below.
+    if (!kbAiTryReserveSpend_(cfg.dailyCap, KB_AI_CALL_RESERVE_USD)) return noneOut('cap', false);
 
     let vendor = null;
     try { vendor = kbAiCallVendor_(cfg, kbAiBuildPrompt_(clean, chunks)); }
     catch (e) { Logger.log('kbGetFacetGuidance vendor: ' + e.message); }
-    if (!vendor) return noneOut('vendor-failed', false);
+    if (!vendor) { kbAiApplySpend_(-KB_AI_CALL_RESERVE_USD, 0); return noneOut('vendor-failed', false); }
 
     const cost = kbAiEstimateCostUsd_(cfg.model, vendor.usage);
-    kbAiRecordSpend_(cost);
+    kbAiApplySpend_(cost - KB_AI_CALL_RESERVE_USD, 1);
     // PHI-free audit row — facets are validated enums, never note content.
     writeAuditLog_(emp, 'KbAiGuidance', '', '', false, 0,
       'facets=' + canonical + '; model=' + cfg.model + '; usd=' + cost.toFixed(4), emp.email);
