@@ -234,6 +234,9 @@ const CONFIG = {
   KB: {
     SS_ID: 'YOUR_KB_SPREADSHEET_ID',
     TAB:   'KB',
+    REVIEW_DUE_DAYS: 90,   // #4 — an article/embed is "review due" when its last
+                           // review (or, for legacy rows, its last edit) is older
+                           // than this. Editing an item counts as reviewing it.
   },
 };
 
@@ -10163,8 +10166,8 @@ function intakeGetSubmission(formType, submissionId) {
 //  in-app KB. PHI-free by policy. Backed by a dedicated KB spreadsheet
 //  (KB_SS_ID), read by the server; reps never open the sheet directly.
 // ════════════════════════════════════════════════════════════════════════════
-const KB = { ID:0, DEPARTMENT:1, TITLE:2, TYPE:3, BODY_MD:4, DRIVE_KIND:5, DRIVE_FILE_ID:6, SORT_ORDER:7, UPDATED_AT:8, UPDATED_BY:9 };
-const KB_HEADERS = ['Id','Department','Title','Type','BodyMd','DriveKind','DriveFileId','SortOrder','UpdatedAt','UpdatedBy'];
+const KB = { ID:0, DEPARTMENT:1, TITLE:2, TYPE:3, BODY_MD:4, DRIVE_KIND:5, DRIVE_FILE_ID:6, SORT_ORDER:7, UPDATED_AT:8, UPDATED_BY:9, REVIEWED_AT:10, REVIEWED_BY:11 };
+const KB_HEADERS = ['Id','Department','Title','Type','BodyMd','DriveKind','DriveFileId','SortOrder','UpdatedAt','UpdatedBy','ReviewedAt','ReviewedBy'];
 const KB_CACHE_KEY = 'kb_tree_v1';
 const KB_CACHE_TTL = 300;
 const KB_BODY_MAX = 49000; // under the 50k Sheets cell limit
@@ -10184,6 +10187,17 @@ function getOrCreateKbSheet_() {
     sheet.appendRow(KB_HEADERS);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, KB_HEADERS.length).setFontWeight('bold');
+  } else {
+    // #4 back-compat — widen the header row if new trailing columns
+    // (ReviewedAt/ReviewedBy) were appended to KB_HEADERS since this sheet was
+    // provisioned. Code indexes by the KB enum so header names are decorative,
+    // but this keeps the sheet self-documenting. One-time + self-healing (the
+    // guard passes once migrated) — same "provision on first touch" pattern as
+    // getCallNotesSheet_.
+    const hdr = sheet.getRange(1, 1, 1, KB_HEADERS.length).getValues()[0];
+    if (String(hdr[KB_HEADERS.length - 1]) !== KB_HEADERS[KB_HEADERS.length - 1]) {
+      sheet.getRange(1, 1, 1, KB_HEADERS.length).setValues([KB_HEADERS]).setFontWeight('bold');
+    }
   }
   return sheet;
 }
@@ -10480,21 +10494,23 @@ function kbRecordView(itemId, context) {
  *  tail scan of KbViews (the tab is append-only/chronological). Timestamp
  *  cells are Sheets-coerced Dates — recovered in the KB spreadsheet's OWN tz
  *  (the tz that coerced them; same discipline as normalizeAuditTs_). */
-function kbGetUsageStats() {
+/** KbViews open-counts per item id over the last `windowDays`. Bounded tail
+ *  scan (KB_VIEWS_MAX_SCAN). Returns { id: {count, drawerCount} } (empty map
+ *  when the tab is missing/empty or on any failure). Shared by kbGetUsageStats
+ *  and kbGetReviewDue (#4 prioritizes review-due items by usage). */
+function kbUsageCounts_(windowDays) {
+  const out = {};
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const ss = getKbSS_();
     const sheet = ss.getSheetByName(KB_VIEWS_TAB);
-    if (!sheet || sheet.getLastRow() < 2) return { items: [] };
+    if (!sheet || sheet.getLastRow() < 2) return out;
     const ssTz = ss.getSpreadsheetTimeZone();
     const lastRow = sheet.getLastRow();
     const startRow = Math.max(2, lastRow - KB_VIEWS_MAX_SCAN + 1);
     const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_VIEWS_HEADERS.length).getValues();
     const cutD = new Date();
-    cutD.setDate(cutD.getDate() - KB_USAGE_WINDOW_DAYS);
+    cutD.setDate(cutD.getDate() - windowDays);
     const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
-    const counts = {};
     for (let i = 0; i < data.length; i++) {
       const tsRaw = (data[i][0] instanceof Date)
         ? Utilities.formatDate(data[i][0], ssTz, 'yyyy-MM-dd')
@@ -10502,10 +10518,19 @@ function kbGetUsageStats() {
       if (tsRaw < cutoff) continue;
       const id = String(data[i][1] || '').trim();
       if (!id) continue;
-      if (!counts[id]) counts[id] = { count: 0, drawerCount: 0 };
-      counts[id].count++;
-      if (String(data[i][3] || '').indexOf('drawer') === 0) counts[id].drawerCount++;
+      if (!out[id]) out[id] = { count: 0, drawerCount: 0 };
+      out[id].count++;
+      if (String(data[i][3] || '').indexOf('drawer') === 0) out[id].drawerCount++;
     }
+  } catch (e) { /* best-effort — empty map on any failure */ }
+  return out;
+}
+
+function kbGetUsageStats() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const counts = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
     const ids = Object.keys(counts);
     if (!ids.length) return { items: [] };
     // Join titles from the KB sheet (small — one bounded read).
@@ -10522,6 +10547,89 @@ function kbGetUsageStats() {
       .sort(function (a, b) { return b.count - a.count; })
       .slice(0, KB_USAGE_TOP_N);
     return { items: items, windowDays: KB_USAGE_WINDOW_DAYS };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Recovers a KB timestamp cell to a yyyy-MM-dd string. Sheets coerces the
+ *  'yyyy-MM-dd HH:mm:ss' strings kbSaveItem writes into Date objects on read,
+ *  so recover Dates in the KB SPREADSHEET's own tz (the tz that coerced them —
+ *  the kbGetUsageStats / normalizeAuditTs_ discipline; NOT the ADP tz). */
+function kbCellDateIso_(v, ssTz) {
+  if (v instanceof Date) return Utilities.formatDate(v, ssTz, 'yyyy-MM-dd');
+  return String(v == null ? '' : v).substring(0, 10);
+}
+
+/** #4 — manager "Mark reviewed": bumps ReviewedAt/ReviewedBy without touching
+ *  content (the "still accurate, no edit needed" path). Manager-gated (INV-02),
+ *  locked (INV-01), audited (KbItemReviewed). No cache invalidation needed —
+ *  the tree cache doesn't carry review state and kbGetReviewDue reads live. */
+function kbMarkReviewed(id) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    id = String(id || '').trim();
+    if (!id) return { success: false, error: 'Missing item id.' };
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    let found = -1;
+    if (last >= 2) {
+      const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+    }
+    if (found < 0) return { success: false, error: 'Item not found.' };
+    const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    sheet.getRange(found, KB.REVIEWED_AT + 1, 1, 2).setValues([[now, emp.email]]);
+    writeAuditLog_(emp, 'KbItemReviewed', '', '', false, 0, 'id=' + id, emp.email);
+    return { success: true, reviewedAt: now };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** #4 — manager review-due queue: KB items whose last review (or, for legacy
+ *  rows with no ReviewedAt, last edit) is older than CONFIG.KB.REVIEW_DUE_DAYS,
+ *  sorted by 30-day usage desc (polish the most-leaned-on stale guides first).
+ *  Manager-gated (INV-02), read-only, PHI-free. */
+function kbGetReviewDue() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const dueDays = (CONFIG.KB && CONFIG.KB.REVIEW_DUE_DAYS) || 90;
+    const ss = getKbSS_();
+    const ssTz = ss.getSpreadsheetTimeZone();
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { items: [], dueDays: dueDays };
+    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
+    const usage = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
+    const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
+    const items = [];
+    rows.forEach(function (r) {
+      const id = String(r[KB.ID] || '').trim();
+      if (!id) return;
+      const reviewedIso = kbCellDateIso_(r[KB.REVIEWED_AT], ssTz);
+      const updatedIso  = kbCellDateIso_(r[KB.UPDATED_AT], ssTz);
+      const baseIso = reviewedIso || updatedIso;   // legacy rows fall back to last edit
+      let ageDays = null;
+      if (baseIso) { const n = cnIsoToDayNum_(baseIso); if (n != null && todayNum != null) ageDays = todayNum - n; }
+      const due = (ageDays == null) || (ageDays >= dueDays);
+      if (!due) return;
+      items.push({
+        id: id,
+        title: String(r[KB.TITLE] || '(untitled)'),
+        department: String(r[KB.DEPARTMENT] || ''),
+        type: String(r[KB.TYPE] || 'article'),
+        lastReviewedIso: reviewedIso || null,
+        basedOnUpdate: !reviewedIso,     // true = never explicitly reviewed (age is since last edit)
+        ageDays: ageDays,
+        views: (usage[id] && usage[id].count) || 0,
+      });
+    });
+    items.sort(function (a, b) {
+      return (b.views - a.views) || ((b.ageDays || 0) - (a.ageDays || 0)) || a.title.localeCompare(b.title);
+    });
+    return { items: items.slice(0, 50), dueDays: dueDays };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -10563,7 +10671,11 @@ function kbSaveItem(payload) {
       const sheet = getOrCreateKbSheet_();
       const id = String(payload.id || '').trim() || Utilities.getUuid();
       const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-      const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email];
+      // #4 — saving an item (new or edited) counts as reviewing it: stamp
+      // ReviewedAt/ReviewedBy alongside UpdatedAt/UpdatedBy so a fresh edit
+      // clears the staleness clock. A no-edit "still accurate" confirmation
+      // goes through kbMarkReviewed instead.
+      const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email, now, emp.email];
       const last = sheet.getLastRow();
       let found = -1;
       if (last >= 2 && payload.id) {

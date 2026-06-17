@@ -3835,6 +3835,8 @@ function test_managerGates_rejectNonManager() {
     ['managerDeleteCallNote',          function () { return managerDeleteCallNote(_TEST_INDIA_ID, 'no-such-note'); }],
     ['getCallNotesTagTaxonomy',        function () { return getCallNotesTagTaxonomy(); }],
     ['getCallNotesTagTrends',          function () { return getCallNotesTagTrends(); }],
+    ['kbGetReviewDue',                 function () { return kbGetReviewDue(); }],
+    ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
