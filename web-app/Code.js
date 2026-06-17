@@ -3749,6 +3749,115 @@ function getAutomationHealth() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Storage Health (#1) — manager-gated, read-only one-pane-of-glass over every
+ *  spreadsheet the app uses: which Script Property resolves it, whether it's
+ *  configured + reachable, and — the headline — whether its timezone matches
+ *  CONFIG.TIMEZONE (a mismatch silently drifts every coerced date/time read;
+ *  the runAllTests S1.1 tripwire only covers the ADP sheet, this covers all of
+ *  them). PHI-free: returns store metadata + names/urls + tz only, never any
+ *  row content. Rendered in the Call Notes Admin tab beside Automation Health. */
+function getStorageHealth() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const props = PropertiesService.getScriptProperties();
+    const cfgTz = CONFIG.TIMEZONE;
+    const isPlaceholder = function (v) { return !v || /^YOUR_/.test(String(v)); };
+
+    // Open a resolved id and report reachability / name / tz / tz-match.
+    const probe = function (spec) {
+      const out = {
+        label: spec.label, role: spec.role, cls: spec.cls, retention: spec.retention,
+        prop: spec.prop, source: spec.source, note: spec.note || '',
+        configured: !!spec.id, reachable: false, name: '', tz: '', tzMatch: null, url: '',
+      };
+      if (!spec.id) return out;
+      try {
+        const ss = SpreadsheetApp.openById(spec.id);
+        out.reachable = true;
+        out.name = ss.getName();
+        out.tz = ss.getSpreadsheetTimeZone();
+        out.tzMatch = (out.tz === cfgTz);
+        out.url = ss.getUrl();
+      } catch (e) { out.error = e.message; }
+      return out;
+    };
+
+    const stores = [];
+    const adpProp = props.getProperty('ADP_SS_ID');
+    const adpId = adpProp || (isPlaceholder(CONFIG.ADP_SS_ID) ? '' : CONFIG.ADP_SS_ID);
+    stores.push(probe({ label: 'Time Clock / ADP', role: 'Roster, Timesheet, TimeOffRequests, shared AuditLog, punch-adjust',
+      cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', id: adpId,
+      source: adpProp ? 'Script Property' : (adpId ? 'CONFIG' : 'unset'),
+      note: adpId ? '' : 'Set ADP_SS_ID — the app fails on first sheet open without it.' }));
+
+    const cdrProp = props.getProperty('CDR_SS_ID');
+    const cdrId = cdrProp || (isPlaceholder(CONFIG.CDR_SS_ID) ? '' : CONFIG.CDR_SS_ID);
+    stores.push(probe({ label: 'CDR Report', role: 'DQE + CSR Transfer + Agent Alias Overrides (read-only)',
+      cls: 'External', retention: 'n/a — owned by call-data-reporting', prop: 'CDR_SS_ID', id: cdrId,
+      source: cdrProp ? 'Script Property' : (cdrId ? 'CONFIG' : 'unset'),
+      note: cdrId ? '' : 'Optional — Metrics + the shift-stats CDR overlay degrade gracefully when unset.' }));
+
+    const intakeProp = props.getProperty('INTAKE_SS_ID');
+    const intakeId = intakeProp || (isPlaceholder(CONFIG.INTAKE.SS_ID) ? '' : CONFIG.INTAKE.SS_ID);
+    stores.push(probe({ label: 'Intake (PHI)', role: 'Offerings + PPD/PMD/PAP submissions',
+      cls: 'PHI', retention: 'Optional purge', prop: 'INTAKE_SS_ID', id: intakeId,
+      source: intakeProp ? 'Script Property' : (intakeId ? 'CONFIG' : 'unset'),
+      note: intakeId ? '' : 'Set INTAKE_SS_ID — Intake fails on first preview/send without it.' }));
+
+    const formsProp = props.getProperty('FORMS_SS_ID');
+    const formsId = formsProp || adpId;
+    stores.push(probe({ label: 'Forms (PHI)', role: 'FormTokens + FormSubmissions',
+      cls: 'PHI', retention: '90-day purge (if enabled)', prop: 'FORMS_SS_ID', id: formsId,
+      source: formsProp ? 'Script Property' : (formsId ? 'ADP fallback' : 'unset'),
+      note: formsProp ? '' : 'Unset → form PHI is co-located with the ADP/payroll sheet. Recommend setting FORMS_SS_ID to the Intake spreadsheet.' }));
+
+    const kbProp = props.getProperty('KB_SS_ID');
+    const kbId = kbProp || (isPlaceholder(CONFIG.KB.SS_ID) ? '' : CONFIG.KB.SS_ID);
+    stores.push(probe({ label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs',
+      cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID', id: kbId,
+      source: kbProp ? 'Script Property' : (kbId ? 'CONFIG' : 'unset'),
+      note: kbId ? '' : 'Set KB_SS_ID — Reference + Training fail without it.' }));
+
+    const hrProp = props.getProperty('HR_DOCS_SS_ID');
+    stores.push(probe({ label: 'Employee Docs (HR)', role: 'EmpDocs + DocSignatures',
+      cls: 'HR — keep-forever', retention: 'Never purged', prop: 'HR_DOCS_SS_ID', id: hrProp || '',
+      source: hrProp ? 'Script Property' : 'unset',
+      note: hrProp ? '' : 'Unset → Employee Docs is disabled (no fallback store, by design — INV-122).' }));
+
+    // Per-rep Call Notes Sheets — probe each enrolled rep (the established
+    // cross-rep walk cost, e.g. managerGetUnresolvedActionCount). Summarize
+    // reachability + tz drift; list up to 20 problem Sheets.
+    const roster = getEmployeeRosterRows_();
+    let enrolled = 0, reachable = 0, tzMismatch = 0;
+    const problems = [];
+    for (let i = 1; i < roster.length; i++) {
+      const sid = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      if (!sid) continue;
+      enrolled++;
+      const nm = String(roster[i][EMP.NAME] || '').trim();
+      try {
+        const rss = SpreadsheetApp.openById(String(sid).trim());
+        reachable++;
+        const rtz = rss.getSpreadsheetTimeZone();
+        if (rtz !== cfgTz) { tzMismatch++; if (problems.length < 20) problems.push({ name: nm, issue: 'tz ' + rtz }); }
+      } catch (e) { if (problems.length < 20) problems.push({ name: nm, issue: 'unreachable' }); }
+    }
+    stores.push({
+      label: 'Call Notes (per-rep)', role: enrolled + ' enrolled rep Sheet(s)',
+      cls: 'PHI', retention: 'Optional purge', prop: 'Employees col L (CallNotesSheetId)',
+      source: 'roster', configured: enrolled > 0,
+      reachable: enrolled === 0 ? null : (reachable === enrolled),
+      tzMatch: enrolled === 0 ? null : (tzMismatch === 0),
+      perRep: { enrolled: enrolled, reachable: reachable, tzMismatch: tzMismatch, problems: problems },
+      note: enrolled === 0 ? 'No reps enrolled yet.'
+        : (reachable + '/' + enrolled + ' reachable' + (tzMismatch ? ('; ' + tzMismatch + ' tz-mismatched') : '')),
+    });
+
+    return { configTimezone: cfgTz, stores: stores };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Bulk-export every enrolled rep's call notes in a date range to a new
  *  Google Sheet. Returns { success, url, fileName, noteCount }. Pair with
  *  the Team Notes "Export Range" modal. Writes a CallNotesExport audit row.
