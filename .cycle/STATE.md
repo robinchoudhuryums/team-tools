@@ -36,10 +36,18 @@ Executing as 7 separate per-module commits on branch claude/practical-gauss-yycw
   (trainCoverageClass_ tones), reps sorted least-covered first. New helpers
   trainRingHtml_/trainCoverageClass_. Pure 134/0, DOM 48/0. Minor: per-cell quiz
   attempt count dropped from the matrix (still in analytics table).
-- NEXT: commit #4 Reference/KB redesign (collapsible departments w/ chevron+count
-  persisted; item icons fileText/grid/paperclip — fileText already wired in #1;
-  .kb-btn→shared tokens; landing panel = Recently viewed / Most used / Review-due).
-  Leave reader/markdown/search/drawer.
+- DONE — commit #4 Reference/KB redesign (4fdb390): collapsible dept headers
+  (chevron+count, persisted in umsKbPanel.deptCollapsed via kbToggleDept_);
+  .kb-btn→token secondary; landing panel kbRenderLanding_ (Recently viewed +
+  Most used 30d + Review due w/ pill+dot+Mark-reviewed) replacing the bare empty
+  state — usage/review loaders now cache into KB_STATE + re-render landing (tree
+  block render removed); KB_STATE.landing flag guards async re-render vs open
+  item/search. Reader/markdown/search/drawer/editor untouched. Pure 134/0, DOM
+  48/0. Most used + Review due are manager-only (endpoints manager-gated).
+- NEXT: commit #5 Time Clock (sky gradient + tz selector; ribbon absorbs
+  hours/state/break-bands/lunch-color + punch buttons under it; NOTE-volume
+  histogram C2; one-row Punches·Team·PTO Annual-only C1 incl. drop Sick Leave
+  from modals.html PTO select; Coverage heatmap + risk callout in tc/manager).
 
 ## Cycle 5 CLOSED (2026-06-17)
 Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
