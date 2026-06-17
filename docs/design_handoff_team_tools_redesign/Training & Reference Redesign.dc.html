@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter Tight', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #0f1623; }
+</style>
+</helmet>
+
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e3e6ec;">
+
+  <!-- header -->
+  <div style="max-width:980px;margin-bottom:8px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">UMS Team Tools · Training &amp; Reference redesign</div>
+    <h1 style="font-size:32px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0 0 14px;">Training &amp; Reference — design updates</h1>
+    <p style="font-size:15px;line-height:1.6;color:#3e4756;max-width:760px;margin:0;">Training gains a real sense of progress (rings + unified summary) and a manager coverage heat-grid in place of the wide text matrix. Reference gets collapsible departments, distinct per-item icons, and a useful landing panel instead of a blank "select an item." Shown in light and the app's dark mode.</p>
+  </div>
+
+  <!-- ══════════ 01 · TRAINING — MY TRAINING ══════════ -->
+  <div style="margin-top:44px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:16px;">01 · Training — my checklist</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+
+    <!-- LIGHT my training -->
+    <div style="flex:none;width:560px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Light</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <!-- progress header -->
+        <div style="padding:20px 22px;border-bottom:1px solid #dce0e7;display:flex;align-items:center;gap:20px;">
+          <div style="position:relative;width:64px;height:64px;flex:none;">
+            <svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="#e5e8ee" stroke-width="7"/><circle cx="32" cy="32" r="27" fill="none" stroke="#0f8a52" stroke-width="7" stroke-linecap="round" stroke-dasharray="170" stroke-dashoffset="97" transform="rotate(-90 32 32)"/></svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;"><span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;line-height:1;">43%</span></div>
+          </div>
+          <div style="flex:1;">
+            <h2 style="font-size:20px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px;">My Training</h2>
+            <div style="font-size:13px;color:#737c8c;">3 of 7 complete · <span style="color:#8a1f1f;font-weight:600;">1 overdue</span></div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <div style="border:1px solid #e5e8ee;border-radius:10px;padding:8px 14px;text-align:center;min-width:62px;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:2px;">Done</div><div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:#0b6e40;">3</div></div>
+            <div style="border:1px solid #e5e8ee;border-radius:10px;padding:8px 14px;text-align:center;min-width:62px;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:2px;">Left</div><div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;">4</div></div>
+          </div>
+        </div>
+        <!-- list -->
+        <div style="padding:14px 22px 18px;display:flex;flex-direction:column;gap:8px;">
+          <!-- overdue quiz -->
+          <div style="display:flex;align-items:center;gap:12px;border:1px solid #f3d4d4;border-radius:10px;background:#fff;padding:11px 14px;box-shadow:inset 3px 0 0 #c13030;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:#fce5e5;color:#8a1f1f;flex:none;">Overdue</span>
+            <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;">PPD Qualification Quiz</div><div style="font-size:12px;color:#737c8c;margin-top:1px;">Quiz · 10 questions · pass ≥80% · due Jun 12</div></div>
+            <button style="font-size:12px;padding:6px 12px;border:1px solid #0f8a52;border-radius:8px;background:#0f8a52;color:#fff;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;flex:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Take quiz</button>
+          </div>
+          <!-- pending article -->
+          <div style="display:flex;align-items:center;gap:12px;border:1px solid #dce0e7;border-radius:10px;background:#fff;padding:11px 14px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:#f0f2f6;color:#737c8c;flex:none;">To do</span>
+            <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;">Intake Call Script</div><div style="font-size:12px;color:#737c8c;margin-top:1px;">Article · due Jun 20</div></div>
+            <button style="font-size:12px;padding:6px 12px;border:1px solid #dce0e7;border-radius:8px;background:#e4f5ec;color:#0b6e40;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;flex:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>Mark complete</button>
+          </div>
+          <!-- pending article 2 -->
+          <div style="display:flex;align-items:center;gap:12px;border:1px solid #dce0e7;border-radius:10px;background:#fff;padding:11px 14px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:#f0f2f6;color:#737c8c;flex:none;">To do</span>
+            <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;">CPAP Documentation Basics</div><div style="font-size:12px;color:#737c8c;margin-top:1px;">Article · no due date</div></div>
+            <button style="font-size:12px;padding:6px 12px;border:1px solid #dce0e7;border-radius:8px;background:#e4f5ec;color:#0b6e40;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;flex:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>Mark complete</button>
+          </div>
+          <!-- done -->
+          <div style="display:flex;align-items:center;gap:12px;border:1px solid #dce0e7;border-radius:10px;background:#fbfdfc;padding:11px 14px;opacity:.78;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:#e4f5ec;color:#0b6e40;flex:none;">Done</span>
+            <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;">HIPAA Privacy Basics</div><div style="font-size:12px;color:#737c8c;margin-top:1px;">Article · completed Jun 09</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;border:1px solid #dce0e7;border-radius:10px;background:#fbfdfc;padding:11px 14px;opacity:.78;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:#e4f5ec;color:#0b6e40;flex:none;">Done</span>
+            <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;">Power Mobility 101</div><div style="font-size:12px;color:#737c8c;margin-top:1px;">Quiz · scored 90% · completed Jun 05</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DARK my training -->
+    <div style="flex:none;width:600px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Dark</div>
+      <div style="padding:20px;background:#0a0d14;border-radius:8px;">
+        <div style="background:#10141d;border-radius:2px;border:1px solid #262d3b;overflow:hidden;">
+          <div style="padding:20px 22px;border-bottom:1px solid #262d3b;display:flex;align-items:center;gap:20px;">
+            <div style="position:relative;width:64px;height:64px;flex:none;">
+              <svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="#1e2532" stroke-width="7"/><circle cx="32" cy="32" r="27" fill="none" stroke="#7af2a1" stroke-width="7" stroke-linecap="round" stroke-dasharray="170" stroke-dashoffset="97" transform="rotate(-90 32 32)"/></svg>
+              <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:600;line-height:1;color:#e8e6e0;">43%</span></div>
+            </div>
+            <div style="flex:1;">
+              <h2 style="font-size:20px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px;color:#e8e6e0;">My Training</h2>
+              <div style="font-size:13px;color:#a6adbc;">3 of 7 complete · <span style="color:#ffa0a8;font-weight:600;">1 overdue</span></div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <div style="border:1px solid #262d3b;border-radius:10px;padding:8px 14px;text-align:center;min-width:62px;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;margin-bottom:2px;">Done</div><div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:#7af2a1;">3</div></div>
+              <div style="border:1px solid #262d3b;border-radius:10px;padding:8px 14px;text-align:center;min-width:62px;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;margin-bottom:2px;">Left</div><div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:#e8e6e0;">4</div></div>
+            </div>
+          </div>
+          <div style="padding:14px 22px 18px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:12px;border:1px solid #4a2a30;border-radius:10px;background:#10141d;padding:11px 14px;box-shadow:inset 3px 0 0 #ff6679;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:rgba(255,102,121,.14);color:#ffa0a8;flex:none;">Overdue</span>
+              <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e6e0;">PPD Qualification Quiz</div><div style="font-size:12px;color:#a6adbc;margin-top:1px;">Quiz · 10 questions · pass ≥80% · due Jun 12</div></div>
+              <button style="font-size:12px;padding:6px 12px;border:none;border-radius:8px;background:#7af2a1;color:#0a0d14;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;flex:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Take quiz</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;border:1px solid #262d3b;border-radius:10px;background:#10141d;padding:11px 14px;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:#1e2532;color:#a6adbc;flex:none;">To do</span>
+              <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e6e0;">Intake Call Script</div><div style="font-size:12px;color:#a6adbc;margin-top:1px;">Article · due Jun 20</div></div>
+              <button style="font-size:12px;padding:6px 12px;border:1px solid #262d3b;border-radius:8px;background:rgba(122,242,161,.12);color:#7af2a1;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;flex:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>Mark complete</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;border:1px solid #262d3b;border-radius:10px;background:#10141d;padding:11px 14px;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:#1e2532;color:#a6adbc;flex:none;">To do</span>
+              <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e6e0;">CPAP Documentation Basics</div><div style="font-size:12px;color:#a6adbc;margin-top:1px;">Article · no due date</div></div>
+              <button style="font-size:12px;padding:6px 12px;border:1px solid #262d3b;border-radius:8px;background:rgba(122,242,161,.12);color:#7af2a1;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;flex:none;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>Mark complete</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;border:1px solid #262d3b;border-radius:10px;background:#0d1118;padding:11px 14px;opacity:.72;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:rgba(122,242,161,.12);color:#7af2a1;flex:none;">Done</span>
+              <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e6e0;">HIPAA Privacy Basics</div><div style="font-size:12px;color:#a6adbc;margin-top:1px;">Article · completed Jun 09</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;border:1px solid #262d3b;border-radius:10px;background:#0d1118;padding:11px 14px;opacity:.72;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px;background:rgba(122,242,161,.12);color:#7af2a1;flex:none;">Done</span>
+              <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:#e8e6e0;">Power Mobility 101</div><div style="font-size:12px;color:#a6adbc;margin-top:1px;">Quiz · scored 90% · completed Jun 05</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 02 · TRAINING — MANAGER COVERAGE GRID ══════════ -->
+  <div style="margin-top:56px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:6px;">02 · Training — manager coverage grid</div>
+  <div style="font-size:13px;color:#737c8c;max-width:760px;margin-bottom:18px;">Replaces the wide horizontally-scrolling text matrix. Each cell is a status dot (done / overdue / pending) so a manager sees gaps at a glance; a coverage column ranks who's behind.</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+
+    <!-- LIGHT grid -->
+    <div style="flex:none;width:620px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Light</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <!-- legend -->
+        <div style="padding:14px 20px;border-bottom:1px solid #dce0e7;display:flex;gap:16px;align-items:center;font-size:12px;color:#737c8c;">
+          <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;border-radius:4px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span>Done</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;border-radius:4px;background:#c13030;"></span>Overdue</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;border-radius:4px;background:#eef0f4;border:1px solid #dce0e7;"></span>Pending</span>
+        </div>
+        <!-- grid -->
+        <div style="padding:8px 20px 18px;">
+          <div style="display:grid;grid-template-columns:140px repeat(4,1fr) 64px;align-items:center;">
+            <!-- header -->
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#a5acb8;padding:10px 0 8px;">Rep</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#a5acb8;text-align:center;padding:10px 0 8px;">HIPAA</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#a5acb8;text-align:center;padding:10px 0 8px;">PMD&nbsp;101</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#a5acb8;text-align:center;padding:10px 0 8px;">PPD&nbsp;Quiz</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#a5acb8;text-align:center;padding:10px 0 8px;">CPAP</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#a5acb8;text-align:right;padding:10px 0 8px;">Cov.</div>
+
+            <!-- row J.Rivera -->
+            <div style="font-size:13px;font-weight:500;padding:7px 0;border-top:1px solid #f0f2f6;">J. Rivera</div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#c13030;"></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#eef0f4;border:1px solid #dce0e7;"></span></div>
+            <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;padding:7px 0;border-top:1px solid #f0f2f6;">50%</div>
+
+            <!-- row A.Cole -->
+            <div style="font-size:13px;font-weight:500;padding:7px 0;border-top:1px solid #f0f2f6;">A. Cole</div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#0b6e40;padding:7px 0;border-top:1px solid #f0f2f6;">100%</div>
+
+            <!-- row S.Park -->
+            <div style="font-size:13px;font-weight:500;padding:7px 0;border-top:1px solid #f0f2f6;">S. Park</div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#eef0f4;border:1px solid #dce0e7;"></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#c13030;"></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#eef0f4;border:1px solid #dce0e7;"></span></div>
+            <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#8a1f1f;padding:7px 0;border-top:1px solid #f0f2f6;">25%</div>
+
+            <!-- row D.Wright -->
+            <div style="font-size:13px;font-weight:500;padding:7px 0;border-top:1px solid #f0f2f6;">D. Wright</div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#0f8a52;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+            <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #f0f2f6;"><span style="width:22px;height:22px;border-radius:6px;background:#eef0f4;border:1px solid #dce0e7;"></span></div>
+            <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;padding:7px 0;border-top:1px solid #f0f2f6;">75%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DARK grid -->
+    <div style="flex:none;width:620px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Dark</div>
+      <div style="padding:20px;background:#0a0d14;border-radius:8px;">
+        <div style="background:#10141d;border-radius:2px;border:1px solid #262d3b;overflow:hidden;">
+          <div style="padding:14px 20px;border-bottom:1px solid #262d3b;display:flex;gap:16px;align-items:center;font-size:12px;color:#a6adbc;">
+            <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;border-radius:4px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span>Done</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;border-radius:4px;background:#ff6679;"></span>Overdue</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;border-radius:4px;background:#1a2230;border:1px solid #2c3545;"></span>Pending</span>
+          </div>
+          <div style="padding:8px 20px 18px;">
+            <div style="display:grid;grid-template-columns:140px repeat(4,1fr) 64px;align-items:center;">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#6c7587;padding:10px 0 8px;">Rep</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#6c7587;text-align:center;padding:10px 0 8px;">HIPAA</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#6c7587;text-align:center;padding:10px 0 8px;">PMD&nbsp;101</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#6c7587;text-align:center;padding:10px 0 8px;">PPD&nbsp;Quiz</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#6c7587;text-align:center;padding:10px 0 8px;">CPAP</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#6c7587;text-align:right;padding:10px 0 8px;">Cov.</div>
+
+              <div style="font-size:13px;font-weight:500;color:#e8e6e0;padding:7px 0;border-top:1px solid #1e2532;">J. Rivera</div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#ff6679;"></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#1a2230;border:1px solid #2c3545;"></span></div>
+              <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#e8e6e0;padding:7px 0;border-top:1px solid #1e2532;">50%</div>
+
+              <div style="font-size:13px;font-weight:500;color:#e8e6e0;padding:7px 0;border-top:1px solid #1e2532;">A. Cole</div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#7af2a1;padding:7px 0;border-top:1px solid #1e2532;">100%</div>
+
+              <div style="font-size:13px;font-weight:500;color:#e8e6e0;padding:7px 0;border-top:1px solid #1e2532;">S. Park</div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#1a2230;border:1px solid #2c3545;"></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#ff6679;"></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#1a2230;border:1px solid #2c3545;"></span></div>
+              <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#ffa0a8;padding:7px 0;border-top:1px solid #1e2532;">25%</div>
+
+              <div style="font-size:13px;font-weight:500;color:#e8e6e0;padding:7px 0;border-top:1px solid #1e2532;">D. Wright</div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#7af2a1;display:inline-flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg></span></div>
+              <div style="display:flex;justify-content:center;padding:7px 0;border-top:1px solid #1e2532;"><span style="width:22px;height:22px;border-radius:6px;background:#1a2230;border:1px solid #2c3545;"></span></div>
+              <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#e8e6e0;padding:7px 0;border-top:1px solid #1e2532;">75%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 03 · REFERENCE ══════════ -->
+  <div style="margin-top:56px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:6px;">03 · Reference — tree + landing panel</div>
+  <div style="font-size:13px;color:#737c8c;max-width:760px;margin-bottom:18px;">Collapsible departments, distinct icons per item type (article / sheet / file), and a landing panel — recently viewed, most used, and (for managers) review-due — instead of a blank "select an item."</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+
+    <!-- LIGHT reference -->
+    <div style="flex:none;width:760px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Light</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;display:grid;grid-template-columns:264px 1fr;height:476px;">
+        <!-- tree -->
+        <div style="border-right:1px solid #dce0e7;background:#fbfcfd;display:flex;flex-direction:column;min-height:0;">
+          <div style="padding:12px 12px 8px;display:flex;gap:7px;align-items:center;border:1px solid #dce0e7;border-width:0 0 1px 0;">
+            <div style="flex:1;display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #dce0e7;border-radius:8px;color:#a5acb8;font-size:12px;background:#fff;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Search reference…</div>
+          </div>
+          <div style="overflow-y:auto;padding:10px 8px;flex:1;">
+            <!-- dept Sales collapsed -->
+            <button style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;padding:8px 6px;text-align:left;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Sales <span style="margin-left:auto;color:#a5acb8;font-weight:500;">4</span></button>
+            <!-- dept Power expanded -->
+            <button style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#0f1623;padding:8px 6px;text-align:left;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Power <span style="margin-left:auto;color:#a5acb8;font-weight:500;">3</span></button>
+            <div style="display:flex;flex-direction:column;gap:1px;padding-bottom:4px;">
+              <button style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;font-size:13px;padding:7px 9px;border:none;border-radius:7px;background:#e4f5ec;color:#0b6e40;cursor:pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>PWC Qualification Guide</button>
+              <button style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;font-size:13px;padding:7px 9px;border:none;border-radius:7px;background:none;color:#0f1623;cursor:pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>HCPCS Code Matrix</button>
+              <button style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;font-size:13px;padding:7px 9px;border:none;border-radius:7px;background:none;color:#0f1623;cursor:pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>MDO Fax Cover (PDF)</button>
+            </div>
+            <!-- dept Billing collapsed -->
+            <button style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;padding:8px 6px;text-align:left;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Billing <span style="margin-left:auto;color:#a5acb8;font-weight:500;">6</span></button>
+          </div>
+        </div>
+        <!-- landing panel -->
+        <div style="padding:24px 26px;overflow-y:auto;">
+          <h2 style="font-size:20px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px;">Reference</h2>
+          <p style="font-size:13px;color:#737c8c;margin:0 0 20px;">Pick a topic on the left, or jump back in.</p>
+
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#737c8c;margin-bottom:8px;">Recently viewed</div>
+          <div style="display:flex;flex-direction:column;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f2f6;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#737c8c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span style="font-size:13px;flex:1;">PWC Qualification Guide</span><span style="font-size:11px;color:#a5acb8;">Power · 2h ago</span></div>
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f2f6;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#737c8c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span style="font-size:13px;flex:1;">CPAP Resupply Cadence</span><span style="font-size:11px;color:#a5acb8;">Sleep · yesterday</span></div>
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#737c8c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span style="font-size:13px;flex:1;">HCPCS Code Matrix</span><span style="font-size:11px;color:#a5acb8;">Power · Mon</span></div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#737c8c;margin-bottom:8px;">Most used</div>
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                <span style="font-size:13px;color:#0f8a52;">Intake Call Script</span>
+                <span style="font-size:13px;color:#0f8a52;">Insurance Cheat Sheet</span>
+                <span style="font-size:13px;color:#0f8a52;">Objection Handling</span>
+              </div>
+            </div>
+            <div style="border-left:1px solid #f0f2f6;padding-left:16px;">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#737c8c;margin-bottom:8px;display:flex;align-items:center;gap:6px;">Review due <span style="font-size:9px;padding:1px 6px;border-radius:999px;background:#fbf1d9;color:#8a4500;">mgr · 2</span></div>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                <div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#b7791f;flex:none;"></span><span style="font-size:13px;">PWC Qualification Guide</span></div>
+                <div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#b7791f;flex:none;"></span><span style="font-size:13px;">SSN Handling Policy</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DARK reference -->
+    <div style="flex:none;width:800px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Dark</div>
+      <div style="padding:20px;background:#0a0d14;border-radius:8px;">
+        <div style="background:#10141d;border-radius:2px;border:1px solid #262d3b;overflow:hidden;display:grid;grid-template-columns:264px 1fr;height:476px;">
+          <div style="border-right:1px solid #262d3b;background:#0d1118;display:flex;flex-direction:column;min-height:0;">
+            <div style="padding:12px 12px 8px;border-bottom:1px solid #262d3b;">
+              <div style="flex:1;display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #262d3b;border-radius:8px;color:#6c7587;font-size:12px;background:#10141d;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Search reference…</div>
+            </div>
+            <div style="overflow-y:auto;padding:10px 8px;flex:1;">
+              <button style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;padding:8px 6px;text-align:left;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Sales <span style="margin-left:auto;color:#6c7587;font-weight:500;">4</span></button>
+              <button style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#e8e6e0;padding:8px 6px;text-align:left;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>Power <span style="margin-left:auto;color:#6c7587;font-weight:500;">3</span></button>
+              <div style="display:flex;flex-direction:column;gap:1px;padding-bottom:4px;">
+                <button style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;font-size:13px;padding:7px 9px;border:none;border-radius:7px;background:rgba(122,242,161,.12);color:#7af2a1;cursor:pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>PWC Qualification Guide</button>
+                <button style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;font-size:13px;padding:7px 9px;border:none;border-radius:7px;background:none;color:#e8e6e0;cursor:pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>HCPCS Code Matrix</button>
+                <button style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;font-size:13px;padding:7px 9px;border:none;border-radius:7px;background:none;color:#e8e6e0;cursor:pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>MDO Fax Cover (PDF)</button>
+              </div>
+              <button style="width:100%;display:flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;padding:8px 6px;text-align:left;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Billing <span style="margin-left:auto;color:#6c7587;font-weight:500;">6</span></button>
+            </div>
+          </div>
+          <div style="padding:24px 26px;overflow-y:auto;">
+            <h2 style="font-size:20px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px;color:#e8e6e0;">Reference</h2>
+            <p style="font-size:13px;color:#a6adbc;margin:0 0 20px;">Pick a topic on the left, or jump back in.</p>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#6c7587;margin-bottom:8px;">Recently viewed</div>
+            <div style="display:flex;flex-direction:column;margin-bottom:20px;">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #1e2532;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a6adbc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span style="font-size:13px;flex:1;color:#e8e6e0;">PWC Qualification Guide</span><span style="font-size:11px;color:#6c7587;">Power · 2h ago</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #1e2532;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a6adbc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span style="font-size:13px;flex:1;color:#e8e6e0;">CPAP Resupply Cadence</span><span style="font-size:11px;color:#6c7587;">Sleep · yesterday</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a6adbc" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg><span style="font-size:13px;flex:1;color:#e8e6e0;">HCPCS Code Matrix</span><span style="font-size:11px;color:#6c7587;">Power · Mon</span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+              <div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#6c7587;margin-bottom:8px;">Most used</div>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <span style="font-size:13px;color:#7af2a1;">Intake Call Script</span>
+                  <span style="font-size:13px;color:#7af2a1;">Insurance Cheat Sheet</span>
+                  <span style="font-size:13px;color:#7af2a1;">Objection Handling</span>
+                </div>
+              </div>
+              <div style="border-left:1px solid #1e2532;padding-left:16px;">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#6c7587;margin-bottom:8px;display:flex;align-items:center;gap:6px;">Review due <span style="font-size:9px;padding:1px 6px;border-radius:999px;background:rgba(255,181,71,.14);color:#ffcb80;">mgr · 2</span></div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#ffb547;flex:none;"></span><span style="font-size:13px;color:#e8e6e0;">PWC Qualification Guide</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;"><span style="width:6px;height:6px;border-radius:50%;background:#ffb547;flex:none;"></span><span style="font-size:13px;color:#e8e6e0;">SSN Handling Policy</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

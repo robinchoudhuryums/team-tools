@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter Tight', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #0f1623; }
+</style>
+</helmet>
+
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e3e6ec;">
+
+  <!-- ══ Board header ══ -->
+  <div style="max-width:1180px;margin-bottom:8px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">UMS Team Tools · Redesign Study</div>
+    <h1 style="font-size:34px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0 0 14px;">Intake — visual & interaction redesign</h1>
+    <p style="font-size:15px;line-height:1.6;color:#3e4756;max-width:720px;margin:0 0 22px;">The Intake module never got the Console-redesign treatment the rest of the app has. It runs on a stray navy brand color, rolls its own button system, and renders all 45 PPD questions — including every yes/no and all 10 pain regions — as identical free-text inputs. Below: the module rebuilt on the shared design tokens, with the PPD form explored as three input treatments.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;border-radius:5px;background:#e4f5ec;color:#0b6e40;">On-brand green</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;border-radius:5px;background:#e4f5ec;color:#0b6e40;">Structured controls</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;border-radius:5px;background:#e4f5ec;color:#0b6e40;">Progress + draft safety</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:4px 9px;border-radius:5px;background:#e4f5ec;color:#0b6e40;">Shared token system</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════ SECTION 1 — THE SHELL ══════════════════ -->
+  <div style="margin-top:48px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:4px;">01 · Module shell</div>
+  <div style="font-size:13px;color:#737c8c;max-width:720px;margin-bottom:18px;">App-bar with breadcrumb + kicker, the shared pill tab system for the four sub-tabs, and the editorial green accent — instead of the bespoke navy header bar.</div>
+
+  <div style="display:flex;gap:48px;align-items:flex-start;">
+    <div style="flex:none;width:980px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Redesigned shell + sub-tabs</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden;border:1px solid #dce0e7;">
+        <!-- app bar -->
+        <div style="padding:22px 28px 18px;border-bottom:1px solid #dce0e7;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#737c8c;letter-spacing:.08em;text-transform:uppercase;display:flex;gap:8px;margin-bottom:8px;"><span>Tools</span><span style="opacity:.5;">/</span><span style="color:#0f1623;">Intake</span></div>
+            <h2 style="font-size:26px;font-weight:600;letter-spacing:-.02em;margin:0;">Intake</h2>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:999px;padding:3px;background:#fff;">
+              <span style="padding:6px 13px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.06em;background:#0f1623;color:#f6f7f9;">EN</span>
+              <span style="padding:6px 13px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.06em;color:#737c8c;">ES</span>
+            </div>
+          </div>
+        </div>
+        <!-- sub tabs -->
+        <div style="display:flex;gap:4px;padding:10px 28px 0;background:#f6f7f9;border-bottom:1px solid #dce0e7;">
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 15px;margin-bottom:-1px;border-bottom:2px solid #0f8a52;font-size:13px;font-weight:600;color:#0f1623;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            PPD
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 15px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            PMD Account
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 15px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            PAP Account
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 15px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            Sent
+          </span>
+        </div>
+        <!-- content peek -->
+        <div style="padding:22px 28px;background:#f6f7f9;display:flex;gap:14px;align-items:center;color:#737c8c;font-size:13px;">
+          <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:5px;background:#e1ecfa;color:#154980;">Patient · TRX 12345</span>
+          The selected tab's form renders here ↓
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ SECTION 2 — PPD INPUT TREATMENTS ══════════════════ -->
+  <div style="margin-top:56px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:4px;">02 · PPD form — three input treatments</div>
+  <div style="font-size:13px;color:#737c8c;max-width:760px;margin-bottom:22px;">Same content in each frame — the yes/no "Extremity Strength" questions and the 10-region "Consistent Pain" section — shown three ways. Today these are 12 identical text boxes.</div>
+
+  <div style="display:flex;gap:48px;align-items:flex-start;">
+
+    <!-- ─── VARIATION A — Inline structured ─── -->
+    <div style="flex:none;width:470px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">A · Inline structured</div>
+      <div style="font-size:12px;color:#737c8c;margin-bottom:10px;line-height:1.45;">Familiar one-per-row list. Right control swaps to the correct type. Lowest training cost.</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <!-- progress header -->
+        <div style="padding:16px 20px;border-bottom:1px solid #dce0e7;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+            <span style="font-size:15px;font-weight:600;">Patient Profile (PPD)</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#0b6e40;font-weight:600;">18 / 45</span>
+          </div>
+          <div style="height:5px;border-radius:999px;background:#e5e8ee;overflow:hidden;"><div style="width:40%;height:100%;background:#0f8a52;"></div></div>
+        </div>
+        <div style="padding:6px 20px 14px;">
+          <!-- section -->
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;padding:16px 0 10px;">Extremity Strength</div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-top:1px solid #f0f2f6;">
+            <span style="font-size:13px;color:#0f1623;font-weight:500;line-height:1.35;">7. Can you move both arms at all?</span>
+            <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:8px;overflow:hidden;flex:none;">
+              <span style="padding:6px 13px;font-size:12px;font-weight:600;background:#0f8a52;color:#fff;">Yes</span>
+              <span style="padding:6px 13px;font-size:12px;font-weight:500;color:#737c8c;border-left:1px solid #dce0e7;">No</span>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-top:1px solid #f0f2f6;">
+            <span style="font-size:13px;color:#0f1623;font-weight:500;line-height:1.35;">9. Can you raise both hands above your head?</span>
+            <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:8px;overflow:hidden;flex:none;">
+              <span style="padding:6px 13px;font-size:12px;font-weight:500;color:#737c8c;">Yes</span>
+              <span style="padding:6px 13px;font-size:12px;font-weight:600;background:#c13030;color:#fff;border-left:1px solid #dce0e7;">No</span>
+            </div>
+          </div>
+
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;padding:18px 0 6px;display:flex;justify-content:space-between;align-items:center;">
+            <span>Consistent Pain</span>
+            <span style="color:#a5acb8;font-weight:500;letter-spacing:0;text-transform:none;font-family:'Inter Tight';">tap a level per region</span>
+          </div>
+
+          <!-- pain rows -->
+          <div style="padding:8px 0;border-top:1px solid #f0f2f6;">
+            <div style="font-size:13px;font-weight:500;margin-bottom:7px;">14. Neck</div>
+            <div style="display:flex;gap:5px;">
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:600;border-radius:6px;background:#0f1623;color:#fff;">None</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">Mild</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">Mod</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">Severe</span>
+            </div>
+          </div>
+          <div style="padding:8px 0;border-top:1px solid #f0f2f6;">
+            <div style="font-size:13px;font-weight:500;margin-bottom:7px;">19. Back</div>
+            <div style="display:flex;gap:5px;">
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">None</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">Mild</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">Mod</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:600;border-radius:6px;background:#c13030;color:#fff;">Severe</span>
+            </div>
+          </div>
+          <div style="padding:8px 0;border-top:1px solid #f0f2f6;">
+            <div style="font-size:13px;font-weight:500;margin-bottom:7px;">21. Knees</div>
+            <div style="display:flex;gap:5px;">
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">None</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:600;border-radius:6px;background:#b7791f;color:#fff;">Mild</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">Mod</span>
+              <span style="flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:500;border-radius:6px;background:#f0f2f6;color:#737c8c;">Severe</span>
+            </div>
+          </div>
+          <div style="text-align:center;padding:10px 0 4px;font-size:12px;color:#a5acb8;">+ 7 more regions</div>
+        </div>
+        <!-- footer -->
+        <div style="display:flex;gap:10px;padding:14px 20px;border-top:1px solid #dce0e7;background:#f6f7f9;">
+          <button style="flex:1;padding:9px;border:none;border-radius:8px;background:#0f8a52;color:#fff;font-family:inherit;font-size:13px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            Preview &amp; Recommend
+          </button>
+          <button style="padding:9px 14px;border:1px solid #dce0e7;border-radius:8px;background:#fff;color:#0f1623;font-family:inherit;font-size:13px;cursor:pointer;">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── VARIATION B — Grouped matrix ─── -->
+    <div style="flex:none;width:470px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">B · Grouped matrix</div>
+      <div style="font-size:12px;color:#737c8c;margin-bottom:10px;line-height:1.45;">Same-type questions collapse into one compact grid. Fastest to complete on a call; densest scan.</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <div style="padding:16px 20px;border-bottom:1px solid #dce0e7;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+            <span style="font-size:15px;font-weight:600;">Patient Profile (PPD)</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#0b6e40;font-weight:600;">18 / 45</span>
+          </div>
+          <div style="height:5px;border-radius:999px;background:#e5e8ee;overflow:hidden;"><div style="width:40%;height:100%;background:#0f8a52;"></div></div>
+        </div>
+        <div style="padding:6px 20px 14px;">
+          <!-- yes/no grouped -->
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;padding:16px 0 4px;">Extremity Strength</div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:0;">
+            <div style="display:contents;">
+              <div style="font-size:13px;padding:9px 0;border-bottom:1px solid #f0f2f6;line-height:1.3;">7. Move both arms at all?</div>
+              <div style="padding:9px 0 9px 12px;border-bottom:1px solid #f0f2f6;display:flex;gap:4px;align-items:center;">
+                <span style="padding:5px 11px;border-radius:6px;font-size:11px;font-weight:600;background:#0f8a52;color:#fff;">Yes</span>
+                <span style="padding:5px 11px;border-radius:6px;font-size:11px;font-weight:500;background:#f0f2f6;color:#737c8c;">No</span>
+              </div>
+              <div style="font-size:13px;padding:9px 0;border-bottom:1px solid #f0f2f6;line-height:1.3;">10. Move your legs at all?</div>
+              <div style="padding:9px 0 9px 12px;border-bottom:1px solid #f0f2f6;display:flex;gap:4px;align-items:center;">
+                <span style="padding:5px 11px;border-radius:6px;font-size:11px;font-weight:600;background:#0f8a52;color:#fff;">Yes</span>
+                <span style="padding:5px 11px;border-radius:6px;font-size:11px;font-weight:500;background:#f0f2f6;color:#737c8c;">No</span>
+              </div>
+              <div style="font-size:13px;padding:9px 0;line-height:1.3;">12. Push a door with your feet?</div>
+              <div style="padding:9px 0 9px 12px;display:flex;gap:4px;align-items:center;">
+                <span style="padding:5px 11px;border-radius:6px;font-size:11px;font-weight:500;background:#f0f2f6;color:#737c8c;">Yes</span>
+                <span style="padding:5px 11px;border-radius:6px;font-size:11px;font-weight:600;background:#c13030;color:#fff;">No</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- pain matrix -->
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;padding:18px 0 8px;">Consistent Pain · all regions</div>
+          <div style="border:1px solid #e5e8ee;border-radius:8px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1fr repeat(4,38px);background:#f6f7f9;border-bottom:1px solid #e5e8ee;">
+              <div style="padding:7px 10px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#a5acb8;">Region</div>
+              <div style="padding:7px 0;text-align:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:#a5acb8;">—</div>
+              <div style="padding:7px 0;text-align:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:#0b6e40;">Mi</div>
+              <div style="padding:7px 0;text-align:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8a4500;">Mo</div>
+              <div style="padding:7px 0;text-align:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8a1f1f;">Se</div>
+            </div>
+            <!-- rows -->
+            <div style="display:grid;grid-template-columns:1fr repeat(4,38px);border-bottom:1px solid #f0f2f6;align-items:center;">
+              <div style="padding:7px 10px;font-size:12px;">Neck</div>
+              <div style="text-align:center;"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0f1623;"></span></div>
+              <div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr repeat(4,38px);border-bottom:1px solid #f0f2f6;align-items:center;">
+              <div style="padding:7px 10px;font-size:12px;">Shoulder</div>
+              <div style="text-align:center;color:#dce0e7;">○</div>
+              <div style="text-align:center;"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#0f8a52;"></span></div>
+              <div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr repeat(4,38px);border-bottom:1px solid #f0f2f6;align-items:center;">
+              <div style="padding:7px 10px;font-size:12px;">Back</div>
+              <div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div>
+              <div style="text-align:center;"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#c13030;"></span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr repeat(4,38px);border-bottom:1px solid #f0f2f6;align-items:center;">
+              <div style="padding:7px 10px;font-size:12px;">Knees</div>
+              <div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div>
+              <div style="text-align:center;"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:#b7791f;"></span></div>
+              <div style="text-align:center;color:#dce0e7;">○</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr repeat(4,38px);align-items:center;">
+              <div style="padding:7px 10px;font-size:12px;color:#a5acb8;">+ 6 more…</div>
+              <div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div><div style="text-align:center;color:#dce0e7;">○</div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;padding:14px 20px;border-top:1px solid #dce0e7;background:#f6f7f9;">
+          <button style="flex:1;padding:9px;border:none;border-radius:8px;background:#0f8a52;color:#fff;font-family:inherit;font-size:13px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            Preview &amp; Recommend
+          </button>
+          <button style="padding:9px 14px;border:1px solid #dce0e7;border-radius:8px;background:#fff;color:#0f1623;font-family:inherit;font-size:13px;cursor:pointer;">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── VARIATION C — Guided flow ─── -->
+    <div style="flex:none;width:470px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">C · Guided flow</div>
+      <div style="font-size:12px;color:#737c8c;margin-bottom:10px;line-height:1.45;">One section at a time, big touch targets, autosave. Best for phone use, new reps, accuracy.</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <!-- stepper -->
+        <div style="padding:16px 20px;border-bottom:1px solid #dce0e7;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#737c8c;letter-spacing:.06em;">STEP 3 OF 4</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#0b6e40;font-weight:500;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              Draft saved
+            </span>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <div style="flex:1;height:4px;border-radius:999px;background:#0f8a52;"></div>
+            <div style="flex:1;height:4px;border-radius:999px;background:#0f8a52;"></div>
+            <div style="flex:1;height:4px;border-radius:999px;background:#0f8a52;"></div>
+            <div style="flex:1;height:4px;border-radius:999px;background:#e5e8ee;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:#a5acb8;margin-top:8px;">
+            <span>MRADL</span><span>Strength</span><span style="color:#0f8a52;font-weight:600;">Pain</span><span>More</span>
+          </div>
+        </div>
+        <div style="padding:22px 20px;">
+          <h3 style="font-size:18px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px;">Consistent pain</h3>
+          <p style="font-size:13px;color:#737c8c;margin:0 0 18px;line-height:1.4;">Tap each region the patient reports pain in, then set the level.</p>
+
+          <!-- one region big -->
+          <div style="border:1px solid #e5e8ee;border-radius:10px;padding:16px;margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+              <span style="font-size:16px;font-weight:600;">Back</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#a5acb8;">region 6 / 10</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <span style="text-align:center;padding:13px 0;border-radius:8px;font-size:13px;font-weight:500;background:#f0f2f6;color:#737c8c;">None</span>
+              <span style="text-align:center;padding:13px 0;border-radius:8px;font-size:13px;font-weight:500;background:#f0f2f6;color:#737c8c;">Mild</span>
+              <span style="text-align:center;padding:13px 0;border-radius:8px;font-size:13px;font-weight:500;background:#f0f2f6;color:#737c8c;">Moderate</span>
+              <span style="text-align:center;padding:13px 0;border-radius:8px;font-size:13px;font-weight:700;background:#c13030;color:#fff;">Severe</span>
+            </div>
+          </div>
+
+          <!-- mini overview of regions -->
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span style="font-size:11px;padding:5px 10px;border-radius:999px;background:#e4f5ec;color:#0b6e40;font-weight:500;">Neck ·—</span>
+            <span style="font-size:11px;padding:5px 10px;border-radius:999px;background:#e4f5ec;color:#0b6e40;font-weight:500;">Shoulder · Mild</span>
+            <span style="font-size:11px;padding:5px 10px;border-radius:999px;background:#fce5e5;color:#8a1f1f;font-weight:600;">Back · Severe</span>
+            <span style="font-size:11px;padding:5px 10px;border-radius:999px;background:#f0f2f6;color:#a5acb8;">Hips</span>
+            <span style="font-size:11px;padding:5px 10px;border-radius:999px;background:#f0f2f6;color:#a5acb8;">Knees</span>
+            <span style="font-size:11px;padding:5px 10px;border-radius:999px;background:#f0f2f6;color:#a5acb8;">+5</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;padding:14px 20px;border-top:1px solid #dce0e7;background:#f6f7f9;">
+          <button style="padding:11px 16px;border:1px solid #dce0e7;border-radius:8px;background:#fff;color:#0f1623;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;">Back</button>
+          <button style="flex:1;padding:11px;border:none;border-radius:8px;background:#0f8a52;color:#fff;font-family:inherit;font-size:13px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
+            Next: Additional info
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════ SECTION 3 — ACCOUNT FORM + SENT ══════════════════ -->
+  <div style="margin-top:56px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:4px;">03 · Account forms &amp; Sent history</div>
+  <div style="font-size:13px;color:#737c8c;max-width:760px;margin-bottom:22px;">PMD / PAP account creation rebuilt with grouped panels and a cleaner image dropzone; the Sent tab gains filters and a scannable record layout.</div>
+
+  <div style="display:flex;gap:48px;align-items:flex-start;">
+
+    <!-- account form -->
+    <div style="flex:none;width:560px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">PMD Account — grouped panels</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <div style="padding:18px 22px;">
+          <!-- panel: demographics -->
+          <div style="border:1px solid #e5e8ee;border-radius:10px;box-shadow:inset 3px 0 0 #0f8a52;overflow:hidden;margin-bottom:14px;">
+            <div style="padding:11px 16px;background:#f6f7f9;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#3e4756;border-bottom:1px solid #e5e8ee;">Demographics</div>
+            <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div style="grid-column:1 / -1;">
+                <label style="display:block;font-size:11px;font-weight:600;color:#737c8c;margin-bottom:5px;">Patient Full Name</label>
+                <div style="padding:9px 11px;border:1px solid #dce0e7;border-radius:8px;font-size:13px;background:#fff;">Maria Gonzalez</div>
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#737c8c;margin-bottom:5px;">Primary Phone</label>
+                <div style="padding:9px 11px;border:1px solid #dce0e7;border-radius:8px;font-size:13px;color:#a5acb8;background:#fff;">(555) 000-0000</div>
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;font-weight:600;color:#737c8c;margin-bottom:5px;">DOB</label>
+                <div style="padding:9px 11px;border:1px solid #dce0e7;border-radius:8px;font-size:13px;color:#a5acb8;background:#fff;">MM / DD / YYYY</div>
+              </div>
+            </div>
+          </div>
+          <!-- panel: scheduling w/ controls -->
+          <div style="border:1px solid #e5e8ee;border-radius:10px;overflow:hidden;margin-bottom:14px;">
+            <div style="padding:11px 16px;background:#f6f7f9;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#3e4756;border-bottom:1px solid #e5e8ee;">Mobility Evaluation</div>
+            <div style="padding:6px 16px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #f0f2f6;">
+                <span style="font-size:13px;line-height:1.3;max-width:330px;">Already had a Power Mobility Evaluation in last 6 months?</span>
+                <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:8px;overflow:hidden;flex:none;">
+                  <span style="padding:6px 13px;font-size:12px;font-weight:500;color:#737c8c;">Yes</span>
+                  <span style="padding:6px 13px;font-size:12px;font-weight:600;background:#0f8a52;color:#fff;border-left:1px solid #dce0e7;">No</span>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;">
+                <span style="font-size:13px;line-height:1.3;max-width:330px;">Permission to call &amp; schedule with MDO?</span>
+                <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:8px;overflow:hidden;flex:none;">
+                  <span style="padding:6px 13px;font-size:12px;font-weight:600;background:#0f8a52;color:#fff;">Yes</span>
+                  <span style="padding:6px 13px;font-size:12px;font-weight:500;color:#737c8c;border-left:1px solid #dce0e7;">No</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- dropzone -->
+          <div style="border:2px dashed #c3c9d3;border-radius:10px;padding:18px;text-align:center;color:#737c8c;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            <div style="font-size:13px;">Drag, click, or paste images <span style="color:#a5acb8;">— up to 12</span></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;padding:14px 22px;border-top:1px solid #dce0e7;background:#f6f7f9;">
+          <button style="flex:1;padding:9px;border:none;border-radius:8px;background:#0f8a52;color:#fff;font-family:inherit;font-size:13px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            Preview &amp; Send
+          </button>
+          <button style="padding:9px 14px;border:1px solid #dce0e7;border-radius:8px;background:#fff;color:#0f1623;font-family:inherit;font-size:13px;cursor:pointer;">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- sent tab -->
+    <div style="flex:none;width:560px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Sent — filterable history</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <!-- filter bar -->
+        <div style="padding:14px 20px;border-bottom:1px solid #dce0e7;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:999px;padding:3px;background:#fff;">
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;background:#0f1623;color:#fff;">ALL</span>
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#737c8c;">PPD</span>
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#737c8c;">PMD</span>
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#737c8c;">PAP</span>
+          </div>
+          <div style="flex:1;min-width:130px;display:flex;align-items:center;gap:7px;padding:7px 11px;border:1px solid #dce0e7;border-radius:8px;color:#a5acb8;font-size:12px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            Search patient or rep…
+          </div>
+        </div>
+        <!-- rows -->
+        <div style="padding:6px 20px 12px;">
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #f0f2f6;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;padding:3px 8px;border-radius:5px;background:#e4f5ec;color:#0b6e40;flex:none;">PPD</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">Maria Gonzalez · TRX 12345</div>
+              <div style="font-size:11px;color:#737c8c;margin-top:2px;">Jun 16, 2:14 PM · J. Rivera · to All Agents</div>
+            </div>
+            <button style="padding:6px 13px;border:1px solid #dce0e7;border-radius:7px;background:#fff;font-family:inherit;font-size:12px;cursor:pointer;flex:none;">View</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #f0f2f6;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;padding:3px 8px;border-radius:5px;background:#e1ecfa;color:#154980;flex:none;">PMD</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">Robert Lee</div>
+              <div style="font-size:11px;color:#737c8c;margin-top:2px;">Jun 16, 11:02 AM · A. Cole · to Default (Sales)</div>
+            </div>
+            <button style="padding:6px 13px;border:1px solid #dce0e7;border-radius:7px;background:#fff;font-family:inherit;font-size:12px;cursor:pointer;flex:none;">View</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #f0f2f6;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;padding:3px 8px;border-radius:5px;background:#fbf1d9;color:#8a4500;flex:none;">PAP</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">Susan Park</div>
+              <div style="font-size:11px;color:#737c8c;margin-top:2px;">Jun 15, 4:48 PM · J. Rivera · to sleep@ums.co</div>
+            </div>
+            <button style="padding:6px 13px;border:1px solid #dce0e7;border-radius:7px;background:#fff;font-family:inherit;font-size:12px;cursor:pointer;flex:none;">View</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:13px 0;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;padding:3px 8px;border-radius:5px;background:#e4f5ec;color:#0b6e40;flex:none;">PPD</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">Daniel Wright · TRX 11890</div>
+              <div style="font-size:11px;color:#737c8c;margin-top:2px;">Jun 15, 9:30 AM · A. Cole · to All Agents</div>
+            </div>
+            <button style="padding:6px 13px;border:1px solid #dce0e7;border-radius:7px;background:#fff;font-family:inherit;font-size:12px;cursor:pointer;flex:none;">View</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- recommendation panel note -->
+      <div style="margin-top:14px;background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:16px 18px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">PPD recommendation card · restyled</div>
+        <div style="display:flex;gap:12px;align-items:flex-start;border:1px solid #e5e8ee;border-radius:10px;padding:12px;">
+          <span style="color:#0f8a52;flex:none;"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></span>
+          <div style="width:74px;height:52px;border:1px dashed #c3c9d3;border-radius:6px;flex:none;display:flex;align-items:center;justify-content:center;font-size:10px;color:#a5acb8;">image</div>
+          <div style="flex:1;min-width:0;">
+            <a style="font-size:13px;font-weight:700;color:#0f8a52;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">K0856 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3h7v7"/><path d="m10 14 11-11"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></a>
+            <div style="font-size:11px;color:#737c8c;margin-top:3px;line-height:1.4;">Group 3 PWC, captain's seat — meets MRADL + strength criteria.</div>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <span style="font-size:10px;padding:3px 8px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;">Copy image</span>
+              <span style="font-size:10px;padding:3px 8px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;">Brochure link</span>
+            </div>
+          </div>
+          <select style="font-family:inherit;font-size:11px;padding:5px 7px;border:1px solid #dce0e7;border-radius:7px;background:#fff;color:#0f1623;flex:none;">
+            <option>Accepted</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter Tight', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #0f1623; }
+</style>
+</helmet>
+
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e3e6ec;">
+
+  <!-- header -->
+  <div style="max-width:900px;margin-bottom:8px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">UMS Team Tools · Icon study</div>
+    <h1 style="font-size:32px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0 0 14px;">Intake tab icons — what's possible &amp; what to use</h1>
+    <p style="font-size:15px;line-height:1.6;color:#3e4756;margin:0 0 6px;">Icons live in a single registry (<span style="font-family:'JetBrains Mono',monospace;font-size:13px;">script_icons.html</span>): each is a named key mapping to inline SVG path data, drawn on a 24×24 grid with <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">stroke="currentColor"</span> so every glyph inherits its surrounding text color — light mode, dark mode, and status tints all work automatically. ~50 ship today. Your options are (1) reuse an existing key, or (2) add a new one — a single line of SVG path data in the same Lucide-style stroke vocabulary.</p>
+  </div>
+
+  <!-- ── existing set sample ── -->
+  <div style="margin-top:40px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:4px;">01 · A sample of the existing set</div>
+  <div style="font-size:13px;color:#737c8c;max-width:760px;margin-bottom:16px;">These already exist and can be used for a tab today with zero new code. (Full set is ~50 — clock, calendar, mail, flag, bulb, copy, filter, etc.)</div>
+  <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:22px;display:grid;grid-template-columns:repeat(8,1fr);gap:18px 12px;width:760px;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9z"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">send</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">user</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">manage</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">list</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">grid</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">mail</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">clock</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">timeoff</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">star</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">bookmark</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4"/><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">flag</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.7.5 1.2 1.5 1.2 2.3v0h5.6v0c0-.8.5-1.8 1.2-2.3A7 7 0 0 0 12 2z"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">bulb</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">chart</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">search</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8"/><path d="m22 7-10 5L2 7"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">paperclip…</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;color:#0f1623;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#737c8c;">moon</span></div>
+  </div>
+
+  <!-- ── current vs proposed ── -->
+  <div style="margin-top:48px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:4px;">02 · Intake tabs — current vs proposed</div>
+  <div style="font-size:13px;color:#737c8c;max-width:760px;margin-bottom:18px;">Today PMD and PAP use the <em>same</em> <span style="font-family:'JetBrains Mono',monospace;font-size:12px;">user</span> glyph (indistinguishable), and PPD's paper-plane reads more like "send" than "assessment". The proposal gives each tab a glyph tied to what it actually is.</div>
+
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+    <!-- current -->
+    <div style="flex:none;width:440px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Current</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <div style="display:flex;gap:2px;padding:10px 16px 0;background:#f6f7f9;border-bottom:1px solid #dce0e7;">
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid #0f8a52;font-size:13px;font-weight:600;color:#0f1623;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9z"/></svg>PPD</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>PMD</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>PAP</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>Sent</span>
+        </div>
+        <div style="padding:16px;font-size:12px;color:#c13030;background:#fff;display:flex;align-items:center;gap:7px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>PMD &amp; PAP share one icon</div>
+      </div>
+    </div>
+
+    <!-- proposed -->
+    <div style="flex:none;width:440px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Proposed</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;overflow:hidden;">
+        <div style="display:flex;gap:2px;padding:10px 16px 0;background:#f6f7f9;border-bottom:1px solid #dce0e7;">
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid #0f8a52;font-size:13px;font-weight:600;color:#0f1623;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 11h8"/><path d="M8 15h6"/></svg>PPD</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="4" r="1"/><path d="m18 19 1-7-6 1"/><path d="m5 8 3-3 5.5 3-2.36 3.5"/><path d="M4.24 14.5a5 5 0 0 0 6.88 6"/><path d="M13.76 17.5a5 5 0 0 0-6.88-6"/></svg>PMD</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 19.6A2 2 0 1 0 14 16H2"/><path d="M17.5 8a2.5 2.5 0 1 1 2 4H2"/><path d="M9.8 4.4A2 2 0 1 1 11 8H2"/></svg>PAP</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/><path d="M3 8l2-4h14l2 4"/><path d="M12 17V9"/><path d="m8.5 12.5 3.5-3.5 3.5 3.5"/></svg>Sent</span>
+        </div>
+        <div style="padding:16px;font-size:12px;color:#0b6e40;background:#fff;display:flex;align-items:center;gap:7px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>Each tab distinct &amp; representative</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- dark sample of proposed -->
+  <div style="margin-top:20px;display:flex;gap:40px;align-items:flex-start;">
+    <div style="flex:none;width:480px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Proposed · dark (stroke=currentColor auto-adapts)</div>
+      <div style="padding:18px;background:#0a0d14;border-radius:8px;">
+        <div style="display:flex;gap:2px;background:#0a0d14;border-bottom:1px solid #262d3b;">
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid #7af2a1;font-size:13px;font-weight:600;color:#e8e6e0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 11h8"/><path d="M8 15h6"/></svg>PPD</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="4" r="1"/><path d="m18 19 1-7-6 1"/><path d="m5 8 3-3 5.5 3-2.36 3.5"/><path d="M4.24 14.5a5 5 0 0 0 6.88 6"/><path d="M13.76 17.5a5 5 0 0 0-6.88-6"/></svg>PMD</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 19.6A2 2 0 1 0 14 16H2"/><path d="M17.5 8a2.5 2.5 0 1 1 2 4H2"/><path d="M9.8 4.4A2 2 0 1 1 11 8H2"/></svg>PAP</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;padding:11px 13px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/><path d="M3 8l2-4h14l2 4"/><path d="M12 17V9"/><path d="m8.5 12.5 3.5-3.5 3.5 3.5"/></svg>Sent</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── new glyphs ── -->
+  <div style="margin-top:48px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:4px;">03 · The glyphs to add to the registry</div>
+  <div style="font-size:13px;color:#737c8c;max-width:760px;margin-bottom:18px;">Four new keys, each one line of path data in the existing stroke style.</div>
+
+  <div style="display:flex;gap:20px;flex-wrap:wrap;max-width:980px;">
+    <!-- ppd -->
+    <div style="flex:none;width:226px;background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:20px;">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
+        <span style="color:#0f8a52;"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 11h8"/><path d="M8 15h6"/></svg></span>
+        <div><div style="font-size:15px;font-weight:600;">PPD</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#0b6e40;">clipboardList</div></div>
+      </div>
+      <div style="font-size:12px;color:#737c8c;line-height:1.45;">The patient-profile questionnaire. Alt: <span style="font-family:'JetBrains Mono',monospace;">clipboardCheck</span> (✓ instead of lines) to emphasize the recommendation.</div>
+    </div>
+    <!-- pmd -->
+    <div style="flex:none;width:226px;background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:20px;">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
+        <span style="color:#0f8a52;"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="4" r="1"/><path d="m18 19 1-7-6 1"/><path d="m5 8 3-3 5.5 3-2.36 3.5"/><path d="M4.24 14.5a5 5 0 0 0 6.88 6"/><path d="M13.76 17.5a5 5 0 0 0-6.88-6"/></svg></span>
+        <div><div style="font-size:15px;font-weight:600;">PMD</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#0b6e40;">accessibility</div></div>
+      </div>
+      <div style="font-size:12px;color:#737c8c;line-height:1.45;">Power-mobility device account. The accessibility figure reads as mobility instantly and renders cleanly at 15px (a literal wheelchair gets muddy that small).</div>
+    </div>
+    <!-- pap -->
+    <div style="flex:none;width:226px;background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:20px;">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
+        <span style="color:#0f8a52;"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 19.6A2 2 0 1 0 14 16H2"/><path d="M17.5 8a2.5 2.5 0 1 1 2 4H2"/><path d="M9.8 4.4A2 2 0 1 1 11 8H2"/></svg></span>
+        <div><div style="font-size:15px;font-weight:600;">PAP</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#0b6e40;">airflow</div></div>
+      </div>
+      <div style="font-size:12px;color:#737c8c;line-height:1.45;">CPAP / sleep-therapy account. Airflow lines = breathing/air pressure. Alt: <span style="font-family:'JetBrains Mono',monospace;">moon</span> (already exists) for "sleep".</div>
+    </div>
+    <!-- sent -->
+    <div style="flex:none;width:226px;background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:20px;">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
+        <span style="color:#0f8a52;"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/><path d="M3 8l2-4h14l2 4"/><path d="M12 17V9"/><path d="m8.5 12.5 3.5-3.5 3.5 3.5"/></svg></span>
+        <div><div style="font-size:15px;font-weight:600;">Sent</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#0b6e40;">outbox</div></div>
+      </div>
+      <div style="font-size:12px;color:#737c8c;line-height:1.45;">An open tray with items lifting out — reads as "things I've sent." Frees the paper-plane up entirely. Alt: <span style="font-family:'JetBrains Mono',monospace;">send</span> (paper-plane) or <span style="font-family:'JetBrains Mono',monospace;">mailCheck</span>.</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
