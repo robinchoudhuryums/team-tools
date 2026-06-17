@@ -34,6 +34,7 @@ The `*.dc.html` files in this bundle are **design references created in HTML** �
 | Clock | `web-app/tc/script_clock.html` |
 | Coverage planner | `web-app/tc/script_manager.html` |
 | Metrics | `web-app/metrics/script_metrics.html` |
+| Call Notes | `web-app/cn/script_callnotes.html` |
 | Tokens (reference only) | `web-app/styles_design_tokens.html` |
 | Shared CSS (reference only) | `web-app/styles.html` |
 
@@ -138,6 +139,29 @@ Metrics is already the strongest module (hero + rail, tabular numerics, dual spa
 
 ---
 
+# 7 · Call Notes
+### Reference files: `Call Notes Redesign.dc.html` (Search + Stats), `Call Notes Admin Redesign.dc.html` (tabbed Admin). Target: `web-app/cn/script_callnotes.html`.
+Call Notes is the **most mature module** — leave the Log composer (contenteditable note doc + copy-anywhere ⌘C, flag rail, tags, shortcuts, sticky drafts, voice), History (range+presets+grouped), reference drawer, email composer, and forms **as-is**. Only three surfaces lag:
+
+### 7a. Search (`cnRenderSearchView` / `cnRenderSearchResults_`, and the manager twin `cnMgrLoadSearchView_` / `cnMgrRenderSearchResults_`)
+- Replace the plain inline-styled `.cn-search-result-card` with the **real note-card vocabulary** (`cnRenderCardCore_`, read-only variant) so results match the rest of the module.
+- Add a **result count** line (“N results for ‘query’”), **search-term highlighting** (reuse the KB approach: walk text nodes, wrap matches in `<mark>` with `var(--selection-bg)` — never string-level HTML surgery), and a **date-range filter** beside the field tabs.
+- Add **Phone** and **TRX** to the field-scope tabs (today only All / Caller / Issue). Bring the rep Search and the manager Search to parity.
+
+### 7b. Manager Stats (`cnMgrRenderStats_`)
+- Replace the per-rep cards (~10 stacked key/value rows each) with a **scannable table**: rows = reps, columns = Notes / Action / Training / Review / Median / % Answered / Coverage. Tri-tone the % Answered + Coverage cells (reuse `mCoverageBadge_` thresholds); rep name stays a drill-link to Per-Rep View (`cnStatsDrillDown_`). This visually aligns Stats with the Metrics team table — ideally they share one table component.
+- Keep the median-note-time footnote.
+
+### 7c. Admin (`enterCallNotesAdminView` + its panel loaders)
+Today Admin is one long scroll of ~7 independently-loaded panels. Restructure into **sub-tabs** (`.toolbar-tabs`, same pattern as Manage): **Overview / Tags / Compliance / Config**.
+- **Overview** = a **System status** row folding the three health panels (Automation Health, CDR drift, Storage Health) into one set of status cards with clear OK / warn / error tone (`.panel[data-tone]`), plus the KPI strip (Week notes / Unresolved / Tags / Reps).
+- **Tags** = **merge** the Tag Taxonomy table and the Tag Trends panel (they list the same tags twice) into one table: Tag · usage bar · note count · inline trend sparkline · Δ wk · Rename/Merge/Archive actions · with an Archived section below. All existing endpoints (`renameCallNoteTag`, `mergeCallNoteTags`, archive/unarchive) wire unchanged.
+- **Compliance** = the existing audit panel. **Config** = the dept-mapping / state-tax / suggestions blocks (the actual settings, currently buried at the very bottom).
+- Keep the contained-failure load pattern (each panel/pane fails independently).
+- Minor: the Search “Exact: TRX” badge pairs `--accent-soft` (green) bg with `--info-deep` (blue) text — pick one tone.
+
+---
+
 # Cross-cutting: token-hygiene fix (do this everywhere you touch)
 Several modules reference **`var(--accent-deep, …)`**, which **is not a defined token** — it always falls back to flat `var(--accent)`. The real token is **`--success-deep`**. Found in `train/script_training.html`, `train/script_empdocs.html`, and `kb/script_kb.html` (e.g. `.tr-chip.done`, `.tr-complete-btn`, `.ed-verify .ok`, `.kb-item.on`). Also several `var(--danger-soft, #fce5e5)` / `var(--warning-soft, …)` hardcode fallbacks that already exist as tokens (`--destructive-soft`, `--warn-soft`). Replace `--accent-deep` → `--success-deep`, and drop the redundant hex fallbacks, so the intended deeper shades actually render (and dark mode inverts them correctly).
 
@@ -169,6 +193,8 @@ No new image assets. Icons are SVG registry entries (see `icons_snippet.md`). Fo
 - `Training & Reference Redesign.dc.html` — Training checklist + coverage matrix; Reference tree + landing.
 - `Time Clock Redesign.dc.html` — Clock tab + Coverage heatmap.
 - `Metrics Redesign.dc.html` — My Stats (presets + rail sparklines) + sortable team table.
+- `Call Notes Redesign.dc.html` — Search (real cards + count + highlight + filters) + manager Stats table.
+- `Call Notes Admin Redesign.dc.html` — tabbed Admin: Overview (system status + KPIs) + merged Tags table.
 - `screenshots/` — preview PNGs of each mock (light-column crops; open the `.dc.html` for the full light+dark board).
 - `support.js` — runtime so the `.dc.html` references open in a browser (not part of the codebase).
 

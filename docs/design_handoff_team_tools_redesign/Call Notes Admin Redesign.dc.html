@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter Tight', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #0f1623; }
+</style>
+</helmet>
+
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e3e6ec;">
+
+  <div style="max-width:900px;margin-bottom:8px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">UMS Team Tools · Call Notes Admin</div>
+    <h1 style="font-size:32px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0 0 14px;">Call Notes — Admin, restructured</h1>
+    <p style="font-size:15px;line-height:1.6;color:#3e4756;max-width:780px;margin:0;">Today Admin is one long scroll of ~7 stacked panels (KPIs, tag taxonomy, tag trends, compliance audit, automation health, storage health, then the dept/tax/suggestion config at the very bottom). Split it into sub-tabs so a manager lands on what they need; fold the three health panels into a single <strong>System status</strong>, and merge tag taxonomy + trends into <strong>one</strong> table. Light + dark.</p>
+  </div>
+
+  <!-- ══════════ 01 · OVERVIEW PANE ══════════ -->
+  <div style="margin-top:44px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:16px;">01 · Overview pane — system status + KPIs</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+
+    <!-- LIGHT overview -->
+    <div style="flex:none;width:680px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Light</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:20px 22px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">Call Notes · Admin</div>
+        <h2 style="font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0 0 14px;">Admin</h2>
+        <!-- sub-tabs -->
+        <div style="display:flex;gap:4px;border-bottom:1px solid #dce0e7;margin-bottom:18px;">
+          <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid #0f8a52;font-size:13px;font-weight:600;color:#0f1623;">Overview</span>
+          <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">Tags</span>
+          <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">Compliance</span>
+          <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">Config</span>
+        </div>
+        <!-- system status -->
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">System status</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px;">
+          <div style="border:1px solid #e5e8ee;border-radius:10px;padding:13px 14px;box-shadow:inset 3px 0 0 #0f8a52;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font-size:13px;font-weight:600;">Automation</span><span style="color:#0f8a52;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg></span></div>
+            <div style="font-size:12px;color:#3e4756;">Last sync 6m ago</div>
+            <div style="font-size:11px;color:#a5acb8;margin-top:2px;">no failures (24h)</div>
+          </div>
+          <div style="border:1px solid #e5e8ee;border-radius:10px;padding:13px 14px;box-shadow:inset 3px 0 0 #0f8a52;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font-size:13px;font-weight:600;">CDR drift</span><span style="color:#0f8a52;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg></span></div>
+            <div style="font-size:12px;color:#3e4756;">In sync</div>
+            <div style="font-size:11px;color:#a5acb8;margin-top:2px;">0 unmatched days</div>
+          </div>
+          <div style="border:1px solid #e5e8ee;border-radius:10px;padding:13px 14px;box-shadow:inset 3px 0 0 #b7791f;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font-size:13px;font-weight:600;">Storage</span><span style="color:#b7791f;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg></span></div>
+            <div style="font-size:12px;color:#3e4756;">1 sheet tz mismatch</div>
+            <div style="font-size:11px;color:#8a4500;margin-top:2px;">review config →</div>
+          </div>
+        </div>
+        <!-- KPI strip -->
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">This week</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+          <div style="border:1px solid #e5e8ee;border-radius:10px;padding:13px 14px;text-align:center;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">Week notes</div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;line-height:1;">412</div><div style="font-size:11px;color:#a5acb8;margin-top:3px;">across team</div></div>
+          <div style="border:1px solid #e5e8ee;border-radius:10px;padding:13px 14px;text-align:center;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">Unresolved</div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;line-height:1;color:#8a4500;">5</div><div style="font-size:11px;color:#a5acb8;margin-top:3px;">action flags</div></div>
+          <div style="border:1px solid #e5e8ee;border-radius:10px;padding:13px 14px;text-align:center;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">Tags</div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;line-height:1;">23</div><div style="font-size:11px;color:#a5acb8;margin-top:3px;">unique in use</div></div>
+          <div style="border:1px solid #e5e8ee;border-radius:10px;padding:13px 14px;text-align:center;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">Reps</div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;line-height:1;">7</div><div style="font-size:11px;color:#a5acb8;margin-top:3px;">enrolled</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DARK overview -->
+    <div style="flex:none;width:680px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Dark</div>
+      <div style="padding:20px;background:#0a0d14;border-radius:8px;">
+        <div style="background:#10141d;border-radius:2px;border:1px solid #262d3b;padding:20px 22px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;margin-bottom:4px;">Call Notes · Admin</div>
+          <h2 style="font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0 0 14px;color:#e8e6e0;">Admin</h2>
+          <div style="display:flex;gap:4px;border-bottom:1px solid #262d3b;margin-bottom:18px;">
+            <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid #7af2a1;font-size:13px;font-weight:600;color:#e8e6e0;">Overview</span>
+            <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;">Tags</span>
+            <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;">Compliance</span>
+            <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;">Config</span>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#6c7587;margin-bottom:10px;">System status</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px;">
+            <div style="border:1px solid #262d3b;border-radius:10px;padding:13px 14px;box-shadow:inset 3px 0 0 #7af2a1;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font-size:13px;font-weight:600;color:#e8e6e0;">Automation</span><span style="color:#7af2a1;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg></span></div>
+              <div style="font-size:12px;color:#a6adbc;">Last sync 6m ago</div>
+              <div style="font-size:11px;color:#6c7587;margin-top:2px;">no failures (24h)</div>
+            </div>
+            <div style="border:1px solid #262d3b;border-radius:10px;padding:13px 14px;box-shadow:inset 3px 0 0 #7af2a1;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font-size:13px;font-weight:600;color:#e8e6e0;">CDR drift</span><span style="color:#7af2a1;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg></span></div>
+              <div style="font-size:12px;color:#a6adbc;">In sync</div>
+              <div style="font-size:11px;color:#6c7587;margin-top:2px;">0 unmatched days</div>
+            </div>
+            <div style="border:1px solid #262d3b;border-radius:10px;padding:13px 14px;box-shadow:inset 3px 0 0 #ffb547;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font-size:13px;font-weight:600;color:#e8e6e0;">Storage</span><span style="color:#ffb547;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg></span></div>
+              <div style="font-size:12px;color:#a6adbc;">1 sheet tz mismatch</div>
+              <div style="font-size:11px;color:#ffcb80;margin-top:2px;">review config →</div>
+            </div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#6c7587;margin-bottom:10px;">This week</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+            <div style="border:1px solid #262d3b;border-radius:10px;padding:13px 14px;text-align:center;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;margin-bottom:4px;">Week notes</div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;line-height:1;color:#e8e6e0;">412</div><div style="font-size:11px;color:#6c7587;margin-top:3px;">across team</div></div>
+            <div style="border:1px solid #262d3b;border-radius:10px;padding:13px 14px;text-align:center;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;margin-bottom:4px;">Unresolved</div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;line-height:1;color:#ffcb80;">5</div><div style="font-size:11px;color:#6c7587;margin-top:3px;">action flags</div></div>
+            <div style="border:1px solid #262d3b;border-radius:10px;padding:13px 14px;text-align:center;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;margin-bottom:4px;">Tags</div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;line-height:1;color:#e8e6e0;">23</div><div style="font-size:11px;color:#6c7587;margin-top:3px;">unique in use</div></div>
+            <div style="border:1px solid #262d3b;border-radius:10px;padding:13px 14px;text-align:center;"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;margin-bottom:4px;">Reps</div><div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:500;line-height:1;color:#e8e6e0;">7</div><div style="font-size:11px;color:#6c7587;margin-top:3px;">enrolled</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 02 · TAGS PANE ══════════ -->
+  <div style="margin-top:56px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:6px;">02 · Tags pane — taxonomy + trends merged</div>
+  <div style="font-size:13px;color:#737c8c;max-width:780px;margin-bottom:18px;">The taxonomy table and the trends table show the same tags twice today. One table: usage bar, note count, an inline trend sparkline, this-week Δ, and the rename / merge / archive actions.</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+
+    <!-- LIGHT tags -->
+    <div style="flex:none;width:680px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Light</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:20px 22px;">
+        <div style="display:flex;gap:4px;border-bottom:1px solid #dce0e7;margin-bottom:16px;">
+          <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">Overview</span>
+          <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid #0f8a52;font-size:13px;font-weight:600;color:#0f1623;">Tags</span>
+          <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">Compliance</span>
+          <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#737c8c;">Config</span>
+        </div>
+        <div style="font-size:12px;color:#737c8c;margin-bottom:12px;">Free-text tags reps applied across all enrolled sheets. Rename to fix a typo, Merge to consolidate, Archive to deprecate (notes keep the tag). Δ compares this week to last — a rising tag flags an emerging issue.</div>
+        <!-- table head -->
+        <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;border-bottom:1px solid #c3c9d3;padding-bottom:7px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#737c8c;">Tag</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a5acb8;">Usage</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a5acb8;text-align:right;">Notes</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a5acb8;text-align:center;">Trend</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a5acb8;text-align:right;">Δ wk</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a5acb8;text-align:right;">Actions</div>
+        </div>
+        <!-- rows -->
+        <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;padding:9px 0;border-bottom:1px solid #f0f2f6;">
+          <div style="font-size:13px;font-weight:500;">billing-question</div>
+          <div style="padding-right:10px;"><div style="height:7px;border-radius:999px;background:#e5e8ee;overflow:hidden;"><div style="width:100%;height:100%;background:#0f8a52;"></div></div></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;">84</div>
+          <div style="display:flex;justify-content:center;"><svg width="80" height="20" viewBox="0 0 80 20" preserveAspectRatio="none"><polyline points="0,15 16,13 32,14 48,9 64,7 80,4" fill="none" stroke="#0f8a52" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#0b6e40;font-weight:600;">▲ 6</div>
+          <div style="display:flex;gap:5px;justify-content:flex-end;"><span style="font-size:10px;padding:3px 7px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;color:#3e4756;">Rename</span><span style="font-size:10px;padding:3px 7px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;color:#3e4756;">Merge</span><span style="font-size:10px;padding:3px 7px;border:1px solid #f3d4d4;border-radius:6px;background:#fff;color:#8a1f1f;">Archive</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;padding:9px 0;border-bottom:1px solid #f0f2f6;">
+          <div style="font-size:13px;font-weight:500;">eval-scheduling</div>
+          <div style="padding-right:10px;"><div style="height:7px;border-radius:999px;background:#e5e8ee;overflow:hidden;"><div style="width:73%;height:100%;background:#0f8a52;"></div></div></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;">61</div>
+          <div style="display:flex;justify-content:center;"><svg width="80" height="20" viewBox="0 0 80 20" preserveAspectRatio="none"><polyline points="0,8 16,9 32,7 48,10 64,9 80,11" fill="none" stroke="#0f8a52" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#737c8c;">±0</div>
+          <div style="display:flex;gap:5px;justify-content:flex-end;"><span style="font-size:10px;padding:3px 7px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;color:#3e4756;">Rename</span><span style="font-size:10px;padding:3px 7px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;color:#3e4756;">Merge</span><span style="font-size:10px;padding:3px 7px;border:1px solid #f3d4d4;border-radius:6px;background:#fff;color:#8a1f1f;">Archive</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;padding:9px 0;border-bottom:1px solid #f0f2f6;">
+          <div style="font-size:13px;font-weight:500;">auth-delay</div>
+          <div style="padding-right:10px;"><div style="height:7px;border-radius:999px;background:#e5e8ee;overflow:hidden;"><div style="width:45%;height:100%;background:#0f8a52;"></div></div></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;">38</div>
+          <div style="display:flex;justify-content:center;"><svg width="80" height="20" viewBox="0 0 80 20" preserveAspectRatio="none"><polyline points="0,16 16,14 32,11 48,8 64,5 80,2" fill="none" stroke="#0f8a52" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#0b6e40;font-weight:600;">▲ 9</div>
+          <div style="display:flex;gap:5px;justify-content:flex-end;"><span style="font-size:10px;padding:3px 7px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;color:#3e4756;">Rename</span><span style="font-size:10px;padding:3px 7px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;color:#3e4756;">Merge</span><span style="font-size:10px;padding:3px 7px;border:1px solid #f3d4d4;border-radius:6px;background:#fff;color:#8a1f1f;">Archive</span></div>
+        </div>
+        <!-- archived row -->
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#a5acb8;letter-spacing:.1em;text-transform:uppercase;margin:14px 0 6px;">Archived</div>
+        <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;padding:9px 0;opacity:.7;">
+          <div style="font-size:13px;font-weight:500;">callback-req <span style="font-size:9px;padding:1px 6px;border-radius:999px;background:#f0f2f6;color:#737c8c;">archived</span></div>
+          <div style="padding-right:10px;"><div style="height:7px;border-radius:999px;background:#e5e8ee;"></div></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#a5acb8;">14</div>
+          <div></div>
+          <div></div>
+          <div style="display:flex;justify-content:flex-end;"><span style="font-size:10px;padding:3px 7px;border:1px solid #dce0e7;border-radius:6px;background:#f6f7f9;color:#3e4756;display:inline-flex;align-items:center;gap:4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Restore</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DARK tags -->
+    <div style="flex:none;width:680px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Dark</div>
+      <div style="padding:20px;background:#0a0d14;border-radius:8px;">
+        <div style="background:#10141d;border-radius:2px;border:1px solid #262d3b;padding:20px 22px;">
+          <div style="display:flex;gap:4px;border-bottom:1px solid #262d3b;margin-bottom:16px;">
+            <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;">Overview</span>
+            <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid #7af2a1;font-size:13px;font-weight:600;color:#e8e6e0;">Tags</span>
+            <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;">Compliance</span>
+            <span style="padding:9px 14px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:#6c7587;">Config</span>
+          </div>
+          <div style="font-size:12px;color:#6c7587;margin-bottom:12px;">Free-text tags reps applied across all enrolled sheets. Rename to fix a typo, Merge to consolidate, Archive to deprecate (notes keep the tag). Δ compares this week to last — a rising tag flags an emerging issue.</div>
+          <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;border-bottom:1px solid #3f4a60;padding-bottom:7px;">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6c7587;">Tag</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6c7587;">Usage</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6c7587;text-align:right;">Notes</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6c7587;text-align:center;">Trend</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6c7587;text-align:right;">Δ wk</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6c7587;text-align:right;">Actions</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;padding:9px 0;border-bottom:1px solid #1e2532;">
+            <div style="font-size:13px;font-weight:500;color:#e8e6e0;">billing-question</div>
+            <div style="padding-right:10px;"><div style="height:7px;border-radius:999px;background:#1e2532;overflow:hidden;"><div style="width:100%;height:100%;background:#7af2a1;"></div></div></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#e8e6e0;">84</div>
+            <div style="display:flex;justify-content:center;"><svg width="80" height="20" viewBox="0 0 80 20" preserveAspectRatio="none"><polyline points="0,15 16,13 32,14 48,9 64,7 80,4" fill="none" stroke="#7af2a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#b8fbc8;font-weight:600;">▲ 6</div>
+            <div style="display:flex;gap:5px;justify-content:flex-end;"><span style="font-size:10px;padding:3px 7px;border:1px solid #262d3b;border-radius:6px;background:#0a0d14;color:#a6adbc;">Rename</span><span style="font-size:10px;padding:3px 7px;border:1px solid #262d3b;border-radius:6px;background:#0a0d14;color:#a6adbc;">Merge</span><span style="font-size:10px;padding:3px 7px;border:1px solid #4a2a30;border-radius:6px;background:#0a0d14;color:#ffa0a8;">Archive</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;padding:9px 0;border-bottom:1px solid #1e2532;">
+            <div style="font-size:13px;font-weight:500;color:#e8e6e0;">eval-scheduling</div>
+            <div style="padding-right:10px;"><div style="height:7px;border-radius:999px;background:#1e2532;overflow:hidden;"><div style="width:73%;height:100%;background:#7af2a1;"></div></div></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#e8e6e0;">61</div>
+            <div style="display:flex;justify-content:center;"><svg width="80" height="20" viewBox="0 0 80 20" preserveAspectRatio="none"><polyline points="0,8 16,9 32,7 48,10 64,9 80,11" fill="none" stroke="#7af2a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#6c7587;">±0</div>
+            <div style="display:flex;gap:5px;justify-content:flex-end;"><span style="font-size:10px;padding:3px 7px;border:1px solid #262d3b;border-radius:6px;background:#0a0d14;color:#a6adbc;">Rename</span><span style="font-size:10px;padding:3px 7px;border:1px solid #262d3b;border-radius:6px;background:#0a0d14;color:#a6adbc;">Merge</span><span style="font-size:10px;padding:3px 7px;border:1px solid #4a2a30;border-radius:6px;background:#0a0d14;color:#ffa0a8;">Archive</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;padding:9px 0;border-bottom:1px solid #1e2532;">
+            <div style="font-size:13px;font-weight:500;color:#e8e6e0;">auth-delay</div>
+            <div style="padding-right:10px;"><div style="height:7px;border-radius:999px;background:#1e2532;overflow:hidden;"><div style="width:45%;height:100%;background:#7af2a1;"></div></div></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#e8e6e0;">38</div>
+            <div style="display:flex;justify-content:center;"><svg width="80" height="20" viewBox="0 0 80 20" preserveAspectRatio="none"><polyline points="0,16 16,14 32,11 48,8 64,5 80,2" fill="none" stroke="#7af2a1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#b8fbc8;font-weight:600;">▲ 9</div>
+            <div style="display:flex;gap:5px;justify-content:flex-end;"><span style="font-size:10px;padding:3px 7px;border:1px solid #262d3b;border-radius:6px;background:#0a0d14;color:#a6adbc;">Rename</span><span style="font-size:10px;padding:3px 7px;border:1px solid #262d3b;border-radius:6px;background:#0a0d14;color:#a6adbc;">Merge</span><span style="font-size:10px;padding:3px 7px;border:1px solid #4a2a30;border-radius:6px;background:#0a0d14;color:#ffa0a8;">Archive</span></div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7587;letter-spacing:.1em;text-transform:uppercase;margin:14px 0 6px;">Archived</div>
+          <div style="display:grid;grid-template-columns:1.3fr 1.1fr .6fr 1fr .6fr 1.5fr;align-items:center;padding:9px 0;opacity:.7;">
+            <div style="font-size:13px;font-weight:500;color:#e8e6e0;">callback-req <span style="font-size:9px;padding:1px 6px;border-radius:999px;background:#1e2532;color:#6c7587;">archived</span></div>
+            <div style="padding-right:10px;"><div style="height:7px;border-radius:999px;background:#1e2532;"></div></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right;color:#6c7587;">14</div>
+            <div></div>
+            <div></div>
+            <div style="display:flex;justify-content:flex-end;"><span style="font-size:10px;padding:3px 7px;border:1px solid #262d3b;border-radius:6px;background:#0a0d14;color:#a6adbc;display:inline-flex;align-items:center;gap:4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Restore</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
