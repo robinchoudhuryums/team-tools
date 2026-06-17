@@ -2,11 +2,21 @@
 
 ## Current
 Cycle: 4
-Phase: implement (broad-implement + 3 feature builds complete — pushed)
-Scope: broad findings (M-1,L-1,L-2,L-3,L-11) + features #5/#4/#3
+Phase: implement (broad-implement + 3 features + P1 hardening — pushed)
+Scope: broad findings (M-1,L-1,L-2,L-3,L-11) + features #5/#4/#3 + P1 (L-4/5/7/8/9/10/12/13,N-2)
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
 Updated: 2026-06-17
+
+## P1 hardening batch this session (pushed, commit 1732fa2)
+- L-8: getMyCallNotes/Range/searchMyCallNotes → readCallNoteRowsInRange_ (bounded;
+  now share the INV-46 append-order contiguity assumption the module already makes).
+- L-7: setCallNotePinned pin-count via 2-column scan + "pinned" pre-filter.
+- L-10: findCallNoteRow_ row fetch at CN_HEADERS.length (not getLastColumn()).
+- L-5: kbUsageCounts_ cutoff in KB ss tz (boundary align). L-4: verifyDocSignature
+  `tampered` flag + empdocs client uses it. L-9/L-12/L-13/N-2/M-1-edge: comments.
+- Pure harness 133 green. NOT taken: forms findFormTokenRow_ getLastColumn() (same
+  class as L-10, out of P1 scope) — follow-on.
 
 ## Feature builds this session (all on claude/affectionate-cori-q4d2hf, pushed)
 - #5 Tag-trend analytics — getCallNotesTagTrends (mgr-gated, cached, PHI-free);
