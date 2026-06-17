@@ -2205,6 +2205,37 @@ function getMyCallNotes(options) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Clock-view note-volume histogram (#5a / C2). Returns the calling rep's own
+ *  note counts for `date` bucketed by REP-LOCAL hour (0–23). Caller-scoped,
+ *  read-only, bounded (single-day contiguous slice via readCallNoteRowsInRange_,
+ *  reading only the Timestamp + DateLocal columns). The Timestamp is stored in
+ *  the rep's own tz (empTz_, "yyyy-MM-dd'T'HH:mm:ss"), so its hour aligns with
+ *  the Clock ribbon's local axis. A Date-coerced cell is re-formatted in empTz.
+ *  Not enrolled / no sheet → all-zero buckets (never throws to the client). */
+function getMyNoteHourBuckets(date) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const empTz = empTz_(emp);
+    const d = date || Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'Invalid date format (expected yyyy-MM-dd).' };
+    const buckets = new Array(24).fill(0);
+    if (!emp.callNotesSheetId) return { buckets: buckets, date: d };
+    const sheet = getCallNotesSheet_(emp);
+    const located = readCallNoteRowsInRange_(sheet, d, d);
+    for (let i = 0; i < located.length; i++) {
+      const row = located[i].row;
+      if (normalizeDate_(row[CN.DATE_LOCAL]) !== d) continue;
+      const ts = row[CN.TIMESTAMP];
+      let hour = -1;
+      if (ts instanceof Date) hour = Number(Utilities.formatDate(ts, empTz, 'H'));
+      else { const m = String(ts || '').match(/[T ](\d{2}):/); if (m) hour = parseInt(m[1], 10); }
+      if (hour >= 0 && hour < 24) buckets[hour]++;
+    }
+    return { buckets: buckets, date: d };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Returns the calling rep's notes across a date range (startDate to endDate,
  *  inclusive). Caller-scoped via getEmployeeInfo_. Range capped at 90 days to
  *  prevent abuse. Returns notes sorted newest-first, with the same shape as
