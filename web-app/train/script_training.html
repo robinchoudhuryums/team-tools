@@ -82,6 +82,42 @@
   .tr-qed-q .qhead .qn { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); flex: 1; }
   .tr-qed-hint { font-size: .74rem; color: var(--muted); margin-top: 2px; }
   .tr-cell-att { font-size: .68rem; color: var(--muted); }
+
+  /* §3a — checklist completion-ring header */
+  .tr-head { display: flex; align-items: center; gap: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); padding: 16px 18px; margin-bottom: 16px; box-shadow: var(--shadow-sm); max-width: 860px; }
+  .tr-head-main { flex: 1; min-width: 0; }
+  .tr-head-title { font-family: var(--display); font-size: 1.3rem; font-weight: 600; color: var(--ink); }
+  .tr-head-sub { font-size: .85rem; color: var(--muted); margin-top: 2px; }
+  .tr-head-sub .tr-overdue-n { color: var(--danger-deep); font-weight: 600; }
+  .tr-head .tr-sum { margin-bottom: 0; }
+  .tr-ring { position: relative; width: 72px; height: 72px; flex-shrink: 0; }
+  .tr-ring svg { transform: rotate(-90deg); display: block; }
+  .tr-ring .pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; font-size: .95rem; color: var(--ink); }
+  :root[data-compact] .tr-head { flex-wrap: wrap; }
+  /* overdue checklist row gets the panel[data-tone] accent rail */
+  .tr-row.overdue { box-shadow: inset 3px 0 0 var(--destructive); }
+  /* quiz action = primary; article action stays accent-soft */
+  .tr-complete-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+  .tr-complete-btn.primary:hover { filter: brightness(1.05); }
+
+  /* §3b — manager completion matrix (reps × items status grid) */
+  .tr-legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; font-size: .78rem; color: var(--muted); }
+  .tr-legend .sw { width: 14px; height: 14px; border-radius: 4px; display: inline-block; vertical-align: -2px; margin-right: 5px; }
+  .tr-matrix { display: grid; gap: 6px 4px; align-items: center; max-width: 100%; }
+  .tr-matrix .mh { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .tr-matrix .mh-num { text-align: center; }
+  .tr-matrix .mh-cov { text-align: right; }
+  .tr-m-emp { font-size: .84rem; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tr-cell-sq { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-family: var(--mono); font-weight: 700; font-size: .8rem; }
+  .tr-cell-sq.done { background: var(--accent); color: var(--paper); }
+  .tr-cell-sq.overdue { background: var(--destructive); color: var(--paper); }
+  .tr-cell-sq.pending { background: var(--paper-2); border: 1px solid var(--line); }
+  .tr-cov { font-family: var(--mono); font-weight: 700; font-size: .82rem; text-align: right; }
+  .tr-cov.full { color: var(--success-deep); }
+  .tr-cov.mid  { color: var(--warning-deep); }
+  .tr-cov.low  { color: var(--danger-deep); }
+  .tr-key { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; font-size: .74rem; color: var(--muted); }
+  .tr-key b { color: var(--ink); font-family: var(--mono); }
 </style>
 
 <script>
@@ -101,6 +137,18 @@ function trainChipHtml_(status) {
   return '<span class="tr-chip ' + s + '">' + label + '</span>';
 }
 
+/** SVG completion ring (track + accent arc) with the % centered. */
+function trainRingHtml_(pct) {
+  var r = 32, c = 2 * Math.PI * r, off = c * (1 - (pct || 0) / 100);
+  return '<div class="tr-ring"><svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">' +
+    '<circle cx="36" cy="36" r="' + r + '" fill="none" stroke="var(--paper-3)" stroke-width="7"></circle>' +
+    '<circle cx="36" cy="36" r="' + r + '" fill="none" stroke="var(--accent)" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"></circle>' +
+    '</svg><div class="pct">' + (pct || 0) + '%</div></div>';
+}
+
+/** Coverage-% tone class (100 → success, ≥50 → warn, else danger). */
+function trainCoverageClass_(pct) { return pct >= 100 ? 'full' : pct >= 50 ? 'mid' : 'low'; }
+
 // ── Rep view: My Training ──────────────────────────────────────────────────
 function enterTrainingHomeView() {
   if (typeof stopClock === 'function') stopClock();
@@ -109,7 +157,6 @@ function enterTrainingHomeView() {
   if (!area) return;
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('check', 16) + ' My Training</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>My Training</h2></div>' +
     '<div id="tr-home-content"><div class="m-loading"><div class="spinner"></div> Loading training&hellip;</div></div>';
   trainLoadMy_();
 }
@@ -142,10 +189,19 @@ function trainRenderMy_() {
   }
   var done = 0, overdue = 0;
   items.forEach(function (it) { if (it.status === 'done') done++; if (it.status === 'overdue') overdue++; });
-  var h = '<div class="tr-sum">' +
-    '<div class="cell"><div class="cell-label">Assigned</div><div class="cell-val">' + items.length + '</div></div>' +
-    '<div class="cell"><div class="cell-label">Done</div><div class="cell-val">' + done + '</div></div>' +
-    '<div class="cell"><div class="cell-label">Overdue</div><div class="cell-val' + (overdue ? ' warn' : '') + '">' + overdue + '</div></div>' +
+  var pct = items.length ? Math.round((done / items.length) * 100) : 0;
+  var left = items.length - done;
+  var h = '<div class="tr-head">' +
+    trainRingHtml_(pct) +
+    '<div class="tr-head-main">' +
+      '<div class="tr-head-title">My Training</div>' +
+      '<div class="tr-head-sub">' + done + ' of ' + items.length + ' complete' +
+        (overdue ? ' · <span class="tr-overdue-n">' + overdue + ' overdue</span>' : '') + '</div>' +
+    '</div>' +
+    '<div class="tr-sum">' +
+      '<div class="cell"><div class="cell-label">Done</div><div class="cell-val">' + done + '</div></div>' +
+      '<div class="cell"><div class="cell-label">Left</div><div class="cell-val">' + left + '</div></div>' +
+    '</div>' +
     '</div><div class="tr-list">';
   items.forEach(function (it) {
     var isQuiz = it.itemType === 'quiz';
@@ -161,7 +217,7 @@ function trainRenderMy_() {
     var action = '';
     if (!it.completed) {
       action = isQuiz
-        ? '<button class="tr-complete-btn" data-tr-quiz="' + esc(it.itemId) + '">' + icon('list', 13) + ' Take quiz</button>'
+        ? '<button class="tr-complete-btn primary" data-tr-quiz="' + esc(it.itemId) + '">' + icon('list', 13) + ' Take quiz</button>'
         : '<button class="tr-complete-btn" data-tr-complete="' + esc(it.itemId) + '">' + icon('check', 13) + ' Mark complete</button>';
     }
     var titleAttr = isQuiz ? 'data-tr-quiz="' + esc(it.itemId) + '"' : 'data-tr-open="' + esc(it.itemId) + '"';
@@ -482,28 +538,45 @@ function trainRenderMgr_() {
     '<div><label>&nbsp;</label><button class="tr-complete-btn" id="tr-as-go">' + icon('plus', 13) + ' Assign</button></div>' +
     '</div></div>';
 
-  // Completion matrix.
+  // Completion matrix — reps × items status grid (§3b). Squares: Done = accent,
+  // Overdue = destructive, Pending = bordered. Reps sorted least-covered first.
   var items = dash.items || [], reps = dash.reps || [];
   if (items.length) {
-    h += '<div class="tr-section-h">Completion matrix</div><table class="tr-table"><thead><tr><th>Employee</th>';
-    items.forEach(function (it) {
-      h += '<th title="' + esc(it.title) + '">' + esc(it.title.length > 22 ? it.title.substring(0, 20) + '…' : it.title) +
-        '<br><span style="font-weight:400;">' + it.done + '/' + it.assigned + (it.overdue ? ' · ' + it.overdue + ' late' : '') + '</span></th>';
+    var N = items.length;
+    var withCov = reps.map(function (r) {
+      var d = 0; items.forEach(function (it) { if (r.items[it.key] === 'done') d++; });
+      return { r: r, pct: N ? Math.round((d / N) * 100) : 0 };
     });
-    h += '</tr></thead><tbody>';
-    reps.forEach(function (r) {
-      h += '<tr><td>' + esc(r.name) + '</td>';
+    withCov.sort(function (a, b) { return a.pct - b.pct || a.r.name.localeCompare(b.r.name); });
+
+    h += '<div class="tr-section-h">Completion matrix</div>' +
+      '<div class="tr-legend">' +
+        '<span><span class="sw" style="background:var(--accent)"></span>Done</span>' +
+        '<span><span class="sw" style="background:var(--destructive)"></span>Overdue</span>' +
+        '<span><span class="sw" style="background:var(--paper-2);border:1px solid var(--line)"></span>Pending</span>' +
+      '</div>' +
+      '<div style="overflow-x:auto"><div class="tr-matrix" style="grid-template-columns:minmax(140px,1.4fr) repeat(' + N + ', 30px) 70px">';
+    // header row
+    h += '<div class="mh mh-emp">Employee</div>';
+    items.forEach(function (it, i) { h += '<div class="mh mh-num" title="' + esc(it.title) + '">' + (i + 1) + '</div>'; });
+    h += '<div class="mh mh-cov">Cov</div>';
+    // body rows (sorted)
+    withCov.forEach(function (w) {
+      h += '<div class="tr-m-emp" title="' + esc(w.r.name) + '">' + esc(w.r.name) + '</div>';
       items.forEach(function (it) {
-        var s = r.items[it.key];
-        var att = (r.attempts && r.attempts[it.key])
-          ? ' <span class="tr-cell-att" title="quiz attempts this round">(' + r.attempts[it.key] + ')</span>' : '';
-        h += '<td>' + (s === 'done' ? '<span class="tr-cell-done">✓</span>' + att
-          : s === 'overdue' ? '<span class="tr-cell-overdue">!</span>' + att
-          : s === 'pending' ? '<span class="tr-cell-pending">–</span>' + att : '') + '</td>';
+        var s = w.r.items[it.key];
+        var sq = s === 'done' ? '<span class="tr-cell-sq done" title="Done">' + icon('check', 13) + '</span>'
+          : s === 'overdue' ? '<span class="tr-cell-sq overdue" title="Overdue">!</span>'
+          : s === 'pending' ? '<span class="tr-cell-sq pending" title="Pending"></span>' : '<span></span>';
+        h += '<div>' + sq + '</div>';
       });
-      h += '</tr>';
+      h += '<div class="tr-cov ' + trainCoverageClass_(w.pct) + '">' + w.pct + '%</div>';
     });
-    h += '</tbody></table>';
+    h += '</div></div>';
+    // numbered item key (carries the per-item done/assigned count the old header had)
+    h += '<div class="tr-key">' + items.map(function (it, i) {
+      return '<span><b>' + (i + 1) + '</b> ' + esc(it.title) + ' (' + it.done + '/' + it.assigned + (it.overdue ? ' · ' + it.overdue + ' late' : '') + ')</span>';
+    }).join('') + '</div>';
   } else {
     h += '<div class="tr-empty">No training assigned yet — use the form above to assign a Reference item.</div>';
   }
