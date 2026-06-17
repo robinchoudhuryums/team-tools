@@ -149,6 +149,33 @@ Updated: 2026-06-16
   "CSR Transfer Historical Data" tab (it does). ALL operator-feedback steps
   (S1 diag, S2 #2/#3, S3 #4, S4 #5/#6) now DONE — ready for deploy + eyeball.
 
+- CYCLE 3 AUDIT FINDINGS IMPLEMENTED (this branch, after the operator-feedback
+  steps). Re-verified each fresh against current code:
+  * S1.2 (Low, fires monthly): getManagerDashboard recent-audits punchDate read
+    via raw String() → coerced "Wed Jun 17 2026…"; now normalizeDate_.
+  * S1.3 (Low, latent): updateTimeOffStatus would RE-DEDUCT on Reconciled→Approved
+    (the deduct guard fires for any non-Approved→Approved). Now rejects any status
+    change FROM 'Reconciled' (terminal — fixPtoReconciliation already credited it).
+  * S2.1 (Low, latent/defensive): getFormByToken + submitFormByToken failed OPEN
+    on an unparseable (non-empty) ExpiresAt; now fail CLOSED (treated as expired /
+    PHI write rejected). Empty-expiry (no-expiry) tokens unchanged.
+  * C1 (Low): KB-AI guidance collapse-after-seen used UTC toISOString (client,
+    kb/script_kb.html:1047) → re-expanded at UTC midnight (5:30am IST); now
+    isoDateTz(empTz()) rep-tz day (F6). Only matters with kbAiGuidance flag ON.
+  * S1.1 (Medium-LATENT, RE-ASSESSED): NOT a behavior bug — normalizeAuditTs_/
+    normalizeDate_ recover coerced Dates in the SHEET tz (= the coercion tz), so
+    the wall-clock STRING round-trips regardless of CONFIG.TIMEZONE. The real
+    exposure is operator drift (ADP sheet tz ≠ CONFIG.TIMEZONE). Fix = a smoke
+    tripwire test_config_adpSheetTzMatchesConfig (NOT a recovery-tz change, which
+    would BREAK the round-trip). Pins the assumption.
+  * C4 (Low): added test_cn_formSubmissionCard_escapes pinning buildFormSubmission
+    CardHtml_ esc_ (builders already escaped; just unpinned).
+  Files: Code.js (S1.2/S1.3/S2.1), kb/script_kb.html (C1), Tests.js (S1.1+C4
+  smoke tests + registration). Pure 127 / DOM 39, node --check clean. Editor
+  smoke/integration tests (S1.1, C4, + existing token-lifecycle for S2.1) run on
+  next runSmokeTests/runAllTests. NET +1 fired (S1.2) + 5 defensive/latent.
+  Cycle 3 backlog now CLEARED — ready for /reflect to close the cycle.
+
 ### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
   PROJECT_HEALTH.md Current Standing + Score History updated). Net +8 (8 prod fixes

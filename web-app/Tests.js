@@ -842,6 +842,8 @@ function _runAllTests() {
   _smokeTest('cn_callDataFromNote_selfNamedNoPrepend',  test_cn_callDataFromNote_selfNamedNoPrepend);
   _smokeTest('cn_callDataFromNote_nonSelfPassthrough',  test_cn_callDataFromNote_nonSelfPassthrough);
   _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
+  _smokeTest('cn_formSubmissionCard_escapes', test_cn_formSubmissionCard_escapes);
+  _smokeTest('config_adpSheetTzMatchesConfig', test_config_adpSheetTzMatchesConfig);
   _smokeTest('cn_extractAuditNoteId_parses',       test_cn_extractAuditNoteId_parses);
   _smokeTest('cn_extractAuditNoteId_noMatch',      test_cn_extractAuditNoteId_noMatch);
   _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
@@ -2886,6 +2888,34 @@ function test_cn_buildEmailHtml_escapesUserFields() {
   _assertFalse(html.indexOf('<img src=x onerror=alert(2)>') >= 0, 'raw patient img payload must NOT appear');
   _assertContains(html, '&lt;script&gt;alert(1)&lt;/script&gt;', 'caller rendered escaped');
   _assertContains(html, 'a &amp; b &lt; c', 'issue ampersand/angle-bracket escaped');
+}
+
+function test_cn_formSubmissionCard_escapes() {
+  // C4 — the in-app submission viewer injects buildFormSubmissionCardHtml_ via
+  // innerHTML (INV-89 class). Pin that recipient-supplied values are esc_'d.
+  const data = {
+    'patient_name': '<script>alert(1)</script>',
+    'free_notes':   'a & b < c',
+  };
+  const html = buildFormSubmissionCardHtml_(data, '');
+  _assertFalse(html.indexOf('<script>alert(1)</script>') >= 0, 'raw script tag must NOT appear in the card');
+  _assertContains(html, '&lt;script&gt;', 'value rendered escaped');
+  _assertContains(html, 'a &amp; b &lt; c', 'ampersand/angle-bracket escaped');
+}
+
+function test_config_adpSheetTzMatchesConfig() {
+  // S1.1 — the AuditLog / TO.SUBMITTED_AT coercion round-trip relies on the ADP
+  // spreadsheet's tz matching CONFIG.TIMEZONE: writes use CONFIG.TIMEZONE
+  // (fmtDate_/fmtTime_) while normalizeAuditTs_/normalizeDate_ recover coerced
+  // Date cells in the SHEET's tz. The wall-clock string round-trips only when
+  // the two are equal; a drift silently shifts every date-filtered audit/PTO
+  // read by the offset. Pin the assumption so an operator tz change surfaces.
+  let ssTz;
+  try { ssTz = getAdpSS_().getSpreadsheetTimeZone(); }
+  catch (e) { _assertTrue(true, 'ADP spreadsheet unavailable — skipped (' + e.message + ')'); return; }
+  _assertEq(ssTz, CONFIG.TIMEZONE,
+    'ADP sheet tz (' + ssTz + ') must equal CONFIG.TIMEZONE (' + CONFIG.TIMEZONE +
+    ') or coerced-date audit/PTO reads drift — see S1.1');
 }
 
 // ── Template scriptlet hygiene (regression guard) ──

@@ -1044,7 +1044,12 @@ function kbDrawerRenderGuidance_() {
 function kbDrawerPaintGuidance_(host, res) {
   if (!res || res.none || res.error || !res.guidance) { host.innerHTML = ''; return; }
   var prefs = kbPanelPrefs_();
-  var today = new Date().toISOString().substring(0, 10);
+  // C1 — derive "today" in the rep's roster tz (F6 discipline), not UTC. UTC
+  // toISOString rolls at UTC midnight (5:30am IST), which would re-expand the
+  // collapsed guidance card mid-morning for offshore reps instead of holding
+  // it for their whole local day.
+  var today = (typeof isoDateTz === 'function' && typeof empTz === 'function')
+    ? isoDateTz(empTz()) : new Date().toISOString().substring(0, 10);
   var seen = prefs.aiSeen || {};
   var collapsed = res.facetHash && seen.hash === res.facetHash && seen.date === today;
   var html = '<div class="kbd-sec">Guidance <span class="kb-snip" style="text-transform:none;letter-spacing:0">AI · from your reference docs</span></div>';

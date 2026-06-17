@@ -982,7 +982,7 @@ function getManagerDashboard() {
           timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
           empName:      String(auditData[i][2]),
           action:       String(auditData[i][4]),
-          punchDate:    String(auditData[i][5]),
+          punchDate:    normalizeDate_(auditData[i][5]),
           punchTime:    String(auditData[i][6]),
           isAdjustment: String(auditData[i][7]) === 'TRUE',
           daysBack:     parseInt(auditData[i][8], 10) || 0,
@@ -1129,6 +1129,15 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         const type    = String(rows[i][TO.TYPE]);
         const notes   = String(rows[i][TO.NOTES]);
         const empName = String(rows[i][TO.EMP_NAME]);
+
+        // S1.3 — 'Reconciled' rows are neutralized duplicates (fixPtoReconciliation
+        // already credited their over-charge back). Re-approving one would
+        // RE-DEDUCT via the transition below (oldStatus !== 'Approved' &&
+        // newStatus === 'Approved'), undoing the credit. Treat Reconciled as
+        // terminal — refuse any status change on it.
+        if (oldStatus === 'Reconciled') {
+          return { success: false, error: 'This request was reconciled (a duplicate already credited back) and can no longer change status.' };
+        }
 
         sheet.getRange(i + 1, TO.STATUS + 1).setValue(newStatus);
 
@@ -5381,7 +5390,12 @@ function getFormByToken(token) {
           } catch(_) {}
           return { error: 'This form link has expired. Please contact UMS to request a new one.' };
         }
-      } catch(_) { /* unparseable — allow access rather than lock out */ }
+      } catch (_) {
+        // S2.1 — fail CLOSED: a non-empty expiry we can't parse is treated as
+        // expired, not allowed. We write ExpiresAt ourselves in a fixed format,
+        // so an unparseable value means a corrupt/tampered token — don't serve it.
+        return { error: 'This form link has expired. Please contact UMS to request a new one.' };
+      }
     }
 
     if (status === 'expired') {
@@ -5447,7 +5461,11 @@ function submitFormByToken(token, formData) {
           tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
           return { success: false, error: 'This form link has expired.' };
         }
-      } catch(_) {}
+      } catch (_) {
+        // S2.1 — fail CLOSED: never accept a PHI submission against a token
+        // whose (non-empty) expiry can't be parsed.
+        return { success: false, error: 'This form link has expired.' };
+      }
     }
 
     const formType = String(row[FT.FORM_TYPE]).trim();
