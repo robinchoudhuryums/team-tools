@@ -58,9 +58,8 @@ test('every var(--token) resolves to a defined custom property', () => {
   const WEB_APP = path.resolve(__dirname, '../../web-app');
   const STANDALONE = new Set(['form_public.html']); // own palette — excluded
   // Pending-removal exceptions. Remove an entry when its module migration lands.
-  const TOKEN_ALLOWLIST = {
-    '--brand': 'intake/script_intake.html — removed in the Intake redesign (carries a literal fallback)',
-  };
+  // (--brand was removed when the Intake redesign dropped the bespoke navy header.)
+  const TOKEN_ALLOWLIST = {};
   const htmlFiles = [];
   (function walk(dir, rel) {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

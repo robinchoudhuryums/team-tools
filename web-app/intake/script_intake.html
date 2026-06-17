@@ -1,59 +1,104 @@
 <style>
-  /* ── Intake tool (PPD + PMD/PAP account creation) ────────────────────── */
+  /* ── Intake tool (PPD + PMD/PAP account creation) — Console redesign ──── */
+  /* Shell uses the shared .app-bar / .toolbar-tabs / .panel / .kicker-pill
+     vocabulary (no bespoke navy --brand header, no .intk-lang). View-scoped
+     .intk-* classes layer the form-specific controls on top of the tokens. */
   .intk-wrap { max-width: 920px; margin: 0 auto; }
   .intk-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
   .intk-bar .grow { flex: 1; }
-  .intk-lang { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .intk-lang button { background: var(--paper-2); border: none; padding: 6px 12px; cursor: pointer; font: inherit; color: var(--muted); }
-  .intk-lang button.on { background: var(--accent); color: #fff; }
   .intk-patient { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
   .intk-patient label { font-size: .8rem; color: var(--muted); font-weight: 600; }
-  .intk-patient input { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--paper-card); color: var(--ink); }
-  .intk-grid { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--paper-card); }
-  .intk-head { background: var(--brand, #223b5d); color: #fff; padding: 9px 14px; font-weight: 700; font-size: .9rem; }
-  .intk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 8px 14px; align-items: center; border-top: 1px solid var(--line); }
+  .intk-patient input { padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); font: inherit; background: var(--paper-card); color: var(--ink); }
+
+  /* Progress header — pinned answered/N count + thin bar */
+  .intk-prog { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 10px 2px; margin-bottom: 12px; background: var(--paper); }
+  .intk-prog .t { font-weight: 600; font-size: .9rem; color: var(--ink); }
+  .intk-prog .count { font-family: var(--mono); font-size: .8rem; font-weight: 600; color: var(--success-deep); }
+  .intk-prog-track { flex: 1; height: 6px; border-radius: 999px; background: var(--paper-3); overflow: hidden; }
+  .intk-prog-fill { height: 100%; background: var(--accent); width: 0; transition: width var(--t) var(--ease); }
+
+  /* Section panels (one per question group) */
+  .intk-sections { display: flex; flex-direction: column; gap: 14px; }
+  .intk-section .sec-title { margin-bottom: 4px; }
+
+  /* Question row — label + control */
+  .intk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 8px 0; align-items: center; border-top: 1px solid var(--line); }
   .intk-row:first-child { border-top: none; }
   .intk-row .q { font-size: .88rem; color: var(--ink); font-weight: 600; }
   .intk-row.secondary .q { font-weight: 400; font-style: italic; color: var(--muted); padding-left: 18px; }
-  .intk-row input[type=text], .intk-row select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; font: inherit; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
+  .intk-row input[type=text], .intk-row input[type=email], .intk-row input[type=date], .intk-row select { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
+
+  /* Yes/No color-coded toggle (PPD + account Yes/No items) */
+  .intk-yn { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
+  .intk-yn-btn { appearance: none; border: none; background: var(--paper-2); color: var(--muted); font: inherit; font-size: .85rem; padding: 6px 18px; cursor: pointer; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
+  .intk-yn-btn + .intk-yn-btn { border-left: 1px solid var(--line); }
+  .intk-yn-btn:hover { color: var(--ink); }
+  .intk-yn-btn.yes.on { background: var(--accent); color: var(--paper); }
+  .intk-yn-btn.no.on  { background: var(--destructive); color: var(--paper); }
+
+  /* Consistent-pain severity scale (None / Mild / Mod / Severe) */
+  .intk-sev { display: flex; gap: 6px; }
+  .intk-sev-chip { flex: 1; appearance: none; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--muted); font: inherit; font-size: .78rem; padding: 6px 4px; cursor: pointer; text-align: center; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
+  .intk-sev-chip:hover { color: var(--ink); }
+  .intk-sev-chip.on[data-set="None"]   { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .intk-sev-chip.on[data-set="Mild"]   { background: var(--warn-soft); color: var(--warning-deep); border-color: transparent; }
+  .intk-sev-chip.on[data-set="Mod"]    { background: var(--warn); color: var(--paper); border-color: var(--warn); }
+  .intk-sev-chip.on[data-set="Severe"] { background: var(--destructive); color: var(--paper); border-color: var(--destructive); }
+
   .intk-row .ck { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--muted); }
   .intk-actions { display: flex; gap: 10px; margin-top: 16px; }
+
+  /* Tokened group header (Sent list/detail + legacy uses; no more navy --brand) */
+  .intk-head { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--paper-2); padding: 8px 14px; border-bottom: 1px solid var(--line); }
+  .intk-grid { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--paper-card); }
+  .intk-grid .intk-row { padding-left: 14px; padding-right: 14px; }
+
+  /* Sent tab filter bar + rows */
+  .intk-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .intk-search { flex: 1; min-width: 180px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); font: inherit; background: var(--paper-card); color: var(--ink); }
+  .intk-sent-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .intk-sent-row:first-child { border-top: none; }
+  .intk-sent-meta { font-size: .76rem; color: var(--muted); margin-top: 2px; }
+
   /* preview modal */
   .intk-modal { width: min(860px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
   .intk-modal .body { overflow: auto; padding: 4px 2px; }
-  .intk-prev { border: 1px solid var(--line); border-radius: 8px; overflow: auto; max-height: 46vh; background: #fff; }
+  .intk-prev { border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; max-height: 46vh; background: #fff; }
   .intk-recpanel { margin-top: 14px; }
-  .intk-rec { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; }
-  .intk-rec .star { font-size: 22px; color: #ccc; cursor: pointer; line-height: 1; user-select: none; }
-  .intk-rec .star.on { color: #FFD700; }
+  .intk-rec { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+  .intk-rec .star { font-size: 22px; color: var(--muted-3); cursor: pointer; line-height: 1; user-select: none; }
+  .intk-rec .star.on { color: var(--accent); }
   .intk-rec .meta { flex: 1; }
   .intk-rec .code { font-weight: 700; }
   .intk-rec .just { font-size: .82rem; color: var(--muted); margin-top: 3px; }
-  .intk-rec img { width: 84px; height: auto; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  .intk-rec img { width: 84px; height: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
   .intk-rec .code-link { color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
   .intk-rec .code-link:hover { text-decoration: underline; }
-  .intk-rec-noimg { width: 84px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: .7rem; color: var(--muted); border: 1px dashed var(--line); border-radius: 4px; flex-shrink: 0; }
+  .intk-rec-noimg { width: 84px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: .7rem; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius-sm); flex-shrink: 0; }
   .intk-rec-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
-  .intk-rec-mini { font: inherit; font-size: .72rem; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .intk-rec-mini { font: inherit; font-size: .72rem; padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
   .intk-rec-mini:hover { background: var(--paper-card); }
   .intk-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 12px; }
   .intk-foot .grow { flex: 1; }
-  .intk-drop { border: 2px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted); font-size: .8rem; cursor: pointer; }
-  .intk-drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .intk-foot select, .intk-foot input[type=email] { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); }
+  .intk-drop { border: 2px dashed var(--line-2); border-radius: var(--radius); padding: 12px; text-align: center; color: var(--muted); font-size: .8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .intk-drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
   .intk-gallery { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-  .intk-thumb { position: relative; width: 46px; height: 46px; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .intk-thumb { position: relative; width: 46px; height: 46px; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
   .intk-thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .intk-thumb .rm { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; background: var(--danger, #c13030); color: #fff; font-size: 11px; line-height: 16px; text-align: center; cursor: pointer; }
+  .intk-thumb .rm { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; background: var(--destructive); color: #fff; font-size: 11px; line-height: 16px; text-align: center; cursor: pointer; }
   :root[data-compact] .intk-row { grid-template-columns: 1fr; }
-  /* bespoke buttons (the app styles controls per-view; no global .btn system) */
-  .intk-btn { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); color: var(--ink); font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-  .intk-btn:hover { background: var(--paper-card); }
-  .intk-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* Buttons — primary = accent bg / paper text (dark-mode inverts to dark text);
+     secondary = paper-card bg / line border. */
+  .intk-btn { padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-card); color: var(--ink); font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .intk-btn:hover { background: var(--paper-2); }
+  .intk-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
   .intk-btn.primary:hover { filter: brightness(1.05); }
   .intk-btn:disabled { opacity: .6; cursor: default; }
   .intk-modal .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .intk-modal .head h3 { margin: 0; font-size: 1rem; }
-  .intk-modal .xclose { background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; border-radius: 6px; }
+  .intk-modal .xclose { background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; border-radius: var(--radius-sm); }
   .intk-modal .xclose:hover { background: var(--paper-2); color: var(--ink); }
 </style>
 
@@ -63,6 +108,12 @@
 //  Forms render from the question banks below; answers POST to the two-stage
 //  intakePreview*/intakeSend* endpoints. PPD also runs the server-side
 //  recommendation engine and shows an interactive accept/reject/star panel.
+//
+//  Console redesign: shared .app-bar shell, .toolbar-tabs language toggle,
+//  PPD "Option A" structured controls (Yes/No toggles + severity chips),
+//  progress header, section panels, Sent filter/search, draft autosave.
+//  The DATA MODEL is unchanged — answers are still keyed by question number
+//  (PPD) / index (account) and the preview→send bodyHash flow is intact.
 // ════════════════════════════════════════════════════════════════════════════
 
 var INTAKE_STATE = {
@@ -71,7 +122,11 @@ var INTAKE_STATE = {
   pap: { lang: 'EN', images: [] },
   preview: null, // { formType, bodyHash, subject, recommendations, payload }
   sent: [],      // cached intakeListMySubmissions rows for the Sent tab
+  sentFilter: { type: 'ALL', q: '' },
 };
+
+// Tool sub-tab → icon (mirrors the TOOLS registry; used for compact headers).
+var INTAKE_TAB_ICON = { ppd: 'clipboardList', pmd: 'accessibility', pap: 'airflow', sent: 'outbox' };
 
 // ── Question banks (verbatim from incoming/form-generator) ────────────────
 var INTAKE_PPD_Q = {
@@ -155,6 +210,22 @@ var INTAKE_PPD_Q = {
   ],
 };
 
+// PPD control type per question number. Engine-safe (INV-112): questions the
+// recommendation engine substring-matches for LOCATION / DIAGNOSIS text must
+// stay free-text — Q25 (numbness 'feet'/'legs'), Q34 (amputation 'knee'/side),
+// Q31a/Q33a (location), Q43 (real diagnosis vs the no/none/n/a exclude list),
+// Q13 (falls — engine isPositive looks for 'yes'). Only purely-binary or
+// engine-isPositive('yes') questions become Yes/No toggles. Anything not listed
+// (incl. the *a sub-questions and free-text Dx fields) renders as text.
+var INTAKE_PPD_TYPE = {
+  '1':'yn', '7':'yn', '8':'yn', '9':'yn', '10':'yn', '11':'yn', '12':'yn',
+  '14':'sev', '15':'sev', '16':'sev', '17':'sev', '18':'sev', '19':'sev', '20':'sev', '21':'sev', '22':'sev', '23':'sev',
+  '24':'yn', '26':'yn', '27':'yn', '28':'yn', '29':'yn', '30':'yn', '31':'yn', '32':'yn', '33':'yn', '35':'yn', '36':'yn',
+  '37':'num', '38':'num', '40':'yn', '44':'yn',
+};
+function intakePpdType_(qNum) { return INTAKE_PPD_TYPE[qNum] || 'text'; }
+var INTAKE_SEV_LEVELS = ['None', 'Mild', 'Mod', 'Severe'];
+
 var INTAKE_PMD_Q = {
   EN: [
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#",
@@ -223,6 +294,17 @@ var INTAKE_PAP_CLIENT = {
   selects:    { 19: ['', 'Yes', 'No'], 21: ['', 'Less than 5 years', 'More than 5 years'] },
 };
 
+// ── App-bar header (shared shell vocabulary; replaces the bespoke navy bar) ──
+function intakeAppBar_(form, name) {
+  var compactIcon = INTAKE_TAB_ICON[form] || 'clipboardList';
+  if (COMPACT_MODE) return '<div class="compact-header">' + icon(compactIcon, 16) + ' ' + esc(name) + '</div>';
+  var right = (form === 'sent') ? '' : intakeLangToggleHtml_(form);
+  return '<div class="app-bar"><div class="app-bar-left">' +
+      '<div class="breadcrumb"><span>Intake</span><span class="crumb-sep">›</span><span class="crumb-current">' + esc(name) + '</span></div>' +
+      '<h1 class="display-title">' + esc(name) + '</h1>' +
+    '</div><div class="app-bar-right">' + right + '</div></div>';
+}
+
 // ── PPD view ──────────────────────────────────────────────────────────────
 function enterIntakePpdView(area) {
   if (typeof stopClock === 'function') stopClock();
@@ -230,55 +312,172 @@ function enterIntakePpdView(area) {
   if (!area) return;
   var lang = INTAKE_STATE.ppd.lang;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('send', 16) + ' PPD</div>' : '') +
+    intakeAppBar_('ppd', 'PPD') +
     '<div class="intk-wrap">' +
-      (COMPACT_MODE ? '' : '<div class="view-title-row"><h2>PPD — Patient Profile & Recommendation</h2></div>') +
-      '<div class="intk-bar">' +
-        intakeLangToggleHtml_('ppd') +
-        '<span class="grow"></span>' +
-      '</div>' +
       '<div class="intk-patient">' +
         '<label for="intk-ppd-patient">Patient Name &amp; Trx#</label>' +
-        '<input type="text" id="intk-ppd-patient" placeholder="e.g. Jane Doe — TRX 12345" autocomplete="off">' +
+        '<input type="text" id="intk-ppd-patient" name="intk-ppd-patient" placeholder="e.g. Jane Doe — TRX 12345" autocomplete="off">' +
       '</div>' +
-      '<div class="intk-grid" id="intk-ppd-grid">' + intakeRenderPpdRows_(lang) + '</div>' +
+      '<div class="intk-prog">' +
+        '<span class="t">PPD intake</span>' +
+        '<span class="count" id="intk-ppd-count">0 / 45</span>' +
+        '<span class="intk-prog-track"><span class="intk-prog-fill" id="intk-ppd-fill"></span></span>' +
+      '</div>' +
+      '<div class="intk-sections" id="intk-ppd-form">' + intakeRenderPpdSections_(lang) + '</div>' +
       '<div class="intk-actions">' +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
         '<button class="intk-btn" onclick="intakeClearForm_(\'ppd\')">Clear</button>' +
       '</div>' +
     '</div>';
+
+  var form = document.getElementById('intk-ppd-form');
+  if (form) form.addEventListener('input', intakePpdAfterChange_);
+  var pat = document.getElementById('intk-ppd-patient');
+  if (pat) pat.addEventListener('input', intakePpdAfterChange_);
+  intakeRestoreDraft_('ppd');
+  intakePpdUpdateProgress_();
 }
 
-function intakeRenderPpdRows_(lang) {
+// Render PPD as section panels (one .panel per question group header).
+function intakeRenderPpdSections_(lang) {
   var qs = INTAKE_PPD_Q[lang] || INTAKE_PPD_Q.EN;
-  var html = '';
+  var out = '';
+  var rows = '';
+  var sectionTitle = '';
+  function flush() {
+    if (!sectionTitle && !rows) return;
+    out += '<div class="panel intk-section">' +
+      (sectionTitle ? '<div class="section-kicker sec-title">' + esc(sectionTitle) + '</div>' : '') +
+      rows + '</div>';
+    rows = '';
+  }
   for (var i = 1; i < qs.length; i++) {
     var raw = qs[i];
     if (!raw || !String(raw).trim()) continue;
     var isSecondary = /^\s+/.test(raw);
     var text = String(raw).trim();
     var m = text.match(/^(\d+[a-z]?)\./);
-    if (!m) { // section header (no leading number)
-      html += '<div class="intk-head">' + esc(text) + '</div>';
-      continue;
-    }
-    var qNum = m[1];
-    html += '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '" data-qnum="' + esc(qNum) + '">' +
-      '<div class="q">' + esc(text) + '</div>' +
-      '<input type="text" autocomplete="off" data-intk-qnum="' + esc(qNum) + '">' +
-    '</div>';
+    if (!m) { flush(); sectionTitle = text; continue; }   // new section header
+    rows += intakePpdRowHtml_(m[1], text, isSecondary);
   }
-  return html;
+  flush();
+  return out;
+}
+
+function intakePpdRowHtml_(qNum, text, isSecondary) {
+  var type = intakePpdType_(qNum);
+  var control;
+  if (type === 'yn') {
+    control = intakeYnControlHtml_('data-qnum="' + esc(qNum) + '"', text);
+  } else if (type === 'sev') {
+    control = intakeSevControlHtml_('data-qnum="' + esc(qNum) + '"', text);
+  } else if (type === 'num') {
+    control = '<input type="text" inputmode="numeric" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+  } else {
+    control = '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+  }
+  var labelFor = (type === 'yn' || type === 'sev') ? '' : ' for="intk-ppd-q' + esc(qNum) + '"';
+  return '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '">' +
+    '<label class="q"' + labelFor + '>' + esc(text) + '</label>' + control + '</div>';
+}
+
+// Yes/No segmented toggle (role=radiogroup). `attrs` carries the identity
+// (data-qnum for PPD, data-idx+data-form for account). aria-label = question.
+function intakeYnControlHtml_(attrs, ariaLabel) {
+  return '<div class="intk-yn" ' + attrs + ' data-val="" role="radiogroup" aria-label="' + esc(ariaLabel) + '" onkeydown="intakePickKey_(event)">' +
+    '<button type="button" class="intk-yn-btn yes" data-set="Yes" role="radio" aria-checked="false" onclick="intakePick_(this)">Yes</button>' +
+    '<button type="button" class="intk-yn-btn no" data-set="No" role="radio" aria-checked="false" onclick="intakePick_(this)">No</button>' +
+  '</div>';
+}
+
+function intakeSevControlHtml_(attrs, ariaLabel) {
+  var chips = INTAKE_SEV_LEVELS.map(function (lv) {
+    return '<button type="button" class="intk-sev-chip" data-set="' + lv + '" role="radio" aria-checked="false" onclick="intakePick_(this)">' + lv + '</button>';
+  }).join('');
+  return '<div class="intk-sev" ' + attrs + ' data-val="" role="radiogroup" aria-label="' + esc(ariaLabel) + '" onkeydown="intakePickKey_(event)">' + chips + '</div>';
+}
+
+// Shared pick handler for Yes/No + severity (PPD and account checkboxes).
+function intakePick_(btn) {
+  var grp = btn.closest('.intk-yn,.intk-sev');
+  if (!grp) return;
+  var val = btn.getAttribute('data-set');
+  grp.setAttribute('data-val', val);
+  grp.querySelectorAll('[data-set]').forEach(function (b) {
+    var on = (b === btn);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  if (grp.getAttribute('data-qnum') != null) intakePpdAfterChange_();
+  else { var f = grp.getAttribute('data-form'); if (f) intakeSaveDraft_(f); }
+}
+
+// Arrow-key navigation within a radiogroup (a11y).
+function intakePickKey_(e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  var grp = e.currentTarget;
+  var btns = Array.prototype.slice.call(grp.querySelectorAll('[data-set]'));
+  if (!btns.length) return;
+  var cur = btns.findIndex(function (b) { return b.classList.contains('on'); });
+  var next = (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+    ? (cur <= 0 ? btns.length - 1 : cur - 1)
+    : (cur < 0 || cur >= btns.length - 1 ? 0 : cur + 1);
+  e.preventDefault();
+  btns[next].focus();
+  intakePick_(btns[next]);
+}
+
+// Get/set a single PPD answer value across all control types.
+function intakePpdGetVal_(root, qNum) {
+  var input = root.querySelector('[data-intk-qnum="' + qNum + '"]');
+  if (input) return String(input.value || '').trim();
+  var grp = root.querySelector('.intk-yn[data-qnum="' + qNum + '"],.intk-sev[data-qnum="' + qNum + '"]');
+  return grp ? String(grp.getAttribute('data-val') || '') : '';
+}
+function intakePpdSetVal_(root, qNum, val) {
+  var input = root.querySelector('[data-intk-qnum="' + qNum + '"]');
+  if (input) { input.value = val == null ? '' : val; return; }
+  var grp = root.querySelector('.intk-yn[data-qnum="' + qNum + '"],.intk-sev[data-qnum="' + qNum + '"]');
+  if (!grp) return;
+  grp.setAttribute('data-val', val == null ? '' : val);
+  grp.querySelectorAll('[data-set]').forEach(function (b) {
+    var on = (b.getAttribute('data-set') === val);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+
+function intakePpdAfterChange_() {
+  intakePpdUpdateProgress_();
+  intakeSaveDraft_('ppd');
+}
+
+function intakePpdUpdateProgress_() {
+  var root = document.getElementById('intk-ppd-form');
+  if (!root) return;
+  var qs = INTAKE_PPD_Q[INTAKE_STATE.ppd.lang] || INTAKE_PPD_Q.EN;
+  var total = 0, answered = 0;
+  for (var i = 1; i < qs.length; i++) {
+    var raw = qs[i];
+    if (!raw || !String(raw).trim()) continue;
+    var m = String(raw).trim().match(/^(\d+)\./);   // main numbered questions only (no 31a/33a)
+    if (!m) continue;
+    total++;
+    if (intakePpdGetVal_(root, m[1])) answered++;
+  }
+  var c = document.getElementById('intk-ppd-count');
+  var f = document.getElementById('intk-ppd-fill');
+  if (c) c.textContent = answered + ' / ' + total;
+  if (f) f.style.width = (total ? Math.round((answered / total) * 100) : 0) + '%';
 }
 
 // Collect { patientInfo, answers, rows, language } from the PPD DOM.
 function intakeCollectPpd_() {
   var lang = INTAKE_STATE.ppd.lang;
   var qs = INTAKE_PPD_Q[lang] || INTAKE_PPD_Q.EN;
-  var grid = document.getElementById('intk-ppd-grid');
+  var root = document.getElementById('intk-ppd-form');
   var answers = {};
   var rows = [];
-  // walk the question array in order, pulling values from inputs by qNum
   for (var i = 1; i < qs.length; i++) {
     var raw = qs[i];
     if (!raw || !String(raw).trim()) continue;
@@ -287,8 +486,7 @@ function intakeCollectPpd_() {
     var m = text.match(/^(\d+[a-z]?)\./);
     if (!m) { rows.push({ isHeader: true, label: text }); continue; }
     var qNum = m[1];
-    var input = grid ? grid.querySelector('input[data-intk-qnum="' + qNum + '"]') : null;
-    var val = input ? input.value.trim() : '';
+    var val = root ? intakePpdGetVal_(root, qNum) : '';
     answers[qNum] = val;
     rows.push({ qNum: qNum, label: text, value: val, isSecondary: isSecondary });
   }
@@ -451,6 +649,7 @@ function intakePpdSend_() {
     .withSuccessHandler(function (res) {
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
+      intakeClearDraft_('ppd');   // drop the persisted draft (PHI) on a successful send
       // Re-render the (now-cleared) form only if the rep is still on this
       // view — a late success after nav-away must not clobber #view-area.
       // State still resets so stale images can't ride into the next send.
@@ -463,8 +662,8 @@ function intakePpdSend_() {
 }
 
 // ── Account-creation views (PMD / PAP share machinery) ────────────────────
-function enterIntakePmdView(area) { intakeEnterAcct_('pmd', 'PMD Account Creation', area); }
-function enterIntakePapView(area) { intakeEnterAcct_('pap', 'PAP Account Creation', area); }
+function enterIntakePmdView(area) { intakeEnterAcct_('pmd', 'PMD Account', area); }
+function enterIntakePapView(area) { intakeEnterAcct_('pap', 'PAP Account', area); }
 
 function intakeAcctBank_(form) { return form === 'pap' ? INTAKE_PAP_Q : INTAKE_PMD_Q; }
 function intakeAcctLayout_(form) { return form === 'pap' ? INTAKE_PAP_CLIENT : INTAKE_PMD_CLIENT; }
@@ -475,37 +674,66 @@ function intakeEnterAcct_(form, title, area) {
   if (!area) return;
   var lang = INTAKE_STATE[form].lang;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('user', 16) + ' ' + esc(title) + '</div>' : '') +
+    intakeAppBar_(form, title) +
     '<div class="intk-wrap">' +
-      (COMPACT_MODE ? '' : '<div class="view-title-row"><h2>' + esc(title) + '</h2></div>') +
-      '<div class="intk-bar">' + intakeLangToggleHtml_(form) + '<span class="grow"></span></div>' +
-      '<div class="intk-grid" id="intk-' + form + '-grid">' + intakeRenderAcctRows_(form, lang) + '</div>' +
+      '<div class="intk-sections" id="intk-' + form + '-form">' + intakeRenderAcctSections_(form, lang) + '</div>' +
       '<div class="intk-actions">' +
         '<button class="intk-btn primary" onclick="intakeAcctPreview_(\'' + form + '\')">' + icon('send', 14) + ' Preview &amp; Send</button>' +
         '<button class="intk-btn" onclick="intakeClearForm_(\'' + form + '\')">Clear</button>' +
       '</div>' +
     '</div>';
+  var f = document.getElementById('intk-' + form + '-form');
+  if (f) f.addEventListener('input', function () { intakeSaveDraft_(form); });
+  intakeRestoreDraft_(form);
 }
 
-function intakeRenderAcctRows_(form, lang) {
+// Render account form as section panels (one .panel per header-group index).
+function intakeRenderAcctSections_(form, lang) {
   var qs = intakeAcctBank_(form)[lang] || intakeAcctBank_(form).EN;
   var L = intakeAcctLayout_(form);
-  var html = '';
+  var out = '';
+  var rows = '';
+  var sectionTitle = '';
+  function flush() {
+    if (!sectionTitle && !rows) return;
+    out += '<div class="panel intk-section">' +
+      (sectionTitle ? '<div class="section-kicker sec-title">' + esc(sectionTitle) + '</div>' : '') +
+      rows + '</div>';
+    rows = '';
+  }
   for (var i = 0; i < qs.length; i++) {
     var label = String(qs[i] || '');
-    if (L.headers.indexOf(i) >= 0) { html += '<div class="intk-head">' + esc(label) + '</div>'; continue; }
+    if (L.headers.indexOf(i) >= 0) { flush(); sectionTitle = label; continue; }
     var isSecondary = L.secondary.indexOf(i) >= 0;
     var control;
     if (L.checkboxes.indexOf(i) >= 0) {
-      control = '<label class="ck"><input type="checkbox" data-intk-idx="' + i + '"> Yes</label>';
+      // Yes/No color-coded toggle storing TRUE/FALSE (preserves the server
+      // checkbox payload contract).
+      control = '<div class="intk-yn" data-idx="' + i + '" data-form="' + form + '" data-val="" role="radiogroup" aria-label="' + esc(label) + '" onkeydown="intakePickKey_(event)">' +
+        '<button type="button" class="intk-yn-btn yes" data-set="TRUE" role="radio" aria-checked="false" onclick="intakePick_(this)">Yes</button>' +
+        '<button type="button" class="intk-yn-btn no" data-set="FALSE" role="radio" aria-checked="false" onclick="intakePick_(this)">No</button>' +
+      '</div>';
     } else if (L.selects[i]) {
-      control = '<select data-intk-idx="' + i + '">' + L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
+      control = '<select id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">' +
+        L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
     } else {
-      control = '<input type="text" autocomplete="off" data-intk-idx="' + i + '">';
+      control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">';
     }
-    html += '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '"><div class="q">' + esc(label) + '</div>' + control + '</div>';
+    var labelFor = (L.checkboxes.indexOf(i) >= 0) ? '' : ' for="intk-' + form + '-q' + i + '"';
+    rows += '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '"><label class="q"' + labelFor + '>' + esc(label) + '</label>' + control + '</div>';
   }
-  return html;
+  flush();
+  return out;
+}
+
+// Read a single account answer (checkbox toggle / select / text) by index.
+function intakeAcctGetVal_(root, i, isCheckbox) {
+  if (isCheckbox) {
+    var grp = root.querySelector('.intk-yn[data-idx="' + i + '"]');
+    return grp ? (String(grp.getAttribute('data-val') || '') || 'FALSE') : 'FALSE';
+  }
+  var el = root.querySelector('[data-intk-idx="' + i + '"]');
+  return el ? String(el.value).trim() : '';
 }
 
 // DOB is form index 5 for both PMD & PAP; patient name is index 1.
@@ -513,23 +741,19 @@ function intakeCollectAcct_(form) {
   var lang = INTAKE_STATE[form].lang;
   var qs = intakeAcctBank_(form)[lang] || intakeAcctBank_(form).EN;
   var L = intakeAcctLayout_(form);
-  var grid = document.getElementById('intk-' + form + '-grid');
+  var root = document.getElementById('intk-' + form + '-form');
   var rows = [], answers = {};
   for (var i = 0; i < qs.length; i++) {
     var label = String(qs[i] || '');
     if (L.headers.indexOf(i) >= 0) { rows.push({ qIndex: i, label: label, isHeader: true }); continue; }
-    var el = grid ? grid.querySelector('[data-intk-idx="' + i + '"]') : null;
-    var val;
-    if (el && el.type === 'checkbox') val = el.checked ? 'TRUE' : 'FALSE';
-    else val = el ? String(el.value).trim() : '';
+    var isCheckbox = L.checkboxes.indexOf(i) >= 0;
+    var val = root ? intakeAcctGetVal_(root, i, isCheckbox) : (isCheckbox ? 'FALSE' : '');
     answers[i] = val;
     rows.push({ qIndex: i, label: label, value: val, isSecondary: L.secondary.indexOf(i) >= 0 });
   }
-  var nameEl = grid ? grid.querySelector('[data-intk-idx="1"]') : null;
-  var dobEl = grid ? grid.querySelector('[data-intk-idx="5"]') : null;
   return {
-    patientInfo: nameEl ? String(nameEl.value).trim() : '',
-    dob: dobEl ? String(dobEl.value).trim() : '',
+    patientInfo: String(answers[1] || '').trim(),
+    dob: String(answers[5] || '').trim(),
     answers: answers, rows: rows, language: lang,
   };
 }
@@ -557,13 +781,13 @@ function intakeBuildAcctModal_(form, html) {
   var agentOpts = (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('');
   var body =
     '<div class="intk-prev">' + html + '</div>' +
-    '<div class="intk-drop" id="intk-drop" tabindex="0">' + icon('upload', 14) + ' Click, drag &amp; drop, or paste (Ctrl+V) images</div>' +
+    '<div class="intk-drop" id="intk-drop" tabindex="0">' + icon('upload', 14) + ' Drag, click, or paste — up to 12 images</div>' +
     '<input type="file" id="intk-file" accept="image/*" multiple style="display:none">' +
     '<div class="intk-gallery" id="intk-gallery"></div>' +
     '<div class="intk-foot">' +
       '<label><strong>Send to:</strong></label>' +
       '<select id="intk-acct-recipient"><option value="default">' + esc(defLabel) + '</option>' + agentOpts + '<option value="custom">Custom email…</option></select>' +
-      '<input type="email" id="intk-acct-custom" placeholder="recipient@…" style="display:none;padding:7px 10px;border:1px solid var(--line);border-radius:7px;">' +
+      '<input type="email" id="intk-acct-custom" placeholder="recipient@…" style="display:none">' +
       '<span class="grow"></span>' +
       '<button class="intk-btn" data-intk-close="1">Cancel</button>' +
       '<button class="intk-btn primary" id="intk-acct-send" onclick="intakeAcctSend_(\'' + form + '\')">' + icon('send', 14) + ' Send Email</button>' +
@@ -619,6 +843,7 @@ function intakeAcctSend_(form) {
     .withSuccessHandler(function (res) {
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
+      intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
       if (currentView === requestedView) intakeClearForm_(form);
       else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
       showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
@@ -683,6 +908,62 @@ function intakeRemoveImage_(form, idx) {
   intakeRenderGallery_(form);
 }
 
+// ── Draft autosave (parity with Call Notes) ───────────────────────────────
+// Persists in-progress answers to ONE localStorage key per the house pattern
+// (umsIntakeDrafts), restored on view enter, cleared on send + Clear. Drafts
+// carry patient answers = PHI; they EXPIRE after 24h and are wiped on send/clear
+// so PHI doesn't linger at rest (the module also drops the in-memory payload on
+// send, F3). All access is try/catch'd (privacy-mode browsers).
+var INTAKE_DRAFT_KEY = 'umsIntakeDrafts';
+var INTAKE_DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+var _intakeDraftTimer = null;
+
+function intakeReadDrafts_() {
+  try { return JSON.parse(localStorage.getItem(INTAKE_DRAFT_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function intakeWriteDrafts_(all) {
+  try { localStorage.setItem(INTAKE_DRAFT_KEY, JSON.stringify(all)); } catch (e) {}
+}
+
+function intakeSaveDraft_(form) {
+  if (_intakeDraftTimer) clearTimeout(_intakeDraftTimer);
+  _intakeDraftTimer = setTimeout(function () {
+    var snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form);
+    var draft = { answers: snap.answers || {}, at: Date.now() };
+    if (form === 'ppd') draft.patientInfo = snap.patientInfo || '';
+    var all = intakeReadDrafts_();
+    all[form] = draft;
+    intakeWriteDrafts_(all);
+  }, 400);
+}
+
+function intakeRestoreDraft_(form) {
+  var all = intakeReadDrafts_();
+  var d = all[form];
+  if (!d) return;
+  if (!d.at || (Date.now() - d.at) > INTAKE_DRAFT_MAX_AGE_MS) { intakeClearDraft_(form); return; }
+  var restored = false;
+  if (form === 'ppd') {
+    var root = document.getElementById('intk-ppd-form');
+    var pat = document.getElementById('intk-ppd-patient');
+    if (pat && d.patientInfo) { pat.value = d.patientInfo; restored = true; }
+    if (root) Object.keys(d.answers || {}).forEach(function (qNum) {
+      if (d.answers[qNum]) { intakePpdSetVal_(root, qNum, d.answers[qNum]); restored = true; }
+    });
+    intakePpdUpdateProgress_();
+  } else {
+    intakeApplyAcctAnswers_(form, d.answers || {});
+    if (Object.keys(d.answers || {}).some(function (k) { return d.answers[k]; })) restored = true;
+  }
+  if (restored) showToast('Draft restored', '');
+}
+
+function intakeClearDraft_(form) {
+  var all = intakeReadDrafts_();
+  if (all[form]) { delete all[form]; intakeWriteDrafts_(all); }
+}
+
 // ── Sent tab (P15) — in-app viewer for past intake submissions ─────────────
 // Caller-scoped server-side (rep sees own; manager sees all). Read-only.
 // Answer labels are reconstructed client-side from the question banks using
@@ -694,8 +975,18 @@ function enterIntakeSentView(area) {
   area = area || document.getElementById('view-area');
   if (!area) return;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('send', 16) + ' Sent Intake</div>' : '<div class="view-title-row"><h2>Sent Intake Forms</h2></div>') +
-    '<div class="intk-wrap"><div id="intk-sent-list"><div class="spinner" style="margin:24px auto"></div></div></div>';
+    intakeAppBar_('sent', 'Sent') +
+    '<div class="intk-wrap">' +
+      '<div class="intk-filter">' +
+        '<div class="toolbar-tabs" role="group" aria-label="Filter by form type">' +
+          ['ALL', 'PPD', 'PMD', 'PAP'].map(function (t) {
+            return '<button class="toolbar-tab" aria-pressed="' + (INTAKE_STATE.sentFilter.type === t) + '" onclick="intakeSetSentFilter_(\'' + t + '\')">' + t + '</button>';
+          }).join('') +
+        '</div>' +
+        '<input type="search" class="intk-search" id="intk-sent-search" placeholder="Search patient or rep…" value="' + esc(INTAKE_STATE.sentFilter.q) + '" oninput="intakeSentSearch_(this.value)">' +
+      '</div>' +
+      '<div id="intk-sent-list"><div class="spinner" style="margin:24px auto"></div></div>' +
+    '</div>';
   var requested = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
@@ -704,7 +995,8 @@ function enterIntakeSentView(area) {
       if (!host) return;
       if (!res || res.error) { host.innerHTML = '<div class="no-data">' + esc((res && res.error) || 'Failed to load submissions') + '</div>'; return; }
       INTAKE_STATE.sent = res.submissions || [];
-      host.innerHTML = intakeRenderSentList_(INTAKE_STATE.sent, !!res.isManager);
+      INTAKE_STATE.sentIsManager = !!res.isManager;
+      intakeRenderSentHost_();
     })
     .withFailureHandler(function (err) {
       if (currentView !== requested) return;
@@ -714,17 +1006,57 @@ function enterIntakeSentView(area) {
     .intakeListMySubmissions();
 }
 
+function intakeSetSentFilter_(type) {
+  INTAKE_STATE.sentFilter.type = type;
+  document.querySelectorAll('.intk-filter .toolbar-tab').forEach(function (b) {
+    b.setAttribute('aria-pressed', b.textContent.trim() === type ? 'true' : 'false');
+  });
+  intakeRenderSentHost_();
+}
+
+function intakeSentSearch_(q) {
+  INTAKE_STATE.sentFilter.q = q || '';
+  intakeRenderSentHost_();
+}
+
+function intakeFilterSent_(subs) {
+  var f = INTAKE_STATE.sentFilter;
+  var q = String(f.q || '').toLowerCase().trim();
+  return (subs || []).filter(function (s) {
+    if (f.type && f.type !== 'ALL' && String(s.formType || '').toUpperCase() !== f.type) return false;
+    if (q) {
+      var hay = (String(s.patientInfo || '') + ' ' + String(s.repName || '')).toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function intakeRenderSentHost_() {
+  var host = document.getElementById('intk-sent-list');
+  if (!host) return;
+  host.innerHTML = intakeRenderSentList_(intakeFilterSent_(INTAKE_STATE.sent), !!INTAKE_STATE.sentIsManager);
+}
+
+// Form-type pill tones (kicker-pill vocabulary).
+function intakeFormPill_(formType) {
+  var t = String(formType || '').toUpperCase();
+  var tone = t === 'PPD' ? 'accent' : t === 'PMD' ? 'info' : t === 'PAP' ? 'warn' : '';
+  return '<span class="kicker-pill"' + (tone ? ' data-tone="' + tone + '"' : '') + '>' + esc(t || '—') + '</span>';
+}
+
 function intakeRenderSentList_(subs, isManager) {
   if (!subs || subs.length === 0) {
-    return '<div class="no-data" style="padding:20px 0">No intake submissions yet' +
+    return '<div class="no-data" style="padding:20px 0">No matching intake submissions' +
       (isManager ? '.' : ' — your sent PPD / PMD / PAP forms will appear here.') + '</div>';
   }
   return '<div class="intk-grid">' +
-    '<div class="intk-head">' + (isManager ? 'All reps · ' : 'Your submissions · ') + 'newest first (max 100)</div>' +
+    '<div class="intk-head">' + (isManager ? 'All reps · ' : 'Your submissions · ') + subs.length + ' shown (newest first, max 100)</div>' +
     subs.map(function (s, i) {
-      return '<div class="intk-row" style="grid-template-columns:1fr auto">' +
-        '<div class="q" style="font-weight:400"><strong>' + esc(s.formType) + '</strong> · ' + esc(s.patientInfo || '(no patient label)') +
-          '<div style="font-size:.76rem;color:var(--muted)">' + esc(s.timestamp) +
+      return '<div class="intk-sent-row">' +
+        intakeFormPill_(s.formType) +
+        '<div><div style="font-weight:600">' + esc(s.patientInfo || '(no patient label)') + '</div>' +
+          '<div class="intk-sent-meta">' + esc(s.timestamp) +
           (isManager ? ' · ' + esc(s.repName) : '') + ' · to ' + esc(s.recipient) + '</div></div>' +
         '<button class="intk-btn" data-sent-idx="' + i + '" onclick="intakeOpenSent_(this)">View</button>' +
       '</div>';
@@ -732,7 +1064,10 @@ function intakeRenderSentList_(subs, isManager) {
 }
 
 function intakeOpenSent_(btn) {
-  var s = (INTAKE_STATE.sent || [])[parseInt(btn.getAttribute('data-sent-idx'), 10)];
+  // The button's index is into the CURRENT (filtered) view — recompute the same
+  // filtered list to resolve it, so a filter doesn't misindex the lookup.
+  var filtered = intakeFilterSent_(INTAKE_STATE.sent);
+  var s = filtered[parseInt(btn.getAttribute('data-sent-idx'), 10)];
   if (!s) return;
   btn.disabled = true;
   var requestedView = currentView;   // INT-5 — don't pop the modal over another view
@@ -809,9 +1144,9 @@ function intakeRenderSentDetail_(d) {
 // ── Shared UI helpers ─────────────────────────────────────────────────────
 function intakeLangToggleHtml_(form) {
   var lang = INTAKE_STATE[form].lang;
-  return '<div class="intk-lang">' +
-    '<button class="' + (lang === 'EN' ? 'on' : '') + '" onclick="intakeSetLang_(\'' + form + '\',\'EN\')">English</button>' +
-    '<button class="' + (lang === 'ES' ? 'on' : '') + '" onclick="intakeSetLang_(\'' + form + '\',\'ES\')">Español</button>' +
+  return '<div class="toolbar-tabs" role="group" aria-label="Language">' +
+    '<button class="toolbar-tab" aria-pressed="' + (lang === 'EN') + '" onclick="intakeSetLang_(\'' + form + '\',\'EN\')">EN</button>' +
+    '<button class="toolbar-tab" aria-pressed="' + (lang === 'ES') + '" onclick="intakeSetLang_(\'' + form + '\',\'ES\')">ES</button>' +
   '</div>';
 }
 
@@ -820,28 +1155,48 @@ function intakeSetLang_(form, lang) {
   // preserve in-progress answers across the language flip (keys are qNum/qIndex)
   var snapshot = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form);
   INTAKE_STATE[form].lang = lang;
-  if (form === 'ppd') enterIntakePpdView(); else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account Creation' : 'PMD Account Creation');
+  if (form === 'ppd') enterIntakePpdView(); else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account' : 'PMD Account');
   intakeRestoreAnswers_(form, snapshot);
 }
 
 function intakeRestoreAnswers_(form, snapshot) {
-  var grid = document.getElementById('intk-' + form + '-grid');
-  if (!grid || !snapshot) return;
+  if (!snapshot) return;
   if (form === 'ppd') {
+    var root = document.getElementById('intk-ppd-form');
     var pat = document.getElementById('intk-ppd-patient');
     if (pat) pat.value = snapshot.patientInfo || '';
-    Object.keys(snapshot.answers || {}).forEach(function (qNum) {
-      var el = grid.querySelector('input[data-intk-qnum="' + qNum + '"]');
-      if (el) el.value = snapshot.answers[qNum];
+    if (root) Object.keys(snapshot.answers || {}).forEach(function (qNum) {
+      intakePpdSetVal_(root, qNum, snapshot.answers[qNum]);
     });
+    intakePpdUpdateProgress_();
   } else {
-    Object.keys(snapshot.answers || {}).forEach(function (idx) {
-      var el = grid.querySelector('[data-intk-idx="' + idx + '"]');
-      if (!el) return;
-      if (el.type === 'checkbox') el.checked = snapshot.answers[idx] === 'TRUE';
-      else el.value = snapshot.answers[idx];
-    });
+    intakeApplyAcctAnswers_(form, snapshot.answers || {});
   }
+}
+
+// Apply an answers map (idx → value) to a rendered account form.
+function intakeApplyAcctAnswers_(form, answers) {
+  var root = document.getElementById('intk-' + form + '-form');
+  var L = intakeAcctLayout_(form);
+  if (!root) return;
+  Object.keys(answers || {}).forEach(function (idx) {
+    var i = parseInt(idx, 10);
+    if (L.checkboxes.indexOf(i) >= 0) {
+      var grp = root.querySelector('.intk-yn[data-idx="' + i + '"]');
+      if (grp) {
+        var v = (answers[idx] === 'TRUE') ? 'TRUE' : (answers[idx] === 'FALSE' ? 'FALSE' : '');
+        grp.setAttribute('data-val', v);
+        grp.querySelectorAll('[data-set]').forEach(function (b) {
+          var on = (b.getAttribute('data-set') === v);
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+      }
+    } else {
+      var el = root.querySelector('[data-intk-idx="' + i + '"]');
+      if (el) el.value = answers[idx];
+    }
+  });
 }
 
 function intakeClearForm_(form) {
@@ -849,8 +1204,9 @@ function intakeClearForm_(form) {
   // Drop the cached preview too — it holds the full patient-answer payload
   // (PHI). Clearing the form must not leave it resident in memory (F3).
   INTAKE_STATE.preview = null;
+  intakeClearDraft_(form);
   if (form === 'ppd') enterIntakePpdView();
-  else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account Creation' : 'PMD Account Creation');
+  else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account' : 'PMD Account');
 }
 
 function intakeStripTags_(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, ''); }
