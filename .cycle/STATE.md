@@ -22,10 +22,17 @@ Executing as 7 separate per-module commits on branch claude/practical-gauss-yycw
   the 2 --warning-soft uses in cn/ + tc/manager); NEW token-hygiene CI tripwire in
   test/client/run.js (form_public excluded; --brand allowlisted until commit #2).
   Pure 134/0, DOM 48/0, node --check clean. Operator: clasp push -f + New version.
-- NEXT: commit #2 Intake redesign (shell→shared app-bar/tt-btn/toolbar-tabs; PPD
-  Option A inline-structured controls + progress header + draft autosave; PMD/PAP
-  panels; Sent filter/search; a11y radio groups). On commit #2, remove --brand from
-  the tripwire allowlist when intake/script_intake.html drops --brand.
+- DONE — commit #2 Intake redesign (64bd150): .app-bar shell + toolbar-tabs EN/ES
+  + .panel sections; PPD Option A (Yes/No toggles + severity chips + progress
+  header) with ENGINE-SAFE classification (Q25/Q34/Q31a/Q33a/Q43/Q13 stay text per
+  INV-112 — README's blanket "additional-info yes/no" was too broad); account
+  checkbox→toggle (TRUE/FALSE preserved); Sent ALL/PPD/PMD/PAP filter+search; a11y
+  radiogroups; draft autosave (umsIntakeDrafts, 24h expiry). --brand removed from
+  tripwire allowlist. Pure 134/0, DOM 48/0. NEW localStorage key umsIntakeDrafts
+  (CLAUDE.md "Ten ... keys" list now 11 — /sync-docs).
+- NEXT: commit #3 Training redesign (completion ring + checklist rows; manager
+  matrix → CSS-grid status grid + coverage % col). Token-hygiene already applied
+  to train/* in commit #1.
 
 ## Cycle 5 CLOSED (2026-06-17)
 Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
