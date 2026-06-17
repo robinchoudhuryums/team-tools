@@ -12278,3 +12278,90 @@ function notifyEmpDocSigned_(doc, signer) {
     MailApp.sendEmail({ to: doc.issuedBy, subject: 'Signed: ' + doc.title, body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
 }
+
+
+// ── T2 extension: import a quiz from a Google Forms quiz ──────────────────
+// Operator feedback (2026-06-15): managers have existing quizzes in Google
+// Forms. READ-ONLY, review-before-save (the kbConvertDriveDoc pattern): this
+// returns a quiz def for the editor; the manager reviews and the normal
+// saveQuiz persists it. FormApp is the project's first Forms call — the
+// deploy adds the Forms OAuth scope (one-time re-auth, like the Docs scope).
+
+/** Pure (Node-pinned) — resolve a Google Forms reference to its file id.
+ *  Returns { id } on success, { error:'published-link' } for a /forms/d/e/
+ *  published URL (that id is the response endpoint, NOT openable by
+ *  FormApp.openById), or { id:'' } when nothing parses. */
+function trainParseFormId_(ref) {
+  const s = String(ref || '').trim();
+  if (!s) return { id: '' };
+  if (/\/forms\/d\/e\//.test(s)) return { error: 'published-link' };
+  let m = s.match(/\/forms\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return { id: m[1] };
+  // A bare id pasted on its own (no slashes, Drive-id shaped).
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(s)) return { id: s };
+  return { id: '' };
+}
+
+function importQuizFromForm(formRef) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const parsed = trainParseFormId_(formRef);
+    if (parsed.error === 'published-link') {
+      return { error: 'That is a published form link. Open the form in EDIT mode and copy the URL from the address bar — it contains /forms/d/<id>/edit.' };
+    }
+    if (!parsed.id) return { error: 'Could not read a Google Form ID from that — paste the form’s edit URL.' };
+    let form;
+    try { form = FormApp.openById(parsed.id); }
+    catch (e) {
+      return { error: 'Could not open that form — the deploying account needs at least view access to it. (' + e.message + ')' };
+    }
+    const warnings = [];
+    const questions = [];
+    const items = form.getItems();
+    for (let i = 0; i < items.length; i++) {
+      if (questions.length >= TRAIN_QUIZ_MAX_QUESTIONS) {
+        warnings.push('Only the first ' + TRAIN_QUIZ_MAX_QUESTIONS + ' questions were imported.');
+        break;
+      }
+      const type = String(items[i].getType());
+      let mc = null;
+      if (type === 'MULTIPLE_CHOICE') mc = items[i].asMultipleChoiceItem();
+      else if (type === 'CHECKBOX') mc = items[i].asCheckboxItem();
+      else continue;   // TEXT / PARAGRAPH / SCALE / GRID / layout items — skip silently
+      let title = String(mc.getTitle() || '').trim();
+      if (title.length > 500) { title = title.substring(0, 500); }
+      const choices = mc.getChoices();
+      const options = [];
+      let correctIdx = -1, correctCount = 0;
+      for (let j = 0; j < choices.length; j++) {
+        let v = String(choices[j].getValue() || '').trim();
+        if (v.length > 200) v = v.substring(0, 200);
+        options.push(v);
+        let isC = false;
+        try { isC = choices[j].isCorrectAnswer(); } catch (_) {}
+        if (isC) { correctCount++; if (correctIdx < 0) correctIdx = j; }
+      }
+      if (options.length < 2) { warnings.push('Skipped "' + title + '" — fewer than 2 options.'); continue; }
+      if (options.length > TRAIN_QUIZ_MAX_OPTIONS) {
+        warnings.push('"' + title + '" had ' + options.length + ' options; kept the first ' + TRAIN_QUIZ_MAX_OPTIONS + '.');
+        options.length = TRAIN_QUIZ_MAX_OPTIONS;
+        if (correctIdx >= TRAIN_QUIZ_MAX_OPTIONS) correctIdx = -1;
+      }
+      if (type === 'CHECKBOX' && correctCount > 1) {
+        warnings.push('"' + title + '" allows multiple correct answers; this tool grades ONE answer — set the right one after import.');
+      }
+      if (correctIdx < 0) {
+        warnings.push('"' + title + '" had no correct answer marked — defaulted to the first option; set it after import.');
+        correctIdx = 0;
+      }
+      questions.push({ q: title || ('Question ' + (questions.length + 1)), options: options, correct: correctIdx });
+    }
+    if (!questions.length) {
+      return { error: 'No multiple-choice questions found. Only multiple-choice and single-answer checkbox questions can be imported (text, scale, and grid items are skipped).' };
+    }
+    let title = String(form.getTitle() || '').trim();
+    if (title.length > 120) title = title.substring(0, 120);
+    return { success: true, title: title, passPct: 80, questions: questions, warnings: warnings };
+  } catch (err) { return { error: err.message }; }
+}

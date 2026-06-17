@@ -422,11 +422,11 @@ function mRenderMyStats_(data) {
 
   // No CDR data → minimal fallback (per S43)
   if (!c) {
-    html += '<div class="m-empty">No call data found for ' + data.date +
+    html += '<div class="m-empty">No call data found for ' + esc(data.date) +
       '. This may be a non-working day, or the CDR spreadsheet is not yet configured.</div>';
     html += '<div class="m-row" style="margin-top:var(--space-sm)">' +
       '<span class="m-row-label">Notes Filed</span>' +
-      '<span class="m-row-value">' + data.noteCount + '</span></div>';
+      '<span class="m-row-value">' + esc(data.noteCount) + '</span></div>';
     el.innerHTML = html;
     return;
   }
@@ -448,7 +448,7 @@ function mRenderMyStats_(data) {
   html += '<div class="m-layout">';
   html += '<div class="m-hero">';
   html += '<div class="m-hero-label">Today · % Answered</div>';
-  html += '<div class="m-hero-value">' + c.pctAnswered + '<span class="unit">%</span></div>';
+  html += '<div class="m-hero-value">' + esc(c.pctAnswered) + '<span class="unit">%</span></div>';
   html += deltaHtml;
   if (data.trend && data.trend.length > 1) {
     html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg) + '</div>';
@@ -752,7 +752,7 @@ function mRenderTeamMetrics_(data) {
   html += '<div class="m-layout">';
   html += '<div class="m-hero">';
   html += '<div class="m-hero-label">' + heroLabel + '</div>';
-  html += '<div class="m-hero-value">' + t.pctAnswered + '<span class="unit">%</span></div>';
+  html += '<div class="m-hero-value">' + esc(t.pctAnswered) + '<span class="unit">%</span></div>';
   html += deltaHtml;
   if (data.trend && data.trend.length > 1) {
     html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg) + '</div>';
@@ -780,7 +780,7 @@ function mRenderTeamMetrics_(data) {
 
   // Per-rep table
   if (data.reps.length === 0) {
-    html += '<div class="m-empty">No activity data for ' + data.date + '.</div>';
+    html += '<div class="m-empty">No activity data for ' + esc(data.date) + '.</div>';
   } else {
     html += '<div class="m-section-title">Per-Rep Breakdown</div>';
     html += '<div class="m-table-wrap"><table class="m-table">';
@@ -799,12 +799,12 @@ function mRenderTeamMetrics_(data) {
       var r = data.reps[i];
       html += '<tr>';
       html += '<td class="m-name">' + esc(r.repName) + '</td>';
-      html += '<td class="m-num">' + r.totalRung + '</td>';
-      html += '<td class="m-num">' + r.totalAnswered + '</td>';
-      html += '<td class="m-num">' + (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + r.totalMissed + '</span>' : '0') + '</td>';
-      html += '<td class="m-num">' + r.pctAnswered + '%</td>';
-      html += '<td class="m-num">' + r.attFormatted + '</td>';
-      html += '<td class="m-num">' + r.noteCount + '</td>';
+      html += '<td class="m-num">' + esc(r.totalRung) + '</td>';
+      html += '<td class="m-num">' + esc(r.totalAnswered) + '</td>';
+      html += '<td class="m-num">' + (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0') + '</td>';
+      html += '<td class="m-num">' + esc(r.pctAnswered) + '%</td>';
+      html += '<td class="m-num">' + esc(r.attFormatted) + '</td>';
+      html += '<td class="m-num">' + esc(r.noteCount) + '</td>';
       html += '<td class="m-num">' + (r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>') + '</td>';
       html += '</tr>';
     }

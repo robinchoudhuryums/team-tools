@@ -1,182 +1,153 @@
 # Cycle State
 
+## MERGE NOTE (2026-06-16) — main ← affectionate-cori
+`main` closed Cycle 3 via a parallel session (PRs #50/#51: its own DOM harness
+`run-dom.js`/`harness-dom.js`, F1/F2/F3/F5/F7 hardening, tour/quiz-import). The
+`claude/affectionate-cori-90q3ap` branch was merged IN, adding work main lacked:
+ - Training T4 — overdue digest (`sendTrainingOverdueDigest`) + quiz analytics
+   (`getQuizAnalytics`); INV-123.
+ - Operator-feedback batch — #2 caller `Name (relation)` cards, #3 Log
+   rolling-stack live-refresh, #4 pop-out (480 default + `umsPopoutGeom` 10th
+   localStorage key + compact icon-rail + sticky save card), #5/#6 Metrics
+   anonymized team-avg (N=3 cohort) + own-vs-team 5-KPI trends incl. the
+   `CSR Transfer Historical Data` reader; INV-124.
+ - Cycle-3 audit findings S1.2 (dashboard punchDate normalize), S1.3 (Reconciled
+   re-deduct guard), S2.1 (form-token expiry fail-closed), C1 (KB-AI rep-tz day),
+   S1.1 (ADP-tz smoke tripwire), C4 (submission-card escape pin).
+ - A SECOND DOM harness `test/client/dom/{boot,runDom}.js` (shell-boot +
+   controllable run). FOLLOW-ON: consolidate the two DOM harnesses into one
+   (this branch's is the capability superset — bootShell/setField/read; main's
+   is currently canonical). CI runs BOTH until consolidated.
+INV count after merge: 124. `npm test` runs all three suites green.
+
 ## Current
 Cycle: 3
-Phase: implement (DOM harness Phases 1-3 DONE; Training T4 partial DONE)
-Scope: Test Suite (test/client/dom/) — building out the DOM-lifecycle harness
-Test Command: manual (+ `npm test` now runs BOTH client harnesses)
-Subsystem cycles since last Seams audit: 1
+Phase: idle (cycle 3 CLOSED — reflect recorded 2026-06-16)
+Scope: broad
+Test Command: manual
+Subsystem cycles since last Seams audit: 2
 Updated: 2026-06-16
 
+## Cycle 3 CLOSED (2026-06-16)
+Reflect recorded: metrics.csv + estimates.csv rows appended; PROJECT_HEALTH
+Current Standing + Score History updated (Overall 7.5→8.5, Test Coverage 7→8.5
+on the jsdom harness; Security held 9). Fresh scan found NO Critical/High (mature
+codebase). net 0 fired-bug fixes − 0 new failure modes; ~9 defensive hardenings;
+1 doc/impl drift closed (tour deep-link gate). Docs synced (sync-docs): Subsystems
+Test Suite list +harness-dom/run-dom; README test paragraph (npm test runs both,
+jsdom dev dep); CLAUDE.md tour decision (T-4 restore + deep-link gate) + break-
+reminder F6 note. 122 pure + 36 DOM green. Branch claude/dreamy-hamilton-4i7kvr,
+all pushed. ONLY OPEN ITEM = operator deploy: cd web-app && clasp push -f + cut a
+New version (client-only, no Script Properties / operator-state change). NEXT cycle
+options: deploy-then-verify, a Seams audit (2 subsystem-cycles elapsed), or a new
+/broad-scan to open Cycle 4.
+
+## Cycle 3 broad-scan (2026-06-15) — defensive hardening batch
+Fresh /broad-scan: codebase exceptionally clean (122 invariants, 2 prior cycles).
+NO Critical/High found. Top findings were all Low (defense-in-depth / consistency).
+Implemented F1,F2,F3,F5,F7 via /broad-implement; skipped F4 (false positive on
+close read), F6 (out of requested scope). Node harness 122/122 post-change.
+- F1 | form_public.html | null-guard the boot()/submit success handlers (resolved-
+  but-null res doesn't trigger withFailureHandler → was a silent frozen-spinner).
+- F2 | metrics/script_metrics.html + cn/script_callnotes.html | esc() the CDR-
+  boundary fields into innerHTML (hero pct, per-rep table incl. attFormatted, date
+  strings, Stats-card CDR numbers, health-panel rowsMatched) — honors the documented
+  "Metrics must esc() every server string" invariant. Numbers → output-identical.
+- F3 | intake/script_intake.html | null INTAKE_STATE.preview (holds patient-answer
+  PHI) on clear + after both send paths (PPD + acct). st captured into a local before
+  the RPC, so INV-111 send/hash unaffected.
+- F5 | train/script_training.html + train/script_empdocs.html | guard every
+  err.message in failure handlers → (err && err.message) || err (ALL occurrences,
+  not just the agent subset).
+- F7 | cn/script_callnotes.html | add withFailureHandler (console.warn) to
+  cnPollAmbient_ — the only RPC in the file lacking one.
+RETRACTED: F4 (Day-Edit picker UTC min) — pure calendar arithmetic on the tz-derived
+`today` string, no browser-now drift; equivalent to the Adjust modal. Not a bug.
+NEXT: operator deploy (clasp push -f + New version) — client-only, no Script
+Properties / operator-state change. Then optionally pick up F6 (_clkRemindedBreaks
+unbounded, Low) or proceed to /reflect to close Cycle 3.
+
+## jsdom DOM-lifecycle test harness (L item, in progress) — 5-phase plan APPROVED
+Operator picked jsdom (over happy-dom / zero-dep) — adds the FIRST dev dependency
+(npm ci now required for the DOM harness; pure run.js stays the zero-install floor).
+- Phase 0 (spike + decision gate) DONE — GO. jsdom loads the 8k-line CN partial +
+  core into a real window via getInternalVMContext (window===globalThis, with a
+  REAL document). runScripts:'outside-only' doesn't auto-fire DOMContentLoaded, so
+  module-top init listeners stay dormant — load-time side effects tamed for free.
+- Phase 1 (foundation) DONE — test/client/harness-dom.js + run-dom.js, 15/15 green.
+  Key mechanics: partials share lexical scope across runInContext calls (browser
+  <script> semantics), so a trailing BRIDGE (window.__t / h.t) get/sets the
+  const/let module state (CN_STATE const, currentView/empState let — NOT reachable
+  as ctx props). Programmable google.script.run mock (run.resolve/reject/lastFor/
+  countFor). extractMarkup() added to harness.js to mount modals.html for tc views
+  (their module-top listeners bind modal nodes). package.json: test:dom + `test`
+  runs both. CI workflow wired (npm ci + run-dom.js as a second step; pure step
+  stays first as the floor).
+- Phases REMAINING:
+  - Phase 2 (overlay lifecycle + escape + focus trap) DONE — run-dom.js now 23/23.
+    Escape-discipline tests drive mRenderTeamMetrics_ / mRenderMyStats_ /
+    cnRenderCardCore_ with a hostile `<img onerror><script>` field and assert NO
+    live node + text-survives — PINS the F2/INV-89 class (proven to bite: reverting
+    esc(repName) fails the test). Overlay lifecycle: ensureOverlay reuse re-asserts
+    `open` (the hidden-but-stateful composer-dead class), Esc closes only the
+    topmost via its hook (stacking), closeOverlay degrades to plain-hide on a
+    hookless/throwing hook. Focus trap: focusin outside the topmost modal pulls
+    focus to its first focusable (jsdom sets activeElement correctly).
+  - Phase 3 (optimistic-UI + late-callback guards) DONE — run-dom.js now 29/29.
+    6 tests: INV-48 optimistic submit (pending card → confirmed swap, drives the
+    FULL cnSubmitActiveForm_ via mockRun) + the 3 revert branches (form empty →
+    cnRestoreFromSnapshot_; new typing → untouched; form gone → sticky-draft
+    localStorage); INV-56 _flagInFlight double-fire (cnToggleFlag_ — proven to
+    bite: removing the guard fails the test); late-callback guard (cnLoadToday_
+    resolving after nav-away updates state but skips the render `then`).
+  - Phase 4 (docs polish) DONE — README documents the harness; CLAUDE.md Test
+    Command section now describes run-dom.js + the bridge/mockRun mechanics; CI
+    wired in Phase 1. Determinism: mockRun handlers fire synchronously on
+    run.resolve/reject (no real timers in the lifecycle tests).
+JSDOM HARNESS COMPLETE (Phases 0-4). Final: 122 pure + 29 DOM green; jsdom is the
+only (dev) dependency; clasp never pushes test/. The client overlay/lifecycle bug
+class — every prior cycle's High/Med client findings + this cycle's F2 fixes — now
+has CI regression coverage. NEXT options: deploy the pending F1-F7 batch, pick up
+F6 (_clkRemindedBreaks), extend DOM coverage to more partials (intake/kb/train
+optimistic paths) as they change, or /reflect to close Cycle 3.
+
+## F6 + opportunistic DOM coverage (2026-06-15)
+- F6 DONE | tc/script_clock.html | clkUpdateBreak_ now resets _clkRemindedBreaks on
+  day rollover (new _clkRemindedDay guard) so the per-break-per-day dedupe map can't
+  grow unbounded in a long-lived pinned pop-out. Same-day behavior unchanged.
+- DOM coverage extended (run-dom.js 29→32): F3 regression pin (intakeClearForm_
+  nulls INTAKE_STATE.preview — patient PHI), intake Sent-list escape
+  (intakeRenderSentList_ hostile patientInfo), training reader escape
+  (trainRenderReader_ hostile embed title). F6 itself is NOT DOM-tested (time/date
+  dependent — would need clock mocking; the parse-guard + manual S39 cover it).
+- ALL scan findings now closed: F1,F2,F3,F5,F7 (prior batch) + F6 (this). F4
+  retracted (false positive). jsdom harness complete.
+## Targeted audit + implement: script_tour.html + appsscript.json (2026-06-16)
+Audited the two never-individually-scanned subsystems. appsscript.json CLEAN
+(executeAs USER_DEPLOYING / ANYONE_ANONYMOUS as designed). script_tour.html:
+XSS-clean (step.title/body are static registry strings). 4 Low findings, all
+implemented except T-3:
+- T-1 DONE | script_tour.html | tourEnsureNodes_ guard checked `tour-root` (an id
+  never created → dead guard). Fixed to check `tour-block`. Proven to bite.
+- T-2 DONE | script_tour.html | auto-start now gated on a deep-link landing
+  (?tool=) inside tourMaybeAutoStart_ — closes the doc/impl drift (the comment +
+  CLAUDE.md claimed "never on a deep-link" but only COMPACT_MODE was checked).
+  Same predicate as the boot caller. Replay (tourStart) unaffected.
+- T-4 DONE | script_tour.html | tourStart captures _tourReturnView=currentView;
+  tourEnd_ restores it via enterTool so the tour no longer strands the rep on the
+  last step's view (Call Notes / Team Notes).
+- T-3 NOT DONE (inherent + benign) | skipped selector steps call enterTool before
+  the skip-check — unavoidable (must be on the view to test its selector), and
+  skipped steps schedule NO paint (setTimeout only on the show path), so it's
+  synchronous + never painted; only cost is wasted re-render for rare skips.
+DOM coverage 32→36: script_tour added to the meta-load list; T-1 idempotency +
+T-2 gated/contrast tests (setTimeout-spy detects the auto-start schedule).
+WHERE I LEFT OFF: T-1/T-2/T-4 + tour DOM tests committed + green (122 pure + 36
+DOM). All scan + targeted findings closed (F1-F7 minus F4 retracted; T-1/T-2/T-4;
+T-3 noted benign). NEXT: operator deploy the client batch (clasp push -f + New
+version; client-only), then close Cycle 3.
+
 ## In progress (facts to carry forward — NOT judgments)
-- CYCLE 3 OPENED 2026-06-16 (/broad-scan). Fresh full read (3 server + 2 client
-  sub-audits + personal verify): NO Critical/High production bugs. Top finding
-  S1.1 (Medium, latent): AuditLog/SUBMITTED_AT timestamps are WRITTEN in
-  CONFIG.TIMEZONE (Asia/Kolkata) but RECOVERED by normalizeAuditTs_ in the
-  ADP-sheet tz — a coupling that only round-trips while those two tzs match.
-  Other Lows: S2.1 submitFormByToken fail-OPEN on unparseable ExpiresAt (PHI
-  write); S1.3 Reconciled→Approved re-deduct; C1 KB-AI "today" via UTC
-  toISOString; S1.2 dashboard punchDate raw String(); C4 no escaping test-pin
-  for buildFormSubmissionCardHtml_. Full report in this session's chat.
-- DOM-LIFECYCLE HARNESS — PHASE 1 DONE (this branch, committed + pushed):
-  test/client/dom/boot.js (jsdom boot — real shell skeleton from modals.html +
-  #app/#toast-stack, loads all 13 partials, controllable google.script.run with
-  independent chains + flushSuccess/flushFailure/respond/drain, bootShell,
-  dispatchKey/click/setField, read() for lexical bindings, flushTimers) +
-  dom/runDom.js (run-mock unit checks + all-partials-load + full shell boot +
-  Call Notes Log render smoke = 7/7). jsdom devDependency; npm test runs both
-  harnesses; CI does npm ci + both suites. Pure harness unchanged (122/122).
-  Two stubs needed for load: window.setTimeClockMode / syncThemeToggleState
-  (index.html <head> globals renderShell calls by bare name).
-  PHASE 2 DONE (this branch): overlay + dialog lifecycle suite in dom/runDom.js
-  (15 tests) — ensureOverlay create/reuse (hidden-but-stateful guard), Esc
-  closes TOPMOST through its hook, throwing-hook degrade, Esc-with-no-overlay →
-  KB drawer; uiConfirm Esc/backdrop/Enter-on-OK/Enter-on-Cancel(INV-83)/resolved
-  sentinel, uiPrompt validator keep-open, dialog-over-base owns Esc
-  (stopPropagation, base hook not run); focus-trap pull-back, #kb-drawer trap
-  exemption, drawer survives a #view-area rewrite. dispatchKey default target →
-  document.body (real capture→bubble path the capture-phase dialog handlers
-  need). DOM suite 7→22; pure harness still 122. These pin the Cycle-2 audit's
-  H1/M2/topmost-Esc/drawer findings as automated regressions.
-  PHASE 3 DONE (this branch): optimistic-UI / RPC-sequencing suite (9 tests) —
-  empty-form no-RPC; optimistic submit (pending card + form clear before RPC);
-  submit success replaces the array slot AND re-points lastSaveUndo.note at the
-  confirmed note (the stale-pending-object regression); failure revert into an
-  empty form vs. leave-new-typing-untouched; _flagInFlight drops a double
-  toggle to ONE RPC (INV-56) + flag-failure revert; M5 nav-away-during-dept-
-  fetch suppresses the notes load; transactional Save & Compose cancel sets
-  _deleteOnConfirm and the save-confirm fires the rollback deleteCallNote.
-  Harness add: spec-accurate isContentEditable getter on HTMLElement.prototype
-  (jsdom returns undefined; the shipped cnGetFieldValue_/cnSetFieldValue_ branch
-  on it for the .ce divs). DOM suite 22→31; pure harness still 122. Harness
-  build-out COMPLETE (all 3 phases). NEXT: Cycle 3 audit-findings backlog
-  (S1.1/S2.1/S1.3/C1/C4) awaiting operator selection, or close the cycle.
-
-- TRAINING T4 (partial) DONE 2026-06-16 (this branch, committed + pushed) —
-  operator chose Overdue digests + Quiz analytics; snapshot-PDF signing
-  deferred. Server: getQuizAnalytics (manager-gated, read-only) + pure
-  trainQuizAnalytics_ (per-quiz attempts/distinct-reps/passRate/avgScore/
-  avgTries, no answer keys — INV-121 intact); sendTrainingOverdueDigest
-  (top-level trigger, assertManagerCaller_ INV-44, best-effort INV-14) built
-  PER MANAGER — org-wide overdue training (INV-120 not team-scoped) + overdue
-  unsigned docs scoped via empDocCanManagerSee_ (INV-122), empDocsOverdueAll_
-  returns [] if HR_DOCS_SS_ID unset; heartbeat 'trainingOverdue' (stale>26h);
-  wired into install+remove TARGETS (now 9 triggers, daily mgr-tz 7am).
-  Client: Team Training fires a 5th RPC (getQuizAnalytics) + renders an
-  analytics table below Quizzes (degrades to no-panel on error). Tests: Node
-  trainQuizAnalytics_ (123), trigger-wiring tripwire still green; editor
-  test_triggerGate_trainingOverdue + getQuizAnalytics gate case added.
-  INV-123 added; CLAUDE.md (gate list, trigger gotcha, INV-44 7→8, operator
-  triggers 8→9, heartbeat note, Training module T4 status) + spec T4 row.
-  OPERATOR: re-run installAutomationTriggers() to add the 9th trigger; deploy.
-
-- OPERATOR FEEDBACK THREAD (2026-06-16) — Log + Metrics polish, planning
-  APPROVED. Sequence (~14-18h): S1 diagnose #1 (DONE); S2 #2 caller-format
-  `Name (relation)` card-only, hide when self + #3 live-refresh rolling stack
-  (ambient + focus, merge pending); S3 #4 pop-out (widen default 380->~480,
-  persist geometry NEW 10th localStorage key umsPopoutGeom, sticky collapsible
-  bottom action bar, compact icon-only flag rail, collapse cn-head stats-mini
-  in compact); S4 #5 anonymized team-avg on My Stats (rep-callable aggregate,
-  N=3 min-cohort guard) + #6 own-vs-team trend overlay for % Answered/Answered/
-  Missed/Transfers/Avg Talk — Transfers from a SEPARATE "CSR Transfer
-  Historical Data" tab in the CDR Report ss (schema TBD from operator).
-  Decisions: #2 keep paste/email structure unchanged (card aesthetic only);
-  #4 sticky bar collapsible + icon flag rail approved.
-- STEP 1 DONE (this branch, committed 765bc6d): 2 DOM-harness diagnostic tests
-  prove the CLIENT re-fetch-on-Log-enter + render path is sound (notes do NOT
-  vanish on nav-back in current code). => #1 is midnight-rollover (Log is
-  strictly today; History is ranges) OR deployed-version lag, NOT a client bug.
-  Pure 123 / DOM 33. NEXT: operator redeploys current code + retests #1; if it
-  still repros same-day, capture steps+times+rep tz (server today-derivation);
-  if only across midnight, product decision (strict-today vs rolling window).
-- STEP 2 DONE (this branch): #2 cnCallerDisplay_ helper (bold caller + (relation)
-  muted, suppressed for self/blank, XSS-escaped) wired into BOTH card renderers
-  (rep + manager read-only); CRM paste/email structure UNCHANGED (card aesthetic
-  only). #3 live-refresh: cnRefreshRollingStack_ (re-fetch today's notes + merge,
-  preserving optimistic _pending, skipped mid inline-edit, requestedView-guarded)
-  called from the 60s ambient poll on the Log view + bound to window focus/
-  visibilitychange (2s throttle, no-op off Log, idempotent bind). 4 DOM tests
-  (caller format + refresh surfaces other-context note + pending preserved +
-  edit-guard). Pure 123 / DOM 37. Minor follow-on: refresh re-renders #cn-stack
-  every 60s — could diff-before-render to avoid a scroll jump (stack is small,
-  accepted for now).
-- STEP 3 DONE (this branch): #4 pop-out. Robust core: popOutCurrentView widened
-  default 380x780 -> 480x800 + reads persisted geometry; pure popoutParseGeom_
-  (range-guarded, Node-pinned) + popoutPersistGeometryInit_ (compact only,
-  resize-debounced + beforeunload, writes umsPopoutGeom — NEW 10th localStorage
-  key). Compact-only additive CSS (data-compact gated, wide mode untouched):
-  icon-only 4-across flag rail (.flag-lbl wrapped + hidden, title/aria carry
-  meaning), sticky collapsible save card (#cn-save-card position:sticky bottom +
-  .cn-save-collapse chevron toggles .collapsed). stats-mini already hidden in
-  compact (no-op, confirmed). Pure 124 / DOM 37. NOTE: the compact VISUAL bits
-  (icon rail + sticky bar) are jsdom-unverifiable (no layout) — need operator
-  eyeball in the real pop-out; the geometry helper + widen are solid/tested.
-  Docs: CLAUDE.md key-count 9->10 + umsPopoutGeom entry + pop-out 380->480
-  decision rewrite.
-- S4 SCHEMA (operator-provided 2026-06-16): "CSR Transfer Historical Data" tab
-  in the CDR Report ss, headers A1:S1 = Month-Year, Week, Date(M/D/YYYY),
-  CSR Rep Name, Transfer %(string "29.79%"), Total Calls, Total Calls
-  Transferred, A_Q_Sales..A_Q_Eligibility_MM&R (per-queue H:R), Comments.
-- STEP 4a DONE (this branch — metrics data FOUNDATION, server+tested): new
-  CSR_TRANSFER_TAB + CSRT enum; pure metricsParsePercent_ ("29.79%"->29.79) +
-  metricsTeamAvgSeries_(perRepDaily,dates,key,minCohort) anonymized team-avg
-  with N>=cohort suppression (the #5 privacy core) — both Node-pinned;
-  getCsrTransferPerRepDaily_ isolated reader (getDisplayValues + cdrRowDateIso_
-  reused for M/D/YYYY + alias canon + roster filter, INV-64 discipline). Fixture:
-  "CSR Transfer Historical Data" tab added to _setupTestCdrFixture_ (M/D/YYYY +
-  "%"-string to exercise the parse path) + editor integration test
-  test_metrics_csrTransferFixture_parsesDateAndPercent (registered). Pure 126 /
-  DOM 37.
-  NEXT — S4b (server, ~2-3h): extend getCdrDailyBreakdown_ with perRepDaily
-  (additive) + extend getMyMetrics to return own 5-KPI 30-day series (%Answered,
-  Answered, Missed, Transfers, AvgTalk) + a team-avg series via
-  metricsTeamAvgSeries_(N=3) reading ALL roster reps (aggregate-only leaves the
-  server — INV-66/privacy); join transfers from getCsrTransferPerRepDaily_.
-  S4c (client, ~3-4h, jsdom-unverifiable visual): My Stats own-vs-team trend
-  charts for the 5 KPIs + the team-avg comparison line (reuse mBuildHeroSparkSvg_
-  helpers). Then docs (INV for #5 anonymization + getMyMetrics shape).
-- STEP 4b+4c DONE (this branch) — STEP 4 COMPLETE. 4b: getCdrDailyBreakdown_ +
-  perRepDaily (additive); pure metricsBuildKpiSeries_; getMyMetrics now reads
-  the whole roster's per-rep-per-day matrix (DQE + Transfer) and returns
-  series.{pctAnswered,answered,missed,attSeconds,transferPct}=[{date,own,team,
-  cohort}] with team N=3 cohort-guarded (aggregates only leave the server) +
-  kpiMinCohort; all legacy fields kept. 4c: My Stats mRenderTrendSection_ +
-  mKpiTrendCard_ + mBuildDualSparkSvg_ + mFmtSecs_ (own accent line vs team
-  muted-dashed; cohort note; "—" on suppressed/absent) + CSS; esc()'d. INV-124
-  + CLAUDE.md Metrics-module bullet + CSR Transfer operator note. Pure 127 /
-  DOM 39. The My Stats CHART VISUAL is jsdom-unverifiable — needs operator
-  eyeball after deploy. Operator: ensure the real CDR ss has the
-  "CSR Transfer Historical Data" tab (it does). ALL operator-feedback steps
-  (S1 diag, S2 #2/#3, S3 #4, S4 #5/#6) now DONE — ready for deploy + eyeball.
-
-- CYCLE 3 AUDIT FINDINGS IMPLEMENTED (this branch, after the operator-feedback
-  steps). Re-verified each fresh against current code:
-  * S1.2 (Low, fires monthly): getManagerDashboard recent-audits punchDate read
-    via raw String() → coerced "Wed Jun 17 2026…"; now normalizeDate_.
-  * S1.3 (Low, latent): updateTimeOffStatus would RE-DEDUCT on Reconciled→Approved
-    (the deduct guard fires for any non-Approved→Approved). Now rejects any status
-    change FROM 'Reconciled' (terminal — fixPtoReconciliation already credited it).
-  * S2.1 (Low, latent/defensive): getFormByToken + submitFormByToken failed OPEN
-    on an unparseable (non-empty) ExpiresAt; now fail CLOSED (treated as expired /
-    PHI write rejected). Empty-expiry (no-expiry) tokens unchanged.
-  * C1 (Low): KB-AI guidance collapse-after-seen used UTC toISOString (client,
-    kb/script_kb.html:1047) → re-expanded at UTC midnight (5:30am IST); now
-    isoDateTz(empTz()) rep-tz day (F6). Only matters with kbAiGuidance flag ON.
-  * S1.1 (Medium-LATENT, RE-ASSESSED): NOT a behavior bug — normalizeAuditTs_/
-    normalizeDate_ recover coerced Dates in the SHEET tz (= the coercion tz), so
-    the wall-clock STRING round-trips regardless of CONFIG.TIMEZONE. The real
-    exposure is operator drift (ADP sheet tz ≠ CONFIG.TIMEZONE). Fix = a smoke
-    tripwire test_config_adpSheetTzMatchesConfig (NOT a recovery-tz change, which
-    would BREAK the round-trip). Pins the assumption.
-  * C4 (Low): added test_cn_formSubmissionCard_escapes pinning buildFormSubmission
-    CardHtml_ esc_ (builders already escaped; just unpinned).
-  Files: Code.js (S1.2/S1.3/S2.1), kb/script_kb.html (C1), Tests.js (S1.1+C4
-  smoke tests + registration). Pure 127 / DOM 39, node --check clean. Editor
-  smoke/integration tests (S1.1, C4, + existing token-lifecycle for S2.1) run on
-  next runSmokeTests/runAllTests. NET +1 fired (S1.2) + 5 defensive/latent.
-  Cycle 3 backlog now CLEARED — ready for /reflect to close the cycle.
-
-### (Cycle 2 history — carry forward)
 - CYCLE 2 CLOSED 2026-06-11 (reflect recorded: metrics.csv + estimates.csv rows,
   PROJECT_HEALTH.md Current Standing + Score History updated). Net +8 (8 prod fixes
   − 0 shipped new failure modes; ~13 defensive; 3 new tripwires). Operator ran
@@ -385,16 +356,25 @@ Updated: 2026-06-16
   Plus the two operator bugfixes (invisible ::selection → --selection-bg;
   blank pop-out → SERVER_WEB_APP_URL).
 
-## Where I left off
-Cycle 3 OPENED (/broad-scan). DOM-lifecycle harness Phase 1 (boot infra)
-SHIPPED on `claude/affectionate-cori-90q3ap`: test/client/dom/{boot,runDom}.js,
-jsdom devDependency, CI wired, README + package-lock. `npm test` green (122 pure
-+ 31 DOM after Phase 3 — harness COMPLETE). NEXT: Cycle 3 audit-findings backlog
-(S1.1 tz coupling, S2.1 fail-open expiry, S1.3, C1, C4) NOT yet implemented —
-awaiting operator selection.
+- OPERATOR FEEDBACK r4 (2026-06-15, post-deploy): (1) TOUR BUG FIX — the
+  Step-7→14 jump was the engine checking selectors synchronously after
+  enterTool, but Call Notes/Time Off views render async (spinner → RPC →
+  #cn-frame), so all 6 CN steps were skipped; tourGoTo_ now POLLS for the
+  target (~1.9s) and only a real timeout skips. (2) Tour tooltip fades
+  out/in across transitions (.in opacity class) so text no longer flashes
+  at the old position before the spotlight moves. (3) Quiz save + delete
+  inline spinners (.tr-spin / trSpin keyframe). (4) GOOGLE FORMS QUIZ
+  IMPORT — importQuizFromForm (manager-gated, READ-ONLY, review-before-save
+  like kbConvertDriveDoc; FormApp.openById with the deployer's access;
+  reads MC + single-answer CHECKBOX + isCorrectAnswer(); skips other item
+  types with warnings; trainParseFormId_ pure/Node-pinned, rejects the
+  /forms/d/e/ published link). Editor gets an "Import from Google Forms"
+  button (new-quiz only) + a warnings banner. FormApp = first Forms scope →
+  ONE-TIME re-auth on deploy (operator note added). Gate case + parser Node
+  test; Node 122→123. CLAUDE.md: tour decision (async-poll note), gate
+  list, INV-121, Forms-scope operator entry.
 
----
-(Below: prior Cycle 2 close note, retained.)
+## Where I left off
 Cycle 2 CLOSED; KB Phase 2b + Phase 3 + KB AI Phase A all SHIPPED on
 `claude/affectionate-dijkstra-js8rlm` (Node 105/105). NEXT: operator deploy
 (clasp push -f + New version + ONE-TIME re-auth for the Drive scope), run

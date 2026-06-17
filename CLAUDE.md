@@ -307,7 +307,7 @@ this section before touching the relevant area.
   `kbConvertDriveDoc`, `kbGetUsageStats`, `saveKbAiSettings`,
   `getTrainingDashboard`, `saveTrainingAssignment`,
   `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`,
-  `getQuizAnalytics`,
+  `getQuizAnalytics`, `importQuizFromForm`,
   `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`
   (the last four are ALSO team-scoped per INV-122 — the gate alone is
   not the boundary).
@@ -2355,14 +2355,23 @@ this section before touching the relevant area.
   ring that dims everything but the target + `#tour-pop` tooltip) walks a
   declarative `TOUR_STEPS` registry (`{tool, view, selector, title, body,
   managerOnly?}`). The engine navigates to each step's tab via `enterTool`
-  then spotlights its selector; a step whose target isn't in the DOM is
-  SKIPPED (never strands), and `managerOnly` steps are filtered for
-  non-managers (the tab-gating pattern). Mounted on `document.body` (the
+  then spotlights its selector. Because views render ASYNCHRONOUSLY
+  (e.g. `enterCallNotesView` shows a spinner and only builds `#cn-frame`
+  after its RPCs return), the engine POLLS for the target after navigating
+  (`tourGoTo_`, ~1.9s) rather than checking synchronously — a sync check
+  wrongly skipped every async-rendered Call Notes step and jumped managers
+  straight to the closing step. Only a genuine timeout skips a step (never
+  strands); `managerOnly` steps are filtered for non-managers (the
+  tab-gating pattern). The tooltip fades out before each transition and
+  fades back in once repositioned (`.in` opacity class) so the new text
+  never flashes at the old position. Mounted on `document.body` (the
   KB-drawer lesson — Call Notes' `#view-area` re-renders would wipe it).
   **Auto-starts once per `TOUR_VERSION`** on first load (gated on
   `umsTour.seenVersion`; never in the compact pop-out, never on a
-  deep-link); **replayable** from the Call Notes ? (shortcuts) overlay via
-  `tourStart()`. Bump `TOUR_VERSION` to re-offer after a material UI
+  deep-link — the `?tool=` landing is honored instead); **replayable** from
+  the Call Notes ? (shortcuts) overlay via `tourStart()`. On finish/skip the
+  tour **restores the rep's entry view** (`tourStart` captures `currentView`,
+  `tourEnd_` re-enters it) so it doesn't strand them on the last step's tab. Bump `TOUR_VERSION` to re-offer after a material UI
   change. Adding a step = one `TOUR_STEPS` entry; a Node tripwire asserts
   every step's `view` is a registered TOOLS tab key (a tab-key rename
   can't silently orphan a step — the M3 view-key discipline). v1 covers
@@ -2481,6 +2490,19 @@ manually for a fresh deploy or environment:
   never-saved pastes accumulate — trim manually). The first export also
   adds the Drive OAuth scope alongside the Docs scope — the deploying
   account may be prompted to re-authorize once.
+- **Quiz import from Google Forms requires the Google Forms OAuth scope.**
+  `importQuizFromForm` (Team Training → New quiz → "Import from Google
+  Forms") is the project's first `FormApp` call, so the deploy that ships it
+  adds the `forms` scope to the auto-detected set. The DEPLOYING account must
+  re-authorize once (the editor prompts on the next run / deploy — accept the
+  new scope) AND must have at least view access to any form it imports
+  (FormApp opens it with the deployer's access, same trust boundary as the
+  Doc converter). It reads MULTIPLE_CHOICE + single-answer CHECKBOX items and
+  their marked correct answers; other item types are skipped with a warning.
+  READ-ONLY + review-before-save — the form is never modified and nothing
+  persists until the manager clicks Save quiz. Paste the form's EDIT url
+  (`/forms/d/<id>/edit`); the published `/forms/d/e/<id>/viewform` link is
+  rejected with a hint (its id is the response endpoint, not openable).
 - **KB Phase 2 converter requires the Google Docs OAuth scope.**
   `kbConvertDriveDoc` is the project's first `DocumentApp` call, so the deploy
   that ships it adds the `documents` scope to the auto-detected scope set. The
@@ -2640,7 +2662,8 @@ manually for a fresh deploy or environment:
   The Clock view shows a "Next break" chip (`#clk-next-break`) and fires a
   one-time reminder toast `breakReminderMin` before each break — but ONLY
   while the Clock tab is open (Apps Script web apps have no background
-  push); the reminded-set dedupes per break per day.
+  push); the reminded-set dedupes per break per day (and is cleared on day
+  rollover so it can't grow unbounded in a long-lived pinned pop-out — F6).
 - **`Employees` sheet column L = `CallNotesSheetId`** — per-rep
   call-notes Spreadsheet ID. Easiest path: **Call Notes → Admin →
   Call Notes Enrollment → Provision Sheet** (one click — creates the
@@ -2805,6 +2828,11 @@ carries the same number. `/cycle-status` surfaces it.
   implement commands' CHECKPOINT step, read by `/cycle-resume` + `/cycle-status`.
 - `.cycle/metrics.csv` — per-cycle metrics appended by `/reflect` / synthesis.
   Header: `date,cycle,subsystem,phase,net_score,prod_fixes,new_failure_modes,category_d_ratio,axis_b_lowest,notes,defensive_count`
+  **Local convention:** the canonical `/reflect` leaves `category_d_ratio` +
+  `axis_b_lowest` blank (a separate `/synthesis` step fills them), but this
+  project has no `/synthesis` command, so fill both at reflect time (cycles 1–3
+  did) — `category_d_ratio` = the Category-D/Low share of the cycle's findings,
+  `axis_b_lowest` = the weakest Axis-B horizontal category that cycle.
 - `.cycle/estimates.csv` — estimate-vs-actual calibration, appended by `/reflect`.
   Header: `date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note`
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
@@ -2895,6 +2923,26 @@ project's only automated check. Use
 the Regression Scenarios below as the canonical full-system
 verification path.
 
+A second, **DOM-lifecycle** harness now sits alongside the pure one:
+`node test/client/run-dom.js` (or `npm run test:dom`; `npm test` runs BOTH).
+It loads the FULL `<script>` of the chosen partials into a real **jsdom**
+window — the project's only dependency, dev-only, so `clasp` still never
+pushes it — and tests the layer the pure harness can't reach: innerHTML
+render/escape, overlay lifecycle (`ensureOverlay`/Esc), optimistic-UI
+submit + revert (INV-48), `_flagInFlight` double-fire (INV-56), late-callback
+`currentView` guards, and the focus trap. Mechanics (see
+`test/client/README.md`): `runScripts:'outside-only'` →
+`getInternalVMContext()` (window === globalThis, real document; no auto
+`DOMContentLoaded`, so module-top init stays dormant); partials share lexical
+scope so a trailing **bridge** (`h.t`) get/sets the `const`/`let` module state
+(`CN_STATE`, `currentView`, `empState`); a programmable `google.script.run`
+mock (`run.resolve`/`reject`/`lastFor`/`countFor`) drives the RPC paths;
+`opts.markup:['modals.html']` mounts shared modal DOM for the `tc/` views. The
+escape-discipline tests are proven to bite (reverting an `esc()` fails them) —
+this is the regression net for the client overlay/lifecycle bug class that
+every prior cycle shipped blind. The CI workflow runs it as a second step
+(after `npm ci`); the zero-install pure step stays first as the always-on floor.
+
 ### Health Dimensions
 Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability
 
@@ -2926,7 +2974,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/harness-dom.js, test/client/run-dom.js
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server
@@ -3050,7 +3098,7 @@ INV-118 | `kbUploadImage(dataUrl)` (KB Phase 3) is manager-gated (INV-02) and va
 INV-119 | **No free text ever enters the KB AI vendor payload.** `kbGetFacetGuidance(facets)` (Phase A) is rep-callable (requires `getEmployeeInfo_`), gated server-side by the `kbAiGuidance` feature flag (scope `both`, default OFF, danger-marked), and best-effort — every failure path (flag off, no facets, thin retrieval, missing `KB_AI_API_KEY`, daily cap reached, vendor error) returns `{ none: true, reason }` and never throws to the client. The privacy boundary is `kbAiSanitizeFacets_`: every facet is whitelist-validated against server-side vocabularies (departments ∈ `getDepartmentEmails_()` keys; update types ∈ `UPDATE_SUGGESTIONS_DEFAULT` ∪ `getUpdateSuggestions_()`; flag ∈ `CN_FLAG_TYPES`+`urgent`; tags ∈ the CALLER's own established tag vocabulary from `getCallNoteTagSuggestions` — a novel tag typed this minute is DROPPED, never sent), and the prompt builder `kbAiBuildPrompt_(clean, chunks)` takes ONLY the sanitized facets + our own PHI-free-by-policy KB chunk excerpts — there is no parameter through which free-typed note text or patient data can reach the wire. Retrieval reuses `searchReference` over `kbAiQueryTerms_(clean)` with a score floor (`KB_AI_SCORE_FLOOR` — thin matches never hit the API and the none is cached). Results cache org-wide (`KB_AI_CACHE_PREFIX`, 6h) keyed by generation salt (`KB_AI_GENERATION`, bumped by `invalidateKbCache_` on every KB save/delete) + MD5 of the canonical order-insensitive facet string (`kbAiCanonicalFacets_`). Spend: each vendor call is costed from usage tokens via `KB_AI_MODEL_PRICES` (unknown model → most expensive known rates, the cap can never be undercounted) into the `KB_AI_SPEND` daily counter; at `KB_AI_DAILY_CAP` (default $3, Admin-adjustable) the endpoint returns none until the date rolls. Each vendor call writes a PHI-free `KbAiGuidance` audit row (canonical facets + model + cost). `saveKbAiSettings` (manager-gated, INV-57 family) validates cap 0–100 + model ∈ `KB_AI_MODEL_PRICES` and persists `KB_AI_DAILY_CAP`/`KB_AI_MODEL`; the API key is NEVER settable or readable through any endpoint. Pinned by the `kb — AI Phase A` Node tests (whitelist / canonical hash / prompt / source tripwire) + `test_kbAi_gatesAndSettingsValidation` + the `saveKbAiSettings` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-120 | Training T1 endpoints follow the established families: `getMyTraining` / `markTrainingComplete` are caller-scoped (the rep's own assignments/completions only; complete requires a LIVE effective assignment — `'kb:'+itemId` in `trainEffectiveForEmp_` — so a rep can't write completion rows for unassigned items, and is idempotent on an already-complete item); `markTrainingComplete` / `saveTrainingAssignment` / `revokeTrainingAssignment` are locked (INV-01); the three manager endpoints are gated (INV-02). `TrainingCompletions` is append-only; `TrainingAssignments` rows are never deleted — revoke sets `RevokedAt`. Completion semantics: an item is complete iff some completion row's `CompletedAt` is STRICTLY after the latest non-revoked matching assignment row's `AssignedAt` (re-assign = reset, the re-certification mechanism; `'*'` rows match every employee). All four timestamp/date cells are Sheets-coercion-guarded (`trainCellTs_`/`trainCellDate_`, recovered in the KB spreadsheet's OWN tz — the normalizeAuditTs_ discipline; lexicographic compare = chronological). Status derivation is the pure `trainDeriveStatus_` (Node-pinned), shared by checklist + dashboard; "today" is the rep's roster tz in `getMyTraining` (F6 discipline) and manager tz in the dashboard. Audit rows `TrainingAssign`/`TrainingRevoke`/`TrainingComplete` are content-free (itemId/assignId/counts only). Assignment notifications are best-effort per-recipient (INV-14). Training dashboards are deliberately NOT team-scoped (every manager sees all reps, matching managerGetShiftStats); only the T3 Employee Docs carry per-team scoping. Pinned by `test_training_assignCompleteFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
-INV-121 | **Quiz answer keys never leave the server.** The `Quizzes` tab's `QuestionsJson` (including `correct` indices) is readable only by the manager-gated `getQuizzes` (managers author the keys); the rep-facing `getQuiz` returns ONLY the WHITELIST-built `trainStripQuizForRep_` shape (never a delete-key copy — a missed field can't leak), requires a live `quiz:` assignment (or manager caller), and `submitQuizAttempt` (rep-callable, locked INV-01, assignment-required) grades server-side via the pure `trainGradeQuiz_` and returns only `scorePct`/`passed`/per-question right-wrong booleans — correct options are NEVER revealed, pass or fail (operator decision §9.4; unlimited retries; attempt counts per assignment round ride back for display). A pass appends the `TrainingCompletions` row (`via='quiz'`, once per assignment round — the INV-120 reset semantics apply to attempts too); `QuizAttempts` is append-only and `PerQuestionJson` stores booleans only, never the rep's answers paired with a key. `saveQuiz` validates via the pure `trainValidateQuizDef_` (1–50 questions, 2–6 options, correct in range, passPct 0–100) and bounds the stored JSON under the Sheets cell cap (INV-96 spirit); `deleteQuiz` removes only the quiz row (attempt/completion history stays; orphaned assignments drop off via the title join, same as a deleted KB item). Audit rows `QuizSave`/`QuizDelete`/`QuizAttempt` carry ids/counts/scores — never question text. Pinned by the `training — quiz` Node tests (validator / grader / strip + the `getQuiz` source tripwire) + `test_training_quizFlow` + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+INV-121 | **Quiz answer keys never leave the server.** The `Quizzes` tab's `QuestionsJson` (including `correct` indices) is readable only by the manager-gated `getQuizzes` (managers author the keys); the rep-facing `getQuiz` returns ONLY the WHITELIST-built `trainStripQuizForRep_` shape (never a delete-key copy — a missed field can't leak), requires a live `quiz:` assignment (or manager caller), and `submitQuizAttempt` (rep-callable, locked INV-01, assignment-required) grades server-side via the pure `trainGradeQuiz_` and returns only `scorePct`/`passed`/per-question right-wrong booleans — correct options are NEVER revealed, pass or fail (operator decision §9.4; unlimited retries; attempt counts per assignment round ride back for display). A pass appends the `TrainingCompletions` row (`via='quiz'`, once per assignment round — the INV-120 reset semantics apply to attempts too); `QuizAttempts` is append-only and `PerQuestionJson` stores booleans only, never the rep's answers paired with a key. `saveQuiz` validates via the pure `trainValidateQuizDef_` (1–50 questions, 2–6 options, correct in range, passPct 0–100) and bounds the stored JSON under the Sheets cell cap (INV-96 spirit); `deleteQuiz` removes only the quiz row (attempt/completion history stays; orphaned assignments drop off via the title join, same as a deleted KB item). Audit rows `QuizSave`/`QuizDelete`/`QuizAttempt` carry ids/counts/scores — never question text. `importQuizFromForm` (manager-gated, READ-ONLY, review-before-save — FormApp opens the form with the deployer's access; only MC + single-answer checkbox items + their marked correct answers are read; the form is never modified and nothing persists until the manager saves) reuses the same `saveQuiz` validation path on save. Pinned by the `training — quiz` Node tests (validator / grader / strip + the `getQuiz` source tripwire + the `trainParseFormId_` URL parser) + `test_training_quizFlow` + the four gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
 INV-122 | **Employee Docs are team-scoped (fail-closed), frozen at issue, and tamper-evident.** All Employee Docs data lives ONLY in the dedicated `HR_DOCS_SS_ID` spreadsheet (`getHrDocsSS_` has NO fallback store — unset property → friendly error, never a silent write to the ADP/KB/PHI sheets), and the `EmpDocs`/`DocSignatures` tabs are EXCLUDED from every retention purge (HR records are keep-forever — the opposite of the PHI-minimization posture). **Scoping:** `getMyDocs`/`getMyDoc`/`acknowledgeDoc` are owner-scoped; manager read access (`getMyDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`) requires `empDocCanManagerSee_` — caller issued the doc OR caller is the employee's roster `ManagerEmail` (column M); membership in `MANAGER_EMAILS` alone grants NOTHING, and a blank column M NARROWS visibility to owner+issuer (fail-closed, operator decision §9.3). Any manager may ISSUE to any employee (issuing reveals nothing). `acknowledgeDoc` is OWNER-only — managers cannot sign on behalf. **Integrity:** content is frozen at issue (`bodyMd` + `empDocContentHash_` over body+title+type+empId); signing re-verifies the content hash first (a tampered row refuses to sign), bounds the signature payload (INV-96; the pad export caps at 600px — Node-pinned parity with `form_public.html`), and writes an append-only `DocSignatures` row whose `SignatureHash` covers contentHash+empId+docId+signature+ackVersion but NOT the timestamp (Sheets coercion, INV-113 lesson) — the `EmpDocSigned` audit row (`hash=`+`signedAt=`) is the independent witness, and the server-authoritative `EMPDOC_ACK_VERSION` stamps which ack language was shown (bump it when `EMPDOC_ACK_TEXT` changes). `voidDoc` only flips status (never deletes, never edits the frozen body — a correction is a NEW doc; a signed doc keeps its signature row); `verifyDocSignature` recomputes both hashes (legacy/unsigned report explicitly, never as failures). Audit rows `EmpDocIssue`/`EmpDocSigned`/`EmpDocVoid` are content-free (docId/empId/type/hash — never the title or body; the void reason lives only in the scoped HR sheet). Pinned by `test_empdocs_issueSignVerifyFlow` (incl. the fail-closed `empDocCanManagerSee_` cases + tamper detection) + the four gate cases in `test_managerGates_rejectNonManager` + the `empDocValidateIssue_`/`edChipHtml_`/pad-cap Node tests | Subsystem: Server + Client (Training views)
 

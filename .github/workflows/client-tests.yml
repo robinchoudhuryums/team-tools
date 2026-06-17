@@ -1,15 +1,17 @@
 name: Client tests
 
 # Runs the client-side test harnesses (and a server-JS syntax check) on every
-# push / PR. Two harnesses, both loading the web-app HtmlService <script>
-# partials — see test/client/README.md:
-#   • run.js     — pure-helper unit tests in a Node vm sandbox (no deps).
-#   • dom/runDom.js — DOM-lifecycle tests in a jsdom window (needs `npm ci`
-#                     for the jsdom devDependency).
+# push / PR. See test/client/README.md. Three test entrypoints:
+#   • run.js        — dependency-free pure-helper + parse-guard net (vm sandbox).
+#   • run-dom.js    — DOM-lifecycle tests in a real jsdom window (needs `npm ci`).
+#   • dom/runDom.js — DOM-lifecycle tests (the cori harness: shell-boot +
+#                     controllable run); needs `npm ci`. (Consolidation of the
+#                     two DOM harnesses is a tracked follow-on.)
 #
 # This is the only automated check for the project (the Apps Script suite in
-# web-app/Tests.js runs only inside the editor). It guards the client helpers
-# and catches gross syntax errors in Code.js / Tests.js.
+# web-app/Tests.js runs only inside the editor). It guards the client helpers,
+# the render/escape + lifecycle layer, and catches gross syntax errors in
+# Code.js / Tests.js.
 
 on:
   push:
@@ -26,7 +28,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dev dependencies (jsdom for the DOM harness)
+      - name: Install dev dependencies (jsdom for the DOM harnesses)
         run: npm ci
 
       - name: Syntax-check server JS (Code.js / Tests.js)
@@ -34,8 +36,13 @@ jobs:
           node --check web-app/Code.js
           node --check web-app/Tests.js
 
-      - name: Run pure-helper unit tests
+      # Zero-dependency pure harness runs first (the always-on floor — green even
+      # if the jsdom install ever fails).
+      - name: Run client unit tests (pure)
         run: node test/client/run.js
 
-      - name: Run DOM-lifecycle tests
+      - name: Run client DOM-lifecycle tests (run-dom)
+        run: node test/client/run-dom.js
+
+      - name: Run client DOM-lifecycle tests (dom/runDom)
         run: node test/client/dom/runDom.js

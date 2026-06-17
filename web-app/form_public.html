@@ -360,8 +360,10 @@ var PAGE_OPENED_AT = new Date().toISOString();  // forms-hardening: certificate 
 (function boot() {
   google.script.run
     .withSuccessHandler(function (res) {
-      if (res.error) {
-        showError(res.error);
+      // A resolved-but-null/undefined result does NOT trigger withFailureHandler;
+      // guard it so the recipient sees an error state instead of a frozen spinner.
+      if (!res || res.error) {
+        showError((res && res.error) || 'This form could not be loaded. Please contact UMS.');
         return;
       }
       FORM_DATA = res;
@@ -1022,10 +1024,12 @@ function handleSubmit() {
 
   google.script.run
     .withSuccessHandler(function(res) {
-      if (!res.success) {
+      // Guard a resolved-but-null result (withFailureHandler won't fire on it),
+      // so the recipient can retry instead of being stuck on a disabled button.
+      if (!res || !res.success) {
         btn.disabled = false;
         btn.textContent = 'Submit Form';
-        errorDiv.textContent = res.error || 'Submission failed.';
+        errorDiv.textContent = (res && res.error) || 'Submission failed.';
         errorDiv.style.display = '';
         return;
       }
