@@ -157,6 +157,17 @@ see the change on next page load.
 For Apps Script tests (`Tests.js` in each project), run them from the
 editor: pick a `runSmokeTests` / `runAllTests` function and click ▶.
 
+**Only `web-app/` is clasp-synced / deployed.** Everything else in the repo is
+local-only and never reaches the live Apps Script project: `test/` (the Node
+harnesses) and `docs/` — including **`docs/design_handoff_team_tools_redesign/`**
+(the redesign mockups: `*.dc.html` static mockups, `support.js`, screenshots,
+`icons_snippet.md`). Those design-handoff files are **non-deployed reference
+artifacts**: `support.js` is mockup-support JS for the standalone `.dc.html`
+files, NOT app code — do not `include()` it from `index.html` or wire it into
+the shell. A redesign lands in the real partials under `web-app/<tool>/` +
+`styles*.html` + `script_*.html`; the handoff folder is the spec to implement
+*against*, not code to ship.
+
 ## Common Gotchas
 
 These accumulate as audits surface real production hazards. Treat
