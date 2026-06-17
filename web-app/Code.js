@@ -9259,10 +9259,18 @@ function getMyMetrics(date) {
     // emp.id so no rep ever reads another rep's cached self-view.
     var metricsCache = CacheService.getScriptCache();
     var myCacheKey = 'metrics_my_v1:' + emp.id + ':' + date;
-    try {
-      var cachedMy = metricsCache.get(myCacheKey);
-      if (cachedMy) { var co = JSON.parse(cachedMy); co.cached = true; return co; }
-    } catch (_) {}
+    // Bypass the endpoint cache whenever a test points the CDR reader at a
+    // fixture/bogus id (the getCdrSS_ override pattern) — otherwise a stale
+    // entry from a prior fixture read would mask a later test's CDR state
+    // (e.g. the cdrUnavailableErrors error-path test). Always active in prod
+    // (the override is undefined there).
+    var useMetricsCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+    if (useMetricsCache) {
+      try {
+        var cachedMy = metricsCache.get(myCacheKey);
+        if (cachedMy) { var co = JSON.parse(cachedMy); co.cached = true; return co; }
+      } catch (_) {}
+    }
 
     // Compute 30-day window ending on `date`
     var endD = new Date(date + 'T12:00:00Z');
@@ -9336,7 +9344,9 @@ function getMyMetrics(date) {
       series: series,
       kpiMinCohort: MIN_COHORT,
     };
-    try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    if (useMetricsCache) {
+      try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    }
     return result;
   } catch (err) { return { error: err.message }; }
 }
