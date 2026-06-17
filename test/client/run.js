@@ -1431,5 +1431,38 @@ test('cnTagTrendsFromEvents_ honors topK and tolerates empty input', () => {
   assert.strictEqual(cnTagTrendsFromEvents_(many, '2026-06-17', 4, 5).series.length, 5, 'topK caps the series');
 });
 
+// Coverage planner bucketing (#3) — the pure hour-concurrency math behind the
+// manager Coverage view (the tz conversion + PTO overlay stay in the endpoint).
+console.log('\nCode.js — coverage bucketing (#3: coverageBucketHours_)');
+vm.runInContext(extractRawFunction('Code.js', 'coverageBucketHours_'), sb, { filename: 'Code.js#coverageBucketHours_' });
+const coverageBucketHours_ = sb.coverageBucketHours_;
+
+test('counts distinct reps per manager-tz hour slot', () => {
+  // Day 0: rep A 08:00–17:00 (min 480–1020), rep B 09:00–12:00 (540–720).
+  const out = coverageBucketHours_([
+    { rep: 'A', absStart: 480, absEnd: 1020, tentative: false },
+    { rep: 'B', absStart: 540, absEnd: 720, tentative: false },
+  ], 1);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0][7].confirmed, 0, '07:00 — nobody yet');
+  assert.strictEqual(out[0][8].confirmed, 1, '08:00 — A only');
+  assert.strictEqual(out[0][9].confirmed, 2, '09:00 — A + B');
+  assert.strictEqual(out[0][16].confirmed, 1, '16:00 — A only (B ended)');
+  assert.strictEqual(out[0][17].confirmed, 0, '17:00 — done');
+});
+
+test('a confirmed rep is not double-counted as tentative in the same slot; clips out-of-range', () => {
+  const out = coverageBucketHours_([
+    { rep: 'A', absStart: 540, absEnd: 600, tentative: false },  // 09:00 confirmed
+    { rep: 'A', absStart: 540, absEnd: 600, tentative: true },   // same rep tentative — must not add
+    { rep: 'C', absStart: 540, absEnd: 600, tentative: true },   // distinct tentative rep
+    { rep: 'D', absStart: -120, absEnd: 60, tentative: false },  // straddles before day 0 → counts hour 0 only
+    { rep: 'E', absStart: 1440 * 2, absEnd: 1440 * 2 + 60, tentative: false }, // beyond numDays → clipped
+  ], 1);
+  assert.strictEqual(out[0][9].confirmed, 1, 'A confirmed at 09:00');
+  assert.strictEqual(out[0][9].tentative, 1, 'only C is tentative (A already confirmed)');
+  assert.strictEqual(out[0][0].confirmed, 1, 'D spillover covers hour 0');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

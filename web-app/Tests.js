@@ -3837,6 +3837,7 @@ function test_managerGates_rejectNonManager() {
     ['getCallNotesTagTrends',          function () { return getCallNotesTagTrends(); }],
     ['kbGetReviewDue',                 function () { return kbGetReviewDue(); }],
     ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
+    ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],

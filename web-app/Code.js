@@ -35,6 +35,9 @@ const CONFIG = {
 
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
+  COVERAGE_MIN_STAFF: 2,   // #3 — manager Coverage planner highlights any
+                           // manager-tz hour with fewer than this many reps
+                           // scheduled (after the PTO overlay) as understaffed.
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
@@ -7859,6 +7862,150 @@ function getShiftSchedule_(timezone) {
 }
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
+
+// ── #3 Coverage planner (manager, forward staffing view) ────────────────────
+// getCoveragePlan(from,to): for each manager-tz day, lists every rep's shift
+// (per-tz schedule, converted to the manager's tz) with a PTO overlay
+// (Approved = off, Pending = tentative), plus an hourly concurrency strip that
+// flags understaffed hours (< CONFIG.COVERAGE_MIN_STAFF). Manager-gated,
+// read-only, PHI-free (names + schedule + PTO status only — never balances).
+// v1 LIMITATION: schedules are per-TIMEZONE, not per-rep (CLAUDE.md — there's
+// no per-rep schedule UI), so coverage assumes everyone in a tz works that tz's
+// shift. The hourly math is the pure, Node-pinned coverageBucketHours_.
+
+/** PURE: buckets shift intervals (minutes from the manager-tz midnight of the
+ *  range's first day) into a per-day × 24-hour concurrency grid, counting
+ *  DISTINCT reps per slot. Returns days[numDays] each = [24]{hour, confirmed,
+ *  tentative}; a rep with a confirmed interval in a slot isn't double-counted
+ *  as tentative there. Intervals outside [0, numDays*24h) are clipped. */
+function coverageBucketHours_(intervals, numDays) {
+  const days = [];
+  for (let d = 0; d < numDays; d++) {
+    const hours = [];
+    for (let h = 0; h < 24; h++) hours.push({ confirmed: {}, tentative: {} });
+    days.push(hours);
+  }
+  (intervals || []).forEach(function (iv) {
+    const rep = String(iv && iv.rep == null ? '' : iv.rep);
+    const s = iv && iv.absStart, e = iv && iv.absEnd;
+    if (!(e > s)) return;
+    const firstSlot = Math.floor(s / 60);
+    const lastSlot = Math.ceil(e / 60) - 1;
+    for (let slot = firstSlot; slot <= lastSlot; slot++) {
+      if (slot < 0) continue;
+      const d = Math.floor(slot / 24);
+      if (d >= numDays) break;
+      const h = slot % 24;
+      (iv.tentative ? days[d][h].tentative : days[d][h].confirmed)[rep] = true;
+    }
+  });
+  return days.map(function (hours) {
+    return hours.map(function (hh, h) {
+      const confirmed = Object.keys(hh.confirmed).length;
+      let tentative = 0;
+      Object.keys(hh.tentative).forEach(function (r) { if (!hh.confirmed[r]) tentative++; });
+      return { hour: h, confirmed: confirmed, tentative: tentative };
+    });
+  });
+}
+
+function getCoveragePlan(fromDate, toDate) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fromDate)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toDate)))
+      return { error: 'Invalid date (expected yyyy-MM-dd).' };
+    if (toDate < fromDate) { const t = fromDate; fromDate = toDate; toDate = t; }
+    const numDays = daysBetween_(fromDate, toDate) + 1;
+    if (numDays < 1 || numDays > 14) return { error: 'Range must be 1–14 days.' };
+
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const minStaff = (CONFIG.COVERAGE_MIN_STAFF != null) ? CONFIG.COVERAGE_MIN_STAFF : 2;
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    // Roster → reps (name + tz + resolved per-tz shift).
+    const roster = getEmployeeRosterRows_();
+    const reps = [];
+    for (let i = 1; i < roster.length; i++) {
+      const name = String(roster[i][EMP.NAME] || '').trim();
+      if (!name) continue;
+      const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
+      reps.push({ id: String(roster[i][EMP.ID]).trim(), name: name, tz: tz, sched: getShiftSchedule_(tz) });
+    }
+
+    // PTO overlay map {empId: {dateIso: 'Approved'|'Pending'}} over a padded
+    // window (a shift's local date can straddle into an adjacent manager day).
+    const padStart = addDaysIso_(fromDate, -1);
+    const padEnd = addDaysIso_(toDate, 1);
+    const ptoMap = {};
+    try {
+      const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+      for (let i = 1; i < trows.length; i++) {
+        const eid = String(trows[i][TO.EMP_ID]).trim();
+        const dt = normalizeDate_(trows[i][TO.DATE]);
+        const st = String(trows[i][TO.STATUS] || '').trim().toLowerCase();
+        if (!eid || !dt || dt < padStart || dt > padEnd) continue;
+        if (st !== 'approved' && st !== 'pending') continue;
+        if (!ptoMap[eid]) ptoMap[eid] = {};
+        if (ptoMap[eid][dt] !== 'Approved') ptoMap[eid][dt] = (st === 'approved') ? 'Approved' : 'Pending';
+      }
+    } catch (e) { /* PTO overlay best-effort — coverage still renders */ }
+
+    // Holidays for the years spanned.
+    const holMap = {};
+    const yrs = {}; yrs[fromDate.substring(0, 4)] = true; yrs[toDate.substring(0, 4)] = true;
+    Object.keys(yrs).forEach(function (y) {
+      try { getUsHolidays_(parseInt(y, 10)).forEach(function (h) { if (h && h.date) holMap[h.date] = h.name; }); }
+      catch (e) { /* ignore */ }
+    });
+
+    const hhmm = function (mins) {
+      const m = ((mins % 1440) + 1440) % 1440;
+      return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2) + ':00';
+    };
+
+    const days = [];
+    for (let d = 0; d < numDays; d++) {
+      const dateIso = addDaysIso_(fromDate, d);
+      const dow = new Date(dateIso + 'T12:00:00Z').getUTCDay();
+      days.push({ date: dateIso, weekday: DOW[dow], holidayName: holMap[dateIso] || null, reps: [] });
+    }
+
+    // For each rep × each padded local date, convert the shift to the manager
+    // tz, push an absolute interval for the hourly strip, and (when the local
+    // date is one of the displayed days) add the rep row.
+    const intervals = [];
+    reps.forEach(function (r) {
+      const startHH = hhmm(r.sched.startMin);
+      const endHH = hhmm(r.sched.startMin + r.sched.lengthMin);
+      for (let dd = -1; dd <= numDays; dd++) {
+        const localDate = addDaysIso_(fromDate, dd);
+        const pto = (ptoMap[r.id] && ptoMap[r.id][localDate]) || '';
+        const off = (pto === 'Approved');
+        const tentative = (pto === 'Pending');
+        const conv = convertDateTime_(localDate, startHH, r.tz, mgrTz);
+        const dayDelta = daysBetween_(fromDate, conv.date);
+        const absStart = dayDelta * 1440 + timeToMins_(conv.time);
+        if (!off) intervals.push({ rep: r.id, absStart: absStart, absEnd: absStart + r.sched.lengthMin, tentative: tentative });
+        if (dd >= 0 && dd < numDays) {
+          const endConv = convertDateTime_(localDate, endHH, r.tz, mgrTz);
+          days[dd].reps.push({
+            name: r.name, tz: r.tz,
+            status: off ? 'off' : (tentative ? 'tentative' : 'working'),
+            ptoType: pto || null,
+            startMgr: conv.displayTime,
+            endMgr: endConv.displayTime,
+          });
+        }
+      }
+    });
+
+    const bucketed = coverageBucketHours_(intervals, numDays);
+    for (let d = 0; d < numDays; d++) days[d].hours = bucketed[d];
+
+    return { from: fromDate, to: toDate, managerTz: mgrTz, minStaff: minStaff, days: days };
+  } catch (err) { return { error: err.message }; }
+}
 function safeTimezone_(tz) {
   if (!tz) return CONFIG.TIMEZONE;
   const t = String(tz).trim();
