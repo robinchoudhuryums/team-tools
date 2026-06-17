@@ -821,7 +821,13 @@ this section before touching the relevant area.
   stays literally true — the helper just isn't re-called on a hit. Keyed
   by `emp.id` so no rep reads another rep's cached self-view; error
   results are never cached; same ≤5-min staleness tradeoff as
-  `getMetricsAmbient` and the Clock strip.
+  `getMetricsAmbient` and the Clock strip. The cache is BYPASSED (read +
+  write) whenever a test CDR override (`_TEST_OVERRIDE_CDR_SS_ID`) is active —
+  the same special-casing `getCdrSS_`/`getIntakeSS_`/`getKbSS_` apply — so a
+  fixture test's cached success can't mask a later test's CDR state (it was
+  masking the `metrics_getMyMetrics_cdrUnavailableErrors` error-path test,
+  since `_resetCdrCaches_` only clears the in-memory CDR caches, not this
+  CacheService entry). Production is unaffected (the override is undefined).
 - **Metrics enters call `stopClock` to avoid an interval leak.**
   `enterMetricsMyStatsView` and `enterMetricsTeamView` call
   `stopClock()` at the top (guarded by `typeof`) so the Clock view's
@@ -2740,6 +2746,29 @@ manually for a fresh deploy or environment:
   shown. Change requires a redeploy (CONFIG, no Script Property override).
 - **`MANAGER_TIMEZONE`** in CONFIG drives manager-dashboard
   display tz; change requires a redeploy.
+- **Timezone model — three distinct concepts, don't conflate them.**
+  (1) **`CONFIG.TIMEZONE`** (currently `Asia/Kolkata`) is the **storage /
+  coercion** tz, NOT a business anchor: shared bookkeeping (AuditLog
+  timestamps, `TO.SUBMITTED_AT`, `DateLocal`) is written in it, and **every
+  spreadsheet's own tz MUST equal it** because the coercion-recovery helpers
+  (`normalizeDate_`/`normalizeAuditTs_`/`trainCellDate_`) format coerced Date
+  cells in the *sheet's* tz while the writers use `CONFIG.TIMEZONE` — the
+  round-trip only holds when they match (the `config_adpSheetTzMatchesConfig`
+  S1.1 tripwire pins this for the ADP sheet; Storage Health surfaces it for all
+  seven). It can be ANY tz as long as the sheets match it. (2)
+  **`MANAGER_TIMEZONE`** (`America/Chicago`) is the **manager display/automation
+  anchor** — dashboard punch display, digest trigger hours, Coverage planner,
+  exports, audit-panel default dates all use it. So CST is already the operating
+  anchor for everything a manager sees, regardless of `CONFIG.TIMEZONE`. (3) The
+  per-employee **`Timezone`** roster column drives each rep's own display /
+  EOD-digest hour / shift; **punches are stamped in the rep's own tz**
+  (`recordPunch` → `empTz_`), so an offshore rep's punch is their local
+  wall-clock independent of the sheet tz. **Operator consequence:** to fix a
+  sheet-tz drift, set the spreadsheet(s) to `CONFIG.TIMEZONE` (`Asia/Kolkata`) —
+  do NOT need to change `CONFIG.TIMEZONE` to CST (that's a coordinated migration
+  of all seven sheets + a one-time reinterpretation of the bookkeeping columns,
+  with no manager-display benefit since `MANAGER_TIMEZONE` already covers it).
+  Neither Kolkata nor Manila observes DST, so PH/India reps have no DST edge.
 - **`CONFIG.COVERAGE_MIN_STAFF`** (default 2) sets the understaffed
   threshold for the manager Coverage planner (#3) — any manager-tz hour
   with fewer working reps is flagged. CONFIG-only; change requires a
