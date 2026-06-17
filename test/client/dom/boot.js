@@ -185,8 +185,12 @@ function defaultEmpState(over) {
 }
 
 /** Boot a fresh jsdom window with every partial loaded + a controllable run.
- *  Does NOT fire the shell load handler — call api.bootShell() for that. */
-function boot() {
+ *  Does NOT fire the shell load handler — call api.bootShell() for that.
+ *  opts.serverQueryParams seeds window.SERVER_QUERY_PARAMS BEFORE the partials
+ *  load, so __URL_PARAMS / INITIAL_VIEW_FROM_URL capture it (e.g. a ?tool=
+ *  deep-link for the onboarding-tour gate). */
+function boot(opts) {
+  opts = opts || {};
   const dom = new JSDOM(skeletonHtml(), {
     url: 'https://example.test/',
     runScripts: 'outside-only',  // enables getInternalVMContext for vm.runInContext
@@ -197,7 +201,7 @@ function boot() {
   const run = makeRun();
 
   // Stubs jsdom doesn't provide / we want controllable.
-  window.SERVER_QUERY_PARAMS = {};
+  window.SERVER_QUERY_PARAMS = opts.serverQueryParams || {};
   window.SERVER_WEB_APP_URL = 'https://example.test/exec';
   window.google = { script: { get run() { return run.runner; } } };
   if (!window.matchMedia) {

@@ -2924,7 +2924,7 @@ the Regression Scenarios below as the canonical full-system
 verification path.
 
 A second, **DOM-lifecycle** harness now sits alongside the pure one:
-`node test/client/run-dom.js` (or `npm run test:dom`; `npm test` runs BOTH).
+`node test/client/dom/runDom.js` (or `npm run test:dom`; `npm test` runs BOTH).
 It loads the FULL `<script>` of the chosen partials into a real **jsdom**
 window — the project's only dependency, dev-only, so `clasp` still never
 pushes it — and tests the layer the pure harness can't reach: innerHTML
@@ -2974,7 +2974,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/harness-dom.js, test/client/run-dom.js
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server

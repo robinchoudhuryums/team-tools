@@ -14,11 +14,14 @@
  - Cycle-3 audit findings S1.2 (dashboard punchDate normalize), S1.3 (Reconciled
    re-deduct guard), S2.1 (form-token expiry fail-closed), C1 (KB-AI rep-tz day),
    S1.1 (ADP-tz smoke tripwire), C4 (submission-card escape pin).
- - A SECOND DOM harness `test/client/dom/{boot,runDom}.js` (shell-boot +
-   controllable run). FOLLOW-ON: consolidate the two DOM harnesses into one
-   (this branch's is the capability superset — bootShell/setField/read; main's
-   is currently canonical). CI runs BOTH until consolidated.
-INV count after merge: 124. `npm test` runs all three suites green.
+ - DOM harnesses CONSOLIDATED to one (Option A): kept this branch's
+   `test/client/dom/{boot,runDom}.js` (capability superset — bootShell/setField/
+   read/controllable-run); removed main's `run-dom.js` + `harness-dom.js` after
+   porting its unique coverage onto boot() (escape-discipline renders, intake/
+   training opportunistic, onboarding-tour gates). `boot(opts)` gained
+   `serverQueryParams`. CI + package.json now run the two entrypoints
+   (run.js + dom/runDom.js).
+INV count after merge: 124. `npm test` green (run.js 128 + dom/runDom.js 48).
 
 ## Current
 Cycle: 3

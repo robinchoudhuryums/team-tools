@@ -534,3 +534,108 @@ test('mRenderTrendSection_ degrades to empty when series is absent (old server)'
 });
 
 
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PORTED from the (now-removed) run-dom.js harness on harness consolidation —
+// escape-discipline render tests + intake/training opportunistic coverage +
+// onboarding-tour gates. Re-expressed on boot(): all partials load, render fns
+// are window globals, INTAKE_STATE is a var global, and a target container is
+// mounted per test.
+// ═════════════════════════════════════════════════════════════════════════════
+const XSS = '<img src=x onerror=alert(1)><script>alert(2)<\/script>';
+function mount_(h, id) { const d = h.document.createElement('div'); d.id = id; h.document.body.appendChild(d); return d; }
+function fullTeamData_(over) {
+  return Object.assign({
+    from: '2026-06-15', to: '2026-06-15', date: '2026-06-15',
+    teamTotals: { pctAnswered: 50, rung: 2, answered: 1, missed: 1, tttFormatted: '0:00:20', noteCount: 1, noteCoverage: 100 },
+    reps: [], trend: null, unmatchedAgents: [], rosterWithNoCdr: [],
+  }, over || {});
+}
+
+section('DOM harness — escape discipline (render with hostile input)');
+
+test('mRenderTeamMetrics_: hostile repName + CDR agent name render escaped (F2)', () => {
+  const h = boot(); mount_(h, 'm-team-content');
+  h.window.mRenderTeamMetrics_(fullTeamData_({
+    reps: [{ repName: XSS, totalRung: 1, totalAnswered: 1, totalMissed: 0, pctAnswered: 100, attFormatted: '0:00:10', noteCount: 1, noteCoverage: 100 }],
+    unmatchedAgents: [XSS],
+  }));
+  const el = h.$('#m-team-content');
+  assert.strictEqual(el.querySelectorAll('script,img').length, 0, 'no live node from repName / agent name');
+  assert.ok(el.textContent.indexOf('onerror') >= 0, 'hostile strings survive as inert text');
+});
+
+test('mRenderMyStats_: hostile server error string renders escaped', () => {
+  const h = boot(); mount_(h, 'm-my-content');
+  h.window.mRenderMyStats_({ error: XSS });
+  const el = h.$('#m-my-content');
+  assert.strictEqual(el.querySelectorAll('script,img').length, 0, 'no live node from data.error');
+  assert.ok(el.textContent.indexOf('onerror') >= 0);
+});
+
+test('cnRenderCardCore_: hostile note fields render escaped (INV-89 card class)', () => {
+  const h = boot(); const area = mount_(h, 'view-area');
+  area.innerHTML = h.window.cnRenderCardCore_({
+    noteId: 'n1', timestamp: '2026-06-15T10:00:00', dateLocal: '2026-06-15',
+    callback: '', caller: XSS, relationship: '', patientAndTrx: '"><script>x<\/script>',
+    issue: XSS, transferredTo: '', resolution: '', flagType: '', resolved: false,
+    emailedAt: '', emailDepartments: '', subform: '', subformData: {},
+  }, false);
+  assert.strictEqual(area.querySelectorAll('script,img').length, 0, 'no live node from note fields');
+  assert.ok(area.textContent.indexOf('onerror') >= 0, 'hostile caller/issue survives as inert text');
+});
+
+section('DOM harness — opportunistic coverage (intake / training)');
+
+test('F3: intakeClearForm_ nulls INTAKE_STATE.preview (drops cached patient PHI)', () => {
+  const h = boot(); mount_(h, 'view-area');
+  h.window.INTAKE_STATE.preview = { formType: 'PPD', payload: { patientInfo: 'Jane PHI', answers: { 38: '250' } }, bodyHash: 'abc' };
+  h.window.intakeClearForm_('ppd');
+  assert.strictEqual(h.window.INTAKE_STATE.preview, null, 'cached preview (patient answers) cleared on form clear');
+});
+
+test('intakeRenderSentList_: hostile patientInfo renders escaped (INV-89/116)', () => {
+  const h = boot(); const area = mount_(h, 'view-area');
+  area.innerHTML = h.window.intakeRenderSentList_(
+    [{ formType: 'PPD', patientInfo: XSS, timestamp: '2026-06-15', recipient: 'x@y.com', repName: 'r' }], true);
+  assert.strictEqual(area.querySelectorAll('script,img').length, 0, 'no live node from a Sent-list patient label');
+  assert.ok(area.textContent.indexOf('onerror') >= 0, 'hostile patientInfo survives as inert text');
+});
+
+test('trainRenderReader_: hostile embed title renders escaped (no live node)', () => {
+  const h = boot(); mount_(h, 'train-reader-overlay');
+  h.window.trainRenderReader_({ id: 'i1', type: 'embed', title: XSS,
+    embedUrl: 'https://docs.google.com/document/d/x/preview', openUrl: 'https://docs.google.com/document/d/x/edit' });
+  const ov = h.$('#train-reader-overlay');
+  assert.strictEqual(ov.querySelectorAll('script').length, 0, 'no <script> from the embed title');
+  assert.strictEqual(ov.querySelectorAll('img').length, 0, 'hostile title did not create an <img>');
+  assert.strictEqual(ov.querySelectorAll('iframe').length, 1, 'the intended embed iframe is present');
+  assert.ok(ov.textContent.indexOf('onerror') >= 0, 'hostile title survives as inert text');
+});
+
+section('DOM harness — onboarding tour (script_tour)');
+
+test('T-1: tourEnsureNodes_ is idempotent — no duplicate nodes on re-entry', () => {
+  const h = boot();
+  h.window.tourEnsureNodes_();
+  h.window.tourEnsureNodes_();
+  assert.strictEqual(h.$$('#tour-block').length, 1, 'guard prevents a duplicate tour-block');
+});
+
+test('T-2: auto-start is SUPPRESSED on a deep-link landing (?tool=…)', () => {
+  const h = boot({ serverQueryParams: { tool: 'callNotes' } });
+  let scheduled = 0;
+  h.window.setTimeout = function () { scheduled++; return 0; };
+  h.window.localStorage.removeItem('umsTour');
+  h.window.tourMaybeAutoStart_();
+  assert.strictEqual(scheduled, 0, 'deep-link landing suppresses the auto-start');
+});
+
+test('T-2 contrast: no deep-link + unseen → auto-start IS scheduled', () => {
+  const h = boot({ serverQueryParams: {} });
+  let scheduled = 0;
+  h.window.setTimeout = function () { scheduled++; return 0; };
+  h.window.localStorage.removeItem('umsTour');
+  h.window.tourMaybeAutoStart_();
+  assert.strictEqual(scheduled, 1, 'no deep-link → auto-start scheduled');
+});
