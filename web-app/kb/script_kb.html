@@ -22,8 +22,8 @@
   .kb-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 14px; }
   .kb-item-head h2 { margin: 0; font-size: 1.15rem; }
   .kb-item-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
-  .kb-btn { font: inherit; font-size: .76rem; padding: 4px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
-  .kb-btn:hover { background: var(--paper-card); }
+  .kb-btn { font: inherit; font-size: .76rem; padding: 4px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+  .kb-btn:hover { background: var(--paper-2); }
   .kb-btn.danger { color: var(--danger, #c13030); border-color: var(--destructive-soft); }
   .kb-embed { flex: 1; width: 100%; min-height: 60vh; border: 1px solid var(--line); border-radius: 8px; }
   /* rendered markdown - Console document register: display-font headings,
@@ -53,6 +53,33 @@
   .kb-article tbody tr:last-child td { border-bottom: none; }
   .kb-article img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: block; margin: .9em 0; }
   .kb-article a.kb-img-lnk { display: inline-block; max-width: 100%; }
+  /* §4 — collapsible department headers (chevron + count) */
+  .kb-dept-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font: inherit; background: none; border: none; cursor: pointer; padding: 8px 6px 4px; }
+  .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
+  .kb-dept-name { font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .kb-dept-count { margin-left: auto; font-family: var(--mono); font-size: .66rem; color: var(--muted-3); }
+  .kb-chevron { display: inline-flex; color: var(--muted-3); }
+  .kb-dept.collapsed .kb-item { display: none; }
+
+  /* §4 — landing panel (right side when nothing is selected) */
+  .kb-land { max-width: 760px; }
+  .kb-land-sec { margin-bottom: 22px; }
+  .kb-land-h { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .kb-land-h .kb-land-sub { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted-3); }
+  .kb-land-pill { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--warn-soft); color: var(--warning-deep); border-radius: 999px; padding: 1px 7px; }
+  .kb-land-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-bottom: 1px solid var(--line); padding: 9px 2px; cursor: pointer; color: var(--ink); }
+  .kb-land-row:last-child { border-bottom: none; }
+  .kb-land-row:hover { background: var(--paper-2); }
+  .kb-land-ic { color: var(--muted); display: inline-flex; flex-shrink: 0; }
+  .kb-land-t { font-size: .9rem; font-weight: 600; }
+  .kb-land-meta { margin-left: auto; font-size: .76rem; color: var(--muted); white-space: nowrap; }
+  .kb-land-none { font-size: .84rem; color: var(--muted); font-style: italic; padding: 4px 2px; }
+  .kb-land-rd { cursor: default; }
+  .kb-land-rd:hover { background: none; }
+  .kb-land-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex-shrink: 0; }
+  .kb-land-rd-open { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; background: none; border: none; text-align: left; font: inherit; cursor: pointer; color: var(--ink); padding: 0; }
+  .kb-land-rd-open:hover .kb-land-t { color: var(--accent); }
+
   /* editor modal */
   .kb-ed { width: min(720px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
   .kb-ed .body { overflow: auto; padding: 4px 2px; }
@@ -142,7 +169,7 @@
 //  first so authored content can't inject script). Embeds render the Drive
 //  preview iframe. Managers get inline add/edit/delete.
 // ════════════════════════════════════════════════════════════════════════════
-var KB_STATE = { tree: [], isManager: false, currentId: null };
+var KB_STATE = { tree: [], isManager: false, currentId: null, landing: false, usage: null, reviewDue: null };
 var KB_EDIT = null;
 
 // Compact markdown → HTML. Escapes HTML up front (so raw tags/script in the
@@ -263,8 +290,9 @@ function enterReferenceView(area) {
         '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off">' +
         '<div id="kb-tree"><div class="kb-loading"><div class="spinner"></div></div></div>' +
       '</div>' +
-      '<div class="kb-main" id="kb-main"><div class="kb-empty">Select an item on the left, or search.</div></div>' +
+      '<div class="kb-main" id="kb-main"><div class="kb-loading"><div class="spinner"></div></div></div>' +
     '</div>';
+  KB_STATE.currentId = null; KB_STATE.landing = true;
 
   var requested = currentView;
   google.script.run
@@ -274,6 +302,7 @@ function enterReferenceView(area) {
       if (!res || res.error) { el.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
       KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager;
       kbRenderTree_();
+      if (KB_STATE.landing) kbRenderLanding_();
       if (KB_STATE.isManager) { kbLoadUsageBlock_(); kbLoadReviewDueBlock_(); }
     })
     .withFailureHandler(function (err) { if (currentView === requested) { var el = document.getElementById('kb-tree'); if (el) el.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; } })
@@ -299,8 +328,15 @@ function kbRenderTree_() {
   var depts = Object.keys(byDept).sort();
   var html = kbAddBtnHtml_();
   if (!depts.length) { html += '<div class="kb-empty">No reference items yet' + (KB_STATE.isManager ? ' — add one.' : '.') + '</div>'; el.innerHTML = html; return; }
+  var collapsed = kbPanelPrefs_().deptCollapsed || {};
   depts.forEach(function (d) {
-    html += '<div class="kb-dept"><div class="kb-dept-h">' + esc(d) + '</div>';
+    var isCol = !!collapsed[d];
+    html += '<div class="kb-dept' + (isCol ? ' collapsed' : '') + '">' +
+      '<button class="kb-dept-toggle" data-dept="' + esc(d) + '" onclick="kbToggleDept_(this.getAttribute(\'data-dept\'))" aria-expanded="' + (!isCol) + '">' +
+        '<span class="kb-chevron">' + icon(isCol ? 'chevronRight' : 'chevronDown', 13) + '</span>' +
+        '<span class="kb-dept-name">' + esc(d) + '</span>' +
+        '<span class="kb-dept-count">' + byDept[d].length + '</span>' +
+      '</button>';
     byDept[d].forEach(function (it) {
       html += '<button class="kb-item' + (it.id === KB_STATE.currentId ? ' on' : '') + '" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
         icon(kbItemIcon_(it), 13) + ' ' + esc(it.title) + '</button>';
@@ -308,6 +344,88 @@ function kbRenderTree_() {
     html += '</div>';
   });
   el.innerHTML = html;
+}
+
+/** Toggle a department's collapsed state (persisted in the umsKbPanel blob). */
+function kbToggleDept_(d) {
+  var prefs = kbPanelPrefs_();
+  prefs.deptCollapsed = prefs.deptCollapsed || {};
+  if (prefs.deptCollapsed[d]) delete prefs.deptCollapsed[d]; else prefs.deptCollapsed[d] = true;
+  kbPanelSave_(prefs);
+  kbRenderTree_();
+}
+
+/** Landing panel (right side, nothing selected): Recently viewed (localStorage
+ *  recents) + Most used + Review due (both manager-only, from the cached usage /
+ *  review-due loads). Dept/icon context is looked up from the loaded tree. */
+function kbRenderLanding_() {
+  var main = document.getElementById('kb-main'); if (!main) return;
+  var prefs = kbPanelPrefs_();
+  var recents = prefs.recents || [];
+  var treeById = {};
+  (KB_STATE.tree || []).forEach(function (it) { treeById[it.id] = it; });
+
+  var h = '<div class="kb-land">';
+
+  // Recently viewed (all users)
+  h += '<div class="kb-land-sec"><div class="kb-land-h">Recently viewed</div>';
+  if (recents.length) {
+    recents.forEach(function (r) {
+      var it = treeById[r.id];
+      h += '<button class="kb-land-row" data-kb-id="' + esc(r.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+        '<span class="kb-land-ic">' + icon(it ? kbItemIcon_(it) : 'fileText', 15) + '</span>' +
+        '<span class="kb-land-t">' + esc(r.title) + '</span>' +
+        (it && it.department ? '<span class="kb-land-meta">' + esc(it.department) + '</span>' : '') + '</button>';
+    });
+  } else {
+    h += '<div class="kb-land-none">Items you open will show up here.</div>';
+  }
+  h += '</div>';
+
+  // Most used (manager-only — kbGetUsageStats is manager-gated)
+  if (KB_STATE.isManager) {
+    var usage = (KB_STATE.usage && KB_STATE.usage.items) || [];
+    h += '<div class="kb-land-sec"><div class="kb-land-h">Most used <span class="kb-land-sub">· 30d</span></div>';
+    if (usage.length) {
+      usage.forEach(function (u) {
+        var it = treeById[u.id];
+        h += '<button class="kb-land-row" data-kb-id="' + esc(u.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+          '<span class="kb-land-ic">' + icon(it ? kbItemIcon_(it) : 'fileText', 15) + '</span>' +
+          '<span class="kb-land-t">' + esc(u.title) + '</span>' +
+          '<span class="kb-land-meta">' + u.count + ' open' + (u.count === 1 ? '' : 's') +
+            (u.drawerCount ? ' · ' + u.drawerCount + ' in-call' : '') + '</span></button>';
+      });
+    } else {
+      h += '<div class="kb-land-none">No opens recorded in the last 30 days yet.</div>';
+    }
+    h += '</div>';
+  }
+
+  // Review due (manager-only)
+  if (KB_STATE.isManager) {
+    var rd = (KB_STATE.reviewDue && KB_STATE.reviewDue.items) || [];
+    if (rd.length) {
+      h += '<div class="kb-land-sec"><div class="kb-land-h">Review due <span class="kb-land-pill">' + rd.length + '</span>' +
+        '<span class="kb-land-sub">· ' + esc(String((KB_STATE.reviewDue && KB_STATE.reviewDue.dueDays) || 90)) + 'd+</span></div>';
+      rd.forEach(function (it) {
+        var age = (it.ageDays == null) ? 'never reviewed'
+          : (it.basedOnUpdate ? ('edited ' + it.ageDays + 'd ago') : ('reviewed ' + it.ageDays + 'd ago'));
+        h += '<div class="kb-land-row kb-land-rd">' +
+          '<span class="kb-land-dot" title="Review due"></span>' +
+          '<button class="kb-land-rd-open" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+            '<span class="kb-land-t">' + esc(it.title) + '</span>' +
+            '<span class="kb-land-meta">' + esc(age) + (it.views ? ' · ' + it.views + ' view' + (it.views === 1 ? '' : 's') : '') + '</span>' +
+          '</button>' +
+          '<button class="kb-btn" data-kb-id="' + esc(it.id) + '" title="Mark reviewed (resets the staleness clock without editing)" ' +
+            'onclick="kbMarkReviewedClick_(this.getAttribute(\'data-kb-id\'))">' + icon('check', 13) + ' Reviewed</button>' +
+        '</div>';
+      });
+      h += '</div>';
+    }
+  }
+
+  h += '</div>';
+  main.innerHTML = h;
 }
 
 // Group section-level results by doc (insertion order = best-score-first).
@@ -478,7 +596,7 @@ function kbScrollToAnchor_(host, anchor) {
 
 function kbDoSearch_(q) {
   q = String(q || '').trim();
-  if (q.length < 2) { kbRenderTree_(); return; }
+  if (q.length < 2) { kbRenderTree_(); if (!KB_STATE.currentId) { KB_STATE.landing = true; kbRenderLanding_(); } return; }
   var el = document.getElementById('kb-tree'); if (!el) return;
   var requested = currentView;
   // L13 — sequence counter (the drawer's kbDrawerSearch_ pattern): two
@@ -507,7 +625,7 @@ function kbDoSearch_(q) {
       // one scroll without opening any doc.
       var main = document.getElementById('kb-main');
       if (main) {
-        KB_STATE.currentId = null;
+        KB_STATE.currentId = null; KB_STATE.landing = false;
         main.innerHTML = '<div class="kb-item-head"><h2>Results for "' + esc(q) + '"</h2></div>' +
           (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_') : '<div class="kb-empty">No matches.</div>');
         kbHighlightTerms_(main, q);
@@ -518,7 +636,7 @@ function kbDoSearch_(q) {
 }
 
 function kbOpenItem_(id, anchor) {
-  KB_STATE.currentId = id;
+  KB_STATE.currentId = id; KB_STATE.landing = false;
   document.querySelectorAll('.kb-item').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-kb-id') === id); });
   var main = document.getElementById('kb-main'); if (!main) return;
   main.innerHTML = '<div class="kb-loading"><div class="spinner"></div></div>';
@@ -564,8 +682,8 @@ function kbDeleteItem_(id) {
         .withSuccessHandler(function (res) {
           if (!res || !res.success) { showToast((res && res.error) || 'Delete failed', 'toast-error'); return; }
           showToast('Deleted', 'toast-success');
-          KB_STATE.currentId = null;
-          var main = document.getElementById('kb-main'); if (main) main.innerHTML = '<div class="kb-empty">Select an item on the left, or search.</div>';
+          KB_STATE.currentId = null; KB_STATE.landing = true;
+          kbRenderLanding_();
           kbReloadTree_();
         })
         .withFailureHandler(function (err) { showToast((err && err.message) || 'Delete failed', 'toast-error'); })
@@ -1224,70 +1342,35 @@ function kbPanelRecordOpen_(item, context) {
   kbRecordViewFireAndForget_(item.id,
     context || ('drawer:' + (typeof currentView !== 'undefined' ? currentView : '')));
 }
-/** Manager-only: top "most referenced (30d)" items, prepended to the tree.
- *  Best-effort - any error renders nothing. The in-call count tells the
- *  manager which guides reps actually lean on mid-call (the conversion
- *  priority signal). */
+/** Manager-only: top "most referenced (30d)" items → cached in KB_STATE and
+ *  rendered into the landing panel's "Most used" block. Best-effort — any error
+ *  leaves the block empty. The in-call count tells the manager which guides
+ *  reps actually lean on mid-call (the conversion priority signal). */
 function kbLoadUsageBlock_() {
   var requested = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
-      if (!res || res.error || !res.items || !res.items.length) return;
-      var el = document.getElementById('kb-tree'); if (!el) return;
-      var html = '<div class="kb-dept"><div class="kb-dept-h">Most referenced \u00b7 30d</div>';
-      res.items.forEach(function (u) {
-        html += '<button class="kb-item" data-kb-id="' + esc(u.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
-          '<span>' + esc(u.title) + '</span>' +
-          '<span class="kb-snip">' + u.count + ' open' + (u.count === 1 ? '' : 's') +
-          (u.drawerCount ? ' \u00b7 ' + u.drawerCount + ' in-call' : '') + '</span></button>';
-      });
-      html += '</div>';
-      var hostDiv = document.createElement('div');
-      hostDiv.innerHTML = html;
-      el.insertBefore(hostDiv.firstChild, el.firstChild);
+      KB_STATE.usage = (res && !res.error) ? res : { items: [] };
+      if (KB_STATE.landing) kbRenderLanding_();
     })
     .withFailureHandler(function () {})
     .kbGetUsageStats();
 }
 
-/** #4 — manager-only "Review due" block, prepended to the tree. Lists KB items
- *  whose last review/edit is older than the threshold, most-used first, each
- *  with a Mark-reviewed button. Best-effort: any error renders nothing. */
+/** #4 — manager-only "Review due" → cached in KB_STATE and rendered into the
+ *  landing panel's "Review due" block (items whose last review/edit is older
+ *  than the threshold, most-used first). Best-effort. */
 function kbLoadReviewDueBlock_() {
   var requested = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
-      if (!res || res.error || !res.items || !res.items.length) return;
-      kbRenderReviewDueBlock_(res);
+      KB_STATE.reviewDue = (res && !res.error) ? res : { items: [] };
+      if (KB_STATE.landing) kbRenderLanding_();
     })
     .withFailureHandler(function () {})
     .kbGetReviewDue();
-}
-
-function kbRenderReviewDueBlock_(res) {
-  var el = document.getElementById('kb-tree'); if (!el) return;
-  // Remove any prior render so a Mark-reviewed reload doesn't stack blocks.
-  var prior = document.getElementById('kb-reviewdue-block'); if (prior) prior.remove();
-  var html = '<div class="kb-dept" id="kb-reviewdue-block"><div class="kb-dept-h">Review due · ' + esc(String(res.dueDays || 90)) + 'd+</div>';
-  res.items.forEach(function (it) {
-    var age = (it.ageDays == null) ? 'never reviewed'
-      : (it.basedOnUpdate ? ('edited ' + it.ageDays + 'd ago') : ('reviewed ' + it.ageDays + 'd ago'));
-    var views = it.views ? (' · ' + it.views + ' view' + (it.views === 1 ? '' : 's')) : '';
-    html += '<div class="kb-reviewdue-row">' +
-      '<button class="kb-item" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
-        '<span>' + esc(it.title) + '</span>' +
-        '<span class="kb-snip">' + esc(age) + views + '</span>' +
-      '</button>' +
-      '<button class="kb-review-btn" data-kb-id="' + esc(it.id) + '" title="Mark reviewed (resets the staleness clock without editing)" ' +
-        'onclick="kbMarkReviewedClick_(this.getAttribute(\'data-kb-id\'))" aria-label="Mark reviewed">' + icon('check', 13) + '</button>' +
-    '</div>';
-  });
-  html += '</div>';
-  var hostDiv = document.createElement('div');
-  hostDiv.innerHTML = html;
-  el.insertBefore(hostDiv.firstChild, el.firstChild);
 }
 
 function kbMarkReviewedClick_(id) {
