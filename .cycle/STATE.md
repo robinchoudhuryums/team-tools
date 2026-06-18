@@ -56,9 +56,18 @@ Executing as 7 separate per-module commits on branch claude/practical-gauss-yycw
   low/none cells) + click-to-expand per-day rep detail + Understaffed-slots risk
   callout (panel[data-tone=destructive], grouped ranges + PTO reason). Server
   unchanged. Pure 134/0, DOM 48/0 throughout.
-- NEXT: commit #6 Metrics (My Stats Today/7D/30D presets; rail sparklines where
-  data exists C4 — answered/missed from trend, attSeconds from series; sortable+
-  sticky team table; tri-tone %Answered + unify .m-coverage on deep tones C5).
+- DONE — commit #6 Metrics (1c6991a): My Stats Today/7D/30D trend-window presets
+  (client slice of the 30d trend; window=1=today-only) + rail sparklines (C4:
+  answered/missed from trend, attSeconds from series; notes/total-talk plain) +
+  sortable+sticky team table (mSortReps_/mTeamSort_/mTh_, default %Ans desc) +
+  tri-tone %Ans cells (mPctClass_) + C5 .m-coverage unified on deep tones. Pure
+  134/0, DOM 48/0. NOTE/conflict: the mock's range-aggregated My Stats needs a
+  server getMyMetrics range variant — deferred (window control is client-only).
+- NEXT: commit #7 Call Notes (Search → real read-only cnRenderCardCore_ cards +
+  result count + term highlight + date filter + Phone/TRX tabs [SERVER change to
+  searchMyCallNotes/managerSearchCallNotes + INV-45 + Tests.js, C3]; manager
+  Stats → table sharing the Metrics team-table component [improvement #1]; Admin
+  → Overview/Tags/Compliance/Config sub-tabs; exact-TRX badge tone C7).
 
 ## Cycle 5 CLOSED (2026-06-17)
 Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
