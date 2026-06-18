@@ -7424,7 +7424,7 @@ var CN_HEALTH_RUN_LABELS = {
 function cnSysCardShell_(key, label) {
   return '<div class="panel cn-sys-card" id="cn-sys-' + key + '" data-tone="sage">' +
     '<div class="cn-sys-h">' + esc(label) + '</div>' +
-    '<div class="cn-sys-v" style="color:var(--muted)">…</div></div>';
+    '<div class="cn-sys-v" style="color:var(--muted)"><span class="lo-dots"><span></span><span></span><span></span></span></div></div>';
 }
 function cnSetSysCard_(key, label, tone, value, sub) {
   var el = document.getElementById('cn-sys-' + key);
@@ -7442,7 +7442,7 @@ function cnSetSysCard_(key, label, tone, value, sub) {
 function cnLoadStoragePanel_() {
   var slot = document.getElementById('cn-admin-storage');
   if (!slot) return;
-  slot.innerHTML = loSweep();
+  slot.innerHTML = '<div style="padding:10px 0">' + loSweep() + '</div>';
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
@@ -7524,7 +7524,7 @@ function cnRenderStoragePanel_(res) {
 function cnLoadHealthPanel_() {
   var slot = document.getElementById('cn-admin-health');
   if (!slot) return;
-  slot.innerHTML = loSweep();
+  slot.innerHTML = '<div style="padding:10px 0">' + loSweep() + '</div>';
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {

@@ -251,11 +251,12 @@
      On mobile the tabs scroll horizontally if they overflow. */
   .tool-tab-bar {
     display: flex; flex-wrap: nowrap;
-    overflow-x: auto;
+    overflow-x: auto; overflow-y: hidden;  /* horizontal scroll on overflow only; never a vertical bar */
     gap: 4px;
     padding: 12px 40px 0;  /* aligns with .view-area's 40px horizontal padding */
     background: var(--paper);
     border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 30;  /* stays pinned while the view scrolls */
   }
   .tool-tab-bar:empty { display: none; }
   .tt-btn {
@@ -273,6 +274,13 @@
     color: var(--ink); border-bottom-color: var(--accent);
   }
   .tt-btn .tt-icon { display: inline-flex; align-items: center; color: inherit; }
+  /* Dark mode: native date/time pickers (incl. the calendar-picker indicator)
+     render black-on-dark and become invisible. color-scheme:dark tells the
+     browser to draw the control + its icon for a dark surface. App-wide. */
+  :root[data-mode="dark"] input[type="date"],
+  :root[data-mode="dark"] input[type="time"],
+  :root[data-mode="dark"] input[type="datetime-local"],
+  :root[data-mode="dark"] input[type="month"] { color-scheme: dark; }
 
   /* .clk-ts-divider rules removed in Round 2 · 8b — the Clock view's
      timesheet section was moved to the Time / PTO tab, so the divider
