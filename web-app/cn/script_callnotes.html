@@ -6150,6 +6150,7 @@ function cnStatsSortReps_(reps, sort) {
       case 'action': return fc.action || 0;
       case 'training': return fc.training || 0;
       case 'review': return fc.review || 0;
+      case 'emails': return r.emailsSent || 0;
       case 'median': return (r.medianCompletionSeconds == null ? -1 : r.medianCompletionSeconds);
       case 'pct': return (r.cdr && r.cdr.pctAnswered != null) ? r.cdr.pctAnswered : -1;
       case 'coverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
@@ -6192,6 +6193,7 @@ function cnMgrRenderStats_(host, res) {
         { key: 'action', label: 'Action', numeric: true, sortable: true, cell: function (r) { var fc = r.flagCounts || {}; return esc(fc.action || 0) + ((r.resolvedCount && fc.action) ? ' <span style="color:var(--muted);font-size:.85em">(' + esc(r.resolvedCount) + ' res)</span>' : ''); } },
         { key: 'training', label: 'Training', numeric: true, sortable: true, cell: function (r) { return esc((r.flagCounts || {}).training || 0); } },
         { key: 'review', label: 'Review', numeric: true, sortable: true, cell: function (r) { return esc((r.flagCounts || {}).review || 0); } },
+        { key: 'emails', label: 'Emails', numeric: true, sortable: true, cell: function (r) { return esc(r.emailsSent || 0); } },
         { key: 'median', label: 'Median', numeric: true, sortable: true, cell: function (r) { return esc(cnStatsFmtDur_(r.medianCompletionSeconds)); } },
         { key: 'pct', label: '% Ans', numeric: true, sortable: true, cell: function (r) { var p = r.cdr ? r.cdr.pctAnswered : null; return (p == null) ? '<span style="color:var(--muted)">—</span>' : '<span class="' + pctCls(p) + '">' + esc(p) + '%</span>'; } },
         { key: 'coverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return (r.noteCoverage != null) ? covBadge(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },

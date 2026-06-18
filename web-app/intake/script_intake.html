@@ -713,24 +713,38 @@ function intakeRenderAcctSections_(form, lang) {
         '<button type="button" class="intk-yn-btn yes" data-set="TRUE" role="radio" aria-checked="false" onclick="intakePick_(this)">Yes</button>' +
         '<button type="button" class="intk-yn-btn no" data-set="FALSE" role="radio" aria-checked="false" onclick="intakePick_(this)">No</button>' +
       '</div>';
+    } else if (L.selects[i] && L.selects[i].length === 3 && L.selects[i][1] === 'Yes' && L.selects[i][2] === 'No') {
+      // #10 — a ['','Yes','No'] select renders as the same color-coded Yes/No
+      // toggle as PPD (storing 'Yes'/'No' — the server select layout's
+      // conditional-coloring keys, contract preserved). data-ynsel marks it so
+      // the collector reads '' (not 'FALSE') when unset.
+      control = '<div class="intk-yn" data-idx="' + i + '" data-form="' + form + '" data-ynsel="1" data-val="" role="radiogroup" aria-label="' + esc(label) + '" onkeydown="intakePickKey_(event)">' +
+        '<button type="button" class="intk-yn-btn yes" data-set="Yes" role="radio" aria-checked="false" onclick="intakePick_(this)">Yes</button>' +
+        '<button type="button" class="intk-yn-btn no" data-set="No" role="radio" aria-checked="false" onclick="intakePick_(this)">No</button>' +
+      '</div>';
     } else if (L.selects[i]) {
       control = '<select id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">' +
         L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
     } else {
       control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">';
     }
-    var labelFor = (L.checkboxes.indexOf(i) >= 0) ? '' : ' for="intk-' + form + '-q' + i + '"';
+    var isYnSel = L.selects[i] && L.selects[i].length === 3 && L.selects[i][1] === 'Yes' && L.selects[i][2] === 'No';
+    var labelFor = (L.checkboxes.indexOf(i) >= 0 || isYnSel) ? '' : ' for="intk-' + form + '-q' + i + '"';
     rows += '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '"><label class="q"' + labelFor + '>' + esc(label) + '</label>' + control + '</div>';
   }
   flush();
   return out;
 }
 
-// Read a single account answer (checkbox toggle / select / text) by index.
+// Read a single account answer by index. Any .intk-yn toggle (checkbox →
+// TRUE/FALSE, or a Yes/No select-toggle marked data-ynsel → Yes/No) reads its
+// data-val; otherwise the input/select value. (#10 generalized the toggle path.)
 function intakeAcctGetVal_(root, i, isCheckbox) {
-  if (isCheckbox) {
-    var grp = root.querySelector('.intk-yn[data-idx="' + i + '"]');
-    return grp ? (String(grp.getAttribute('data-val') || '') || 'FALSE') : 'FALSE';
+  var grp = root.querySelector('.intk-yn[data-idx="' + i + '"]');
+  if (grp) {
+    var v = String(grp.getAttribute('data-val') || '');
+    if (v) return v;
+    return grp.getAttribute('data-ynsel') ? '' : 'FALSE';
   }
   var el = root.querySelector('[data-intk-idx="' + i + '"]');
   return el ? String(el.value).trim() : '';
@@ -1174,24 +1188,23 @@ function intakeRestoreAnswers_(form, snapshot) {
   }
 }
 
-// Apply an answers map (idx → value) to a rendered account form.
+// Apply an answers map (idx → value) to a rendered account form. Any .intk-yn
+// toggle (checkbox TRUE/FALSE or Yes/No select-toggle) restores via its data-val
+// + button states; everything else sets the input/select value. (#10 generalized.)
 function intakeApplyAcctAnswers_(form, answers) {
   var root = document.getElementById('intk-' + form + '-form');
-  var L = intakeAcctLayout_(form);
   if (!root) return;
   Object.keys(answers || {}).forEach(function (idx) {
     var i = parseInt(idx, 10);
-    if (L.checkboxes.indexOf(i) >= 0) {
-      var grp = root.querySelector('.intk-yn[data-idx="' + i + '"]');
-      if (grp) {
-        var v = (answers[idx] === 'TRUE') ? 'TRUE' : (answers[idx] === 'FALSE' ? 'FALSE' : '');
-        grp.setAttribute('data-val', v);
-        grp.querySelectorAll('[data-set]').forEach(function (b) {
-          var on = (b.getAttribute('data-set') === v);
-          b.classList.toggle('on', on);
-          b.setAttribute('aria-checked', on ? 'true' : 'false');
-        });
-      }
+    var grp = root.querySelector('.intk-yn[data-idx="' + i + '"]');
+    if (grp) {
+      var v = answers[idx] == null ? '' : String(answers[idx]);
+      grp.setAttribute('data-val', v);
+      grp.querySelectorAll('[data-set]').forEach(function (b) {
+        var on = (b.getAttribute('data-set') === v);
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
     } else {
       var el = root.querySelector('[data-intk-idx="' + i + '"]');
       if (el) el.value = answers[idx];
