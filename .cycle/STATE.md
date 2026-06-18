@@ -76,6 +76,22 @@ Executing as 7 separate per-module commits on branch claude/practical-gauss-yycw
     health panels into compact status CARDS deferred (panels already convey tone).
   Pure 134/0, DOM 48/0, node --check clean.
 
+## DEFERRED FOLLOW-UPS #1–#4 DONE (post-redesign, same branch)
+- #1 (43ea7ab) range-aggregated My Stats: new server getMyMetricsRange(from,to)
+  (caller-scoped self-aggregate, 92d cap, no team/series); Today=single rich /
+  7D·30D=server ranges / custom From-To; mRenderMyStats_ handles both.
+- #2 (36506d2) Sick deprecation: removed 'Sick Leave' from TIME_OFF_TYPES (no new
+  sick via UI or RPC); KEPT getLeaveDeduction_ sick mapping + col J for historical
+  reverts (removing would corrupt annual on legacy sick reverts). Node test updated.
+- #3 (377b981) shared mtRenderTable_ (script_core) drives BOTH the Metrics team
+  table + CN Stats table (CN Stats gained sortable cols); mTh_ removed.
+- #4 (48d212c) Admin Overview "System status" cards (Automation/CDR/Storage,
+  OK/warn/error) from the existing health/storage fetches; detail panels kept below.
+Pure 134/0, DOM 48/0, node --check clean throughout. Still NOT merged (no PR).
+Remaining deferred: full col-J excision (only if zero historical sick rows);
+Admin health→cards full consolidation (detail panels still shown); + the
+small UX niceties (#6–#10 in chat) + /sync-docs doc drift.
+
 ## REDESIGN COMPLETE — all 7 commits landed on claude/practical-gauss-yycwkz
 (8 commits incl. the #5 Clock/Coverage split). Plan: docs/design_handoff_team_tools_redesign/
 IMPLEMENTATION_PLAN.md. NOT merged (no PR requested). OPERATOR: one clasp push -f
