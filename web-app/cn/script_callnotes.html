@@ -1449,6 +1449,14 @@
     font-family: var(--ui); font-size: 12px;
     color: var(--ink); line-height: 1.5;
   }
+  /* §7c/#4 — Admin Overview "System status" cards */
+  .cn-sys-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 900px; margin-bottom: 18px; }
+  .cn-sys-card { padding: 12px 14px; }
+  .cn-sys-card .cn-sys-h { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+  .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
+  .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  @media (max-width: 640px) { .cn-sys-status { grid-template-columns: 1fr; } }
+
   /* §7a — search results in the real note-card vocabulary (read-only) */
   .cn-result-count { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .04em; margin: 2px 0 10px; }
   .cn-result-count b { color: var(--ink); }
@@ -6806,6 +6814,12 @@ function enterCallNotesAdminView(area) {
       tab('overview', 'Overview') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="overview" style="' + paneStyle('overview') + '">' +
+      '<div class="day-section-label" style="margin-bottom:8px">System status</div>' +
+      '<div class="cn-sys-status">' +
+        cnSysCardShell_('automation', 'Automation') +
+        cnSysCardShell_('cdr', 'CDR') +
+        cnSysCardShell_('storage', 'Storage') +
+      '</div>' +
       '<div id="cn-admin-kpis"></div>' +
       '<div id="cn-admin-health"></div>' +
       '<div id="cn-admin-storage"></div>' +
@@ -7377,6 +7391,28 @@ var CN_HEALTH_RUN_LABELS = {
  *  cnLoadHealthPanel_. Renders one row per spreadsheet the app uses with a
  *  configured/reachable/tz badge — the tz-mismatch row is the headline (it's
  *  the exact misconfig the runAllTests S1.1 tripwire flags). */
+// §7c/#4 — compact "System status" cards atop the Admin Overview, summarizing
+// Automation / CDR / Storage as OK / warn / error. Derived from the SAME
+// getAutomationHealth + getStorageHealth fetches the detail panels below use (no
+// extra RPCs). The full panels remain below as the drill-down.
+function cnSysCardShell_(key, label) {
+  return '<div class="panel cn-sys-card" id="cn-sys-' + key + '" data-tone="sage">' +
+    '<div class="cn-sys-h">' + esc(label) + '</div>' +
+    '<div class="cn-sys-v" style="color:var(--muted)">…</div></div>';
+}
+function cnSetSysCard_(key, label, tone, value, sub) {
+  var el = document.getElementById('cn-sys-' + key);
+  if (!el) return;
+  var toneAttr = tone === 'ok' ? 'sage' : tone === 'warn' ? 'warn' : 'destructive';
+  var ic = tone === 'ok' ? 'checkCircle' : tone === 'warn' ? 'warning' : 'xCircle';
+  var col = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep)' : 'var(--danger-deep)';
+  el.setAttribute('data-tone', toneAttr);
+  el.innerHTML =
+    '<div class="cn-sys-h">' + esc(label) + ' <span style="color:' + col + '">' + icon(ic, 13) + '</span></div>' +
+    '<div class="cn-sys-v">' + esc(value) + '</div>' +
+    (sub ? '<div class="cn-sys-s">' + esc(sub) + '</div>' : '');
+}
+
 function cnLoadStoragePanel_() {
   var slot = document.getElementById('cn-admin-storage');
   if (!slot) return;
@@ -7389,14 +7425,23 @@ function cnLoadStoragePanel_() {
       if (!live) return;
       if (!res || res.error) {
         live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Storage health unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
+        cnSetSysCard_('storage', 'Storage', 'warn', 'Unavailable', 'health check failed');
         return;
       }
       live.innerHTML = cnRenderStoragePanel_(res);
+      var stores = res.stores || [];
+      var unreachable = stores.filter(function (s) { return s.configured && s.reachable === false; }).length;
+      var tzDrift = stores.filter(function (s) { return s.tzMatch === false; }).length;
+      var tone = unreachable > 0 ? 'crit' : (tzDrift > 0 ? 'warn' : 'ok');
+      var val = unreachable > 0 ? (unreachable + ' unreachable') : (tzDrift > 0 ? (tzDrift + ' tz mismatch') : 'All OK');
+      var sub = unreachable > 0 ? 'check sharing / access' : (tzDrift > 0 ? 'review config →' : 'reachable · tz matches');
+      cnSetSysCard_('storage', 'Storage', tone, val, sub);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var live = document.getElementById('cn-admin-storage');
       if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Storage health unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
+      cnSetSysCard_('storage', 'Storage', 'warn', 'Unavailable', 'health check failed');
     })
     .getStorageHealth();
 }
@@ -7462,16 +7507,43 @@ function cnLoadHealthPanel_() {
       if (!live) return;
       if (!res || res.error) {
         live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Automation health unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
+        cnSetSysCard_('automation', 'Automation', 'warn', 'Unavailable', 'health check failed');
+        cnSetSysCard_('cdr', 'CDR', 'warn', 'Unavailable', 'health check failed');
         return;
       }
       live.innerHTML = cnRenderHealthPanel_(res);
+      cnSetSysFromHealth_(res);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var live = document.getElementById('cn-admin-health');
       if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Automation health unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
+      cnSetSysCard_('automation', 'Automation', 'warn', 'Unavailable', 'health check failed');
+      cnSetSysCard_('cdr', 'CDR', 'warn', 'Unavailable', 'health check failed');
     })
     .getAutomationHealth();
+}
+
+/** Derive the Automation + CDR Overview status cards (#4) from a successful
+ *  getAutomationHealth payload. */
+function cnSetSysFromHealth_(res) {
+  var sfCount = (res.syncFails && res.syncFails.count) || 0;
+  var staleDigests = (res.digests || []).filter(function (d) { return d.stale; }).length;
+  var autoTone = (sfCount > 0 || staleDigests > 0) ? 'warn' : 'ok';
+  var autoVal = sfCount > 0 ? (sfCount + ' sync fail' + (sfCount === 1 ? '' : 's'))
+    : (staleDigests > 0 ? (staleDigests + ' digest' + (staleDigests === 1 ? '' : 's') + ' stale') : 'OK');
+  var autoSub = sfCount > 0 ? 'personal-sheet drift'
+    : (staleDigests > 0 ? 'a trigger may be dead' : 'no failures · digests fresh');
+  cnSetSysCard_('automation', 'Automation', autoTone, autoVal, autoSub);
+
+  var cdr = res.cdr || { ok: false };
+  var unmatched = (cdr.unmatchedAgents && cdr.unmatchedAgents.length) || 0;
+  var cdrTone = !cdr.ok ? 'warn' : (cdr.columnWarning || unmatched > 0) ? 'warn' : 'ok';
+  var cdrVal = !cdr.ok ? 'Unreachable'
+    : (cdr.columnWarning ? 'Column drift' : (unmatched > 0 ? (unmatched + ' unmatched') : 'In sync'));
+  var cdrSub = !cdr.ok ? 'check CDR_SS_ID / access'
+    : (cdr.columnWarning ? 'DQE layout changed' : (unmatched > 0 ? 'agent name mismatch' : '0 unmatched agents'));
+  cnSetSysCard_('cdr', 'CDR', cdrTone, cdrVal, cdrSub);
 }
 
 function cnRenderHealthPanel_(res) {
