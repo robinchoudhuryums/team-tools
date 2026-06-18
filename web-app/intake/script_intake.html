@@ -20,6 +20,23 @@
   /* Section panels (one per question group) */
   .intk-sections { display: flex; flex-direction: column; gap: 14px; }
   .intk-section .sec-title { margin-bottom: 4px; }
+  /* #4 — per-category section-header color (PPD blue, PMD orange, PAP purple),
+     so each Intake tab's cards read as its own category. Header gets a tinted
+     bar + accent left-rail + colored label. */
+  .intk-cat-ppd .sec-title,
+  .intk-cat-pmd .sec-title,
+  .intk-cat-pap .sec-title {
+    margin: -2px -2px 8px; padding: 7px 12px; border-radius: var(--radius-sm);
+    border-left: 3px solid var(--muted); font-weight: 700; letter-spacing: .04em;
+  }
+  .intk-cat-ppd .sec-title { background: var(--info-soft);        border-left-color: var(--info);   color: var(--info-deep); }
+  .intk-cat-pmd .sec-title { background: var(--warn-soft);        border-left-color: var(--warn);   color: var(--warning-deep); }
+  .intk-cat-pap .sec-title { background: rgba(124, 92, 208, .14); border-left-color: #7c5cd0;       color: #6a45c0; }
+  :root[data-mode="dark"] .intk-cat-pap .sec-title { color: #c3a8f5; }
+  /* Category-tinted top rail on each section card for extra at-a-glance cueing */
+  .intk-cat-ppd .intk-section { box-shadow: var(--shadow-sm), inset 0 2px 0 var(--info); }
+  .intk-cat-pmd .intk-section { box-shadow: var(--shadow-sm), inset 0 2px 0 var(--warn); }
+  .intk-cat-pap .intk-section { box-shadow: var(--shadow-sm), inset 0 2px 0 #7c5cd0; }
 
   /* Question row — label + control */
   .intk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 8px 0; align-items: center; border-top: 1px solid var(--line); }
@@ -323,7 +340,7 @@ function enterIntakePpdView(area) {
         '<span class="count" id="intk-ppd-count">0 / 45</span>' +
         '<span class="intk-prog-track"><span class="intk-prog-fill" id="intk-ppd-fill"></span></span>' +
       '</div>' +
-      '<div class="intk-sections" id="intk-ppd-form">' + intakeRenderPpdSections_(lang) + '</div>' +
+      '<div class="intk-sections intk-cat-ppd" id="intk-ppd-form">' + intakeRenderPpdSections_(lang) + '</div>' +
       '<div class="intk-actions">' +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
         '<button class="intk-btn" onclick="intakeClearForm_(\'ppd\')">Clear</button>' +
@@ -331,7 +348,16 @@ function enterIntakePpdView(area) {
     '</div>';
 
   var form = document.getElementById('intk-ppd-form');
-  if (form) form.addEventListener('input', intakePpdAfterChange_);
+  if (form) {
+    form.addEventListener('input', intakePpdAfterChange_);
+    // Yes/No + severity controls are <button>s (no 'input' event) — intakePick_
+    // already updates progress, but a delegated click listener guarantees the
+    // bar fills on every toggle even if a control path is ever added that
+    // bypasses intakePick_.
+    form.addEventListener('click', function (e) {
+      if (e.target.closest('.intk-yn-btn, .intk-sev-chip')) intakePpdUpdateProgress_();
+    });
+  }
   var pat = document.getElementById('intk-ppd-patient');
   if (pat) pat.addEventListener('input', intakePpdAfterChange_);
   intakeRestoreDraft_('ppd');
@@ -689,7 +715,7 @@ function intakeEnterAcct_(form, title, area) {
   area.innerHTML =
     intakeAppBar_(form, title) +
     '<div class="intk-wrap">' +
-      '<div class="intk-sections" id="intk-' + form + '-form">' + intakeRenderAcctSections_(form, lang) + '</div>' +
+      '<div class="intk-sections intk-cat-' + form + '" id="intk-' + form + '-form">' + intakeRenderAcctSections_(form, lang) + '</div>' +
       '<div class="intk-actions">' +
         '<button class="intk-btn primary" onclick="intakeAcctPreview_(\'' + form + '\')">' + icon('send', 14) + ' Preview &amp; Send</button>' +
         '<button class="intk-btn" onclick="intakeClearForm_(\'' + form + '\')">Clear</button>' +

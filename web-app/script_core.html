@@ -517,15 +517,38 @@ function showView(view) {
   });
   const area = document.getElementById('view-area');
   if (!area) return;
-  // 2nd-pass motion §1 — fade+rise on every view swap. Hooked HERE (the single
-  // navigation entry point) on purpose: optimistic re-renders call their render
-  // fns directly, never showView, so this fires on tab nav only and can't
-  // re-animate mid-interaction. The reflow re-fires the keyframe each nav.
-  area.classList.remove('view-enter');
-  void area.offsetWidth;
-  area.classList.add('view-enter');
+  // 2nd-pass motion §1 — fade+rise the rendered CONTENT (not the loading
+  // spinner). Hooked HERE at the single navigation entry point: a one-shot
+  // observer waits past the full-view loader and reveals on the first real
+  // content swap, then disconnects. Optimistic re-renders call their render fns
+  // directly (never showView), so they can't re-trigger this mid-interaction.
+  const fireReveal = function () {
+    area.classList.remove('view-enter'); void area.offsetWidth; area.classList.add('view-enter');
+  };
+  // "Loading-only" = the full-view spinner (renderLoading sets a single
+  // .state-center child). We wait past that and animate the content that lands.
+  const isLoadingOnly = function () {
+    return area.children.length === 1 && area.firstElementChild &&
+      area.firstElementChild.classList && area.firstElementChild.classList.contains('state-center');
+  };
+  if (area._revealObs) { area._revealObs.disconnect(); area._revealObs = null; }
+  if (typeof MutationObserver !== 'undefined') {
+    const obs = new MutationObserver(function () {
+      if (isLoadingOnly()) return;
+      fireReveal();
+      obs.disconnect(); area._revealObs = null;
+    });
+    area._revealObs = obs;
+    obs.observe(area, { childList: true });
+  }
   const enterFn = window[TOOLS[toolKey].tabs[view].enter];
   if (typeof enterFn === 'function') enterFn(area);
+  // Synchronous renders set content before the observer's first async callback —
+  // reveal now and cancel the observer to avoid a double-fire.
+  if (area.children.length && !isLoadingOnly()) {
+    fireReveal();
+    if (area._revealObs) { area._revealObs.disconnect(); area._revealObs = null; }
+  }
 }
 
 /** 2nd-pass motion — one shared IntersectionObserver for scroll-into-view
@@ -593,6 +616,29 @@ function unsettleRow_(row, labelSel) {
   row.classList.remove('mc', 'done', 'checked');
   if (labelSel) { var l = row.querySelector(labelSel); if (l) l.classList.remove('mc-label'); }
   var ck = row.querySelector('.ck-wrap'); if (ck && ck.parentNode) ck.parentNode.removeChild(ck);
+}
+
+/** 2nd-pass motion §4 — count-up tween a number element from 0 to target
+ *  (ease-out cubic, ~700ms via rAF). Respects reduced motion (jumps straight).
+ *  Recaptures start per run so a backgrounded tab doesn't make it snap. */
+function countUp_(el, target, ms) {
+  if (!el) return;
+  target = Number(target) || 0;
+  ms = ms || 700;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.textContent = String(target); return;
+  }
+  if (typeof requestAnimationFrame !== 'function') { el.textContent = String(target); return; }
+  var start = null;
+  function tick(t) {
+    if (start === null) start = t;
+    var p = Math.min(1, (t - start) / ms);
+    var eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = String(Math.round(target * eased));
+    if (p < 1) requestAnimationFrame(tick);
+    else el.textContent = String(target);
+  }
+  requestAnimationFrame(tick);
 }
 
 /** 2nd-pass motion §7 — flash a copy button on success (also aids ⌘C

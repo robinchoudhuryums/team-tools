@@ -33,8 +33,11 @@
   .tr-assign .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
   .tr-assign label { display: block; font-size: .76rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
   .tr-assign select, .tr-assign input[type=date] { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
-  .tr-emp-box { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 8px 10px; max-height: 160px; overflow-y: auto; min-width: 220px; }
-  .tr-emp-box label { display: flex; align-items: center; gap: 7px; font-size: .84rem; font-weight: 400; color: var(--ink); margin: 0 0 4px; cursor: pointer; }
+  .tr-emp-box { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 8px 10px; max-height: 200px; overflow-y: auto; min-width: 280px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 14px; align-content: start; }
+  .tr-emp-box label { display: flex; align-items: center; gap: 7px; font-size: .84rem; font-weight: 400; color: var(--ink); margin: 0; padding: 3px 0; cursor: pointer; }
+  .tr-emp-box label:first-child { grid-column: 1 / -1; padding-bottom: 5px; margin-bottom: 3px; border-bottom: 1px solid var(--line); }
+  .tr-emp-box input[type="checkbox"] { width: 15px; height: 15px; flex-shrink: 0; }
   .tr-table { border-collapse: collapse; font-size: .84rem; max-width: 100%; overflow-x: auto; display: block; }
   .tr-table th { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 6px 14px 6px 0; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
   .tr-table td { padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -543,7 +546,34 @@ function trainRenderMgr_() {
   });
   empBox += '</div>';
 
-  var h = '<div class="tr-assign"><h3>Assign training</h3><div class="row">' +
+  // #5 — at-a-glance status cards (assigned items / reps tracked / overall
+  // completion / overdue) computed from the dashboard matrix.
+  var mItems = dash.items || [], mReps = dash.reps || [];
+  var totalCells = mReps.length * mItems.length, doneCells = 0, overdueCells = 0;
+  mReps.forEach(function (r) {
+    mItems.forEach(function (it) {
+      var s = r.items && r.items[it.key];
+      if (s === 'done') doneCells++; else if (s === 'overdue') overdueCells++;
+    });
+  });
+  var pct = totalCells ? Math.round((doneCells / totalCells) * 100) : 0;
+  var pctCls = pct >= 80 ? 'success' : (pct >= 50 ? 'warn' : 'crit');
+  var statCell = function (label, value, sub, cls) {
+    return '<div class="tel-cell"><div class="tel-label">' + label + '</div>' +
+      '<div class="tel-value ' + (cls || '') + '">' + esc(String(value)) + '</div>' +
+      '<div class="tel-sub">' + esc(sub) + '</div></div>';
+  };
+  var statStrip = (mItems.length || mReps.length)
+    ? '<div class="telemetry" style="max-width:860px;margin-bottom:18px">' +
+        statCell('Assigned', mItems.length, 'items') +
+        statCell('Reps', mReps.length, 'tracked') +
+        statCell('Complete', pct + '%', doneCells + ' / ' + totalCells, pctCls) +
+        statCell('Overdue', overdueCells, 'cells', overdueCells > 0 ? 'crit' : '') +
+      '</div>'
+    : '';
+
+  var h = statStrip +
+    '<div class="tr-assign"><h3>Assign training</h3><div class="row">' +
     '<div><label>Reference item</label>' + sel + '</div>' +
     '<div><label>Employees</label>' + empBox + '</div>' +
     '<div><label>Due date (optional)</label><input type="date" id="tr-as-due"></div>' +

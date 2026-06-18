@@ -281,6 +281,9 @@
   :root[data-mode="dark"] input[type="time"],
   :root[data-mode="dark"] input[type="datetime-local"],
   :root[data-mode="dark"] input[type="month"] { color-scheme: dark; }
+  /* Native checkboxes/radios rendered system-blue, clashing with the green
+     theme — tint them with the app accent everywhere for consistency. */
+  input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 
   /* .clk-ts-divider rules removed in Round 2 · 8b — the Clock view's
      timesheet section was moved to the Time / PTO tab, so the divider
