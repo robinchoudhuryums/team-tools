@@ -44,6 +44,17 @@ const CONFIG = {
   COVERAGE_BUSINESS_START_HOUR: 8,
   COVERAGE_BUSINESS_END_HOUR:   17,
   COVERAGE_WEEKDAYS_ONLY:       true,
+  // Punctuality: a ClockIn within this many minutes of the scheduled shift
+  // start counts as on-time (grace). Lunch-out within this of scheduled lunch
+  // counts as on-time too.
+  PUNCTUALITY_GRACE_MIN:        5,
+  // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
+  // are sent to this group address; "resolved" = first reply from a configured
+  // bilingual group MEMBER (SPANISH_INBOX_MEMBERS, comma-separated emails, via
+  // Script Property). The deploying account must be a member of the group so its
+  // mailbox receives the threads to scan. Script Properties override these.
+  SPANISH_INBOX_ADDRESS:        'spanishcalls@universalmedsupply.com',
+  SPANISH_INBOX_MEMBERS:        '',
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
@@ -534,9 +545,32 @@ function getEmployeeState() {
       sickLeave: emp.sickLeave,
       annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
       sickLeaveMax:   CONFIG.SICK_LEAVE_MAX   || 10,
+      // Future-dated PENDING annual days (not yet deducted) — the Clock PTO pips
+      // mark these amber: still in the green balance but tentatively committed.
+      annualPlannedUpcoming: getUpcomingAnnualPlanned_(emp.id, today),
       flags: getClientFeatureFlags_(),
     };
   } catch (err) { return { error: err.message }; }
+}
+
+/** Sum of future-dated PENDING annual-bucket leave days for an employee.
+ *  Approved future PTO is already deducted from the balance on approval, so
+ *  only pending requests are "planned but not yet reflected" (the amber pips). */
+function getUpcomingAnnualPlanned_(empId, todayIso) {
+  try {
+    const rows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+    let days = 0;
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][TO.EMP_ID]).trim() !== empId) continue;
+      const d = normalizeDate_(rows[i][TO.DATE]);
+      if (!d || d <= todayIso) continue;   // future-dated only
+      const st = String(rows[i][TO.STATUS] || '').toLowerCase().trim();
+      if (st !== 'pending') continue;
+      const ded = getLeaveDeduction_(String(rows[i][TO.TYPE]));
+      if (ded && ded.bucket === 'annual') days += ded.days;
+    }
+    return days;
+  } catch (e) { return 0; }
 }
 
 function recordPunch(punchType, custom) {
@@ -8234,6 +8268,168 @@ function getCoveragePlan(fromDate, toDate) {
              businessStartHour: bizStart, businessEndHour: bizEnd, weekdaysOnly: weekdaysOnly };
   } catch (err) { return { error: err.message }; }
 }
+
+/** Punctuality report (manager-gated, read-only): per-rep start-time adherence
+ *  over a date range — first ClockIn vs the rep's scheduled shift start (per-tz,
+ *  CONFIG.SHIFT_SCHEDULE), with a grace window. Also a secondary lunch-adherence
+ *  stat (first LunchOut vs scheduled lunch). PHI-free (names + minute deltas).
+ *  Only days the rep actually clocked in are counted (PTO/off days excluded). */
+function getPunctualityReport(fromDate, toDate) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fromDate)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toDate)))
+      return { error: 'Invalid date (expected yyyy-MM-dd).' };
+    if (toDate < fromDate) { const t = fromDate; fromDate = toDate; toDate = t; }
+    const grace = (CONFIG.PUNCTUALITY_GRACE_MIN != null) ? CONFIG.PUNCTUALITY_GRACE_MIN : 5;
+
+    const roster = getEmployeeRosterRows_();
+    const repMap = {};
+    for (let i = 1; i < roster.length; i++) {
+      const id = String(roster[i][EMP.ID]).trim(); if (!id) continue;
+      const name = String(roster[i][EMP.NAME] || '').trim(); if (!name) continue;
+      const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
+      const sched = getShiftSchedule_(tz);
+      let lunchMin = null;
+      (sched.breaks || []).forEach(function (b) { if (/lunch/i.test(b.label)) lunchMin = b.startMin; });
+      if (lunchMin === null) {
+        let longest = -1;
+        (sched.breaks || []).forEach(function (b) { if (b.lenMin > longest) { longest = b.lenMin; lunchMin = b.startMin; } });
+      }
+      repMap[id] = { id: id, name: name, tz: tz, startMin: sched.startMin, lunchMin: lunchMin, days: {} };
+    }
+
+    const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    for (let i = 2; i < rows.length; i++) {
+      const id = String(rows[i][ADP.EMP_ID]).trim();
+      const r = repMap[id]; if (!r) continue;
+      const d = normalizeDate_(rows[i][ADP.DATE]);
+      if (!d || d < fromDate || d > toDate) continue;
+      const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
+      if (type !== 'ClockIn' && type !== 'LunchOut') continue;
+      const mins = timeToMins_(normalizeTime_(rows[i][ADP.TIME]));
+      if (!r.days[d]) r.days[d] = {};
+      if (type === 'ClockIn') { if (r.days[d].in == null || mins < r.days[d].in) r.days[d].in = mins; }
+      else { if (r.days[d].lunch == null || mins < r.days[d].lunch) r.days[d].lunch = mins; }
+    }
+
+    const reps = [];
+    Object.keys(repMap).forEach(function (id) {
+      const r = repMap[id];
+      const dates = Object.keys(r.days).filter(function (d) { return r.days[d].in != null; });
+      if (!dates.length) return;
+      let onTime = 0, late = 0, totLate = 0, worst = 0, lunchDays = 0, lunchOnTime = 0;
+      dates.forEach(function (d) {
+        const lateMin = r.days[d].in - r.startMin;
+        if (lateMin > grace) { late++; totLate += lateMin; if (lateMin > worst) worst = lateMin; }
+        else onTime++;
+        if (r.lunchMin != null && r.days[d].lunch != null) {
+          lunchDays++;
+          if (r.days[d].lunch <= r.lunchMin + grace) lunchOnTime++;   // early/within-grace lunch is fine
+        }
+      });
+      reps.push({
+        id: r.id, name: r.name, tz: r.tz, startMin: r.startMin,
+        days: dates.length, onTime: onTime, late: late,
+        onTimePct: Math.round((onTime / dates.length) * 100),
+        avgLate: late ? Math.round(totLate / late) : 0,
+        worst: worst,
+        lunchOnTimePct: lunchDays ? Math.round((lunchOnTime / lunchDays) * 100) : null,
+      });
+    });
+    reps.sort(function (a, b) { return a.onTimePct - b.onTimePct || b.late - a.late; });   // least punctual first
+    return { from: fromDate, to: toDate, grace: grace, reps: reps };
+  } catch (err) { return { error: err.message }; }
+}
+
+// ── Spanish-inbox efficiency (Gmail) ────────────────────────────────────────
+function getSpanishInboxAddress_() {
+  try {
+    const p = PropertiesService.getScriptProperties().getProperty('SPANISH_INBOX_ADDRESS');
+    if (p && p.trim()) return p.trim().toLowerCase();
+  } catch (e) {}
+  return String(CONFIG.SPANISH_INBOX_ADDRESS || '').trim().toLowerCase();
+}
+/** Set of lowercased bilingual group-member emails (resolution = a reply from one). */
+function getSpanishInboxMembers_() {
+  let raw = '';
+  try { raw = PropertiesService.getScriptProperties().getProperty('SPANISH_INBOX_MEMBERS') || ''; } catch (e) {}
+  if (!raw) raw = String(CONFIG.SPANISH_INBOX_MEMBERS || '');
+  const set = {};
+  raw.split(',').forEach(function (s) { const e = s.trim().toLowerCase(); if (e) set[e] = true; });
+  return set;
+}
+/** Extract the bare email from a "Name <email@x>" / "email@x" From header. */
+function emailAddrOnly_(from) {
+  const s = String(from || '');
+  const m = s.match(/<([^>]+)>/);
+  return (m ? m[1] : s).trim().toLowerCase();
+}
+
+/** Spanish-inbox resolution stats (manager-gated, read-only). Scans the
+ *  DEPLOYER's Gmail for threads addressed to the group inbox over the last
+ *  `days` and computes time-to-resolution (first inbound → first reply from a
+ *  bilingual group member). PHI-free: returns counts + durations + requester
+ *  email + age only — never the subject/body. 5-min cached. Requires the deploy
+ *  account to be a member of the group (so it receives the threads). */
+function getSpanishInboxStats(days) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
+    const addr = getSpanishInboxAddress_();
+    if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
+
+    const cache = CacheService.getScriptCache();
+    const ckey = 'spanish_inbox_v1:' + d;
+    const hit = cache.get(ckey);
+    if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+
+    const members = getSpanishInboxMembers_();
+    const haveMembers = Object.keys(members).length > 0;
+    const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const durations = [], pending = [];
+    let resolvedCount = 0;
+    const nowMs = Date.now();
+    threads.forEach(function (th) {
+      const msgs = th.getMessages();
+      if (!msgs.length) return;
+      const req = msgs[0];
+      const reqMs = req.getDate().getTime();
+      const requester = emailAddrOnly_(req.getFrom());
+      let resolveMs = null;
+      for (let i = 1; i < msgs.length; i++) {
+        const from = emailAddrOnly_(msgs[i].getFrom());
+        // Resolved = a reply from a configured bilingual member; if no member
+        // list is set, fall back to "first reply from someone else".
+        const isResolver = haveMembers ? !!members[from] : (from && from !== requester);
+        if (isResolver) { resolveMs = msgs[i].getDate().getTime(); break; }
+      }
+      if (resolveMs != null) {
+        resolvedCount++;
+        durations.push(Math.max(0, Math.round((resolveMs - reqMs) / 60000)));   // minutes
+      } else {
+        pending.push({ requester: requester, ageHours: Math.round((nowMs - reqMs) / 3600000) });
+      }
+    });
+    durations.sort(function (a, b) { return a - b; });
+    const avg = durations.length ? Math.round(durations.reduce(function (s, x) { return s + x; }, 0) / durations.length) : null;
+    const median = durations.length ? durations[Math.floor(durations.length / 2)] : null;
+    pending.sort(function (a, b) { return b.ageHours - a.ageHours; });
+    const result = {
+      address: addr, days: d,
+      resolved: resolvedCount, pending: pending.length,
+      avgMinutes: avg, medianMinutes: median,
+      pendingList: pending.slice(0, 25),
+      membersConfigured: Object.keys(members).length,
+      threadsScanned: threads.length,
+    };
+    cache.put(ckey, JSON.stringify(result), 300);
+    return result;
+  } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
+}
+
 function safeTimezone_(tz) {
   if (!tz) return CONFIG.TIMEZONE;
   const t = String(tz).trim();

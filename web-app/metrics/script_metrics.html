@@ -1026,4 +1026,76 @@ function mClearBadge_() {
     if (badge) badge.remove();
   }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SPANISH INBOX — bilingual-assistance resolution time (managerOnly tab)
+// ════════════════════════════════════════════════════════════════════════════
+var SPANISH_STATE = { days: 30 };
+
+function enterSpanishInboxView(area) {
+  if (typeof stopClock === 'function') stopClock();
+  area = area || document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    (COMPACT_MODE
+      ? '<div class="compact-header"><div class="ch-title">' + icon('mail', 16) + ' Spanish Inbox</div></div>'
+      : '<div class="view-title-row"><h2>Spanish Inbox</h2><p>Bilingual-assistance request resolution time — first reply from a group member. Read-only.</p></div>') +
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
+      '<label style="font-size:12px;color:var(--muted)">Window</label>' +
+      '<select id="spanish-days">' + [7, 30, 60, 90].map(function (n) {
+        return '<option value="' + n + '"' + (n === SPANISH_STATE.days ? ' selected' : '') + '>Last ' + n + ' days</option>';
+      }).join('') + '</select>' +
+    '</div>' +
+    '<div id="spanish-body">' + loSweep() + '</div>';
+  var sel = document.getElementById('spanish-days');
+  if (sel) sel.onchange = function () { SPANISH_STATE.days = parseInt(this.value, 10) || 30; spanishLoad_(); };
+  spanishLoad_();
+}
+
+function spanishLoad_() {
+  var body = document.getElementById('spanish-body'); if (!body) return;
+  body.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (d) { if (currentView !== 'metricsSpanish') return; spanishRender_(d); })
+    .withFailureHandler(function (e) {
+      if (currentView !== 'metricsSpanish') return;
+      body.innerHTML = '<div class="no-data">' + esc((e && e.message) || 'Failed to load') + '</div>';
+    })
+    .getSpanishInboxStats(SPANISH_STATE.days);
+}
+
+function spanishFmtDur_(mins) {
+  if (mins == null) return '—';
+  if (mins < 60) return mins + 'm';
+  var h = Math.floor(mins / 60), m = mins % 60;
+  if (h < 24) return h + 'h' + (m ? (' ' + m + 'm') : '');
+  var dys = Math.floor(h / 24), hr = h % 24;
+  return dys + 'd' + (hr ? (' ' + hr + 'h') : '');
+}
+
+function spanishRender_(d) {
+  var body = document.getElementById('spanish-body'); if (!body) return;
+  if (!d || d.error) { body.innerHTML = '<div class="no-data">' + esc((d && d.error) || 'No data') + '</div>'; return; }
+  var total = d.resolved + d.pending;
+  var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Inbox <b>' + esc(d.address) + '</b> · ' +
+    esc(String(d.threadsScanned || 0)) + ' threads scanned' +
+    (d.membersConfigured ? '' : ' · <span style="color:var(--warning-deep)">no member list set — counting any reply as resolved</span>') + '</div>';
+  var strip = '<div class="telemetry" style="max-width:660px;margin-bottom:16px">' +
+    '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + d.resolved + '</div><div class="tel-sub">of ' + total + '</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Pending</div><div class="tel-value ' + (d.pending > 0 ? 'warn' : '') + '">' + d.pending + '</div><div class="tel-sub">awaiting reply</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Avg time</div><div class="tel-value">' + esc(spanishFmtDur_(d.avgMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(spanishFmtDur_(d.medianMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
+    '</div>';
+  var pend = '';
+  if (d.pendingList && d.pendingList.length) {
+    pend = '<div class="day-section-label" style="margin:6px 0 8px">Pending · oldest first</div><div style="max-width:660px">' +
+      d.pendingList.map(function (p) {
+        var aged = p.ageHours >= 24 ? (Math.floor(p.ageHours / 24) + 'd ' + (p.ageHours % 24) + 'h') : (p.ageHours + 'h');
+        var tone = p.ageHours >= 24 ? 'var(--danger-deep)' : (p.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
+        return '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px">' +
+          '<span>' + esc(p.requester) + '</span><span style="font-family:var(--mono);color:' + tone + '">' + esc(aged) + '</span></div>';
+      }).join('') + '</div>';
+  }
+  body.innerHTML = note + strip + pend;
+}
 </script>

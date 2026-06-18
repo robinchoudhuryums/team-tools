@@ -40,6 +40,12 @@
   .cov-risk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 2px 20px; margin-top: 4px; }
   .cov-risk-item { font-size: 13px; padding: 3px 0; color: var(--ink); }
   .cov-risk-item b { font-family: var(--mono); }
+  /* Punctuality table */
+  .punct-table { border-collapse: collapse; font-size: 13px; width: 100%; max-width: 780px; }
+  .punct-table th { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 7px 16px 7px 0; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
+  .punct-table td { padding: 7px 16px 7px 0; border-bottom: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
+  .punct-table tbody tr:last-child td { border-bottom: none; }
+  .punct-table .num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 </style>
 <script>
 // ════════════════════════════════════════════════════════════════════════════
@@ -1143,5 +1149,93 @@ function covRender_(data) {
         ' All business hours meet the ' + esc(String(minStaff)) + '-rep minimum in this range.</div></div>';
 
   body.innerHTML = note + legend + grid + risk;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PUNCTUALITY (start-time adherence vs scheduled shift start, managerOnly tab)
+// ════════════════════════════════════════════════════════════════════════════
+var PUNCT_STATE = { from: '', to: '' };
+
+function enterPunctualityView(area) {
+  if (typeof stopClock === 'function') stopClock();
+  area = area || document.getElementById('view-area');
+  if (!area) return;
+  var isoLocal = function (d) {
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  };
+  if (!PUNCT_STATE.from) {
+    var today = new Date();
+    PUNCT_STATE.to = isoLocal(today);
+    PUNCT_STATE.from = isoLocal(new Date(today.getTime() - 29 * 86400000));   // default last 30 days
+  }
+  area.innerHTML =
+    (COMPACT_MODE
+      ? '<div class="compact-header"><div class="ch-title">' + icon('clock', 16) + ' Punctuality</div></div>'
+      : '<div class="view-title-row"><h2>Punctuality</h2><p>Start-time adherence vs each rep’s scheduled shift start (per-timezone). On-time = clock-in within the grace window.</p></div>') +
+    '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
+      '<div class="field"><label>From</label><input type="date" id="punct-from" value="' + esc(PUNCT_STATE.from) + '"></div>' +
+      '<div class="field"><label>To</label><input type="date" id="punct-to" value="' + esc(PUNCT_STATE.to) + '"></div>' +
+      '<button class="btn-modal-ok" id="punct-load" style="margin:0">Load</button>' +
+    '</div>' +
+    '<div id="punct-body">' + loSweep() + '</div>';
+  var b = document.getElementById('punct-load');
+  if (b) b.onclick = function () {
+    PUNCT_STATE.from = document.getElementById('punct-from').value;
+    PUNCT_STATE.to = document.getElementById('punct-to').value;
+    punctLoad_();
+  };
+  punctLoad_();
+}
+
+function punctFmtMin_(m) {
+  var hh = Math.floor(m / 60), mm = m % 60, ap = hh < 12 ? 'AM' : 'PM', h12 = hh % 12 || 12;
+  return h12 + ':' + ('0' + mm).slice(-2) + ' ' + ap;
+}
+
+function punctLoad_() {
+  var body = document.getElementById('punct-body'); if (!body) return;
+  var requested = currentView;
+  body.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (data) { if (currentView !== requested) return; punctRender_(data); })
+    .withFailureHandler(function (err) {
+      if (currentView !== requested) return;
+      body.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load punctuality') + '</div>';
+    })
+    .getPunctualityReport(PUNCT_STATE.from, PUNCT_STATE.to);
+}
+
+function punctRender_(data) {
+  var body = document.getElementById('punct-body'); if (!body) return;
+  if (!data || data.error) { body.innerHTML = '<div class="no-data">' + esc((data && data.error) || 'No data') + '</div>'; return; }
+  var reps = data.reps || [];
+  if (!reps.length) { body.innerHTML = '<div class="no-data">No clock-ins in this range.</div>'; return; }
+  var totDays = 0, totOn = 0;
+  reps.forEach(function (r) { totDays += r.days; totOn += r.onTime; });
+  var teamPct = totDays ? Math.round((totOn / totDays) * 100) : 0;
+  var toneCol = function (p) { return p >= 90 ? 'var(--success-deep)' : (p >= 75 ? 'var(--warning-deep)' : 'var(--danger-deep)'); };
+  var teamCls = teamPct >= 90 ? 'success' : (teamPct >= 75 ? 'warn' : 'crit');
+  var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">On-time = clock-in within ' + esc(String(data.grace)) +
+    ' min of the scheduled start. Only days with a clock-in are counted. Least punctual first.</div>';
+  var summary = '<div class="telemetry" style="max-width:560px;margin-bottom:16px">' +
+    '<div class="tel-cell"><div class="tel-label">Team on-time</div><div class="tel-value ' + teamCls + '">' + teamPct + '%</div><div class="tel-sub">' + totOn + ' / ' + totDays + ' days</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Reps</div><div class="tel-value">' + reps.length + '</div><div class="tel-sub">with clock-ins</div></div>' +
+    '</div>';
+  var rowsHtml = reps.map(function (r) {
+    return '<tr>' +
+      '<td>' + esc(r.name) + '</td>' +
+      '<td class="num">' + esc(punctFmtMin_(r.startMin)) + '</td>' +
+      '<td class="num">' + r.days + '</td>' +
+      '<td class="num" style="color:' + toneCol(r.onTimePct) + ';font-weight:700">' + r.onTimePct + '%</td>' +
+      '<td class="num">' + (r.late ? r.avgLate + 'm' : '—') + '</td>' +
+      '<td class="num">' + (r.worst ? r.worst + 'm' : '—') + '</td>' +
+      '<td class="num">' + (r.lunchOnTimePct == null ? '—' : r.lunchOnTimePct + '%') + '</td>' +
+    '</tr>';
+  }).join('');
+  body.innerHTML = note + summary +
+    '<div style="overflow-x:auto"><table class="punct-table"><thead><tr>' +
+      '<th>Rep</th><th class="num">Shift start</th><th class="num">Days</th><th class="num">On-time</th>' +
+      '<th class="num">Avg late</th><th class="num">Worst</th><th class="num">Lunch on-time</th>' +
+    '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>';
 }
 </script>

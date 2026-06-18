@@ -2815,6 +2815,23 @@ manually for a fresh deploy or environment:
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
   reads this before CONFIG; without it, no one passes the
   `isManager` check and manager features stay locked out.
+- **Spanish-inbox tracking (Gmail) needs 3 things.** The Metrics → **Spanish
+  Inbox** tab (`getSpanishInboxStats`, manager-gated, read-only, 5-min cached)
+  scans the **deploying account's** Gmail for threads addressed to the group
+  inbox and times first-inbound → first-reply-from-a-member. To work:
+  (1) the **deploying account must be a member** of the group
+  `spanishcalls@universalmedsupply.com` (so its mailbox receives the threads);
+  (2) set Script Property **`SPANISH_INBOX_MEMBERS`** to a comma-separated list
+  of the bilingual group members' emails — "resolved" = first reply from one of
+  them (with no list it falls back to "first reply from anyone but the
+  requester"); (3) the deploy that ships `GmailApp` **adds the Gmail OAuth
+  scope** (auto-detected — `appsscript.json` has no explicit `oauthScopes`), so
+  the deployer **re-authorizes once** on the next deploy/run. The address
+  defaults to `CONFIG.SPANISH_INBOX_ADDRESS` (Script Property
+  `SPANISH_INBOX_ADDRESS` overrides). PHI-free: the tab returns counts +
+  durations + requester email + age only — never subject/body. A scoping note +
+  the "what else is possible" generalization live in
+  `docs/spanish-inbox-tracking-scope.md`.
 - **External fillable-form links must be the canonical anonymous `/exec` URL.**
   Inside a Google Workspace, `ScriptApp.getService().getUrl()` returns the
   **domain-scoped** form `https://script.google.com/a/<domain>/macros/s/<id>/exec`
