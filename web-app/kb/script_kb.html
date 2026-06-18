@@ -58,8 +58,11 @@
   .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
   .kb-dept-name { font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
   .kb-dept-count { margin-left: auto; font-family: var(--mono); font-size: .66rem; color: var(--muted-3); }
-  .kb-chevron { display: inline-flex; color: var(--muted-3); }
-  .kb-dept.collapsed .kb-item { display: none; }
+  .kb-chevron { display: inline-flex; color: var(--muted-3); transition: transform .2s var(--ease); }
+  /* §8 — animate the department collapse via the body's max-height + chevron rotate */
+  .kb-dept-body { overflow: hidden; max-height: 2000px; transition: max-height .26s var(--ease); }
+  .kb-dept.collapsed .kb-dept-body { max-height: 0; }
+  .kb-dept.collapsed .kb-chevron { transform: rotate(-90deg); }
 
   /* §4 — landing panel (right side when nothing is selected) */
   .kb-land { max-width: 760px; }
@@ -332,27 +335,39 @@ function kbRenderTree_() {
   depts.forEach(function (d) {
     var isCol = !!collapsed[d];
     html += '<div class="kb-dept' + (isCol ? ' collapsed' : '') + '">' +
-      '<button class="kb-dept-toggle" data-dept="' + esc(d) + '" onclick="kbToggleDept_(this.getAttribute(\'data-dept\'))" aria-expanded="' + (!isCol) + '">' +
-        '<span class="kb-chevron">' + icon(isCol ? 'chevronRight' : 'chevronDown', 13) + '</span>' +
+      '<button class="kb-dept-toggle" data-dept="' + esc(d) + '" onclick="kbToggleDept_(this)" aria-expanded="' + (!isCol) + '">' +
+        '<span class="kb-chevron">' + icon('chevronDown', 13) + '</span>' +
         '<span class="kb-dept-name">' + esc(d) + '</span>' +
         '<span class="kb-dept-count">' + byDept[d].length + '</span>' +
-      '</button>';
+      '</button>' +
+      '<div class="kb-dept-body">';   // §8 — wrap items so collapse can animate (max-height)
     byDept[d].forEach(function (it) {
       html += '<button class="kb-item' + (it.id === KB_STATE.currentId ? ' on' : '') + '" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
         icon(kbItemIcon_(it), 13) + ' ' + esc(it.title) + '</button>';
     });
-    html += '</div>';
+    html += '</div></div>';
   });
   el.innerHTML = html;
 }
 
-/** Toggle a department's collapsed state (persisted in the umsKbPanel blob). */
-function kbToggleDept_(d) {
+/** Toggle a department's collapsed state (persisted in the umsKbPanel blob).
+ *  §8 — toggles the class LIVE (no full re-render) so the .kb-dept-body
+ *  max-height transition + chevron rotate animate. */
+function kbToggleDept_(btn) {
+  var d = btn.getAttribute ? btn.getAttribute('data-dept') : btn;   // back-compat
+  var box = btn.closest ? btn.closest('.kb-dept') : null;
   var prefs = kbPanelPrefs_();
   prefs.deptCollapsed = prefs.deptCollapsed || {};
-  if (prefs.deptCollapsed[d]) delete prefs.deptCollapsed[d]; else prefs.deptCollapsed[d] = true;
+  var nowCollapsed;
+  if (prefs.deptCollapsed[d]) { delete prefs.deptCollapsed[d]; nowCollapsed = false; }
+  else { prefs.deptCollapsed[d] = true; nowCollapsed = true; }
   kbPanelSave_(prefs);
-  kbRenderTree_();
+  if (box) {
+    box.classList.toggle('collapsed', nowCollapsed);
+    if (btn.setAttribute) btn.setAttribute('aria-expanded', String(!nowCollapsed));
+  } else {
+    kbRenderTree_();   // fallback (string arg / button not found)
+  }
 }
 
 /** Landing panel (right side, nothing selected): Recently viewed (localStorage

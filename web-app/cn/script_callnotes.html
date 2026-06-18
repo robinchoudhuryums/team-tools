@@ -1520,8 +1520,12 @@
     padding-left: 16px;
   }
   .cn-qa-card-a svg { flex-shrink: 0; margin-top: 2px; }
-  #cn-training-qa-tray.collapsed .cn-qa-cards { display: none; }
+  /* §8 — animate the tray collapse (max-height) + chevron rotate */
+  .cn-qa-cards { overflow: hidden; max-height: 1200px; transition: max-height .26s var(--ease); }
+  #cn-training-qa-tray.collapsed .cn-qa-cards { max-height: 0; }
   #cn-training-qa-tray.collapsed { padding-bottom: 10px; }
+  .cn-qa-label svg:last-child { transition: transform .2s var(--ease); }
+  #cn-training-qa-tray.collapsed .cn-qa-label svg:last-child { transform: rotate(-90deg); }
 
   /* Stats drill-down — clickable rep name */
   .cn-stats-name-link {
@@ -1958,7 +1962,7 @@ function enterCallNotesView(area) {
   CN_STATE.editingNoteId = null;
   CN_STATE.filter = 'all';
   cnPrewarmScript_();
-  renderLoading(area, 'Loading call notes…', 'mail');
+  renderLoading(area, 'Loading call notes…', 'adjust');
   // Guard the config-fetch continuation too: cnLoadToday_'s own guard
   // captures currentView only when THIS callback runs, so a nav-away during
   // a slow first config fetch would otherwise pass the inner guard, clobber
