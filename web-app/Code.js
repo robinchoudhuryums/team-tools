@@ -9505,6 +9505,66 @@ function getMyMetrics(date) {
 }
 
 /**
+ * My Stats over a date RANGE (deferred #1). Caller-scoped self-view: aggregates
+ * the calling rep's own CDR over [from, to] (reusing getCdrAgentMetrics_ for the
+ * rep's name) + a per-day trend (getCdrDailyBreakdown_) for the hero/rail
+ * sparklines + the rep's note count/coverage over the range. Range-capped at 92
+ * days. Returns ONLY the rep's own aggregates (no team/other-rep data and no
+ * own-vs-team series — that anonymized series is a single-day-anchored concept,
+ * INV-124). Shape mirrors getMyMetrics's cdr block so the client renderer is shared.
+ */
+function getMyMetricsRange(from, to) {
+  try {
+    var emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!from || !/^\d{4}-\d{2}-\d{2}$/.test(from)) return { error: 'Invalid start date (expected yyyy-MM-dd).' };
+    if (!to || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (from > to) return { error: 'Start date must be on or before end date.' };
+    var spanDays = Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
+    if (spanDays > 92) return { error: 'Range capped at 92 days.' };
+
+    var agg = getCdrAgentMetrics_(from, to, [emp.name]);
+    var c = (agg && agg.agents && agg.agents[emp.name]) || null;
+
+    // Per-day trend across the range for the sparklines (own row only).
+    var trend = [];
+    try {
+      var bd = getCdrDailyBreakdown_(from, to, [emp.name]);
+      var prd = (bd && bd.perRepDaily) || {};
+      var endD = new Date(to + 'T12:00:00Z');
+      for (var d = new Date(from + 'T12:00:00Z'); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+        var iso = isoFromUtc_(d);
+        var own = prd[iso] && prd[iso][emp.name];
+        trend.push({
+          date: iso,
+          pctAnswered: own ? own.pctAnswered : null,
+          answered: own ? own.answered : 0,
+          missed: own ? own.missed : 0,
+        });
+      }
+    } catch (e) { trend = []; }
+
+    var noteCount = countCallNotesInRange_(emp, from, to);
+    return {
+      from: from, to: to, repName: emp.name,
+      cdr: c ? {
+        totalRung:    c.totalRung,
+        totalAnswered: c.totalAnswered,
+        totalMissed:  c.totalMissed,
+        pctAnswered:  c.pctAnswered,
+        tttFormatted: c.tttFormatted,
+        attFormatted: c.attFormatted,
+        tttSeconds:   c.tttSeconds,
+        attSeconds:   c.attSeconds,
+      } : null,
+      noteCount: noteCount,
+      noteCoverage: cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
+      trend: trend,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/**
  * Manager view: per-rep CDR metrics + note counts for a date range.
  * Accepts either a single date or from/to. Also returns a 30-day team
  * % Answered trend when viewing a single date.

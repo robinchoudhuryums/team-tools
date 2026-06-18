@@ -349,7 +349,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 var M_STATE = { myDate: null, teamFrom: null, teamTo: null,
-  myWindow: 30, myData: null,                                  // §6 My Stats trend-window preset + cache
+  myMode: 'single', myFrom: '', myTo: '', myData: null,            // §6/#1 My Stats single date | aggregated range + cache
   teamSort: { key: 'pctAnswered', dir: 'desc' }, teamData: null };  // §6 sortable team table + cache
 
 function mTodayIso_() {
@@ -396,60 +396,85 @@ function enterMetricsMyStatsView() {
       '<h2>My Call Metrics</h2>' +
     '</div>' +
     '<div class="m-controls">' +
-      '<label style="font-size:0.85rem;color:var(--muted)">Date</label>' +
-      '<input type="date" id="m-my-date" value="' + M_STATE.myDate + '">' +
-      '<button class="btn btn-sm" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
-      // §6 — trend-window presets. Single-date KPIs stay tied to the date input;
-      // these set the hero + rail sparkline / vs-avg window (client-side slice of
-      // the 30-day trend the server already returns). Today = today's value only.
-      '<div class="toolbar-tabs m-preset-tabs" role="group" aria-label="Trend window">' +
-        mMyWindowBtn_('Today', 1) + mMyWindowBtn_('7D', 7) + mMyWindowBtn_('30D', 30) +
+      // Today/7D/30D presets — Today = single-day rich view (own-vs-team series);
+      // 7D/30D = server-AGGREGATED ranges (#1). A specific past day stays
+      // available via the date input; custom spans via From/To.
+      '<div class="toolbar-tabs m-preset-tabs" role="group" aria-label="Range preset">' +
+        mMyPresetBtn_('Today', 'today') + mMyPresetBtn_('7D', '7d') + mMyPresetBtn_('30D', '30d') +
       '</div>' +
+      '<label style="font-size:0.85rem;color:var(--muted)">Day</label>' +
+      '<input type="date" id="m-my-date" value="' + M_STATE.myDate + '">' +
+      '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px">Range</label>' +
+      '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
+      '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
+      '<button class="btn btn-sm" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
     '<div id="m-my-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
 
   document.getElementById('m-my-date').addEventListener('change', function () {
-    M_STATE.myDate = this.value;
-    mLoadMyStats_();
+    M_STATE.myMode = 'single'; M_STATE.myDate = this.value;
+    mMyStatsSyncPresets_(); mLoadMyStats_();
   });
+  var onRange = function () {
+    var f = document.getElementById('m-my-from'), t = document.getElementById('m-my-to');
+    if (!f.value || !t.value) return;
+    M_STATE.myMode = 'range'; M_STATE.myFrom = f.value; M_STATE.myTo = t.value;
+    mMyStatsSyncPresets_(); mLoadMyStats_();
+  };
+  document.getElementById('m-my-from').addEventListener('change', onRange);
+  document.getElementById('m-my-to').addEventListener('change', onRange);
 
   mLoadMyStats_();
 }
 
-function mMyWindowBtn_(label, n) {
-  var on = (M_STATE.myWindow || 30) === n;
-  return '<button class="toolbar-tab" aria-pressed="' + on + '" onclick="mMyWindow_(' + n + ')">' + label + '</button>';
+function mMyPresetBtn_(label, key) {
+  return '<button class="toolbar-tab" data-my-preset="' + key + '" aria-pressed="' + (mMyActivePreset_() === key) + '" onclick="mMyPreset_(\'' + key + '\')">' + label + '</button>';
 }
-
-/** Switch the My Stats trend window (client-side; re-renders from the cached
- *  payload — no server reload, the 30-day trend is already in hand). */
-function mMyWindow_(n) {
-  M_STATE.myWindow = n;
+/** Which preset (if any) the current selection matches — for the pressed state. */
+function mMyActivePreset_() {
+  var today = mTodayIso_();
+  if (M_STATE.myMode === 'single' && M_STATE.myDate === today) return 'today';
+  if (M_STATE.myMode === 'range' && M_STATE.myTo === today) {
+    if (M_STATE.myFrom === mDaysAgo_(6)) return '7d';
+    if (M_STATE.myFrom === mDaysAgo_(29)) return '30d';
+  }
+  return '';
+}
+function mMyStatsSyncPresets_() {
+  var active = mMyActivePreset_();
   document.querySelectorAll('.m-preset-tabs .toolbar-tab').forEach(function (b) {
-    b.setAttribute('aria-pressed', b.textContent.trim() === (n === 1 ? 'Today' : n + 'D') ? 'true' : 'false');
+    b.setAttribute('aria-pressed', b.getAttribute('data-my-preset') === active ? 'true' : 'false');
   });
-  if (M_STATE.myData) mRenderMyStats_(M_STATE.myData);
+  var dEl = document.getElementById('m-my-date'); if (dEl && M_STATE.myMode === 'single') dEl.value = M_STATE.myDate;
+  var fEl = document.getElementById('m-my-from'); if (fEl) fEl.value = M_STATE.myFrom || '';
+  var tEl = document.getElementById('m-my-to'); if (tEl) tEl.value = M_STATE.myTo || '';
+}
+/** Today = single (rich); 7D/30D = aggregated ranges ending today (#1). */
+function mMyPreset_(key) {
+  var today = mTodayIso_();
+  if (key === 'today') { M_STATE.myMode = 'single'; M_STATE.myDate = today; }
+  else { M_STATE.myMode = 'range'; M_STATE.myTo = today; M_STATE.myFrom = mDaysAgo_(key === '7d' ? 6 : 29); }
+  mMyStatsSyncPresets_();
+  mLoadMyStats_();
 }
 
 function mLoadMyStats_() {
-  var date = M_STATE.myDate;
-  if (!date) return;
   var requestedView = currentView;
-
   document.getElementById('m-my-content').innerHTML =
     '<div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div>';
 
-  google.script.run
-    .withSuccessHandler(function (data) {
-      if (currentView !== requestedView) return;
-      mRenderMyStats_(data);
-    })
-    .withFailureHandler(function (err) {
-      if (currentView !== requestedView) return;
-      document.getElementById('m-my-content').innerHTML =
-        '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
-    })
-    .getMyMetrics(date);
+  var ok = function (data) { if (currentView === requestedView) mRenderMyStats_(data); };
+  var fail = function (err) {
+    if (currentView !== requestedView) return;
+    document.getElementById('m-my-content').innerHTML =
+      '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
+  };
+  if (M_STATE.myMode === 'range' && M_STATE.myFrom && M_STATE.myTo) {
+    google.script.run.withSuccessHandler(ok).withFailureHandler(fail).getMyMetricsRange(M_STATE.myFrom, M_STATE.myTo);
+  } else {
+    var date = M_STATE.myDate; if (!date) return;
+    google.script.run.withSuccessHandler(ok).withFailureHandler(fail).getMyMetrics(date);
+  }
 }
 
 function mRenderMyStats_(data) {
@@ -460,24 +485,25 @@ function mRenderMyStats_(data) {
     el.innerHTML = '<div class="m-empty">' + esc(data.error) + '</div>';
     return;
   }
-  M_STATE.myData = data;   // §6 — cache so window-preset toggles re-render without a reload
+  M_STATE.myData = data;
 
   var c = data.cdr;
   var html = '';
-  // §6 — windowed trend (Today=1 / 7D / 30D). Slices the 30-day trend the server
-  // already returns; the rail sparklines + hero baseline use the same window.
-  var win = M_STATE.myWindow || 30;
-  var trendW = (data.trend || []).slice(-win);
+  // #1 — range mode (getMyMetricsRange returns from/to) vs single-day. Both carry
+  // a per-day `trend`; range has no own-vs-team `series` (a single-day concept).
+  var isRange = !!(data.from && data.to);
+  var trend = data.trend || [];
   var series = data.series || {};
   var seriesOwn = function (k) {
     var arr = series[k]; if (!Array.isArray(arr)) return null;
-    return arr.slice(-win).map(function (p) { return p ? p.own : null; });
+    return arr.map(function (p) { return p ? p.own : null; });
   };
+  var periodLabel = isRange ? (esc(data.from) + ' → ' + esc(data.to)) : 'Today';
 
   // No CDR data → minimal fallback (per S43)
   if (!c) {
-    html += '<div class="m-empty">No call data found for ' + esc(data.date) +
-      '. This may be a non-working day, or the CDR spreadsheet is not yet configured.</div>';
+    html += '<div class="m-empty">No call data found for ' + (isRange ? esc(data.from) + ' → ' + esc(data.to) : esc(data.date)) +
+      '. This may be a non-working day/range, or the CDR spreadsheet is not yet configured.</div>';
     html += '<div class="m-row" style="margin-top:var(--space-sm)">' +
       '<span class="m-row-label">Notes Filed</span>' +
       '<span class="m-row-value">' + esc(data.noteCount) + '</span></div>';
@@ -485,45 +511,44 @@ function mRenderMyStats_(data) {
     return;
   }
 
-  // V4·E4 — Hero + Rail layout. Hero = % answered + vs-avg + 30-day
-  // sparkline. Rail = notes filed, coverage, missed, avg/total talk.
-  var avg = mTrendAvg_(trendW, 'pctAnswered');
-  var winLabel = win === 1 ? 'today' : win + '-day';
+  // Hero + Rail. Hero = % answered (range = aggregate over from→to) + vs-avg +
+  // period sparkline. Rail = notes filed, answered, missed, avg/total talk.
+  var avg = mTrendAvg_(trend, 'pctAnswered');
   var deltaHtml = '';
-  if (win > 1 && avg != null && c.pctAnswered != null) {
+  if (trend.length > 1 && avg != null && c.pctAnswered != null) {
     var d = c.pctAnswered - avg;
     var sign = d > 0.05 ? 'pos' : (d < -0.05 ? 'neg' : 'neu');
     var label = d > 0.05 ? '+' + Math.abs(d).toFixed(1)
               : d < -0.05 ? '−' + Math.abs(d).toFixed(1)
               : '±0';
     deltaHtml = '<div class="m-hero-delta">' +
-      '<span class="' + sign + '">' + label + ' pts</span> vs ' + winLabel + ' average (' + avg.toFixed(1) + '%)</div>';
+      '<span class="' + sign + '">' + label + ' pts</span> vs period daily average (' + avg.toFixed(1) + '%)</div>';
   }
 
   html += '<div class="m-layout">';
   html += '<div class="m-hero">';
-  html += '<div class="m-hero-label">Today · % Answered</div>';
+  html += '<div class="m-hero-label">' + periodLabel + ' · % Answered</div>';
   html += '<div class="m-hero-value">' + esc(c.pctAnswered) + '<span class="unit">%</span></div>';
   html += deltaHtml;
-  if (trendW.length > 1) {
-    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(trendW, 'pctAnswered', avg) + '</div>';
-    var firstLabel = trendW[0].date ? trendW[0].date.substring(5) : '';
-    var lastLabel = trendW[trendW.length - 1].date ? trendW[trendW.length - 1].date.substring(5) : '';
+  if (trend.length > 1) {
+    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(trend, 'pctAnswered', avg) + '</div>';
+    var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
+    var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
     html += '<div class="m-hero-spark-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>';
   }
   html += '</div>';
 
   // Side rail — sparklines where per-day data exists (C4): Answered/Missed from
-  // the windowed trend, Avg talk from the own attSeconds series. Notes filed +
-  // Total talk have no per-day series, so they stay plain.
+  // the trend; Avg talk from the own attSeconds series (single mode only — range
+  // returns no per-day series). Notes filed + Total talk stay plain.
   html += '<div class="m-rail">';
   html += mRailRow_('Notes filed', data.noteCount,
     data.noteCoverage != null ? data.noteCoverage + '% coverage' : null);
   html += mRailRow_('Calls answered', c.totalAnswered, 'good', null,
-    { values: trendW.map(function (t) { return t.answered; }) });
+    { values: trend.map(function (t) { return t.answered; }) });
   html += mRailRow_('Missed', c.totalMissed, c.totalMissed > 0 ? 'warn' : 'good',
     c.totalMissed > 0 ? c.totalMissed + ' calls unanswered' : 'no missed calls',
-    { values: trendW.map(function (t) { return t.missed; }), tone: 'warn' });
+    { values: trend.map(function (t) { return t.missed; }), tone: 'warn' });
   html += mRailRow_('Avg talk', c.attFormatted, null, null,
     { values: seriesOwn('attSeconds') });
   html += mRailRow_('Total talk', c.tttFormatted);
