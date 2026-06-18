@@ -706,6 +706,11 @@ function flagOn_(key) {
 function showToast(msg, cls) {
   const stack = document.getElementById('toast-stack');
   if (!stack) return;
+  // Normalize the variant: most callers pass the full class
+  // ('toast-success'/'toast-error'/'toast-warn'/'toast-info'), but Training /
+  // EmpDocs pass bare names ('success'/'error'/'warn'/'info'). Without this,
+  // bare names render with no colored rail and fall through to the info glyph.
+  cls = /^toast-/.test(cls) ? cls : (cls ? 'toast-' + cls : '');
   // Pick the SVG glyph that matches the variant — checkCircle / xCircle /
   // warning / info. The .toast-icon CSS tints each per variant.
   const iconName = cls === 'toast-success' ? 'checkCircle'

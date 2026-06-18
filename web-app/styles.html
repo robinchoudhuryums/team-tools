@@ -1991,10 +1991,13 @@
     margin-bottom: 6px;
   }
   .day-info-row:last-child { margin-bottom: 0; }
-  .day-info-row.holiday      { background: var(--accent-soft);      color: var(--info-deep);    font-weight: 500; }
+  /* Token-family consistency (2nd-pass popups addendum #3): holiday is an
+     info row (blue bg + blue text); own-approved is a positive/leave row
+     (green bg + green text). Previously both paired green bg with blue text. */
+  .day-info-row.holiday      { background: var(--info-soft);        color: var(--info-deep);    font-weight: 500; }
   .day-info-row.worked       { background: var(--good-soft);        color: var(--success-deep); }
   .day-info-row.own-pending  { background: var(--warn-soft);        color: var(--warning-deep); font-weight: 500; }
-  .day-info-row.own-approved { background: var(--accent-soft);      color: var(--info-deep);    font-weight: 500; }
+  .day-info-row.own-approved { background: var(--accent-soft);      color: var(--success-deep); font-weight: 500; }
   .day-info-row.own-denied   { background: var(--destructive-soft); color: var(--danger-deep);  font-weight: 500; }
 
   /* ─── PTO DAY MODAL — HEADS-UP CONFLICT BANNERS (V1·E2) ──────────
@@ -2103,6 +2106,7 @@
   .toast-success { box-shadow: inset 3px 0 0 var(--good),        var(--shadow-sm); }
   .toast-error   { box-shadow: inset 3px 0 0 var(--destructive), var(--shadow-sm); }
   .toast-warn    { box-shadow: inset 3px 0 0 var(--warn),        var(--shadow-sm); }
+  .toast-info    { box-shadow: inset 3px 0 0 var(--info),        var(--shadow-sm); }
   .toast-icon {
     flex-shrink: 0;
     display: inline-flex; align-items: center; justify-content: center;
@@ -2112,6 +2116,7 @@
   .toast-success .toast-icon { color: var(--good); }
   .toast-error   .toast-icon { color: var(--destructive); }
   .toast-warn    .toast-icon { color: var(--warn); }
+  .toast-info    .toast-icon { color: var(--info); }
   .toast-msg { flex: 1; line-height: 1.4; }
 
   /* ─── LOADING / EMPTY STATES ─────────────────────────────────── */
