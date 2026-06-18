@@ -2211,9 +2211,9 @@ function cnRenderNotesView(area) {
           <h2 class="cn-head-title">Call Notes</h2>
         </div>
         <div class="cn-stats-mini" id="cn-stats-mini">
-          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-today">0</div><div class="cn-stat-lbl">Today</div></div>
-          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-week">0</div><div class="cn-stat-lbl">Week</div></div>
-          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-flag">0</div><div class="cn-stat-lbl">Unresolved</div></div>
+          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-today"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Today</div></div>
+          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-week"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Week</div></div>
+          <div class="cn-stat-cell"><div class="cn-stat-num" id="cn-stat-flag"><span class="lo-dots"><span></span><span></span><span></span></span></div><div class="cn-stat-lbl">Unresolved</div></div>
         </div>
         <button type="button" class="cn-help-fab" id="cn-help-btn" title="Keyboard shortcuts (${esc(mod)}+/ or ?)">?</button>
       </div>
@@ -6599,10 +6599,11 @@ function cnUpdateStatsMini_(res) {
   const week  = document.getElementById('cn-stat-week');
   const flag  = document.getElementById('cn-stat-flag');
   if (!today || !week || !flag) return;
-  today.textContent = String(res.todayTotal || 0);
-  week.textContent  = String(res.weekTotal  || 0);
+  // §4 count-up — animate from 0 to the value (replaces the loading dots).
+  countUp_(today, res.todayTotal || 0);
+  countUp_(week,  res.weekTotal  || 0);
   const unresolved = res.unresolvedActionCount || 0;
-  flag.textContent  = String(unresolved);
+  countUp_(flag, unresolved);
   flag.classList.remove('warn', 'crit');
   if (unresolved >= 3)      flag.classList.add('crit');
   else if (unresolved >= 1) flag.classList.add('warn');
@@ -7424,7 +7425,7 @@ var CN_HEALTH_RUN_LABELS = {
 function cnSysCardShell_(key, label) {
   return '<div class="panel cn-sys-card" id="cn-sys-' + key + '" data-tone="sage">' +
     '<div class="cn-sys-h">' + esc(label) + '</div>' +
-    '<div class="cn-sys-v" style="color:var(--muted)">…</div></div>';
+    '<div class="cn-sys-v" style="color:var(--muted)"><span class="lo-dots"><span></span><span></span><span></span></span></div></div>';
 }
 function cnSetSysCard_(key, label, tone, value, sub) {
   var el = document.getElementById('cn-sys-' + key);
@@ -7442,7 +7443,7 @@ function cnSetSysCard_(key, label, tone, value, sub) {
 function cnLoadStoragePanel_() {
   var slot = document.getElementById('cn-admin-storage');
   if (!slot) return;
-  slot.innerHTML = loSweep();
+  slot.innerHTML = '<div style="padding:10px 0">' + loSweep() + '</div>';
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
@@ -7524,7 +7525,7 @@ function cnRenderStoragePanel_(res) {
 function cnLoadHealthPanel_() {
   var slot = document.getElementById('cn-admin-health');
   if (!slot) return;
-  slot.innerHTML = loSweep();
+  slot.innerHTML = '<div style="padding:10px 0">' + loSweep() + '</div>';
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {

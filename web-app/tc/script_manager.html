@@ -28,10 +28,16 @@
   .cov-cell.risk { background: var(--warn-soft); }
   .cov-cell.low  { background: var(--destructive-soft); }
   .cov-cell.none { background: var(--paper-2); color: var(--muted-3); }
+  .cov-cell.closed { background: repeating-linear-gradient(45deg, var(--paper-2), var(--paper-2) 4px, var(--paper) 4px, var(--paper) 8px); }
+  .cov-day-lbl.is-closed { color: var(--muted-3); }
+  .cov-closed-tag { font-family: var(--mono); font-size: 9px; color: var(--muted-3); letter-spacing: .08em; text-transform: uppercase; }
   .cov-detail { grid-column: 1 / -1; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
   .cov-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 10px 0; }
   .cov-legend .sw { width: 13px; height: 13px; border-radius: 3px; display: inline-block; vertical-align: -2px; margin-right: 5px; }
   .cov-risk { margin-top: 16px; }
+  /* #2c — understaffed slots span the card width in responsive columns instead
+     of one narrow column with dead space. */
+  .cov-risk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 2px 20px; margin-top: 4px; }
   .cov-risk-item { font-size: 13px; padding: 3px 0; color: var(--ink); }
   .cov-risk-item b { font-family: var(--mono); }
 </style>
@@ -1080,9 +1086,14 @@ function covRender_(data) {
   if (!data || data.error) { body.innerHTML = '<div class="no-data">' + esc((data && data.error) || 'No data') + '</div>'; return; }
   if (!data.days || !data.days.length) { body.innerHTML = '<div class="no-data">No coverage in range.</div>'; return; }
   var minStaff = data.minStaff || 2;
-  var hours = []; for (var h = COV_HOUR_START; h <= COV_HOUR_END; h++) hours.push(h);
+  // Display + flag only business hours [start, end) (manager tz) — off-hours and
+  // weekends are out of scope (we're closed), so they're not shown/flagged.
+  var bizStart = (typeof data.businessStartHour === 'number') ? data.businessStartHour : COV_HOUR_START;
+  var bizEnd = (typeof data.businessEndHour === 'number') ? data.businessEndHour : (COV_HOUR_END + 1);
+  var hours = []; for (var h = bizStart; h < bizEnd; h++) hours.push(h);
 
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Times in ' + esc(data.managerTz || '') +
+    ' · business hours ' + covFmtHr_(bizStart) + '–' + covFmtHr_(bizEnd) +
     '. Per-tz shifts (v1). Hours with fewer than ' + esc(String(minStaff)) + ' working reps are flagged — click a day for the rep breakdown.</div>';
   var legend = '<div class="cov-legend">' +
     '<span><span class="sw" style="background:var(--accent-soft)"></span>OK (≥' + minStaff + ')</span>' +
@@ -1100,27 +1111,36 @@ function covRender_(data) {
     var byHour = {};
     (day.hours || []).forEach(function (x) { byHour[x.hour] = x; });
     var detailId = 'cov-d-' + di;
-    grid += '<div class="cov-day-lbl" onclick="covToggleDay_(\'' + detailId + '\')">' +
+    grid += '<div class="cov-day-lbl' + (day.closed ? ' is-closed' : '') + '" onclick="covToggleDay_(\'' + detailId + '\')">' +
       '<span class="chev">' + icon('chevronRight', 12) + '</span>' +
       esc(day.weekday.slice(0, 3)) + ' ' + esc(String(day.date).slice(5)) +
-      (day.holidayName ? ' <span class="hol">' + esc(day.holidayName) + '</span>' : '') + '</div>';
+      (day.holidayName ? ' <span class="hol">' + esc(day.holidayName) + '</span>' : '') +
+      (day.closed ? ' <span class="cov-closed-tag">closed</span>' : '') + '</div>';
     hours.forEach(function (hr, hi) {
       var x = byHour[hr] || { confirmed: 0, tentative: 0 };
       var c = x.confirmed || 0, t = x.tentative || 0;
-      var cls = (c >= minStaff) ? 'ok' : ((c + t) >= minStaff ? 'risk' : ((c + t) > 0 ? 'low' : 'none'));
+      // Closed days are never flagged (we're not open) — render a neutral cell.
+      var cls = day.closed ? 'closed'
+        : ((c >= minStaff) ? 'ok' : ((c + t) >= minStaff ? 'risk' : ((c + t) > 0 ? 'low' : 'none')));
       // §5 grid stagger-in — delay by cell position, capped < ~350ms total.
       var d = Math.min((di * hours.length + hi) * 6, 340);
-      grid += '<div class="cov-cell hm ' + cls + '" style="--d:' + d + 'ms" title="' + esc(covFmtHr_(hr) + ' — ' + c + ' working' + (t ? (' (+' + t + ' tentative)') : '')) + '">' + (c || '') + '</div>';
+      var title = day.closed ? (covFmtHr_(hr) + ' — closed')
+        : (covFmtHr_(hr) + ' — ' + c + ' working' + (t ? (' (+' + t + ' tentative)') : ''));
+      grid += '<div class="cov-cell hm ' + cls + '" style="--d:' + d + 'ms" title="' + esc(title) + '">' + (day.closed ? '' : (c || '')) + '</div>';
     });
     grid += '<div class="cov-detail" id="' + detailId + '" style="display:none">' + covRepsHtml_(day) + '</div>';
-    risks = risks.concat(covDayRisks_(day, byHour, hours, minStaff));
+    if (!day.closed) risks = risks.concat(covDayRisks_(day, byHour, hours, minStaff));
   });
   grid += '</div>';
 
   var risk = risks.length
     ? '<div class="panel cov-risk" data-tone="destructive"><div class="card-label">Understaffed slots</div>' +
-        risks.map(function (r) { return '<div class="cov-risk-item">' + r + '</div>'; }).join('') + '</div>'
-    : '';
+        '<div class="cov-risk-list">' +
+        risks.map(function (r) { return '<div class="cov-risk-item">' + r + '</div>'; }).join('') +
+        '</div></div>'
+    : '<div class="panel cov-risk" data-tone="sage"><div class="card-label">Coverage</div>' +
+        '<div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) +
+        ' All business hours meet the ' + esc(String(minStaff)) + '-rep minimum in this range.</div></div>';
 
   body.innerHTML = note + legend + grid + risk;
 }

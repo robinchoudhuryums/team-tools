@@ -38,6 +38,12 @@ const CONFIG = {
   COVERAGE_MIN_STAFF: 2,   // #3 — manager Coverage planner highlights any
                            // manager-tz hour with fewer than this many reps
                            // scheduled (after the PTO overlay) as understaffed.
+  // Understaffed is only flagged within these manager-tz business hours
+  // [start, end) on weekdays — outside this window / on weekends we're closed,
+  // so off-hours and weekend cells are shown but never flagged.
+  COVERAGE_BUSINESS_START_HOUR: 8,
+  COVERAGE_BUSINESS_END_HOUR:   17,
+  COVERAGE_WEEKDAYS_ONLY:       true,
 
   MANAGER_EMAILS: ['YOUR_EMAIL@umsupply.com'],
 
@@ -8180,11 +8186,14 @@ function getCoveragePlan(fromDate, toDate) {
       return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2) + ':00';
     };
 
+    const weekdaysOnly = CONFIG.COVERAGE_WEEKDAYS_ONLY !== false;
     const days = [];
     for (let d = 0; d < numDays; d++) {
       const dateIso = addDaysIso_(fromDate, d);
       const dow = new Date(dateIso + 'T12:00:00Z').getUTCDay();
-      days.push({ date: dateIso, weekday: DOW[dow], holidayName: holMap[dateIso] || null, reps: [] });
+      // Weekends are closed (we're only open weekdays) — shown but never flagged.
+      const closed = weekdaysOnly && (dow === 0 || dow === 6);
+      days.push({ date: dateIso, weekday: DOW[dow], holidayName: holMap[dateIso] || null, closed: closed, reps: [] });
     }
 
     // For each rep × each padded local date, convert the shift to the manager
@@ -8219,7 +8228,10 @@ function getCoveragePlan(fromDate, toDate) {
     const bucketed = coverageBucketHours_(intervals, numDays);
     for (let d = 0; d < numDays; d++) days[d].hours = bucketed[d];
 
-    return { from: fromDate, to: toDate, managerTz: mgrTz, minStaff: minStaff, days: days };
+    const bizStart = (CONFIG.COVERAGE_BUSINESS_START_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_START_HOUR : 8;
+    const bizEnd = (CONFIG.COVERAGE_BUSINESS_END_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_END_HOUR : 17;
+    return { from: fromDate, to: toDate, managerTz: mgrTz, minStaff: minStaff, days: days,
+             businessStartHour: bizStart, businessEndHour: bizEnd, weekdaysOnly: weekdaysOnly };
   } catch (err) { return { error: err.message }; }
 }
 function safeTimezone_(tz) {

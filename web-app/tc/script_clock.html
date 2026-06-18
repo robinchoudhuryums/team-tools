@@ -773,6 +773,18 @@ function renderCoverageStrip_(slot, data) {
 function loadTeammateStatus() {
   const slot = document.getElementById('teammate-card-slot');
   if (!slot) return;
+  // Loading state (was silent/empty until pop-in) — a card shell + skeleton rows
+  // so the space is reserved and the load is visible.
+  slot.innerHTML =
+    '<div class="card"><div class="card-label with-count"><span>Team Right Now</span></div>' +
+    '<div class="emp-grid">' +
+      '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
+        '<div class="skel skel-bar" style="width:70%;height:11px"></div></div></div>' +
+      '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
+        '<div class="skel skel-bar" style="width:55%;height:11px"></div></div></div>' +
+      '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
+        '<div class="skel skel-bar" style="width:62%;height:11px"></div></div></div>' +
+    '</div></div>';
   google.script.run
     .withSuccessHandler(data => {
       if (!data || !data.enabled || data.error) { slot.innerHTML = ''; return; }
