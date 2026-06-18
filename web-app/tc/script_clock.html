@@ -19,6 +19,10 @@
   /* Live shift strip = the control surface (header + ribbon + punch buttons). */
   .shift-strip { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); box-shadow: var(--shadow-sm); padding: 14px 16px; margin: 14px 0; }
   .shift-strip-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  /* #4 — break schedule chips under the ribbon */
+  .clk-brk-sched { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+  .clk-brk-label { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .clk-brk-chip { font-family: var(--mono); font-size: 11px; color: var(--ink); background: var(--warn-soft); color: var(--warning-deep); border-radius: 999px; padding: 2px 10px; }
   .ss-label { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
   .ss-state { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; }
   .ss-state.working { background: var(--accent-soft); color: var(--success-deep); }
@@ -72,8 +76,43 @@ let SELF_UNDO_WINDOW_SECONDS = 300;
  *  thin wrapper around renderClockView. */
 function enterClockCombinedView(area) {
   stopClock();
-  renderClockView(area);
+  renderClockView(area);   // instant paint from cached empState
   startClock();
+  clkRefreshState_();      // then reconcile to current truth (day rollover, a
+                           // manager's approved punch fix, a forgotten clock-out)
+  clkBindFreshness_();     // refresh on tab focus/visibility (idempotent)
+}
+
+/** Re-fetch employee state and re-render the Clock view if still active. Fixes
+ *  stale button state when a tab is left open across midnight (a forgotten
+ *  clock-out shouldn't carry into the new day) or after a manager approves a
+ *  punch-adjust for today — the open tab now reconciles instead of showing the
+ *  prior day's "Clock Out" / pre-fix buttons. */
+function clkRefreshState_() {
+  google.script.run
+    .withSuccessHandler(function (state) {
+      if (!state || state.error) return;
+      empState = state;
+      adjustWindowDays = state.adjustWindowDays || 30;
+      _clkLastDay = isoDateTz(empTz());
+      if (currentView === 'clock') {
+        var area = getClockArea_();
+        if (area) { renderClockView(area); startClock(); }
+      }
+    })
+    .withFailureHandler(function () {})
+    .getEmployeeState();
+}
+
+/** Bind a one-time focus/visibility refresh so a Clock tab left open reconciles
+ *  when the rep returns to it (no background push in Apps Script web apps). */
+var _clkFreshnessBound = false;
+function clkBindFreshness_() {
+  if (_clkFreshnessBound) return;
+  _clkFreshnessBound = true;
+  var onWake = function () { if (currentView === 'clock' && !document.hidden) clkRefreshState_(); };
+  window.addEventListener('focus', onWake);
+  document.addEventListener('visibilitychange', onWake);
 }
 
 /** Returns the container the clock view renders into. Pre-8b this had
@@ -141,6 +180,7 @@ function renderClockView(area) {
         ${hoursReadout}
       </div>
       ${renderDayRibbon_(s.punches, stats, tz)}
+      ${clkBreakScheduleHtml_()}
       ${renderActions(s.nextActions)}
     </div>
 
@@ -288,6 +328,7 @@ function renderPtoMini_(s) {
 // the gradient only repaints when the displayed hour changes.
 let CLK_DISPLAY_TZ = null;
 let _clkLastSkyHour = -1;
+let _clkLastDay = null;   // rep-tz date last rendered — drives the day-rollover refresh
 
 function tzSelectHtml_(repTz, repAbbr) {
   const zones = [{ label: repAbbr || 'Local', tz: repTz }];
@@ -443,6 +484,8 @@ const CLK_REGION_ZONES = [
   { label: 'CT',  tz: 'America/Chicago' },
   { label: 'PT',  tz: 'America/Los_Angeles' },
   { label: 'HST', tz: 'Pacific/Honolulu' },
+  { label: 'IST', tz: 'Asia/Kolkata' },   // offshore team zones — always listed
+  { label: 'PHT', tz: 'Asia/Manila' },
 ];
 let CLK_REGION_FMTS = [];
 function clkBuildRegionFmts_(repTz, repAbbr) {
@@ -619,6 +662,17 @@ function stopRibbonNowCursor_() {
 // Clock tab is open (Apps Script web apps have no background push); the
 // reminded-set dedupes so a toast fires once per break per day.
 function clkBreaks_() { return (CLK_SCHEDULE && Array.isArray(CLK_SCHEDULE.breaks)) ? CLK_SCHEDULE.breaks : []; }
+/** #4 — full break schedule chips under the shift ribbon, so agents always see
+ *  their scheduled breaks (the next-break chip only shows the upcoming one). */
+function clkBreakScheduleHtml_() {
+  var breaks = clkBreaks_();
+  if (!breaks.length) return '';
+  var chips = breaks.map(function (b) {
+    return '<span class="clk-brk-chip">' + esc(b.label) + ' · ' +
+      esc(clkFmtMin_(b.startMin)) + '–' + esc(clkFmtMin_(b.startMin + b.lenMin)) + '</span>';
+  }).join('');
+  return '<div class="clk-brk-sched"><span class="clk-brk-label">' + icon('clock', 12) + ' Break schedule</span>' + chips + '</div>';
+}
 function clkBreakReminderMin_() { return (CLK_SCHEDULE && CLK_SCHEDULE.breakReminderMin) || 10; }
 function clkNowMin_(tz) {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
@@ -991,12 +1045,17 @@ function bindClockBtns() {
 
 function startClock() {
   stopClock();
+  if (_clkLastDay === null) _clkLastDay = isoDateTz(empTz());
   const tick = () => {
     if (!document.getElementById('live-time')) return;
     clkTickTime_();        // big time in the displayed tz (#5a)
     clkApplySky_();        // repaint the sky gradient when the displayed hour rolls over
     clkUpdateRegions_();   // item 5 — refresh the world-clock strip (cached formatters)
     clkUpdateBreak_();     // item 1 — next-break chip + X-min reminder toast
+    // Day rollover — a tab open past midnight must reconcile state so a
+    // forgotten clock-out doesn't carry "Clock Out" into the new day.
+    const dayNow = isoDateTz(empTz());
+    if (dayNow !== _clkLastDay) { _clkLastDay = dayNow; clkRefreshState_(); }
   };
   tick(); clockInterval = setInterval(tick, 1000);
   startRibbonNowCursor_();
@@ -1023,10 +1082,19 @@ function handlePunch(punchType) {
 
 function submitPunch(punchType, custom) {
   setClockBtnsDisabled(true);
+  // #3 — immediate visual feedback: the primary action shows an inline loader
+  // ("Working…") the instant it's clicked, instead of just going disabled until
+  // the toast lands. Restored on failure; replaced by the re-render on success.
+  var prime = document.querySelector('.actions .prime');
+  var primeHtml = prime ? prime.innerHTML : null;
+  if (prime) prime.innerHTML = '<span class="lo-dots"><span></span><span></span><span></span></span> Working…';
   google.script.run
     .withSuccessHandler(result => {
       setClockBtnsDisabled(false);
-      if (!result.success) { showToast((result.error||'Error'), 'toast-error'); return; }
+      if (!result.success) {
+        if (prime && primeHtml != null) prime.innerHTML = primeHtml;
+        showToast((result.error||'Error'), 'toast-error'); return;
+      }
       const tag = result.isAdjustment ? ' (adj)' : '';
       showToast(`${PUNCH_META[punchType].label}${tag} at ${result.displayTime}`, 'toast-success');
       google.script.run
@@ -1043,6 +1111,7 @@ function submitPunch(punchType, custom) {
     })
     .withFailureHandler(err => {
       setClockBtnsDisabled(false);
+      if (prime && primeHtml != null) prime.innerHTML = primeHtml;
       showToast((err.message||'Server error'), 'toast-error');
     })
     .recordPunch(punchType, custom);
