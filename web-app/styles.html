@@ -2184,7 +2184,8 @@
   .mc.done .mc-label { text-decoration: line-through; color: var(--muted-3); transition: color .3s var(--ease); }
   @keyframes drawCheck { to { stroke-dashoffset: 0; } }
   .ck { stroke-dasharray: 24; stroke-dashoffset: 24; }
-  .mc.done .ck { animation: drawCheck .35s var(--ease) forwards; }
+  .mc.done .ck, .mc.checked .ck { animation: drawCheck .35s var(--ease) forwards; }
+  .ck-wrap { display: inline-flex; align-items: center; }
   /* §7 selection & copy. .popping / .copied are general one-shot helpers
      (toggle on, the keyframe runs once); .star.on pops when preferred. */
   @keyframes pop { 0% { transform: scale(1); } 42% { transform: scale(1.15); } 100% { transform: scale(1); } }

@@ -4346,6 +4346,14 @@ function cnToggleResolved_(noteId) {
       }
       cnReplaceNoteInState_(res.note);
       cnReRenderActiveView_();
+      // §6 settle — only when transitioning TO resolved, and applied AFTER this
+      // confirming re-render (the optimistic one would be clobbered by it).
+      // Transient + self-cleaning so a resolved card is never left stuck dimmed
+      // and the optimistic-revert path (INV-48/56) is untouched.
+      if (!prevResolved && res.note && res.note.resolved) {
+        var card = document.querySelector('[data-note-id="' + noteId + '"]');
+        if (card) settleRow_(card, null, { transient: true });
+      }
     })
     .withFailureHandler(function (err) {
       note._flagInFlight = false;

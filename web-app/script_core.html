@@ -554,22 +554,45 @@ function observeReveals(container) {
 
 /** 2nd-pass motion §6 — settle a row in place on a mutation (mark-complete /
  *  resolve / accept): dim + tint, strike the label, draw a check. Keeps the row
- *  (good for context / undo affordance). `labelSel` is an optional selector for
- *  the text to strike through. Idempotent — re-calling won't stack checks. */
-function settleRow_(row, labelSel) {
+ *  (good for context / undo affordance). Options:
+ *    labelSel  — optional selector for the text to strike through
+ *    opts.dim       (default true)  — apply the .done dim + strike
+ *    opts.check     (default true)  — inject + draw a check glyph
+ *    opts.transient (default false) — auto-remove the classes/glyph after holdMs
+ *    opts.holdMs    (default 1100)  — transient lifetime
+ *  Idempotent — re-calling won't stack checks. */
+function settleRow_(row, labelSel, opts) {
+  opts = opts || {};
   if (!row || !row.classList) return;
+  var dim = opts.dim !== false;
+  var check = opts.check !== false;
   row.classList.add('mc');
   if (labelSel) {
     var label = row.querySelector(labelSel);
     if (label) label.classList.add('mc-label');
   }
-  if (!row.querySelector('.ck-wrap')) {
+  if (check && !row.querySelector('.ck-wrap')) {
     var span = document.createElement('span');
     span.className = 'ck-wrap';
     span.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="ck" d="M5 13l4 4L19 7"/></svg>';
     row.appendChild(span);
   }
-  row.classList.add('done');
+  row.classList.add(dim ? 'done' : 'checked');   // .done dims+draws; .checked only draws
+  if (opts.transient) {
+    setTimeout(function () {
+      row.classList.remove('mc', 'done', 'checked');
+      if (labelSel) { var l = row.querySelector(labelSel); if (l) l.classList.remove('mc-label'); }
+      var ck = row.querySelector('.ck-wrap'); if (ck && ck.parentNode) ck.parentNode.removeChild(ck);
+    }, opts.holdMs || 1100);
+  }
+}
+
+/** §6 — clear a settle applied by settleRow_ (e.g. an accept→reject change). */
+function unsettleRow_(row, labelSel) {
+  if (!row || !row.classList) return;
+  row.classList.remove('mc', 'done', 'checked');
+  if (labelSel) { var l = row.querySelector(labelSel); if (l) l.classList.remove('mc-label'); }
+  var ck = row.querySelector('.ck-wrap'); if (ck && ck.parentNode) ck.parentNode.removeChild(ck);
 }
 
 /** 2nd-pass motion §7 — flash a copy button on success (also aids ⌘C
