@@ -11,7 +11,15 @@ Apps Script project under its own directory, synced via `clasp`.
    - **Time Clock** — cross-timezone time tracking, PTO requests,
      manager dashboard, ADP-format export, and a manager-only
      **Coverage** planner (forward staffing across timezones with PTO
-     overlaid + understaffed-hour flagging — `getCoveragePlan`, INV-127).
+     overlaid + understaffed-hour flagging — `getCoveragePlan`, INV-127;
+     redesigned as a days×hours heatmap + understaffed callout). The Clock
+     view was redesigned into a sky-gradient clock card + tz selector with
+     the day ribbon as the primary control surface (hours/state header,
+     break bands, a note-volume histogram via `getMyNoteHourBuckets(date)` —
+     sourced from the rep's LOGGED NOTES per rep-local hour, NOT CDR — and
+     the punch buttons mounted directly beneath it, lunch color-coded), plus
+     a one-row Punches · Team · Annual-PTO layout. **Sick leave was removed
+     from the UI** (backend kept for legacy reverts — see Common Gotchas).
      Backs a shared Google Sheet (`CONFIG.ADP_SS_ID` in `web-app/Code.js`).
    - **Call Notes** — rolling-note panel for CSR call logging. Each
      rep writes to their own per-rep Google Sheet (`Notes` tab in the
@@ -21,6 +29,12 @@ Apps Script project under its own directory, synced via `clasp`.
      two-stage flow with preview gate. Three flag types
      (action / training / review) with EOD reminders for unresolved
      action flags and weekly manager digests for training + review.
+     Redesign: Search renders real read-only cards with a result count,
+     search-term highlight, a date filter, and **Phone / TRX** field scopes
+     (alongside All / Caller / Issue — INV-45); the manager Stats view is a
+     scannable table (shared `mtRenderTable_` component); and the Admin tab is
+     split into **Overview / Tags / Compliance / Config** sub-tabs with
+     system-status cards.
    - **Metrics** — CDR integration module that reads DQE Historical
      Data from the CDR Report spreadsheet (the same sheet backing the
      `call-data-reporting` repo's Department Dashboard). Two tabs:
@@ -38,6 +52,11 @@ Apps Script project under its own directory, synced via `clasp`.
      replaces only those functions. CDR metrics also enrich the
      Call Notes Stats tab (`managerGetShiftStats`) via a best-effort
      try/catch overlay — CDR failure never breaks existing stats.
+     My Stats has Today / 7D / 30D range presets (server-aggregated via
+     `getMyMetricsRange(from, to)` — caller-scoped self-aggregate, no team
+     line/series), rail-row sparklines, and a sortable + sticky-header team
+     table with tri-tone % cells (the table renders via the shared
+     `mtRenderTable_` component, see Key Design Decisions).
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
    - **Intake** — patient-intake forms ported from the bound
      `form-generator` Apps Script (kept in `incoming/form-generator/`
@@ -60,7 +79,10 @@ Apps Script project under its own directory, synced via `clasp`.
      the read-only `Offerings` tab); the shared AuditLog row stays
      PHI-free (`IntakeSent: submissionId + recipientDomain`). The
      Offerings catalog is isolated behind `getIntakeOfferings_()` (the
-     `getCdrSS_()` pattern). Backs the Intake spreadsheet
+     `getCdrSS_()` pattern). Redesigned onto the shared `.app-bar` shell with
+     PPD "Option A" structured controls (Yes/No toggles + severity chips,
+     engine-safe — see Common Gotchas), a filterable/searchable Sent tab, and
+     per-form draft autosave (`umsIntakeDrafts`). Backs the Intake spreadsheet
      (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
    - **Reference** — in-app knowledge base (Phase 1). A per-department
      tree + full-text search + reader for training/policy docs, so the
@@ -88,7 +110,9 @@ Apps Script project under its own directory, synced via `clasp`.
      `kbGetReviewDue`/`kbMarkReviewed`, INV-126), and an optional
      **AI guidance card** (Phase A —
      `kbGetFacetGuidance`, Anthropic API, whitelisted enum facets
-     only, feature-flagged OFF by default; INV-119).
+     only, feature-flagged OFF by default; INV-119). The Reference tab was
+     redesigned with collapsible departments (state in `umsKbPanel.deptCollapsed`)
+     and a landing panel (recent / most-used / review-due).
    - **Training & Employee Docs** — phased module
      (`docs/training-employee-docs-spec.md`). **T1 (shipped):**
      manager-assigned training built ON the Reference/KB content layer —
@@ -126,7 +150,9 @@ Apps Script project under its own directory, synced via `clasp`.
      (`getQuizAnalytics`, manager-gated aggregate — pass rate / avg
      score / attempts, no answer keys) in Team Training. The remaining
      T4 item (Drive snapshot-to-PDF signing for signable embeds) stays
-     on-demand. See INV-123.
+     on-demand. See INV-123. The rep My Training checklist was redesigned
+     with completion rings; Team Training's matrix is now a reps×items CSS-grid
+     status matrix.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -299,6 +325,19 @@ this section before touching the relevant area.
   the M-1 fix the deduction gated only on the global flag, silently
   contradicting S15; the read-side `getEmployeeInfo_`/`lookupEmployeeById_`
   parse the same coercion-safe `FALSE`/`no`/`n`/`0` values.)
+- **Sick leave is UI-removed but backend-dormant (deferred #2 / C1).**
+  `'Sick Leave'` was dropped from `TIME_OFF_TYPES` (and the `day-type`
+  `<select>` options), so no NEW sick request can be created — via the UI
+  picker OR a direct `submitTimeOffRequest`/`managerSubmitTimeOff` RPC
+  (`isValidTimeOffType_` rejects it, INV-95). But the SICK BACKEND IS KEPT
+  ON PURPOSE: `getLeaveDeduction_`'s `sick` mapping (+ its mirror
+  `LEAVE_DEDUCTION_CLIENT`), `adjustLeaveBalance_`'s sick column (J), the
+  PTO-reconciliation sick handling, and roster column J all stay so
+  historical Approved-sick rows still revert/reconcile to the SICK bucket.
+  Removing them would silently restore legacy sick reverts into the ANNUAL
+  bucket (a balance-corruption regression). Treat the sick path as
+  read/revert-only legacy — don't re-add `Sick Leave` to `TIME_OFF_TYPES`
+  without re-deriving this.
 - **`_TEST_OVERRIDE_EMAIL` only intercepts `getActiveUserEmail_()`.**
   Any code path that calls `Session.getActiveUser()` directly will
   bypass the test impersonation and use the real running user.
@@ -462,6 +501,20 @@ this section before touching the relevant area.
   or inserting an Offerings column silently corrupts recommendations — keep the
   A–F contract, or update the engine + the fixture catalog in the tests
   together. The catalog is cached in-memory per execution (`_intakeOfferingsCache`).
+- **Intake PPD "Option A" controls are engine-safe — some questions MUST
+  stay free-text.** The redesign renders most PPD questions as structured
+  controls via `INTAKE_PPD_TYPE` (`script_intake.html`): `'yn'` = Yes/No
+  color-coded toggle, `'sev'` = None/Mild/Mod/Severe severity chips, `'num'`
+  = number; anything not in the map (default `'text'`) renders free-text.
+  The classification is LOAD-BEARING for the recommendation engine (INV-112):
+  `intakeFilterRecommendations_` substring-matches the CONTENT of Q25
+  (numbness 'feet'/'legs'), Q34 (amputation 'knee'/side), Q31a/Q33a
+  (location), Q43 (real diagnosis vs the no/none/n-a exclude list), and Q13
+  (falls — `isPositive` looks for 'yes'), so those MUST remain free-text —
+  collapsing them to a Yes/No toggle would feed the engine a bare
+  `Yes`/`No` and silently break the upgrade logic. Only purely-binary or
+  `isPositive('yes')` questions become toggles. Keep `INTAKE_PPD_TYPE` and
+  the engine in sync — same parallel-source discipline as the layouts below.
 - **Intake email builders must `esc_` every patient field; the justification
   is the ONE raw exception.** `intakeBuildPpdBodyHtml_` / `intakeBuildAcctBodyHtml_`
   inject the body into the preview modal via `innerHTML` and into the sent
@@ -481,6 +534,17 @@ this section before touching the relevant area.
   if they drift. Adding/removing a PMD/PAP question means updating BOTH the
   question banks (client `INTAKE_*_Q`) AND both layouts. Same discipline as
   `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_`.
+- **Intake account Yes/No toggles read/write through `.intk-yn` groups
+  (deferred #10).** PMD/PAP account answers are gathered by
+  `intakeAcctGetVal_` and re-applied by `intakeApplyAcctAnswers_`, both of
+  which handle ANY `.intk-yn` group: a checkbox-style toggle stores
+  `TRUE`/`FALSE`, while a select-style toggle marked `data-ynsel` (the
+  `['', 'Yes', 'No']` shape, e.g. PAP's CPAP-history conditional) stores
+  `Yes`/`No`. The server `INTAKE_PMD_LAYOUT` / `INTAKE_PAP_LAYOUT` select
+  keys are UNCHANGED — only the client input control changed shape, so the
+  layout-mirror tripwire still passes. New account Yes/No fields should
+  reuse the `.intk-yn` (+ `data-ynsel` where a Yes/No string is needed)
+  pattern rather than a raw checkbox/select.
 - **Call Notes Sheet enrollment — one-click auto-provision (or manual).**
   A rep has no Call Notes panel until column L (`CallNotesSheetId`) of the
   Employees roster has their per-rep spreadsheet ID. `getCallNotesSheet_(emp)`
@@ -931,7 +995,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Ten client-side localStorage keys total.** All per-browser, all
+- **Twelve client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -960,7 +1024,9 @@ this section before touching the relevant area.
     default true — the context-suggestions toggle) + `aiSeen`
     ({hash, date} — the Phase A guidance card's collapse-after-seen
     marker; same facet combo renders collapsed for the rest of the
-    day). Sanitized on read (corrupt blob → `{}`); deliberately a
+    day) + `deptCollapsed` ({deptName: bool} — the Reference tab's
+    collapsible-department open/closed state, written by `kbToggleDept_`).
+    Sanitized on read (corrupt blob → `{}`); deliberately a
     single key so drawer prefs don't multiply the key count.
   - `umsLastView` — the active tab key, written by `showView` on every
     navigation. On boot (when no `?tool=` deep-link is present) the shell
@@ -979,7 +1045,14 @@ this section before touching the relevant area.
     `popoutParseGeom_` (corrupt/out-of-range → null → default 480×800). So the
     rep's manual resize/reposition sticks across launches. Position is
     best-effort (browsers restrict programmatic move of an existing window).
-  Clearing browser data wipes all ten.
+  - `umsIntakeDrafts` — in-progress Intake form answers (PPD / PMD / PAP)
+    as ONE JSON blob keyed by form type (`INTAKE_DRAFT_KEY`), auto-saved on
+    input, restored on the form's view enter, cleared on send + Clear. Like
+    the Call Notes draft it carries an `at` ms stamp and expires after 24h.
+    NOTE this is **PHI at rest in the browser** (patient answers) — the same
+    posture as the Call Notes active-form draft; it lives only in the rep's
+    own browser and is wiped on send/clear/expiry.
+  Clearing browser data wipes all twelve.
 
 ## Key Design Decisions
 
@@ -1255,16 +1328,17 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Ten client-side localStorage keys total" entry in
+  authoritative "Twelve client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
-  `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`) — all
-  per-browser, all try/catch-wrapped. (An earlier version of this decision
-  listed only four; Round 2 · 8a/8b added the sidebar-width and Time/PTO-mode
-  keys, the KB drawer added its single `umsKbPanel` prefs blob, the
-  refresh-restore behavior added `umsLastView`, and #4 added
-  `umsPopoutGeom`.)
+  `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
+  `umsIntakeDrafts`) — all per-browser, all try/catch-wrapped. (An earlier
+  version of this decision listed only four; Round 2 · 8a/8b added the
+  sidebar-width and Time/PTO-mode keys, the KB drawer added its single
+  `umsKbPanel` prefs blob, the refresh-restore behavior added `umsLastView`,
+  #4 added `umsPopoutGeom`, and the redesign added `umsIntakeDrafts` (Intake
+  form drafts) + a `deptCollapsed` field inside `umsKbPanel`.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -2463,8 +2537,20 @@ this section before touching the relevant area.
   a managers-only closing step. Interactive gating ("now type here…") was
   deliberately deferred — the passive spotlight teaches the same things
   without fighting the optimistic re-renders.
-
-## Deferred Follow-ons
+- **Shared `mtRenderTable_` table component (`script_core.html`).** One
+  config-driven `.m-table` renderer (columns + rows + sort + sticky header +
+  per-cell tone) backs BOTH the Metrics Team table AND the Call Notes manager
+  Stats table, so the two scannable tables can't drift in markup/escaping/
+  sort behavior — the same parallel-source discipline as `mtRenderTable_`'s
+  callers each `esc()`-ing their own cell strings. The earlier ad-hoc
+  `mTh_` header helper was removed when the two tables were unified onto this
+  component. New manager tables should reuse it rather than hand-rolling
+  `<table>` markup.
+- **Icon library additions (`script_icons.html`).** The redesign added
+  `clipboardList`, `accessibility`, `airflow`, `outbox`, and `fileText` to the
+  `ICONS` set, repointed the Intake tab + sidebar icons, and switched
+  `kbItemIcon_`'s article glyph to `fileText`. Same rule as before — add one
+  path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
 
 Items identified during the V1–V4 + Round 2 redesign work that
 were intentionally deferred. The redesign itself is complete; these
@@ -2513,6 +2599,13 @@ Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`.
 State that exists outside the codebase and must be set up
 manually for a fresh deploy or environment:
 
+- **The 2026-06 redesign + deferred follow-ons #1–#4 + niceties #8–#10
+  add NO new operator state** — no new Script Properties, no new triggers,
+  no migrations. The new endpoints (`getMyMetricsRange`,
+  `getMyNoteHourBuckets`) read existing stores. It deploys with the normal
+  single `clasp push -f` + New version. The redesign record (per-commit
+  scope, before/after) is
+  `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without
   it, `getAdpSS_()` falls back to the inert `'YOUR_ADP_SPREADSHEET_ID'`
@@ -3056,7 +3149,12 @@ in BOTH the install and `removeAutomationTriggers` `TARGETS` dedupe arrays
 — the exact class of bug that duplicated `purgeOldCallNotes` until it was
 added to both)); it also
 parse-guards every JS-bearing `<script>` partial so a syntax error
-anywhere in the client fails CI. See `test/client/README.md`. It needs
+anywhere in the client fails CI. It also runs a **design-token hygiene
+tripwire** (INV-128) that fails CI on any `var(--token)` used in a shared
+partial but defined nowhere in `styles_design_tokens.html` (the allowlist is
+empty; `form_public.html` is excluded). The integration suite (`Tests.js`)
+gained `test_cn_search_phoneTrxFieldScopes`, pinning the Phone/TRX search
+field-scope isolation (INV-45). See `test/client/README.md`. It needs
 no npm install and lives outside `web-app/`, so `clasp` never pushes it. A
 GitHub Action (`.github/workflows/client-tests.yml`) runs this harness +
 a `node --check` of `Code.js` / `Tests.js` on every push and PR — the
@@ -3134,7 +3232,7 @@ INV-13 | `getManagerDashboard` reads the audit sheet via a bounded range (last ~
 INV-14 | Email sends (`notifyEmployeeOfDecision_`, `sendDailyMissedPunchAlerts`, `sendAutomatedExport_`) are wrapped in try/catch and never block the API result | Subsystem: Server
 INV-15 | Automation triggers can only be installed by emails in `MANAGER_EMAILS` (Script Properties or CONFIG, via `getManagerEmails_()`); `installAutomationTriggers` throws otherwise | Subsystem: Server
 INV-16 | Empty timezone strings fall back to `CONFIG.TIMEZONE`; empty leave-balance cells parse as 0. Trigger handlers route roster timezone values through `safeTimezone_()`, which shape-checks the id (IANA `Area/Location` or `UTC`/`GMT±h[:mm]`) before the `Utilities.formatDate` probe — the V8 runtime no longer throws on unknown tz ids, so the probe alone can't catch typos — and logs invalid values before falling back | Subsystem: Server
-INV-17 | `getLeaveDeduction_` is case-insensitive and trims whitespace; unknown types default to `{ bucket: 'annual', days: 1.0 }`; `'Unpaid Leave'` returns `{ bucket: null, days: 0 }` | Subsystem: Server
+INV-17 | `getLeaveDeduction_` is case-insensitive and trims whitespace; unknown types default to `{ bucket: 'annual', days: 1.0 }`; `'Unpaid Leave'` returns `{ bucket: null, days: 0 }`. It STILL maps `'Sick Leave'` → `{ bucket: 'sick', ... }` even though `Sick Leave` was removed from `TIME_OFF_TYPES` (so no new sick request is creatable, INV-95) — the mapping is kept so historical Approved-sick rows revert/reconcile to the SICK bucket; removing it would route legacy sick reverts into ANNUAL | Subsystem: Server
 INV-18 | Bi-weekly period boundaries are computed from the FIRST `'biweekly'` anchor row in the Employees sheet via the anchor-floor formula in `getCurrentBiweeklyRange_` | Subsystem: Server
 INV-19 | US holiday observance shift: Saturday → previous Friday, Sunday → following Monday (handled by `fixedHoliday_`) | Subsystem: Server
 INV-20 | Test impersonation uses `_TEST_OVERRIDE_EMAIL`, consumed only by `getActiveUserEmail_()`, and is cleared in `finally` by every entry point | Subsystem: Test Suite
@@ -3162,7 +3260,7 @@ INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody +
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
 INV-44 | The eight trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` and `purgeOldCallNotes` are destructive (delete FormSubmissions/FormTokens and per-rep Notes rows past their retention windows) so the gate is load-bearing, not just defensive | Subsystem: Server
-INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise substring matching across (caller, callback, patientAndTrx) for `field='caller'|'all'` and (issue, resolution) for `field='issue'|'all'`. Used by the "Find prior calls for this TRX" card button | Subsystem: Server
+INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise `field ∈ all \| caller \| issue \| phone \| trx`: `all` matches across (caller, callback, patientAndTrx, issue, resolution); `caller` matches (caller, callback, patientAndTrx); `issue` matches (issue, resolution); **`phone` matches the callback number ONLY; `trx` matches patientAndTrx ONLY** (scope-isolated — a `phone` search never matches a TRX token, and vice-versa). The same field-scope set applies to the manager-gated `managerSearchCallNotes`. Used by the "Find prior calls for this TRX" card button + the Search tab's field-scope tabs. Pinned by `test_cn_search_phoneTrxFieldScopes` | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
 INV-48 | Optimistic UI on the Call Notes hot path: `cnSubmitActiveForm_`, `cnToggleFlag_`, and `cnToggleResolved_` mutate `CN_STATE.rollingNotes` and re-render BEFORE the server RPC fires. Pending notes carry `_pending: true` and render with reduced opacity + a "Saving" badge in place of action buttons. Server failure triggers `cnRevertPendingSubmit_` (for submit) or restores the prior flag/resolved state (for toggles), and surfaces a clear toast. The submit snapshot captures the full multi-flag array (incl. `urgent`) + tags + training question — not just the single primary flag — so a failed submit recovers everything the rep typed (`cnRestoreFromSnapshot_` prefers `snap.flags`/`snap.tags`; F2 fix). The revert NEVER clobbers newer work: it restores into the form only when the form is still empty (same 5-field check as the Ctrl/⌘+Z path); with new typing present the form is left untouched (the failed note remains on the clipboard from the optimistic copy), and after a nav-away the snapshot is parked in the sticky-draft slot via `cnSaveSnapshotAsStickyDraft_` so the next Log view restores it (Cycle 2 · M4). Auto-copy also runs in the optimistic path so the rep can paste into the CRM before the network acknowledges anything | Subsystem: Client (Call Notes views)
@@ -3189,7 +3287,7 @@ INV-68 | `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` are the isolated 
 INV-69 | `getManagerDashboard` returns `pendingTrend` (14 days, new pending submissions per day, INCLUDES today) + `missedTrend` (14 days, missed-clockout instances per day, EXCLUDES today since reps still mid-shift would always register as missed). Both computed in-memory from already-loaded `toRows` / `adpRows` (INV-13 honored — no extra Sheet reads). Used by the V4·E2 telemetry-strip sparklines on Missed + Pending cells | Subsystem: Server
 INV-70 | `getManagerDashboard` attaches `recentHours[]` (7 entries `{date, hours}`, oldest→newest, excludes today) to each `liveStatus` entry. Computed via one extra in-memory pass over already-loaded `adpRows` and `calcHours_`; days without both a `ClockIn` and a `ClockOut` are recorded as 0 hours. Used by the V4·E3 per-rep sparkline on the manager dashboard's live-status cards | Subsystem: Server
 INV-71 | Clock view's "until end of shift" countdown (in `buildStatusSentence_`) and the day ribbon's scheduled band (in `renderDayRibbon_`) both anchor to the rep's first `ClockIn` + the scheduled length once they've clocked in; before that, both fall back to the rep's configured shift from `CONFIG.SHIFT_SCHEDULE` (default 8:00–17:00 CST, per-timezone overrides — e.g. PH `Asia/Manila` 8:30–17:00). The schedule is resolved server-side by `getShiftSchedule_(timezone)` → `{startMin, lengthMin}`, shipped on `getEmployeeState`, and read client-side via `CLK_SCHEDULE` (`clkSchedStartMin_` / `clkSchedLenMin_`, falling back to `RIBBON_DEFAULT_*` if absent). Per-rep (vs. per-tz) schedules still aren't supported | Subsystem: Server + Client (Time Clock views)
-INV-72 | `LEAVE_DEDUCTION_CLIENT` in `tc/script_timeoff.html` must mirror server's `getLeaveDeduction_` (Code.js) for the PTO day modal's balance-after preview to compute correctly. The server still performs the actual deduction on submit (via `updateTimeOffStatus`'s Pending→Approved transition), so a drift causes UI mis-preview but not balance corruption. Adding a new leave type requires updating BOTH maps | Subsystem: Client (Time Clock views) + Server
+INV-72 | `LEAVE_DEDUCTION_CLIENT` in `tc/script_timeoff.html` must mirror server's `getLeaveDeduction_` (Code.js) for the PTO day modal's balance-after preview to compute correctly. The server still performs the actual deduction on submit (via `updateTimeOffStatus`'s Pending→Approved transition), so a drift causes UI mis-preview but not balance corruption. Adding a new leave type requires updating BOTH maps. Both maps RETAIN the `sick` mapping (mirror intact) even though `Sick Leave` is no longer a creatable type (INV-17/INV-95) — kept for legacy-row reverts/reconciliation | Subsystem: Client (Time Clock views) + Server
 INV-73 | Day-ribbon now-cursor refresh interval (`_ribbonNowInterval`, 60s) is bound to the `startClock` / `stopClock` lifecycle via `startRibbonNowCursor_` / `stopRibbonNowCursor_`. When the Clock view is exited via tab navigation (Time Off / Manager / Call Notes / Metrics enters all call `stopClock` at the top), the interval clears alongside the 1Hz live-time interval | Subsystem: Client (Time Clock views)
 INV-74 | (Removed in Round 2 · 8b.) The Clock view's pay-period ledger cell + the `lazyUpdatePayPeriodCell_` lazy hook were both removed when the timesheet section moved to the Time / PTO tab. The orphaned timesheet render cluster (`loadTimesheet` / `renderTimesheetView` / calendar+card renderers) was fully pruned in Cycle 2 (L11) — `tc/script_timesheet.html` now holds only the live `computeRange` / `isoFromMs` range helpers used by the Time / PTO side rail | Subsystem: Client (Time Clock views)
 INV-75 | `submitCallNote` accepts `payload.flags[]` (multi-select via `sanitizeFlagsArray_`) and `payload.tags[]` (free-text kebab-case via `sanitizeTagsArray_`) in addition to the legacy `payload.flagType` single string. Server folds both into `subformData` (no new Sheet column required) and derives the `FlagType` column from `flags[]` via priority order (`action` > `training` > `review` > `urgent`). `urgent` never enters the `FlagType` column (INV-37 preserved — `sanitizeFlagType_` still rejects it); it lives in `subformData.flags` only so existing manager digests / queues are unaffected. Pin stays in `subformData.pinned` with its 3-cap (INV-50) — not in flags[] | Subsystem: Server
@@ -3212,7 +3310,7 @@ INV-91 | `managerGetFormSubmission(repEmpId, token)` is manager-gated (INV-02), 
 INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set; timestamp cells are recovered via `normalizeAuditTs_` since Sheets coerces them to Dates). The search filters by rep / action / date range (default start = last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz; default END = today in `CONFIG.TIMEZONE` — the tz audit rows are stamped in, so IST-stamped rows written "tomorrow" relative to the US-afternoon manager aren't silently hidden), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content. Pinned by `test_auditPanel_searchAndHistory` + the gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server
 INV-93 | `saveEmailTemplates(templates)` is manager-gated (INV-02, INV-57), persists to Script Property `CN_EMAIL_TEMPLATES` (JSON array of `{name, recipientType, body}`), validates each entry (non-empty name + body, `recipientType ∈ customer|provider|any`, count ≤ `CN_EMAIL_TEMPLATE_LIMIT`=50, body ≤ `CN_EMAIL_TEMPLATE_BODY_MAX`=4000), and writes an `AdminConfigChange` audit row. `getEmailTemplates_()` reads the property first (CONFIG fallback), sanitizing on read so a corrupt blob degrades to the fallback rather than throwing. Templates are exposed to reps via `getCallNotesDepartments` (rep-callable) for the external-email composer picker, and to managers via `getAdminConfig` for the editor | Subsystem: Server
 INV-94 | `submitTimeOffRequest` and `managerSubmitTimeOff` reject a request when the employee already has a Pending or Approved row for that date (`hasActiveTimeOffOnDate_`, inside the existing ScriptLock). Prevents the double-deduct that INV-03's per-row transition guard cannot catch — two sibling rows for one day would each deduct on approval. Denied/cancelled rows don't block a re-request | Subsystem: Server
-INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via `isValidTimeOffType_` (case-insensitive, trimmed) before any write; an unknown/empty type is rejected rather than silently defaulting to `getLeaveDeduction_`'s annual/1.0 (INV-17). `TIME_OFF_TYPES` must stay a superset of the `day-type` `<select>` options in `modals.html` — pinned by a Node-harness coupling test | Subsystem: Server
+INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via `isValidTimeOffType_` (case-insensitive, trimmed) before any write; an unknown/empty type is rejected rather than silently defaulting to `getLeaveDeduction_`'s annual/1.0 (INV-17). `TIME_OFF_TYPES` must stay a superset of the `day-type` `<select>` options in `modals.html` — pinned by a Node-harness coupling test. `TIME_OFF_TYPES` NO LONGER contains `'Sick Leave'` (deferred #2): the day-type `<select>` dropped it too (still ⊆), so no new sick request is creatable via the UI or a direct RPC; the sick BUCKET machinery is intentionally retained for legacy reverts (INV-17/INV-72) | Subsystem: Server
 INV-96 | `submitFormByToken` (public, token-only) bounds the recipient-supplied payload before the append: field count ≤ 200 and per-cell char length ≤ 45000 (under the 50k Sheets cell limit) for both the data JSON and the signature. On exceed it returns a specific error and leaves the token `pending` for retry, rather than throwing mid-write; also caps the number of arbitrary keys an unauthenticated caller can persist. Defense-in-depth (B5): `form_public.html`'s `SIG_PAD.toDataURL` downscales the signature EXPORT to ≤ 600px wide (the capture canvas is `rect.width * devicePixelRatio`, large on retina/mobile) so a legitimate signature's base64 stays well under one cell and never trips this cap — capture stays full-res for smooth drawing. A B5 "store the signature in Drive" alternative was deliberately NOT built: it would split a HIPAA-attested append-only record (§164.312(c)) across two stores and require integrating the destructive `purgeExpiredFormData` to avoid orphaned PHI in Drive — disproportionate risk for a cap that the capture-side downscale already keeps from biting | Subsystem: Server + Client (public forms)
 INV-97 | Feature toggles are gated by the `FEATURE_FLAGS` registry (`Code.js`): only registry keys are honored. `getFlag_(key)` reads Script Property `CN_FEATURE_FLAGS` first (sanitize-on-read: corrupt/non-object blob → registry defaults; unknown key → `false`), else the registry default (which mirrors the legacy CONFIG constant, so migrating a read to `getFlag_` is a behavioral no-op until a flag is set). A flag's `scope` decides enforcement: `client` flags only gate UI (delivered via `getEmployeeState` `empState.flags` + `getCallNotesDepartments` `deptConfig.flags`, read client-side via `flagOn_()`); `server`/`both` flags are ALSO enforced in their endpoint — hiding a button never disables an endpoint (INV-02/S30 preserved). Flags are consulted at request boundaries, never mid-transaction | Subsystem: Server + Client (shell)
 INV-98 | `getFeatureFlags` and `saveFeatureFlags` are manager-gated (INV-02/INV-57 family). `saveFeatureFlags` accepts only registry keys with strict-boolean values (unknown key or non-boolean → rejected, never persisted), writes the `{key:bool}` map to Script Property `CN_FEATURE_FLAGS`, and records an `AdminConfigChange` audit row with the manager's email. `danger`-marked flags (`voiceInput` HIPAA/BAA, `enablePtoTracking` stateful) are gated behind a `uiConfirm({tone:'danger'})` in the Admin UI before save | Subsystem: Server + Client (Call Notes views)
@@ -3249,6 +3347,9 @@ INV-124 | **Metrics anonymized team-avg is cohort-guarded; only aggregates leave
 INV-125 | **Tag-trend analytics (#5).** `getCallNotesTagTrends()` is manager-gated (INV-02/31), read-only, cached (`cn_tag_trends_v1`, 5 min — invalidated alongside the taxonomy cache by the tag-admin ops via `invalidateCnTaxonomyCache_`), and PHI-free (tags + dates only). It reuses the taxonomy's bounded 2-column scan (`SubformData` tags + `DateLocal`) across enrolled reps but buckets by ISO week over the trailing `CN_TAG_TRENDS_WEEKS` (12) instead of total+lastSeen; archived tags are excluded and a window pre-filter (yyyy-MM-dd lexical = chronological) bounds the events array. The week-bucketing is the pure, Node-pinned `cnTrendWeekStarts_` (Monday-anchored, tz-safe day math via `cnIsoToDayNum_`/`cnDayNumToIso_`) + `cnTagTrendsFromEvents_` (bucket → sort by total → top-`CN_TAG_TRENDS_TOPK` (12) → this-wk-vs-prior delta). Client renders a per-tag sparkline + total + delta in the Admin "Tag Trends" panel (`#cn-admin-trends`), every tag label `esc()`'d (the Metrics/CN gotcha). Pinned by the `cnTrendWeekStarts_`/`cnTagTrendsFromEvents_` Node tests + the `getCallNotesTagTrends` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Call Notes views)
 INV-126 | **KB review-due workflow (#4).** The KB schema gained trailing `ReviewedAt`/`ReviewedBy` columns (KB enum + `KB_HEADERS`); back-compat like `CN_HEADERS` (legacy rows read undefined and fall back to `UpdatedAt`), and `getOrCreateKbSheet_` self-heals the header width once post-deploy. **Editing counts as reviewing** — `kbSaveItem` stamps `ReviewedAt`/`ReviewedBy` on every save. `kbMarkReviewed(id)` is the no-edit "still accurate" path: manager-gated (INV-02), locked (INV-01), audited (`KbItemReviewed`), bumps only the two cells (no cache invalidation — the tree cache doesn't carry review state and `kbGetReviewDue` reads live). `kbGetReviewDue()` is manager-gated, read-only, PHI-free: items whose last review (or legacy last-edit) is older than `CONFIG.KB.REVIEW_DUE_DAYS` (90), sorted by 30-day usage desc via the factored `kbUsageCounts_` (shared with `kbGetUsageStats`). KB timestamp cells are recovered in the KB spreadsheet's OWN tz via `kbCellDateIso_` (Sheets-coercion discipline). Client renders a manager-only "Review due" block atop the Reference tree with Open + Mark-reviewed. Pinned by the `kbGetReviewDue`/`kbMarkReviewed` cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
 INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's per-TIMEZONE shift (`getShiftSchedule_`, v1 limitation: per-tz not per-rep) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped). Understaffed hours (< `CONFIG.COVERAGE_MIN_STAFF`, default 2) are flagged. Surfaced as the managerOnly `coverage` tab under Time Clock (`enterCoverageView` in `tc/script_manager.html`); every server string `esc()`'d. Pinned by the `coverageBucketHours_` Node tests + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
+INV-128 | **Design-token hygiene tripwire.** `test/client/run.js` fails CI if any `var(--token)` referenced in a SHARED design-token-consuming partial is defined nowhere in `styles_design_tokens.html` (or the allowlist). It guards against the redesign foot-gun of referencing a renamed/typo'd CSS custom property that silently renders as the fallback/transparent. `form_public.html` is EXCLUDED (it's a standalone page that ships its own inline palette, not the token partial); the explicit allowlist is currently empty (every token resolves). Adding a new `var(--x)` to a shared partial means declaring `--x` in `styles_design_tokens.html` (or, rarely, allowlisting it) | Subsystem: Test Suite
+INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Today/7D/30D range presets. Returns `cdr: null` (not an error) when the agent has no DQE data | Subsystem: Server + Client (Metrics views)
+INV-130 | `getMyNoteHourBuckets(date)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates the date, and returns a 24-element array of the caller's own LOGGED-NOTE counts bucketed by REP-LOCAL hour (`empTz_`) for that day — sourced from the rep's call-notes Sheet (the bounded `readCallNoteRowsInRange_` + `normalizeDate_`/`CN.TIMESTAMP` coercion guards), NOT from CDR. PHI-free (hour counts only). Not enrolled → all-zero buckets (never throws). Powers the Clock-view day-ribbon note-volume histogram | Subsystem: Server + Client (Time Clock views)
 
 
 ### Policy Configuration

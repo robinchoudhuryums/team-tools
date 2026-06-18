@@ -37,6 +37,20 @@ session had claimed Cycle 4 for a non-audit operator-feedback batch (kept distin
   version + `runAllTests()`).
 - Last updated: 2026-06-17 (Cycle 5 close).
 
+> **Non-audit thread (2026-06-18, branch `claude/practical-gauss-yycwkz`):** a
+> parallel UI-redesign batch landed — redesign commits #1–#7 (Time Clock sky
+> card + ribbon control surface, Metrics presets/sortable table, Call Notes
+> Search cards + Admin sub-tabs, Intake Option-A controls, Training rings/matrix,
+> Reference collapsible depts, Coverage heatmap), deferred follow-ons #1–#4
+> (range-aggregated My Stats via `getMyMetricsRange`, Sick-leave UI removal /
+> backend-dormant, shared `mtRenderTable_` table component, Admin system-status
+> cards), and niceties #8–#10. New endpoints `getMyMetricsRange` /
+> `getMyNoteHourBuckets`; new tests (`test_cn_search_phoneTrxFieldScopes` + a
+> design-token hygiene tripwire). INV-128/129/130 are now DOCUMENTED in CLAUDE.md
+> (no longer just proposed). Docs synced via `/sync-docs` (this note). No PR yet;
+> operator deploy still pending. This was feature/redesign work, not an audit —
+> no health-dimension rescore.
+
 ## Prior baseline (Cycle 2 scan-time)
 First numeric per-dimension baseline, scored at SCAN time (before the cycle-2
 backlog was implemented):
