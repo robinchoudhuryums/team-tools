@@ -777,12 +777,7 @@ function mTeamSort_(key) {
   M_STATE.teamSort = s;
   if (M_STATE.teamData) mRenderTeamMetrics_(M_STATE.teamData);
 }
-/** Sortable <th>. `numeric` right-aligns (m-num); the active column shows a caret. */
-function mTh_(key, label, numeric) {
-  var s = M_STATE.teamSort || {};
-  var caret = (s.key === key) ? '<span class="m-caret">' + (s.dir === 'asc' ? '▲' : '▼') + '</span>' : '';
-  return '<th class="m-sortable' + (numeric ? ' m-num' : '') + '" onclick="mTeamSort_(\'' + key + '\')">' + esc(label) + caret + '</th>';
-}
+// (mTh_ removed — header rendering now lives in the shared mtRenderTable_, #3.)
 
 // ── Team Metrics view (manager-only) ──────────────────────────────────
 
@@ -944,34 +939,24 @@ function mRenderTeamMetrics_(data) {
     html += '<div class="m-empty">No activity data for ' + esc(data.date) + '.</div>';
   } else {
     html += '<div class="m-section-title">Per-Rep Breakdown</div>';
-    html += '<div class="m-table-wrap"><table class="m-table">';
-    html += '<thead><tr>' +
-      mTh_('repName', 'Rep', false) +
-      mTh_('totalRung', 'Rung', true) +
-      mTh_('totalAnswered', 'Answered', true) +
-      mTh_('totalMissed', 'Missed', true) +
-      mTh_('pctAnswered', '% Ans', true) +
-      mTh_('attSeconds', 'ATT', true) +
-      mTh_('noteCount', 'Notes', true) +
-      mTh_('noteCoverage', 'Coverage', true) +
-      '</tr></thead><tbody>';
-
+    // #3 — render via the shared mtRenderTable_ component (also used by the CN
+    // manager Stats table). Rows pre-sorted here; mTeamSort_ re-renders.
     var reps = mSortReps_(data.reps, M_STATE.teamSort || { key: 'pctAnswered', dir: 'desc' });
-    for (var i = 0; i < reps.length; i++) {
-      var r = reps[i];
-      html += '<tr>';
-      html += '<td class="m-name">' + esc(r.repName) + '</td>';
-      html += '<td class="m-num">' + esc(r.totalRung) + '</td>';
-      html += '<td class="m-num">' + esc(r.totalAnswered) + '</td>';
-      html += '<td class="m-num">' + (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0') + '</td>';
-      html += '<td class="m-num"><span class="' + mPctClass_(r.pctAnswered) + '">' + esc(r.pctAnswered) + '%</span></td>';
-      html += '<td class="m-num">' + esc(r.attFormatted) + '</td>';
-      html += '<td class="m-num">' + esc(r.noteCount) + '</td>';
-      html += '<td class="m-num">' + (r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>') + '</td>';
-      html += '</tr>';
-    }
-
-    html += '</tbody></table></div>';
+    html += mtRenderTable_({
+      rows: reps,
+      sort: M_STATE.teamSort,
+      onSort: 'mTeamSort_',
+      columns: [
+        { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) { return esc(r.repName); } },
+        { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return esc(r.totalRung); } },
+        { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return esc(r.totalAnswered); } },
+        { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'; } },
+        { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return '<span class="' + mPctClass_(r.pctAnswered) + '">' + esc(r.pctAnswered) + '%</span>'; } },
+        { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return esc(r.attFormatted); } },
+        { key: 'noteCount', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return esc(r.noteCount); } },
+        { key: 'noteCoverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
+      ],
+    });
   }
 
   // Unmatched agents warning

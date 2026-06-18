@@ -6125,47 +6125,70 @@ function cnMgrLoadStats_() {
     .managerGetShiftStats(CN_STATE.mgrStatsDate);
 }
 
+function cnStatsFmtDur_(sec) {
+  if (sec == null) return '—';
+  if (sec < 60) return sec + 's';
+  var m = Math.floor(sec / 60), s = sec % 60;
+  return m + 'm ' + (s ? s + 's' : '00s');
+}
+// Sort accessors for the CN Stats table (parallels mSortReps_).
+function cnStatsSortReps_(reps, sort) {
+  var key = sort.key, dir = (sort.dir === 'asc') ? 1 : -1;
+  var get = function (r) {
+    var fc = r.flagCounts || {};
+    switch (key) {
+      case 'repName': return String(r.repName || '').toLowerCase();
+      case 'totalNotes': return r.totalNotes || 0;
+      case 'action': return fc.action || 0;
+      case 'training': return fc.training || 0;
+      case 'review': return fc.review || 0;
+      case 'median': return (r.medianCompletionSeconds == null ? -1 : r.medianCompletionSeconds);
+      case 'pct': return (r.cdr && r.cdr.pctAnswered != null) ? r.cdr.pctAnswered : -1;
+      case 'coverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
+      default: return 0;
+    }
+  };
+  return reps.slice().sort(function (a, b) { var x = get(a), y = get(b); return x < y ? -1 * dir : x > y ? 1 * dir : 0; });
+}
+function cnStatsSort_(key) {
+  var s = CN_STATE.statsSort || { key: 'totalNotes', dir: 'desc' };
+  if (s.key === key) s.dir = (s.dir === 'asc') ? 'desc' : 'asc';
+  else { s.key = key; s.dir = (key === 'repName') ? 'asc' : 'desc'; }
+  CN_STATE.statsSort = s;
+  var body = document.getElementById('cn-mgr-stats-body');
+  if (body && CN_STATE.statsData) cnMgrRenderStats_(body, CN_STATE.statsData);
+}
+
+// §7b/#3 — scannable table via the SHARED mtRenderTable_ component (also drives
+// the Metrics team table). Sortable headers + tri-tone % / coverage. Rep name
+// stays a drill-link to the Per-Rep view (cnStatsDrillDown_).
 function cnMgrRenderStats_(host, res) {
   const reps = res.reps || [];
   if (reps.length === 0) {
     host.innerHTML = `<div class="cn-stack-empty">No reps enrolled, or no activity on ${esc(res.date)}.</div>`;
     return;
   }
-  const fmtDur = function (sec) {
-    if (sec == null) return '—';
-    if (sec < 60) return sec + 's';
-    const m = Math.floor(sec / 60), s = sec % 60;
-    return m + 'm ' + (s ? s + 's' : '00s');
-  };
-  // §7b — scannable table (rows = reps, cols = Notes / Action / Training /
-  // Review / Median / % Answered / Coverage), visually aligned with the Metrics
-  // team table by reusing its .m-table vocabulary + mPctClass_ / mCoverageBadge_
-  // (tri-tone). Rep name stays a drill-link to the Per-Rep view (cnStatsDrillDown_).
+  CN_STATE.statsData = res;
+  CN_STATE.statsSort = CN_STATE.statsSort || { key: 'totalNotes', dir: 'desc' };
   const pctCls = (typeof mPctClass_ === 'function') ? mPctClass_ : function () { return ''; };
   const covBadge = (typeof mCoverageBadge_ === 'function') ? mCoverageBadge_ : function (p) { return p + '%'; };
-  const rows = reps.map(function (r) {
-    const fc = r.flagCounts || { action: 0, training: 0, review: 0 };
-    const pct = r.cdr ? r.cdr.pctAnswered : null;
-    const pctCell = (pct == null) ? '<span style="color:var(--muted)">—</span>' : '<span class="' + pctCls(pct) + '">' + esc(pct) + '%</span>';
-    const covCell = (r.noteCoverage != null) ? covBadge(r.noteCoverage) : '<span style="color:var(--muted)">—</span>';
-    const actionCell = esc(fc.action || 0) +
-      ((r.resolvedCount && fc.action) ? ' <span style="color:var(--muted);font-size:.85em">(' + esc(r.resolvedCount) + ' res)</span>' : '');
-    return '<tr>' +
-      '<td class="m-name"><a class="cn-stats-name-link" href="#" data-stats-rep-id="' + esc(r.repId) + '" onclick="event.preventDefault(); cnStatsDrillDown_(this.dataset.statsRepId)">' + esc(r.repName) + '</a></td>' +
-      '<td class="m-num">' + esc(r.totalNotes) + '</td>' +
-      '<td class="m-num">' + actionCell + '</td>' +
-      '<td class="m-num">' + esc(fc.training || 0) + '</td>' +
-      '<td class="m-num">' + esc(fc.review || 0) + '</td>' +
-      '<td class="m-num">' + esc(fmtDur(r.medianCompletionSeconds)) + '</td>' +
-      '<td class="m-num">' + pctCell + '</td>' +
-      '<td class="m-num">' + covCell + '</td>' +
-    '</tr>';
-  }).join('');
+  const sorted = cnStatsSortReps_(reps, CN_STATE.statsSort);
   host.innerHTML =
-    '<div class="m-table-wrap"><table class="m-table"><thead><tr>' +
-      '<th>Rep</th><th class="m-num">Notes</th><th class="m-num">Action</th><th class="m-num">Training</th>' +
-      '<th class="m-num">Review</th><th class="m-num">Median</th><th class="m-num">% Ans</th><th class="m-num">Coverage</th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    mtRenderTable_({
+      rows: sorted,
+      sort: CN_STATE.statsSort,
+      onSort: 'cnStatsSort_',
+      columns: [
+        { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) { return '<a class="cn-stats-name-link" href="#" data-stats-rep-id="' + esc(r.repId) + '" onclick="event.preventDefault(); cnStatsDrillDown_(this.dataset.statsRepId)">' + esc(r.repName) + '</a>'; } },
+        { key: 'totalNotes', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return esc(r.totalNotes); } },
+        { key: 'action', label: 'Action', numeric: true, sortable: true, cell: function (r) { var fc = r.flagCounts || {}; return esc(fc.action || 0) + ((r.resolvedCount && fc.action) ? ' <span style="color:var(--muted);font-size:.85em">(' + esc(r.resolvedCount) + ' res)</span>' : ''); } },
+        { key: 'training', label: 'Training', numeric: true, sortable: true, cell: function (r) { return esc((r.flagCounts || {}).training || 0); } },
+        { key: 'review', label: 'Review', numeric: true, sortable: true, cell: function (r) { return esc((r.flagCounts || {}).review || 0); } },
+        { key: 'median', label: 'Median', numeric: true, sortable: true, cell: function (r) { return esc(cnStatsFmtDur_(r.medianCompletionSeconds)); } },
+        { key: 'pct', label: '% Ans', numeric: true, sortable: true, cell: function (r) { var p = r.cdr ? r.cdr.pctAnswered : null; return (p == null) ? '<span style="color:var(--muted)">—</span>' : '<span class="' + pctCls(p) + '">' + esc(p) + '%</span>'; } },
+        { key: 'coverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return (r.noteCoverage != null) ? covBadge(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
+      ],
+    }) +
     '<div class="cn-stats-foot-note">' +
       'Median note time = form-start → submit duration (skips outliers &gt; 30 min; covers only notes that captured one). ' +
       '% Answered / Coverage come from CDR — absent when there’s no CDR data for the rep/date.' +

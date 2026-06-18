@@ -635,6 +635,44 @@ function esc(s) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// ── Shared sortable data table (.m-table) ──────────────────────────────────
+// One config-driven renderer for the Metrics team table AND the Call Notes
+// manager Stats table (deferred #1 — they were two near-identical hand-rolled
+// tables). Uses the .m-table vocabulary from the Metrics partial (loaded
+// globally). opts:
+//   columns: [{ key, label, numeric?, name?, sortable?, cell(row) }]
+//            cell(row) returns the <td> INNER html and MUST esc() its own
+//            dynamic content (escaping stays the caller's responsibility — the
+//            component only esc()s the static header labels).
+//   rows:    array (caller pre-sorts; the component does not sort)
+//   sort:    { key, dir } current sort (for the active-column caret) — optional
+//   onSort:  global fn name called as onSort('<colKey>') on a sortable header click
+//   empty:   html shown when rows is empty
+function mtRenderTable_(opts) {
+  opts = opts || {};
+  var cols = opts.columns || [];
+  var rows = opts.rows || [];
+  if (!rows.length) return opts.empty || '<div class="m-empty">No data.</div>';
+  var sort = opts.sort || {};
+  var thead = cols.map(function (c) {
+    var caret = (sort.key === c.key) ? '<span class="m-caret">' + (sort.dir === 'asc' ? '▲' : '▼') + '</span>' : '';
+    var clsList = [];
+    if (c.numeric) clsList.push('m-num');
+    if (c.sortable && opts.onSort) clsList.push('m-sortable');
+    var clsAttr = clsList.length ? ' class="' + clsList.join(' ') + '"' : '';
+    var onclick = (c.sortable && opts.onSort) ? ' onclick="' + opts.onSort + '(\'' + esc(c.key) + '\')"' : '';
+    return '<th' + clsAttr + onclick + '>' + esc(c.label) + caret + '</th>';
+  }).join('');
+  var body = rows.map(function (r) {
+    return '<tr>' + cols.map(function (c) {
+      var tdCls = c.numeric ? ' class="m-num"' : (c.name ? ' class="m-name"' : '');
+      return '<td' + tdCls + '>' + (c.cell ? c.cell(r) : '') + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+  return '<div class="m-table-wrap"><table class="m-table"><thead><tr>' + thead +
+    '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
+
 // ── Runtime feature toggles ────────────────────────────────────────────
 // Reads a resolved feature-flag value delivered by the server on
 // empState.flags (shell-wide, loaded first) or CN_STATE.deptConfig.flags
