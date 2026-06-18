@@ -267,7 +267,7 @@ function renderPtoMini_(s) {
   return `<div class="card pto-mini">
     <div class="pto-mini-ring"><svg width="60" height="60" viewBox="0 0 60 60" aria-hidden="true">
         <circle cx="30" cy="30" r="${r}" fill="none" stroke="var(--paper-3)" stroke-width="6"></circle>
-        <circle cx="30" cy="30" r="${r}" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"></circle>
+        <circle class="ring-arc" style="--circ:${c.toFixed(1)};--target:${off.toFixed(1)}" cx="30" cy="30" r="${r}" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"></circle>
       </svg><div class="pct">${formatLeaveDays(rem)}</div></div>
     <div class="pto-mini-main">
       <div class="card-label">Annual PTO</div>

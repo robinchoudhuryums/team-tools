@@ -407,6 +407,8 @@ function intakePick_(btn) {
     var on = (b === btn);
     b.classList.toggle('on', on);
     b.setAttribute('aria-checked', on ? 'true' : 'false');
+    // §7 pop — the newly-selected chip/toggle gives a quick scale feedback.
+    if (on) { b.classList.remove('popping'); void b.offsetWidth; b.classList.add('popping'); }
   });
   if (grp.getAttribute('data-qnum') != null) intakePpdAfterChange_();
   else { var f = grp.getAttribute('data-form'); if (f) intakeSaveDraft_(f); }
@@ -599,8 +601,8 @@ function intakeCopyLink_(btn) {
     } catch (e) { showToast('Copy failed — ' + txt, 'toast-error'); }
   }
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(txt).then(function () { showToast('Link copied', 'toast-success'); }, fallback);
-  } else { fallback(); }
+    navigator.clipboard.writeText(txt).then(function () { showToast('Link copied', 'toast-success'); flashCopied(btn); }, fallback);
+  } else { fallback(); flashCopied(btn); }
 }
 
 // Best-effort copy of the actual device IMAGE bytes (so it can be pasted
@@ -999,7 +1001,7 @@ function enterIntakeSentView(area) {
         '</div>' +
         '<input type="search" class="intk-search" id="intk-sent-search" placeholder="Search patient or rep…" value="' + esc(INTAKE_STATE.sentFilter.q) + '" oninput="intakeSentSearch_(this.value)">' +
       '</div>' +
-      '<div id="intk-sent-list"><div class="spinner" style="margin:24px auto"></div></div>' +
+      '<div id="intk-sent-list">' + loSweep() + '</div>' +
     '</div>';
   var requested = currentView;
   google.script.run

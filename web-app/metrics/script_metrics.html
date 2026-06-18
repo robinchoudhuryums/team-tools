@@ -409,7 +409,7 @@ function enterMetricsMyStatsView() {
       '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
       '<button class="btn btn-sm" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
-    '<div id="m-my-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
+    '<div id="m-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
   document.getElementById('m-my-date').addEventListener('change', function () {
     M_STATE.myMode = 'single'; M_STATE.myDate = this.value;
@@ -691,9 +691,12 @@ function mBuildHeroSparkSvg_(trend, metric, avg) {
     var by = (h - pad - avg * yScale).toFixed(1);
     baselineHtml = '<line class="baseline" x1="' + pad + '" y1="' + by + '" x2="' + (w - pad) + '" y2="' + by + '"/>';
   }
+  // §4 sparkline draw — the polyline draws itself in on render. --len is a safe
+  // over-estimate of the path length (viewBox width 300); over-estimating just
+  // means it starts fully hidden and animates to fully drawn (end state 0).
   return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
     baselineHtml +
-    '<polyline points="' + coords.join(' ') + '"/>' +
+    '<polyline class="spark" style="--len:600" points="' + coords.join(' ') + '"/>' +
     '<circle cx="' + lx + '" cy="' + ly + '" r="2.5"/>' +
     '</svg>';
 }
@@ -808,7 +811,7 @@ function enterMetricsTeamView() {
       '<span class="m-preset-chip" onclick="mTeamPreset_(\'week\')">Last 7 Days</span>' +
       '<span class="m-preset-chip" onclick="mTeamPreset_(\'month\')">Last 30 Days</span>' +
     '</div>' +
-    '<div id="m-team-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
+    '<div id="m-team-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
   document.getElementById('m-team-from').addEventListener('change', function () {
     M_STATE.teamFrom = this.value;

@@ -234,14 +234,14 @@ function renderTimeOffView(area, data) {
     const nm = data.month === 1 ? 12 : data.month - 1;
     const ny = data.month === 1 ? data.year - 1 : data.year;
     calYear = ny; calMonth = nm;
-    renderLoading(area, 'Loading calendar…'); loadCalendar(ny, nm);
+    renderLoading(area, 'Loading calendar…', 'clock'); loadCalendar(ny, nm);
   });
   document.getElementById('cal-next').addEventListener('click', () => {
     if (!canNext) return;
     const nm = data.month === 12 ? 1 : data.month + 1;
     const ny = data.month === 12 ? data.year + 1 : data.year;
     calYear = ny; calMonth = nm;
-    renderLoading(area, 'Loading calendar…'); loadCalendar(ny, nm);
+    renderLoading(area, 'Loading calendar…', 'clock'); loadCalendar(ny, nm);
   });
 
   // Round 2 · 8c — wire hover (or tap-only on touch) for the day modal.

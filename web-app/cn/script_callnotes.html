@@ -314,9 +314,9 @@
   .cn-tax-head,
   .cn-tax-row {
     display: grid;
-    /* Round 2 follow-on — added Actions column; rebalanced for the row
-       buttons (Rename / Merge / Archive). */
-    grid-template-columns: 160px 1fr 50px 90px auto;
+    /* 2nd-pass merge — taxonomy + trends in one table: Tag / Usage / Notes /
+       Trend(sparkline) / Δ wk / Actions (replaced the old Last-seen column). */
+    grid-template-columns: 150px 1fr 46px 86px 50px auto;
     gap: 12px; align-items: center;
     padding: 6px 0;
     font-family: var(--ui); font-size: 12px;
@@ -351,8 +351,10 @@
     font-family: var(--mono); font-variant-numeric: tabular-nums;
     text-align: right; color: var(--ink);
   }
-  .cn-tax-last {
-    font-family: var(--mono); font-size: 11px; color: var(--muted-2);
+  .cn-tax-trend { display: flex; justify-content: center; align-items: center; }
+  .cn-tax-trend svg { display: block; }
+  .cn-tax-delta {
+    font-family: var(--mono); font-size: 11px; text-align: right;
     font-variant-numeric: tabular-nums;
   }
   .cn-tax-actions {
@@ -1456,6 +1458,18 @@
   .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
   .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
   @media (max-width: 640px) { .cn-sys-status { grid-template-columns: 1fr; } }
+  /* 2nd-pass — System-details disclosure toggle (folds the full health panels) */
+  .cn-sys-details-btn {
+    appearance: none; cursor: pointer; margin: 4px 0 16px;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+    background: none; border: none; padding: 4px 0;
+    transition: color var(--t) var(--ease);
+  }
+  .cn-sys-details-btn:hover { color: var(--ink); }
+  .cn-sys-details-btn .acc-chev { display: inline-flex; }
+  .cn-sys-details-btn.open .acc-chev { transform: rotate(90deg); }
 
   /* §7a — search results in the real note-card vocabulary (read-only) */
   .cn-result-count { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .04em; margin: 2px 0 10px; }
@@ -1944,7 +1958,7 @@ function enterCallNotesView(area) {
   CN_STATE.editingNoteId = null;
   CN_STATE.filter = 'all';
   cnPrewarmScript_();
-  renderLoading(area, 'Loading call notes…');
+  renderLoading(area, 'Loading call notes…', 'mail');
   // Guard the config-fetch continuation too: cnLoadToday_'s own guard
   // captures currentView only when THIS callback runs, so a nav-away during
   // a slow first config fetch would otherwise pass the inner guard, clobber
@@ -1984,7 +1998,7 @@ function enterCallNotesHistoryView(area) {
     CN_STATE.historyDate = `${d7.getUTCFullYear()}-${pad(d7.getUTCMonth()+1)}-${pad(d7.getUTCDate())}`;
     CN_STATE.historyEndDate = today;
   }
-  renderLoading(area, 'Loading history…');
+  renderLoading(area, 'Loading history…', 'list');
   cnLoadDateRange_(CN_STATE.historyDate, CN_STATE.historyEndDate || CN_STATE.historyDate, function () {
     cnRenderHistoryView(area);
   });
@@ -2008,7 +2022,7 @@ function enterCallNotesSearchView(area) {
 function enterCallNotesFormsView(area) {
   stopClock();
   const requestedView = currentView;
-  renderLoading(area, 'Loading sent forms…');
+  renderLoading(area, 'Loading sent forms…', 'outbox');
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
@@ -2078,7 +2092,7 @@ function cnSentFormCardHtml_(f) {
 
 function enterCallNotesManageView(area) {
   stopClock();
-  renderLoading(area, 'Loading team queues…');
+  renderLoading(area, 'Loading team queues…', 'list');
   cnRenderManageView(area);
 }
 
@@ -2426,6 +2440,8 @@ function cnWireActiveForm_() {
       if (idx >= 0) cur.splice(idx, 1);
       else cur.push(flag);
       cnSetFormFlags_(form, cur);
+      // §7 pop — quick scale feedback when a flag is switched ON.
+      if (cur.indexOf(flag) >= 0) { btn.classList.remove('popping'); void btn.offsetWidth; btn.classList.add('popping'); }
       // Persist immediately so a tab close right after a flag toggle doesn't
       // lose the categorization
       cnPersistActiveFormDraft_();
@@ -5387,7 +5403,7 @@ function cnHistoryRangeChanged_() {
   var e = CN_STATE.historyEndDate || s;
   if (!s) return;
   var stack = document.getElementById('cn-history-stack');
-  if (stack) stack.innerHTML = '<div class="cn-stack-empty">Loading…</div>';
+  if (stack) stack.innerHTML = loSkeleton(4);
   cnLoadDateRange_(s, e, cnRenderHistoryStack_);
 }
 
@@ -5730,7 +5746,7 @@ function cnMgrLoadQueue_(kind) {
     b.classList.toggle('active', b.dataset.mqueue === kind);
   });
   const host = document.getElementById('cn-mgr-results');
-  if (host) host.innerHTML = `<div class="cn-stack-empty">Loading…</div>`;
+  if (host) host.innerHTML = loSkeleton(4);
   const requestedView = currentView;
   const fn = kind === 'training' ? 'managerGetTrainingQueue' : 'managerGetReviewCandidates';
   google.script.run
@@ -5761,7 +5777,7 @@ function cnMgrLoadRepView_() {
   if (!host) return;
   // Load enrolled rep list once per session
   if (!CN_STATE.mgrEnrolledReps) {
-    host.innerHTML = `<div class="cn-stack-empty">Loading reps…</div>`;
+    host.innerHTML = loSkeleton(4);
     google.script.run
       .withSuccessHandler(function (res) {
         if (res.error) { host.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
@@ -5823,7 +5839,7 @@ function cnMgrRepDateChanged_(d) {
 function cnMgrLoadRepNotes_() {
   const stack = document.getElementById('cn-mgr-rep-stack');
   if (!stack || !CN_STATE.mgrRepView) return;
-  stack.innerHTML = `<div class="cn-stack-empty">Loading…</div>`;
+  stack.innerHTML = loSkeleton(4);
   const requestedView = currentView;
   const requestedRepId = CN_STATE.mgrRepView.repId;
   const requestedDate = CN_STATE.mgrRepView.date;
@@ -6113,7 +6129,7 @@ function cnMgrStatsDateChanged_(d) {
 function cnMgrLoadStats_() {
   const body = document.getElementById('cn-mgr-stats-body');
   if (!body) return;
-  body.innerHTML = `<div class="cn-stack-empty">Loading…</div>`;
+  body.innerHTML = loSkeleton(4);
   const requestedView = currentView;
   const requestedDate = CN_STATE.mgrStatsDate;
   google.script.run
@@ -6823,18 +6839,26 @@ function enterCallNotesAdminView(area) {
         cnSysCardShell_('storage', 'Storage') +
       '</div>' +
       '<div id="cn-admin-kpis"></div>' +
-      '<div id="cn-admin-health"></div>' +
-      '<div id="cn-admin-storage"></div>' +
+      // 2nd-pass Admin consolidation: the 3 status cards above ARE the folded
+      // summary of the Automation / CDR / Storage health panels; the full detail
+      // panels move behind a disclosure so Overview lands on the summary, not a
+      // long scroll. Detail is preserved (progressive disclosure), not removed.
+      '<button id="cn-sys-details-toggle" class="cn-sys-details-btn" aria-expanded="false" onclick="cnToggleSysDetails_()">' +
+        '<span class="acc-chev">' + icon('chevronRight', 13) + '</span> System details' +
+      '</button>' +
+      '<div id="cn-sys-details" style="display:none">' +
+        '<div id="cn-admin-health"></div>' +
+        '<div id="cn-admin-storage"></div>' +
+      '</div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
       '<div id="cn-admin-augment"></div>' +
-      '<div id="cn-admin-trends"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="compliance" style="' + paneStyle('compliance') + '">' +
       '<div id="cn-admin-audit"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="config" style="' + paneStyle('config') + '">' +
-      '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>' +
+      '<div id="cn-admin-body" style="max-width:900px">' + loSweep() + '</div>' +
     '</div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
@@ -6851,8 +6875,8 @@ function enterCallNotesAdminView(area) {
   // alongside the existing dept/tax body. Two parallel server calls; either
   // can fail without taking down the existing controls.
   cnLoadAdminAugment_();
-  // #5 — tag-trend analytics panel. Independent load; failure stays contained.
-  cnLoadTagTrends_();
+  // #5 tag-trend analytics are now MERGED into the taxonomy table (loaded inside
+  // cnLoadAdminAugment_), not a separate panel.
   // #3 — compliance audit panel (call-note AuditLog search). Independent of
   // the augment + body loads; failure stays contained to its own slot.
   cnLoadAuditPanel_();
@@ -6877,23 +6901,41 @@ function cnAdminTab_(key) {
   });
 }
 
+/** 2nd-pass Admin consolidation — toggle the folded System-details disclosure
+ *  (the full Automation/CDR + Storage health panels). The 3 status cards are
+ *  the always-visible summary; the detail is progressive-disclosure so Overview
+ *  lands on the summary, not a long scroll. Plain show/hide (the panels are tall
+ *  + variable — a fixed-height accordion would clip them). */
+function cnToggleSysDetails_() {
+  var box = document.getElementById('cn-sys-details');
+  var btn = document.getElementById('cn-sys-details-toggle');
+  if (!box || !btn) return;
+  var open = box.style.display === 'none';
+  box.style.display = open ? '' : 'none';
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('open', open);
+}
+
 /** Round 2 · 8h — fetch + render the new Admin sections (KPI strip + tag
  *  taxonomy table). Drops into #cn-admin-augment which sits above the
  *  existing department mapping / state tax / suggestions blocks. */
 function cnLoadAdminAugment_() {
   const slot = document.getElementById('cn-admin-augment');
   if (!slot) return;
-  slot.innerHTML = '<div class="spinner" style="margin:18px auto"></div>';
+  slot.innerHTML = loSweep();
   // Use the existing getCallNotesAmbient endpoint for KPIs (it returns
   // weekTotal + flagCounts from Phase 4) AND getCallNotesTagTaxonomy
   // (new in Round 2 · 8h) for the tag table. Fire in parallel.
-  let kpi = null, tax = null, done = 0;
+  // 2nd-pass Admin consolidation: taxonomy + trends are ONE table now, so the
+  // trends fetch joins this parallel load (was a separate panel). Trends failure
+  // is non-fatal — the table renders without the sparkline/Δ columns' data.
+  let kpi = null, tax = null, trends = null, done = 0;
   function maybeRender() {
-    if (done < 2) return;
+    if (done < 3) return;
     if (currentView !== 'callNotesAdmin') return;
-    // §7c — split: KPI strip → Overview (#cn-admin-kpis); tag taxonomy → Tags
+    // KPI strip → Overview (#cn-admin-kpis); merged tag table → Tags
     // (#cn-admin-augment). Falls back to a single slot if the KPI host is absent.
-    const parts = cnRenderAdminAugmentHtml_(kpi, tax);
+    const parts = cnRenderAdminAugmentHtml_(kpi, tax, trends);
     const kpiSlot = document.getElementById('cn-admin-kpis');
     if (kpiSlot) { kpiSlot.innerHTML = parts.kpiHtml; slot.innerHTML = parts.taxHtml; }
     else { slot.innerHTML = parts.kpiHtml + parts.taxHtml; }
@@ -6909,10 +6951,15 @@ function cnLoadAdminAugment_() {
     .withSuccessHandler(function (r) { tax = r || null; done++; maybeRender(); })
     .withFailureHandler(function () { done++; maybeRender(); })
     .getCallNotesTagTaxonomy();
+  google.script.run
+    .withSuccessHandler(function (r) { trends = r || null; done++; maybeRender(); })
+    .withFailureHandler(function () { done++; maybeRender(); })
+    .getCallNotesTagTrends();
 }
 
-/** Round 2 · 8h — render the KPI strip + tag taxonomy table HTML. */
-function cnRenderAdminAugmentHtml_(kpi, tax) {
+/** Round 2 · 8h + 2nd-pass merge — render the KPI strip + the merged tag table
+ *  (taxonomy taxonomy + inline trend sparkline + this-week Δ). */
+function cnRenderAdminAugmentHtml_(kpi, tax, trends) {
   // KPI strip: Notes this week, Unresolved actions, Tags in use, Reps scanned
   const weekVal = kpi && typeof kpi.weekTotal === 'number' ? kpi.weekTotal : '—';
   const unresolvedVal = kpi && typeof kpi.unresolvedActionCount === 'number' ? kpi.unresolvedActionCount : '—';
@@ -6930,29 +6977,39 @@ function cnRenderAdminAugmentHtml_(kpi, tax) {
   // Tag taxonomy table — Round 2 follow-on extends each row with
   // Rename / Merge / Archive action buttons. Archived tags render with
   // an "archived" pill + a Restore button instead.
+  // Join the trend series (keyed by tag) into the taxonomy rows — one table.
+  const trendSeries = (trends && Array.isArray(trends.series)) ? trends.series : [];
+  const trendMap = {};
+  let maxTrend = 0;
+  trendSeries.forEach(function (s) {
+    trendMap[s.tag] = s;
+    (s.counts || []).forEach(function (c) { if (c > maxTrend) maxTrend = c; });
+  });
+
   let taxHtml = '';
   const inUse = (tax && Array.isArray(tax.tags)) ? tax.tags : [];
   const archivedOnly = (tax && Array.isArray(tax.archivedOnlyTags)) ? tax.archivedOnlyTags : [];
   if (tax && (inUse.length > 0 || archivedOnly.length > 0)) {
     const max = inUse.length > 0 ? Math.max.apply(null, inUse.map(function (t) { return t.count || 0; })) : 0;
     const inUseRowsHtml = inUse.slice(0, 50).map(function (t) {
-      return cnRenderTagRow_(t, max);
+      return cnRenderTagRow_(t, max, trendMap, maxTrend);
     }).join('');
     let archivedSection = '';
     if (archivedOnly.length > 0) {
       const archRowsHtml = archivedOnly.slice(0, 50).map(function (t) {
-        return cnRenderTagRow_(t, 0);  // 0-bar; rows are archived-only
+        return cnRenderTagRow_(t, 0, trendMap, maxTrend);  // 0-bar; rows are archived-only
       }).join('');
       archivedSection =
         '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px">Archived (not in any current note)</div>'
         + archRowsHtml;
     }
+    const trendWeeks = trends && (trends.weeks || (trends.weekStarts ? trends.weekStarts.length : 0)) || 0;
     taxHtml =
       '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">'
-        + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy</div>'
-        + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Free-text tags reps applied across all enrolled per-rep Sheets. Rename to merge a typo; Merge to consolidate; Archive to deprecate (notes keep their tags; future-suggestion surfaces hide it).</div>'
+        + '<div class="day-section-label" style="margin-bottom:10px">' + icon('list', 14) + ' Tag Taxonomy &amp; Trends</div>'
+        + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Free-text tags reps applied across all enrolled per-rep Sheets. Trend + Δ cover the trailing ' + esc(String(trendWeeks)) + ' weeks (a rising tag flags an emerging issue). Rename to merge a typo; Merge to consolidate; Archive to deprecate (notes keep their tags).</div>'
         + (inUse.length > 0
-            ? '<div class="cn-tax-head"><div class="cn-tax-tag">Tag</div><div class="cn-tax-bar">Usage</div><div class="cn-tax-count">Notes</div><div class="cn-tax-last">Last seen</div><div class="cn-tax-actions">Actions</div></div>' + inUseRowsHtml
+            ? '<div class="cn-tax-head"><div class="cn-tax-tag">Tag</div><div class="cn-tax-bar">Usage</div><div class="cn-tax-count">Notes</div><div class="cn-tax-trend">Trend</div><div class="cn-tax-delta">Δ wk</div><div class="cn-tax-actions">Actions</div></div>' + inUseRowsHtml
             : '<div style="font-size:12px;color:var(--muted)">No tags in active use.</div>')
         + archivedSection
       + '</div>';
@@ -6974,10 +7031,23 @@ function cnRenderAdminAugmentHtml_(kpi, tax) {
  *  in place of the rename/merge buttons and a Restore button instead of
  *  Archive. data-tag attributes drive the click delegation in
  *  cnWireAdminTagActions_. */
-function cnRenderTagRow_(t, maxCount) {
+function cnRenderTagRow_(t, maxCount, trendMap, maxTrend) {
   const pct = (maxCount > 0 && t.count) ? Math.round((t.count / maxCount) * 100) : 0;
   const tagAttr = esc(t.tag);
   const archived = !!t.archived;
+  // Merged trend cells (2nd-pass): inline sparkline + this-week Δ from the
+  // joined trend series. Absent (no series for this tag, or archived) → blanks.
+  const ser = (trendMap && trendMap[t.tag]) || null;
+  const trendCell = (ser && !archived)
+    ? cnTrendSparkSvg_(ser.counts || [], maxTrend || 0)
+    : '<span style="color:var(--muted-3)">—</span>';
+  let deltaCell = '<span style="color:var(--muted-3)">—</span>';
+  if (ser && !archived) {
+    const d = ser.delta || 0;
+    deltaCell = d > 0 ? '<span class="cn-trend-delta up">▲ ' + d + '</span>'
+      : (d < 0 ? '<span class="cn-trend-delta down">▼ ' + Math.abs(d) + '</span>'
+               : '<span class="cn-trend-delta flat">±0</span>');
+  }
   const archivedBadge = archived
     ? ' <span class="cn-tax-archived-pill">archived</span>'
     : '';
@@ -6999,28 +7069,10 @@ function cnRenderTagRow_(t, maxCount) {
     + '<div class="cn-tax-tag">' + esc(t.tag) + archivedBadge + '</div>'
     + '<div class="cn-tax-bar"><i style="width:' + pct + '%"></i></div>'
     + '<div class="cn-tax-count">' + (t.count || 0) + '</div>'
-    + '<div class="cn-tax-last">' + esc(t.lastSeen || '—') + '</div>'
+    + '<div class="cn-tax-trend">' + trendCell + '</div>'
+    + '<div class="cn-tax-delta">' + deltaCell + '</div>'
     + '<div class="cn-tax-actions">' + actionsHtml + '</div>'
   + '</div>';
-}
-
-/** #5 — fetch + render the Tag Trends panel into #cn-admin-trends. Independent
- *  of the augment/audit/health loads; a failure leaves the panel empty rather
- *  than taking down the rest of the Admin tab (the contained-failure pattern). */
-function cnLoadTagTrends_() {
-  const slot = document.getElementById('cn-admin-trends');
-  if (!slot) return;
-  slot.innerHTML = '<div class="spinner" style="margin:14px auto"></div>';
-  google.script.run
-    .withSuccessHandler(function (data) {
-      if (currentView !== 'callNotesAdmin') return;
-      slot.innerHTML = cnRenderTagTrendsHtml_(data);
-    })
-    .withFailureHandler(function () {
-      if (currentView !== 'callNotesAdmin') return;
-      slot.innerHTML = '';   // contained failure — no panel, no error noise
-    })
-    .getCallNotesTagTrends();
 }
 
 /** #5 — inline sparkline (SVG polyline) of a tag's weekly counts, scaled to the
@@ -7038,46 +7090,6 @@ function cnTrendSparkSvg_(counts, maxVal) {
   return '<svg class="cn-trend-spark" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
     '<polyline points="' + pts + '" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
     '</svg>';
-}
-
-/** #5 — render the Tag Trends panel: per-tag sparkline + total + this-week-vs-
- *  prior delta over the trailing window. Stays quiet (empty) when there's
- *  nothing to show — the taxonomy table above already covers the empty case.
- *  Every tag label esc()'d (rep free-text → the Metrics/CN escaping gotcha). */
-function cnRenderTagTrendsHtml_(data) {
-  if (!data || !Array.isArray(data.series) || data.series.length === 0) {
-    if (data && data.error) {
-      return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:14px 20px;margin-bottom:20px;max-width:900px;font-size:12px;color:var(--muted)">Tag trends unavailable: ' + esc(data.error) + '</div>';
-    }
-    return '';
-  }
-  const weeks = data.weeks || (data.weekStarts ? data.weekStarts.length : 0);
-  const ws = data.weekStarts || [];
-  const firstLabel = ws.length ? String(ws[0]).substring(5) : '';
-  const lastLabel = ws.length ? String(ws[ws.length - 1]).substring(5) : '';
-  const maxVal = data.series.reduce(function (m, s) {
-    const sm = (s.counts || []).reduce(function (a, b) { return Math.max(a, b); }, 0);
-    return Math.max(m, sm);
-  }, 0);
-  const rows = data.series.map(function (s) {
-    const d = s.delta || 0;
-    const deltaHtml = d > 0
-      ? '<span class="cn-trend-delta up">▲ ' + d + '</span>'
-      : (d < 0 ? '<span class="cn-trend-delta down">▼ ' + Math.abs(d) + '</span>'
-               : '<span class="cn-trend-delta flat">±0</span>');
-    return '<div class="cn-trend-row">' +
-      '<div class="cn-trend-tag" title="' + esc(s.tag) + '">' + esc(s.tag) + '</div>' +
-      '<div class="cn-trend-spark-cell">' + cnTrendSparkSvg_(s.counts || [], maxVal) + '</div>' +
-      '<div class="cn-trend-total">' + (s.total || 0) + '</div>' +
-      '<div class="cn-trend-deltacell">' + deltaHtml + '</div>' +
-    '</div>';
-  }).join('');
-  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
-    '<div class="day-section-label" style="margin-bottom:10px">' + icon('chart', 14) + ' Tag Trends · last ' + esc(String(weeks)) + ' weeks</div>' +
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Weekly count of each tag across all enrolled reps (archived tags excluded). Δ compares this week to the prior week — a rising tag flags an emerging issue type.</div>' +
-    '<div class="cn-trend-head"><div class="cn-trend-tag">Tag</div><div class="cn-trend-spark-cell">' + esc(firstLabel) + ' → ' + esc(lastLabel) + '</div><div class="cn-trend-total">Total</div><div class="cn-trend-deltacell">Δ wk</div></div>' +
-    rows +
-  '</div>';
 }
 
 /** Round 2 follow-on — wires click delegation for the tag-table action
@@ -7247,7 +7259,7 @@ function cnLoadAuditPanel_() {
         '<button class="refresh-btn cn-audit-preset" data-days="7">Last 7</button>' +
         '<button class="refresh-btn cn-audit-preset" data-days="30">Last 30</button>' +
       '</div>' +
-      '<div id="cn-audit-results" style="margin-top:8px"><div class="spinner" style="margin:18px auto"></div></div>' +
+      '<div id="cn-audit-results" style="margin-top:8px">' + loSweep() + '</div>' +
     '</div>';
   document.getElementById('cn-audit-search-btn').addEventListener('click', cnRunAuditSearch_);
   Array.prototype.forEach.call(document.querySelectorAll('.cn-audit-preset'), function (b) {
@@ -7277,7 +7289,7 @@ function cnLoadAuditPanel_() {
 function cnRunAuditSearch_() {
   var host = document.getElementById('cn-audit-results');
   if (!host) return;
-  host.innerHTML = '<div class="spinner" style="margin:18px auto"></div>';
+  host.innerHTML = loSweep();
   var filters = {
     repId:     (document.getElementById('cn-audit-rep')    || {}).value || '',
     action:    (document.getElementById('cn-audit-action') || {}).value || '',
@@ -7354,7 +7366,7 @@ function cnToggleAuditHistory_(btn, noteId) {
   if (!hist) return;
   if (hist.style.display !== 'none') { hist.style.display = 'none'; return; }
   hist.style.display = 'block';
-  hist.innerHTML = '<div class="spinner" style="margin:10px auto"></div>';
+  hist.innerHTML = loSweep();
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error) { hist.innerHTML = '<div class="cn-audit-hist-empty">' + esc((res && res.error) || 'Could not load history') + '</div>'; return; }
@@ -7418,7 +7430,7 @@ function cnSetSysCard_(key, label, tone, value, sub) {
 function cnLoadStoragePanel_() {
   var slot = document.getElementById('cn-admin-storage');
   if (!slot) return;
-  slot.innerHTML = '<div class="spinner" style="margin:18px auto"></div>';
+  slot.innerHTML = loSweep();
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
@@ -7500,7 +7512,7 @@ function cnRenderStoragePanel_(res) {
 function cnLoadHealthPanel_() {
   var slot = document.getElementById('cn-admin-health');
   if (!slot) return;
-  slot.innerHTML = '<div class="spinner" style="margin:18px auto"></div>';
+  slot.innerHTML = loSweep();
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
@@ -7860,7 +7872,7 @@ function cnRenderAdminBody_(cfg) {
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('user', 14) + ' Call Notes Enrollment</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Create a per-rep Call Notes Sheet in one click — no more copying a template and pasting the ID. The new Sheet is owned by the deploying account and the rep is enrolled immediately.</div>' +
-      '<div id="cn-admin-enroll-list"><div class="spinner" style="margin:12px auto"></div></div>' +
+      '<div id="cn-admin-enroll-list">' + loSweep() + '</div>' +
     '</div>';
 
   cnAdminLoadEnrollment_();

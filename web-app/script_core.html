@@ -517,8 +517,63 @@ function showView(view) {
   });
   const area = document.getElementById('view-area');
   if (!area) return;
+  // 2nd-pass motion §1 — fade+rise on every view swap. Hooked HERE (the single
+  // navigation entry point) on purpose: optimistic re-renders call their render
+  // fns directly, never showView, so this fires on tab nav only and can't
+  // re-animate mid-interaction. The reflow re-fires the keyframe each nav.
+  area.classList.remove('view-enter');
+  void area.offsetWidth;
+  area.classList.add('view-enter');
   const enterFn = window[TOOLS[toolKey].tabs[view].enter];
   if (typeof enterFn === 'function') enterFn(area);
+}
+
+/** 2nd-pass motion — one shared IntersectionObserver for scroll-into-view
+ *  reveals. A tool calls observeReveals(container) after render; any
+ *  descendant carrying `.js-anim` re-fires its CSS animation when the
+ *  container scrolls ~35% into view (so below-the-fold content animates when
+ *  seen, not before). No-ops where IntersectionObserver is unavailable or the
+ *  user prefers reduced motion (the CSS block already neutralizes durations). */
+var MOTION_IO = (typeof IntersectionObserver !== 'undefined')
+  ? new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.querySelectorAll('.js-anim').forEach(function (el) {
+          el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+        });
+      });
+    }, { threshold: 0.35 })
+  : null;
+function observeReveals(container) {
+  if (!MOTION_IO || !container) return;
+  if (container.matches && container.matches('[data-reveal]')) MOTION_IO.observe(container);
+  if (container.querySelectorAll) {
+    container.querySelectorAll('[data-reveal]').forEach(function (el) { MOTION_IO.observe(el); });
+  }
+}
+
+/** 2nd-pass motion §7 — flash a copy button on success (also aids ⌘C
+ *  discoverability). One-shot: re-arm the class, then clear it. */
+function flashCopied(el) {
+  if (!el || !el.classList) return;
+  el.classList.remove('copied'); void el.offsetWidth; el.classList.add('copied');
+  setTimeout(function () { el.classList.remove('copied'); }, 800);
+}
+
+/** 2nd-pass loader Role C — a thin indeterminate sweep bar for in-place
+ *  refreshes (content stays visible / a panel is reloading). Returns markup. */
+function loSweep() { return '<div class="lo-sweep" role="status" aria-label="Loading"></div>'; }
+/** 2nd-pass loader Role B — skeleton rows shaped like a note/list row
+ *  (avatar circle + two text bars). Cross-fades to real content on arrival. */
+function loSkeleton(rows) {
+  rows = rows || 3;
+  var out = '<div class="skel-wrap" role="status" aria-label="Loading">';
+  for (var i = 0; i < rows; i++) {
+    out += '<div class="skel-row"><div class="skel skel-avatar"></div>' +
+      '<div class="skel-lines"><div class="skel skel-bar" style="width:70%"></div>' +
+      '<div class="skel skel-bar" style="width:45%"></div></div></div>';
+  }
+  return out + '</div>';
 }
 
 // ── Time Clock tab enter handlers ───────────────────────────────────────
@@ -534,17 +589,23 @@ function enterTimeoffView(area) {
     calYear = parseInt(parts[0], 10);
     calMonth = parseInt(parts[1], 10);
   }
-  renderLoading(area, 'Loading calendar…');
+  renderLoading(area, 'Loading calendar…', 'clock');
   loadCalendar(calYear, calMonth);
 }
 function enterManagerView(area) {
   stopClock();
-  renderLoading(area, 'Loading dashboard…');
+  renderLoading(area, 'Loading dashboard…', 'clock');
   loadManagerDashboard();
 }
 
-function renderLoading(area, label) {
-  area.innerHTML = `<div class="state-center"><div class="spinner"></div>
+function renderLoading(area, label, iconName) {
+  // 2nd-pass loaders_and_motion.md Role A — full-view enter shows the module's
+  // own glyph, pulsing, + a mono label. When no iconName is passed (legacy
+  // 2-arg callers) keep the spinner so behavior is unchanged.
+  const mark = iconName
+    ? `<span class="lo-glyph">${icon(iconName, 30)}</span>`
+    : `<div class="spinner"></div>`;
+  area.innerHTML = `<div class="state-center">${mark}
     <div class="state-label">${esc(label)}</div></div>`;
 }
 
@@ -706,6 +767,11 @@ function flagOn_(key) {
 function showToast(msg, cls) {
   const stack = document.getElementById('toast-stack');
   if (!stack) return;
+  // Normalize the variant: most callers pass the full class
+  // ('toast-success'/'toast-error'/'toast-warn'/'toast-info'), but Training /
+  // EmpDocs pass bare names ('success'/'error'/'warn'/'info'). Without this,
+  // bare names render with no colored rail and fall through to the info glyph.
+  cls = /^toast-/.test(cls) ? cls : (cls ? 'toast-' + cls : '');
   // Pick the SVG glyph that matches the variant — checkCircle / xCircle /
   // warning / info. The .toast-icon CSS tints each per variant.
   const iconName = cls === 'toast-success' ? 'checkCircle'

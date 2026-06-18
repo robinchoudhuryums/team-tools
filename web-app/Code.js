@@ -4432,6 +4432,17 @@ const CN_EMAIL_PALETTE = {
   danger:       '#c13030',
   dangerSoft:   '#fce5e5',
   dangerDeep:   '#8a1f1f',
+  // Email-only semantic borders + accents (2nd-pass email_styling.md). Keep
+  // ALL email color on this palette rather than scattering inline literals —
+  // that drift is exactly what these replace. Email-safe literal hex (no var()).
+  accentBorder: '#abdfc4',
+  dangerBorder: '#f3d4d4',
+  warnBorder:   '#f0d9a8',
+  info:         '#1e63b8',   // link (matches in-app --info)
+  star:         '#b7791f',   // preferred-recommendation star (= warn)
+  muted2:       '#737c8c',
+  muted3:       '#a5acb8',   // N/A / faint
+  navyTint:     '#eef2f7',   // navy-soft highlight (Resolution row, default banner)
   // UMS brand navy + pale-blue alternating-row tint. These match the legacy
   // dept-email aesthetic (closeOrderEmail.js, updateOrderEmail.js) so emails
   // sent from the new web app look continuous with the prior tooling.
@@ -4781,7 +4792,7 @@ function buildCallNoteEmailHtml_(callData, selections) {
   // immediately sees what kind of update this is. Default is the brand
   // navy (matches the Call Details header).
   let tplColor = P.brand;
-  let tplSoft  = P.brandSoft;
+  let tplSoft  = P.navyTint;   // 2nd-pass: default banner soft = navy-tint #eef2f7
   let tplDeep  = P.brand;
   if (updateInfo === 'Close Order') {
     tplColor = P.danger; tplSoft = P.dangerSoft; tplDeep = P.dangerDeep;
@@ -4844,10 +4855,14 @@ function buildCallNoteEmailHtml_(callData, selections) {
     ['Resolution',      resolutionText, false],
   ];
   const detailsBodyHtml = detailsRows.map(function (r, i) {
-    const bg = (i % 2 === 0) ? P.paperCard : P.brandSoft;
+    // 2nd-pass email_styling.md: the Resolution row is highlighted IN PLACE
+    // (navy-tint bg + a navy left-rail on the label cell) rather than split out.
+    const isResolution = r[0] === 'Resolution';
+    const bg = isResolution ? P.navyTint : ((i % 2 === 0) ? P.paperCard : P.brandSoft);
     const weight = r[2] ? 'font-weight:600;' : '';
+    const labelExtra = isResolution ? `border-left:3px solid ${P.brand};` : '';
     return `<tr style="background:${bg};">` +
-      `<td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;width:34%;color:${P.brand};">${r[0]}</td>` +
+      `<td style="padding:9px 12px;border-top:1px solid ${P.line};font-weight:600;width:34%;color:${P.brand};${labelExtra}">${r[0]}</td>` +
       `<td style="padding:9px 12px;border-top:1px solid ${P.line};color:${P.ink};${weight}">${r[1]}</td>` +
     `</tr>`;
   }).join('');
@@ -9788,9 +9803,10 @@ const INTAKE_PAP_LAYOUT = {
   CHECKBOX_ROWS:           [24, 26],
   SECONDARY_QUESTION_ROWS: [3, 10, 20, 21, 22, 25, 27],
   CHECKBOX_WARN_ROWS:      [],
+  // 2nd-pass email_styling.md: green=accentSoft/accentDeep, amber=warnSoft/warnDeep.
   CONDITIONAL_FORMATTING_ROWS: {
-    19: { 'No': { bg: '#d4edda', fg: '#155724' }, 'Yes': { bg: '#F7E891', fg: '#7A6C21' } },
-    21: { 'Less than 5 years': { bg: '#F7E891', fg: '#7A6C21' }, 'More than 5 years': { bg: '#d4edda', fg: '#155724' } },
+    19: { 'No': { bg: '#e4f5ec', fg: '#0b6e40' }, 'Yes': { bg: '#fbf1d9', fg: '#8a4500' } },
+    21: { 'Less than 5 years': { bg: '#fbf1d9', fg: '#8a4500' }, 'More than 5 years': { bg: '#e4f5ec', fg: '#0b6e40' } },
   },
 };
 
@@ -10144,11 +10160,14 @@ function intakeEmailShell_(title, innerHtml) {
 
 const INTAKE_PPD_YESNO_QS = ['14','15','16','17','18','19','20','21','22','23','26','27','28','30','31','33','35','36','44'];
 function intakePpdAnswerStyles_() {
+  // 2nd-pass email_styling.md: map the questionnaire answer chips onto the
+  // shared palette (Yes=green, No=red, severity=amber, None=muted).
+  const P = CN_EMAIL_PALETTE;
   return {
-    green:  'background-color:#d4edda;color:#155724;border:1px solid #c3e6cb;font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
-    red:    'background-color:#f8d7da;color:#721c24;border:1px solid #f5c6cb;font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
-    gray:   'background-color:#e2e3e5;color:#383d41;border:1px solid #d6d8db;border-radius:4px;padding:4px 8px;display:inline-block;',
-    yellow: 'background-color:#fff3cd;color:#856404;border:1px solid #ffeeba;font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
+    green:  'background-color:' + P.accentSoft + ';color:' + P.accentDeep + ';border:1px solid ' + P.accentBorder + ';font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
+    red:    'background-color:' + P.dangerSoft + ';color:' + P.dangerDeep + ';border:1px solid ' + P.dangerBorder + ';font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
+    gray:   'background-color:' + P.paper + ';color:' + P.muted2 + ';border:1px solid ' + P.line + ';border-radius:4px;padding:4px 8px;display:inline-block;',
+    yellow: 'background-color:' + P.warnSoft + ';color:' + P.warnDeep + ';border:1px solid ' + P.warnBorder + ';font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
   };
 }
 
@@ -10161,14 +10180,14 @@ function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
   (rows || []).forEach(function (r) {
     const label = esc_(r.label || '');
     if (r.isHeader) {
-      html += '<tr><td colspan="2" style="height:14px;"></td></tr><tr style="background:' + P.brand + ';"><td colspan="2" style="padding:10px;border:1px solid #ccc;text-align:center;font-weight:bold;color:#ffffff;">' + label + '</td></tr>';
+      html += '<tr><td colspan="2" style="height:14px;"></td></tr><tr style="background:' + P.brand + ';"><td colspan="2" style="padding:10px;border:1px solid ' + P.line + ';text-align:center;font-weight:bold;color:#ffffff;">' + label + '</td></tr>';
       return;
     }
     const answerRaw = String(r.value == null ? '' : r.value);
     const qNum = String(r.qNum || '');
     let displayAnswer;
     if (!answerRaw) {
-      displayAnswer = '<span style="color:#999;font-style:italic;font-weight:normal;">N/A</span>';
+      displayAnswer = '<span style="color:' + P.muted3 + ';font-style:italic;font-weight:normal;">N/A</span>';
     } else {
       const escAns = esc_(answerRaw);
       const lower = answerRaw.toLowerCase();
@@ -10186,25 +10205,25 @@ function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
         displayAnswer = escAns;
       }
     }
-    const qStyle = r.isSecondary ? 'font-weight:normal;font-style:italic;color:#444;padding-left:25px;' : 'font-weight:bold;color:#333333;';
-    const bg = (fieldIdx % 2 === 0) ? '#ffffff' : '#e6f2ff';
+    const qStyle = r.isSecondary ? 'font-weight:normal;font-style:italic;color:' + P.muted2 + ';padding-left:25px;' : 'font-weight:bold;color:' + P.ink + ';';
+    const bg = (fieldIdx % 2 === 0) ? P.paperCard : P.brandSoft;
     fieldIdx++;
-    html += '<tr style="background:' + bg + ';"><td style="padding:8px;border:1px solid #ddd;width:50%;' + qStyle + '">' + label + '</td><td style="padding:8px;border:1px solid #ddd;text-align:center;vertical-align:middle;font-weight:bold;">' + displayAnswer + '</td></tr>';
+    html += '<tr style="background:' + bg + ';"><td style="padding:8px;border:1px solid ' + P.line + ';width:50%;' + qStyle + '">' + label + '</td><td style="padding:8px;border:1px solid ' + P.line + ';text-align:center;vertical-align:middle;font-weight:bold;">' + displayAnswer + '</td></tr>';
   });
 
   // --- Recommendations ---
-  html += '<tr><td colspan="2" style="padding:20px 10px 5px 10px;border-top:2px solid #ccc;"><h3 style="margin:0 0 8px;">Recommended HCPCS:</h3>';
+  html += '<tr><td colspan="2" style="padding:20px 10px 5px 10px;border-top:2px solid ' + P.line + ';"><h3 style="margin:0 0 8px;color:' + P.brand + ';">Recommended HCPCS:</h3>';
   const hasComplex = recData && recData.complex && recData.complex.length > 0;
   const hasStandard = recData && recData.standard && recData.standard.length > 0;
   if (!hasComplex && !hasStandard) {
-    html += '<p style="color:#666;font-style:italic;">No products matched all criteria based on the provided answers.</p>';
+    html += '<p style="color:' + P.muted2 + ';font-style:italic;">No products matched all criteria based on the provided answers.</p>';
   } else {
     if (hasComplex) {
-      html += '<h4 style="margin-bottom:5px;color:#b71c1c;">Complex Rehab</h4>' + intakeRecListHtml_(recData.complex, selections);
+      html += '<h4 style="margin-bottom:5px;color:' + P.brand + ';">Complex Rehab</h4>' + intakeRecListHtml_(recData.complex, selections);
     }
     if (hasStandard) {
       if (hasComplex) html += '<div style="height:20px;"></div>';
-      html += '<h4 style="margin-bottom:5px;color:#1565c0;">Standard Powerchair</h4>' + intakeRecListHtml_(recData.standard, selections);
+      html += '<h4 style="margin-bottom:5px;color:' + P.brand + ';">Standard Powerchair</h4>' + intakeRecListHtml_(recData.standard, selections);
     }
   }
   html += '</td></tr></table>';
@@ -10216,40 +10235,50 @@ function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
 // markup, so it is injected raw; hcpcs / links / images are esc_'d.
 function intakeRecListHtml_(items, selections) {
   selections = selections || {};
-  let out = '<ul style="list-style-type:none;padding-left:0;margin:0;">';
+  const P = CN_EMAIL_PALETTE;
+  // 2nd-pass email_styling.md: each product is a 2-cell TABLE row (image cell +
+  // content cell) — NOT a flex <li> with filter:grayscale, both of which Outlook
+  // drops. Rejected rows grey explicitly (bg + muted text), no filter.
+  let out = '<table style="width:100%;border-collapse:collapse;font-size:14px;">';
   (items || []).forEach(function (product) {
     const itemId = String(product.hcpcs).replace(/\s+/g, '-');
     const sel = selections[itemId] || {};
     const status = sel.status || 'none';
     const isPreferred = !!sel.preferred;
+    const rejected = status === 'rejected';
+    const rowBg = rejected ? P.paper : P.paperCard;
+    const textColor = rejected ? P.muted3 : P.ink;
 
-    let rowStyle = 'padding:10px;border-bottom:1px solid #ddd;display:flex;align-items:flex-start;gap:15px;';
-    if (status === 'rejected') rowStyle += 'background-color:#f8f9fa;opacity:0.6;filter:grayscale(100%);';
-    out += '<li style="' + rowStyle + '">';
+    let badge;
+    if (status === 'accepted')       badge = '<span style="background:' + P.accentSoft + ';color:' + P.accentDeep + ';border:1px solid ' + P.accentBorder + ';padding:2px 6px;border-radius:4px;font-size:12px;">&#10004; Accepted</span>';
+    else if (status === 'rejected')  badge = '<span style="background:' + P.dangerSoft + ';color:' + P.dangerDeep + ';border:1px solid ' + P.dangerBorder + ';padding:2px 6px;border-radius:4px;font-size:12px;">&#10008; Rejected</span>';
+    else if (status === 'undecided') badge = '<span style="background:' + P.warnSoft + ';color:' + P.warnDeep + ';border:1px solid ' + P.warnBorder + ';padding:2px 6px;border-radius:4px;font-size:12px;">&#129300; Undecided/Maybe</span>';
+    else                             badge = '<span style="background:' + P.paper + ';color:' + P.muted2 + ';border:1px solid ' + P.line + ';padding:2px 6px;border-radius:4px;font-size:12px;">Unconfirmed</span>';
 
-    out += '<div style="padding-top:5px;">' + (isPreferred
-      ? '<span style="font-size:24px;color:#FFD700;line-height:1;">&#9733;</span>'
-      : '<span style="width:24px;display:inline-block;"></span>') + '</div>';
-
-    if (product.imageUrl) {
-      out += '<img src="' + esc_(product.imageUrl) + '?v=' + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;vertical-align:middle;border:1px solid #eee;margin-right:10px;">';
-    }
-
-    out += '<div style="font-size:14px;flex-grow:1;">';
-    out += '<div style="font-weight:bold;font-size:16px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">';
+    const star = isPreferred
+      ? '<span style="font-size:20px;color:' + P.star + ';line-height:1;vertical-align:middle;">&#9733;</span> '
+      : '';
     const title = product.pdfLink
-      ? '<a href="' + esc_(product.pdfLink) + '" target="_blank" style="text-decoration:none;color:#1a73e8;">' + esc_(product.hcpcs) + '</a>'
+      ? '<a href="' + esc_(product.pdfLink) + '" target="_blank" style="text-decoration:none;color:' + P.info + ';">' + esc_(product.hcpcs) + '</a>'
       : esc_(product.hcpcs);
-    out += '<span>' + title + '</span><div style="font-weight:normal;margin-left:15px;">';
-    if (status === 'accepted')       out += '<span style="background:#e6fffa;color:#00875A;border:1px solid #b3f5e1;padding:2px 6px;border-radius:4px;font-size:12px;">&#10004; Accepted</span>';
-    else if (status === 'rejected')  out += '<span style="background:#ffebe6;color:#DE350B;border:1px solid #ffbdad;padding:2px 6px;border-radius:4px;font-size:12px;">&#10008; Rejected</span>';
-    else if (status === 'undecided') out += '<span style="background:#e2e8f0;color:#334155;border:1px solid #94a3b8;padding:2px 6px;border-radius:4px;font-size:12px;">&#129300; Undecided/Maybe</span>';
-    else                             out += '<span style="background:#f4f5f7;color:#888;border:1px solid #dfe1e6;padding:2px 6px;border-radius:4px;font-size:12px;">Unconfirmed</span>';
-    out += '</div></div>';
-    out += '<div style="color:#555;">' + (product.justification || 'Eligible match.') + '</div>';
-    out += '</div></li>';
+
+    const imgCell = product.imageUrl
+      ? '<td style="width:110px;padding:10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;background:' + rowBg + ';"><img src="' + esc_(product.imageUrl) + '?v=' + esc_(product.hcpcs) + '" alt="' + esc_(product.hcpcs) + '" style="width:100px;height:auto;border:1px solid ' + P.line + ';display:block;"></td>'
+      : '<td style="width:1px;padding:0;border-bottom:1px solid ' + P.line + ';background:' + rowBg + ';"></td>';
+
+    // justification is server-generated (trusted) + carries inline markup, so
+    // it is injected RAW (INV-89 exception); hcpcs / links / images are esc_'d.
+    out += '<tr>' + imgCell +
+      '<td style="padding:10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;background:' + rowBg + ';color:' + textColor + ';">' +
+        '<table style="width:100%;border-collapse:collapse;"><tr>' +
+          '<td style="font-weight:bold;font-size:16px;vertical-align:middle;">' + star + '<span>' + title + '</span></td>' +
+          '<td style="text-align:right;vertical-align:middle;white-space:nowrap;">' + badge + '</td>' +
+        '</tr></table>' +
+        '<div style="color:' + (rejected ? P.muted3 : P.muted2) + ';margin-top:6px;">' + (product.justification || 'Eligible match.') + '</div>' +
+      '</td>' +
+    '</tr>';
   });
-  out += '</ul>';
+  out += '</table>';
   return out;
 }
 
@@ -10266,7 +10295,7 @@ function intakeBuildAcctBodyHtml_(rows, layout) {
     const isHeader = layout.HEADER_ROWS.indexOf(i + 1) >= 0;
 
     if (isHeader) {
-      html += '<tr><td colspan="2" style="height:14px;"></td></tr><tr style="background:' + P.brand + ';"><td colspan="2" style="padding:10px;border:1px solid #ccc;text-align:center;font-weight:bold;color:#ffffff;">' + label + '</td></tr>';
+      html += '<tr><td colspan="2" style="height:14px;"></td></tr><tr style="background:' + P.brand + ';"><td colspan="2" style="padding:10px;border:1px solid ' + P.line + ';text-align:center;font-weight:bold;color:#ffffff;">' + label + '</td></tr>';
       return;
     }
 
@@ -10276,20 +10305,20 @@ function intakeBuildAcctBodyHtml_(rows, layout) {
       const rule = cond[answerRaw];
       displayAnswer = '<div style="background-color:' + rule.bg + ';color:' + rule.fg + ';border:1px solid ' + rule.bg + ';border-radius:4px;padding:5px 8px;font-weight:bold;display:inline-block;">' + esc_(answerRaw) + '</div>';
     } else if (layout.CHECKBOX_ROWS.indexOf(i) >= 0) {
-      const checkColor = layout.CHECKBOX_WARN_ROWS.indexOf(i) >= 0 ? '#FFC107' : '#00875A';
+      const checkColor = layout.CHECKBOX_WARN_ROWS.indexOf(i) >= 0 ? P.warn : P.accent;
       displayAnswer = (answerRaw === 'TRUE')
-        ? '<div style="width:16px;height:16px;border:1px solid #777;background-color:#fff;text-align:center;line-height:16px;font-weight:bold;color:' + checkColor + ';display:inline-block;">&#10003;</div>'
-        : '<div style="width:16px;height:16px;border:1px solid #ccc;background-color:#f4f4f4;display:inline-block;"></div>';
+        ? '<div style="width:16px;height:16px;border:1px solid ' + P.muted2 + ';background-color:' + P.paperCard + ';text-align:center;line-height:16px;font-weight:bold;color:' + checkColor + ';display:inline-block;">&#10003;</div>'
+        : '<div style="width:16px;height:16px;border:1px solid ' + P.line + ';background-color:' + P.paper + ';display:inline-block;"></div>';
     } else {
-      displayAnswer = !answerRaw ? '<span style="color:#999;font-style:italic;">N/A</span>' : esc_(answerRaw);
+      displayAnswer = !answerRaw ? '<span style="color:' + P.muted3 + ';font-style:italic;">N/A</span>' : esc_(answerRaw);
     }
 
     const qStyle = layout.SECONDARY_QUESTION_ROWS.indexOf(i) >= 0
-      ? 'font-weight:normal;font-style:italic;color:#444;padding-left:25px;'
-      : 'font-weight:bold;color:#333333;';
-    const bg = (fieldIdx % 2 === 0) ? '#ffffff' : '#e6f2ff';
+      ? 'font-weight:normal;font-style:italic;color:' + P.muted2 + ';padding-left:25px;'
+      : 'font-weight:bold;color:' + P.ink + ';';
+    const bg = (fieldIdx % 2 === 0) ? P.paperCard : P.brandSoft;
     fieldIdx++;
-    html += '<tr style="background:' + bg + ';"><td style="padding:8px;border:1px solid #ddd;width:50%;' + qStyle + '">' + label + '</td><td style="padding:8px;border:1px solid #ddd;text-align:center;vertical-align:middle;">' + displayAnswer + '</td></tr>';
+    html += '<tr style="background:' + bg + ';"><td style="padding:8px;border:1px solid ' + P.line + ';width:50%;' + qStyle + '">' + label + '</td><td style="padding:8px;border:1px solid ' + P.line + ';text-align:center;vertical-align:middle;">' + displayAnswer + '</td></tr>';
   });
   html += '</table>';
   return html;
@@ -10304,7 +10333,7 @@ function intakeDecodeImages_(images) {
   let sectionHtml = '';
   if (!images || !images.length) return { inlineImagesObj: inlineImagesObj, sectionHtml: '' };
   const capped = images.slice(0, CONFIG.INTAKE.MAX_IMAGES);
-  sectionHtml = '<div style="margin-top:20px;border-top:2px dashed #ccc;padding-top:20px;text-align:center;"><h3 style="color:#444;">Attached Images</h3>';
+  sectionHtml = '<div style="margin-top:20px;border-top:2px dashed ' + CN_EMAIL_PALETTE.line + ';padding-top:20px;text-align:center;"><h3 style="color:' + CN_EMAIL_PALETTE.brand + ';">Attached Images</h3>';
   capped.forEach(function (b64, index) {
     const str = String(b64 || '');
     if (str.length > CONFIG.INTAKE.MAX_IMAGE_CHARS) throw new Error('An attached image is too large (max ~5MB each).');
@@ -10323,7 +10352,7 @@ function intakeDecodeImages_(images) {
     const data = str.substring(comma + 1);
     const blob = Utilities.newBlob(Utilities.base64Decode(data), contentType, cid);
     inlineImagesObj[cid] = blob;
-    sectionHtml += '<img src="cid:' + cid + '" style="max-width:100%;border:1px solid #ddd;border-radius:4px;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />';
+    sectionHtml += '<img src="cid:' + cid + '" style="max-width:100%;border:1px solid ' + CN_EMAIL_PALETTE.line + ';border-radius:4px;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />';
   });
   sectionHtml += '</div>';
   return { inlineImagesObj: inlineImagesObj, sectionHtml: sectionHtml };

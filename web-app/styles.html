@@ -1991,10 +1991,13 @@
     margin-bottom: 6px;
   }
   .day-info-row:last-child { margin-bottom: 0; }
-  .day-info-row.holiday      { background: var(--accent-soft);      color: var(--info-deep);    font-weight: 500; }
+  /* Token-family consistency (2nd-pass popups addendum #3): holiday is an
+     info row (blue bg + blue text); own-approved is a positive/leave row
+     (green bg + green text). Previously both paired green bg with blue text. */
+  .day-info-row.holiday      { background: var(--info-soft);        color: var(--info-deep);    font-weight: 500; }
   .day-info-row.worked       { background: var(--good-soft);        color: var(--success-deep); }
   .day-info-row.own-pending  { background: var(--warn-soft);        color: var(--warning-deep); font-weight: 500; }
-  .day-info-row.own-approved { background: var(--accent-soft);      color: var(--info-deep);    font-weight: 500; }
+  .day-info-row.own-approved { background: var(--accent-soft);      color: var(--success-deep); font-weight: 500; }
   .day-info-row.own-denied   { background: var(--destructive-soft); color: var(--danger-deep);  font-weight: 500; }
 
   /* ─── PTO DAY MODAL — HEADS-UP CONFLICT BANNERS (V1·E2) ──────────
@@ -2103,6 +2106,7 @@
   .toast-success { box-shadow: inset 3px 0 0 var(--good),        var(--shadow-sm); }
   .toast-error   { box-shadow: inset 3px 0 0 var(--destructive), var(--shadow-sm); }
   .toast-warn    { box-shadow: inset 3px 0 0 var(--warn),        var(--shadow-sm); }
+  .toast-info    { box-shadow: inset 3px 0 0 var(--info),        var(--shadow-sm); }
   .toast-icon {
     flex-shrink: 0;
     display: inline-flex; align-items: center; justify-content: center;
@@ -2112,6 +2116,7 @@
   .toast-success .toast-icon { color: var(--good); }
   .toast-error   .toast-icon { color: var(--destructive); }
   .toast-warn    .toast-icon { color: var(--warn); }
+  .toast-info    .toast-icon { color: var(--info); }
   .toast-msg { flex: 1; line-height: 1.4; }
 
   /* ─── LOADING / EMPTY STATES ─────────────────────────────────── */
@@ -2127,6 +2132,86 @@
     border-radius: 50%; animation: spin .8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Unified loader system (2nd-pass loaders_and_motion.md, Part 1) ──
+     Four roles, one shared set. The --lo-* aliases map to app tokens so all
+     loaders theme in dark mode automatically. GPU-cheap (transform/opacity/
+     background-position only); the global prefers-reduced-motion block in
+     styles_design_tokens.html neutralizes every animation below. */
+  :root { --lo-accent: var(--accent); --lo-track: var(--line); }
+  @keyframes lo-spin    { to { transform: rotate(360deg); } }
+  @keyframes lo-dot     { 0%,80%,100% { transform: scale(.5); opacity: .4; } 40% { transform: scale(1); opacity: 1; } }
+  @keyframes lo-bar     { 0% { left: -40%; } 100% { left: 100%; } }
+  @keyframes lo-shimmer { 100% { background-position: 200% 0; } }
+  @keyframes lo-pulse   { 0%,100% { transform: scale(.82); opacity: .45; } 50% { transform: scale(1); opacity: 1; } }
+  /* Role A — full-view enter: the module glyph, pulsing (renderLoading). */
+  .lo-glyph { color: var(--lo-accent); animation: lo-pulse 1.25s var(--ease) infinite; display: inline-flex; }
+  /* Role B — lists / tables / cards: skeleton shimmer. */
+  .skel {
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--paper-3) 25%, var(--paper-2) 37%, var(--paper-3) 63%);
+    background-size: 200% 100%;
+    animation: lo-shimmer 1.3s linear infinite;
+  }
+  .skel-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+  .skel-avatar { width: 32px; height: 32px; border-radius: 50%; flex: none; }
+  .skel-lines { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+  .skel-bar { height: 10px; }
+  /* Role C — in-place refresh: a thin indeterminate sweep bar at panel top. */
+  .lo-sweep { position: relative; height: 3px; border-radius: 999px; background: var(--lo-track); overflow: hidden; }
+  .lo-sweep::after {
+    content: ''; position: absolute; top: 0; bottom: 0; width: 40%;
+    border-radius: 999px; background: var(--lo-accent);
+    animation: lo-bar 1.15s var(--ease) infinite;
+  }
+  /* Role D — buttons / tiny slots: inline dot pulse (keep the word too). */
+  .lo-dots { display: inline-flex; gap: 5px; vertical-align: middle; }
+  .lo-dots span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: lo-dot 1.4s var(--ease) infinite; }
+  .lo-dots span:nth-child(2) { animation-delay: .18s; }
+  .lo-dots span:nth-child(3) { animation-delay: .36s; }
+
+  /* ─── Motion system (2nd-pass loaders_and_motion.md, Part 2) ──────────
+     All reveals are one-shot (animation-fill-mode: both bakes the end state);
+     the global prefers-reduced-motion block neutralizes every rule below.
+     Overlay/modal entrance (§9) is ALREADY handled by .overlay.open (fadein)
+     + .modal (modalin) + the #kb-drawer slide — not re-declared here. */
+  /* §1 view transition — fade + rise on each view-area swap (router-hooked) */
+  @keyframes revFade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .view-enter { animation: revFade .18s var(--ease) both; }
+  /* §6 mutation feedback — settle (dim + tint + draw check + strike) */
+  .mc { transition: opacity .3s var(--ease), background .3s var(--ease); }
+  .mc.done { opacity: .72; background: var(--paper-card); }
+  .mc.done .mc-label { text-decoration: line-through; color: var(--muted-3); transition: color .3s var(--ease); }
+  @keyframes drawCheck { to { stroke-dashoffset: 0; } }
+  .ck { stroke-dasharray: 24; stroke-dashoffset: 24; }
+  .mc.done .ck { animation: drawCheck .35s var(--ease) forwards; }
+  /* §7 selection & copy. .popping / .copied are general one-shot helpers
+     (toggle on, the keyframe runs once); .star.on pops when preferred. */
+  @keyframes pop { 0% { transform: scale(1); } 42% { transform: scale(1.15); } 100% { transform: scale(1); } }
+  .popping, .chip.popping { animation: pop .28s var(--ease); }
+  .star.on { animation: pop .28s var(--ease); }
+  @keyframes flashBg { 0% { background: var(--accent-soft); } 100% { background: transparent; } }
+  .copied, .copybtn.copied { animation: flashBg .7s var(--ease); }
+  /* §3 ring fill — training completion + clock PTO. --circ (=2πr) and --target
+     (=circ·(1−pct)) are set inline per ring; defaults here keep them defined
+     (token-hygiene) + render sanely before the inline override lands. */
+  @keyframes ringFill { from { stroke-dashoffset: var(--circ); } to { stroke-dashoffset: var(--target); } }
+  .ring-arc { --circ: 0; --target: 0; stroke-dashoffset: var(--target); animation: ringFill .9s var(--ease) both; }
+  /* §4 sparkline draw — --len (≥ polyline length) set inline per spark. */
+  @keyframes sparkDraw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+  .spark { --len: 0; stroke-dasharray: var(--len); stroke-dashoffset: 0; animation: sparkDraw 1s var(--ease) both; }
+  /* §5 grid stagger-in — coverage heatmap + training matrix. --d set inline. */
+  @keyframes hmIn { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
+  .hm { --d: 0ms; animation: hmIn .25s var(--ease) both; animation-delay: var(--d, 0ms); }
+  /* §8 collapse — KB department / CN trays */
+  .acc-body { max-height: 0; opacity: 0; overflow: hidden; transition: max-height .26s var(--ease), opacity .26s var(--ease); }
+  .acc.open .acc-body { max-height: 240px; opacity: 1; }
+  .acc-chev { transition: transform .2s var(--ease); }
+  .acc.open .acc-chev { transform: rotate(90deg); }
+  /* §10 timezone sky cross-fade — clock big-clock card */
+  .sky-layer { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; }
+  .sky-layer.on { opacity: 1; }
+
   .state-label {
     font-family: var(--mono);
     color: var(--muted); font-size: 11px;
