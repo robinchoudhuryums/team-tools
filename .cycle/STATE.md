@@ -63,11 +63,30 @@ Executing as 7 separate per-module commits on branch claude/practical-gauss-yycw
   tri-tone %Ans cells (mPctClass_) + C5 .m-coverage unified on deep tones. Pure
   134/0, DOM 48/0. NOTE/conflict: the mock's range-aggregated My Stats needs a
   server getMyMetrics range variant — deferred (window control is client-only).
-- NEXT: commit #7 Call Notes (Search → real read-only cnRenderCardCore_ cards +
-  result count + term highlight + date filter + Phone/TRX tabs [SERVER change to
-  searchMyCallNotes/managerSearchCallNotes + INV-45 + Tests.js, C3]; manager
-  Stats → table sharing the Metrics team-table component [improvement #1]; Admin
-  → Overview/Tags/Compliance/Config sub-tabs; exact-TRX badge tone C7).
+- DONE — commit #7 Call Notes, split 7a/7b/7c:
+  - 7a (448f434) Search: read-only cnRenderResultCard_ (real cn-card) for rep +
+    manager search + result count + KB term highlight + date-range filter +
+    Phone/TRX scopes (SERVER change to searchMyCallNotes/managerSearchCallNotes,
+    INV-45 doc, Tests.js test_cn_search_phoneTrxFieldScopes) + C7 badge tone.
+  - 7b (271db84) manager Stats → scannable .m-table (Notes/Action/Training/Review/
+    Median/%Ans/Coverage) reusing mPctClass_/mCoverageBadge_; shared JS component
+    (improvement #1) DEFERRED (column sets differ — visual align via .m-table).
+  - 7c (56535fd) Admin → Overview/Tags/Compliance/Config sub-tabs (cnAdminTab_,
+    show/hide panes; cnRenderAdminAugmentHtml_ → {kpiHtml,taxHtml} split). Folding
+    health panels into compact status CARDS deferred (panels already convey tone).
+  Pure 134/0, DOM 48/0, node --check clean.
+
+## REDESIGN COMPLETE — all 7 commits landed on claude/practical-gauss-yycwkz
+(8 commits incl. the #5 Clock/Coverage split). Plan: docs/design_handoff_team_tools_redesign/
+IMPLEMENTATION_PLAN.md. NOT merged (no PR requested). OPERATOR: one clasp push -f
++ New deployment version covers all client + the Code.js changes
+(getMyNoteHourBuckets, phone/trx search scopes); then runAllTests() in the editor
+(exercises test_cn_search_phoneTrxFieldScopes). DEFERRED/conflicts to revisit:
+range-aggregated My Stats (server getMyMetrics range variant, C-mock); shared
+Metrics/CN-Stats table component; Admin health-status-cards consolidation; Sick
+backend deprecation (UI-removed, backend dormant). DOC drift for /sync-docs:
+new umsIntakeDrafts + umsKbPanel.deptCollapsed localStorage keys, getMyNoteHourBuckets
+endpoint, INV-45 phone/trx, token-hygiene tripwire, Sick UI-removal.
 
 ## Cycle 5 CLOSED (2026-06-17)
 Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
