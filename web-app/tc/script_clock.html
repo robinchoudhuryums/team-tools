@@ -60,6 +60,7 @@
   .pto-pip { width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }          /* remaining */
   .pto-pip.used { background: var(--paper-3); }                                                    /* used */
   .pto-pip.used-half { background: linear-gradient(90deg, var(--paper-3) 50%, var(--accent) 50%); }
+  .pto-pip.planned { background: var(--warn); }                                                    /* pending upcoming */
   :root[data-compact] .clk-row3 { grid-template-columns: 1fr; }
   @media (max-width: 760px) { .clk-row3 { grid-template-columns: 1fr; } }
 </style>
@@ -317,21 +318,26 @@ function renderPtoMini_(s) {
   const totalPips = Math.max(1, Math.round(max));
   const full = Math.floor(used);
   const frac = used - full;
+  // Amber "planned" pips = future pending annual days (still in the green
+  // balance but tentatively committed) — the last `planned` remaining pips.
+  const planned = Math.min(Math.round(s.annualPlannedUpcoming || 0), totalPips - full);
   let pips = '';
   for (let i = 0; i < totalPips; i++) {
     const dayNum = i + 1;
     let cls;
     if (dayNum <= full) cls = 'used';
     else if (dayNum === full + 1 && frac > 0) cls = 'used-half';
+    else if (planned > 0 && dayNum > totalPips - planned) cls = 'planned';
     else cls = '';   // remaining (filled accent)
     pips += `<span class="pto-pip ${cls}"></span>`;
   }
+  const plannedSub = planned > 0 ? ` · ${formatLeaveDays(s.annualPlannedUpcoming)} planned` : '';
   return `<div class="card pto-mini">
     <div class="pto-mini-main">
       <div class="card-label">Annual PTO</div>
       <div class="pto-big">${formatLeaveDays(rem)} <span class="pto-big-unit">days left</span></div>
-      <div class="pto-pips" title="${formatLeaveDays(rem)} of ${formatLeaveDays(max)} days remaining">${pips}</div>
-      <div class="sub">${formatLeaveDays(used)} used · ${formatLeaveDays(max)} total</div>
+      <div class="pto-pips" title="${formatLeaveDays(rem)} of ${formatLeaveDays(max)} days remaining${planned > 0 ? ' (' + formatLeaveDays(s.annualPlannedUpcoming) + ' pending upcoming)' : ''}">${pips}</div>
+      <div class="sub">${formatLeaveDays(used)} used · ${formatLeaveDays(max)} total${plannedSub}</div>
     </div></div>`;
 }
 
