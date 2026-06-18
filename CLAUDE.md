@@ -580,12 +580,33 @@ this section before touching the relevant area.
   header, alternating row tint, top-of-email logo bar). Subform
   detail borders (shipping, resupply, OOP) also use resolved hex —
   `#b1d1c4` for good-transparent and `#e7bda3` for warn-transparent.
+  The 2nd-pass email restyle EXTENDED this palette with semantic email
+  tokens (`accentBorder`/`dangerBorder`/`warnBorder`, `info` link, `star`,
+  `muted2`/`muted3`, `navyTint`) and **routed the Intake/PPD builders onto
+  it** (`intakePpdAnswerStyles_`, `intakeBuildPpdBodyHtml_`,
+  `intakeBuildAcctBodyHtml_`, the PAP `CONDITIONAL_FORMATTING_ROWS` constants)
+  — they previously hardcoded Material/Google hexes. Keep ALL email color on
+  this palette; new email color belongs here, not inline. **Email-safe rule
+  (re-affirmed by the PPD fix): NO `display:flex` / `gap` / `filter`** —
+  Outlook drops them; `intakeRecListHtml_` was rebuilt from a flex `<li>` +
+  `filter:grayscale` into 2-cell table rows with explicit grey for rejected.
 - **Clipboard API often fails in HtmlService iframes.** The auto-copy
   feature tries `navigator.clipboard.writeText` first and falls back
   to a `<textarea>` + `document.execCommand('copy')` shim
   (`cnFallbackCopy_`). Both fire from the Ctrl/⌘+Enter user gesture so
   permissions are usually granted, but never assume one path alone
   works.
+- **`showToast(msg, type)` normalizes the variant — pass either form.**
+  Most callers pass the full class (`'toast-success'` / `'toast-error'` /
+  `'toast-warn'` / `'toast-info'`), but the Training / EmpDocs partials pass
+  bare names (`'success'` / `'error'` / `'warn'` / `'info'`). `showToast`
+  (`script_core.html`) now normalizes via
+  `cls = /^toast-/.test(cls) ? cls : (cls ? 'toast-' + cls : '')` so both
+  render the colored rail + correct glyph. Before the 2nd-pass fix, bare
+  names rendered with NO accent rail and fell through to the info glyph
+  (18 Training/EmpDocs callsites). `.toast-info` was added at the same time
+  (only success/error/warn existed). Either calling form is fine now —
+  don't "fix" callers to one style.
 - **Call-notes flag enum vs. blank.** `FlagType` is `''` / `'action'`
   / `'training'` / `'review'`. `sanitizeFlagType_()` lowercases + range-
   checks; bad values fall back to `''` rather than throwing, so
@@ -1995,22 +2016,28 @@ this section before touching the relevant area.
   full thread read-only with it, so agent acks/clarifications are
   visible to the manager (previously the card showed only the legacy
   single `trainingReply`).
-- **Admin tab augmented with KPIs + tag taxonomy (Round 2 · 8h).**
-  The Call Notes Admin tab renders a 4-cell `.telemetry` strip
-  (Week notes / Unresolved / Tags / Reps) and a tag taxonomy table
-  (kebab-case tag + usage bar + count + last-seen + per-row action
-  buttons) ABOVE the existing department-email / state-tax /
-  suggestions controls (those preserved unchanged). Manager-gated.
-  KPIs from `getCallNotesAmbient`; taxonomy from
-  `getCallNotesTagTaxonomy` which scans every enrolled rep's
-  per-rep Sheet for `subformData.tags[]` entries and marks each
-  with an `archived` flag from the `CN_ARCHIVED_TAGS` Script
-  Property. An `archivedOnlyTags[]` array surfaces archived tags
-  no longer in active use so admins can still restore them. A
-  **"Tag Trends" panel** (`#cn-admin-trends`) sits below the taxonomy:
-  a per-tag weekly sparkline + total + this-week-vs-prior delta over the
-  trailing 12 weeks (`getCallNotesTagTrends`, archived tags excluded),
-  so a rising issue-tag surfaces as an early warning — INV-125.
+- **Admin tab augmented with KPIs + tag taxonomy (Round 2 · 8h; 2nd-pass
+  consolidation).** The Call Notes Admin tab is split into **Overview / Tags /
+  Compliance / Config** sub-tabs (`cnAdminTab_`, persisted in
+  `CN_STATE.adminTab`). **Overview** = a 3-card **System status** summary
+  (Automation / CDR / Storage, derived from the same `getAutomationHealth` +
+  `getStorageHealth` fetches the detail panels use — no extra RPCs) + a 4-cell
+  `.telemetry` KPI strip (Week notes / Unresolved / Tags / Reps). The full
+  Automation/Storage Health detail panels are folded behind a **"System
+  details" disclosure** (`cnToggleSysDetails_`, plain show/hide — the panels are
+  tall/variable so a fixed-height accordion would clip) so Overview lands on the
+  summary, not a long scroll. **Tags** = ONE merged **taxonomy + trends** table
+  (`cnRenderAdminAugmentHtml_` joins `getCallNotesTagTaxonomy` rows with
+  `getCallNotesTagTrends` `series[]` by tag): columns Tag / Usage bar / Notes /
+  **Trend** (inline sparkline `cnTrendSparkSvg_`) / **Δ wk** / Actions
+  (Rename / Merge / Archive); the prior separate "Tag Trends" panel +
+  `#cn-admin-trends` slot were removed (the low-value "Last seen" column was
+  dropped for Trend+Δ). Manager-gated. Taxonomy scans each enrolled rep's Sheet
+  for `subformData.tags[]`, marking each with an `archived` flag from
+  `CN_ARCHIVED_TAGS`; `archivedOnlyTags[]` surfaces archived tags no longer in
+  use (Restore). Trends bucket by ISO week over the trailing 12 (INV-125,
+  archived excluded). **Compliance** = the audit panel; **Config** = the
+  dept-email / state-tax / suggestions controls (preserved unchanged).
 - **External-email message template library (Admin tab).** Manager-
   curated canned message bodies for the external (customer/provider)
   email composer — resolving the deferred "template library Admin
@@ -2291,7 +2318,10 @@ this section before touching the relevant area.
   inline string interpolation.
 - **Storage Health panel (Admin tab, #1).** Manager-only, read-only
   one-pane-of-glass over every spreadsheet the app uses (`getStorageHealth`,
-  rendered by `cnLoadStoragePanel_` beside Automation Health). For each of the
+  rendered by `cnLoadStoragePanel_`). Since the 2nd-pass consolidation it +
+  Automation Health live behind the Overview **"System details" disclosure**
+  (the always-visible 3-card System-status summary is the folded view of both;
+  the full panels are the drill-down). For each of the
   seven stores (see the Operator State Checklist's storage map) it reports which
   Script Property resolves it, whether it's configured + reachable
   (`SpreadsheetApp.openById` in try/catch), and — the headline — whether the
@@ -2306,7 +2336,9 @@ this section before touching the relevant area.
   (whose PHI/payroll/HR/retention boundaries are deliberate).
 - **Automation Health panel (Admin tab).** Manager-only, read-only
   surfacing of the silent-degradation signals (`getAutomationHealth`,
-  rendered by `cnLoadHealthPanel_` below the compliance panel). One
+  rendered by `cnLoadHealthPanel_`; since the 2nd-pass consolidation it sits
+  behind the Overview "System details" disclosure, with the Automation + CDR
+  System-status cards as its always-visible summary). One
   bounded AuditLog tail scan (`CN_AUDIT_MAX_SCAN` rows) yields (a) the
   `PersonalSheetSyncFail` count + 5 most recent entries over a 30-day
   window and (b) the last-seen audit row per automation job
@@ -2551,6 +2583,40 @@ this section before touching the relevant area.
   `ICONS` set, repointed the Intake tab + sidebar icons, and switched
   `kbItemIcon_`'s article glyph to `fileText`. Same rule as before — add one
   path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
+- **Unified loader + motion system (2nd-pass; `styles.html` + `script_core.html`).**
+  One shared CSS+helper set for loading states and purposeful micro-animations,
+  spec in `docs/design_handoff_team_tools_redesign_update/loaders_and_motion.md`.
+  Principles: CSS-only where possible (animate `transform`/`opacity`/
+  `stroke-dashoffset`), reveals are one-shot via `animation-fill-mode:both`, and
+  a single global `@media (prefers-reduced-motion: reduce)` block (already in
+  `styles_design_tokens.html`) neutralizes everything — don't add a second.
+  **Loaders (4 roles):** Role A glyph-pulse via `renderLoading(area, label,
+  iconName)` (the optional 3rd arg shows the module glyph pulsing; 2-arg keeps
+  the spinner) — pass each tool's icon (Call Notes log = `adjust`/pencil,
+  history/queues = `list`, sent forms = `outbox`, Clock/Manager/Time-Off =
+  `clock`, Metrics = `chart`, Training = `check`, EmpDocs = `fileText`); Role B
+  `loSkeleton(n)` shimmer rows (CN list/stack loads); Role C `loSweep()`
+  indeterminate bar (admin/coverage/intake panel reloads); Role D `.lo-dots`.
+  **Motion:** §1 view-enter fade+rise hooked ONCE in the router (`showView` adds
+  `.view-enter` on each nav — optimistic re-renders call render fns directly so
+  they're unaffected); a shared `MOTION_IO` IntersectionObserver +
+  `observeReveals(container)` re-fires `.js-anim` on scroll-in; §6 settle
+  (`settleRow_(row, labelSel, {dim,check,transient})` + `unsettleRow_` — dim +
+  strike + drawn check, wired at Training mark-complete (persistent), CN flag
+  resolve (transient, in the SUCCESS handler so the optimistic re-render can't
+  clobber it, INV-48/56 revert untouched), and PPD status (accept→check,
+  reject→dim)); §7 `.popping` + `flashCopied()` (flag/chip pop, copy-button
+  flash); §3 `.ring-arc` (`--circ`/`--target` inline) on Training + Clock rings;
+  §4 `.spark` (`--len` inline) on Metrics sparklines; §5 `.hm` (`--d` inline)
+  coverage-heatmap stagger; §8 `.kb-dept-body` / `.cn-qa-cards` max-height
+  accordion (KB dept toggles its class LIVE now, not a re-render, so it can
+  animate); §10 two stacked `.sky-layer`s cross-fade the Clock big-clock card
+  (CSS can't transition between two gradients). Overlay/modal entrance was
+  already handled by `.overlay.open` (fadein) + `.modal` (modalin) + the
+  `#kb-drawer` slide — NOT re-declared. Inline animation params
+  (`--circ/--target/--len/--d`) carry defaults so the INV-128 token tripwire
+  stays green. New tools should reuse `renderLoading` + these classes rather
+  than hand-rolling spinners/animations.
 
 Items identified during the V1–V4 + Round 2 redesign work that
 were intentionally deferred. The redesign itself is complete; these
@@ -2606,6 +2672,14 @@ manually for a fresh deploy or environment:
   single `clasp push -f` + New version. The redesign record (per-commit
   scope, before/after) is
   `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
+- **The 2nd-pass design batch (pop-up fixes, email styling, loader + motion
+  system, Admin consolidation, §6 settle) ALSO adds no new operator state** —
+  no Script Properties, triggers, or migrations; client CSS/JS + `Code.js`
+  email-builder restyle only. Deploys with the same single `clasp push -f` +
+  New version. **Post-deploy spot-check the emails** (Call Note + PPD) — the
+  HTML-email restyle can't be verified in CI. The 2nd-pass spec lives in
+  `docs/design_handoff_team_tools_redesign_update/` (`loaders_and_motion.md`,
+  `email_styling.md`, `popups_addendum.md`).
 - **Set Script Property `ADP_SS_ID`** to the real spreadsheet ID in
   Apps Script editor → Project Settings → Script Properties. Without
   it, `getAdpSS_()` falls back to the inert `'YOUR_ADP_SPREADSHEET_ID'`
