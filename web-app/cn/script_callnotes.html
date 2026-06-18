@@ -2440,6 +2440,8 @@ function cnWireActiveForm_() {
       if (idx >= 0) cur.splice(idx, 1);
       else cur.push(flag);
       cnSetFormFlags_(form, cur);
+      // §7 pop — quick scale feedback when a flag is switched ON.
+      if (cur.indexOf(flag) >= 0) { btn.classList.remove('popping'); void btn.offsetWidth; btn.classList.add('popping'); }
       // Persist immediately so a tab close right after a flag toggle doesn't
       // lose the categorization
       cnPersistActiveFormDraft_();

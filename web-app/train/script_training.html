@@ -142,7 +142,8 @@ function trainRingHtml_(pct) {
   var r = 32, c = 2 * Math.PI * r, off = c * (1 - (pct || 0) / 100);
   return '<div class="tr-ring"><svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">' +
     '<circle cx="36" cy="36" r="' + r + '" fill="none" stroke="var(--paper-3)" stroke-width="7"></circle>' +
-    '<circle cx="36" cy="36" r="' + r + '" fill="none" stroke="var(--accent)" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"></circle>' +
+    // §3 ring fill — animate from empty (--circ) to filled (--target=off).
+    '<circle class="ring-arc" style="--circ:' + c.toFixed(1) + ';--target:' + off.toFixed(1) + '" cx="36" cy="36" r="' + r + '" fill="none" stroke="var(--accent)" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '"></circle>' +
     '</svg><div class="pct">' + (pct || 0) + '%</div></div>';
 }
 

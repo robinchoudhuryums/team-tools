@@ -552,6 +552,14 @@ function observeReveals(container) {
   }
 }
 
+/** 2nd-pass motion §7 — flash a copy button on success (also aids ⌘C
+ *  discoverability). One-shot: re-arm the class, then clear it. */
+function flashCopied(el) {
+  if (!el || !el.classList) return;
+  el.classList.remove('copied'); void el.offsetWidth; el.classList.add('copied');
+  setTimeout(function () { el.classList.remove('copied'); }, 800);
+}
+
 /** 2nd-pass loader Role C — a thin indeterminate sweep bar for in-place
  *  refreshes (content stays visible / a panel is reloading). Returns markup. */
 function loSweep() { return '<div class="lo-sweep" role="status" aria-label="Loading"></div>'; }

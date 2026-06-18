@@ -691,9 +691,12 @@ function mBuildHeroSparkSvg_(trend, metric, avg) {
     var by = (h - pad - avg * yScale).toFixed(1);
     baselineHtml = '<line class="baseline" x1="' + pad + '" y1="' + by + '" x2="' + (w - pad) + '" y2="' + by + '"/>';
   }
+  // §4 sparkline draw — the polyline draws itself in on render. --len is a safe
+  // over-estimate of the path length (viewBox width 300); over-estimating just
+  // means it starts fully hidden and animates to fully drawn (end state 0).
   return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
     baselineHtml +
-    '<polyline points="' + coords.join(' ') + '"/>' +
+    '<polyline class="spark" style="--len:600" points="' + coords.join(' ') + '"/>' +
     '<circle cx="' + lx + '" cy="' + ly + '" r="2.5"/>' +
     '</svg>';
 }

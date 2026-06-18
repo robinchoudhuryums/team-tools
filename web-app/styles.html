@@ -2185,12 +2185,13 @@
   @keyframes drawCheck { to { stroke-dashoffset: 0; } }
   .ck { stroke-dasharray: 24; stroke-dashoffset: 24; }
   .mc.done .ck { animation: drawCheck .35s var(--ease) forwards; }
-  /* §7 selection & copy */
+  /* §7 selection & copy. .popping / .copied are general one-shot helpers
+     (toggle on, the keyframe runs once); .star.on pops when preferred. */
   @keyframes pop { 0% { transform: scale(1); } 42% { transform: scale(1.15); } 100% { transform: scale(1); } }
-  .chip.popping { animation: pop .28s var(--ease); }
+  .popping, .chip.popping { animation: pop .28s var(--ease); }
   .star.on { animation: pop .28s var(--ease); }
   @keyframes flashBg { 0% { background: var(--accent-soft); } 100% { background: transparent; } }
-  .copybtn.copied { animation: flashBg .7s var(--ease); }
+  .copied, .copybtn.copied { animation: flashBg .7s var(--ease); }
   /* §3 ring fill — training completion + clock PTO. --circ (=2πr) and --target
      (=circ·(1−pct)) are set inline per ring; defaults here keep them defined
      (token-hygiene) + render sanely before the inline override lands. */

@@ -1104,11 +1104,13 @@ function covRender_(data) {
       '<span class="chev">' + icon('chevronRight', 12) + '</span>' +
       esc(day.weekday.slice(0, 3)) + ' ' + esc(String(day.date).slice(5)) +
       (day.holidayName ? ' <span class="hol">' + esc(day.holidayName) + '</span>' : '') + '</div>';
-    hours.forEach(function (hr) {
+    hours.forEach(function (hr, hi) {
       var x = byHour[hr] || { confirmed: 0, tentative: 0 };
       var c = x.confirmed || 0, t = x.tentative || 0;
       var cls = (c >= minStaff) ? 'ok' : ((c + t) >= minStaff ? 'risk' : ((c + t) > 0 ? 'low' : 'none'));
-      grid += '<div class="cov-cell ' + cls + '" title="' + esc(covFmtHr_(hr) + ' — ' + c + ' working' + (t ? (' (+' + t + ' tentative)') : '')) + '">' + (c || '') + '</div>';
+      // §5 grid stagger-in — delay by cell position, capped < ~350ms total.
+      var d = Math.min((di * hours.length + hi) * 6, 340);
+      grid += '<div class="cov-cell hm ' + cls + '" style="--d:' + d + 'ms" title="' + esc(covFmtHr_(hr) + ' — ' + c + ' working' + (t ? (' (+' + t + ' tentative)') : '')) + '">' + (c || '') + '</div>';
     });
     grid += '<div class="cov-detail" id="' + detailId + '" style="display:none">' + covRepsHtml_(day) + '</div>';
     risks = risks.concat(covDayRisks_(day, byHour, hours, minStaff));
