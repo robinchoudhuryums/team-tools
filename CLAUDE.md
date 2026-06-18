@@ -2831,7 +2831,39 @@ manually for a fresh deploy or environment:
   `SPANISH_INBOX_ADDRESS` overrides). PHI-free: the tab returns counts +
   durations + requester email + age only — never subject/body. A scoping note +
   the "what else is possible" generalization live in
-  `docs/spanish-inbox-tracking-scope.md`.
+  `docs/spanish-inbox-tracking-scope.md`. **Part A — pending-as-tasks:**
+  `getSpanishInboxPending(days)` (manager-gated, live-read, never stored beyond
+  the request) returns the open/unresponded threads with `{threadId, requester,
+  ageHours, subject, snippet, permalink}`; `getSpanishInboxThreadBody(threadId)`
+  (scope-guarded — verifies the thread's first message is addressed to the inbox
+  before returning a body slice) backs the per-card "Show full request" expand.
+  The body surfaces request content in-app (it may reference a patient/call), so
+  it is deliberately manager-gated + live-read-only + "Open in Gmail" as the
+  primary action — bodies are never written to a sheet or cache.
+- **Inter-department request tracking (`DeptRequests` / Part B).** A rep composes
+  a tracked request to another department from **Call Notes → Dept Requests**
+  (`sendDeptRequest`, rep-callable + locked): it emails the dept's address
+  (`getDepartmentEmails_()[dept]`) a branded message carrying a **"✓ Mark this
+  resolved"** link → `?resolve=<uuid>`, and appends an `open` row to a PHI-free
+  **`DeptRequests`** tab. The receiver (internal `@umsupply.com`) clicks the link;
+  `doGet`'s `?resolve=` branch → `serveResolvePage_` → `markDeptRequestResolved_`
+  (locked, **idempotent** — already-resolved shows who/when) stamps
+  `status=resolved` + `resolvedAt` + `resolvedBy` (`getActiveUserEmail_()`) and
+  serves a branded confirmation page. `getDeptRequests` (rep-callable) returns the
+  caller's own requests (open/resolved + elapsed) + the targetable department
+  list; managers ALSO get a per-department resolution-time aggregate
+  (`deptStats` open/resolved/avg/median) + oldest-open team list. **Store:**
+  optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated PHI-free sheet);
+  falls back to the ADP sheet (the store is PHI-free — subject/message ride in
+  the email only, never stored; the row keeps a short non-PHI `label`). No new
+  OAuth scope (MailApp already used). Audit rows `DeptRequestSent` /
+  `DeptRequestResolved` (reqId + dept only). **Resolve method is the
+  receiver-clicks-email-link path** because the roster has no per-employee
+  department column (only the `DEPARTMENT_EMAILS` name→email map) — an in-app
+  department inbox would need that column. **Roadmap (v2, not built):** an in-app
+  per-department incoming-requests inbox (needs a roster department column or a
+  dept-membership map), stale-open reminder digests, per-dept SLA targets. See
+  `docs/email-request-tracking-plan.md`.
 - **External fillable-form links must be the canonical anonymous `/exec` URL.**
   Inside a Google Workspace, `ScriptApp.getService().getUrl()` returns the
   **domain-scoped** form `https://script.google.com/a/<domain>/macros/s/<id>/exec`

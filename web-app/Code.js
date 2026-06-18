@@ -270,6 +270,10 @@ const EMP = {
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
+// Inter-department request tracking (DeptRequests tab). PHI-free: no email body.
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10 };
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label'];
+
 // Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
 const CN = {
   NOTE_ID:0, TIMESTAMP:1, DATE_LOCAL:2,
@@ -466,6 +470,13 @@ function doGet(e) {
   // No auth needed — the token validates the request.
   if (e && e.parameter && e.parameter.form) {
     return serveExternalForm_(e.parameter.form);
+  }
+  // ── Inter-department request resolve route ─────────────────────────
+  // The "✓ Mark this resolved" link in a tracked dept-request email lands
+  // here. The recipient is internal (@umsupply.com) so normal auth applies;
+  // serveResolvePage_ identifies them via getActiveUserEmail_().
+  if (e && e.parameter && e.parameter.resolve) {
+    return serveResolvePage_(e.parameter.resolve);
   }
   // ── Internal app — access gate ─────────────────────────────────────
   // Defense in depth on top of the per-endpoint getEmployeeInfo_() check.
@@ -8428,6 +8439,246 @@ function getSpanishInboxStats(days) {
     cache.put(ckey, JSON.stringify(result), 300);
     return result;
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
+}
+
+/** Pending (unresolved) Spanish-inbox requests as task cards — manager-gated,
+ *  live-read (NOT cached/stored, since it carries request content). Returns
+ *  subject + a short snippet + an Open-in-Gmail permalink per open thread; the
+ *  full body is fetched on demand via getSpanishInboxThreadBody. PHI note: the
+ *  body may reference a patient/call — that's why it's manager-gated + never
+ *  persisted. */
+function getSpanishInboxPending(days) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
+    const addr = getSpanishInboxAddress_();
+    if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
+    const members = getSpanishInboxMembers_();
+    const haveMembers = Object.keys(members).length > 0;
+    const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const out = [];
+    const nowMs = Date.now();
+    threads.forEach(function (th) {
+      const msgs = th.getMessages();
+      if (!msgs.length) return;
+      const req = msgs[0];
+      const requester = emailAddrOnly_(req.getFrom());
+      let resolved = false;
+      for (let i = 1; i < msgs.length; i++) {
+        const from = emailAddrOnly_(msgs[i].getFrom());
+        if (haveMembers ? !!members[from] : (from && from !== requester)) { resolved = true; break; }
+      }
+      if (resolved) return;   // only pending
+      const bodyRaw = String(req.getPlainBody() || '').replace(/\s+/g, ' ').trim();
+      out.push({
+        threadId: th.getId(),
+        requester: requester,
+        ageHours: Math.round((nowMs - req.getDate().getTime()) / 3600000),
+        subject: req.getSubject() || '(no subject)',
+        snippet: bodyRaw.slice(0, 240),
+        hasMore: bodyRaw.length > 240,
+        permalink: th.getPermalink(),
+      });
+    });
+    out.sort(function (a, b) { return b.ageHours - a.ageHours; });
+    return { address: addr, days: d, pending: out };
+  } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
+}
+
+/** Full body of one Spanish-inbox request thread (manager-gated, on-demand
+ *  expand). Scope-guarded: only returns the body if the thread is actually
+ *  addressed to the configured inbox, so a manager can't pull arbitrary thread
+ *  bodies by id. Live-read, never stored. */
+function getSpanishInboxThreadBody(threadId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
+    const th = GmailApp.getThreadById(String(threadId || ''));
+    if (!th) return { error: 'Thread not found.' };
+    const addr = getSpanishInboxAddress_();
+    const msgs = th.getMessages();
+    if (!msgs.length) return { error: 'Empty thread.' };
+    const first = msgs[0];
+    const recips = (String(first.getTo() || '') + ',' + String(first.getCc() || '')).toLowerCase();
+    if (addr && recips.indexOf(addr) < 0) return { error: 'Not a Spanish-inbox thread.' };
+    return {
+      threadId: String(threadId),
+      subject: first.getSubject() || '(no subject)',
+      body: String(first.getPlainBody() || '').trim().slice(0, 8000),
+      permalink: th.getPermalink(),
+    };
+  } catch (err) { return { error: 'Read failed: ' + err.message }; }
+}
+
+// ── Inter-department request tracking (Part B) ──────────────────────────────
+function getDeptRequestsSS_() {
+  try {
+    const id = PropertiesService.getScriptProperties().getProperty('DEPT_REQUESTS_SS_ID');
+    if (id && id.trim()) return SpreadsheetApp.openById(id.trim());
+  } catch (e) {}
+  return getAdpSS_();   // back-compat: PHI-free, so co-locating on the ADP sheet is fine
+}
+function getOrCreateDeptRequestsSheet_() {
+  const ss = getDeptRequestsSS_();
+  let sh = ss.getSheetByName('DeptRequests');
+  if (!sh) { sh = ss.insertSheet('DeptRequests'); sh.appendRow(DR_HEADERS); }
+  return sh;
+}
+function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss'); }
+
+/** Send a tracked inter-department request: a branded email to the chosen
+ *  department with a "Mark resolved" button (a `?resolve=<token>` link the
+ *  receiver clicks), and an `open` DeptRequests row. Rep-callable, locked.
+ *  PHI-free store (subject/message ride in the email only; the row keeps a short
+ *  non-PHI label). */
+function sendDeptRequest(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Your account is not registered.' };
+    payload = payload || {};
+    const dept = String(payload.toDept || '').trim();
+    const subject = String(payload.subject || '').trim();
+    const message = String(payload.message || '').trim();
+    const label = String(payload.label || '').trim().slice(0, 80);
+    if (!dept) return { success: false, error: 'Pick a department.' };
+    if (!subject) return { success: false, error: 'A subject is required.' };
+    if (!message) return { success: false, error: 'A message is required.' };
+    const deptMap = getDepartmentEmails_();
+    const toEmail = deptMap[dept];
+    if (!toEmail) return { success: false, error: 'Unknown department: ' + dept };
+
+    const requestId = Utilities.getUuid();
+    const resolveUrl = getWebAppExecUrl_() + '?resolve=' + encodeURIComponent(requestId);
+    const P = CN_EMAIL_PALETTE;
+    const bodyHtml =
+      '<p style="margin:0 0 10px;color:' + P.ink + ';">' + esc_(message).replace(/\n/g, '<br>') + '</p>' +
+      brandedKvRows_([['From', emp.name], ['Department', dept]]) +
+      '<div style="margin:18px 0 4px;text-align:center;">' +
+        '<a href="' + esc_(resolveUrl) + '" style="display:inline-block;background:' + P.accent + ';color:#ffffff;' +
+        'text-decoration:none;font-weight:600;padding:11px 22px;border-radius:8px;font-size:14px;">&#10003; Mark this resolved</a>' +
+      '</div>' +
+      '<p style="margin:6px 0 0;font-size:12px;color:' + P.muted + ';text-align:center;">Click only after you’ve actioned (or attempted) this request.</p>';
+    const html = buildBrandedEmailHtml_('Department request: ' + subject, bodyHtml, { accent: P.brand });
+
+    // Send first; only log on a successful send (no orphan open rows).
+    MailApp.sendEmail({ to: toEmail, subject: 'Request: ' + subject, htmlBody: html,
+      body: message + '\n\nMark resolved: ' + resolveUrl });
+
+    getOrCreateDeptRequestsSheet_().appendRow([
+      requestId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
+      dept, toEmail, drNowTs_(), 'open', '', '', label,
+    ]);
+    try { writeAuditLog_(emp, 'DeptRequestSent', '', '', false, 0, 'reqId=' + requestId + '; dept=' + dept); } catch (e) {}
+    return { success: true, requestId: requestId };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally { lock.releaseLock(); }
+}
+
+/** Mark a request resolved (the receiver clicked the email link). Idempotent. */
+function markDeptRequestResolved_(token, byEmail) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sh = getOrCreateDeptRequestsSheet_();
+    const rows = sh.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][DR.REQ_ID]) !== String(token)) continue;
+      if (String(rows[i][DR.STATUS]) === 'resolved') {
+        return { found: true, already: true, dept: rows[i][DR.TO_DEPT],
+                 resolvedAt: rows[i][DR.RESOLVED_AT], resolvedBy: rows[i][DR.RESOLVED_BY] };
+      }
+      sh.getRange(i + 1, DR.STATUS + 1).setValue('resolved');
+      sh.getRange(i + 1, DR.RESOLVED_AT + 1).setValue(drNowTs_());
+      sh.getRange(i + 1, DR.RESOLVED_BY + 1).setValue(byEmail || 'unknown');
+      try { writeAuditLog_({ id: rows[i][DR.BY_ID], name: rows[i][DR.BY_NAME] }, 'DeptRequestResolved',
+        '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown'), byEmail || ''); } catch (e) {}
+      return { found: true, already: false, dept: rows[i][DR.TO_DEPT] };
+    }
+    return { found: false };
+  } finally { lock.releaseLock(); }
+}
+
+/** Public-ish resolve page served by doGet?resolve=<token>. The token is the
+ *  credential (in the email to the dept); we record the clicker if Google can
+ *  identify them. A simple branded confirmation page (no internal partials). */
+function serveResolvePage_(token) {
+  const P = CN_EMAIL_PALETTE;
+  let heading, msg;
+  try {
+    const by = getActiveUserEmail_();
+    const res = markDeptRequestResolved_(token, by);
+    if (!res.found) { heading = 'Request not found'; msg = 'This link is invalid or the request was removed.'; }
+    else if (res.already) { heading = 'Already resolved'; msg = 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.'; }
+    else { heading = 'Marked resolved — thank you!'; msg = 'The ' + (res.dept || 'department') + ' request is now recorded as resolved' + (by ? ' (' + by + ')' : '') + '.'; }
+  } catch (e) { heading = 'Something went wrong'; msg = 'Could not record the resolution. Please try again.'; }
+  const html =
+    '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:48px auto;padding:28px;border:1px solid ' + P.line + ';border-radius:12px;text-align:center;color:' + P.ink + ';">' +
+      '<div style="font-size:40px;color:' + P.accent + ';line-height:1;">&#10003;</div>' +
+      '<h2 style="font-size:20px;margin:12px 0 8px;color:' + P.brand + ';">' + esc_(heading) + '</h2>' +
+      '<p style="font-size:14px;color:' + P.muted + ';margin:0;">' + esc_(msg) + '</p>' +
+      '<p style="font-size:11px;color:' + P.muted + ';margin-top:20px;">UMS Team Tools</p>' +
+    '</div>';
+  return HtmlService.createHtmlOutput(html).setTitle('Mark resolved');
+}
+
+/** Inter-department requests for the caller (rep: own; manager: all) + a
+ *  per-department resolution-time aggregate for managers. Manager-gated fields
+ *  (the aggregate + cross-rep rows) only return for managers. */
+function getDeptRequests() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Your account is not registered.' };
+    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
+    const mine = [], all = [];
+    const parseMs = function (s) { const ms = parseTimestampMs_(s); return ms || null; };
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r[DR.REQ_ID]) continue;
+      const createdMs = parseMs(r[DR.CREATED_AT]);
+      const resolvedMs = r[DR.STATUS] === 'resolved' ? parseMs(r[DR.RESOLVED_AT]) : null;
+      const elapsedMin = (resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000)
+                        : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
+      const item = {
+        requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
+        toDept: String(r[DR.TO_DEPT] || ''), createdAt: String(r[DR.CREATED_AT] || ''),
+        status: String(r[DR.STATUS] || 'open'), resolvedAt: String(r[DR.RESOLVED_AT] || ''),
+        resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
+        elapsedMin: elapsedMin,
+      };
+      all.push(item);
+      if (String(r[DR.BY_ID]).trim() === emp.id) mine.push(item);
+    }
+    mine.sort(function (a, b) { return (a.status === b.status) ? 0 : (a.status === 'open' ? -1 : 1); });
+    // Departments the composer can target — only those with a resolvable email.
+    const deptMap = getDepartmentEmails_() || {};
+    const departments = Object.keys(deptMap).filter(function (d) { return !!deptMap[d]; });
+    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments };
+    if (emp.isManager) {
+      const byDept = {};
+      all.forEach(function (it) {
+        const k = it.toDept || '—';
+        if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, durations: [] };
+        if (it.status === 'resolved') { byDept[k].resolved++; if (it.elapsedMin != null) byDept[k].durations.push(it.elapsedMin); }
+        else byDept[k].open++;
+      });
+      result.deptStats = Object.keys(byDept).map(function (k) {
+        const b = byDept[k];
+        b.durations.sort(function (x, y) { return x - y; });
+        const avg = b.durations.length ? Math.round(b.durations.reduce(function (s, x) { return s + x; }, 0) / b.durations.length) : null;
+        const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
+        return { dept: b.dept, open: b.open, resolved: b.resolved, avgMinutes: avg, medianMinutes: med };
+      }).sort(function (a, b) { return b.open - a.open; });
+      result.allOpen = all.filter(function (it) { return it.status === 'open'; })
+        .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100);
+    }
+    return result;
+  } catch (err) { return { error: err.message }; }
 }
 
 function safeTimezone_(tz) {
