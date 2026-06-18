@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter Tight', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #0f1623; }
+  mark { border-radius: 3px; padding: 0 1px; }
+</style>
+</helmet>
+
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e3e6ec;">
+
+  <div style="max-width:900px;margin-bottom:8px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">UMS Team Tools · Call Notes refinements</div>
+    <h1 style="font-size:32px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0 0 14px;">Call Notes — Search &amp; Stats</h1>
+    <p style="font-size:15px;line-height:1.6;color:#3e4756;max-width:780px;margin:0;">Call Notes is the most mature module — these are the two surfaces that lag the rest. Search results become real note cards with a count, term highlighting, a date filter, and Phone/TRX scopes (matching the Reference search standard). The manager Stats tab becomes a scannable table aligned with Metrics. Light + dark.</p>
+  </div>
+
+  <!-- ══════════ 01 · SEARCH ══════════ -->
+  <div style="margin-top:44px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:16px;">01 · Search — real cards, count, highlight, filters</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+
+    <!-- LIGHT search -->
+    <div style="flex:none;width:660px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Light</div>
+      <div style="background:#f6f7f9;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:22px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:4px;">Call Notes · Search</div>
+        <h2 style="font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0 0 14px;">Find past interactions</h2>
+        <!-- search bar -->
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #dce0e7;border-radius:10px;background:#fff;margin-bottom:10px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a5acb8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <span style="flex:1;font-size:14px;color:#0f1623;">medicare<span style="display:inline-block;width:1px;height:16px;background:#0f8a52;vertical-align:-3px;margin-left:1px;"></span></span>
+        </div>
+        <!-- filter row: field tabs + date range -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+          <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:999px;padding:3px;background:#fff;">
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;background:#0f1623;color:#fff;">ALL</span>
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#737c8c;">CALLER</span>
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#737c8c;">PHONE</span>
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#737c8c;">TRX</span>
+            <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#737c8c;">ISSUE</span>
+          </div>
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid #dce0e7;border-radius:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#3e4756;background:#fff;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a5acb8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Last 30 days</span>
+        </div>
+        <!-- result count -->
+        <div style="font-size:12px;color:#737c8c;margin-bottom:10px;"><strong style="color:#0f1623;">3</strong> results for "<span style="color:#0f1623;">medicare</span>"</div>
+        <!-- result cards -->
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="background:#fff;border:1px solid #dce0e7;border-radius:10px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.04);">
+            <div style="display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#737c8c;margin-bottom:6px;">
+              <span>Jun 14 · 2:18 PM</span>
+              <span style="font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:5px;background:#fbf1d9;color:#8a4500;">Action</span>
+              <span style="margin-left:auto;color:#a5acb8;">sent 2:24 PM</span>
+            </div>
+            <div style="font-size:14px;"><strong>Eleanor Briggs</strong> · TRX 20431</div>
+            <div style="font-size:13px;color:#3e4756;margin-top:3px;line-height:1.45;">Wants to confirm her <mark style="background:#abdfc4;">Medicare</mark> Part B covers the new chair before the eval.</div>
+            <div style="font-size:13px;color:#737c8c;margin-top:2px;">→ Verified plan, booked ME for Thu.</div>
+          </div>
+          <div style="background:#fff;border:1px solid #dce0e7;border-radius:10px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.04);">
+            <div style="display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#737c8c;margin-bottom:6px;">
+              <span>Jun 11 · 10:02 AM</span>
+              <span style="font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:5px;background:#e1ecfa;color:#154980;">Training</span>
+            </div>
+            <div style="font-size:14px;"><strong>Marcus Webb</strong> · TRX 19887</div>
+            <div style="font-size:13px;color:#3e4756;margin-top:3px;line-height:1.45;">Confused whether <mark style="background:#abdfc4;">Medicare</mark> Advantage needs a separate auth.</div>
+            <div style="font-size:13px;color:#737c8c;margin-top:2px;">→ Escalated to billing; flagged for training.</div>
+          </div>
+          <div style="background:#fff;border:1px solid #dce0e7;border-radius:10px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.04);">
+            <div style="display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#737c8c;margin-bottom:6px;">
+              <span>Jun 9 · 4:41 PM</span>
+              <span style="font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:5px;background:#e4f5ec;color:#0b6e40;">Review</span>
+            </div>
+            <div style="font-size:14px;"><strong>Dorothy Lane</strong> · TRX 20002</div>
+            <div style="font-size:13px;color:#3e4756;margin-top:3px;line-height:1.45;">Grateful — asked how <mark style="background:#abdfc4;">Medicare</mark> secondary worked with her supplement.</div>
+            <div style="font-size:13px;color:#737c8c;margin-top:2px;">→ Walked her through it; great candidate for a 5-star ask.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DARK search -->
+    <div style="flex:none;width:660px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Dark</div>
+      <div style="padding:20px;background:#0a0d14;border-radius:8px;">
+        <div style="background:#10141d;border-radius:2px;border:1px solid #262d3b;padding:22px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6c7587;margin-bottom:4px;">Call Notes · Search</div>
+          <h2 style="font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0 0 14px;color:#e8e6e0;">Find past interactions</h2>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #262d3b;border-radius:10px;background:#0a0d14;margin-bottom:10px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6c7587" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <span style="flex:1;font-size:14px;color:#e8e6e0;">medicare<span style="display:inline-block;width:1px;height:16px;background:#7af2a1;vertical-align:-3px;margin-left:1px;"></span></span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <div style="display:inline-flex;border:1px solid #262d3b;border-radius:999px;padding:3px;background:#10141d;">
+              <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;background:#e8e6e0;color:#0a0d14;">ALL</span>
+              <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#6c7587;">CALLER</span>
+              <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#6c7587;">PHONE</span>
+              <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#6c7587;">TRX</span>
+              <span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;color:#6c7587;">ISSUE</span>
+            </div>
+            <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid #262d3b;border-radius:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#a6adbc;background:#0a0d14;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6c7587" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Last 30 days</span>
+          </div>
+          <div style="font-size:12px;color:#6c7587;margin-bottom:10px;"><strong style="color:#e8e6e0;">3</strong> results for "<span style="color:#e8e6e0;">medicare</span>"</div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div style="background:#10141d;border:1px solid #262d3b;border-radius:10px;padding:12px 14px;">
+              <div style="display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7587;margin-bottom:6px;">
+                <span>Jun 14 · 2:18 PM</span>
+                <span style="font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:5px;background:rgba(255,181,71,.14);color:#ffcb80;">Action</span>
+                <span style="margin-left:auto;color:#6c7587;">sent 2:24 PM</span>
+              </div>
+              <div style="font-size:14px;color:#e8e6e0;"><strong>Eleanor Briggs</strong> · TRX 20431</div>
+              <div style="font-size:13px;color:#a6adbc;margin-top:3px;line-height:1.45;">Wants to confirm her <mark style="background:#2f6b4d;color:#e8e6e0;">Medicare</mark> Part B covers the new chair before the eval.</div>
+              <div style="font-size:13px;color:#6c7587;margin-top:2px;">→ Verified plan, booked ME for Thu.</div>
+            </div>
+            <div style="background:#10141d;border:1px solid #262d3b;border-radius:10px;padding:12px 14px;">
+              <div style="display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7587;margin-bottom:6px;">
+                <span>Jun 11 · 10:02 AM</span>
+                <span style="font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:5px;background:rgba(116,199,255,.14);color:#b0ddff;">Training</span>
+              </div>
+              <div style="font-size:14px;color:#e8e6e0;"><strong>Marcus Webb</strong> · TRX 19887</div>
+              <div style="font-size:13px;color:#a6adbc;margin-top:3px;line-height:1.45;">Confused whether <mark style="background:#2f6b4d;color:#e8e6e0;">Medicare</mark> Advantage needs a separate auth.</div>
+              <div style="font-size:13px;color:#6c7587;margin-top:2px;">→ Escalated to billing; flagged for training.</div>
+            </div>
+            <div style="background:#10141d;border:1px solid #262d3b;border-radius:10px;padding:12px 14px;">
+              <div style="display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#6c7587;margin-bottom:6px;">
+                <span>Jun 9 · 4:41 PM</span>
+                <span style="font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:5px;background:rgba(122,242,161,.12);color:#b8fbc8;">Review</span>
+              </div>
+              <div style="font-size:14px;color:#e8e6e0;"><strong>Dorothy Lane</strong> · TRX 20002</div>
+              <div style="font-size:13px;color:#a6adbc;margin-top:3px;line-height:1.45;">Grateful — asked how <mark style="background:#2f6b4d;color:#e8e6e0;">Medicare</mark> secondary worked with her supplement.</div>
+              <div style="font-size:13px;color:#6c7587;margin-top:2px;">→ Walked her through it; great candidate for a 5-star ask.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 02 · STATS TABLE ══════════ -->
+  <div style="margin-top:56px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:6px;">02 · Manager Stats — scannable table</div>
+  <div style="font-size:13px;color:#737c8c;max-width:780px;margin-bottom:18px;">Replaces the per-rep cards (≈10 stacked key/value rows each) with one table — rows = reps, columns = the metrics — aligned with the Metrics module. Tri-tone on % Answered + coverage; click a rep to drill into Per-Rep View.</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+
+    <!-- LIGHT stats -->
+    <div style="flex:none;width:760px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Light</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:20px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <span style="font-size:16px;font-weight:600;flex:1;">Stats · Tue, Jun 16</span>
+          <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:999px;padding:3px;background:#fff;"><span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;background:#0f1623;color:#fff;">DAY</span><span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#737c8c;">WEEK</span></div>
+        </div>
+        <div style="border:1px solid #e5e8ee;border-radius:10px;overflow:hidden;">
+          <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;background:#f6f7f9;border-bottom:1px solid #e5e8ee;">
+            <div style="padding:9px 12px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#737c8c;">Rep</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#737c8c;text-align:right;">Notes</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a5acb8;text-align:right;">Act</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a5acb8;text-align:right;">Trn</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a5acb8;text-align:right;">Rev</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a5acb8;text-align:right;">Median</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a5acb8;text-align:right;">% Ans</div>
+            <div style="padding:9px 12px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a5acb8;text-align:right;">Coverage</div>
+          </div>
+          <!-- rows -->
+          <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;border-bottom:1px solid #f0f2f6;align-items:center;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;color:#0f8a52;">A. Cole</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;">28</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">3</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">1</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">2</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">2m 10s</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#0b6e40;font-weight:600;">94%</div>
+            <div style="padding:9px 12px;text-align:right;"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#e4f5ec;color:#0b6e40;">92%</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;border-bottom:1px solid #f0f2f6;align-items:center;background:#fbfcfd;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;color:#0f8a52;">D. Wright</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;">21</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">2</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">0</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">3</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">2m 44s</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#0b6e40;font-weight:600;">90%</div>
+            <div style="padding:9px 12px;text-align:right;"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#e4f5ec;color:#0b6e40;">88%</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;border-bottom:1px solid #f0f2f6;align-items:center;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;color:#0f8a52;">J. Rivera</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;">19</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">5</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">2</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">1</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">3m 02s</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#8a4500;font-weight:600;">88%</div>
+            <div style="padding:9px 12px;text-align:right;"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#fbf1d9;color:#8a4500;">78%</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;align-items:center;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;color:#0f8a52;">S. Park</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;">12</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">1</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">3</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">0</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#3e4756;">4m 30s</div>
+            <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#8a1f1f;font-weight:600;">81%</div>
+            <div style="padding:9px 12px;text-align:right;"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#fce5e5;color:#8a1f1f;">46%</span></div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#a5acb8;margin-top:10px;line-height:1.5;">Median = form-start → submit; skips outliers &gt; 30 min. Coverage = notes ÷ calls answered. Click a rep to open Per-Rep View.</div>
+      </div>
+    </div>
+
+    <!-- DARK stats -->
+    <div style="flex:none;width:760px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">Dark</div>
+      <div style="padding:20px;background:#0a0d14;border-radius:8px;">
+        <div style="background:#10141d;border-radius:2px;border:1px solid #262d3b;padding:20px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <span style="font-size:16px;font-weight:600;flex:1;color:#e8e6e0;">Stats · Tue, Jun 16</span>
+            <div style="display:inline-flex;border:1px solid #262d3b;border-radius:999px;padding:3px;background:#10141d;"><span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;background:#e8e6e0;color:#0a0d14;">DAY</span><span style="padding:5px 12px;border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#6c7587;">WEEK</span></div>
+          </div>
+          <div style="border:1px solid #262d3b;border-radius:10px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;background:#0a0d14;border-bottom:1px solid #262d3b;">
+              <div style="padding:9px 12px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6c7587;">Rep</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a6adbc;text-align:right;">Notes</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6c7587;text-align:right;">Act</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6c7587;text-align:right;">Trn</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6c7587;text-align:right;">Rev</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6c7587;text-align:right;">Median</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6c7587;text-align:right;">% Ans</div>
+              <div style="padding:9px 12px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#6c7587;text-align:right;">Coverage</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;border-bottom:1px solid #1e2532;align-items:center;">
+              <div style="padding:9px 12px;font-size:13px;font-weight:500;color:#7af2a1;">A. Cole</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#e8e6e0;">28</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">3</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">1</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">2</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">2m 10s</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#b8fbc8;font-weight:600;">94%</div>
+              <div style="padding:9px 12px;text-align:right;"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:rgba(122,242,161,.12);color:#b8fbc8;">92%</span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;border-bottom:1px solid #1e2532;align-items:center;background:#0d1118;">
+              <div style="padding:9px 12px;font-size:13px;font-weight:500;color:#7af2a1;">D. Wright</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#e8e6e0;">21</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">2</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">0</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">3</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">2m 44s</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#b8fbc8;font-weight:600;">90%</div>
+              <div style="padding:9px 12px;text-align:right;"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:rgba(122,242,161,.12);color:#b8fbc8;">88%</span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;border-bottom:1px solid #1e2532;align-items:center;">
+              <div style="padding:9px 12px;font-size:13px;font-weight:500;color:#7af2a1;">J. Rivera</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#e8e6e0;">19</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">5</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">2</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">1</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">3m 02s</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#ffcb80;font-weight:600;">88%</div>
+              <div style="padding:9px 12px;text-align:right;"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:rgba(255,181,71,.14);color:#ffcb80;">78%</span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.4fr .7fr .7fr .7fr .7fr .8fr .8fr .9fr;align-items:center;">
+              <div style="padding:9px 12px;font-size:13px;font-weight:500;color:#7af2a1;">S. Park</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#e8e6e0;">12</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">1</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">3</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">0</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#a6adbc;">4m 30s</div>
+              <div style="padding:9px 6px;font-family:'JetBrains Mono',monospace;font-size:13px;text-align:right;color:#ffa0a8;font-weight:600;">81%</div>
+              <div style="padding:9px 12px;text-align:right;"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:rgba(255,102,121,.14);color:#ffa0a8;">46%</span></div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#6c7587;margin-top:10px;line-height:1.5;">Median = form-start → submit; skips outliers &gt; 30 min. Coverage = notes ÷ calls answered. Click a rep to open Per-Rep View.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
