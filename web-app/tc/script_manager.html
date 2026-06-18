@@ -16,6 +16,24 @@
   .cov-rep-status { font-family: var(--mono); font-size: 11px; color: var(--ink); }
   .cov-rep.off .cov-rep-name, .cov-rep.off .cov-rep-status { color: var(--muted); }
   .cov-rep.tentative .cov-rep-status { color: var(--warning-deep, var(--warn)); }
+  /* #3 / §5b — week heatmap (days × hours) replacing the stacked per-day strips */
+  .cov-heat { display: grid; gap: 3px; align-items: center; margin: 6px 0 4px; }
+  .cov-heat .ch-hr { font-family: var(--mono); font-size: 9px; color: var(--muted); text-align: center; }
+  .cov-day-lbl { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+  .cov-day-lbl:hover { color: var(--accent); }
+  .cov-day-lbl .chev { color: var(--muted-3); display: inline-flex; }
+  .cov-day-lbl .hol { font-family: var(--mono); font-size: 9px; color: var(--warning-deep); }
+  .cov-cell { height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 10px; color: var(--ink); }
+  .cov-cell.ok   { background: var(--accent-soft); }
+  .cov-cell.risk { background: var(--warn-soft); }
+  .cov-cell.low  { background: var(--destructive-soft); }
+  .cov-cell.none { background: var(--paper-2); color: var(--muted-3); }
+  .cov-detail { grid-column: 1 / -1; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
+  .cov-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 10px 0; }
+  .cov-legend .sw { width: 13px; height: 13px; border-radius: 3px; display: inline-block; vertical-align: -2px; margin-right: 5px; }
+  .cov-risk { margin-top: 16px; }
+  .cov-risk-item { font-size: 13px; padding: 3px 0; color: var(--ink); }
+  .cov-risk-item b { font-family: var(--mono); }
 </style>
 <script>
 // ════════════════════════════════════════════════════════════════════════════
@@ -1007,46 +1025,101 @@ function covLoad_() {
     .getCoveragePlan(COV_STATE.from, COV_STATE.to);
 }
 
+// §5b — one days × hours heatmap (rows = days, cols = working hours 6a–9p) +
+// an understaffed risk callout. Per-day rep detail expands on clicking the day.
+var COV_HOUR_START = 6, COV_HOUR_END = 21;
+function covFmtHr_(h) { var hh = (h % 24); var ap = hh < 12 ? 'a' : 'p'; var h12 = hh % 12 || 12; return h12 + ap; }
+function covToggleDay_(id) { var el = document.getElementById(id); if (el) el.style.display = (el.style.display === 'none') ? '' : 'none'; }
+
+function covRepsHtml_(day) {
+  if (!day.reps || !day.reps.length) return '<div style="font-size:12px;color:var(--muted)">No reps scheduled.</div>';
+  return '<div class="cov-reps">' + day.reps.map(function (r) {
+    var statusCls = (r.status === 'off') ? 'off' : (r.status === 'tentative' ? 'tentative' : 'working');
+    var lbl = (r.status === 'off')
+      ? ('Off' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
+      : (r.status === 'tentative'
+          ? ('Tentative' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
+          : (esc(r.startMgr) + ' – ' + esc(r.endMgr)));
+    return '<div class="cov-rep ' + statusCls + '">' +
+      '<span class="cov-rep-name">' + esc(r.name) + '</span>' +
+      '<span class="cov-rep-tz">' + esc(r.tz) + '</span>' +
+      '<span class="cov-rep-status">' + lbl + '</span></div>';
+  }).join('') + '</div>';
+}
+
+// Reps off/tentative on a day, for the risk callout's "— who" suffix (escaped).
+function covOffReps_(day) {
+  var names = (day.reps || []).filter(function (r) { return r.status === 'off' || r.status === 'tentative'; })
+    .map(function (r) { return esc(r.name) + (r.ptoType ? (' (' + esc(r.ptoType) + ')') : ''); });
+  return names.join(', ');
+}
+
+// Group consecutive understaffed hours (confirmed < minStaff) within the window
+// into ranges, each rendered as one risk line (all dynamic parts esc'd).
+function covDayRisks_(day, byHour, hours, minStaff) {
+  var out = [], runStart = null, runC = null;
+  var who = covOffReps_(day);
+  function flush(endH) {
+    if (runStart === null) return;
+    out.push('<b>' + esc(day.weekday.slice(0, 3)) + ' ' + covFmtHr_(runStart) + '–' + covFmtHr_(endH + 1) + '</b> · ' +
+      runC + ' working, need ' + minStaff + (who ? (' — ' + who) : ''));
+    runStart = null; runC = null;
+  }
+  hours.forEach(function (h) {
+    var x = byHour[h] || { confirmed: 0 };
+    var c = x.confirmed || 0;
+    if (c < minStaff) { if (runStart === null) { runStart = h; runC = c; } else { runC = Math.min(runC, c); } }
+    else { flush(h - 1); }
+  });
+  flush(hours[hours.length - 1]);
+  return out;
+}
+
 function covRender_(data) {
   var body = document.getElementById('cov-body'); if (!body) return;
   if (!data || data.error) { body.innerHTML = '<div class="no-data">' + esc((data && data.error) || 'No data') + '</div>'; return; }
   if (!data.days || !data.days.length) { body.innerHTML = '<div class="no-data">No coverage in range.</div>'; return; }
   var minStaff = data.minStaff || 2;
-  var html = '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Times shown in ' + esc(data.managerTz || '') +
-    '. Shifts use each rep’s timezone schedule (per-tz, v1). Hours with fewer than ' + esc(String(minStaff)) + ' working reps are flagged.</div>';
-  data.days.forEach(function (day) {
-    html += '<div class="card" style="margin-bottom:14px">';
-    html += '<div class="card-label">' + esc(day.weekday) + ' · ' + esc(day.date) +
-      (day.holidayName ? ' · <span style="color:var(--warning-deep,var(--warn))">' + esc(day.holidayName) + '</span>' : '') + '</div>';
-    html += '<div class="cov-strip">';
-    (day.hours || []).forEach(function (h) {
-      var c = h.confirmed || 0, t = h.tentative || 0;
+  var hours = []; for (var h = COV_HOUR_START; h <= COV_HOUR_END; h++) hours.push(h);
+
+  var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Times in ' + esc(data.managerTz || '') +
+    '. Per-tz shifts (v1). Hours with fewer than ' + esc(String(minStaff)) + ' working reps are flagged — click a day for the rep breakdown.</div>';
+  var legend = '<div class="cov-legend">' +
+    '<span><span class="sw" style="background:var(--accent-soft)"></span>OK (≥' + minStaff + ')</span>' +
+    '<span><span class="sw" style="background:var(--warn-soft)"></span>At risk</span>' +
+    '<span><span class="sw" style="background:var(--destructive-soft)"></span>Low</span>' +
+    '<span><span class="sw" style="background:var(--paper-2)"></span>None</span>' +
+    '</div>';
+
+  var cols = 'minmax(110px,auto) repeat(' + hours.length + ',1fr)';
+  var grid = '<div class="cov-heat" style="grid-template-columns:' + cols + '"><div></div>';
+  hours.forEach(function (hr) { grid += '<div class="ch-hr">' + covFmtHr_(hr) + '</div>'; });
+
+  var risks = [];
+  data.days.forEach(function (day, di) {
+    var byHour = {};
+    (day.hours || []).forEach(function (x) { byHour[x.hour] = x; });
+    var detailId = 'cov-d-' + di;
+    grid += '<div class="cov-day-lbl" onclick="covToggleDay_(\'' + detailId + '\')">' +
+      '<span class="chev">' + icon('chevronRight', 12) + '</span>' +
+      esc(day.weekday.slice(0, 3)) + ' ' + esc(String(day.date).slice(5)) +
+      (day.holidayName ? ' <span class="hol">' + esc(day.holidayName) + '</span>' : '') + '</div>';
+    hours.forEach(function (hr) {
+      var x = byHour[hr] || { confirmed: 0, tentative: 0 };
+      var c = x.confirmed || 0, t = x.tentative || 0;
       var cls = (c >= minStaff) ? 'ok' : ((c + t) >= minStaff ? 'risk' : ((c + t) > 0 ? 'low' : 'none'));
-      var title = h.hour + ':00 — ' + c + ' working' + (t ? (' (+' + t + ' tentative)') : '');
-      html += '<div class="cov-h ' + cls + '" title="' + esc(title) + '"><i>' + (c || '') + '</i></div>';
+      grid += '<div class="cov-cell ' + cls + '" title="' + esc(covFmtHr_(hr) + ' — ' + c + ' working' + (t ? (' (+' + t + ' tentative)') : '')) + '">' + (c || '') + '</div>';
     });
-    html += '</div>';
-    html += '<div class="cov-hours-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>23</span></div>';
-    if (day.reps && day.reps.length) {
-      html += '<div class="cov-reps">';
-      day.reps.forEach(function (r) {
-        var statusCls = (r.status === 'off') ? 'off' : (r.status === 'tentative' ? 'tentative' : 'working');
-        var lbl = (r.status === 'off')
-          ? ('Off' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
-          : (r.status === 'tentative'
-              ? ('Tentative' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
-              : (esc(r.startMgr) + ' – ' + esc(r.endMgr)));
-        html += '<div class="cov-rep ' + statusCls + '">' +
-          '<span class="cov-rep-name">' + esc(r.name) + '</span>' +
-          '<span class="cov-rep-tz">' + esc(r.tz) + '</span>' +
-          '<span class="cov-rep-status">' + lbl + '</span></div>';
-      });
-      html += '</div>';
-    } else {
-      html += '<div style="font-size:12px;color:var(--muted)">No reps scheduled.</div>';
-    }
-    html += '</div>';
+    grid += '<div class="cov-detail" id="' + detailId + '" style="display:none">' + covRepsHtml_(day) + '</div>';
+    risks = risks.concat(covDayRisks_(day, byHour, hours, minStaff));
   });
-  body.innerHTML = html;
+  grid += '</div>';
+
+  var risk = risks.length
+    ? '<div class="panel cov-risk" data-tone="destructive"><div class="card-label">Understaffed slots</div>' +
+        risks.map(function (r) { return '<div class="cov-risk-item">' + r + '</div>'; }).join('') + '</div>'
+    : '';
+
+  body.innerHTML = note + legend + grid + risk;
 }
 </script>
