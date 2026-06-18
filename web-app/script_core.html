@@ -517,8 +517,39 @@ function showView(view) {
   });
   const area = document.getElementById('view-area');
   if (!area) return;
+  // 2nd-pass motion §1 — fade+rise on every view swap. Hooked HERE (the single
+  // navigation entry point) on purpose: optimistic re-renders call their render
+  // fns directly, never showView, so this fires on tab nav only and can't
+  // re-animate mid-interaction. The reflow re-fires the keyframe each nav.
+  area.classList.remove('view-enter');
+  void area.offsetWidth;
+  area.classList.add('view-enter');
   const enterFn = window[TOOLS[toolKey].tabs[view].enter];
   if (typeof enterFn === 'function') enterFn(area);
+}
+
+/** 2nd-pass motion — one shared IntersectionObserver for scroll-into-view
+ *  reveals. A tool calls observeReveals(container) after render; any
+ *  descendant carrying `.js-anim` re-fires its CSS animation when the
+ *  container scrolls ~35% into view (so below-the-fold content animates when
+ *  seen, not before). No-ops where IntersectionObserver is unavailable or the
+ *  user prefers reduced motion (the CSS block already neutralizes durations). */
+var MOTION_IO = (typeof IntersectionObserver !== 'undefined')
+  ? new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.querySelectorAll('.js-anim').forEach(function (el) {
+          el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+        });
+      });
+    }, { threshold: 0.35 })
+  : null;
+function observeReveals(container) {
+  if (!MOTION_IO || !container) return;
+  if (container.matches && container.matches('[data-reveal]')) MOTION_IO.observe(container);
+  if (container.querySelectorAll) {
+    container.querySelectorAll('[data-reveal]').forEach(function (el) { MOTION_IO.observe(el); });
+  }
 }
 
 // ── Time Clock tab enter handlers ───────────────────────────────────────
