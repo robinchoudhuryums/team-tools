@@ -7727,9 +7727,16 @@ function isoLocalDate_(d) {
 // getLeaveDeduction_ but not offered in the picker). Validated server-side
 // so a client bug / direct RPC can't write a garbage type that
 // getLeaveDeduction_ then silently defaults to annual/1.0 (M1).
+// 'Sick Leave' was removed (deferred #2 / C1 — employees have no sick days), so
+// no new sick request can be created via ANY path (UI select + this submit
+// whitelist). The sick BUCKET intentionally remains in getLeaveDeduction_ /
+// adjustLeaveBalance_ / the reconciliation + decision-email code so HISTORICAL
+// Approved-sick rows still revert/reconcile to the correct (sick) balance —
+// removing it would restore legacy sick reverts into the annual bucket. Roster
+// column J (SICK_LEAVE) is likewise kept (dormant, never surfaced in the UI).
 const TIME_OFF_TYPES = [
   'Full Day', 'Half Day - Morning', 'Half Day - Afternoon',
-  'Sick Leave', 'Personal Day', 'Unpaid Leave', 'Other',
+  'Personal Day', 'Unpaid Leave', 'Other',
 ];
 
 /** Case-insensitive, trimmed validity check for a time-off Type — mirrors

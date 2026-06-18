@@ -345,10 +345,10 @@ const isValidTimeOffType_ = sb.isValidTimeOffType_;
 test('accepts every canonical type, case- and whitespace-insensitive', () => {
   sb.TIME_OFF_TYPES.forEach((t) => assert.strictEqual(isValidTimeOffType_(t), true, t));
   assert.strictEqual(isValidTimeOffType_('  full day  '), true);
-  assert.strictEqual(isValidTimeOffType_('SICK LEAVE'), true);
 });
 test('rejects unknown / empty / malformed types', () => {
   assert.strictEqual(isValidTimeOffType_('Half Day'), false); // missing - Morning/Afternoon
+  assert.strictEqual(isValidTimeOffType_('Sick Leave'), false); // #2 — sick deprecated, no longer creatable
   assert.strictEqual(isValidTimeOffType_('Vacation'), false);
   assert.strictEqual(isValidTimeOffType_(''), false);
   assert.strictEqual(isValidTimeOffType_(null), false);
