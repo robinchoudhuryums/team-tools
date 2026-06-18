@@ -1449,6 +1449,22 @@
     font-family: var(--ui); font-size: 12px;
     color: var(--ink); line-height: 1.5;
   }
+  /* §7c/#4 — Admin Overview "System status" cards */
+  .cn-sys-status { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 900px; margin-bottom: 18px; }
+  .cn-sys-card { padding: 12px 14px; }
+  .cn-sys-card .cn-sys-h { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+  .cn-sys-card .cn-sys-v { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
+  .cn-sys-card .cn-sys-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  @media (max-width: 640px) { .cn-sys-status { grid-template-columns: 1fr; } }
+
+  /* §7a — search results in the real note-card vocabulary (read-only) */
+  .cn-result-count { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .04em; margin: 2px 0 10px; }
+  .cn-result-count b { color: var(--ink); }
+  .cn-card.cn-card-readonly .cn-card-actions { gap: 5px; align-items: flex-start; }
+  .cn-result-rep { display: inline-block; margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .cn-search-dates { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cn-search-dates input[type=date] { font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
+  .cn-search-dates label { font-size: 11px; color: var(--muted); }
 
   /* ── Training Q&A tray — recent answered training questions ──── */
   #cn-training-qa-tray:empty { display: none; }
@@ -1890,6 +1906,8 @@ const CN_STATE = {
   searchTimer: null,
   searchExact: false,        // true when search was launched by "find prior calls for this TRX" — matches patientAndTrx exactly
   searchExactTrx: '',        // the TRX being matched, for the "Exact match · X · clear" badge
+  searchFrom: '', searchTo: '',           // §7a — optional date-range filter (rep search)
+  mgrSearchField: 'all', mgrSearchFrom: '', mgrSearchTo: '',  // §7a — manager search field + date range
   deptConfig: null,          // cached departments / suggestions / state tax rates
   ambientTimer: null,
   mgrEnrolledReps: null,     // [{id,name}] of reps with a CallNotesSheetId; loaded once for manager Per-Rep view
@@ -5424,6 +5442,61 @@ function cnFormatDateLabel_(isoDate) {
 
 // ── Search view ────────────────────────────────────────────────────────
 
+// §7a — read-only search-result card in the real note-card vocabulary (cn-card),
+// no action buttons / editors. Shared by the rep and manager search. `repName`
+// (manager search) renders a small attribution chip. Every field esc()'d.
+function cnRenderResultCard_(note, repName) {
+  const time = cnFormatTimestampForCopy_(note.timestamp);
+  const flagCls = note.flagType ? ' flag-' + note.flagType : '';
+  const isUrgent = cnIsUrgent_(note);
+  const callerLine = cnCallerDisplay_(note);
+  const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
+  const issue = note.issue ? esc(note.issue) : '<em>—</em>';
+  const detailParts = [];
+  if (note.callback) detailParts.push(esc(note.callback));
+  if (note.relationship) detailParts.push(esc(note.relationship));
+  if (note.transferredTo) detailParts.push('→ ' + esc(note.transferredTo));
+  const detailLine = detailParts.length
+    ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">${detailParts.join(' · ')}</div>` : '';
+  const resolutionLine = note.resolution
+    ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${esc(note.resolution)}</div>` : '';
+  const repBit = repName ? `<span class="cn-result-rep">${esc(repName)}</span>` : '';
+  const pills = [];
+  if (note.flagType) pills.push(`<span class="kicker-pill" data-tone="${note.flagType === 'action' ? 'warn' : note.flagType === 'training' ? 'info' : 'accent'}">${esc(note.flagType)}</span>`);
+  if (note.emailedAt) pills.push(`<span class="kicker-pill">sent</span>`);
+  return `
+    <div class="cn-card cn-card-readonly${flagCls}${isUrgent ? ' is-urgent' : ''}" data-note-id="${esc(note.noteId)}">
+      <div class="cn-card-row">
+        <span class="cn-card-time tabular">${esc(time)} · ${esc(note.dateLocal || '')}</span>
+        <div class="cn-card-main">
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${repBit}</div>
+          ${detailLine}
+          <div class="cn-card-issue">${issue}</div>
+          ${resolutionLine}
+        </div>
+        <div class="cn-card-actions">${pills.join('')}</div>
+      </div>
+    </div>`;
+}
+
+// §7a — optional date-range controls shared by the rep + manager search bars.
+function cnSearchDatesHtml_(idPrefix, from, to) {
+  return `<div class="cn-search-dates">` +
+    `<label>From</label><input type="date" id="${idPrefix}-from" value="${esc(from || '')}" onchange="${idPrefix === 'cn-search' ? 'cnSearchDateChanged_()' : 'cnMgrSearchDateChanged_()'}">` +
+    `<label>To</label><input type="date" id="${idPrefix}-to" value="${esc(to || '')}" onchange="${idPrefix === 'cn-search' ? 'cnSearchDateChanged_()' : 'cnMgrSearchDateChanged_()'}">` +
+  `</div>`;
+}
+function cnSearchDateChanged_() {
+  const f = document.getElementById('cn-search-from'), t = document.getElementById('cn-search-to');
+  CN_STATE.searchFrom = f ? f.value : ''; CN_STATE.searchTo = t ? t.value : '';
+  cnFireSearch_();
+}
+function cnMgrSearchDateChanged_() {
+  const f = document.getElementById('cn-mgr-search-from'), t = document.getElementById('cn-mgr-search-to');
+  CN_STATE.mgrSearchFrom = f ? f.value : ''; CN_STATE.mgrSearchTo = t ? t.value : '';
+  cnMgrFireSearch_();
+}
+
 function cnRenderSearchView(area) {
   if (!CN_STATE.enrolled) {
     area.innerHTML = cnEnrollmentMissingHtml_();
@@ -5434,7 +5507,7 @@ function cnRenderSearchView(area) {
   // this TRX" on a card. Clearing returns to substring search with the same
   // query so they can widen the net without re-typing.
   const exactBadge = CN_STATE.searchExact
-    ? `<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--info-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">
+    ? `<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--success-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">
          ${icon('search', 12)} Exact: ${esc(CN_STATE.searchExactTrx || '')}
          <button onclick="cnClearExactMode_()" style="appearance:none;border:none;background:transparent;color:inherit;cursor:pointer;padding:0;text-transform:uppercase;font-family:inherit;font-size:inherit;letter-spacing:.06em;text-decoration:underline">clear</button>
        </div>`
@@ -5448,8 +5521,11 @@ function cnRenderSearchView(area) {
       <div class="toolbar-tabs" role="group" aria-label="Search field">
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'all'}" onclick="cnSetSearchField_('all')">All</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'caller'}" onclick="cnSetSearchField_('caller')">Caller</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'phone'}" onclick="cnSetSearchField_('phone')">Phone</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'trx'}" onclick="cnSetSearchField_('trx')">TRX</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'issue'}" onclick="cnSetSearchField_('issue')">Issue</button>
       </div>
+      ${cnSearchDatesHtml_('cn-search', CN_STATE.searchFrom, CN_STATE.searchTo)}
     </div>
     ${exactBadge ? `<div style="margin-bottom:10px">${exactBadge}</div>` : ''}
     <div id="cn-search-results"></div>
@@ -5544,7 +5620,9 @@ function cnFireSearch_() {
       if (currentView !== requestedView) return;
       showToast('Search failed: ' + err.message, 'toast-error');
     })
-    .searchMyCallNotes(q, CN_STATE.searchField, null, !!CN_STATE.searchExact);
+    .searchMyCallNotes(q, CN_STATE.searchField,
+      (CN_STATE.searchFrom && CN_STATE.searchTo) ? { start: CN_STATE.searchFrom, end: CN_STATE.searchTo } : null,
+      !!CN_STATE.searchExact);
 }
 
 function cnRenderSearchResults_() {
@@ -5554,26 +5632,16 @@ function cnRenderSearchResults_() {
     host.innerHTML = `<div class="cn-stack-empty">Type at least 2 characters to search.</div>`;
     return;
   }
-  if (CN_STATE.searchResults.length === 0) {
+  const results = CN_STATE.searchResults || [];
+  if (results.length === 0) {
     host.innerHTML = `<div class="cn-stack-empty">No matches.</div>`;
     return;
   }
-  host.innerHTML = CN_STATE.searchResults.map(function (n) {
-    return `
-      <div class="cn-search-result-card">
-        <div class="cn-search-result-meta">
-          ${esc(n.dateLocal)} · ${esc(cnFormatTimestampForCopy_(n.timestamp))}
-          ${n.flagType ? ' · <span style="color:var(--ink)">' + esc(n.flagType.toUpperCase()) + '</span>' : ''}
-          ${n.emailedAt ? ' · sent ' + esc(cnFormatTimestampForCopy_(n.emailedAt)) : ''}
-        </div>
-        <div class="cn-search-result-body">
-          <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
-          <br>${esc(n.issue || '')}
-          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
+  const count = `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.searchQuery)}&rdquo;</div>`;
+  host.innerHTML = count + results.map(function (n) { return cnRenderResultCard_(n); }).join('');
+  // Term highlight (reuses the KB DOM-walk highlighter — wraps matches in
+  // <mark class="kb-hl">, never string-level HTML surgery). Skip in exact mode.
+  if (!CN_STATE.searchExact && typeof kbHighlightTerms_ === 'function') kbHighlightTerms_(host, CN_STATE.searchQuery);
 }
 
 // ── Manage (manager-only) view ─────────────────────────────────────────
@@ -6065,58 +6133,76 @@ function cnMgrLoadStats_() {
     .managerGetShiftStats(CN_STATE.mgrStatsDate);
 }
 
+function cnStatsFmtDur_(sec) {
+  if (sec == null) return '—';
+  if (sec < 60) return sec + 's';
+  var m = Math.floor(sec / 60), s = sec % 60;
+  return m + 'm ' + (s ? s + 's' : '00s');
+}
+// Sort accessors for the CN Stats table (parallels mSortReps_).
+function cnStatsSortReps_(reps, sort) {
+  var key = sort.key, dir = (sort.dir === 'asc') ? 1 : -1;
+  var get = function (r) {
+    var fc = r.flagCounts || {};
+    switch (key) {
+      case 'repName': return String(r.repName || '').toLowerCase();
+      case 'totalNotes': return r.totalNotes || 0;
+      case 'action': return fc.action || 0;
+      case 'training': return fc.training || 0;
+      case 'review': return fc.review || 0;
+      case 'emails': return r.emailsSent || 0;
+      case 'median': return (r.medianCompletionSeconds == null ? -1 : r.medianCompletionSeconds);
+      case 'pct': return (r.cdr && r.cdr.pctAnswered != null) ? r.cdr.pctAnswered : -1;
+      case 'coverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
+      default: return 0;
+    }
+  };
+  return reps.slice().sort(function (a, b) { var x = get(a), y = get(b); return x < y ? -1 * dir : x > y ? 1 * dir : 0; });
+}
+function cnStatsSort_(key) {
+  var s = CN_STATE.statsSort || { key: 'totalNotes', dir: 'desc' };
+  if (s.key === key) s.dir = (s.dir === 'asc') ? 'desc' : 'asc';
+  else { s.key = key; s.dir = (key === 'repName') ? 'asc' : 'desc'; }
+  CN_STATE.statsSort = s;
+  var body = document.getElementById('cn-mgr-stats-body');
+  if (body && CN_STATE.statsData) cnMgrRenderStats_(body, CN_STATE.statsData);
+}
+
+// §7b/#3 — scannable table via the SHARED mtRenderTable_ component (also drives
+// the Metrics team table). Sortable headers + tri-tone % / coverage. Rep name
+// stays a drill-link to the Per-Rep view (cnStatsDrillDown_).
 function cnMgrRenderStats_(host, res) {
   const reps = res.reps || [];
   if (reps.length === 0) {
     host.innerHTML = `<div class="cn-stack-empty">No reps enrolled, or no activity on ${esc(res.date)}.</div>`;
     return;
   }
-  const fmtDur = function (sec) {
-    if (sec == null) return '—';
-    if (sec < 60) return sec + 's';
-    const m = Math.floor(sec / 60), s = sec % 60;
-    return m + 'm ' + (s ? s + 's' : '00s');
-  };
-  const cards = reps.map(function (r) {
-    const fc = r.flagCounts || { action:0, training:0, review:0 };
-    const span = r.shiftSpan
-      ? `<span class="cn-stats-span">${esc(r.shiftSpan.first)} → ${esc(r.shiftSpan.last)}</span>`
-      : '<span class="cn-stats-span" style="opacity:.5">no activity</span>';
-    const medianRow = (r.medianCompletionSeconds != null)
-      ? `<div class="cn-stats-row"><span class="cn-stats-k">Median note time</span><span class="cn-stats-v">${esc(fmtDur(r.medianCompletionSeconds))}</span></div>`
-      : `<div class="cn-stats-row"><span class="cn-stats-k">Median note time</span><span class="cn-stats-v" style="opacity:.5">no data yet</span></div>`;
-    return `
-      <div class="cn-stats-card">
-        <div class="cn-stats-head">
-          <div class="cn-stats-name"><a class="cn-stats-name-link" href="#" data-stats-rep-id="${esc(r.repId)}" onclick="event.preventDefault(); cnStatsDrillDown_(this.dataset.statsRepId)">${esc(r.repName)}</a></div>
-          ${span}
-        </div>
-        <div class="cn-stats-total">${r.totalNotes}<span class="cn-stats-total-lbl">notes</span></div>
-        <div class="cn-stats-grid">
-          <div class="cn-stats-row"><span class="cn-stats-k">Action flagged</span><span class="cn-stats-v">${fc.action || 0}${(r.resolvedCount && fc.action) ? ' <span style="opacity:.6">(' + r.resolvedCount + ' resolved)</span>' : ''}</span></div>
-          <div class="cn-stats-row"><span class="cn-stats-k">Training flagged</span><span class="cn-stats-v">${fc.training || 0}</span></div>
-          <div class="cn-stats-row"><span class="cn-stats-k">Review candidates</span><span class="cn-stats-v">${fc.review || 0}</span></div>
-          <div class="cn-stats-row"><span class="cn-stats-k">Emails sent</span><span class="cn-stats-v">${r.emailsSent}</span></div>
-          ${medianRow}
-          ${r.cdr ? `
-          <div class="cn-stats-row" style="border-top:1px solid var(--line);padding-top:6px;margin-top:4px"><span class="cn-stats-k" style="color:var(--accent)">Calls answered</span><span class="cn-stats-v">${esc(r.cdr.totalAnswered)}</span></div>
-          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">Calls missed</span><span class="cn-stats-v">${r.cdr.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.cdr.totalMissed) + '</span>' : '0'}</span></div>
-          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">% Answered</span><span class="cn-stats-v">${esc(r.cdr.pctAnswered)}%</span></div>
-          <div class="cn-stats-row"><span class="cn-stats-k" style="color:var(--accent)">Avg Talk Time</span><span class="cn-stats-v">${esc(r.cdr.attFormatted)}</span></div>
-          ` : ''}
-          ${r.noteCoverage != null ? `
-          <div class="cn-stats-row"><span class="cn-stats-k">Note coverage</span><span class="cn-stats-v">${r.noteCoverage}%</span></div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
-  host.innerHTML = `
-    <div class="cn-stats-foot-note">
-      Median note time = form-start → submit duration. Skips outliers &gt; 30 min (rep walked away mid-note). Older notes don't have this data; the median is computed only over notes that captured one.
-    </div>
-    <div class="cn-stats-grid-outer">${cards}</div>
-  `;
+  CN_STATE.statsData = res;
+  CN_STATE.statsSort = CN_STATE.statsSort || { key: 'totalNotes', dir: 'desc' };
+  const pctCls = (typeof mPctClass_ === 'function') ? mPctClass_ : function () { return ''; };
+  const covBadge = (typeof mCoverageBadge_ === 'function') ? mCoverageBadge_ : function (p) { return p + '%'; };
+  const sorted = cnStatsSortReps_(reps, CN_STATE.statsSort);
+  host.innerHTML =
+    mtRenderTable_({
+      rows: sorted,
+      sort: CN_STATE.statsSort,
+      onSort: 'cnStatsSort_',
+      columns: [
+        { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) { return '<a class="cn-stats-name-link" href="#" data-stats-rep-id="' + esc(r.repId) + '" onclick="event.preventDefault(); cnStatsDrillDown_(this.dataset.statsRepId)">' + esc(r.repName) + '</a>'; } },
+        { key: 'totalNotes', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return esc(r.totalNotes); } },
+        { key: 'action', label: 'Action', numeric: true, sortable: true, cell: function (r) { var fc = r.flagCounts || {}; return esc(fc.action || 0) + ((r.resolvedCount && fc.action) ? ' <span style="color:var(--muted);font-size:.85em">(' + esc(r.resolvedCount) + ' res)</span>' : ''); } },
+        { key: 'training', label: 'Training', numeric: true, sortable: true, cell: function (r) { return esc((r.flagCounts || {}).training || 0); } },
+        { key: 'review', label: 'Review', numeric: true, sortable: true, cell: function (r) { return esc((r.flagCounts || {}).review || 0); } },
+        { key: 'emails', label: 'Emails', numeric: true, sortable: true, cell: function (r) { return esc(r.emailsSent || 0); } },
+        { key: 'median', label: 'Median', numeric: true, sortable: true, cell: function (r) { return esc(cnStatsFmtDur_(r.medianCompletionSeconds)); } },
+        { key: 'pct', label: '% Ans', numeric: true, sortable: true, cell: function (r) { var p = r.cdr ? r.cdr.pctAnswered : null; return (p == null) ? '<span style="color:var(--muted)">—</span>' : '<span class="' + pctCls(p) + '">' + esc(p) + '%</span>'; } },
+        { key: 'coverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return (r.noteCoverage != null) ? covBadge(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
+      ],
+    }) +
+    '<div class="cn-stats-foot-note">' +
+      'Median note time = form-start → submit duration (skips outliers &gt; 30 min; covers only notes that captured one). ' +
+      '% Answered / Coverage come from CDR — absent when there’s no CDR data for the rep/date.' +
+    '</div>';
 }
 
 /** Stats drill-down: clicking a rep name in the Stats tab navigates to
@@ -6144,8 +6230,11 @@ function cnMgrLoadSearchView_() {
       <div class="toolbar-tabs" role="group" aria-label="Search field">
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'all'}" onclick="cnMgrSetSearchField_('all')">All</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'caller'}" onclick="cnMgrSetSearchField_('caller')">Caller</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'phone'}" onclick="cnMgrSetSearchField_('phone')">Phone</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'trx'}" onclick="cnMgrSetSearchField_('trx')">TRX</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'issue'}" onclick="cnMgrSetSearchField_('issue')">Issue</button>
       </div>
+      ${cnSearchDatesHtml_('cn-mgr-search', CN_STATE.mgrSearchFrom, CN_STATE.mgrSearchTo)}
     </div>
     <div id="cn-mgr-search-results"></div>
   `;
@@ -6187,7 +6276,8 @@ function cnMgrFireSearch_() {
       if (currentView !== requestedView) return;
       showToast('Search failed: ' + err.message, 'toast-error');
     })
-    .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null, null);
+    .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null,
+      (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null);
 }
 
 function cnMgrRenderSearchResults_() {
@@ -6197,28 +6287,14 @@ function cnMgrRenderSearchResults_() {
     host.innerHTML = '<div class="cn-stack-empty">Type at least 2 characters to search across all reps.</div>';
     return;
   }
-  if (CN_STATE.mgrSearchResults.length === 0) {
+  const results = CN_STATE.mgrSearchResults || [];
+  if (results.length === 0) {
     host.innerHTML = '<div class="cn-stack-empty">No matches.</div>';
     return;
   }
-  host.innerHTML = CN_STATE.mgrSearchResults.map(function (n) {
-    return `
-      <div class="cn-search-result-card">
-        <div class="cn-search-result-meta">
-          ${esc(n.dateLocal)} · ${esc(cnFormatTimestampForCopy_(n.timestamp))}
-          · <strong style="color:var(--ink)">${esc(n.repName)}</strong> (${esc(n.repId)})
-          ${n.flagType ? ' · <span style="color:var(--ink)">' + esc(n.flagType.toUpperCase()) + '</span>' : ''}
-          ${n.emailedAt ? ' · sent ' + esc(cnFormatTimestampForCopy_(n.emailedAt)) : ''}
-          ${n.emailDepartments ? ' · ' + esc(n.emailDepartments) : ''}
-        </div>
-        <div class="cn-search-result-body">
-          <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
-          <br>${esc(n.issue || '')}
-          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
+  const count = `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps</div>`;
+  host.innerHTML = count + results.map(function (n) { return cnRenderResultCard_(n, n.repName); }).join('');
+  if (typeof kbHighlightTerms_ === 'function') kbHighlightTerms_(host, CN_STATE.mgrSearchQuery);
 }
 
 // ── Ambient (sidebar badge) polling ────────────────────────────────────
@@ -6722,15 +6798,44 @@ function cnStartDragModal_(e) {
 function enterCallNotesAdminView(area) {
   stopClock();   // F5 — every tab enter stops the Clock-view intervals; this one was missed
   var compactHeader = COMPACT_MODE ? cnCompactHeader_('Admin', 'settings') : '';
+  // §7c — Admin is grouped into sub-tabs (same .toolbar-tabs vocabulary as the
+  // Manage view) instead of one long scroll: Overview (system status + KPIs) /
+  // Tags (taxonomy + trends) / Compliance (audit) / Config (dept/tax/suggestions).
+  // Each panel keeps its independent, contained-failure loader; the tabs just
+  // route the existing slots into show/hide panes.
+  var tab = function (key, label) {
+    return '<button class="toolbar-tab' + (CN_STATE.adminTab === key ? ' active' : '') +
+      '" data-admin-tab="' + key + '" onclick="cnAdminTab_(\'' + key + '\')">' + label + '</button>';
+  };
+  if (!CN_STATE.adminTab) CN_STATE.adminTab = 'overview';
+  var paneStyle = function (key) { return CN_STATE.adminTab === key ? '' : 'display:none'; };
   area.innerHTML =
     compactHeader +
     (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'KPIs, tag taxonomy, and department/tax config. Changes take effect immediately (no redeploy needed).')) +
-    '<div id="cn-admin-augment"></div>' +
-    '<div id="cn-admin-trends"></div>' +
-    '<div id="cn-admin-audit"></div>' +
-    '<div id="cn-admin-health"></div>' +
-    '<div id="cn-admin-storage"></div>' +
-    '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>';
+    '<div class="toolbar-tabs cn-admin-tabs" role="group" aria-label="Admin section" style="margin-bottom:16px">' +
+      tab('overview', 'Overview') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') +
+    '</div>' +
+    '<div class="cn-admin-pane" data-pane="overview" style="' + paneStyle('overview') + '">' +
+      '<div class="day-section-label" style="margin-bottom:8px">System status</div>' +
+      '<div class="cn-sys-status">' +
+        cnSysCardShell_('automation', 'Automation') +
+        cnSysCardShell_('cdr', 'CDR') +
+        cnSysCardShell_('storage', 'Storage') +
+      '</div>' +
+      '<div id="cn-admin-kpis"></div>' +
+      '<div id="cn-admin-health"></div>' +
+      '<div id="cn-admin-storage"></div>' +
+    '</div>' +
+    '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
+      '<div id="cn-admin-augment"></div>' +
+      '<div id="cn-admin-trends"></div>' +
+    '</div>' +
+    '<div class="cn-admin-pane" data-pane="compliance" style="' + paneStyle('compliance') + '">' +
+      '<div id="cn-admin-audit"></div>' +
+    '</div>' +
+    '<div class="cn-admin-pane" data-pane="config" style="' + paneStyle('config') + '">' +
+      '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>' +
+    '</div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
       if (currentView !== 'callNotesAdmin') return;
@@ -6759,6 +6864,19 @@ function enterCallNotesAdminView(area) {
   cnLoadStoragePanel_();
 }
 
+/** §7c — switch the Admin sub-tab (Overview / Tags / Compliance / Config).
+ *  Pure show/hide over the already-loaded panes; the panels keep their data
+ *  (no reload). Persists the active tab in CN_STATE so a re-enter restores it. */
+function cnAdminTab_(key) {
+  CN_STATE.adminTab = key;
+  document.querySelectorAll('.cn-admin-tabs .toolbar-tab').forEach(function (b) {
+    b.classList.toggle('active', b.getAttribute('data-admin-tab') === key);
+  });
+  document.querySelectorAll('.cn-admin-pane').forEach(function (p) {
+    p.style.display = (p.getAttribute('data-pane') === key) ? '' : 'none';
+  });
+}
+
 /** Round 2 · 8h — fetch + render the new Admin sections (KPI strip + tag
  *  taxonomy table). Drops into #cn-admin-augment which sits above the
  *  existing department mapping / state tax / suggestions blocks. */
@@ -6773,7 +6891,12 @@ function cnLoadAdminAugment_() {
   function maybeRender() {
     if (done < 2) return;
     if (currentView !== 'callNotesAdmin') return;
-    slot.innerHTML = cnRenderAdminAugmentHtml_(kpi, tax);
+    // §7c — split: KPI strip → Overview (#cn-admin-kpis); tag taxonomy → Tags
+    // (#cn-admin-augment). Falls back to a single slot if the KPI host is absent.
+    const parts = cnRenderAdminAugmentHtml_(kpi, tax);
+    const kpiSlot = document.getElementById('cn-admin-kpis');
+    if (kpiSlot) { kpiSlot.innerHTML = parts.kpiHtml; slot.innerHTML = parts.taxHtml; }
+    else { slot.innerHTML = parts.kpiHtml + parts.taxHtml; }
     // Round 2 follow-on — wire the tag-row action buttons. Sentinel-guarded
     // so repeated renders don't stack handlers.
     cnWireAdminTagActions_();
@@ -6841,7 +6964,9 @@ function cnRenderAdminAugmentHtml_(kpi, tax) {
       + '</div>';
   }
 
-  return kpiHtml + taxHtml;
+  // §7c — return the two pieces separately so the tabbed Admin can place the
+  // KPI strip in Overview and the tag taxonomy in Tags.
+  return { kpiHtml: kpiHtml, taxHtml: taxHtml };
 }
 
 /** Round 2 follow-on — one tag-table row with usage bar + Rename / Merge
@@ -7268,6 +7393,28 @@ var CN_HEALTH_RUN_LABELS = {
  *  cnLoadHealthPanel_. Renders one row per spreadsheet the app uses with a
  *  configured/reachable/tz badge — the tz-mismatch row is the headline (it's
  *  the exact misconfig the runAllTests S1.1 tripwire flags). */
+// §7c/#4 — compact "System status" cards atop the Admin Overview, summarizing
+// Automation / CDR / Storage as OK / warn / error. Derived from the SAME
+// getAutomationHealth + getStorageHealth fetches the detail panels below use (no
+// extra RPCs). The full panels remain below as the drill-down.
+function cnSysCardShell_(key, label) {
+  return '<div class="panel cn-sys-card" id="cn-sys-' + key + '" data-tone="sage">' +
+    '<div class="cn-sys-h">' + esc(label) + '</div>' +
+    '<div class="cn-sys-v" style="color:var(--muted)">…</div></div>';
+}
+function cnSetSysCard_(key, label, tone, value, sub) {
+  var el = document.getElementById('cn-sys-' + key);
+  if (!el) return;
+  var toneAttr = tone === 'ok' ? 'sage' : tone === 'warn' ? 'warn' : 'destructive';
+  var ic = tone === 'ok' ? 'checkCircle' : tone === 'warn' ? 'warning' : 'xCircle';
+  var col = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep)' : 'var(--danger-deep)';
+  el.setAttribute('data-tone', toneAttr);
+  el.innerHTML =
+    '<div class="cn-sys-h">' + esc(label) + ' <span style="color:' + col + '">' + icon(ic, 13) + '</span></div>' +
+    '<div class="cn-sys-v">' + esc(value) + '</div>' +
+    (sub ? '<div class="cn-sys-s">' + esc(sub) + '</div>' : '');
+}
+
 function cnLoadStoragePanel_() {
   var slot = document.getElementById('cn-admin-storage');
   if (!slot) return;
@@ -7280,14 +7427,23 @@ function cnLoadStoragePanel_() {
       if (!live) return;
       if (!res || res.error) {
         live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Storage health unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
+        cnSetSysCard_('storage', 'Storage', 'warn', 'Unavailable', 'health check failed');
         return;
       }
       live.innerHTML = cnRenderStoragePanel_(res);
+      var stores = res.stores || [];
+      var unreachable = stores.filter(function (s) { return s.configured && s.reachable === false; }).length;
+      var tzDrift = stores.filter(function (s) { return s.tzMatch === false; }).length;
+      var tone = unreachable > 0 ? 'crit' : (tzDrift > 0 ? 'warn' : 'ok');
+      var val = unreachable > 0 ? (unreachable + ' unreachable') : (tzDrift > 0 ? (tzDrift + ' tz mismatch') : 'All OK');
+      var sub = unreachable > 0 ? 'check sharing / access' : (tzDrift > 0 ? 'review config →' : 'reachable · tz matches');
+      cnSetSysCard_('storage', 'Storage', tone, val, sub);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var live = document.getElementById('cn-admin-storage');
       if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Storage health unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
+      cnSetSysCard_('storage', 'Storage', 'warn', 'Unavailable', 'health check failed');
     })
     .getStorageHealth();
 }
@@ -7297,7 +7453,7 @@ function cnRenderStoragePanel_(res) {
   if (!stores.length) return '';
   var pill = function (txt, tone) {
     var color = tone === 'ok' ? 'var(--success-deep)' : tone === 'warn' ? 'var(--warning-deep,var(--warn))' : tone === 'crit' ? 'var(--danger-deep)' : 'var(--muted)';
-    var bg = tone === 'ok' ? 'var(--accent-soft)' : tone === 'warn' ? 'var(--warning-soft,var(--warn-soft))' : tone === 'crit' ? 'var(--destructive-soft)' : 'var(--paper-2)';
+    var bg = tone === 'ok' ? 'var(--accent-soft)' : tone === 'warn' ? 'var(--warn-soft)' : tone === 'crit' ? 'var(--destructive-soft)' : 'var(--paper-2)';
     return '<span style="font-family:var(--mono);font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;color:' + color + ';background:' + bg + '">' + esc(txt) + '</span>';
   };
   var rows = stores.map(function (s) {
@@ -7353,16 +7509,43 @@ function cnLoadHealthPanel_() {
       if (!live) return;
       if (!res || res.error) {
         live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Automation health unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
+        cnSetSysCard_('automation', 'Automation', 'warn', 'Unavailable', 'health check failed');
+        cnSetSysCard_('cdr', 'CDR', 'warn', 'Unavailable', 'health check failed');
         return;
       }
       live.innerHTML = cnRenderHealthPanel_(res);
+      cnSetSysFromHealth_(res);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var live = document.getElementById('cn-admin-health');
       if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:20px">Automation health unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
+      cnSetSysCard_('automation', 'Automation', 'warn', 'Unavailable', 'health check failed');
+      cnSetSysCard_('cdr', 'CDR', 'warn', 'Unavailable', 'health check failed');
     })
     .getAutomationHealth();
+}
+
+/** Derive the Automation + CDR Overview status cards (#4) from a successful
+ *  getAutomationHealth payload. */
+function cnSetSysFromHealth_(res) {
+  var sfCount = (res.syncFails && res.syncFails.count) || 0;
+  var staleDigests = (res.digests || []).filter(function (d) { return d.stale; }).length;
+  var autoTone = (sfCount > 0 || staleDigests > 0) ? 'warn' : 'ok';
+  var autoVal = sfCount > 0 ? (sfCount + ' sync fail' + (sfCount === 1 ? '' : 's'))
+    : (staleDigests > 0 ? (staleDigests + ' digest' + (staleDigests === 1 ? '' : 's') + ' stale') : 'OK');
+  var autoSub = sfCount > 0 ? 'personal-sheet drift'
+    : (staleDigests > 0 ? 'a trigger may be dead' : 'no failures · digests fresh');
+  cnSetSysCard_('automation', 'Automation', autoTone, autoVal, autoSub);
+
+  var cdr = res.cdr || { ok: false };
+  var unmatched = (cdr.unmatchedAgents && cdr.unmatchedAgents.length) || 0;
+  var cdrTone = !cdr.ok ? 'warn' : (cdr.columnWarning || unmatched > 0) ? 'warn' : 'ok';
+  var cdrVal = !cdr.ok ? 'Unreachable'
+    : (cdr.columnWarning ? 'Column drift' : (unmatched > 0 ? (unmatched + ' unmatched') : 'In sync'));
+  var cdrSub = !cdr.ok ? 'check CDR_SS_ID / access'
+    : (cdr.columnWarning ? 'DQE layout changed' : (unmatched > 0 ? 'agent name mismatch' : '0 unmatched agents'));
+  cnSetSysCard_('cdr', 'CDR', cdrTone, cdrVal, cdrSub);
 }
 
 function cnRenderHealthPanel_(res) {

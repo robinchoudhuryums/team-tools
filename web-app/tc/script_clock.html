@@ -1,3 +1,56 @@
+<style>
+  /* ── Clock-view redesign (#5a) — layers on the styles.html clock vocabulary ── */
+  /* Time-of-day "sky" gradient card. Gradient hexes are decorative, time-of-day
+     specific, and have no token equivalent (the CN_EMAIL_PALETTE precedent for
+     justified inline hex). White text + shadow for contrast over the gradient. */
+  .clk.clk-sky { position: relative; overflow: hidden; color: #fff; border-radius: var(--radius-lg); padding: 16px 18px; text-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: background .6s var(--ease); }
+  .clk-sky .clk-time { color: #fff; }
+  .clk-sky .clk-meta, .clk-sky .clk-regions { color: rgba(255, 255, 255, .92); }
+  .clk-sky .clk-region b { color: #fff; }
+  .clk-sky-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .clk-phase { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .95; display: inline-flex; align-items: center; gap: 5px; }
+  .clk-tz-pill { appearance: none; background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .4); color: #fff; font: inherit; font-size: 11px; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
+  .clk-tz-pill option { color: var(--ink); }
+
+  /* Live shift strip = the control surface (header + ribbon + punch buttons). */
+  .shift-strip { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); box-shadow: var(--shadow-sm); padding: 14px 16px; margin: 14px 0; }
+  .shift-strip-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .ss-label { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .ss-state { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; }
+  .ss-state.working { background: var(--accent-soft); color: var(--success-deep); }
+  .ss-state.lunch   { background: var(--warn-soft); color: var(--warning-deep); }
+  .ss-state.out     { background: var(--paper-2); color: var(--muted); }
+  .ss-grow { flex: 1; }
+  .ss-hours { font-family: var(--mono); font-size: .86rem; font-weight: 700; color: var(--ink); }
+  .ss-hours .ss-sub { font-weight: 400; color: var(--muted); }
+  .shift-strip .actions { margin-top: 12px; margin-bottom: 0; }
+
+  /* Note-volume histogram behind the ribbon track (C2 — sourced from today's
+     own notes bucketed by rep-local hour; Timestamp is stored in the rep's tz). */
+  .ribbon-hist { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .ribbon-hist .hbar { position: absolute; bottom: 0; width: 5px; transform: translateX(-50%); border-radius: 2px 2px 0 0;
+    background: rgba(15, 138, 82, .16); background: color-mix(in oklch, var(--accent) 16%, transparent); }
+  /* Scheduled break bands (amber) drawn over the work segments. */
+  .r-break { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--warn);
+    background: rgba(183, 121, 31, .22); background: color-mix(in oklch, var(--warn) 20%, transparent); }
+
+  /* Lunch / clock action colors (mirror the ribbon lunch = warn). */
+  .actions .prime.prime-warn { background: var(--warn); border-color: var(--warn); color: var(--paper); }
+  .actions .prime.prime-neutral { background: var(--paper-card); border-color: var(--line-2); color: var(--ink); }
+  .actions .sec.act-lunchout { color: var(--warning-deep); }
+  .actions .sec.act-lunchin, .actions .sec.act-clockin, .actions .sec.act-lunchin svg { color: var(--success-deep); }
+
+  /* Bottom one-row: Today's Punches · Team Right Now · compact Annual PTO. */
+  .clk-row3 { display: grid; grid-template-columns: 1fr 1fr minmax(170px, .7fr); gap: 14px; align-items: start; margin-top: 14px; }
+  .pto-mini { display: flex; align-items: center; gap: 14px; }
+  .pto-mini-ring { position: relative; width: 60px; height: 60px; flex-shrink: 0; }
+  .pto-mini-ring svg { transform: rotate(-90deg); display: block; }
+  .pto-mini-ring .pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; font-size: .9rem; color: var(--ink); }
+  .pto-mini-main .sub { font-size: .76rem; color: var(--muted); margin-top: 2px; }
+  :root[data-compact] .clk-row3 { grid-template-columns: 1fr; }
+  @media (max-width: 760px) { .clk-row3 { grid-template-columns: 1fr; } }
+</style>
+
 <script>
 // ════════════════════════════════════════════════════════════════════════════
 //  CLOCK VIEW
@@ -42,6 +95,16 @@ function renderClockView(area) {
   const stats = computeShiftStats_(s.punches, tz);
   const statusSentence = buildStatusSentence_(stats, s.nextActions, tzAbbr);
   clkBuildRegionFmts_(tz, tzAbbr);   // item 5 — world-clock strip formatters
+  if (!CLK_DISPLAY_TZ) CLK_DISPLAY_TZ = tz;   // tz selector default = rep's roster tz
+
+  // Shift-strip header: state pill + hours-worked readout (hours moved off the
+  // old ledger here per #5a).
+  const stateLabel = stats ? (stats.state === 'lunch' ? 'On lunch' : stats.state === 'out' ? 'Done' : 'Working') : 'Not in';
+  const stateCls   = stats ? (stats.state === 'lunch' ? 'lunch' : stats.state === 'out' ? 'out' : 'working') : 'out';
+  const hoursReadout = stats
+    ? `<span class="ss-hours">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m worked` +
+        (stats.lunchMinutes ? ` <span class="ss-sub">· ${stats.lunchMinutes}m lunch</span>` : '') + `</span>`
+    : `<span class="ss-hours ss-sub">Not clocked in yet</span>`;
 
   area.innerHTML = `
     <div class="hero">
@@ -50,35 +113,49 @@ function renderClockView(area) {
         <div class="greet-name">Hi, ${esc(greetName)}</div>
         <div class="status-sentence">${statusSentence}</div>
       </div>
-      <div class="clk">
+      <div class="clk clk-sky" id="clk-sky">
+        <div class="clk-sky-top">
+          <span class="clk-phase" id="clk-phase"></span>
+          ${tzSelectHtml_(tz, tzAbbr)}
+        </div>
         <div class="clk-time tabular" id="live-time">--:--:--<span class="ampm"></span></div>
         <div class="clk-meta">
-          <span>${esc(dateStr)}</span>
+          <span id="clk-date">${esc(dateStr)}</span>
           ${tzAbbr ? `<span class="sep">·</span><span>${esc(tzAbbr)}</span>` : ''}
         </div>
-        <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
+        <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px"></div>
         <div class="clk-next-break" id="clk-next-break" style="margin-top:6px"></div>
       </div>
     </div>
 
-    ${renderActions(s.nextActions)}
-
-    ${renderDayRibbon_(s.punches, stats, tz)}
+    <div class="shift-strip">
+      <div class="shift-strip-head">
+        <span class="ss-label">Today's shift</span>
+        <span class="ss-state ${stateCls}">${esc(stateLabel)}</span>
+        <span class="ss-grow"></span>
+        ${hoursReadout}
+      </div>
+      ${renderDayRibbon_(s.punches, stats, tz)}
+      ${renderActions(s.nextActions)}
+    </div>
 
     <div id="clk-cov-slot"></div>
 
-    ${renderLedger_(s, stats)}
-
-    <div class="card">
-      <div class="card-label">Today's Punches</div>
-      ${renderPunchHistory(s.punches)}
-    </div>
-
-    <div id="teammate-card-slot"></div>`;
+    <div class="clk-row3">
+      <div class="card">
+        <div class="card-label">Today's Punches</div>
+        ${renderPunchHistory(s.punches)}
+      </div>
+      <div id="teammate-card-slot"></div>
+      ${renderPtoMini_(s)}
+    </div>`;
   bindClockBtns();
   bindSelfUndoBtns();
   loadTeammateStatus();
   loadCoverageStrip_();
+  clkApplySky_(true);        // initial gradient + phase glyph
+  clkBindTzSelect_();
+  clkLoadNoteVolume_();      // C2 — note-volume histogram (async, best-effort)
 }
 
 /** Computes "worked", "lunch", "since" stats from today's punches.
@@ -170,31 +247,124 @@ function buildStatusSentence_(stats, nextActions, tzAbbr) {
   return `You're ${stateLabel} ${since}. ${workedStr}${lunchStr}${endStr}.`;
 }
 
-/** 4-cell ledger strip: Annual / Sick / Hours Today / Pay-period.
- *  Hours Today is computed from punches client-side. Pay-period hours
- *  comes from tsData if loaded (combined Clock+Timesheet view auto-
- *  loads the timesheet section below); otherwise shows "—" until the
- *  timesheet load completes. Annual/Sick cells gracefully hide via
- *  muted text when ptoEnabled is false (contractor reps). */
-function renderLedger_(s, stats) {
-  // 3-cell ledger after Round 2 · 8b moved timesheet out of the Clock
-  // view. Pay-period stats now live in the Time / PTO tab's Timesheet-
-  // mode side rail. The remaining cells stay glanceable: Annual / Sick
-  // / Hours today.
-  const annualVal = s.ptoEnabled
-    ? `<div class="cell-value">${formatLeaveDays(s.annualLeave || 0)}</div><div class="cell-sub">of ${formatLeaveDays(s.annualLeaveMax || 15)} days</div>`
-    : `<div class="cell-value muted">—</div><div class="cell-sub">not tracked</div>`;
-  const sickVal = s.ptoEnabled
-    ? `<div class="cell-value">${formatLeaveDays(s.sickLeave || 0)}</div><div class="cell-sub">of ${formatLeaveDays(s.sickLeaveMax || 10)} days</div>`
-    : `<div class="cell-value muted">—</div><div class="cell-sub">not tracked</div>`;
-  const hoursToday = stats
-    ? `<div class="cell-value">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m</div><div class="cell-sub">${stats.lunchMinutes ? stats.lunchMinutes + 'm lunch' : 'no lunch yet'}</div>`
-    : `<div class="cell-value muted">0h</div><div class="cell-sub">not in yet</div>`;
-  return `<div class="ledger ledger-3">
-    <div class="cell"><div class="cell-label">Annual</div>${annualVal}</div>
-    <div class="cell"><div class="cell-label">Sick</div>${sickVal}</div>
-    <div class="cell"><div class="cell-label">Hours today</div>${hoursToday}</div>
-  </div>`;
+/** Compact Annual-PTO card for the bottom one-row (#5a). Sick was removed
+ *  entirely (C1 — employees have no sick days; the file-Sick option is also
+ *  dropped from the PTO modal, so no new sick request can be created and the
+ *  dormant sick balance is never surfaced). Hours-worked moved to the shift-
+ *  strip header. Contractors (ptoEnabled=false) show a "not tracked" card. */
+function renderPtoMini_(s) {
+  if (!s.ptoEnabled) {
+    return `<div class="card pto-mini"><div class="pto-mini-main">
+        <div class="card-label">PTO</div>
+        <div class="cell-value muted">—</div>
+        <div class="sub">Not tracked</div></div></div>`;
+  }
+  const max = s.annualLeaveMax || 15;
+  const rem = s.annualLeave || 0;
+  const used = Math.max(0, max - rem);
+  const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
+  const r = 24, c = 2 * Math.PI * r, off = c * (1 - pct / 100);
+  return `<div class="card pto-mini">
+    <div class="pto-mini-ring"><svg width="60" height="60" viewBox="0 0 60 60" aria-hidden="true">
+        <circle cx="30" cy="30" r="${r}" fill="none" stroke="var(--paper-3)" stroke-width="6"></circle>
+        <circle cx="30" cy="30" r="${r}" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"></circle>
+      </svg><div class="pct">${formatLeaveDays(rem)}</div></div>
+    <div class="pto-mini-main">
+      <div class="card-label">Annual PTO</div>
+      <div class="sub">of ${formatLeaveDays(max)} days</div>
+      <div class="sub">${formatLeaveDays(used)} used</div>
+    </div></div>`;
+}
+
+// ── Sky gradient + timezone selector (#5a) ──────────────────────────────────
+// The big clock card carries a time-of-day gradient that recomputes from the
+// DISPLAYED tz's current hour (default = the rep's roster tz; the pill lets them
+// preview any world-clock zone). Driven off the existing 1Hz startClock tick;
+// the gradient only repaints when the displayed hour changes.
+let CLK_DISPLAY_TZ = null;
+let _clkLastSkyHour = -1;
+
+function tzSelectHtml_(repTz, repAbbr) {
+  const zones = [{ label: repAbbr || 'Local', tz: repTz }];
+  CLK_REGION_ZONES.forEach(function (z) { if (z.tz !== repTz) zones.push(z); });
+  const cur = CLK_DISPLAY_TZ || repTz;
+  return '<select class="clk-tz-pill" id="clk-tz-sel" title="Preview another timezone’s clock">' +
+    zones.map(function (z) {
+      return '<option value="' + esc(z.tz) + '"' + (z.tz === cur ? ' selected' : '') + '>' + esc(z.label) + '</option>';
+    }).join('') + '</select>';
+}
+function clkBindTzSelect_() {
+  const sel = document.getElementById('clk-tz-sel');
+  if (!sel) return;
+  sel.addEventListener('change', function () {
+    CLK_DISPLAY_TZ = this.value;
+    clkApplySky_(true);
+    clkTickTime_();   // refresh the big time immediately
+  });
+}
+function clkDisplayHour_() {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: CLK_DISPLAY_TZ || empTz(), hour: 'numeric', hour12: false }).formatToParts(new Date());
+  let h = 0; parts.forEach(function (p) { if (p.type === 'hour') h = parseInt(p.value, 10) || 0; });
+  return h % 24;
+}
+/** Time-of-day gradient + phase label/glyph for an hour. Decorative hexes (no
+ *  token equivalent — the CN_EMAIL_PALETTE inline-hex precedent). */
+function clkSkyFor_(h) {
+  if (h >= 5 && h < 8)   return { grad: 'linear-gradient(135deg,#e8835a,#f6c177)', phase: 'Sunrise',       glyph: 'sun' };
+  if (h >= 8 && h < 12)  return { grad: 'linear-gradient(135deg,#4a89c8,#9ec9e8)', phase: 'Morning',       glyph: 'sun' };
+  if (h >= 12 && h < 17) return { grad: 'linear-gradient(135deg,#3f78c0,#f0c674)', phase: 'Mid-afternoon', glyph: 'sun' };
+  if (h >= 17 && h < 20) return { grad: 'linear-gradient(135deg,#6a4a8c,#e0916a)', phase: 'Dusk',          glyph: 'moon' };
+  return { grad: 'linear-gradient(135deg,#243056,#5b3a6e)', phase: 'Night', glyph: 'moon' };
+}
+function clkApplySky_(force) {
+  const card = document.getElementById('clk-sky');
+  if (!card) return;
+  const h = clkDisplayHour_();
+  if (!force && h === _clkLastSkyHour) return;
+  _clkLastSkyHour = h;
+  const sky = clkSkyFor_(h);
+  card.style.background = sky.grad;
+  const ph = document.getElementById('clk-phase');
+  if (ph) ph.innerHTML = icon(sky.glyph, 12) + ' ' + esc(sky.phase.toUpperCase());
+}
+/** Render the big time in the displayed tz (extracted from startClock so the
+ *  tz-pill change can refresh it without waiting for the next tick). */
+function clkTickTime_() {
+  const el = document.getElementById('live-time');
+  if (!el) return;
+  const raw = liveTimeTz(CLK_DISPLAY_TZ || empTz());
+  const m = raw.match(/^(.*?)\s*(AM|PM)$/i);
+  if (m) { el.innerHTML = esc(m[1]) + '<span class="ampm">' + esc(m[2]) + '</span>'; }
+  else { el.textContent = raw; }
+}
+
+/** C2 — note-volume histogram behind the ribbon. Buckets are server-computed by
+ *  rep-local hour (getMyNoteHourBuckets — the note Timestamp is stored in the
+ *  rep's tz, so the hour aligns with the ribbon's 6a–10p axis). Its own endpoint
+ *  (not getMyCallNotes) keeps the Clock view's hot path to one extra bounded
+ *  read. Best-effort; the histogram is simply absent on failure. */
+function clkLoadNoteVolume_() {
+  const today = isoDateTz(empTz());
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== 'clock') return;
+      const hist = document.getElementById('ribbon-hist');
+      if (!hist || !res || res.error || !res.buckets) return;
+      const buckets = res.buckets;
+      const max = Math.max(1, Math.max.apply(null, buckets));
+      let html = '';
+      for (let h = 0; h < 24; h++) {
+        if (!buckets[h]) continue;
+        const mid = h * 60 + 30;
+        if (mid < RIBBON_START_MIN || mid > RIBBON_END_MIN) continue;
+        const ht = Math.max(4, Math.round((buckets[h] / max) * 100));
+        html += '<div class="hbar" style="left:' + ribbonPct_(mid).toFixed(2) + '%;height:' + ht + '%" title="' +
+          esc(buckets[h] + ' note' + (buckets[h] === 1 ? '' : 's') + ' · ' + ribbonFormatHm_(h * 60)) + '"></div>';
+      }
+      hist.innerHTML = html;
+    })
+    .withFailureHandler(function () {})
+    .getMyNoteHourBuckets(today);
 }
 
 // lazyUpdatePayPeriodCell_ removed in Round 2 · 8b — the pay-period
@@ -357,6 +527,17 @@ function renderDayRibbon_(punches, stats, tz) {
     </div>`;
   }).join('');
 
+  // Scheduled break bands (#5a) — amber ticks from CLK_SCHEDULE.breaks, drawn
+  // over the work segments so an in-shift break reads as a tint on the bar.
+  const breakHtml = clkBreaks_().map(b => {
+    if (typeof b.startMin !== 'number') return '';
+    if (b.startMin < RIBBON_START_MIN || b.startMin > RIBBON_END_MIN) return '';
+    const l = ribbonPct_(b.startMin);
+    const w = Math.max(0.6, ribbonPct_(b.startMin + (b.lenMin || 0)) - l);
+    return `<div class="r-break" style="left:${l.toFixed(2)}%;width:${w.toFixed(2)}%"
+      title="${esc((b.label || 'Break') + ' ' + ribbonFormatHm_(b.startMin))}"></div>`;
+  }).join('');
+
   const nowMin = ribbonTimeToMin_(liveTimeHmsTz(tz));
   const nowHtml = isActive && !isNaN(nowMin)
     ? `<div class="r-now" id="r-now-cursor" style="left:${ribbonPct_(nowMin).toFixed(2)}%"></div>`
@@ -374,9 +555,11 @@ function renderDayRibbon_(punches, stats, tz) {
     <div class="ribbon-axis-row">${axisHtml}</div>
     <div class="ribbon">
       <div class="ribbon-track">
+        <div class="ribbon-hist" id="ribbon-hist"></div>
         <div class="r-sched" style="left:${schedLeft.toFixed(2)}%;width:${schedWidth.toFixed(2)}%"
           title="Scheduled ${ribbonFormatHm_(schedStart)}–${ribbonFormatHm_(schedEnd)}"></div>
         ${segHtml}
+        ${breakHtml}
         ${punchHtml}
         ${nowHtml}
       </div>
@@ -385,6 +568,8 @@ function renderDayRibbon_(punches, stats, tz) {
       <span class="r-leg-item"><span class="swatch"></span>Worked</span>
       <span class="r-leg-item"><span class="swatch lunch"></span>Lunch</span>
       <span class="r-leg-item"><span class="swatch sched"></span>Scheduled</span>
+      ${breakHtml ? `<span class="r-leg-item"><span class="swatch" style="background:var(--warn)"></span>Break</span>` : ''}
+      <span class="r-leg-item"><span class="swatch" style="background:rgba(15,138,82,.16);background:color-mix(in oklch,var(--accent) 16%,transparent)"></span>Notes</span>
       ${isActive ? `<span class="r-leg-item"><span class="swatch now"></span>Now</span>` : ''}
     </div>
   </div>`;
@@ -731,26 +916,37 @@ function renderActions(actions) {
     return `<div class="shift-done-msg">${icon('checkCircle', 16)}Shift complete for today</div>`
       + `<div class="actions"><button class="sec" data-action="Adjust">${icon('adjust', 18)}Adjust</button></div>`;
   }
-  // Pick the primary CTA by state per redesign: prefer ClockIn (start of day) →
-  // LunchIn (returning from lunch) → ClockOut (end of day) → first remaining.
-  // Adjust is always rendered last as a secondary.
-  const order = ['ClockIn', 'LunchIn', 'ClockOut'];
+  // Pick the primary CTA by state (#5a): ClockIn (start) → LunchIn (back from
+  // lunch) → LunchOut (the frequent mid-shift action, gold) → ClockOut (end) →
+  // first remaining. Adjust is always last as a secondary. Each button is also
+  // color-coded by punch type (lunch = warn, in = accent, out = neutral).
+  const order = ['ClockIn', 'LunchIn', 'LunchOut', 'ClockOut'];
   let primary = order.find(a => actions.indexOf(a) >= 0)
     || actions.find(a => a !== 'Adjust')
     || 'Adjust';
   const secondaries = actions.filter(a => a !== primary && a !== 'Adjust');
 
   const pm = PUNCH_META[primary];
-  const primeCls = primary === 'ClockOut' ? 'prime clockout' : 'prime';
+  let primeCls = 'prime';
+  if (primary === 'LunchOut') primeCls = 'prime prime-warn act-lunchout';
+  else if (primary === 'ClockOut') primeCls = 'prime prime-neutral act-clockout';
+  else primeCls = 'prime ' + clkActTypeCls_(primary);   // ClockIn / LunchIn → accent default
   let html = `<div class="actions">`;
   html += `<button class="${primeCls}" data-action="${primary}">${icon(pm.icon, 18)}${pm.label}</button>`;
   secondaries.forEach(a => {
     const m = PUNCH_META[a];
-    html += `<button class="sec" data-action="${a}">${icon(m.icon, 18)}${m.label}</button>`;
+    html += `<button class="sec ${clkActTypeCls_(a)}" data-action="${a}">${icon(m.icon, 18)}${m.label}</button>`;
   });
   html += `<button class="sec" data-action="Adjust">${icon('adjust', 18)}Adjust</button>`;
   html += `</div>`;
   return html;
+}
+
+function clkActTypeCls_(a) {
+  return a === 'LunchOut' ? 'act-lunchout'
+    : a === 'LunchIn' ? 'act-lunchin'
+    : a === 'ClockIn' ? 'act-clockin'
+    : a === 'ClockOut' ? 'act-clockout' : '';
 }
 
 function bindClockBtns() {
@@ -765,17 +961,10 @@ function bindClockBtns() {
 
 function startClock() {
   stopClock();
-  const tz = empTz();
   const tick = () => {
-    const el = document.getElementById('live-time');
-    if (!el) return;
-    const raw = liveTimeTz(tz);   // e.g. "9:34:22 AM"
-    const m = raw.match(/^(.*?)\s*(AM|PM)$/i);
-    if (m) {
-      el.innerHTML = esc(m[1]) + '<span class="ampm">' + esc(m[2]) + '</span>';
-    } else {
-      el.textContent = raw;
-    }
+    if (!document.getElementById('live-time')) return;
+    clkTickTime_();        // big time in the displayed tz (#5a)
+    clkApplySky_();        // repaint the sky gradient when the displayed hour rolls over
     clkUpdateRegions_();   // item 5 — refresh the world-clock strip (cached formatters)
     clkUpdateBreak_();     // item 1 — next-break chip + X-min reminder toast
   };

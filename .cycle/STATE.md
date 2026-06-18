@@ -8,6 +8,102 @@ Test Command: manual
 Subsystem cycles since last Seams audit: 4
 Updated: 2026-06-17 (Cycle 5 reflect)
 
+## Design redesign thread (ACTIVE — non-audit, does NOT bump Cycle)
+Operator-driven visual/interaction redesign from the design handoff in
+`docs/design_handoff_team_tools_redesign/`. Plan + conflict register committed at
+`docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md` (commit ee5fa96).
+Executing as 7 separate per-module commits on branch claude/practical-gauss-yycwkz.
+- Operator decisions: C1 remove Sick (confirmed real — UI surfaces only this pass,
+  backend deduction/reconcile left dormant); C2 ribbon histogram re-sourced to LIVE
+  logged-note volume (CDR has no hourly data); C3 add Phone/TRX search tabs (server
+  change, touches INV-45); C4–C7 + all 5 improvements accepted.
+- DONE — commit #1 foundation (95516d6): 5 new icons + Intake tab-icon repoint +
+  kbItemIcon_→fileText; --accent-deep→--success-deep + soft-fallback hygiene (also
+  the 2 --warning-soft uses in cn/ + tc/manager); NEW token-hygiene CI tripwire in
+  test/client/run.js (form_public excluded; --brand allowlisted until commit #2).
+  Pure 134/0, DOM 48/0, node --check clean. Operator: clasp push -f + New version.
+- DONE — commit #2 Intake redesign (64bd150): .app-bar shell + toolbar-tabs EN/ES
+  + .panel sections; PPD Option A (Yes/No toggles + severity chips + progress
+  header) with ENGINE-SAFE classification (Q25/Q34/Q31a/Q33a/Q43/Q13 stay text per
+  INV-112 — README's blanket "additional-info yes/no" was too broad); account
+  checkbox→toggle (TRUE/FALSE preserved); Sent ALL/PPD/PMD/PAP filter+search; a11y
+  radiogroups; draft autosave (umsIntakeDrafts, 24h expiry). --brand removed from
+  tripwire allowlist. Pure 134/0, DOM 48/0. NEW localStorage key umsIntakeDrafts
+  (CLAUDE.md "Ten ... keys" list now 11 — /sync-docs).
+- DONE — commit #3 Training redesign (df073df): §3a completion-ring header card +
+  Done/Left cells + overdue inset rail + primary quiz action; §3b manager matrix →
+  reps×items CSS-grid status squares + numbered item key + coverage% column
+  (trainCoverageClass_ tones), reps sorted least-covered first. New helpers
+  trainRingHtml_/trainCoverageClass_. Pure 134/0, DOM 48/0. Minor: per-cell quiz
+  attempt count dropped from the matrix (still in analytics table).
+- DONE — commit #4 Reference/KB redesign (4fdb390): collapsible dept headers
+  (chevron+count, persisted in umsKbPanel.deptCollapsed via kbToggleDept_);
+  .kb-btn→token secondary; landing panel kbRenderLanding_ (Recently viewed +
+  Most used 30d + Review due w/ pill+dot+Mark-reviewed) replacing the bare empty
+  state — usage/review loaders now cache into KB_STATE + re-render landing (tree
+  block render removed); KB_STATE.landing flag guards async re-render vs open
+  item/search. Reader/markdown/search/drawer/editor untouched. Pure 134/0, DOM
+  48/0. Most used + Review due are manager-only (endpoints manager-gated).
+- DONE — commit #5a Time Clock (59b3230): sky-gradient clock card + tz-selector
+  pill + phase glyph (off the 1Hz tick); shift strip = control surface (hours +
+  state pill header, ribbon break-bands + note-volume histogram, punch buttons
+  under, lunch=warn color-coding, LunchOut mid-shift primary); C2 histogram via
+  NEW server getMyNoteHourBuckets(date) (rep-local hours; own endpoint avoids the
+  getMyCallNotes DOM-flush collision + trims a hot-path RPC); C1 Sick removed —
+  one-row Punches·Team·Annual-PTO(ring) replaces the ledger, Sick Leave dropped
+  from both modals.html PTO selects (INV-95 ok), backend dormant.
+- DONE — commit #5b Coverage (1aa2c0f): days×hours week heatmap (6a–9p, ok/risk/
+  low/none cells) + click-to-expand per-day rep detail + Understaffed-slots risk
+  callout (panel[data-tone=destructive], grouped ranges + PTO reason). Server
+  unchanged. Pure 134/0, DOM 48/0 throughout.
+- DONE — commit #6 Metrics (1c6991a): My Stats Today/7D/30D trend-window presets
+  (client slice of the 30d trend; window=1=today-only) + rail sparklines (C4:
+  answered/missed from trend, attSeconds from series; notes/total-talk plain) +
+  sortable+sticky team table (mSortReps_/mTeamSort_/mTh_, default %Ans desc) +
+  tri-tone %Ans cells (mPctClass_) + C5 .m-coverage unified on deep tones. Pure
+  134/0, DOM 48/0. NOTE/conflict: the mock's range-aggregated My Stats needs a
+  server getMyMetrics range variant — deferred (window control is client-only).
+- DONE — commit #7 Call Notes, split 7a/7b/7c:
+  - 7a (448f434) Search: read-only cnRenderResultCard_ (real cn-card) for rep +
+    manager search + result count + KB term highlight + date-range filter +
+    Phone/TRX scopes (SERVER change to searchMyCallNotes/managerSearchCallNotes,
+    INV-45 doc, Tests.js test_cn_search_phoneTrxFieldScopes) + C7 badge tone.
+  - 7b (271db84) manager Stats → scannable .m-table (Notes/Action/Training/Review/
+    Median/%Ans/Coverage) reusing mPctClass_/mCoverageBadge_; shared JS component
+    (improvement #1) DEFERRED (column sets differ — visual align via .m-table).
+  - 7c (56535fd) Admin → Overview/Tags/Compliance/Config sub-tabs (cnAdminTab_,
+    show/hide panes; cnRenderAdminAugmentHtml_ → {kpiHtml,taxHtml} split). Folding
+    health panels into compact status CARDS deferred (panels already convey tone).
+  Pure 134/0, DOM 48/0, node --check clean.
+
+## DEFERRED FOLLOW-UPS #1–#4 DONE (post-redesign, same branch)
+- #1 (43ea7ab) range-aggregated My Stats: new server getMyMetricsRange(from,to)
+  (caller-scoped self-aggregate, 92d cap, no team/series); Today=single rich /
+  7D·30D=server ranges / custom From-To; mRenderMyStats_ handles both.
+- #2 (36506d2) Sick deprecation: removed 'Sick Leave' from TIME_OFF_TYPES (no new
+  sick via UI or RPC); KEPT getLeaveDeduction_ sick mapping + col J for historical
+  reverts (removing would corrupt annual on legacy sick reverts). Node test updated.
+- #3 (377b981) shared mtRenderTable_ (script_core) drives BOTH the Metrics team
+  table + CN Stats table (CN Stats gained sortable cols); mTh_ removed.
+- #4 (48d212c) Admin Overview "System status" cards (Automation/CDR/Storage,
+  OK/warn/error) from the existing health/storage fetches; detail panels kept below.
+Pure 134/0, DOM 48/0, node --check clean throughout. Still NOT merged (no PR).
+Remaining deferred: full col-J excision (only if zero historical sick rows);
+Admin health→cards full consolidation (detail panels still shown); + the
+small UX niceties (#6–#10 in chat) + /sync-docs doc drift.
+
+## REDESIGN COMPLETE — all 7 commits landed on claude/practical-gauss-yycwkz
+(8 commits incl. the #5 Clock/Coverage split). Plan: docs/design_handoff_team_tools_redesign/
+IMPLEMENTATION_PLAN.md. NOT merged (no PR requested). OPERATOR: one clasp push -f
++ New deployment version covers all client + the Code.js changes
+(getMyNoteHourBuckets, phone/trx search scopes); then runAllTests() in the editor
+(exercises test_cn_search_phoneTrxFieldScopes). DEFERRED/conflicts to revisit:
+range-aggregated My Stats (server getMyMetrics range variant, C-mock); shared
+Metrics/CN-Stats table component; Admin health-status-cards consolidation; Sick
+backend deprecation (UI-removed, backend dormant). DOC drift for /sync-docs:
+new umsIntakeDrafts + umsKbPanel.deptCollapsed localStorage keys, getMyNoteHourBuckets
+endpoint, INV-45 phone/trx, token-hygiene tripwire, Sick UI-removal.
+
 ## Cycle 5 CLOSED (2026-06-17)
 Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
 (PR #53). Numbered 5 (a parallel session claimed Cycle 4 for a non-audit

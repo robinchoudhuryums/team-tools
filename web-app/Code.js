@@ -2205,6 +2205,37 @@ function getMyCallNotes(options) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Clock-view note-volume histogram (#5a / C2). Returns the calling rep's own
+ *  note counts for `date` bucketed by REP-LOCAL hour (0–23). Caller-scoped,
+ *  read-only, bounded (single-day contiguous slice via readCallNoteRowsInRange_,
+ *  reading only the Timestamp + DateLocal columns). The Timestamp is stored in
+ *  the rep's own tz (empTz_, "yyyy-MM-dd'T'HH:mm:ss"), so its hour aligns with
+ *  the Clock ribbon's local axis. A Date-coerced cell is re-formatted in empTz.
+ *  Not enrolled / no sheet → all-zero buckets (never throws to the client). */
+function getMyNoteHourBuckets(date) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    const empTz = empTz_(emp);
+    const d = date || Utilities.formatDate(new Date(), empTz, 'yyyy-MM-dd');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'Invalid date format (expected yyyy-MM-dd).' };
+    const buckets = new Array(24).fill(0);
+    if (!emp.callNotesSheetId) return { buckets: buckets, date: d };
+    const sheet = getCallNotesSheet_(emp);
+    const located = readCallNoteRowsInRange_(sheet, d, d);
+    for (let i = 0; i < located.length; i++) {
+      const row = located[i].row;
+      if (normalizeDate_(row[CN.DATE_LOCAL]) !== d) continue;
+      const ts = row[CN.TIMESTAMP];
+      let hour = -1;
+      if (ts instanceof Date) hour = Number(Utilities.formatDate(ts, empTz, 'H'));
+      else { const m = String(ts || '').match(/[T ](\d{2}):/); if (m) hour = parseInt(m[1], 10); }
+      if (hour >= 0 && hour < 24) buckets[hour]++;
+    }
+    return { buckets: buckets, date: d };
+  } catch (err) { return { error: err.message }; }
+}
+
 /** Returns the calling rep's notes across a date range (startDate to endDate,
  *  inclusive). Caller-scoped via getEmployeeInfo_. Range capped at 90 days to
  *  prevent abuse. Returns notes sorted newest-first, with the same shape as
@@ -2381,8 +2412,11 @@ function getCallNotesDepartments() {
   } catch (err) { return { error: err.message }; }
 }
 
-/** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all.
- *  If exact=true, matches patientAndTrx exactly (case-insensitive, trimmed) and
+/** Substring search across the rep's notes. field ∈ all | caller | issue |
+ *  phone | trx (INV-45). `caller`/`all` fold in callback+patientAndTrx and
+ *  `issue`/`all` fold in resolution; `phone` matches the callback column only
+ *  and `trx` the patientAndTrx column only (the distinct scope tabs). If
+ *  exact=true, matches patientAndTrx exactly (case-insensitive, trimmed) and
  *  ignores the field parameter — used by the "Find prior calls for this TRX"
  *  button on note cards to surface repeat-caller history without substring noise. */
 function searchMyCallNotes(query, field, dateRange, exact) {
@@ -2411,6 +2445,10 @@ function searchMyCallNotes(query, field, dateRange, exact) {
       let hit = false;
       if (isExact) {
         if (String(note.patientAndTrx || '').toLowerCase().trim() === qLower) hit = true;
+      } else if (f === 'phone') {
+        if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+      } else if (f === 'trx') {
+        if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
       } else {
         if (f === 'caller' || f === 'all') {
           if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
@@ -3095,12 +3133,18 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
           if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
           if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
           let hit = false;
-          if (f === 'caller' || f === 'all') {
-            if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
-                  .toLowerCase().indexOf(qLower) >= 0) hit = true;
-          }
-          if (!hit && (f === 'issue' || f === 'all')) {
-            if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+          if (f === 'phone') {
+            if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+          } else if (f === 'trx') {
+            if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+          } else {
+            if (f === 'caller' || f === 'all') {
+              if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                    .toLowerCase().indexOf(qLower) >= 0) hit = true;
+            }
+            if (!hit && (f === 'issue' || f === 'all')) {
+              if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+            }
           }
           if (hit) {
             note.repId = repId; note.repName = repName;
@@ -7683,9 +7727,16 @@ function isoLocalDate_(d) {
 // getLeaveDeduction_ but not offered in the picker). Validated server-side
 // so a client bug / direct RPC can't write a garbage type that
 // getLeaveDeduction_ then silently defaults to annual/1.0 (M1).
+// 'Sick Leave' was removed (deferred #2 / C1 — employees have no sick days), so
+// no new sick request can be created via ANY path (UI select + this submit
+// whitelist). The sick BUCKET intentionally remains in getLeaveDeduction_ /
+// adjustLeaveBalance_ / the reconciliation + decision-email code so HISTORICAL
+// Approved-sick rows still revert/reconcile to the correct (sick) balance —
+// removing it would restore legacy sick reverts into the annual bucket. Roster
+// column J (SICK_LEAVE) is likewise kept (dormant, never surfaced in the UI).
 const TIME_OFF_TYPES = [
   'Full Day', 'Half Day - Morning', 'Half Day - Afternoon',
-  'Sick Leave', 'Personal Day', 'Unpaid Leave', 'Other',
+  'Personal Day', 'Unpaid Leave', 'Other',
 ];
 
 /** Case-insensitive, trimmed validity check for a time-off Type — mirrors
@@ -9457,6 +9508,66 @@ function getMyMetrics(date) {
       try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return result;
+  } catch (err) { return { error: err.message }; }
+}
+
+/**
+ * My Stats over a date RANGE (deferred #1). Caller-scoped self-view: aggregates
+ * the calling rep's own CDR over [from, to] (reusing getCdrAgentMetrics_ for the
+ * rep's name) + a per-day trend (getCdrDailyBreakdown_) for the hero/rail
+ * sparklines + the rep's note count/coverage over the range. Range-capped at 92
+ * days. Returns ONLY the rep's own aggregates (no team/other-rep data and no
+ * own-vs-team series — that anonymized series is a single-day-anchored concept,
+ * INV-124). Shape mirrors getMyMetrics's cdr block so the client renderer is shared.
+ */
+function getMyMetricsRange(from, to) {
+  try {
+    var emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Employee not found.' };
+    if (!from || !/^\d{4}-\d{2}-\d{2}$/.test(from)) return { error: 'Invalid start date (expected yyyy-MM-dd).' };
+    if (!to || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (from > to) return { error: 'Start date must be on or before end date.' };
+    var spanDays = Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
+    if (spanDays > 92) return { error: 'Range capped at 92 days.' };
+
+    var agg = getCdrAgentMetrics_(from, to, [emp.name]);
+    var c = (agg && agg.agents && agg.agents[emp.name]) || null;
+
+    // Per-day trend across the range for the sparklines (own row only).
+    var trend = [];
+    try {
+      var bd = getCdrDailyBreakdown_(from, to, [emp.name]);
+      var prd = (bd && bd.perRepDaily) || {};
+      var endD = new Date(to + 'T12:00:00Z');
+      for (var d = new Date(from + 'T12:00:00Z'); d <= endD; d.setUTCDate(d.getUTCDate() + 1)) {
+        var iso = isoFromUtc_(d);
+        var own = prd[iso] && prd[iso][emp.name];
+        trend.push({
+          date: iso,
+          pctAnswered: own ? own.pctAnswered : null,
+          answered: own ? own.answered : 0,
+          missed: own ? own.missed : 0,
+        });
+      }
+    } catch (e) { trend = []; }
+
+    var noteCount = countCallNotesInRange_(emp, from, to);
+    return {
+      from: from, to: to, repName: emp.name,
+      cdr: c ? {
+        totalRung:    c.totalRung,
+        totalAnswered: c.totalAnswered,
+        totalMissed:  c.totalMissed,
+        pctAnswered:  c.pctAnswered,
+        tttFormatted: c.tttFormatted,
+        attFormatted: c.attFormatted,
+        tttSeconds:   c.tttSeconds,
+        attSeconds:   c.attSeconds,
+      } : null,
+      noteCount: noteCount,
+      noteCoverage: cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
+      trend: trend,
+    };
   } catch (err) { return { error: err.message }; }
 }
 

@@ -49,9 +49,9 @@
   padding: 2px 8px;
   border-radius: var(--radius-sm);
 }
-.m-coverage--high { background: var(--good-soft); color: var(--good); }
-.m-coverage--mid  { background: var(--warn-soft); color: var(--warn); }
-.m-coverage--low  { background: var(--danger-soft); color: var(--danger); }
+.m-coverage--high { background: var(--accent-soft); color: var(--success-deep); }
+.m-coverage--mid  { background: var(--warn-soft); color: var(--warning-deep); }
+.m-coverage--low  { background: var(--destructive-soft); color: var(--danger-deep); }
 
 /* ── Sidebar alert badge ────────────────────────────────────────── */
 .m-alert-badge {
@@ -320,6 +320,27 @@
 :root[data-compact] .m-hero-value { font-size: 42px; }
 :root[data-compact] .m-hero-value .unit { font-size: 18px; }
 :root[data-compact] .m-hero-spark svg { height: 40px; }
+
+/* §6 — My Stats trend-window presets (shared .toolbar-tabs) */
+.m-preset-tabs { margin-left: auto; }
+
+/* §6 — rail-row inline sparkline (where per-day data exists, C4) */
+.m-row-spark { grid-column: 1 / -1; margin-top: 4px; }
+.m-row-spark svg { display: block; width: 100%; height: 20px; }
+.m-row-spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.m-row-spark.warn polyline { stroke: var(--warn); }
+
+/* §6 — tri-tone % Answered cells (same thresholds as mCoverageBadge_) */
+.m-pct-high { color: var(--success-deep); font-weight: 700; }
+.m-pct-mid  { color: var(--warning-deep); font-weight: 700; }
+.m-pct-low  { color: var(--danger-deep); font-weight: 700; }
+
+/* §6 — sortable + sticky team table */
+.m-table-wrap { max-height: 62vh; overflow: auto; }
+.m-table thead th { position: sticky; top: 0; background: var(--paper-card); z-index: 1; }
+.m-table th.m-sortable { cursor: pointer; user-select: none; }
+.m-table th.m-sortable:hover { color: var(--ink); }
+.m-table th .m-caret { display: inline-block; width: 9px; margin-left: 3px; color: var(--accent); }
 </style>
 
 <script>
@@ -327,7 +348,9 @@
 //  METRICS — My Stats + Team Metrics views
 // ════════════════════════════════════════════════════════════════════════════
 
-var M_STATE = { myDate: null, teamFrom: null, teamTo: null };
+var M_STATE = { myDate: null, teamFrom: null, teamTo: null,
+  myMode: 'single', myFrom: '', myTo: '', myData: null,            // §6/#1 My Stats single date | aggregated range + cache
+  teamSort: { key: 'pctAnswered', dir: 'desc' }, teamData: null };  // §6 sortable team table + cache
 
 function mTodayIso_() {
   // Derive "today" in the employee's roster timezone (empTz/isoDateTz from
@@ -373,39 +396,85 @@ function enterMetricsMyStatsView() {
       '<h2>My Call Metrics</h2>' +
     '</div>' +
     '<div class="m-controls">' +
-      '<label style="font-size:0.85rem;color:var(--muted)">Date</label>' +
+      // Today/7D/30D presets — Today = single-day rich view (own-vs-team series);
+      // 7D/30D = server-AGGREGATED ranges (#1). A specific past day stays
+      // available via the date input; custom spans via From/To.
+      '<div class="toolbar-tabs m-preset-tabs" role="group" aria-label="Range preset">' +
+        mMyPresetBtn_('Today', 'today') + mMyPresetBtn_('7D', '7d') + mMyPresetBtn_('30D', '30d') +
+      '</div>' +
+      '<label style="font-size:0.85rem;color:var(--muted)">Day</label>' +
       '<input type="date" id="m-my-date" value="' + M_STATE.myDate + '">' +
+      '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px">Range</label>' +
+      '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
+      '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
       '<button class="btn btn-sm" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
     '<div id="m-my-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
 
   document.getElementById('m-my-date').addEventListener('change', function () {
-    M_STATE.myDate = this.value;
-    mLoadMyStats_();
+    M_STATE.myMode = 'single'; M_STATE.myDate = this.value;
+    mMyStatsSyncPresets_(); mLoadMyStats_();
   });
+  var onRange = function () {
+    var f = document.getElementById('m-my-from'), t = document.getElementById('m-my-to');
+    if (!f.value || !t.value) return;
+    M_STATE.myMode = 'range'; M_STATE.myFrom = f.value; M_STATE.myTo = t.value;
+    mMyStatsSyncPresets_(); mLoadMyStats_();
+  };
+  document.getElementById('m-my-from').addEventListener('change', onRange);
+  document.getElementById('m-my-to').addEventListener('change', onRange);
 
   mLoadMyStats_();
 }
 
-function mLoadMyStats_() {
-  var date = M_STATE.myDate;
-  if (!date) return;
-  var requestedView = currentView;
+function mMyPresetBtn_(label, key) {
+  return '<button class="toolbar-tab" data-my-preset="' + key + '" aria-pressed="' + (mMyActivePreset_() === key) + '" onclick="mMyPreset_(\'' + key + '\')">' + label + '</button>';
+}
+/** Which preset (if any) the current selection matches — for the pressed state. */
+function mMyActivePreset_() {
+  var today = mTodayIso_();
+  if (M_STATE.myMode === 'single' && M_STATE.myDate === today) return 'today';
+  if (M_STATE.myMode === 'range' && M_STATE.myTo === today) {
+    if (M_STATE.myFrom === mDaysAgo_(6)) return '7d';
+    if (M_STATE.myFrom === mDaysAgo_(29)) return '30d';
+  }
+  return '';
+}
+function mMyStatsSyncPresets_() {
+  var active = mMyActivePreset_();
+  document.querySelectorAll('.m-preset-tabs .toolbar-tab').forEach(function (b) {
+    b.setAttribute('aria-pressed', b.getAttribute('data-my-preset') === active ? 'true' : 'false');
+  });
+  var dEl = document.getElementById('m-my-date'); if (dEl && M_STATE.myMode === 'single') dEl.value = M_STATE.myDate;
+  var fEl = document.getElementById('m-my-from'); if (fEl) fEl.value = M_STATE.myFrom || '';
+  var tEl = document.getElementById('m-my-to'); if (tEl) tEl.value = M_STATE.myTo || '';
+}
+/** Today = single (rich); 7D/30D = aggregated ranges ending today (#1). */
+function mMyPreset_(key) {
+  var today = mTodayIso_();
+  if (key === 'today') { M_STATE.myMode = 'single'; M_STATE.myDate = today; }
+  else { M_STATE.myMode = 'range'; M_STATE.myTo = today; M_STATE.myFrom = mDaysAgo_(key === '7d' ? 6 : 29); }
+  mMyStatsSyncPresets_();
+  mLoadMyStats_();
+}
 
+function mLoadMyStats_() {
+  var requestedView = currentView;
   document.getElementById('m-my-content').innerHTML =
     '<div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div>';
 
-  google.script.run
-    .withSuccessHandler(function (data) {
-      if (currentView !== requestedView) return;
-      mRenderMyStats_(data);
-    })
-    .withFailureHandler(function (err) {
-      if (currentView !== requestedView) return;
-      document.getElementById('m-my-content').innerHTML =
-        '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
-    })
-    .getMyMetrics(date);
+  var ok = function (data) { if (currentView === requestedView) mRenderMyStats_(data); };
+  var fail = function (err) {
+    if (currentView !== requestedView) return;
+    document.getElementById('m-my-content').innerHTML =
+      '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
+  };
+  if (M_STATE.myMode === 'range' && M_STATE.myFrom && M_STATE.myTo) {
+    google.script.run.withSuccessHandler(ok).withFailureHandler(fail).getMyMetricsRange(M_STATE.myFrom, M_STATE.myTo);
+  } else {
+    var date = M_STATE.myDate; if (!date) return;
+    google.script.run.withSuccessHandler(ok).withFailureHandler(fail).getMyMetrics(date);
+  }
 }
 
 function mRenderMyStats_(data) {
@@ -416,14 +485,25 @@ function mRenderMyStats_(data) {
     el.innerHTML = '<div class="m-empty">' + esc(data.error) + '</div>';
     return;
   }
+  M_STATE.myData = data;
 
   var c = data.cdr;
   var html = '';
+  // #1 — range mode (getMyMetricsRange returns from/to) vs single-day. Both carry
+  // a per-day `trend`; range has no own-vs-team `series` (a single-day concept).
+  var isRange = !!(data.from && data.to);
+  var trend = data.trend || [];
+  var series = data.series || {};
+  var seriesOwn = function (k) {
+    var arr = series[k]; if (!Array.isArray(arr)) return null;
+    return arr.map(function (p) { return p ? p.own : null; });
+  };
+  var periodLabel = isRange ? (esc(data.from) + ' → ' + esc(data.to)) : 'Today';
 
   // No CDR data → minimal fallback (per S43)
   if (!c) {
-    html += '<div class="m-empty">No call data found for ' + esc(data.date) +
-      '. This may be a non-working day, or the CDR spreadsheet is not yet configured.</div>';
+    html += '<div class="m-empty">No call data found for ' + (isRange ? esc(data.from) + ' → ' + esc(data.to) : esc(data.date)) +
+      '. This may be a non-working day/range, or the CDR spreadsheet is not yet configured.</div>';
     html += '<div class="m-row" style="margin-top:var(--space-sm)">' +
       '<span class="m-row-label">Notes Filed</span>' +
       '<span class="m-row-value">' + esc(data.noteCount) + '</span></div>';
@@ -431,41 +511,46 @@ function mRenderMyStats_(data) {
     return;
   }
 
-  // V4·E4 — Hero + Rail layout. Hero = % answered + vs-avg + 30-day
-  // sparkline. Rail = notes filed, coverage, missed, avg/total talk.
-  var avg = mTrendAvg_(data.trend, 'pctAnswered');
+  // Hero + Rail. Hero = % answered (range = aggregate over from→to) + vs-avg +
+  // period sparkline. Rail = notes filed, answered, missed, avg/total talk.
+  var avg = mTrendAvg_(trend, 'pctAnswered');
   var deltaHtml = '';
-  if (avg != null && c.pctAnswered != null) {
+  if (trend.length > 1 && avg != null && c.pctAnswered != null) {
     var d = c.pctAnswered - avg;
     var sign = d > 0.05 ? 'pos' : (d < -0.05 ? 'neg' : 'neu');
     var label = d > 0.05 ? '+' + Math.abs(d).toFixed(1)
               : d < -0.05 ? '−' + Math.abs(d).toFixed(1)
               : '±0';
     deltaHtml = '<div class="m-hero-delta">' +
-      '<span class="' + sign + '">' + label + ' pts</span> vs 30-day average (' + avg.toFixed(1) + '%)</div>';
+      '<span class="' + sign + '">' + label + ' pts</span> vs period daily average (' + avg.toFixed(1) + '%)</div>';
   }
 
   html += '<div class="m-layout">';
   html += '<div class="m-hero">';
-  html += '<div class="m-hero-label">Today · % Answered</div>';
+  html += '<div class="m-hero-label">' + periodLabel + ' · % Answered</div>';
   html += '<div class="m-hero-value">' + esc(c.pctAnswered) + '<span class="unit">%</span></div>';
   html += deltaHtml;
-  if (data.trend && data.trend.length > 1) {
-    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg) + '</div>';
-    var firstLabel = data.trend[0].date ? data.trend[0].date.substring(5) : '';
-    var lastLabel = data.trend[data.trend.length - 1].date ? data.trend[data.trend.length - 1].date.substring(5) : '';
+  if (trend.length > 1) {
+    html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(trend, 'pctAnswered', avg) + '</div>';
+    var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
+    var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
     html += '<div class="m-hero-spark-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>';
   }
   html += '</div>';
 
-  // Side rail
+  // Side rail — sparklines where per-day data exists (C4): Answered/Missed from
+  // the trend; Avg talk from the own attSeconds series (single mode only — range
+  // returns no per-day series). Notes filed + Total talk stay plain.
   html += '<div class="m-rail">';
   html += mRailRow_('Notes filed', data.noteCount,
     data.noteCoverage != null ? data.noteCoverage + '% coverage' : null);
-  html += mRailRow_('Calls answered', c.totalAnswered, 'good');
+  html += mRailRow_('Calls answered', c.totalAnswered, 'good', null,
+    { values: trend.map(function (t) { return t.answered; }) });
   html += mRailRow_('Missed', c.totalMissed, c.totalMissed > 0 ? 'warn' : 'good',
-    c.totalMissed > 0 ? c.totalMissed + ' calls unanswered' : 'no missed calls');
-  html += mRailRow_('Avg talk', c.attFormatted);
+    c.totalMissed > 0 ? c.totalMissed + ' calls unanswered' : 'no missed calls',
+    { values: trend.map(function (t) { return t.missed; }), tone: 'warn' });
+  html += mRailRow_('Avg talk', c.attFormatted, null, null,
+    { values: seriesOwn('attSeconds') });
   html += mRailRow_('Total talk', c.tttFormatted);
   html += '</div>';
   html += '</div>';
@@ -613,9 +698,27 @@ function mBuildHeroSparkSvg_(trend, metric, avg) {
     '</svg>';
 }
 
+/** Tiny inline trend sparkline for a rail row (§6 / C4). `values` is a numeric
+ *  array (nulls skipped); auto-scaled min→max. Empty when < 2 points. */
+function mMiniSparkSvg_(values) {
+  var nums = (values || []).filter(function (v) { return v != null && !isNaN(v); });
+  if (nums.length < 2) return '';
+  var max = Math.max.apply(null, nums), min = Math.min.apply(null, nums);
+  var range = (max - min) || 1;
+  var w = 90, h = 20, pad = 2, xs = (w - pad * 2) / (values.length - 1);
+  var coords = [];
+  values.forEach(function (v, i) {
+    if (v == null || isNaN(v)) return;
+    var y = h - pad - ((v - min) / range) * (h - pad * 2);
+    coords.push((pad + i * xs).toFixed(1) + ',' + y.toFixed(1));
+  });
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><polyline points="' + coords.join(' ') + '"/></svg>';
+}
+
 /** Single rail row. Value is rendered with the optional tone class
- *  (warn/good/crit); a sub-line below is optional. */
-function mRailRow_(label, value, toneOrSub, sub) {
+ *  (warn/good/crit); a sub-line below is optional. `spark` (§6) is an optional
+ *  { values:[…], tone:'warn'? } trend sparkline rendered full-width below. */
+function mRailRow_(label, value, toneOrSub, sub, spark) {
   var tone = '';
   var subLine = '';
   // Polymorphic 3rd arg: 'good'/'warn'/'crit' → tone class; anything else → sub line.
@@ -625,14 +728,56 @@ function mRailRow_(label, value, toneOrSub, sub) {
   } else if (toneOrSub) {
     subLine = '<div class="m-row-sub">' + esc(toneOrSub) + '</div>';
   }
+  var sparkHtml = '';
+  if (spark && spark.values) {
+    var svg = mMiniSparkSvg_(spark.values);
+    if (svg) sparkHtml = '<div class="m-row-spark' + (spark.tone === 'warn' ? ' warn' : '') + '">' + svg + '</div>';
+  }
   // esc() every interpolated slot — value/sub can carry CDR-derived strings;
   // matches the "Metrics client must esc() every server string" invariant.
   return '<div class="m-row">' +
     '<span class="m-row-label">' + esc(label) + '</span>' +
     '<span class="m-row-value' + (tone ? ' ' + tone : '') + '">' + esc(value) + '</span>' +
     subLine +
+    sparkHtml +
     '</div>';
 }
+
+/** Tri-tone class for a % Answered / coverage value (mCoverageBadge_ thresholds). */
+function mPctClass_(p) { return (p == null) ? '' : (p >= 80 ? 'm-pct-high' : p >= 50 ? 'm-pct-mid' : 'm-pct-low'); }
+
+// §6 — sortable team table. Sort keys map to rep fields; ATT sorts by the
+// numeric attSeconds (not the formatted string), coverage treats null as lowest.
+function mSortReps_(reps, sort) {
+  var key = sort.key, dir = (sort.dir === 'asc') ? 1 : -1;
+  var get = function (r) {
+    switch (key) {
+      case 'repName': return String(r.repName || '').toLowerCase();
+      case 'totalRung': return r.totalRung || 0;
+      case 'totalAnswered': return r.totalAnswered || 0;
+      case 'totalMissed': return r.totalMissed || 0;
+      case 'pctAnswered': return r.pctAnswered || 0;
+      case 'attSeconds': return r.attSeconds || 0;
+      case 'noteCount': return r.noteCount || 0;
+      case 'noteCoverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
+      default: return 0;
+    }
+  };
+  return reps.slice().sort(function (a, b) {
+    var va = get(a), vb = get(b);
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  });
+}
+function mTeamSort_(key) {
+  var s = M_STATE.teamSort || { key: 'pctAnswered', dir: 'desc' };
+  if (s.key === key) s.dir = (s.dir === 'asc') ? 'desc' : 'asc';
+  else { s.key = key; s.dir = (key === 'repName') ? 'asc' : 'desc'; }
+  M_STATE.teamSort = s;
+  if (M_STATE.teamData) mRenderTeamMetrics_(M_STATE.teamData);
+}
+// (mTh_ removed — header rendering now lives in the shared mtRenderTable_, #3.)
 
 // ── Team Metrics view (manager-only) ──────────────────────────────────
 
@@ -739,6 +884,7 @@ function mRenderTeamMetrics_(data) {
     el.innerHTML = '<div class="m-empty">No metrics available for this range.</div>';
     return;
   }
+  M_STATE.teamData = data;   // §6 — cache so column-sort toggles re-render without a reload
 
   var html = '';
 
@@ -793,33 +939,24 @@ function mRenderTeamMetrics_(data) {
     html += '<div class="m-empty">No activity data for ' + esc(data.date) + '.</div>';
   } else {
     html += '<div class="m-section-title">Per-Rep Breakdown</div>';
-    html += '<div class="m-table-wrap"><table class="m-table">';
-    html += '<thead><tr>' +
-      '<th>Rep</th>' +
-      '<th class="m-num">Rung</th>' +
-      '<th class="m-num">Answered</th>' +
-      '<th class="m-num">Missed</th>' +
-      '<th class="m-num">% Ans</th>' +
-      '<th class="m-num">ATT</th>' +
-      '<th class="m-num">Notes</th>' +
-      '<th class="m-num">Coverage</th>' +
-      '</tr></thead><tbody>';
-
-    for (var i = 0; i < data.reps.length; i++) {
-      var r = data.reps[i];
-      html += '<tr>';
-      html += '<td class="m-name">' + esc(r.repName) + '</td>';
-      html += '<td class="m-num">' + esc(r.totalRung) + '</td>';
-      html += '<td class="m-num">' + esc(r.totalAnswered) + '</td>';
-      html += '<td class="m-num">' + (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0') + '</td>';
-      html += '<td class="m-num">' + esc(r.pctAnswered) + '%</td>';
-      html += '<td class="m-num">' + esc(r.attFormatted) + '</td>';
-      html += '<td class="m-num">' + esc(r.noteCount) + '</td>';
-      html += '<td class="m-num">' + (r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>') + '</td>';
-      html += '</tr>';
-    }
-
-    html += '</tbody></table></div>';
+    // #3 — render via the shared mtRenderTable_ component (also used by the CN
+    // manager Stats table). Rows pre-sorted here; mTeamSort_ re-renders.
+    var reps = mSortReps_(data.reps, M_STATE.teamSort || { key: 'pctAnswered', dir: 'desc' });
+    html += mtRenderTable_({
+      rows: reps,
+      sort: M_STATE.teamSort,
+      onSort: 'mTeamSort_',
+      columns: [
+        { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) { return esc(r.repName); } },
+        { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return esc(r.totalRung); } },
+        { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return esc(r.totalAnswered); } },
+        { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'; } },
+        { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return '<span class="' + mPctClass_(r.pctAnswered) + '">' + esc(r.pctAnswered) + '%</span>'; } },
+        { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return esc(r.attFormatted); } },
+        { key: 'noteCount', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return esc(r.noteCount); } },
+        { key: 'noteCoverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
+      ],
+    });
   }
 
   // Unmatched agents warning
