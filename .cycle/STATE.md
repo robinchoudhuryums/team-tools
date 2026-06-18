@@ -44,10 +44,21 @@ Executing as 7 separate per-module commits on branch claude/practical-gauss-yycw
   block render removed); KB_STATE.landing flag guards async re-render vs open
   item/search. Reader/markdown/search/drawer/editor untouched. Pure 134/0, DOM
   48/0. Most used + Review due are manager-only (endpoints manager-gated).
-- NEXT: commit #5 Time Clock (sky gradient + tz selector; ribbon absorbs
-  hours/state/break-bands/lunch-color + punch buttons under it; NOTE-volume
-  histogram C2; one-row Punches·Team·PTO Annual-only C1 incl. drop Sick Leave
-  from modals.html PTO select; Coverage heatmap + risk callout in tc/manager).
+- DONE — commit #5a Time Clock (59b3230): sky-gradient clock card + tz-selector
+  pill + phase glyph (off the 1Hz tick); shift strip = control surface (hours +
+  state pill header, ribbon break-bands + note-volume histogram, punch buttons
+  under, lunch=warn color-coding, LunchOut mid-shift primary); C2 histogram via
+  NEW server getMyNoteHourBuckets(date) (rep-local hours; own endpoint avoids the
+  getMyCallNotes DOM-flush collision + trims a hot-path RPC); C1 Sick removed —
+  one-row Punches·Team·Annual-PTO(ring) replaces the ledger, Sick Leave dropped
+  from both modals.html PTO selects (INV-95 ok), backend dormant.
+- DONE — commit #5b Coverage (1aa2c0f): days×hours week heatmap (6a–9p, ok/risk/
+  low/none cells) + click-to-expand per-day rep detail + Understaffed-slots risk
+  callout (panel[data-tone=destructive], grouped ranges + PTO reason). Server
+  unchanged. Pure 134/0, DOM 48/0 throughout.
+- NEXT: commit #6 Metrics (My Stats Today/7D/30D presets; rail sparklines where
+  data exists C4 — answered/missed from trend, attSeconds from series; sortable+
+  sticky team table; tri-tone %Answered + unify .m-coverage on deep tones C5).
 
 ## Cycle 5 CLOSED (2026-06-17)
 Audit-opened broad-scan + full backlog implemented same-cycle, merged to main
