@@ -3,7 +3,11 @@
   /* Time-of-day "sky" gradient card. Gradient hexes are decorative, time-of-day
      specific, and have no token equivalent (the CN_EMAIL_PALETTE precedent for
      justified inline hex). White text + shadow for contrast over the gradient. */
-  .clk.clk-sky { position: relative; overflow: hidden; color: #fff; border-radius: var(--radius-lg); padding: 16px 18px; text-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: background .6s var(--ease); }
+  .clk.clk-sky { position: relative; overflow: hidden; color: #fff; border-radius: var(--radius-lg); padding: 16px 18px; text-shadow: 0 1px 3px rgba(0, 0, 0, .35); background: #243056; }
+  /* §10 sky cross-fade — stacked gradient layers (CSS can't transition between
+     two gradients, so we cross-fade opacity between two absolute layers). */
+  .clk-sky-layers { position: absolute; inset: 0; z-index: 0; border-radius: inherit; overflow: hidden; }
+  .clk-sky > :not(.clk-sky-layers) { position: relative; z-index: 1; }
   .clk-sky .clk-time { color: #fff; }
   .clk-sky .clk-meta, .clk-sky .clk-regions { color: rgba(255, 255, 255, .92); }
   .clk-sky .clk-region b { color: #fff; }
@@ -114,6 +118,7 @@ function renderClockView(area) {
         <div class="status-sentence">${statusSentence}</div>
       </div>
       <div class="clk clk-sky" id="clk-sky">
+        <div class="clk-sky-layers"><div class="sky-layer" id="clk-sky-a"></div><div class="sky-layer" id="clk-sky-b"></div></div>
         <div class="clk-sky-top">
           <span class="clk-phase" id="clk-phase"></span>
           ${tzSelectHtml_(tz, tzAbbr)}
@@ -323,7 +328,20 @@ function clkApplySky_(force) {
   if (!force && h === _clkLastSkyHour) return;
   _clkLastSkyHour = h;
   const sky = clkSkyFor_(h);
-  card.style.background = sky.grad;
+  // §10 cross-fade — paint the inactive layer with the new gradient, then toggle
+  // .on so the sky dissolves between phases. Falls back to a flat card bg if the
+  // layers aren't present (e.g. an older cached render).
+  const a = document.getElementById('clk-sky-a');
+  const b = document.getElementById('clk-sky-b');
+  if (a && b) {
+    const incoming = a.classList.contains('on') ? b : a;
+    const outgoing = incoming === a ? b : a;
+    incoming.style.background = sky.grad;
+    incoming.classList.add('on');
+    outgoing.classList.remove('on');
+  } else {
+    card.style.background = sky.grad;
+  }
   const ph = document.getElementById('clk-phase');
   if (ph) ph.innerHTML = icon(sky.glyph, 12) + ' ' + esc(sky.phase.toUpperCase());
 }

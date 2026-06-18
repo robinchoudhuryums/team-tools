@@ -552,6 +552,26 @@ function observeReveals(container) {
   }
 }
 
+/** 2nd-pass motion §6 — settle a row in place on a mutation (mark-complete /
+ *  resolve / accept): dim + tint, strike the label, draw a check. Keeps the row
+ *  (good for context / undo affordance). `labelSel` is an optional selector for
+ *  the text to strike through. Idempotent — re-calling won't stack checks. */
+function settleRow_(row, labelSel) {
+  if (!row || !row.classList) return;
+  row.classList.add('mc');
+  if (labelSel) {
+    var label = row.querySelector(labelSel);
+    if (label) label.classList.add('mc-label');
+  }
+  if (!row.querySelector('.ck-wrap')) {
+    var span = document.createElement('span');
+    span.className = 'ck-wrap';
+    span.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="ck" d="M5 13l4 4L19 7"/></svg>';
+    row.appendChild(span);
+  }
+  row.classList.add('done');
+}
+
 /** 2nd-pass motion §7 — flash a copy button on success (also aids ⌘C
  *  discoverability). One-shot: re-arm the class, then clear it. */
 function flashCopied(el) {

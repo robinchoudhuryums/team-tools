@@ -266,7 +266,18 @@ function trainMarkComplete_(itemId, btn) {
       var it = trainItemById_(itemId);
       if (it) { it.completed = true; it.completedAt = res.completedAt || ''; it.status = 'done'; }
       showToast('Training marked complete.', 'success');
-      if (currentView === 'trainingHome') trainRenderMy_();
+      // §6 settle — dim + strike + draw a check on the row, then let the list
+      // re-render to its canonical done state once the animation has played.
+      var row = null;
+      document.querySelectorAll('.tr-row[data-item-id]').forEach(function (r) {
+        if (r.getAttribute('data-item-id') === itemId) row = r;
+      });
+      if (row && currentView === 'trainingHome') {
+        settleRow_(row, '.tr-title');
+        setTimeout(function () { if (currentView === 'trainingHome') trainRenderMy_(); }, 420);
+      } else if (currentView === 'trainingHome') {
+        trainRenderMy_();
+      }
       trainSyncReaderFoot_(itemId);
     })
     .withFailureHandler(function (err) {
