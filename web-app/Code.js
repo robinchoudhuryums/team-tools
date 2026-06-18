@@ -2412,8 +2412,11 @@ function getCallNotesDepartments() {
   } catch (err) { return { error: err.message }; }
 }
 
-/** TextFinder-backed search across the rep's notes. field ∈ caller | issue | all.
- *  If exact=true, matches patientAndTrx exactly (case-insensitive, trimmed) and
+/** Substring search across the rep's notes. field ∈ all | caller | issue |
+ *  phone | trx (INV-45). `caller`/`all` fold in callback+patientAndTrx and
+ *  `issue`/`all` fold in resolution; `phone` matches the callback column only
+ *  and `trx` the patientAndTrx column only (the distinct scope tabs). If
+ *  exact=true, matches patientAndTrx exactly (case-insensitive, trimmed) and
  *  ignores the field parameter — used by the "Find prior calls for this TRX"
  *  button on note cards to surface repeat-caller history without substring noise. */
 function searchMyCallNotes(query, field, dateRange, exact) {
@@ -2442,6 +2445,10 @@ function searchMyCallNotes(query, field, dateRange, exact) {
       let hit = false;
       if (isExact) {
         if (String(note.patientAndTrx || '').toLowerCase().trim() === qLower) hit = true;
+      } else if (f === 'phone') {
+        if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+      } else if (f === 'trx') {
+        if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
       } else {
         if (f === 'caller' || f === 'all') {
           if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
@@ -3126,12 +3133,18 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
           if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
           if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
           let hit = false;
-          if (f === 'caller' || f === 'all') {
-            if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
-                  .toLowerCase().indexOf(qLower) >= 0) hit = true;
-          }
-          if (!hit && (f === 'issue' || f === 'all')) {
-            if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+          if (f === 'phone') {
+            if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+          } else if (f === 'trx') {
+            if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+          } else {
+            if (f === 'caller' || f === 'all') {
+              if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                    .toLowerCase().indexOf(qLower) >= 0) hit = true;
+            }
+            if (!hit && (f === 'issue' || f === 'all')) {
+              if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+            }
           }
           if (hit) {
             note.repId = repId; note.repName = repName;

@@ -1449,6 +1449,14 @@
     font-family: var(--ui); font-size: 12px;
     color: var(--ink); line-height: 1.5;
   }
+  /* §7a — search results in the real note-card vocabulary (read-only) */
+  .cn-result-count { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .04em; margin: 2px 0 10px; }
+  .cn-result-count b { color: var(--ink); }
+  .cn-card.cn-card-readonly .cn-card-actions { gap: 5px; align-items: flex-start; }
+  .cn-result-rep { display: inline-block; margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .cn-search-dates { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cn-search-dates input[type=date] { font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
+  .cn-search-dates label { font-size: 11px; color: var(--muted); }
 
   /* ── Training Q&A tray — recent answered training questions ──── */
   #cn-training-qa-tray:empty { display: none; }
@@ -1890,6 +1898,8 @@ const CN_STATE = {
   searchTimer: null,
   searchExact: false,        // true when search was launched by "find prior calls for this TRX" — matches patientAndTrx exactly
   searchExactTrx: '',        // the TRX being matched, for the "Exact match · X · clear" badge
+  searchFrom: '', searchTo: '',           // §7a — optional date-range filter (rep search)
+  mgrSearchField: 'all', mgrSearchFrom: '', mgrSearchTo: '',  // §7a — manager search field + date range
   deptConfig: null,          // cached departments / suggestions / state tax rates
   ambientTimer: null,
   mgrEnrolledReps: null,     // [{id,name}] of reps with a CallNotesSheetId; loaded once for manager Per-Rep view
@@ -5424,6 +5434,61 @@ function cnFormatDateLabel_(isoDate) {
 
 // ── Search view ────────────────────────────────────────────────────────
 
+// §7a — read-only search-result card in the real note-card vocabulary (cn-card),
+// no action buttons / editors. Shared by the rep and manager search. `repName`
+// (manager search) renders a small attribution chip. Every field esc()'d.
+function cnRenderResultCard_(note, repName) {
+  const time = cnFormatTimestampForCopy_(note.timestamp);
+  const flagCls = note.flagType ? ' flag-' + note.flagType : '';
+  const isUrgent = cnIsUrgent_(note);
+  const callerLine = cnCallerDisplay_(note);
+  const trxBit = note.caller && note.patientAndTrx ? `<span class="cn-trx">${esc(note.patientAndTrx)}</span>` : '';
+  const issue = note.issue ? esc(note.issue) : '<em>—</em>';
+  const detailParts = [];
+  if (note.callback) detailParts.push(esc(note.callback));
+  if (note.relationship) detailParts.push(esc(note.relationship));
+  if (note.transferredTo) detailParts.push('→ ' + esc(note.transferredTo));
+  const detailLine = detailParts.length
+    ? `<div style="font-size:11px;color:var(--muted);margin-top:1px">${detailParts.join(' · ')}</div>` : '';
+  const resolutionLine = note.resolution
+    ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${esc(note.resolution)}</div>` : '';
+  const repBit = repName ? `<span class="cn-result-rep">${esc(repName)}</span>` : '';
+  const pills = [];
+  if (note.flagType) pills.push(`<span class="kicker-pill" data-tone="${note.flagType === 'action' ? 'warn' : note.flagType === 'training' ? 'info' : 'accent'}">${esc(note.flagType)}</span>`);
+  if (note.emailedAt) pills.push(`<span class="kicker-pill">sent</span>`);
+  return `
+    <div class="cn-card cn-card-readonly${flagCls}${isUrgent ? ' is-urgent' : ''}" data-note-id="${esc(note.noteId)}">
+      <div class="cn-card-row">
+        <span class="cn-card-time tabular">${esc(time)} · ${esc(note.dateLocal || '')}</span>
+        <div class="cn-card-main">
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${repBit}</div>
+          ${detailLine}
+          <div class="cn-card-issue">${issue}</div>
+          ${resolutionLine}
+        </div>
+        <div class="cn-card-actions">${pills.join('')}</div>
+      </div>
+    </div>`;
+}
+
+// §7a — optional date-range controls shared by the rep + manager search bars.
+function cnSearchDatesHtml_(idPrefix, from, to) {
+  return `<div class="cn-search-dates">` +
+    `<label>From</label><input type="date" id="${idPrefix}-from" value="${esc(from || '')}" onchange="${idPrefix === 'cn-search' ? 'cnSearchDateChanged_()' : 'cnMgrSearchDateChanged_()'}">` +
+    `<label>To</label><input type="date" id="${idPrefix}-to" value="${esc(to || '')}" onchange="${idPrefix === 'cn-search' ? 'cnSearchDateChanged_()' : 'cnMgrSearchDateChanged_()'}">` +
+  `</div>`;
+}
+function cnSearchDateChanged_() {
+  const f = document.getElementById('cn-search-from'), t = document.getElementById('cn-search-to');
+  CN_STATE.searchFrom = f ? f.value : ''; CN_STATE.searchTo = t ? t.value : '';
+  cnFireSearch_();
+}
+function cnMgrSearchDateChanged_() {
+  const f = document.getElementById('cn-mgr-search-from'), t = document.getElementById('cn-mgr-search-to');
+  CN_STATE.mgrSearchFrom = f ? f.value : ''; CN_STATE.mgrSearchTo = t ? t.value : '';
+  cnMgrFireSearch_();
+}
+
 function cnRenderSearchView(area) {
   if (!CN_STATE.enrolled) {
     area.innerHTML = cnEnrollmentMissingHtml_();
@@ -5434,7 +5499,7 @@ function cnRenderSearchView(area) {
   // this TRX" on a card. Clearing returns to substring search with the same
   // query so they can widen the net without re-typing.
   const exactBadge = CN_STATE.searchExact
-    ? `<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--info-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">
+    ? `<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--success-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">
          ${icon('search', 12)} Exact: ${esc(CN_STATE.searchExactTrx || '')}
          <button onclick="cnClearExactMode_()" style="appearance:none;border:none;background:transparent;color:inherit;cursor:pointer;padding:0;text-transform:uppercase;font-family:inherit;font-size:inherit;letter-spacing:.06em;text-decoration:underline">clear</button>
        </div>`
@@ -5448,8 +5513,11 @@ function cnRenderSearchView(area) {
       <div class="toolbar-tabs" role="group" aria-label="Search field">
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'all'}" onclick="cnSetSearchField_('all')">All</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'caller'}" onclick="cnSetSearchField_('caller')">Caller</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'phone'}" onclick="cnSetSearchField_('phone')">Phone</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'trx'}" onclick="cnSetSearchField_('trx')">TRX</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'issue'}" onclick="cnSetSearchField_('issue')">Issue</button>
       </div>
+      ${cnSearchDatesHtml_('cn-search', CN_STATE.searchFrom, CN_STATE.searchTo)}
     </div>
     ${exactBadge ? `<div style="margin-bottom:10px">${exactBadge}</div>` : ''}
     <div id="cn-search-results"></div>
@@ -5544,7 +5612,9 @@ function cnFireSearch_() {
       if (currentView !== requestedView) return;
       showToast('Search failed: ' + err.message, 'toast-error');
     })
-    .searchMyCallNotes(q, CN_STATE.searchField, null, !!CN_STATE.searchExact);
+    .searchMyCallNotes(q, CN_STATE.searchField,
+      (CN_STATE.searchFrom && CN_STATE.searchTo) ? { start: CN_STATE.searchFrom, end: CN_STATE.searchTo } : null,
+      !!CN_STATE.searchExact);
 }
 
 function cnRenderSearchResults_() {
@@ -5554,26 +5624,16 @@ function cnRenderSearchResults_() {
     host.innerHTML = `<div class="cn-stack-empty">Type at least 2 characters to search.</div>`;
     return;
   }
-  if (CN_STATE.searchResults.length === 0) {
+  const results = CN_STATE.searchResults || [];
+  if (results.length === 0) {
     host.innerHTML = `<div class="cn-stack-empty">No matches.</div>`;
     return;
   }
-  host.innerHTML = CN_STATE.searchResults.map(function (n) {
-    return `
-      <div class="cn-search-result-card">
-        <div class="cn-search-result-meta">
-          ${esc(n.dateLocal)} · ${esc(cnFormatTimestampForCopy_(n.timestamp))}
-          ${n.flagType ? ' · <span style="color:var(--ink)">' + esc(n.flagType.toUpperCase()) + '</span>' : ''}
-          ${n.emailedAt ? ' · sent ' + esc(cnFormatTimestampForCopy_(n.emailedAt)) : ''}
-        </div>
-        <div class="cn-search-result-body">
-          <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
-          <br>${esc(n.issue || '')}
-          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
+  const count = `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.searchQuery)}&rdquo;</div>`;
+  host.innerHTML = count + results.map(function (n) { return cnRenderResultCard_(n); }).join('');
+  // Term highlight (reuses the KB DOM-walk highlighter — wraps matches in
+  // <mark class="kb-hl">, never string-level HTML surgery). Skip in exact mode.
+  if (!CN_STATE.searchExact && typeof kbHighlightTerms_ === 'function') kbHighlightTerms_(host, CN_STATE.searchQuery);
 }
 
 // ── Manage (manager-only) view ─────────────────────────────────────────
@@ -6144,8 +6204,11 @@ function cnMgrLoadSearchView_() {
       <div class="toolbar-tabs" role="group" aria-label="Search field">
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'all'}" onclick="cnMgrSetSearchField_('all')">All</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'caller'}" onclick="cnMgrSetSearchField_('caller')">Caller</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'phone'}" onclick="cnMgrSetSearchField_('phone')">Phone</button>
+        <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'trx'}" onclick="cnMgrSetSearchField_('trx')">TRX</button>
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'issue'}" onclick="cnMgrSetSearchField_('issue')">Issue</button>
       </div>
+      ${cnSearchDatesHtml_('cn-mgr-search', CN_STATE.mgrSearchFrom, CN_STATE.mgrSearchTo)}
     </div>
     <div id="cn-mgr-search-results"></div>
   `;
@@ -6187,7 +6250,8 @@ function cnMgrFireSearch_() {
       if (currentView !== requestedView) return;
       showToast('Search failed: ' + err.message, 'toast-error');
     })
-    .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null, null);
+    .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null,
+      (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null);
 }
 
 function cnMgrRenderSearchResults_() {
@@ -6197,28 +6261,14 @@ function cnMgrRenderSearchResults_() {
     host.innerHTML = '<div class="cn-stack-empty">Type at least 2 characters to search across all reps.</div>';
     return;
   }
-  if (CN_STATE.mgrSearchResults.length === 0) {
+  const results = CN_STATE.mgrSearchResults || [];
+  if (results.length === 0) {
     host.innerHTML = '<div class="cn-stack-empty">No matches.</div>';
     return;
   }
-  host.innerHTML = CN_STATE.mgrSearchResults.map(function (n) {
-    return `
-      <div class="cn-search-result-card">
-        <div class="cn-search-result-meta">
-          ${esc(n.dateLocal)} · ${esc(cnFormatTimestampForCopy_(n.timestamp))}
-          · <strong style="color:var(--ink)">${esc(n.repName)}</strong> (${esc(n.repId)})
-          ${n.flagType ? ' · <span style="color:var(--ink)">' + esc(n.flagType.toUpperCase()) + '</span>' : ''}
-          ${n.emailedAt ? ' · sent ' + esc(cnFormatTimestampForCopy_(n.emailedAt)) : ''}
-          ${n.emailDepartments ? ' · ' + esc(n.emailDepartments) : ''}
-        </div>
-        <div class="cn-search-result-body">
-          <strong>${esc(n.caller || n.patientAndTrx || '—')}</strong> · ${esc(n.patientAndTrx || '')}
-          <br>${esc(n.issue || '')}
-          ${n.resolution ? '<br><span style="color:var(--muted)">→ ' + esc(n.resolution) + '</span>' : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
+  const count = `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps</div>`;
+  host.innerHTML = count + results.map(function (n) { return cnRenderResultCard_(n, n.repName); }).join('');
+  if (typeof kbHighlightTerms_ === 'function') kbHighlightTerms_(host, CN_STATE.mgrSearchQuery);
 }
 
 // ── Ambient (sidebar badge) polling ────────────────────────────────────

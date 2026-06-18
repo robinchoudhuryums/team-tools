@@ -876,6 +876,7 @@ function _runAllTests() {
   _integrationTest('cn_deleteCallNote_basic',                test_cn_deleteCallNote_basic);
   _integrationTest('cn_setCallNotePinned_capAt3',            test_cn_setCallNotePinned_capAt3);
   _integrationTest('cn_updateCallNote_basic',                test_cn_updateCallNote_basic);
+  _integrationTest('cn_search_phoneTrxFieldScopes',          test_cn_search_phoneTrxFieldScopes);
   _integrationTest('cn_managerGetCallNotes_nonManagerRejected', test_cn_managerGetCallNotes_nonManagerRejected);
   _integrationTest('cn_getFormSubmission_callerScoped',      test_cn_getFormSubmission_callerScoped);
   _integrationTest('cn_managerGetFormSubmission_gatedAndScoped', test_cn_managerGetFormSubmission_gatedAndScoped);
@@ -3047,6 +3048,26 @@ function _cnTestPayload(overrides) {
 }
 
 // ── submitCallNote ──
+
+// §7a / INV-45 — the distinct `phone` (callback-only) and `trx`
+// (patientAndTrx-only) search scopes. Two notes, each matching ONE scope on a
+// unique token, must not cross-surface in the other scope.
+function test_cn_search_phoneTrxFieldScopes() {
+  _clearTestCallNotes();
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    submitCallNote(_cnTestPayload({ callback: '5550009999', caller: 'Alpha Caller', patientAndTrx: 'Patient AAA' }));
+    submitCallNote(_cnTestPayload({ callback: '5551112222', caller: 'Beta Caller',  patientAndTrx: 'TRX-ZZZ-77' }));
+  });
+  const byPhone = _asUser(_TEST_INDIA_EMAIL, function () { return searchMyCallNotes('5550009999', 'phone', null, false); });
+  _assertEq((byPhone.results || []).length, 1, 'phone scope matches the one note by callback');
+  _assertEq(byPhone.results[0].caller, 'Alpha Caller', 'phone scope returned the right note');
+  const byTrx = _asUser(_TEST_INDIA_EMAIL, function () { return searchMyCallNotes('TRX-ZZZ-77', 'trx', null, false); });
+  _assertEq((byTrx.results || []).length, 1, 'trx scope matches the one note by patientAndTrx');
+  _assertEq(byTrx.results[0].caller, 'Beta Caller', 'trx scope returned the right note');
+  // phone scope must NOT match a patientAndTrx token (scope isolation)
+  const cross = _asUser(_TEST_INDIA_EMAIL, function () { return searchMyCallNotes('TRX-ZZZ-77', 'phone', null, false); });
+  _assertEq((cross.results || []).length, 0, 'phone scope does not match a patientAndTrx token');
+}
 
 function test_cn_submitCallNote_basic() {
   _clearTestCallNotes();
