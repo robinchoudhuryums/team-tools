@@ -1,4 +1,18 @@
 <style>
+/* Spanish-inbox pending task cards (Part A) */
+.sp-tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; max-width: 920px; }
+.sp-task { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); box-shadow: var(--shadow-sm); padding: 12px 14px; }
+.sp-task-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.sp-task-from { font-size: 12px; color: var(--muted); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-task-age { font-family: var(--mono); font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.sp-task-subj { font-weight: 600; font-size: 14px; color: var(--ink); margin-bottom: 4px; }
+.sp-task-body { font-size: 13px; color: var(--muted); line-height: 1.45; white-space: pre-wrap; }
+.sp-task-actions { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+.sp-open { font-size: 12px; color: var(--info); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.sp-open:hover { text-decoration: underline; }
+.sp-more { appearance: none; border: none; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+.sp-more:hover { text-decoration: underline; }
+
 /* ═══════════════════════════════════════════════════════════════════════
    METRICS — view-scoped styles
    ───────────────────────────────────────────────────────────────────────
@@ -1086,16 +1100,61 @@ function spanishRender_(d) {
     '<div class="tel-cell"><div class="tel-label">Avg time</div><div class="tel-value">' + esc(spanishFmtDur_(d.avgMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(spanishFmtDur_(d.medianMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
     '</div>';
-  var pend = '';
-  if (d.pendingList && d.pendingList.length) {
-    pend = '<div class="day-section-label" style="margin:6px 0 8px">Pending · oldest first</div><div style="max-width:660px">' +
-      d.pendingList.map(function (p) {
-        var aged = p.ageHours >= 24 ? (Math.floor(p.ageHours / 24) + 'd ' + (p.ageHours % 24) + 'h') : (p.ageHours + 'h');
-        var tone = p.ageHours >= 24 ? 'var(--danger-deep)' : (p.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
-        return '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px">' +
-          '<span>' + esc(p.requester) + '</span><span style="font-family:var(--mono);color:' + tone + '">' + esc(aged) + '</span></div>';
-      }).join('') + '</div>';
-  }
+  var pend = '<div id="spanish-pending" style="margin-top:6px">' + loSweep() + '</div>';
   body.innerHTML = note + strip + pend;
+  spanishLoadPending_();
+}
+
+/** Part A — live-read pending requests as task cards (subject + snippet +
+ *  Open-in-Gmail + expand-to-full-body). Loaded separately from the cached
+ *  aggregate so the bodies are never cached/stored. */
+function spanishLoadPending_() {
+  var slot = document.getElementById('spanish-pending'); if (!slot) return;
+  google.script.run
+    .withSuccessHandler(function (d) {
+      if (currentView !== 'metricsSpanish') return;
+      var s = document.getElementById('spanish-pending'); if (!s) return;
+      if (!d || d.error) { s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((d && d.error) || 'Could not load tasks') + '</div>'; return; }
+      var list = d.pending || [];
+      if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Pending tasks</div><div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) + ' Nothing pending — all caught up.</div>'; return; }
+      s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Pending tasks · ' + list.length + '</div>' +
+        '<div class="sp-tasks">' + list.map(spanishTaskCard_).join('') + '</div>';
+    })
+    .withFailureHandler(function (e) {
+      if (currentView !== 'metricsSpanish') return;
+      var s = document.getElementById('spanish-pending'); if (s) s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((e && e.message) || 'Could not load tasks') + '</div>';
+    })
+    .getSpanishInboxPending(SPANISH_STATE.days);
+}
+
+function spanishTaskCard_(t) {
+  var aged = t.ageHours >= 24 ? (Math.floor(t.ageHours / 24) + 'd ' + (t.ageHours % 24) + 'h') : (t.ageHours + 'h');
+  var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
+  var more = t.hasMore ? '<button class="sp-more" data-thread="' + esc(t.threadId) + '" onclick="spanishExpand_(this)">Show full request</button>' : '';
+  var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
+  return '<div class="sp-task">' +
+    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' +
+      '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
+    '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
+    '<div class="sp-task-body">' + esc(t.snippet) + (t.hasMore ? '…' : '') + '</div>' +
+    '<div class="sp-task-actions">' + open + ' ' + more + '</div>' +
+  '</div>';
+}
+
+function spanishExpand_(btn) {
+  var tid = btn.getAttribute('data-thread');
+  var card = btn.closest('.sp-task');
+  if (!card) return;
+  btn.disabled = true; btn.textContent = 'Loading…';
+  google.script.run
+    .withSuccessHandler(function (r) {
+      btn.disabled = false; btn.textContent = 'Show full request';
+      if (!r || r.error) { showToast((r && r.error) || 'Could not load', 'error'); return; }
+      var bodyEl = card.querySelector('.sp-task-body');
+      if (bodyEl) bodyEl.textContent = r.body || '(empty)';
+      btn.remove();
+    })
+    .withFailureHandler(function (e) { btn.disabled = false; btn.textContent = 'Show full request'; showToast((e && e.message) || 'Error', 'error'); })
+    .getSpanishInboxThreadBody(tid);
 }
 </script>
