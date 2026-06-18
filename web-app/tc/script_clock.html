@@ -51,10 +51,15 @@
   /* Bottom one-row: Today's Punches · Team Right Now · compact Annual PTO. */
   .clk-row3 { display: grid; grid-template-columns: 1fr 1fr minmax(170px, .7fr); gap: 14px; align-items: start; margin-top: 14px; }
   .pto-mini { display: flex; align-items: center; gap: 14px; }
-  .pto-mini-ring { position: relative; width: 60px; height: 60px; flex-shrink: 0; }
-  .pto-mini-ring svg { transform: rotate(-90deg); display: block; }
-  .pto-mini-ring .pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; font-size: .9rem; color: var(--ink); }
-  .pto-mini-main .sub { font-size: .76rem; color: var(--muted); margin-top: 2px; }
+  .pto-mini-main { flex: 1; min-width: 0; }
+  .pto-mini-main .sub { font-size: .76rem; color: var(--muted); margin-top: 4px; }
+  /* #6 — segmented day-pips PTO display (replaces the donut) */
+  .pto-big { font-family: var(--mono); font-weight: 700; font-size: 1.4rem; color: var(--ink); line-height: 1.1; margin: 2px 0 7px; }
+  .pto-big-unit { font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .pto-pips { display: flex; flex-wrap: wrap; gap: 3px; max-width: 190px; }
+  .pto-pip { width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }          /* remaining */
+  .pto-pip.used { background: var(--paper-3); }                                                    /* used */
+  .pto-pip.used-half { background: linear-gradient(90deg, var(--paper-3) 50%, var(--accent) 50%); }
   :root[data-compact] .clk-row3 { grid-template-columns: 1fr; }
   @media (max-width: 760px) { .clk-row3 { grid-template-columns: 1fr; } }
 </style>
@@ -307,17 +312,26 @@ function renderPtoMini_(s) {
   const max = s.annualLeaveMax || 15;
   const rem = s.annualLeave || 0;
   const used = Math.max(0, max - rem);
-  const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
-  const r = 24, c = 2 * Math.PI * r, off = c * (1 - pct / 100);
+  // Segmented day-pips: one pip per allotted day — remaining = accent (filled),
+  // used = muted, with a half-pip for a half-day. Reads exact days at a glance.
+  const totalPips = Math.max(1, Math.round(max));
+  const full = Math.floor(used);
+  const frac = used - full;
+  let pips = '';
+  for (let i = 0; i < totalPips; i++) {
+    const dayNum = i + 1;
+    let cls;
+    if (dayNum <= full) cls = 'used';
+    else if (dayNum === full + 1 && frac > 0) cls = 'used-half';
+    else cls = '';   // remaining (filled accent)
+    pips += `<span class="pto-pip ${cls}"></span>`;
+  }
   return `<div class="card pto-mini">
-    <div class="pto-mini-ring"><svg width="60" height="60" viewBox="0 0 60 60" aria-hidden="true">
-        <circle cx="30" cy="30" r="${r}" fill="none" stroke="var(--paper-3)" stroke-width="6"></circle>
-        <circle class="ring-arc" style="--circ:${c.toFixed(1)};--target:${off.toFixed(1)}" cx="30" cy="30" r="${r}" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"></circle>
-      </svg><div class="pct">${formatLeaveDays(rem)}</div></div>
     <div class="pto-mini-main">
       <div class="card-label">Annual PTO</div>
-      <div class="sub">of ${formatLeaveDays(max)} days</div>
-      <div class="sub">${formatLeaveDays(used)} used</div>
+      <div class="pto-big">${formatLeaveDays(rem)} <span class="pto-big-unit">days left</span></div>
+      <div class="pto-pips" title="${formatLeaveDays(rem)} of ${formatLeaveDays(max)} days remaining">${pips}</div>
+      <div class="sub">${formatLeaveDays(used)} used · ${formatLeaveDays(max)} total</div>
     </div></div>`;
 }
 
