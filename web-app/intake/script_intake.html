@@ -549,7 +549,7 @@ function intakeBuildPpdModal_(html, recs) {
           '<div class="meta">' + codeHtml +
             '<div class="just">' + esc(intakeStripTags_(p.justification)) + '</div>' + actions +
           '</div>' +
-          '<select class="status-sel" data-status="' + esc(id) + '" title="Marked on the email sent to the agent">' +
+          '<select class="status-sel" data-status="' + esc(id) + '" onchange="intakeRecStatusChange_(this)" title="Marked on the email sent to the agent">' +
             '<option value="none">— No selection —</option>' +
             '<option value="accepted">Accepted</option>' +
             '<option value="undecided">Undecided/Maybe</option>' +
@@ -583,6 +583,17 @@ function intakeToggleStar_(el) {
   var id = el.getAttribute('data-star');
   document.querySelectorAll('.intk-rec .star').forEach(function (s) { if (s !== el) s.classList.remove('on'); });
   el.classList.toggle('on');
+}
+
+// §6 settle — recommendation status feedback. Accepted draws a check (positive,
+// no dim); Rejected dims the row (matches the greyed-rejected email semantic);
+// any other value clears the settle. Modal-local; no hot-path interaction.
+function intakeRecStatusChange_(sel) {
+  var row = sel.closest('.intk-rec');
+  if (!row) return;
+  unsettleRow_(row);   // clear any prior settle so accepted↔rejected switches cleanly
+  if (sel.value === 'accepted')      settleRow_(row, null, { dim: false });
+  else if (sel.value === 'rejected') settleRow_(row, null, { check: false });
 }
 
 // Copy a URL (image or brochure) to the clipboard so the agent can paste it
