@@ -6765,15 +6765,38 @@ function cnStartDragModal_(e) {
 function enterCallNotesAdminView(area) {
   stopClock();   // F5 — every tab enter stops the Clock-view intervals; this one was missed
   var compactHeader = COMPACT_MODE ? cnCompactHeader_('Admin', 'settings') : '';
+  // §7c — Admin is grouped into sub-tabs (same .toolbar-tabs vocabulary as the
+  // Manage view) instead of one long scroll: Overview (system status + KPIs) /
+  // Tags (taxonomy + trends) / Compliance (audit) / Config (dept/tax/suggestions).
+  // Each panel keeps its independent, contained-failure loader; the tabs just
+  // route the existing slots into show/hide panes.
+  var tab = function (key, label) {
+    return '<button class="toolbar-tab' + (CN_STATE.adminTab === key ? ' active' : '') +
+      '" data-admin-tab="' + key + '" onclick="cnAdminTab_(\'' + key + '\')">' + label + '</button>';
+  };
+  if (!CN_STATE.adminTab) CN_STATE.adminTab = 'overview';
+  var paneStyle = function (key) { return CN_STATE.adminTab === key ? '' : 'display:none'; };
   area.innerHTML =
     compactHeader +
     (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'KPIs, tag taxonomy, and department/tax config. Changes take effect immediately (no redeploy needed).')) +
-    '<div id="cn-admin-augment"></div>' +
-    '<div id="cn-admin-trends"></div>' +
-    '<div id="cn-admin-audit"></div>' +
-    '<div id="cn-admin-health"></div>' +
-    '<div id="cn-admin-storage"></div>' +
-    '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>';
+    '<div class="toolbar-tabs cn-admin-tabs" role="group" aria-label="Admin section" style="margin-bottom:16px">' +
+      tab('overview', 'Overview') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') +
+    '</div>' +
+    '<div class="cn-admin-pane" data-pane="overview" style="' + paneStyle('overview') + '">' +
+      '<div id="cn-admin-kpis"></div>' +
+      '<div id="cn-admin-health"></div>' +
+      '<div id="cn-admin-storage"></div>' +
+    '</div>' +
+    '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
+      '<div id="cn-admin-augment"></div>' +
+      '<div id="cn-admin-trends"></div>' +
+    '</div>' +
+    '<div class="cn-admin-pane" data-pane="compliance" style="' + paneStyle('compliance') + '">' +
+      '<div id="cn-admin-audit"></div>' +
+    '</div>' +
+    '<div class="cn-admin-pane" data-pane="config" style="' + paneStyle('config') + '">' +
+      '<div id="cn-admin-body" style="max-width:900px"><div class="spinner" style="margin:24px auto"></div></div>' +
+    '</div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
       if (currentView !== 'callNotesAdmin') return;
@@ -6802,6 +6825,19 @@ function enterCallNotesAdminView(area) {
   cnLoadStoragePanel_();
 }
 
+/** §7c — switch the Admin sub-tab (Overview / Tags / Compliance / Config).
+ *  Pure show/hide over the already-loaded panes; the panels keep their data
+ *  (no reload). Persists the active tab in CN_STATE so a re-enter restores it. */
+function cnAdminTab_(key) {
+  CN_STATE.adminTab = key;
+  document.querySelectorAll('.cn-admin-tabs .toolbar-tab').forEach(function (b) {
+    b.classList.toggle('active', b.getAttribute('data-admin-tab') === key);
+  });
+  document.querySelectorAll('.cn-admin-pane').forEach(function (p) {
+    p.style.display = (p.getAttribute('data-pane') === key) ? '' : 'none';
+  });
+}
+
 /** Round 2 · 8h — fetch + render the new Admin sections (KPI strip + tag
  *  taxonomy table). Drops into #cn-admin-augment which sits above the
  *  existing department mapping / state tax / suggestions blocks. */
@@ -6816,7 +6852,12 @@ function cnLoadAdminAugment_() {
   function maybeRender() {
     if (done < 2) return;
     if (currentView !== 'callNotesAdmin') return;
-    slot.innerHTML = cnRenderAdminAugmentHtml_(kpi, tax);
+    // §7c — split: KPI strip → Overview (#cn-admin-kpis); tag taxonomy → Tags
+    // (#cn-admin-augment). Falls back to a single slot if the KPI host is absent.
+    const parts = cnRenderAdminAugmentHtml_(kpi, tax);
+    const kpiSlot = document.getElementById('cn-admin-kpis');
+    if (kpiSlot) { kpiSlot.innerHTML = parts.kpiHtml; slot.innerHTML = parts.taxHtml; }
+    else { slot.innerHTML = parts.kpiHtml + parts.taxHtml; }
     // Round 2 follow-on — wire the tag-row action buttons. Sentinel-guarded
     // so repeated renders don't stack handlers.
     cnWireAdminTagActions_();
@@ -6884,7 +6925,9 @@ function cnRenderAdminAugmentHtml_(kpi, tax) {
       + '</div>';
   }
 
-  return kpiHtml + taxHtml;
+  // §7c — return the two pieces separately so the tabbed Admin can place the
+  // KPI strip in Overview and the tag taxonomy in Tags.
+  return { kpiHtml: kpiHtml, taxHtml: taxHtml };
 }
 
 /** Round 2 follow-on — one tag-table row with usage bar + Rename / Merge
