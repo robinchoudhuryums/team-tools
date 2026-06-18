@@ -534,17 +534,23 @@ function enterTimeoffView(area) {
     calYear = parseInt(parts[0], 10);
     calMonth = parseInt(parts[1], 10);
   }
-  renderLoading(area, 'Loading calendar…');
+  renderLoading(area, 'Loading calendar…', 'clock');
   loadCalendar(calYear, calMonth);
 }
 function enterManagerView(area) {
   stopClock();
-  renderLoading(area, 'Loading dashboard…');
+  renderLoading(area, 'Loading dashboard…', 'clock');
   loadManagerDashboard();
 }
 
-function renderLoading(area, label) {
-  area.innerHTML = `<div class="state-center"><div class="spinner"></div>
+function renderLoading(area, label, iconName) {
+  // 2nd-pass loaders_and_motion.md Role A — full-view enter shows the module's
+  // own glyph, pulsing, + a mono label. When no iconName is passed (legacy
+  // 2-arg callers) keep the spinner so behavior is unchanged.
+  const mark = iconName
+    ? `<span class="lo-glyph">${icon(iconName, 30)}</span>`
+    : `<div class="spinner"></div>`;
+  area.innerHTML = `<div class="state-center">${mark}
     <div class="state-label">${esc(label)}</div></div>`;
 }
 

@@ -486,7 +486,7 @@ function renderManagerView(area, data) {
     </div>`;
 
   document.getElementById('mgr-refresh').addEventListener('click', () => {
-    renderLoading(area, 'Refreshing…');
+    renderLoading(area, 'Refreshing…', 'clock');
     loadManagerDashboard();
   });
   document.getElementById('mgr-export').addEventListener('click', openExportModal);

@@ -2132,6 +2132,44 @@
     border-radius: 50%; animation: spin .8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Unified loader system (2nd-pass loaders_and_motion.md, Part 1) ──
+     Four roles, one shared set. The --lo-* aliases map to app tokens so all
+     loaders theme in dark mode automatically. GPU-cheap (transform/opacity/
+     background-position only); the global prefers-reduced-motion block in
+     styles_design_tokens.html neutralizes every animation below. */
+  :root { --lo-accent: var(--accent); --lo-track: var(--line); }
+  @keyframes lo-spin    { to { transform: rotate(360deg); } }
+  @keyframes lo-dot     { 0%,80%,100% { transform: scale(.5); opacity: .4; } 40% { transform: scale(1); opacity: 1; } }
+  @keyframes lo-bar     { 0% { left: -40%; } 100% { left: 100%; } }
+  @keyframes lo-shimmer { 100% { background-position: 200% 0; } }
+  @keyframes lo-pulse   { 0%,100% { transform: scale(.82); opacity: .45; } 50% { transform: scale(1); opacity: 1; } }
+  /* Role A — full-view enter: the module glyph, pulsing (renderLoading). */
+  .lo-glyph { color: var(--lo-accent); animation: lo-pulse 1.25s var(--ease) infinite; display: inline-flex; }
+  /* Role B — lists / tables / cards: skeleton shimmer. */
+  .skel {
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--paper-3) 25%, var(--paper-2) 37%, var(--paper-3) 63%);
+    background-size: 200% 100%;
+    animation: lo-shimmer 1.3s linear infinite;
+  }
+  .skel-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+  .skel-avatar { width: 32px; height: 32px; border-radius: 50%; flex: none; }
+  .skel-lines { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+  .skel-bar { height: 10px; }
+  /* Role C — in-place refresh: a thin indeterminate sweep bar at panel top. */
+  .lo-sweep { position: relative; height: 3px; border-radius: 999px; background: var(--lo-track); overflow: hidden; }
+  .lo-sweep::after {
+    content: ''; position: absolute; top: 0; bottom: 0; width: 40%;
+    border-radius: 999px; background: var(--lo-accent);
+    animation: lo-bar 1.15s var(--ease) infinite;
+  }
+  /* Role D — buttons / tiny slots: inline dot pulse (keep the word too). */
+  .lo-dots { display: inline-flex; gap: 5px; vertical-align: middle; }
+  .lo-dots span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: lo-dot 1.4s var(--ease) infinite; }
+  .lo-dots span:nth-child(2) { animation-delay: .18s; }
+  .lo-dots span:nth-child(3) { animation-delay: .36s; }
+
   .state-label {
     font-family: var(--mono);
     color: var(--muted); font-size: 11px;

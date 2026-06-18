@@ -1944,7 +1944,7 @@ function enterCallNotesView(area) {
   CN_STATE.editingNoteId = null;
   CN_STATE.filter = 'all';
   cnPrewarmScript_();
-  renderLoading(area, 'Loading call notes…');
+  renderLoading(area, 'Loading call notes…', 'mail');
   // Guard the config-fetch continuation too: cnLoadToday_'s own guard
   // captures currentView only when THIS callback runs, so a nav-away during
   // a slow first config fetch would otherwise pass the inner guard, clobber
@@ -1984,7 +1984,7 @@ function enterCallNotesHistoryView(area) {
     CN_STATE.historyDate = `${d7.getUTCFullYear()}-${pad(d7.getUTCMonth()+1)}-${pad(d7.getUTCDate())}`;
     CN_STATE.historyEndDate = today;
   }
-  renderLoading(area, 'Loading history…');
+  renderLoading(area, 'Loading history…', 'list');
   cnLoadDateRange_(CN_STATE.historyDate, CN_STATE.historyEndDate || CN_STATE.historyDate, function () {
     cnRenderHistoryView(area);
   });
@@ -2008,7 +2008,7 @@ function enterCallNotesSearchView(area) {
 function enterCallNotesFormsView(area) {
   stopClock();
   const requestedView = currentView;
-  renderLoading(area, 'Loading sent forms…');
+  renderLoading(area, 'Loading sent forms…', 'outbox');
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
@@ -2078,7 +2078,7 @@ function cnSentFormCardHtml_(f) {
 
 function enterCallNotesManageView(area) {
   stopClock();
-  renderLoading(area, 'Loading team queues…');
+  renderLoading(area, 'Loading team queues…', 'list');
   cnRenderManageView(area);
 }
 
