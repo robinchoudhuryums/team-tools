@@ -552,6 +552,22 @@ function observeReveals(container) {
   }
 }
 
+/** 2nd-pass loader Role C — a thin indeterminate sweep bar for in-place
+ *  refreshes (content stays visible / a panel is reloading). Returns markup. */
+function loSweep() { return '<div class="lo-sweep" role="status" aria-label="Loading"></div>'; }
+/** 2nd-pass loader Role B — skeleton rows shaped like a note/list row
+ *  (avatar circle + two text bars). Cross-fades to real content on arrival. */
+function loSkeleton(rows) {
+  rows = rows || 3;
+  var out = '<div class="skel-wrap" role="status" aria-label="Loading">';
+  for (var i = 0; i < rows; i++) {
+    out += '<div class="skel-row"><div class="skel skel-avatar"></div>' +
+      '<div class="skel-lines"><div class="skel skel-bar" style="width:70%"></div>' +
+      '<div class="skel skel-bar" style="width:45%"></div></div></div>';
+  }
+  return out + '</div>';
+}
+
 // ── Time Clock tab enter handlers ───────────────────────────────────────
 //  Each tab's enter handler receives the view-area element and does whatever
 //  setup the tab needs (data load, ticker start, etc.). The Clock tab's

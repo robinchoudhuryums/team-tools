@@ -1002,7 +1002,7 @@ function enterCoverageView(area) {
       '<div class="field"><label>To</label><input type="date" id="cov-to" value="' + esc(COV_STATE.to) + '"></div>' +
       '<button class="btn-modal-ok" id="cov-load" style="margin:0">Load</button>' +
     '</div>' +
-    '<div id="cov-body"><div class="spinner" style="margin:24px auto"></div></div>';
+    '<div id="cov-body">' + loSweep() + '</div>';
   var loadBtn = document.getElementById('cov-load');
   if (loadBtn) loadBtn.onclick = function () {
     COV_STATE.from = document.getElementById('cov-from').value;

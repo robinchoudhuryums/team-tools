@@ -999,7 +999,7 @@ function enterIntakeSentView(area) {
         '</div>' +
         '<input type="search" class="intk-search" id="intk-sent-search" placeholder="Search patient or rep…" value="' + esc(INTAKE_STATE.sentFilter.q) + '" oninput="intakeSentSearch_(this.value)">' +
       '</div>' +
-      '<div id="intk-sent-list"><div class="spinner" style="margin:24px auto"></div></div>' +
+      '<div id="intk-sent-list">' + loSweep() + '</div>' +
     '</div>';
   var requested = currentView;
   google.script.run

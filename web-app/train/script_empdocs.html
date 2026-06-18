@@ -130,7 +130,7 @@ function enterMyDocsView() {
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('paperclip', 16) + ' My Docs</div>' : '') +
     '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>My Documents</h2></div>' +
-    '<div id="ed-my-content"><div class="m-loading"><div class="spinner"></div> Loading documents&hellip;</div></div>';
+    '<div id="ed-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('fileText', 26) + '</span> Loading documents&hellip;</div></div>';
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (data) {
@@ -292,7 +292,7 @@ function enterDocsManageView() {
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('manage', 16) + ' Issue Docs</div>' : '') +
     '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>Employee Documents</h2></div>' +
-    '<div id="ed-mgr-content"><div class="m-loading"><div class="spinner"></div> Loading&hellip;</div></div>';
+    '<div id="ed-mgr-content"><div class="m-loading"><span class="lo-glyph">' + icon('fileText', 26) + '</span> Loading&hellip;</div></div>';
   edLoadMgr_();
 }
 

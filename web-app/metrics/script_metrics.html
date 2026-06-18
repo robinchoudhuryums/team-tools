@@ -409,7 +409,7 @@ function enterMetricsMyStatsView() {
       '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
       '<button class="btn btn-sm" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
-    '<div id="m-my-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
+    '<div id="m-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
   document.getElementById('m-my-date').addEventListener('change', function () {
     M_STATE.myMode = 'single'; M_STATE.myDate = this.value;
@@ -808,7 +808,7 @@ function enterMetricsTeamView() {
       '<span class="m-preset-chip" onclick="mTeamPreset_(\'week\')">Last 7 Days</span>' +
       '<span class="m-preset-chip" onclick="mTeamPreset_(\'month\')">Last 30 Days</span>' +
     '</div>' +
-    '<div id="m-team-content"><div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div></div>';
+    '<div id="m-team-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
   document.getElementById('m-team-from').addEventListener('change', function () {
     M_STATE.teamFrom = this.value;
