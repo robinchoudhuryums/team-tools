@@ -373,6 +373,8 @@ this section before touching the relevant area.
   `getTrainingDashboard`, `saveTrainingAssignment`,
   `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`,
   `getQuizAnalytics`, `importQuizFromForm`,
+  `getPunctualityReport`, `getSpanishInboxStats`, `getSpanishInboxPending`,
+  `getSpanishInboxThreadBody`,
   `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`
   (the last four are ALSO team-scoped per INV-122 — the gate alone is
   not the boundary).
@@ -2815,6 +2817,23 @@ manually for a fresh deploy or environment:
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
   reads this before CONFIG; without it, no one passes the
   `isManager` check and manager features stay locked out.
+- **Punctuality tracking (manager Time Clock tab).** `getPunctualityReport(from,
+  to)` (manager-gated, read-only, PHI-free) backs the managerOnly **Time Clock →
+  Punctuality** tab. Per rep over the range it compares the first `ClockIn`
+  against the rep's scheduled start (`getShiftSchedule_(tz).startMin`, resolved in
+  the rep's own tz) and flags a late start when it exceeds
+  `CONFIG.PUNCTUALITY_GRACE_MIN` (default 5), plus a lunch-adherence pass;
+  least-punctual reps sort first. CONFIG-only (`PUNCTUALITY_GRACE_MIN`; no Script
+  Property) — redeploy to change. Reuses the per-tz shift (no per-rep schedule,
+  the INV-127 limitation).
+- **Coverage planner is business-hours/weekday scoped.** `getCoveragePlan` now
+  returns a per-day `closed` flag plus `businessStartHour` / `businessEndHour` /
+  `weekdaysOnly`, driven by CONFIG `COVERAGE_BUSINESS_START_HOUR` (8) /
+  `COVERAGE_BUSINESS_END_HOUR` (17) / `COVERAGE_WEEKDAYS_ONLY` (true). Understaffed
+  flags fire only inside the business-hours window; weekends (when
+  `weekdaysOnly`) render as closed rather than as understaffed. CONFIG-only —
+  redeploy to change. Refines INV-127's flagging (the `< COVERAGE_MIN_STAFF`
+  rule still applies, now only within business hours).
 - **Spanish-inbox tracking (Gmail) needs 3 things.** The Metrics → **Spanish
   Inbox** tab (`getSpanishInboxStats`, manager-gated, read-only, 5-min cached)
   scans the **deploying account's** Gmail for threads addressed to the group
@@ -2855,7 +2874,11 @@ manually for a fresh deploy or environment:
   (`deptStats` open/resolved/avg/median) + oldest-open team list. **Store:**
   optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated PHI-free sheet);
   falls back to the ADP sheet (the store is PHI-free — subject/message ride in
-  the email only, never stored; the row keeps a short non-PHI `label`). No new
+  the email only, never stored; the row keeps a short non-PHI `label`). **A
+  dedicated sheet's tz MUST equal `CONFIG.TIMEZONE`** (not surfaced by Storage
+  Health yet) — `CreatedAt`/`ResolvedAt` are written in the ISO `'T'` form
+  (`drNowTs_`) so Sheets keeps them as strings and `parseTimestampMs_` matches;
+  a drifted sheet tz would skew the elapsed/resolution-time math. No new
   OAuth scope (MailApp already used). Audit rows `DeptRequestSent` /
   `DeptRequestResolved` (reqId + dept only). **Resolve method is the
   receiver-clicks-email-link path** because the roster has no per-employee
@@ -3324,7 +3347,7 @@ Client (shell):
 Client (Time Clock views):
   web-app/tc/script_clock.html, web-app/tc/script_timesheet.html, web-app/tc/script_timeoff.html, web-app/tc/script_manager.html
 Client (Call Notes views):
-  web-app/cn/script_callnotes.html
+  web-app/cn/script_callnotes.html, web-app/cn/script_deptrequests.html
 Client (Metrics views):
   web-app/metrics/script_metrics.html
 Client (Intake views):
