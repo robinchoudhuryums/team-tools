@@ -8496,14 +8496,17 @@ function getSpanishInboxThreadBody(threadId) {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isManager) return { error: 'Manager access required.' };
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
+    const addr = getSpanishInboxAddress_();
+    // Fail closed: without a configured inbox there's no scope to guard against,
+    // so refuse rather than letting an arbitrary thread id be read by id.
+    if (!addr) return { error: 'Spanish inbox not configured.' };
     const th = GmailApp.getThreadById(String(threadId || ''));
     if (!th) return { error: 'Thread not found.' };
-    const addr = getSpanishInboxAddress_();
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
     const first = msgs[0];
     const recips = (String(first.getTo() || '') + ',' + String(first.getCc() || '')).toLowerCase();
-    if (addr && recips.indexOf(addr) < 0) return { error: 'Not a Spanish-inbox thread.' };
+    if (recips.indexOf(addr) < 0) return { error: 'Not a Spanish-inbox thread.' };
     return {
       threadId: String(threadId),
       subject: first.getSubject() || '(no subject)',
@@ -8527,7 +8530,7 @@ function getOrCreateDeptRequestsSheet_() {
   if (!sh) { sh = ss.insertSheet('DeptRequests'); sh.appendRow(DR_HEADERS); }
   return sh;
 }
-function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss'); }
+function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss"); }
 
 /** Send a tracked inter-department request: a branded email to the chosen
  *  department with a "Mark resolved" button (a `?resolve=<token>` link the
@@ -8612,10 +8615,17 @@ function serveResolvePage_(token) {
   let heading, msg;
   try {
     const by = getActiveUserEmail_();
-    const res = markDeptRequestResolved_(token, by);
-    if (!res.found) { heading = 'Request not found'; msg = 'This link is invalid or the request was removed.'; }
-    else if (res.already) { heading = 'Already resolved'; msg = 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.'; }
-    else { heading = 'Marked resolved — thank you!'; msg = 'The ' + (res.dept || 'department') + ' request is now recorded as resolved' + (by ? ' (' + by + ')' : '') + '.'; }
+    if (!by) {
+      // Anonymous / unidentifiable visitor (the ANYONE_ANONYMOUS executeAs case):
+      // don't resolve unattributed — ask them to open it from their work account.
+      heading = 'Sign in to confirm';
+      msg = 'Open this link while signed in to your @umsupply.com account so we can record who resolved the request.';
+    } else {
+      const res = markDeptRequestResolved_(token, by);
+      if (!res.found) { heading = 'Request not found'; msg = 'This link is invalid or the request was removed.'; }
+      else if (res.already) { heading = 'Already resolved'; msg = 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.'; }
+      else { heading = 'Marked resolved — thank you!'; msg = 'The ' + (res.dept || 'department') + ' request is now recorded as resolved (' + by + ').'; }
+    }
   } catch (e) { heading = 'Something went wrong'; msg = 'Could not record the resolution. Please try again.'; }
   const html =
     '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:48px auto;padding:28px;border:1px solid ' + P.line + ';border-radius:12px;text-align:center;color:' + P.ink + ';">' +
@@ -8636,7 +8646,17 @@ function getDeptRequests() {
     if (!emp) return { error: 'Your account is not registered.' };
     const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
     const mine = [], all = [];
-    const parseMs = function (s) { const ms = parseTimestampMs_(s); return ms || null; };
+    // CreatedAt/ResolvedAt are written in the ISO 'T' form (drNowTs_) so Sheets
+    // keeps them as strings — but tolerate a legacy space-form row that Sheets
+    // coerced to a Date (the AuditLog/TO.SUBMITTED_AT coercion gotcha).
+    const parseMs = function (v) {
+      if (v instanceof Date) return v.getTime();
+      const ms = parseTimestampMs_(String(v || ''), CONFIG.TIMEZONE);
+      return ms || null;
+    };
+    const fmtTs = function (ms) {
+      return ms ? Utilities.formatDate(new Date(ms), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a') : '';
+    };
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
       if (!r[DR.REQ_ID]) continue;
@@ -8646,8 +8666,8 @@ function getDeptRequests() {
                         : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
-        toDept: String(r[DR.TO_DEPT] || ''), createdAt: String(r[DR.CREATED_AT] || ''),
-        status: String(r[DR.STATUS] || 'open'), resolvedAt: String(r[DR.RESOLVED_AT] || ''),
+        toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
+        status: String(r[DR.STATUS] || 'open'), resolvedAt: fmtTs(resolvedMs),
         resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
         elapsedMin: elapsedMin,
       };

@@ -2874,7 +2874,11 @@ manually for a fresh deploy or environment:
   (`deptStats` open/resolved/avg/median) + oldest-open team list. **Store:**
   optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated PHI-free sheet);
   falls back to the ADP sheet (the store is PHI-free — subject/message ride in
-  the email only, never stored; the row keeps a short non-PHI `label`). No new
+  the email only, never stored; the row keeps a short non-PHI `label`). **A
+  dedicated sheet's tz MUST equal `CONFIG.TIMEZONE`** (not surfaced by Storage
+  Health yet) — `CreatedAt`/`ResolvedAt` are written in the ISO `'T'` form
+  (`drNowTs_`) so Sheets keeps them as strings and `parseTimestampMs_` matches;
+  a drifted sheet tz would skew the elapsed/resolution-time math. No new
   OAuth scope (MailApp already used). Audit rows `DeptRequestSent` /
   `DeptRequestResolved` (reqId + dept only). **Resolve method is the
   receiver-clicks-email-link path** because the roster has no per-employee

@@ -50,7 +50,8 @@ function drRender_(area, data, errorMsg) {
       '<div class="dr-field"><label class="dr-lbl">Message</label>' +
         '<textarea id="dr-message" class="dr-input dr-ta" rows="4" placeholder="What do you need from this department?"></textarea></div>' +
       '<div class="dr-field"><label class="dr-lbl">Label <span class="dr-lbl-opt">(optional, non-PHI tag)</span></label>' +
-        '<input id="dr-label" class="dr-input" type="text" maxlength="80" placeholder="e.g. auth follow-up"></div>' +
+        '<input id="dr-label" class="dr-input" type="text" maxlength="80" placeholder="e.g. auth follow-up">' +
+        '<div class="dr-hint" style="margin-top:4px">The label is stored for tracking — keep it generic. <b>No patient names or PHI</b> here; the request itself goes in the message above (emailed, never stored).</div></div>' +
       '<div class="dr-composer-foot">' +
         '<span class="dr-hint">The request body rides in the email only — not stored. The receiver clicks a link in the email to mark it resolved.</span>' +
         '<button type="button" class="dr-send-btn" onclick="drSend_()">' + icon('send', 14) + ' Send tracked request</button>' +
