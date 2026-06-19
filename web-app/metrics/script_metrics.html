@@ -93,6 +93,10 @@
   border-radius: var(--radius-sm);
   background: var(--paper-card);
   color: var(--ink);
+  transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+.m-controls input[type="date"]:focus {
+  border-color: var(--accent); box-shadow: var(--ring-focus); outline: none;
 }
 
 /* ── Team table ─────────────────────────────────────────────────── */
@@ -421,7 +425,7 @@ function enterMetricsMyStatsView() {
       '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px">Range</label>' +
       '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
       '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
-      '<button class="btn btn-sm" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
+      '<button class="refresh-btn" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
     '<div id="m-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
@@ -817,7 +821,7 @@ function enterMetricsTeamView() {
       '<input type="date" id="m-team-from" value="' + M_STATE.teamFrom + '">' +
       '<label style="font-size:0.85rem;color:var(--muted)">To</label>' +
       '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">' +
-      '<button class="btn btn-sm" onclick="mLoadTeamMetrics_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
+      '<button class="refresh-btn" onclick="mLoadTeamMetrics_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
     '<div class="m-controls" style="margin-top:calc(-1 * var(--space-xs))">' +
       '<span class="m-preset-chip" onclick="mTeamPreset_(\'today\')">Today</span>' +
