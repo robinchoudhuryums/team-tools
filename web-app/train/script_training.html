@@ -15,7 +15,7 @@
   .tr-chip { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; flex-shrink: 0; }
   .tr-chip.done { background: var(--accent-soft); color: var(--success-deep); }
   .tr-chip.pending { background: var(--paper-2); color: var(--muted); }
-  .tr-chip.overdue { background: var(--destructive-soft); color: var(--danger-deep, #c13030); }
+  .tr-chip.overdue { background: var(--destructive-soft); color: var(--danger-deep); }
   .tr-complete-btn { font: inherit; font-size: .78rem; padding: 5px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--accent-soft); color: var(--success-deep); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
   /* inline button spinner — quiz save/delete in-flight (operator feedback r4) */
   .tr-spin { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; opacity: .8; animation: trSpin .7s linear infinite; vertical-align: -1px; }
@@ -43,9 +43,9 @@
   .tr-table td { padding: 7px 14px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
   .tr-table tbody tr:last-child td { border-bottom: none; }
   .tr-cell-done { color: var(--success-deep); font-weight: 700; }
-  .tr-cell-overdue { color: var(--danger-deep, #c13030); font-weight: 700; }
+  .tr-cell-overdue { color: var(--danger-deep); font-weight: 700; }
   .tr-cell-pending { color: var(--muted); }
-  .tr-revoke-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--danger-deep, #c13030); cursor: pointer; }
+  .tr-revoke-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--danger-deep); cursor: pointer; }
   .tr-section-h { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
   :root[data-compact] .tr-row { flex-wrap: wrap; }
   .tr-link { font: inherit; font-size: .76rem; background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -61,11 +61,11 @@
   .tr-q.wrong { border-color: var(--destructive-soft); background: var(--destructive-soft); }
   .tr-q .tr-q-verdict { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 6px; }
   .tr-q.right .tr-q-verdict { color: var(--success-deep); }
-  .tr-q.wrong .tr-q-verdict { color: var(--danger-deep, #c13030); }
+  .tr-q.wrong .tr-q-verdict { color: var(--danger-deep); }
   .tr-score { text-align: center; padding: 14px 0 6px; }
   .tr-score .big { font-size: 2.2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .tr-score.pass .big { color: var(--success-deep); }
-  .tr-score.fail .big { color: var(--danger-deep, #c13030); }
+  .tr-score.fail .big { color: var(--danger-deep); }
   .tr-score .sub { font-size: .86rem; color: var(--muted); }
   /* quiz editor modal */
   .tr-qed { width: min(720px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
