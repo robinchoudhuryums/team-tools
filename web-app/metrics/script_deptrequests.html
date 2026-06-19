@@ -1,14 +1,16 @@
 <script>
 // ════════════════════════════════════════════════════════════════════════════
-//  DEPT REQUESTS — inter-department request tracking (Part B)
-//  A rep composes a tracked request to another department; the email carries a
-//  "✓ Mark this resolved" link (?resolve=<token>) the receiver clicks. This tab
-//  shows the rep's own requests (open/resolved + elapsed) and, for managers, a
-//  per-department resolution-time aggregate + oldest-open list. Server:
-//  sendDeptRequest / getDeptRequests / serveResolvePage_ (Code.js).
+//  DEPT REQUESTS — inter-department request tracking (Metrics tab)
+//  Tracking is AUTOMATIC: every department email an agent sends from Call Notes
+//  (emailFromCallNote) logs a PHI-free DeptRequests row + embeds a "Mark
+//  resolved" link in the email. This read-only tab shows the rep's own tracked
+//  requests (open/resolved + elapsed) and, for managers, a per-department
+//  resolution-time aggregate + oldest-open list. A request resolves either via
+//  the email link (receiver clicks) OR the in-app button here (sender/manager).
+//  Server: getDeptRequests / resolveDeptRequest / serveResolvePage_ (Code.js).
 // ════════════════════════════════════════════════════════════════════════════
 
-const DR_STATE = { data: null, sending: false };
+const DR_STATE = { data: null };
 
 function enterDeptRequestsView(area) {
   stopClock();
@@ -33,35 +35,19 @@ function drRender_(area, data, errorMsg) {
   const head = compact
     ? cnCompactHeader_('Dept Requests', 'outbox')
     : '<div class="cn-head"><div>' +
-        '<div class="cn-head-eyebrow">Track a request to another department</div>' +
+        '<div class="cn-head-eyebrow">Tracked automatically from the department emails you send</div>' +
         '<h2 class="cn-head-title">Dept Requests</h2>' +
       '</div></div>';
   if (errorMsg) { area.innerHTML = head + '<div class="dr-empty">' + esc(errorMsg) + '</div>'; return; }
 
-  const depts = (data && data.departments) || [];
-  const opts = depts.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
-  const composer =
-    '<div class="dr-card dr-composer">' +
-      '<div class="dr-card-title">New request</div>' +
-      '<div class="dr-field"><label class="dr-lbl">Department</label>' +
-        '<select id="dr-dept" class="dr-input">' + (opts || '<option value="">No departments configured</option>') + '</select></div>' +
-      '<div class="dr-field"><label class="dr-lbl">Subject</label>' +
-        '<input id="dr-subject" class="dr-input" type="text" maxlength="140" placeholder="e.g. Auth follow-up for TRX 12345"></div>' +
-      '<div class="dr-field"><label class="dr-lbl">Message</label>' +
-        '<textarea id="dr-message" class="dr-input dr-ta" rows="4" placeholder="What do you need from this department?"></textarea></div>' +
-      '<div class="dr-field"><label class="dr-lbl">Label <span class="dr-lbl-opt">(optional, non-PHI tag)</span></label>' +
-        '<input id="dr-label" class="dr-input" type="text" maxlength="80" placeholder="e.g. auth follow-up">' +
-        '<div class="dr-hint" style="margin-top:4px">The label is stored for tracking — keep it generic. <b>No patient names or PHI</b> here; the request itself goes in the message above (emailed, never stored).</div></div>' +
-      '<div class="dr-composer-foot">' +
-        '<span class="dr-hint">The request body rides in the email only — not stored. The receiver clicks a link in the email to mark it resolved.</span>' +
-        '<button type="button" class="dr-send-btn" onclick="drSend_()">' + icon('send', 14) + ' Send tracked request</button>' +
-      '</div>' +
-    '</div>';
+  const intro = '<div class="dr-note">' + icon('outbox', 13) +
+    ' Every department email you send from Call Notes is logged here. Resolve a request with the button below, ' +
+    'or the receiver can click the “Mark resolved” link in the email.</div>';
 
   const mine = (data && data.mine) || [];
   const mineHtml = mine.length
     ? '<div class="dr-list">' + mine.map(drRequestRowHtml_).join('') + '</div>'
-    : '<div class="dr-empty">No requests yet. Send one above.</div>';
+    : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>';
   const mineSection =
     '<div class="dr-section"><div class="dr-section-title">My requests</div>' + mineHtml + '</div>';
 
@@ -70,7 +56,7 @@ function drRender_(area, data, errorMsg) {
     mgrSection = drManagerSectionHtml_(data);
   }
 
-  area.innerHTML = head + composer + mineSection + mgrSection;
+  area.innerHTML = head + intro + mineSection + mgrSection;
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 
@@ -86,13 +72,17 @@ function drStatusChip_(item) {
 
 function drRequestRowHtml_(item) {
   const label = item.label ? '<span class="dr-tag">' + esc(item.label) + '</span>' : '';
+  const resolveBtn = item.status !== 'resolved'
+    ? '<button type="button" class="dr-resolve-btn" data-req="' + esc(item.requestId) +
+        '" onclick="drResolveClick_(this)">' + icon('check', 12) + ' Mark resolved</button>'
+    : '';
   return '<div class="dr-row js-anim">' +
     '<div class="dr-row-main">' +
       '<div class="dr-row-dept">' + esc(item.toDept || '—') + label + '</div>' +
       '<div class="dr-row-meta">' + esc(item.createdAt || '') +
         (item.byName ? ' · ' + esc(item.byName) : '') + '</div>' +
     '</div>' +
-    drStatusChip_(item) +
+    '<div class="dr-row-right">' + drStatusChip_(item) + resolveBtn + '</div>' +
   '</div>';
 }
 
@@ -127,43 +117,29 @@ function drManagerSectionHtml_(data) {
     '</div>';
 }
 
-function drSend_() {
-  if (DR_STATE.sending) return;
-  const dept = (document.getElementById('dr-dept') || {}).value || '';
-  const subject = ((document.getElementById('dr-subject') || {}).value || '').trim();
-  const message = ((document.getElementById('dr-message') || {}).value || '').trim();
-  const label = ((document.getElementById('dr-label') || {}).value || '').trim();
-  if (!dept) { showToast('Pick a department.', 'toast-warn'); return; }
-  if (!subject) { showToast('A subject is required.', 'toast-warn'); return; }
-  if (!message) { showToast('A message is required.', 'toast-warn'); return; }
-
-  DR_STATE.sending = true;
-  const btn = document.querySelector('.dr-send-btn');
-  if (btn) { btn.disabled = true; btn.classList.add('is-busy'); btn.innerHTML = icon('send', 14) + ' Sending…'; }
-
+/** In-app resolve (the manual path): the sender or a manager marks an open
+ *  request resolved (server enforces owner-or-manager). */
+function drResolveClick_(btn) {
+  const id = btn.getAttribute('data-req');
+  if (!id || btn.disabled) return;
+  btn.disabled = true; btn.classList.add('is-busy');
+  const orig = btn.innerHTML;
+  btn.innerHTML = icon('check', 12) + ' Resolving…';
   google.script.run
     .withSuccessHandler(function (res) {
-      DR_STATE.sending = false;
       if (res && res.success) {
-        showToast('Tracked request sent to ' + dept + '.', 'toast-success');
+        showToast(res.already ? 'Already resolved.' : 'Marked resolved.', 'toast-success');
         enterDeptRequestsView(getDeptRequestsArea_());
       } else {
-        showToast((res && res.error) || 'Send failed.', 'toast-error');
-        drResetSendBtn_(btn);
+        showToast((res && res.error) || 'Could not resolve.', 'toast-error');
+        btn.disabled = false; btn.classList.remove('is-busy'); btn.innerHTML = orig;
       }
     })
     .withFailureHandler(function (err) {
-      DR_STATE.sending = false;
-      showToast((err && err.message) || 'Send failed.', 'toast-error');
-      drResetSendBtn_(btn);
+      showToast((err && err.message) || 'Could not resolve.', 'toast-error');
+      btn.disabled = false; btn.classList.remove('is-busy'); btn.innerHTML = orig;
     })
-    .sendDeptRequest({ toDept: dept, subject: subject, message: message, label: label });
-}
-
-function drResetSendBtn_(btn) {
-  if (!btn) return;
-  btn.disabled = false; btn.classList.remove('is-busy');
-  btn.innerHTML = icon('send', 14) + ' Send tracked request';
+    .resolveDeptRequest(id);
 }
 
 function getDeptRequestsArea_() {
@@ -182,44 +158,33 @@ function drFmtMin_(min) {
 </script>
 
 <style>
-  .dr-card, .dr-section { background: var(--paper-card); border: 1px solid var(--line);
+  .dr-section { background: var(--paper-card); border: 1px solid var(--line);
     border-radius: var(--radius-md); padding: 16px; margin-bottom: 14px; }
-  .dr-card-title, .dr-section-title { font-weight: 700; font-size: 13px; color: var(--ink);
-    margin-bottom: 12px; }
-  .dr-field { margin-bottom: 10px; }
-  .dr-lbl { display: block; font-size: 11px; font-weight: 600; color: var(--muted);
-    margin-bottom: 4px; }
-  .dr-lbl-opt { font-weight: 400; }
-  .dr-input { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px;
-    color: var(--ink); background: var(--paper-card); border: 1px solid var(--line);
-    border-radius: var(--radius-sm); font-family: inherit; }
-  .dr-input:focus { outline: none; border-color: var(--accent); }
-  .dr-ta { resize: vertical; min-height: 64px; }
-  .dr-composer-foot { display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; margin-top: 6px; flex-wrap: wrap; }
-  .dr-hint { font-size: 11px; color: var(--muted); flex: 1 1 240px; }
-  .dr-send-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px;
-    font-size: 13px; font-weight: 600; color: #fff; background: var(--accent);
-    border: none; border-radius: var(--radius-sm); cursor: pointer; }
-  .dr-send-btn:hover { filter: brightness(0.96); }
-  .dr-send-btn.is-busy { opacity: 0.7; cursor: default; }
+  .dr-section-title { font-weight: 700; font-size: 13px; color: var(--ink); margin-bottom: 12px; }
+  .dr-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--muted);
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-md);
+    padding: 10px 12px; margin-bottom: 14px; }
   .dr-list { display: flex; flex-direction: column; gap: 8px; }
   .dr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm);
     background: var(--paper-card); }
   .dr-row-main { min-width: 0; }
+  .dr-row-right { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
   .dr-row-dept { font-weight: 600; font-size: 13px; color: var(--ink); }
   .dr-row-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
   .dr-tag { display: inline-block; margin-left: 8px; padding: 1px 7px; font-size: 10px;
-    font-weight: 600; color: var(--muted); background: var(--paper-2);
-    border-radius: 999px; }
+    font-weight: 600; color: var(--muted); background: var(--paper-2); border-radius: 999px; }
   .dr-chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
     padding: 3px 9px; font-size: 11px; font-weight: 600; border-radius: 999px; }
   .dr-chip-open { color: var(--warn); background: var(--warn-soft); }
   .dr-chip-resolved { color: var(--success-deep); background: var(--accent-soft); }
+  .dr-resolve-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px;
+    font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft);
+    border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+  .dr-resolve-btn:hover { filter: brightness(0.97); }
+  .dr-resolve-btn.is-busy { opacity: 0.6; cursor: default; }
   .dr-empty { padding: 18px; text-align: center; font-size: 13px; color: var(--muted);
-    background: var(--paper-card); border: 1px dashed var(--line);
-    border-radius: var(--radius-md); }
+    background: var(--paper-card); border: 1px dashed var(--line); border-radius: var(--radius-md); }
   .dr-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .dr-table th { text-align: left; font-size: 10px; text-transform: uppercase;
     letter-spacing: 0.04em; color: var(--muted); font-weight: 600;

@@ -4642,14 +4642,22 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         'Note content changed since you previewed. Re-open Preview to confirm the new body before sending.' };
     }
 
+    // Auto-track this dept email as an inter-department request: generate a
+    // resolve token + a "Mark resolved" CTA appended to the SENT body ONLY
+    // (after the INV-41 hash check, so the preview/hash contract is untouched).
+    // The PHI-free DeptRequests row is logged below, after the send succeeds.
+    const drId = Utilities.getUuid();
+    const drResolveUrl = getWebAppExecUrl_() + '?resolve=' + encodeURIComponent(drId);
+    const sentHtml = htmlBody + drResolveCtaHtml_(drResolveUrl);
+
     // Send first. If MailApp throws, nothing is stamped and the rep sees a clean failure.
     try {
       MailApp.sendEmail({
         to: recipientList.to,
         cc: CONFIG.CALL_NOTES.CC_EMAIL,
         subject,
-        body: textBody,
-        htmlBody,
+        body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
+        htmlBody: sentHtml,
       });
     } catch (sendErr) {
       return { success: false, error: 'Email send failed: ' + sendErr.message };
@@ -4693,6 +4701,23 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // department label, and the recipient count instead.
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
       `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}`);
+
+    // Auto-log the inter-department request (best-effort — never fails the send).
+    // PHI-free: the row carries the dept label + the update CATEGORY only; the
+    // subject (patient/TRX) and note content never enter it. Surfaced in
+    // Metrics → Dept Requests with elapsed/resolution-time tracking.
+    try {
+      getOrCreateDeptRequestsSheet_().appendRow([
+        drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
+        deptLabel, recipientList.to, drNowTs_(), 'open', '', '',
+        (selections.updateInfo || 'Call note email'),
+      ]);
+      writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
+        'reqId=' + drId + '; dept=' + (deptLabel || '(none)'));
+    } catch (drErr) {
+      console.warn('emailFromCallNote: dept-request auto-log failed (noteId=' +
+        noteId + '): ' + drErr.message);
+    }
 
     return { success: true, emailedAt, recipients: recipientList.to, subject };
   } catch (err) { return { success: false, error: err.message }; }
@@ -8547,6 +8572,18 @@ function getOrCreateDeptRequestsSheet_() {
 }
 function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss"); }
 
+/** "Mark resolved" CTA appended to a tracked department email's SENT body
+ *  (added AFTER the INV-41 hash check so the preview/hash contract is unchanged).
+ *  esc_'s the URL — same email-escape discipline as the call-note builder. */
+function drResolveCtaHtml_(resolveUrl) {
+  const P = CN_EMAIL_PALETTE;
+  return '<div style="margin:18px 0 4px;text-align:center;">' +
+      '<a href="' + esc_(resolveUrl) + '" style="display:inline-block;background:' + P.accent + ';color:#ffffff;' +
+      'text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px;font-size:13px;">&#10003; Mark this request resolved</a>' +
+    '</div>' +
+    '<p style="margin:6px 0 0;font-size:11px;color:' + P.muted + ';text-align:center;">Click once you’ve actioned this request (or reply to let the sender know).</p>';
+}
+
 /** Send a tracked inter-department request: a branded email to the chosen
  *  department with a "Mark resolved" button (a `?resolve=<token>` link the
  *  receiver clicks), and an `open` DeptRequests row. Rep-callable, locked.
@@ -8620,6 +8657,28 @@ function markDeptRequestResolved_(token, byEmail) {
     }
     return { found: false };
   } finally { lock.releaseLock(); }
+}
+
+/** In-app resolve (the manual path that complements the email link): the
+ *  request's CREATOR or any manager can mark it resolved from the Metrics tab —
+ *  e.g. when the recipient replied "done" without clicking the email link.
+ *  Rep-callable; ownership/manager-checked before the resolve. */
+function resolveDeptRequest(requestId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Your account is not registered.' };
+    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
+    let owner = null;
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][DR.REQ_ID]) === String(requestId)) { owner = String(rows[i][DR.BY_ID]).trim(); break; }
+    }
+    if (owner === null) return { success: false, error: 'Request not found.' };
+    if (owner !== emp.id && !emp.isManager)
+      return { success: false, error: 'Only the sender or a manager can resolve this request.' };
+    const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '');
+    if (!res.found) return { success: false, error: 'Request not found.' };
+    return { success: true, already: !!res.already };
+  } catch (err) { return { success: false, error: err.message }; }
 }
 
 /** Public-ish resolve page served by doGet?resolve=<token>. The token is the
