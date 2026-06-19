@@ -1642,12 +1642,12 @@ function test_recordPunch_reasonAcceptedOldAdj() {
 function test_submitTimeOff_createsRow() {
   _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
   _asUser(_TEST_INDIA_EMAIL, () => {
-    const r = submitTimeOffRequest(_TEST_DATE_FUTURE, 'Sick Leave', 'doctor visit');
+    const r = submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'doctor visit');
     _assertSuccess(r);
   });
   const row = _findTimeOffRow(_TEST_INDIA_ID, _TEST_DATE_FUTURE);
   _assertNotNull(row, 'Time-off row should exist');
-  _assertEq(row.type, 'Sick Leave');
+  _assertEq(row.type, 'Full Day');
   _assertEq(row.status, 'Pending');
 }
 
@@ -1738,9 +1738,13 @@ function test_updateTimeOff_approveDeductsAnnual() {
 
 function test_updateTimeOff_approveDeductsSick() {
   _clearTestState(_TEST_PH_ID);
-  _asUser(_TEST_PH_EMAIL, () => {
-    _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Sick Leave', ''));
-  });
+  // Sick Leave is no longer creatable via the submit whitelist (INV-95), but the
+  // sick BUCKET machinery is intentionally kept for legacy rows (INV-17). Write a
+  // Pending sick row DIRECTLY (bypassing the whitelist) to prove the
+  // Pending->Approved transition still deducts from the sick bucket.
+  const submittedAt = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+  getOrCreateTimeOffSheet_().appendRow(
+    [_TEST_PH_ID, _TEST_PH_NAME, _TEST_DATE_FUTURE, 'Sick Leave', 'legacy', 'Pending', submittedAt]);
   const row = _findTimeOffRow(_TEST_PH_ID, _TEST_DATE_FUTURE);
   const before = _getBalance(_TEST_PH_ID, 'sick');
   _asUser(_TEST_MGR_EMAIL, () => {

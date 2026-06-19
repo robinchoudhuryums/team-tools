@@ -8377,6 +8377,21 @@ function emailAddrOnly_(from) {
   return (m ? m[1] : s).trim().toLowerCase();
 }
 
+/** One-shot operator helper to FORCE the Gmail OAuth consent prompt.
+ *  The Spanish-inbox features call GmailApp, but `appsscript.json` auto-detects
+ *  scopes and NO test exercises GmailApp — so `runAllTests` never needs the
+ *  Gmail scope and never prompts, leaving the deployed app unauthorized
+ *  ("script does not have permission … gmail.readonly …"). Run THIS function
+ *  from the Apps Script editor (Run ▶) as the deploying account, accept the
+ *  Gmail permission, THEN re-deploy a New version so the web app picks up the
+ *  scope. Read-only (a 1-result search) — gated like the other Gmail funcs. */
+function authorizeGmailScope() {
+  assertManagerCaller_('authorizeGmailScope');
+  const n = GmailApp.search('to:me', 0, 1).length;   // forces the gmail.readonly grant
+  Logger.log('Gmail scope OK — search returned ' + n + ' thread(s). Now redeploy a New version.');
+  return { ok: true, threads: n };
+}
+
 /** Spanish-inbox resolution stats (manager-gated, read-only). Scans the
  *  DEPLOYER's Gmail for threads addressed to the group inbox over the last
  *  `days` and computes time-to-resolution (first inbound → first reply from a
