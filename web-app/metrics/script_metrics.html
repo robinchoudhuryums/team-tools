@@ -478,8 +478,7 @@ function mMyPreset_(key) {
 
 function mLoadMyStats_() {
   var requestedView = currentView;
-  document.getElementById('m-my-content').innerHTML =
-    '<div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div>';
+  document.getElementById('m-my-content').innerHTML = loSweep();
 
   var ok = function (data) { if (currentView === requestedView) mRenderMyStats_(data); };
   var fail = function (err) {
@@ -870,8 +869,7 @@ function mLoadTeamMetrics_() {
   if (!from) return;
   var requestedView = currentView;
 
-  document.getElementById('m-team-content').innerHTML =
-    '<div class="m-loading"><div class="spinner"></div> Loading metrics&hellip;</div>';
+  document.getElementById('m-team-content').innerHTML = loSweep();
 
   google.script.run
     .withSuccessHandler(function (data) {

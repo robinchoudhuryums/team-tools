@@ -1027,7 +1027,7 @@ function enterCoverageView(area) {
 function covLoad_() {
   var body = document.getElementById('cov-body'); if (!body) return;
   var requested = currentView;
-  body.innerHTML = '<div class="spinner" style="margin:24px auto"></div>';
+  body.innerHTML = loSweep();
   google.script.run
     .withSuccessHandler(function (data) { if (currentView !== requested) return; covRender_(data); })
     .withFailureHandler(function (err) {

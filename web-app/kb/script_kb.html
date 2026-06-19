@@ -291,9 +291,9 @@ function enterReferenceView(area) {
     '<div class="kb-wrap">' +
       '<div class="kb-side">' +
         '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off">' +
-        '<div id="kb-tree"><div class="kb-loading"><div class="spinner"></div></div></div>' +
+        '<div id="kb-tree">' + loSweep() + '</div>' +
       '</div>' +
-      '<div class="kb-main" id="kb-main"><div class="kb-loading"><div class="spinner"></div></div></div>' +
+      '<div class="kb-main" id="kb-main">' + loSweep() + '</div>' +
     '</div>';
   KB_STATE.currentId = null; KB_STATE.landing = true;
 
@@ -654,7 +654,7 @@ function kbOpenItem_(id, anchor) {
   KB_STATE.currentId = id; KB_STATE.landing = false;
   document.querySelectorAll('.kb-item').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-kb-id') === id); });
   var main = document.getElementById('kb-main'); if (!main) return;
-  main.innerHTML = '<div class="kb-loading"><div class="spinner"></div></div>';
+  main.innerHTML = loSweep();
   var requested = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
@@ -1315,7 +1315,7 @@ function kbDrawerSearch_(q) {
 
 function kbDrawerOpenItem_(id, anchor) {
   var body = document.getElementById('kbd-body'); if (!body) return;
-  body.innerHTML = '<div class="kb-loading"><div class="spinner"></div></div>';
+  body.innerHTML = loSweep();
   KB_DRAWER.view = 'item';
   google.script.run
     .withSuccessHandler(function (res) {
