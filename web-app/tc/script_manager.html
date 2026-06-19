@@ -1012,7 +1012,7 @@ function enterCoverageView(area) {
     '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
       '<div class="field"><label>From</label><input type="date" id="cov-from" value="' + esc(COV_STATE.from) + '"></div>' +
       '<div class="field"><label>To</label><input type="date" id="cov-to" value="' + esc(COV_STATE.to) + '"></div>' +
-      '<button class="btn-modal-ok" id="cov-load" style="margin:0">Load</button>' +
+      '<button class="refresh-btn" id="cov-load">Load</button>' +
     '</div>' +
     '<div id="cov-body">' + loSweep() + '</div>';
   var loadBtn = document.getElementById('cov-load');
@@ -1175,7 +1175,7 @@ function enterPunctualityView(area) {
     '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
       '<div class="field"><label>From</label><input type="date" id="punct-from" value="' + esc(PUNCT_STATE.from) + '"></div>' +
       '<div class="field"><label>To</label><input type="date" id="punct-to" value="' + esc(PUNCT_STATE.to) + '"></div>' +
-      '<button class="btn-modal-ok" id="punct-load" style="margin:0">Load</button>' +
+      '<button class="refresh-btn" id="punct-load">Load</button>' +
     '</div>' +
     '<div id="punct-body">' + loSweep() + '</div>';
   var b = document.getElementById('punct-load');
