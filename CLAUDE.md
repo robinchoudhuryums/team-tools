@@ -2859,19 +2859,28 @@ manually for a fresh deploy or environment:
   The body surfaces request content in-app (it may reference a patient/call), so
   it is deliberately manager-gated + live-read-only + "Open in Gmail" as the
   primary action — bodies are never written to a sheet or cache.
-- **Inter-department request tracking (`DeptRequests` / Part B).** A rep composes
-  a tracked request to another department from **Call Notes → Dept Requests**
-  (`sendDeptRequest`, rep-callable + locked): it emails the dept's address
-  (`getDepartmentEmails_()[dept]`) a branded message carrying a **"✓ Mark this
-  resolved"** link → `?resolve=<uuid>`, and appends an `open` row to a PHI-free
-  **`DeptRequests`** tab. The receiver (internal `@umsupply.com`) clicks the link;
-  `doGet`'s `?resolve=` branch → `serveResolvePage_` → `markDeptRequestResolved_`
-  (locked, **idempotent** — already-resolved shows who/when) stamps
-  `status=resolved` + `resolvedAt` + `resolvedBy` (`getActiveUserEmail_()`) and
-  serves a branded confirmation page. `getDeptRequests` (rep-callable) returns the
-  caller's own requests (open/resolved + elapsed) + the targetable department
-  list; managers ALSO get a per-department resolution-time aggregate
-  (`deptStats` open/resolved/avg/median) + oldest-open team list. **Store:**
+- **Inter-department request tracking (`DeptRequests` / Part B).** Tracking is
+  **AUTOMATIC**: every department email an agent sends from Call Notes
+  (`emailFromCallNote`) auto-logs a PHI-free `DeptRequests` row AND appends a
+  **"✓ Mark this request resolved"** link (`drResolveCtaHtml_`) to the SENT email
+  body — added AFTER the INV-41 preview-hash check, so the hash contract is
+  untouched. The row carries the dept label + the update CATEGORY only
+  (`selections.updateInfo`); the subject (patient/TRX) and note content never
+  enter it. The auto-log is best-effort (try/catch, like the other post-send
+  stamps — never fails the send). **Two resolve paths:** (1) the receiver
+  (internal `@umsupply.com`) clicks the email link → `doGet`'s `?resolve=`
+  branch → `serveResolvePage_` → `markDeptRequestResolved_` (locked,
+  **idempotent**; requires a signed-in `getActiveUserEmail_` so it's attributed);
+  (2) the **sender or a manager** clicks "Mark resolved" in-app →
+  `resolveDeptRequest(requestId)` (rep-callable, owner-or-manager-checked) — for
+  when the recipient replied "done" without clicking. The surface is the
+  rep-visible **Metrics → Dept Requests** tab (`metricsDeptReq` →
+  `enterDeptRequestsView`, read-only list + resolve buttons): `getDeptRequests`
+  (rep-callable) returns the caller's own requests (open/resolved + elapsed);
+  managers ALSO get a per-department resolution-time aggregate (`deptStats`
+  open/resolved/avg/median) + oldest-open team list. (The legacy standalone
+  `sendDeptRequest` composer endpoint still exists but is no longer surfaced —
+  auto-tracking replaced the manual compose tab.) **Store:**
   optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated PHI-free sheet);
   falls back to the ADP sheet (the store is PHI-free — subject/message ride in
   the email only, never stored; the row keeps a short non-PHI `label`). **A
@@ -2880,12 +2889,13 @@ manually for a fresh deploy or environment:
   (`drNowTs_`) so Sheets keeps them as strings and `parseTimestampMs_` matches;
   a drifted sheet tz would skew the elapsed/resolution-time math. No new
   OAuth scope (MailApp already used). Audit rows `DeptRequestSent` /
-  `DeptRequestResolved` (reqId + dept only). **Resolve method is the
-  receiver-clicks-email-link path** because the roster has no per-employee
-  department column (only the `DEPARTMENT_EMAILS` name→email map) — an in-app
-  department inbox would need that column. **Roadmap (v2, not built):** an in-app
-  per-department incoming-requests inbox (needs a roster department column or a
-  dept-membership map), stale-open reminder digests, per-dept SLA targets. See
+  `DeptRequestResolved` (reqId + dept only). **Resolution offers both the
+  email-link path AND an in-app button** because the roster has no per-employee
+  department column (only the `DEPARTMENT_EMAILS` name→email map), so the app
+  can't route a true per-department incoming inbox. **Roadmap (v2, not built):**
+  an in-app per-department incoming-requests inbox (needs a roster department
+  column or a dept-membership map), stale-open reminder digests, per-dept SLA
+  targets. See
   `docs/email-request-tracking-plan.md`.
 - **External fillable-form links must be the canonical anonymous `/exec` URL.**
   Inside a Google Workspace, `ScriptApp.getService().getUrl()` returns the
@@ -3347,9 +3357,9 @@ Client (shell):
 Client (Time Clock views):
   web-app/tc/script_clock.html, web-app/tc/script_timesheet.html, web-app/tc/script_timeoff.html, web-app/tc/script_manager.html
 Client (Call Notes views):
-  web-app/cn/script_callnotes.html, web-app/cn/script_deptrequests.html
+  web-app/cn/script_callnotes.html
 Client (Metrics views):
-  web-app/metrics/script_metrics.html
+  web-app/metrics/script_metrics.html, web-app/metrics/script_deptrequests.html
 Client (Intake views):
   web-app/intake/script_intake.html
 Client (Reference views):
