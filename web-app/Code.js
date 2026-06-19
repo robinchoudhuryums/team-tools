@@ -4502,25 +4502,68 @@ const CN_EMAIL_PALETTE = {
   logoUrl:      'https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg',
 };
 
-/** Shared branded wrapper for automated notification emails (item 2) — logo
- *  bar + colored header + white card + footer, matching the CN_EMAIL_PALETTE
- *  identity (inline hex; email clients strip <style>). `heading` is esc_'d
- *  here; `bodyHtml` is caller-built and MUST already esc_ any user data.
- *  `opts.accent` overrides the header color (default brand navy). */
+/** Shared branded wrapper for automated notification emails — HYBRID style
+ *  (design rev §5): navy wordmark + navy underline rule + a top-right status
+ *  dot for the company cue; a soft semantic CHIP (the heading as a mono label),
+ *  a warm-paper card, and a mono footer for the Console cue. Email-safe (tables,
+ *  inline hex; clients strip <style>/vars). `heading` is esc_'d here; `bodyHtml`
+ *  is caller-built and MUST already esc_ any user data (INV-105).
+ *  Semantic state is tone-driven: `opts.tone` ∈ success|danger|warn|info, else
+ *  reverse-mapped from the legacy `opts.accent` hex, else 'info' (navy). So the
+ *  13 existing callers keep their colors with no change. Optional `opts.subLabel`
+ *  (header sub-line, default 'Notification') + `opts.ctaUrl`/`opts.ctaLabel`
+ *  (green primary action button). */
 function buildBrandedEmailHtml_(heading, bodyHtml, opts) {
   opts = opts || {};
   const P = CN_EMAIL_PALETTE;
-  const accent = opts.accent || P.brand;
+  const TONES = {
+    success: { dot: P.goodDeep,   bg: P.goodSoft,   text: P.goodDeep,   border: P.accentBorder },
+    danger:  { dot: P.dangerDeep, bg: P.dangerSoft, text: P.dangerDeep, border: P.dangerBorder },
+    warn:    { dot: P.warnDeep,   bg: P.warnSoft,   text: P.warnDeep,   border: P.warnBorder },
+    info:    { dot: P.brand,      bg: P.navyTint,   text: P.brand,      border: P.line },
+  };
+  const ACCENT_TONE = {};
+  ACCENT_TONE[P.accent] = 'success'; ACCENT_TONE[P.good] = 'success';
+  ACCENT_TONE[P.goodDeep] = 'success'; ACCENT_TONE[P.accentDeep] = 'success';
+  ACCENT_TONE[P.danger] = 'danger'; ACCENT_TONE[P.dangerDeep] = 'danger';
+  ACCENT_TONE[P.warn] = 'warn'; ACCENT_TONE[P.warnDeep] = 'warn';
+  ACCENT_TONE[P.brand] = 'info';
+  const tone = TONES[opts.tone] ? opts.tone : ((opts.accent && ACCENT_TONE[opts.accent]) || 'info');
+  const T = TONES[tone];
+  const subLabel = opts.subLabel || 'Notification';
+  const cta = (opts.ctaUrl && opts.ctaLabel)
+    ? '<tr><td style="padding:4px 22px 18px;"><a href="' + esc_(opts.ctaUrl) + '" style="display:inline-block;' +
+        'font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#ffffff;background:' + P.accent +
+        ';text-decoration:none;border-radius:8px;padding:10px 18px;">' + esc_(opts.ctaLabel) + ' &#8594;</a></td></tr>'
+    : '';
   return (
     '<div style="margin:0;padding:0;background:' + P.paper + ';">' +
-    '<div style="max-width:600px;margin:0 auto;padding:20px 12px;font-family:\'Inter\',\'Helvetica Neue\',Arial,sans-serif;color:' + P.ink + ';">' +
-      '<div style="text-align:center;padding:0 0 14px;">' +
-        '<img src="' + P.logoUrl + '" alt="UMS" style="max-height:46px;max-width:200px;">' +
-      '</div>' +
-      '<div style="background:' + P.paperCard + ';border:1px solid ' + P.line + ';border-radius:10px;overflow:hidden;">' +
-        '<div style="background:' + accent + ';color:#ffffff;padding:13px 20px;font-size:16px;font-weight:600;">' + esc_(heading) + '</div>' +
-        '<div style="padding:18px 20px;font-size:14px;line-height:1.55;color:' + P.ink + ';">' + bodyHtml + '</div>' +
-      '</div>' +
+    '<div style="max-width:600px;margin:0 auto;padding:20px 12px;font-family:Arial,Helvetica,sans-serif;color:' + P.ink + ';">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + P.paperCard +
+        ';border:1px solid ' + P.line + ';border-radius:10px;overflow:hidden;">' +
+        // navy wordmark + navy underline rule + semantic status dot (company cue)
+        '<tr><td style="padding:18px 22px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+          '<td style="border-bottom:2px solid ' + P.brand + ';padding-bottom:12px;">' +
+            '<span style="font-size:14px;font-weight:700;letter-spacing:.5px;color:' + P.brand + ';">UMS</span>' +
+            '<span style="font-size:14px;color:' + P.muted2 + ';">&nbsp;Team Tools</span>' +
+            '<div style="font-family:\'Courier New\',monospace;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:' + P.muted3 + ';margin-top:4px;">' + esc_(subLabel) + '</div>' +
+          '</td>' +
+          '<td align="right" style="border-bottom:2px solid ' + P.brand + ';padding-bottom:12px;vertical-align:bottom;">' +
+            '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + T.dot + ';"></span></td>' +
+        '</tr></table></td></tr>' +
+        // soft semantic chip — heading as a mono micro-label (app cue)
+        '<tr><td style="padding:16px 22px 2px;">' +
+          '<table role="presentation" cellpadding="0" cellspacing="0" style="background:' + T.bg +
+            ';border-left:4px solid ' + T.dot + ';border-radius:6px;"><tr><td style="padding:10px 14px;">' +
+            '<span style="font-family:\'Courier New\',monospace;font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:' + T.text + ';">' + esc_(heading) + '</span>' +
+          '</td></tr></table></td></tr>' +
+        // body card
+        '<tr><td style="padding:12px 22px 6px;font-size:14px;line-height:1.55;color:' + P.ink + ';">' + bodyHtml + '</td></tr>' +
+        cta +
+        // mono footer
+        '<tr><td style="padding:6px 22px 18px;"><div style="border-top:1px solid ' + P.line +
+          ';padding-top:12px;font-family:\'Courier New\',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:' + P.muted3 + ';">Automated · do not reply</div></td></tr>' +
+      '</table>' +
       '<div style="text-align:center;color:' + P.muted + ';font-size:11px;padding:14px 0 0;">UMS Team Tools · automated message</div>' +
     '</div></div>'
   );
