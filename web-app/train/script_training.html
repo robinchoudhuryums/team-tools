@@ -46,7 +46,6 @@
   .tr-cell-overdue { color: var(--danger-deep); font-weight: 700; }
   .tr-cell-pending { color: var(--muted); }
   .tr-revoke-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); color: var(--danger-deep); cursor: pointer; }
-  .tr-section-h { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
   :root[data-compact] .tr-row { flex-wrap: wrap; }
   .tr-link { font: inherit; font-size: .76rem; background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
   /* quiz-taking modal */
@@ -106,7 +105,10 @@
   /* §3b — manager completion matrix (reps × items status grid) */
   .tr-legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; font-size: .78rem; color: var(--muted); }
   .tr-legend .sw { width: 14px; height: 14px; border-radius: 4px; display: inline-block; vertical-align: -2px; margin-right: 5px; }
-  .tr-matrix { display: grid; gap: 6px 4px; align-items: center; max-width: 100%; }
+  /* inline-grid + max-content so a small matrix sits next to the employee name
+     instead of flinging the lone cell to the far right (design rev D/2) */
+  .tr-matrix { display: inline-grid; gap: 6px 4px; align-items: center; }
+  .tr-matrix-wrap { overflow-x: auto; }
   .tr-matrix .mh { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .tr-matrix .mh-num { text-align: center; }
   .tr-matrix .mh-cov { text-align: right; }
@@ -121,6 +123,17 @@
   .tr-cov.low  { color: var(--danger-deep); }
   .tr-key { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; font-size: .74rem; color: var(--muted); }
   .tr-key b { color: var(--ink); font-family: var(--mono); }
+  /* §D/2 — card the manager view's bottom sections (matrix / assignments /
+     quizzes / analytics), matching the carded telemetry strip + assign form */
+  .tr-card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card);
+    padding: 14px 16px; margin-bottom: 18px; max-width: 100%; }
+  .tr-card-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .tr-card-title { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); }
+  .tr-card-badge { font-family: var(--mono); font-size: 11px; color: var(--muted);
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; flex-shrink: 0; }
+  .tr-empty-well { border: 1px dashed var(--line); border-radius: 10px; padding: 18px 16px;
+    text-align: center; color: var(--muted); font-size: .9rem; }
 </style>
 
 <script>
@@ -591,13 +604,14 @@ function trainRenderMgr_() {
     });
     withCov.sort(function (a, b) { return a.pct - b.pct || a.r.name.localeCompare(b.r.name); });
 
-    h += '<div class="tr-section-h">Completion matrix</div>' +
+    h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Completion matrix</span>' +
+        '<span class="tr-card-badge">' + reps.length + ' rep · ' + N + ' item</span></div>' +
       '<div class="tr-legend">' +
         '<span><span class="sw" style="background:var(--accent)"></span>Done</span>' +
         '<span><span class="sw" style="background:var(--destructive)"></span>Overdue</span>' +
         '<span><span class="sw" style="background:var(--paper-2);border:1px solid var(--line)"></span>Pending</span>' +
       '</div>' +
-      '<div style="overflow-x:auto"><div class="tr-matrix" style="grid-template-columns:minmax(140px,1.4fr) repeat(' + N + ', 30px) 70px">';
+      '<div class="tr-matrix-wrap"><div class="tr-matrix" style="grid-template-columns:minmax(140px,240px) repeat(' + N + ', 30px) 70px">';
     // header row
     h += '<div class="mh mh-emp">Employee</div>';
     items.forEach(function (it, i) { h += '<div class="mh mh-num" title="' + esc(it.title) + '">' + (i + 1) + '</div>'; });
@@ -619,24 +633,28 @@ function trainRenderMgr_() {
     h += '<div class="tr-key">' + items.map(function (it, i) {
       return '<span><b>' + (i + 1) + '</b> ' + esc(it.title) + ' (' + it.done + '/' + it.assigned + (it.overdue ? ' · ' + it.overdue + ' late' : '') + ')</span>';
     }).join('') + '</div>';
+    h += '</div>';
   } else {
-    h += '<div class="tr-empty">No training assigned yet — use the form above to assign a Reference item.</div>';
+    h += '<div class="tr-card"><div class="tr-empty-well">No training assigned yet — use the form above to assign a Reference item.</div></div>';
   }
 
   // Active assignments (revoke).
   var assigns = dash.assignments || [];
   if (assigns.length) {
-    h += '<div class="tr-section-h">Active assignments</div><table class="tr-table"><thead><tr>' +
+    h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Active assignments</span>' +
+        '<span class="tr-card-badge">' + assigns.length + '</span></div>' +
+      '<table class="tr-table"><thead><tr>' +
       '<th>Item</th><th>Assigned to</th><th>Due</th><th>Assigned</th><th></th></tr></thead><tbody>';
     assigns.forEach(function (a) {
       h += '<tr><td>' + esc(a.title) + '</td><td>' + esc(a.empLabel) + '</td>' +
         '<td>' + esc(a.dueDate || '—') + '</td><td>' + esc(String(a.assignedAt).substring(0, 10)) + '</td>' +
         '<td><button class="tr-revoke-btn" data-tr-revoke="' + esc(a.assignId) + '">Revoke</button></td></tr>';
     });
-    h += '</tbody></table>';
+    h += '</tbody></table></div>';
   }
   // Quizzes — authoring (T2).
-  h += '<div class="tr-section-h">Quizzes</div>';
+  h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Quizzes</span>' +
+      (quizzes.length ? '<span class="tr-card-badge">' + quizzes.length + '</span>' : '') + '</div>';
   if (quizzes.length) {
     h += '<table class="tr-table"><thead><tr><th>Quiz</th><th>Questions</th><th>Pass</th><th>Linked item</th><th></th></tr></thead><tbody>';
     var kbTitleById = {};
@@ -648,13 +666,17 @@ function trainRenderMgr_() {
         '<button class="tr-revoke-btn" data-tr-quiz-del="' + esc(q.quizId) + '">Delete</button></td></tr>';
     });
     h += '</tbody></table>';
+  } else {
+    h += '<div class="tr-empty-well">No quizzes yet — create one to assess training with a graded, retryable check.</div>';
   }
-  h += '<p><button class="tr-complete-btn" id="tr-quiz-new">' + icon('plus', 13) + ' New quiz</button></p>';
+  h += '<p style="margin:12px 0 0"><button class="tr-complete-btn" id="tr-quiz-new">' + icon('plus', 13) + ' New quiz</button></p>';
+  h += '</div>';
 
   // Quiz analytics (T4) — read-only aggregate; no answer keys, no per-rep rows.
   var qa = (TRAIN_STATE.quizAnalytics && TRAIN_STATE.quizAnalytics.quizzes) || [];
   if (qa.length) {
-    h += '<div class="tr-section-h">Quiz analytics</div>' +
+    h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Quiz analytics</span>' +
+        '<span class="tr-card-badge">' + qa.length + '</span></div>' +
       '<table class="tr-table"><thead><tr><th>Quiz</th><th>Attempts</th><th>Passed</th><th>Pass rate</th><th>Avg score</th><th>Avg tries</th></tr></thead><tbody>';
     qa.forEach(function (q) {
       var passCls = (q.passRate === null) ? '' : (q.passRate >= 80 ? 'tr-cell-done' : q.passRate >= 50 ? 'tr-cell-pending' : 'tr-cell-overdue');
@@ -665,7 +687,7 @@ function trainRenderMgr_() {
         '<td>' + (q.avgScore === null ? '—' : q.avgScore + '%') + '</td>' +
         '<td>' + (q.avgAttemptsPerRep === null ? '—' : q.avgAttemptsPerRep) + '</td></tr>';
     });
-    h += '</tbody></table>';
+    h += '</tbody></table></div>';
   }
 
   el.innerHTML = h;
