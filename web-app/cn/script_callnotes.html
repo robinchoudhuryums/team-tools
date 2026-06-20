@@ -2256,6 +2256,9 @@ function cnRenderNotesView(area) {
   // When per-call CDR data lands: prefill the form from hint.calls[0]
   // or auto-filter the rolling stack to unmatched-only.
   cnConsumeNavHint_();
+  // Cross-tool nav hint (e.g. a Spanish-inbox tool-suggestion chip): surface a
+  // context banner + prefill the Issue field with the request subject.
+  cnConsumeAppNavHint_();
   // Restore any in-progress draft from a prior session (sticky form). If a
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
@@ -6535,6 +6538,28 @@ function cnConsumeNavHint_() {
     ? `Filing ${n} missing note${n > 1 ? 's' : ''}${dateLabel}`
     : `Note coverage${dateLabel}`;
   showToast(msg, 'toast-success');
+}
+
+/** Consume a shared cross-tool nav hint targeting Call Notes (e.g. a Spanish
+ *  Inbox tool-suggestion chip). Renders the request context banner at the top
+ *  of the Log view and prefills the Issue field with the request subject (only
+ *  if empty) so the logged note references the inbound email. One-shot —
+ *  appTakeNavHint_ nulls the hint. */
+function cnConsumeAppNavHint_() {
+  if (typeof appTakeNavHint_ !== 'function') return;
+  const hint = appTakeNavHint_('callNotes');
+  if (!hint) return;
+  const area = document.getElementById('view-area');
+  if (area && typeof appShowNavHintBanner_ === 'function') appShowNavHintBanner_(hint, area);
+  try {
+    const cur = (typeof cnGetFieldValue_ === 'function') ? cnGetFieldValue_('cn-fld-issue') : '';
+    if (!cur && hint.subject && typeof cnSetFieldValue_ === 'function') {
+      cnSetFieldValue_('cn-fld-issue', hint.subject);
+    }
+  } catch (_) {}
+  if (typeof showToast === 'function') {
+    showToast(hint.template ? ('Ready to log — ' + hint.template) : 'Ready to log this request', 'toast-success');
+  }
 }
 
 /** V4 Phase 4 — parse ?prefill=key:value;key:value... query params and

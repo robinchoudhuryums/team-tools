@@ -387,6 +387,20 @@ function enterIntakePpdView(area) {
   if (pat) pat.addEventListener('input', intakePpdAfterChange_);
   intakeRestoreDraft_('ppd');
   intakePpdUpdateProgress_();
+  intakeConsumeNavHint_();
+}
+
+// Consume a shared cross-tool nav hint targeting Intake (e.g. a Spanish Inbox
+// tool-suggestion chip): render the request context banner at the top of the
+// form so the rep keeps the request in view while filling it. One-shot.
+function intakeConsumeNavHint_() {
+  if (typeof appTakeNavHint_ !== 'function') return;
+  var hint = appTakeNavHint_('intake');
+  if (!hint) return;
+  var area = document.getElementById('view-area');
+  var container = area && (area.querySelector('.intk-main') || area.querySelector('.intk-wrap'));
+  if (container && typeof appShowNavHintBanner_ === 'function') appShowNavHintBanner_(hint, container);
+  if (typeof showToast === 'function') showToast('Working from a Spanish Inbox request', 'toast-success');
 }
 
 // Render PPD as section panels (one .panel per question group header).
@@ -766,6 +780,7 @@ function intakeEnterAcct_(form, title, area) {
   var f = document.getElementById('intk-' + form + '-form');
   if (f) f.addEventListener('input', function () { intakeSaveDraft_(form); });
   intakeRestoreDraft_(form);
+  intakeConsumeNavHint_();
 }
 
 // Render account form as section panels (one .panel per header-group index).

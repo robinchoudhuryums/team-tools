@@ -1153,11 +1153,11 @@ var SPANISH_TOOL_SUGGESTIONS = [
   { test: /\bpmd\b|power mobility/i,
     label: 'PMD account', tool: 'intake', tab: 'intakePmdAccount', icon: 'accessibility' },
   { test: /shipping|tracking|delivery|shipment|env[ií]o|rastreo|entrega|paquete|seguimiento/i,
-    label: 'Log: Verified Shipping', tool: 'callNotes', tab: 'callNotes', icon: 'mail' },
+    label: 'Log: Verified Shipping', tool: 'callNotes', tab: 'callNotes', icon: 'mail', template: 'Verified Shipping' },
   { test: /resupply|resurtido|reorder|refill|supplies|resurt/i,
-    label: 'Log: Repeat Resupply', tool: 'callNotes', tab: 'callNotes', icon: 'mail' },
+    label: 'Log: Repeat Resupply', tool: 'callNotes', tab: 'callNotes', icon: 'mail', template: 'Repeat Resupply' },
   { test: /\border\b|pedido|\borden\b|cancel|cancelar|\bstatus\b|estado/i,
-    label: 'Log: Order update', tool: 'callNotes', tab: 'callNotes', icon: 'mail' },
+    label: 'Log: Order update', tool: 'callNotes', tab: 'callNotes', icon: 'mail', template: 'Close Order' },
 ];
 function spanishSuggestHtml_(text) {
   var t = String(text || '').toLowerCase();
@@ -1169,11 +1169,40 @@ function spanishSuggestHtml_(text) {
     var key = s.tool === 'callNotes' ? 'callNotes' : (s.tool + ':' + s.tab);  // one CN chip max
     if (seen[key]) continue;
     seen[key] = 1;
-    chips.push('<button class="sp-suggest" onclick="enterTool(\'' + s.tool + '\',\'' + s.tab + '\')" ' +
-      'title="Open ' + esc(s.label) + '">' + icon(s.icon, 12) + esc(s.label) + '</button>');
+    // Carry tool/tab/label/template on data-* (the request context — requester /
+    // subject / snippet / permalink — is read from the .sp-task card DOM by
+    // spanishNavTo_, so no quote-escaping of email text into an inline onclick).
+    chips.push('<button class="sp-suggest" data-tool="' + esc(s.tool) + '" data-tab="' + esc(s.tab) +
+      '" data-label="' + esc(s.label) + '" data-template="' + esc(s.template || '') +
+      '" onclick="spanishNavTo_(this)" title="Open ' + esc(s.label) + '">' +
+      icon(s.icon, 12) + esc(s.label) + '</button>');
   }
   if (!chips.length) return '';
   return '<div class="sp-suggests"><span class="sp-suggest-lbl">Suggested</span>' + chips.join('') + '</div>';
+}
+
+// Chip click → carry the email's request context into the destination tool via
+// the shared APP_NAV_HINT (consumed by the Call Notes Log / Intake views, which
+// render a context banner so the rep keeps the request in view, and — for Call
+// Notes — prefill the Issue field + suggested update type). Context is read from
+// the card DOM (no quote-escaping of email text into the chip's onclick).
+function spanishNavTo_(btn) {
+  var card = btn.closest('.sp-task');
+  var read = function (sel, attr) {
+    var e = card && card.querySelector(sel);
+    return e ? (attr ? (e.getAttribute(attr) || '') : (e.textContent || '')).trim() : '';
+  };
+  window.APP_NAV_HINT = {
+    source: 'spanishInbox',
+    tool: btn.dataset.tool,
+    tab: btn.dataset.tab,
+    template: btn.dataset.template || '',
+    requester: read('.sp-task-from'),
+    subject: read('.sp-task-subj'),
+    snippet: read('.sp-task-body'),
+    permalink: read('.sp-open', 'href'),
+  };
+  enterTool(btn.dataset.tool, btn.dataset.tab);
 }
 
 function spanishTaskCard_(t) {

@@ -484,6 +484,58 @@ function enterTool(toolKey, tabKey) {
   showView(chosen);
 }
 
+// ── Shared cross-tool nav hint ──────────────────────────────────────────────
+// A generic one-shot hint set before enterTool(...) so a destination view can
+// surface the source context (and optionally prefill). Distinct from the
+// coverage-strip-specific CLK_NAV_HINT. Today's only producer is the Spanish
+// Inbox tool-suggestion chips (source:'spanishInbox'); the destination consumers
+// are the Call Notes Log + the three Intake views. One-shot: the consumer nulls
+// it via appTakeNavHint_ so a later view enter can't re-fire a stale banner.
+window.APP_NAV_HINT = null;
+
+/** Take (read + null) the pending hint iff it targets `toolKey`; else null. */
+function appTakeNavHint_(toolKey) {
+  const h = window.APP_NAV_HINT;
+  if (!h || h.source !== 'spanishInbox' || h.tool !== toolKey) return null;
+  window.APP_NAV_HINT = null;
+  return h;
+}
+
+/** Dismissible context banner HTML for a consumed nav hint. */
+function appNavHintBannerHtml_(hint) {
+  if (!hint) return '';
+  const from = hint.requester ? '<span class="nav-hint-from">' + esc(hint.requester) + '</span>' : '';
+  const subj = hint.subject ? '<div class="nav-hint-subj">' + esc(hint.subject) + '</div>' : '';
+  const snip = hint.snippet ? '<div class="nav-hint-snip">' + esc(hint.snippet) + '</div>' : '';
+  const gmail = hint.permalink
+    ? '<a class="nav-hint-link" href="' + esc(hint.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>'
+    : '';
+  return '<div class="nav-hint-banner" id="app-nav-hint">' +
+      '<div class="nav-hint-main">' +
+        '<span class="nav-hint-kicker">' + icon('outbox', 12) + ' From Spanish Inbox' + (from ? ' · ' : '') + '</span>' + from +
+        subj + snip +
+      '</div>' +
+      '<div class="nav-hint-actions">' + gmail +
+        '<button class="nav-hint-x" title="Dismiss" onclick="appDismissNavHint_()" aria-label="Dismiss">' + icon('x', 14) + '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+/** Prepend the context banner to `container` (idempotent — replaces any prior). */
+function appShowNavHintBanner_(hint, container) {
+  if (!hint || !container) return;
+  appDismissNavHint_();
+  const wrap = document.createElement('div');
+  wrap.innerHTML = appNavHintBannerHtml_(hint);
+  const banner = wrap.firstElementChild;
+  if (banner) container.insertBefore(banner, container.firstChild);
+}
+
+function appDismissNavHint_() {
+  const el = document.getElementById('app-nav-hint');
+  if (el) el.remove();
+}
+
 /** Re-render the tab bar above the view area for the given tool.
  *  Hides managerOnly tabs from non-managers. */
 function renderToolTabBar(toolKey) {
