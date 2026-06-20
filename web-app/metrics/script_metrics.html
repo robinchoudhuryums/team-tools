@@ -12,6 +12,16 @@
 .sp-open:hover { text-decoration: underline; }
 .sp-more { appearance: none; border: none; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
 .sp-more:hover { text-decoration: underline; }
+/* Content-aware tool suggestions on a Spanish-inbox task (heuristic; deep-links
+   to the relevant Intake form / Call Notes log). */
+.sp-suggest-wrap:empty { display: none; }
+.sp-suggests { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.sp-suggest-lbl { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.sp-suggest { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2);
+  color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; }
+.sp-suggest:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--success-deep); }
+.sp-suggest svg { flex-shrink: 0; }
 
 /* ═══════════════════════════════════════════════════════════════════════
    METRICS — view-scoped styles
@@ -1129,6 +1139,43 @@ function spanishLoadPending_() {
     .getSpanishInboxPending(SPANISH_STATE.days);
 }
 
+// Content-aware tool suggestions: Spanish-inbox requests are usually to complete
+// an intake form or log a specific note template (e.g. "Verified Shipping").
+// Match keywords (EN + ES) in the subject/snippet (and the body once expanded)
+// and surface deep-link chips. Heuristic + dismissible — a false positive is
+// just an extra chip. Intake matches are distinct destinations; Call Notes
+// matches collapse to a single chip (same Log destination, contextual label).
+var SPANISH_TOOL_SUGGESTIONS = [
+  { test: /wheelchair|mobility|scooter|power\s*chair|walker|rollator|silla de ruedas|movilidad|andad|scooter/i,
+    label: 'PPD intake', tool: 'intake', tab: 'intakePpd', icon: 'clipboardList' },
+  { test: /cpap|bipap|apnea|sleep|su[eé]ñ|m[aá]scar|mascarilla|resmed|airsense/i,
+    label: 'PAP intake', tool: 'intake', tab: 'intakePapAccount', icon: 'airflow' },
+  { test: /\bpmd\b|power mobility/i,
+    label: 'PMD account', tool: 'intake', tab: 'intakePmdAccount', icon: 'accessibility' },
+  { test: /shipping|tracking|delivery|shipment|env[ií]o|rastreo|entrega|paquete|seguimiento/i,
+    label: 'Log: Verified Shipping', tool: 'callNotes', tab: 'callNotes', icon: 'mail' },
+  { test: /resupply|resurtido|reorder|refill|supplies|resurt/i,
+    label: 'Log: Repeat Resupply', tool: 'callNotes', tab: 'callNotes', icon: 'mail' },
+  { test: /\border\b|pedido|\borden\b|cancel|cancelar|\bstatus\b|estado/i,
+    label: 'Log: Order update', tool: 'callNotes', tab: 'callNotes', icon: 'mail' },
+];
+function spanishSuggestHtml_(text) {
+  var t = String(text || '').toLowerCase();
+  if (!t.trim()) return '';
+  var seen = {}, chips = [];
+  for (var i = 0; i < SPANISH_TOOL_SUGGESTIONS.length && chips.length < 3; i++) {
+    var s = SPANISH_TOOL_SUGGESTIONS[i];
+    if (!s.test.test(t)) continue;
+    var key = s.tool === 'callNotes' ? 'callNotes' : (s.tool + ':' + s.tab);  // one CN chip max
+    if (seen[key]) continue;
+    seen[key] = 1;
+    chips.push('<button class="sp-suggest" onclick="enterTool(\'' + s.tool + '\',\'' + s.tab + '\')" ' +
+      'title="Open ' + esc(s.label) + '">' + icon(s.icon, 12) + esc(s.label) + '</button>');
+  }
+  if (!chips.length) return '';
+  return '<div class="sp-suggests"><span class="sp-suggest-lbl">Suggested</span>' + chips.join('') + '</div>';
+}
+
 function spanishTaskCard_(t) {
   var aged = t.ageHours >= 24 ? (Math.floor(t.ageHours / 24) + 'd ' + (t.ageHours % 24) + 'h') : (t.ageHours + 'h');
   var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
@@ -1139,6 +1186,7 @@ function spanishTaskCard_(t) {
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body">' + esc(t.snippet) + (t.hasMore ? '…' : '') + '</div>' +
+    '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (t.snippet || '')) + '</div>' +
     '<div class="sp-task-actions">' + open + ' ' + more + '</div>' +
   '</div>';
 }
@@ -1154,6 +1202,10 @@ function spanishExpand_(btn) {
       if (!r || r.error) { showToast((r && r.error) || 'Could not load', 'error'); return; }
       var bodyEl = card.querySelector('.sp-task-body');
       if (bodyEl) bodyEl.textContent = r.body || '(empty)';
+      // Re-run tool suggestions now that the fuller body text is available.
+      var subjEl = card.querySelector('.sp-task-subj');
+      var wrap = card.querySelector('.sp-suggest-wrap');
+      if (wrap) wrap.innerHTML = spanishSuggestHtml_((subjEl ? subjEl.textContent : '') + ' ' + (r.body || ''));
       btn.remove();
     })
     .withFailureHandler(function (e) { btn.disabled = false; btn.textContent = 'Show full request'; showToast((e && e.message) || 'Error', 'error'); })
