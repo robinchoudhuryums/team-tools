@@ -1669,6 +1669,19 @@
     letter-spacing: .04em; vertical-align: middle; cursor: pointer;
   }
   .cn-form-pill svg { flex-shrink: 0; }
+  /* Intake-sourced note chip — a note auto-logged after an intake form send.
+     Colored by intake category (PPD blue / PMD orange / PAP purple) to match
+     the Intake tab section headers. */
+  .cn-intake-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 8px; margin-left: 6px; border-radius: 999px;
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase; vertical-align: middle;
+  }
+  .cn-intake-pill.ppd { background: var(--info-soft);   color: var(--info-deep); }
+  .cn-intake-pill.pmd { background: var(--warn-soft);   color: var(--warning-deep); }
+  .cn-intake-pill.pap { background: rgba(124, 92, 208, .16); color: #6a45c0; }
+  :root[data-mode="dark"] .cn-intake-pill.pap { color: #c3a8f5; }
   .cn-form-sub-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   .cn-fs-row {
     display: grid; grid-template-columns: 38% 1fr; gap: 10px;
@@ -3760,7 +3773,7 @@ function cnRenderCardCore_(note, expandable) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnIntakePillHtml_(note)}</div>
           ${detailLine}
           <div class="cn-card-issue">${issue}</div>
           ${resolutionLine}
@@ -3810,6 +3823,18 @@ function cnIsUrgent_(note) {
 function cnUrgentPillHtml_(note) {
   if (!cnIsUrgent_(note)) return '';
   return '<span class="cn-urgent-pill" title="Flagged urgent">' + icon('warning', 10) + 'urgent</span>';
+}
+
+// Intake-sourced note chip: a note auto-logged after an Intake form was sent
+// (subformData.intakeType ∈ ppd|pmd|pap). Colored by category to match the
+// Intake tab. Single source of truth for the rep + manager read-only cards.
+function cnIntakePillHtml_(note) {
+  const t = note && note.subformData && note.subformData.intakeType;
+  const ft = String(t || '').toLowerCase();
+  if (ft !== 'ppd' && ft !== 'pmd' && ft !== 'pap') return '';
+  const label = ft === 'ppd' ? 'PPD' : ft === 'pmd' ? 'PMD' : 'PAP';
+  return '<span class="cn-intake-pill ' + ft + '" title="Logged from an Intake ' + label + ' submission">' +
+    icon('clipboardList', 10) + label + '</span>';
 }
 
 function cnExtEmailPillHtml_(note) {
@@ -5901,7 +5926,7 @@ function cnMgrRenderReadonlyCard_(note) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnIntakePillHtml_(note)}</div>
           <div class="cn-card-issue">${issue}</div>
           ${threadHtml}
           ${resolution}

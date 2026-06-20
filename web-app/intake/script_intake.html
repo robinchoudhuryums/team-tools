@@ -136,6 +136,12 @@
   .intk-modal .head h3 { margin: 0; font-size: 1rem; }
   .intk-modal .xclose { background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; border-radius: var(--radius-sm); }
   .intk-modal .xclose:hover { background: var(--paper-2); color: var(--ink); }
+  /* Auto-drafted note (post-send) — readonly CRM-paste box + save status line */
+  .intk-note-box { width: 100%; box-sizing: border-box; resize: vertical; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper);
+    color: var(--ink); font-family: var(--mono); font-size: .82rem; line-height: 1.5; white-space: pre; }
+  .intk-note-status { display: flex; align-items: center; gap: 5px; margin-top: 8px;
+    font-family: var(--mono); font-size: .75rem; color: var(--muted); }
 </style>
 
 <script>
@@ -730,6 +736,7 @@ function intakePpdSend_() {
       if (currentView === requestedView) intakeClearForm_('ppd');
       else { INTAKE_STATE.ppd.images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
       showToast('PPD emailed to ' + res.recipient, 'toast-success');
+      intakeAutoLogNote_('ppd', st.payload, res.recipient, st.recommendations, currentView === requestedView);
     })
     .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     .intakeSendPPD(st.payload, spec, st.bodyHash);
@@ -935,6 +942,7 @@ function intakeAcctSend_(form) {
       if (currentView === requestedView) intakeClearForm_(form);
       else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
       showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
+      intakeAutoLogNote_(form, st.payload, res.recipient, null, currentView === requestedView);
     })
     .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     [fn](st.payload, spec, images, st.bodyHash);
@@ -1320,5 +1328,98 @@ function intakeCloseModal_() {
   var drop = document.getElementById('intk-drop');
   if (drop && drop._intkPaste) document.removeEventListener('paste', drop._intkPaste);
   ov.remove();
+}
+
+// ── Auto-drafted note after an intake send ──────────────────────────────────
+// On a successful intake email send, build a CRM-paste note template, copy it to
+// the clipboard, display it for the rep, and (best-effort) log it to the rep's
+// Call Notes history tagged with the intake category (subformData.intakeType →
+// the colored chip on the card). If the rep isn't enrolled in Call Notes the
+// history write fails gracefully and the rep still gets the copyable draft.
+function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
+  var ft = String(formType || '').toLowerCase();
+  var label = ft === 'ppd' ? 'PPD' : ft === 'pmd' ? 'PMD Account' : ft === 'pap' ? 'PAP Account' : 'Intake';
+  var patient = (payload && payload.patientInfo) ? String(payload.patientInfo) : '';
+  // PPD preview returns recommendations as { complex:[], standard:[] } of items
+  // carrying .hcpcs — surface the qualifying codes in the note (best-effort).
+  var codes = [];
+  try {
+    var items = [].concat((recs && recs.complex) || [], (recs && recs.standard) || []);
+    codes = items.map(function (p) { return p && p.hcpcs; }).filter(Boolean);
+  } catch (_) { codes = []; }
+  var recoLine = codes.length ? 'Recommended: ' + codes.join(', ') + '\n' : '';
+  var text =
+    'Intake Form: ' + label + '\n' +
+    'Patient & TRX: ' + (patient || 'N/A') + '\n' +
+    'Emailed To: ' + (recipient || 'N/A') + '\n' +
+    recoLine;
+
+  intakeCopyText_(text);
+  if (onView) intakeShowNoteDraftModal_(label, text);
+
+  // Best-effort history write — reuses the rep-callable submitCallNote (locked +
+  // audited server-side). Marked via subformData.intakeType (chip) + a tag.
+  var notePayload = {
+    caller: '',
+    patientAndTrx: patient,
+    issue: label + ' intake submitted',
+    resolution: 'Emailed to ' + (recipient || 'N/A') + (codes.length ? ' · Rec: ' + codes.join(', ') : ''),
+    subformData: { intakeType: ft, tags: ['intake-' + ft] }
+  };
+  google.script.run
+    .withSuccessHandler(function (res) {
+      var ok = res && res.success;
+      intakeNoteDraftStatus_(ok, ok ? 'Added to your Call Notes history' : ((res && res.error) || 'Could not add to Call Notes history'));
+    })
+    .withFailureHandler(function (err) {
+      intakeNoteDraftStatus_(false, 'Could not add to history — ' + ((err && err.message) || err));
+    })
+    .submitCallNote(notePayload);
+}
+
+function intakeShowNoteDraftModal_(label, text) {
+  var body =
+    '<p style="margin:0 0 8px;font-size:.84rem;color:var(--muted);">A note was drafted from this ' + esc(label) +
+      ' submission, copied to your clipboard, and added to your Call Notes history.</p>' +
+    '<textarea class="intk-note-box" id="intk-note-box" readonly rows="5">' + esc(text) + '</textarea>' +
+    '<div class="intk-note-status" id="intk-note-status">' + icon('clock', 12) + ' Saving to Call Notes…</div>' +
+    '<div class="intk-foot">' +
+      '<button class="intk-btn" onclick="intakeCopyNoteBox_()">' + icon('copy', 14) + ' Copy again</button>' +
+      '<button class="intk-btn" onclick="enterTool(\'callNotes\',\'callNotes\')">' + icon('mail', 14) + ' Open Call Notes</button>' +
+      '<span class="grow"></span>' +
+      '<button class="intk-btn primary" data-intk-close="1">Done</button>' +
+    '</div>';
+  intakeOpenModal_('Note copied for the CRM', body);
+}
+
+function intakeNoteDraftStatus_(ok, msg) {
+  var el = document.getElementById('intk-note-status');
+  if (!el) return;
+  el.innerHTML = (ok ? icon('checkCircle', 12) : icon('warning', 12)) + ' ' + esc(msg);
+  el.style.color = ok ? 'var(--success-deep)' : 'var(--warning-deep)';
+}
+
+function intakeCopyNoteBox_() {
+  var el = document.getElementById('intk-note-box');
+  if (el) intakeCopyText_(el.value);
+}
+
+// Copy plain text to the clipboard (navigator.clipboard with an execCommand
+// fallback for HtmlService iframes — same pattern as the link/image copies).
+function intakeCopyText_(txt) {
+  function fallback() {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      showToast('Note copied', 'toast-success');
+    } catch (e) { showToast('Copy failed', 'toast-error'); }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function () { showToast('Note copied', 'toast-success'); }, fallback);
+    } else { fallback(); }
+  } catch (e) { fallback(); }
 }
 </script>
