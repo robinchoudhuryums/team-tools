@@ -2307,6 +2307,32 @@
     min-width: 200px; max-width: 280px;
     font-size: 12px; padding: 9px 12px 9px 14px;
   }
+  /* Shared cross-tool nav-hint banner — surfaces the source request (e.g. a
+     Spanish-inbox email) at the top of the destination tool so the rep keeps
+     the context in view while filling a form / composing. Built by
+     appNavHintBannerHtml_ in script_core. */
+  .nav-hint-banner {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    margin: 0 0 14px; padding: 10px 14px;
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: var(--radius-md); animation: revFade .18s var(--ease) both;
+  }
+  .nav-hint-main { min-width: 0; }
+  .nav-hint-kicker { font-family: var(--mono); font-size: 10px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--success-deep);
+    display: inline-flex; align-items: center; gap: 4px; }
+  .nav-hint-from { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .nav-hint-subj { font-size: 13px; font-weight: 600; color: var(--ink); margin-top: 3px; }
+  .nav-hint-snip { font-size: 12px; color: var(--muted); margin-top: 2px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .nav-hint-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .nav-hint-link { font-size: 12px; color: var(--info); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .nav-hint-link:hover { text-decoration: underline; }
+  .nav-hint-x { appearance: none; border: none; background: none; cursor: pointer;
+    color: var(--muted); padding: 2px; border-radius: var(--radius-sm); line-height: 0; }
+  .nav-hint-x:hover { background: var(--paper-2); color: var(--ink); }
+
   /* Compact-mode mini header — a slim strip at the top of the view-area
      with the active tool label + close. Each tool view is responsible
      for rendering its own compact header at the top of view-area when
