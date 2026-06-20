@@ -1517,5 +1517,131 @@ test('a confirmed rep is not double-counted as tentative in the same slot; clips
   assert.strictEqual(out[0][0].confirmed, 1, 'D spillover covers hour 0');
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Spanish Inbox → tools cross-navigation (metrics suggestion map + shared hint).
+// `sb` already has script_core (appTakeNavHint_/appNavHintBannerHtml_) + metrics
+// (SPANISH_TOOL_SUGGESTIONS/spanishSuggestHtml_) + esc/icon loaded.
+//   • spanishSuggestHtml_  → keyword→destination routing (EN + ES), CN-collapse,
+//                            3-chip cap, data-* contract, no-match empties.
+//   • appTakeNavHint_      → one-shot read+null + tool/source gating.
+//   • appNavHintBannerHtml_→ esc() of email-derived text (the XSS/PHI boundary —
+//                            the banner is injected via innerHTML).
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\ncross-nav — Spanish Inbox suggestion routing + shared nav hint');
+
+const spanishSuggestHtml_ = sb.spanishSuggestHtml_;
+const appTakeNavHint_ = sb.appTakeNavHint_;
+const appNavHintBannerHtml_ = sb.appNavHintBannerHtml_;
+
+test('spanishSuggestHtml_: empty / whitespace / no-keyword text → no chips', () => {
+  assert.strictEqual(spanishSuggestHtml_(''), '');
+  assert.strictEqual(spanishSuggestHtml_('   '), '');
+  assert.strictEqual(spanishSuggestHtml_(null), '');
+  assert.strictEqual(spanishSuggestHtml_('hello, can you call me back please'), '',
+    'generic text matches no destination');
+});
+
+test('spanishSuggestHtml_: shipping keywords (EN + ES) → Verified Shipping CN chip', () => {
+  ['where is my shipping', 'tracking number?', '¿dónde está mi envío?', 'rastreo del paquete', 'estado de la entrega']
+    .forEach((t) => {
+      const html = spanishSuggestHtml_(t);
+      assert.ok(/data-tool="callNotes"/.test(html), `${t}: routes to callNotes`);
+      assert.ok(/data-template="Verified Shipping"/.test(html), `${t}: carries the Verified Shipping template`);
+      assert.ok(/data-tab="callNotes"/.test(html), `${t}: lands on the Log tab`);
+    });
+});
+
+test('spanishSuggestHtml_: resupply keywords → Repeat Resupply template', () => {
+  ['need a resupply', 'resurtido de máscara', 'monthly refill', 'reorder supplies'].forEach((t) => {
+    assert.ok(/data-template="Repeat Resupply"/.test(spanishSuggestHtml_(t)), `${t}: Repeat Resupply`);
+  });
+});
+
+test('spanishSuggestHtml_: order keywords → Close Order template', () => {
+  ['order status', 'estado del pedido', 'cancel my order', 'cancelar la orden'].forEach((t) => {
+    assert.ok(/data-template="Close Order"/.test(spanishSuggestHtml_(t)), `${t}: Close Order`);
+  });
+});
+
+test('spanishSuggestHtml_: mobility keywords → PPD intake (distinct intake destination)', () => {
+  ['need a wheelchair', 'silla de ruedas', 'problemas de movilidad', 'a power chair'].forEach((t) => {
+    const html = spanishSuggestHtml_(t);
+    assert.ok(/data-tool="intake"/.test(html), `${t}: intake tool`);
+    assert.ok(/data-tab="intakePpd"/.test(html), `${t}: PPD tab`);
+    assert.ok(/data-template=""/.test(html), `${t}: intake chips carry no CN template`);
+  });
+});
+
+test('spanishSuggestHtml_: CPAP keywords → PAP intake; PMD keywords → PMD account', () => {
+  ['cpap mask', 'sleep apnea', 'mascarilla resmed airsense'].forEach((t) => {
+    assert.ok(/data-tab="intakePapAccount"/.test(spanishSuggestHtml_(t)), `${t}: PAP`);
+  });
+  ['need a pmd', 'power mobility device'].forEach((t) => {
+    assert.ok(/data-tab="intakePmdAccount"/.test(spanishSuggestHtml_(t)), `${t}: PMD`);
+  });
+});
+
+test('spanishSuggestHtml_: multiple CN matches collapse to ONE chip (same Log destination)', () => {
+  // "shipping" + "resupply" + "order" all route to Call Notes Log — only one chip.
+  const html = spanishSuggestHtml_('shipping for my resupply order');
+  const cnChips = (html.match(/data-tool="callNotes"/g) || []).length;
+  assert.strictEqual(cnChips, 1, 'CN matches dedupe to a single chip');
+  // The first matching rule (Verified Shipping) wins the single slot.
+  assert.ok(/data-template="Verified Shipping"/.test(html), 'first CN rule order wins');
+});
+
+test('spanishSuggestHtml_: caps at 3 chips even when more rules match', () => {
+  // wheelchair (PPD) + cpap (PAP) + pmd (PMD) + shipping (CN) = 4 distinct → 3.
+  const html = spanishSuggestHtml_('wheelchair cpap pmd shipping');
+  const chips = (html.match(/class="sp-suggest"/g) || []).length;
+  assert.strictEqual(chips, 3, 'hard cap of 3 chips');
+});
+
+test('spanishSuggestHtml_: distinct intake destinations are NOT collapsed', () => {
+  const html = spanishSuggestHtml_('wheelchair and cpap'); // PPD + PAP — two intake chips
+  assert.ok(/data-tab="intakePpd"/.test(html) && /data-tab="intakePapAccount"/.test(html),
+    'PPD and PAP both surface (different tabs)');
+});
+
+test('appTakeNavHint_: returns null when no hint pending', () => {
+  sb.APP_NAV_HINT = null;
+  assert.strictEqual(appTakeNavHint_('callNotes'), null);
+});
+
+test('appTakeNavHint_: gated by source AND tool; non-match leaves hint intact', () => {
+  sb.APP_NAV_HINT = { source: 'spanishInbox', tool: 'callNotes', subject: 'x' };
+  assert.strictEqual(appTakeNavHint_('intake'), null, 'wrong tool → null');
+  assert.ok(sb.APP_NAV_HINT, 'a non-matching take does NOT consume the hint');
+  sb.APP_NAV_HINT = { source: 'coverageStrip', tool: 'callNotes' };
+  assert.strictEqual(appTakeNavHint_('callNotes'), null, 'wrong source → null');
+});
+
+test('appTakeNavHint_: one-shot — matching take returns the hint then nulls it', () => {
+  const hint = { source: 'spanishInbox', tool: 'callNotes', template: 'Verified Shipping', subject: 's' };
+  sb.APP_NAV_HINT = hint;
+  const got = appTakeNavHint_('callNotes');
+  assert.strictEqual(got, hint, 'first take returns the hint');
+  assert.strictEqual(sb.APP_NAV_HINT, null, 'hint is consumed (nulled)');
+  assert.strictEqual(appTakeNavHint_('callNotes'), null, 'second take returns null — no stale re-fire');
+});
+
+test('appNavHintBannerHtml_: escapes email-derived requester/subject/snippet/permalink', () => {
+  const html = appNavHintBannerHtml_({
+    requester: '<img src=x onerror=alert(1)>',
+    subject: '<script>steal()</script>',
+    snippet: 'a & b < c',
+    permalink: 'https://mail.google.com/"><img onerror=alert(2)>',
+  });
+  assert.ok(!/<img src=x onerror/.test(html), 'requester markup is escaped');
+  assert.ok(!/<script>steal/.test(html), 'subject markup is escaped');
+  assert.ok(/&lt;script&gt;/.test(html), 'subject angle-brackets entity-encoded');
+  assert.ok(/a &amp; b &lt; c/.test(html), 'snippet ampersand + bracket escaped');
+  assert.ok(!/"><img onerror/.test(html), 'permalink attribute breakout escaped');
+});
+
+test('appNavHintBannerHtml_: empty hint → empty string', () => {
+  assert.strictEqual(appNavHintBannerHtml_(null), '');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
