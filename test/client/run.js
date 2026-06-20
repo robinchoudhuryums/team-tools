@@ -1696,5 +1696,37 @@ const sbIntake = buildSandbox(['script_icons.html', 'script_core.html', 'intake/
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// View instant-paint (stale-while-revalidate) — viewCacheFresh_ is the pure TTL
+// decision behind the Metrics/Call-Notes instant repaint. (script_core, on sb.)
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\ncross-nav — view instant-paint TTL (viewCacheFresh_)');
+const viewCacheFresh_ = sb.viewCacheFresh_;
+
+test('viewCacheFresh_: null / malformed entry → not fresh (fail-safe to fetch)', () => {
+  assert.strictEqual(viewCacheFresh_(null, 45000, 1000), false);
+  assert.strictEqual(viewCacheFresh_(undefined, 45000, 1000), false);
+  assert.strictEqual(viewCacheFresh_({}, 45000, 1000), false, 'no .at → not fresh');
+  assert.strictEqual(viewCacheFresh_({ at: 'x' }, 45000, 1000), false, 'non-number .at → not fresh');
+});
+
+test('viewCacheFresh_: within TTL → fresh; past TTL → stale', () => {
+  assert.strictEqual(viewCacheFresh_({ at: 1000 }, 45000, 1000), true, 'age 0 is fresh');
+  assert.strictEqual(viewCacheFresh_({ at: 1000 }, 45000, 1000 + 45000), true, 'exactly at TTL is fresh');
+  assert.strictEqual(viewCacheFresh_({ at: 1000 }, 45000, 1000 + 45001), false, 'past TTL is stale');
+  assert.strictEqual(viewCacheFresh_({ at: 1000 }, 45000, 1000 + 20000), true, 'mid-window is fresh');
+});
+
+test('viewCacheFresh_: a future stamp (clock skew) → not fresh', () => {
+  assert.strictEqual(viewCacheFresh_({ at: 5000 }, 45000, 1000), false, 'negative age → not fresh');
+});
+
+test('viewCacheFresh_: defaults ttl to VIEW_CACHE_TTL_MS when omitted', () => {
+  assert.strictEqual(typeof sb.VIEW_CACHE_TTL_MS, 'number', 'default TTL constant present');
+  const now = 1000000;
+  assert.strictEqual(viewCacheFresh_({ at: now }, undefined, now), true);
+  assert.strictEqual(viewCacheFresh_({ at: now - sb.VIEW_CACHE_TTL_MS - 1 }, undefined, now), false);
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

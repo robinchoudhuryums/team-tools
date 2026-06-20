@@ -435,7 +435,7 @@ function enterMetricsMyStatsView() {
       '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px">Range</label>' +
       '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
       '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
-      '<button class="refresh-btn" onclick="mLoadMyStats_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
+      '<button class="refresh-btn" onclick="mLoadMyStats_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
     '<div id="m-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
@@ -486,20 +486,46 @@ function mMyPreset_(key) {
   mLoadMyStats_();
 }
 
-function mLoadMyStats_() {
+function mLoadMyStats_(opts) {
+  opts = opts || {};
   var requestedView = currentView;
-  document.getElementById('m-my-content').innerHTML = loSweep();
+  // Cache key = the exact query (a date toggle is a different key, so we never
+  // paint the wrong day from cache).
+  var isRange = (M_STATE.myMode === 'range' && M_STATE.myFrom && M_STATE.myTo);
+  var key = isRange ? ('range:' + M_STATE.myFrom + ':' + M_STATE.myTo) : ('day:' + M_STATE.myDate);
+  // Stale-while-revalidate: instant repaint from a fresh cached payload (unless
+  // the caller forced a fetch, e.g. the Refresh button), then refresh quietly.
+  M_STATE.myCache = M_STATE.myCache || {};
+  var cached = M_STATE.myCache[key];
+  var painted = false;
+  if (!opts.force && cached && typeof viewCacheFresh_ === 'function' && viewCacheFresh_(cached.entry)) {
+    mRenderMyStats_(cached.data);
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    painted = true;
+  } else {
+    document.getElementById('m-my-content').innerHTML = loSweep();
+  }
 
-  var ok = function (data) { if (currentView === requestedView) mRenderMyStats_(data); };
+  var done = function () { if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
+  var ok = function (data) {
+    if (currentView !== requestedView) { done(); return; }
+    // Cache only good payloads — an {error} response shouldn't poison the cache.
+    if (data && !data.error) M_STATE.myCache[key] = { data: data, entry: { at: Date.now() } };
+    mRenderMyStats_(data);
+    done();
+  };
   var fail = function (err) {
-    if (currentView !== requestedView) return;
+    if (currentView !== requestedView) { done(); return; }
+    done();
+    // If a stale view is already on screen, keep it rather than blanking it.
+    if (painted) { showToast('Couldn’t refresh metrics — showing last loaded', 'toast-warn'); return; }
     document.getElementById('m-my-content').innerHTML =
       '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
   };
-  if (M_STATE.myMode === 'range' && M_STATE.myFrom && M_STATE.myTo) {
+  if (isRange) {
     google.script.run.withSuccessHandler(ok).withFailureHandler(fail).getMyMetricsRange(M_STATE.myFrom, M_STATE.myTo);
   } else {
-    var date = M_STATE.myDate; if (!date) return;
+    var date = M_STATE.myDate; if (!date) { done(); return; }
     google.script.run.withSuccessHandler(ok).withFailureHandler(fail).getMyMetrics(date);
   }
 }
