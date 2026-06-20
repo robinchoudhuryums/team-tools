@@ -4534,12 +4534,19 @@ function cnOpenEmailComposer_(noteId) {
 }
 
 function cnLoadComposerDefaults_(note) {
+  // One-shot update-type carried in from a cross-tool nav hint (e.g. a Spanish
+  // Inbox "Log: Verified Shipping" chip). Applied only when nothing else has set
+  // updateInfo, then cleared so it can't bleed into an unrelated note's compose.
+  const navTpl = CN_STATE.pendingComposeTemplate || '';
+  CN_STATE.pendingComposeTemplate = null;
   // Restore prior selections if the rep is re-sending; otherwise empty.
   if (note.subformData && typeof note.subformData === 'object') {
-    return Object.assign({
+    const base = Object.assign({
       departments: [], individualEmail: '', updateInfo: '',
       callbackNeeded: false,
     }, note.subformData);
+    if (!base.updateInfo && navTpl) base.updateInfo = navTpl;
+    return base;
   }
   const lsKey = 'umsCallNotesLastDept';
   let lastDept = [];
@@ -4547,7 +4554,7 @@ function cnLoadComposerDefaults_(note) {
   return {
     departments: Array.isArray(lastDept) ? lastDept : [],
     individualEmail: '',
-    updateInfo: '',
+    updateInfo: navTpl || '',
     callbackNeeded: false,
     overwriteResolution: false,
     shippingDetails: null,
@@ -6548,7 +6555,9 @@ function cnConsumeNavHint_() {
 function cnConsumeAppNavHint_() {
   if (typeof appTakeNavHint_ !== 'function') return;
   const hint = appTakeNavHint_('callNotes');
-  if (!hint) return;
+  // Plain Log enter (no hint): drop any stale carried template so it can't
+  // preselect an unrelated note's composer on a later, unrelated compose.
+  if (!hint) { CN_STATE.pendingComposeTemplate = null; return; }
   const area = document.getElementById('view-area');
   if (area && typeof appShowNavHintBanner_ === 'function') appShowNavHintBanner_(hint, area);
   try {
@@ -6557,6 +6566,10 @@ function cnConsumeAppNavHint_() {
       cnSetFieldValue_('cn-fld-issue', hint.subject);
     }
   } catch (_) {}
+  // Carry the chip's suggested update-type into the NEXT composer open (one-shot,
+  // applied by cnLoadComposerDefaults_) so "Log: Verified Shipping" lands the rep
+  // directly in that email flow with the right subform.
+  CN_STATE.pendingComposeTemplate = hint.template || '';
   if (typeof showToast === 'function') {
     showToast(hint.template ? ('Ready to log — ' + hint.template) : 'Ready to log this request', 'toast-success');
   }
