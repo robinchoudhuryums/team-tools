@@ -1162,19 +1162,38 @@ function enterIntakeSentView(area) {
       '</div>' +
       '<div id="intk-sent-list">' + loSweep() + '</div>' +
     '</div>';
+  // Stale-while-revalidate: if the Sent list was loaded recently, paint it
+  // instantly from state and refresh behind the pill (no spinner). An empty list
+  // is valid, so the freshness STAMP — not array length — gates the fast path.
+  var painted = false;
+  if (INTAKE_STATE.sentEntry && typeof viewCacheFresh_ === 'function' && viewCacheFresh_(INTAKE_STATE.sentEntry)) {
+    intakeRenderSentHost_();
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    painted = true;
+  }
   var requested = currentView;
+  var done = function () { if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   google.script.run
     .withSuccessHandler(function (res) {
-      if (currentView !== requested) return;
+      if (currentView !== requested) { done(); return; }
       var host = document.getElementById('intk-sent-list');
-      if (!host) return;
-      if (!res || res.error) { host.innerHTML = '<div class="no-data">' + esc((res && res.error) || 'Failed to load submissions') + '</div>'; return; }
+      if (!host) { done(); return; }
+      if (!res || res.error) {
+        done();
+        if (painted) { if (typeof showToast === 'function') showToast('Couldn’t refresh sent list — showing last loaded', 'toast-warn'); return; }
+        host.innerHTML = '<div class="no-data">' + esc((res && res.error) || 'Failed to load submissions') + '</div>';
+        return;
+      }
       INTAKE_STATE.sent = res.submissions || [];
       INTAKE_STATE.sentIsManager = !!res.isManager;
+      INTAKE_STATE.sentEntry = { at: Date.now() };
       intakeRenderSentHost_();
+      done();
     })
     .withFailureHandler(function (err) {
-      if (currentView !== requested) return;
+      if (currentView !== requested) { done(); return; }
+      done();
+      if (painted) { if (typeof showToast === 'function') showToast('Couldn’t refresh sent list — showing last loaded', 'toast-warn'); return; }
       var host = document.getElementById('intk-sent-list');
       if (host) host.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load submissions') + '</div>';
     })

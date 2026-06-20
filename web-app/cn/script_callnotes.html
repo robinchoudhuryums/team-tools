@@ -1994,8 +1994,26 @@ function enterCallNotesHistoryView(area) {
     CN_STATE.historyDate = `${d7.getUTCFullYear()}-${pad(d7.getUTCMonth()+1)}-${pad(d7.getUTCDate())}`;
     CN_STATE.historyEndDate = today;
   }
+  const start = CN_STATE.historyDate;
+  const end = CN_STATE.historyEndDate || CN_STATE.historyDate;
+  // Stale-while-revalidate: instant repaint when returning to the SAME range
+  // within the freshness window (key carries the range so a different span never
+  // paints from cache), then refresh the stack only behind the pill.
+  if (CN_STATE.enrolled !== false && Array.isArray(CN_STATE.historyNotes) &&
+      CN_STATE.historyEntry && CN_STATE.historyEntry.key === (start + ':' + end) &&
+      typeof viewCacheFresh_ === 'function' && viewCacheFresh_(CN_STATE.historyEntry)) {
+    cnRenderHistoryView(area);
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    const reqV = currentView;
+    cnLoadDateRange_(start, end, function () {
+      if (currentView !== reqV) return;
+      cnRenderHistoryStack_();   // stack + summary only — never re-wires the date inputs
+      if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+    });
+    return;
+  }
   renderLoading(area, 'Loading history…', 'list');
-  cnLoadDateRange_(CN_STATE.historyDate, CN_STATE.historyEndDate || CN_STATE.historyDate, function () {
+  cnLoadDateRange_(start, end, function () {
     cnRenderHistoryView(area);
   });
 }
@@ -2167,6 +2185,8 @@ function cnLoadDateRange_(startDate, endDate, then) {
       } else {
         CN_STATE.enrolled = true;
         CN_STATE.historyNotes = res.notes || [];
+        // Stamp freshness + the exact range for History's instant-paint fast path.
+        CN_STATE.historyEntry = { at: Date.now(), key: startDate + ':' + endDate };
       }
       if (currentView !== requestedView) return;
       if (then) then();

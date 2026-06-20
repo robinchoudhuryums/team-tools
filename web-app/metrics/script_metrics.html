@@ -856,7 +856,7 @@ function enterMetricsTeamView() {
       '<input type="date" id="m-team-from" value="' + M_STATE.teamFrom + '">' +
       '<label style="font-size:0.85rem;color:var(--muted)">To</label>' +
       '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">' +
-      '<button class="refresh-btn" onclick="mLoadTeamMetrics_()" title="Refresh">' + icon('refresh', 14) + '</button>' +
+      '<button class="refresh-btn" onclick="mLoadTeamMetrics_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
     '<div class="m-controls" style="margin-top:calc(-1 * var(--space-xs))">' +
       '<span class="m-preset-chip" onclick="mTeamPreset_(\'today\')">Today</span>' +
@@ -899,21 +899,39 @@ function mTeamPreset_(key) {
   mLoadTeamMetrics_();
 }
 
-function mLoadTeamMetrics_() {
+function mLoadTeamMetrics_(opts) {
+  opts = opts || {};
   var from = M_STATE.teamFrom;
   var to = M_STATE.teamTo;
   if (!from) return;
   var requestedView = currentView;
+  var key = from + ':' + to;   // a range change is a different key — never paints the wrong range
 
-  document.getElementById('m-team-content').innerHTML = loSweep();
+  // Stale-while-revalidate: instant repaint from a fresh cached payload (unless
+  // forced via the Refresh button), then refresh quietly behind the pill.
+  M_STATE.teamCache = M_STATE.teamCache || {};
+  var cached = M_STATE.teamCache[key];
+  var painted = false;
+  if (!opts.force && cached && typeof viewCacheFresh_ === 'function' && viewCacheFresh_(cached.entry)) {
+    mRenderTeamMetrics_(cached.data);
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    painted = true;
+  } else {
+    document.getElementById('m-team-content').innerHTML = loSweep();
+  }
 
+  var done = function () { if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   google.script.run
     .withSuccessHandler(function (data) {
-      if (currentView !== requestedView) return;
+      if (currentView !== requestedView) { done(); return; }
+      if (data && !data.error) M_STATE.teamCache[key] = { data: data, entry: { at: Date.now() } };
       mRenderTeamMetrics_(data);
+      done();
     })
     .withFailureHandler(function (err) {
-      if (currentView !== requestedView) return;
+      if (currentView !== requestedView) { done(); return; }
+      done();
+      if (painted) { showToast('Couldn’t refresh metrics — showing last loaded', 'toast-warn'); return; }
       document.getElementById('m-team-content').innerHTML =
         '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
     })
