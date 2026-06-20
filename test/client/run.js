@@ -1643,5 +1643,58 @@ test('appNavHintBannerHtml_: empty hint → empty string', () => {
   assert.strictEqual(appNavHintBannerHtml_(null), '');
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Intake PPD section structure — the per-section side-rail stepper. intakePpdSections_
+// is the SINGLE source the renderer (section ids), the stepper (steps/goto), and
+// the progress updater (per-section + overall counts) all consume; pin that the
+// three stay in lockstep and that the overall main-question count (the ring
+// denominator) is unchanged by the refactor.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\nintake — PPD per-section stepper (intakePpdSections_ single source)');
+const sbIntake = buildSandbox(['script_icons.html', 'script_core.html', 'intake/script_intake.html']);
+
+['EN', 'ES'].forEach((lang) => {
+  test('intakePpdSections_(' + lang + '): well-formed sections; mainQNums are bare numbers, unique', () => {
+    const secs = sbIntake.intakePpdSections_(lang);
+    assert.ok(Array.isArray(secs) && secs.length > 0, 'has sections');
+    secs.forEach((s, i) => {
+      assert.ok(s.title || s.rows.length, 'section ' + i + ' has a title or rows');
+      s.mainQNums.forEach((q) => assert.ok(/^\d+$/.test(q), 'mainQNum "' + q + '" is a bare number (no 31a/33a)'));
+    });
+    const flat = secs.reduce((a, s) => a.concat(s.mainQNums), []);
+    assert.strictEqual(new Set(flat).size, flat.length, 'no duplicate main question across sections');
+  });
+
+  test('intakePpdSections_(' + lang + '): total mainQNums == the ring denominator (progress count unchanged)', () => {
+    const secs = sbIntake.intakePpdSections_(lang);
+    const total = secs.reduce((a, s) => a + s.mainQNums.length, 0);
+    // Independent recount of the prior progress filter directly off INTAKE_PPD_Q.
+    const qs = sbIntake.INTAKE_PPD_Q[lang] || sbIntake.INTAKE_PPD_Q.EN;
+    let expected = 0;
+    for (let i = 1; i < qs.length; i++) {
+      const raw = qs[i];
+      if (!raw || !String(raw).trim()) continue;
+      if (/^(\d+)\./.test(String(raw).trim())) expected++;
+    }
+    assert.strictEqual(total, expected, 'stepper main-count matches the legacy /^(\\d+)\\./ progress count');
+  });
+
+  test('intakePpdSections_(' + lang + '): renderer, stepper, and section list agree on count + indices', () => {
+    const secs = sbIntake.intakePpdSections_(lang);
+    const render = sbIntake.intakeRenderPpdSections_(lang);
+    const stepper = sbIntake.intakePpdStepperHtml_(lang);
+    const renderIds = (render.match(/id="intk-ppd-sec-(\d+)"/g) || []);
+    const steps = (stepper.match(/class="intk-step"/g) || []);
+    assert.strictEqual(renderIds.length, secs.length, 'one rendered panel id per section');
+    assert.strictEqual(steps.length, secs.length, 'one stepper step per section');
+    // Section ids + stepper data-sec/onclick run 0..n-1 in order.
+    for (let s = 0; s < secs.length; s++) {
+      assert.ok(render.indexOf('id="intk-ppd-sec-' + s + '"') >= 0, 'panel id ' + s + ' present');
+      assert.ok(stepper.indexOf('data-sec="' + s + '"') >= 0, 'step data-sec ' + s + ' present');
+      assert.ok(stepper.indexOf('intakePpdGotoSection_(' + s + ')') >= 0, 'step ' + s + ' wired to goto');
+    }
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

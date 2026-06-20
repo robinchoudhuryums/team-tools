@@ -25,6 +25,19 @@
   .intk-ring-fg { transition: stroke-dashoffset .45s var(--ease); }
   .intk-rail-count { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: -4px; }
   .intk-rail .intk-btn { width: 100%; justify-content: center; }
+  /* Per-section stepper: a clickable section navigator with done/partial state. */
+  .intk-stepper { width: 100%; display: flex; flex-direction: column; gap: 2px; margin: 2px 0 4px; }
+  .intk-step { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background: none; border: 0; border-radius: 7px; padding: 5px 7px; cursor: pointer;
+    color: var(--muted); font-size: 12px; line-height: 1.25; transition: background .12s, color .12s; }
+  .intk-step:hover { background: var(--paper-2); color: var(--ink); }
+  .intk-step-dot { flex: none; width: 9px; height: 9px; border-radius: 50%;
+    border: 1.5px solid var(--line); background: var(--paper-3); transition: background .15s, border-color .15s; }
+  .intk-step.is-partial .intk-step-dot { border-color: var(--warn); background: var(--warn-soft); }
+  .intk-step.is-done .intk-step-dot { border-color: var(--accent); background: var(--accent); }
+  .intk-step.is-done { color: var(--ink); }
+  .intk-step-lbl { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .intk-step-frac { flex: none; font-family: var(--mono); font-size: 10px; color: var(--muted); }
   @media (max-width: 760px) {
     .intk-ppd-layout { grid-template-columns: 1fr; }
     .intk-rail { order: -1; }
@@ -33,6 +46,10 @@
     .intk-ring .pct { font-size: 14px; }
     .intk-rail-label { width: 100%; text-align: center; }
     .intk-rail .intk-btn { width: auto; }
+    /* Wrap the stepper into a horizontal chip row on narrow screens. */
+    .intk-stepper { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    .intk-step { width: auto; border: 1px solid var(--line); }
+    .intk-step-lbl { max-width: 120px; }
   }
 
   /* Section panels (one per question group) */
@@ -367,6 +384,7 @@ function enterIntakePpdView(area) {
         '<span class="intk-rail-label">Progress</span>' +
         intakePpdRingHtml_() +
         '<span class="intk-rail-count" id="intk-ppd-count">0 / 45</span>' +
+        intakePpdStepperHtml_(lang) +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
         '<button class="intk-btn" onclick="intakeClearForm_(\'ppd\')">Clear</button>' +
       '</div></aside>' +
@@ -403,30 +421,70 @@ function intakeConsumeNavHint_() {
   if (typeof showToast === 'function') showToast('Working from a Spanish Inbox request', 'toast-success');
 }
 
-// Render PPD as section panels (one .panel per question group header).
-function intakeRenderPpdSections_(lang) {
+// SINGLE SOURCE OF TRUTH for the PPD section structure — used by the renderer
+// (to assign stable section ids), the side-rail stepper (labels + goto), AND the
+// progress updater (per-section + overall counts). Parses INTAKE_PPD_Q[lang] into
+// ordered sections; `mainQNums` are the bare-numbered questions that count toward
+// progress (31a/33a sub-questions render but don't count — mirrors the prior
+// `/^(\d+)\./` progress filter). Keep all three consumers on this so they can't
+// drift (same discipline as INTAKE_*_LAYOUT mirroring).
+function intakePpdSections_(lang) {
   var qs = INTAKE_PPD_Q[lang] || INTAKE_PPD_Q.EN;
-  var out = '';
-  var rows = '';
-  var sectionTitle = '';
-  function flush() {
-    if (!sectionTitle && !rows) return;
-    out += '<div class="panel intk-section">' +
-      (sectionTitle ? '<div class="section-kicker sec-title">' + esc(sectionTitle) + '</div>' : '') +
-      rows + '</div>';
-    rows = '';
-  }
+  var secs = [];
+  var cur = null;
   for (var i = 1; i < qs.length; i++) {
     var raw = qs[i];
     if (!raw || !String(raw).trim()) continue;
     var isSecondary = /^\s+/.test(raw);
     var text = String(raw).trim();
     var m = text.match(/^(\d+[a-z]?)\./);
-    if (!m) { flush(); sectionTitle = text; continue; }   // new section header
-    rows += intakePpdRowHtml_(m[1], text, isSecondary);
+    if (!m) { cur = { title: text, rows: [], mainQNums: [] }; secs.push(cur); continue; }
+    if (!cur) { cur = { title: '', rows: [], mainQNums: [] }; secs.push(cur); }
+    cur.rows.push({ qNum: m[1], text: text, isSecondary: isSecondary });
+    if (/^\d+$/.test(m[1])) cur.mainQNums.push(m[1]);
   }
-  flush();
+  return secs;
+}
+
+// Render PPD as section panels (one .panel per question group header), each with
+// a stable id (intk-ppd-sec-<idx>) so the side-rail stepper can scroll to it.
+function intakeRenderPpdSections_(lang) {
+  var secs = intakePpdSections_(lang);
+  var out = '';
+  for (var s = 0; s < secs.length; s++) {
+    var sec = secs[s];
+    var rows = '';
+    for (var r = 0; r < sec.rows.length; r++) {
+      rows += intakePpdRowHtml_(sec.rows[r].qNum, sec.rows[r].text, sec.rows[r].isSecondary);
+    }
+    out += '<div class="panel intk-section" id="intk-ppd-sec-' + s + '">' +
+      (sec.title ? '<div class="section-kicker sec-title">' + esc(sec.title) + '</div>' : '') +
+      rows + '</div>';
+  }
   return out;
+}
+
+// Side-rail per-section stepper: one clickable step per PPD section that scrolls
+// to it and shows answered/total + a done/partial state (updated live by
+// intakePpdUpdateProgress_).
+function intakePpdStepperHtml_(lang) {
+  var secs = intakePpdSections_(lang);
+  var out = '<div class="intk-stepper" id="intk-ppd-stepper">';
+  for (var s = 0; s < secs.length; s++) {
+    var title = secs[s].title || ('Section ' + (s + 1));
+    out += '<button type="button" class="intk-step" data-sec="' + s + '" ' +
+        'onclick="intakePpdGotoSection_(' + s + ')" title="' + esc(title) + '">' +
+        '<span class="intk-step-dot" aria-hidden="true"></span>' +
+        '<span class="intk-step-lbl">' + esc(title) + '</span>' +
+        '<span class="intk-step-frac" data-sec-frac="' + s + '"></span>' +
+      '</button>';
+  }
+  return out + '</div>';
+}
+
+function intakePpdGotoSection_(s) {
+  var el = document.getElementById('intk-ppd-sec-' + s);
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function intakePpdRowHtml_(qNum, text, isSecondary) {
@@ -535,15 +593,21 @@ function intakePpdRingHtml_() {
 function intakePpdUpdateProgress_() {
   var root = document.getElementById('intk-ppd-form');
   if (!root) return;
-  var qs = INTAKE_PPD_Q[INTAKE_STATE.ppd.lang] || INTAKE_PPD_Q.EN;
+  // Iterate the shared section structure so per-section stepper state and the
+  // overall ring/count come from one count (main questions only — 31a/33a excluded).
+  var secs = intakePpdSections_(INTAKE_STATE.ppd.lang);
   var total = 0, answered = 0;
-  for (var i = 1; i < qs.length; i++) {
-    var raw = qs[i];
-    if (!raw || !String(raw).trim()) continue;
-    var m = String(raw).trim().match(/^(\d+)\./);   // main numbered questions only (no 31a/33a)
-    if (!m) continue;
-    total++;
-    if (intakePpdGetVal_(root, m[1])) answered++;
+  for (var s = 0; s < secs.length; s++) {
+    var main = secs[s].mainQNums, sTotal = main.length, sAns = 0;
+    for (var q = 0; q < main.length; q++) { if (intakePpdGetVal_(root, main[q])) sAns++; }
+    total += sTotal; answered += sAns;
+    var stepEl = document.querySelector('.intk-step[data-sec="' + s + '"]');
+    if (stepEl) {
+      stepEl.classList.toggle('is-done', sTotal > 0 && sAns === sTotal);
+      stepEl.classList.toggle('is-partial', sAns > 0 && sAns < sTotal);
+    }
+    var fracEl = document.querySelector('[data-sec-frac="' + s + '"]');
+    if (fracEl) fracEl.textContent = sTotal ? (sAns + '/' + sTotal) : '';
   }
   var pct = total ? Math.round((answered / total) * 100) : 0;
   var c = document.getElementById('intk-ppd-count');
