@@ -606,6 +606,48 @@ function showView(view) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// View instant-paint (stale-while-revalidate). The pain on tab-switching is the
+// Apps Script RPC round-trip (~300–800ms) re-fired on every view enter even when
+// the data was just fetched. Views that keep their last payload in module state
+// can repaint instantly from it and refresh in the background, showing a subtle
+// "Refreshing…" pill instead of a full spinner. `viewCacheFresh_` is the pure
+// TTL decision (Node-pinned); each view owns its own keyed payload cache + the
+// freshness stamp. Default window is short — instant on a quick back-and-forth,
+// always-fresh after that (consistent with the app's ≤5-min staleness elsewhere).
+// ─────────────────────────────────────────────────────────────────────────────
+var VIEW_CACHE_TTL_MS = 45000;
+
+/** Pure: is a {at:<ms>} cache entry still within `ttlMs` of `nowMs`? A future or
+ *  malformed stamp is treated as not-fresh (fail-safe → normal fetch). */
+function viewCacheFresh_(entry, ttlMs, nowMs) {
+  if (!entry || typeof entry.at !== 'number') return false;
+  if (typeof ttlMs !== 'number') ttlMs = VIEW_CACHE_TTL_MS;
+  if (typeof nowMs !== 'number') nowMs = Date.now();
+  var age = nowMs - entry.at;
+  return age >= 0 && age <= ttlMs;
+}
+
+/** Toggle a subtle bottom-right "Refreshing…" pill while a stale-while-revalidate
+ *  background fetch runs. Idempotent; the pill is appended to #view-area so a
+ *  content re-render that replaces #view-area's innerHTML also clears it. */
+function viewRefreshingPill_(on) {
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  var pill = document.getElementById('view-refreshing-pill');
+  if (on) {
+    if (pill) return;
+    pill = document.createElement('div');
+    pill.id = 'view-refreshing-pill';
+    pill.className = 'view-refreshing';
+    pill.setAttribute('aria-live', 'polite');
+    pill.textContent = 'Refreshing…';
+    area.appendChild(pill);
+  } else if (pill) {
+    pill.remove();
+  }
+}
+
 /** 2nd-pass motion — one shared IntersectionObserver for scroll-into-view
  *  reveals. A tool calls observeReveals(container) after render; any
  *  descendant carrying `.js-anim` re-fires its CSS animation when the

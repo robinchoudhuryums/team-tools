@@ -1934,6 +1934,26 @@ function enterCallNotesView(area) {
   CN_STATE.editingNoteId = null;
   CN_STATE.filter = 'all';
   cnPrewarmScript_();
+  // Stale-while-revalidate: on a quick return, if the dept config is cached and
+  // today's notes are warm + fresh, paint instantly (no spinner) and refresh in
+  // the background with a subtle pill — the Apps Script RPC no longer gates the
+  // repaint. The optimistic-UI mutations already keep CN_STATE.rollingNotes
+  // current, so a cached repaint shows correct data. Falls through to the normal
+  // spinner+fetch path on the first visit or once the freshness window lapses.
+  if (CN_STATE.enrolled !== false && CN_STATE.deptConfig &&
+      Array.isArray(CN_STATE.rollingNotes) &&
+      typeof viewCacheFresh_ === 'function' && viewCacheFresh_(CN_STATE.rollingEntry)) {
+    cnRenderNotesView(area);          // instant full paint (form + draft + stack)
+    cnStartAmbientPolling_();
+    if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
+    // Background refresh updates ONLY the stack (cnRefreshRollingStack_), never a
+    // second full re-render — so the just-restored draft/nav-hint aren't re-run
+    // and mid-typing isn't clobbered. It also preserves optimistic _pending notes.
+    cnRefreshRollingStack_(function () {
+      if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+    });
+    return;
+  }
   renderLoading(area, 'Loading call notes…', 'adjust');
   // Guard the config-fetch continuation too: cnLoadToday_'s own guard
   // captures currentView only when THIS callback runs, so a nav-away during
@@ -2105,6 +2125,8 @@ function cnLoadToday_(then) {
         CN_STATE.rollingNotes = res.notes || [];
         CN_STATE.autoCopyFormat = res.autoCopyFormat || '';
         CN_STATE.empTz = res.timezone || '';
+        // Stamp freshness for the Log view's instant-paint fast path (SWR).
+        CN_STATE.rollingEntry = { at: Date.now() };
       }
       if (currentView !== requestedView) return;
       if (then) then();
@@ -6333,14 +6355,17 @@ function cnStartAmbientPolling_() {
  *  or any drift from the in-memory stack — surfaces without a manual nav.
  *  Log view only; skipped mid inline-edit so an open editor isn't wiped.
  *  Optimistic `_pending` notes not yet on the server are preserved on top. */
-function cnRefreshRollingStack_() {
-  if (currentView !== 'callNotes' || !CN_STATE.enrolled) return;
-  if (CN_STATE.editingNoteId) return;            // don't clobber an open inline edit
+function cnRefreshRollingStack_(then) {
+  // `then` (optional) fires on EVERY exit path, so a caller driving a UI
+  // indicator (e.g. the instant-paint "Refreshing…" pill) can always clear it.
+  const done = function () { if (typeof then === 'function') then(); };
+  if (currentView !== 'callNotes' || !CN_STATE.enrolled) { done(); return; }
+  if (CN_STATE.editingNoteId) { done(); return; }   // don't clobber an open inline edit
   const requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
-      if (!res || res.error || res.enrolled === false) return;
-      if (currentView !== requestedView) return;
+      if (!res || res.error || res.enrolled === false) { done(); return; }
+      if (currentView !== requestedView) { done(); return; }
       const server = res.notes || [];
       const serverIds = {};
       server.forEach(function (n) { serverIds[n.noteId] = true; });
@@ -6349,10 +6374,12 @@ function cnRefreshRollingStack_() {
       });
       CN_STATE.rollingNotes = pending.concat(server);
       CN_STATE.autoCopyFormat = res.autoCopyFormat || CN_STATE.autoCopyFormat || '';
+      CN_STATE.rollingEntry = { at: Date.now() };   // keep the SWR instant-paint cache warm
       cnRenderStack_();
       cnRenderFilterBar_();
+      done();
     })
-    .withFailureHandler(function () { /* live-refresh is best-effort */ })
+    .withFailureHandler(function () { done(); /* live-refresh is best-effort */ })
     .getMyCallNotes({ filter: 'all' });
 }
 

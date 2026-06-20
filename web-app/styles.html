@@ -2492,4 +2492,21 @@
     .hero-clock-time { font-size: 40px; }
     .view-title { font-size: 22px; }
   }
+
+  /* Stale-while-revalidate "Refreshing…" pill — shown while a view instant-paints
+     from cache and refreshes in the background (viewRefreshingPill_). Subtle,
+     bottom-right, below overlays (50) and the KB drawer (55). */
+  .view-refreshing {
+    position: fixed; bottom: 16px; right: 16px; z-index: 40;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border-radius: 999px;
+    background: var(--paper-card); border: 1px solid var(--line);
+    box-shadow: var(--shadow-sm); color: var(--muted);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    animation: viewRefreshPulse 1.2s ease-in-out infinite;
+  }
+  .view-refreshing::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  }
+  @keyframes viewRefreshPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
 </style>
