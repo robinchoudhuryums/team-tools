@@ -2,11 +2,42 @@
 
 ## Current
 Cycle: 5
-Phase: idle (Cycle 5 CLOSED — reflect recorded 2026-06-17)
+Phase: idle (Cycle 5 CLOSED 2026-06-17; one-off targeted audit+implement run 2026-06-22)
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 4
-Updated: 2026-06-17 (Cycle 5 reflect)
+Updated: 2026-06-22 (targeted audit+implement: Spanish Inbox + DeptRequests)
+
+## Targeted audit + implement — Spanish Inbox + DeptRequests (2026-06-22, on practical-gauss-yycwkz)
+Context: the designated branch `claude/practical-gauss-yycwkz` was 45 commits behind
+main and LACKED the audited code (Spanish/DeptReq/punctuality landed post-#56 on main).
+Fast-forwarded the branch to origin/main (clean, 0-ahead), then implemented on it.
+- AUDIT verdict: 0 Critical / 0 High / 1 Medium / 7 Low. The XSS surface I most
+  expected (external Gmail subject/snippet/body → app) is CLEAN: banner esc()'d,
+  Issue prefill + body expand use textContent, suggestion chips only keyword-match.
+  All auth gates present; PHI-adjacent Spanish bodies never cached/persisted.
+- IMPLEMENTED (commit b4592e5, pushed):
+  - A1 (F7): gate-pin getSpanishInboxStats/Pending/ThreadBody + getPunctualityReport
+    in test_managerGates_rejectNonManager; + no-leak assertion that getDeptRequests
+    (rep-callable, only ADDS manager aggregate) never returns deptStats/allOpen to a
+    non-manager.
+  - A2 (F4): getSpanishInboxStats cache key scoped by spanishCacheHash_(addr,members)
+    so a config change isn't masked for the 5-min TTL.
+  - A3 (F3): DeptRequests ToEmail column now stores recipient DOMAIN(s) via
+    drRecipientDomains_ (the "Other" dept can be an external/customer email; store can
+    fall back to the ADP/payroll sheet) — matches ExternalEmailSent minimization.
+    Column is write-only (never read back by any endpoint).
+- Node harness 48/48 green; node --check clean. The Apps Script gate test runs
+  in-editor (runAllTests) — confirm on next operator deploy.
+- DEFERRED (the audit's Defer tier — NOT done): A4 bound the unbounded
+  getDeptRequests/resolve full-sheet reads (Medium, F1 — sheet grows 1 row/dept-email,
+  no retention; bound the LIST read ONLY — resolve's by-token scan must stay full so
+  old tokens resolve); A5 dedupe duplicate DeptRequests rows on note re-send (F2,
+  touches the emailFromCallNote hot path — DO NOT TOUCH the hash-gate/stamping); A6
+  retire the unsurfaced-but-live sendDeptRequest endpoint (F6).
+- DOC drift (/sync-docs): add the 4 endpoints to the INV-31 manager-gate list; note
+  DeptRequests ToEmail is now domain-minimized (the "PHI-free store" line); 2 new
+  invariant candidates below.
 
 ## Design redesign thread (ACTIVE — non-audit, does NOT bump Cycle)
 Operator-driven visual/interaction redesign from the design handoff in
@@ -225,6 +256,10 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
   (the kbResolveDocImages_ lesson). Fails OPEN on lock contention (prior best-effort posture).
 
 ## Where I left off
-Cycle-4 broad-implement is committed + pushed on claude/affectionate-cori-q4d2hf.
-NEXT: operator deploy (clasp push -f + New version) + runAllTests() in the editor,
-then /sync-docs for the M-1/L-1/L-2 doc updates. No PR opened (not requested).
+2026-06-22: targeted audit+implement of Spanish Inbox + DeptRequests done on
+`claude/practical-gauss-yycwkz` (fast-forwarded to main first; now == main + commit
+b4592e5, pushed). A1–A3 landed; A4–A6 deferred (see the targeted-audit section up
+top). Node 48/48 green. NEXT: operator deploy (clasp push -f + New version) +
+runAllTests() in the editor (exercises the new gate cases); then /sync-docs for the
+manager-gate-list + DeptRequests-domain doc drift. No PR opened (not requested).
+Older Cycle-4 thread (M-1/L-1/L-2) is on claude/affectionate-cori-q4d2hf, unmerged.
