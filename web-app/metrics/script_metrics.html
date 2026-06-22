@@ -1100,7 +1100,7 @@ function mClearBadge_() {
 // ════════════════════════════════════════════════════════════════════════════
 //  SPANISH INBOX — bilingual-assistance resolution time (managerOnly tab)
 // ════════════════════════════════════════════════════════════════════════════
-var SPANISH_STATE = { days: 30 };
+var SPANISH_STATE = { days: 30, tab: 'pending' };
 
 function enterSpanishInboxView(area) {
   if (typeof stopClock === 'function') stopClock();
@@ -1156,20 +1156,42 @@ function spanishRender_(d) {
     '<div class="tel-cell"><div class="tel-label">Avg time</div><div class="tel-value">' + esc(spanishFmtDur_(d.avgMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(spanishFmtDur_(d.medianMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
     '</div>';
-  var pend = '<div id="spanish-pending" style="margin-top:6px">' + loSweep() + '</div>';
-  body.innerHTML = note + strip + pend;
-  spanishLoadPending_();
+  var toggle =
+    '<div class="toolbar-tabs" role="group" aria-label="Pending or resolved" style="margin:2px 0 10px">' +
+      '<button class="toolbar-tab" data-sp-tab="pending" aria-pressed="' + (SPANISH_STATE.tab !== 'resolved') + '" onclick="spanishSetTab_(\'pending\')">Pending</button>' +
+      '<button class="toolbar-tab" data-sp-tab="resolved" aria-pressed="' + (SPANISH_STATE.tab === 'resolved') + '" onclick="spanishSetTab_(\'resolved\')">Resolved</button>' +
+    '</div>';
+  var list = '<div id="spanish-list" style="margin-top:2px">' + loSweep() + '</div>';
+  body.innerHTML = note + strip + toggle + list;
+  spanishLoadList_();
+}
+
+/** Switch the Pending/Resolved sub-tab and reload just the list (the stats strip
+ *  + days select stay put). */
+function spanishSetTab_(tab) {
+  SPANISH_STATE.tab = (tab === 'resolved') ? 'resolved' : 'pending';
+  document.querySelectorAll('.toolbar-tab[data-sp-tab]').forEach(function (b) {
+    b.setAttribute('aria-pressed', b.getAttribute('data-sp-tab') === SPANISH_STATE.tab);
+  });
+  spanishLoadList_();
+}
+
+/** Dispatch the active sub-tab's loader into #spanish-list. */
+function spanishLoadList_() {
+  if (SPANISH_STATE.tab === 'resolved') spanishLoadResolved_();
+  else spanishLoadPending_();
 }
 
 /** Part A — live-read pending requests as task cards (subject + snippet +
  *  Open-in-Gmail + expand-to-full-body). Loaded separately from the cached
  *  aggregate so the bodies are never cached/stored. */
 function spanishLoadPending_() {
-  var slot = document.getElementById('spanish-pending'); if (!slot) return;
+  var slot = document.getElementById('spanish-list'); if (!slot) return;
+  slot.innerHTML = loSweep();
   google.script.run
     .withSuccessHandler(function (d) {
-      if (currentView !== 'metricsSpanish') return;
-      var s = document.getElementById('spanish-pending'); if (!s) return;
+      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending') return;
+      var s = document.getElementById('spanish-list'); if (!s) return;
       if (!d || d.error) { s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((d && d.error) || 'Could not load tasks') + '</div>'; return; }
       var list = d.pending || [];
       if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Pending tasks</div><div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) + ' Nothing pending — all caught up.</div>'; return; }
@@ -1177,10 +1199,44 @@ function spanishLoadPending_() {
         '<div class="sp-tasks">' + list.map(spanishTaskCard_).join('') + '</div>';
     })
     .withFailureHandler(function (e) {
-      if (currentView !== 'metricsSpanish') return;
-      var s = document.getElementById('spanish-pending'); if (s) s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((e && e.message) || 'Could not load tasks') + '</div>';
+      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending') return;
+      var s = document.getElementById('spanish-list'); if (s) s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((e && e.message) || 'Could not load tasks') + '</div>';
     })
     .getSpanishInboxPending(SPANISH_STATE.days);
+}
+
+/** Resolved sub-tab: who resolved each request + how long it took, over the
+ *  selected window. Read-only; "Open in Gmail" is the primary action. */
+function spanishLoadResolved_() {
+  var slot = document.getElementById('spanish-list'); if (!slot) return;
+  slot.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (d) {
+      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved') return;
+      var s = document.getElementById('spanish-list'); if (!s) return;
+      if (!d || d.error) { s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((d && d.error) || 'Could not load resolved') + '</div>'; return; }
+      var list = d.resolved || [];
+      if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Resolved</div><div style="font-size:13px;color:var(--muted)">No resolved requests in this period.</div>'; return; }
+      s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Resolved · ' + list.length + '</div>' +
+        '<div class="sp-tasks">' + list.map(spanishResolvedCard_).join('') + '</div>';
+    })
+    .withFailureHandler(function (e) {
+      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved') return;
+      var s = document.getElementById('spanish-list'); if (s) s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((e && e.message) || 'Could not load resolved') + '</div>';
+    })
+    .getSpanishInboxResolved(SPANISH_STATE.days);
+}
+
+function spanishResolvedCard_(t) {
+  var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
+  var took = spanishFmtDur_(t.resolveMinutes);
+  return '<div class="sp-task">' +
+    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' +
+      '<span class="sp-task-age" style="color:var(--success-deep)">' + icon('check', 12) + ' ' + esc(took) + '</span></div>' +
+    '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
+    '<div class="sp-task-body" style="color:var(--muted)">Resolved by ' + esc(t.resolver || 'a team member') + '</div>' +
+    '<div class="sp-task-actions">' + open + '</div>' +
+  '</div>';
 }
 
 // Content-aware tool suggestions: Spanish-inbox requests are usually to complete

@@ -8602,6 +8602,51 @@ function getSpanishInboxPending(days) {
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
+/** Resolved Spanish-inbox requests over the window (manager-gated, live-read,
+ *  never stored — same posture as the pending list). For each resolved thread
+ *  returns who resolved it + how long it took, newest-resolved first. PHI-lean:
+ *  subject only (no body snippet — the on-demand getSpanishInboxThreadBody expand
+ *  is the body path if ever needed). */
+function getSpanishInboxResolved(days) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
+    const addr = getSpanishInboxAddress_();
+    if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
+    const members = getSpanishInboxMembers_();
+    const haveMembers = Object.keys(members).length > 0;
+    const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const out = [];
+    threads.forEach(function (th) {
+      const msgs = th.getMessages();
+      if (!msgs.length) return;
+      const req = msgs[0];
+      const reqMs = req.getDate().getTime();
+      const requester = emailAddrOnly_(req.getFrom());
+      let resolveMs = null, resolver = '';
+      for (let i = 1; i < msgs.length; i++) {
+        const from = emailAddrOnly_(msgs[i].getFrom());
+        const isResolver = haveMembers ? !!members[from] : (from && from !== requester);
+        if (isResolver) { resolveMs = msgs[i].getDate().getTime(); resolver = from; break; }
+      }
+      if (resolveMs == null) return;   // only resolved
+      out.push({
+        threadId: th.getId(),
+        requester: requester,
+        resolver: resolver,
+        resolveMinutes: Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
+        resolvedAtMs: resolveMs,
+        subject: req.getSubject() || '(no subject)',
+        permalink: th.getPermalink(),
+      });
+    });
+    out.sort(function (a, b) { return b.resolvedAtMs - a.resolvedAtMs; });   // newest resolved first
+    return { address: addr, days: d, resolved: out };
+  } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
+}
+
 /** Full body of one Spanish-inbox request thread (manager-gated, on-demand
  *  expand). Scope-guarded: only returns the body if the thread is actually
  *  addressed to the configured inbox, so a manager can't pull arbitrary thread

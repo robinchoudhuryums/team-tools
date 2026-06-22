@@ -3914,6 +3914,7 @@ function test_managerGates_rejectNonManager() {
     // access, so these run safely even where Gmail / the inbox is unconfigured.
     ['getSpanishInboxStats',           function () { return getSpanishInboxStats(30); }],
     ['getSpanishInboxPending',         function () { return getSpanishInboxPending(30); }],
+    ['getSpanishInboxResolved',        function () { return getSpanishInboxResolved(30); }],
     ['getSpanishInboxThreadBody',      function () { return getSpanishInboxThreadBody('no-such-thread'); }],
     // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
     ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
