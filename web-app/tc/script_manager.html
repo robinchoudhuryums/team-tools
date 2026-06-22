@@ -1103,6 +1103,7 @@ function covRender_(data) {
   if (!data || data.error) { body.innerHTML = '<div class="no-data">' + esc((data && data.error) || 'No data') + '</div>'; return; }
   if (!data.days || !data.days.length) { body.innerHTML = '<div class="no-data">No coverage in range.</div>'; return; }
   var minStaff = data.minStaff || 2;
+  var good = data.goodStaff || minStaff;   // ≥good = green; minStaff..good-1 = amber; <minStaff = red
   // Display + flag only business hours [start, end) (manager tz) — off-hours and
   // weekends are out of scope (we're closed), so they're not shown/flagged.
   var bizStart = (typeof data.businessStartHour === 'number') ? data.businessStartHour : COV_HOUR_START;
@@ -1112,11 +1113,11 @@ function covRender_(data) {
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Times in ' + esc(data.managerTz || '') +
     ' · business hours ' + covFmtHr_(bizStart) + '–' + covFmtHr_(bizEnd) +
     '. Per-tz shifts (v1). Hours with fewer than ' + esc(String(minStaff)) + ' working reps are flagged — click a day for the rep breakdown.</div>';
+  var accLabel = (minStaff >= good - 1) ? String(minStaff) : (minStaff + '–' + (good - 1));
   var legend = '<div class="cov-legend">' +
-    '<span><span class="sw" style="background:var(--accent-soft)"></span>OK (≥' + minStaff + ')</span>' +
-    '<span><span class="sw" style="background:var(--warn-soft)"></span>At risk</span>' +
-    '<span><span class="sw" style="background:var(--destructive-soft)"></span>Low</span>' +
-    '<span><span class="sw" style="background:var(--paper-2)"></span>None</span>' +
+    '<span><span class="sw" style="background:var(--accent-soft)"></span>Good (≥' + good + ')</span>' +
+    '<span><span class="sw" style="background:var(--warn-soft)"></span>Acceptable (' + accLabel + ')</span>' +
+    '<span><span class="sw" style="background:var(--destructive-soft)"></span>Concerning (<' + minStaff + ')</span>' +
     '</div>';
 
   var cols = 'minmax(110px,auto) repeat(' + hours.length + ',1fr)';
@@ -1137,8 +1138,10 @@ function covRender_(data) {
       var x = byHour[hr] || { confirmed: 0, tentative: 0 };
       var c = x.confirmed || 0, t = x.tentative || 0;
       // Closed days are never flagged (we're not open) — render a neutral cell.
+      // Three bands on CONFIRMED reps (every shown hour is a business hour, so 0
+      // is concerning, not neutral): ≥good green, ≥minStaff amber, else red.
       var cls = day.closed ? 'closed'
-        : ((c >= minStaff) ? 'ok' : ((c + t) >= minStaff ? 'risk' : ((c + t) > 0 ? 'low' : 'none')));
+        : ((c >= good) ? 'ok' : (c >= minStaff ? 'risk' : 'low'));
       // §5 grid stagger-in — delay by cell position, capped < ~350ms total.
       var d = Math.min((di * hours.length + hi) * 6, 340);
       var title = day.closed ? (covFmtHr_(hr) + ' — closed')

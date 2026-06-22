@@ -7,10 +7,29 @@
   /* §10 sky cross-fade — stacked gradient layers (CSS can't transition between
      two gradients, so we cross-fade opacity between two absolute layers). */
   .clk-sky-layers { position: absolute; inset: 0; z-index: 0; border-radius: inherit; overflow: hidden; }
-  .clk-sky > :not(.clk-sky-layers) { position: relative; z-index: 1; }
+  .clk-sky > :not(.clk-sky-layers):not(.clk-sky-bg):not(.clk-bg-ctrl) { position: relative; z-index: 1; }
+  /* Optional per-browser background image ("for fun") — a downscaled raster
+     data-URL (localStorage) layered UNDER the sky gradient, which dims to a tint
+     when an image is set. A dark scrim is baked into the image (in JS) so the
+     white clock text stays legible at any time of day. */
+  .clk-sky-bg { position: absolute; inset: 0; z-index: 0; display: none;
+    background-size: cover; background-position: center; border-radius: inherit; }
+  .clk-sky.has-bg .clk-sky-bg { display: block; }
+  .clk-sky.has-bg .clk-sky-layers { opacity: .4; }
+  .clk-sky.has-bg { text-shadow: 0 1px 4px rgba(0, 0, 0, .55); }
+  .clk-bg-ctrl { position: absolute; right: 10px; bottom: 8px; z-index: 2; display: flex; gap: 6px; }
+  .clk-bg-btn { appearance: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .34); color: #fff; border-radius: 8px;
+    cursor: pointer; opacity: .5; transition: opacity .15s ease, background .15s ease; }
+  .clk-sky:hover .clk-bg-btn, .clk-bg-btn:focus-visible { opacity: 1; }
+  .clk-bg-btn:hover { background: rgba(255, 255, 255, .3); }
   .clk-sky .clk-time { color: #fff; }
   .clk-sky .clk-meta, .clk-sky .clk-regions { color: rgba(255, 255, 255, .92); }
   .clk-sky .clk-region b { color: #fff; }
+  /* Rotating world-clock chip — one zone at a time, slides in on each rotation
+     (neutralized by the global prefers-reduced-motion block). */
+  .clk-region-rot { display: inline-flex; align-items: baseline; gap: 5px; animation: clkRegSlide .42s var(--ease) both; }
+  @keyframes clkRegSlide { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
   .clk-sky-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
   .clk-phase { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .95; display: inline-flex; align-items: center; gap: 5px; }
   .clk-tz-pill { appearance: none; background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .4); color: #fff; font: inherit; font-size: 11px; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
@@ -163,6 +182,7 @@ function renderClockView(area) {
         <div class="status-sentence">${statusSentence}</div>
       </div>
       <div class="clk clk-sky" id="clk-sky">
+        <div class="clk-sky-bg" id="clk-sky-bg"></div>
         <div class="clk-sky-layers"><div class="sky-layer" id="clk-sky-a"></div><div class="sky-layer" id="clk-sky-b"></div></div>
         <div class="clk-sky-top">
           <span class="clk-phase" id="clk-phase"></span>
@@ -175,6 +195,11 @@ function renderClockView(area) {
         </div>
         <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px"></div>
         <div class="clk-next-break" id="clk-next-break" style="margin-top:6px"></div>
+        <div class="clk-bg-ctrl">
+          <button class="clk-bg-btn" id="clk-bg-set" title="Set a background image (saved to this browser only)" aria-label="Set clock background image" onclick="clkBgChoose_(event)">${icon('image', 13)}</button>
+          <button class="clk-bg-btn" id="clk-bg-clear" title="Remove background" aria-label="Remove clock background" style="display:none" onclick="clkBgClear_(event)">${icon('x', 13)}</button>
+        </div>
+        <input type="file" id="clk-bg-input" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="clkBgOnFile_(this)">
       </div>
     </div>
 
@@ -205,6 +230,8 @@ function renderClockView(area) {
   loadTeammateStatus();
   loadCoverageStrip_();
   clkApplySky_(true);        // initial gradient + phase glyph
+  clkBgApply_();             // optional per-browser background image (localStorage)
+  clkUpdateRegions_();       // paint the rotating world-clock strip immediately
   clkBindTzSelect_();
   clkLoadNoteVolume_();      // C2 — note-volume histogram (async, best-effort)
 }
@@ -406,6 +433,83 @@ function clkApplySky_(force) {
   const ph = document.getElementById('clk-phase');
   if (ph) ph.innerHTML = icon(sky.glyph, 12) + ' ' + esc(sky.phase.toUpperCase());
 }
+
+// ── Clock-card background image (per-browser, opt-in, "for fun") ───────────────
+// Stored as a downscaled raster data-URL in localStorage['umsClockBg'] — NEVER
+// server-side, so any accidental PHI stays in this browser and it adds zero
+// operator state. Applied as a layer under the dimmed sky gradient; a dark scrim
+// is baked into the image (clkBgApply_) so the white clock text stays legible.
+var CLK_BG_KEY = 'umsClockBg';
+var CLK_BG_MAX_CHARS = 1500000;                                  // ~1.1MB data-URL cap (localStorage-safe)
+var CLK_BG_TYPES = { 'image/png': 1, 'image/jpeg': 1, 'image/webp': 1 };   // raster only — no SVG (script-capable)
+
+function clkBgGet_() { try { return localStorage.getItem(CLK_BG_KEY) || ''; } catch (e) { return ''; } }
+
+function clkBgApply_() {
+  var sky = document.getElementById('clk-sky'); if (!sky) return;
+  var bgEl = document.getElementById('clk-sky-bg');
+  var clearBtn = document.getElementById('clk-bg-clear');
+  var data = clkBgGet_();
+  if (data && bgEl) {
+    // Bake a time-of-day-independent dark scrim over the image for legibility.
+    bgEl.style.backgroundImage = 'linear-gradient(rgba(12,18,38,.34), rgba(12,18,38,.52)), url("' + data + '")';
+    sky.classList.add('has-bg');
+  } else {
+    if (bgEl) bgEl.style.backgroundImage = '';
+    sky.classList.remove('has-bg');
+  }
+  if (clearBtn) clearBtn.style.display = data ? '' : 'none';
+}
+
+function clkBgChoose_(ev) { if (ev) ev.stopPropagation(); var i = document.getElementById('clk-bg-input'); if (i) i.click(); }
+
+function clkBgClear_(ev) {
+  if (ev) ev.stopPropagation();
+  try { localStorage.removeItem(CLK_BG_KEY); } catch (e) {}
+  clkBgApply_();
+  if (typeof showToast === 'function') showToast('Background cleared', 'toast-info');
+}
+
+function clkBgOnFile_(input) {
+  var file = input && input.files && input.files[0];
+  if (input) input.value = '';                                  // allow re-picking the same file later
+  if (!file) return;
+  if (!CLK_BG_TYPES[file.type]) { if (typeof showToast === 'function') showToast('Use a PNG, JPEG, or WebP image', 'toast-error'); return; }
+  clkBgDownscale_(file, function (dataUrl) {
+    if (!dataUrl) { if (typeof showToast === 'function') showToast('Could not read that image', 'toast-error'); return; }
+    if (dataUrl.length > CLK_BG_MAX_CHARS) { if (typeof showToast === 'function') showToast('That image is still too large after resizing — try a smaller one', 'toast-error'); return; }
+    try { localStorage.setItem(CLK_BG_KEY, dataUrl); }
+    catch (e) { if (typeof showToast === 'function') showToast('Couldn’t save the background (browser storage is full)', 'toast-error'); return; }
+    clkBgApply_();
+    if (typeof showToast === 'function') showToast('Background set (this browser only)', 'toast-success');
+  });
+}
+
+// Downscale to ≤ maxW wide via canvas + re-encode as JPEG so the stored data-URL
+// stays small (a raw phone photo would blow the localStorage quota / slow boot).
+function clkBgDownscale_(file, cb) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var maxW = 1280;
+        var scale = Math.min(1, maxW / (img.width || maxW));
+        var w = Math.max(1, Math.round((img.width || maxW) * scale));
+        var h = Math.max(1, Math.round((img.height || maxW) * scale));
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        cb(canvas.toDataURL('image/jpeg', 0.82));
+      } catch (e) { cb(null); }
+    };
+    img.onerror = function () { cb(null); };
+    img.src = reader.result;
+  };
+  reader.onerror = function () { cb(null); };
+  reader.readAsDataURL(file);
+}
+
 /** Render the big time in the displayed tz (extracted from startClock so the
  *  tz-pill change can refresh it without waiting for the next tick). */
 function clkTickTime_() {
@@ -508,6 +612,11 @@ const CLK_REGION_ZONES = [
   { label: 'PHT', tz: 'Asia/Manila' },
 ];
 let CLK_REGION_FMTS = [];
+// Rotation state — the strip shows ONE non-displayed zone at a time and cycles,
+// instead of listing them all (declutter). Reset per render in clkBuildRegionFmts_.
+const CLK_REGION_ROTATE_MS = 4500;
+let _clkRegionIdx = -1;
+let _clkRegionRotateAt = 0;
 function clkBuildRegionFmts_(repTz, repAbbr) {
   const zones = CLK_REGION_ZONES.slice();
   if (repTz && !zones.some(function (z) { return z.tz === repTz; })) {
@@ -517,16 +626,38 @@ function clkBuildRegionFmts_(repTz, repAbbr) {
     let fmt = null;
     try { fmt = new Intl.DateTimeFormat('en-US', { timeZone: z.tz, hour: 'numeric', minute: '2-digit' }); }
     catch (e) { fmt = null; }   // unknown tz → drop
-    return { label: z.label, fmt: fmt };
+    return { label: z.label, tz: z.tz, fmt: fmt };
   }).filter(function (z) { return z.fmt; });
+  _clkRegionIdx = -1; _clkRegionRotateAt = 0;   // restart the rotation on each render
 }
+// Zones eligible for rotation = all formatted zones EXCEPT the one currently in
+// the big clock (that tz is already the headline).
+function clkRotationZones_() {
+  const disp = (typeof CLK_DISPLAY_TZ !== 'undefined' && CLK_DISPLAY_TZ) ? CLK_DISPLAY_TZ : empTz();
+  return CLK_REGION_FMTS.filter(function (z) { return z.tz !== disp; });
+}
+// 1Hz tick: keep the displayed zone's time live, and slide to the next zone every
+// CLK_REGION_ROTATE_MS. Re-renders the element (to animate) only on a rotation step;
+// otherwise it just updates the minute in place.
 function clkUpdateRegions_() {
   const host = document.getElementById('clk-regions');
   if (!host) return;
-  const now = new Date();
-  host.innerHTML = CLK_REGION_FMTS.map(function (z) {
-    return '<span class="clk-region"><b>' + esc(z.label) + '</b> ' + esc(z.fmt.format(now)) + '</span>';
-  }).join('');
+  const zones = clkRotationZones_();
+  if (!zones.length) { host.innerHTML = ''; return; }
+  const now = Date.now();
+  let rotate = (now >= _clkRegionRotateAt);
+  if (_clkRegionIdx < 0 || _clkRegionIdx >= zones.length) { _clkRegionIdx = 0; rotate = true; }
+  else if (rotate) { _clkRegionIdx = (_clkRegionIdx + 1) % zones.length; }
+  if (rotate) _clkRegionRotateAt = now + CLK_REGION_ROTATE_MS;
+  const z = zones[_clkRegionIdx];
+  const timeStr = z.fmt.format(new Date());
+  const timeEl = host.querySelector('.clk-region-time');
+  if (rotate || !timeEl) {
+    host.innerHTML = '<span class="clk-region clk-region-rot">' +
+      '<b>' + esc(z.label) + '</b> <span class="clk-region-time">' + esc(timeStr) + '</span></span>';
+  } else {
+    timeEl.textContent = timeStr;   // same zone, just tick the minute — no re-animate
+  }
 }
 
 function ribbonPct_(min) {

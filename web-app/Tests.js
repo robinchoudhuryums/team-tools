@@ -2941,9 +2941,12 @@ function test_config_adpSheetTzMatchesConfig() {
   let ssTz;
   try { ssTz = getAdpSS_().getSpreadsheetTimeZone(); }
   catch (e) { _assertTrue(true, 'ADP spreadsheet unavailable — skipped (' + e.message + ')'); return; }
-  _assertEq(ssTz, CONFIG.TIMEZONE,
+  // Alias-aware: Google stores the legacy "Asia/Calcutta" for GMT+5:30, which is
+  // functionally identical to CONFIG's "Asia/Kolkata" (tzEquivalent_), so an
+  // alias passes; only a genuinely different zone (e.g. America/Los_Angeles) fails.
+  _assertTrue(tzEquivalent_(ssTz, CONFIG.TIMEZONE),
     'ADP sheet tz (' + ssTz + ') must equal CONFIG.TIMEZONE (' + CONFIG.TIMEZONE +
-    ') or coerced-date audit/PTO reads drift — see S1.1');
+    ') — or a known alias — or coerced-date audit/PTO reads drift — see S1.1');
 }
 
 // ── Template scriptlet hygiene (regression guard) ──
@@ -3914,6 +3917,7 @@ function test_managerGates_rejectNonManager() {
     // access, so these run safely even where Gmail / the inbox is unconfigured.
     ['getSpanishInboxStats',           function () { return getSpanishInboxStats(30); }],
     ['getSpanishInboxPending',         function () { return getSpanishInboxPending(30); }],
+    ['getSpanishInboxResolved',        function () { return getSpanishInboxResolved(30); }],
     ['getSpanishInboxThreadBody',      function () { return getSpanishInboxThreadBody('no-such-thread'); }],
     // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
     ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],

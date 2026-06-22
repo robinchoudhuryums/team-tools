@@ -1146,13 +1146,6 @@
   .cn-card-actions .cn-act-btn.is-sent {
     background: var(--accent-soft); color: var(--info-deep);
   }
-  .cn-email-depts {
-    font-family: var(--mono); font-size: 9px; letter-spacing: .04em;
-    color: var(--info-deep);
-    max-width: 120px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    display: inline-block; vertical-align: middle;
-  }
   /* Operator feedback (2026-06-12 r2): same per-type icon tint as the
      form's flag toolbar, applied to saved-note card actions even when OFF. */
   .cn-card-actions .cn-act-btn.action svg   { color: var(--warn); }
@@ -1658,6 +1651,21 @@
     cursor: default;
   }
   .cn-ext-email-pill svg { flex-shrink: 0; }
+
+  /* Department-email "sent to …" pill — readable (wraps, no ellipsis truncation),
+     info-toned to distinguish from the green external-email pill. Replaces the
+     old truncated inline text that rode on the action button. */
+  .cn-sent-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    max-width: 100%; padding: 2px 8px; margin-left: 6px;
+    background: var(--info-soft); color: var(--info-deep);
+    border-radius: 999px;
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    letter-spacing: .03em; line-height: 1.3;
+    vertical-align: middle; cursor: default;
+  }
+  .cn-sent-pill svg { flex-shrink: 0; }
+  .cn-sent-pill span { overflow-wrap: anywhere; }
 
   /* ── Form-submission pill (clickable) + read-only viewer (G3) ────── */
   .cn-form-pill {
@@ -3766,9 +3774,12 @@ function cnRenderCardCore_(note, expandable) {
     return `<button class="${cls}" title="${lbl}" data-cn-action="flag" data-flag-kind="${kind}">${icon(name, 14)}</button>`;
   };
 
+  // When sent, the button is just the mail icon in its "sent" state (click =
+  // send again); WHERE it went is shown by the readable cnDeptEmailPillHtml_
+  // pill in the caller line (no more truncated inline text on the button).
   const emailBtn = note.emailedAt
     ? `<button class="cn-act-btn is-sent" title="Email sent at ${esc(cnFormatTimestampForCopy_(note.emailedAt))}${note.emailDepartments ? ' to ' + esc(note.emailDepartments) : ''} — click to send again"
-               data-cn-action="email">${icon('mail', 14)}${note.emailDepartments ? '<span class="cn-email-depts">' + esc(note.emailDepartments) + '</span>' : ''}</button>`
+               data-cn-action="email">${icon('mail', 14)}</button>`
     : `<button class="cn-act-btn" title="Compose email from this note"
                data-cn-action="email">${icon('mail', 14)}</button>`;
 
@@ -3818,7 +3829,7 @@ function cnRenderCardCore_(note, expandable) {
       <div class="cn-card-row">
         <span class="cn-card-time tabular">${esc(time)}</span>
         <div class="cn-card-main">
-          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnIntakePillHtml_(note)}</div>
+          <div class="cn-card-caller">${callerLine}${trxBit}${cnUrgentPillHtml_(note)}${cnIntakePillHtml_(note)}${cnDeptEmailPillHtml_(note)}</div>
           ${detailLine}
           <div class="cn-card-issue">${issue}</div>
           ${resolutionLine}
@@ -3880,6 +3891,20 @@ function cnIntakePillHtml_(note) {
   const label = ft === 'ppd' ? 'PPD' : ft === 'pmd' ? 'PMD' : 'PAP';
   return '<span class="cn-intake-pill ' + ft + '" title="Logged from an Intake ' + label + ' submission">' +
     icon('clipboardList', 10) + label + '</span>';
+}
+
+// Readable "emailed to <depts>" pill for a sent note — replaces the truncated
+// inline text that used to ride on the action button. Shows the department
+// label clearly (wraps instead of ellipsis-truncating); the send timestamp is
+// in the tooltip. Empty depts → a plain "Emailed" pill. Same placement family
+// as cnUrgentPillHtml_ / cnExtEmailPillHtml_.
+function cnDeptEmailPillHtml_(note) {
+  if (!note || !note.emailedAt) return '';
+  const depts = String(note.emailDepartments || '').trim();
+  const when = (typeof cnFormatTimestampForCopy_ === 'function') ? cnFormatTimestampForCopy_(note.emailedAt) : '';
+  const tip = 'Email sent' + (when ? ' ' + when : '') + (depts ? ' to ' + depts : '');
+  return '<span class="cn-sent-pill" title="' + esc(tip) + '">' +
+    icon('mail', 11) + '<span>' + (depts ? esc(depts) : 'Emailed') + '</span></span>';
 }
 
 function cnExtEmailPillHtml_(note) {
@@ -5962,9 +5987,7 @@ function cnMgrRenderReadonlyCard_(note) {
   const flagPill = note.flagType
     ? `<span class="adj-pill" style="text-transform:uppercase;font-size:10px;letter-spacing:.06em">${esc(note.flagType)}${note.flagType === 'action' && note.resolved ? ' · resolved' : ''}</span>`
     : '';
-  const sentPill = note.emailedAt
-    ? `<span class="adj-pill" title="${note.emailDepartments ? 'Sent to: ' + esc(note.emailDepartments) : 'Sent'}">sent${note.emailDepartments ? ' <span class="cn-email-depts">' + esc(note.emailDepartments) + '</span>' : ''}</span>`
-    : '';
+  const sentPill = cnDeptEmailPillHtml_(note);   // readable "emailed to <depts>" (no truncation)
   // Manager-side form-submission viewer: clickable pill when the rep's note
   // carries a submitted fillable form (parallels the rep's cn-form-pill).
   const mgrFormSub = (note.subformData && note.subformData.formSubmission) ? note.subformData.formSubmission : null;

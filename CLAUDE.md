@@ -82,7 +82,12 @@ Apps Script project under its own directory, synced via `clasp`.
      `getCdrSS_()` pattern). Redesigned onto the shared `.app-bar` shell with
      PPD "Option A" structured controls (Yes/No toggles + severity chips,
      engine-safe — see Common Gotchas), a filterable/searchable Sent tab, and
-     per-form draft autosave (`umsIntakeDrafts`). Backs the Intake spreadsheet
+     per-form draft autosave (`umsIntakeDrafts`). **All three forms (PPD / PMD
+     Account / PAP Account) share a sticky side progress rail** (ring + count +
+     Preview/Clear) via `intakeRingHtml_(form)`/`intakeRingSet_(form,…)` +
+     `intakeAcctUpdateProgress_`, with a **per-form ring color** (PPD blue / PMD
+     orange / PAP purple) from the `--intake-ppd`/`--intake-pmd`/`--intake-pap`
+     design tokens. Backs the Intake spreadsheet
      (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
    - **Reference** — in-app knowledge base (Phase 1). A per-department
      tree + full-text search + reader for training/policy docs, so the
@@ -374,7 +379,7 @@ this section before touching the relevant area.
   `revokeTrainingAssignment`, `getQuizzes`, `saveQuiz`, `deleteQuiz`,
   `getQuizAnalytics`, `importQuizFromForm`,
   `getPunctualityReport`, `getSpanishInboxStats`, `getSpanishInboxPending`,
-  `getSpanishInboxThreadBody`,
+  `getSpanishInboxResolved`, `getSpanishInboxThreadBody`,
   `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`
   (the last four are ALSO team-scoped per INV-122 — the gate alone is
   not the boundary).
@@ -1018,7 +1023,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Twelve client-side localStorage keys total.** All per-browser, all
+- **Thirteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1075,7 +1080,14 @@ this section before touching the relevant area.
     NOTE this is **PHI at rest in the browser** (patient answers) — the same
     posture as the Call Notes active-form draft; it lives only in the rep's
     own browser and is wiped on send/clear/expiry.
-  Clearing browser data wipes all twelve.
+  - `umsClockBg` — optional per-browser Clock-card background image ("for fun"),
+    a downscaled (≤1280px, JPEG re-encoded) raster **data-URL** set via the image
+    control on the sky clock card. Client-only — NEVER server-side (so an
+    accidental PHI image stays in this browser; zero operator state), raster-only
+    (PNG/JPEG/WebP, no SVG), ~1.1MB cap after downscale, try/catch on read/write
+    (quota-safe). Applied under the dimmed sky gradient with a baked-in dark scrim
+    for legibility (`clkBgApply_`); cleared via the card's × button.
+  Clearing browser data wipes all thirteen.
 
 ## Key Design Decisions
 
@@ -1351,17 +1363,18 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Twelve client-side localStorage keys total" entry in
+  authoritative "Thirteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
-  `umsIntakeDrafts`) — all per-browser, all try/catch-wrapped. (An earlier
-  version of this decision listed only four; Round 2 · 8a/8b added the
-  sidebar-width and Time/PTO-mode keys, the KB drawer added its single
+  `umsIntakeDrafts`, `umsClockBg`) — all per-browser, all try/catch-wrapped.
+  (An earlier version of this decision listed only four; Round 2 · 8a/8b added
+  the sidebar-width and Time/PTO-mode keys, the KB drawer added its single
   `umsKbPanel` prefs blob, the refresh-restore behavior added `umsLastView`,
-  #4 added `umsPopoutGeom`, and the redesign added `umsIntakeDrafts` (Intake
-  form drafts) + a `deptCollapsed` field inside `umsKbPanel`.)
+  #4 added `umsPopoutGeom`, the redesign added `umsIntakeDrafts` (Intake
+  form drafts) + a `deptCollapsed` field inside `umsKbPanel`, and the
+  Clock-card background image added `umsClockBg`.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -1634,10 +1647,13 @@ this section before touching the relevant area.
 - **Stats drill-down links to Per-Rep View.** Rep names in the
   Stats tab are clickable — clicking one navigates to the Per-Rep
   View for that rep and the same date.
-- **Email department display on note cards.** Note cards show which
-  departments an email was sent to (from `emailDepartments`) next
-  to the sent timestamp. The `title` attribute includes the full
-  list for overflow.
+- **Email department display on note cards.** A sent note shows which
+  departments the email went to as a readable, info-toned **`cn-sent-pill`**
+  (`cnDeptEmailPillHtml_`) in the caller line — it wraps the dept label instead
+  of ellipsis-truncating it, with the send timestamp in the `title`. The mail
+  ACTION button (sent state) is just the icon (click = send again). Used by both
+  the rep card and the manager read-only card (its `sentPill`). Replaced the old
+  truncated inline `.cn-email-depts` text-on-the-button (that class is gone).
 - **External email for customers and providers.** A standalone
   "Send External" button on the Call Notes Log view opens a modal
   for sending branded emails to customers or providers — not tied
@@ -1791,7 +1807,12 @@ this section before touching the relevant area.
   regions ET / CT / PT / HST. Pure client-side `Intl.DateTimeFormat` with
   formatters cached once per render (`clkBuildRegionFmts_`) and refreshed
   in the existing 1Hz `startClock` tick (`clkUpdateRegions_`) — no server
-  cost, no extra interval. Add/remove zones via `CLK_REGION_ZONES`.
+  cost, no extra interval. Add/remove zones via `CLK_REGION_ZONES`. **The
+  strip ROTATES (declutter): it shows ONE zone at a time and slides to the
+  next every `CLK_REGION_ROTATE_MS` (4.5s)** — `clkRotationZones_` excludes the
+  tz currently in the big clock (it's already the headline); the displayed
+  zone's minute stays live each tick, the slide-in (`.clk-region-rot`) fires
+  only on a rotation step and is neutralized by `prefers-reduced-motion`.
 - **Day ribbon (Clock view).** Horizontal 06:00–22:00 time ribbon
   rendered between the actions row and the coverage strip. Shows a
   dashed scheduled band, filled accent-green work segments + dashed
@@ -2583,7 +2604,8 @@ this section before touching the relevant area.
 - **Icon library additions (`script_icons.html`).** The redesign added
   `clipboardList`, `accessibility`, `airflow`, `outbox`, and `fileText` to the
   `ICONS` set, repointed the Intake tab + sidebar icons, and switched
-  `kbItemIcon_`'s article glyph to `fileText`. Same rule as before — add one
+  `kbItemIcon_`'s article glyph to `fileText` (and `image` was later added for
+  the Clock-card background picker). Same rule as before — add one
   path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
 - **Unified loader + motion system (2nd-pass; `styles.html` + `script_core.html`).**
   One shared CSS+helper set for loading states and purposeful micro-animations,
@@ -3028,7 +3050,12 @@ manually for a fresh deploy or environment:
   cells in the *sheet's* tz while the writers use `CONFIG.TIMEZONE` — the
   round-trip only holds when they match (the `config_adpSheetTzMatchesConfig`
   S1.1 tripwire pins this for the ADP sheet; Storage Health surfaces it for all
-  seven). It can be ANY tz as long as the sheets match it. (2)
+  seven). **Both the tripwire and Storage Health compare via `tzEquivalent_`
+  (alias-aware): Google Sheets stores GMT+5:30 as the legacy `Asia/Calcutta`,
+  which is functionally identical to CONFIG's `Asia/Kolkata` (same offset, no
+  DST) — `Utilities.formatDate` treats them the same, so an alias passes; only a
+  genuinely different zone (e.g. `America/Los_Angeles`) fails.** It can be ANY tz
+  as long as the sheets match it. (2)
   **`MANAGER_TIMEZONE`** (`America/Chicago`) is the **manager display/automation
   anchor** — dashboard punch display, digest trigger hours, Coverage planner,
   exports, audit-panel default dates all use it. So CST is already the operating
@@ -3042,11 +3069,17 @@ manually for a fresh deploy or environment:
   of all seven sheets + a one-time reinterpretation of the bookkeeping columns,
   with no manager-display benefit since `MANAGER_TIMEZONE` already covers it).
   Neither Kolkata nor Manila observes DST, so PH/India reps have no DST edge.
-- **`CONFIG.COVERAGE_MIN_STAFF`** (default 2) sets the understaffed
-  threshold for the manager Coverage planner (#3) — any manager-tz hour
-  with fewer working reps is flagged. CONFIG-only; change requires a
-  redeploy. The planner reuses `CONFIG.SHIFT_SCHEDULE` (per-tz) for each
-  rep's shift — there is still no per-rep schedule (INV-127).
+- **`CONFIG.COVERAGE_MIN_STAFF`** (this deploy: **6**) + **`CONFIG.COVERAGE_STAFF_GOOD`**
+  (this deploy: **7**) set the manager Coverage planner's three bands (#3): a
+  manager-tz business hour with **≥ GOOD** confirmed reps renders green ("good"),
+  **≥ MIN_STAFF** but below GOOD renders amber ("acceptable"), and **< MIN_STAFF**
+  renders red ("concerning") + is listed in the Understaffed callout. Both are
+  CONFIG-only (no Script Property / Admin UI yet — deliberate, per the operator
+  decision); change requires a redeploy. `getCoveragePlan` ships both as
+  `minStaff` / `goodStaff`; the client (`tc/script_manager.html`) bands on the
+  CONFIRMED count (every shown hour is a business hour, so 0 is concerning, not
+  neutral). The planner reuses `CONFIG.SHIFT_SCHEDULE` (per-tz) for each rep's
+  shift — there is still no per-rep schedule (INV-127).
 - **`CONFIG.KB.REVIEW_DUE_DAYS`** (default 90) sets the KB review-due
   staleness window (#4). CONFIG-only; change requires a redeploy. The KB
   sheet gained trailing `ReviewedAt`/`ReviewedBy` columns — the header
@@ -3415,7 +3448,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v6`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`, `getSpanishInboxStats`, `getSpanishInboxPending`, `getSpanishInboxThreadBody`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; all three Spanish-inbox endpoints gate BEFORE any GmailApp access, and are now pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport` and a `getDeptRequests` no-manager-fields-leak assertion) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`, `getSpanishInboxStats`, `getSpanishInboxPending`, `getSpanishInboxResolved`, `getSpanishInboxThreadBody`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; all four Spanish-inbox endpoints gate BEFORE any GmailApp access, and are now pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport` and a `getDeptRequests` no-manager-fields-leak assertion) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
@@ -3515,7 +3548,7 @@ INV-123 | **Training T4 — overdue digest + quiz analytics.** `sendTrainingOver
 INV-124 | **Metrics anonymized team-avg is cohort-guarded; only aggregates leave the server.** `getMyMetrics` (rep-callable, caller-identified) reads the WHOLE roster's per-rep-per-day matrix (`getCdrDailyBreakdown_().perRepDaily` for DQE + `getCsrTransferPerRepDaily_()` for the separate **`CSR Transfer Historical Data`** tab) to compute a team benchmark, but returns ONLY aggregates: `series.{pctAnswered,answered,missed,attSeconds,transferPct}` as `[{date, own, team, cohort}]`. The `team` value is the pure `metricsTeamAvgSeries_` mean over reporting reps and is **null whenever that day's cohort < `kpiMinCohort` (3)** — so a small team can't be back-solved to an individual (the #5 privacy boundary). No individual rep's row is ever returned. The Transfer reader uses `getDisplayValues()` + the shared `cdrRowDateIso_` (Date is `M/D/YYYY`) + `metricsParsePercent_` (`"29.79%"`) per the CDR spreadsheet-tz discipline (INV-64). The legacy `cdr`/`trend`/`noteCount`/`noteCoverage` fields are preserved (back-compat). Client (`metrics/script_metrics.html`) renders own (accent) vs team (muted dashed) sparklines per KPI with the cohort note; every server string is `esc()`'d (the Metrics-`esc()` gotcha). Pinned by `metricsParsePercent_` / `metricsTeamAvgSeries_` / `metricsBuildKpiSeries_` Node tests + `test_metrics_csrTransferFixture_parsesDateAndPercent` + the `mRenderTrendSection_` DOM test | Subsystem: Server + Client (Metrics views)
 INV-125 | **Tag-trend analytics (#5).** `getCallNotesTagTrends()` is manager-gated (INV-02/31), read-only, cached (`cn_tag_trends_v1`, 5 min — invalidated alongside the taxonomy cache by the tag-admin ops via `invalidateCnTaxonomyCache_`), and PHI-free (tags + dates only). It reuses the taxonomy's bounded 2-column scan (`SubformData` tags + `DateLocal`) across enrolled reps but buckets by ISO week over the trailing `CN_TAG_TRENDS_WEEKS` (12) instead of total+lastSeen; archived tags are excluded and a window pre-filter (yyyy-MM-dd lexical = chronological) bounds the events array. The week-bucketing is the pure, Node-pinned `cnTrendWeekStarts_` (Monday-anchored, tz-safe day math via `cnIsoToDayNum_`/`cnDayNumToIso_`) + `cnTagTrendsFromEvents_` (bucket → sort by total → top-`CN_TAG_TRENDS_TOPK` (12) → this-wk-vs-prior delta). Client renders a per-tag sparkline + total + delta in the Admin "Tag Trends" panel (`#cn-admin-trends`), every tag label `esc()`'d (the Metrics/CN gotcha). Pinned by the `cnTrendWeekStarts_`/`cnTagTrendsFromEvents_` Node tests + the `getCallNotesTagTrends` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Call Notes views)
 INV-126 | **KB review-due workflow (#4).** The KB schema gained trailing `ReviewedAt`/`ReviewedBy` columns (KB enum + `KB_HEADERS`); back-compat like `CN_HEADERS` (legacy rows read undefined and fall back to `UpdatedAt`), and `getOrCreateKbSheet_` self-heals the header width once post-deploy. **Editing counts as reviewing** — `kbSaveItem` stamps `ReviewedAt`/`ReviewedBy` on every save. `kbMarkReviewed(id)` is the no-edit "still accurate" path: manager-gated (INV-02), locked (INV-01), audited (`KbItemReviewed`), bumps only the two cells (no cache invalidation — the tree cache doesn't carry review state and `kbGetReviewDue` reads live). `kbGetReviewDue()` is manager-gated, read-only, PHI-free: items whose last review (or legacy last-edit) is older than `CONFIG.KB.REVIEW_DUE_DAYS` (90), sorted by 30-day usage desc via the factored `kbUsageCounts_` (shared with `kbGetUsageStats`). KB timestamp cells are recovered in the KB spreadsheet's OWN tz via `kbCellDateIso_` (Sheets-coercion discipline). Client renders a manager-only "Review due" block atop the Reference tree with Open + Mark-reviewed. Pinned by the `kbGetReviewDue`/`kbMarkReviewed` cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
-INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's per-TIMEZONE shift (`getShiftSchedule_`, v1 limitation: per-tz not per-rep) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped). Understaffed hours (< `CONFIG.COVERAGE_MIN_STAFF`, default 2) are flagged. Surfaced as the managerOnly `coverage` tab under Time Clock (`enterCoverageView` in `tc/script_manager.html`); every server string `esc()`'d. Pinned by the `coverageBucketHours_` Node tests + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
+INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's per-TIMEZONE shift (`getShiftSchedule_`, v1 limitation: per-tz not per-rep) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped). Coverage is shown as THREE bands (returned as `minStaff` / `goodStaff`): ≥ `COVERAGE_STAFF_GOOD` green ("good"), ≥ `COVERAGE_MIN_STAFF` amber ("acceptable"), < `COVERAGE_MIN_STAFF` red ("concerning") + listed in the Understaffed callout; the client bands on the CONFIRMED count. (This deploy: GOOD=7, MIN_STAFF=6.) Surfaced as the managerOnly `coverage` tab under Time Clock (`enterCoverageView` in `tc/script_manager.html`); every server string `esc()`'d. Pinned by the `coverageBucketHours_` Node tests + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
 INV-128 | **Design-token hygiene tripwire.** `test/client/run.js` fails CI if any `var(--token)` referenced in a SHARED design-token-consuming partial is defined nowhere in `styles_design_tokens.html` (or the allowlist). It guards against the redesign foot-gun of referencing a renamed/typo'd CSS custom property that silently renders as the fallback/transparent. `form_public.html` is EXCLUDED (it's a standalone page that ships its own inline palette, not the token partial); the explicit allowlist is currently empty (every token resolves). Adding a new `var(--x)` to a shared partial means declaring `--x` in `styles_design_tokens.html` (or, rarely, allowlisting it) | Subsystem: Test Suite
 INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Today/7D/30D range presets. Returns `cdr: null` (not an error) when the agent has no DQE data | Subsystem: Server + Client (Metrics views)
 INV-130 | `getMyNoteHourBuckets(date)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates the date, and returns a 24-element array of the caller's own LOGGED-NOTE counts bucketed by REP-LOCAL hour (`empTz_`) for that day — sourced from the rep's call-notes Sheet (the bounded `readCallNoteRowsInRange_` + `normalizeDate_`/`CN.TIMESTAMP` coercion guards), NOT from CDR. PHI-free (hour counts only). Not enrolled → all-zero buckets (never throws). Powers the Clock-view day-ribbon note-volume histogram | Subsystem: Server + Client (Time Clock views)
