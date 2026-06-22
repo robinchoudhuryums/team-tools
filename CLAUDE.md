@@ -2879,8 +2879,8 @@ manually for a fresh deploy or environment:
   (rep-callable) returns the caller's own requests (open/resolved + elapsed);
   managers ALSO get a per-department resolution-time aggregate (`deptStats`
   open/resolved/avg/median) + oldest-open team list. (The legacy standalone
-  `sendDeptRequest` composer endpoint still exists but is no longer surfaced —
-  auto-tracking replaced the manual compose tab.) **Store:**
+  `sendDeptRequest` composer endpoint was REMOVED — it had no caller; auto-tracking
+  replaced the manual compose tab.) **Store:**
   optional Script Property **`DEPT_REQUESTS_SS_ID`** (a dedicated PHI-free sheet);
   falls back to the ADP sheet (the store is PHI-free — subject/message ride in
   the email only, never stored; the row keeps a short non-PHI `label`). The
