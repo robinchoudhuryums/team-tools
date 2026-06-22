@@ -35,9 +35,11 @@ const CONFIG = {
 
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
-  COVERAGE_MIN_STAFF: 2,   // #3 — manager Coverage planner highlights any
-                           // manager-tz hour with fewer than this many reps
-                           // scheduled (after the PTO overlay) as understaffed.
+  COVERAGE_MIN_STAFF: 6,   // #3 — Coverage planner: minimum ADEQUATE reps per
+                           // manager-tz business hour (after the PTO overlay).
+                           // At/above this but below COVERAGE_STAFF_GOOD =
+                           // "acceptable" (amber); below this = "concerning" (red).
+  COVERAGE_STAFF_GOOD: 7,  // at/above this many working reps = "good" (green).
   // Understaffed is only flagged within these manager-tz business hours
   // [start, end) on weekdays — outside this window / on weekends we're closed,
   // so off-hours and weekend cells are shown but never flagged.
@@ -3881,7 +3883,7 @@ function getStorageHealth() {
         out.reachable = true;
         out.name = ss.getName();
         out.tz = ss.getSpreadsheetTimeZone();
-        out.tzMatch = (out.tz === cfgTz);
+        out.tzMatch = tzEquivalent_(out.tz, cfgTz);   // alias-aware (Calcutta ≡ Kolkata)
         out.url = ss.getUrl();
       } catch (e) { out.error = e.message; }
       return out;
@@ -3944,7 +3946,7 @@ function getStorageHealth() {
         const rss = SpreadsheetApp.openById(String(sid).trim());
         reachable++;
         const rtz = rss.getSpreadsheetTimeZone();
-        if (rtz !== cfgTz) { tzMismatch++; if (problems.length < 20) problems.push({ name: nm, issue: 'tz ' + rtz }); }
+        if (!tzEquivalent_(rtz, cfgTz)) { tzMismatch++; if (problems.length < 20) problems.push({ name: nm, issue: 'tz ' + rtz }); }
       } catch (e) { if (problems.length < 20) problems.push({ name: nm, issue: 'unreachable' }); }
     }
     stores.push({
@@ -8277,6 +8279,7 @@ function getCoveragePlan(fromDate, toDate) {
 
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     const minStaff = (CONFIG.COVERAGE_MIN_STAFF != null) ? CONFIG.COVERAGE_MIN_STAFF : 2;
+    const goodStaff = (CONFIG.COVERAGE_STAFF_GOOD != null) ? CONFIG.COVERAGE_STAFF_GOOD : minStaff;
     const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
     // Roster → reps (name + tz + resolved per-tz shift).
@@ -8364,7 +8367,7 @@ function getCoveragePlan(fromDate, toDate) {
 
     const bizStart = (CONFIG.COVERAGE_BUSINESS_START_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_START_HOUR : 8;
     const bizEnd = (CONFIG.COVERAGE_BUSINESS_END_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_END_HOUR : 17;
-    return { from: fromDate, to: toDate, managerTz: mgrTz, minStaff: minStaff, days: days,
+    return { from: fromDate, to: toDate, managerTz: mgrTz, minStaff: minStaff, goodStaff: goodStaff, days: days,
              businessStartHour: bizStart, businessEndHour: bizEnd, weekdaysOnly: weekdaysOnly };
   } catch (err) { return { error: err.message }; }
 }
@@ -8899,6 +8902,30 @@ function getDeptRequests() {
     return result;
   } catch (err) { return { error: err.message }; }
 }
+
+// IANA timezone aliases that resolve to the SAME zone (identical offset + rules).
+// Google Sheets often STORES the legacy alias (e.g. "Asia/Calcutta") for what
+// CONFIG names canonically ("Asia/Kolkata"). They're functionally identical at
+// runtime — Utilities.formatDate treats them the same, so the coercion-recovery
+// helpers (normalizeDate_/normalizeAuditTs_) round-trip correctly across an
+// alias. ONLY string-EQUALITY checks (the S1.1 tripwire, Storage Health's tz
+// badge) need to canonicalize first, so a correctly-configured GMT+5:30 sheet
+// stored as "Asia/Calcutta" isn't falsely flagged as drifted.
+const TZ_CANONICAL = {
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'Asia/Ulan_Bator': 'Asia/Ulaanbaatar',
+  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+};
+function tzCanonical_(tz) {
+  const t = String(tz || '').trim();
+  return TZ_CANONICAL[t] || t;
+}
+/** Equality across known IANA aliases (Asia/Calcutta ≡ Asia/Kolkata, etc.). */
+function tzEquivalent_(a, b) { return tzCanonical_(a) === tzCanonical_(b); }
 
 function safeTimezone_(tz) {
   if (!tz) return CONFIG.TIMEZONE;
