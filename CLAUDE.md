@@ -82,7 +82,12 @@ Apps Script project under its own directory, synced via `clasp`.
      `getCdrSS_()` pattern). Redesigned onto the shared `.app-bar` shell with
      PPD "Option A" structured controls (Yes/No toggles + severity chips,
      engine-safe — see Common Gotchas), a filterable/searchable Sent tab, and
-     per-form draft autosave (`umsIntakeDrafts`). Backs the Intake spreadsheet
+     per-form draft autosave (`umsIntakeDrafts`). **All three forms (PPD / PMD
+     Account / PAP Account) share a sticky side progress rail** (ring + count +
+     Preview/Clear) via `intakeRingHtml_(form)`/`intakeRingSet_(form,…)` +
+     `intakeAcctUpdateProgress_`, with a **per-form ring color** (PPD blue / PMD
+     orange / PAP purple) from the `--intake-ppd`/`--intake-pmd`/`--intake-pap`
+     design tokens. Backs the Intake spreadsheet
      (`CONFIG.INTAKE.SS_ID` / Script Property `INTAKE_SS_ID`).
    - **Reference** — in-app knowledge base (Phase 1). A per-department
      tree + full-text search + reader for training/policy docs, so the
@@ -1018,7 +1023,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Twelve client-side localStorage keys total.** All per-browser, all
+- **Thirteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1075,7 +1080,14 @@ this section before touching the relevant area.
     NOTE this is **PHI at rest in the browser** (patient answers) — the same
     posture as the Call Notes active-form draft; it lives only in the rep's
     own browser and is wiped on send/clear/expiry.
-  Clearing browser data wipes all twelve.
+  - `umsClockBg` — optional per-browser Clock-card background image ("for fun"),
+    a downscaled (≤1280px, JPEG re-encoded) raster **data-URL** set via the image
+    control on the sky clock card. Client-only — NEVER server-side (so an
+    accidental PHI image stays in this browser; zero operator state), raster-only
+    (PNG/JPEG/WebP, no SVG), ~1.1MB cap after downscale, try/catch on read/write
+    (quota-safe). Applied under the dimmed sky gradient with a baked-in dark scrim
+    for legibility (`clkBgApply_`); cleared via the card's × button.
+  Clearing browser data wipes all thirteen.
 
 ## Key Design Decisions
 
@@ -1351,17 +1363,18 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Twelve client-side localStorage keys total" entry in
+  authoritative "Thirteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
-  `umsIntakeDrafts`) — all per-browser, all try/catch-wrapped. (An earlier
-  version of this decision listed only four; Round 2 · 8a/8b added the
-  sidebar-width and Time/PTO-mode keys, the KB drawer added its single
+  `umsIntakeDrafts`, `umsClockBg`) — all per-browser, all try/catch-wrapped.
+  (An earlier version of this decision listed only four; Round 2 · 8a/8b added
+  the sidebar-width and Time/PTO-mode keys, the KB drawer added its single
   `umsKbPanel` prefs blob, the refresh-restore behavior added `umsLastView`,
-  #4 added `umsPopoutGeom`, and the redesign added `umsIntakeDrafts` (Intake
-  form drafts) + a `deptCollapsed` field inside `umsKbPanel`.)
+  #4 added `umsPopoutGeom`, the redesign added `umsIntakeDrafts` (Intake
+  form drafts) + a `deptCollapsed` field inside `umsKbPanel`, and the
+  Clock-card background image added `umsClockBg`.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -1634,10 +1647,13 @@ this section before touching the relevant area.
 - **Stats drill-down links to Per-Rep View.** Rep names in the
   Stats tab are clickable — clicking one navigates to the Per-Rep
   View for that rep and the same date.
-- **Email department display on note cards.** Note cards show which
-  departments an email was sent to (from `emailDepartments`) next
-  to the sent timestamp. The `title` attribute includes the full
-  list for overflow.
+- **Email department display on note cards.** A sent note shows which
+  departments the email went to as a readable, info-toned **`cn-sent-pill`**
+  (`cnDeptEmailPillHtml_`) in the caller line — it wraps the dept label instead
+  of ellipsis-truncating it, with the send timestamp in the `title`. The mail
+  ACTION button (sent state) is just the icon (click = send again). Used by both
+  the rep card and the manager read-only card (its `sentPill`). Replaced the old
+  truncated inline `.cn-email-depts` text-on-the-button (that class is gone).
 - **External email for customers and providers.** A standalone
   "Send External" button on the Call Notes Log view opens a modal
   for sending branded emails to customers or providers — not tied
@@ -1791,7 +1807,12 @@ this section before touching the relevant area.
   regions ET / CT / PT / HST. Pure client-side `Intl.DateTimeFormat` with
   formatters cached once per render (`clkBuildRegionFmts_`) and refreshed
   in the existing 1Hz `startClock` tick (`clkUpdateRegions_`) — no server
-  cost, no extra interval. Add/remove zones via `CLK_REGION_ZONES`.
+  cost, no extra interval. Add/remove zones via `CLK_REGION_ZONES`. **The
+  strip ROTATES (declutter): it shows ONE zone at a time and slides to the
+  next every `CLK_REGION_ROTATE_MS` (4.5s)** — `clkRotationZones_` excludes the
+  tz currently in the big clock (it's already the headline); the displayed
+  zone's minute stays live each tick, the slide-in (`.clk-region-rot`) fires
+  only on a rotation step and is neutralized by `prefers-reduced-motion`.
 - **Day ribbon (Clock view).** Horizontal 06:00–22:00 time ribbon
   rendered between the actions row and the coverage strip. Shows a
   dashed scheduled band, filled accent-green work segments + dashed
@@ -2583,7 +2604,8 @@ this section before touching the relevant area.
 - **Icon library additions (`script_icons.html`).** The redesign added
   `clipboardList`, `accessibility`, `airflow`, `outbox`, and `fileText` to the
   `ICONS` set, repointed the Intake tab + sidebar icons, and switched
-  `kbItemIcon_`'s article glyph to `fileText`. Same rule as before — add one
+  `kbItemIcon_`'s article glyph to `fileText` (and `image` was later added for
+  the Clock-card background picker). Same rule as before — add one
   path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
 - **Unified loader + motion system (2nd-pass; `styles.html` + `script_core.html`).**
   One shared CSS+helper set for loading states and purposeful micro-animations,
