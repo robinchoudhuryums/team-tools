@@ -39,10 +39,13 @@ Fast-forwarded the branch to origin/main (clean, 0-ahead), then implemented on i
 - A6 DONE (commit f9318a7, F6): removed the dead sendDeptRequest endpoint (no
   caller anywhere; tombstone left) — auto-tracking via emailFromCallNote replaced
   it. CLAUDE.md updated. Node 48/48 green.
-- STILL DEFERRED — A5 ONLY: dedupe duplicate DeptRequests rows on note re-send
-  (F2, Low; touches the emailFromCallNote hot path — DO NOT TOUCH the
-  hash-gate/stamping; needs a deliberate noteId+dept open-row lookup). The audit's
-  A1–A4 + A6 are all landed; A1–A6 action list is complete except A5.
+- A5 DONE (commit 0ab6fd3, F2, Approach A — signed off): re-send of the same note
+  to the same dept now REUSES the open row's token (drFindOpenRequest_, bounded
+  tail) instead of opening a second request. Schema add DR.NOTE_ID (col 11,
+  back-compat); pre-send reuse is hash-safe + best-effort; post-send append guarded
+  by !drExistingId. New INV-131; pinned by self-cleaning test_deptReq_resendDedupLookup.
+  DO-NOT-TOUCH respected (hash check / MailApp.send / EmailedAt stamping untouched).
+- AUDIT ACTION LIST COMPLETE: A1–A6 all landed (A5 was the last). Nothing deferred.
 
 ## Design redesign thread (ACTIVE — non-audit, does NOT bump Cycle)
 Operator-driven visual/interaction redesign from the design handoff in
@@ -261,11 +264,12 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
   (the kbResolveDocImages_ lesson). Fails OPEN on lock contention (prior best-effort posture).
 
 ## Where I left off
-2026-06-22: Spanish Inbox + DeptRequests targeted audit + A1–A4 + A6 + /sync-docs
-all done on `claude/practical-gauss-yycwkz` (fast-forwarded to main first). Commits:
-b4592e5 (A1–A3), f8856d2 (checkpoint), 6ec0b03 (doc sync), 09896e0 (A4), f9318a7
-(A6). Node 48/48 green throughout. ONLY A5 remains deferred (re-send dedupe —
-touches the emailFromCallNote DO-NOT-TOUCH hot path; do only with a signed-off
-approach). NEXT: operator deploy (clasp push -f + New version) + runAllTests() in
-the editor (exercises the new gate cases). No PR opened (not requested). Older
-Cycle-4 thread (M-1/L-1/L-2) is on claude/affectionate-cori-q4d2hf, unmerged.
+2026-06-22: Spanish Inbox + DeptRequests targeted audit COMPLETE on
+`claude/practical-gauss-yycwkz` (fast-forwarded to main first) — A1–A6 + /sync-docs
+all landed, nothing deferred. Commits: b4592e5 (A1–A3), f8856d2 (checkpoint),
+6ec0b03 (doc sync), 09896e0 (A4), f9318a7 (A6), 0ab6fd3 (A5). Node 48/48 green
+throughout; node --check clean. New invariant INV-131 (DeptRequests re-send
+idempotency). NEXT: operator deploy (clasp push -f + New version) + runAllTests()
+in the editor (exercises the new gate cases + test_deptReq_resendDedupLookup). No
+PR opened (not requested). Older Cycle-4 thread (M-1/L-1/L-2) is on
+claude/affectionate-cori-q4d2hf, unmerged.
