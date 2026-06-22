@@ -897,6 +897,8 @@ function _runAllTests() {
 
   // ── F8: manager-gate coverage across INV-31 / time-clock manager endpoints ─
   _integrationTest('managerGates_rejectNonManager',           test_managerGates_rejectNonManager);
+  // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
+  _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
@@ -3931,6 +3933,36 @@ function test_managerGates_rejectNonManager() {
   const dr = _asUser(_TEST_INDIA_EMAIL, function () { return getDeptRequests(); });
   _assertTrue(dr && dr.deptStats == null && dr.allOpen == null,
     'getDeptRequests must not leak deptStats/allOpen to a non-manager');
+}
+
+// A5 — drFindOpenRequest_ is the re-send dedup lookup: a re-send of the same note
+// to the same dept reuses the OPEN row's token instead of opening a second
+// request. Self-cleaning: appends two probe rows to the DeptRequests tab and
+// deletes exactly those rows in `finally` (DeptRequests is not swept by
+// cleanupTestData). The probe noteId is TEST_-prefixed for identifiability.
+function test_deptReq_resendDedupLookup() {
+  const sh = getOrCreateDeptRequestsSheet_();
+  const before = sh.getLastRow();
+  const nid = 'TEST_DR_NOTE_A5';
+  try {
+    // An OPEN (nid, 'Sales') row and a RESOLVED (nid, 'Shipping') row.
+    sh.appendRow(['TEST_DR_OPEN', _TEST_INDIA_ID, 'T', 't@x.com', 'Sales', 'x.com',
+      drNowTs_(), 'open', '', '', 'lbl', nid]);
+    sh.appendRow(['TEST_DR_RES', _TEST_INDIA_ID, 'T', 't@x.com', 'Shipping', 'x.com',
+      drNowTs_(), 'resolved', drNowTs_(), 'r@x.com', 'lbl', nid]);
+    SpreadsheetApp.flush();
+    _assertEq(drFindOpenRequest_(nid, 'Sales'), 'TEST_DR_OPEN',
+      'reuses the OPEN (note, dept) row');
+    _assertEq(drFindOpenRequest_(nid, 'Marketing'), null,
+      'a different dept opens a NEW request (no reuse)');
+    _assertEq(drFindOpenRequest_(nid, 'Shipping'), null,
+      'a RESOLVED row is never reused');
+    _assertEq(drFindOpenRequest_('', 'Sales'), null,
+      'no noteId → null (legacy rows never dedupe)');
+  } finally {
+    const after = sh.getLastRow();
+    if (after > before) sh.deleteRows(before + 1, after - before);
+  }
 }
 
 // Phase 3 — kbUploadImage validation: malformed / non-image payloads are

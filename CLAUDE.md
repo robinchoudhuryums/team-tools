@@ -2865,9 +2865,16 @@ manually for a fresh deploy or environment:
   **"✓ Mark this request resolved"** link (`drResolveCtaHtml_`) to the SENT email
   body — added AFTER the INV-41 preview-hash check, so the hash contract is
   untouched. The row carries the dept label + the update CATEGORY only
-  (`selections.updateInfo`); the subject (patient/TRX) and note content never
-  enter it. The auto-log is best-effort (try/catch, like the other post-send
-  stamps — never fails the send). **Two resolve paths:** (1) the receiver
+  (`selections.updateInfo`) + the source `noteId` (col `NOTE_ID`, a back-compat
+  trailing add); the subject (patient/TRX) and note content never enter it. The
+  auto-log is best-effort (try/catch, like the other post-send stamps — never
+  fails the send). **Re-send dedup (A5):** before sending, `drFindOpenRequest_`
+  (bounded tail, the `DR_MAX_SCAN` philosophy) looks up an OPEN row for this
+  `(noteId, deptLabel)`; if found it REUSES that row's token in the SENT email's
+  resolve CTA and SKIPS the append (the audit row is annotated `resend`), so
+  re-sending the same note to the same dept re-notifies without opening a second
+  request. Legacy rows (no `noteId`) never dedupe; the lookup failing-open mints a
+  fresh token. **Two resolve paths:** (1) the receiver
   (internal `@umsupply.com`) clicks the email link → `doGet`'s `?resolve=`
   branch → `serveResolvePage_` → `markDeptRequestResolved_` (locked,
   **idempotent**; requires a signed-in `getActiveUserEmail_` so it's attributed);
@@ -3512,6 +3519,7 @@ INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gate
 INV-128 | **Design-token hygiene tripwire.** `test/client/run.js` fails CI if any `var(--token)` referenced in a SHARED design-token-consuming partial is defined nowhere in `styles_design_tokens.html` (or the allowlist). It guards against the redesign foot-gun of referencing a renamed/typo'd CSS custom property that silently renders as the fallback/transparent. `form_public.html` is EXCLUDED (it's a standalone page that ships its own inline palette, not the token partial); the explicit allowlist is currently empty (every token resolves). Adding a new `var(--x)` to a shared partial means declaring `--x` in `styles_design_tokens.html` (or, rarely, allowlisting it) | Subsystem: Test Suite
 INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Today/7D/30D range presets. Returns `cdr: null` (not an error) when the agent has no DQE data | Subsystem: Server + Client (Metrics views)
 INV-130 | `getMyNoteHourBuckets(date)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates the date, and returns a 24-element array of the caller's own LOGGED-NOTE counts bucketed by REP-LOCAL hour (`empTz_`) for that day — sourced from the rep's call-notes Sheet (the bounded `readCallNoteRowsInRange_` + `normalizeDate_`/`CN.TIMESTAMP` coercion guards), NOT from CDR. PHI-free (hour counts only). Not enrolled → all-zero buckets (never throws). Powers the Clock-view day-ribbon note-volume histogram | Subsystem: Server + Client (Time Clock views)
+INV-131 | The `emailFromCallNote` dept-request auto-log is IDEMPOTENT per open `(noteId, deptLabel)` request (A5): before send, `drFindOpenRequest_(noteId, deptLabel)` (bounded tail of `DR_MAX_SCAN` rows, newest-first) reuses an existing OPEN row's `ReqId` as the resolve token and the post-send block SKIPS the append (auditing `resend`), so re-sending the same note to the same dept re-notifies without opening a second request. The lookup is best-effort (any throw → fresh token, never fails the send) and hash-safe (the token rides the CTA appended AFTER the INV-41 check; only the token VALUE changes). The `DR.NOTE_ID` column (col 11) is a back-compat trailing add (`DR_HEADERS` 11→12, the `CN_HEADERS`/`FS_HEADERS` posture — legacy rows read `''` and never dedupe). The resolve-by-token scans (`resolveDeptRequest`/`markDeptRequestResolved_`) stay FULL and don't read `NOTE_ID`. Pinned by `test_deptReq_resendDedupLookup` | Subsystem: Server + Client (Call Notes views)
 
 
 ### Policy Configuration

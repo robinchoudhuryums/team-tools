@@ -271,8 +271,12 @@ const EMP = {
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
 // Inter-department request tracking (DeptRequests tab). PHI-free: no email body.
-const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10 };
-const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label'];
+// NOTE_ID (col 11) is a back-compat trailing add (A5): legacy rows read '' for it
+// and never dedupe; new auto-logged rows carry the source noteId so a re-send of
+// the same note to the same dept reuses the open row's token instead of opening a
+// second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11 };
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId'];
 // Bounded tail scan for the getDeptRequests LIST read only (rows append
 // chronologically; the sheet grows one row per dept email with no retention).
 // The resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_)
@@ -4690,11 +4694,18 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         'Note content changed since you previewed. Re-open Preview to confirm the new body before sending.' };
     }
 
-    // Auto-track this dept email as an inter-department request: generate a
-    // resolve token + a "Mark resolved" CTA appended to the SENT body ONLY
-    // (after the INV-41 hash check, so the preview/hash contract is untouched).
-    // The PHI-free DeptRequests row is logged below, after the send succeeds.
-    const drId = Utilities.getUuid();
+    // Auto-track this dept email as an inter-department request. A5: if this same
+    // note was already sent to this same dept and that request is still OPEN,
+    // REUSE its token (a re-send re-notifies the dept; it must not open a second
+    // request) — else mint a new token. The lookup is best-effort (a throw falls
+    // back to a fresh token, never failing the send). The "Mark resolved" CTA is
+    // appended to the SENT body ONLY, AFTER the INV-41 hash check, so the
+    // preview/hash contract is untouched. The PHI-free DeptRequests row is logged
+    // below, after the send succeeds (only when this is a NEW request).
+    const drDeptKey = selections.departments.join(', ');
+    let drExistingId = null;
+    try { drExistingId = drFindOpenRequest_(noteId, drDeptKey); } catch (e) { drExistingId = null; }
+    const drId = drExistingId || Utilities.getUuid();
     const drResolveUrl = getWebAppExecUrl_() + '?resolve=' + encodeURIComponent(drId);
     const sentHtml = htmlBody + drResolveCtaHtml_(drResolveUrl);
 
@@ -4751,17 +4762,22 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
       `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}`);
 
     // Auto-log the inter-department request (best-effort — never fails the send).
-    // PHI-free: the row carries the dept label + the update CATEGORY only; the
-    // subject (patient/TRX) and note content never enter it. Surfaced in
+    // PHI-free: the row carries the dept label + the update CATEGORY + the source
+    // noteId only; the subject (patient/TRX) and note content never enter it.
+    // A5: append a NEW open row ONLY when this isn't a re-send of an already-open
+    // (note, dept) request — a re-send reuses the prior token (drExistingId), so
+    // we skip the append and just audit the re-notification. Surfaced in
     // Metrics → Dept Requests with elapsed/resolution-time tracking.
     try {
-      getOrCreateDeptRequestsSheet_().appendRow([
-        drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
-        deptLabel, drRecipientDomains_(recipientList.to), drNowTs_(), 'open', '', '',
-        (selections.updateInfo || 'Call note email'),
-      ]);
+      if (!drExistingId) {
+        getOrCreateDeptRequestsSheet_().appendRow([
+          drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
+          deptLabel, drRecipientDomains_(recipientList.to), drNowTs_(), 'open', '', '',
+          (selections.updateInfo || 'Call note email'), noteId,
+        ]);
+      }
       writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
-        'reqId=' + drId + '; dept=' + (deptLabel || '(none)'));
+        'reqId=' + drId + '; dept=' + (deptLabel || '(none)') + (drExistingId ? '; resend' : ''));
     } catch (drErr) {
       console.warn('emailFromCallNote: dept-request auto-log failed (noteId=' +
         noteId + '): ' + drErr.message);
@@ -8644,6 +8660,32 @@ function drRecipientDomains_(toList) {
     if (dom && dom !== '(none)' && !seen[dom]) { seen[dom] = 1; out.push(dom); }
   });
   return out.join(', ') || '(none)';
+}
+
+/** Dedup lookup (A5): the ReqId of an existing OPEN DeptRequests row for this
+ *  (noteId, deptLabel), else null — so a note re-send to the same dept REUSES
+ *  the prior token instead of opening a second request. Bounded tail (the
+ *  DR_MAX_SCAN philosophy): a request older than the window is treated as absent
+ *  and a re-send legitimately reopens it. Newest-first so the most recent open
+ *  row wins. Legacy rows (no NoteId) never match. Best-effort — the caller falls
+ *  back to a fresh token on any throw. */
+function drFindOpenRequest_(noteId, deptLabel) {
+  if (!noteId) return null;
+  const sh = getOrCreateDeptRequestsSheet_();
+  const lastRow = sh.getLastRow();
+  const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+  const numRows = lastRow - firstData + 1;
+  if (numRows <= 0) return null;
+  const rows = sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (String(r[DR.STATUS]) === 'open' &&
+        String(r[DR.NOTE_ID] || '') === String(noteId) &&
+        String(r[DR.TO_DEPT] || '') === String(deptLabel)) {
+      return String(r[DR.REQ_ID]);
+    }
+  }
+  return null;
 }
 
 /** "Mark resolved" CTA appended to a tracked department email's SENT body
