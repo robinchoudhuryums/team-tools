@@ -2,11 +2,50 @@
 
 ## Current
 Cycle: 5
-Phase: idle (Cycle 5 CLOSED — reflect recorded 2026-06-17)
+Phase: idle (Cycle 5 CLOSED 2026-06-17; one-off targeted audit+implement run 2026-06-22)
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 4
-Updated: 2026-06-17 (Cycle 5 reflect)
+Updated: 2026-06-22 (targeted audit+implement: Spanish Inbox + DeptRequests)
+
+## Targeted audit + implement — Spanish Inbox + DeptRequests (2026-06-22, on practical-gauss-yycwkz)
+Context: the designated branch `claude/practical-gauss-yycwkz` was 45 commits behind
+main and LACKED the audited code (Spanish/DeptReq/punctuality landed post-#56 on main).
+Fast-forwarded the branch to origin/main (clean, 0-ahead), then implemented on it.
+- AUDIT verdict: 0 Critical / 0 High / 1 Medium / 7 Low. The XSS surface I most
+  expected (external Gmail subject/snippet/body → app) is CLEAN: banner esc()'d,
+  Issue prefill + body expand use textContent, suggestion chips only keyword-match.
+  All auth gates present; PHI-adjacent Spanish bodies never cached/persisted.
+- IMPLEMENTED (commit b4592e5, pushed):
+  - A1 (F7): gate-pin getSpanishInboxStats/Pending/ThreadBody + getPunctualityReport
+    in test_managerGates_rejectNonManager; + no-leak assertion that getDeptRequests
+    (rep-callable, only ADDS manager aggregate) never returns deptStats/allOpen to a
+    non-manager.
+  - A2 (F4): getSpanishInboxStats cache key scoped by spanishCacheHash_(addr,members)
+    so a config change isn't masked for the 5-min TTL.
+  - A3 (F3): DeptRequests ToEmail column now stores recipient DOMAIN(s) via
+    drRecipientDomains_ (the "Other" dept can be an external/customer email; store can
+    fall back to the ADP/payroll sheet) — matches ExternalEmailSent minimization.
+    Column is write-only (never read back by any endpoint).
+- Node harness 48/48 green; node --check clean. The Apps Script gate test runs
+  in-editor (runAllTests) — confirm on next operator deploy.
+- A4 DONE (commit 09896e0, F1, the one Medium): getDeptRequests now reads a
+  bounded tail (DR_MAX_SCAN=4000, mirrors CN_AUDIT_MAX_SCAN) instead of the whole
+  sheet + returns a `truncated` flag (client shows a transparent note). The
+  resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_) were
+  LEFT full so old tokens still resolve (the cross-module caveat). Node 48/48 green.
+- DOC drift DONE (/sync-docs, commit 6ec0b03): the 4 endpoints added to INV-31;
+  DeptRequests ToEmail domain-minimization documented in the "Store" note.
+- A6 DONE (commit f9318a7, F6): removed the dead sendDeptRequest endpoint (no
+  caller anywhere; tombstone left) — auto-tracking via emailFromCallNote replaced
+  it. CLAUDE.md updated. Node 48/48 green.
+- A5 DONE (commit 0ab6fd3, F2, Approach A — signed off): re-send of the same note
+  to the same dept now REUSES the open row's token (drFindOpenRequest_, bounded
+  tail) instead of opening a second request. Schema add DR.NOTE_ID (col 11,
+  back-compat); pre-send reuse is hash-safe + best-effort; post-send append guarded
+  by !drExistingId. New INV-131; pinned by self-cleaning test_deptReq_resendDedupLookup.
+  DO-NOT-TOUCH respected (hash check / MailApp.send / EmailedAt stamping untouched).
+- AUDIT ACTION LIST COMPLETE: A1–A6 all landed (A5 was the last). Nothing deferred.
 
 ## Design redesign thread (ACTIVE — non-audit, does NOT bump Cycle)
 Operator-driven visual/interaction redesign from the design handoff in
@@ -225,6 +264,12 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
   (the kbResolveDocImages_ lesson). Fails OPEN on lock contention (prior best-effort posture).
 
 ## Where I left off
-Cycle-4 broad-implement is committed + pushed on claude/affectionate-cori-q4d2hf.
-NEXT: operator deploy (clasp push -f + New version) + runAllTests() in the editor,
-then /sync-docs for the M-1/L-1/L-2 doc updates. No PR opened (not requested).
+2026-06-22: Spanish Inbox + DeptRequests targeted audit COMPLETE on
+`claude/practical-gauss-yycwkz` (fast-forwarded to main first) — A1–A6 + /sync-docs
+all landed, nothing deferred. Commits: b4592e5 (A1–A3), f8856d2 (checkpoint),
+6ec0b03 (doc sync), 09896e0 (A4), f9318a7 (A6), 0ab6fd3 (A5). Node 48/48 green
+throughout; node --check clean. New invariant INV-131 (DeptRequests re-send
+idempotency). NEXT: operator deploy (clasp push -f + New version) + runAllTests()
+in the editor (exercises the new gate cases + test_deptReq_resendDedupLookup). No
+PR opened (not requested). Older Cycle-4 thread (M-1/L-1/L-2) is on
+claude/affectionate-cori-q4d2hf, unmerged.

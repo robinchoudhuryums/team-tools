@@ -271,8 +271,17 @@ const EMP = {
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
 // Inter-department request tracking (DeptRequests tab). PHI-free: no email body.
-const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10 };
-const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label'];
+// NOTE_ID (col 11) is a back-compat trailing add (A5): legacy rows read '' for it
+// and never dedupe; new auto-logged rows carry the source noteId so a re-send of
+// the same note to the same dept reuses the open row's token instead of opening a
+// second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11 };
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId'];
+// Bounded tail scan for the getDeptRequests LIST read only (rows append
+// chronologically; the sheet grows one row per dept email with no retention).
+// The resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_)
+// stay FULL so an old token still resolves. INV-13 spirit, mirrors CN_AUDIT_MAX_SCAN.
+const DR_MAX_SCAN = 4000;
 
 // Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
 const CN = {
@@ -4685,11 +4694,18 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         'Note content changed since you previewed. Re-open Preview to confirm the new body before sending.' };
     }
 
-    // Auto-track this dept email as an inter-department request: generate a
-    // resolve token + a "Mark resolved" CTA appended to the SENT body ONLY
-    // (after the INV-41 hash check, so the preview/hash contract is untouched).
-    // The PHI-free DeptRequests row is logged below, after the send succeeds.
-    const drId = Utilities.getUuid();
+    // Auto-track this dept email as an inter-department request. A5: if this same
+    // note was already sent to this same dept and that request is still OPEN,
+    // REUSE its token (a re-send re-notifies the dept; it must not open a second
+    // request) — else mint a new token. The lookup is best-effort (a throw falls
+    // back to a fresh token, never failing the send). The "Mark resolved" CTA is
+    // appended to the SENT body ONLY, AFTER the INV-41 hash check, so the
+    // preview/hash contract is untouched. The PHI-free DeptRequests row is logged
+    // below, after the send succeeds (only when this is a NEW request).
+    const drDeptKey = selections.departments.join(', ');
+    let drExistingId = null;
+    try { drExistingId = drFindOpenRequest_(noteId, drDeptKey); } catch (e) { drExistingId = null; }
+    const drId = drExistingId || Utilities.getUuid();
     const drResolveUrl = getWebAppExecUrl_() + '?resolve=' + encodeURIComponent(drId);
     const sentHtml = htmlBody + drResolveCtaHtml_(drResolveUrl);
 
@@ -4746,17 +4762,22 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
       `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}`);
 
     // Auto-log the inter-department request (best-effort — never fails the send).
-    // PHI-free: the row carries the dept label + the update CATEGORY only; the
-    // subject (patient/TRX) and note content never enter it. Surfaced in
+    // PHI-free: the row carries the dept label + the update CATEGORY + the source
+    // noteId only; the subject (patient/TRX) and note content never enter it.
+    // A5: append a NEW open row ONLY when this isn't a re-send of an already-open
+    // (note, dept) request — a re-send reuses the prior token (drExistingId), so
+    // we skip the append and just audit the re-notification. Surfaced in
     // Metrics → Dept Requests with elapsed/resolution-time tracking.
     try {
-      getOrCreateDeptRequestsSheet_().appendRow([
-        drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
-        deptLabel, recipientList.to, drNowTs_(), 'open', '', '',
-        (selections.updateInfo || 'Call note email'),
-      ]);
+      if (!drExistingId) {
+        getOrCreateDeptRequestsSheet_().appendRow([
+          drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
+          deptLabel, drRecipientDomains_(recipientList.to), drNowTs_(), 'open', '', '',
+          (selections.updateInfo || 'Call note email'), noteId,
+        ]);
+      }
       writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
-        'reqId=' + drId + '; dept=' + (deptLabel || '(none)'));
+        'reqId=' + drId + '; dept=' + (deptLabel || '(none)') + (drExistingId ? '; resend' : ''));
     } catch (drErr) {
       console.warn('emailFromCallNote: dept-request auto-log failed (noteId=' +
         noteId + '): ' + drErr.message);
@@ -8438,6 +8459,14 @@ function getSpanishInboxMembers_() {
   raw.split(',').forEach(function (s) { const e = s.trim().toLowerCase(); if (e) set[e] = true; });
   return set;
 }
+/** Stable short hash of the inbox address + member set, used to scope the stats
+ *  cache key so editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't masked
+ *  by a stale (wrong-resolution) aggregate for up to the 5-min TTL. Mirrors cdrRosterHash_. */
+function spanishCacheHash_(addr, members) {
+  const basis = String(addr || '') + '|' + Object.keys(members || {}).sort().join(',');
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, basis)
+    .map(function (b) { return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'); }).join('');
+}
 /** Extract the bare email from a "Name <email@x>" / "email@x" From header. */
 function emailAddrOnly_(from) {
   const s = String(from || '');
@@ -8476,12 +8505,15 @@ function getSpanishInboxStats(days) {
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
 
     const cache = CacheService.getScriptCache();
-    const ckey = 'spanish_inbox_v1:' + d;
+    const members = getSpanishInboxMembers_();
+    const haveMembers = Object.keys(members).length > 0;
+    // Cache key is scoped by address + member set (not just `days`) so an operator
+    // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
+    // aggregate computed under the old config for the TTL.
+    const ckey = 'spanish_inbox_v1:' + d + ':' + spanishCacheHash_(addr, members);
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
-    const members = getSpanishInboxMembers_();
-    const haveMembers = Object.keys(members).length > 0;
     const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
     const durations = [], pending = [];
     let resolvedCount = 0;
@@ -8615,6 +8647,47 @@ function getOrCreateDeptRequestsSheet_() {
 }
 function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss"); }
 
+/** Minimize a recipient list to its unique domain(s) for the PHI-free
+ *  DeptRequests ToEmail column. The "Other" department lets a rep enter a
+ *  free-text (possibly external/customer) address, and the store can fall back
+ *  to the ADP/payroll sheet, so we persist only the domain(s) — the same PII
+ *  minimization as the ExternalEmailSent audit row. The column is write-only
+ *  (never read back by any endpoint), so domain-only loses no functionality. */
+function drRecipientDomains_(toList) {
+  const seen = {}, out = [];
+  String(toList || '').split(',').forEach(function (a) {
+    const dom = intakeEmailDomain_(a.trim());
+    if (dom && dom !== '(none)' && !seen[dom]) { seen[dom] = 1; out.push(dom); }
+  });
+  return out.join(', ') || '(none)';
+}
+
+/** Dedup lookup (A5): the ReqId of an existing OPEN DeptRequests row for this
+ *  (noteId, deptLabel), else null — so a note re-send to the same dept REUSES
+ *  the prior token instead of opening a second request. Bounded tail (the
+ *  DR_MAX_SCAN philosophy): a request older than the window is treated as absent
+ *  and a re-send legitimately reopens it. Newest-first so the most recent open
+ *  row wins. Legacy rows (no NoteId) never match. Best-effort — the caller falls
+ *  back to a fresh token on any throw. */
+function drFindOpenRequest_(noteId, deptLabel) {
+  if (!noteId) return null;
+  const sh = getOrCreateDeptRequestsSheet_();
+  const lastRow = sh.getLastRow();
+  const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+  const numRows = lastRow - firstData + 1;
+  if (numRows <= 0) return null;
+  const rows = sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (String(r[DR.STATUS]) === 'open' &&
+        String(r[DR.NOTE_ID] || '') === String(noteId) &&
+        String(r[DR.TO_DEPT] || '') === String(deptLabel)) {
+      return String(r[DR.REQ_ID]);
+    }
+  }
+  return null;
+}
+
 /** "Mark resolved" CTA appended to a tracked department email's SENT body
  *  (added AFTER the INV-41 hash check so the preview/hash contract is unchanged).
  *  esc_'s the URL — same email-escape discipline as the call-note builder. */
@@ -8627,56 +8700,11 @@ function drResolveCtaHtml_(resolveUrl) {
     '<p style="margin:6px 0 0;font-size:11px;color:' + P.muted + ';text-align:center;">Click once you’ve actioned this request (or reply to let the sender know).</p>';
 }
 
-/** Send a tracked inter-department request: a branded email to the chosen
- *  department with a "Mark resolved" button (a `?resolve=<token>` link the
- *  receiver clicks), and an `open` DeptRequests row. Rep-callable, locked.
- *  PHI-free store (subject/message ride in the email only; the row keeps a short
- *  non-PHI label). */
-function sendDeptRequest(payload) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Your account is not registered.' };
-    payload = payload || {};
-    const dept = String(payload.toDept || '').trim();
-    const subject = String(payload.subject || '').trim();
-    const message = String(payload.message || '').trim();
-    const label = String(payload.label || '').trim().slice(0, 80);
-    if (!dept) return { success: false, error: 'Pick a department.' };
-    if (!subject) return { success: false, error: 'A subject is required.' };
-    if (!message) return { success: false, error: 'A message is required.' };
-    const deptMap = getDepartmentEmails_();
-    const toEmail = deptMap[dept];
-    if (!toEmail) return { success: false, error: 'Unknown department: ' + dept };
-
-    const requestId = Utilities.getUuid();
-    const resolveUrl = getWebAppExecUrl_() + '?resolve=' + encodeURIComponent(requestId);
-    const P = CN_EMAIL_PALETTE;
-    const bodyHtml =
-      '<p style="margin:0 0 10px;color:' + P.ink + ';">' + esc_(message).replace(/\n/g, '<br>') + '</p>' +
-      brandedKvRows_([['From', emp.name], ['Department', dept]]) +
-      '<div style="margin:18px 0 4px;text-align:center;">' +
-        '<a href="' + esc_(resolveUrl) + '" style="display:inline-block;background:' + P.accent + ';color:#ffffff;' +
-        'text-decoration:none;font-weight:600;padding:11px 22px;border-radius:8px;font-size:14px;">&#10003; Mark this resolved</a>' +
-      '</div>' +
-      '<p style="margin:6px 0 0;font-size:12px;color:' + P.muted + ';text-align:center;">Click only after you’ve actioned (or attempted) this request.</p>';
-    const html = buildBrandedEmailHtml_('Department request: ' + subject, bodyHtml, { accent: P.brand });
-
-    // Send first; only log on a successful send (no orphan open rows).
-    MailApp.sendEmail({ to: toEmail, subject: 'Request: ' + subject, htmlBody: html,
-      body: message + '\n\nMark resolved: ' + resolveUrl });
-
-    getOrCreateDeptRequestsSheet_().appendRow([
-      requestId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
-      dept, toEmail, drNowTs_(), 'open', '', '', label,
-    ]);
-    try { writeAuditLog_(emp, 'DeptRequestSent', '', '', false, 0, 'reqId=' + requestId + '; dept=' + dept); } catch (e) {}
-    return { success: true, requestId: requestId };
-  } catch (err) {
-    return { success: false, error: err.message };
-  } finally { lock.releaseLock(); }
-}
+// sendDeptRequest (the legacy standalone dept-request composer endpoint) was
+// retired (audit A6/F6): it had no caller anywhere — inter-department request
+// tracking is now AUTOMATIC via emailFromCallNote (auto-logs the DeptRequests
+// row + appends the resolve CTA). drResolveCtaHtml_ above is still used by that
+// auto-log path.
 
 /** Mark a request resolved (the receiver clicked the email link). Idempotent. */
 function markDeptRequestResolved_(token, byEmail) {
@@ -8761,7 +8789,16 @@ function getDeptRequests() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Your account is not registered.' };
-    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
+    // Bounded tail read — never the whole sheet. Rows append chronologically, so
+    // the most-recent DR_MAX_SCAN rows are the relevant ones for the list/aggregate.
+    // (resolveDeptRequest / markDeptRequestResolved_ keep their FULL scans so an
+    // old token still resolves — only this LIST read is bounded; F1/A4.)
+    const sh = getOrCreateDeptRequestsSheet_();
+    const lastRow = sh.getLastRow();
+    const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+    const numRows = lastRow - firstData + 1;
+    const rows = numRows > 0 ? sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues() : [];
+    const truncated = (lastRow - 1) > DR_MAX_SCAN;   // data rows exceed the cap
     const mine = [], all = [];
     // CreatedAt/ResolvedAt are written in the ISO 'T' form (drNowTs_) so Sheets
     // keeps them as strings — but tolerate a legacy space-form row that Sheets
@@ -8774,7 +8811,7 @@ function getDeptRequests() {
     const fmtTs = function (ms) {
       return ms ? Utilities.formatDate(new Date(ms), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a') : '';
     };
-    for (let i = 1; i < rows.length; i++) {
+    for (let i = 0; i < rows.length; i++) {   // i=0: tail slice has no header row
       const r = rows[i];
       if (!r[DR.REQ_ID]) continue;
       const createdMs = parseMs(r[DR.CREATED_AT]);
@@ -8795,7 +8832,7 @@ function getDeptRequests() {
     // Departments the composer can target — only those with a resolvable email.
     const deptMap = getDepartmentEmails_() || {};
     const departments = Object.keys(deptMap).filter(function (d) { return !!deptMap[d]; });
-    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments };
+    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments, truncated: truncated };
     if (emp.isManager) {
       const byDept = {};
       all.forEach(function (it) {

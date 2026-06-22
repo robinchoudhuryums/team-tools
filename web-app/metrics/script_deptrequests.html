@@ -44,6 +44,13 @@ function drRender_(area, data, errorMsg) {
     ' Every department email you send from Call Notes is logged here. Resolve a request with the button below, ' +
     'or the receiver can click the “Mark resolved” link in the email.</div>';
 
+  // The server reads only the most-recent rows (bounded tail) — be transparent
+  // when older entries fall outside that window (F1/A4).
+  const trunc = (data && data.truncated)
+    ? '<div class="dr-note" style="color:var(--warning-deep)">' + icon('outbox', 13) +
+      ' Showing the most recent requests only — older entries aren’t listed.</div>'
+    : '';
+
   const mine = (data && data.mine) || [];
   const mineHtml = mine.length
     ? '<div class="dr-list">' + mine.map(drRequestRowHtml_).join('') + '</div>'
@@ -56,7 +63,7 @@ function drRender_(area, data, errorMsg) {
     mgrSection = drManagerSectionHtml_(data);
   }
 
-  area.innerHTML = head + intro + mineSection + mgrSection;
+  area.innerHTML = head + intro + trunc + mineSection + mgrSection;
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 

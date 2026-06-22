@@ -897,6 +897,8 @@ function _runAllTests() {
 
   // ── F8: manager-gate coverage across INV-31 / time-clock manager endpoints ─
   _integrationTest('managerGates_rejectNonManager',           test_managerGates_rejectNonManager);
+  // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
+  _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
@@ -3908,6 +3910,13 @@ function test_managerGates_rejectNonManager() {
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
+    // Spanish Inbox (Gmail) manager gates — the gate fires BEFORE any GmailApp
+    // access, so these run safely even where Gmail / the inbox is unconfigured.
+    ['getSpanishInboxStats',           function () { return getSpanishInboxStats(30); }],
+    ['getSpanishInboxPending',         function () { return getSpanishInboxPending(30); }],
+    ['getSpanishInboxThreadBody',      function () { return getSpanishInboxThreadBody('no-such-thread'); }],
+    // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
+    ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
   ];
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
@@ -3918,6 +3927,42 @@ function test_managerGates_rejectNonManager() {
   // assert it never leaks a badge / data to a non-manager.
   const amb = _asUser(_TEST_INDIA_EMAIL, function () { return getMetricsAmbient(); });
   _assertTrue(!amb || amb.badge == null, 'getMetricsAmbient must not leak a badge to a non-manager');
+  // getDeptRequests is rep-callable (returns the caller's OWN requests) and only
+  // ADDS the cross-rep manager aggregate for managers — assert a non-manager
+  // never receives the manager-only fields (deptStats / allOpen).
+  const dr = _asUser(_TEST_INDIA_EMAIL, function () { return getDeptRequests(); });
+  _assertTrue(dr && dr.deptStats == null && dr.allOpen == null,
+    'getDeptRequests must not leak deptStats/allOpen to a non-manager');
+}
+
+// A5 — drFindOpenRequest_ is the re-send dedup lookup: a re-send of the same note
+// to the same dept reuses the OPEN row's token instead of opening a second
+// request. Self-cleaning: appends two probe rows to the DeptRequests tab and
+// deletes exactly those rows in `finally` (DeptRequests is not swept by
+// cleanupTestData). The probe noteId is TEST_-prefixed for identifiability.
+function test_deptReq_resendDedupLookup() {
+  const sh = getOrCreateDeptRequestsSheet_();
+  const before = sh.getLastRow();
+  const nid = 'TEST_DR_NOTE_A5';
+  try {
+    // An OPEN (nid, 'Sales') row and a RESOLVED (nid, 'Shipping') row.
+    sh.appendRow(['TEST_DR_OPEN', _TEST_INDIA_ID, 'T', 't@x.com', 'Sales', 'x.com',
+      drNowTs_(), 'open', '', '', 'lbl', nid]);
+    sh.appendRow(['TEST_DR_RES', _TEST_INDIA_ID, 'T', 't@x.com', 'Shipping', 'x.com',
+      drNowTs_(), 'resolved', drNowTs_(), 'r@x.com', 'lbl', nid]);
+    SpreadsheetApp.flush();
+    _assertEq(drFindOpenRequest_(nid, 'Sales'), 'TEST_DR_OPEN',
+      'reuses the OPEN (note, dept) row');
+    _assertEq(drFindOpenRequest_(nid, 'Marketing'), null,
+      'a different dept opens a NEW request (no reuse)');
+    _assertEq(drFindOpenRequest_(nid, 'Shipping'), null,
+      'a RESOLVED row is never reused');
+    _assertEq(drFindOpenRequest_('', 'Sales'), null,
+      'no noteId → null (legacy rows never dedupe)');
+  } finally {
+    const after = sh.getLastRow();
+    if (after > before) sh.deleteRows(before + 1, after - before);
+  }
 }
 
 // Phase 3 — kbUploadImage validation: malformed / non-image payloads are
