@@ -3908,6 +3908,13 @@ function test_managerGates_rejectNonManager() {
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
+    // Spanish Inbox (Gmail) manager gates — the gate fires BEFORE any GmailApp
+    // access, so these run safely even where Gmail / the inbox is unconfigured.
+    ['getSpanishInboxStats',           function () { return getSpanishInboxStats(30); }],
+    ['getSpanishInboxPending',         function () { return getSpanishInboxPending(30); }],
+    ['getSpanishInboxThreadBody',      function () { return getSpanishInboxThreadBody('no-such-thread'); }],
+    // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
+    ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
   ];
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
@@ -3918,6 +3925,12 @@ function test_managerGates_rejectNonManager() {
   // assert it never leaks a badge / data to a non-manager.
   const amb = _asUser(_TEST_INDIA_EMAIL, function () { return getMetricsAmbient(); });
   _assertTrue(!amb || amb.badge == null, 'getMetricsAmbient must not leak a badge to a non-manager');
+  // getDeptRequests is rep-callable (returns the caller's OWN requests) and only
+  // ADDS the cross-rep manager aggregate for managers — assert a non-manager
+  // never receives the manager-only fields (deptStats / allOpen).
+  const dr = _asUser(_TEST_INDIA_EMAIL, function () { return getDeptRequests(); });
+  _assertTrue(dr && dr.deptStats == null && dr.allOpen == null,
+    'getDeptRequests must not leak deptStats/allOpen to a non-manager');
 }
 
 // Phase 3 — kbUploadImage validation: malformed / non-image payloads are

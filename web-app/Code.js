@@ -4752,7 +4752,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     try {
       getOrCreateDeptRequestsSheet_().appendRow([
         drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
-        deptLabel, recipientList.to, drNowTs_(), 'open', '', '',
+        deptLabel, drRecipientDomains_(recipientList.to), drNowTs_(), 'open', '', '',
         (selections.updateInfo || 'Call note email'),
       ]);
       writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
@@ -8438,6 +8438,14 @@ function getSpanishInboxMembers_() {
   raw.split(',').forEach(function (s) { const e = s.trim().toLowerCase(); if (e) set[e] = true; });
   return set;
 }
+/** Stable short hash of the inbox address + member set, used to scope the stats
+ *  cache key so editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't masked
+ *  by a stale (wrong-resolution) aggregate for up to the 5-min TTL. Mirrors cdrRosterHash_. */
+function spanishCacheHash_(addr, members) {
+  const basis = String(addr || '') + '|' + Object.keys(members || {}).sort().join(',');
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, basis)
+    .map(function (b) { return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0'); }).join('');
+}
 /** Extract the bare email from a "Name <email@x>" / "email@x" From header. */
 function emailAddrOnly_(from) {
   const s = String(from || '');
@@ -8476,12 +8484,15 @@ function getSpanishInboxStats(days) {
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
 
     const cache = CacheService.getScriptCache();
-    const ckey = 'spanish_inbox_v1:' + d;
+    const members = getSpanishInboxMembers_();
+    const haveMembers = Object.keys(members).length > 0;
+    // Cache key is scoped by address + member set (not just `days`) so an operator
+    // editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't served a stale
+    // aggregate computed under the old config for the TTL.
+    const ckey = 'spanish_inbox_v1:' + d + ':' + spanishCacheHash_(addr, members);
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
-    const members = getSpanishInboxMembers_();
-    const haveMembers = Object.keys(members).length > 0;
     const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
     const durations = [], pending = [];
     let resolvedCount = 0;
@@ -8615,6 +8626,21 @@ function getOrCreateDeptRequestsSheet_() {
 }
 function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss"); }
 
+/** Minimize a recipient list to its unique domain(s) for the PHI-free
+ *  DeptRequests ToEmail column. The "Other" department lets a rep enter a
+ *  free-text (possibly external/customer) address, and the store can fall back
+ *  to the ADP/payroll sheet, so we persist only the domain(s) — the same PII
+ *  minimization as the ExternalEmailSent audit row. The column is write-only
+ *  (never read back by any endpoint), so domain-only loses no functionality. */
+function drRecipientDomains_(toList) {
+  const seen = {}, out = [];
+  String(toList || '').split(',').forEach(function (a) {
+    const dom = intakeEmailDomain_(a.trim());
+    if (dom && dom !== '(none)' && !seen[dom]) { seen[dom] = 1; out.push(dom); }
+  });
+  return out.join(', ') || '(none)';
+}
+
 /** "Mark resolved" CTA appended to a tracked department email's SENT body
  *  (added AFTER the INV-41 hash check so the preview/hash contract is unchanged).
  *  esc_'s the URL — same email-escape discipline as the call-note builder. */
@@ -8669,7 +8695,7 @@ function sendDeptRequest(payload) {
 
     getOrCreateDeptRequestsSheet_().appendRow([
       requestId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
-      dept, toEmail, drNowTs_(), 'open', '', '', label,
+      dept, drRecipientDomains_(toEmail), drNowTs_(), 'open', '', '', label,
     ]);
     try { writeAuditLog_(emp, 'DeptRequestSent', '', '', false, 0, 'reqId=' + requestId + '; dept=' + dept); } catch (e) {}
     return { success: true, requestId: requestId };
