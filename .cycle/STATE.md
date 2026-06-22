@@ -36,9 +36,13 @@ Fast-forwarded the branch to origin/main (clean, 0-ahead), then implemented on i
   LEFT full so old tokens still resolve (the cross-module caveat). Node 48/48 green.
 - DOC drift DONE (/sync-docs, commit 6ec0b03): the 4 endpoints added to INV-31;
   DeptRequests ToEmail domain-minimization documented in the "Store" note.
-- STILL DEFERRED: A5 dedupe duplicate DeptRequests rows on note re-send (F2,
-  touches the emailFromCallNote hot path — DO NOT TOUCH the hash-gate/stamping);
-  A6 retire the unsurfaced-but-live sendDeptRequest endpoint (F6).
+- A6 DONE (commit f9318a7, F6): removed the dead sendDeptRequest endpoint (no
+  caller anywhere; tombstone left) — auto-tracking via emailFromCallNote replaced
+  it. CLAUDE.md updated. Node 48/48 green.
+- STILL DEFERRED — A5 ONLY: dedupe duplicate DeptRequests rows on note re-send
+  (F2, Low; touches the emailFromCallNote hot path — DO NOT TOUCH the
+  hash-gate/stamping; needs a deliberate noteId+dept open-row lookup). The audit's
+  A1–A4 + A6 are all landed; A1–A6 action list is complete except A5.
 
 ## Design redesign thread (ACTIVE — non-audit, does NOT bump Cycle)
 Operator-driven visual/interaction redesign from the design handoff in
@@ -257,11 +261,11 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
   (the kbResolveDocImages_ lesson). Fails OPEN on lock contention (prior best-effort posture).
 
 ## Where I left off
-2026-06-22: Spanish Inbox + DeptRequests targeted audit + A1–A4 + /sync-docs all
-done on `claude/practical-gauss-yycwkz` (fast-forwarded to main first). Commits:
-b4592e5 (A1–A3), f8856d2 (checkpoint), 6ec0b03 (doc sync), 09896e0 (A4). Node
-48/48 green throughout. ONLY A5/A6 remain deferred (A5 touches the emailFromCallNote
-DO-NOT-TOUCH hot path). NEXT: operator deploy (clasp push -f + New version) +
-runAllTests() in the editor (exercises the new gate cases). No PR opened (not
-requested). Older Cycle-4 thread (M-1/L-1/L-2) is on
-claude/affectionate-cori-q4d2hf, unmerged.
+2026-06-22: Spanish Inbox + DeptRequests targeted audit + A1–A4 + A6 + /sync-docs
+all done on `claude/practical-gauss-yycwkz` (fast-forwarded to main first). Commits:
+b4592e5 (A1–A3), f8856d2 (checkpoint), 6ec0b03 (doc sync), 09896e0 (A4), f9318a7
+(A6). Node 48/48 green throughout. ONLY A5 remains deferred (re-send dedupe —
+touches the emailFromCallNote DO-NOT-TOUCH hot path; do only with a signed-off
+approach). NEXT: operator deploy (clasp push -f + New version) + runAllTests() in
+the editor (exercises the new gate cases). No PR opened (not requested). Older
+Cycle-4 thread (M-1/L-1/L-2) is on claude/affectionate-cori-q4d2hf, unmerged.
