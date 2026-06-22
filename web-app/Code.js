@@ -273,6 +273,11 @@ const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED
 // Inter-department request tracking (DeptRequests tab). PHI-free: no email body.
 const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10 };
 const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label'];
+// Bounded tail scan for the getDeptRequests LIST read only (rows append
+// chronologically; the sheet grows one row per dept email with no retention).
+// The resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_)
+// stay FULL so an old token still resolves. INV-13 spirit, mirrors CN_AUDIT_MAX_SCAN.
+const DR_MAX_SCAN = 4000;
 
 // Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
 const CN = {
@@ -8787,7 +8792,16 @@ function getDeptRequests() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Your account is not registered.' };
-    const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
+    // Bounded tail read — never the whole sheet. Rows append chronologically, so
+    // the most-recent DR_MAX_SCAN rows are the relevant ones for the list/aggregate.
+    // (resolveDeptRequest / markDeptRequestResolved_ keep their FULL scans so an
+    // old token still resolves — only this LIST read is bounded; F1/A4.)
+    const sh = getOrCreateDeptRequestsSheet_();
+    const lastRow = sh.getLastRow();
+    const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+    const numRows = lastRow - firstData + 1;
+    const rows = numRows > 0 ? sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues() : [];
+    const truncated = (lastRow - 1) > DR_MAX_SCAN;   // data rows exceed the cap
     const mine = [], all = [];
     // CreatedAt/ResolvedAt are written in the ISO 'T' form (drNowTs_) so Sheets
     // keeps them as strings — but tolerate a legacy space-form row that Sheets
@@ -8800,7 +8814,7 @@ function getDeptRequests() {
     const fmtTs = function (ms) {
       return ms ? Utilities.formatDate(new Date(ms), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a') : '';
     };
-    for (let i = 1; i < rows.length; i++) {
+    for (let i = 0; i < rows.length; i++) {   // i=0: tail slice has no header row
       const r = rows[i];
       if (!r[DR.REQ_ID]) continue;
       const createdMs = parseMs(r[DR.CREATED_AT]);
@@ -8821,7 +8835,7 @@ function getDeptRequests() {
     // Departments the composer can target — only those with a resolvable email.
     const deptMap = getDepartmentEmails_() || {};
     const departments = Object.keys(deptMap).filter(function (d) { return !!deptMap[d]; });
-    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments };
+    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments, truncated: truncated };
     if (emp.isManager) {
       const byDept = {};
       all.forEach(function (it) {
