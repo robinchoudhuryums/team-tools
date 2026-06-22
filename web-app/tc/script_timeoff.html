@@ -3,16 +3,50 @@
 //  TIME OFF VIEW
 // ════════════════════════════════════════════════════════════════════════════
 
-function loadCalendar(year, month) {
+// Per-(year, month) calendar payload cache for instant-paint month navigation
+// (stale-while-revalidate). Cleared on any time-off mutation so a PTO change is
+// never masked by a stale cached month.
+var CAL_CACHE = {};
+function calCacheKey_(y, m) { return y + '-' + m; }
+
+function loadCalendar(year, month, opts) {
+  opts = opts || {};
   google.script.run
     .withSuccessHandler(data => {
+      if (opts.silent) viewRefreshingPill_(false);
       if (data.error) { showToast(data.error, 'toast-error'); return; }
-      calData = data; calYear = year; calMonth = month;
+      CAL_CACHE[calCacheKey_(year, month)] = { data: data, at: Date.now() };
+      // Render only if the user is still on this exact month — a fast double-nav
+      // or a nav-away must not let a late/stale fetch clobber the current view.
+      // (Every caller sets calYear/calMonth to its target before calling.)
+      if (currentView !== 'timeoff' || year !== calYear || month !== calMonth) return;
+      calData = data;
       const area = document.getElementById('view-area');
-      if (area && currentView === 'timeoff') renderTimeOffView(area, data);
+      if (area) renderTimeOffView(area, data);
     })
-    .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
+    .withFailureHandler(err => { if (opts.silent) viewRefreshingPill_(false); showToast((err.message||'Load failed'),'toast-error'); })
     .getCalendarData(year, month);
+}
+
+// Month navigation with instant-paint: repaint from the per-month cache
+// immediately (no full-view spinner), then revalidate in the background behind
+// the shared "Refreshing…" pill when the cached copy is stale. A cache miss
+// falls back to the full loader. Mirrors the #81/#82 stale-while-revalidate pattern.
+function calNavTo_(ny, nm) {
+  calYear = ny; calMonth = nm;
+  const area = document.getElementById('view-area');
+  const entry = CAL_CACHE[calCacheKey_(ny, nm)];
+  if (entry && entry.data) {
+    calData = entry.data;
+    if (area) renderTimeOffView(area, entry.data);          // instant
+    if (typeof viewCacheFresh_ !== 'function' || !viewCacheFresh_(entry, VIEW_CACHE_TTL_MS)) {
+      viewRefreshingPill_(true);
+      loadCalendar(ny, nm, { silent: true });               // quiet background refresh
+    }
+  } else {
+    if (area) renderLoading(area, 'Loading calendar…', 'clock');
+    loadCalendar(ny, nm);
+  }
 }
 
 function renderTimeOffView(area, data) {
@@ -233,15 +267,13 @@ function renderTimeOffView(area, data) {
     if (!canPrev) return;
     const nm = data.month === 1 ? 12 : data.month - 1;
     const ny = data.month === 1 ? data.year - 1 : data.year;
-    calYear = ny; calMonth = nm;
-    renderLoading(area, 'Loading calendar…', 'clock'); loadCalendar(ny, nm);
+    calNavTo_(ny, nm);
   });
   document.getElementById('cal-next').addEventListener('click', () => {
     if (!canNext) return;
     const nm = data.month === 12 ? 1 : data.month + 1;
     const ny = data.month === 12 ? data.year + 1 : data.year;
-    calYear = ny; calMonth = nm;
-    renderLoading(area, 'Loading calendar…', 'clock'); loadCalendar(ny, nm);
+    calNavTo_(ny, nm);
   });
 
   // Round 2 · 8c — wire hover (or tap-only on touch) for the day modal.
@@ -294,6 +326,7 @@ function renderTimeOffView(area, data) {
               return;
             }
             showToast('Request cancelled', 'toast-success');
+            CAL_CACHE = {};   // a PTO change invalidates every cached month
             refreshViewIfCurrent('timeoff', 'Loading calendar…', function () { loadCalendar(calYear, calMonth); });
           })
           .withFailureHandler(err => {
@@ -701,6 +734,7 @@ document.getElementById('day-submit').addEventListener('click', () => {
       document.getElementById('day-overlay').classList.remove('open');
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       showToast('Time off request submitted','toast-success');
+      CAL_CACHE = {};   // a PTO change invalidates every cached month
       refreshViewIfCurrent('timeoff', 'Loading calendar…', function () { loadCalendar(calYear, calMonth); });
     })
     .withFailureHandler(err => {
