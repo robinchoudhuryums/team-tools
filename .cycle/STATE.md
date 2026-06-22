@@ -29,15 +29,16 @@ Fast-forwarded the branch to origin/main (clean, 0-ahead), then implemented on i
     Column is write-only (never read back by any endpoint).
 - Node harness 48/48 green; node --check clean. The Apps Script gate test runs
   in-editor (runAllTests) — confirm on next operator deploy.
-- DEFERRED (the audit's Defer tier — NOT done): A4 bound the unbounded
-  getDeptRequests/resolve full-sheet reads (Medium, F1 — sheet grows 1 row/dept-email,
-  no retention; bound the LIST read ONLY — resolve's by-token scan must stay full so
-  old tokens resolve); A5 dedupe duplicate DeptRequests rows on note re-send (F2,
-  touches the emailFromCallNote hot path — DO NOT TOUCH the hash-gate/stamping); A6
-  retire the unsurfaced-but-live sendDeptRequest endpoint (F6).
-- DOC drift (/sync-docs): add the 4 endpoints to the INV-31 manager-gate list; note
-  DeptRequests ToEmail is now domain-minimized (the "PHI-free store" line); 2 new
-  invariant candidates below.
+- A4 DONE (commit 09896e0, F1, the one Medium): getDeptRequests now reads a
+  bounded tail (DR_MAX_SCAN=4000, mirrors CN_AUDIT_MAX_SCAN) instead of the whole
+  sheet + returns a `truncated` flag (client shows a transparent note). The
+  resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_) were
+  LEFT full so old tokens still resolve (the cross-module caveat). Node 48/48 green.
+- DOC drift DONE (/sync-docs, commit 6ec0b03): the 4 endpoints added to INV-31;
+  DeptRequests ToEmail domain-minimization documented in the "Store" note.
+- STILL DEFERRED: A5 dedupe duplicate DeptRequests rows on note re-send (F2,
+  touches the emailFromCallNote hot path — DO NOT TOUCH the hash-gate/stamping);
+  A6 retire the unsurfaced-but-live sendDeptRequest endpoint (F6).
 
 ## Design redesign thread (ACTIVE — non-audit, does NOT bump Cycle)
 Operator-driven visual/interaction redesign from the design handoff in
@@ -256,10 +257,11 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
   (the kbResolveDocImages_ lesson). Fails OPEN on lock contention (prior best-effort posture).
 
 ## Where I left off
-2026-06-22: targeted audit+implement of Spanish Inbox + DeptRequests done on
-`claude/practical-gauss-yycwkz` (fast-forwarded to main first; now == main + commit
-b4592e5, pushed). A1–A3 landed; A4–A6 deferred (see the targeted-audit section up
-top). Node 48/48 green. NEXT: operator deploy (clasp push -f + New version) +
-runAllTests() in the editor (exercises the new gate cases); then /sync-docs for the
-manager-gate-list + DeptRequests-domain doc drift. No PR opened (not requested).
-Older Cycle-4 thread (M-1/L-1/L-2) is on claude/affectionate-cori-q4d2hf, unmerged.
+2026-06-22: Spanish Inbox + DeptRequests targeted audit + A1–A4 + /sync-docs all
+done on `claude/practical-gauss-yycwkz` (fast-forwarded to main first). Commits:
+b4592e5 (A1–A3), f8856d2 (checkpoint), 6ec0b03 (doc sync), 09896e0 (A4). Node
+48/48 green throughout. ONLY A5/A6 remain deferred (A5 touches the emailFromCallNote
+DO-NOT-TOUCH hot path). NEXT: operator deploy (clasp push -f + New version) +
+runAllTests() in the editor (exercises the new gate cases). No PR opened (not
+requested). Older Cycle-4 thread (M-1/L-1/L-2) is on
+claude/affectionate-cori-q4d2hf, unmerged.
