@@ -89,6 +89,14 @@
   .pto-pip.planned { background: var(--warn); }                                                    /* pending upcoming */
   :root[data-compact] .clk-row3 { grid-template-columns: 1fr; }
   @media (max-width: 760px) { .clk-row3 { grid-template-columns: 1fr; } }
+  /* Pop-out (compact) density: drop the secondary world-clock strip + greeting
+     kicker (the big clock already shows the rep's time), and tighten the cards
+     so the actionable bits — clock, punch buttons, today's punches — sit higher. */
+  :root[data-compact] #clk-regions { display: none !important; }
+  :root[data-compact] .hero .greet-kicker { display: none; }
+  :root[data-compact] .hero { padding: 14px 16px 12px; gap: 10px; }
+  :root[data-compact] .shift-strip { padding: 12px 14px; margin: 10px 0; }
+  :root[data-compact] .clk-row3 { gap: 10px; margin-top: 10px; }
 </style>
 
 <script>

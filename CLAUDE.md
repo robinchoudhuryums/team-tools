@@ -1094,13 +1094,17 @@ this section before touching the relevant area.
     tour auto-starts once per `TOUR_VERSION` (bump to re-offer after a
     material UI change); stamped on finish/skip. Replayable anytime from
     the Call Notes ? menu regardless of this flag.
-  - `umsPopoutGeom` — compact pop-out window geometry `{w,h,x,y}` (#4).
-    Written by `popoutPersistGeometryInit_` (compact window only, debounced
-    on resize + on `beforeunload`); read by `popOutCurrentView` (in either
-    window — same-origin localStorage is shared) via the pure, range-guarded
-    `popoutParseGeom_` (corrupt/out-of-range → null → default 480×800). So the
-    rep's manual resize/reposition sticks across launches. Position is
-    best-effort (browsers restrict programmatic move of an existing window).
+  - `umsPopoutGeom_<tool>` — compact pop-out window geometry `{w,h,x,y}`,
+    **keyed per tool** (#4 + per-tool windows). Written by
+    `popoutPersistGeometryInit_` (compact window only, debounced on resize +
+    on `beforeunload`) under the tool the window was opened for; read by
+    `popOutCurrentView` (in either window — same-origin localStorage is shared)
+    via the pure, range-guarded `popoutParseGeom_` (corrupt/out-of-range → null
+    → default 480×800). A legacy single-window `umsPopoutGeom` blob seeds the
+    SIZE only (not position) so a fresh per-tool window doesn't stack on an
+    existing one. So each tool's pop-out remembers its own size/position across
+    launches. Position is best-effort (browsers restrict programmatic move of an
+    existing window).
   - `umsIntakeDrafts` — in-progress Intake form answers (PPD / PMD / PAP)
     as ONE JSON blob keyed by form type (`INTAKE_DRAFT_KEY`), auto-saved on
     input, restored on the form's view enter, cleared on send + Clear. Like
@@ -1330,12 +1334,18 @@ this section before touching the relevant area.
   when `COMPACT_MODE === true`. The Clock tab's hero layout needs
   no explicit header. Per-class compact-mode tuning lives in the
   styles partial.
-- **Pop-out uses a named window target.** `popOutCurrentView()` calls
-  `window.open(url, 'umsTeamToolsCompact', ...)`. The named target
-  means subsequent clicks of the pop-out button focus the existing
-  window rather than spawning duplicates — important for the "single
-  always-visible panel" workflow. Closing the pop-out clears the
-  reference and the next click opens a fresh window.
+- **Pop-out uses a PER-TOOL named window target.** `popOutCurrentView()`
+  calls `window.open(url, 'umsTeamToolsCompact_' + popoutToolKey_(currentView),
+  ...)` where `popoutToolKey_` maps the active tab to its tool via
+  `VIEW_TO_TOOL`. Keying the window name by TOOL means a Call Notes pop-out
+  and a Time Clock pop-out can be open **at the same time** (each tool gets
+  its own window), while a repeat click on the same tool's pop-out focuses
+  that tool's existing window rather than spawning a duplicate. Geometry is
+  likewise per-tool (`umsPopoutGeom_<tool>`), captured at boot from the
+  `?tool=` the window was opened for, so internal navigation doesn't move a
+  window's remembered size to another tool's key. Each pop-out is a full app
+  instance (own iframe + ambient/clock pollers) — linear cost, negligible at
+  the 2–3 windows a rep would realistically open.
 - **Per-rep call-notes Sheets are the storage substrate.** Same
   pattern as the time-clock module's `EMP.SHEET_ID` (per-rep month
   Sheet) — each rep's notes live in a Sheet Robin owns, mapped via
@@ -1954,15 +1964,19 @@ this section before touching the relevant area.
   `adjustWindowDays` field (falls back to 30 only if absent), so the
   picker tracks the real window if the CONFIG changes. The server stays
   authoritative regardless.
-- **Compact pop-out defaults to 480×800, then remembers (#4).**
-  `popOutCurrentView()` opens the named `umsTeamToolsCompact` window at
+- **Compact pop-out defaults to 480×800, then remembers (#4) — PER TOOL.**
+  `popOutCurrentView()` opens the `umsTeamToolsCompact_<tool>` window at
   **480×800 by default** (widened from the prior 380×780 so the Call Notes
   note template + its flags/tags/save rail sit side-by-side on launch instead
-  of collapsing to one column), overridden by the rep's last persisted
-  geometry (`umsPopoutGeom` via `popoutParseGeom_`). The named target means
-  subsequent clicks focus the existing window rather than spawning duplicates
-  — and because open-features are honored only on first open, later resizes
-  are captured by `popoutPersistGeometryInit_` and restored next launch.
+  of collapsing to one column), overridden by that tool's last persisted
+  geometry (`umsPopoutGeom_<tool>` via `popoutParseGeom_`). The per-tool named
+  target means each tool keeps its own pop-out window (Call Notes + Time Clock
+  can coexist) while a repeat click on the same tool focuses its window rather
+  than spawning a duplicate — and because open-features are honored only on
+  first open, later resizes are captured by `popoutPersistGeometryInit_` and
+  restored next launch. **Compact Time Clock (`:root[data-compact]`):** the
+  world-clock region strip + greeting kicker are hidden and the hero/shift/row3
+  paddings tighten so the clock, punch buttons, and today's punches sit higher.
   **Compact Call Notes form (`:root[data-compact]`):** the `cn-head`
   stats-mini is not rendered, the flag toolbar collapses to an **icon-only**
   4-across rail (`.flag-lbl` hidden; title + `aria-label` carry meaning), and
@@ -3878,14 +3892,14 @@ S24 | Call Notes — manager training-queue + review-candidate digests | Subsyst
     - Inspect the manager mailbox
   Expected: Two separate emails arrive (Training Queue, Review Candidates), each listing notes from the past 7 days with rep name + caller + issue + resolution. Empty queues are silently skipped (no email). The function never throws.
 
-S25 | Compact mode + pop-out (cross-tool) | Subsystem: Client (shell)
+S25 | Compact mode + per-tool pop-out (cross-tool) | Subsystem: Client (shell)
   Steps:
-    - From any view, click the pop-out icon (top-right of sidebar or mobile header)
-    - Confirm a new 440x780 chromeless window opens with sidebar + header collapsed
-    - In the pop-out, navigate between views (Call Notes ↔ Time Clock ↔ Manage)
-    - Click the pop-out icon again from the original window
-    - Resize the pop-out down to ~360px width
-  Expected: Pop-out window is named `umsTeamToolsCompact` — second pop-out click focuses the existing window instead of spawning a duplicate. All tool views render without horizontal overflow; modals near-full-window; field-row and ts-summary collapse to single column; action grid (Time Clock) and dept-chip grid (Call Notes) stack 2-col → 1-col gracefully.
+    - From Call Notes, click the pop-out icon → confirm a 480×800 chromeless window opens (sidebar + header collapsed)
+    - Switch the main window to Time Clock, click pop-out again → confirm a SECOND window opens (the Call Notes pop-out stays open — both coexist)
+    - From the main window on Call Notes, click pop-out again → confirm it FOCUSES the existing Call Notes pop-out (no duplicate); same for Time Clock
+    - Resize each pop-out, close + reopen each → confirm each restores its OWN size/position
+    - In a pop-out, navigate between views (Call Notes ↔ Time Clock ↔ Manage) and resize → confirm the geometry stays under the tool the window was opened for
+  Expected: Window name is `umsTeamToolsCompact_<tool>` and geometry key `umsPopoutGeom_<tool>`, so one window per tool — Call Notes + Time Clock pop-outs coexist; a repeat click on a tool focuses that tool's window. A legacy `umsPopoutGeom` seeds size only. All tool views render without horizontal overflow; the compact Time Clock hides the world-clock strip + greeting kicker and tightens paddings; action grid (Time Clock) and dept-chip grid (Call Notes) stack 2-col → 1-col gracefully.
 
 S26 | Manager per-rep Call Notes view | Subsystem: Server, Client (Call Notes)
   Steps:
