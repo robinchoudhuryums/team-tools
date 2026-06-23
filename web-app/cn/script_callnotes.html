@@ -3599,6 +3599,7 @@ function cnInstallCardDelegation_(area) {
       case 'cancel-edit': cnCancelEdit_(noteId); break;
       case 'delete':      cnDeleteNote_(noteId); break;
       case 'find-trx':    cnFindPriorCallsForTrx_(btn.dataset.trx); break;
+      case 'timeline':    cnOpenPatientTimeline_(btn.dataset.trx); break;
       case 'view-form':   cnViewFormSubmission_(btn.dataset.token); break;
       case 'more':        cnToggleMoreMenu_(btn); break;
     }
@@ -3798,6 +3799,10 @@ function cnRenderCardCore_(note, expandable) {
     ? `<button class="cn-act-btn" title="Find prior calls for this TRX" data-cn-action="find-trx" data-trx="${esc(note.patientAndTrx)}">${icon('search', 14)}</button>`
     : '';
 
+  const timelineBtn = (note.patientAndTrx && note.patientAndTrx.trim())
+    ? `<button class="cn-act-btn" title="Patient timeline (notes · intake · forms)" data-cn-action="timeline" data-trx="${esc(note.patientAndTrx)}">${icon('list', 14)}</button>`
+    : '';
+
   const isPinned = !!(note.subformData && note.subformData.pinned);
   const pinAtCapacity = !isPinned && (CN_STATE.pinnedNotes || []).length >= (CN_STATE.pinLimit || 3);
   const pinCls = isPinned ? 'is-on' : (pinAtCapacity ? 'pin-full' : '');
@@ -3845,7 +3850,7 @@ function cnRenderCardCore_(note, expandable) {
                 var urgentBtn = '<button class="cn-act-btn cn-urgent-toggle' + (isUrgent ? ' is-on' : '') +
                   '" title="' + (isUrgent ? 'Remove urgent flag' : 'Mark urgent') +
                   '" data-cn-action="flag-urgent">' + icon('warning', 14) + '</button>';
-                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
+                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn + timelineBtn;
                 if (!sec) return '';
                 return '<button class="cn-act-btn" title="More actions" data-cn-action="more">' + icon('chevronDown', 14) + '</button>' +
                   '<span class="cn-more-menu" style="display:none">' + sec + '</span>';
@@ -3951,6 +3956,90 @@ function cnRenderFormSubOverlay_(html) {
 function cnCloseFormSubOverlay_() {
   var overlay = document.getElementById('cn-form-sub-overlay');
   if (overlay) overlay.remove();
+}
+
+// ── #3: patient/TRX timeline ────────────────────────────────────────────────
+// Stitches the rep's OWN call notes + intake submissions + sent fillable forms
+// for one patient/order into a single newest-first timeline (server endpoint
+// getPatientTimeline is caller-scoped + read-only). Every server string is
+// esc()'d before innerHTML. Dynamic overlay → ensureOverlay (the Esc/leak
+// gotcha class).
+function cnOpenPatientTimeline_(trx) {
+  trx = String(trx || '').trim();
+  if (!trx) return;
+  cnRenderTimelineOverlay_(
+    '<div class="modal cn-timeline-modal" style="max-width:600px">' +
+      '<div class="state-center"><div class="spinner"></div>' +
+      '<div class="state-label">Building timeline…</div></div></div>');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) {
+        cnCloseTimelineOverlay_();
+        if (typeof showToast === 'function') showToast((res && res.error) || 'Could not build timeline', 'toast-error');
+        return;
+      }
+      cnRenderTimelineOverlay_(cnBuildTimelineHtml_(res));
+    })
+    .withFailureHandler(function (err) {
+      cnCloseTimelineOverlay_();
+      if (typeof showToast === 'function') showToast('Could not build timeline: ' + ((err && err.message) || err), 'toast-error');
+    })
+    .getPatientTimeline(trx);
+}
+function cnRenderTimelineOverlay_(html) {
+  var overlay = ensureOverlay('cn-timeline-overlay', { onClose: cnCloseTimelineOverlay_ });
+  overlay.innerHTML = html;
+}
+function cnCloseTimelineOverlay_() {
+  var overlay = document.getElementById('cn-timeline-overlay');
+  if (overlay) overlay.remove();
+}
+function cnTimelineRowHtml_(ev) {
+  var glyph, head, detail = '';
+  if (ev.kind === 'intake') {
+    glyph = icon('clipboardList', 15);
+    head = 'Intake · ' + esc(ev.formType || '');
+    if (ev.recipient) detail = 'Sent to ' + esc(ev.recipient);
+    if (ev.patientInfo) detail += (detail ? ' · ' : '') + esc(ev.patientInfo);
+  } else if (ev.kind === 'form') {
+    glyph = icon('outbox', 15);
+    head = 'Form · ' + esc(ev.formName || '');
+    detail = 'Status: ' + esc(ev.status || '') + (ev.recipientName ? ' · ' + esc(ev.recipientName) : '');
+  } else {
+    glyph = icon('adjust', 15);
+    head = 'Call note' + (ev.caller ? ' · ' + esc(ev.caller) : '');
+    var bits = [];
+    if (ev.issue) bits.push(esc(ev.issue));
+    if (ev.flagType) bits.push('[' + esc(ev.flagType) + ']');
+    if (ev.emailedAt) bits.push('emailed');
+    detail = bits.join(' · ');
+  }
+  return '<div style="display:flex;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line)">' +
+    '<div style="flex:0 0 auto;color:var(--muted);margin-top:1px">' + glyph + '</div>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px">' +
+        '<strong style="font-size:13px">' + head + '</strong>' +
+        '<span class="tabular" style="font-size:11px;color:var(--muted);white-space:nowrap">' + esc(ev.ts || '') + '</span>' +
+      '</div>' +
+      (detail ? '<div style="font-size:12px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis">' + detail + '</div>' : '') +
+    '</div>' +
+  '</div>';
+}
+function cnBuildTimelineHtml_(res) {
+  var events = (res && res.events) || [];
+  var head = '<div class="head"><h3>Patient timeline · ' + esc(res.trx || '') + '</h3>' +
+    '<button class="xclose" onclick="cnCloseTimelineOverlay_()" aria-label="Close">' + icon('x', 16) + '</button></div>';
+  if (!events.length) {
+    return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
+      '<div class="body"><div class="no-data">No call notes, intake submissions, or sent forms found for this patient / TRX in your own records.</div></div></div>';
+  }
+  var counts = { note: 0, intake: 0, form: 0 };
+  events.forEach(function (ev) { counts[ev.kind] = (counts[ev.kind] || 0) + 1; });
+  var summary = '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' +
+    counts.note + ' note(s) · ' + counts.intake + ' intake · ' + counts.form + ' form(s)</div>';
+  var rows = events.map(cnTimelineRowHtml_).join('');
+  return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
+    '<div class="body" style="max-height:62vh;overflow:auto">' + summary + rows + '</div></div>';
 }
 
 // Manager-side form-submission viewer (Team Notes Per-Rep view). Reuses the
@@ -6940,6 +7029,7 @@ function enterCallNotesAdminView(area) {
       tab('overview', 'Overview') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="overview" style="' + paneStyle('overview') + '">' +
+      '<div id="cn-admin-deploy"></div>' +
       '<div class="day-section-label" style="margin-bottom:8px">System status</div>' +
       '<div class="cn-sys-status">' +
         cnSysCardShell_('automation', 'Automation') +
@@ -6994,6 +7084,60 @@ function enterCallNotesAdminView(area) {
   // #1 — Storage Health: one pane over every spreadsheet (configured /
   // reachable / tz-vs-CONFIG). Independent load; failure stays contained.
   cnLoadStoragePanel_();
+  // #1 (pre-deploy checklist) — one-click deploy-readiness report composed
+  // from the storage + automation health + manager-email count. Independent
+  // load; failure stays contained to its own slot.
+  cnLoadDeployReadiness_();
+}
+
+// #1 — Deploy-readiness checklist panel (Admin Overview headline). Manager-
+// gated server endpoint; every server string esc()'d before innerHTML.
+function cnLoadDeployReadiness_() {
+  var slot = document.getElementById('cn-admin-deploy');
+  if (!slot) return;
+  slot.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== 'callNotesAdmin') return;
+      if (!res || res.error) {
+        slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((res && res.error) || 'Could not load deploy readiness') + '</div>';
+        return;
+      }
+      slot.innerHTML = cnRenderDeployReadinessHtml_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== 'callNotesAdmin') return;
+      slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((err && err.message) || 'Could not load deploy readiness') + '</div>';
+    })
+    .getDeployReadiness();
+}
+function cnRenderDeployReadinessHtml_(res) {
+  var items = (res && res.items) || [];
+  var sum = (res && res.summary) || { ok: 0, warn: 0, fail: 0 };
+  var toneOf = function (st) { return st === 'fail' ? 'var(--danger)' : (st === 'warn' ? 'var(--warning-deep,var(--warn))' : 'var(--success-deep,var(--accent))'); };
+  var glyphOf = function (st) { return st === 'fail' ? icon('x', 13) : (st === 'warn' ? icon('warning', 13) : icon('check', 13)); };
+  var overallTone = sum.fail > 0 ? 'destructive' : (sum.warn > 0 ? 'warn' : 'ok');
+  var pill = sum.fail > 0 ? (sum.fail + ' blocking')
+           : (sum.warn > 0 ? (sum.warn + ' warning(s)') : 'All clear');
+  var rows = items.map(function (it) {
+    return '<div style="display:flex;gap:9px;padding:7px 0;border-bottom:1px solid var(--line)">' +
+      '<span style="flex:0 0 auto;color:' + toneOf(it.status) + ';margin-top:1px">' + glyphOf(it.status) + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:13px;font-weight:600">' + esc(it.label) + '</div>' +
+        (it.detail ? '<div style="font-size:12px;color:var(--muted)">' + esc(it.detail) + '</div>' : '') +
+      '</div></div>';
+  }).join('');
+  return '<div class="day-section-label" style="margin-bottom:8px">' + icon('checkCircle', 14) + ' Deploy readiness</div>' +
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin-bottom:18px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+        '<strong style="font-size:13px">Pre-deploy checklist</strong>' +
+        '<span class="cn-chip cn-chip-' + overallTone + '" style="font-size:11px;padding:2px 8px;border-radius:999px;color:' +
+          (sum.fail > 0 ? 'var(--danger)' : (sum.warn > 0 ? 'var(--warning-deep,var(--warn))' : 'var(--success-deep,var(--accent))')) +
+          '">' + esc(pill) + '</span>' +
+        '<span style="font-size:11px;color:var(--muted);margin-left:auto">CONFIG tz: ' + esc(res.configTimezone || '') + '</span>' +
+      '</div>' +
+      rows +
+    '</div>';
 }
 
 /** §7c — switch the Admin sub-tab (Overview / Tags / Compliance / Config).
@@ -7944,8 +8088,8 @@ function cnRenderAdminBody_(cfg) {
 
     // Quick links (surveys / reviews) for the external composer
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
-      '<div class="day-section-label" style="margin-bottom:10px">' + icon('send', 14) + ' Quick Links (surveys / reviews)</div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Links reps can drop into an external email — survey, feedback, or Google-review-request URLs hosted <strong>outside</strong> this app. Each needs a label and an http(s) URL. (The in-app fillable-form route can\'t be served to external recipients on this domain — see your admin.)</div>' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('send', 14) + ' Quick Links — external collection</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">The <strong>official path</strong> for collecting from external recipients: survey, feedback, and Google-review URLs hosted <strong>outside</strong> this app (the in-app fillable-form route can\'t be served to external recipients on this domain). Reps pick these from a grouped menu in the external-email composer. Each needs a label, an http(s) URL, and a category.</div>' +
       '<div id="cn-admin-link-list">' + cnRenderLinkRows_(cfg.externalLinks || []) + '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
         '<button class="refresh-btn" id="cn-admin-add-link">' + icon('plus', 12) + ' Add Link</button>' +
@@ -8203,8 +8347,9 @@ function cnRenderAdminBody_(cfg) {
     for (var i = 0; i < rows.length; i++) {
       var label = ((rows[i].querySelector('.cn-admin-link-label') || {}).value || '').trim();
       var url = ((rows[i].querySelector('.cn-admin-link-url') || {}).value || '').trim();
+      var category = ((rows[i].querySelector('.cn-admin-link-cat') || {}).value || 'other').trim();
       if (!label && !url) continue;  // skip fully-empty rows
-      out.push({ label: label, url: url });
+      out.push({ label: label, url: url, category: category });
     }
     btn.disabled = true; btn.textContent = 'Saving…';
     google.script.run
@@ -8229,10 +8374,15 @@ function cnRenderLinkRows_(links) {
 }
 function cnRenderLinkRow_(l) {
   l = l || {};
+  var cat = (l.category || 'other');
+  var catOpt = function (v, lbl) { return '<option value="' + v + '"' + (cat === v ? ' selected' : '') + '>' + lbl + '</option>'; };
   return '<div class="cn-admin-link-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
     '<div class="field-row" style="gap:8px;margin:0;align-items:center">' +
-      '<div class="field" style="flex:0 0 32%;margin:0"><input type="text" class="cn-admin-link-label" value="' + esc(l.label || '') + '" placeholder="Label (e.g. Satisfaction Survey)"></div>' +
+      '<div class="field" style="flex:0 0 28%;margin:0"><input type="text" class="cn-admin-link-label" value="' + esc(l.label || '') + '" placeholder="Label (e.g. Satisfaction Survey)"></div>' +
       '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-link-url" value="' + esc(l.url || '') + '" placeholder="https://…"></div>' +
+      '<div class="field" style="flex:0 0 110px;margin:0"><select class="cn-admin-link-cat">' +
+        catOpt('survey', 'Survey') + catOpt('review', 'Review') + catOpt('feedback', 'Feedback') + catOpt('other', 'Other') +
+      '</select></div>' +
       '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-link-row\').remove()">' + icon('x', 14) + '</button>' +
     '</div>' +
   '</div>';
@@ -8446,15 +8596,29 @@ function cnExtLinksAll_() {
   return (CN_STATE.deptConfig && Array.isArray(CN_STATE.deptConfig.externalLinks))
     ? CN_STATE.deptConfig.externalLinks : [];
 }
+// Groups the picker by category (the official external-collection path — #2).
+// Option values stay the ORIGINAL index into cnExtLinksAll_() so the existing
+// insert handler is unchanged. Labels are inlined (no module-level dependency)
+// so the function unit-tests in isolation.
 function cnExtLinkOptionsHtml_() {
+  var catLabels = [['survey', 'Surveys'], ['review', 'Reviews'], ['feedback', 'Feedback'], ['other', 'Other']];
+  var all = cnExtLinksAll_();
   var opts = '<option value="">Insert a link…</option>';
-  cnExtLinksAll_().forEach(function (l, i) { opts += '<option value="' + i + '">' + esc(l.label) + '</option>'; });
+  catLabels.forEach(function (pair) {
+    var cat = pair[0];
+    var inGroup = [];
+    all.forEach(function (l, i) { if ((l.category || 'other') === cat) inGroup.push({ l: l, i: i }); });
+    if (!inGroup.length) return;
+    opts += '<optgroup label="' + esc(pair[1]) + '">';
+    inGroup.forEach(function (x) { opts += '<option value="' + x.i + '">' + esc(x.l.label) + '</option>'; });
+    opts += '</optgroup>';
+  });
   return opts;
 }
 function cnExtLinkRowHtml_() {
   if (cnExtLinksAll_().length === 0) return '';
   return '<div class="field" style="margin-bottom:10px">' +
-    '<label>Quick link (survey / review)</label>' +
+    '<label>Quick link (survey / review / feedback)</label>' +
     '<select id="cnX-link">' + cnExtLinkOptionsHtml_() + '</select>' +
   '</div>';
 }

@@ -332,6 +332,9 @@ const CN_EMAIL_TEMPLATE_LIMIT = 50;
 const CN_EMAIL_TEMPLATE_BODY_MAX = 4000;
 const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
 const CN_EXTERNAL_LINK_LIMIT = 50;
+// Quick-link categories (the official external-collection path — #2). Order is
+// the composer-picker optgroup order; 'other' is the back-compat default.
+const CN_EXTERNAL_LINK_CATEGORIES = ['survey', 'review', 'feedback', 'other'];
 
 /** Round 2 · 8e — derives the single FlagType column value from a
  *  multi-select flags array. Maintains backward compat with existing
@@ -2528,6 +2531,92 @@ function searchMyCallNotes(query, field, dateRange, exact) {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Pure (Node-pinned) — stitches a single patient/order's events from the
+ *  rep's own call notes + intake submissions + sent fillable forms into one
+ *  newest-first timeline. `trx` is matched as a case-insensitive substring of
+ *  each source's patient/TRX field; sent forms are linked by their source
+ *  noteId being one of the matched notes (a fillable form is sent in a note's
+ *  context). Sort key normalizes the heterogeneous source timestamps
+ *  ("yyyy-MM-ddTHH:mm:ss" notes/forms vs "yyyy-MM-dd HH:mm:ss" intake) to a
+ *  comparable "yyyy-MM-dd HH:mm:ss" prefix — good enough for display ordering
+ *  of one rep's own data (the cross-tz caveat doesn't reorder same-source
+ *  events). No braces inside string literals (extractRawFunction caveat). */
+function buildPatientTimeline_(notes, submissions, forms, trx) {
+  var t = String(trx || '').trim().toLowerCase();
+  var keyOf = function (ts) { return String(ts || '').replace('T', ' ').slice(0, 19); };
+  var events = [];
+  var matchedNoteIds = {};
+  (notes || []).forEach(function (n) {
+    if (t && String(n.patientAndTrx || '').toLowerCase().indexOf(t) < 0) return;
+    if (n.noteId) matchedNoteIds[String(n.noteId)] = true;
+    events.push({
+      kind: 'note', at: keyOf(n.timestamp), ts: String(n.timestamp || ''),
+      noteId: String(n.noteId || ''), caller: String(n.caller || ''),
+      patientAndTrx: String(n.patientAndTrx || ''), issue: String(n.issue || ''),
+      resolution: String(n.resolution || ''), flagType: String(n.flagType || ''),
+      emailedAt: String(n.emailedAt || ''),
+    });
+  });
+  (submissions || []).forEach(function (s) {
+    if (t && String(s.patientInfo || '').toLowerCase().indexOf(t) < 0) return;
+    events.push({
+      kind: 'intake', at: keyOf(s.timestamp), ts: String(s.timestamp || ''),
+      formType: String(s.formType || ''), submissionId: String(s.submissionId || ''),
+      patientInfo: String(s.patientInfo || ''), recipient: String(s.recipient || ''),
+    });
+  });
+  (forms || []).forEach(function (f) {
+    if (!f.noteId || !matchedNoteIds[String(f.noteId)]) return;
+    events.push({
+      kind: 'form', at: keyOf(f.createdAt), ts: String(f.createdAt || ''),
+      token: String(f.token || ''), formName: String(f.formName || ''),
+      status: String(f.status || ''), recipientName: String(f.recipientName || ''),
+      noteId: String(f.noteId || ''),
+    });
+  });
+  events.sort(function (a, b) { return a.at < b.at ? 1 : (a.at > b.at ? -1 : 0); });
+  return events;
+}
+
+/** Patient/TRX timeline (#3) — caller-scoped, read-only. Stitches the rep's
+ *  OWN call notes (TRX substring), intake submissions (patientInfo substring),
+ *  and sent fillable forms (linked by source noteId) for one patient/order
+ *  into a single newest-first timeline. Reuses the existing caller-scoped
+ *  endpoints (each re-checks getEmployeeInfo_), so no new read surface and no
+ *  cross-rep leak: submissions are filtered to the caller's own id even when a
+ *  manager (who otherwise sees all) calls it. PHI is the caller's own. */
+function getPatientTimeline(trx) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const t = String(trx || '').trim();
+    if (!t) return { error: 'Enter a patient name or TRX number.' };
+
+    let notes = [];
+    try {
+      const nr = searchMyCallNotes(t, 'trx', null, false);
+      notes = (nr && nr.results) || [];
+    } catch (e) {}
+
+    let submissions = [];
+    try {
+      const sr = intakeListMySubmissions();
+      submissions = ((sr && sr.submissions) || []).filter(function (s) {
+        return String(s.repId || '') === emp.id;   // caller-scoped even for managers
+      });
+    } catch (e) {}
+
+    let forms = [];
+    try {
+      const fr = getMySentForms();
+      forms = (fr && fr.forms) || [];
+    } catch (e) {}
+
+    const events = buildPatientTimeline_(notes, submissions, forms, t);
+    return { trx: t, events: events, timezone: empTz_(emp), count: events.length };
+  } catch (err) { return { error: err.message }; }
+}
+
 // ── Manager-gated call-notes views ──────────────────────────────────────
 
 /** Lists reps enrolled in Call Notes (have a non-empty CallNotesSheetId in
@@ -3512,9 +3601,13 @@ function saveExternalLinks(links) {
       const l = links[i] || {};
       const label = String(l.label || '').trim();
       const url = String(l.url || '').trim();
+      const cat = String(l.category || '').trim().toLowerCase();
       if (!label) return { success: false, error: 'Each link needs a label.' };
       if (!/^https?:\/\//i.test(url)) return { success: false, error: 'Link "' + label + '" needs an http(s) URL.' };
-      clean.push({ label: label, url: url });
+      clean.push({
+        label: label, url: url,
+        category: CN_EXTERNAL_LINK_CATEGORIES.indexOf(cat) >= 0 ? cat : 'other',
+      });
     }
     PropertiesService.getScriptProperties().setProperty('CN_EXTERNAL_LINKS', JSON.stringify(clean));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
@@ -3961,6 +4054,87 @@ function getStorageHealth() {
     });
 
     return { configTimezone: cfgTz, stores: stores };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Pure (Node-pinned) — derives the deploy-readiness checklist from the
+ *  Storage + Automation health payloads + the manager-email count. Each item
+ *  is {key,label,status:'ok'|'warn'|'fail',detail}; a `summary` tallies the
+ *  three statuses. Required stores (ADP/KB/Intake) FAIL when unset; optional
+ *  stores (CDR/Forms/HR/per-rep) only WARN; a tz mismatch on any store WARNs
+ *  (the silent coerced-read drift). No braces inside string literals
+ *  (extractRawFunction caveat). */
+function deployReadinessItems_(storage, automation, managerCount) {
+  var REQUIRED = { ADP_SS_ID: 1, KB_SS_ID: 1, INTAKE_SS_ID: 1 };
+  var items = [];
+  var push = function (key, label, status, detail) {
+    items.push({ key: key, label: label, status: status, detail: detail || '' });
+  };
+
+  push('managers', 'Manager emails configured',
+    (managerCount > 0) ? 'ok' : 'fail',
+    (managerCount > 0) ? (managerCount + ' configured')
+      : 'Set MANAGER_EMAILS — no one passes the manager gate without it.');
+
+  var cfgTz = (storage && storage.configTimezone) || '';
+  var stores = (storage && storage.stores) || [];
+  stores.forEach(function (s) {
+    var prop = s.prop || '';
+    var required = !!REQUIRED[prop];
+    var status, detail;
+    if (s.configured === false) {
+      status = required ? 'fail' : 'warn';
+      detail = s.note || (required ? ('Required — set ' + prop) : 'Optional — unset');
+    } else if (s.reachable === false) {
+      status = 'fail';
+      detail = 'Configured but unreachable' + (s.error ? (': ' + s.error) : '.');
+    } else if (s.tzMatch === false) {
+      status = 'warn';
+      detail = 'Timezone ' + (s.tz || s.note || '?') + ' differs from CONFIG ' + cfgTz + ' — coerced date/time reads drift.';
+    } else {
+      status = 'ok';
+      detail = s.note || s.name || 'OK';
+    }
+    push('store_' + (prop || s.label), s.label, status, detail);
+  });
+
+  var digests = (automation && automation.digests) || [];
+  var anyHeartbeat = digests.some(function (d) { return !!d.last; });
+  var anyStale = digests.some(function (d) { return !!d.stale; });
+  push('triggers', 'Automation triggers (digest heartbeats)',
+    !anyHeartbeat ? 'warn' : (anyStale ? 'warn' : 'ok'),
+    !anyHeartbeat ? 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).'
+      : (anyStale ? 'A digest looks stale — check the cross-account trigger-ownership trap.' : 'Heartbeats fresh.'));
+
+  var cdrOk = !!(automation && automation.cdr && automation.cdr.ok);
+  push('cdr', 'CDR reachability (Metrics)',
+    cdrOk ? 'ok' : 'warn',
+    cdrOk ? 'Reachable.' : 'CDR unreachable/unset — Metrics + the shift-stats overlay degrade gracefully (optional).');
+
+  var summary = { ok: 0, warn: 0, fail: 0 };
+  items.forEach(function (it) { summary[it.status] = (summary[it.status] || 0) + 1; });
+  return { items: items, summary: summary };
+}
+
+/** Deploy-readiness checklist (#1) — manager-gated, read-only. One-click
+ *  pre-deploy report: composes the existing Storage Health (all 7 stores'
+ *  configured/reachable/tz-vs-CONFIG) + Automation Health (digest heartbeats,
+ *  CDR) + the MANAGER_EMAILS count into a pass/warn/fail checklist. PHI-free
+ *  (store metadata only). Surfaced atop the Call Notes Admin Overview. */
+function getDeployReadiness() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const storage = getStorageHealth();
+    if (storage && storage.error) return { error: storage.error };
+    let automation = {};
+    try { automation = getAutomationHealth() || {}; } catch (e) { automation = {}; }
+    const managerCount = getManagerEmails_().length;
+    const res = deployReadinessItems_(storage, automation, managerCount);
+    return {
+      items: res.items, summary: res.summary,
+      configTimezone: (storage && storage.configTimezone) || CONFIG.TIMEZONE,
+    };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -8154,7 +8328,15 @@ function getExternalLinks_() {
     } catch (_) {}
   }
   return raw.map(function (l) {
-    return { label: String((l && l.label) || '').trim(), url: String((l && l.url) || '').trim() };
+    // Quick-links are the OFFICIAL external-collection path (the in-app ?form
+    // route is admin-blocked on this domain). `category` groups them in the
+    // composer picker — back-compat: absent/unknown → 'other'.
+    const cat = String((l && l.category) || '').trim().toLowerCase();
+    return {
+      label: String((l && l.label) || '').trim(),
+      url: String((l && l.url) || '').trim(),
+      category: CN_EXTERNAL_LINK_CATEGORIES.indexOf(cat) >= 0 ? cat : 'other',
+    };
   }).filter(function (l) { return l.label && /^https?:\/\//i.test(l.url); });
 }
 

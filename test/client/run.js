@@ -1728,5 +1728,77 @@ test('viewCacheFresh_: defaults ttl to VIEW_CACHE_TTL_MS when omitted', () => {
   assert.strictEqual(viewCacheFresh_({ at: now - sb.VIEW_CACHE_TTL_MS - 1 }, undefined, now), false);
 });
 
+console.log('\nCode.js — buildPatientTimeline_() (#3 patient/TRX timeline merge)');
+// Pure server helper: stitches notes + intake submissions + sent forms for one
+// TRX into a newest-first timeline. Substring TRX match; forms linked by noteId.
+vm.runInContext(extractRawFunction('Code.js', 'buildPatientTimeline_'), sb,
+  { filename: 'Code.js#buildPatientTimeline_' });
+const buildPatientTimeline_ = sb.buildPatientTimeline_;
+test('merges + sorts newest-first; matches TRX as a substring; links forms by noteId', () => {
+  const notes = [
+    { noteId: 'n1', timestamp: '2026-06-01T09:00:00', caller: 'A', patientAndTrx: 'Jane Doe TRX12345', issue: 'i1' },
+    { noteId: 'n2', timestamp: '2026-06-03T11:00:00', caller: 'B', patientAndTrx: 'Other TRX99999', issue: 'i2' },
+  ];
+  const subs = [
+    { formType: 'PPD', submissionId: 's1', timestamp: '2026-06-02 10:00:00', patientInfo: 'Jane Doe TRX12345', repId: 'r1' },
+  ];
+  const forms = [
+    { token: 't1', formName: 'EAA', status: 'submitted', createdAt: '2026-06-04T08:00:00', noteId: 'n1' },
+    { token: 't2', formName: 'EAA', status: 'pending', createdAt: '2026-06-05T08:00:00', noteId: 'nX' }, // unlinked
+  ];
+  const ev = buildPatientTimeline_(notes, subs, forms, 'trx12345');
+  // n2 excluded (different TRX); t2 excluded (noteId not matched)
+  assert.strictEqual(ev.length, 3, 'note n1 + intake s1 + form t1');
+  assert.strictEqual(ev[0].kind, 'form', 'newest first = the 06-04 form');
+  assert.strictEqual(ev[ev.length - 1].kind, 'note', 'oldest = the 06-01 note');
+  assert.ok(ev.every((e) => e.noteId !== 'n2' && e.token !== 't2'), 'non-matches excluded');
+});
+test('empty / missing inputs never throw; blank trx returns all notes', () => {
+  // (cross-realm: the helper runs in the vm sandbox, so assert on .length, not deepStrictEqual)
+  assert.strictEqual(buildPatientTimeline_(null, null, null, 'x').length, 0);
+  const all = buildPatientTimeline_([{ noteId: 'n', timestamp: '2026-01-01T00:00:00', patientAndTrx: 'anything' }], [], [], '');
+  assert.strictEqual(all.length, 1, 'blank trx → no filter');
+});
+
+console.log('\nCode.js — deployReadinessItems_() (#1 pre-deploy checklist)');
+vm.runInContext(extractRawFunction('Code.js', 'deployReadinessItems_'), sb,
+  { filename: 'Code.js#deployReadinessItems_' });
+const deployReadinessItems_ = sb.deployReadinessItems_;
+test('required store unset → fail; optional unset → warn; tz mismatch → warn; manager-count 0 → fail', () => {
+  const storage = {
+    configTimezone: 'Asia/Kolkata',
+    stores: [
+      { label: 'ADP', prop: 'ADP_SS_ID', configured: false },                          // required → fail
+      { label: 'KB', prop: 'KB_SS_ID', configured: true, reachable: true, tzMatch: true }, // ok
+      { label: 'CDR', prop: 'CDR_SS_ID', configured: false },                          // optional → warn
+      { label: 'Intake', prop: 'INTAKE_SS_ID', configured: true, reachable: true, tzMatch: false, tz: 'America/Los_Angeles' }, // tz → warn
+      { label: 'HR', prop: 'HR_DOCS_SS_ID', configured: true, reachable: false },      // unreachable → fail
+    ],
+  };
+  const automation = { digests: [{ key: 'eod', last: '2026-06-23 07:00:00', stale: false }], cdr: { ok: true } };
+  const out = deployReadinessItems_(storage, automation, 0);
+  const byKey = {};
+  out.items.forEach((it) => { byKey[it.key] = it.status; });
+  assert.strictEqual(byKey['managers'], 'fail', 'no manager emails → fail');
+  assert.strictEqual(byKey['store_ADP_SS_ID'], 'fail', 'required ADP unset → fail');
+  assert.strictEqual(byKey['store_KB_SS_ID'], 'ok');
+  assert.strictEqual(byKey['store_CDR_SS_ID'], 'warn', 'optional CDR unset → warn');
+  assert.strictEqual(byKey['store_INTAKE_SS_ID'], 'warn', 'tz mismatch → warn');
+  assert.strictEqual(byKey['store_HR_DOCS_SS_ID'], 'fail', 'configured-but-unreachable → fail');
+  assert.strictEqual(byKey['triggers'], 'ok', 'fresh heartbeat → ok');
+  assert.strictEqual(byKey['cdr'], 'ok');
+  assert.ok(out.summary.fail >= 3 && out.summary.warn >= 2, 'summary tallies statuses');
+});
+test('no heartbeats → triggers warn; cdr down → warn; clean → all ok', () => {
+  const clean = deployReadinessItems_(
+    { configTimezone: 'X', stores: [{ label: 'ADP', prop: 'ADP_SS_ID', configured: true, reachable: true, tzMatch: true }] },
+    { digests: [{ key: 'eod', last: null, stale: false }], cdr: { ok: false } }, 2);
+  const byKey = {};
+  clean.items.forEach((it) => { byKey[it.key] = it.status; });
+  assert.strictEqual(byKey['managers'], 'ok');
+  assert.strictEqual(byKey['triggers'], 'warn', 'no heartbeat yet → warn');
+  assert.strictEqual(byKey['cdr'], 'warn', 'cdr down → warn');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
