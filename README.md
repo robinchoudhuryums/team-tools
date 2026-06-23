@@ -58,7 +58,15 @@ Script project synced via [clasp](https://github.com/google/clasp).
     content is frozen and hashed at issue, employees sign on a canvas
     pad, signature records are append-only and tamper-evident, and
     manager visibility is per-team (fail-closed via the roster's
-    ManagerEmail column).
+    ManagerEmail column). Documents can be built from reusable
+    templates (e.g. an annual review), carry employee-completable
+    fields (free-text / paragraph / date in addition to the
+    signature), and are saved as a draft then explicitly released to
+    the employee; the deadline reminds both sides. Coaching: granular,
+    non-routine manager feedback on a specific patient/TRX interaction
+    (severity-graded, rep-acknowledged) with a team-scoped manager
+    dashboard and analytics (ack-rate, median time-to-acknowledge,
+    overdue, per-rep) — kept in the same HR store, never purged.
 
   Adding a new tool: append a new entry to `TOOLS` (with its tabs)
   in `script_core.html`, drop tab partials in

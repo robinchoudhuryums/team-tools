@@ -3599,6 +3599,7 @@ function cnInstallCardDelegation_(area) {
       case 'cancel-edit': cnCancelEdit_(noteId); break;
       case 'delete':      cnDeleteNote_(noteId); break;
       case 'find-trx':    cnFindPriorCallsForTrx_(btn.dataset.trx); break;
+      case 'timeline':    cnOpenPatientTimeline_(btn.dataset.trx); break;
       case 'view-form':   cnViewFormSubmission_(btn.dataset.token); break;
       case 'more':        cnToggleMoreMenu_(btn); break;
     }
@@ -3798,6 +3799,10 @@ function cnRenderCardCore_(note, expandable) {
     ? `<button class="cn-act-btn" title="Find prior calls for this TRX" data-cn-action="find-trx" data-trx="${esc(note.patientAndTrx)}">${icon('search', 14)}</button>`
     : '';
 
+  const timelineBtn = (note.patientAndTrx && note.patientAndTrx.trim())
+    ? `<button class="cn-act-btn" title="Patient timeline (notes · intake · forms)" data-cn-action="timeline" data-trx="${esc(note.patientAndTrx)}">${icon('list', 14)}</button>`
+    : '';
+
   const isPinned = !!(note.subformData && note.subformData.pinned);
   const pinAtCapacity = !isPinned && (CN_STATE.pinnedNotes || []).length >= (CN_STATE.pinLimit || 3);
   const pinCls = isPinned ? 'is-on' : (pinAtCapacity ? 'pin-full' : '');
@@ -3845,7 +3850,7 @@ function cnRenderCardCore_(note, expandable) {
                 var urgentBtn = '<button class="cn-act-btn cn-urgent-toggle' + (isUrgent ? ' is-on' : '') +
                   '" title="' + (isUrgent ? 'Remove urgent flag' : 'Mark urgent') +
                   '" data-cn-action="flag-urgent">' + icon('warning', 14) + '</button>';
-                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn;
+                var sec = urgentBtn + flagBtn('review', 'thumbsUp', note.flagType === 'review') + resolveBtn + editBtn + priorBtn + timelineBtn;
                 if (!sec) return '';
                 return '<button class="cn-act-btn" title="More actions" data-cn-action="more">' + icon('chevronDown', 14) + '</button>' +
                   '<span class="cn-more-menu" style="display:none">' + sec + '</span>';
@@ -3951,6 +3956,90 @@ function cnRenderFormSubOverlay_(html) {
 function cnCloseFormSubOverlay_() {
   var overlay = document.getElementById('cn-form-sub-overlay');
   if (overlay) overlay.remove();
+}
+
+// ── #3: patient/TRX timeline ────────────────────────────────────────────────
+// Stitches the rep's OWN call notes + intake submissions + sent fillable forms
+// for one patient/order into a single newest-first timeline (server endpoint
+// getPatientTimeline is caller-scoped + read-only). Every server string is
+// esc()'d before innerHTML. Dynamic overlay → ensureOverlay (the Esc/leak
+// gotcha class).
+function cnOpenPatientTimeline_(trx) {
+  trx = String(trx || '').trim();
+  if (!trx) return;
+  cnRenderTimelineOverlay_(
+    '<div class="modal cn-timeline-modal" style="max-width:600px">' +
+      '<div class="state-center"><div class="spinner"></div>' +
+      '<div class="state-label">Building timeline…</div></div></div>');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error) {
+        cnCloseTimelineOverlay_();
+        if (typeof showToast === 'function') showToast((res && res.error) || 'Could not build timeline', 'toast-error');
+        return;
+      }
+      cnRenderTimelineOverlay_(cnBuildTimelineHtml_(res));
+    })
+    .withFailureHandler(function (err) {
+      cnCloseTimelineOverlay_();
+      if (typeof showToast === 'function') showToast('Could not build timeline: ' + ((err && err.message) || err), 'toast-error');
+    })
+    .getPatientTimeline(trx);
+}
+function cnRenderTimelineOverlay_(html) {
+  var overlay = ensureOverlay('cn-timeline-overlay', { onClose: cnCloseTimelineOverlay_ });
+  overlay.innerHTML = html;
+}
+function cnCloseTimelineOverlay_() {
+  var overlay = document.getElementById('cn-timeline-overlay');
+  if (overlay) overlay.remove();
+}
+function cnTimelineRowHtml_(ev) {
+  var glyph, head, detail = '';
+  if (ev.kind === 'intake') {
+    glyph = icon('clipboardList', 15);
+    head = 'Intake · ' + esc(ev.formType || '');
+    if (ev.recipient) detail = 'Sent to ' + esc(ev.recipient);
+    if (ev.patientInfo) detail += (detail ? ' · ' : '') + esc(ev.patientInfo);
+  } else if (ev.kind === 'form') {
+    glyph = icon('outbox', 15);
+    head = 'Form · ' + esc(ev.formName || '');
+    detail = 'Status: ' + esc(ev.status || '') + (ev.recipientName ? ' · ' + esc(ev.recipientName) : '');
+  } else {
+    glyph = icon('adjust', 15);
+    head = 'Call note' + (ev.caller ? ' · ' + esc(ev.caller) : '');
+    var bits = [];
+    if (ev.issue) bits.push(esc(ev.issue));
+    if (ev.flagType) bits.push('[' + esc(ev.flagType) + ']');
+    if (ev.emailedAt) bits.push('emailed');
+    detail = bits.join(' · ');
+  }
+  return '<div style="display:flex;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line)">' +
+    '<div style="flex:0 0 auto;color:var(--muted);margin-top:1px">' + glyph + '</div>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px">' +
+        '<strong style="font-size:13px">' + head + '</strong>' +
+        '<span class="tabular" style="font-size:11px;color:var(--muted);white-space:nowrap">' + esc(ev.ts || '') + '</span>' +
+      '</div>' +
+      (detail ? '<div style="font-size:12px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis">' + detail + '</div>' : '') +
+    '</div>' +
+  '</div>';
+}
+function cnBuildTimelineHtml_(res) {
+  var events = (res && res.events) || [];
+  var head = '<div class="head"><h3>Patient timeline · ' + esc(res.trx || '') + '</h3>' +
+    '<button class="xclose" onclick="cnCloseTimelineOverlay_()" aria-label="Close">' + icon('x', 16) + '</button></div>';
+  if (!events.length) {
+    return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
+      '<div class="body"><div class="no-data">No call notes, intake submissions, or sent forms found for this patient / TRX in your own records.</div></div></div>';
+  }
+  var counts = { note: 0, intake: 0, form: 0 };
+  events.forEach(function (ev) { counts[ev.kind] = (counts[ev.kind] || 0) + 1; });
+  var summary = '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' +
+    counts.note + ' note(s) · ' + counts.intake + ' intake · ' + counts.form + ' form(s)</div>';
+  var rows = events.map(cnTimelineRowHtml_).join('');
+  return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
+    '<div class="body" style="max-height:62vh;overflow:auto">' + summary + rows + '</div></div>';
 }
 
 // Manager-side form-submission viewer (Team Notes Per-Rep view). Reuses the
@@ -5551,6 +5640,7 @@ function cnRenderResultCard_(note, repName) {
     ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${esc(note.resolution)}</div>` : '';
   const repBit = repName ? `<span class="cn-result-rep">${esc(repName)}</span>` : '';
   const pills = [];
+  if (note._archived) pills.push(`<span class="kicker-pill" title="From the cold NotesArchive — read-only">archived</span>`);
   if (note.flagType) pills.push(`<span class="kicker-pill" data-tone="${note.flagType === 'action' ? 'warn' : note.flagType === 'training' ? 'info' : 'accent'}">${esc(note.flagType)}</span>`);
   if (note.emailedAt) pills.push(`<span class="kicker-pill">sent</span>`);
   return `
@@ -5615,12 +5705,23 @@ function cnRenderSearchView(area) {
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'issue'}" onclick="cnSetSearchField_('issue')">Issue</button>
       </div>
       ${cnSearchDatesHtml_('cn-search', CN_STATE.searchFrom, CN_STATE.searchTo)}
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="cn-search-archive" ${CN_STATE.searchIncludeArchive ? 'checked' : ''} onchange="cnToggleArchiveSearch_(this.checked)">
+        Include archived
+      </label>
     </div>
     ${exactBadge ? `<div style="margin-bottom:10px">${exactBadge}</div>` : ''}
     <div id="cn-search-results"></div>
   `;
   cnInstallCardDelegation_(area);
   cnRenderSearchResults_();
+}
+
+// Include-archive toggle (rep Search) — re-fires the search over live + the
+// cold NotesArchive tab. Archived hits render with a read-only "archived" pill.
+function cnToggleArchiveSearch_(on) {
+  CN_STATE.searchIncludeArchive = !!on;
+  cnFireSearch_();
 }
 
 function cnSearchQueryChanged_(q) {
@@ -5711,7 +5812,7 @@ function cnFireSearch_() {
     })
     .searchMyCallNotes(q, CN_STATE.searchField,
       (CN_STATE.searchFrom && CN_STATE.searchTo) ? { start: CN_STATE.searchFrom, end: CN_STATE.searchTo } : null,
-      !!CN_STATE.searchExact);
+      !!CN_STATE.searchExact, !!CN_STATE.searchIncludeArchive);
 }
 
 function cnRenderSearchResults_() {
@@ -5851,13 +5952,16 @@ function cnMgrLoadRepView_() {
   // Load enrolled rep list once per session
   if (!CN_STATE.mgrEnrolledReps) {
     host.innerHTML = loSkeleton(4);
+    const requestedView = currentView;   // F1 — drop late callbacks after nav-away
     google.script.run
       .withSuccessHandler(function (res) {
+        if (currentView !== requestedView) return;
         if (res.error) { host.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
         CN_STATE.mgrEnrolledReps = res.reps || [];
         cnMgrRenderRepViewControls_(host);
       })
       .withFailureHandler(function (err) {
+        if (currentView !== requestedView) return;
         host.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
       })
       .getEnrolledCallNotesReps();
@@ -6015,11 +6119,27 @@ function cnMgrRenderReadonlyCard_(note) {
       </div>
       ${editor}
       <div class="cn-mgr-card-actions">
+        <button type="button" class="cn-mgr-coach-btn" data-rep-id="${esc(repId)}" data-note-id="${esc(note.noteId)}"
+                data-patient-trx="${esc(note.patientAndTrx || '')}" onclick="cnMgrCoachOnNote_(this)"
+                title="Log coaching for this rep about this call">${icon('bulb', 12)} Coach</button>
         <button type="button" class="cn-mgr-del-btn" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}"
                 onclick="cnMgrDeleteNote_(this)" title="Delete this note from the rep's history (manager — audited)">${icon('trash', 12)} Delete</button>
       </div>
     </div>
   `;
+}
+
+/** "Coach on this" — jumps to Training → Coaching with the rep + this call's
+ *  patient/TRX + noteId pre-filled into the composer (the CLK_NAV_HINT pattern,
+ *  via window.COACH_PREFILL which coachRenderMgr_ reads + clears). */
+function cnMgrCoachOnNote_(btn) {
+  window.COACH_PREFILL = {
+    empId: btn.dataset.repId || '',
+    patientTRX: btn.dataset.patientTrx || '',
+    noteId: btn.dataset.noteId || '',
+  };
+  if (typeof enterTool === 'function') enterTool('training', 'coachingManage');
+  else if (typeof showToast === 'function') showToast('Open Training → Coaching to log it', 'toast-info');
 }
 
 /** Operator feedback (2026-06-12) — manager delete from history. The rep
@@ -6322,10 +6442,19 @@ function cnMgrLoadSearchView_() {
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'issue'}" onclick="cnMgrSetSearchField_('issue')">Issue</button>
       </div>
       ${cnSearchDatesHtml_('cn-mgr-search', CN_STATE.mgrSearchFrom, CN_STATE.mgrSearchTo)}
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="cn-mgr-search-archive" ${CN_STATE.mgrSearchIncludeArchive ? 'checked' : ''} onchange="cnMgrToggleArchiveSearch_(this.checked)">
+        Include archived
+      </label>
     </div>
     <div id="cn-mgr-search-results"></div>
   `;
   cnMgrRenderSearchResults_();
+}
+
+function cnMgrToggleArchiveSearch_(on) {
+  CN_STATE.mgrSearchIncludeArchive = !!on;
+  cnMgrFireSearch_();
 }
 
 function cnMgrSearchQueryChanged_(q) {
@@ -6364,7 +6493,8 @@ function cnMgrFireSearch_() {
       showToast('Search failed: ' + err.message, 'toast-error');
     })
     .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null,
-      (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null);
+      (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null,
+      !!CN_STATE.mgrSearchIncludeArchive);
 }
 
 function cnMgrRenderSearchResults_() {
@@ -6937,6 +7067,7 @@ function enterCallNotesAdminView(area) {
       tab('overview', 'Overview') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="overview" style="' + paneStyle('overview') + '">' +
+      '<div id="cn-admin-deploy"></div>' +
       '<div class="day-section-label" style="margin-bottom:8px">System status</div>' +
       '<div class="cn-sys-status">' +
         cnSysCardShell_('automation', 'Automation') +
@@ -6963,6 +7094,7 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-admin-audit"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="config" style="' + paneStyle('config') + '">' +
+      '<div id="cn-admin-retention" style="max-width:900px"></div>' +
       '<div id="cn-admin-body" style="max-width:900px">' + loSweep() + '</div>' +
     '</div>';
   google.script.run
@@ -6991,6 +7123,152 @@ function enterCallNotesAdminView(area) {
   // #1 — Storage Health: one pane over every spreadsheet (configured /
   // reachable / tz-vs-CONFIG). Independent load; failure stays contained.
   cnLoadStoragePanel_();
+  // #1 (pre-deploy checklist) — one-click deploy-readiness report composed
+  // from the storage + automation health + manager-email count. Independent
+  // load; failure stays contained to its own slot.
+  cnLoadDeployReadiness_();
+  // Retention panel (Config pane) — the three call-note retention windows +
+  // current values + safety-ordering warnings, editable (danger-gated saves).
+  cnLoadRetentionPanel_();
+}
+
+// Admin Config — call-note retention windows summary + editor. Manager-gated
+// server endpoints; every server string esc()'d before innerHTML. The two PURGE
+// windows are irreversible PHI deletes, so raising them is danger-confirmed.
+function cnLoadRetentionPanel_() {
+  var slot = document.getElementById('cn-admin-retention');
+  if (!slot) return;
+  slot.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== 'callNotesAdmin') return;
+      if (!res || res.error) { slot.innerHTML = ''; return; }   // stay quiet on error — non-critical panel
+      CN_STATE.retentionCfg = res;
+      slot.innerHTML = cnRenderRetentionHtml_(res);
+    })
+    .withFailureHandler(function () { if (currentView === 'callNotesAdmin') slot.innerHTML = ''; })
+    .getRetentionConfig();
+}
+function cnRetentionRowHtml_(key, label, val, destructive) {
+  var v = (val && val.value) || 0;
+  var src = (val && val.source) || 'default';
+  var tagText = v > 0 ? (v + ' days') : 'disabled';
+  return '<div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)">' +
+    '<div style="flex:1;min-width:0">' +
+      '<div style="font-size:13px;font-weight:600">' + esc(label) +
+        (destructive ? ' <span style="font-size:11px;color:var(--danger)">· irreversible</span>' : ' <span style="font-size:11px;color:var(--muted)">· non-destructive</span>') +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--muted)">currently <strong>' + esc(tagText) + '</strong> · source: ' + esc(src) + '</div>' +
+    '</div>' +
+    '<input type="number" min="0" step="1" id="cn-ret-' + key + '" value="' + (v || '') + '" placeholder="0" ' +
+      'style="width:90px;flex:0 0 auto" aria-label="' + esc(label) + ' days">' +
+  '</div>';
+}
+function cnRenderRetentionHtml_(res) {
+  var warnHtml = '';
+  if (res.warnings && res.warnings.length) {
+    warnHtml = '<div style="background:var(--warn-soft);border:1px solid var(--warning-deep);border-radius:8px;padding:10px 12px;margin:10px 0;font-size:12px;color:var(--warning-deep)">' +
+      res.warnings.map(function (w) { return '⚠ ' + esc(w); }).join('<br>') + '</div>';
+  }
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
+    '<div class="day-section-label" style="margin-bottom:6px">' + icon('clock', 14) + ' Call-note retention</div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Three independent windows (days; 0 = disabled). <strong>Recommended SAFE setup:</strong> set Archive only, leave both Purge windows at 0 — bounds the live Sheet while preserving every note in the <em>' + esc(res.archiveTab || 'NotesArchive') + '</em> tab. Purges are <strong>irreversible PHI deletes</strong>.</div>' +
+    cnRetentionRowHtml_('archive', 'Archive after — move old notes to the cold tab', res.archiveDays, false) +
+    cnRetentionRowHtml_('purge', 'Purge live after — delete from the live Notes tab', res.retentionDays, true) +
+    cnRetentionRowHtml_('archpurge', 'Purge cold after — delete from the archive tab', res.archiveRetentionDays, true) +
+    warnHtml +
+    '<div style="display:flex;align-items:center;gap:12px;margin-top:12px">' +
+      '<button class="btn-modal-ok" id="cn-ret-save" style="margin:0" onclick="cnSaveRetention_()">Save retention</button>' +
+      '<span style="font-size:11px;color:var(--muted)">Takes effect on the next nightly run. Re-run <code>installAutomationTriggers()</code> once if you have not yet.</span>' +
+    '</div>' +
+  '</div>';
+}
+function cnSaveRetention_() {
+  var rd = function (id) { var el = document.getElementById('cn-ret-' + id); return el ? el.value : ''; };
+  var payload = { archiveDays: rd('archive'), retentionDays: rd('purge'), archiveRetentionDays: rd('archpurge') };
+  var prev = CN_STATE.retentionCfg || {};
+  var prevPurge = (prev.retentionDays && prev.retentionDays.value) || 0;
+  var prevCold  = (prev.archiveRetentionDays && prev.archiveRetentionDays.value) || 0;
+  var newPurge = parseInt(payload.retentionDays, 10) || 0;
+  var newCold  = parseInt(payload.archiveRetentionDays, 10) || 0;
+  // Danger-confirm only when ENABLING or RAISING an irreversible purge window.
+  var raisingPurge = newPurge > 0 && newPurge !== prevPurge;
+  var raisingCold  = newCold > 0 && newCold !== prevCold;
+  var doSave = function () {
+    var btn = document.getElementById('cn-ret-save');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; } return; }
+        showToast('Retention windows saved', 'toast-success');
+        cnLoadRetentionPanel_();   // re-render with fresh values + warnings
+      })
+      .withFailureHandler(function (err) { showToast((err && err.message) || 'Save failed', 'toast-error'); if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; } })
+      .saveRetentionConfig(payload);
+  };
+  if (raisingPurge || raisingCold) {
+    uiConfirm({
+      title: 'Enable an irreversible purge?',
+      message: 'You are turning on a retention window that PERMANENTLY DELETES call notes (PHI) — ' +
+        (raisingPurge ? 'live notes older than ' + newPurge + ' days' : '') +
+        (raisingPurge && raisingCold ? ' and ' : '') +
+        (raisingCold ? 'archived notes older than ' + newCold + ' days' : '') +
+        '. This cannot be undone. Confirm the canonical record lives elsewhere first.',
+      confirmLabel: 'Enable purge', tone: 'danger',
+    }).then(function (ok) { if (ok) doSave(); });
+  } else {
+    doSave();
+  }
+}
+
+// #1 — Deploy-readiness checklist panel (Admin Overview headline). Manager-
+// gated server endpoint; every server string esc()'d before innerHTML.
+function cnLoadDeployReadiness_() {
+  var slot = document.getElementById('cn-admin-deploy');
+  if (!slot) return;
+  slot.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== 'callNotesAdmin') return;
+      if (!res || res.error) {
+        slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((res && res.error) || 'Could not load deploy readiness') + '</div>';
+        return;
+      }
+      slot.innerHTML = cnRenderDeployReadinessHtml_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== 'callNotesAdmin') return;
+      slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((err && err.message) || 'Could not load deploy readiness') + '</div>';
+    })
+    .getDeployReadiness();
+}
+function cnRenderDeployReadinessHtml_(res) {
+  var items = (res && res.items) || [];
+  var sum = (res && res.summary) || { ok: 0, warn: 0, fail: 0 };
+  var toneOf = function (st) { return st === 'fail' ? 'var(--danger)' : (st === 'warn' ? 'var(--warning-deep,var(--warn))' : 'var(--success-deep,var(--accent))'); };
+  var glyphOf = function (st) { return st === 'fail' ? icon('x', 13) : (st === 'warn' ? icon('warning', 13) : icon('check', 13)); };
+  var overallTone = sum.fail > 0 ? 'destructive' : (sum.warn > 0 ? 'warn' : 'ok');
+  var pill = sum.fail > 0 ? (sum.fail + ' blocking')
+           : (sum.warn > 0 ? (sum.warn + ' warning(s)') : 'All clear');
+  var rows = items.map(function (it) {
+    return '<div style="display:flex;gap:9px;padding:7px 0;border-bottom:1px solid var(--line)">' +
+      '<span style="flex:0 0 auto;color:' + toneOf(it.status) + ';margin-top:1px">' + glyphOf(it.status) + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:13px;font-weight:600">' + esc(it.label) + '</div>' +
+        (it.detail ? '<div style="font-size:12px;color:var(--muted)">' + esc(it.detail) + '</div>' : '') +
+      '</div></div>';
+  }).join('');
+  return '<div class="day-section-label" style="margin-bottom:8px">' + icon('checkCircle', 14) + ' Deploy readiness</div>' +
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin-bottom:18px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+        '<strong style="font-size:13px">Pre-deploy checklist</strong>' +
+        '<span class="cn-chip cn-chip-' + overallTone + '" style="font-size:11px;padding:2px 8px;border-radius:999px;color:' +
+          (sum.fail > 0 ? 'var(--danger)' : (sum.warn > 0 ? 'var(--warning-deep,var(--warn))' : 'var(--success-deep,var(--accent))')) +
+          '">' + esc(pill) + '</span>' +
+        '<span style="font-size:11px;color:var(--muted);margin-left:auto">CONFIG tz: ' + esc(res.configTimezone || '') + '</span>' +
+      '</div>' +
+      rows +
+    '</div>';
 }
 
 /** §7c — switch the Admin sub-tab (Overview / Tags / Compliance / Config).
@@ -7472,8 +7750,10 @@ function cnToggleAuditHistory_(btn, noteId) {
   if (hist.style.display !== 'none') { hist.style.display = 'none'; return; }
   hist.style.display = 'block';
   hist.innerHTML = loSweep();
+  var requestedView = currentView;   // F1 — drop late callbacks after nav-away
   google.script.run
     .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
       if (!res || res.error) { hist.innerHTML = '<div class="cn-audit-hist-empty">' + esc((res && res.error) || 'Could not load history') + '</div>'; return; }
       var hrows = res.rows || [];
       if (hrows.length === 0) { hist.innerHTML = '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
@@ -7487,6 +7767,7 @@ function cnToggleAuditHistory_(btn, noteId) {
       }).join('');
     })
     .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
       hist.innerHTML = '<div class="cn-audit-hist-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
     })
     .getCallNoteAuditHistory(noteId);
@@ -7803,8 +8084,10 @@ function cnAdminLoadEnrollment_() {
     });
     slot._enrollDelegated = true;
   }
+  var requestedView = currentView;   // F1 — drop late callbacks after nav-away
   google.script.run
     .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
       if (!res || res.error) {
         slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((res && res.error) || 'Failed to load enrollment') + '</div>';
         return;
@@ -7812,6 +8095,7 @@ function cnAdminLoadEnrollment_() {
       slot.innerHTML = cnRenderEnrollmentHtml_(res);
     })
     .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
       slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((err && err.message) || 'Failed to load enrollment') + '</div>';
     })
     .getCallNotesEnrollment();
@@ -7935,8 +8219,8 @@ function cnRenderAdminBody_(cfg) {
 
     // Quick links (surveys / reviews) for the external composer
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
-      '<div class="day-section-label" style="margin-bottom:10px">' + icon('send', 14) + ' Quick Links (surveys / reviews)</div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Links reps can drop into an external email — survey, feedback, or Google-review-request URLs hosted <strong>outside</strong> this app. Each needs a label and an http(s) URL. (The in-app fillable-form route can\'t be served to external recipients on this domain — see your admin.)</div>' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('send', 14) + ' Quick Links — external collection</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">The <strong>official path</strong> for collecting from external recipients: survey, feedback, and Google-review URLs hosted <strong>outside</strong> this app (the in-app fillable-form route can\'t be served to external recipients on this domain). Reps pick these from a grouped menu in the external-email composer. Each needs a label, an http(s) URL, and a category.</div>' +
       '<div id="cn-admin-link-list">' + cnRenderLinkRows_(cfg.externalLinks || []) + '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;margin-top:10px">' +
         '<button class="refresh-btn" id="cn-admin-add-link">' + icon('plus', 12) + ' Add Link</button>' +
@@ -8194,8 +8478,9 @@ function cnRenderAdminBody_(cfg) {
     for (var i = 0; i < rows.length; i++) {
       var label = ((rows[i].querySelector('.cn-admin-link-label') || {}).value || '').trim();
       var url = ((rows[i].querySelector('.cn-admin-link-url') || {}).value || '').trim();
+      var category = ((rows[i].querySelector('.cn-admin-link-cat') || {}).value || 'other').trim();
       if (!label && !url) continue;  // skip fully-empty rows
-      out.push({ label: label, url: url });
+      out.push({ label: label, url: url, category: category });
     }
     btn.disabled = true; btn.textContent = 'Saving…';
     google.script.run
@@ -8220,10 +8505,15 @@ function cnRenderLinkRows_(links) {
 }
 function cnRenderLinkRow_(l) {
   l = l || {};
+  var cat = (l.category || 'other');
+  var catOpt = function (v, lbl) { return '<option value="' + v + '"' + (cat === v ? ' selected' : '') + '>' + lbl + '</option>'; };
   return '<div class="cn-admin-link-row" style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px">' +
     '<div class="field-row" style="gap:8px;margin:0;align-items:center">' +
-      '<div class="field" style="flex:0 0 32%;margin:0"><input type="text" class="cn-admin-link-label" value="' + esc(l.label || '') + '" placeholder="Label (e.g. Satisfaction Survey)"></div>' +
+      '<div class="field" style="flex:0 0 28%;margin:0"><input type="text" class="cn-admin-link-label" value="' + esc(l.label || '') + '" placeholder="Label (e.g. Satisfaction Survey)"></div>' +
       '<div class="field" style="flex:1;margin:0"><input type="text" class="cn-admin-link-url" value="' + esc(l.url || '') + '" placeholder="https://…"></div>' +
+      '<div class="field" style="flex:0 0 110px;margin:0"><select class="cn-admin-link-cat">' +
+        catOpt('survey', 'Survey') + catOpt('review', 'Review') + catOpt('feedback', 'Feedback') + catOpt('other', 'Other') +
+      '</select></div>' +
       '<button class="cn-act-btn" title="Remove" onclick="this.closest(\'.cn-admin-link-row\').remove()">' + icon('x', 14) + '</button>' +
     '</div>' +
   '</div>';
@@ -8437,15 +8727,29 @@ function cnExtLinksAll_() {
   return (CN_STATE.deptConfig && Array.isArray(CN_STATE.deptConfig.externalLinks))
     ? CN_STATE.deptConfig.externalLinks : [];
 }
+// Groups the picker by category (the official external-collection path — #2).
+// Option values stay the ORIGINAL index into cnExtLinksAll_() so the existing
+// insert handler is unchanged. Labels are inlined (no module-level dependency)
+// so the function unit-tests in isolation.
 function cnExtLinkOptionsHtml_() {
+  var catLabels = [['survey', 'Surveys'], ['review', 'Reviews'], ['feedback', 'Feedback'], ['other', 'Other']];
+  var all = cnExtLinksAll_();
   var opts = '<option value="">Insert a link…</option>';
-  cnExtLinksAll_().forEach(function (l, i) { opts += '<option value="' + i + '">' + esc(l.label) + '</option>'; });
+  catLabels.forEach(function (pair) {
+    var cat = pair[0];
+    var inGroup = [];
+    all.forEach(function (l, i) { if ((l.category || 'other') === cat) inGroup.push({ l: l, i: i }); });
+    if (!inGroup.length) return;
+    opts += '<optgroup label="' + esc(pair[1]) + '">';
+    inGroup.forEach(function (x) { opts += '<option value="' + x.i + '">' + esc(x.l.label) + '</option>'; });
+    opts += '</optgroup>';
+  });
   return opts;
 }
 function cnExtLinkRowHtml_() {
   if (cnExtLinksAll_().length === 0) return '';
   return '<div class="field" style="margin-bottom:10px">' +
-    '<label>Quick link (survey / review)</label>' +
+    '<label>Quick link (survey / review / feedback)</label>' +
     '<select id="cnX-link">' + cnExtLinkOptionsHtml_() + '</select>' +
   '</div>';
 }

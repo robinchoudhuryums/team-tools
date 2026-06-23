@@ -367,6 +367,102 @@ test('every day-type <select> option is an accepted leave type', () => {
     `UI offers "${v}" but the server validator rejects it`));
 });
 
+console.log('\nCode.js — coaching pure helpers (coachValidate_ / coachUnackedOverdue_)');
+// Source the validator + its whitelist/caps from Code.js (no local re-declare).
+const coachSevMatch = codeSrc.match(/const (COACH_SEVERITIES\s*=\s*\[[\s\S]*?\]);/);
+const coachTmaxMatch = codeSrc.match(/const (COACH_TEXT_MAX\s*=\s*\d+);/);
+const coachTrxMatch = codeSrc.match(/const (COACH_TRX_MAX\s*=\s*\d+);/);
+assert.ok(coachSevMatch && coachTmaxMatch && coachTrxMatch, 'COACH_* consts found in Code.js');
+vm.runInContext(coachSevMatch[1] + ';' + coachTmaxMatch[1] + ';' + coachTrxMatch[1] + ';', sb,
+  { filename: 'Code.js#COACH_consts' });
+vm.runInContext(extractRawFunction('Code.js', 'coachValidate_'), sb, { filename: 'Code.js#coachValidate_' });
+vm.runInContext(extractRawFunction('Code.js', 'coachUnackedOverdue_'), sb, { filename: 'Code.js#coachUnackedOverdue_' });
+const coachValidate_ = sb.coachValidate_;
+const coachUnackedOverdue_ = sb.coachUnackedOverdue_;
+
+test('coachValidate_ accepts a well-formed payload, trims + lowercases severity', () => {
+  const r = coachValidate_({ empId: ' E1 ', severity: 'Major', whatHappened: ' did x ', whatShould: 'do y', patientTRX: 'TRX1', noteId: 'n1' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.item.empId, 'E1');
+  assert.strictEqual(r.item.severity, 'major');
+  assert.strictEqual(r.item.whatHappened, 'did x');
+  assert.strictEqual(r.item.noteId, 'n1');
+});
+test('coachValidate_ allows empty whatShould (praise often has none)', () => {
+  const r = coachValidate_({ empId: 'E1', severity: 'praise', whatHappened: 'great job' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.item.whatShould, '');
+});
+test('coachValidate_ rejects missing emp / bad severity / empty narrative / oversize', () => {
+  assert.strictEqual(coachValidate_({ severity: 'minor', whatHappened: 'x' }).ok, false);
+  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'nope', whatHappened: 'x' }).ok, false);
+  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: '  ' }).ok, false);
+  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: 'x'.repeat(sb.COACH_TEXT_MAX + 1) }).ok, false);
+  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: 'x', patientTRX: 't'.repeat(sb.COACH_TRX_MAX + 1) }).ok, false);
+});
+test('coachUnackedOverdue_ returns only open, non-praise items older than N days', () => {
+  const now = 1000 * 86400000, day = 86400000;
+  const items = [
+    { status: 'open', severity: 'major', createdAtMs: now - 10 * day },          // overdue → in
+    { status: 'open', severity: 'major', createdAtMs: now - 2 * day },           // too recent → out
+    { status: 'acknowledged', severity: 'major', createdAtMs: now - 30 * day },  // acked → out
+    { status: 'open', severity: 'praise', createdAtMs: now - 30 * day },         // praise → out
+    { status: 'open', severity: 'critical', createdAtMs: now - 8 * day },        // overdue → in
+  ];
+  const due = coachUnackedOverdue_(items, now, 7);
+  assert.strictEqual(due.length, 2);
+  assert.ok(due.every((d) => d.status === 'open' && d.severity !== 'praise'));
+});
+test('coachUnackedOverdue_ never throws on empty / missing input', () => {
+  assert.strictEqual(coachUnackedOverdue_(null, 0, 7).length, 0);
+  assert.strictEqual(coachUnackedOverdue_([], 0, 7).length, 0);
+});
+
+vm.runInContext(extractRawFunction('Code.js', 'coachParseTs_'), sb, { filename: 'Code.js#coachParseTs_' });
+vm.runInContext(extractRawFunction('Code.js', 'coachMedian_'), sb, { filename: 'Code.js#coachMedian_' });
+vm.runInContext(extractRawFunction('Code.js', 'coachAnalytics_'), sb, { filename: 'Code.js#coachAnalytics_' });
+const coachAnalytics_ = sb.coachAnalytics_;
+test('coachMedian_ handles even/odd/empty', () => {
+  assert.strictEqual(sb.coachMedian_([]), 0);
+  assert.strictEqual(sb.coachMedian_([3]), 3);
+  assert.strictEqual(sb.coachMedian_([1, 3]), 2);
+  assert.strictEqual(sb.coachMedian_([5, 1, 3]), 3);
+});
+test('coachAnalytics_ aggregates severity / ack-rate / median-days / per-rep', () => {
+  const now = Date.UTC(2026, 0, 20, 0, 0, 0); // 2026-01-20
+  const items = [
+    // acked 3 days after creation
+    { empId: 'A', empName: 'Ana', severity: 'major', status: 'acknowledged', createdAt: '2026-01-01 09:00:00', acknowledgedAt: '2026-01-04 09:00:00' },
+    // acked 1 day after creation
+    { empId: 'A', empName: 'Ana', severity: 'minor', status: 'acknowledged', createdAt: '2026-01-10 09:00:00', acknowledgedAt: '2026-01-11 09:00:00' },
+    // open + old → overdue (non-praise)
+    { empId: 'B', empName: 'Bo', severity: 'critical', status: 'open', createdAt: '2026-01-01 09:00:00', acknowledgedAt: '' },
+    // praise open + old → NOT overdue
+    { empId: 'B', empName: 'Bo', severity: 'praise', status: 'open', createdAt: '2026-01-01 09:00:00', acknowledgedAt: '' },
+  ];
+  const a = coachAnalytics_(items, now, 7);
+  assert.strictEqual(a.total, 4);
+  assert.strictEqual(a.bySeverity.praise, 1);
+  assert.strictEqual(a.bySeverity.minor, 1);
+  assert.strictEqual(a.bySeverity.major, 1);
+  assert.strictEqual(a.bySeverity.critical, 1);
+  assert.strictEqual(a.acknowledged, 2);
+  assert.strictEqual(a.ackRatePct, 50);
+  assert.strictEqual(a.overdueUnacked, 1, 'critical open+old overdue; praise excluded');
+  assert.strictEqual(a.medianDaysToAck, 2, 'median of [3,1] days = 2');
+  const ana = a.perRep.find((r) => r.empId === 'A');
+  assert.strictEqual(ana.ackRatePct, 100);
+  assert.strictEqual(ana.medianDaysToAck, 2);
+  // most-overdue rep sorts first
+  assert.strictEqual(a.perRep[0].empId, 'B');
+});
+test('coachAnalytics_ empty input → zeroed shape', () => {
+  const a = coachAnalytics_([], Date.now(), 7);
+  assert.strictEqual(a.total, 0);
+  assert.strictEqual(a.ackRatePct, 0);
+  assert.strictEqual(a.perRep.length, 0);
+});
+
 console.log('\nCode.js — feature-flag registry + getFlag_ (Plan A)');
 // These server helpers reference CONFIG (registry defaults) + PropertiesService
 // (the override store). Build a dedicated vm context with minimal stubs, then
@@ -1356,13 +1452,51 @@ test('kbHlRegex_: token regex matches case-insensitively; escapes regex chars; n
 // T3 — Employee Docs: issue-payload validator (pure, from Code.js), the
 // status-chip renderer, and the signature-pad export-cap parity tripwire.
 console.log('\nempdocs — validator / chip / pad export cap (T3)');
-['EMPDOC_TYPES', 'EMPDOC_TITLE_MAX', 'EMPDOC_BODY_MAX'].forEach((name) => {
+['EMPDOC_TYPES', 'EMPDOC_TITLE_MAX', 'EMPDOC_BODY_MAX',
+ 'EMPDOC_FIELD_TYPES', 'EMPDOC_FIELD_CAP', 'EMPDOC_FIELD_LABEL_MAX', 'EMPDOC_RESPONSE_MAX'].forEach((name) => {
   const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*[^;]+);'));
   assert.ok(m, name + ' declaration found in Code.js');
   vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
 });
+vm.runInContext(extractRawFunction('Code.js', 'empDocValidateFields_'), sb, { filename: 'Code.js#empDocValidateFields_' });
+vm.runInContext(extractRawFunction('Code.js', 'empDocValidateResponses_'), sb, { filename: 'Code.js#empDocValidateResponses_' });
+vm.runInContext(extractRawFunction('Code.js', 'empDocNeedsAction_'), sb, { filename: 'Code.js#empDocNeedsAction_' });
 vm.runInContext(extractRawFunction('Code.js', 'empDocValidateIssue_'), sb,
   { filename: 'Code.js#empDocValidateIssue_' });
+test('empDocValidateFields_: normalizes, slugs ids, dedupes, whitelists type, caps', () => {
+  const r = sb.empDocValidateFields_([{ label: 'Your Goals' }, { label: 'Your Goals', type: 'textarea' }, { label: 'When', type: 'date', required: false }]);
+  assert.ok(r.ok);
+  assert.strictEqual(r.fields.length, 3);
+  assert.strictEqual(r.fields[0].id, 'your-goals');
+  assert.strictEqual(r.fields[1].id, 'your-goals-2', 'dedupes ids');
+  assert.strictEqual(r.fields[0].required, true, 'required defaults on');
+  assert.strictEqual(r.fields[2].required, false);
+  assert.strictEqual(sb.empDocValidateFields_(null).ok, true, 'null → no fields');
+  assert.strictEqual(sb.empDocValidateFields_([{ label: '' }]).ok, false, 'blank label rejected');
+  assert.strictEqual(sb.empDocValidateFields_([{ label: 'x', type: 'email' }]).ok, false, 'bad type rejected');
+});
+test('empDocValidateResponses_: requires required fields, bounds, validates dates', () => {
+  const fields = [{ id: 'a', label: 'A', type: 'text', required: true }, { id: 'b', label: 'B', type: 'date', required: false }];
+  assert.strictEqual(sb.empDocValidateResponses_(fields, { a: 'hi' }).ok, true);
+  assert.strictEqual(sb.empDocValidateResponses_(fields, { a: '' }).ok, false, 'missing required → fail');
+  assert.strictEqual(sb.empDocValidateResponses_(fields, { a: 'hi', b: '07/01/2026' }).ok, false, 'bad date → fail');
+  const big = sb.empDocValidateResponses_(fields, { a: 'x'.repeat(sb.EMPDOC_RESPONSE_MAX + 1) });
+  assert.strictEqual(big.ok, false, 'oversize response → fail');
+  // only known field ids are kept
+  const kept = sb.empDocValidateResponses_(fields, { a: 'hi', zzz: 'ignored' });
+  assert.ok(kept.ok && kept.responses.zzz === undefined);
+});
+test('empDocNeedsAction_: issued + (signature OR required field) needs action', () => {
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'issued', requiresSignature: true, fields: [] }), true);
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'issued', requiresSignature: false, fields: [{ required: true }] }), true);
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'issued', requiresSignature: false, fields: [{ required: false }] }), false);
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'draft', requiresSignature: true, fields: [] }), false, 'draft → no action');
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'signed', requiresSignature: true, fields: [] }), false);
+});
+test('empDocValidateIssue_: release flag maps to draft/issued status', () => {
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'review', title: 'T', bodyMd: 'b' }).doc.status, 'issued', 'default issues');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'review', title: 'T', bodyMd: 'b', release: false }).doc.status, 'draft');
+});
 test('empDocValidateIssue_: accepts a good payload; whitelists type; bounds title/body/date', () => {
   const ok = sb.empDocValidateIssue_({ empId: 'E1', docType: 'review', title: 'T', bodyMd: 'body', dueAt: '2026-07-01' });
   assert.ok(ok.ok);
@@ -1726,6 +1860,97 @@ test('viewCacheFresh_: defaults ttl to VIEW_CACHE_TTL_MS when omitted', () => {
   const now = 1000000;
   assert.strictEqual(viewCacheFresh_({ at: now }, undefined, now), true);
   assert.strictEqual(viewCacheFresh_({ at: now - sb.VIEW_CACHE_TTL_MS - 1 }, undefined, now), false);
+});
+
+console.log('\nCode.js — buildPatientTimeline_() (#3 patient/TRX timeline merge)');
+// Pure server helper: stitches notes + intake submissions + sent forms for one
+// TRX into a newest-first timeline. Substring TRX match; forms linked by noteId.
+vm.runInContext(extractRawFunction('Code.js', 'buildPatientTimeline_'), sb,
+  { filename: 'Code.js#buildPatientTimeline_' });
+const buildPatientTimeline_ = sb.buildPatientTimeline_;
+test('merges + sorts newest-first; matches TRX as a substring; links forms by noteId', () => {
+  const notes = [
+    { noteId: 'n1', timestamp: '2026-06-01T09:00:00', caller: 'A', patientAndTrx: 'Jane Doe TRX12345', issue: 'i1' },
+    { noteId: 'n2', timestamp: '2026-06-03T11:00:00', caller: 'B', patientAndTrx: 'Other TRX99999', issue: 'i2' },
+  ];
+  const subs = [
+    { formType: 'PPD', submissionId: 's1', timestamp: '2026-06-02 10:00:00', patientInfo: 'Jane Doe TRX12345', repId: 'r1' },
+  ];
+  const forms = [
+    { token: 't1', formName: 'EAA', status: 'submitted', createdAt: '2026-06-04T08:00:00', noteId: 'n1' },
+    { token: 't2', formName: 'EAA', status: 'pending', createdAt: '2026-06-05T08:00:00', noteId: 'nX' }, // unlinked
+  ];
+  const ev = buildPatientTimeline_(notes, subs, forms, 'trx12345');
+  // n2 excluded (different TRX); t2 excluded (noteId not matched)
+  assert.strictEqual(ev.length, 3, 'note n1 + intake s1 + form t1');
+  assert.strictEqual(ev[0].kind, 'form', 'newest first = the 06-04 form');
+  assert.strictEqual(ev[ev.length - 1].kind, 'note', 'oldest = the 06-01 note');
+  assert.ok(ev.every((e) => e.noteId !== 'n2' && e.token !== 't2'), 'non-matches excluded');
+});
+test('empty / missing inputs never throw; blank trx returns all notes', () => {
+  // (cross-realm: the helper runs in the vm sandbox, so assert on .length, not deepStrictEqual)
+  assert.strictEqual(buildPatientTimeline_(null, null, null, 'x').length, 0);
+  const all = buildPatientTimeline_([{ noteId: 'n', timestamp: '2026-01-01T00:00:00', patientAndTrx: 'anything' }], [], [], '');
+  assert.strictEqual(all.length, 1, 'blank trx → no filter');
+});
+
+console.log('\nCode.js — deployReadinessItems_() (#1 pre-deploy checklist)');
+vm.runInContext(extractRawFunction('Code.js', 'deployReadinessItems_'), sb,
+  { filename: 'Code.js#deployReadinessItems_' });
+const deployReadinessItems_ = sb.deployReadinessItems_;
+test('required store unset → fail; optional unset → warn; tz mismatch → warn; manager-count 0 → fail', () => {
+  const storage = {
+    configTimezone: 'Asia/Kolkata',
+    stores: [
+      { label: 'ADP', prop: 'ADP_SS_ID', configured: false },                          // required → fail
+      { label: 'KB', prop: 'KB_SS_ID', configured: true, reachable: true, tzMatch: true }, // ok
+      { label: 'CDR', prop: 'CDR_SS_ID', configured: false },                          // optional → warn
+      { label: 'Intake', prop: 'INTAKE_SS_ID', configured: true, reachable: true, tzMatch: false, tz: 'America/Los_Angeles' }, // tz → warn
+      { label: 'HR', prop: 'HR_DOCS_SS_ID', configured: true, reachable: false },      // unreachable → fail
+    ],
+  };
+  const automation = { digests: [{ key: 'eod', last: '2026-06-23 07:00:00', stale: false }], cdr: { ok: true } };
+  const out = deployReadinessItems_(storage, automation, 0);
+  const byKey = {};
+  out.items.forEach((it) => { byKey[it.key] = it.status; });
+  assert.strictEqual(byKey['managers'], 'fail', 'no manager emails → fail');
+  assert.strictEqual(byKey['store_ADP_SS_ID'], 'fail', 'required ADP unset → fail');
+  assert.strictEqual(byKey['store_KB_SS_ID'], 'ok');
+  assert.strictEqual(byKey['store_CDR_SS_ID'], 'warn', 'optional CDR unset → warn');
+  assert.strictEqual(byKey['store_INTAKE_SS_ID'], 'warn', 'tz mismatch → warn');
+  assert.strictEqual(byKey['store_HR_DOCS_SS_ID'], 'fail', 'configured-but-unreachable → fail');
+  assert.strictEqual(byKey['triggers'], 'ok', 'fresh heartbeat → ok');
+  assert.strictEqual(byKey['cdr'], 'ok');
+  assert.ok(out.summary.fail >= 3 && out.summary.warn >= 2, 'summary tallies statuses');
+});
+test('no heartbeats → triggers warn; cdr down → warn; clean → all ok', () => {
+  const clean = deployReadinessItems_(
+    { configTimezone: 'X', stores: [{ label: 'ADP', prop: 'ADP_SS_ID', configured: true, reachable: true, tzMatch: true }] },
+    { digests: [{ key: 'eod', last: null, stale: false }], cdr: { ok: false } }, 2);
+  const byKey = {};
+  clean.items.forEach((it) => { byKey[it.key] = it.status; });
+  assert.strictEqual(byKey['managers'], 'ok');
+  assert.strictEqual(byKey['triggers'], 'warn', 'no heartbeat yet → warn');
+  assert.strictEqual(byKey['cdr'], 'warn', 'cdr down → warn');
+});
+
+console.log('\nCode.js — retentionWarnings_() (Admin Retention panel safety ordering)');
+vm.runInContext(extractRawFunction('Code.js', 'retentionWarnings_'), sb,
+  { filename: 'Code.js#retentionWarnings_' });
+const retentionWarnings_ = sb.retentionWarnings_;
+test('clean configs warn-free; unsafe orderings each warn', () => {
+  // archive-only (recommended) — no warnings
+  assert.strictEqual(retentionWarnings_(90, 0, 0).length, 0);
+  // all disabled — no warnings
+  assert.strictEqual(retentionWarnings_(0, 0, 0).length, 0);
+  // safe 3-tier: archive 90 ≤ purge 365, cold 730 ≥ archive 90 — no warnings
+  assert.strictEqual(retentionWarnings_(90, 365, 730).length, 0);
+  // purge ON but archive OFF → warn
+  assert.strictEqual(retentionWarnings_(0, 90, 0).length, 1);
+  // archive window > purge window → warn (loss before archive)
+  assert.ok(retentionWarnings_(365, 90, 0).some((w) => w.indexOf('LARGER') >= 0));
+  // cold purge shorter than archive window → warn
+  assert.ok(retentionWarnings_(90, 0, 30).some((w) => w.indexOf('Cold-store') >= 0));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

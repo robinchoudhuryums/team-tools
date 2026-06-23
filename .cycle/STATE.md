@@ -1,12 +1,119 @@
 # Cycle State
 
 ## Current
-Cycle: 5
-Phase: idle (Cycle 5 CLOSED 2026-06-17; one-off targeted audit+implement run 2026-06-22)
+Cycle: 6
+Phase: implement (broad-scan + broad-implement F1/F2/F4/F5 done 2026-06-23)
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 4
-Updated: 2026-06-22 (targeted audit+implement: Spanish Inbox + DeptRequests)
+Subsystem cycles since last Seams audit: 5
+Updated: 2026-06-23 (broad-scan: 0 Critical / 0 High / 6 Low; implemented F1/F2/F4/F5)
+
+## Cycle 6 retention 3rd-tier + include-archive search (2026-06-23, branch claude/happy-faraday-0grppg)
+Closed the two archive follow-ons (pushed). Retention is now a full 3-tier system.
+- 3rd tier: purgeArchivedCallNotes() (top-level trigger, assertManagerCaller_-gated
+  INV-44, locked) irreversibly deletes NotesArchive rows older than
+  CN_ARCHIVE_RETENTION_DAYS (Script Property → CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS,
+  default 0) — the ONLY deleter of archived notes; read-only re tab existence
+  (never creates it). getArchiveRetentionDays_; PHI-free CallNotesArchivePurge
+  audit + AUTOMATION_AUDIT_ACTIONS. 11th daily trigger @ mgr-tz 2am (before the
+  3am archive) + both TARGETS (tripwire green). Gate test added.
+- Include-archive search: searchMyCallNotes + managerSearchCallNotes gain an
+  includeArchive param → also scan the cold NotesArchive tab (read-only
+  getSheetByName, never creates) and tag hits _archived. Match logic factored
+  into a per-source closure (live path unchanged). Client "Include archived"
+  checkbox on both Search bars (CN_STATE.searchIncludeArchive /
+  mgrSearchIncludeArchive); archived hits render a read-only "archived" pill.
+DECISIONS: the 3 windows are independent operator knobs — NOTE_ARCHIVE_DAYS (move
+Notes→archive), NOTE_RETENTION_DAYS (delete from live), ARCHIVE_RETENTION_DAYS
+(delete from cold). 2am purge-archive < 3am archive < 4am purge ordering.
+includeArchive defaults OFF everywhere (back-compat: getPatientTimeline's 4-arg
+searchMyCallNotes call + the omnibus gate's 4-arg managerSearchCallNotes call are
+unaffected). Pure 162/0, DOM 48/0, node --check clean. DOC: /sync-docs (11
+triggers, CN_ARCHIVE_RETENTION_DAYS, INV-44 10 handlers, INV-132 now the
+cold-deleter, include-archive note, a new invariant).
+
+## Cycle 6 call-note retention ARCHIVAL tier (2026-06-23, branch claude/happy-faraday-0grppg)
+Stage-3 follow-on: made retention SAFE by adding a cold-archive tier (pushed).
+- New archiveOldCallNotes() (top-level trigger handler, assertManagerCaller_-gated
+  INV-44, locked INV-01) MOVES per-rep Notes rows older than CN_NOTE_ARCHIVE_DAYS
+  into a NotesArchive tab in the SAME per-rep spreadsheet — data preserved, live
+  tab bounded, no new operator store. Helpers getNoteArchiveDays_,
+  getOrCreateNotesArchiveTab_, archiveSheetRowsOlderThan_ (append-then-delete +
+  flush; worst case = duplicate in cold archive, never lose). PHI-free
+  CallNotesArchive audit row.
+- Disabled by default (CN_NOTE_ARCHIVE_DAYS / CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS
+  =0). New CONFIG.CALL_NOTES.ARCHIVE_TAB='NotesArchive'.
+- 10th daily trigger at mgr-tz 3am (BEFORE the 4am purge); added to BOTH TARGETS
+  arrays (trigger-wiring tripwire green) + AUTOMATION_AUDIT_ACTIONS (health panel).
+- New gate test test_triggerGate_archiveOldCallNotes_nonManagerThrows. Pure 162/0,
+  DOM 48/0, node --check clean.
+DECISIONS: archive lives in the SAME per-rep PHI spreadsheet (NotesArchive tab) —
+zero new operator state, same PHI boundary, bounds the LIVE tab (which all readers
+use via getCallNotesSheet_→NOTES_TAB). Archived notes are intentionally NOT
+in-app-searchable (cold). Purge never touches NotesArchive (true cold store).
+Recommended SAFE setup: archive on, retention/purge off. FOLLOW-ON: a "purge the
+archive after a longer window" 3rd tier + an optional "include archive" search.
+DOC: needs /sync-docs (10 triggers, CN_NOTE_ARCHIVE_DAYS, NotesArchive tab in the
+storage map, INV-44 + a new INV for the archive tier).
+
+## Cycle 6 Stage-3 FEATURE batch (2026-06-23, branch claude/happy-faraday-0grppg)
+Implemented 3 strategic suggestions from the broad-scan Stage 3 (features, not
+fixes), all pushed:
+- #1 Deploy-readiness checklist: getDeployReadiness() (mgr-gated, PHI-free)
+  composes Storage+Automation health + MANAGER_EMAILS count → pass/warn/fail
+  (required ADP/KB/Intake fail when unset; optional warn; tz mismatch warns).
+  Pure Node-pinned deployReadinessItems_. Panel atop CN Admin Overview
+  (cnLoadDeployReadiness_). Gate added to test_managerGates_rejectNonManager.
+- #2 Quick Links = official external-collection path: links gain optional
+  `category` (survey/review/feedback/other; back-compat default 'other',
+  sanitized read+write in getExternalLinks_/saveExternalLinks; new
+  CN_EXTERNAL_LINK_CATEGORIES). Composer picker groups by optgroup (original
+  indices preserved → insert handler unchanged); Admin editor category select;
+  section reframed.
+- #3 Patient/TRX timeline: getPatientTimeline(trx) (caller-scoped, read-only)
+  stitches the rep's OWN notes (searchMyCallNotes trx) + intake submissions
+  (filtered to emp.id even for managers) + sent forms (linked by noteId) →
+  newest-first. Pure Node-pinned buildPatientTimeline_. Timeline button in the
+  card more-menu → ensureOverlay modal, all server strings esc()'d.
+DECISIONS: timeline is strictly caller-scoped (managers see only their own
+notes/forms; intake filtered to emp.id) — v1 framed as a rep's own-patient
+context, NOT a cross-rep manager view (follow-on if needed). Reused existing
+caller-scoped endpoints internally (no new read surface). Pure 162/0 (4 new
+tests), DOM 48/0, node --check clean. OPERATOR: clasp push -f + New version;
+no new Script Properties/triggers/migrations. DOC: add getDeployReadiness +
+getPatientTimeline + the quick-link category to CLAUDE.md (/sync-docs).
+
+## Cycle 6 broad-scan + implement (2026-06-23, branch claude/happy-faraday-0grppg)
+AUDIT: 6 parallel deep-read agents + independent verification of every Crit/High
+claim. Result = 4th consecutive audit with NO verified Critical/High; every agent
+Crit/High collapsed on verification (retracted: hasActiveTimeOffOnDate_ "Reconciled"
+block [false — Reconciled ≠ pending/approved], getQuiz answer-key inversion [false —
+always strips], audit-ts INV-29 [by design], public-form sig date [intentional local
+date], CN bounded-read race [throws→caught, not wrong counts]). Net findings: 6 Low.
+Confirmed clean: auth gate, manager gating, CDR getDisplayValues (all 3 readers),
+EmpDocs fail-closed scoping, PHI-free audit rows (CallNoteEmail/DeptRequest/IntakeSent/
+forms), trigger install/remove TARGETS symmetry (9==9), esc()/localStorage/overlay
+hygiene, test suite genuinely bites (781 asserts/249 fns; manager-gate omnibus 50+
+endpoints asserts .error + 'Manager access').
+IMPLEMENTED (commit pushed):
+- F1: currentView guards on 3 CN manager/admin loaders (cnMgrLoadRepView_,
+  cnToggleAuditHistory_, cnAdminLoadEnrollment_) — both success+failure handlers,
+  matching the documented loader-guard pattern.
+- F2: kbAiApplySpend_ console.warn on failed spend-counter write (was silent swallow).
+- F4: escaping-contract comment on intakeOpenModal_ (bodyHtml raw; callers must esc).
+- F5: two-source manager-gate comment at assertManagerCaller_ (MANAGER_EMAILS vs
+  emp.isManager roster column).
+DEFERRED:
+- F3 (empDocContentHash_/empDocSignatureHash_ space-delimiter collision, Low): NOT
+  changed — would mark ALL already-issued keep-forever HR records as tampered
+  (INV-122) + refuse new sigs on existing unsigned docs. Needs a HashVersion-column
+  migration. Same space-delimiter in computeFormSubmissionHash_ (check under same
+  umbrella if ever done).
+- F6 (getSpanishInboxThreadBody scope, Low): no change — already manager-gated +
+  scope-checked (first msg must be addressed to the configured inbox) + documented.
+Net = 0 prod-fixes-that-would-fire − 0 new failure modes (all 4 are preventive/
+defensive/doc). Pure harness 158/0; node --check clean. NEXT: operator deploy
+(clasp push -f + New version); no new Script Properties/triggers/migrations.
 
 ## Targeted audit + implement — Spanish Inbox + DeptRequests (2026-06-22, on practical-gauss-yycwkz)
 Context: the designated branch `claude/practical-gauss-yycwkz` was 45 commits behind

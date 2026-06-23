@@ -50,6 +50,10 @@ const CONFIG = {
   // start counts as on-time (grace). Lunch-out within this of scheduled lunch
   // counts as on-time too.
   PUNCTUALITY_GRACE_MIN:        5,
+  // Coaching (Training module): un-acknowledged coaching items older than this
+  // many days are nudged to the issuing/team manager in the daily overdue
+  // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
+  COACHING_UNACK_REMINDER_DAYS: 7,
   // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
   // are sent to this group address; "resolved" = first reply from a configured
   // bilingual group MEMBER (SPANISH_INBOX_MEMBERS, comma-separated emails, via
@@ -116,9 +120,12 @@ const CONFIG = {
   // separate action from log-on-submit. See helper getCallNotesSheet_().
   CALL_NOTES: {
     NOTES_TAB:           'Notes',
+    ARCHIVE_TAB:         'NotesArchive', // cold-archive tab in each per-rep Sheet (archiveOldCallNotes moves old rows here)
     SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
     DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
     NOTE_RETENTION_DAYS: 0,              // rolling auto-delete of old notes; 0 = disabled (irreversible PHI delete; CN_NOTE_RETENTION_DAYS Script Property overrides)
+    NOTE_ARCHIVE_DAYS: 0,               // SAFE tier — move notes older than this to a NotesArchive tab (data preserved, live tab bounded); 0 = disabled (CN_NOTE_ARCHIVE_DAYS Script Property overrides)
+    ARCHIVE_RETENTION_DAYS: 0,          // 3rd tier — irreversibly delete NotesArchive rows older than this (cold-store purge); 0 = disabled (CN_ARCHIVE_RETENTION_DAYS Script Property overrides; keep ≥ NOTE_ARCHIVE_DAYS)
     CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
     AUTO_COPY_FORMAT:
       'Callback Number: {callback}\n' +
@@ -332,6 +339,9 @@ const CN_EMAIL_TEMPLATE_LIMIT = 50;
 const CN_EMAIL_TEMPLATE_BODY_MAX = 4000;
 const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
 const CN_EXTERNAL_LINK_LIMIT = 50;
+// Quick-link categories (the official external-collection path — #2). Order is
+// the composer-picker optgroup order; 'other' is the back-compat default.
+const CN_EXTERNAL_LINK_CATEGORIES = ['survey', 'review', 'feedback', 'other'];
 
 /** Round 2 · 8e — derives the single FlagType column value from a
  *  multi-select flags array. Maintains backward compat with existing
@@ -2481,7 +2491,7 @@ function getCallNotesDepartments() {
  *  exact=true, matches patientAndTrx exactly (case-insensitive, trimmed) and
  *  ignores the field parameter — used by the "Find prior calls for this TRX"
  *  button on note cards to surface repeat-caller history without substring noise. */
-function searchMyCallNotes(query, field, dateRange, exact) {
+function searchMyCallNotes(query, field, dateRange, exact, includeArchive) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
@@ -2495,36 +2505,132 @@ function searchMyCallNotes(query, field, dateRange, exact) {
     // whole history but column-bounded to CN_HEADERS.length (no stray columns).
     const rangeStart = (dateRange && dateRange.start) || null;
     const rangeEnd   = (dateRange && dateRange.end)   || null;
-    const located = readCallNoteRowsInRange_(sheet, rangeStart, rangeEnd);
 
     const qLower = q.toLowerCase();
     const isExact = exact === true;
     const results = [];
-    for (let i = 0; i < located.length; i++) {
-      const note = callNoteRowToObject_(located[i]);
-      if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
-      if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
-      let hit = false;
-      if (isExact) {
-        if (String(note.patientAndTrx || '').toLowerCase().trim() === qLower) hit = true;
-      } else if (f === 'phone') {
-        if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
-      } else if (f === 'trx') {
-        if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
-      } else {
-        if (f === 'caller' || f === 'all') {
-          if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
-                .toLowerCase().indexOf(qLower) >= 0) hit = true;
+    const matchInto = function (located, isArchived) {
+      for (let i = 0; i < located.length; i++) {
+        const note = callNoteRowToObject_(located[i]);
+        if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+        if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+        let hit = false;
+        if (isExact) {
+          if (String(note.patientAndTrx || '').toLowerCase().trim() === qLower) hit = true;
+        } else if (f === 'phone') {
+          if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+        } else if (f === 'trx') {
+          if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+        } else {
+          if (f === 'caller' || f === 'all') {
+            if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                  .toLowerCase().indexOf(qLower) >= 0) hit = true;
+          }
+          if (!hit && (f === 'issue' || f === 'all')) {
+            if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+          }
         }
-        if (!hit && (f === 'issue' || f === 'all')) {
-          if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
-        }
+        if (hit) { if (isArchived) note._archived = true; results.push(note); }
       }
-      if (hit) results.push(note);
+    };
+
+    matchInto(readCallNoteRowsInRange_(sheet, rangeStart, rangeEnd), false);
+    // Include-archive: ALSO scan the cold NotesArchive tab when it exists.
+    // Read-only — never creates the tab (getSheetByName, not getOrCreate).
+    if (includeArchive === true) {
+      const archive = sheet.getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+      if (archive) matchInto(readCallNoteRowsInRange_(archive, rangeStart, rangeEnd), true);
     }
+
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 200) results.length = 200;
     return { results, timezone: empTz, exact: isExact };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Pure (Node-pinned) — stitches a single patient/order's events from the
+ *  rep's own call notes + intake submissions + sent fillable forms into one
+ *  newest-first timeline. `trx` is matched as a case-insensitive substring of
+ *  each source's patient/TRX field; sent forms are linked by their source
+ *  noteId being one of the matched notes (a fillable form is sent in a note's
+ *  context). Sort key normalizes the heterogeneous source timestamps
+ *  ("yyyy-MM-ddTHH:mm:ss" notes/forms vs "yyyy-MM-dd HH:mm:ss" intake) to a
+ *  comparable "yyyy-MM-dd HH:mm:ss" prefix — good enough for display ordering
+ *  of one rep's own data (the cross-tz caveat doesn't reorder same-source
+ *  events). No braces inside string literals (extractRawFunction caveat). */
+function buildPatientTimeline_(notes, submissions, forms, trx) {
+  var t = String(trx || '').trim().toLowerCase();
+  var keyOf = function (ts) { return String(ts || '').replace('T', ' ').slice(0, 19); };
+  var events = [];
+  var matchedNoteIds = {};
+  (notes || []).forEach(function (n) {
+    if (t && String(n.patientAndTrx || '').toLowerCase().indexOf(t) < 0) return;
+    if (n.noteId) matchedNoteIds[String(n.noteId)] = true;
+    events.push({
+      kind: 'note', at: keyOf(n.timestamp), ts: String(n.timestamp || ''),
+      noteId: String(n.noteId || ''), caller: String(n.caller || ''),
+      patientAndTrx: String(n.patientAndTrx || ''), issue: String(n.issue || ''),
+      resolution: String(n.resolution || ''), flagType: String(n.flagType || ''),
+      emailedAt: String(n.emailedAt || ''),
+    });
+  });
+  (submissions || []).forEach(function (s) {
+    if (t && String(s.patientInfo || '').toLowerCase().indexOf(t) < 0) return;
+    events.push({
+      kind: 'intake', at: keyOf(s.timestamp), ts: String(s.timestamp || ''),
+      formType: String(s.formType || ''), submissionId: String(s.submissionId || ''),
+      patientInfo: String(s.patientInfo || ''), recipient: String(s.recipient || ''),
+    });
+  });
+  (forms || []).forEach(function (f) {
+    if (!f.noteId || !matchedNoteIds[String(f.noteId)]) return;
+    events.push({
+      kind: 'form', at: keyOf(f.createdAt), ts: String(f.createdAt || ''),
+      token: String(f.token || ''), formName: String(f.formName || ''),
+      status: String(f.status || ''), recipientName: String(f.recipientName || ''),
+      noteId: String(f.noteId || ''),
+    });
+  });
+  events.sort(function (a, b) { return a.at < b.at ? 1 : (a.at > b.at ? -1 : 0); });
+  return events;
+}
+
+/** Patient/TRX timeline (#3) — caller-scoped, read-only. Stitches the rep's
+ *  OWN call notes (TRX substring), intake submissions (patientInfo substring),
+ *  and sent fillable forms (linked by source noteId) for one patient/order
+ *  into a single newest-first timeline. Reuses the existing caller-scoped
+ *  endpoints (each re-checks getEmployeeInfo_), so no new read surface and no
+ *  cross-rep leak: submissions are filtered to the caller's own id even when a
+ *  manager (who otherwise sees all) calls it. PHI is the caller's own. */
+function getPatientTimeline(trx) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const t = String(trx || '').trim();
+    if (!t) return { error: 'Enter a patient name or TRX number.' };
+
+    let notes = [];
+    try {
+      const nr = searchMyCallNotes(t, 'trx', null, false);
+      notes = (nr && nr.results) || [];
+    } catch (e) {}
+
+    let submissions = [];
+    try {
+      const sr = intakeListMySubmissions();
+      submissions = ((sr && sr.submissions) || []).filter(function (s) {
+        return String(s.repId || '') === emp.id;   // caller-scoped even for managers
+      });
+    } catch (e) {}
+
+    let forms = [];
+    try {
+      const fr = getMySentForms();
+      forms = (fr && fr.forms) || [];
+    } catch (e) {}
+
+    const events = buildPatientTimeline_(notes, submissions, forms, t);
+    return { trx: t, events: events, timezone: empTz_(emp), count: events.length };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -3164,7 +3270,7 @@ function readCallNoteRowsInRange_(sheet, start, end) {
   return out;
 }
 
-function managerSearchCallNotes(query, field, repFilter, dateRange) {
+function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchive) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
@@ -3175,6 +3281,7 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
 
     const roster = getEmployeeRosterRows_();
     const results = [];
+    const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
     for (let r = 1; r < roster.length; r++) {
       const repId = String(roster[r][EMP.ID]).trim();
       if (repFilter && repFilter.length && repFilter.indexOf(repId) < 0) continue;
@@ -3188,30 +3295,37 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
         // Bounded read when a full date range is supplied; full scan for
         // open-ended search. Per-note date re-checks below stay as defensive
         // guards (and handle the partial-range case).
-        const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
-        const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
-        for (let i = 0; i < located.length; i++) {
-          const note = callNoteRowToObject_(located[i]);
-          if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
-          if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
-          let hit = false;
-          if (f === 'phone') {
-            if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
-          } else if (f === 'trx') {
-            if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
-          } else {
-            if (f === 'caller' || f === 'all') {
-              if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
-                    .toLowerCase().indexOf(qLower) >= 0) hit = true;
+        const matchInto = function (located, isArchived) {
+          for (let i = 0; i < located.length; i++) {
+            const note = callNoteRowToObject_(located[i]);
+            if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+            if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+            let hit = false;
+            if (f === 'phone') {
+              if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+            } else if (f === 'trx') {
+              if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+            } else {
+              if (f === 'caller' || f === 'all') {
+                if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                      .toLowerCase().indexOf(qLower) >= 0) hit = true;
+              }
+              if (!hit && (f === 'issue' || f === 'all')) {
+                if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+              }
             }
-            if (!hit && (f === 'issue' || f === 'all')) {
-              if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+            if (hit) {
+              note.repId = repId; note.repName = repName;
+              if (isArchived) note._archived = true;
+              results.push(note);
             }
           }
-          if (hit) {
-            note.repId = repId; note.repName = repName;
-            results.push(note);
-          }
+        };
+        matchInto(readCallNoteRowsInRange_(sheet, dr.start, dr.end), false);
+        // Include-archive: read-only scan of the cold NotesArchive tab when present.
+        if (includeArchive === true) {
+          const archive = sheet.getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+          if (archive) matchInto(readCallNoteRowsInRange_(archive, dr.start, dr.end), true);
         }
       } catch (e) {
         // A broken per-rep Sheet shouldn't break the cross-rep search
@@ -3404,6 +3518,82 @@ function getAdminConfig() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Pure (Node-pinned) — safety-ordering warnings for the three call-note
+ *  retention windows. archiveDays moves Notes→NotesArchive; retentionDays
+ *  irreversibly deletes from live; archiveRetentionDays irreversibly deletes
+ *  from the cold store. The triggers run 2am (archive-purge) < 3am (archive) <
+ *  4am (live purge). No braces inside string literals (extractRawFunction). */
+function retentionWarnings_(archiveDays, retentionDays, archiveRetentionDays) {
+  var w = [];
+  var a = archiveDays || 0, r = retentionDays || 0, ar = archiveRetentionDays || 0;
+  if (r > 0 && a === 0) {
+    w.push('Live purge is ON but archival is OFF — old notes are irreversibly deleted with NO cold copy. Enable archival (recommended) for a safer setup.');
+  }
+  if (r > 0 && a > 0 && a > r) {
+    w.push('Archive window (' + a + 'd) is LARGER than the live-purge window (' + r + 'd) — the 4am purge can irreversibly delete live rows before the 3am archive reaches them. Set archive ≤ purge, or disable purge.');
+  }
+  if (ar > 0 && a > 0 && ar < a) {
+    w.push('Cold-store purge (' + ar + 'd) is shorter than the archive window (' + a + 'd) — notes get archived, then almost immediately purged from the cold store.');
+  }
+  return w;
+}
+
+/** Retention config (Admin Config panel) — manager-gated, read-only summary of
+ *  the three call-note retention windows + their resolved values, source, and
+ *  safety-ordering warnings. PHI-free. */
+function getRetentionConfig() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const props = PropertiesService.getScriptProperties();
+    const srcOf = function (propName, cfgVal) {
+      const p = props.getProperty(propName);
+      if (p != null && p !== '') return 'Script Property';
+      return (cfgVal && cfgVal > 0) ? 'CONFIG' : 'default';
+    };
+    const a = getNoteArchiveDays_(), r = getNoteRetentionDays_(), ar = getArchiveRetentionDays_();
+    return {
+      archiveDays:          { value: a,  source: srcOf('CN_NOTE_ARCHIVE_DAYS', CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS) },
+      retentionDays:        { value: r,  source: srcOf('CN_NOTE_RETENTION_DAYS', CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS) },
+      archiveRetentionDays: { value: ar, source: srcOf('CN_ARCHIVE_RETENTION_DAYS', CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS) },
+      warnings: retentionWarnings_(a, r, ar),
+      archiveTab: CONFIG.CALL_NOTES.ARCHIVE_TAB,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated write of the three retention windows to Script Properties
+ *  (CN_NOTE_ARCHIVE_DAYS / CN_NOTE_RETENTION_DAYS / CN_ARCHIVE_RETENTION_DAYS).
+ *  Each must be a whole number of days ≥ 0 (0 = disabled). Writes an
+ *  AdminConfigChange audit row (INV-57 family). Takes effect immediately — the
+ *  trigger handlers read the windows fresh per run. The two PURGE windows are
+ *  irreversible PHI deletes; the client gates raising them behind a danger
+ *  confirm. Returns the post-save safety warnings so the UI can surface them. */
+function saveRetentionConfig(settings) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    settings = settings || {};
+    const parse = function (v) {
+      if (v === '' || v == null) return 0;
+      if (String(v).indexOf('.') >= 0) return null;   // whole days only
+      const n = parseInt(v, 10);
+      return (isNaN(n) || n < 0) ? null : n;
+    };
+    const a = parse(settings.archiveDays), r = parse(settings.retentionDays), ar = parse(settings.archiveRetentionDays);
+    if (a === null || r === null || ar === null) {
+      return { success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' };
+    }
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty('CN_NOTE_ARCHIVE_DAYS', String(a));
+    props.setProperty('CN_NOTE_RETENTION_DAYS', String(r));
+    props.setProperty('CN_ARCHIVE_RETENTION_DAYS', String(ar));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated call-note retention windows (archive=' + a + 'd, purge=' + r + 'd, archivePurge=' + ar + 'd)', callerEmp.email);
+    return { success: true, warnings: retentionWarnings_(a, r, ar) };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
 /** Manager-gated read of the feature-toggle registry + resolved values
  *  (also embedded in getAdminConfig; kept standalone for testability). */
 function getFeatureFlags() {
@@ -3512,9 +3702,13 @@ function saveExternalLinks(links) {
       const l = links[i] || {};
       const label = String(l.label || '').trim();
       const url = String(l.url || '').trim();
+      const cat = String(l.category || '').trim().toLowerCase();
       if (!label) return { success: false, error: 'Each link needs a label.' };
       if (!/^https?:\/\//i.test(url)) return { success: false, error: 'Link "' + label + '" needs an http(s) URL.' };
-      clean.push({ label: label, url: url });
+      clean.push({
+        label: label, url: url,
+        category: CN_EXTERNAL_LINK_CATEGORIES.indexOf(cat) >= 0 ? cat : 'other',
+      });
     }
     PropertiesService.getScriptProperties().setProperty('CN_EXTERNAL_LINKS', JSON.stringify(clean));
     writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
@@ -3725,6 +3919,7 @@ function getCallNoteAuditHistory(noteId) {
 // accordingly so "never seen" isn't misread as "broken".
 const AUTOMATION_AUDIT_ACTIONS = [
   'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
+  'CallNotesArchive', 'CallNotesArchivePurge',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
@@ -3961,6 +4156,87 @@ function getStorageHealth() {
     });
 
     return { configTimezone: cfgTz, stores: stores };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Pure (Node-pinned) — derives the deploy-readiness checklist from the
+ *  Storage + Automation health payloads + the manager-email count. Each item
+ *  is {key,label,status:'ok'|'warn'|'fail',detail}; a `summary` tallies the
+ *  three statuses. Required stores (ADP/KB/Intake) FAIL when unset; optional
+ *  stores (CDR/Forms/HR/per-rep) only WARN; a tz mismatch on any store WARNs
+ *  (the silent coerced-read drift). No braces inside string literals
+ *  (extractRawFunction caveat). */
+function deployReadinessItems_(storage, automation, managerCount) {
+  var REQUIRED = { ADP_SS_ID: 1, KB_SS_ID: 1, INTAKE_SS_ID: 1 };
+  var items = [];
+  var push = function (key, label, status, detail) {
+    items.push({ key: key, label: label, status: status, detail: detail || '' });
+  };
+
+  push('managers', 'Manager emails configured',
+    (managerCount > 0) ? 'ok' : 'fail',
+    (managerCount > 0) ? (managerCount + ' configured')
+      : 'Set MANAGER_EMAILS — no one passes the manager gate without it.');
+
+  var cfgTz = (storage && storage.configTimezone) || '';
+  var stores = (storage && storage.stores) || [];
+  stores.forEach(function (s) {
+    var prop = s.prop || '';
+    var required = !!REQUIRED[prop];
+    var status, detail;
+    if (s.configured === false) {
+      status = required ? 'fail' : 'warn';
+      detail = s.note || (required ? ('Required — set ' + prop) : 'Optional — unset');
+    } else if (s.reachable === false) {
+      status = 'fail';
+      detail = 'Configured but unreachable' + (s.error ? (': ' + s.error) : '.');
+    } else if (s.tzMatch === false) {
+      status = 'warn';
+      detail = 'Timezone ' + (s.tz || s.note || '?') + ' differs from CONFIG ' + cfgTz + ' — coerced date/time reads drift.';
+    } else {
+      status = 'ok';
+      detail = s.note || s.name || 'OK';
+    }
+    push('store_' + (prop || s.label), s.label, status, detail);
+  });
+
+  var digests = (automation && automation.digests) || [];
+  var anyHeartbeat = digests.some(function (d) { return !!d.last; });
+  var anyStale = digests.some(function (d) { return !!d.stale; });
+  push('triggers', 'Automation triggers (digest heartbeats)',
+    !anyHeartbeat ? 'warn' : (anyStale ? 'warn' : 'ok'),
+    !anyHeartbeat ? 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).'
+      : (anyStale ? 'A digest looks stale — check the cross-account trigger-ownership trap.' : 'Heartbeats fresh.'));
+
+  var cdrOk = !!(automation && automation.cdr && automation.cdr.ok);
+  push('cdr', 'CDR reachability (Metrics)',
+    cdrOk ? 'ok' : 'warn',
+    cdrOk ? 'Reachable.' : 'CDR unreachable/unset — Metrics + the shift-stats overlay degrade gracefully (optional).');
+
+  var summary = { ok: 0, warn: 0, fail: 0 };
+  items.forEach(function (it) { summary[it.status] = (summary[it.status] || 0) + 1; });
+  return { items: items, summary: summary };
+}
+
+/** Deploy-readiness checklist (#1) — manager-gated, read-only. One-click
+ *  pre-deploy report: composes the existing Storage Health (all 7 stores'
+ *  configured/reachable/tz-vs-CONFIG) + Automation Health (digest heartbeats,
+ *  CDR) + the MANAGER_EMAILS count into a pass/warn/fail checklist. PHI-free
+ *  (store metadata only). Surfaced atop the Call Notes Admin Overview. */
+function getDeployReadiness() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const storage = getStorageHealth();
+    if (storage && storage.error) return { error: storage.error };
+    let automation = {};
+    try { automation = getAutomationHealth() || {}; } catch (e) { automation = {}; }
+    const managerCount = getManagerEmails_().length;
+    const res = deployReadinessItems_(storage, automation, managerCount);
+    return {
+      items: res.items, summary: res.summary,
+      configTimezone: (storage && storage.configTimezone) || CONFIG.TIMEZONE,
+    };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -6738,6 +7014,192 @@ function purgeOldCallNotes() {
   }
 }
 
+/** Cold-archive window: days from CN_NOTE_ARCHIVE_DAYS Script Property first,
+ *  else CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS. 0/neg/unparseable → 0 (disabled).
+ *  Mirrors getNoteRetentionDays_. */
+function getNoteArchiveDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_NOTE_ARCHIVE_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** Returns the cold-archive tab (CONFIG.CALL_NOTES.ARCHIVE_TAB) in the given
+ *  per-rep spreadsheet, creating it with the canonical CN_HEADERS on first use.
+ *  Same schema as the live Notes tab so an archived row round-trips identically
+ *  (and stays readable by callNoteRowToObject_ if ever needed). */
+function getOrCreateNotesArchiveTab_(ss) {
+  const name = CONFIG.CALL_NOTES.ARCHIVE_TAB;
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(CN_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** Move rows older than cutoffMs from srcSheet to archiveSheet (preserving the
+ *  full row), then delete them from srcSheet. APPEND-then-delete so a mid-run
+ *  failure can only DUPLICATE into the cold archive (never lose) — the source
+ *  still has the row, so the next run re-archives + deletes it. Batched append
+ *  (one setValues block) + bottom-up delete. Returns the count moved. Mirrors
+ *  purgeSheetRowsOlderThan_ but is NON-destructive (data preserved). */
+function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs) {
+  const lastRow = srcSheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const rows = srcSheet.getDataRange().getValues();
+  const toMoveRows = [];   // full row values, in sheet order
+  const toDelete = [];     // 1-based sheet row indices
+  for (let i = 1; i < rows.length; i++) {
+    const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
+    if (ms !== null && ms < cutoffMs) { toMoveRows.push(rows[i]); toDelete.push(i + 1); }
+  }
+  if (!toMoveRows.length) return 0;
+  // Normalize every moved row to the archive's column width (live rows may be
+  // narrower/wider than CN_HEADERS for legacy reasons; setValues needs a
+  // uniform rectangle).
+  const width = CN_HEADERS.length;
+  const block = toMoveRows.map(function (r) {
+    const out = new Array(width);
+    for (let c = 0; c < width; c++) out[c] = (c < r.length) ? r[c] : '';
+    return out;
+  });
+  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(block);
+  SpreadsheetApp.flush();   // ensure the archive write lands before we delete the source
+  for (let j = toDelete.length - 1; j >= 0; j--) srcSheet.deleteRow(toDelete[j]);
+  return toMoveRows.length;
+}
+
+/** Cold-archive tier for call-note retention (the SAFE alternative to the
+ *  irreversible purgeOldCallNotes). Across every enrolled rep's per-rep Sheet,
+ *  MOVES Notes rows older than the archive window into a NotesArchive tab in the
+ *  SAME spreadsheet — data is preserved (the canonical record stays), the LIVE
+ *  Notes tab is bounded (faster open-ended scans), and no new operator store is
+ *  needed. DISABLED by default (CN_NOTE_ARCHIVE_DAYS / CONFIG = 0). Top-level
+ *  (time-trigger target) → reachable via google.script.run, so gated like the
+ *  other trigger handlers (assertManagerCaller_); locked (INV-01). A broken
+ *  per-rep Sheet is skipped, not fatal. Dates read from CN.DATE_LOCAL
+ *  (Sheets-coerced; parseRetentionDateMs_ handles it). Writes a PHI-free
+ *  CallNotesArchive audit row with counts.
+ *
+ *  OPERATOR ORDERING: if BOTH archive and purge are enabled, keep
+ *  CN_NOTE_ARCHIVE_DAYS ≤ CN_NOTE_RETENTION_DAYS — the 3am archive runs before
+ *  the 4am purge, so the safe path is archive-first. The recommended setup is
+ *  archive-only (leave retention/purge at 0): bounded live tab, full history
+ *  retained in NotesArchive. */
+function archiveOldCallNotes() {
+  assertManagerCaller_('archiveOldCallNotes');
+  try {
+    const days = getNoteArchiveDays_();
+    if (!days) {
+      Logger.log('archiveOldCallNotes: archival disabled (CN_NOTE_ARCHIVE_DAYS=0) — nothing archived.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const roster = getEmployeeRosterRows_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let repsTouched = 0, notesArchived = 0;
+    try {
+      for (let r = 1; r < roster.length; r++) {
+        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
+        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const emp = {
+          id:   String(roster[r][EMP.ID]).trim(),
+          name: String(roster[r][EMP.NAME]).trim(),
+          callNotesSheetId: String(sheetIdRaw).trim(),
+        };
+        try {
+          const live = getCallNotesSheet_(emp);
+          const archive = getOrCreateNotesArchiveTab_(live.getParent());
+          const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs);
+          if (moved > 0) { notesArchived += moved; repsTouched++; }
+        } catch (e) {
+          Logger.log('archiveOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
+        }
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
+      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}`);
+    Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
+  } catch (err) {
+    Logger.log('archiveOldCallNotes failed: ' + err.message);
+  }
+}
+
+/** 3rd-tier cold-store retention window: days from CN_ARCHIVE_RETENTION_DAYS
+ *  Script Property first, else CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS.
+ *  0/neg/unparseable → 0 (disabled). Mirrors getNoteRetentionDays_. */
+function getArchiveRetentionDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_ARCHIVE_RETENTION_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** 3rd-tier retention: irreversibly delete rows from each rep's NotesArchive
+ *  (cold store) older than CN_ARCHIVE_RETENTION_DAYS, so the cold archive
+ *  doesn't grow forever. This is the ONLY mechanism that deletes archived
+ *  notes (archiveOldCallNotes MOVES into the archive; purgeOldCallNotes never
+ *  touches it). Top-level (time-trigger target) → reachable via
+ *  google.script.run, so gated like the other destructive trigger handlers
+ *  (assertManagerCaller_); locked (INV-01). DISABLED by default
+ *  (CN_ARCHIVE_RETENTION_DAYS / CONFIG = 0); the delete is irreversible and the
+ *  notes are PHI. READ-ONLY w.r.t. the tab's existence — it never creates a
+ *  NotesArchive tab (a rep with no archive is simply skipped). Dates read from
+ *  CN.DATE_LOCAL (the archived row keeps its original date). Cross-rep; a broken
+ *  Sheet is skipped. Writes a PHI-free CallNotesArchivePurge audit row.
+ *
+ *  OPERATOR: keep CN_ARCHIVE_RETENTION_DAYS ≥ CN_NOTE_ARCHIVE_DAYS — it's the
+ *  cold-store lifetime, longer than the move window. Scheduled at manager-tz 2am
+ *  (before the 3am archive) so it operates on yesterday's settled archive. */
+function purgeArchivedCallNotes() {
+  assertManagerCaller_('purgeArchivedCallNotes');
+  try {
+    const days = getArchiveRetentionDays_();
+    if (!days) {
+      Logger.log('purgeArchivedCallNotes: archive retention disabled (CN_ARCHIVE_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const roster = getEmployeeRosterRows_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let repsTouched = 0, notesRemoved = 0;
+    try {
+      for (let r = 1; r < roster.length; r++) {
+        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
+        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const emp = {
+          id:   String(roster[r][EMP.ID]).trim(),
+          name: String(roster[r][EMP.NAME]).trim(),
+          callNotesSheetId: String(sheetIdRaw).trim(),
+        };
+        try {
+          // Read-only existence check — never create the archive tab here.
+          const archive = getCallNotesSheet_(emp).getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+          if (!archive) continue;
+          const removed = purgeSheetRowsOlderThan_(archive, CN.DATE_LOCAL, cutoffMs);
+          if (removed > 0) { notesRemoved += removed; repsTouched++; }
+        } catch (e) {
+          Logger.log('purgeArchivedCallNotes: skipped rep ' + emp.id + ': ' + e.message);
+        }
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchivePurge', '', '', false, 0,
+      `archiveRetentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}`);
+    Logger.log(`purgeArchivedCallNotes: removed ${notesRemoved} archived note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
+  } catch (err) {
+    Logger.log('purgeArchivedCallNotes failed: ' + err.message);
+  }
+}
+
 /** #8 — manager-triggered reconcile pass. Scans every enrolled rep's Notes tab
  *  for HAND-ENTERED rows (content present but no noteId — typed directly into
  *  the Sheet, not via the app) and backfills the fields the app needs to treat
@@ -6825,6 +7287,8 @@ function installAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'purgeArchivedCallNotes',
+    'archiveOldCallNotes',
     'purgeOldCallNotes',
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
@@ -6860,6 +7324,20 @@ function installAutomationTriggers() {
   // FORM_DATA_RETENTION_DAYS = 0 (the default), so installing it is harmless;
   // it only deletes once the operator sets a positive retention window.
   ScriptApp.newTrigger('purgeExpiredFormData')
+    .timeBased().atHour(3).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // 3rd-tier cold-store purge — irreversibly deletes NotesArchive rows past the
+  // archive-retention window. No-ops while CN_ARCHIVE_RETENTION_DAYS=0 (the
+  // default). Staggered to 2am, BEFORE the 3am archive, so it operates on the
+  // settled cold store from prior runs.
+  ScriptApp.newTrigger('purgeArchivedCallNotes')
+    .timeBased().atHour(2).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Cold-archive tier (SAFE retention) — moves old notes to a NotesArchive tab
+  // (data preserved, live tab bounded). No-ops while CN_NOTE_ARCHIVE_DAYS=0 (the
+  // default), so installing it is harmless. Staggered to 3am, BEFORE the 4am
+  // purge, so if both are enabled the safe archive-first ordering holds.
+  ScriptApp.newTrigger('archiveOldCallNotes')
     .timeBased().atHour(3).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   // Rolling note retention (item 7) — also no-ops while CN_NOTE_RETENTION_DAYS=0
@@ -6921,6 +7399,8 @@ function removeAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'purgeArchivedCallNotes',
+    'archiveOldCallNotes',
     'purgeOldCallNotes',
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
@@ -7460,9 +7940,9 @@ function empDocsOverdueAll_(todayIso) {
     for (let i = 0; i < rows.length; i++) {
       const d = empDocRowToObj_(rows[i], ssTz);
       if (!d.docId) continue;
-      if (!(d.status === 'issued' && d.requiresSignature && d.dueAt && todayIso > d.dueAt)) continue;
+      if (!(empDocNeedsAction_(d) && d.dueAt && todayIso > d.dueAt)) continue;
       const target = lookupEmployeeById_(d.empId);
-      out.push({ doc: d, empName: target ? target.name : 'former employee' });
+      out.push({ doc: d, empName: target ? target.name : 'former employee', empEmail: target ? target.email : '' });
     }
     out.sort(function (x, y) {
       if (x.doc.dueAt !== y.doc.dueAt) return x.doc.dueAt < y.doc.dueAt ? -1 : 1;
@@ -7487,20 +7967,39 @@ function sendTrainingOverdueDigest() {
     const todayIso = Utilities.formatDate(new Date(), mgrTz, 'yyyy-MM-dd');
     const overdueTraining = trainOverdueForRoster_(todayIso);   // org-wide
     const overdueDocs = empDocsOverdueAll_(todayIso);           // scope per manager below
+    const overdueCoaching = coachUnackedAll_(Date.now());       // scope per manager below
     let sent = 0;
     mgrEmails.forEach(function (email) {
+      const mgr = { email: email, isManager: true };
       const scopedDocs = overdueDocs.filter(function (od) {
-        return empDocCanManagerSee_({ email: email, isManager: true }, od.doc);
+        return empDocCanManagerSee_(mgr, od.doc);
       });
-      if (!overdueTraining.length && !scopedDocs.length) return;   // nothing for this manager
+      const scopedCoaching = overdueCoaching.filter(function (oc) {
+        return coachCanManagerSee_(mgr, oc.item);
+      });
+      if (!overdueTraining.length && !scopedDocs.length && !scopedCoaching.length) return;   // nothing for this manager
       try {
-        sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, todayIso);
+        sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso);
         sent++;
       } catch (e) { console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + e.message); }
     });
+    // v2 — also nudge the EMPLOYEE about their own overdue documents (one
+    // email per employee). Best-effort per recipient.
+    let empNudged = 0;
+    const byEmp = {};
+    overdueDocs.forEach(function (od) {
+      const key = (od.empEmail || '').toLowerCase();
+      if (!key) return;
+      (byEmp[key] = byEmp[key] || { name: od.empName, docs: [] }).docs.push(od.doc);
+    });
+    Object.keys(byEmp).forEach(function (email) {
+      try { sendEmployeeOverdueDocsEmail_(email, byEmp[email].name, byEmp[email].docs, todayIso); empNudged++; }
+      catch (e) { console.warn('employee overdue-docs nudge to ' + email + ' failed: ' + e.message); }
+    });
     stampDigestLastRun_('trainingOverdue');
     Logger.log('sendTrainingOverdueDigest: training=' + overdueTraining.length +
-      ' docs=' + overdueDocs.length + ' managersEmailed=' + sent);
+      ' docs=' + overdueDocs.length + ' coaching=' + overdueCoaching.length +
+      ' managersEmailed=' + sent + ' employeesNudged=' + empNudged);
   } catch (err) {
     Logger.log('sendTrainingOverdueDigest failed: ' + err.message);
   }
@@ -7508,7 +8007,7 @@ function sendTrainingOverdueDigest() {
 
 /** Branded overdue-digest email to one manager (INV-105 — heading esc_'d in
  *  the wrapper, every user field esc_'d here; plain-text body fallback). */
-function sendTrainingOverdueEmail_(toEmail, training, docs, todayIso) {
+function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) {
   const P = CN_EMAIL_PALETTE;
   function section_(label, rowsHtml) {
     return '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:' + P.muted +
@@ -7537,10 +8036,42 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, todayIso) {
     html += section_('Unsigned documents (' + docs.length + ')', rows);
     text += '\n\nUnsigned documents:\n' + docs.map(function (od) { return '  ' + od.empName + ' · ' + od.doc.title + ' (due ' + od.doc.dueAt + ')'; }).join('\n');
   }
-  html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs</strong> to follow up.</p>';
+  if (coaching && coaching.length) {
+    const rows = coaching.map(function (oc) {
+      return '<tr>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity) + (oc.item.patientTRX ? ' · ' + esc_(oc.item.patientTRX) : '') + '</td>' +
+        '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">since ' + esc_(String(oc.item.createdAt).substring(0, 10)) + '</td>' +
+        '</tr>';
+    }).join('');
+    html += section_('Un-acknowledged coaching (' + coaching.length + ')', rows);
+    text += '\n\nUn-acknowledged coaching:\n' + coaching.map(function (oc) { return '  ' + oc.empName + ' · ' + oc.item.severity + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')'; }).join('\n');
+  }
+  html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs / Coaching</strong> to follow up.</p>';
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
-  const htmlBody = buildBrandedEmailHtml_('Overdue training & documents', html, { accent: P.warnDeep });
-  MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training & documents', body: text, htmlBody: htmlBody });
+  const htmlBody = buildBrandedEmailHtml_('Overdue training, documents & coaching', html, { accent: P.warnDeep });
+  MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training, documents & coaching', body: text, htmlBody: htmlBody });
+}
+
+/** Branded reminder to ONE employee about their own overdue documents (v2 —
+ *  the deadline reminds both sides). INV-105 — every field esc_'d, plain-text
+ *  fallback. */
+function sendEmployeeOverdueDocsEmail_(toEmail, empName, docs, todayIso) {
+  const P = CN_EMAIL_PALETTE;
+  const rows = docs.map(function (d) {
+    const action = d.requiresSignature ? 'sign' : 'complete';
+    return '<tr>' +
+      '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(d.title) + '</strong> · ' + esc_(action) + '</td>' +
+      '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">due ' + esc_(d.dueAt) + '</td>' +
+      '</tr>';
+  }).join('');
+  const html = '<p style="margin:0 0 4px;">Hi ' + esc_(empName) + ', these documents are past their due date and still need your attention.</p>' +
+    '<table style="width:100%;border-collapse:collapse;">' + rows + '</table>' +
+    '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → My Docs</strong> to complete them.</p>';
+  const text = 'Hi ' + empName + ', these documents are overdue (as of ' + todayIso + '):\n' +
+    docs.map(function (d) { return '  ' + d.title + ' (due ' + d.dueAt + ')'; }).join('\n') +
+    '\n\nOpen the web app → Training & Employee Docs → My Docs to complete them.';
+  const htmlBody = buildBrandedEmailHtml_('Documents need your attention', html, { accent: P.warnDeep });
+  MailApp.sendEmail({ to: toEmail, subject: '⏰ Your documents are overdue', body: text, htmlBody: htmlBody });
 }
 
 function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
@@ -8154,7 +8685,15 @@ function getExternalLinks_() {
     } catch (_) {}
   }
   return raw.map(function (l) {
-    return { label: String((l && l.label) || '').trim(), url: String((l && l.url) || '').trim() };
+    // Quick-links are the OFFICIAL external-collection path (the in-app ?form
+    // route is admin-blocked on this domain). `category` groups them in the
+    // composer picker — back-compat: absent/unknown → 'other'.
+    const cat = String((l && l.category) || '').trim().toLowerCase();
+    return {
+      label: String((l && l.label) || '').trim(),
+      url: String((l && l.url) || '').trim(),
+      category: CN_EXTERNAL_LINK_CATEGORIES.indexOf(cat) >= 0 ? cat : 'other',
+    };
   }).filter(function (l) { return l.label && /^https?:\/\//i.test(l.url); });
 }
 
@@ -8178,7 +8717,15 @@ function getManagerEmails_() {
  *  endpoints (sendDailyMissedPunchAlerts, runDailyExportCheck,
  *  sendCallNotesEodDigest, sendCallNotesWeeklyDigests) that must be public
  *  for time-based triggers and are therefore also reachable via
- *  google.script.run — without this gate, any logged-in rep could fire them. */
+ *  google.script.run — without this gate, any logged-in rep could fire them.
+ *
+ *  F5 — NOTE the two "who is a manager" sources: this gate (trigger/digest
+ *  endpoints) keys off the MANAGER_EMAILS Script Property, while the in-app
+ *  endpoints gate off `emp.isManager` (Employees roster column). They are
+ *  intentionally distinct (triggers run as the installer, not a roster lookup),
+ *  but a person who is a manager in ONE source and not the OTHER gets
+ *  inconsistent capability — keep the roster column and MANAGER_EMAILS in sync
+ *  when onboarding/offboarding a manager. */
 function assertManagerCaller_(label) {
   const userEmail = String(getActiveUserEmail_() || '').toLowerCase();
   const allowed = getManagerEmails_().map(e => String(e).toLowerCase());
@@ -12222,7 +12769,14 @@ function kbAiApplySpend_(usdDelta, callDelta) {
     s.usd = Math.max(0, s.usd + usdDelta);
     s.calls += (callDelta || 0);
     PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
-  } catch (_) {}
+  } catch (e) {
+    // F2 — surface the degradation: if this write fails the daily spend
+    // counter freezes while real spend continues (the soft cap stops
+    // counting). Best-effort by design — never block the caller — but log
+    // it so the silent drift is visible. The Anthropic-console hard cap is
+    // the true backstop.
+    console.warn('kbAiApplySpend_ failed (spend counter not updated): ' + (e && e.message));
+  }
   finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
 }
 
@@ -13382,11 +13936,22 @@ function getQuizAnalytics() {
 // EXCLUDED from every retention purge: HR records are keep-forever.
 const EMPDOC_TAB = 'EmpDocs';
 const EMPDOC_SIG_TAB = 'DocSignatures';
-const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason'];
+const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson'];
 const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
-const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12 };
+const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14 };
 const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6 };
 const EMPDOC_TYPES = ['review','pip','policy','other'];
+// v2 — manager-curated reusable templates (e.g. "Annual Performance Review").
+// Org-wide + PHI-free (form shells, not employee data) → not team-scoped.
+const EMPDOC_TPL_TAB = 'EmpDocTemplates';
+const EMPDOC_TPL_HEADERS = ['TemplateId','Name','DocType','BodyMd','FieldsJson','RequiresSignature','CreatedBy','CreatedAt'];
+const EDT = { TPL_ID:0, NAME:1, DOC_TYPE:2, BODY_MD:3, FIELDS:4, REQUIRES_SIG:5, CREATED_BY:6, CREATED_AT:7 };
+// v2 — employee-completable fields on a doc (in addition to the signature).
+const EMPDOC_FIELD_TYPES = ['text','textarea','date'];
+const EMPDOC_FIELD_CAP = 40;              // max fields per doc/template
+const EMPDOC_FIELD_LABEL_MAX = 200;
+const EMPDOC_RESPONSE_MAX = 8000;         // per free-text response
+const EMPDOC_TPL_NAME_MAX = 120;
 const EMPDOC_TITLE_MAX = 200;
 const EMPDOC_BODY_MAX = 49000;        // under the 50k Sheets cell limit
 const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales to <=600px
@@ -13412,6 +13977,19 @@ function getOrCreateEmpDocSheet_(tabName, headers) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    return sheet;
+  }
+  // Self-heal a short header (back-compat: the EmpDocs tab grew trailing v2
+  // FieldsJson/ResponsesJson columns — legacy rows read those as ''). Widen +
+  // (re)write the header row once so range reads at headers.length don't throw.
+  if (sheet.getMaxColumns() < headers.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+  }
+  const hdr = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  let missing = false;
+  for (let i = 0; i < headers.length; i++) { if (String(hdr[i] || '').trim() !== headers[i]) { missing = true; break; } }
+  if (missing) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
   }
   return sheet;
 }
@@ -13425,16 +14003,25 @@ function empDocSha256Hex_(payload) {
   }
   return out;
 }
-/** Content hash — freezes what was issued (body+title+type+empId). */
-function empDocContentHash_(bodyMd, title, docType, empId) {
-  return empDocSha256Hex_(String(bodyMd || '') + ' ' + String(title || '') + ' ' + String(docType || '') + ' ' + String(empId || ''));
+/** Content hash — freezes what was issued (body+title+type+empId, + the v2
+ *  fillable-field SCHEMA when present). `fieldsJson` is appended ONLY when
+ *  non-empty so legacy 4-arg callers / fieldless rows hash identically to
+ *  before (back-compat — old stored hashes stay valid). Callers MUST pass the
+ *  RAW stored FieldsJson cell string (not a re-serialized object) so recompute
+ *  is byte-stable. */
+function empDocContentHash_(bodyMd, title, docType, empId, fieldsJson) {
+  let base = String(bodyMd || '') + ' ' + String(title || '') + ' ' + String(docType || '') + ' ' + String(empId || '');
+  if (fieldsJson) base += ' ' + String(fieldsJson);
+  return empDocSha256Hex_(base);
 }
 /** Signature hash — covers the frozen content hash + identity + the ack
  *  version. Deliberately NOT the timestamp (Sheets coerces datetime cells to
  *  Dates on read, which would break recompute — INV-113); the EmpDocSigned
  *  audit row is the independent timestamp witness. */
-function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion) {
-  return empDocSha256Hex_(String(contentHash || '') + ' ' + String(empId || '') + ' ' + String(docId || '') + ' ' + String(signatureDataUrl || '') + ' ' + String(ackVersion || ''));
+function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson) {
+  let base = String(contentHash || '') + ' ' + String(empId || '') + ' ' + String(docId || '') + ' ' + String(signatureDataUrl || '') + ' ' + String(ackVersion || '');
+  if (responsesJson) base += ' ' + String(responsesJson);   // v2 — the signed responses are attested too (back-compat: appended only when present)
+  return empDocSha256Hex_(base);
 }
 
 /** Pure — issueDoc payload validation (Node-pinned). Returns {ok, doc} or
@@ -13452,7 +14039,89 @@ function empDocValidateIssue_(payload) {
   if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
   const dueAt = String(payload.dueAt || '').trim();
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
-  return { ok: true, doc: { empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt, requiresSignature: payload.requiresSignature !== false } };
+  const fv = empDocValidateFields_(payload.fields);
+  if (!fv.ok) return { ok: false, error: fv.error };
+  return { ok: true, doc: {
+    empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt,
+    requiresSignature: payload.requiresSignature !== false,
+    fields: fv.fields,
+    // v2 — manager can save as a DRAFT (invisible to the employee) and Release
+    // later; default behavior (no flag) is to issue immediately (back-compat).
+    status: payload.release === false ? 'draft' : 'issued',
+  } };
+}
+
+/** Pure (Node-pinned) — normalize + validate a fillable-field schema. Returns
+ *  {ok, fields:[{id,label,type,required}]} or {ok:false,error}. Auto-derives a
+ *  stable slug id from the label when absent; dedupes ids. */
+function empDocValidateFields_(fields) {
+  if (fields == null) return { ok: true, fields: [] };
+  if (!Array.isArray(fields)) return { ok: false, error: 'Fields must be a list.' };
+  if (fields.length > EMPDOC_FIELD_CAP) return { ok: false, error: 'Too many fields (max ' + EMPDOC_FIELD_CAP + ').' };
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i] || {};
+    const label = String(f.label || '').trim();
+    if (!label) return { ok: false, error: 'Each field needs a label.' };
+    if (label.length > EMPDOC_FIELD_LABEL_MAX) return { ok: false, error: 'A field label is too long.' };
+    const type = String(f.type || 'text').trim().toLowerCase();
+    if (EMPDOC_FIELD_TYPES.indexOf(type) < 0) return { ok: false, error: 'Invalid field type "' + type + '".' };
+    let id = String(f.id || f.label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!id) id = 'f' + (i + 1);
+    let base = id, n = 2;
+    while (seen[id]) { id = base + '-' + (n++); }
+    seen[id] = true;
+    out.push({ id: id, label: label, type: type, required: f.required !== false });
+  }
+  return { ok: true, fields: out };
+}
+
+/** Pure (Node-pinned) — validate the employee's responses against the doc's
+ *  field schema. Every required field must be non-empty; sizes are bounded.
+ *  Returns {ok, responses} (keyed by field id, only known fields kept) or
+ *  {ok:false,error}. */
+function empDocValidateResponses_(fields, responses) {
+  fields = Array.isArray(fields) ? fields : [];
+  responses = (responses && typeof responses === 'object') ? responses : {};
+  const out = {};
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const raw = responses[f.id];
+    const val = raw == null ? '' : String(raw).trim();
+    if (f.required && !val) return { ok: false, error: 'Please complete: ' + f.label };
+    if (val.length > EMPDOC_RESPONSE_MAX) return { ok: false, error: 'A response is too long (max ' + EMPDOC_RESPONSE_MAX + ' chars).' };
+    if (f.type === 'date' && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return { ok: false, error: 'Invalid date for: ' + f.label };
+    if (val) out[f.id] = val;
+  }
+  return { ok: true, responses: out };
+}
+
+/** Pure (Node-pinned) — does this doc still need employee action? (an
+ *  unsigned signature OR an unfilled required field). Drives "overdue". */
+function empDocNeedsAction_(doc) {
+  if (!doc || doc.status !== 'issued') return false;
+  if (doc.requiresSignature) return true;
+  const fields = Array.isArray(doc.fields) ? doc.fields : [];
+  return fields.some(function (f) { return f.required; });
+}
+
+/** Pure (Node-pinned) — saveEmpDocTemplate validation. */
+function empDocTemplateValidate_(payload) {
+  payload = payload || {};
+  const name = String(payload.name || '').trim();
+  if (!name || name.length > EMPDOC_TPL_NAME_MAX) return { ok: false, error: 'Template name is required (max ' + EMPDOC_TPL_NAME_MAX + ' chars).' };
+  const docType = String(payload.docType || 'review').trim().toLowerCase();
+  if (EMPDOC_TYPES.indexOf(docType) < 0) return { ok: false, error: 'Invalid document type.' };
+  const bodyMd = String(payload.bodyMd || '');
+  if (!bodyMd.trim()) return { ok: false, error: 'Template body is required.' };
+  if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Template body is too long.' };
+  const fv = empDocValidateFields_(payload.fields);
+  if (!fv.ok) return { ok: false, error: fv.error };
+  return { ok: true, tpl: {
+    name: name, docType: docType, bodyMd: bodyMd, fields: fv.fields,
+    requiresSignature: payload.requiresSignature !== false,
+  } };
 }
 
 function empDocRowToObj_(row, ssTz) {
@@ -13470,7 +14139,20 @@ function empDocRowToObj_(row, ssTz) {
     dueAt: trainCellDate_(row[ED.DUE_AT], ssTz),
     signedAt: trainCellTs_(row[ED.SIGNED_AT], ssTz),
     voidReason: String(row[ED.VOID_REASON] || ''),
+    // v2 — keep BOTH the raw cell string (for byte-stable hash recompute) and
+    // the parsed shape (for rendering). Legacy rows have undefined cells → ''/[]/{}.
+    fieldsRaw: String(row[ED.FIELDS] || ''),
+    fields: empDocParseJson_(row[ED.FIELDS], []),
+    responsesRaw: String(row[ED.RESPONSES] || ''),
+    responses: empDocParseJson_(row[ED.RESPONSES], {}),
   };
+}
+
+/** Defensive JSON parse — corrupt blob never throws (returns the fallback). */
+function empDocParseJson_(cell, fallback) {
+  const s = String(cell || '').trim();
+  if (!s) return fallback;
+  try { const v = JSON.parse(s); return v == null ? fallback : v; } catch (e) { return fallback; }
 }
 
 /** Bounded id-column lookup → { rowIdx, doc } or null. */
@@ -13515,10 +14197,12 @@ function getMyDocs() {
     for (let i = 0; i < rows.length; i++) {
       if (String(rows[i][ED.EMP_ID]).trim() !== emp.id) continue;
       const d = empDocRowToObj_(rows[i], ssTz);
+      if (d.status === 'draft') continue;   // drafts are invisible until released
       docs.push({
         docId: d.docId, docType: d.docType, title: d.title, status: d.status,
         requiresSignature: d.requiresSignature, issuedAt: d.issuedAt,
         dueAt: d.dueAt, signedAt: d.signedAt,
+        fieldCount: (d.fields || []).length, needsAction: empDocNeedsAction_(d),
       });
     }
     docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
@@ -13537,15 +14221,20 @@ function getMyDoc(docId) {
     const d = found.doc;
     const isOwner = d.empId === emp.id;
     if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
+    // The owner can't see a doc that hasn't been released yet (draft).
+    if (isOwner && d.status === 'draft') return { error: 'Document not found.' };
     const out = {
       docId: d.docId, empId: d.empId, docType: d.docType, title: d.title,
       bodyMd: d.bodyMd, status: d.status, requiresSignature: d.requiresSignature,
       issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
       voidReason: d.voidReason, isOwner: isOwner,
+      fields: d.fields || [], responses: d.responses || {},
     };
-    if (isOwner && d.requiresSignature && d.status === 'issued') {
-      out.ackText = EMPDOC_ACK_TEXT;
-      out.ackVersion = EMPDOC_ACK_VERSION;
+    // The owner gets the completion affordance while the doc is still issued
+    // (signature ack text when it requires a signature, regardless for fields).
+    if (isOwner && d.status === 'issued') {
+      out.canComplete = true;
+      if (d.requiresSignature) { out.ackText = EMPDOC_ACK_TEXT; out.ackVersion = EMPDOC_ACK_VERSION; }
     }
     return out;
   } catch (err) { return { error: err.message }; }
@@ -13557,7 +14246,7 @@ function getMyDoc(docId) {
  *  to sign), bounds the signature payload (INV-96), writes the append-only
  *  DocSignatures row + flips the EmpDocs status in the same lock. Audit:
  *  EmpDocSigned (docId + hash + signedAt — the independent witness). */
-function acknowledgeDoc(docId, signatureDataUrl) {
+function acknowledgeDoc(docId, signatureDataUrl, responses) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -13566,31 +14255,50 @@ function acknowledgeDoc(docId, signatureDataUrl) {
     const found = findEmpDocRow_(docId);
     if (!found || found.doc.empId !== emp.id) return { success: false, error: 'Document not found.' };
     const d = found.doc;
-    if (!d.requiresSignature) return { success: false, error: 'This document does not require a signature.' };
-    if (d.status === 'signed') return { success: false, error: 'Already signed.' };
+    const hasFields = (d.fields || []).length > 0;
+    if (!d.requiresSignature && !hasFields) return { success: false, error: 'This document does not require any action.' };
+    if (d.status === 'signed' || d.status === 'completed') return { success: false, error: 'Already completed.' };
     if (d.status !== 'issued') return { success: false, error: 'This document is no longer active.' };
-    const sig = String(signatureDataUrl || '');
-    if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
-    if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
-    // Integrity gate: the row must still hash to what was issued.
-    const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId);
+    // Validate the employee's field responses against the frozen schema.
+    const rv = empDocValidateResponses_(d.fields, responses);
+    if (!rv.ok) return { success: false, error: rv.error };
+    const responsesRaw = hasFields ? JSON.stringify(rv.responses) : '';
+    // A signature is required only when the doc asks for one.
+    let sig = '';
+    if (d.requiresSignature) {
+      sig = String(signatureDataUrl || '');
+      if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
+      if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
+    }
+    // Integrity gate: the row must still hash to what was issued (incl. fields).
+    const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
     if (d.contentHash && d.contentHash !== expect) {
       return { success: false, error: 'Integrity check failed — this document was altered after issue. Ask your manager to re-issue it.' };
     }
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
-    const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION);
-    const cert = JSON.stringify({
-      docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION,
-      alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion',
-    });
-    getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
-      .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
     const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
-    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
-    sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
-    writeAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
-      'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
+    // Persist responses first (so a signed doc's responses are what was attested).
+    if (hasFields) sheet.getRange(found.rowIdx, ED.RESPONSES + 1).setValue(responsesRaw);
+    if (d.requiresSignature) {
+      const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION, responsesRaw);
+      const cert = JSON.stringify({
+        docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION,
+        alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion' + (responsesRaw ? '|responses' : ''),
+      });
+      getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
+        .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
+      sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
+      sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
+      writeAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
+        'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
+    } else {
+      // Fields-only doc (no signature): completing the fields is the action.
+      sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('completed');
+      sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
+      writeAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
+        'docId=' + d.docId + '; completedAt=' + ts);
+    }
     notifyEmpDocSigned_(d, emp);
     return { success: true, signedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
@@ -13614,16 +14322,42 @@ function issueDoc(payload) {
     const docId = Utilities.getUuid();
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
-    const contentHash = empDocContentHash_(v.doc.bodyMd, v.doc.title, v.doc.docType, v.doc.empId);
+    const fieldsRaw = v.doc.fields.length ? JSON.stringify(v.doc.fields) : '';
+    const contentHash = empDocContentHash_(v.doc.bodyMd, v.doc.title, v.doc.docType, v.doc.empId, fieldsRaw);
     getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS).appendRow([
       docId, v.doc.empId, v.doc.docType, v.doc.title, v.doc.bodyMd, contentHash,
-      v.doc.requiresSignature ? 'TRUE' : 'FALSE', 'issued',
-      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '',
+      v.doc.requiresSignature ? 'TRUE' : 'FALSE', v.doc.status,
+      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '', fieldsRaw, '',
     ]);
     writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
-      'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType, callerEmp.email);
-    notifyEmpDocIssued_(target, v.doc);
-    return { success: true, docId: docId };
+      'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status, callerEmp.email);
+    // Only a RELEASED (issued) doc is visible to the employee — drafts stay silent.
+    if (v.doc.status === 'issued') notifyEmpDocIssued_(target, v.doc);
+    return { success: true, docId: docId, status: v.doc.status };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated + team-scoped, locked. Releases a DRAFT to the employee
+ *  (draft → issued) and notifies them. The frozen content/hash is untouched —
+ *  release only flips the gate. Audit: EmpDocRelease. */
+function releaseDoc(docId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findEmpDocRow_(docId);
+    if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
+    if (found.doc.status !== 'draft') return { success: false, error: 'Only a draft can be released.' };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('issued');
+    const now = new Date();
+    writeAuditLog_(callerEmp, 'EmpDocRelease', fmtDate_(now), '', false, 0,
+      'docId=' + found.doc.docId + '; empId=' + found.doc.empId, callerEmp.email);
+    const target = lookupEmployeeById_(found.doc.empId);
+    if (target) notifyEmpDocIssued_(target, found.doc);
+    return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -13652,7 +14386,8 @@ function getDocsDashboard() {
         docType: d.docType, title: d.title, status: d.status,
         requiresSignature: d.requiresSignature, issuedBy: d.issuedBy,
         issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
-        overdue: d.status === 'issued' && d.requiresSignature && !!d.dueAt && todayIso > d.dueAt,
+        fieldCount: (d.fields || []).length,
+        overdue: empDocNeedsAction_(d) && !!d.dueAt && todayIso > d.dueAt,
       });
     }
     docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
@@ -13695,7 +14430,7 @@ function verifyDocSignature(docId) {
     const found = findEmpDocRow_(docId);
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { error: 'Document not found.' };
     const d = found.doc;
-    const contentMatch = !d.contentHash ? null : (empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId) === d.contentHash);
+    const contentMatch = !d.contentHash ? null : (empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw) === d.contentHash);
     // Newest signature row for the doc (bottom-up id-column scan).
     const sigSheet = getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS);
     const sigLast = sigSheet.getLastRow();
@@ -13713,7 +14448,7 @@ function verifyDocSignature(docId) {
     const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
     const recomputed = empDocSignatureHash_(
       d.contentHash, d.empId, d.docId,
-      String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''));
+      String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''), d.responsesRaw);
     const match = storedHash ? storedHash === recomputed : null;
     // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
     // consistent body+contentHash rewrite trips `match` (the signature hash
@@ -13731,6 +14466,106 @@ function verifyDocSignature(docId) {
       ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
     };
   } catch (err) { return { error: err.message }; }
+}
+
+// ── EmpDocs v2 — reusable templates (manager-curated form shells) ───────────
+function empDocTemplateRowToObj_(row) {
+  return {
+    templateId: String(row[EDT.TPL_ID] || '').trim(),
+    name: String(row[EDT.NAME] || ''),
+    docType: String(row[EDT.DOC_TYPE] || 'review').trim().toLowerCase(),
+    bodyMd: String(row[EDT.BODY_MD] || ''),
+    fields: empDocParseJson_(row[EDT.FIELDS], []),
+    requiresSignature: String(row[EDT.REQUIRES_SIG]).toLowerCase() !== 'false',
+    createdBy: String(row[EDT.CREATED_BY] || '').toLowerCase().trim(),
+  };
+}
+function findEmpDocTemplateRow_(templateId) {
+  templateId = String(templateId || '').trim();
+  if (!templateId) return null;
+  const sheet = getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const ids = sheet.getRange(2, EDT.TPL_ID + 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() !== templateId) continue;
+    return { rowIdx: i + 2, tpl: empDocTemplateRowToObj_(sheet.getRange(i + 2, 1, 1, EMPDOC_TPL_HEADERS.length).getValues()[0]) };
+  }
+  return null;
+}
+
+/** Manager-gated, read-only. Templates are org-wide + PHI-free (form shells),
+ *  so NOT team-scoped — any manager may use any template. */
+function getEmpDocTemplates() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { templates: [] };
+    const rows = sheet.getRange(2, 1, last - 1, EMPDOC_TPL_HEADERS.length).getValues();
+    const templates = [];
+    for (let i = 0; i < rows.length; i++) {
+      const t = empDocTemplateRowToObj_(rows[i]);
+      if (t.templateId) templates.push(t);
+    }
+    templates.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    return { templates: templates };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Upsert a template by templateId
+ *  (new id minted when absent). Validates via empDocTemplateValidate_. Audit:
+ *  EmpDocTemplateSave (id + name only — PHI-free). */
+function saveEmpDocTemplate(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const v = empDocTemplateValidate_(payload);
+    if (!v.ok) return { success: false, error: v.error };
+    const fieldsRaw = v.tpl.fields.length ? JSON.stringify(v.tpl.fields) : '';
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS);
+    const existing = (payload && payload.templateId) ? findEmpDocTemplateRow_(payload.templateId) : null;
+    let templateId;
+    if (existing) {
+      templateId = existing.tpl.templateId;
+      const r = existing.rowIdx;
+      sheet.getRange(r, EDT.NAME + 1).setValue(v.tpl.name);
+      sheet.getRange(r, EDT.DOC_TYPE + 1).setValue(v.tpl.docType);
+      sheet.getRange(r, EDT.BODY_MD + 1).setValue(v.tpl.bodyMd);
+      sheet.getRange(r, EDT.FIELDS + 1).setValue(fieldsRaw);
+      sheet.getRange(r, EDT.REQUIRES_SIG + 1).setValue(v.tpl.requiresSignature ? 'TRUE' : 'FALSE');
+    } else {
+      templateId = Utilities.getUuid();
+      const now = new Date();
+      sheet.appendRow([templateId, v.tpl.name, v.tpl.docType, v.tpl.bodyMd, fieldsRaw,
+        v.tpl.requiresSignature ? 'TRUE' : 'FALSE', callerEmp.email, fmtDate_(now) + ' ' + fmtTime_(now)]);
+    }
+    writeAuditLog_(callerEmp, 'EmpDocTemplateSave', '', '', false, 0,
+      'templateId=' + templateId + '; name=' + v.tpl.name, callerEmp.email);
+    return { success: true, templateId: templateId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Removes a template row only —
+ *  already-issued docs are independent (the body was frozen at issue). */
+function deleteEmpDocTemplate(templateId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findEmpDocTemplateRow_(templateId);
+    if (!found) return { success: false, error: 'Template not found.' };
+    getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS).deleteRow(found.rowIdx);
+    writeAuditLog_(callerEmp, 'EmpDocTemplateDelete', '', '', false, 0,
+      'templateId=' + found.tpl.templateId, callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 /** Best-effort (INV-14) — employee notification on issue. Title only; the
@@ -13759,6 +14594,356 @@ function notifyEmpDocSigned_(doc, signer) {
       brandedKvRows_([['Document', doc.title], ['Signed by', signer.name]]));
     MailApp.sendEmail({ to: doc.issuedBy, subject: 'Signed: ' + doc.title, body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  COACHING — granular, NON-routine manager coaching feedback on a specific
+//  interaction (patient/TRX). Severity praise→critical; rep acknowledges; the
+//  daily overdue digest nudges the manager on un-acked items. Lives in the HR
+//  store (keep-forever, team-scoped per roster column M — the EmpDocs posture),
+//  the per-rep coaching record that feeds reviews/PIPs. Tied to the call-note
+//  'training' flag via the "Coach on this" prefill.
+// ════════════════════════════════════════════════════════════════════════════
+const COACH_TAB = 'Coaching';
+const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy'];
+const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12 };
+const COACH_SEVERITIES = ['praise','minor','major','critical'];
+const COACH_TEXT_MAX = 4000;
+const COACH_TRX_MAX = 200;
+
+/** Pure (Node-pinned) — createCoaching payload validation. Whitelist-built;
+ *  references COACH_SEVERITIES / COACH_TEXT_MAX (injected in the Node harness,
+ *  the isValidTimeOffType_ pattern). 'whatShould' is optional (praise rarely
+ *  needs it); 'whatHappened' is always required. */
+function coachValidate_(payload) {
+  payload = payload || {};
+  var empId = String(payload.empId || '').trim();
+  if (!empId) return { ok: false, error: 'Pick an employee.' };
+  var severity = String(payload.severity || '').trim().toLowerCase();
+  if (COACH_SEVERITIES.indexOf(severity) < 0) return { ok: false, error: 'Pick a severity (praise / minor / major / critical).' };
+  var whatHappened = String(payload.whatHappened || '').trim();
+  if (!whatHappened) return { ok: false, error: 'Describe what happened.' };
+  if (whatHappened.length > COACH_TEXT_MAX) return { ok: false, error: 'What happened is too long (max ' + COACH_TEXT_MAX + ' chars).' };
+  var whatShould = String(payload.whatShould || '').trim();
+  if (whatShould.length > COACH_TEXT_MAX) return { ok: false, error: 'What should have happened is too long (max ' + COACH_TEXT_MAX + ' chars).' };
+  var patientTRX = String(payload.patientTRX || '').trim();
+  if (patientTRX.length > COACH_TRX_MAX) return { ok: false, error: 'Patient/TRX reference is too long.' };
+  var noteId = String(payload.noteId || '').trim();
+  return { ok: true, item: { empId: empId, severity: severity, whatHappened: whatHappened, whatShould: whatShould, patientTRX: patientTRX, noteId: noteId } };
+}
+
+/** Pure (Node-pinned) — the open, non-praise coaching items older than `days`
+ *  that should nudge the manager. Items carry a precomputed `createdAtMs`. */
+function coachUnackedOverdue_(items, nowMs, days) {
+  var cutoff = nowMs - (days || 0) * 86400000;
+  var out = [];
+  (items || []).forEach(function (it) {
+    if (!it || it.status !== 'open') return;
+    if (it.severity === 'praise') return;            // praise never nags
+    if (it.createdAtMs && it.createdAtMs <= cutoff) out.push(it);
+  });
+  return out;
+}
+
+/** Pure (Node-pinned) — parse a 'yyyy-MM-dd HH:mm:ss' (or 'T'-form) stamp to
+ *  ms as UTC. Only used for DIFFERENCES (ack − created), so the fixed-UTC
+ *  interpretation cancels out and tz never skews a day-count. NaN on garbage. */
+function coachParseTs_(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(s || ''));
+  if (!m) return NaN;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+}
+/** Pure — median of a numeric array (0 when empty), 1-decimal rounded. */
+function coachMedian_(arr) {
+  const a = (arr || []).filter(function (x) { return typeof x === 'number' && !isNaN(x); }).sort(function (x, y) { return x - y; });
+  if (!a.length) return 0;
+  const mid = Math.floor(a.length / 2);
+  const v = a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+  return Math.round(v * 10) / 10;
+}
+
+/** Pure (Node-pinned) — manager coaching analytics over the team-scoped items.
+ *  Aggregates: totals, by-severity, acknowledged + ack-rate, overdue-unacked,
+ *  median days-to-acknowledge, and a per-rep breakdown (most-overdue first).
+ *  No PHI — counts + the empName already in the items. */
+function coachAnalytics_(items, nowMs, reminderDays) {
+  items = items || [];
+  const cutoff = nowMs - (reminderDays || 0) * 86400000;
+  const sev = { praise: 0, minor: 0, major: 0, critical: 0 };
+  const ackDays = [];
+  const perRep = {};
+  let acknowledged = 0, overdue = 0;
+  items.forEach(function (it) {
+    if (sev[it.severity] != null) sev[it.severity]++;
+    const isAck = it.status === 'acknowledged';
+    if (isAck) acknowledged++;
+    const isOverdue = it.status === 'open' && it.severity !== 'praise' && (function () {
+      const c = coachParseTs_(it.createdAt); return !isNaN(c) && c <= cutoff;
+    })();
+    if (isOverdue) overdue++;
+    let d = NaN;
+    if (isAck && it.acknowledgedAt) {
+      const c = coachParseTs_(it.createdAt), a = coachParseTs_(it.acknowledgedAt);
+      if (!isNaN(c) && !isNaN(a) && a >= c) { d = (a - c) / 86400000; ackDays.push(d); }
+    }
+    const r = perRep[it.empId] || (perRep[it.empId] = { empId: it.empId, empName: it.empName, total: 0, acknowledged: 0, overdue: 0, _ackDays: [] });
+    r.total++;
+    if (isAck) r.acknowledged++;
+    if (isOverdue) r.overdue++;
+    if (!isNaN(d)) r._ackDays.push(d);
+  });
+  const reps = Object.keys(perRep).map(function (id) {
+    const r = perRep[id];
+    return {
+      empId: r.empId, empName: r.empName, total: r.total, acknowledged: r.acknowledged,
+      overdue: r.overdue,
+      ackRatePct: r.total ? Math.round((r.acknowledged / r.total) * 100) : 0,
+      medianDaysToAck: coachMedian_(r._ackDays),
+    };
+  }).sort(function (a, b) {
+    if (b.overdue !== a.overdue) return b.overdue - a.overdue;
+    return b.total - a.total;
+  });
+  return {
+    total: items.length, bySeverity: sev,
+    acknowledged: acknowledged, overdueUnacked: overdue,
+    ackRatePct: items.length ? Math.round((acknowledged / items.length) * 100) : 0,
+    medianDaysToAck: coachMedian_(ackDays),
+    perRep: reps,
+  };
+}
+
+function coachRowToObj_(row, ssTz) {
+  return {
+    coachId: String(row[CO.COACH_ID] || '').trim(),
+    empId: String(row[CO.EMP_ID] || '').trim(),
+    empName: String(row[CO.EMP_NAME] || ''),
+    patientTRX: String(row[CO.PATIENT_TRX] || ''),
+    severity: String(row[CO.SEVERITY] || '').trim().toLowerCase(),
+    whatHappened: String(row[CO.WHAT_HAPPENED] || ''),
+    whatShould: String(row[CO.WHAT_SHOULD] || ''),
+    noteId: String(row[CO.NOTE_ID] || '').trim(),
+    status: String(row[CO.STATUS] || 'open').trim(),
+    createdBy: String(row[CO.CREATED_BY] || '').toLowerCase().trim(),
+    createdAt: trainCellTs_(row[CO.CREATED_AT], ssTz),
+    acknowledgedAt: trainCellTs_(row[CO.ACK_AT], ssTz),
+    ackBy: String(row[CO.ACK_BY] || '').toLowerCase().trim(),
+  };
+}
+
+/** Bounded id-column lookup → { rowIdx, item } or null (the findEmpDocRow_ pattern). */
+function findCoachingRow_(coachId) {
+  coachId = String(coachId || '').trim();
+  if (!coachId) return null;
+  const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const ids = sheet.getRange(2, CO.COACH_ID + 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() !== coachId) continue;
+    const row = sheet.getRange(i + 2, 1, 1, COACH_HEADERS.length).getValues()[0];
+    return { rowIdx: i + 2, item: coachRowToObj_(row, getHrDocsSS_().getSpreadsheetTimeZone()) };
+  }
+  return null;
+}
+
+/** FAIL-CLOSED team scoping (the empDocCanManagerSee_ rule): a manager sees a
+ *  coaching item only when they CREATED it or they are the employee's roster
+ *  ManagerEmail (column M). MANAGER_EMAILS membership alone grants nothing. */
+function coachCanManagerSee_(callerEmp, item) {
+  if (!callerEmp || !callerEmp.isManager) return false;
+  const caller = String(callerEmp.email || '').toLowerCase().trim();
+  if (caller && caller === String(item.createdBy || '').toLowerCase().trim()) return true;
+  const target = lookupEmployeeById_(item.empId);
+  return !!(target && target.managerEmail && target.managerEmail === caller);
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Creates a coaching item for an
+ *  employee. Any manager may issue (issuing reveals nothing); READING stays
+ *  team-scoped. The patient/TRX + free text are HR-class PHI-adjacent and live
+ *  ONLY in the HR store; the audit row is content-free (coachId/empId/severity
+ *  — never the patient/TRX or the narrative). */
+function createCoaching(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const v = coachValidate_(payload);
+    if (!v.ok) return { success: false, error: v.error };
+    const target = lookupEmployeeById_(v.item.empId);
+    if (!target) return { success: false, error: 'Unknown employee.' };
+    const coachId = Utilities.getUuid();
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS).appendRow([
+      coachId, target.id, target.name, v.item.patientTRX, v.item.severity,
+      v.item.whatHappened, v.item.whatShould, v.item.noteId, 'open',
+      callerEmp.email, ts, '', '',
+    ]);
+    writeAuditLog_(callerEmp, 'CoachingCreate', fmtDate_(now), '', false, 0,
+      'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity, callerEmp.email);
+    notifyRepOfCoaching_(target, v.item, callerEmp);
+    return { success: true, coachId: coachId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Rep-callable, caller-scoped, read-only — the caller's OWN coaching items
+ *  (full content; it's their own record). Newest first; excludes voided. */
+function getMyCoaching() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { items: [] };
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
+    const items = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][CO.EMP_ID]).trim() !== emp.id) continue;
+      const c = coachRowToObj_(rows[i], ssTz);
+      if (c.status === 'void') continue;
+      items.push(c);
+    }
+    items.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    return { items: items };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-callable, locked (INV-01), OWNER-only — the employee acknowledges they
+ *  have read the coaching. Idempotent (already-acked → friendly no-op). Audit
+ *  CoachingAck (content-free). */
+function acknowledgeCoaching(coachId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const found = findCoachingRow_(coachId);
+    if (!found || found.item.empId !== emp.id) return { success: false, error: 'Coaching item not found.' };
+    if (found.item.status === 'void') return { success: false, error: 'This item is no longer active.' };
+    if (found.item.status === 'acknowledged') return { success: true, alreadyAcknowledged: true, acknowledgedAt: found.item.acknowledgedAt };
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue('acknowledged');
+    sheet.getRange(found.rowIdx, CO.ACK_AT + 1).setValue(ts);
+    sheet.getRange(found.rowIdx, CO.ACK_BY + 1).setValue(emp.email);
+    writeAuditLog_(emp, 'CoachingAck', fmtDate_(now), '', false, 0,
+      'coachId=' + found.item.coachId + '; ackAt=' + ts);
+    notifyManagerOfCoachingAck_(found.item, emp);
+    return { success: true, acknowledgedAt: ts };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), read-only, TEAM-SCOPED (coachCanManagerSee_).
+ *  Returns the coaching items the manager may see + summary counts (open /
+ *  acknowledged / overdue-unacked / praise). */
+function getCoachingDashboard() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { items: [], counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 } };
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
+    const nowMs = Date.now();
+    const reminderDays = CONFIG.COACHING_UNACK_REMINDER_DAYS || 7;
+    const items = [];
+    const counts = { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 };
+    for (let i = 0; i < rows.length; i++) {
+      const c = coachRowToObj_(rows[i], ssTz);
+      if (!c.coachId || c.status === 'void') continue;
+      if (!coachCanManagerSee_(callerEmp, c)) continue;
+      const createdMs = parseTimestampMs_(c.createdAt, ssTz);
+      c.overdueUnacked = (c.status === 'open' && c.severity !== 'praise' && createdMs && createdMs <= (nowMs - reminderDays * 86400000));
+      if (c.status === 'open') counts.open++;
+      if (c.status === 'acknowledged') counts.acknowledged++;
+      if (c.severity === 'praise') counts.praise++;
+      if (c.overdueUnacked) counts.overdueUnacked++;
+      items.push(c);
+    }
+    items.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    return { items: items, counts: counts, reminderDays: reminderDays,
+      analytics: coachAnalytics_(items, nowMs, reminderDays) };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Soft-voids a coaching item (a
+ *  mistaken/duplicate entry) — never deletes. Audit CoachingVoid. */
+function voidCoaching(coachId, reason) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findCoachingRow_(coachId);
+    if (!found) return { success: false, error: 'Coaching item not found.' };
+    if (!coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue('void');
+    writeAuditLog_(callerEmp, 'CoachingVoid', '', '', false, 0,
+      'coachId=' + found.item.coachId + (reason ? '; reason=' + String(reason).slice(0, 200) : ''), callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** All open, non-praise coaching items older than the reminder window, as
+ *  [{ item, empName }] for per-manager scoping in the digest. Returns []
+ *  (never throws) when the HR store is unavailable. */
+function coachUnackedAll_(nowMs) {
+  try {
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return [];
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
+    const items = [];
+    for (let i = 0; i < rows.length; i++) {
+      const c = coachRowToObj_(rows[i], ssTz);
+      if (!c.coachId) continue;
+      c.createdAtMs = parseTimestampMs_(c.createdAt, ssTz);
+      items.push(c);
+    }
+    return coachUnackedOverdue_(items, nowMs, CONFIG.COACHING_UNACK_REMINDER_DAYS || 7)
+      .map(function (c) { return { item: c, empName: c.empName }; });
+  } catch (e) {
+    Logger.log('coachUnackedAll_ skipped (HR docs store unavailable): ' + e.message);
+    return [];
+  }
+}
+
+/** Best-effort (INV-14) — notify the rep of new coaching. PHI-adjacent content
+ *  (patient/TRX + narrative) stays OUT of the email; it names only the severity
+ *  + a link to open the app. The detail lives behind their authenticated
+ *  "My Coaching" view. */
+function notifyRepOfCoaching_(target, item, manager) {
+  try {
+    if (!target.email) return;
+    const sev = item.severity === 'praise' ? 'praise' : (item.severity + ' coaching');
+    const body = manager.name + ' left you ' + sev + '. Open the web app → Training & Employee Docs → My Coaching to read and acknowledge it.';
+    const htmlBody = buildBrandedEmailHtml_(item.severity === 'praise' ? 'You received praise' : 'New coaching feedback',
+      brandedKvRows_([['From', manager.name], ['Type', item.severity]]) +
+      '<p style="margin:12px 0 0;">Open <strong>Training &amp; Employee Docs → My Coaching</strong> to read and acknowledge it.</p>',
+      { accent: item.severity === 'critical' ? CN_EMAIL_PALETTE.danger : (item.severity === 'praise' ? CN_EMAIL_PALETTE.brand : CN_EMAIL_PALETTE.warnDeep) });
+    MailApp.sendEmail({ to: target.email, subject: (item.severity === 'praise' ? '⭐ Praise from ' : '📋 Coaching from ') + manager.name, body: body, htmlBody: htmlBody });
+  } catch (e) { console.warn('notifyRepOfCoaching_ failed: ' + e.message); }
+}
+
+/** Best-effort — tell the issuing manager their coaching was acknowledged. */
+function notifyManagerOfCoachingAck_(item, rep) {
+  try {
+    if (!item.createdBy) return;
+    const body = rep.name + ' acknowledged your coaching (' + item.severity + ').';
+    MailApp.sendEmail({ to: item.createdBy, subject: 'Acknowledged: coaching for ' + rep.name,
+      body: body, htmlBody: buildBrandedEmailHtml_('Coaching acknowledged',
+        brandedKvRows_([['Employee', rep.name], ['Type', item.severity]])) });
+  } catch (e) { console.warn('notifyManagerOfCoachingAck_ failed: ' + e.message); }
 }
 
 

@@ -951,6 +951,8 @@ function _runAllTests() {
   _integrationTest('triggerGate_dailyExport_nonManagerThrows',  test_triggerGate_dailyExport_nonManagerThrows);
   _integrationTest('triggerGate_urgentDigest_nonManagerThrows', test_triggerGate_urgentDigest_nonManagerThrows);
   _integrationTest('triggerGate_purgeOldCallNotes_nonManagerThrows', test_triggerGate_purgeOldCallNotes_nonManagerThrows);
+  _integrationTest('triggerGate_archiveOldCallNotes_nonManagerThrows', test_triggerGate_archiveOldCallNotes_nonManagerThrows);
+  _integrationTest('triggerGate_purgeArchivedCallNotes_nonManagerThrows', test_triggerGate_purgeArchivedCallNotes_nonManagerThrows);
   _integrationTest('triggerGate_purgeExpiredFormData_nonManagerThrows', test_triggerGate_purgeExpiredFormData_nonManagerThrows);
   _integrationTest('triggerGate_removeAutomationTriggers_nonManagerThrows', test_triggerGate_removeAutomationTriggers_nonManagerThrows);
   _integrationTest('triggerGate_trainingOverdue_nonManagerThrows', test_triggerGate_trainingOverdue_nonManagerThrows);
@@ -3294,6 +3296,24 @@ function test_triggerGate_purgeOldCallNotes_nonManagerThrows() {
   }, 'manager access required', 'Non-manager should not be able to purge notes');
 }
 
+// Cold-archive tier — a top-level trigger handler reachable via google.script.run
+// that moves (deletes-from-live) per-rep Notes rows, so it carries the same
+// assertManagerCaller_ gate as the purge (INV-44 family).
+function test_triggerGate_archiveOldCallNotes_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { archiveOldCallNotes(); });
+  }, 'manager access required', 'Non-manager should not be able to archive notes');
+}
+
+// 3rd-tier cold-store purge — the ONLY mechanism that irreversibly deletes
+// archived (NotesArchive) rows; same INV-44 gate as the other destructive
+// trigger handlers.
+function test_triggerGate_purgeArchivedCallNotes_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { purgeArchivedCallNotes(); });
+  }, 'manager access required', 'Non-manager should not be able to purge the cold archive');
+}
+
 // M10 — the FormSubmissions/FormTokens PHI purge is the most destructive
 // trigger handler of all; its gate was the only one of the seven untested.
 function test_triggerGate_purgeExpiredFormData_nonManagerThrows() {
@@ -3869,6 +3889,8 @@ function test_managerGates_rejectNonManager() {
     ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
     ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
+    ['getRetentionConfig',             function () { return getRetentionConfig(); }],
+    ['saveRetentionConfig',            function () { return saveRetentionConfig({ archiveDays: 30 }); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
     ['saveUpdateSuggestions',          function () { return saveUpdateSuggestions({ Sales: ['x'] }); }],
@@ -3879,6 +3901,7 @@ function test_managerGates_rejectNonManager() {
     ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
     ['getAutomationHealth',            function () { return getAutomationHealth(); }],
     ['getStorageHealth',               function () { return getStorageHealth(); }],
+    ['getDeployReadiness',             function () { return getDeployReadiness(); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
     ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
     ['getCallNotesAuditLog',           function () { return getCallNotesAuditLog({}); }],
@@ -3910,6 +3933,11 @@ function test_managerGates_rejectNonManager() {
     ['getDocsDashboard',               function () { return getDocsDashboard(); }],
     ['voidDoc',                        function () { return voidDoc('no-such-doc', ''); }],
     ['verifyDocSignature',             function () { return verifyDocSignature('no-such-doc'); }],
+    // T3 v2 — release + templates (gate precedes any HR_DOCS_SS_ID access).
+    ['releaseDoc',                     function () { return releaseDoc('no-such-doc'); }],
+    ['getEmpDocTemplates',             function () { return getEmpDocTemplates(); }],
+    ['saveEmpDocTemplate',             function () { return saveEmpDocTemplate({ name: 'gate', bodyMd: 'x' }); }],
+    ['deleteEmpDocTemplate',           function () { return deleteEmpDocTemplate('no-such-tpl'); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -3921,6 +3949,11 @@ function test_managerGates_rejectNonManager() {
     ['getSpanishInboxThreadBody',      function () { return getSpanishInboxThreadBody('no-such-thread'); }],
     // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
     ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
+    // Coaching (Training module) — the gate fires BEFORE any HR_DOCS_SS_ID
+    // access, so these run safely even where the property is unset.
+    ['createCoaching',                 function () { return createCoaching({ empId: _TEST_INDIA_ID, severity: 'minor', whatHappened: 'gate' }); }],
+    ['getCoachingDashboard',           function () { return getCoachingDashboard(); }],
+    ['voidCoaching',                   function () { return voidCoaching('no-such-coach', ''); }],
   ];
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
