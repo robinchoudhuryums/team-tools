@@ -5640,6 +5640,7 @@ function cnRenderResultCard_(note, repName) {
     ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">↳ ${esc(note.resolution)}</div>` : '';
   const repBit = repName ? `<span class="cn-result-rep">${esc(repName)}</span>` : '';
   const pills = [];
+  if (note._archived) pills.push(`<span class="kicker-pill" title="From the cold NotesArchive — read-only">archived</span>`);
   if (note.flagType) pills.push(`<span class="kicker-pill" data-tone="${note.flagType === 'action' ? 'warn' : note.flagType === 'training' ? 'info' : 'accent'}">${esc(note.flagType)}</span>`);
   if (note.emailedAt) pills.push(`<span class="kicker-pill">sent</span>`);
   return `
@@ -5704,12 +5705,23 @@ function cnRenderSearchView(area) {
         <button class="toolbar-tab" aria-pressed="${CN_STATE.searchField === 'issue'}" onclick="cnSetSearchField_('issue')">Issue</button>
       </div>
       ${cnSearchDatesHtml_('cn-search', CN_STATE.searchFrom, CN_STATE.searchTo)}
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="cn-search-archive" ${CN_STATE.searchIncludeArchive ? 'checked' : ''} onchange="cnToggleArchiveSearch_(this.checked)">
+        Include archived
+      </label>
     </div>
     ${exactBadge ? `<div style="margin-bottom:10px">${exactBadge}</div>` : ''}
     <div id="cn-search-results"></div>
   `;
   cnInstallCardDelegation_(area);
   cnRenderSearchResults_();
+}
+
+// Include-archive toggle (rep Search) — re-fires the search over live + the
+// cold NotesArchive tab. Archived hits render with a read-only "archived" pill.
+function cnToggleArchiveSearch_(on) {
+  CN_STATE.searchIncludeArchive = !!on;
+  cnFireSearch_();
 }
 
 function cnSearchQueryChanged_(q) {
@@ -5800,7 +5812,7 @@ function cnFireSearch_() {
     })
     .searchMyCallNotes(q, CN_STATE.searchField,
       (CN_STATE.searchFrom && CN_STATE.searchTo) ? { start: CN_STATE.searchFrom, end: CN_STATE.searchTo } : null,
-      !!CN_STATE.searchExact);
+      !!CN_STATE.searchExact, !!CN_STATE.searchIncludeArchive);
 }
 
 function cnRenderSearchResults_() {
@@ -6414,10 +6426,19 @@ function cnMgrLoadSearchView_() {
         <button class="toolbar-tab" aria-pressed="${CN_STATE.mgrSearchField === 'issue'}" onclick="cnMgrSetSearchField_('issue')">Issue</button>
       </div>
       ${cnSearchDatesHtml_('cn-mgr-search', CN_STATE.mgrSearchFrom, CN_STATE.mgrSearchTo)}
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="cn-mgr-search-archive" ${CN_STATE.mgrSearchIncludeArchive ? 'checked' : ''} onchange="cnMgrToggleArchiveSearch_(this.checked)">
+        Include archived
+      </label>
     </div>
     <div id="cn-mgr-search-results"></div>
   `;
   cnMgrRenderSearchResults_();
+}
+
+function cnMgrToggleArchiveSearch_(on) {
+  CN_STATE.mgrSearchIncludeArchive = !!on;
+  cnMgrFireSearch_();
 }
 
 function cnMgrSearchQueryChanged_(q) {
@@ -6456,7 +6477,8 @@ function cnMgrFireSearch_() {
       showToast('Search failed: ' + err.message, 'toast-error');
     })
     .managerSearchCallNotes(q, CN_STATE.mgrSearchField, null,
-      (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null);
+      (CN_STATE.mgrSearchFrom && CN_STATE.mgrSearchTo) ? { start: CN_STATE.mgrSearchFrom, end: CN_STATE.mgrSearchTo } : null,
+      !!CN_STATE.mgrSearchIncludeArchive);
 }
 
 function cnMgrRenderSearchResults_() {

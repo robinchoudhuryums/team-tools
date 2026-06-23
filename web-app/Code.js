@@ -121,6 +121,7 @@ const CONFIG = {
     DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
     NOTE_RETENTION_DAYS: 0,              // rolling auto-delete of old notes; 0 = disabled (irreversible PHI delete; CN_NOTE_RETENTION_DAYS Script Property overrides)
     NOTE_ARCHIVE_DAYS: 0,               // SAFE tier — move notes older than this to a NotesArchive tab (data preserved, live tab bounded); 0 = disabled (CN_NOTE_ARCHIVE_DAYS Script Property overrides)
+    ARCHIVE_RETENTION_DAYS: 0,          // 3rd tier — irreversibly delete NotesArchive rows older than this (cold-store purge); 0 = disabled (CN_ARCHIVE_RETENTION_DAYS Script Property overrides; keep ≥ NOTE_ARCHIVE_DAYS)
     CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
     AUTO_COPY_FORMAT:
       'Callback Number: {callback}\n' +
@@ -2486,7 +2487,7 @@ function getCallNotesDepartments() {
  *  exact=true, matches patientAndTrx exactly (case-insensitive, trimmed) and
  *  ignores the field parameter — used by the "Find prior calls for this TRX"
  *  button on note cards to surface repeat-caller history without substring noise. */
-function searchMyCallNotes(query, field, dateRange, exact) {
+function searchMyCallNotes(query, field, dateRange, exact, includeArchive) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
@@ -2500,33 +2501,43 @@ function searchMyCallNotes(query, field, dateRange, exact) {
     // whole history but column-bounded to CN_HEADERS.length (no stray columns).
     const rangeStart = (dateRange && dateRange.start) || null;
     const rangeEnd   = (dateRange && dateRange.end)   || null;
-    const located = readCallNoteRowsInRange_(sheet, rangeStart, rangeEnd);
 
     const qLower = q.toLowerCase();
     const isExact = exact === true;
     const results = [];
-    for (let i = 0; i < located.length; i++) {
-      const note = callNoteRowToObject_(located[i]);
-      if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
-      if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
-      let hit = false;
-      if (isExact) {
-        if (String(note.patientAndTrx || '').toLowerCase().trim() === qLower) hit = true;
-      } else if (f === 'phone') {
-        if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
-      } else if (f === 'trx') {
-        if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
-      } else {
-        if (f === 'caller' || f === 'all') {
-          if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
-                .toLowerCase().indexOf(qLower) >= 0) hit = true;
+    const matchInto = function (located, isArchived) {
+      for (let i = 0; i < located.length; i++) {
+        const note = callNoteRowToObject_(located[i]);
+        if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+        if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+        let hit = false;
+        if (isExact) {
+          if (String(note.patientAndTrx || '').toLowerCase().trim() === qLower) hit = true;
+        } else if (f === 'phone') {
+          if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+        } else if (f === 'trx') {
+          if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+        } else {
+          if (f === 'caller' || f === 'all') {
+            if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                  .toLowerCase().indexOf(qLower) >= 0) hit = true;
+          }
+          if (!hit && (f === 'issue' || f === 'all')) {
+            if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+          }
         }
-        if (!hit && (f === 'issue' || f === 'all')) {
-          if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
-        }
+        if (hit) { if (isArchived) note._archived = true; results.push(note); }
       }
-      if (hit) results.push(note);
+    };
+
+    matchInto(readCallNoteRowsInRange_(sheet, rangeStart, rangeEnd), false);
+    // Include-archive: ALSO scan the cold NotesArchive tab when it exists.
+    // Read-only — never creates the tab (getSheetByName, not getOrCreate).
+    if (includeArchive === true) {
+      const archive = sheet.getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+      if (archive) matchInto(readCallNoteRowsInRange_(archive, rangeStart, rangeEnd), true);
     }
+
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (results.length > 200) results.length = 200;
     return { results, timezone: empTz, exact: isExact };
@@ -3255,7 +3266,7 @@ function readCallNoteRowsInRange_(sheet, start, end) {
   return out;
 }
 
-function managerSearchCallNotes(query, field, repFilter, dateRange) {
+function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchive) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
@@ -3266,6 +3277,7 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
 
     const roster = getEmployeeRosterRows_();
     const results = [];
+    const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
     for (let r = 1; r < roster.length; r++) {
       const repId = String(roster[r][EMP.ID]).trim();
       if (repFilter && repFilter.length && repFilter.indexOf(repId) < 0) continue;
@@ -3279,30 +3291,37 @@ function managerSearchCallNotes(query, field, repFilter, dateRange) {
         // Bounded read when a full date range is supplied; full scan for
         // open-ended search. Per-note date re-checks below stay as defensive
         // guards (and handle the partial-range case).
-        const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
-        const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
-        for (let i = 0; i < located.length; i++) {
-          const note = callNoteRowToObject_(located[i]);
-          if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
-          if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
-          let hit = false;
-          if (f === 'phone') {
-            if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
-          } else if (f === 'trx') {
-            if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
-          } else {
-            if (f === 'caller' || f === 'all') {
-              if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
-                    .toLowerCase().indexOf(qLower) >= 0) hit = true;
+        const matchInto = function (located, isArchived) {
+          for (let i = 0; i < located.length; i++) {
+            const note = callNoteRowToObject_(located[i]);
+            if (dateRange && dateRange.start && note.dateLocal < dateRange.start) continue;
+            if (dateRange && dateRange.end   && note.dateLocal > dateRange.end)   continue;
+            let hit = false;
+            if (f === 'phone') {
+              if (String(note.callback || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+            } else if (f === 'trx') {
+              if (String(note.patientAndTrx || '').toLowerCase().indexOf(qLower) >= 0) hit = true;
+            } else {
+              if (f === 'caller' || f === 'all') {
+                if ((note.caller + ' ' + note.callback + ' ' + note.patientAndTrx)
+                      .toLowerCase().indexOf(qLower) >= 0) hit = true;
+              }
+              if (!hit && (f === 'issue' || f === 'all')) {
+                if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+              }
             }
-            if (!hit && (f === 'issue' || f === 'all')) {
-              if ((note.issue + ' ' + note.resolution).toLowerCase().indexOf(qLower) >= 0) hit = true;
+            if (hit) {
+              note.repId = repId; note.repName = repName;
+              if (isArchived) note._archived = true;
+              results.push(note);
             }
           }
-          if (hit) {
-            note.repId = repId; note.repName = repName;
-            results.push(note);
-          }
+        };
+        matchInto(readCallNoteRowsInRange_(sheet, dr.start, dr.end), false);
+        // Include-archive: read-only scan of the cold NotesArchive tab when present.
+        if (includeArchive === true) {
+          const archive = sheet.getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+          if (archive) matchInto(readCallNoteRowsInRange_(archive, dr.start, dr.end), true);
         }
       } catch (e) {
         // A broken per-rep Sheet shouldn't break the cross-rep search
@@ -3820,7 +3839,7 @@ function getCallNoteAuditHistory(noteId) {
 // accordingly so "never seen" isn't misread as "broken".
 const AUTOMATION_AUDIT_ACTIONS = [
   'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
-  'CallNotesArchive',
+  'CallNotesArchive', 'CallNotesArchivePurge',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
@@ -7032,6 +7051,75 @@ function archiveOldCallNotes() {
   }
 }
 
+/** 3rd-tier cold-store retention window: days from CN_ARCHIVE_RETENTION_DAYS
+ *  Script Property first, else CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS.
+ *  0/neg/unparseable → 0 (disabled). Mirrors getNoteRetentionDays_. */
+function getArchiveRetentionDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_ARCHIVE_RETENTION_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** 3rd-tier retention: irreversibly delete rows from each rep's NotesArchive
+ *  (cold store) older than CN_ARCHIVE_RETENTION_DAYS, so the cold archive
+ *  doesn't grow forever. This is the ONLY mechanism that deletes archived
+ *  notes (archiveOldCallNotes MOVES into the archive; purgeOldCallNotes never
+ *  touches it). Top-level (time-trigger target) → reachable via
+ *  google.script.run, so gated like the other destructive trigger handlers
+ *  (assertManagerCaller_); locked (INV-01). DISABLED by default
+ *  (CN_ARCHIVE_RETENTION_DAYS / CONFIG = 0); the delete is irreversible and the
+ *  notes are PHI. READ-ONLY w.r.t. the tab's existence — it never creates a
+ *  NotesArchive tab (a rep with no archive is simply skipped). Dates read from
+ *  CN.DATE_LOCAL (the archived row keeps its original date). Cross-rep; a broken
+ *  Sheet is skipped. Writes a PHI-free CallNotesArchivePurge audit row.
+ *
+ *  OPERATOR: keep CN_ARCHIVE_RETENTION_DAYS ≥ CN_NOTE_ARCHIVE_DAYS — it's the
+ *  cold-store lifetime, longer than the move window. Scheduled at manager-tz 2am
+ *  (before the 3am archive) so it operates on yesterday's settled archive. */
+function purgeArchivedCallNotes() {
+  assertManagerCaller_('purgeArchivedCallNotes');
+  try {
+    const days = getArchiveRetentionDays_();
+    if (!days) {
+      Logger.log('purgeArchivedCallNotes: archive retention disabled (CN_ARCHIVE_RETENTION_DAYS=0) — nothing purged.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const roster = getEmployeeRosterRows_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let repsTouched = 0, notesRemoved = 0;
+    try {
+      for (let r = 1; r < roster.length; r++) {
+        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
+        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const emp = {
+          id:   String(roster[r][EMP.ID]).trim(),
+          name: String(roster[r][EMP.NAME]).trim(),
+          callNotesSheetId: String(sheetIdRaw).trim(),
+        };
+        try {
+          // Read-only existence check — never create the archive tab here.
+          const archive = getCallNotesSheet_(emp).getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+          if (!archive) continue;
+          const removed = purgeSheetRowsOlderThan_(archive, CN.DATE_LOCAL, cutoffMs);
+          if (removed > 0) { notesRemoved += removed; repsTouched++; }
+        } catch (e) {
+          Logger.log('purgeArchivedCallNotes: skipped rep ' + emp.id + ': ' + e.message);
+        }
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchivePurge', '', '', false, 0,
+      `archiveRetentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}`);
+    Logger.log(`purgeArchivedCallNotes: removed ${notesRemoved} archived note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
+  } catch (err) {
+    Logger.log('purgeArchivedCallNotes failed: ' + err.message);
+  }
+}
+
 /** #8 — manager-triggered reconcile pass. Scans every enrolled rep's Notes tab
  *  for HAND-ENTERED rows (content present but no noteId — typed directly into
  *  the Sheet, not via the app) and backfills the fields the app needs to treat
@@ -7119,6 +7207,7 @@ function installAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'purgeArchivedCallNotes',
     'archiveOldCallNotes',
     'purgeOldCallNotes',
     'reconcileCallNotes',
@@ -7156,6 +7245,13 @@ function installAutomationTriggers() {
   // it only deletes once the operator sets a positive retention window.
   ScriptApp.newTrigger('purgeExpiredFormData')
     .timeBased().atHour(3).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // 3rd-tier cold-store purge — irreversibly deletes NotesArchive rows past the
+  // archive-retention window. No-ops while CN_ARCHIVE_RETENTION_DAYS=0 (the
+  // default). Staggered to 2am, BEFORE the 3am archive, so it operates on the
+  // settled cold store from prior runs.
+  ScriptApp.newTrigger('purgeArchivedCallNotes')
+    .timeBased().atHour(2).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   // Cold-archive tier (SAFE retention) — moves old notes to a NotesArchive tab
   // (data preserved, live tab bounded). No-ops while CN_NOTE_ARCHIVE_DAYS=0 (the
@@ -7223,6 +7319,7 @@ function removeAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'purgeArchivedCallNotes',
     'archiveOldCallNotes',
     'purgeOldCallNotes',
     'reconcileCallNotes',

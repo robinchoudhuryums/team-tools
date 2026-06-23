@@ -952,6 +952,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_urgentDigest_nonManagerThrows', test_triggerGate_urgentDigest_nonManagerThrows);
   _integrationTest('triggerGate_purgeOldCallNotes_nonManagerThrows', test_triggerGate_purgeOldCallNotes_nonManagerThrows);
   _integrationTest('triggerGate_archiveOldCallNotes_nonManagerThrows', test_triggerGate_archiveOldCallNotes_nonManagerThrows);
+  _integrationTest('triggerGate_purgeArchivedCallNotes_nonManagerThrows', test_triggerGate_purgeArchivedCallNotes_nonManagerThrows);
   _integrationTest('triggerGate_purgeExpiredFormData_nonManagerThrows', test_triggerGate_purgeExpiredFormData_nonManagerThrows);
   _integrationTest('triggerGate_removeAutomationTriggers_nonManagerThrows', test_triggerGate_removeAutomationTriggers_nonManagerThrows);
   _integrationTest('triggerGate_trainingOverdue_nonManagerThrows', test_triggerGate_trainingOverdue_nonManagerThrows);
@@ -3302,6 +3303,15 @@ function test_triggerGate_archiveOldCallNotes_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { archiveOldCallNotes(); });
   }, 'manager access required', 'Non-manager should not be able to archive notes');
+}
+
+// 3rd-tier cold-store purge — the ONLY mechanism that irreversibly deletes
+// archived (NotesArchive) rows; same INV-44 gate as the other destructive
+// trigger handlers.
+function test_triggerGate_purgeArchivedCallNotes_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { purgeArchivedCallNotes(); });
+  }, 'manager access required', 'Non-manager should not be able to purge the cold archive');
 }
 
 // M10 — the FormSubmissions/FormTokens PHI purge is the most destructive
