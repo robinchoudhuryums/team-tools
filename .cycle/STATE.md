@@ -1,12 +1,44 @@
 # Cycle State
 
 ## Current
-Cycle: 5
-Phase: idle (Cycle 5 CLOSED 2026-06-17; one-off targeted audit+implement run 2026-06-22)
+Cycle: 6
+Phase: implement (broad-scan + broad-implement F1/F2/F4/F5 done 2026-06-23)
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 4
-Updated: 2026-06-22 (targeted audit+implement: Spanish Inbox + DeptRequests)
+Subsystem cycles since last Seams audit: 5
+Updated: 2026-06-23 (broad-scan: 0 Critical / 0 High / 6 Low; implemented F1/F2/F4/F5)
+
+## Cycle 6 broad-scan + implement (2026-06-23, branch claude/happy-faraday-0grppg)
+AUDIT: 6 parallel deep-read agents + independent verification of every Crit/High
+claim. Result = 4th consecutive audit with NO verified Critical/High; every agent
+Crit/High collapsed on verification (retracted: hasActiveTimeOffOnDate_ "Reconciled"
+block [false — Reconciled ≠ pending/approved], getQuiz answer-key inversion [false —
+always strips], audit-ts INV-29 [by design], public-form sig date [intentional local
+date], CN bounded-read race [throws→caught, not wrong counts]). Net findings: 6 Low.
+Confirmed clean: auth gate, manager gating, CDR getDisplayValues (all 3 readers),
+EmpDocs fail-closed scoping, PHI-free audit rows (CallNoteEmail/DeptRequest/IntakeSent/
+forms), trigger install/remove TARGETS symmetry (9==9), esc()/localStorage/overlay
+hygiene, test suite genuinely bites (781 asserts/249 fns; manager-gate omnibus 50+
+endpoints asserts .error + 'Manager access').
+IMPLEMENTED (commit pushed):
+- F1: currentView guards on 3 CN manager/admin loaders (cnMgrLoadRepView_,
+  cnToggleAuditHistory_, cnAdminLoadEnrollment_) — both success+failure handlers,
+  matching the documented loader-guard pattern.
+- F2: kbAiApplySpend_ console.warn on failed spend-counter write (was silent swallow).
+- F4: escaping-contract comment on intakeOpenModal_ (bodyHtml raw; callers must esc).
+- F5: two-source manager-gate comment at assertManagerCaller_ (MANAGER_EMAILS vs
+  emp.isManager roster column).
+DEFERRED:
+- F3 (empDocContentHash_/empDocSignatureHash_ space-delimiter collision, Low): NOT
+  changed — would mark ALL already-issued keep-forever HR records as tampered
+  (INV-122) + refuse new sigs on existing unsigned docs. Needs a HashVersion-column
+  migration. Same space-delimiter in computeFormSubmissionHash_ (check under same
+  umbrella if ever done).
+- F6 (getSpanishInboxThreadBody scope, Low): no change — already manager-gated +
+  scope-checked (first msg must be addressed to the configured inbox) + documented.
+Net = 0 prod-fixes-that-would-fire − 0 new failure modes (all 4 are preventive/
+defensive/doc). Pure harness 158/0; node --check clean. NEXT: operator deploy
+(clasp push -f + New version); no new Script Properties/triggers/migrations.
 
 ## Targeted audit + implement — Spanish Inbox + DeptRequests (2026-06-22, on practical-gauss-yycwkz)
 Context: the designated branch `claude/practical-gauss-yycwkz` was 45 commits behind
