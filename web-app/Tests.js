@@ -4357,7 +4357,10 @@ function test_empdocs_issueSignVerifyFlow() {
       const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
       _assertTrue(signed && signed.success, 'owner signs');
       const again = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
-      _assertFailure(again, 'Already signed', 'double-sign rejected');
+      // EmpDocs v2 (INV-135) generalized the double-submit guard message to
+      // "Already completed." (a doc can now complete via fields without a
+      // signature; the guard fires for status 'signed' OR 'completed').
+      _assertFailure(again, 'Already completed', 'double-sign rejected');
 
       // Verify: both hashes match.
       let v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
