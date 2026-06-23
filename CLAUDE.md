@@ -1108,13 +1108,16 @@ this section before touching the relevant area.
     NOTE this is **PHI at rest in the browser** (patient answers) — the same
     posture as the Call Notes active-form draft; it lives only in the rep's
     own browser and is wiped on send/clear/expiry.
-  - `umsClockBg` — optional per-browser Clock-card background image ("for fun"),
-    a downscaled (≤1280px, JPEG re-encoded) raster **data-URL** set via the image
-    control on the sky clock card. Client-only — NEVER server-side (so an
-    accidental PHI image stays in this browser; zero operator state), raster-only
-    (PNG/JPEG/WebP, no SVG), ~1.1MB cap after downscale, try/catch on read/write
-    (quota-safe). Applied under the dimmed sky gradient with a baked-in dark scrim
-    for legibility (`clkBgApply_`); cleared via the card's × button.
+  - `umsClockBg` — optional per-browser Clock **greeting (hero) card** background
+    image ("for fun"), a downscaled (≤1280px, JPEG re-encoded) raster **data-URL**
+    set via the image control on the clock card. Applied behind the WHOLE hero
+    card (`#clk-hero` / `.clk-hero-bg`) — both the greeting text and the clock
+    tile sit on top of it; the clock tile keeps its own sky gradient (the photo is
+    the card background, not the big-clock background). Client-only — NEVER
+    server-side (so an accidental PHI image stays in this browser; zero operator
+    state), raster-only (PNG/JPEG/WebP, no SVG), ~1.1MB cap after downscale,
+    try/catch on read/write (quota-safe). A baked-in dark scrim keeps the greeting
+    text legible (`clkBgApply_`); cleared via the card's × button.
   Clearing browser data wipes all thirteen.
 
 ## Key Design Decisions

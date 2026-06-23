@@ -9,19 +9,26 @@
   .clk-sky-layers { position: absolute; inset: 0; z-index: 0; border-radius: inherit; overflow: hidden; }
   .clk-sky > :not(.clk-sky-layers):not(.clk-sky-bg):not(.clk-bg-ctrl) { position: relative; z-index: 1; }
   /* Optional per-browser background image ("for fun") — a downscaled raster
-     data-URL (localStorage) layered UNDER the sky gradient, which dims to a tint
-     when an image is set. A dark scrim is baked into the image (in JS) so the
-     white clock text stays legible at any time of day. */
-  .clk-sky-bg { position: absolute; inset: 0; z-index: 0; display: none;
+     data-URL (localStorage) layered behind the whole GREETING (hero) CARD, so
+     both the greeting text and the clock tile sit on top of it. The clock tile
+     keeps its own sky gradient. A dark scrim is baked into the image (in JS) for
+     legibility of the greeting text. */
+  .hero { position: relative; overflow: hidden; }
+  .clk-hero-bg { position: absolute; inset: 0; z-index: 0; display: none;
     background-size: cover; background-position: center; border-radius: inherit; }
-  .clk-sky.has-bg .clk-sky-bg { display: block; }
-  .clk-sky.has-bg .clk-sky-layers { opacity: .4; }
-  .clk-sky.has-bg { text-shadow: 0 1px 4px rgba(0, 0, 0, .55); }
+  .hero.has-bg .clk-hero-bg { display: block; }
+  .hero > .greet, .hero > .clk { position: relative; z-index: 1; }
+  /* Over a photo the greeting text turns light for contrast (the clock tile is
+     opaque, so it needs no change). */
+  .hero.has-bg .greet-kicker { color: rgba(255, 255, 255, .82); }
+  .hero.has-bg .greet-name { color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+  .hero.has-bg .status-sentence { color: rgba(255, 255, 255, .94); text-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
+  .hero.has-bg .status-sentence strong { color: #fff; }
   .clk-bg-ctrl { position: absolute; right: 10px; bottom: 8px; z-index: 2; display: flex; gap: 6px; }
   .clk-bg-btn { appearance: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
     background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .34); color: #fff; border-radius: 8px;
     cursor: pointer; opacity: .5; transition: opacity .15s ease, background .15s ease; }
-  .clk-sky:hover .clk-bg-btn, .clk-bg-btn:focus-visible { opacity: 1; }
+  .clk-sky:hover .clk-bg-btn, .hero:hover .clk-bg-btn, .clk-bg-btn:focus-visible { opacity: 1; }
   .clk-bg-btn:hover { background: rgba(255, 255, 255, .3); }
   .clk-sky .clk-time { color: #fff; }
   .clk-sky .clk-meta, .clk-sky .clk-regions { color: rgba(255, 255, 255, .92); }
@@ -175,14 +182,14 @@ function renderClockView(area) {
     : `<span class="ss-hours ss-sub">Not clocked in yet</span>`;
 
   area.innerHTML = `
-    <div class="hero">
+    <div class="hero" id="clk-hero">
+      <div class="clk-hero-bg" id="clk-hero-bg"></div>
       <div class="greet">
         <div class="greet-kicker">${esc(kicker)}</div>
         <div class="greet-name">Hi, ${esc(greetName)}</div>
         <div class="status-sentence">${statusSentence}</div>
       </div>
       <div class="clk clk-sky" id="clk-sky">
-        <div class="clk-sky-bg" id="clk-sky-bg"></div>
         <div class="clk-sky-layers"><div class="sky-layer" id="clk-sky-a"></div><div class="sky-layer" id="clk-sky-b"></div></div>
         <div class="clk-sky-top">
           <span class="clk-phase" id="clk-phase"></span>
@@ -437,8 +444,9 @@ function clkApplySky_(force) {
 // ── Clock-card background image (per-browser, opt-in, "for fun") ───────────────
 // Stored as a downscaled raster data-URL in localStorage['umsClockBg'] — NEVER
 // server-side, so any accidental PHI stays in this browser and it adds zero
-// operator state. Applied as a layer under the dimmed sky gradient; a dark scrim
-// is baked into the image (clkBgApply_) so the white clock text stays legible.
+// operator state. Applied as the GREETING (hero) CARD background — behind both
+// the greeting text and the clock tile, which keeps its own sky gradient; a dark
+// scrim is baked into the image (clkBgApply_) so the greeting text stays legible.
 var CLK_BG_KEY = 'umsClockBg';
 var CLK_BG_MAX_CHARS = 1500000;                                  // ~1.1MB data-URL cap (localStorage-safe)
 var CLK_BG_TYPES = { 'image/png': 1, 'image/jpeg': 1, 'image/webp': 1 };   // raster only — no SVG (script-capable)
@@ -446,17 +454,17 @@ var CLK_BG_TYPES = { 'image/png': 1, 'image/jpeg': 1, 'image/webp': 1 };   // ra
 function clkBgGet_() { try { return localStorage.getItem(CLK_BG_KEY) || ''; } catch (e) { return ''; } }
 
 function clkBgApply_() {
-  var sky = document.getElementById('clk-sky'); if (!sky) return;
-  var bgEl = document.getElementById('clk-sky-bg');
+  var hero = document.getElementById('clk-hero'); if (!hero) return;
+  var bgEl = document.getElementById('clk-hero-bg');
   var clearBtn = document.getElementById('clk-bg-clear');
   var data = clkBgGet_();
   if (data && bgEl) {
     // Bake a time-of-day-independent dark scrim over the image for legibility.
-    bgEl.style.backgroundImage = 'linear-gradient(rgba(12,18,38,.34), rgba(12,18,38,.52)), url("' + data + '")';
-    sky.classList.add('has-bg');
+    bgEl.style.backgroundImage = 'linear-gradient(rgba(12,18,38,.30), rgba(12,18,38,.46)), url("' + data + '")';
+    hero.classList.add('has-bg');
   } else {
     if (bgEl) bgEl.style.backgroundImage = '';
-    sky.classList.remove('has-bg');
+    hero.classList.remove('has-bg');
   }
   if (clearBtn) clearBtn.style.display = data ? '' : 'none';
 }
