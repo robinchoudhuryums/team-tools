@@ -8178,7 +8178,15 @@ function getManagerEmails_() {
  *  endpoints (sendDailyMissedPunchAlerts, runDailyExportCheck,
  *  sendCallNotesEodDigest, sendCallNotesWeeklyDigests) that must be public
  *  for time-based triggers and are therefore also reachable via
- *  google.script.run — without this gate, any logged-in rep could fire them. */
+ *  google.script.run — without this gate, any logged-in rep could fire them.
+ *
+ *  F5 — NOTE the two "who is a manager" sources: this gate (trigger/digest
+ *  endpoints) keys off the MANAGER_EMAILS Script Property, while the in-app
+ *  endpoints gate off `emp.isManager` (Employees roster column). They are
+ *  intentionally distinct (triggers run as the installer, not a roster lookup),
+ *  but a person who is a manager in ONE source and not the OTHER gets
+ *  inconsistent capability — keep the roster column and MANAGER_EMAILS in sync
+ *  when onboarding/offboarding a manager. */
 function assertManagerCaller_(label) {
   const userEmail = String(getActiveUserEmail_() || '').toLowerCase();
   const allowed = getManagerEmails_().map(e => String(e).toLowerCase());
@@ -12222,7 +12230,14 @@ function kbAiApplySpend_(usdDelta, callDelta) {
     s.usd = Math.max(0, s.usd + usdDelta);
     s.calls += (callDelta || 0);
     PropertiesService.getScriptProperties().setProperty(KB_AI_SPEND_PROP, JSON.stringify(s));
-  } catch (_) {}
+  } catch (e) {
+    // F2 — surface the degradation: if this write fails the daily spend
+    // counter freezes while real spend continues (the soft cap stops
+    // counting). Best-effort by design — never block the caller — but log
+    // it so the silent drift is visible. The Anthropic-console hard cap is
+    // the true backstop.
+    console.warn('kbAiApplySpend_ failed (spend counter not updated): ' + (e && e.message));
+  }
   finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
 }
 

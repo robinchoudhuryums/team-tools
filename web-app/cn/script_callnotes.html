@@ -5851,13 +5851,16 @@ function cnMgrLoadRepView_() {
   // Load enrolled rep list once per session
   if (!CN_STATE.mgrEnrolledReps) {
     host.innerHTML = loSkeleton(4);
+    const requestedView = currentView;   // F1 — drop late callbacks after nav-away
     google.script.run
       .withSuccessHandler(function (res) {
+        if (currentView !== requestedView) return;
         if (res.error) { host.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
         CN_STATE.mgrEnrolledReps = res.reps || [];
         cnMgrRenderRepViewControls_(host);
       })
       .withFailureHandler(function (err) {
+        if (currentView !== requestedView) return;
         host.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
       })
       .getEnrolledCallNotesReps();
@@ -7472,8 +7475,10 @@ function cnToggleAuditHistory_(btn, noteId) {
   if (hist.style.display !== 'none') { hist.style.display = 'none'; return; }
   hist.style.display = 'block';
   hist.innerHTML = loSweep();
+  var requestedView = currentView;   // F1 — drop late callbacks after nav-away
   google.script.run
     .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
       if (!res || res.error) { hist.innerHTML = '<div class="cn-audit-hist-empty">' + esc((res && res.error) || 'Could not load history') + '</div>'; return; }
       var hrows = res.rows || [];
       if (hrows.length === 0) { hist.innerHTML = '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
@@ -7487,6 +7492,7 @@ function cnToggleAuditHistory_(btn, noteId) {
       }).join('');
     })
     .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
       hist.innerHTML = '<div class="cn-audit-hist-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
     })
     .getCallNoteAuditHistory(noteId);
@@ -7803,8 +7809,10 @@ function cnAdminLoadEnrollment_() {
     });
     slot._enrollDelegated = true;
   }
+  var requestedView = currentView;   // F1 — drop late callbacks after nav-away
   google.script.run
     .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
       if (!res || res.error) {
         slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((res && res.error) || 'Failed to load enrollment') + '</div>';
         return;
@@ -7812,6 +7820,7 @@ function cnAdminLoadEnrollment_() {
       slot.innerHTML = cnRenderEnrollmentHtml_(res);
     })
     .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
       slot.innerHTML = '<div style="font-size:12px;color:var(--danger)">' + esc((err && err.message) || 'Failed to load enrollment') + '</div>';
     })
     .getCallNotesEnrollment();

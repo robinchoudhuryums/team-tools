@@ -1456,6 +1456,12 @@ function intakeStripTags_(s) { return String(s == null ? '' : s).replace(/<[^>]*
 // EVERY close path — Escape included — removes the document-level paste
 // listener. (Esc previously only hid the node, leaking the listener app-wide:
 // any image pasted anywhere kept accumulating into INTAKE_STATE silently.)
+// CONTRACT (F4): `title` is esc()'d here, but `bodyHtml` is injected RAW via
+// innerHTML — EVERY caller MUST esc() any user/patient/server-supplied value it
+// places into bodyHtml before passing it in (same load-bearing discipline as
+// buildCallNoteEmailHtml_'s esc_, INV-89). A new caller that passes an
+// unescaped server string here is stored XSS. Today all callers comply
+// (PPD/account previews, intakeRenderSentDetail_).
 function intakeOpenModal_(title, bodyHtml) {
   intakeCloseModal_();
   var ov = ensureOverlay('intk-modal-overlay', { onClose: intakeCloseModal_ });
