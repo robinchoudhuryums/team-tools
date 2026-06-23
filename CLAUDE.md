@@ -401,9 +401,12 @@ this section before touching the relevant area.
   `getQuizAnalytics`, `importQuizFromForm`,
   `getPunctualityReport`, `getSpanishInboxStats`, `getSpanishInboxPending`,
   `getSpanishInboxResolved`, `getSpanishInboxThreadBody`,
-  `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`
-  (the last four are ALSO team-scoped per INV-122 — the gate alone is
+  `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`,
+  `releaseDoc`
+  (these five are ALSO team-scoped per INV-122 — the gate alone is
   not the boundary),
+  `getEmpDocTemplates`, `saveEmpDocTemplate`, `deleteEmpDocTemplate`
+  (org-wide PHI-free form shells — gated but NOT team-scoped, INV-135),
   `createCoaching`, `getCoachingDashboard`, `voidCoaching`
   (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
   fail-closed model; the gate alone is not the boundary).
@@ -3244,7 +3247,9 @@ manually for a fresh deploy or environment:
   no other module reads it yet.
 - **Set Script Property `HR_DOCS_SS_ID`** to a DEDICATED spreadsheet for
   Employee Docs (create an empty one; tabs `EmpDocs` + `DocSignatures`
-  auto-provision). There is deliberately NO fallback — without the
+  + `EmpDocTemplates` (v2 reusable templates) + `Coaching` auto-provision;
+  the `EmpDocs` header self-heals to add the v2 `FieldsJson`/`ResponsesJson`
+  columns on first post-deploy use — INV-135). There is deliberately NO fallback — without the
   property every Employee Docs endpoint returns a friendly
   "not configured" error. Keep it separate from the KB (broadly
   rep-readable), the ADP sheet (payroll), and the PHI sheets; the
@@ -3543,7 +3548,7 @@ Client (Intake views):
 Client (Reference views):
   web-app/kb/script_kb.html
 Client (Training views):
-  web-app/train/script_training.html, web-app/train/script_empdocs.html
+  web-app/train/script_training.html, web-app/train/script_empdocs.html, web-app/train/script_coaching.html
 Client (public forms):
   web-app/form_public.html
 Test Suite:
