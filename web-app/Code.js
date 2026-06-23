@@ -116,9 +116,11 @@ const CONFIG = {
   // separate action from log-on-submit. See helper getCallNotesSheet_().
   CALL_NOTES: {
     NOTES_TAB:           'Notes',
+    ARCHIVE_TAB:         'NotesArchive', // cold-archive tab in each per-rep Sheet (archiveOldCallNotes moves old rows here)
     SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
     DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
     NOTE_RETENTION_DAYS: 0,              // rolling auto-delete of old notes; 0 = disabled (irreversible PHI delete; CN_NOTE_RETENTION_DAYS Script Property overrides)
+    NOTE_ARCHIVE_DAYS: 0,               // SAFE tier — move notes older than this to a NotesArchive tab (data preserved, live tab bounded); 0 = disabled (CN_NOTE_ARCHIVE_DAYS Script Property overrides)
     CC_EMAIL:            'robin.choudhury@universalmedsupply.com',
     AUTO_COPY_FORMAT:
       'Callback Number: {callback}\n' +
@@ -3818,6 +3820,7 @@ function getCallNoteAuditHistory(noteId) {
 // accordingly so "never seen" isn't misread as "broken".
 const AUTOMATION_AUDIT_ACTIONS = [
   'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
+  'CallNotesArchive',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
@@ -6912,6 +6915,123 @@ function purgeOldCallNotes() {
   }
 }
 
+/** Cold-archive window: days from CN_NOTE_ARCHIVE_DAYS Script Property first,
+ *  else CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS. 0/neg/unparseable → 0 (disabled).
+ *  Mirrors getNoteRetentionDays_. */
+function getNoteArchiveDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('CN_NOTE_ARCHIVE_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS || 0);
+  const v = parseInt(raw, 10);
+  return (isNaN(v) || v < 0) ? 0 : v;
+}
+
+/** Returns the cold-archive tab (CONFIG.CALL_NOTES.ARCHIVE_TAB) in the given
+ *  per-rep spreadsheet, creating it with the canonical CN_HEADERS on first use.
+ *  Same schema as the live Notes tab so an archived row round-trips identically
+ *  (and stays readable by callNoteRowToObject_ if ever needed). */
+function getOrCreateNotesArchiveTab_(ss) {
+  const name = CONFIG.CALL_NOTES.ARCHIVE_TAB;
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(CN_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, CN_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** Move rows older than cutoffMs from srcSheet to archiveSheet (preserving the
+ *  full row), then delete them from srcSheet. APPEND-then-delete so a mid-run
+ *  failure can only DUPLICATE into the cold archive (never lose) — the source
+ *  still has the row, so the next run re-archives + deletes it. Batched append
+ *  (one setValues block) + bottom-up delete. Returns the count moved. Mirrors
+ *  purgeSheetRowsOlderThan_ but is NON-destructive (data preserved). */
+function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs) {
+  const lastRow = srcSheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const rows = srcSheet.getDataRange().getValues();
+  const toMoveRows = [];   // full row values, in sheet order
+  const toDelete = [];     // 1-based sheet row indices
+  for (let i = 1; i < rows.length; i++) {
+    const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
+    if (ms !== null && ms < cutoffMs) { toMoveRows.push(rows[i]); toDelete.push(i + 1); }
+  }
+  if (!toMoveRows.length) return 0;
+  // Normalize every moved row to the archive's column width (live rows may be
+  // narrower/wider than CN_HEADERS for legacy reasons; setValues needs a
+  // uniform rectangle).
+  const width = CN_HEADERS.length;
+  const block = toMoveRows.map(function (r) {
+    const out = new Array(width);
+    for (let c = 0; c < width; c++) out[c] = (c < r.length) ? r[c] : '';
+    return out;
+  });
+  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(block);
+  SpreadsheetApp.flush();   // ensure the archive write lands before we delete the source
+  for (let j = toDelete.length - 1; j >= 0; j--) srcSheet.deleteRow(toDelete[j]);
+  return toMoveRows.length;
+}
+
+/** Cold-archive tier for call-note retention (the SAFE alternative to the
+ *  irreversible purgeOldCallNotes). Across every enrolled rep's per-rep Sheet,
+ *  MOVES Notes rows older than the archive window into a NotesArchive tab in the
+ *  SAME spreadsheet — data is preserved (the canonical record stays), the LIVE
+ *  Notes tab is bounded (faster open-ended scans), and no new operator store is
+ *  needed. DISABLED by default (CN_NOTE_ARCHIVE_DAYS / CONFIG = 0). Top-level
+ *  (time-trigger target) → reachable via google.script.run, so gated like the
+ *  other trigger handlers (assertManagerCaller_); locked (INV-01). A broken
+ *  per-rep Sheet is skipped, not fatal. Dates read from CN.DATE_LOCAL
+ *  (Sheets-coerced; parseRetentionDateMs_ handles it). Writes a PHI-free
+ *  CallNotesArchive audit row with counts.
+ *
+ *  OPERATOR ORDERING: if BOTH archive and purge are enabled, keep
+ *  CN_NOTE_ARCHIVE_DAYS ≤ CN_NOTE_RETENTION_DAYS — the 3am archive runs before
+ *  the 4am purge, so the safe path is archive-first. The recommended setup is
+ *  archive-only (leave retention/purge at 0): bounded live tab, full history
+ *  retained in NotesArchive. */
+function archiveOldCallNotes() {
+  assertManagerCaller_('archiveOldCallNotes');
+  try {
+    const days = getNoteArchiveDays_();
+    if (!days) {
+      Logger.log('archiveOldCallNotes: archival disabled (CN_NOTE_ARCHIVE_DAYS=0) — nothing archived.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const roster = getEmployeeRosterRows_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let repsTouched = 0, notesArchived = 0;
+    try {
+      for (let r = 1; r < roster.length; r++) {
+        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
+        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const emp = {
+          id:   String(roster[r][EMP.ID]).trim(),
+          name: String(roster[r][EMP.NAME]).trim(),
+          callNotesSheetId: String(sheetIdRaw).trim(),
+        };
+        try {
+          const live = getCallNotesSheet_(emp);
+          const archive = getOrCreateNotesArchiveTab_(live.getParent());
+          const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs);
+          if (moved > 0) { notesArchived += moved; repsTouched++; }
+        } catch (e) {
+          Logger.log('archiveOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
+        }
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
+      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}`);
+    Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
+  } catch (err) {
+    Logger.log('archiveOldCallNotes failed: ' + err.message);
+  }
+}
+
 /** #8 — manager-triggered reconcile pass. Scans every enrolled rep's Notes tab
  *  for HAND-ENTERED rows (content present but no noteId — typed directly into
  *  the Sheet, not via the app) and backfills the fields the app needs to treat
@@ -6999,6 +7119,7 @@ function installAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'archiveOldCallNotes',
     'purgeOldCallNotes',
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
@@ -7034,6 +7155,13 @@ function installAutomationTriggers() {
   // FORM_DATA_RETENTION_DAYS = 0 (the default), so installing it is harmless;
   // it only deletes once the operator sets a positive retention window.
   ScriptApp.newTrigger('purgeExpiredFormData')
+    .timeBased().atHour(3).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Cold-archive tier (SAFE retention) — moves old notes to a NotesArchive tab
+  // (data preserved, live tab bounded). No-ops while CN_NOTE_ARCHIVE_DAYS=0 (the
+  // default), so installing it is harmless. Staggered to 3am, BEFORE the 4am
+  // purge, so if both are enabled the safe archive-first ordering holds.
+  ScriptApp.newTrigger('archiveOldCallNotes')
     .timeBased().atHour(3).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   // Rolling note retention (item 7) — also no-ops while CN_NOTE_RETENTION_DAYS=0
@@ -7095,6 +7223,7 @@ function removeAutomationTriggers() {
     'sendCallNotesWeeklyDigests',
     'sendCallNotesUrgentDigest',
     'purgeExpiredFormData',
+    'archiveOldCallNotes',
     'purgeOldCallNotes',
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',

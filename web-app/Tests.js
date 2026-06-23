@@ -951,6 +951,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_dailyExport_nonManagerThrows',  test_triggerGate_dailyExport_nonManagerThrows);
   _integrationTest('triggerGate_urgentDigest_nonManagerThrows', test_triggerGate_urgentDigest_nonManagerThrows);
   _integrationTest('triggerGate_purgeOldCallNotes_nonManagerThrows', test_triggerGate_purgeOldCallNotes_nonManagerThrows);
+  _integrationTest('triggerGate_archiveOldCallNotes_nonManagerThrows', test_triggerGate_archiveOldCallNotes_nonManagerThrows);
   _integrationTest('triggerGate_purgeExpiredFormData_nonManagerThrows', test_triggerGate_purgeExpiredFormData_nonManagerThrows);
   _integrationTest('triggerGate_removeAutomationTriggers_nonManagerThrows', test_triggerGate_removeAutomationTriggers_nonManagerThrows);
   _integrationTest('triggerGate_trainingOverdue_nonManagerThrows', test_triggerGate_trainingOverdue_nonManagerThrows);
@@ -3292,6 +3293,15 @@ function test_triggerGate_purgeOldCallNotes_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { purgeOldCallNotes(); });
   }, 'manager access required', 'Non-manager should not be able to purge notes');
+}
+
+// Cold-archive tier — a top-level trigger handler reachable via google.script.run
+// that moves (deletes-from-live) per-rep Notes rows, so it carries the same
+// assertManagerCaller_ gate as the purge (INV-44 family).
+function test_triggerGate_archiveOldCallNotes_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { archiveOldCallNotes(); });
+  }, 'manager access required', 'Non-manager should not be able to archive notes');
 }
 
 // M10 — the FormSubmissions/FormTokens PHI purge is the most destructive
