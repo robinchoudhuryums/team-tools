@@ -372,7 +372,7 @@ this section before touching the relevant area.
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
-  `getStorageHealth`,
+  `getStorageHealth`, `getDeployReadiness`,
   `kbConvertDriveDoc`, `kbGetUsageStats`, `kbGetReviewDue`,
   `kbMarkReviewed`, `saveKbAiSettings`,
   `getTrainingDashboard`, `saveTrainingAssignment`,
@@ -2100,6 +2100,17 @@ this section before touching the relevant area.
   only when ≥1 link is configured and **appends** the chosen `label: url` to the
   message (unlike the template picker, which replaces). Unlike templates, links
   are recipient-type-agnostic. Pinned by `cnExtLinkOptionsHtml_` client tests.
+  **Categorized (the official external-collection path).** Each link carries an
+  optional `category` ∈ `CN_EXTERNAL_LINK_CATEGORIES` (`survey`/`review`/
+  `feedback`/`other`) — back-compat: absent/unknown → `'other'`, sanitized on
+  BOTH read (`getExternalLinks_`) and write (`saveExternalLinks`), so a legacy
+  `{label,url}` blob upgrades silently with no migration. The composer picker
+  groups options by category via `<optgroup>` while preserving each option's
+  ORIGINAL index into `cnExtLinksAll_()` (the insert handler is unchanged); the
+  Admin editor row adds a category `<select>`. Framed in the Admin UI as the
+  official way to collect from external recipients, since the in-app `?form`
+  route is admin-blocked on this domain. `cnExtLinkOptionsHtml_` inlines its
+  category labels (no module-level dep) so it unit-tests in isolation.
 - **Reference tool: native markdown articles + Drive embeds, one store.** The KB
   is a single `KB` tab (one row per item: `{id, department, title, type, BodyMd,
   DriveKind, DriveFileId, sortOrder, …}`). Articles store **markdown source** (not
@@ -2339,6 +2350,38 @@ this section before touching the relevant area.
   before `innerHTML`. Note IDs/dates/rep IDs pass via `data-*`
   attributes read in the handler (the `cnStatsDrillDown_` pattern), not
   inline string interpolation.
+- **Deploy-readiness checklist (Admin Overview headline).** A manager-gated,
+  read-only, PHI-free pre-deploy report (`getDeployReadiness`, rendered by
+  `cnLoadDeployReadiness_` atop the Admin Overview pane). It does NOT re-scan —
+  it **composes** the existing `getStorageHealth` (all 7 stores'
+  configured/reachable/tz-vs-CONFIG) + `getAutomationHealth` (digest heartbeats,
+  CDR) + the `getManagerEmails_()` count into a single pass/warn/fail checklist
+  via the pure, Node-pinned `deployReadinessItems_(storage, automation,
+  managerCount)`. Banding: required stores (`ADP_SS_ID`/`KB_SS_ID`/
+  `INTAKE_SS_ID`) **fail** when unset; optional stores (CDR/Forms/HR/per-rep)
+  **warn**; a configured-but-unreachable store **fails**; a tz mismatch **warns**
+  (the silent coerced-read drift); no digest heartbeat yet **warns** (expected on
+  a fresh deploy). Manager-gated (the omnibus pins it). Every server string
+  `esc()`'d. Surfaces the operator-state gaps (sheet-tz drift, unset properties,
+  uninstalled triggers) as one glance before cutting a new deployment version.
+- **Patient/TRX timeline (rep-facing, read-only).** `getPatientTimeline(trx)`
+  (rep-callable, **caller-scoped**) stitches everything the rep has on one
+  patient/order into a single newest-first list: their OWN call notes (TRX
+  substring via `searchMyCallNotes`), intake submissions (`patientInfo`
+  substring via `intakeListMySubmissions`, **filtered to `emp.id` even for a
+  manager** so it can't widen to cross-rep), and sent fillable forms (linked by
+  source `noteId` via `getMySentForms`). The merge/sort is the pure, Node-pinned
+  `buildPatientTimeline_(notes, submissions, forms, trx)` — heterogeneous source
+  timestamps (`T`-form notes/forms vs space-form intake) normalize to a
+  comparable `yyyy-MM-dd HH:mm:ss` prefix for display ordering (the cross-tz
+  caveat never reorders same-source events). It reuses only existing
+  caller-scoped/bounded endpoints — no new read surface, no PHI cross-leak. The
+  PHI is the caller's own. Surfaced as a Timeline button in the note-card
+  more-menu (next to "Find prior calls for this TRX") → a read-only
+  `ensureOverlay` modal (`cnOpenPatientTimeline_` / `cnBuildTimelineHtml_`),
+  every server string `esc()`'d. **v1 is rep's-own-patient context, NOT a
+  cross-rep manager view** (a manager-gated variant reusing
+  `managerSearchCallNotes` is the follow-on if needed).
 - **Storage Health panel (Admin tab, #1).** Manager-only, read-only
   one-pane-of-glass over every spreadsheet the app uses (`getStorageHealth`,
   rendered by `cnLoadStoragePanel_`). Since the 2nd-pass consolidation it +
@@ -3162,8 +3205,10 @@ manually for a fresh deploy or environment:
   via `getCallNotesDepartments`); a corrupt blob degrades to the CONFIG
   fallback rather than breaking the composer.
 - **Script Property `CN_EXTERNAL_LINKS`** (auto-managed). JSON array of
-  `{label, url}` manager-curated quick links (survey / feedback / Google-review
-  URLs hosted OUTSIDE this app), written by `saveExternalLinks` from the Call
+  `{label, url, category}` manager-curated quick links (survey / feedback /
+  Google-review URLs hosted OUTSIDE this app; `category` ∈
+  `survey`/`review`/`feedback`/`other`, default `other` — back-compat, no
+  migration), written by `saveExternalLinks` from the Call
   Notes → Admin tab's "Quick Links" section. Created on first save; read by
   `getExternalLinks_()` (sanitize-on-read — keeps only entries with a label +
   an http(s) url; falls back to `CONFIG.CALL_NOTES.EXTERNAL_LINKS`, default
@@ -3336,7 +3381,11 @@ functions (`esc`, `empTz` / `isoDateTz`, the metrics date helpers,
 external-email template-picker helpers `cnExtTemplatesFor_` /
 `cnExtTemplateOptionsHtml_`, `cnLatestManagerReply_` (the training
 feedback[]-vs-legacy precedence helper), and the server-side
-`cnExtractAuditNoteId_` parser plus the `isValidTimeOffType_` leave-type
+`cnExtractAuditNoteId_` parser, the `buildPatientTimeline_` (#3 patient/TRX
+timeline merge — substring TRX match + noteId-linked forms + newest-first
+sort) and `deployReadinessItems_` (#1 pre-deploy checklist banding — required
+fail / optional warn / tz-mismatch warn / heartbeat warn) pure helpers, plus
+the `isValidTimeOffType_` leave-type
 validator extracted from `Code.js` via `extractRawFunction` — the latter
 with a coupling tripwire asserting the `day-type` `<select>` options stay
 a subset of `TIME_OFF_TYPES`, the feature-flag layer
@@ -3448,7 +3497,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v6`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`, `getSpanishInboxStats`, `getSpanishInboxPending`, `getSpanishInboxResolved`, `getSpanishInboxThreadBody`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; all four Spanish-inbox endpoints gate BEFORE any GmailApp access, and are now pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport` and a `getDeptRequests` no-manager-fields-leak assertion) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`, `getSpanishInboxStats`, `getSpanishInboxPending`, `getSpanishInboxResolved`, `getSpanishInboxThreadBody`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; all four Spanish-inbox endpoints gate BEFORE any GmailApp access, and are now pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
