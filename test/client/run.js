@@ -1800,5 +1800,24 @@ test('no heartbeats → triggers warn; cdr down → warn; clean → all ok', () 
   assert.strictEqual(byKey['cdr'], 'warn', 'cdr down → warn');
 });
 
+console.log('\nCode.js — retentionWarnings_() (Admin Retention panel safety ordering)');
+vm.runInContext(extractRawFunction('Code.js', 'retentionWarnings_'), sb,
+  { filename: 'Code.js#retentionWarnings_' });
+const retentionWarnings_ = sb.retentionWarnings_;
+test('clean configs warn-free; unsafe orderings each warn', () => {
+  // archive-only (recommended) — no warnings
+  assert.strictEqual(retentionWarnings_(90, 0, 0).length, 0);
+  // all disabled — no warnings
+  assert.strictEqual(retentionWarnings_(0, 0, 0).length, 0);
+  // safe 3-tier: archive 90 ≤ purge 365, cold 730 ≥ archive 90 — no warnings
+  assert.strictEqual(retentionWarnings_(90, 365, 730).length, 0);
+  // purge ON but archive OFF → warn
+  assert.strictEqual(retentionWarnings_(0, 90, 0).length, 1);
+  // archive window > purge window → warn (loss before archive)
+  assert.ok(retentionWarnings_(365, 90, 0).some((w) => w.indexOf('LARGER') >= 0));
+  // cold purge shorter than archive window → warn
+  assert.ok(retentionWarnings_(90, 0, 30).some((w) => w.indexOf('Cold-store') >= 0));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -3889,6 +3889,8 @@ function test_managerGates_rejectNonManager() {
     ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
     ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
+    ['getRetentionConfig',             function () { return getRetentionConfig(); }],
+    ['saveRetentionConfig',            function () { return saveRetentionConfig({ archiveDays: 30 }); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
     ['saveUpdateSuggestions',          function () { return saveUpdateSuggestions({ Sales: ['x'] }); }],

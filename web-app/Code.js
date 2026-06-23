@@ -3514,6 +3514,82 @@ function getAdminConfig() {
   } catch (err) { return { error: err.message }; }
 }
 
+/** Pure (Node-pinned) — safety-ordering warnings for the three call-note
+ *  retention windows. archiveDays moves Notes→NotesArchive; retentionDays
+ *  irreversibly deletes from live; archiveRetentionDays irreversibly deletes
+ *  from the cold store. The triggers run 2am (archive-purge) < 3am (archive) <
+ *  4am (live purge). No braces inside string literals (extractRawFunction). */
+function retentionWarnings_(archiveDays, retentionDays, archiveRetentionDays) {
+  var w = [];
+  var a = archiveDays || 0, r = retentionDays || 0, ar = archiveRetentionDays || 0;
+  if (r > 0 && a === 0) {
+    w.push('Live purge is ON but archival is OFF — old notes are irreversibly deleted with NO cold copy. Enable archival (recommended) for a safer setup.');
+  }
+  if (r > 0 && a > 0 && a > r) {
+    w.push('Archive window (' + a + 'd) is LARGER than the live-purge window (' + r + 'd) — the 4am purge can irreversibly delete live rows before the 3am archive reaches them. Set archive ≤ purge, or disable purge.');
+  }
+  if (ar > 0 && a > 0 && ar < a) {
+    w.push('Cold-store purge (' + ar + 'd) is shorter than the archive window (' + a + 'd) — notes get archived, then almost immediately purged from the cold store.');
+  }
+  return w;
+}
+
+/** Retention config (Admin Config panel) — manager-gated, read-only summary of
+ *  the three call-note retention windows + their resolved values, source, and
+ *  safety-ordering warnings. PHI-free. */
+function getRetentionConfig() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const props = PropertiesService.getScriptProperties();
+    const srcOf = function (propName, cfgVal) {
+      const p = props.getProperty(propName);
+      if (p != null && p !== '') return 'Script Property';
+      return (cfgVal && cfgVal > 0) ? 'CONFIG' : 'default';
+    };
+    const a = getNoteArchiveDays_(), r = getNoteRetentionDays_(), ar = getArchiveRetentionDays_();
+    return {
+      archiveDays:          { value: a,  source: srcOf('CN_NOTE_ARCHIVE_DAYS', CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS) },
+      retentionDays:        { value: r,  source: srcOf('CN_NOTE_RETENTION_DAYS', CONFIG.CALL_NOTES.NOTE_RETENTION_DAYS) },
+      archiveRetentionDays: { value: ar, source: srcOf('CN_ARCHIVE_RETENTION_DAYS', CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS) },
+      warnings: retentionWarnings_(a, r, ar),
+      archiveTab: CONFIG.CALL_NOTES.ARCHIVE_TAB,
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated write of the three retention windows to Script Properties
+ *  (CN_NOTE_ARCHIVE_DAYS / CN_NOTE_RETENTION_DAYS / CN_ARCHIVE_RETENTION_DAYS).
+ *  Each must be a whole number of days ≥ 0 (0 = disabled). Writes an
+ *  AdminConfigChange audit row (INV-57 family). Takes effect immediately — the
+ *  trigger handlers read the windows fresh per run. The two PURGE windows are
+ *  irreversible PHI deletes; the client gates raising them behind a danger
+ *  confirm. Returns the post-save safety warnings so the UI can surface them. */
+function saveRetentionConfig(settings) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    settings = settings || {};
+    const parse = function (v) {
+      if (v === '' || v == null) return 0;
+      if (String(v).indexOf('.') >= 0) return null;   // whole days only
+      const n = parseInt(v, 10);
+      return (isNaN(n) || n < 0) ? null : n;
+    };
+    const a = parse(settings.archiveDays), r = parse(settings.retentionDays), ar = parse(settings.archiveRetentionDays);
+    if (a === null || r === null || ar === null) {
+      return { success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' };
+    }
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty('CN_NOTE_ARCHIVE_DAYS', String(a));
+    props.setProperty('CN_NOTE_RETENTION_DAYS', String(r));
+    props.setProperty('CN_ARCHIVE_RETENTION_DAYS', String(ar));
+    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+      'Updated call-note retention windows (archive=' + a + 'd, purge=' + r + 'd, archivePurge=' + ar + 'd)', callerEmp.email);
+    return { success: true, warnings: retentionWarnings_(a, r, ar) };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
 /** Manager-gated read of the feature-toggle registry + resolved values
  *  (also embedded in getAdminConfig; kept standalone for testability). */
 function getFeatureFlags() {

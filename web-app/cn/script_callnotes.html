@@ -7078,6 +7078,7 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-admin-audit"></div>' +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="config" style="' + paneStyle('config') + '">' +
+      '<div id="cn-admin-retention" style="max-width:900px"></div>' +
       '<div id="cn-admin-body" style="max-width:900px">' + loSweep() + '</div>' +
     '</div>';
   google.script.run
@@ -7110,6 +7111,98 @@ function enterCallNotesAdminView(area) {
   // from the storage + automation health + manager-email count. Independent
   // load; failure stays contained to its own slot.
   cnLoadDeployReadiness_();
+  // Retention panel (Config pane) — the three call-note retention windows +
+  // current values + safety-ordering warnings, editable (danger-gated saves).
+  cnLoadRetentionPanel_();
+}
+
+// Admin Config — call-note retention windows summary + editor. Manager-gated
+// server endpoints; every server string esc()'d before innerHTML. The two PURGE
+// windows are irreversible PHI deletes, so raising them is danger-confirmed.
+function cnLoadRetentionPanel_() {
+  var slot = document.getElementById('cn-admin-retention');
+  if (!slot) return;
+  slot.innerHTML = loSweep();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== 'callNotesAdmin') return;
+      if (!res || res.error) { slot.innerHTML = ''; return; }   // stay quiet on error — non-critical panel
+      CN_STATE.retentionCfg = res;
+      slot.innerHTML = cnRenderRetentionHtml_(res);
+    })
+    .withFailureHandler(function () { if (currentView === 'callNotesAdmin') slot.innerHTML = ''; })
+    .getRetentionConfig();
+}
+function cnRetentionRowHtml_(key, label, val, destructive) {
+  var v = (val && val.value) || 0;
+  var src = (val && val.source) || 'default';
+  var tagText = v > 0 ? (v + ' days') : 'disabled';
+  return '<div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)">' +
+    '<div style="flex:1;min-width:0">' +
+      '<div style="font-size:13px;font-weight:600">' + esc(label) +
+        (destructive ? ' <span style="font-size:11px;color:var(--danger)">· irreversible</span>' : ' <span style="font-size:11px;color:var(--muted)">· non-destructive</span>') +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--muted)">currently <strong>' + esc(tagText) + '</strong> · source: ' + esc(src) + '</div>' +
+    '</div>' +
+    '<input type="number" min="0" step="1" id="cn-ret-' + key + '" value="' + (v || '') + '" placeholder="0" ' +
+      'style="width:90px;flex:0 0 auto" aria-label="' + esc(label) + ' days">' +
+  '</div>';
+}
+function cnRenderRetentionHtml_(res) {
+  var warnHtml = '';
+  if (res.warnings && res.warnings.length) {
+    warnHtml = '<div style="background:var(--warn-soft);border:1px solid var(--warning-deep);border-radius:8px;padding:10px 12px;margin:10px 0;font-size:12px;color:var(--warning-deep)">' +
+      res.warnings.map(function (w) { return '⚠ ' + esc(w); }).join('<br>') + '</div>';
+  }
+  return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px">' +
+    '<div class="day-section-label" style="margin-bottom:6px">' + icon('clock', 14) + ' Call-note retention</div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Three independent windows (days; 0 = disabled). <strong>Recommended SAFE setup:</strong> set Archive only, leave both Purge windows at 0 — bounds the live Sheet while preserving every note in the <em>' + esc(res.archiveTab || 'NotesArchive') + '</em> tab. Purges are <strong>irreversible PHI deletes</strong>.</div>' +
+    cnRetentionRowHtml_('archive', 'Archive after — move old notes to the cold tab', res.archiveDays, false) +
+    cnRetentionRowHtml_('purge', 'Purge live after — delete from the live Notes tab', res.retentionDays, true) +
+    cnRetentionRowHtml_('archpurge', 'Purge cold after — delete from the archive tab', res.archiveRetentionDays, true) +
+    warnHtml +
+    '<div style="display:flex;align-items:center;gap:12px;margin-top:12px">' +
+      '<button class="btn-modal-ok" id="cn-ret-save" style="margin:0" onclick="cnSaveRetention_()">Save retention</button>' +
+      '<span style="font-size:11px;color:var(--muted)">Takes effect on the next nightly run. Re-run <code>installAutomationTriggers()</code> once if you have not yet.</span>' +
+    '</div>' +
+  '</div>';
+}
+function cnSaveRetention_() {
+  var rd = function (id) { var el = document.getElementById('cn-ret-' + id); return el ? el.value : ''; };
+  var payload = { archiveDays: rd('archive'), retentionDays: rd('purge'), archiveRetentionDays: rd('archpurge') };
+  var prev = CN_STATE.retentionCfg || {};
+  var prevPurge = (prev.retentionDays && prev.retentionDays.value) || 0;
+  var prevCold  = (prev.archiveRetentionDays && prev.archiveRetentionDays.value) || 0;
+  var newPurge = parseInt(payload.retentionDays, 10) || 0;
+  var newCold  = parseInt(payload.archiveRetentionDays, 10) || 0;
+  // Danger-confirm only when ENABLING or RAISING an irreversible purge window.
+  var raisingPurge = newPurge > 0 && newPurge !== prevPurge;
+  var raisingCold  = newCold > 0 && newCold !== prevCold;
+  var doSave = function () {
+    var btn = document.getElementById('cn-ret-save');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; } return; }
+        showToast('Retention windows saved', 'toast-success');
+        cnLoadRetentionPanel_();   // re-render with fresh values + warnings
+      })
+      .withFailureHandler(function (err) { showToast((err && err.message) || 'Save failed', 'toast-error'); if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; } })
+      .saveRetentionConfig(payload);
+  };
+  if (raisingPurge || raisingCold) {
+    uiConfirm({
+      title: 'Enable an irreversible purge?',
+      message: 'You are turning on a retention window that PERMANENTLY DELETES call notes (PHI) — ' +
+        (raisingPurge ? 'live notes older than ' + newPurge + ' days' : '') +
+        (raisingPurge && raisingCold ? ' and ' : '') +
+        (raisingCold ? 'archived notes older than ' + newCold + ' days' : '') +
+        '. This cannot be undone. Confirm the canonical record lives elsewhere first.',
+      confirmLabel: 'Enable purge', tone: 'danger',
+    }).then(function (ok) { if (ok) doSave(); });
+  } else {
+    doSave();
+  }
 }
 
 // #1 — Deploy-readiness checklist panel (Admin Overview headline). Manager-
