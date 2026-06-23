@@ -170,13 +170,8 @@ function coachRenderMgr_() {
     '<div class="hint">This is HR-class feedback (kept indefinitely, team-scoped). The patient/TRX and narrative are stored only in the HR record — the audit log stays content-free.</div>' +
     '</div>';
 
-  // counts strip
-  h += '<div class="coach-kpis">' +
-    coachKpi_('Open', counts.open, '') +
-    coachKpi_('Acknowledged', counts.acknowledged, '') +
-    coachKpi_('Overdue', counts.overdueUnacked, counts.overdueUnacked ? 'crit' : '') +
-    coachKpi_('Praise', counts.praise, '') +
-    '</div>';
+  // metrics panel (analytics from the server) + operational counts
+  h += coachAnalyticsHtml_(dash.analytics, counts);
 
   var items = dash.items || [];
   if (!items.length) {
@@ -194,8 +189,49 @@ function coachRenderMgr_() {
 }
 
 function coachKpi_(label, val, tone) {
-  return '<div class="coach-kpi"><div class="coach-kpi-num' + (tone ? ' ' + tone : '') + '">' + (val || 0) + '</div>' +
+  return '<div class="coach-kpi"><div class="coach-kpi-num' + (tone ? ' ' + tone : '') + '">' + esc(String(val == null ? 0 : val)) + '</div>' +
     '<div class="coach-kpi-lbl">' + esc(label) + '</div></div>';
+}
+
+/** Coaching metrics panel — headline KPIs, severity breakdown, per-rep table. */
+function coachAnalyticsHtml_(a, counts) {
+  a = a || {};
+  if (!a.total) {
+    // Nothing logged yet — show the lightweight operational counts only.
+    return '<div class="coach-kpis">' +
+      coachKpi_('Open', counts.open, '') + coachKpi_('Acknowledged', counts.acknowledged, '') +
+      coachKpi_('Overdue', counts.overdueUnacked, counts.overdueUnacked ? 'crit' : '') +
+      coachKpi_('Praise', counts.praise, '') + '</div>';
+  }
+  var h = '<div class="coach-kpis">' +
+    coachKpi_('Total', a.total, '') +
+    coachKpi_('Ack rate', a.ackRatePct + '%', '') +
+    coachKpi_('Median days to ack', a.medianDaysToAck, '') +
+    coachKpi_('Overdue', a.overdueUnacked, a.overdueUnacked ? 'crit' : '') +
+    '</div>';
+  // severity breakdown chips
+  var sev = a.bySeverity || {};
+  h += '<div class="coach-sevbar">' +
+    coachSevStat_('praise', sev.praise) + coachSevStat_('minor', sev.minor) +
+    coachSevStat_('major', sev.major) + coachSevStat_('critical', sev.critical) +
+    '</div>';
+  // per-rep table
+  var reps = a.perRep || [];
+  if (reps.length) {
+    h += '<div class="tr-section-h">By employee</div>' +
+      '<table class="tr-table coach-rep-table"><thead><tr><th>Employee</th><th>Total</th><th>Acked</th><th>Ack&nbsp;%</th><th>Median&nbsp;days</th><th>Overdue</th></tr></thead><tbody>';
+    reps.forEach(function (r) {
+      h += '<tr><td>' + esc(r.empName) + '</td>' +
+        '<td>' + r.total + '</td><td>' + r.acknowledged + '</td>' +
+        '<td>' + r.ackRatePct + '%</td><td>' + r.medianDaysToAck + '</td>' +
+        '<td>' + (r.overdue ? '<span class="tr-cell-overdue">' + r.overdue + '</span>' : '0') + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  return h;
+}
+function coachSevStat_(sev, n) {
+  return '<span class="coach-sevstat">' + coachSevChip_(sev) + '<b>' + (n || 0) + '</b></span>';
 }
 
 function coachCardMgr_(it) {
@@ -290,4 +326,9 @@ document.addEventListener('click', function (e) {
 .coach-kpi-num.crit { color:var(--danger-deep); }
 .coach-kpi-lbl { margin-top:4px; font:600 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
 :root[data-compact] .coach-kpis { grid-template-columns:repeat(2, 1fr); }
+.coach-sevbar { display:flex; flex-wrap:wrap; gap:14px; margin:0 0 14px; }
+.coach-sevstat { display:inline-flex; align-items:center; gap:6px; font-size:.9rem; }
+.coach-sevstat b { font-variant-numeric:tabular-nums; color:var(--ink); }
+.coach-rep-table { width:100%; }
+.coach-rep-table td, .coach-rep-table th { font-variant-numeric:tabular-nums; }
 </style>

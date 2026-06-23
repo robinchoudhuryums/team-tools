@@ -14646,6 +14646,74 @@ function coachUnackedOverdue_(items, nowMs, days) {
   return out;
 }
 
+/** Pure (Node-pinned) — parse a 'yyyy-MM-dd HH:mm:ss' (or 'T'-form) stamp to
+ *  ms as UTC. Only used for DIFFERENCES (ack − created), so the fixed-UTC
+ *  interpretation cancels out and tz never skews a day-count. NaN on garbage. */
+function coachParseTs_(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(s || ''));
+  if (!m) return NaN;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+}
+/** Pure — median of a numeric array (0 when empty), 1-decimal rounded. */
+function coachMedian_(arr) {
+  const a = (arr || []).filter(function (x) { return typeof x === 'number' && !isNaN(x); }).sort(function (x, y) { return x - y; });
+  if (!a.length) return 0;
+  const mid = Math.floor(a.length / 2);
+  const v = a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+  return Math.round(v * 10) / 10;
+}
+
+/** Pure (Node-pinned) — manager coaching analytics over the team-scoped items.
+ *  Aggregates: totals, by-severity, acknowledged + ack-rate, overdue-unacked,
+ *  median days-to-acknowledge, and a per-rep breakdown (most-overdue first).
+ *  No PHI — counts + the empName already in the items. */
+function coachAnalytics_(items, nowMs, reminderDays) {
+  items = items || [];
+  const cutoff = nowMs - (reminderDays || 0) * 86400000;
+  const sev = { praise: 0, minor: 0, major: 0, critical: 0 };
+  const ackDays = [];
+  const perRep = {};
+  let acknowledged = 0, overdue = 0;
+  items.forEach(function (it) {
+    if (sev[it.severity] != null) sev[it.severity]++;
+    const isAck = it.status === 'acknowledged';
+    if (isAck) acknowledged++;
+    const isOverdue = it.status === 'open' && it.severity !== 'praise' && (function () {
+      const c = coachParseTs_(it.createdAt); return !isNaN(c) && c <= cutoff;
+    })();
+    if (isOverdue) overdue++;
+    let d = NaN;
+    if (isAck && it.acknowledgedAt) {
+      const c = coachParseTs_(it.createdAt), a = coachParseTs_(it.acknowledgedAt);
+      if (!isNaN(c) && !isNaN(a) && a >= c) { d = (a - c) / 86400000; ackDays.push(d); }
+    }
+    const r = perRep[it.empId] || (perRep[it.empId] = { empId: it.empId, empName: it.empName, total: 0, acknowledged: 0, overdue: 0, _ackDays: [] });
+    r.total++;
+    if (isAck) r.acknowledged++;
+    if (isOverdue) r.overdue++;
+    if (!isNaN(d)) r._ackDays.push(d);
+  });
+  const reps = Object.keys(perRep).map(function (id) {
+    const r = perRep[id];
+    return {
+      empId: r.empId, empName: r.empName, total: r.total, acknowledged: r.acknowledged,
+      overdue: r.overdue,
+      ackRatePct: r.total ? Math.round((r.acknowledged / r.total) * 100) : 0,
+      medianDaysToAck: coachMedian_(r._ackDays),
+    };
+  }).sort(function (a, b) {
+    if (b.overdue !== a.overdue) return b.overdue - a.overdue;
+    return b.total - a.total;
+  });
+  return {
+    total: items.length, bySeverity: sev,
+    acknowledged: acknowledged, overdueUnacked: overdue,
+    ackRatePct: items.length ? Math.round((acknowledged / items.length) * 100) : 0,
+    medianDaysToAck: coachMedian_(ackDays),
+    perRep: reps,
+  };
+}
+
 function coachRowToObj_(row, ssTz) {
   return {
     coachId: String(row[CO.COACH_ID] || '').trim(),
@@ -14801,7 +14869,8 @@ function getCoachingDashboard() {
       items.push(c);
     }
     items.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
-    return { items: items, counts: counts, reminderDays: reminderDays };
+    return { items: items, counts: counts, reminderDays: reminderDays,
+      analytics: coachAnalytics_(items, nowMs, reminderDays) };
   } catch (err) { return { error: err.message }; }
 }
 

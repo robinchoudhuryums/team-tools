@@ -418,6 +418,51 @@ test('coachUnackedOverdue_ never throws on empty / missing input', () => {
   assert.strictEqual(coachUnackedOverdue_([], 0, 7).length, 0);
 });
 
+vm.runInContext(extractRawFunction('Code.js', 'coachParseTs_'), sb, { filename: 'Code.js#coachParseTs_' });
+vm.runInContext(extractRawFunction('Code.js', 'coachMedian_'), sb, { filename: 'Code.js#coachMedian_' });
+vm.runInContext(extractRawFunction('Code.js', 'coachAnalytics_'), sb, { filename: 'Code.js#coachAnalytics_' });
+const coachAnalytics_ = sb.coachAnalytics_;
+test('coachMedian_ handles even/odd/empty', () => {
+  assert.strictEqual(sb.coachMedian_([]), 0);
+  assert.strictEqual(sb.coachMedian_([3]), 3);
+  assert.strictEqual(sb.coachMedian_([1, 3]), 2);
+  assert.strictEqual(sb.coachMedian_([5, 1, 3]), 3);
+});
+test('coachAnalytics_ aggregates severity / ack-rate / median-days / per-rep', () => {
+  const now = Date.UTC(2026, 0, 20, 0, 0, 0); // 2026-01-20
+  const items = [
+    // acked 3 days after creation
+    { empId: 'A', empName: 'Ana', severity: 'major', status: 'acknowledged', createdAt: '2026-01-01 09:00:00', acknowledgedAt: '2026-01-04 09:00:00' },
+    // acked 1 day after creation
+    { empId: 'A', empName: 'Ana', severity: 'minor', status: 'acknowledged', createdAt: '2026-01-10 09:00:00', acknowledgedAt: '2026-01-11 09:00:00' },
+    // open + old → overdue (non-praise)
+    { empId: 'B', empName: 'Bo', severity: 'critical', status: 'open', createdAt: '2026-01-01 09:00:00', acknowledgedAt: '' },
+    // praise open + old → NOT overdue
+    { empId: 'B', empName: 'Bo', severity: 'praise', status: 'open', createdAt: '2026-01-01 09:00:00', acknowledgedAt: '' },
+  ];
+  const a = coachAnalytics_(items, now, 7);
+  assert.strictEqual(a.total, 4);
+  assert.strictEqual(a.bySeverity.praise, 1);
+  assert.strictEqual(a.bySeverity.minor, 1);
+  assert.strictEqual(a.bySeverity.major, 1);
+  assert.strictEqual(a.bySeverity.critical, 1);
+  assert.strictEqual(a.acknowledged, 2);
+  assert.strictEqual(a.ackRatePct, 50);
+  assert.strictEqual(a.overdueUnacked, 1, 'critical open+old overdue; praise excluded');
+  assert.strictEqual(a.medianDaysToAck, 2, 'median of [3,1] days = 2');
+  const ana = a.perRep.find((r) => r.empId === 'A');
+  assert.strictEqual(ana.ackRatePct, 100);
+  assert.strictEqual(ana.medianDaysToAck, 2);
+  // most-overdue rep sorts first
+  assert.strictEqual(a.perRep[0].empId, 'B');
+});
+test('coachAnalytics_ empty input → zeroed shape', () => {
+  const a = coachAnalytics_([], Date.now(), 7);
+  assert.strictEqual(a.total, 0);
+  assert.strictEqual(a.ackRatePct, 0);
+  assert.strictEqual(a.perRep.length, 0);
+});
+
 console.log('\nCode.js — feature-flag registry + getFlag_ (Plan A)');
 // These server helpers reference CONFIG (registry defaults) + PropertiesService
 // (the override store). Build a dedicated vm context with minimal stubs, then
