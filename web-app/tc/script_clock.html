@@ -57,13 +57,27 @@
   .ss-grow { flex: 1; }
   .ss-hours { font-family: var(--mono); font-size: .86rem; font-weight: 700; color: var(--ink); }
   .ss-hours .ss-sub { font-weight: 400; color: var(--muted); }
+  /* Inline note-coverage in the shift header (#3 — replaces the donut strip). */
+  .ss-cov { display: inline-flex; align-items: center; gap: 8px; }
+  .ss-cov-pct { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .03em; color: var(--muted); }
+  .ss-cov-pct.good { color: var(--success-deep); }
+  .ss-cov-pct.warn { color: var(--warning-deep); }
+  .ss-cov-pct.crit { color: var(--danger-deep); }
+  .ss-cov-ok { display: inline-flex; align-items: center; gap: 3px; font-family: var(--mono); font-size: 11px; color: var(--success-deep); }
+  .ss-cov-cta { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 11px; font-weight: 600;
+    color: var(--warning-deep); background: var(--warn-soft); border: 1px solid transparent; border-radius: 999px;
+    padding: 2px 9px; cursor: pointer; transition: background .12s; }
+  .ss-cov-cta:hover { background: var(--warn-soft); border-color: var(--warn); }
   .shift-strip .actions { margin-top: 12px; margin-bottom: 0; }
 
   /* Note-volume histogram behind the ribbon track (C2 — sourced from today's
      own notes bucketed by rep-local hour; Timestamp is stored in the rep's tz). */
-  .ribbon-hist { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-  .ribbon-hist .hbar { position: absolute; bottom: 0; width: 5px; transform: translateX(-50%); border-radius: 2px 2px 0 0;
-    background: rgba(15, 138, 82, .16); background: color-mix(in oklch, var(--accent) 16%, transparent); }
+  .ribbon-hist { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+  /* Per-hour note-volume bars behind the shift bar (the in-ribbon "coverage"
+     view — replaces the old separate donut strip). Prominent enough to read as
+     a background histogram of when the rep logged notes. */
+  .ribbon-hist .hbar { position: absolute; bottom: 0; width: 7px; transform: translateX(-50%); border-radius: 2px 2px 0 0;
+    background: rgba(15, 138, 82, .34); background: color-mix(in oklch, var(--accent) 34%, transparent); }
   /* Scheduled break bands (amber) drawn over the work segments. */
   .r-break { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--warn);
     background: rgba(183, 121, 31, .22); background: color-mix(in oklch, var(--warn) 20%, transparent); }
@@ -223,14 +237,13 @@ function renderClockView(area) {
         <span class="ss-label">Today's shift</span>
         <span class="ss-state ${stateCls}">${esc(stateLabel)}</span>
         <span class="ss-grow"></span>
+        <span class="ss-cov" id="clk-shift-cov"></span>
         ${hoursReadout}
       </div>
       ${renderDayRibbon_(s.punches, stats, tz)}
       ${clkBreakScheduleHtml_()}
       ${renderActions(s.nextActions)}
     </div>
-
-    <div id="clk-cov-slot"></div>
 
     <div class="clk-row3">
       <div class="card">
@@ -897,20 +910,19 @@ function clkUpdateBreak_() {
   }
 }
 
-/** Note-coverage strip (V1·E3). Fetches via getMyMetrics(today). Renders
- *  a donut gauge for note coverage + 30-day mini-bar trend + "File N
- *  missing" CTA when answered > notes. Hides entirely when the rep had
- *  no call activity today (no notes AND no CDR rows). Cached in
- *  CLK_COVERAGE_CACHE to avoid re-fetching on every re-render. */
+/** Note coverage — now rendered INLINE in the shift-strip header (#3): the
+ *  per-hour note bars behind the day ribbon are the visual histogram, and the
+ *  header carries a compact coverage % + a "File N missing" link when answered
+ *  calls outnumber logged notes. Fetches getMyMetrics(today); hides entirely
+ *  when the rep had no call activity today. Cached in CLK_COVERAGE_CACHE to
+ *  avoid re-fetching on every re-render. */
 var CLK_COVERAGE_CACHE = { date: null, data: null };
 
 function loadCoverageStrip_() {
-  const slot = document.getElementById('clk-cov-slot');
+  const slot = document.getElementById('clk-shift-cov');
   if (!slot) return;
   const today = isoDateTz(empTz());
   if (CLK_COVERAGE_CACHE.date === today && CLK_COVERAGE_CACHE.data) {
-    // Guard on currentView for symmetry with the network branch below — a
-    // late re-render shouldn't paint the strip into a non-Clock view.
     if (currentView === 'clock') renderCoverageStrip_(slot, CLK_COVERAGE_CACHE.data);
     return;
   }
@@ -918,7 +930,6 @@ function loadCoverageStrip_() {
     .withSuccessHandler(function (data) {
       if (!data || data.error) { slot.innerHTML = ''; return; }
       CLK_COVERAGE_CACHE = { date: today, data };
-      // Only render if we're still on the clock view (rep didn't nav away)
       if (currentView === 'clock') renderCoverageStrip_(slot, data);
     })
     .withFailureHandler(function () { slot.innerHTML = ''; })
@@ -934,60 +945,26 @@ function renderCoverageStrip_(slot, data) {
 
   const covPct = data.noteCoverage != null ? data.noteCoverage : null;
   const missing = answered - noteCount;
-  const toneCls = covPct == null ? '' : (covPct >= 80 ? '' : (covPct >= 50 ? 'warn' : 'crit'));
+  const toneCls = covPct == null ? '' : (covPct >= 80 ? 'good' : (covPct >= 50 ? 'warn' : 'crit'));
+  const title = answered > 0
+    ? noteCount + ' notes logged for ' + answered + ' answered calls today'
+    : noteCount + ' notes today';
 
-  // Donut gauge — coverage ratio expressed on a 0–100 scale, clipped at 100.
-  const r = 22, c = 2 * Math.PI * r;
-  const pctClipped = Math.max(0, Math.min(100, covPct == null ? 0 : covPct));
-  const dashOffset = c * (1 - pctClipped / 100);
-  const gauge = `<div class="cov-gauge">
-    <svg width="56" height="56" viewBox="0 0 56 56">
-      <circle class="bg" cx="28" cy="28" r="${r}"/>
-      <circle class="fg ${toneCls}" cx="28" cy="28" r="${r}" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${dashOffset.toFixed(2)}" transform="rotate(-90 28 28)"/>
-    </svg>
-    <div class="num">${covPct != null ? covPct + '%' : '—'}</div>
-  </div>`;
-
-  // 30-day mini-bar trend (from data.trend, %answered per day)
-  let trendBars = '';
-  if (data.trend && data.trend.length > 0) {
-    const max = Math.max(1, ...data.trend.map(d => d.pctAnswered || 0));
-    trendBars = '<div class="cov-trend">' + data.trend.map((d, i) => {
-      const v = d.pctAnswered || 0;
-      const h = v === 0 ? 0 : Math.max(2, Math.round((v / max) * 22));
-      const cls = ['bar'];
-      if (v === 0) cls.push('zero');
-      if (i === data.trend.length - 1) cls.push('today');
-      return `<div class="${cls.join(' ')}" title="${esc(d.date + ': ' + v + '%')}" style="height:${h}px"></div>`;
-    }).join('') + '</div>';
+  let html = '';
+  if (covPct != null) {
+    html += `<span class="ss-cov-pct ${toneCls}" title="${esc(title)}">${covPct}% logged</span>`;
+  } else if (noteCount > 0) {
+    html += `<span class="ss-cov-pct" title="${esc(title)}">${noteCount} notes</span>`;
   }
-
-  const detailLine = answered > 0
-    ? `<strong>${noteCount}</strong> notes for <strong>${answered}</strong> calls today`
-    : `<strong>${noteCount}</strong> notes today`;
-
-  let ctaHtml = '';
   if (missing > 0) {
-    // Round 2 · 8z — pass the date through fileMissingCalls_ as an in-memory
-    // navigation hint. The Log view consumes the hint and (when per-call
-    // CDR data eventually exists) can pre-filter to unmatched calls. Today,
-    // CDR is per-(agent, date) aggregated only — no per-call records — so
-    // the hint just carries the date for context.
+    // Round 2 · 8z — fileMissingCalls_ sets an in-memory nav hint the Log view
+    // consumes (CDR is per-(agent,date) aggregated, so it carries the date).
     const today = isoDateTz(empTz());
-    ctaHtml = `<button class="cov-cta" onclick="fileMissingCalls_('${esc(today)}', ${missing})">${icon('adjust', 12)}File ${missing} missing</button>`;
-  } else if (noteCount > 0 && answered > 0 && covPct >= 100) {
-    ctaHtml = `<button class="cov-cta muted" onclick="enterTool('callNotes')">${icon('check', 12)}All covered</button>`;
+    html += `<button class="ss-cov-cta" onclick="fileMissingCalls_('${esc(today)}', ${missing})">${icon('adjust', 11)} File ${missing} missing</button>`;
+  } else if (noteCount > 0 && answered > 0) {
+    html += `<span class="ss-cov-ok">${icon('check', 11)} covered</span>`;
   }
-
-  slot.innerHTML = `<div class="cov">
-    ${gauge}
-    <div class="cov-meta">
-      <div class="cov-label">Note coverage · today</div>
-      <div class="cov-detail">${detailLine}</div>
-      ${trendBars}
-    </div>
-    ${ctaHtml}
-  </div>`;
+  slot.innerHTML = html;
 }
 
 /** Load teammate status into the slot below Actions (best-effort, silent on failure). */

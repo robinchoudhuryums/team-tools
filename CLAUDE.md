@@ -1830,16 +1830,22 @@ this section before touching the relevant area.
   inline mono text rows. Both components live in `styles.html` and
   are consumed today by the manager dashboard's live-status cards
   and pending PTO queue.
-- **Clock view: hero + actions + cov + ledger architecture.** The
+- **Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live
-  clock + tz + date on the right), an `.actions` row (one `.prime`
-  CTA — ClockIn → LunchIn → ClockOut by state, with `.clockout`
-  variant in destructive tone; Adjust always last as a `.sec`), a
-  `.cov` note-coverage strip (donut gauge + 30-day mini-bar trend +
-  "File N missing" CTA, hidden entirely when the rep had no call
-  activity today), and a 3-cell `.ledger.ledger-3` strip
-  (Annual / Sick / Hours today). Pay-period info moved to the Time /
+  clock + tz + date on the right; the optional per-browser photo is
+  the hero CARD background — see the `umsClockBg` gotcha), the
+  `.shift-strip` (head + day ribbon + breaks + the `.actions` row —
+  one `.prime` CTA ClockIn → LunchIn → ClockOut by state, Adjust last
+  as a `.sec`), and a 3-cell `.ledger.ledger-3` strip
+  (Annual / Sick / Hours today). **Note coverage is now INLINE in the
+  shift-strip header (#3):** the per-hour note-volume bars behind the
+  day ribbon (`ribbon-hist`, from `getMyNoteHourBuckets`) are the
+  visual histogram, and the header shows a compact `% logged` +
+  a "File N missing" link (`#clk-shift-cov`, `loadCoverageStrip_` →
+  `renderCoverageStrip_`, fed by `getMyMetrics`; `fileMissingCalls_`
+  CTA preserved). The old separate `.cov` donut/trend strip + its CSS
+  were removed. Pay-period info moved to the Time /
   PTO tab's Timesheet-mode side rail in Round 2 · 8b — the Clock
   view no longer loads timesheet data. Today's Punches and teammate
   status render below the ledger as the existing cards. A world-clock
