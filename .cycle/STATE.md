@@ -8,6 +8,33 @@ Test Command: manual
 Subsystem cycles since last Seams audit: 5
 Updated: 2026-06-23 (broad-scan: 0 Critical / 0 High / 6 Low; implemented F1/F2/F4/F5)
 
+## Cycle 6 Stage-3 FEATURE batch (2026-06-23, branch claude/happy-faraday-0grppg)
+Implemented 3 strategic suggestions from the broad-scan Stage 3 (features, not
+fixes), all pushed:
+- #1 Deploy-readiness checklist: getDeployReadiness() (mgr-gated, PHI-free)
+  composes Storage+Automation health + MANAGER_EMAILS count → pass/warn/fail
+  (required ADP/KB/Intake fail when unset; optional warn; tz mismatch warns).
+  Pure Node-pinned deployReadinessItems_. Panel atop CN Admin Overview
+  (cnLoadDeployReadiness_). Gate added to test_managerGates_rejectNonManager.
+- #2 Quick Links = official external-collection path: links gain optional
+  `category` (survey/review/feedback/other; back-compat default 'other',
+  sanitized read+write in getExternalLinks_/saveExternalLinks; new
+  CN_EXTERNAL_LINK_CATEGORIES). Composer picker groups by optgroup (original
+  indices preserved → insert handler unchanged); Admin editor category select;
+  section reframed.
+- #3 Patient/TRX timeline: getPatientTimeline(trx) (caller-scoped, read-only)
+  stitches the rep's OWN notes (searchMyCallNotes trx) + intake submissions
+  (filtered to emp.id even for managers) + sent forms (linked by noteId) →
+  newest-first. Pure Node-pinned buildPatientTimeline_. Timeline button in the
+  card more-menu → ensureOverlay modal, all server strings esc()'d.
+DECISIONS: timeline is strictly caller-scoped (managers see only their own
+notes/forms; intake filtered to emp.id) — v1 framed as a rep's own-patient
+context, NOT a cross-rep manager view (follow-on if needed). Reused existing
+caller-scoped endpoints internally (no new read surface). Pure 162/0 (4 new
+tests), DOM 48/0, node --check clean. OPERATOR: clasp push -f + New version;
+no new Script Properties/triggers/migrations. DOC: add getDeployReadiness +
+getPatientTimeline + the quick-link category to CLAUDE.md (/sync-docs).
+
 ## Cycle 6 broad-scan + implement (2026-06-23, branch claude/happy-faraday-0grppg)
 AUDIT: 6 parallel deep-read agents + independent verification of every Crit/High
 claim. Result = 4th consecutive audit with NO verified Critical/High; every agent
