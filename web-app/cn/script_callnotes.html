@@ -6208,7 +6208,7 @@ function cnMgrCoachOnNote_(btn) {
     patientTRX: btn.dataset.patientTrx || '',
     noteId: btn.dataset.noteId || '',
   };
-  if (typeof enterTool === 'function') enterTool('training', 'coachingManage');
+  if (typeof enterTool === 'function') enterTool('training', 'coaching');
   else if (typeof showToast === 'function') showToast('Open Training → Coaching to log it', 'toast-info');
 }
 

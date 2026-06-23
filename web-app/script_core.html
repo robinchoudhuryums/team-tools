@@ -106,8 +106,7 @@ const TOOLS = {
     tabs: {
       trainingHome:   { label: 'My Training',   icon: 'check',  enter: 'enterTrainingHomeView' },
       trainingManage: { label: 'Team Training', icon: 'manage', enter: 'enterTrainingManageView', managerOnly: true },
-      coaching:       { label: 'My Coaching',   icon: 'bulb',   enter: 'enterMyCoachingView' },
-      coachingManage: { label: 'Coaching',      icon: 'thumbsUp', enter: 'enterCoachingManageView', managerOnly: true },
+      coaching:       { label: 'Coaching',      icon: 'thumbsUp', enter: 'enterCoachingView' },
       myDocs:         { label: 'My Docs',       icon: 'paperclip', enter: 'enterMyDocsView' },
       docsManage:     { label: 'Issue Docs',    icon: 'send',   enter: 'enterDocsManageView', managerOnly: true },
     },
@@ -568,8 +567,15 @@ function renderToolTabBar(toolKey) {
   });
   bar.innerHTML = tabs.map(k => {
     const t = tool.tabs[k];
-    return `<button class="tt-btn" data-tab="${k}" onclick="showView('${k}')">
-      <span class="tt-icon">${icon(t.icon, 14)}</span>${esc(t.label)}
+    // Manager-only tabs get a subtle upward accent gradient + a small marker
+    // glyph so reps-turned-managers can tell at a glance which tabs are the
+    // privileged, team-facing ones.
+    const mgrCls = t.managerOnly ? ' tt-mgr' : '';
+    const mgrMark = t.managerOnly
+      ? `<span class="tt-mgr-mark" title="Manager-only">${icon('manage', 10)}</span>`
+      : '';
+    return `<button class="tt-btn${mgrCls}" data-tab="${k}" onclick="showView('${k}')">
+      <span class="tt-icon">${icon(t.icon, 14)}</span>${esc(t.label)}${mgrMark}
     </button>`;
   }).join('');
 }

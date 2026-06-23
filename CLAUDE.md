@@ -166,11 +166,18 @@ Apps Script project under its own directory, synced via `clasp`.
      T4 item (Drive snapshot-to-PDF signing for signable embeds) stays
      on-demand. See INV-123. The rep My Training checklist was redesigned
      with completion rings; Team Training's matrix is now a reps×items CSS-grid
-     status matrix. **Coaching (shipped):** two more tabs — **My Coaching**
-     (rep — severity-chipped feedback cards with one-click Acknowledge) and
-     **Coaching** (manager — a composer + team-scoped dashboard + a metrics
-     panel: ack-rate, median days-to-acknowledge, severity breakdown, overdue,
-     per-rep). Granular, non-routine manager feedback on a SPECIFIC patient/TRX
+     status matrix. **Coaching (shipped):** ONE merged **Coaching** tab
+     (`enterCoachingView`) for everyone. Reps see **My Coaching** (their received
+     severity-chipped feedback cards with one-click Acknowledge) and never see a
+     mode toggle; managers get a **Mine ⇄ Team** segmented toggle
+     (`coachSwitchMode_`, persisted per-browser to `umsCoachingMode`, managers
+     default to Team) where **My Coaching** is the manager's OWN received items
+     (routine coaching) and **Team Coaching** is the composer + team-scoped
+     dashboard + a metrics panel (ack-rate, median days-to-acknowledge, severity
+     breakdown, overdue, per-rep). The two prior tabs (`coaching` rep +
+     `coachingManage` manager) were merged into this single non-managerOnly tab;
+     the "Coach on this" deep-link now opens `coaching` and forces Team mode via
+     `window.COACH_PREFILL`. Granular, non-routine manager feedback on a SPECIFIC patient/TRX
      interaction (vs. the org-wide quizzes/assignments), stored in a `Coaching`
      tab in `HR_DOCS_SS_ID` (keep-forever, team-scoped) — `createCoaching` /
      `getMyCoaching` / `acknowledgeCoaching` / `getCoachingDashboard` /
@@ -1051,7 +1058,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Thirteen client-side localStorage keys total.** All per-browser, all
+- **Fourteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1122,7 +1129,11 @@ this section before touching the relevant area.
     state), raster-only (PNG/JPEG/WebP, no SVG), ~1.1MB cap after downscale,
     try/catch on read/write (quota-safe). A baked-in dark scrim keeps the greeting
     text legible (`clkBgApply_`); cleared via the card's × button.
-  Clearing browser data wipes all thirteen.
+  - `umsCoachingMode` — the merged Coaching tab's Mine/Team mode (managers
+    only; `'mine'` | `'team'`, default `'team'`). Reps never write it (they're
+    always pinned to `'mine'` and never see the toggle). Read by
+    `coachReadMode_`, written by `coachSwitchMode_`.
+  Clearing browser data wipes all fourteen.
 
 ## Key Design Decisions
 
@@ -1134,6 +1145,10 @@ this section before touching the relevant area.
   show ONE button per tool. Sub-navigation is a horizontal tab bar
   (`#tool-tab-bar`) rendered above the view area, populated by
   `renderToolTabBar(toolKey)` whenever a tool is opened.
+  **`managerOnly: true` tabs are both hidden from non-managers AND visually
+  marked for managers** — `renderToolTabBar` adds a `.tt-mgr` class (a subtle
+  upward `--accent-soft` gradient wash) + a small `.tt-mgr-mark` `manage` glyph
+  so the privileged team-facing tabs read distinctly from rep tabs.
   `enterTool(toolKey, tabKey)` is the entry point — it sets the
   sidebar active state, swaps the sidebar sub-label, renders the tab
   bar, and dispatches to the chosen tab (or `defaultTab` if none
@@ -1404,18 +1419,20 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Thirteen client-side localStorage keys total" entry in
+  authoritative "Fourteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
-  `umsIntakeDrafts`, `umsClockBg`) — all per-browser, all try/catch-wrapped.
+  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`) — all per-browser, all
+  try/catch-wrapped.
   (An earlier version of this decision listed only four; Round 2 · 8a/8b added
   the sidebar-width and Time/PTO-mode keys, the KB drawer added its single
   `umsKbPanel` prefs blob, the refresh-restore behavior added `umsLastView`,
   #4 added `umsPopoutGeom`, the redesign added `umsIntakeDrafts` (Intake
-  form drafts) + a `deptCollapsed` field inside `umsKbPanel`, and the
-  Clock-card background image added `umsClockBg`.)
+  form drafts) + a `deptCollapsed` field inside `umsKbPanel`, the
+  Clock-card background image added `umsClockBg`, and the merged Coaching tab
+  added `umsCoachingMode`.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -3718,7 +3735,7 @@ INV-132 | `archiveOldCallNotes` is the SAFE (non-destructive) cold-archive tier 
 
 INV-133 | The call-note retention 3rd tier + its controls. (a) `purgeArchivedCallNotes` is a top-level trigger handler (reachable via `google.script.run`) gated with `assertManagerCaller_` (INV-44) and locked (INV-01); it irreversibly deletes each rep's `NotesArchive` rows older than `CN_ARCHIVE_RETENTION_DAYS` (Script Property → `CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS`, default **0 = disabled**) — the ONLY deleter of archived notes. READ-ONLY w.r.t. tab existence (`getSheetByName`, never creates `NotesArchive`); date from the preserved `CN.DATE_LOCAL` via `parseRetentionDateMs_`; cross-rep, per-rep failures skipped; PHI-free `CallNotesArchivePurge` audit (in `AUTOMATION_AUDIT_ACTIONS`). Scheduled manager-tz 2am (before the 3am archive); in BOTH TARGETS (trigger-wiring tripwire). Pinned by `test_triggerGate_purgeArchivedCallNotes_nonManagerThrows`. (b) `searchMyCallNotes`/`managerSearchCallNotes` accept a trailing `includeArchive` flag (default off — 4-arg callers unaffected) that ALSO scans the cold tab (read-only) and tags hits `_archived`; the INV-45 field-scope logic is byte-identical (factored into a per-source closure). (c) `getRetentionConfig` (read-only summary + `retentionWarnings_` safety ordering, Node-pinned) + `saveRetentionConfig` (writes the three Script Properties, whole-days validation, `AdminConfigChange` audit) are manager-gated (INV-31/INV-57 family, omnibus-pinned); the client danger-confirms enabling/raising either irreversible purge window | Subsystem: Server + Client (Call Notes views)
 
-INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in the audit log.** Coaching items (granular, non-routine manager feedback on a specific patient/TRX interaction; severity praise/minor/major/critical) live ONLY in a `Coaching` tab in the dedicated `HR_DOCS_SS_ID` spreadsheet (keep-forever, EXCLUDED from every retention purge — the EmpDocs posture; `getOrCreateEmpDocSheet_` auto-provisions it). **Scoping:** `getMyCoaching`/`acknowledgeCoaching` are owner-scoped (the rep's own `EmpId`); manager read/void (`getCoachingDashboard`, `voidCoaching`) require `coachCanManagerSee_` — caller CREATED the item OR is the employee's roster `ManagerEmail` (column M); `MANAGER_EMAILS` membership alone grants nothing, blank column M narrows to owner+issuer (the INV-122 fail-closed rule). `createCoaching`/`acknowledgeCoaching`/`voidCoaching` are locked (INV-01); the three manager endpoints are gated (INV-02). The patient/TRX + free-text narrative are HR-class PHI-adjacent and persist ONLY in the HR store — the shared `CoachingCreate`/`CoachingAck`/`CoachingVoid` audit rows are content-free (coachId/empId/severity only, never the patient/TRX or narrative). `acknowledgeCoaching` is idempotent (already-acked → friendly no-op). The pure `coachValidate_` (whitelist-built; severity ∈ `COACH_SEVERITIES`, caps `COACH_TEXT_MAX`/`COACH_TRX_MAX`) and `coachUnackedOverdue_` (open + non-praise + older than `CONFIG.COACHING_UNACK_REMINDER_DAYS`, default 7) are Node-pinned. Un-acked overdue coaching is folded into the existing daily `sendTrainingOverdueDigest` (team-scoped per manager via `coachCanManagerSee_` — NO new trigger), so 'praise' never nags. Notifications (rep on create, manager on ack) are best-effort (INV-14) and PHI-minimal — they name only the severity, never the narrative. Tied to the call-note training flag via the "Coach on this" button (`window.COACH_PREFILL`, the `CLK_NAV_HINT` pattern). **Metrics:** `getCoachingDashboard` also returns an `analytics` block from the pure, Node-pinned `coachAnalytics_(items, nowMs, reminderDays)` (totals, by-severity, ack-rate, overdue-unacked, median days-to-acknowledge via `coachParseTs_`/`coachMedian_` — UTC-parsed so the tz cancels in the ack−created diff, and a per-rep breakdown most-overdue-first) — rendered as a metrics panel in the Coaching tab; no new endpoint/gate (it rides the already team-scoped dashboard, PHI-free). Pinned by the `coachValidate_`/`coachUnackedOverdue_`/`coachAnalytics_`/`coachMedian_` Node tests + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
+INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in the audit log.** Coaching items (granular, non-routine manager feedback on a specific patient/TRX interaction; severity praise/minor/major/critical) live ONLY in a `Coaching` tab in the dedicated `HR_DOCS_SS_ID` spreadsheet (keep-forever, EXCLUDED from every retention purge — the EmpDocs posture; `getOrCreateEmpDocSheet_` auto-provisions it). **Scoping:** `getMyCoaching`/`acknowledgeCoaching` are owner-scoped (the rep's own `EmpId`); manager read/void (`getCoachingDashboard`, `voidCoaching`) require `coachCanManagerSee_` — caller CREATED the item OR is the employee's roster `ManagerEmail` (column M); `MANAGER_EMAILS` membership alone grants nothing, blank column M narrows to owner+issuer (the INV-122 fail-closed rule). `createCoaching`/`acknowledgeCoaching`/`voidCoaching` are locked (INV-01); the three manager endpoints are gated (INV-02). The patient/TRX + free-text narrative are HR-class PHI-adjacent and persist ONLY in the HR store — the shared `CoachingCreate`/`CoachingAck`/`CoachingVoid` audit rows are content-free (coachId/empId/severity only, never the patient/TRX or narrative). `acknowledgeCoaching` is idempotent (already-acked → friendly no-op). The pure `coachValidate_` (whitelist-built; severity ∈ `COACH_SEVERITIES`, caps `COACH_TEXT_MAX`/`COACH_TRX_MAX`) and `coachUnackedOverdue_` (open + non-praise + older than `CONFIG.COACHING_UNACK_REMINDER_DAYS`, default 7) are Node-pinned. Un-acked overdue coaching is folded into the existing daily `sendTrainingOverdueDigest` (team-scoped per manager via `coachCanManagerSee_` — NO new trigger), so 'praise' never nags. Notifications (rep on create, manager on ack) are best-effort (INV-14) and PHI-minimal — they name only the severity, never the narrative. Tied to the call-note training flag via the "Coach on this" button (`window.COACH_PREFILL`, the `CLK_NAV_HINT` pattern). **Metrics:** `getCoachingDashboard` also returns an `analytics` block from the pure, Node-pinned `coachAnalytics_(items, nowMs, reminderDays)` (totals, by-severity, ack-rate, overdue-unacked, median days-to-acknowledge via `coachParseTs_`/`coachMedian_` — UTC-parsed so the tz cancels in the ack−created diff, and a per-rep breakdown most-overdue-first) — rendered as a metrics panel in the Coaching tab's Team mode; no new endpoint/gate (it rides the already team-scoped dashboard, PHI-free). **UI note:** the former rep `coaching` + manager `coachingManage` tabs were MERGED into one non-managerOnly `coaching` tab (`enterCoachingView`) with a manager-only Mine ⇄ Team toggle (`coachSwitchMode_`, persisted to `umsCoachingMode`) — a pure client reorganization; every endpoint, gate, scope, and audit row above is unchanged. Pinned by the `coachValidate_`/`coachUnackedOverdue_`/`coachAnalytics_`/`coachMedian_` Node tests + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
 INV-135 | **Employee Docs v2 — templates, fillable fields, draft→release, dual reminders (extends INV-122).** The `EmpDocs` tab gained TRAILING `FieldsJson`/`ResponsesJson` columns (back-compat like `CN_HEADERS`/`FS_HEADERS`; `getOrCreateEmpDocSheet_` self-heals a short header width once post-deploy — the INV-126 pattern). **Hash back-compat is load-bearing:** `empDocContentHash_(body,title,type,empId,fieldsJson)` and `empDocSignatureHash_(...,responsesJson)` append the new input ONLY when non-empty, so legacy 4-/5-arg rows hash identically (old stored hashes/signatures stay valid); callers MUST pass the RAW stored `fieldsRaw`/`responsesRaw` cell strings (not a re-serialized object) for byte-stable recompute, and `verifyDocSignature` does. **Fields:** the pure `empDocValidateFields_` (Node-pinned — slug-id from label, dedupe, type ∈ `text`/`textarea`/`date`, cap `EMPDOC_FIELD_CAP`) + `empDocValidateResponses_` (required filled, size/date bounds, only-known-ids kept) + `empDocNeedsAction_` (issued + signature-or-required-field). `acknowledgeDoc(docId, signature, responses)` now validates+stores responses (the responses are attested — folded into the signature hash); a fields-only doc (no `requiresSignature`) completes WITHOUT a signature → status `completed` (audit `EmpDocCompleted`); the responses are persisted BEFORE the status flip. **Draft→release:** `issueDoc` accepts `release:false` → status `draft` (invisible to the employee — `getMyDocs`/`getMyDoc` hide drafts; no notify); `releaseDoc(docId)` (manager-gated, team-scoped, locked) flips draft→issued + notifies (audit `EmpDocRelease`). **Templates** (org-wide, PHI-free form shells — NOT team-scoped) live in an `EmpDocTemplates` tab: `getEmpDocTemplates`/`saveEmpDocTemplate` (upsert, `empDocTemplateValidate_`)/`deleteEmpDocTemplate`, all manager-gated; issuing prefills from one client-side. **Reminders:** `sendTrainingOverdueDigest` now also emails the EMPLOYEE about their own overdue docs (`sendEmployeeOverdueDocsEmail_`, one per employee, best-effort) and overdue covers fields-only docs (via `empDocNeedsAction_`). INV-122's team-scoping / frozen-content / append-only-signatures / never-purged guarantees are unchanged. Pinned by the `empDocValidateFields_`/`empDocValidateResponses_`/`empDocNeedsAction_` Node tests + the `releaseDoc`/`getEmpDocTemplates`/`saveEmpDocTemplate`/`deleteEmpDocTemplate` gate cases | Subsystem: Server + Client (Training views)
 

@@ -274,6 +274,11 @@
     color: var(--ink); border-bottom-color: var(--accent);
   }
   .tt-btn .tt-icon { display: inline-flex; align-items: center; color: inherit; }
+  /* Manager-only tabs: an upward accent-soft wash + a small marker glyph so the
+     privileged team-facing tabs read distinctly from the rep tabs. */
+  .tt-btn.tt-mgr { background: linear-gradient(to top, var(--accent-soft), transparent 68%); border-top-left-radius: 7px; border-top-right-radius: 7px; }
+  .tt-btn.tt-mgr.active { background: linear-gradient(to top, var(--accent-soft), transparent 52%); }
+  .tt-mgr-mark { display: inline-flex; align-items: center; color: var(--accent); opacity: .6; margin-left: -1px; }
   /* Dark mode: native date/time pickers (incl. the calendar-picker indicator)
      render black-on-dark and become invisible. color-scheme:dark tells the
      browser to draw the control + its icon for a dark surface. App-wide. */
