@@ -8,6 +8,30 @@ Test Command: manual
 Subsystem cycles since last Seams audit: 5
 Updated: 2026-06-23 (broad-scan: 0 Critical / 0 High / 6 Low; implemented F1/F2/F4/F5)
 
+## Cycle 6 retention 3rd-tier + include-archive search (2026-06-23, branch claude/happy-faraday-0grppg)
+Closed the two archive follow-ons (pushed). Retention is now a full 3-tier system.
+- 3rd tier: purgeArchivedCallNotes() (top-level trigger, assertManagerCaller_-gated
+  INV-44, locked) irreversibly deletes NotesArchive rows older than
+  CN_ARCHIVE_RETENTION_DAYS (Script Property → CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS,
+  default 0) — the ONLY deleter of archived notes; read-only re tab existence
+  (never creates it). getArchiveRetentionDays_; PHI-free CallNotesArchivePurge
+  audit + AUTOMATION_AUDIT_ACTIONS. 11th daily trigger @ mgr-tz 2am (before the
+  3am archive) + both TARGETS (tripwire green). Gate test added.
+- Include-archive search: searchMyCallNotes + managerSearchCallNotes gain an
+  includeArchive param → also scan the cold NotesArchive tab (read-only
+  getSheetByName, never creates) and tag hits _archived. Match logic factored
+  into a per-source closure (live path unchanged). Client "Include archived"
+  checkbox on both Search bars (CN_STATE.searchIncludeArchive /
+  mgrSearchIncludeArchive); archived hits render a read-only "archived" pill.
+DECISIONS: the 3 windows are independent operator knobs — NOTE_ARCHIVE_DAYS (move
+Notes→archive), NOTE_RETENTION_DAYS (delete from live), ARCHIVE_RETENTION_DAYS
+(delete from cold). 2am purge-archive < 3am archive < 4am purge ordering.
+includeArchive defaults OFF everywhere (back-compat: getPatientTimeline's 4-arg
+searchMyCallNotes call + the omnibus gate's 4-arg managerSearchCallNotes call are
+unaffected). Pure 162/0, DOM 48/0, node --check clean. DOC: /sync-docs (11
+triggers, CN_ARCHIVE_RETENTION_DAYS, INV-44 10 handlers, INV-132 now the
+cold-deleter, include-archive note, a new invariant).
+
 ## Cycle 6 call-note retention ARCHIVAL tier (2026-06-23, branch claude/happy-faraday-0grppg)
 Stage-3 follow-on: made retention SAFE by adding a cold-archive tier (pushed).
 - New archiveOldCallNotes() (top-level trigger handler, assertManagerCaller_-gated
