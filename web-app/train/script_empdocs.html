@@ -23,6 +23,26 @@
   .ed-verify { font-size: .82rem; }
   .ed-verify .ok { color: var(--success-deep); font-weight: 600; }
   .ed-verify .bad { color: var(--danger-deep); font-weight: 600; }
+  /* ── v2: fillable fields + field builder + templates + per-employee groups ── */
+  .ed-fields { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 12px 14px; margin-top: 14px; }
+  .ed-fields-h { font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .ed-field { margin-bottom: 12px; }
+  .ed-field > label { display: block; font-size: .82rem; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+  .ed-field .ed-req { color: var(--danger-deep); }
+  .ed-field input[type=text], .ed-field input[type=date], .ed-field textarea { font: inherit; width: 100%; box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-card); color: var(--ink); }
+  .ed-field textarea { min-height: 90px; resize: vertical; }
+  .ed-resp-ro { white-space: pre-wrap; font-size: .9rem; color: var(--ink); background: var(--paper-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  .ed-field-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .ed-field-label { flex: 1; min-width: 200px; font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+  .ed-field-type { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+  .ed-field-req { display: inline-flex; align-items: center; gap: 5px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .ed-tpl-manage { margin: -6px 0 18px; max-width: 860px; }
+  .ed-tpl-manage summary { cursor: pointer; font-size: .84rem; color: var(--muted); }
+  .ed-tpl-rows { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .ed-tpl-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-card); padding: 7px 10px; font-size: .88rem; }
+  .ed-tpl-meta { color: var(--muted); font-size: .78rem; }
+  .ed-emp-group { margin-bottom: 16px; }
+  .ed-emp-name { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: .9rem; color: var(--ink); margin-bottom: 6px; }
 </style>
 
 <script>
@@ -34,16 +54,21 @@
 //  INV-96 cell cap; capture stays full-res). Reader/sign modals are
 //  ensureOverlay dynamic overlays. Spec: docs/training-employee-docs-spec.md.
 // ════════════════════════════════════════════════════════════════════════════
-var ED_STATE = { my: null, dash: null, emps: null, readerDocId: null, sigPad: null };
+var ED_STATE = { my: null, dash: null, emps: null, templates: null, readerDocId: null, sigPad: null, issueFields: [] };
 
 /** Pure chip markup — Node-pinned. */
 function edChipHtml_(doc) {
   var s, label;
   if (doc.status === 'void') { s = 'pending'; label = 'Void'; }
+  else if (doc.status === 'draft') { s = 'pending'; label = 'Draft'; }
   else if (doc.status === 'signed') { s = 'done'; label = 'Signed'; }
+  else if (doc.status === 'completed') { s = 'done'; label = 'Completed'; }
   else if (doc.requiresSignature) {
     s = 'overdue';
     label = doc.overdue ? 'Overdue' : 'Needs signature';
+  } else if (doc.needsAction || doc.fieldCount) {
+    s = 'overdue';
+    label = doc.overdue ? 'Overdue' : 'Needs completion';
   } else { s = 'pending'; label = 'For review'; }
   return '<span class="tr-chip ' + s + '">' + label + '</span>';
 }
@@ -209,6 +234,29 @@ function edRenderDoc_(doc) {
     body += '<div class="ed-void-note">This document was voided' + (doc.voidReason ? ': ' + esc(doc.voidReason) : '.') + '</div>';
   }
   body += '<div class="kb-article"><h1>' + esc(doc.title) + '</h1>' + kbMd_(doc.bodyMd || '') + '</div>';
+
+  // Fillable fields: editable for the owner while issued; read-only (showing
+  // the stored responses) for a completed doc or a manager viewing it.
+  var fields = doc.fields || [];
+  var responses = doc.responses || {};
+  var editable = !!doc.canComplete;
+  if (fields.length) {
+    body += '<div class="ed-fields"><div class="ed-fields-h">' + (editable ? 'Please complete' : 'Responses') + '</div>';
+    fields.forEach(function (f) {
+      var val = responses[f.id] != null ? responses[f.id] : '';
+      body += '<div class="ed-field"><label>' + esc(f.label) + (f.required && editable ? ' <span class="ed-req">*</span>' : '') + '</label>';
+      if (editable) {
+        if (f.type === 'textarea') body += '<textarea class="ed-resp" data-fid="' + esc(f.id) + '">' + esc(val) + '</textarea>';
+        else if (f.type === 'date') body += '<input type="date" class="ed-resp" data-fid="' + esc(f.id) + '" value="' + esc(val) + '">';
+        else body += '<input type="text" class="ed-resp" data-fid="' + esc(f.id) + '" maxlength="8000" value="' + esc(val) + '">';
+      } else {
+        body += '<div class="ed-resp-ro">' + (val ? esc(val) : '<em>—</em>') + '</div>';
+      }
+      body += '</div>';
+    });
+    body += '</div>';
+  }
+
   var canSign = !!doc.ackText;   // server includes it only for owner + issued + requiresSignature
   if (canSign) {
     body += '<div class="ed-ack">' +
@@ -222,8 +270,14 @@ function edRenderDoc_(doc) {
         '</div>' +
       '</div></div>';
   }
-  if (doc.status === 'signed') {
-    body += '<p class="tr-meta" style="margin-top:14px;">' + icon('checkCircle', 13) + ' Signed ' + esc(String(doc.signedAt).substring(0, 10)) + '</p>';
+  // Fields-only doc (no signature required): a standalone Submit button.
+  if (editable && !canSign) {
+    body += '<div class="ed-sig-row" style="margin-top:14px;"><div class="tr-spacer" style="flex:1"></div>' +
+      '<button class="tr-complete-btn" id="ed-sign-btn">' + icon('check', 13) + ' Submit</button></div>';
+  }
+  if (doc.status === 'signed' || doc.status === 'completed') {
+    body += '<p class="tr-meta" style="margin-top:14px;">' + icon('checkCircle', 13) + ' ' +
+      (doc.status === 'signed' ? 'Signed ' : 'Completed ') + esc(String(doc.signedAt).substring(0, 10)) + '</p>';
   }
   overlay.innerHTML =
     '<div class="modal ed-reader">' +
@@ -243,36 +297,47 @@ function edRenderDoc_(doc) {
     document.getElementById('ed-sig-clear').addEventListener('click', function () {
       if (ED_STATE.sigPad) ED_STATE.sigPad.clear();
     });
-    document.getElementById('ed-sign-btn').addEventListener('click', function () { edSubmitSignature_(doc.docId, this); });
   }
+  var signBtn = document.getElementById('ed-sign-btn');
+  if (signBtn) signBtn.addEventListener('click', function () { edSubmitSignature_(doc.docId, this, canSign); });
 }
 
-function edSubmitSignature_(docId, btn) {
-  if (!ED_STATE.sigPad || ED_STATE.sigPad.isEmpty()) {
+/** Gather the employee's field responses keyed by field id. */
+function edGatherResponses_() {
+  var out = {};
+  document.querySelectorAll('#ed-reader-overlay .ed-resp').forEach(function (el) {
+    out[el.dataset.fid] = el.value;
+  });
+  return out;
+}
+
+function edSubmitSignature_(docId, btn, needsSig) {
+  if (needsSig && (!ED_STATE.sigPad || ED_STATE.sigPad.isEmpty())) {
     showToast('Draw your signature first.', 'error');
     return;
   }
-  if (btn) { btn.disabled = true; btn.textContent = 'Signing…'; }
+  var label = needsSig ? ' Sign document' : ' Submit';
+  if (btn) { btn.disabled = true; btn.textContent = needsSig ? 'Signing…' : 'Submitting…'; }
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || !res.success) {
-        if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Sign document'; }
-        showToast((res && res.error) || 'Could not sign.', 'error');
+        if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + label; }
+        showToast((res && res.error) || 'Could not submit.', 'error');
         return;
       }
-      showToast('Document signed.', 'success');
+      showToast(needsSig ? 'Document signed.' : 'Document completed.', 'success');
       var docs = (ED_STATE.my && ED_STATE.my.docs) || [];
       for (var i = 0; i < docs.length; i++) {
-        if (docs[i].docId === docId) { docs[i].status = 'signed'; docs[i].signedAt = res.signedAt; }
+        if (docs[i].docId === docId) { docs[i].status = needsSig ? 'signed' : 'completed'; docs[i].signedAt = res.signedAt; docs[i].needsAction = false; }
       }
       edCloseDoc_();
       if (currentView === 'myDocs') edRenderMy_();
     })
     .withFailureHandler(function (err) {
-      if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Sign document'; }
-      showToast('Could not sign: ' + ((err && err.message) || err), 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + label; }
+      showToast('Could not submit: ' + ((err && err.message) || err), 'error');
     })
-    .acknowledgeDoc(docId, ED_STATE.sigPad.toDataURL());
+    .acknowledgeDoc(docId, needsSig && ED_STATE.sigPad ? ED_STATE.sigPad.toDataURL() : '', edGatherResponses_());
 }
 
 /** Idempotent (ensureOverlay contract). */
@@ -301,7 +366,7 @@ function edLoadMgr_() {
   var got = 0, failed = false;
   function done() {
     got++;
-    if (got < 2 || failed || currentView !== requestedView) return;
+    if (got < 3 || failed || currentView !== requestedView) return;
     edRenderMgr_();
   }
   function onFail(err) {
@@ -313,6 +378,7 @@ function edLoadMgr_() {
   }
   google.script.run.withSuccessHandler(function (d) { ED_STATE.dash = d; done(); }).withFailureHandler(onFail).getDocsDashboard();
   google.script.run.withSuccessHandler(function (d) { ED_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
+  google.script.run.withSuccessHandler(function (d) { ED_STATE.templates = d; done(); }).withFailureHandler(onFail).getEmpDocTemplates();
 }
 
 function edRenderMgr_() {
@@ -326,7 +392,15 @@ function edRenderMgr_() {
   emps.forEach(function (e) { empSel += '<option value="' + esc(e.id) + '">' + esc(e.name) + '</option>'; });
   empSel += '</select>';
 
-  var h = '<div class="ed-issue"><h3>Issue a document</h3>' +
+  var templates = (ED_STATE.templates && ED_STATE.templates.templates) || [];
+  var tplPick = '<select id="ed-tpl-pick"><option value="">Start from scratch…</option>';
+  templates.forEach(function (t) { tplPick += '<option value="' + esc(t.templateId) + '">' + esc(t.name) + '</option>'; });
+  tplPick += '</select>';
+
+  var h = '<div class="ed-issue"><h3>Create a document</h3>' +
+    '<div class="row"><div style="flex:1;min-width:240px;"><label>Template</label>' + tplPick +
+      '<div class="hint">Pick a template to prefill the body + fields, or build from scratch.</div></div>' +
+      '<div style="align-self:flex-end;"><button class="kb-btn" id="ed-tpl-save">' + icon('fileText', 13) + ' Save current as template</button></div></div>' +
     '<div class="row">' +
       '<div><label>Employee</label>' + empSel + '</div>' +
       '<div><label>Type</label><select id="ed-is-type">' +
@@ -342,41 +416,191 @@ function edRenderMgr_() {
       '<textarea id="ed-is-body" placeholder="Write the document here, or convert a Google Doc below."></textarea>' +
       '<div class="hint">Content is hashed and locked when you issue — a correction means voiding and re-issuing. ' +
       '<button class="tr-link" id="ed-is-convert">Convert a Google Doc to markdown</button></div></div></div>' +
-    '<div class="row"><button class="tr-complete-btn" id="ed-is-go">' + icon('send', 13) + ' Issue document</button></div>' +
+    '<div class="row"><div style="flex:1;width:100%;"><label>Fields the employee completes (optional)</label>' +
+      '<div id="ed-fields-list"></div>' +
+      '<button class="kb-btn" id="ed-add-field" style="margin-top:6px;">' + icon('plus', 12) + ' Add field</button>' +
+      '<div class="hint">Free-text / paragraph / date fields the employee fills in (e.g. self-assessment). The signature & date is separate (toggle above).</div></div></div>' +
+    '<div class="row" style="gap:8px;">' +
+      '<button class="kb-btn" id="ed-save-draft">' + icon('fileText', 13) + ' Save as draft</button>' +
+      '<button class="tr-complete-btn" id="ed-is-go">' + icon('send', 13) + ' Issue &amp; release</button>' +
+    '</div>' +
     '</div>';
+
+  // Template management (delete) — only when templates exist.
+  if (templates.length) {
+    h += '<details class="ed-tpl-manage"><summary>Manage templates (' + templates.length + ')</summary><div class="ed-tpl-rows">';
+    templates.forEach(function (t) {
+      h += '<div class="ed-tpl-row"><span>' + esc(t.name) + ' <span class="ed-tpl-meta">' + esc(t.docType) + ((t.fields || []).length ? ' · ' + t.fields.length + ' field(s)' : '') + '</span></span>' +
+        '<button class="tr-revoke-btn" data-ed-tpl-del="' + esc(t.templateId) + '">Delete</button></div>';
+    });
+    h += '</div></details>';
+  }
 
   var docs = dash.docs || [];
   if (docs.length) {
-    h += '<div class="tr-section-h">Issued documents (your team)</div>' +
-      '<table class="tr-table"><thead><tr><th>Employee</th><th>Type</th><th>Title</th><th>Status</th><th>Due</th><th>Signed</th><th></th></tr></thead><tbody>';
-    docs.forEach(function (d) {
-      h += '<tr><td>' + esc(d.empName) + '</td><td>' + esc(d.docType) + '</td>' +
-        '<td><button class="tr-title" data-ed-open="' + esc(d.docId) + '">' + esc(d.title) + '</button></td>' +
-        '<td>' + edChipHtml_(d) + '</td>' +
-        '<td>' + esc(d.dueAt || '—') + (d.overdue ? ' <span class="tr-cell-overdue">!</span>' : '') + '</td>' +
-        '<td>' + esc(d.signedAt ? String(d.signedAt).substring(0, 10) : '—') + '</td>' +
-        '<td>' +
-          (d.requiresSignature ? '<button class="kb-btn" data-ed-verify="' + esc(d.docId) + '">Verify</button> ' : '') +
-          (d.status !== 'void' ? '<button class="tr-revoke-btn" data-ed-void="' + esc(d.docId) + '">Void</button>' : '') +
-        '</td></tr>';
+    // Group by employee for "view and manage per employee".
+    var byEmp = {};
+    docs.forEach(function (d) { (byEmp[d.empId] = byEmp[d.empId] || { name: d.empName, rows: [] }).rows.push(d); });
+    var empIds = Object.keys(byEmp).sort(function (a, b) { return byEmp[a].name.localeCompare(byEmp[b].name); });
+    h += '<div class="tr-section-h">Documents (your team)</div>';
+    empIds.forEach(function (id) {
+      var g = byEmp[id];
+      h += '<div class="ed-emp-group"><div class="ed-emp-name">' + icon('user', 13) + ' ' + esc(g.name) + '</div>' +
+        '<table class="tr-table"><thead><tr><th>Type</th><th>Title</th><th>Status</th><th>Due</th><th>Signed</th><th></th></tr></thead><tbody>';
+      g.rows.forEach(function (d) {
+        h += '<tr><td>' + esc(d.docType) + '</td>' +
+          '<td><button class="tr-title" data-ed-open="' + esc(d.docId) + '">' + esc(d.title) + '</button>' +
+            ((d.fieldCount) ? ' <span class="ed-tpl-meta">' + d.fieldCount + ' field(s)</span>' : '') + '</td>' +
+          '<td>' + edChipHtml_(d) + '</td>' +
+          '<td>' + esc(d.dueAt || '—') + (d.overdue ? ' <span class="tr-cell-overdue">!</span>' : '') + '</td>' +
+          '<td>' + esc(d.signedAt ? String(d.signedAt).substring(0, 10) : '—') + '</td>' +
+          '<td>' +
+            (d.status === 'draft' ? '<button class="tr-complete-btn" data-ed-release="' + esc(d.docId) + '">Release</button> ' : '') +
+            (d.requiresSignature && d.status !== 'draft' ? '<button class="kb-btn" data-ed-verify="' + esc(d.docId) + '">Verify</button> ' : '') +
+            (d.status !== 'void' ? '<button class="tr-revoke-btn" data-ed-void="' + esc(d.docId) + '">Void</button>' : '') +
+          '</td></tr>';
+      });
+      h += '</tbody></table></div>';
     });
-    h += '</tbody></table>';
   } else {
     h += '<div class="tr-empty">No documents visible to you yet. You see docs you issued plus docs for employees whose roster ManagerEmail (column M) is you.</div>';
   }
   el.innerHTML = h;
 
-  document.getElementById('ed-is-go').addEventListener('click', edSubmitIssue_);
+  edRenderIssueFields_();
+  document.getElementById('ed-is-go').addEventListener('click', function () { edSubmitIssue_(true); });
+  document.getElementById('ed-save-draft').addEventListener('click', function () { edSubmitIssue_(false); });
   document.getElementById('ed-is-convert').addEventListener('click', edConvertDoc_);
+  document.getElementById('ed-add-field').addEventListener('click', edAddField_);
+  document.getElementById('ed-tpl-save').addEventListener('click', edSaveAsTemplate_);
+  var tp = document.getElementById('ed-tpl-pick');
+  if (tp) tp.addEventListener('change', function () { edApplyTemplate_(this.value); });
   if (!el._edMgrDelegated) {
     el._edMgrDelegated = true;
     el.addEventListener('click', function (e) {
       var t;
       if ((t = e.target.closest('[data-ed-open]'))) { edOpenDoc_(t.getAttribute('data-ed-open')); return; }
       if ((t = e.target.closest('[data-ed-verify]'))) { edVerify_(t.getAttribute('data-ed-verify')); return; }
+      if ((t = e.target.closest('[data-ed-release]'))) { edRelease_(t.getAttribute('data-ed-release')); return; }
+      if ((t = e.target.closest('[data-ed-tpl-del]'))) { edDeleteTemplate_(t.getAttribute('data-ed-tpl-del')); return; }
+      if ((t = e.target.closest('[data-ed-field-del]'))) { edRemoveField_(+t.getAttribute('data-ed-field-del')); return; }
       if ((t = e.target.closest('[data-ed-void]'))) edVoid_(t.getAttribute('data-ed-void'));
     });
   }
+}
+
+// ── Fillable-field builder (manager Issue form) ─────────────────────────────
+function edRenderIssueFields_() {
+  var host = document.getElementById('ed-fields-list');
+  if (!host) return;
+  var fields = ED_STATE.issueFields || [];
+  if (!fields.length) { host.innerHTML = '<div class="ed-tpl-meta" style="padding:4px 0;">No fields — the employee will only sign (if required).</div>'; return; }
+  var h = '';
+  fields.forEach(function (f, i) {
+    h += '<div class="ed-field-row">' +
+      '<input type="text" class="ed-field-label" data-ed-fi="' + i + '" maxlength="200" placeholder="Field label (e.g. Your accomplishments this year)" value="' + esc(f.label || '') + '">' +
+      '<select class="ed-field-type" data-ed-fi="' + i + '">' +
+        '<option value="text"' + (f.type === 'text' ? ' selected' : '') + '>Short text</option>' +
+        '<option value="textarea"' + (f.type === 'textarea' ? ' selected' : '') + '>Paragraph</option>' +
+        '<option value="date"' + (f.type === 'date' ? ' selected' : '') + '>Date</option>' +
+      '</select>' +
+      '<label class="ed-field-req"><input type="checkbox" data-ed-fi="' + i + '"' + (f.required !== false ? ' checked' : '') + '> Required</label>' +
+      '<button class="tr-revoke-btn" data-ed-field-del="' + i + '">' + icon('x', 12) + '</button>' +
+    '</div>';
+  });
+  host.innerHTML = h;
+  // Live-sync edits back into state (so add/remove preserves them).
+  host.querySelectorAll('.ed-field-label').forEach(function (el) {
+    el.addEventListener('input', function () { ED_STATE.issueFields[+this.dataset.edFi].label = this.value; });
+  });
+  host.querySelectorAll('.ed-field-type').forEach(function (el) {
+    el.addEventListener('change', function () { ED_STATE.issueFields[+this.dataset.edFi].type = this.value; });
+  });
+  host.querySelectorAll('.ed-field-req input').forEach(function (el) {
+    el.addEventListener('change', function () { ED_STATE.issueFields[+this.dataset.edFi].required = this.checked; });
+  });
+}
+function edAddField_() {
+  ED_STATE.issueFields.push({ label: '', type: 'text', required: true });
+  edRenderIssueFields_();
+}
+function edRemoveField_(i) {
+  ED_STATE.issueFields.splice(i, 1);
+  edRenderIssueFields_();
+}
+
+// ── Templates ───────────────────────────────────────────────────────────────
+function edApplyTemplate_(templateId) {
+  if (!templateId) return;
+  var templates = (ED_STATE.templates && ED_STATE.templates.templates) || [];
+  var t = null;
+  for (var i = 0; i < templates.length; i++) { if (templates[i].templateId === templateId) { t = templates[i]; break; } }
+  if (!t) return;
+  var typeEl = document.getElementById('ed-is-type'); if (typeEl) typeEl.value = t.docType || 'review';
+  var bodyEl = document.getElementById('ed-is-body'); if (bodyEl) bodyEl.value = t.bodyMd || '';
+  var sigEl = document.getElementById('ed-is-sig'); if (sigEl) sigEl.checked = t.requiresSignature !== false;
+  var titleEl = document.getElementById('ed-is-title'); if (titleEl && !titleEl.value.trim()) titleEl.value = t.name || '';
+  ED_STATE.issueFields = (t.fields || []).map(function (f) { return { label: f.label, type: f.type, required: f.required !== false }; });
+  edRenderIssueFields_();
+  showToast('Template applied — review and personalize.', 'info');
+}
+function edSaveAsTemplate_() {
+  var bodyMd = (document.getElementById('ed-is-body') || {}).value || '';
+  if (!bodyMd.trim()) { showToast('Write a body first, then save it as a template.', 'warn'); return; }
+  uiPrompt({
+    title: 'Save as template',
+    message: 'Reusable for any employee. Stores the body + fields + type + signature setting (no employee data).',
+    placeholder: 'e.g. Annual Performance Review',
+    validator: function (v) { return v && v.trim() ? '' : 'Give the template a name.'; },
+  }).then(function (name) {
+    if (!name) return;
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) { showToast((res && res.error) || 'Could not save template.', 'error'); return; }
+        showToast('Template saved.', 'success');
+        if (currentView === 'docsManage') edLoadMgr_();
+      })
+      .withFailureHandler(function (err) { showToast('Could not save: ' + ((err && err.message) || err), 'error'); })
+      .saveEmpDocTemplate({
+        name: name,
+        docType: (document.getElementById('ed-is-type') || {}).value || 'review',
+        bodyMd: bodyMd,
+        requiresSignature: !!(document.getElementById('ed-is-sig') || {}).checked,
+        fields: edGatherFields_(),
+      });
+  });
+}
+function edDeleteTemplate_(templateId) {
+  uiConfirm({ title: 'Delete this template?', message: 'Already-issued documents are unaffected.', confirmLabel: 'Delete', tone: 'danger' })
+    .then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success) { showToast((res && res.error) || 'Could not delete.', 'error'); return; }
+          showToast('Template deleted.', 'success');
+          if (currentView === 'docsManage') edLoadMgr_();
+        })
+        .withFailureHandler(function (err) { showToast('Could not delete: ' + ((err && err.message) || err), 'error'); })
+        .deleteEmpDocTemplate(templateId);
+    });
+}
+function edGatherFields_() {
+  return (ED_STATE.issueFields || []).filter(function (f) { return f.label && f.label.trim(); })
+    .map(function (f) { return { label: f.label.trim(), type: f.type || 'text', required: f.required !== false }; });
+}
+function edRelease_(docId) {
+  uiConfirm({ title: 'Release to the employee?', message: 'The employee is notified by email and can complete it.', confirmLabel: 'Release' })
+    .then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (!res || !res.success) { showToast((res && res.error) || 'Release failed.', 'error'); return; }
+          showToast('Released.', 'success');
+          if (currentView === 'docsManage') edLoadMgr_();
+        })
+        .withFailureHandler(function (err) { showToast('Release failed: ' + ((err && err.message) || err), 'error'); })
+        .releaseDoc(docId);
+    });
 }
 
 /** Reuses the manager-gated KB Phase-2 converter to pre-fill the body. */
@@ -402,7 +626,7 @@ function edConvertDoc_() {
   });
 }
 
-function edSubmitIssue_() {
+function edSubmitIssue_(release) {
   var payload = {
     empId: (document.getElementById('ed-is-emp') || {}).value || '',
     docType: (document.getElementById('ed-is-type') || {}).value || '',
@@ -410,28 +634,33 @@ function edSubmitIssue_() {
     bodyMd: (document.getElementById('ed-is-body') || {}).value || '',
     dueAt: (document.getElementById('ed-is-due') || {}).value || '',
     requiresSignature: !!(document.getElementById('ed-is-sig') || {}).checked,
+    fields: edGatherFields_(),
+    release: !!release,
   };
   if (!payload.empId) { showToast('Pick an employee.', 'error'); return; }
   if (!payload.title.trim()) { showToast('Title is required.', 'error'); return; }
   if (!payload.bodyMd.trim()) { showToast('Document body is required.', 'error'); return; }
   uiConfirm({
-    title: 'Issue document?',
-    message: 'The content is frozen and hashed at issue. The employee is notified by email' + (payload.requiresSignature ? ' and asked to sign' : '') + '.',
-    confirmLabel: 'Issue',
+    title: release ? 'Issue & release document?' : 'Save as draft?',
+    message: release
+      ? ('The content is frozen and hashed at issue. The employee is notified by email' + (payload.requiresSignature ? ' and asked to sign' : '') + '.')
+      : 'Saved as a draft — the employee can\'t see it until you Release it.',
+    confirmLabel: release ? 'Issue & release' : 'Save draft',
   }).then(function (ok) {
     if (!ok) return;
-    var btn = document.getElementById('ed-is-go');
+    var btn = document.getElementById(release ? 'ed-is-go' : 'ed-save-draft');
     if (btn) btn.disabled = true;
     google.script.run
       .withSuccessHandler(function (res) {
         if (btn) btn.disabled = false;
-        if (!res || !res.success) { showToast((res && res.error) || 'Issue failed.', 'error'); return; }
-        showToast('Document issued.', 'success');
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed.', 'error'); return; }
+        showToast(res.status === 'draft' ? 'Draft saved.' : 'Document issued.', 'success');
+        ED_STATE.issueFields = [];
         if (currentView === 'docsManage') edLoadMgr_();
       })
       .withFailureHandler(function (err) {
         if (btn) btn.disabled = false;
-        showToast('Issue failed: ' + ((err && err.message) || err), 'error');
+        showToast('Save failed: ' + ((err && err.message) || err), 'error');
       })
       .issueDoc(payload);
   });

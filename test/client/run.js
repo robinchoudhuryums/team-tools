@@ -1407,13 +1407,51 @@ test('kbHlRegex_: token regex matches case-insensitively; escapes regex chars; n
 // T3 — Employee Docs: issue-payload validator (pure, from Code.js), the
 // status-chip renderer, and the signature-pad export-cap parity tripwire.
 console.log('\nempdocs — validator / chip / pad export cap (T3)');
-['EMPDOC_TYPES', 'EMPDOC_TITLE_MAX', 'EMPDOC_BODY_MAX'].forEach((name) => {
+['EMPDOC_TYPES', 'EMPDOC_TITLE_MAX', 'EMPDOC_BODY_MAX',
+ 'EMPDOC_FIELD_TYPES', 'EMPDOC_FIELD_CAP', 'EMPDOC_FIELD_LABEL_MAX', 'EMPDOC_RESPONSE_MAX'].forEach((name) => {
   const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*[^;]+);'));
   assert.ok(m, name + ' declaration found in Code.js');
   vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
 });
+vm.runInContext(extractRawFunction('Code.js', 'empDocValidateFields_'), sb, { filename: 'Code.js#empDocValidateFields_' });
+vm.runInContext(extractRawFunction('Code.js', 'empDocValidateResponses_'), sb, { filename: 'Code.js#empDocValidateResponses_' });
+vm.runInContext(extractRawFunction('Code.js', 'empDocNeedsAction_'), sb, { filename: 'Code.js#empDocNeedsAction_' });
 vm.runInContext(extractRawFunction('Code.js', 'empDocValidateIssue_'), sb,
   { filename: 'Code.js#empDocValidateIssue_' });
+test('empDocValidateFields_: normalizes, slugs ids, dedupes, whitelists type, caps', () => {
+  const r = sb.empDocValidateFields_([{ label: 'Your Goals' }, { label: 'Your Goals', type: 'textarea' }, { label: 'When', type: 'date', required: false }]);
+  assert.ok(r.ok);
+  assert.strictEqual(r.fields.length, 3);
+  assert.strictEqual(r.fields[0].id, 'your-goals');
+  assert.strictEqual(r.fields[1].id, 'your-goals-2', 'dedupes ids');
+  assert.strictEqual(r.fields[0].required, true, 'required defaults on');
+  assert.strictEqual(r.fields[2].required, false);
+  assert.strictEqual(sb.empDocValidateFields_(null).ok, true, 'null → no fields');
+  assert.strictEqual(sb.empDocValidateFields_([{ label: '' }]).ok, false, 'blank label rejected');
+  assert.strictEqual(sb.empDocValidateFields_([{ label: 'x', type: 'email' }]).ok, false, 'bad type rejected');
+});
+test('empDocValidateResponses_: requires required fields, bounds, validates dates', () => {
+  const fields = [{ id: 'a', label: 'A', type: 'text', required: true }, { id: 'b', label: 'B', type: 'date', required: false }];
+  assert.strictEqual(sb.empDocValidateResponses_(fields, { a: 'hi' }).ok, true);
+  assert.strictEqual(sb.empDocValidateResponses_(fields, { a: '' }).ok, false, 'missing required → fail');
+  assert.strictEqual(sb.empDocValidateResponses_(fields, { a: 'hi', b: '07/01/2026' }).ok, false, 'bad date → fail');
+  const big = sb.empDocValidateResponses_(fields, { a: 'x'.repeat(sb.EMPDOC_RESPONSE_MAX + 1) });
+  assert.strictEqual(big.ok, false, 'oversize response → fail');
+  // only known field ids are kept
+  const kept = sb.empDocValidateResponses_(fields, { a: 'hi', zzz: 'ignored' });
+  assert.ok(kept.ok && kept.responses.zzz === undefined);
+});
+test('empDocNeedsAction_: issued + (signature OR required field) needs action', () => {
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'issued', requiresSignature: true, fields: [] }), true);
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'issued', requiresSignature: false, fields: [{ required: true }] }), true);
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'issued', requiresSignature: false, fields: [{ required: false }] }), false);
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'draft', requiresSignature: true, fields: [] }), false, 'draft → no action');
+  assert.strictEqual(sb.empDocNeedsAction_({ status: 'signed', requiresSignature: true, fields: [] }), false);
+});
+test('empDocValidateIssue_: release flag maps to draft/issued status', () => {
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'review', title: 'T', bodyMd: 'b' }).doc.status, 'issued', 'default issues');
+  assert.strictEqual(sb.empDocValidateIssue_({ empId: 'E1', docType: 'review', title: 'T', bodyMd: 'b', release: false }).doc.status, 'draft');
+});
 test('empDocValidateIssue_: accepts a good payload; whitelists type; bounds title/body/date', () => {
   const ok = sb.empDocValidateIssue_({ empId: 'E1', docType: 'review', title: 'T', bodyMd: 'body', dueAt: '2026-07-01' });
   assert.ok(ok.ok);

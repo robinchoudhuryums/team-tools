@@ -3933,6 +3933,11 @@ function test_managerGates_rejectNonManager() {
     ['getDocsDashboard',               function () { return getDocsDashboard(); }],
     ['voidDoc',                        function () { return voidDoc('no-such-doc', ''); }],
     ['verifyDocSignature',             function () { return verifyDocSignature('no-such-doc'); }],
+    // T3 v2 — release + templates (gate precedes any HR_DOCS_SS_ID access).
+    ['releaseDoc',                     function () { return releaseDoc('no-such-doc'); }],
+    ['getEmpDocTemplates',             function () { return getEmpDocTemplates(); }],
+    ['saveEmpDocTemplate',             function () { return saveEmpDocTemplate({ name: 'gate', bodyMd: 'x' }); }],
+    ['deleteEmpDocTemplate',           function () { return deleteEmpDocTemplate('no-such-tpl'); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],

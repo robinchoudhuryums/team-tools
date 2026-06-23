@@ -7940,9 +7940,9 @@ function empDocsOverdueAll_(todayIso) {
     for (let i = 0; i < rows.length; i++) {
       const d = empDocRowToObj_(rows[i], ssTz);
       if (!d.docId) continue;
-      if (!(d.status === 'issued' && d.requiresSignature && d.dueAt && todayIso > d.dueAt)) continue;
+      if (!(empDocNeedsAction_(d) && d.dueAt && todayIso > d.dueAt)) continue;
       const target = lookupEmployeeById_(d.empId);
-      out.push({ doc: d, empName: target ? target.name : 'former employee' });
+      out.push({ doc: d, empName: target ? target.name : 'former employee', empEmail: target ? target.email : '' });
     }
     out.sort(function (x, y) {
       if (x.doc.dueAt !== y.doc.dueAt) return x.doc.dueAt < y.doc.dueAt ? -1 : 1;
@@ -7983,9 +7983,23 @@ function sendTrainingOverdueDigest() {
         sent++;
       } catch (e) { console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + e.message); }
     });
+    // v2 — also nudge the EMPLOYEE about their own overdue documents (one
+    // email per employee). Best-effort per recipient.
+    let empNudged = 0;
+    const byEmp = {};
+    overdueDocs.forEach(function (od) {
+      const key = (od.empEmail || '').toLowerCase();
+      if (!key) return;
+      (byEmp[key] = byEmp[key] || { name: od.empName, docs: [] }).docs.push(od.doc);
+    });
+    Object.keys(byEmp).forEach(function (email) {
+      try { sendEmployeeOverdueDocsEmail_(email, byEmp[email].name, byEmp[email].docs, todayIso); empNudged++; }
+      catch (e) { console.warn('employee overdue-docs nudge to ' + email + ' failed: ' + e.message); }
+    });
     stampDigestLastRun_('trainingOverdue');
     Logger.log('sendTrainingOverdueDigest: training=' + overdueTraining.length +
-      ' docs=' + overdueDocs.length + ' coaching=' + overdueCoaching.length + ' managersEmailed=' + sent);
+      ' docs=' + overdueDocs.length + ' coaching=' + overdueCoaching.length +
+      ' managersEmailed=' + sent + ' employeesNudged=' + empNudged);
   } catch (err) {
     Logger.log('sendTrainingOverdueDigest failed: ' + err.message);
   }
@@ -8036,6 +8050,28 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
   const htmlBody = buildBrandedEmailHtml_('Overdue training, documents & coaching', html, { accent: P.warnDeep });
   MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training, documents & coaching', body: text, htmlBody: htmlBody });
+}
+
+/** Branded reminder to ONE employee about their own overdue documents (v2 —
+ *  the deadline reminds both sides). INV-105 — every field esc_'d, plain-text
+ *  fallback. */
+function sendEmployeeOverdueDocsEmail_(toEmail, empName, docs, todayIso) {
+  const P = CN_EMAIL_PALETTE;
+  const rows = docs.map(function (d) {
+    const action = d.requiresSignature ? 'sign' : 'complete';
+    return '<tr>' +
+      '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(d.title) + '</strong> · ' + esc_(action) + '</td>' +
+      '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">due ' + esc_(d.dueAt) + '</td>' +
+      '</tr>';
+  }).join('');
+  const html = '<p style="margin:0 0 4px;">Hi ' + esc_(empName) + ', these documents are past their due date and still need your attention.</p>' +
+    '<table style="width:100%;border-collapse:collapse;">' + rows + '</table>' +
+    '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → My Docs</strong> to complete them.</p>';
+  const text = 'Hi ' + empName + ', these documents are overdue (as of ' + todayIso + '):\n' +
+    docs.map(function (d) { return '  ' + d.title + ' (due ' + d.dueAt + ')'; }).join('\n') +
+    '\n\nOpen the web app → Training & Employee Docs → My Docs to complete them.';
+  const htmlBody = buildBrandedEmailHtml_('Documents need your attention', html, { accent: P.warnDeep });
+  MailApp.sendEmail({ to: toEmail, subject: '⏰ Your documents are overdue', body: text, htmlBody: htmlBody });
 }
 
 function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
@@ -13900,11 +13936,22 @@ function getQuizAnalytics() {
 // EXCLUDED from every retention purge: HR records are keep-forever.
 const EMPDOC_TAB = 'EmpDocs';
 const EMPDOC_SIG_TAB = 'DocSignatures';
-const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason'];
+const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson'];
 const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
-const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12 };
+const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14 };
 const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6 };
 const EMPDOC_TYPES = ['review','pip','policy','other'];
+// v2 — manager-curated reusable templates (e.g. "Annual Performance Review").
+// Org-wide + PHI-free (form shells, not employee data) → not team-scoped.
+const EMPDOC_TPL_TAB = 'EmpDocTemplates';
+const EMPDOC_TPL_HEADERS = ['TemplateId','Name','DocType','BodyMd','FieldsJson','RequiresSignature','CreatedBy','CreatedAt'];
+const EDT = { TPL_ID:0, NAME:1, DOC_TYPE:2, BODY_MD:3, FIELDS:4, REQUIRES_SIG:5, CREATED_BY:6, CREATED_AT:7 };
+// v2 — employee-completable fields on a doc (in addition to the signature).
+const EMPDOC_FIELD_TYPES = ['text','textarea','date'];
+const EMPDOC_FIELD_CAP = 40;              // max fields per doc/template
+const EMPDOC_FIELD_LABEL_MAX = 200;
+const EMPDOC_RESPONSE_MAX = 8000;         // per free-text response
+const EMPDOC_TPL_NAME_MAX = 120;
 const EMPDOC_TITLE_MAX = 200;
 const EMPDOC_BODY_MAX = 49000;        // under the 50k Sheets cell limit
 const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales to <=600px
@@ -13930,6 +13977,19 @@ function getOrCreateEmpDocSheet_(tabName, headers) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    return sheet;
+  }
+  // Self-heal a short header (back-compat: the EmpDocs tab grew trailing v2
+  // FieldsJson/ResponsesJson columns — legacy rows read those as ''). Widen +
+  // (re)write the header row once so range reads at headers.length don't throw.
+  if (sheet.getMaxColumns() < headers.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+  }
+  const hdr = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  let missing = false;
+  for (let i = 0; i < headers.length; i++) { if (String(hdr[i] || '').trim() !== headers[i]) { missing = true; break; } }
+  if (missing) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
   }
   return sheet;
 }
@@ -13943,16 +14003,25 @@ function empDocSha256Hex_(payload) {
   }
   return out;
 }
-/** Content hash — freezes what was issued (body+title+type+empId). */
-function empDocContentHash_(bodyMd, title, docType, empId) {
-  return empDocSha256Hex_(String(bodyMd || '') + ' ' + String(title || '') + ' ' + String(docType || '') + ' ' + String(empId || ''));
+/** Content hash — freezes what was issued (body+title+type+empId, + the v2
+ *  fillable-field SCHEMA when present). `fieldsJson` is appended ONLY when
+ *  non-empty so legacy 4-arg callers / fieldless rows hash identically to
+ *  before (back-compat — old stored hashes stay valid). Callers MUST pass the
+ *  RAW stored FieldsJson cell string (not a re-serialized object) so recompute
+ *  is byte-stable. */
+function empDocContentHash_(bodyMd, title, docType, empId, fieldsJson) {
+  let base = String(bodyMd || '') + ' ' + String(title || '') + ' ' + String(docType || '') + ' ' + String(empId || '');
+  if (fieldsJson) base += ' ' + String(fieldsJson);
+  return empDocSha256Hex_(base);
 }
 /** Signature hash — covers the frozen content hash + identity + the ack
  *  version. Deliberately NOT the timestamp (Sheets coerces datetime cells to
  *  Dates on read, which would break recompute — INV-113); the EmpDocSigned
  *  audit row is the independent timestamp witness. */
-function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion) {
-  return empDocSha256Hex_(String(contentHash || '') + ' ' + String(empId || '') + ' ' + String(docId || '') + ' ' + String(signatureDataUrl || '') + ' ' + String(ackVersion || ''));
+function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson) {
+  let base = String(contentHash || '') + ' ' + String(empId || '') + ' ' + String(docId || '') + ' ' + String(signatureDataUrl || '') + ' ' + String(ackVersion || '');
+  if (responsesJson) base += ' ' + String(responsesJson);   // v2 — the signed responses are attested too (back-compat: appended only when present)
+  return empDocSha256Hex_(base);
 }
 
 /** Pure — issueDoc payload validation (Node-pinned). Returns {ok, doc} or
@@ -13970,7 +14039,89 @@ function empDocValidateIssue_(payload) {
   if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
   const dueAt = String(payload.dueAt || '').trim();
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
-  return { ok: true, doc: { empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt, requiresSignature: payload.requiresSignature !== false } };
+  const fv = empDocValidateFields_(payload.fields);
+  if (!fv.ok) return { ok: false, error: fv.error };
+  return { ok: true, doc: {
+    empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt,
+    requiresSignature: payload.requiresSignature !== false,
+    fields: fv.fields,
+    // v2 — manager can save as a DRAFT (invisible to the employee) and Release
+    // later; default behavior (no flag) is to issue immediately (back-compat).
+    status: payload.release === false ? 'draft' : 'issued',
+  } };
+}
+
+/** Pure (Node-pinned) — normalize + validate a fillable-field schema. Returns
+ *  {ok, fields:[{id,label,type,required}]} or {ok:false,error}. Auto-derives a
+ *  stable slug id from the label when absent; dedupes ids. */
+function empDocValidateFields_(fields) {
+  if (fields == null) return { ok: true, fields: [] };
+  if (!Array.isArray(fields)) return { ok: false, error: 'Fields must be a list.' };
+  if (fields.length > EMPDOC_FIELD_CAP) return { ok: false, error: 'Too many fields (max ' + EMPDOC_FIELD_CAP + ').' };
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i] || {};
+    const label = String(f.label || '').trim();
+    if (!label) return { ok: false, error: 'Each field needs a label.' };
+    if (label.length > EMPDOC_FIELD_LABEL_MAX) return { ok: false, error: 'A field label is too long.' };
+    const type = String(f.type || 'text').trim().toLowerCase();
+    if (EMPDOC_FIELD_TYPES.indexOf(type) < 0) return { ok: false, error: 'Invalid field type "' + type + '".' };
+    let id = String(f.id || f.label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!id) id = 'f' + (i + 1);
+    let base = id, n = 2;
+    while (seen[id]) { id = base + '-' + (n++); }
+    seen[id] = true;
+    out.push({ id: id, label: label, type: type, required: f.required !== false });
+  }
+  return { ok: true, fields: out };
+}
+
+/** Pure (Node-pinned) — validate the employee's responses against the doc's
+ *  field schema. Every required field must be non-empty; sizes are bounded.
+ *  Returns {ok, responses} (keyed by field id, only known fields kept) or
+ *  {ok:false,error}. */
+function empDocValidateResponses_(fields, responses) {
+  fields = Array.isArray(fields) ? fields : [];
+  responses = (responses && typeof responses === 'object') ? responses : {};
+  const out = {};
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const raw = responses[f.id];
+    const val = raw == null ? '' : String(raw).trim();
+    if (f.required && !val) return { ok: false, error: 'Please complete: ' + f.label };
+    if (val.length > EMPDOC_RESPONSE_MAX) return { ok: false, error: 'A response is too long (max ' + EMPDOC_RESPONSE_MAX + ' chars).' };
+    if (f.type === 'date' && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return { ok: false, error: 'Invalid date for: ' + f.label };
+    if (val) out[f.id] = val;
+  }
+  return { ok: true, responses: out };
+}
+
+/** Pure (Node-pinned) — does this doc still need employee action? (an
+ *  unsigned signature OR an unfilled required field). Drives "overdue". */
+function empDocNeedsAction_(doc) {
+  if (!doc || doc.status !== 'issued') return false;
+  if (doc.requiresSignature) return true;
+  const fields = Array.isArray(doc.fields) ? doc.fields : [];
+  return fields.some(function (f) { return f.required; });
+}
+
+/** Pure (Node-pinned) — saveEmpDocTemplate validation. */
+function empDocTemplateValidate_(payload) {
+  payload = payload || {};
+  const name = String(payload.name || '').trim();
+  if (!name || name.length > EMPDOC_TPL_NAME_MAX) return { ok: false, error: 'Template name is required (max ' + EMPDOC_TPL_NAME_MAX + ' chars).' };
+  const docType = String(payload.docType || 'review').trim().toLowerCase();
+  if (EMPDOC_TYPES.indexOf(docType) < 0) return { ok: false, error: 'Invalid document type.' };
+  const bodyMd = String(payload.bodyMd || '');
+  if (!bodyMd.trim()) return { ok: false, error: 'Template body is required.' };
+  if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Template body is too long.' };
+  const fv = empDocValidateFields_(payload.fields);
+  if (!fv.ok) return { ok: false, error: fv.error };
+  return { ok: true, tpl: {
+    name: name, docType: docType, bodyMd: bodyMd, fields: fv.fields,
+    requiresSignature: payload.requiresSignature !== false,
+  } };
 }
 
 function empDocRowToObj_(row, ssTz) {
@@ -13988,7 +14139,20 @@ function empDocRowToObj_(row, ssTz) {
     dueAt: trainCellDate_(row[ED.DUE_AT], ssTz),
     signedAt: trainCellTs_(row[ED.SIGNED_AT], ssTz),
     voidReason: String(row[ED.VOID_REASON] || ''),
+    // v2 — keep BOTH the raw cell string (for byte-stable hash recompute) and
+    // the parsed shape (for rendering). Legacy rows have undefined cells → ''/[]/{}.
+    fieldsRaw: String(row[ED.FIELDS] || ''),
+    fields: empDocParseJson_(row[ED.FIELDS], []),
+    responsesRaw: String(row[ED.RESPONSES] || ''),
+    responses: empDocParseJson_(row[ED.RESPONSES], {}),
   };
+}
+
+/** Defensive JSON parse — corrupt blob never throws (returns the fallback). */
+function empDocParseJson_(cell, fallback) {
+  const s = String(cell || '').trim();
+  if (!s) return fallback;
+  try { const v = JSON.parse(s); return v == null ? fallback : v; } catch (e) { return fallback; }
 }
 
 /** Bounded id-column lookup → { rowIdx, doc } or null. */
@@ -14033,10 +14197,12 @@ function getMyDocs() {
     for (let i = 0; i < rows.length; i++) {
       if (String(rows[i][ED.EMP_ID]).trim() !== emp.id) continue;
       const d = empDocRowToObj_(rows[i], ssTz);
+      if (d.status === 'draft') continue;   // drafts are invisible until released
       docs.push({
         docId: d.docId, docType: d.docType, title: d.title, status: d.status,
         requiresSignature: d.requiresSignature, issuedAt: d.issuedAt,
         dueAt: d.dueAt, signedAt: d.signedAt,
+        fieldCount: (d.fields || []).length, needsAction: empDocNeedsAction_(d),
       });
     }
     docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
@@ -14055,15 +14221,20 @@ function getMyDoc(docId) {
     const d = found.doc;
     const isOwner = d.empId === emp.id;
     if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
+    // The owner can't see a doc that hasn't been released yet (draft).
+    if (isOwner && d.status === 'draft') return { error: 'Document not found.' };
     const out = {
       docId: d.docId, empId: d.empId, docType: d.docType, title: d.title,
       bodyMd: d.bodyMd, status: d.status, requiresSignature: d.requiresSignature,
       issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
       voidReason: d.voidReason, isOwner: isOwner,
+      fields: d.fields || [], responses: d.responses || {},
     };
-    if (isOwner && d.requiresSignature && d.status === 'issued') {
-      out.ackText = EMPDOC_ACK_TEXT;
-      out.ackVersion = EMPDOC_ACK_VERSION;
+    // The owner gets the completion affordance while the doc is still issued
+    // (signature ack text when it requires a signature, regardless for fields).
+    if (isOwner && d.status === 'issued') {
+      out.canComplete = true;
+      if (d.requiresSignature) { out.ackText = EMPDOC_ACK_TEXT; out.ackVersion = EMPDOC_ACK_VERSION; }
     }
     return out;
   } catch (err) { return { error: err.message }; }
@@ -14075,7 +14246,7 @@ function getMyDoc(docId) {
  *  to sign), bounds the signature payload (INV-96), writes the append-only
  *  DocSignatures row + flips the EmpDocs status in the same lock. Audit:
  *  EmpDocSigned (docId + hash + signedAt — the independent witness). */
-function acknowledgeDoc(docId, signatureDataUrl) {
+function acknowledgeDoc(docId, signatureDataUrl, responses) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -14084,31 +14255,50 @@ function acknowledgeDoc(docId, signatureDataUrl) {
     const found = findEmpDocRow_(docId);
     if (!found || found.doc.empId !== emp.id) return { success: false, error: 'Document not found.' };
     const d = found.doc;
-    if (!d.requiresSignature) return { success: false, error: 'This document does not require a signature.' };
-    if (d.status === 'signed') return { success: false, error: 'Already signed.' };
+    const hasFields = (d.fields || []).length > 0;
+    if (!d.requiresSignature && !hasFields) return { success: false, error: 'This document does not require any action.' };
+    if (d.status === 'signed' || d.status === 'completed') return { success: false, error: 'Already completed.' };
     if (d.status !== 'issued') return { success: false, error: 'This document is no longer active.' };
-    const sig = String(signatureDataUrl || '');
-    if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
-    if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
-    // Integrity gate: the row must still hash to what was issued.
-    const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId);
+    // Validate the employee's field responses against the frozen schema.
+    const rv = empDocValidateResponses_(d.fields, responses);
+    if (!rv.ok) return { success: false, error: rv.error };
+    const responsesRaw = hasFields ? JSON.stringify(rv.responses) : '';
+    // A signature is required only when the doc asks for one.
+    let sig = '';
+    if (d.requiresSignature) {
+      sig = String(signatureDataUrl || '');
+      if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
+      if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
+    }
+    // Integrity gate: the row must still hash to what was issued (incl. fields).
+    const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
     if (d.contentHash && d.contentHash !== expect) {
       return { success: false, error: 'Integrity check failed — this document was altered after issue. Ask your manager to re-issue it.' };
     }
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
-    const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION);
-    const cert = JSON.stringify({
-      docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION,
-      alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion',
-    });
-    getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
-      .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
     const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
-    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
-    sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
-    writeAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
-      'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
+    // Persist responses first (so a signed doc's responses are what was attested).
+    if (hasFields) sheet.getRange(found.rowIdx, ED.RESPONSES + 1).setValue(responsesRaw);
+    if (d.requiresSignature) {
+      const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION, responsesRaw);
+      const cert = JSON.stringify({
+        docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION,
+        alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion' + (responsesRaw ? '|responses' : ''),
+      });
+      getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
+        .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
+      sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
+      sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
+      writeAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
+        'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
+    } else {
+      // Fields-only doc (no signature): completing the fields is the action.
+      sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('completed');
+      sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
+      writeAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
+        'docId=' + d.docId + '; completedAt=' + ts);
+    }
     notifyEmpDocSigned_(d, emp);
     return { success: true, signedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
@@ -14132,16 +14322,42 @@ function issueDoc(payload) {
     const docId = Utilities.getUuid();
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
-    const contentHash = empDocContentHash_(v.doc.bodyMd, v.doc.title, v.doc.docType, v.doc.empId);
+    const fieldsRaw = v.doc.fields.length ? JSON.stringify(v.doc.fields) : '';
+    const contentHash = empDocContentHash_(v.doc.bodyMd, v.doc.title, v.doc.docType, v.doc.empId, fieldsRaw);
     getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS).appendRow([
       docId, v.doc.empId, v.doc.docType, v.doc.title, v.doc.bodyMd, contentHash,
-      v.doc.requiresSignature ? 'TRUE' : 'FALSE', 'issued',
-      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '',
+      v.doc.requiresSignature ? 'TRUE' : 'FALSE', v.doc.status,
+      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '', fieldsRaw, '',
     ]);
     writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
-      'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType, callerEmp.email);
-    notifyEmpDocIssued_(target, v.doc);
-    return { success: true, docId: docId };
+      'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status, callerEmp.email);
+    // Only a RELEASED (issued) doc is visible to the employee — drafts stay silent.
+    if (v.doc.status === 'issued') notifyEmpDocIssued_(target, v.doc);
+    return { success: true, docId: docId, status: v.doc.status };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated + team-scoped, locked. Releases a DRAFT to the employee
+ *  (draft → issued) and notifies them. The frozen content/hash is untouched —
+ *  release only flips the gate. Audit: EmpDocRelease. */
+function releaseDoc(docId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findEmpDocRow_(docId);
+    if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
+    if (found.doc.status !== 'draft') return { success: false, error: 'Only a draft can be released.' };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS);
+    sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('issued');
+    const now = new Date();
+    writeAuditLog_(callerEmp, 'EmpDocRelease', fmtDate_(now), '', false, 0,
+      'docId=' + found.doc.docId + '; empId=' + found.doc.empId, callerEmp.email);
+    const target = lookupEmployeeById_(found.doc.empId);
+    if (target) notifyEmpDocIssued_(target, found.doc);
+    return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -14170,7 +14386,8 @@ function getDocsDashboard() {
         docType: d.docType, title: d.title, status: d.status,
         requiresSignature: d.requiresSignature, issuedBy: d.issuedBy,
         issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
-        overdue: d.status === 'issued' && d.requiresSignature && !!d.dueAt && todayIso > d.dueAt,
+        fieldCount: (d.fields || []).length,
+        overdue: empDocNeedsAction_(d) && !!d.dueAt && todayIso > d.dueAt,
       });
     }
     docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
@@ -14213,7 +14430,7 @@ function verifyDocSignature(docId) {
     const found = findEmpDocRow_(docId);
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { error: 'Document not found.' };
     const d = found.doc;
-    const contentMatch = !d.contentHash ? null : (empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId) === d.contentHash);
+    const contentMatch = !d.contentHash ? null : (empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw) === d.contentHash);
     // Newest signature row for the doc (bottom-up id-column scan).
     const sigSheet = getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS);
     const sigLast = sigSheet.getLastRow();
@@ -14231,7 +14448,7 @@ function verifyDocSignature(docId) {
     const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
     const recomputed = empDocSignatureHash_(
       d.contentHash, d.empId, d.docId,
-      String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''));
+      String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''), d.responsesRaw);
     const match = storedHash ? storedHash === recomputed : null;
     // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
     // consistent body+contentHash rewrite trips `match` (the signature hash
@@ -14249,6 +14466,106 @@ function verifyDocSignature(docId) {
       ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
     };
   } catch (err) { return { error: err.message }; }
+}
+
+// ── EmpDocs v2 — reusable templates (manager-curated form shells) ───────────
+function empDocTemplateRowToObj_(row) {
+  return {
+    templateId: String(row[EDT.TPL_ID] || '').trim(),
+    name: String(row[EDT.NAME] || ''),
+    docType: String(row[EDT.DOC_TYPE] || 'review').trim().toLowerCase(),
+    bodyMd: String(row[EDT.BODY_MD] || ''),
+    fields: empDocParseJson_(row[EDT.FIELDS], []),
+    requiresSignature: String(row[EDT.REQUIRES_SIG]).toLowerCase() !== 'false',
+    createdBy: String(row[EDT.CREATED_BY] || '').toLowerCase().trim(),
+  };
+}
+function findEmpDocTemplateRow_(templateId) {
+  templateId = String(templateId || '').trim();
+  if (!templateId) return null;
+  const sheet = getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const ids = sheet.getRange(2, EDT.TPL_ID + 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() !== templateId) continue;
+    return { rowIdx: i + 2, tpl: empDocTemplateRowToObj_(sheet.getRange(i + 2, 1, 1, EMPDOC_TPL_HEADERS.length).getValues()[0]) };
+  }
+  return null;
+}
+
+/** Manager-gated, read-only. Templates are org-wide + PHI-free (form shells),
+ *  so NOT team-scoped — any manager may use any template. */
+function getEmpDocTemplates() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { templates: [] };
+    const rows = sheet.getRange(2, 1, last - 1, EMPDOC_TPL_HEADERS.length).getValues();
+    const templates = [];
+    for (let i = 0; i < rows.length; i++) {
+      const t = empDocTemplateRowToObj_(rows[i]);
+      if (t.templateId) templates.push(t);
+    }
+    templates.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    return { templates: templates };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Upsert a template by templateId
+ *  (new id minted when absent). Validates via empDocTemplateValidate_. Audit:
+ *  EmpDocTemplateSave (id + name only — PHI-free). */
+function saveEmpDocTemplate(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const v = empDocTemplateValidate_(payload);
+    if (!v.ok) return { success: false, error: v.error };
+    const fieldsRaw = v.tpl.fields.length ? JSON.stringify(v.tpl.fields) : '';
+    const sheet = getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS);
+    const existing = (payload && payload.templateId) ? findEmpDocTemplateRow_(payload.templateId) : null;
+    let templateId;
+    if (existing) {
+      templateId = existing.tpl.templateId;
+      const r = existing.rowIdx;
+      sheet.getRange(r, EDT.NAME + 1).setValue(v.tpl.name);
+      sheet.getRange(r, EDT.DOC_TYPE + 1).setValue(v.tpl.docType);
+      sheet.getRange(r, EDT.BODY_MD + 1).setValue(v.tpl.bodyMd);
+      sheet.getRange(r, EDT.FIELDS + 1).setValue(fieldsRaw);
+      sheet.getRange(r, EDT.REQUIRES_SIG + 1).setValue(v.tpl.requiresSignature ? 'TRUE' : 'FALSE');
+    } else {
+      templateId = Utilities.getUuid();
+      const now = new Date();
+      sheet.appendRow([templateId, v.tpl.name, v.tpl.docType, v.tpl.bodyMd, fieldsRaw,
+        v.tpl.requiresSignature ? 'TRUE' : 'FALSE', callerEmp.email, fmtDate_(now) + ' ' + fmtTime_(now)]);
+    }
+    writeAuditLog_(callerEmp, 'EmpDocTemplateSave', '', '', false, 0,
+      'templateId=' + templateId + '; name=' + v.tpl.name, callerEmp.email);
+    return { success: true, templateId: templateId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Removes a template row only —
+ *  already-issued docs are independent (the body was frozen at issue). */
+function deleteEmpDocTemplate(templateId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findEmpDocTemplateRow_(templateId);
+    if (!found) return { success: false, error: 'Template not found.' };
+    getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS).deleteRow(found.rowIdx);
+    writeAuditLog_(callerEmp, 'EmpDocTemplateDelete', '', '', false, 0,
+      'templateId=' + found.tpl.templateId, callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 /** Best-effort (INV-14) — employee notification on issue. Title only; the
