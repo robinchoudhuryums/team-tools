@@ -3944,6 +3944,11 @@ function test_managerGates_rejectNonManager() {
     ['getSpanishInboxThreadBody',      function () { return getSpanishInboxThreadBody('no-such-thread'); }],
     // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
     ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
+    // Coaching (Training module) — the gate fires BEFORE any HR_DOCS_SS_ID
+    // access, so these run safely even where the property is unset.
+    ['createCoaching',                 function () { return createCoaching({ empId: _TEST_INDIA_ID, severity: 'minor', whatHappened: 'gate' }); }],
+    ['getCoachingDashboard',           function () { return getCoachingDashboard(); }],
+    ['voidCoaching',                   function () { return voidCoaching('no-such-coach', ''); }],
   ];
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);

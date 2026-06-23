@@ -157,7 +157,17 @@ Apps Script project under its own directory, synced via `clasp`.
      T4 item (Drive snapshot-to-PDF signing for signable embeds) stays
      on-demand. See INV-123. The rep My Training checklist was redesigned
      with completion rings; Team Training's matrix is now a reps×items CSS-grid
-     status matrix.
+     status matrix. **Coaching (shipped):** two more tabs — **My Coaching**
+     (rep — severity-chipped feedback cards with one-click Acknowledge) and
+     **Coaching** (manager — a composer + team-scoped dashboard + un-acked
+     KPIs). Granular, non-routine manager feedback on a SPECIFIC patient/TRX
+     interaction (vs. the org-wide quizzes/assignments), stored in a `Coaching`
+     tab in `HR_DOCS_SS_ID` (keep-forever, team-scoped) — `createCoaching` /
+     `getMyCoaching` / `acknowledgeCoaching` / `getCoachingDashboard` /
+     `voidCoaching`. Tied to the Call Notes training flag via a **"Coach on
+     this"** button on the manager Per-Rep card; un-acked items past
+     `CONFIG.COACHING_UNACK_REMINDER_DAYS` (7) nudge the manager in the existing
+     overdue digest. See INV-134.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
@@ -383,7 +393,10 @@ this section before touching the relevant area.
   `getSpanishInboxResolved`, `getSpanishInboxThreadBody`,
   `issueDoc`, `getDocsDashboard`, `voidDoc`, `verifyDocSignature`
   (the last four are ALSO team-scoped per INV-122 — the gate alone is
-  not the boundary).
+  not the boundary),
+  `createCoaching`, `getCoachingDashboard`, `voidCoaching`
+  (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
+  fail-closed model; the gate alone is not the boundary).
   Returning a dashboard or accepting writes without this check is a
   privilege escalation.
 - **Trigger-handler endpoints are reachable via `google.script.run`.**
@@ -2722,7 +2735,7 @@ one-pane-of-glass for this table. Keep all seven in one Drive folder for sanity.
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions | **PHI** | 90-day purge (if enabled) | `getFormsSS_` |
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts | PHI-free by policy | kept | `getKbSS_` |
-| Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures | HR — keep-forever | **never purged** (INV-122) | `getHrDocsSS_` |
+| Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
 | Call Notes (per-rep) | `Employees` col L (`CallNotesSheetId`) | Notes, NotesArchive (cold tier) — one Sheet **per rep** | **PHI** | optional archive + optional purge (live + cold) | `getCallNotesSheet_` |
 
 **Every store's timezone MUST equal `CONFIG.TIMEZONE`** (coerced date/time reads
@@ -3666,6 +3679,8 @@ INV-131 | The `emailFromCallNote` dept-request auto-log is IDEMPOTENT per open `
 INV-132 | `archiveOldCallNotes` is the SAFE (non-destructive) cold-archive tier for call-note retention — a top-level trigger handler (reachable via `google.script.run`) gated with `assertManagerCaller_` (INV-44 family) and locked (INV-01). Across every enrolled rep's per-rep Sheet it MOVES `Notes` rows older than `CN_NOTE_ARCHIVE_DAYS` (Script Property → `CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS`, default **0 = disabled**) into a `NotesArchive` tab (`CONFIG.CALL_NOTES.ARCHIVE_TAB`) in the SAME spreadsheet via `archiveSheetRowsOlderThan_`, which **appends-then-deletes with a `flush()` between** — so a mid-run failure can only DUPLICATE into the cold archive, never lose (the source row survives and is re-archived next run). Data is preserved (the canonical record stays); the live `Notes` tab is bounded; no new operator store. Rows are normalized to `CN_HEADERS` width on move; date read from `CN.DATE_LOCAL` via `parseRetentionDateMs_` (the Sheets-coercion guard). Cross-rep; per-rep Sheet failures are skipped; writes a PHI-free `CallNotesArchive` audit row (counts only; in `AUTOMATION_AUDIT_ACTIONS` so Automation Health surfaces last-run). Archived notes are NOT in the default in-app readers (all go through `getCallNotesSheet_`→`NOTES_TAB`); the opt-in include-archive search (INV-133) is the only reader that reaches the cold tab. `purgeOldCallNotes` never touches `NotesArchive` — the 3rd-tier `purgeArchivedCallNotes` (INV-133) is the only deleter of archived notes. Scheduled at manager-tz 3am, BEFORE the 4am `purgeOldCallNotes`, so archive-first ordering holds; wired into BOTH `installAutomationTriggers`/`removeAutomationTriggers` TARGETS (the trigger-wiring tripwire pins this). Pinned by `test_triggerGate_archiveOldCallNotes_nonManagerThrows` | Subsystem: Server
 
 INV-133 | The call-note retention 3rd tier + its controls. (a) `purgeArchivedCallNotes` is a top-level trigger handler (reachable via `google.script.run`) gated with `assertManagerCaller_` (INV-44) and locked (INV-01); it irreversibly deletes each rep's `NotesArchive` rows older than `CN_ARCHIVE_RETENTION_DAYS` (Script Property → `CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS`, default **0 = disabled**) — the ONLY deleter of archived notes. READ-ONLY w.r.t. tab existence (`getSheetByName`, never creates `NotesArchive`); date from the preserved `CN.DATE_LOCAL` via `parseRetentionDateMs_`; cross-rep, per-rep failures skipped; PHI-free `CallNotesArchivePurge` audit (in `AUTOMATION_AUDIT_ACTIONS`). Scheduled manager-tz 2am (before the 3am archive); in BOTH TARGETS (trigger-wiring tripwire). Pinned by `test_triggerGate_purgeArchivedCallNotes_nonManagerThrows`. (b) `searchMyCallNotes`/`managerSearchCallNotes` accept a trailing `includeArchive` flag (default off — 4-arg callers unaffected) that ALSO scans the cold tab (read-only) and tags hits `_archived`; the INV-45 field-scope logic is byte-identical (factored into a per-source closure). (c) `getRetentionConfig` (read-only summary + `retentionWarnings_` safety ordering, Node-pinned) + `saveRetentionConfig` (writes the three Script Properties, whole-days validation, `AdminConfigChange` audit) are manager-gated (INV-31/INV-57 family, omnibus-pinned); the client danger-confirms enabling/raising either irreversible purge window | Subsystem: Server + Client (Call Notes views)
+
+INV-134 | **Coaching is team-scoped (fail-closed), HR-class, and content-free in the audit log.** Coaching items (granular, non-routine manager feedback on a specific patient/TRX interaction; severity praise/minor/major/critical) live ONLY in a `Coaching` tab in the dedicated `HR_DOCS_SS_ID` spreadsheet (keep-forever, EXCLUDED from every retention purge — the EmpDocs posture; `getOrCreateEmpDocSheet_` auto-provisions it). **Scoping:** `getMyCoaching`/`acknowledgeCoaching` are owner-scoped (the rep's own `EmpId`); manager read/void (`getCoachingDashboard`, `voidCoaching`) require `coachCanManagerSee_` — caller CREATED the item OR is the employee's roster `ManagerEmail` (column M); `MANAGER_EMAILS` membership alone grants nothing, blank column M narrows to owner+issuer (the INV-122 fail-closed rule). `createCoaching`/`acknowledgeCoaching`/`voidCoaching` are locked (INV-01); the three manager endpoints are gated (INV-02). The patient/TRX + free-text narrative are HR-class PHI-adjacent and persist ONLY in the HR store — the shared `CoachingCreate`/`CoachingAck`/`CoachingVoid` audit rows are content-free (coachId/empId/severity only, never the patient/TRX or narrative). `acknowledgeCoaching` is idempotent (already-acked → friendly no-op). The pure `coachValidate_` (whitelist-built; severity ∈ `COACH_SEVERITIES`, caps `COACH_TEXT_MAX`/`COACH_TRX_MAX`) and `coachUnackedOverdue_` (open + non-praise + older than `CONFIG.COACHING_UNACK_REMINDER_DAYS`, default 7) are Node-pinned. Un-acked overdue coaching is folded into the existing daily `sendTrainingOverdueDigest` (team-scoped per manager via `coachCanManagerSee_` — NO new trigger), so 'praise' never nags. Notifications (rep on create, manager on ack) are best-effort (INV-14) and PHI-minimal — they name only the severity, never the narrative. Tied to the call-note training flag via the "Coach on this" button (`window.COACH_PREFILL`, the `CLK_NAV_HINT` pattern). Pinned by the `coachValidate_`/`coachUnackedOverdue_` Node tests + the three gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Training views)
 
 
 ### Policy Configuration

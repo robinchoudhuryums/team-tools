@@ -50,6 +50,10 @@ const CONFIG = {
   // start counts as on-time (grace). Lunch-out within this of scheduled lunch
   // counts as on-time too.
   PUNCTUALITY_GRACE_MIN:        5,
+  // Coaching (Training module): un-acknowledged coaching items older than this
+  // many days are nudged to the issuing/team manager in the daily overdue
+  // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
+  COACHING_UNACK_REMINDER_DAYS: 7,
   // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
   // are sent to this group address; "resolved" = first reply from a configured
   // bilingual group MEMBER (SPANISH_INBOX_MEMBERS, comma-separated emails, via
@@ -7963,20 +7967,25 @@ function sendTrainingOverdueDigest() {
     const todayIso = Utilities.formatDate(new Date(), mgrTz, 'yyyy-MM-dd');
     const overdueTraining = trainOverdueForRoster_(todayIso);   // org-wide
     const overdueDocs = empDocsOverdueAll_(todayIso);           // scope per manager below
+    const overdueCoaching = coachUnackedAll_(Date.now());       // scope per manager below
     let sent = 0;
     mgrEmails.forEach(function (email) {
+      const mgr = { email: email, isManager: true };
       const scopedDocs = overdueDocs.filter(function (od) {
-        return empDocCanManagerSee_({ email: email, isManager: true }, od.doc);
+        return empDocCanManagerSee_(mgr, od.doc);
       });
-      if (!overdueTraining.length && !scopedDocs.length) return;   // nothing for this manager
+      const scopedCoaching = overdueCoaching.filter(function (oc) {
+        return coachCanManagerSee_(mgr, oc.item);
+      });
+      if (!overdueTraining.length && !scopedDocs.length && !scopedCoaching.length) return;   // nothing for this manager
       try {
-        sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, todayIso);
+        sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso);
         sent++;
       } catch (e) { console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + e.message); }
     });
     stampDigestLastRun_('trainingOverdue');
     Logger.log('sendTrainingOverdueDigest: training=' + overdueTraining.length +
-      ' docs=' + overdueDocs.length + ' managersEmailed=' + sent);
+      ' docs=' + overdueDocs.length + ' coaching=' + overdueCoaching.length + ' managersEmailed=' + sent);
   } catch (err) {
     Logger.log('sendTrainingOverdueDigest failed: ' + err.message);
   }
@@ -7984,7 +7993,7 @@ function sendTrainingOverdueDigest() {
 
 /** Branded overdue-digest email to one manager (INV-105 — heading esc_'d in
  *  the wrapper, every user field esc_'d here; plain-text body fallback). */
-function sendTrainingOverdueEmail_(toEmail, training, docs, todayIso) {
+function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) {
   const P = CN_EMAIL_PALETTE;
   function section_(label, rowsHtml) {
     return '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:' + P.muted +
@@ -8013,10 +8022,20 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, todayIso) {
     html += section_('Unsigned documents (' + docs.length + ')', rows);
     text += '\n\nUnsigned documents:\n' + docs.map(function (od) { return '  ' + od.empName + ' · ' + od.doc.title + ' (due ' + od.doc.dueAt + ')'; }).join('\n');
   }
-  html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs</strong> to follow up.</p>';
+  if (coaching && coaching.length) {
+    const rows = coaching.map(function (oc) {
+      return '<tr>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity) + (oc.item.patientTRX ? ' · ' + esc_(oc.item.patientTRX) : '') + '</td>' +
+        '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">since ' + esc_(String(oc.item.createdAt).substring(0, 10)) + '</td>' +
+        '</tr>';
+    }).join('');
+    html += section_('Un-acknowledged coaching (' + coaching.length + ')', rows);
+    text += '\n\nUn-acknowledged coaching:\n' + coaching.map(function (oc) { return '  ' + oc.empName + ' · ' + oc.item.severity + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')'; }).join('\n');
+  }
+  html += '<p style="margin:14px 0 0;">Open the web app → <strong>Training &amp; Employee Docs → Team Training / Issue Docs / Coaching</strong> to follow up.</p>';
   text += '\n\nOpen the web app → Training & Employee Docs to follow up.';
-  const htmlBody = buildBrandedEmailHtml_('Overdue training & documents', html, { accent: P.warnDeep });
-  MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training & documents', body: text, htmlBody: htmlBody });
+  const htmlBody = buildBrandedEmailHtml_('Overdue training, documents & coaching', html, { accent: P.warnDeep });
+  MailApp.sendEmail({ to: toEmail, subject: '⏰ Overdue training, documents & coaching', body: text, htmlBody: htmlBody });
 }
 
 function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
@@ -14258,6 +14277,287 @@ function notifyEmpDocSigned_(doc, signer) {
       brandedKvRows_([['Document', doc.title], ['Signed by', signer.name]]));
     MailApp.sendEmail({ to: doc.issuedBy, subject: 'Signed: ' + doc.title, body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  COACHING — granular, NON-routine manager coaching feedback on a specific
+//  interaction (patient/TRX). Severity praise→critical; rep acknowledges; the
+//  daily overdue digest nudges the manager on un-acked items. Lives in the HR
+//  store (keep-forever, team-scoped per roster column M — the EmpDocs posture),
+//  the per-rep coaching record that feeds reviews/PIPs. Tied to the call-note
+//  'training' flag via the "Coach on this" prefill.
+// ════════════════════════════════════════════════════════════════════════════
+const COACH_TAB = 'Coaching';
+const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy'];
+const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12 };
+const COACH_SEVERITIES = ['praise','minor','major','critical'];
+const COACH_TEXT_MAX = 4000;
+const COACH_TRX_MAX = 200;
+
+/** Pure (Node-pinned) — createCoaching payload validation. Whitelist-built;
+ *  references COACH_SEVERITIES / COACH_TEXT_MAX (injected in the Node harness,
+ *  the isValidTimeOffType_ pattern). 'whatShould' is optional (praise rarely
+ *  needs it); 'whatHappened' is always required. */
+function coachValidate_(payload) {
+  payload = payload || {};
+  var empId = String(payload.empId || '').trim();
+  if (!empId) return { ok: false, error: 'Pick an employee.' };
+  var severity = String(payload.severity || '').trim().toLowerCase();
+  if (COACH_SEVERITIES.indexOf(severity) < 0) return { ok: false, error: 'Pick a severity (praise / minor / major / critical).' };
+  var whatHappened = String(payload.whatHappened || '').trim();
+  if (!whatHappened) return { ok: false, error: 'Describe what happened.' };
+  if (whatHappened.length > COACH_TEXT_MAX) return { ok: false, error: 'What happened is too long (max ' + COACH_TEXT_MAX + ' chars).' };
+  var whatShould = String(payload.whatShould || '').trim();
+  if (whatShould.length > COACH_TEXT_MAX) return { ok: false, error: 'What should have happened is too long (max ' + COACH_TEXT_MAX + ' chars).' };
+  var patientTRX = String(payload.patientTRX || '').trim();
+  if (patientTRX.length > COACH_TRX_MAX) return { ok: false, error: 'Patient/TRX reference is too long.' };
+  var noteId = String(payload.noteId || '').trim();
+  return { ok: true, item: { empId: empId, severity: severity, whatHappened: whatHappened, whatShould: whatShould, patientTRX: patientTRX, noteId: noteId } };
+}
+
+/** Pure (Node-pinned) — the open, non-praise coaching items older than `days`
+ *  that should nudge the manager. Items carry a precomputed `createdAtMs`. */
+function coachUnackedOverdue_(items, nowMs, days) {
+  var cutoff = nowMs - (days || 0) * 86400000;
+  var out = [];
+  (items || []).forEach(function (it) {
+    if (!it || it.status !== 'open') return;
+    if (it.severity === 'praise') return;            // praise never nags
+    if (it.createdAtMs && it.createdAtMs <= cutoff) out.push(it);
+  });
+  return out;
+}
+
+function coachRowToObj_(row, ssTz) {
+  return {
+    coachId: String(row[CO.COACH_ID] || '').trim(),
+    empId: String(row[CO.EMP_ID] || '').trim(),
+    empName: String(row[CO.EMP_NAME] || ''),
+    patientTRX: String(row[CO.PATIENT_TRX] || ''),
+    severity: String(row[CO.SEVERITY] || '').trim().toLowerCase(),
+    whatHappened: String(row[CO.WHAT_HAPPENED] || ''),
+    whatShould: String(row[CO.WHAT_SHOULD] || ''),
+    noteId: String(row[CO.NOTE_ID] || '').trim(),
+    status: String(row[CO.STATUS] || 'open').trim(),
+    createdBy: String(row[CO.CREATED_BY] || '').toLowerCase().trim(),
+    createdAt: trainCellTs_(row[CO.CREATED_AT], ssTz),
+    acknowledgedAt: trainCellTs_(row[CO.ACK_AT], ssTz),
+    ackBy: String(row[CO.ACK_BY] || '').toLowerCase().trim(),
+  };
+}
+
+/** Bounded id-column lookup → { rowIdx, item } or null (the findEmpDocRow_ pattern). */
+function findCoachingRow_(coachId) {
+  coachId = String(coachId || '').trim();
+  if (!coachId) return null;
+  const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const ids = sheet.getRange(2, CO.COACH_ID + 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() !== coachId) continue;
+    const row = sheet.getRange(i + 2, 1, 1, COACH_HEADERS.length).getValues()[0];
+    return { rowIdx: i + 2, item: coachRowToObj_(row, getHrDocsSS_().getSpreadsheetTimeZone()) };
+  }
+  return null;
+}
+
+/** FAIL-CLOSED team scoping (the empDocCanManagerSee_ rule): a manager sees a
+ *  coaching item only when they CREATED it or they are the employee's roster
+ *  ManagerEmail (column M). MANAGER_EMAILS membership alone grants nothing. */
+function coachCanManagerSee_(callerEmp, item) {
+  if (!callerEmp || !callerEmp.isManager) return false;
+  const caller = String(callerEmp.email || '').toLowerCase().trim();
+  if (caller && caller === String(item.createdBy || '').toLowerCase().trim()) return true;
+  const target = lookupEmployeeById_(item.empId);
+  return !!(target && target.managerEmail && target.managerEmail === caller);
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Creates a coaching item for an
+ *  employee. Any manager may issue (issuing reveals nothing); READING stays
+ *  team-scoped. The patient/TRX + free text are HR-class PHI-adjacent and live
+ *  ONLY in the HR store; the audit row is content-free (coachId/empId/severity
+ *  — never the patient/TRX or the narrative). */
+function createCoaching(payload) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const v = coachValidate_(payload);
+    if (!v.ok) return { success: false, error: v.error };
+    const target = lookupEmployeeById_(v.item.empId);
+    if (!target) return { success: false, error: 'Unknown employee.' };
+    const coachId = Utilities.getUuid();
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS).appendRow([
+      coachId, target.id, target.name, v.item.patientTRX, v.item.severity,
+      v.item.whatHappened, v.item.whatShould, v.item.noteId, 'open',
+      callerEmp.email, ts, '', '',
+    ]);
+    writeAuditLog_(callerEmp, 'CoachingCreate', fmtDate_(now), '', false, 0,
+      'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity, callerEmp.email);
+    notifyRepOfCoaching_(target, v.item, callerEmp);
+    return { success: true, coachId: coachId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Rep-callable, caller-scoped, read-only — the caller's OWN coaching items
+ *  (full content; it's their own record). Newest first; excludes voided. */
+function getMyCoaching() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { items: [] };
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
+    const items = [];
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][CO.EMP_ID]).trim() !== emp.id) continue;
+      const c = coachRowToObj_(rows[i], ssTz);
+      if (c.status === 'void') continue;
+      items.push(c);
+    }
+    items.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    return { items: items };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Rep-callable, locked (INV-01), OWNER-only — the employee acknowledges they
+ *  have read the coaching. Idempotent (already-acked → friendly no-op). Audit
+ *  CoachingAck (content-free). */
+function acknowledgeCoaching(coachId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const found = findCoachingRow_(coachId);
+    if (!found || found.item.empId !== emp.id) return { success: false, error: 'Coaching item not found.' };
+    if (found.item.status === 'void') return { success: false, error: 'This item is no longer active.' };
+    if (found.item.status === 'acknowledged') return { success: true, alreadyAcknowledged: true, acknowledgedAt: found.item.acknowledgedAt };
+    const now = new Date();
+    const ts = fmtDate_(now) + ' ' + fmtTime_(now);
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue('acknowledged');
+    sheet.getRange(found.rowIdx, CO.ACK_AT + 1).setValue(ts);
+    sheet.getRange(found.rowIdx, CO.ACK_BY + 1).setValue(emp.email);
+    writeAuditLog_(emp, 'CoachingAck', fmtDate_(now), '', false, 0,
+      'coachId=' + found.item.coachId + '; ackAt=' + ts);
+    notifyManagerOfCoachingAck_(found.item, emp);
+    return { success: true, acknowledgedAt: ts };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** Manager-gated (INV-02), read-only, TEAM-SCOPED (coachCanManagerSee_).
+ *  Returns the coaching items the manager may see + summary counts (open /
+ *  acknowledged / overdue-unacked / praise). */
+function getCoachingDashboard() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return { items: [], counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 } };
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
+    const nowMs = Date.now();
+    const reminderDays = CONFIG.COACHING_UNACK_REMINDER_DAYS || 7;
+    const items = [];
+    const counts = { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 };
+    for (let i = 0; i < rows.length; i++) {
+      const c = coachRowToObj_(rows[i], ssTz);
+      if (!c.coachId || c.status === 'void') continue;
+      if (!coachCanManagerSee_(callerEmp, c)) continue;
+      const createdMs = parseTimestampMs_(c.createdAt, ssTz);
+      c.overdueUnacked = (c.status === 'open' && c.severity !== 'praise' && createdMs && createdMs <= (nowMs - reminderDays * 86400000));
+      if (c.status === 'open') counts.open++;
+      if (c.status === 'acknowledged') counts.acknowledged++;
+      if (c.severity === 'praise') counts.praise++;
+      if (c.overdueUnacked) counts.overdueUnacked++;
+      items.push(c);
+    }
+    items.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    return { items: items, counts: counts, reminderDays: reminderDays };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated (INV-02), locked (INV-01). Soft-voids a coaching item (a
+ *  mistaken/duplicate entry) — never deletes. Audit CoachingVoid. */
+function voidCoaching(coachId, reason) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const found = findCoachingRow_(coachId);
+    if (!found) return { success: false, error: 'Coaching item not found.' };
+    if (!coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue('void');
+    writeAuditLog_(callerEmp, 'CoachingVoid', '', '', false, 0,
+      'coachId=' + found.item.coachId + (reason ? '; reason=' + String(reason).slice(0, 200) : ''), callerEmp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** All open, non-praise coaching items older than the reminder window, as
+ *  [{ item, empName }] for per-manager scoping in the digest. Returns []
+ *  (never throws) when the HR store is unavailable. */
+function coachUnackedAll_(nowMs) {
+  try {
+    const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
+    const last = sheet.getLastRow();
+    if (last < 2) return [];
+    const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
+    const items = [];
+    for (let i = 0; i < rows.length; i++) {
+      const c = coachRowToObj_(rows[i], ssTz);
+      if (!c.coachId) continue;
+      c.createdAtMs = parseTimestampMs_(c.createdAt, ssTz);
+      items.push(c);
+    }
+    return coachUnackedOverdue_(items, nowMs, CONFIG.COACHING_UNACK_REMINDER_DAYS || 7)
+      .map(function (c) { return { item: c, empName: c.empName }; });
+  } catch (e) {
+    Logger.log('coachUnackedAll_ skipped (HR docs store unavailable): ' + e.message);
+    return [];
+  }
+}
+
+/** Best-effort (INV-14) — notify the rep of new coaching. PHI-adjacent content
+ *  (patient/TRX + narrative) stays OUT of the email; it names only the severity
+ *  + a link to open the app. The detail lives behind their authenticated
+ *  "My Coaching" view. */
+function notifyRepOfCoaching_(target, item, manager) {
+  try {
+    if (!target.email) return;
+    const sev = item.severity === 'praise' ? 'praise' : (item.severity + ' coaching');
+    const body = manager.name + ' left you ' + sev + '. Open the web app → Training & Employee Docs → My Coaching to read and acknowledge it.';
+    const htmlBody = buildBrandedEmailHtml_(item.severity === 'praise' ? 'You received praise' : 'New coaching feedback',
+      brandedKvRows_([['From', manager.name], ['Type', item.severity]]) +
+      '<p style="margin:12px 0 0;">Open <strong>Training &amp; Employee Docs → My Coaching</strong> to read and acknowledge it.</p>',
+      { accent: item.severity === 'critical' ? CN_EMAIL_PALETTE.danger : (item.severity === 'praise' ? CN_EMAIL_PALETTE.brand : CN_EMAIL_PALETTE.warnDeep) });
+    MailApp.sendEmail({ to: target.email, subject: (item.severity === 'praise' ? '⭐ Praise from ' : '📋 Coaching from ') + manager.name, body: body, htmlBody: htmlBody });
+  } catch (e) { console.warn('notifyRepOfCoaching_ failed: ' + e.message); }
+}
+
+/** Best-effort — tell the issuing manager their coaching was acknowledged. */
+function notifyManagerOfCoachingAck_(item, rep) {
+  try {
+    if (!item.createdBy) return;
+    const body = rep.name + ' acknowledged your coaching (' + item.severity + ').';
+    MailApp.sendEmail({ to: item.createdBy, subject: 'Acknowledged: coaching for ' + rep.name,
+      body: body, htmlBody: buildBrandedEmailHtml_('Coaching acknowledged',
+        brandedKvRows_([['Employee', rep.name], ['Type', item.severity]])) });
+  } catch (e) { console.warn('notifyManagerOfCoachingAck_ failed: ' + e.message); }
 }
 
 

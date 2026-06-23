@@ -6119,11 +6119,27 @@ function cnMgrRenderReadonlyCard_(note) {
       </div>
       ${editor}
       <div class="cn-mgr-card-actions">
+        <button type="button" class="cn-mgr-coach-btn" data-rep-id="${esc(repId)}" data-note-id="${esc(note.noteId)}"
+                data-patient-trx="${esc(note.patientAndTrx || '')}" onclick="cnMgrCoachOnNote_(this)"
+                title="Log coaching for this rep about this call">${icon('bulb', 12)} Coach</button>
         <button type="button" class="cn-mgr-del-btn" data-note-id="${esc(note.noteId)}" data-rep-id="${esc(repId)}"
                 onclick="cnMgrDeleteNote_(this)" title="Delete this note from the rep's history (manager — audited)">${icon('trash', 12)} Delete</button>
       </div>
     </div>
   `;
+}
+
+/** "Coach on this" — jumps to Training → Coaching with the rep + this call's
+ *  patient/TRX + noteId pre-filled into the composer (the CLK_NAV_HINT pattern,
+ *  via window.COACH_PREFILL which coachRenderMgr_ reads + clears). */
+function cnMgrCoachOnNote_(btn) {
+  window.COACH_PREFILL = {
+    empId: btn.dataset.repId || '',
+    patientTRX: btn.dataset.patientTrx || '',
+    noteId: btn.dataset.noteId || '',
+  };
+  if (typeof enterTool === 'function') enterTool('training', 'coachingManage');
+  else if (typeof showToast === 'function') showToast('Open Training → Coaching to log it', 'toast-info');
 }
 
 /** Operator feedback (2026-06-12) — manager delete from history. The rep

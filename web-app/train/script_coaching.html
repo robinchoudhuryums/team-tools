@@ -1,0 +1,293 @@
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  COACHING (Training module) — granular, non-routine manager coaching on a
+//  specific interaction (patient/TRX). Rep acknowledges; manager dashboard +
+//  composer. Backed by createCoaching / getMyCoaching / acknowledgeCoaching /
+//  getCoachingDashboard / voidCoaching (HR store, team-scoped). PHI-adjacent
+//  narrative renders only behind the authenticated views; every server string
+//  is esc()'d before innerHTML.
+// ════════════════════════════════════════════════════════════════════════════
+var COACH_STATE = { my: null, dash: null, emps: null };
+
+// severity → kicker-pill tone (reuses the shared .kicker-pill[data-tone] styles)
+function coachSevTone_(sev) {
+  return sev === 'praise' ? 'accent'
+    : sev === 'minor' ? 'info'
+    : sev === 'major' ? 'warn'
+    : sev === 'critical' ? 'destructive' : 'info';
+}
+function coachSevChip_(sev) {
+  var label = (sev || '').charAt(0).toUpperCase() + (sev || '').slice(1);
+  return '<span class="kicker-pill" data-tone="' + coachSevTone_(sev) + '">' + esc(label) + '</span>';
+}
+function coachNarrativeHtml_(label, text) {
+  if (!text) return '';
+  return '<div style="margin-top:8px;"><div style="font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:3px;">' +
+    esc(label) + '</div><div style="white-space:pre-wrap;color:var(--ink);font-size:.9rem;">' + esc(text) + '</div></div>';
+}
+
+// ── REP: My Coaching ────────────────────────────────────────────────────────
+function enterMyCoachingView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('bulb', 16) + ' My Coaching</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>My Coaching</h2></div>' +
+    '<div id="coach-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('bulb', 26) + '</span> Loading coaching&hellip;</div></div>';
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (d) { COACH_STATE.my = d; if (currentView !== requestedView) return; coachRenderMy_(); })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var el = document.getElementById('coach-my-content');
+      if (el) el.innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
+    })
+    .getMyCoaching();
+}
+
+function coachRenderMy_() {
+  var el = document.getElementById('coach-my-content');
+  if (!el) return;
+  var data = COACH_STATE.my || {};
+  if (data.error) { el.innerHTML = '<div class="tr-empty">' + esc(data.error) + '</div>'; return; }
+  var items = data.items || [];
+  if (!items.length) {
+    el.innerHTML = '<div class="tr-empty">No coaching yet. Feedback your manager leaves on specific calls shows up here.</div>';
+    return;
+  }
+  var openCount = items.filter(function (i) { return i.status === 'open'; }).length;
+  var h = openCount
+    ? '<div class="coach-banner">' + icon('flag', 14) + ' You have <strong>' + openCount + '</strong> item' + (openCount === 1 ? '' : 's') + ' to acknowledge.</div>'
+    : '';
+  h += '<div class="coach-list">';
+  items.forEach(function (it) { h += coachCardMy_(it); });
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+function coachCardMy_(it) {
+  var acked = it.status === 'acknowledged';
+  var foot = acked
+    ? '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt || '').substring(0, 16)) + '</div>'
+    : '<button class="tr-complete-btn" data-coach-ack="' + esc(it.coachId) + '">' + icon('check', 13) + ' Acknowledge</button>';
+  return '<div class="coach-card' + (acked ? ' is-acked' : '') + '">' +
+    '<div class="coach-card-head">' + coachSevChip_(it.severity) +
+      (it.patientTRX ? '<span class="coach-trx">' + esc(it.patientTRX) + '</span>' : '') +
+      '<span class="coach-meta">' + esc(String(it.createdAt || '').substring(0, 10)) + '</span></div>' +
+    coachNarrativeHtml_('What happened', it.whatHappened) +
+    coachNarrativeHtml_('What should have happened', it.whatShould) +
+    '<div class="coach-card-foot">' + foot + '</div>' +
+    '</div>';
+}
+
+function coachAck_(coachId) {
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (r && r.success) {
+        if (typeof showToast === 'function') showToast('Acknowledged', 'toast-success');
+        enterMyCoachingView();
+      } else if (typeof showToast === 'function') {
+        showToast((r && r.error) || 'Could not acknowledge', 'toast-error');
+      }
+    })
+    .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast(esc((err && err.message) || err), 'toast-error'); })
+    .acknowledgeCoaching(coachId);
+}
+
+// ── MANAGER: Coaching dashboard + composer ──────────────────────────────────
+function enterCoachingManageView() {
+  if (typeof stopClock === 'function') stopClock();
+  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  var area = document.getElementById('view-area');
+  if (!area) return;
+  area.innerHTML =
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('thumbsUp', 16) + ' Coaching</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>Coaching</h2></div>' +
+    '<div id="coach-mgr-content"><div class="m-loading"><span class="lo-glyph">' + icon('thumbsUp', 26) + '</span> Loading&hellip;</div></div>';
+  coachLoadMgr_();
+}
+
+function coachLoadMgr_() {
+  var requestedView = currentView;
+  var got = 0, failed = false;
+  function done() {
+    got++;
+    if (got < 2 || failed || currentView !== requestedView) return;
+    coachRenderMgr_();
+  }
+  function onFail(err) {
+    if (failed) return;
+    failed = true;
+    if (currentView !== requestedView) return;
+    var el = document.getElementById('coach-mgr-content');
+    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc((err && err.message) || err) + '</div>';
+  }
+  google.script.run.withSuccessHandler(function (d) { COACH_STATE.dash = d; done(); }).withFailureHandler(onFail).getCoachingDashboard();
+  google.script.run.withSuccessHandler(function (d) { COACH_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
+}
+
+function coachRenderMgr_() {
+  var el = document.getElementById('coach-mgr-content');
+  if (!el) return;
+  var dash = COACH_STATE.dash || {};
+  if (dash.error) { el.innerHTML = '<div class="tr-empty">' + esc(dash.error) + '</div>'; return; }
+  var emps = (COACH_STATE.emps && COACH_STATE.emps.employees) || [];
+  var counts = dash.counts || { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 };
+
+  // Optional prefill from a Call Notes "Coach on this" click.
+  var pre = window.COACH_PREFILL || null;
+  window.COACH_PREFILL = null;
+
+  var empSel = '<select id="coach-emp"><option value="">Pick an employee…</option>';
+  emps.forEach(function (e) {
+    var seld = (pre && pre.empId === e.id) ? ' selected' : '';
+    empSel += '<option value="' + esc(e.id) + '"' + seld + '>' + esc(e.name) + '</option>';
+  });
+  empSel += '</select>';
+
+  var sevSel = '<select id="coach-sev">' +
+    '<option value="praise">Praise — went above and beyond</option>' +
+    '<option value="minor" selected>Minor — small correction</option>' +
+    '<option value="major">Major — notable issue</option>' +
+    '<option value="critical">Critical — serious, needs a meeting</option>' +
+    '</select>';
+
+  var h = '<div class="coach-compose ed-issue"><h3>' + icon('bulb', 15) + ' Log coaching</h3>' +
+    '<div class="row">' +
+      '<div><label>Employee</label>' + empSel + '</div>' +
+      '<div><label>Severity</label>' + sevSel + '</div>' +
+      '<div style="flex:1;min-width:200px;"><label>Patient / TRX (optional)</label>' +
+        '<input type="text" id="coach-trx" maxlength="200" placeholder="e.g. TRX-12345" value="' + (pre && pre.patientTRX ? esc(pre.patientTRX) : '') + '"></div>' +
+    '</div>' +
+    '<div class="row"><div style="flex:1;width:100%;"><label>What happened</label>' +
+      '<textarea id="coach-what" maxlength="4000" placeholder="Describe the interaction."></textarea></div></div>' +
+    '<div class="row"><div style="flex:1;width:100%;"><label>What should have happened (optional)</label>' +
+      '<textarea id="coach-should" maxlength="4000" placeholder="The coaching point — how to handle it next time."></textarea></div></div>' +
+    '<input type="hidden" id="coach-noteid" value="' + (pre && pre.noteId ? esc(pre.noteId) : '') + '">' +
+    '<div class="row"><button class="tr-complete-btn" id="coach-go">' + icon('send', 13) + ' Log coaching</button></div>' +
+    '<div class="hint">This is HR-class feedback (kept indefinitely, team-scoped). The patient/TRX and narrative are stored only in the HR record — the audit log stays content-free.</div>' +
+    '</div>';
+
+  // counts strip
+  h += '<div class="coach-kpis">' +
+    coachKpi_('Open', counts.open, '') +
+    coachKpi_('Acknowledged', counts.acknowledged, '') +
+    coachKpi_('Overdue', counts.overdueUnacked, counts.overdueUnacked ? 'crit' : '') +
+    coachKpi_('Praise', counts.praise, '') +
+    '</div>';
+
+  var items = dash.items || [];
+  if (!items.length) {
+    h += '<div class="tr-empty">No coaching logged yet for your team.</div>';
+  } else {
+    h += '<div class="coach-list">';
+    items.forEach(function (it) { h += coachCardMgr_(it); });
+    h += '</div>';
+  }
+  el.innerHTML = h;
+
+  var goBtn = document.getElementById('coach-go');
+  if (goBtn) goBtn.addEventListener('click', coachCreate_);
+  if (pre) { var w = document.getElementById('coach-what'); if (w) w.focus(); }
+}
+
+function coachKpi_(label, val, tone) {
+  return '<div class="coach-kpi"><div class="coach-kpi-num' + (tone ? ' ' + tone : '') + '">' + (val || 0) + '</div>' +
+    '<div class="coach-kpi-lbl">' + esc(label) + '</div></div>';
+}
+
+function coachCardMgr_(it) {
+  var statusPill = it.status === 'acknowledged'
+    ? '<span class="kicker-pill" data-tone="accent">' + icon('check', 11) + ' Acknowledged</span>'
+    : it.overdueUnacked
+      ? '<span class="kicker-pill" data-tone="destructive">' + icon('flag', 11) + ' Overdue</span>'
+      : '<span class="kicker-pill" data-tone="warn">Awaiting ack</span>';
+  return '<div class="coach-card">' +
+    '<div class="coach-card-head">' + coachSevChip_(it.severity) +
+      '<strong class="coach-emp">' + esc(it.empName) + '</strong>' +
+      (it.patientTRX ? '<span class="coach-trx">' + esc(it.patientTRX) + '</span>' : '') +
+      statusPill +
+      '<span class="coach-meta">' + esc(String(it.createdAt || '').substring(0, 10)) + '</span></div>' +
+    coachNarrativeHtml_('What happened', it.whatHappened) +
+    coachNarrativeHtml_('What should have happened', it.whatShould) +
+    (it.acknowledgedAt ? '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt).substring(0, 16)) + '</div>' : '') +
+    '<div class="coach-card-foot"><button class="tr-link coach-void" data-coach-void="' + esc(it.coachId) + '">Void</button></div>' +
+    '</div>';
+}
+
+function coachCreate_() {
+  var empId = (document.getElementById('coach-emp') || {}).value || '';
+  var severity = (document.getElementById('coach-sev') || {}).value || '';
+  var patientTRX = (document.getElementById('coach-trx') || {}).value || '';
+  var whatHappened = (document.getElementById('coach-what') || {}).value || '';
+  var whatShould = (document.getElementById('coach-should') || {}).value || '';
+  var noteId = (document.getElementById('coach-noteid') || {}).value || '';
+  if (!empId) { if (typeof showToast === 'function') showToast('Pick an employee', 'toast-warn'); return; }
+  if (!whatHappened.trim()) { if (typeof showToast === 'function') showToast('Describe what happened', 'toast-warn'); return; }
+  var btn = document.getElementById('coach-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (r && r.success) {
+        if (typeof showToast === 'function') showToast('Coaching logged', 'toast-success');
+        enterCoachingManageView();
+      } else {
+        if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 13) + ' Log coaching'; }
+        if (typeof showToast === 'function') showToast((r && r.error) || 'Could not save', 'toast-error');
+      }
+    })
+    .withFailureHandler(function (err) {
+      if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 13) + ' Log coaching'; }
+      if (typeof showToast === 'function') showToast(esc((err && err.message) || err), 'toast-error');
+    })
+    .createCoaching({ empId: empId, severity: severity, patientTRX: patientTRX, whatHappened: whatHappened, whatShould: whatShould, noteId: noteId });
+}
+
+function coachVoid_(coachId) {
+  if (typeof uiConfirm !== 'function') return;
+  uiConfirm({ title: 'Void this coaching?', message: 'It will be hidden from the employee and the dashboard. This cannot be undone.', confirmLabel: 'Void', tone: 'danger' })
+    .then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (r && r.success) { if (typeof showToast === 'function') showToast('Voided', 'toast-success'); enterCoachingManageView(); }
+          else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not void', 'toast-error');
+        })
+        .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast(esc((err && err.message) || err), 'toast-error'); })
+        .voidCoaching(coachId, '');
+    });
+}
+
+// Delegated click dispatch for both views (ack / void buttons).
+document.addEventListener('click', function (e) {
+  var ack = e.target.closest && e.target.closest('[data-coach-ack]');
+  if (ack) { coachAck_(ack.getAttribute('data-coach-ack')); return; }
+  var voidBtn = e.target.closest && e.target.closest('[data-coach-void]');
+  if (voidBtn) { coachVoid_(voidBtn.getAttribute('data-coach-void')); return; }
+});
+</script>
+
+<style>
+.coach-banner { display:flex; align-items:center; gap:8px; background:var(--warn-soft); color:var(--warning-deep);
+  border:1px solid var(--warn-soft); border-radius:var(--radius); padding:9px 12px; margin-bottom:12px; font-size:.9rem; }
+.coach-list { display:flex; flex-direction:column; gap:10px; }
+.coach-card { border:1px solid var(--line); background:var(--paper-card); border-radius:var(--radius); padding:12px 14px; }
+.coach-card.is-acked { opacity:.78; }
+.coach-card-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.coach-card-head .coach-emp { color:var(--ink); font-size:.95rem; }
+.coach-trx { font:600 11px/1.2 var(--mono); color:var(--muted); background:var(--paper-2);
+  border:1px solid var(--line); border-radius:6px; padding:2px 7px; }
+.coach-meta { margin-left:auto; font:500 11px/1 var(--mono); color:var(--muted); }
+.coach-card-foot { margin-top:10px; display:flex; justify-content:flex-end; gap:8px; }
+.coach-acked { margin-top:8px; display:flex; align-items:center; gap:6px; color:var(--success-deep); font-size:.84rem; }
+.coach-void { color:var(--danger-deep); }
+.coach-compose { margin-bottom:6px; }
+.coach-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:14px 0; }
+.coach-kpi { border:1px solid var(--line); background:var(--paper-card); border-radius:var(--radius); padding:10px 12px; text-align:center; }
+.coach-kpi-num { font:700 1.5rem/1 var(--display, inherit); color:var(--ink); }
+.coach-kpi-num.crit { color:var(--danger-deep); }
+.coach-kpi-lbl { margin-top:4px; font:600 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+:root[data-compact] .coach-kpis { grid-template-columns:repeat(2, 1fr); }
+</style>

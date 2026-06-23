@@ -367,6 +367,57 @@ test('every day-type <select> option is an accepted leave type', () => {
     `UI offers "${v}" but the server validator rejects it`));
 });
 
+console.log('\nCode.js — coaching pure helpers (coachValidate_ / coachUnackedOverdue_)');
+// Source the validator + its whitelist/caps from Code.js (no local re-declare).
+const coachSevMatch = codeSrc.match(/const (COACH_SEVERITIES\s*=\s*\[[\s\S]*?\]);/);
+const coachTmaxMatch = codeSrc.match(/const (COACH_TEXT_MAX\s*=\s*\d+);/);
+const coachTrxMatch = codeSrc.match(/const (COACH_TRX_MAX\s*=\s*\d+);/);
+assert.ok(coachSevMatch && coachTmaxMatch && coachTrxMatch, 'COACH_* consts found in Code.js');
+vm.runInContext(coachSevMatch[1] + ';' + coachTmaxMatch[1] + ';' + coachTrxMatch[1] + ';', sb,
+  { filename: 'Code.js#COACH_consts' });
+vm.runInContext(extractRawFunction('Code.js', 'coachValidate_'), sb, { filename: 'Code.js#coachValidate_' });
+vm.runInContext(extractRawFunction('Code.js', 'coachUnackedOverdue_'), sb, { filename: 'Code.js#coachUnackedOverdue_' });
+const coachValidate_ = sb.coachValidate_;
+const coachUnackedOverdue_ = sb.coachUnackedOverdue_;
+
+test('coachValidate_ accepts a well-formed payload, trims + lowercases severity', () => {
+  const r = coachValidate_({ empId: ' E1 ', severity: 'Major', whatHappened: ' did x ', whatShould: 'do y', patientTRX: 'TRX1', noteId: 'n1' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.item.empId, 'E1');
+  assert.strictEqual(r.item.severity, 'major');
+  assert.strictEqual(r.item.whatHappened, 'did x');
+  assert.strictEqual(r.item.noteId, 'n1');
+});
+test('coachValidate_ allows empty whatShould (praise often has none)', () => {
+  const r = coachValidate_({ empId: 'E1', severity: 'praise', whatHappened: 'great job' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.item.whatShould, '');
+});
+test('coachValidate_ rejects missing emp / bad severity / empty narrative / oversize', () => {
+  assert.strictEqual(coachValidate_({ severity: 'minor', whatHappened: 'x' }).ok, false);
+  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'nope', whatHappened: 'x' }).ok, false);
+  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: '  ' }).ok, false);
+  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: 'x'.repeat(sb.COACH_TEXT_MAX + 1) }).ok, false);
+  assert.strictEqual(coachValidate_({ empId: 'E1', severity: 'minor', whatHappened: 'x', patientTRX: 't'.repeat(sb.COACH_TRX_MAX + 1) }).ok, false);
+});
+test('coachUnackedOverdue_ returns only open, non-praise items older than N days', () => {
+  const now = 1000 * 86400000, day = 86400000;
+  const items = [
+    { status: 'open', severity: 'major', createdAtMs: now - 10 * day },          // overdue → in
+    { status: 'open', severity: 'major', createdAtMs: now - 2 * day },           // too recent → out
+    { status: 'acknowledged', severity: 'major', createdAtMs: now - 30 * day },  // acked → out
+    { status: 'open', severity: 'praise', createdAtMs: now - 30 * day },         // praise → out
+    { status: 'open', severity: 'critical', createdAtMs: now - 8 * day },        // overdue → in
+  ];
+  const due = coachUnackedOverdue_(items, now, 7);
+  assert.strictEqual(due.length, 2);
+  assert.ok(due.every((d) => d.status === 'open' && d.severity !== 'praise'));
+});
+test('coachUnackedOverdue_ never throws on empty / missing input', () => {
+  assert.strictEqual(coachUnackedOverdue_(null, 0, 7).length, 0);
+  assert.strictEqual(coachUnackedOverdue_([], 0, 7).length, 0);
+});
+
 console.log('\nCode.js — feature-flag registry + getFlag_ (Plan A)');
 // These server helpers reference CONFIG (registry defaults) + PropertiesService
 // (the override store). Build a dedicated vm context with minimal stubs, then
