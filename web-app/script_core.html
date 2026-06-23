@@ -106,8 +106,7 @@ const TOOLS = {
     tabs: {
       trainingHome:   { label: 'My Training',   icon: 'check',  enter: 'enterTrainingHomeView' },
       trainingManage: { label: 'Team Training', icon: 'manage', enter: 'enterTrainingManageView', managerOnly: true },
-      coaching:       { label: 'My Coaching',   icon: 'bulb',   enter: 'enterMyCoachingView' },
-      coachingManage: { label: 'Coaching',      icon: 'thumbsUp', enter: 'enterCoachingManageView', managerOnly: true },
+      coaching:       { label: 'Coaching',      icon: 'thumbsUp', enter: 'enterCoachingView' },
       myDocs:         { label: 'My Docs',       icon: 'paperclip', enter: 'enterMyDocsView' },
       docsManage:     { label: 'Issue Docs',    icon: 'send',   enter: 'enterDocsManageView', managerOnly: true },
     },
@@ -217,8 +216,9 @@ window.addEventListener('load', () => {
 });
 
 /** Opens the current view in a chromeless pop-out window in compact mode.
- *  Re-uses the named target so subsequent clicks bring the same window
- *  to the front instead of spawning duplicates. */
+ *  ONE window PER TOOL (named target keyed by tool) so e.g. a Call Notes
+ *  pop-out and a Time Clock pop-out can be open at the same time; a repeat
+ *  click on the same tool's pop-out just focuses that tool's window. */
 function popOutCurrentView() {
   try {
     // The iframe's own origin+pathname is the sandboxed googleusercontent
@@ -228,20 +228,33 @@ function popOutCurrentView() {
     const base = window.SERVER_WEB_APP_URL ||
       (window.location.origin + window.location.pathname);
     const url = base + '?compact=1&tool=' + encodeURIComponent(currentView);
-    // #4 — default 480×800 (wide enough that the note template + its rail sit
-    // side-by-side on launch), overridden by the rep's last persisted
-    // size/position (umsPopoutGeom). Features are honored only on FIRST open
-    // of the named window; subsequent clicks just focus it (browser rule), and
-    // the pop-out itself persists any later resize via
-    // popoutPersistGeometryInit_.
+    const tool = popoutToolKey_(currentView);
+    // #4 — default 480×800, overridden by this tool's last persisted size/pos
+    // (umsPopoutGeom_<tool>). Features honored only on FIRST open of the named
+    // window; later resizes persist via popoutPersistGeometryInit_. A legacy
+    // single-window geom seeds the SIZE only (not position, so a new per-tool
+    // window doesn't stack exactly on an existing one).
     let geom = null;
-    try { geom = popoutParseGeom_(localStorage.getItem('umsPopoutGeom')); } catch (e) {}
+    try {
+      geom = popoutParseGeom_(localStorage.getItem('umsPopoutGeom_' + tool));
+      if (!geom) {
+        const lg = popoutParseGeom_(localStorage.getItem('umsPopoutGeom'));
+        if (lg) geom = { w: lg.w, h: lg.h };
+      }
+    } catch (e) {}
     const w = geom ? geom.w : 480;
     const h = geom ? geom.h : 800;
     let feat = 'width=' + w + ',height=' + h + ',menubar=no,toolbar=no,location=no,status=no,resizable=yes';
     if (geom && geom.x != null && geom.y != null) feat += ',left=' + geom.x + ',top=' + geom.y;
-    window.open(url, 'umsTeamToolsCompact', feat);
+    window.open(url, 'umsTeamToolsCompact_' + tool, feat);
   } catch (e) { showToast('Pop-out blocked by browser', 'toast-warn'); }
+}
+
+/** Tool key a view belongs to (windows + geometry are keyed by tool, not tab),
+ *  so all tabs of one tool share its single pop-out window. */
+function popoutToolKey_(viewKey) {
+  try { return (typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[viewKey]) || viewKey || 'default'; }
+  catch (e) { return viewKey || 'default'; }
 }
 
 /** Pure — parse + range-guard the persisted pop-out geometry blob
@@ -271,9 +284,13 @@ function popoutParseGeom_(raw) {
  *  window) reads what the pop-out last wrote. */
 function popoutPersistGeometryInit_() {
   if (!COMPACT_MODE) return;
+  // Persist under THIS pop-out's tool key (captured at boot from the tool it
+  // was opened for) so each tool's window remembers its own size/position,
+  // even if the rep navigates to another tool inside it.
+  const key = 'umsPopoutGeom_' + popoutToolKey_(currentView);
   const save = function () {
     try {
-      localStorage.setItem('umsPopoutGeom', JSON.stringify({
+      localStorage.setItem(key, JSON.stringify({
         w: window.outerWidth, h: window.outerHeight,
         x: window.screenX, y: window.screenY,
       }));
@@ -550,8 +567,15 @@ function renderToolTabBar(toolKey) {
   });
   bar.innerHTML = tabs.map(k => {
     const t = tool.tabs[k];
-    return `<button class="tt-btn" data-tab="${k}" onclick="showView('${k}')">
-      <span class="tt-icon">${icon(t.icon, 14)}</span>${esc(t.label)}
+    // Manager-only tabs get a subtle upward accent gradient + a small marker
+    // glyph so reps-turned-managers can tell at a glance which tabs are the
+    // privileged, team-facing ones.
+    const mgrCls = t.managerOnly ? ' tt-mgr' : '';
+    const mgrMark = t.managerOnly
+      ? `<span class="tt-mgr-mark" title="Manager-only">${icon('manage', 10)}</span>`
+      : '';
+    return `<button class="tt-btn${mgrCls}" data-tab="${k}" onclick="showView('${k}')">
+      <span class="tt-icon">${icon(t.icon, 14)}</span>${esc(t.label)}${mgrMark}
     </button>`;
   }).join('');
 }

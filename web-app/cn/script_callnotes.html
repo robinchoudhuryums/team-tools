@@ -1624,6 +1624,37 @@
     color: var(--muted); letter-spacing: .04em;
     margin-bottom: 10px;
   }
+  /* Collapsible History date groups */
+  .cn-hist-group { margin-bottom: 10px; }
+  .cn-hist-grouphead {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    appearance: none; background: var(--paper-2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 12px; cursor: pointer; text-align: left;
+    margin-bottom: 8px; transition: background .12s;
+  }
+  .cn-hist-grouphead:hover { background: var(--paper-card); }
+  .cn-hg-caret { display: inline-flex; color: var(--muted); transition: transform .15s; }
+  .cn-hist-group.collapsed .cn-hg-caret { transform: rotate(-90deg); }
+  .cn-hg-date { font-weight: 600; font-size: .9rem; }
+  .cn-hg-count {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    letter-spacing: .03em;
+  }
+  .cn-hg-flags { display: inline-flex; gap: 5px; margin-left: auto; flex-wrap: wrap; }
+  .cn-hg-flag {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    padding: 1px 7px 1px 5px; border-radius: 999px;
+    background: var(--paper-card); border: 1px solid var(--line);
+  }
+  .cn-hg-flag svg { opacity: .85; }
+  .cn-hg-action   { color: var(--warning-deep); border-color: var(--warn-soft); }
+  .cn-hg-training { color: var(--info-deep);    border-color: var(--accent-soft); }
+  .cn-hg-review   { color: var(--success-deep); border-color: var(--good-soft); }
+  .cn-hg-urgent   { color: var(--danger-deep);  border-color: var(--destructive-soft); }
+  .cn-hist-groupbody { overflow: hidden; }
+  .cn-hist-group.collapsed .cn-hist-groupbody { display: none; }
 
   /* ── External email button (form header) ───────────────────────── */
   .cn-ext-email-btn {
@@ -5588,7 +5619,8 @@ function cnRenderHistoryStack_() {
     if (summary) summary.innerHTML = '<div class="cn-history-summary">' +
       esc(startLabel) + ' – ' + esc(endLabel) + ' · ' + notes.length + ' note' + (notes.length !== 1 ? 's' : '') + '</div>';
 
-    // Group by dateLocal, newest dates first
+    // Group by dateLocal, newest dates first — each group is collapsible with
+    // a metadata header (note count + per-flag-type counts).
     var groups = [];
     var groupMap = {};
     notes.forEach(function (n) {
@@ -5599,14 +5631,52 @@ function cnRenderHistoryStack_() {
     groups.sort(function (a, b) { return b.localeCompare(a); });
     var html = '';
     groups.forEach(function (d) {
-      html += '<div class="cn-date-separator">' + esc(cnFormatDateLabel_(d)) + '</div>';
-      html += groupMap[d].map(cnRenderCard_).join('');
+      var gnotes = groupMap[d];
+      html += '<div class="cn-hist-group" data-hgdate="' + esc(d) + '">' +
+        '<button class="cn-hist-grouphead" onclick="cnToggleHistGroup_(this)" aria-expanded="true">' +
+          '<span class="cn-hg-caret">' + icon('chevronDown', 14) + '</span>' +
+          '<span class="cn-hg-date">' + esc(cnFormatDateLabel_(d)) + '</span>' +
+          '<span class="cn-hg-count">' + gnotes.length + ' note' + (gnotes.length !== 1 ? 's' : '') + '</span>' +
+          cnHistGroupChips_(gnotes) +
+        '</button>' +
+        '<div class="cn-hist-groupbody">' + gnotes.map(cnRenderCard_).join('') + '</div>' +
+      '</div>';
     });
     stack.innerHTML = html;
   } else {
     if (summary) summary.innerHTML = '';
     stack.innerHTML = notes.map(cnRenderCard_).join('');
   }
+}
+
+/** Per-flag-type count chips for a History date group. action/training/review
+ *  come from flagType; urgent from subformData.flags via cnIsUrgent_. */
+function cnHistGroupChips_(notes) {
+  var c = { action: 0, training: 0, review: 0, urgent: 0 };
+  notes.forEach(function (n) {
+    if (n.flagType && c[n.flagType] != null) c[n.flagType]++;
+    if (cnIsUrgent_(n)) c.urgent++;
+  });
+  var defs = [
+    ['urgent', 'urgent', icon('flag', 11)],
+    ['action', 'action', icon('flag', 11)],
+    ['training', 'training', icon('bulb', 11)],
+    ['review', 'review', icon('thumbsUp', 11)],
+  ];
+  var out = '';
+  defs.forEach(function (d) {
+    if (!c[d[0]]) return;
+    out += '<span class="cn-hg-flag cn-hg-' + d[0] + '" title="' + c[d[0]] + ' ' + d[1] + '">' + d[2] + c[d[0]] + '</span>';
+  });
+  return out ? '<span class="cn-hg-flags">' + out + '</span>' : '';
+}
+
+/** Toggle a History date group open/closed. */
+function cnToggleHistGroup_(btn) {
+  var group = btn.closest('.cn-hist-group');
+  if (!group) return;
+  var collapsed = group.classList.toggle('collapsed');
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
 }
 
 function cnFormatDateLabel_(isoDate) {
@@ -6138,7 +6208,7 @@ function cnMgrCoachOnNote_(btn) {
     patientTRX: btn.dataset.patientTrx || '',
     noteId: btn.dataset.noteId || '',
   };
-  if (typeof enterTool === 'function') enterTool('training', 'coachingManage');
+  if (typeof enterTool === 'function') enterTool('training', 'coaching');
   else if (typeof showToast === 'function') showToast('Open Training → Coaching to log it', 'toast-info');
 }
 

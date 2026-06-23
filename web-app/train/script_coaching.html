@@ -9,6 +9,18 @@
 // ════════════════════════════════════════════════════════════════════════════
 var COACH_STATE = { my: null, dash: null, emps: null };
 
+// Merged Coaching tab: one tab for everyone. Reps always see "Mine" (their
+// received coaching) and never see the toggle; managers get a Mine ⇄ Team
+// toggle — Team is the composer + team dashboard + metrics, Mine is the
+// manager's OWN received coaching/routine items. Mode persists per browser
+// (managers only) under umsCoachingMode; managers default to Team (primary).
+var COACH_MODE = 'mine';
+function coachReadMode_() {
+  try { var v = localStorage.getItem('umsCoachingMode'); if (v === 'mine' || v === 'team') return v; } catch (e) {}
+  return 'team';
+}
+function coachWriteMode_(m) { try { localStorage.setItem('umsCoachingMode', m); } catch (e) {} }
+
 // severity → kicker-pill tone (reuses the shared .kicker-pill[data-tone] styles)
 function coachSevTone_(sev) {
   return sev === 'praise' ? 'accent'
@@ -27,28 +39,62 @@ function coachNarrativeHtml_(label, text) {
 }
 
 // ── REP: My Coaching ────────────────────────────────────────────────────────
-function enterMyCoachingView() {
+// ── Merged tab entry: builds chrome + (manager) mode toggle, then dispatches ──
+function enterCoachingView() {
   if (typeof stopClock === 'function') stopClock();
   if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
   var area = document.getElementById('view-area');
   if (!area) return;
+  var isMgr = !!(empState && empState.isManager);
+  // A Call Notes "Coach on this" prefill forces Team mode (the composer is there).
+  if (isMgr && window.COACH_PREFILL) COACH_MODE = 'team';
+  else COACH_MODE = isMgr ? coachReadMode_() : 'mine';
+
+  var toggle = isMgr
+    ? '<div class="coach-modes" role="tablist">' +
+        '<button class="coach-mode' + (COACH_MODE === 'mine' ? ' on' : '') + '" data-coach-mode="mine">' + icon('bulb', 13) + ' My Coaching</button>' +
+        '<button class="coach-mode' + (COACH_MODE === 'team' ? ' on' : '') + '" data-coach-mode="team">' + icon('manage', 13) + ' Team Coaching</button>' +
+      '</div>'
+    : '';
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('bulb', 16) + ' My Coaching</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>My Coaching</h2></div>' +
-    '<div id="coach-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('bulb', 26) + '</span> Loading coaching&hellip;</div></div>';
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('thumbsUp', 16) + ' Coaching</div>' : '') +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>Coaching</h2></div>' +
+    toggle +
+    '<div id="coach-content"></div>';
+  coachDispatchMode_();
+}
+
+function coachDispatchMode_() {
+  if (COACH_MODE === 'team') coachLoadMgr_();
+  else coachLoadMy_();
+}
+
+function coachSwitchMode_(mode) {
+  if ((mode !== 'mine' && mode !== 'team') || COACH_MODE === mode) return;
+  COACH_MODE = mode;
+  coachWriteMode_(mode);
+  document.querySelectorAll('.coach-mode').forEach(function (b) {
+    b.classList.toggle('on', b.getAttribute('data-coach-mode') === mode);
+  });
+  coachDispatchMode_();
+}
+
+function coachLoadMy_() {
+  var el = document.getElementById('coach-content');
+  if (el) el.innerHTML = '<div class="m-loading"><span class="lo-glyph">' + icon('bulb', 26) + '</span> Loading coaching&hellip;</div>';
   var requestedView = currentView;
   google.script.run
-    .withSuccessHandler(function (d) { COACH_STATE.my = d; if (currentView !== requestedView) return; coachRenderMy_(); })
+    .withSuccessHandler(function (d) { COACH_STATE.my = d; if (currentView !== requestedView || COACH_MODE !== 'mine') return; coachRenderMy_(); })
     .withFailureHandler(function (err) {
-      if (currentView !== requestedView) return;
-      var el = document.getElementById('coach-my-content');
-      if (el) el.innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
+      if (currentView !== requestedView || COACH_MODE !== 'mine') return;
+      var e2 = document.getElementById('coach-content');
+      if (e2) e2.innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
     })
     .getMyCoaching();
 }
 
 function coachRenderMy_() {
-  var el = document.getElementById('coach-my-content');
+  var el = document.getElementById('coach-content');
   if (!el) return;
   var data = COACH_STATE.my || {};
   if (data.error) { el.innerHTML = '<div class="tr-empty">' + esc(data.error) + '</div>'; return; }
@@ -87,7 +133,7 @@ function coachAck_(coachId) {
     .withSuccessHandler(function (r) {
       if (r && r.success) {
         if (typeof showToast === 'function') showToast('Acknowledged', 'toast-success');
-        enterMyCoachingView();
+        coachLoadMy_();
       } else if (typeof showToast === 'function') {
         showToast((r && r.error) || 'Could not acknowledge', 'toast-error');
       }
@@ -96,32 +142,22 @@ function coachAck_(coachId) {
     .acknowledgeCoaching(coachId);
 }
 
-// ── MANAGER: Coaching dashboard + composer ──────────────────────────────────
-function enterCoachingManageView() {
-  if (typeof stopClock === 'function') stopClock();
-  if (typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
-  var area = document.getElementById('view-area');
-  if (!area) return;
-  area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('thumbsUp', 16) + ' Coaching</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>Coaching</h2></div>' +
-    '<div id="coach-mgr-content"><div class="m-loading"><span class="lo-glyph">' + icon('thumbsUp', 26) + '</span> Loading&hellip;</div></div>';
-  coachLoadMgr_();
-}
-
+// ── MANAGER (Team mode): Coaching dashboard + composer ──────────────────────
 function coachLoadMgr_() {
+  var c = document.getElementById('coach-content');
+  if (c) c.innerHTML = '<div class="m-loading"><span class="lo-glyph">' + icon('manage', 26) + '</span> Loading&hellip;</div>';
   var requestedView = currentView;
   var got = 0, failed = false;
   function done() {
     got++;
-    if (got < 2 || failed || currentView !== requestedView) return;
+    if (got < 2 || failed || currentView !== requestedView || COACH_MODE !== 'team') return;
     coachRenderMgr_();
   }
   function onFail(err) {
     if (failed) return;
     failed = true;
-    if (currentView !== requestedView) return;
-    var el = document.getElementById('coach-mgr-content');
+    if (currentView !== requestedView || COACH_MODE !== 'team') return;
+    var el = document.getElementById('coach-content');
     if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc((err && err.message) || err) + '</div>';
   }
   google.script.run.withSuccessHandler(function (d) { COACH_STATE.dash = d; done(); }).withFailureHandler(onFail).getCoachingDashboard();
@@ -129,7 +165,7 @@ function coachLoadMgr_() {
 }
 
 function coachRenderMgr_() {
-  var el = document.getElementById('coach-mgr-content');
+  var el = document.getElementById('coach-content');
   if (!el) return;
   var dash = COACH_STATE.dash || {};
   if (dash.error) { el.innerHTML = '<div class="tr-empty">' + esc(dash.error) + '</div>'; return; }
@@ -268,7 +304,7 @@ function coachCreate_() {
     .withSuccessHandler(function (r) {
       if (r && r.success) {
         if (typeof showToast === 'function') showToast('Coaching logged', 'toast-success');
-        enterCoachingManageView();
+        coachLoadMgr_();
       } else {
         if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 13) + ' Log coaching'; }
         if (typeof showToast === 'function') showToast((r && r.error) || 'Could not save', 'toast-error');
@@ -288,7 +324,7 @@ function coachVoid_(coachId) {
       if (!ok) return;
       google.script.run
         .withSuccessHandler(function (r) {
-          if (r && r.success) { if (typeof showToast === 'function') showToast('Voided', 'toast-success'); enterCoachingManageView(); }
+          if (r && r.success) { if (typeof showToast === 'function') showToast('Voided', 'toast-success'); coachLoadMgr_(); }
           else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not void', 'toast-error');
         })
         .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast(esc((err && err.message) || err), 'toast-error'); })
@@ -296,8 +332,10 @@ function coachVoid_(coachId) {
     });
 }
 
-// Delegated click dispatch for both views (ack / void buttons).
+// Delegated click dispatch for both modes (mode toggle / ack / void buttons).
 document.addEventListener('click', function (e) {
+  var modeBtn = e.target.closest && e.target.closest('[data-coach-mode]');
+  if (modeBtn) { coachSwitchMode_(modeBtn.getAttribute('data-coach-mode')); return; }
   var ack = e.target.closest && e.target.closest('[data-coach-ack]');
   if (ack) { coachAck_(ack.getAttribute('data-coach-ack')); return; }
   var voidBtn = e.target.closest && e.target.closest('[data-coach-void]');
@@ -306,6 +344,15 @@ document.addEventListener('click', function (e) {
 </script>
 
 <style>
+/* Mine ⇄ Team mode toggle (managers only) — segmented-pill vocabulary,
+   matching the Time/PTO + composer-tab controls. */
+.coach-modes { display:inline-flex; gap:2px; background:var(--paper-2); border:1px solid var(--line);
+  border-radius:999px; padding:3px; margin:0 0 16px; }
+.coach-mode { appearance:none; border:none; background:transparent; cursor:pointer;
+  display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px;
+  font-family:var(--ui); font-size:13px; font-weight:600; color:var(--muted); transition:background var(--t) var(--ease), color var(--t) var(--ease); }
+.coach-mode:hover { color:var(--ink); }
+.coach-mode.on { background:var(--paper-card); color:var(--ink); box-shadow:var(--shadow-sm); }
 .coach-banner { display:flex; align-items:center; gap:8px; background:var(--warn-soft); color:var(--warning-deep);
   border:1px solid var(--warn-soft); border-radius:var(--radius); padding:9px 12px; margin-bottom:12px; font-size:.9rem; }
 .coach-list { display:flex; flex-direction:column; gap:10px; }

@@ -1230,13 +1230,29 @@ function spanishLoadResolved_() {
 function spanishResolvedCard_(t) {
   var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
   var took = spanishFmtDur_(t.resolveMinutes);
+  var when = spanishFmtDateTime_(t.resolvedAtMs);
   return '<div class="sp-task">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' +
       '<span class="sp-task-age" style="color:var(--success-deep)">' + icon('check', 12) + ' ' + esc(took) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
-    '<div class="sp-task-body" style="color:var(--muted)">Resolved by ' + esc(t.resolver || 'a team member') + '</div>' +
+    '<div class="sp-task-body" style="color:var(--muted)">' +
+      (when ? '<span class="sp-resolved-when">' + icon('clock', 11) + ' Resolved ' + esc(when) + '</span> · ' : '') +
+      'by ' + esc(t.resolver || 'a team member') + '</div>' +
     '<div class="sp-task-actions">' + open + '</div>' +
   '</div>';
+}
+
+/** Resolved timestamp for the card (e.g. "Jun 21, 3:40 PM"). Display-only,
+ *  manager-facing — browser-local is fine here (not a "today" derivation). The
+ *  list is server-sorted newest-resolved-first; showing the stamp makes that
+ *  ordering legible (the #6 fix). */
+function spanishFmtDateTime_(ms) {
+  if (!ms) return '';
+  try {
+    var d = new Date(ms);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ', ' +
+      d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  } catch (e) { return ''; }
 }
 
 // Content-aware tool suggestions: Spanish-inbox requests are usually to complete
