@@ -8,6 +8,30 @@ Test Command: manual
 Subsystem cycles since last Seams audit: 5
 Updated: 2026-06-23 (broad-scan: 0 Critical / 0 High / 6 Low; implemented F1/F2/F4/F5)
 
+## Cycle 6 call-note retention ARCHIVAL tier (2026-06-23, branch claude/happy-faraday-0grppg)
+Stage-3 follow-on: made retention SAFE by adding a cold-archive tier (pushed).
+- New archiveOldCallNotes() (top-level trigger handler, assertManagerCaller_-gated
+  INV-44, locked INV-01) MOVES per-rep Notes rows older than CN_NOTE_ARCHIVE_DAYS
+  into a NotesArchive tab in the SAME per-rep spreadsheet — data preserved, live
+  tab bounded, no new operator store. Helpers getNoteArchiveDays_,
+  getOrCreateNotesArchiveTab_, archiveSheetRowsOlderThan_ (append-then-delete +
+  flush; worst case = duplicate in cold archive, never lose). PHI-free
+  CallNotesArchive audit row.
+- Disabled by default (CN_NOTE_ARCHIVE_DAYS / CONFIG.CALL_NOTES.NOTE_ARCHIVE_DAYS
+  =0). New CONFIG.CALL_NOTES.ARCHIVE_TAB='NotesArchive'.
+- 10th daily trigger at mgr-tz 3am (BEFORE the 4am purge); added to BOTH TARGETS
+  arrays (trigger-wiring tripwire green) + AUTOMATION_AUDIT_ACTIONS (health panel).
+- New gate test test_triggerGate_archiveOldCallNotes_nonManagerThrows. Pure 162/0,
+  DOM 48/0, node --check clean.
+DECISIONS: archive lives in the SAME per-rep PHI spreadsheet (NotesArchive tab) —
+zero new operator state, same PHI boundary, bounds the LIVE tab (which all readers
+use via getCallNotesSheet_→NOTES_TAB). Archived notes are intentionally NOT
+in-app-searchable (cold). Purge never touches NotesArchive (true cold store).
+Recommended SAFE setup: archive on, retention/purge off. FOLLOW-ON: a "purge the
+archive after a longer window" 3rd tier + an optional "include archive" search.
+DOC: needs /sync-docs (10 triggers, CN_NOTE_ARCHIVE_DAYS, NotesArchive tab in the
+storage map, INV-44 + a new INV for the archive tier).
+
 ## Cycle 6 Stage-3 FEATURE batch (2026-06-23, branch claude/happy-faraday-0grppg)
 Implemented 3 strategic suggestions from the broad-scan Stage 3 (features, not
 fixes), all pushed:
