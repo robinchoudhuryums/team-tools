@@ -1693,8 +1693,12 @@ this section before touching the relevant area.
 - **History view supports date ranges.** The History tab defaults
   to "Last 7 Days" with From/To date inputs and presets (Yesterday,
   Last 7 Days, Last 30 Days, This Week, Last Week). Multi-date
-  results render with date-separator headers grouping notes by day.
-  Single-date mode (start === end) uses the original `getMyCallNotes`
+  results render as **collapsible per-date groups**: each date is a
+  `.cn-hist-group` with a clickable metadata header (caret + note count
+  + per-flag-type count chips — urgent/action/training/review, from
+  `cnHistGroupChips_`) that toggles the group body via
+  `cnToggleHistGroup_` (`.collapsed` class). Single-date mode
+  (start === end) uses the original `getMyCallNotes`
   endpoint; ranges use `getMyCallNotesRange` (90-day cap). The
   client stores both `CN_STATE.historyDate` (start) and
   `CN_STATE.historyEndDate`.
