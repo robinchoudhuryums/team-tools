@@ -3938,6 +3938,10 @@ function getAutomationHealth() {
     const lastRunByAction = {};
     let scannedAll = true;
     const auditSheet = getOrCreateAuditSheet_();
+    // Deep-link to the AuditLog tab (the source of the sync-fail + job-last-run
+    // evidence below) so a manager can jump straight to the raw rows.
+    let auditLogUrl = '';
+    try { auditLogUrl = auditSheet.getParent().getUrl() + '#gid=' + auditSheet.getSheetId(); } catch (e) {}
     const lastRow = auditSheet.getLastRow();
     if (lastRow > 1) {
       const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
@@ -4046,6 +4050,7 @@ function getAutomationHealth() {
       cdr: cdr,
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
+      auditLogUrl: auditLogUrl,
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -4141,7 +4146,14 @@ function getStorageHealth() {
         const rss = SpreadsheetApp.openById(String(sid).trim());
         reachable++;
         const rtz = rss.getSpreadsheetTimeZone();
-        if (!tzEquivalent_(rtz, cfgTz)) { tzMismatch++; if (problems.length < 20) problems.push({ name: nm, issue: 'tz ' + rtz }); }
+        if (!tzEquivalent_(rtz, cfgTz)) {
+          tzMismatch++;
+          if (problems.length < 20) {
+            let rurl = '';
+            try { rurl = rss.getUrl(); } catch (e2) {}
+            problems.push({ name: nm, issue: 'tz ' + rtz, url: rurl });
+          }
+        }
       } catch (e) { if (problems.length < 20) problems.push({ name: nm, issue: 'unreachable' }); }
     }
     stores.push({
