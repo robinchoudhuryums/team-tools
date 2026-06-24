@@ -2471,7 +2471,14 @@ this section before touching the relevant area.
   cross-rep walk cost). PHI-free: returns store metadata + names/urls + tz only,
   never row content. Every server string is `esc()`'d before `innerHTML`. The
   management surface is consolidated here without consolidating the data stores
-  (whose PHI/payroll/HR/retention boundaries are deliberate).
+  (whose PHI/payroll/HR/retention boundaries are deliberate). **"Jump to source"
+  (Tier 1):** each store row carries an `Open ↗` link (`s.url` = `ss.getUrl()`);
+  a tz-mismatched store ALSO renders an inline fix hint ("set this sheet's time
+  zone to `<configTimezone>` · File → Settings → Time zone" + open link — the fix
+  is a spreadsheet-level setting, not a cell), and each drifted/unreachable
+  per-rep Notes Sheet links straight to its source (`problems[].url`, omitted for
+  the unreachable ones we couldn't open). `getStorageHealth` already returns
+  `configTimezone` for the hint.
 - **Automation Health panel (Admin tab).** Manager-only, read-only
   surfacing of the silent-degradation signals (`getAutomationHealth`,
   rendered by `cnLoadHealthPanel_`; since the 2nd-pass consolidation it sits
@@ -2491,7 +2498,11 @@ this section before touching the relevant area.
   aliases itself and every aliased agent would otherwise false-positive
   as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
   without taking down the rest of the panel. Every server string is
-  `esc()`'d before `innerHTML`. The EOD/weekly/urgent/training-overdue
+  `esc()`'d before `innerHTML`. **"Jump to source" (Tier 1):** the panel
+  header carries an `Open AuditLog ↗` deep-link to the AuditLog TAB
+  (`res.auditLogUrl` = `auditSheet.getParent().getUrl() + '#gid=' +
+  auditSheet.getSheetId()`, built in a try/catch) — the raw source of the
+  sync-fail + automation-last-seen evidence. The EOD/weekly/urgent/training-overdue
   digests still write
   no audit rows (deliberate — the hourly EOD digest would crowd the
   bounded AuditLog tail scans); instead each run stamps a Script-Property
