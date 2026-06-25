@@ -4748,6 +4748,23 @@ function parseTimestampMs_(tsStr, tz) {
   } catch (e) { return null; }
 }
 
+/** Coercion-safe read of a FormTokens timestamp cell (ExpiresAt / CreatedAt).
+ *  createFormToken writes these as a "yyyy-MM-dd'T'HH:mm:ss" string in
+ *  CONFIG.TIMEZONE, but some spreadsheet locales — notably the Intake sheet
+ *  FORMS_SS_ID is segregated onto — COERCE that ISO-T value into a datetime, so
+ *  getValues() returns a Date. The previous String()+strict-parse then threw on
+ *  the coerced Date and fail-closed EVERY fresh token to "expired" (the same
+ *  coercion the FormSubmissions SubmissionHash already excludes submittedAt for).
+ *  Returns { present, ms }: present=false for an empty cell; ms=null for a
+ *  NON-empty but unparseable string — the caller fail-closes THAT as tamper
+ *  (INV-96 / S2.1). A coerced Date is valid (ms via getTime()). */
+function formTokenCellMs_(cell) {
+  if (cell instanceof Date) return { present: true, ms: cell.getTime() };
+  const s = String(cell == null ? '' : cell).trim();
+  if (!s) return { present: false, ms: null };
+  return { present: true, ms: parseTimestampMs_(s, CONFIG.TIMEZONE) };
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  CALL NOTES — EMAIL COMPOSER
@@ -6152,27 +6169,14 @@ function getFormByToken(token) {
       return { error: 'This form has already been submitted. Thank you!' };
     }
 
-    // Check expiration — compare stored expiresAt with current time.
-    // ExpiresAt is stored in CONFIG.TIMEZONE (createFormToken writes it there;
-    // L-13 — the prior "creating rep's tz" note was stale and a tz-"fix" off it
-    // would re-introduce the ±~12h expiry skew), so we parse it in the same tz.
-    const expiresAtStr = String(row[FT.EXPIRES_AT] || '');
-    if (expiresAtStr) {
-      try {
-        const expMs = Utilities.parseDate(expiresAtStr, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
-        if (Date.now() > expMs) {
-          // Mark as expired in the sheet (best-effort)
-          try {
-            sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
-          } catch(_) {}
-          return { error: 'This form link has expired. Please contact UMS to request a new one.' };
-        }
-      } catch (_) {
-        // S2.1 — fail CLOSED: a non-empty expiry we can't parse is treated as
-        // expired, not allowed. We write ExpiresAt ourselves in a fixed format,
-        // so an unparseable value means a corrupt/tampered token — don't serve it.
-        return { error: 'This form link has expired. Please contact UMS to request a new one.' };
-      }
+    // Check expiration — ExpiresAt is written in CONFIG.TIMEZONE (L-13: the
+    // creating-rep's-tz form skewed expiry), but the sheet may COERCE the ISO-T
+    // value to a Date on read (formTokenCellMs_ handles both; a non-empty
+    // unparseable string fail-closes as tamper, S2.1).
+    const expFB = formTokenCellMs_(row[FT.EXPIRES_AT]);
+    if (expFB.present && (expFB.ms == null || Date.now() > expFB.ms)) {
+      try { sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired'); } catch (_) {}
+      return { error: 'This form link has expired. Please contact UMS to request a new one.' };
     }
 
     if (status === 'expired') {
@@ -6229,20 +6233,13 @@ function submitFormByToken(token, formData) {
         : 'This form link has expired.' };
     }
 
-    // Check expiration
-    const expiresAtStr = String(row[FT.EXPIRES_AT] || '');
-    if (expiresAtStr) {
-      try {
-        const expMs = Utilities.parseDate(expiresAtStr, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
-        if (Date.now() > expMs) {
-          tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
-          return { success: false, error: 'This form link has expired.' };
-        }
-      } catch (_) {
-        // S2.1 — fail CLOSED: never accept a PHI submission against a token
-        // whose (non-empty) expiry can't be parsed.
-        return { success: false, error: 'This form link has expired.' };
-      }
+    // Check expiration (coercion-safe; see formTokenCellMs_ — fail CLOSED on a
+    // non-empty unparseable expiry, S2.1, so a PHI submission is never accepted
+    // against a tampered token).
+    const expSF = formTokenCellMs_(row[FT.EXPIRES_AT]);
+    if (expSF.present && (expSF.ms == null || Date.now() > expSF.ms)) {
+      tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
+      return { success: false, error: 'This form link has expired.' };
     }
 
     const formType = String(row[FT.FORM_TYPE]).trim();
@@ -6483,12 +6480,11 @@ function getMySentForms() {
       if (String(rows[i][FT.CREATED_BY] || '').toLowerCase().trim() !== myEmail) continue;
       const formType = String(rows[i][FT.FORM_TYPE] || '').trim();
       let status = String(rows[i][FT.STATUS] || '').trim().toLowerCase();
-      const expiresAtStr = String(rows[i][FT.EXPIRES_AT] || '');
-      if (status === 'pending' && expiresAtStr) {
-        try {
-          const expMs = Utilities.parseDate(expiresAtStr, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss").getTime();
-          if (nowMs > expMs) status = 'expired';
-        } catch (_) {}
+      // Coercion-safe (formTokenCellMs_): a pending token reads as expired only
+      // when its expiry is genuinely past OR unparseable (tamper).
+      if (status === 'pending') {
+        const expMS = formTokenCellMs_(rows[i][FT.EXPIRES_AT]);
+        if (expMS.present && (expMS.ms == null || nowMs > expMS.ms)) status = 'expired';
       }
       forms.push({
         token: String(rows[i][FT.TOKEN] || '').trim(),

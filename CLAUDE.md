@@ -3408,6 +3408,19 @@ manually for a fresh deploy or environment:
   `getMySentForms`, `parseRetentionDateMs_`) assumes that tz, and writing
   `ExpiresAt` in the creating rep's tz skewed token expiry by the tz offset
   (±~12h for CST reps) until fixed. Keep new timestamp columns consistent.
+  **`ExpiresAt` reads MUST go through `formTokenCellMs_` (coercion-safe).**
+  Some spreadsheet locales — notably the Intake sheet `FORMS_SS_ID` is
+  segregated onto — COERCE the stored `yyyy-MM-dd'T'HH:mm:ss` string into a
+  datetime, so `getValues()` returns a `Date`. The old `String()` +
+  strict-`parseDate` threw on that Date and fail-closed EVERY fresh token to
+  "expired" (the exact reason `computeFormSubmissionHash_` already excludes
+  `submittedAt`). `formTokenCellMs_(cell)` returns `{present, ms}` — a `Date`
+  → `getTime()`, a parseable string → ms, a non-empty unparseable string →
+  `ms:null` (caller fail-closes as tamper, S2.1), empty → `present:false`. All
+  three expiry sites route through it. Pinned by the `formTokenCellMs_` Node
+  test. (This was latent on the ADP-fallback sheet, which didn't coerce; it
+  surfaced when `FORMS_SS_ID` moved to the Intake sheet — a CODE bug, NOT
+  fixable by the sheet tz alone.)
   No manual setup needed — the `getOrCreateFormTokensSheet_()` /
   `getOrCreateFormSubmissionsSheet_()` helpers provision them with headers on
   first call.
