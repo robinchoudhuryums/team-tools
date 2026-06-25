@@ -4765,6 +4765,16 @@ function formTokenCellMs_(cell) {
   return { present: true, ms: parseTimestampMs_(s, CONFIG.TIMEZONE) };
 }
 
+/** Display string for a FormTokens timestamp cell — a clean CONFIG.TIMEZONE
+ *  "yyyy-MM-dd'T'HH:mm:ss" whether the cell is a coerced Date or the stored
+ *  string (the coercion-safe sibling of formTokenCellMs_; used in the values
+ *  returned to clients so a coerced Date never leaks as a "Sat Jun 27 …" blob). */
+function formTokenIsoString_(cell) {
+  const r = formTokenCellMs_(cell);
+  if (r.ms != null) return Utilities.formatDate(new Date(r.ms), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
+  return String(cell == null ? '' : cell).trim();
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  CALL NOTES — EMAIL COMPOSER
@@ -6201,7 +6211,7 @@ function getFormByToken(token) {
       recipientName: String(row[FT.RECIPIENT_NAME] || ''),
       recipientEmail: String(row[FT.RECIPIENT_EMAIL] || ''),
       prefillData: prefillData,
-      expiresAt: expiresAtStr,
+      expiresAt: formTokenIsoString_(row[FT.EXPIRES_AT]),
     };
   } catch (err) {
     return { error: 'An error occurred loading this form. Please try again.' };
@@ -6493,8 +6503,8 @@ function getMySentForms() {
         recipientName: String(rows[i][FT.RECIPIENT_NAME] || ''),
         recipientEmail: String(rows[i][FT.RECIPIENT_EMAIL] || ''),
         status: status,
-        createdAt: String(rows[i][FT.CREATED_AT] || ''),
-        expiresAt: expiresAtStr,
+        createdAt: formTokenIsoString_(rows[i][FT.CREATED_AT]),
+        expiresAt: formTokenIsoString_(rows[i][FT.EXPIRES_AT]),
         noteId: String(rows[i][FT.NOTE_ID] || '').trim(),
         submitted: status === 'submitted',
       });
