@@ -3417,8 +3417,10 @@ manually for a fresh deploy or environment:
   `submittedAt`). `formTokenCellMs_(cell)` returns `{present, ms}` — a `Date`
   → `getTime()`, a parseable string → ms, a non-empty unparseable string →
   `ms:null` (caller fail-closes as tamper, S2.1), empty → `present:false`. All
-  three expiry sites route through it. Pinned by the `formTokenCellMs_` Node
-  test. (This was latent on the ADP-fallback sheet, which didn't coerce; it
+  three expiry sites route through it. The client-returned `expiresAt` /
+  `createdAt` go through the sibling `formTokenIsoString_` so a coerced Date
+  never leaks back as a `"Sat Jun 27 …"` blob. Pinned by the `formTokenCellMs_`
+  Node test. (This was latent on the ADP-fallback sheet, which didn't coerce; it
   surfaced when `FORMS_SS_ID` moved to the Intake sheet — a CODE bug, NOT
   fixable by the sheet tz alone.)
   No manual setup needed — the `getOrCreateFormTokensSheet_()` /
