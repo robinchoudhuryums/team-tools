@@ -367,6 +367,40 @@ test('every day-type <select> option is an accepted leave type', () => {
     `UI offers "${v}" but the server validator rejects it`));
 });
 
+console.log('\nCode.js — formTokenCellMs_() (coercion-safe form-token expiry read)');
+// Regression for the "every fresh token reads as expired" bug: when FORMS_SS_ID
+// points at a sheet that coerces the ISO-T ExpiresAt string to a datetime,
+// getValues() returns a Date — the old String()+strict-parse fail-closed it to
+// "expired". formTokenCellMs_ must accept a Date directly. Stub its deps
+// (CONFIG.TIMEZONE + parseTimestampMs_) so the helper unit-tests in isolation.
+vm.runInContext(
+  'var CONFIG = { TIMEZONE: "Asia/Kolkata" };' +
+  'function parseTimestampMs_(s, tz) { return /^\\d{4}-\\d{2}-\\d{2}T/.test(s) ? 1700000000000 : null; }',
+  sb, { filename: 'test#formTokenCellMs_deps' });
+vm.runInContext(extractRawFunction('Code.js', 'formTokenCellMs_'), sb,
+  { filename: 'Code.js#formTokenCellMs_' });
+const formTokenCellMs_ = sb.formTokenCellMs_;
+
+// Field-wise asserts (the helper returns a sandbox-realm object, so a whole-
+// object deepStrictEqual trips on prototype identity across vm realms).
+const expectCell = (r, present, ms) => {
+  assert.strictEqual(r.present, present);
+  assert.strictEqual(r.ms, ms);
+};
+test('a coerced Date cell is valid (the bug) — present, ms = getTime()', () => {
+  const d = new Date(Date.UTC(2026, 5, 27, 13, 0, 0));
+  expectCell(formTokenCellMs_(d), true, d.getTime());
+});
+test('an empty / null cell is absent (no expiry → skip the check)', () => {
+  expectCell(formTokenCellMs_(''), false, null);
+  expectCell(formTokenCellMs_(null), false, null);
+  expectCell(formTokenCellMs_(undefined), false, null);
+});
+test('a valid ISO-T string parses; a non-empty garbage string fail-closes (ms=null)', () => {
+  expectCell(formTokenCellMs_('2026-06-27T19:00:00'), true, 1700000000000);
+  expectCell(formTokenCellMs_('not-a-date'), true, null);
+});
+
 console.log('\nCode.js — coaching pure helpers (coachValidate_ / coachUnackedOverdue_)');
 // Source the validator + its whitelist/caps from Code.js (no local re-declare).
 const coachSevMatch = codeSrc.match(/const (COACH_SEVERITIES\s*=\s*\[[\s\S]*?\]);/);
