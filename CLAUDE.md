@@ -2751,10 +2751,17 @@ this section before touching the relevant area.
   server string `esc()`'d before `innerHTML`. The client `CN_SHEET_VIEWS` picker
   list is a coupling-tripwired subset of the server allowlist (a Node test
   asserts client keys ⊆ `adminSheetViewKeys_()` — the picker can't offer a view
-  the server won't honor). 2b (KB / Training PHI-free views) drops in with one
-  `CN_SHEET_VIEWS` entry + one server registry case + a pure flagger. Pinned by
-  the `adminAuditRowTone_` + allowlist-subset Node tests + the `getAdminSheetView`
-  case in `test_managerGates_rejectNonManager`.
+  the server won't honor). **2b (shipped):** three more PHI-free views via the
+  shared `adminSheetViewBuild_` (bounded newest-first read + per-row deep-link +
+  a `rowMapper` projection) — `kb` (the KB content tab, projected to metadata
+  only — NO `BodyMd` — with review-due rows warn-tinted via the pure
+  `adminKbReviewTone_`, mirroring INV-126), `trainingAssign` (revoked rows
+  muted), and `trainingComplete` (browse). Each view returns its own
+  server-driven `legend` (auditLog tones differ from kb/training), rendered by
+  the client. The Quizzes answer key (`QuestionsJson`) + all PHI/HR tabs stay
+  OUT of the allowlist. Pinned by the `adminAuditRowTone_` / `adminKbReviewTone_`
+  + allowlist-subset Node tests + the `getAdminSheetView` case in
+  `test_managerGates_rejectNonManager`.
 - **Icon library additions (`script_icons.html`).** The redesign added
   `clipboardList`, `accessibility`, `airflow`, `outbox`, and `fileText` to the
   `ICONS` set, repointed the Intake tab + sidebar icons, and switched

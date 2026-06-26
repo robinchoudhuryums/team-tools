@@ -4181,8 +4181,10 @@ function getStorageHealth() {
 //  AuditLog is PHI-free) / INV-121 / INV-122. Read-only: there is NO write path.
 // ════════════════════════════════════════════════════════════════════════════
 
-/** The allowlist of admin sheet-view keys (the security boundary). */
-function adminSheetViewKeys_() { return ['auditLog']; }
+/** The allowlist of admin sheet-view keys (the security boundary). Every key is
+ *  a pre-vetted, column-projected, PHI-free view — PHI/payroll/HR tabs are
+ *  deliberately absent (INV-32/121/122). */
+function adminSheetViewKeys_() { return ['auditLog', 'kb', 'trainingAssign', 'trainingComplete']; }
 
 /** Pure (Node-pinned) — row tone for the AuditLog view, by action name only.
  *  danger = destructive (purge/delete/void); warn = degradation/correction
@@ -4207,6 +4209,9 @@ function getAdminSheetView(viewKey, opts) {
     viewKey = String(viewKey || '');
     if (adminSheetViewKeys_().indexOf(viewKey) < 0) return { error: 'Unknown view.' };
     if (viewKey === 'auditLog') return adminSheetView_auditLog_();
+    if (viewKey === 'kb') return adminSheetView_kb_();
+    if (viewKey === 'trainingAssign') return adminSheetView_trainingAssign_();
+    if (viewKey === 'trainingComplete') return adminSheetView_trainingComplete_();
     return { error: 'Unknown view.' };
   } catch (err) { return { error: err.message }; }
 }
@@ -4257,7 +4262,143 @@ function adminSheetView_auditLog_() {
   return {
     ok: true, viewKey: 'auditLog', label: 'AuditLog · ADP', storeUrl: baseUrl,
     mgrTzAbbr: tzAbbr_(mgrTz), columns: columns, rows: rows, truncated: truncated,
+    legend: [
+      { tone: 'danger', label: 'destructive' },
+      { tone: 'warn', label: 'degradation' },
+      { tone: 'info', label: 'automation' },
+    ],
   };
+}
+
+/** Pure (Node-pinned) — KB row tone: warn when the item is review-due (last
+ *  review/edit age ≥ dueDays, or never reviewed/edited), else neutral. Mirrors
+ *  the kbGetReviewDue staleness rule (INV-126). */
+function adminKbReviewTone_(ageDays, dueDays) {
+  if (ageDays == null) return 'warn';
+  return ageDays >= dueDays ? 'warn' : '';
+}
+
+/** Shared 2b builder — bounded newest-first tail read of `sheet`, each data row
+ *  mapped via rowMapper(rowArray) → { cells, tone } (or null to skip), with a
+ *  per-row #gid&range deep-link. PHI-free by the caller's column projection. */
+function adminSheetViewBuild_(sheet, viewKey, label, columns, legend, rowMapper) {
+  let baseUrl = '';
+  try { baseUrl = sheet.getParent().getUrl() + '#gid=' + sheet.getSheetId(); } catch (e) {}
+  const out = {
+    ok: true, viewKey: viewKey, label: label, storeUrl: baseUrl,
+    columns: columns, rows: [], truncated: false, legend: legend || [],
+  };
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return out;
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const cap = ADMIN_VIEW_MAX_ROWS;
+  const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
+  const numRows = lastRow - startRow + 1;
+  const data = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
+  const rows = [];
+  for (let i = data.length - 1; i >= 0 && rows.length < cap; i--) {  // newest-first
+    const mapped = rowMapper(data[i]);
+    if (!mapped) continue;
+    const sheetRow = startRow + i;
+    rows.push({ cells: mapped.cells, tone: mapped.tone || '', rowUrl: baseUrl ? (baseUrl + '&range=A' + sheetRow) : '' });
+  }
+  out.rows = rows;
+  out.truncated = (startRow > 2) || (data.length > cap);
+  return out;
+}
+
+/** KB view — the PHI-free-by-policy content tab, projected to metadata only
+ *  (NO BodyMd), review-due rows warn-tinted (INV-126). */
+function adminSheetView_kb_() {
+  const ss = getKbSS_();
+  const ssTz = ss.getSpreadsheetTimeZone();
+  const sheet = getOrCreateKbSheet_();
+  const dueDays = (CONFIG.KB && CONFIG.KB.REVIEW_DUE_DAYS) || 90;
+  const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
+  const columns = [
+    { key: 'title', label: 'Title' },
+    { key: 'dept', label: 'Department' },
+    { key: 'type', label: 'Type' },
+    { key: 'updated', label: 'Updated' },
+    { key: 'reviewed', label: 'Reviewed' },
+  ];
+  return adminSheetViewBuild_(sheet, 'kb', 'Knowledge Base · KB', columns,
+    [{ tone: 'warn', label: 'review due (' + dueDays + 'd+)' }],
+    function (r) {
+      const id = String(r[KB.ID] || '').trim();
+      if (!id) return null;
+      const reviewedIso = kbCellDateIso_(r[KB.REVIEWED_AT], ssTz);
+      const updatedIso = kbCellDateIso_(r[KB.UPDATED_AT], ssTz);
+      const baseIso = reviewedIso || updatedIso;
+      let ageDays = null;
+      if (baseIso) { const n = cnIsoToDayNum_(baseIso); if (n != null && todayNum != null) ageDays = todayNum - n; }
+      return {
+        tone: adminKbReviewTone_(ageDays, dueDays),
+        cells: {
+          title: String(r[KB.TITLE] || '(untitled)'),
+          dept: String(r[KB.DEPARTMENT] || ''),
+          type: String(r[KB.TYPE] || 'article'),
+          updated: updatedIso || '',
+          reviewed: reviewedIso || '(never)',
+        },
+      };
+    });
+}
+
+/** Training assignments — PHI-free (roster ids only); revoked rows muted. */
+function adminSheetView_trainingAssign_() {
+  const ssTz = getKbSS_().getSpreadsheetTimeZone();
+  const sheet = getOrCreateTrainSheet_(TRAIN_ASSIGN_TAB, TRAIN_ASSIGN_HEADERS);
+  const columns = [
+    { key: 'item', label: 'Item' },
+    { key: 'emp', label: 'Employee' },
+    { key: 'assigned', label: 'Assigned' },
+    { key: 'due', label: 'Due' },
+    { key: 'revoked', label: 'Revoked' },
+  ];
+  return adminSheetViewBuild_(sheet, 'trainingAssign', 'Training assignments', columns,
+    [{ tone: 'info', label: 'revoked' }],
+    function (r) {
+      const assignId = String(r[TA.ASSIGN_ID] || '').trim();
+      if (!assignId) return null;
+      const revoked = trainCellDate_(r[TA.REVOKED_AT], ssTz);
+      return {
+        tone: revoked ? 'info' : '',
+        cells: {
+          item: String(r[TA.ITEM_TYPE] || '') + ':' + String(r[TA.ITEM_ID] || ''),
+          emp: String(r[TA.EMP_ID] || ''),
+          assigned: trainCellDate_(r[TA.ASSIGNED_AT], ssTz) || '',
+          due: trainCellDate_(r[TA.DUE_DATE], ssTz) || '',
+          revoked: revoked || '',
+        },
+      };
+    });
+}
+
+/** Training completions — PHI-free (roster ids only); browse + deep-link. */
+function adminSheetView_trainingComplete_() {
+  const ssTz = getKbSS_().getSpreadsheetTimeZone();
+  const sheet = getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS);
+  const columns = [
+    { key: 'emp', label: 'Employee' },
+    { key: 'item', label: 'Item' },
+    { key: 'completed', label: 'Completed' },
+    { key: 'via', label: 'Via' },
+  ];
+  return adminSheetViewBuild_(sheet, 'trainingComplete', 'Training completions', columns, [],
+    function (r) {
+      const emp = String(r[TCMP.EMP_ID] || '').trim();
+      if (!emp) return null;
+      return {
+        tone: '',
+        cells: {
+          emp: emp,
+          item: String(r[TCMP.ITEM_TYPE] || '') + ':' + String(r[TCMP.ITEM_ID] || ''),
+          completed: trainCellDate_(r[TCMP.COMPLETED_AT], ssTz) || '',
+          via: String(r[TCMP.VIA] || ''),
+        },
+      };
+    });
 }
 
 /** Pure (Node-pinned) — derives the deploy-readiness checklist from the
