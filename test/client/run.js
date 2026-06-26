@@ -375,7 +375,8 @@ console.log('\nCode.js — formTokenCellMs_() (coercion-safe form-token expiry r
 // (CONFIG.TIMEZONE + parseTimestampMs_) so the helper unit-tests in isolation.
 vm.runInContext(
   'var CONFIG = { TIMEZONE: "Asia/Kolkata" };' +
-  'function parseTimestampMs_(s, tz) { return /^\\d{4}-\\d{2}-\\d{2}T/.test(s) ? 1700000000000 : null; }',
+  'function parseTimestampMs_(s, tz) { return /^\\d{4}-\\d{2}-\\d{2}T/.test(s) ? 1700000000000 : null; }' +
+  'var Utilities = { formatDate: function (d, tz, fmt) { return "ISO:" + d.getTime() + ":" + tz; } };',
   sb, { filename: 'test#formTokenCellMs_deps' });
 vm.runInContext(extractRawFunction('Code.js', 'formTokenCellMs_'), sb,
   { filename: 'Code.js#formTokenCellMs_' });
@@ -399,6 +400,21 @@ test('an empty / null cell is absent (no expiry → skip the check)', () => {
 test('a valid ISO-T string parses; a non-empty garbage string fail-closes (ms=null)', () => {
   expectCell(formTokenCellMs_('2026-06-27T19:00:00'), true, 1700000000000);
   expectCell(formTokenCellMs_('not-a-date'), true, null);
+});
+
+// formTokenIsoString_ is the display sibling — the source of the #90 regression
+// (two return sites referenced a removed var). Pin its three branches so a
+// future refactor of the returned expiresAt/createdAt values can't silently
+// leak a coerced-Date blob or break.
+vm.runInContext(extractRawFunction('Code.js', 'formTokenIsoString_'), sb,
+  { filename: 'Code.js#formTokenIsoString_' });
+const formTokenIsoString_ = sb.formTokenIsoString_;
+test('formTokenIsoString_: Date + parseable string → reformatted ISO; empty → ""; garbage → raw', () => {
+  const d = new Date(Date.UTC(2026, 5, 27, 13, 0, 0));
+  assert.strictEqual(formTokenIsoString_(d), 'ISO:' + d.getTime() + ':Asia/Kolkata');       // coerced Date → clean ISO
+  assert.strictEqual(formTokenIsoString_('2026-06-27T19:00:00'), 'ISO:1700000000000:Asia/Kolkata');
+  assert.strictEqual(formTokenIsoString_(''), '');                                          // empty stays empty
+  assert.strictEqual(formTokenIsoString_('garbage'), 'garbage');                            // unparseable passes through
 });
 
 console.log('\nCode.js — adminAuditRowTone_() + sheet-view allowlist (Tier 2)');
