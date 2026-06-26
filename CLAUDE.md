@@ -1874,11 +1874,20 @@ this section before touching the relevant area.
   (already the `.pto-tile` on Time/PTO). Compact: the in-page `umsDashboardCompact`
   toggle OR `?compact=1` pop-out collapses to the rail (`.dash-compact` /
   `:root[data-compact]`); mobile (`max-width:860px`) stacks. Every server string
-  `esc()`'d; team values respect the N=3 cohort guard (INV-124). **Documented
-  follow-ons (not in v1):** the manager Spanish↔Requests switcher carousel + the
-  MTD/YTD run-rate projection cone. The pre-dashboard layout decision (hero +
-  shift-strip + ledger; coverage in the shift header; world-clock strip) is below
-  — those pieces still render INSIDE the rail.
+  `esc()`'d; team values respect the N=3 cohort guard (INV-124). **Follow-ons
+  (shipped):** (a) a manager **Spanish↔Requests switcher** carousel — a 2-slide
+  switcher (segmented chip Spanish/Requests, `clkDashSegHtml_(key, labels)` now
+  takes a labels arg) backed by `getSpanishInboxStats(7)` + `getDeptRequests()`,
+  each card deep-linking to its Metrics tab; a **Spanish rep** (non-manager,
+  `canSeeSpanish`) gets just the Spanish card. (b) a **run-rate projection** —
+  the pure, Node-pinned `dashProjection_(value, fromIso, toIso, periodKey)`
+  projects an MTD/YTD volume to period end by elapsed fraction (≥3 days elapsed,
+  not a complete period, volumes-only — never a rate), rendered as an "On pace
+  for ~N answered by <EOM/EOY>" line on the own + team cards. (The full daily
+  "cone" chart would need a per-day series in `getDashboardMetrics` — deferred.)
+  The pre-dashboard layout decision (hero + shift-strip + ledger; coverage in the
+  shift header; world-clock strip) is below — those pieces still render INSIDE
+  the rail.
 - **Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live

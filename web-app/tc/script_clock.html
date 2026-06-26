@@ -154,6 +154,9 @@
   .dash-kpi-big .dash-kpi-v { font-size: 2rem; color: var(--accent); }
   .dash-card-foot { font-size: 10px; color: var(--muted); margin-top: 12px; }
   .dash-empty { font-size: 13px; color: var(--muted); padding: 8px 0 4px; }
+  .dash-proj { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--info-deep); margin-top: 8px; }
+  .dash-link { font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; }
+  .dash-link:hover { text-decoration: underline; }
 
   /* Mobile / stacked — rail on top, carousels below, full width. */
   @media (max-width: 860px) {
@@ -380,7 +383,9 @@ function clkRenderDashboard_() {
   if (!host) return;
   host.innerHTML =
     clkDashCarouselHtml_('mine', 'Your numbers') +
-    clkDashCarouselHtml_('team', CLK_DASH.isMgr ? 'Department' : 'Team');
+    clkDashCarouselHtml_('team', CLK_DASH.isMgr ? 'Department' : 'Team') +
+    '<div id="dash-extra"></div>';
+  clkLoadDashboardExtras_();   // manager Spanish↔Requests switcher / Spanish-rep card
 }
 
 /** One carousel: a segmented chip (period selector) + a clipped track of 3 slides. */
@@ -398,14 +403,16 @@ function clkDashCarouselHtml_(key, title) {
 }
 
 /** Sliding segmented chip — an absolutely-positioned highlight pill moved by
- *  translateX, with one clickable label per period setting the index. */
-function clkDashSegHtml_(key) {
-  var i = CLK_DASH[key] || 0, n = CLK_DASH_LABELS.length;
+ *  translateX, one clickable label per option. `labels` defaults to the period
+ *  set (Yesterday/MTD/YTD); the Spanish↔Requests switcher passes its own. */
+function clkDashSegHtml_(key, labels) {
+  labels = labels || CLK_DASH_LABELS;
+  var i = CLK_DASH[key] || 0, n = labels.length;
   var w = 'calc((100% - 6px) / ' + n + ')';
-  var labels = CLK_DASH_LABELS.map(function (lbl, idx) {
+  var html = labels.map(function (lbl, idx) {
     return '<span class="dash-seg-opt' + (idx === i ? ' on' : '') + '" onclick="clkDashSet_(\'' + key + '\',' + idx + ')">' + esc(lbl) + '</span>';
   }).join('');
-  return '<div class="dash-seg"><div class="dash-seg-hi" style="width:' + w + ';transform:translateX(' + (i * 100) + '%)"></div>' + labels + '</div>';
+  return '<div class="dash-seg"><div class="dash-seg-hi" style="width:' + w + ';transform:translateX(' + (i * 100) + '%)"></div>' + html + '</div>';
 }
 
 /** Switch a carousel to period index — transform-only (track + highlight); no
@@ -431,27 +438,125 @@ function clkDashKpi_(label, val, big) {
 function clkDashEmpty_(res) {
   return '<div class="dash-empty">No call data for ' + esc((res && res.label) || 'this period') + '.</div>';
 }
+/** Pure (Node-pinned) — run-rate projection of a period-to-date COUNT to the
+ *  period end, from the aggregate + elapsed fraction. Returns null for the
+ *  'yesterday' period, a null value, < 3 elapsed days (too early to project),
+ *  or a complete period. Rates (pct) are NOT projected — only volumes. */
+function dashProjection_(value, fromIso, toIso, periodKey) {
+  if ((periodKey !== 'mtd' && periodKey !== 'ytd') || value == null ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(String(fromIso)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(toIso))) return null;
+  var elapsed = Math.round((Date.parse(toIso + 'T00:00:00Z') - Date.parse(fromIso + 'T00:00:00Z')) / 86400000) + 1;
+  if (elapsed < 3) return null;
+  var y = +toIso.slice(0, 4), total, endLabel;
+  if (periodKey === 'mtd') {
+    var m = +toIso.slice(5, 7);
+    total = new Date(Date.UTC(y, m, 0)).getUTCDate();   // last day-of-month
+    endLabel = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] + ' ' + total;
+  } else {
+    total = ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365;
+    endLabel = 'Dec 31';
+  }
+  if (elapsed >= total) return null;
+  return { projected: Math.round(value * (total / elapsed)), elapsed: elapsed, total: total, endLabel: endLabel };
+}
+
 function clkDashOwnCard_(res) {
   if (!res || !res.own) return clkDashEmpty_(res);
   var o = res.own;
-  return '<div class="dash-kpis">' +
+  var kpis = '<div class="dash-kpis">' +
     clkDashKpi_('Transfer %', o.transferPct != null ? o.transferPct + '%' : '—', true) +
     clkDashKpi_('% Answered', o.pctAnswered != null ? o.pctAnswered + '%' : '—') +
     clkDashKpi_('Answered', o.answered != null ? o.answered : '—') +
     clkDashKpi_('Missed', o.missed != null ? o.missed : '—') +
     clkDashKpi_('Avg talk', o.attFormatted || '—') +
-  '</div><div class="dash-card-foot mono">' + esc(res.label) + (o.calls != null ? ' · ' + o.calls + ' calls' : '') + '</div>';
+  '</div>';
+  var foot = '<div class="dash-card-foot mono">' + esc(res.label) + (o.calls != null ? ' · ' + o.calls + ' calls' : '') + '</div>';
+  // Run-rate projection (MTD/YTD only, ≥3 days elapsed) — a client calc on the
+  // aggregate. The full daily "cone" chart would need a series in the endpoint.
+  var proj = dashProjection_(o.answered, res.from, res.to, res.periodKey);
+  var projHtml = proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
+    ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '';
+  return kpis + foot + projHtml;
 }
 function clkDashTeamCard_(res) {
   if (!res) return clkDashEmpty_(res);
   if (!res.team) return '<div class="dash-empty">Team data hidden — fewer than ' + (res.kpiMinCohort || 3) + ' reps reported this period.</div>';
   var t = res.team;
-  return '<div class="dash-kpis">' +
+  var kpis = '<div class="dash-kpis">' +
     clkDashKpi_('Transfer %', t.transferPct != null ? t.transferPct + '%' : '—', true) +
     clkDashKpi_('% Answered', t.pctAnswered != null ? t.pctAnswered + '%' : '—') +
     clkDashKpi_('Answered', t.answered != null ? t.answered : '—') +
     clkDashKpi_('Missed', t.missed != null ? t.missed : '—') +
   '</div><div class="dash-card-foot mono">' + esc(res.label) + ' · ' + (res.cohort || 0) + ' reps</div>';
+  var proj = dashProjection_(t.answered, res.from, res.to, res.periodKey);
+  return kpis + (proj ? '<div class="dash-proj mono">' + icon('chart', 11) +
+    ' On pace for ~' + proj.projected + ' answered by ' + esc(proj.endLabel) + '</div>' : '');
+}
+
+// ── Manager Spanish↔Requests switcher / Spanish-rep card (dashboard extras) ──
+function clkLoadDashboardExtras_() {
+  var host = document.getElementById('dash-extra');
+  if (!host) return;
+  var isMgr = CLK_DASH.isMgr, canSp = !!(empState && empState.canSeeSpanish);
+  if (!isMgr && !canSp) { host.innerHTML = ''; return; }
+  CLK_DASH.extra = { spanish: undefined, requests: undefined };
+  var requestedView = currentView;
+  var render = function () { if (currentView === requestedView) clkRenderDashboardExtras_(); };
+  render();   // paint the loading shell immediately
+  if (canSp) {
+    google.script.run
+      .withSuccessHandler(function (r) { CLK_DASH.extra.spanish = r || { error: 'No data' }; render(); })
+      .withFailureHandler(function () { CLK_DASH.extra.spanish = { error: 'Spanish inbox unavailable' }; render(); })
+      .getSpanishInboxStats(7);
+  }
+  if (isMgr) {
+    google.script.run
+      .withSuccessHandler(function (r) { CLK_DASH.extra.requests = r || { error: 'No data' }; render(); })
+      .withFailureHandler(function () { CLK_DASH.extra.requests = { error: 'Dept requests unavailable' }; render(); })
+      .getDeptRequests();
+  }
+}
+
+function clkRenderDashboardExtras_() {
+  var host = document.getElementById('dash-extra');
+  if (!host) return;
+  var isMgr = CLK_DASH.isMgr, canSp = !!(empState && empState.canSeeSpanish), x = CLK_DASH.extra || {};
+  if (isMgr) {
+    // Switcher — Spanish | Requests (managers see both).
+    var idx = CLK_DASH.sw || 0;
+    var slides = '<div class="dash-sld">' + clkDashSpanishCard_(x.spanish) + '</div>' +
+                 '<div class="dash-sld">' + clkDashRequestsCard_(x.requests) + '</div>';
+    host.innerHTML = '<div class="dash-card">' +
+      '<div class="dash-card-head"><span class="dash-seclabel">Inbox</span>' + clkDashSegHtml_('sw', ['Spanish', 'Requests']) + '</div>' +
+      '<div class="dash-vp"><div class="dash-trk" id="dash-trk-sw" style="transform:translateX(-' + (idx * 100) + '%)">' + slides + '</div></div>' +
+    '</div>';
+  } else if (canSp) {
+    host.innerHTML = '<div class="dash-card"><div class="dash-card-head"><span class="dash-seclabel">Spanish Inbox</span></div>' + clkDashSpanishCard_(x.spanish) + '</div>';
+  } else {
+    host.innerHTML = '';
+  }
+}
+
+function clkDashSpanishCard_(res) {
+  if (res === undefined) return '<div class="dash-empty">' + loSweep() + '</div>';
+  if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
+  return '<div class="dash-kpis">' +
+    clkDashKpi_('Pending', res.pending != null ? res.pending : '—', true) +
+    clkDashKpi_('Resolved · 7d', res.resolved != null ? res.resolved : '—') +
+    clkDashKpi_('Median reply', res.medianMinutes != null ? res.medianMinutes + 'm' : '—') +
+  '</div><div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsSpanish\')">Open Spanish Inbox →</a></div>';
+}
+
+function clkDashRequestsCard_(res) {
+  if (res === undefined) return '<div class="dash-empty">' + loSweep() + '</div>';
+  if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
+  var stats = res.deptStats || [], open = 0, resolved = 0;
+  stats.forEach(function (d) { open += d.open || 0; resolved += d.resolved || 0; });
+  return '<div class="dash-kpis">' +
+    clkDashKpi_('Open', open, true) +
+    clkDashKpi_('Resolved', resolved) +
+    clkDashKpi_('Depts', stats.length) +
+  '</div><div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsDeptReq\')">Open Dept Requests →</a></div>';
 }
 
 /** Computes "worked", "lunch", "since" stats from today's punches.
