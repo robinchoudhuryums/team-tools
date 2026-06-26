@@ -111,6 +111,57 @@
   :root[data-compact] .hero { padding: 14px 16px 12px; gap: 10px; }
   :root[data-compact] .shift-strip { padding: 12px 14px; margin: 10px 0; }
   :root[data-compact] .clk-row3 { gap: 10px; margin-top: 10px; }
+
+  /* ── Dashboard (Time Clock → Dashboard) ──────────────────────────────────
+     Two-column grid: clock rail (left) + briefing carousels (main). The
+     minmax(0,1fr) on the main column is LOAD-BEARING — a bare 1fr has an
+     implicit min-width:auto floor that the carousel viewports would blow past. */
+  .dash-grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 20px; align-items: start; }
+  .dash-rail { min-width: 0; }
+  .dash-rail .shift-strip { margin: 14px 0; }
+  .dash-rail .card { margin-top: 14px; }
+  .dash-hero { display: block; }   /* greeting moved to main → clock fills the rail */
+  .dash-main { min-width: 0; }
+  .dash-greet { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .dash-compact-toggle { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; font-weight: 600;
+    color: var(--muted); background: var(--paper-2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap; }
+  .dash-compact-toggle:hover { color: var(--ink); }
+  /* Compact (the in-dashboard toggle OR the ?compact=1 pop-out): collapse to the
+     rail only. */
+  .dash-grid.dash-compact { grid-template-columns: 1fr; }
+  .dash-grid.dash-compact .dash-main { display: none; }
+  :root[data-compact] .dash-grid { grid-template-columns: 1fr; }
+  :root[data-compact] .dash-grid .dash-main { display: none; }
+
+  .dash-cards-loading { padding: 20px 0; }
+  .dash-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
+  .dash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .dash-seclabel { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  /* Segmented chip — tinted track, sliding white highlight, labels above it. */
+  .dash-seg { position: relative; display: flex; background: var(--paper-2); border-radius: 8px; padding: 3px; min-width: 190px; }
+  .dash-seg-hi { position: absolute; top: 3px; bottom: 3px; left: 3px; background: var(--paper-card); border-radius: 6px;
+    box-shadow: var(--shadow-sm); transition: transform .35s cubic-bezier(.4, 0, .2, 1); }
+  .dash-seg-opt { flex: 1; text-align: center; padding: 5px 9px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .03em;
+    cursor: pointer; position: relative; z-index: 1; color: var(--muted); white-space: nowrap; }
+  .dash-seg-opt.on { color: var(--ink); }
+  /* Carousel viewport + track (transform-only slides). */
+  .dash-vp { overflow: hidden; }
+  .dash-trk { display: flex; transition: transform .4s cubic-bezier(.4, 0, .2, 1); }
+  .dash-sld { min-width: 100%; }
+  .dash-kpis { display: flex; flex-wrap: wrap; gap: 18px 26px; align-items: flex-end; }
+  .dash-kpi-v { font-family: var(--display, var(--ui)); font-size: 1.3rem; font-weight: 700; color: var(--ink); line-height: 1; }
+  .dash-kpi-l { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: 5px; }
+  .dash-kpi-big .dash-kpi-v { font-size: 2rem; color: var(--accent); }
+  .dash-card-foot { font-size: 10px; color: var(--muted); margin-top: 12px; }
+  .dash-empty { font-size: 13px; color: var(--muted); padding: 8px 0 4px; }
+
+  /* Mobile / stacked — rail on top, carousels below, full width. */
+  @media (max-width: 860px) {
+    .dash-grid { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dash-trk, .dash-seg-hi { transition: none; }
+  }
 </style>
 
 <script>
@@ -203,55 +254,70 @@ function renderClockView(area) {
         (stats.lunchMinutes ? ` <span class="ss-sub">· ${stats.lunchMinutes}m lunch</span>` : '') + `</span>`
     : `<span class="ss-hours ss-sub">Not clocked in yet</span>`;
 
+  // Dashboard (Time Clock → Dashboard): two-column grid — clock rail (left) +
+  // briefing carousels (main). The greeting moves to the top of the main column
+  // so the clock card fits the 360px rail; #clk-hero is kept (just the clock now)
+  // so the umsClockBg background + all clock machinery (#clk-sky, #live-time,
+  // #clk-regions, ribbon) keep working. Annual PTO relocated to the Time/PTO tab.
+  const isMgr = !!(s && s.isManager);
+  const dashCompact = COMPACT_MODE || clkDashCompactPref_();
   area.innerHTML = `
-    <div class="hero" id="clk-hero">
-      <div class="clk-hero-bg" id="clk-hero-bg"></div>
-      <div class="greet">
-        <div class="greet-kicker">${esc(kicker)}</div>
-        <div class="greet-name">Hi, ${esc(greetName)}</div>
-        <div class="status-sentence">${statusSentence}</div>
-      </div>
-      <div class="clk clk-sky" id="clk-sky">
-        <div class="clk-sky-layers"><div class="sky-layer" id="clk-sky-a"></div><div class="sky-layer" id="clk-sky-b"></div></div>
-        <div class="clk-sky-top">
-          <span class="clk-phase" id="clk-phase"></span>
-          ${tzSelectHtml_(tz, tzAbbr)}
+    <div class="dash-grid${dashCompact ? ' dash-compact' : ''}" id="dash-grid">
+      <div class="dash-rail">
+        <div class="hero dash-hero" id="clk-hero">
+          <div class="clk-hero-bg" id="clk-hero-bg"></div>
+          <div class="clk clk-sky" id="clk-sky">
+            <div class="clk-sky-layers"><div class="sky-layer" id="clk-sky-a"></div><div class="sky-layer" id="clk-sky-b"></div></div>
+            <div class="clk-sky-top">
+              <span class="clk-phase" id="clk-phase"></span>
+              ${tzSelectHtml_(tz, tzAbbr)}
+            </div>
+            <div class="clk-time tabular" id="live-time">--:--:--<span class="ampm"></span></div>
+            <div class="clk-meta">
+              <span id="clk-date">${esc(dateStr)}</span>
+              ${tzAbbr ? `<span class="sep">·</span><span>${esc(tzAbbr)}</span>` : ''}
+            </div>
+            <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px"></div>
+            <div class="clk-next-break" id="clk-next-break" style="margin-top:6px"></div>
+            <div class="clk-bg-ctrl">
+              <button class="clk-bg-btn" id="clk-bg-set" title="Set a background image (saved to this browser only)" aria-label="Set clock background image" onclick="clkBgChoose_(event)">${icon('image', 13)}</button>
+              <button class="clk-bg-btn" id="clk-bg-clear" title="Remove background" aria-label="Remove clock background" style="display:none" onclick="clkBgClear_(event)">${icon('x', 13)}</button>
+            </div>
+            <input type="file" id="clk-bg-input" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="clkBgOnFile_(this)">
+          </div>
         </div>
-        <div class="clk-time tabular" id="live-time">--:--:--<span class="ampm"></span></div>
-        <div class="clk-meta">
-          <span id="clk-date">${esc(dateStr)}</span>
-          ${tzAbbr ? `<span class="sep">·</span><span>${esc(tzAbbr)}</span>` : ''}
-        </div>
-        <div class="clk-regions" id="clk-regions" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-family:var(--mono);font-size:11px"></div>
-        <div class="clk-next-break" id="clk-next-break" style="margin-top:6px"></div>
-        <div class="clk-bg-ctrl">
-          <button class="clk-bg-btn" id="clk-bg-set" title="Set a background image (saved to this browser only)" aria-label="Set clock background image" onclick="clkBgChoose_(event)">${icon('image', 13)}</button>
-          <button class="clk-bg-btn" id="clk-bg-clear" title="Remove background" aria-label="Remove clock background" style="display:none" onclick="clkBgClear_(event)">${icon('x', 13)}</button>
-        </div>
-        <input type="file" id="clk-bg-input" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="clkBgOnFile_(this)">
-      </div>
-    </div>
 
-    <div class="shift-strip">
-      <div class="shift-strip-head">
-        <span class="ss-label">Today's shift</span>
-        <span class="ss-state ${stateCls}">${esc(stateLabel)}</span>
-        <span class="ss-grow"></span>
-        <span class="ss-cov" id="clk-shift-cov"></span>
-        ${hoursReadout}
-      </div>
-      ${renderDayRibbon_(s.punches, stats, tz)}
-      ${clkBreakScheduleHtml_()}
-      ${renderActions(s.nextActions)}
-    </div>
+        <div class="shift-strip">
+          <div class="shift-strip-head">
+            <span class="ss-label">Today's shift</span>
+            <span class="ss-state ${stateCls}">${esc(stateLabel)}</span>
+            <span class="ss-grow"></span>
+            <span class="ss-cov" id="clk-shift-cov"></span>
+            ${hoursReadout}
+          </div>
+          ${renderDayRibbon_(s.punches, stats, tz)}
+          ${clkBreakScheduleHtml_()}
+          ${renderActions(s.nextActions)}
+        </div>
 
-    <div class="clk-row3">
-      <div class="card">
-        <div class="card-label">Today's Punches</div>
-        ${renderPunchHistory(s.punches)}
+        <div class="card">
+          <div class="card-label">Today's Punches</div>
+          ${renderPunchHistory(s.punches)}
+        </div>
+        <div id="teammate-card-slot"></div>
       </div>
-      <div id="teammate-card-slot"></div>
-      ${renderPtoMini_(s)}
+
+      <div class="dash-main" id="dash-main">
+        <div class="dash-greet">
+          <div class="dash-greet-text">
+            <div class="greet-kicker">${esc(kicker)}</div>
+            <div class="greet-name">Hi, ${esc(greetName)}</div>
+            <div class="status-sentence">${statusSentence}</div>
+          </div>
+          <button class="dash-compact-toggle" id="dash-compact-toggle" title="Collapse to just the clock" onclick="clkDashToggleCompact_()">${icon('list', 13)} <span>Compact</span></button>
+        </div>
+        <div id="dash-cards"><div class="dash-cards-loading">${loSweep()}</div></div>
+      </div>
     </div>`;
   bindClockBtns();
   bindSelfUndoBtns();
@@ -262,6 +328,130 @@ function renderClockView(area) {
   clkUpdateRegions_();       // paint the rotating world-clock strip immediately
   clkBindTzSelect_();
   clkLoadNoteVolume_();      // C2 — note-volume histogram (async, best-effort)
+  clkLoadDashboard_(isMgr);  // briefing carousels (async, best-effort)
+}
+
+// ── Dashboard briefing carousels (Time Clock → Dashboard) ────────────────────
+// Period-aggregated metric cards (Yesterday / MTD / YTD) in a clipped carousel
+// driven by a sliding segmented chip. Data via getDashboardMetrics (own +
+// cohort-guarded team, INV-124). Every server string esc()'d. Manager + agent
+// share the same two carousels (the team carousel is the dept rollup for a
+// manager). v1 scope — the Spanish↔Requests switcher + the MTD/YTD projection
+// cone are documented follow-ons.
+var CLK_DASH_PERIODS = ['yesterday', 'mtd', 'ytd'];
+var CLK_DASH_LABELS = ['Yesterday', 'MTD', 'YTD'];
+var CLK_DASH = { mine: 0, team: 0, data: {}, isMgr: false };
+
+/** Per-browser dashboard-compact preference (the 15th localStorage key) —
+ *  distinct from the URL ?compact=1 pop-out (COMPACT_MODE / data-compact). */
+function clkDashCompactPref_() {
+  try { return localStorage.getItem('umsDashboardCompact') === '1'; } catch (e) { return false; }
+}
+function clkDashToggleCompact_() {
+  var grid = document.getElementById('dash-grid');
+  if (!grid) return;
+  var on = !grid.classList.contains('dash-compact');
+  grid.classList.toggle('dash-compact', on);
+  try { localStorage.setItem('umsDashboardCompact', on ? '1' : '0'); } catch (e) {}
+}
+
+/** Fetch all three periods up front (server-cached per (emp,period)); render the
+ *  carousels when they all resolve. Guards on currentView (late-callback). */
+function clkLoadDashboard_(isMgr) {
+  CLK_DASH.isMgr = !!isMgr; CLK_DASH.mine = 0; CLK_DASH.team = 0;
+  var host = document.getElementById('dash-cards');
+  if (!host) return;
+  var requestedView = currentView, got = {}, done = 0, need = CLK_DASH_PERIODS.length;
+  var finish = function (pk, res) {
+    got[pk] = (res && !res.error) ? res : null;
+    if (++done < need || currentView !== requestedView) return;
+    CLK_DASH.data = got; clkRenderDashboard_();
+  };
+  CLK_DASH_PERIODS.forEach(function (pk) {
+    google.script.run
+      .withSuccessHandler(function (res) { finish(pk, res); })
+      .withFailureHandler(function () { finish(pk, null); })
+      .getDashboardMetrics(pk);
+  });
+}
+
+function clkRenderDashboard_() {
+  var host = document.getElementById('dash-cards');
+  if (!host) return;
+  host.innerHTML =
+    clkDashCarouselHtml_('mine', 'Your numbers') +
+    clkDashCarouselHtml_('team', CLK_DASH.isMgr ? 'Department' : 'Team');
+}
+
+/** One carousel: a segmented chip (period selector) + a clipped track of 3 slides. */
+function clkDashCarouselHtml_(key, title) {
+  var i = CLK_DASH[key] || 0;
+  var slides = CLK_DASH_PERIODS.map(function (pk) {
+    var res = CLK_DASH.data[pk];
+    var card = (key === 'mine') ? clkDashOwnCard_(res) : clkDashTeamCard_(res);
+    return '<div class="dash-sld">' + card + '</div>';
+  }).join('');
+  return '<div class="dash-card">' +
+    '<div class="dash-card-head"><span class="dash-seclabel">' + esc(title) + '</span>' + clkDashSegHtml_(key) + '</div>' +
+    '<div class="dash-vp"><div class="dash-trk" id="dash-trk-' + key + '" style="transform:translateX(-' + (i * 100) + '%)">' + slides + '</div></div>' +
+  '</div>';
+}
+
+/** Sliding segmented chip — an absolutely-positioned highlight pill moved by
+ *  translateX, with one clickable label per period setting the index. */
+function clkDashSegHtml_(key) {
+  var i = CLK_DASH[key] || 0, n = CLK_DASH_LABELS.length;
+  var w = 'calc((100% - 6px) / ' + n + ')';
+  var labels = CLK_DASH_LABELS.map(function (lbl, idx) {
+    return '<span class="dash-seg-opt' + (idx === i ? ' on' : '') + '" onclick="clkDashSet_(\'' + key + '\',' + idx + ')">' + esc(lbl) + '</span>';
+  }).join('');
+  return '<div class="dash-seg"><div class="dash-seg-hi" style="width:' + w + ';transform:translateX(' + (i * 100) + '%)"></div>' + labels + '</div>';
+}
+
+/** Switch a carousel to period index — transform-only (track + highlight); no
+ *  re-render so it stays cheap on the Apps Script webview. */
+function clkDashSet_(key, idx) {
+  CLK_DASH[key] = idx;
+  var trk = document.getElementById('dash-trk-' + key);
+  if (trk) trk.style.transform = 'translateX(-' + (idx * 100) + '%)';
+  var card = trk && trk.closest('.dash-card');
+  var seg = card && card.querySelector('.dash-seg');
+  if (seg) {
+    var hi = seg.querySelector('.dash-seg-hi');
+    if (hi) hi.style.transform = 'translateX(' + (idx * 100) + '%)';
+    seg.querySelectorAll('.dash-seg-opt').forEach(function (o, j) { o.classList.toggle('on', j === idx); });
+  }
+}
+
+function clkDashKpi_(label, val, big) {
+  return '<div class="dash-kpi' + (big ? ' dash-kpi-big' : '') + '">' +
+    '<div class="dash-kpi-v tabular">' + esc(String(val)) + '</div>' +
+    '<div class="dash-kpi-l">' + esc(label) + '</div></div>';
+}
+function clkDashEmpty_(res) {
+  return '<div class="dash-empty">No call data for ' + esc((res && res.label) || 'this period') + '.</div>';
+}
+function clkDashOwnCard_(res) {
+  if (!res || !res.own) return clkDashEmpty_(res);
+  var o = res.own;
+  return '<div class="dash-kpis">' +
+    clkDashKpi_('Transfer %', o.transferPct != null ? o.transferPct + '%' : '—', true) +
+    clkDashKpi_('% Answered', o.pctAnswered != null ? o.pctAnswered + '%' : '—') +
+    clkDashKpi_('Answered', o.answered != null ? o.answered : '—') +
+    clkDashKpi_('Missed', o.missed != null ? o.missed : '—') +
+    clkDashKpi_('Avg talk', o.attFormatted || '—') +
+  '</div><div class="dash-card-foot mono">' + esc(res.label) + (o.calls != null ? ' · ' + o.calls + ' calls' : '') + '</div>';
+}
+function clkDashTeamCard_(res) {
+  if (!res) return clkDashEmpty_(res);
+  if (!res.team) return '<div class="dash-empty">Team data hidden — fewer than ' + (res.kpiMinCohort || 3) + ' reps reported this period.</div>';
+  var t = res.team;
+  return '<div class="dash-kpis">' +
+    clkDashKpi_('Transfer %', t.transferPct != null ? t.transferPct + '%' : '—', true) +
+    clkDashKpi_('% Answered', t.pctAnswered != null ? t.pctAnswered + '%' : '—') +
+    clkDashKpi_('Answered', t.answered != null ? t.answered : '—') +
+    clkDashKpi_('Missed', t.missed != null ? t.missed : '—') +
+  '</div><div class="dash-card-foot mono">' + esc(res.label) + ' · ' + (res.cohort || 0) + ' reps</div>';
 }
 
 /** Computes "worked", "lunch", "since" stats from today's punches.
