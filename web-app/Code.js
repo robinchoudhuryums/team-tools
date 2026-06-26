@@ -335,6 +335,7 @@ const CN_AUDIT_ACTIONS = [
 const CN_AUDIT_MAX_SCAN = 4000;
 const CN_AUDIT_MAX_RESULTS = 500;
 const CN_AUDIT_DEFAULT_DAYS = 30;
+const ADMIN_VIEW_MAX_ROWS = 300;  // Tier-2 admin sheet-viewer row cap (browse table)
 const CN_EMAIL_TEMPLATE_LIMIT = 50;
 const CN_EMAIL_TEMPLATE_BODY_MAX = 4000;
 const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
@@ -4169,6 +4170,94 @@ function getStorageHealth() {
 
     return { configTimezone: cfgTz, stores: stores };
   } catch (err) { return { error: err.message }; }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  ADMIN SHEET VIEWER (Tier 2) — read-only, highlighted, in-app table view of
+//  a SAFE, allowlisted tab. The view KEY is the security boundary: a caller can
+//  only request a pre-vetted, PHI-free, column-projected view. PHI/payroll/HR
+//  tabs are deliberately ABSENT from the registry (Intake/Forms/per-rep Notes/
+//  Timesheet/Employees/EmpDocs, and the Quizzes answer key) — see INV-32 (the
+//  AuditLog is PHI-free) / INV-121 / INV-122. Read-only: there is NO write path.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** The allowlist of admin sheet-view keys (the security boundary). */
+function adminSheetViewKeys_() { return ['auditLog']; }
+
+/** Pure (Node-pinned) — row tone for the AuditLog view, by action name only.
+ *  danger = destructive (purge/delete/void); warn = degradation/correction
+ *  (sync-fail, PTO reconciliation fix); info = automation/admin (reconcile,
+ *  export, archive, provision, install/remove, digest); else neutral. */
+function adminAuditRowTone_(action) {
+  var a = String(action || '');
+  if (/Purge|Delete|Void/i.test(a)) return 'danger';
+  if (/SyncFail|PtoReconciliationFix/i.test(a)) return 'warn';
+  if (/Reconcile|Export|Archive|Provision|Install|Remove|Digest/i.test(a)) return 'info';
+  return '';
+}
+
+/** Manager-gated (INV-02), read-only, PHI-free in-app viewer of an allowlisted
+ *  tab. Returns { ok, viewKey, label, storeUrl, mgrTzAbbr, columns, rows, truncated }
+ *  where each row is { cells:{...}, tone, rowUrl }. rowUrl deep-links to that
+ *  exact row in Sheets (the Tier-1 pattern, per-row). */
+function getAdminSheetView(viewKey, opts) {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    viewKey = String(viewKey || '');
+    if (adminSheetViewKeys_().indexOf(viewKey) < 0) return { error: 'Unknown view.' };
+    if (viewKey === 'auditLog') return adminSheetView_auditLog_();
+    return { error: 'Unknown view.' };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** AuditLog view — newest-first bounded tail scan (the cnReadCallNoteAuditRows_
+ *  pattern), ALL actions (not just call-note ones), tone-flagged + row-deep-linked.
+ *  PHI-free (INV-32 — the AuditLog never carries note content). */
+function adminSheetView_auditLog_() {
+  const sheet = getOrCreateAuditSheet_();
+  let baseUrl = '';
+  try { baseUrl = sheet.getParent().getUrl() + '#gid=' + sheet.getSheetId(); } catch (e) {}
+  const columns = [
+    { key: 'ts', label: 'Time' },
+    { key: 'action', label: 'Action' },
+    { key: 'rep', label: 'Employee' },
+    { key: 'actor', label: 'Actor' },
+    { key: 'notes', label: 'Detail' },
+  ];
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return { ok: true, viewKey: 'auditLog', label: 'AuditLog · ADP', storeUrl: baseUrl, columns: columns, rows: [], truncated: false };
+  }
+  const cap = ADMIN_VIEW_MAX_ROWS;
+  const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
+  const scannedAll = startRow === 2;
+  const numRows = lastRow - startRow + 1;
+  const data = sheet.getRange(startRow, 1, numRows, 10).getValues();
+  const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  const rows = [];
+  for (let i = data.length - 1; i >= 0 && rows.length < cap; i--) {  // newest-first
+    const action = String(data[i][4] || '');
+    const tsRaw = normalizeAuditTs_(data[i][0]);
+    const sheetRow = startRow + i;
+    rows.push({
+      tone: adminAuditRowTone_(action),
+      rowUrl: baseUrl ? (baseUrl + '&range=A' + sheetRow) : '',
+      cells: {
+        ts:     convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+        action: action,
+        rep:    String(data[i][2] || data[i][1] || ''),
+        actor:  String(data[i][3] || ''),
+        notes:  String(data[i][9] || ''),
+      },
+    });
+  }
+  // Truncated when the scan window didn't reach row 2, or the cap clipped the result.
+  const truncated = !scannedAll || (data.length > cap);
+  return {
+    ok: true, viewKey: 'auditLog', label: 'AuditLog · ADP', storeUrl: baseUrl,
+    mgrTzAbbr: tzAbbr_(mgrTz), columns: columns, rows: rows, truncated: truncated,
+  };
 }
 
 /** Pure (Node-pinned) — derives the deploy-readiness checklist from the

@@ -401,6 +401,33 @@ test('a valid ISO-T string parses; a non-empty garbage string fail-closes (ms=nu
   expectCell(formTokenCellMs_('not-a-date'), true, null);
 });
 
+console.log('\nCode.js — adminAuditRowTone_() + sheet-view allowlist (Tier 2)');
+vm.runInContext(extractRawFunction('Code.js', 'adminAuditRowTone_'), sb,
+  { filename: 'Code.js#adminAuditRowTone_' });
+const adminAuditRowTone_ = sb.adminAuditRowTone_;
+test('row tone: destructive / degradation / automation / neutral', () => {
+  ['FormDataPurge', 'CallNoteDelete', 'EmpDocVoid'].forEach((a) =>
+    assert.strictEqual(adminAuditRowTone_(a), 'danger', a));
+  ['PersonalSheetSyncFail', 'PtoReconciliationFix'].forEach((a) =>
+    assert.strictEqual(adminAuditRowTone_(a), 'warn', a));
+  ['CallNotesReconcile', 'AdpExport', 'CallNotesArchive', 'CallNotesProvision'].forEach((a) =>
+    assert.strictEqual(adminAuditRowTone_(a), 'info', a));
+  ['CallNoteCreate', '', null, undefined].forEach((a) =>
+    assert.strictEqual(adminAuditRowTone_(a), '', String(a)));
+});
+// Coupling tripwire: the client view picker must never offer a view the server
+// allowlist doesn't honor — the KEY is the security boundary (INV-32/121/122).
+test('client CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_()', () => {
+  const cnSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const serverKeys = (codeSrc.match(/function adminSheetViewKeys_\(\)\s*\{\s*return\s*(\[[^\]]*\])/) || [])[1];
+  const clientBlock = (cnSrc.match(/var CN_SHEET_VIEWS\s*=\s*(\[[\s\S]*?\]);/) || [])[1];
+  assert.ok(serverKeys && clientBlock, 'found both view lists');
+  const sk = JSON.parse(serverKeys.replace(/'/g, '"'));
+  const ck = [...clientBlock.matchAll(/key:\s*'([^']+)'/g)].map((m) => m[1]);
+  assert.ok(ck.length >= 1, 'parsed client view keys');
+  ck.forEach((k) => assert.ok(sk.includes(k), `client offers "${k}" but server allowlist omits it`));
+});
+
 console.log('\nCode.js — coaching pure helpers (coachValidate_ / coachUnackedOverdue_)');
 // Source the validator + its whitelist/caps from Code.js (no local re-declare).
 const coachSevMatch = codeSrc.match(/const (COACH_SEVERITIES\s*=\s*\[[\s\S]*?\]);/);

@@ -1902,6 +1902,19 @@
   .cn-ext-prefill-section .field input {
     padding: 6px 8px; font-size: 12px;
   }
+  /* Tier 2 — sheet-viewer row tones + legend. Tints are subtle so the table
+     stays scannable; the legend maps tone → meaning. */
+  .m-table tbody tr.sv-row-danger > td { background: var(--danger-soft); }
+  .m-table tbody tr.sv-row-warn   > td { background: var(--warn-soft); }
+  .m-table tbody tr.sv-row-info   > td { background: var(--info-soft); }
+  .cn-sheetview-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .cn-sheetview-legend .sv-leg {
+    font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .04em;
+    padding: 2px 8px; border-radius: 999px; text-transform: uppercase;
+  }
+  .cn-sheetview-legend .sv-danger { background: var(--danger-soft); color: var(--danger-deep); }
+  .cn-sheetview-legend .sv-warn   { background: var(--warn-soft); color: var(--warning-deep); }
+  .cn-sheetview-legend .sv-info   { background: var(--info-soft); color: var(--info-deep); }
 </style>
 
 <script>
@@ -7134,7 +7147,7 @@ function enterCallNotesAdminView(area) {
     compactHeader +
     (COMPACT_MODE ? '' : cnViewTitleBar_('Call Notes · Admin', 'KPIs, tag taxonomy, and department/tax config. Changes take effect immediately (no redeploy needed).')) +
     '<div class="toolbar-tabs cn-admin-tabs" role="group" aria-label="Admin section" style="margin-bottom:16px">' +
-      tab('overview', 'Overview') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') +
+      tab('overview', 'Overview') + tab('tags', 'Tags') + tab('compliance', 'Compliance') + tab('config', 'Config') + tab('sheets', 'Sheets') +
     '</div>' +
     '<div class="cn-admin-pane" data-pane="overview" style="' + paneStyle('overview') + '">' +
       '<div id="cn-admin-deploy"></div>' +
@@ -7166,6 +7179,12 @@ function enterCallNotesAdminView(area) {
     '<div class="cn-admin-pane" data-pane="config" style="' + paneStyle('config') + '">' +
       '<div id="cn-admin-retention" style="max-width:900px"></div>' +
       '<div id="cn-admin-body" style="max-width:900px">' + loSweep() + '</div>' +
+    '</div>' +
+    // Tier 2 — read-only highlighted viewer of an allowlisted, PHI-free tab.
+    // Lazy-loaded on first open of this sub-tab (cnAdminTab_), so the Admin
+    // landing doesn't pay the AuditLog scan on every open.
+    '<div class="cn-admin-pane" data-pane="sheets" style="' + paneStyle('sheets') + '">' +
+      '<div id="cn-admin-sheets"></div>' +
     '</div>';
   google.script.run
     .withSuccessHandler(function (cfg) {
@@ -7352,6 +7371,10 @@ function cnAdminTab_(key) {
   document.querySelectorAll('.cn-admin-pane').forEach(function (p) {
     p.style.display = (p.getAttribute('data-pane') === key) ? '' : 'none';
   });
+  // Tier 2 — lazy-load the Sheets viewer the first time it's opened (avoids an
+  // AuditLog scan on every Admin landing; the _sheetsLoaded guard makes re-open
+  // a no-op — the Reload button re-fetches on demand).
+  if (key === 'sheets' && !CN_STATE._sheetsLoaded) { CN_STATE._sheetsLoaded = true; cnLoadSheetView_('auditLog'); }
 }
 
 /** 2nd-pass Admin consolidation — toggle the folded System-details disclosure
@@ -7881,6 +7904,83 @@ function cnSetSysCard_(key, label, tone, value, sub) {
     '<div class="cn-sys-h">' + esc(label) + ' <span style="color:' + col + '">' + icon(ic, 13) + '</span></div>' +
     '<div class="cn-sys-v">' + esc(value) + '</div>' +
     (sub ? '<div class="cn-sys-s">' + esc(sub) + '</div>' : '');
+}
+
+// ── Tier 2 — read-only highlighted sheet viewer (allowlisted, PHI-free) ──────
+// The allowlisted views (label map mirroring the server adminSheetViewKeys_).
+// Only 'auditLog' ships in 2a; built as a picker so 2b views (KB / Training)
+// drop in with one entry here + one server registry case.
+var CN_SHEET_VIEWS = [{ key: 'auditLog', label: 'AuditLog · ADP' }];
+
+function cnLoadSheetView_(viewKey) {
+  var slot = document.getElementById('cn-admin-sheets');
+  if (!slot) return;
+  slot.innerHTML = '<div style="padding:10px 0">' + loSweep() + '</div>';
+  var requestedView = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-admin-sheets');
+      if (!live) return;
+      if (!res || res.error) {
+        live.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sheet view unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
+        return;
+      }
+      live.innerHTML = cnRenderSheetView_(res);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView !== requestedView) return;
+      var live = document.getElementById('cn-admin-sheets');
+      if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sheet view unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
+    })
+    .getAdminSheetView(viewKey);
+}
+
+function cnRenderSheetView_(res) {
+  var rows = res.rows || [];
+  var picker = '<select id="cn-sheetview-pick" onchange="cnLoadSheetView_(this.value)" style="margin-left:10px;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--paper-card);color:var(--ink)">' +
+    CN_SHEET_VIEWS.map(function (v) {
+      return '<option value="' + esc(v.key) + '"' + (v.key === res.viewKey ? ' selected' : '') + '>' + esc(v.label) + '</option>';
+    }).join('') + '</select>';
+  var openLink = res.storeUrl ? '<a href="' + esc(res.storeUrl) + '" target="_blank" rel="noopener" style="font-size:12px;margin-left:10px">Open in Sheets ↗</a>' : '';
+  var reload = '<button onclick="cnLoadSheetView_(\'' + esc(res.viewKey) + '\')" style="margin-left:10px;font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--paper-2);color:var(--ink);cursor:pointer">Reload</button>';
+  var legend = '<div class="cn-sheetview-legend">' +
+    '<span class="sv-leg sv-danger">destructive</span>' +
+    '<span class="sv-leg sv-warn">degradation</span>' +
+    '<span class="sv-leg sv-info">automation</span>' +
+  '</div>';
+
+  var cols = (res.columns || []).map(function (c) {
+    return {
+      key: c.key, label: c.label,
+      cell: function (r) {
+        var cells = r.cells || {};
+        var v = esc(String(cells[c.key] == null ? '' : cells[c.key]));
+        // The Detail column carries the per-row "open this row in Sheets" link.
+        if (c.key === 'notes' && r.rowUrl) {
+          return v + ' <a href="' + esc(r.rowUrl) + '" target="_blank" rel="noopener" title="Open this row in Sheets" style="font-size:11px;text-decoration:none">↗</a>';
+        }
+        return v;
+      },
+    };
+  });
+
+  var table = mtRenderTable_({
+    columns: cols,
+    rows: rows,
+    rowClass: function (r) { return r.tone ? ('sv-row-' + r.tone) : ''; },
+    empty: '<div class="m-empty">No rows yet.</div>',
+  });
+
+  var head =
+    '<div class="day-section-label" style="margin-bottom:8px;display:flex;align-items:center;flex-wrap:wrap">' +
+      icon('list', 14) + ' Sheet viewer' + picker + openLink + reload +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Read-only view of a PHI-free, allowlisted tab' +
+      (res.mgrTzAbbr ? ' · times in ' + esc(res.mgrTzAbbr) : '') + '. Rows are highlighted by signal; click ↗ to open a row in Sheets.</div>' +
+    legend;
+  var trunc = res.truncated ? '<div style="font-size:11px;color:var(--warning-deep);margin-top:8px">Showing the most recent ' + rows.length + ' rows — older history is in the sheet (Open in Sheets ↗).</div>' : '';
+  return '<div style="max-width:1000px">' + head + table + trunc + '</div>';
 }
 
 function cnLoadStoragePanel_() {
