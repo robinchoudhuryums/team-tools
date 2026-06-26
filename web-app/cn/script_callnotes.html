@@ -6606,11 +6606,26 @@ function cnStartAmbientPolling_() {
   CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
 }
 
+/** Stable signature of the rolling-note set for the live-refresh skip-render
+ *  guard. Server-meaningful fields only — client-transient keys (anything
+ *  prefixed `_`, e.g. `_pending` / `_flagInFlight`) are dropped so they don't
+ *  spuriously force a re-render. Returns null on any failure (fail-open: a null
+ *  signature never matches, so we render). */
+function cnRollingStackSignature_(notes) {
+  try {
+    return JSON.stringify(notes || [], function (k, v) {
+      return (k && k.charAt(0) === '_') ? undefined : v;
+    });
+  } catch (e) { return null; }
+}
+
 /** #3 live-sync: re-fetch today's notes and re-render the rolling stack so a
  *  note logged in ANOTHER context (the pop-out, or the rep's other window) —
  *  or any drift from the in-memory stack — surfaces without a manual nav.
  *  Log view only; skipped mid inline-edit so an open editor isn't wiped.
- *  Optimistic `_pending` notes not yet on the server are preserved on top. */
+ *  Optimistic `_pending` notes not yet on the server are preserved on top.
+ *  Re-render is signature-guarded (cnRollingStackSignature_) so an unchanged
+ *  poll doesn't flash the stack. */
 function cnRefreshRollingStack_(then) {
   // `then` (optional) fires on EVERY exit path, so a caller driving a UI
   // indicator (e.g. the instant-paint "Refreshing…" pill) can always clear it.
@@ -6631,8 +6646,15 @@ function cnRefreshRollingStack_(then) {
       CN_STATE.rollingNotes = pending.concat(server);
       CN_STATE.autoCopyFormat = res.autoCopyFormat || CN_STATE.autoCopyFormat || '';
       CN_STATE.rollingEntry = { at: Date.now() };   // keep the SWR instant-paint cache warm
-      cnRenderStack_();
-      cnRenderFilterBar_();
+      // Skip the re-render (and its visible flash) when the note set is byte-for-byte
+      // unchanged — this poll/focus refresh fires every 60s + on every window wake,
+      // and an unconditional re-render was flashing the stack "for no reason".
+      const sig = cnRollingStackSignature_(CN_STATE.rollingNotes);
+      if (sig === null || sig !== CN_STATE._rollingStackSig) {
+        CN_STATE._rollingStackSig = sig;
+        cnRenderStack_();
+        cnRenderFilterBar_();
+      }
       done();
     })
     .withFailureHandler(function () { done(); /* live-refresh is best-effort */ })
