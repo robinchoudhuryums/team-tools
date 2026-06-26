@@ -1058,7 +1058,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fourteen client-side localStorage keys total.** All per-browser, all
+- **Fifteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1133,7 +1133,12 @@ this section before touching the relevant area.
     only; `'mine'` | `'team'`, default `'team'`). Reps never write it (they're
     always pinned to `'mine'` and never see the toggle). Read by
     `coachReadMode_`, written by `coachSwitchMode_`.
-  Clearing browser data wipes all fourteen.
+  - `umsDashboardCompact` — the Time Clock **Dashboard**'s in-page compact
+    toggle (`'1'`/`'0'`, default off). Collapses the dashboard to just the clock
+    rail (hides the carousel main column). DISTINCT from the URL `?compact=1`
+    pop-out (`COMPACT_MODE` / `data-compact`, which also collapses to the rail);
+    read by `clkDashCompactPref_`, written by `clkDashToggleCompact_`.
+  Clearing browser data wipes all fifteen.
 
 ## Key Design Decisions
 
@@ -1419,13 +1424,13 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Fourteen client-side localStorage keys total" entry in
+  authoritative "Fifteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
-  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`) — all per-browser, all
-  try/catch-wrapped.
+  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`, `umsDashboardCompact`)
+  — all per-browser, all try/catch-wrapped.
   (An earlier version of this decision listed only four; Round 2 · 8a/8b added
   the sidebar-width and Time/PTO-mode keys, the KB drawer added its single
   `umsKbPanel` prefs blob, the refresh-restore behavior added `umsLastView`,
@@ -1851,6 +1856,29 @@ this section before touching the relevant area.
   inline mono text rows. Both components live in `styles.html` and
   are consumed today by the manager dashboard's live-status cards
   and pending PTO queue.
+- **Time Clock → Dashboard (the Clock tab is a two-column Dashboard).** The
+  `clock` tab (key + `enterClockCombinedView` handler UNCHANGED — only the visible
+  LABEL is now 'Dashboard', so `?tool=clock`/`currentView==='clock'`/`umsLastView`/
+  pop-out all keep working) renders a `.dash-grid` (`360px minmax(0,1fr)` — the
+  `minmax(0,1fr)` is LOAD-BEARING for the carousel viewports). **Left rail:** the
+  existing `#clk-hero` (now just the sky clock — the greeting moved to the main
+  column so the clock fits 360px; `#clk-hero` is KEPT so `umsClockBg` + all clock
+  machinery work) + shift-strip + Today's Punches + teammate. **Main column:**
+  greeting + a compact toggle + the briefing **carousels**. Each carousel is a
+  clipped `.dash-vp`/`.dash-trk` (transform-only slides) driven by a sliding
+  **segmented chip** (`.dash-seg` + a translateX highlight pill; `clkDashSet_`
+  switches period transform-only, reduced-motion-safe). v1 ships two carousels —
+  **Your numbers** (own) + **Team**/**Department** (cohort-guarded team) — over
+  **Yesterday / MTD / YTD**, fed by `getDashboardMetrics(periodKey)` (all three
+  fetched up front, server-cached). **Annual PTO relocated** off the dashboard
+  (already the `.pto-tile` on Time/PTO). Compact: the in-page `umsDashboardCompact`
+  toggle OR `?compact=1` pop-out collapses to the rail (`.dash-compact` /
+  `:root[data-compact]`); mobile (`max-width:860px`) stacks. Every server string
+  `esc()`'d; team values respect the N=3 cohort guard (INV-124). **Documented
+  follow-ons (not in v1):** the manager Spanish↔Requests switcher carousel + the
+  MTD/YTD run-rate projection cone. The pre-dashboard layout decision (hero +
+  shift-strip + ledger; coverage in the shift header; world-clock strip) is below
+  — those pieces still render INSIDE the rail.
 - **Clock view: hero + shift-strip + ledger architecture.** The
   Clock tab's `renderClockView` emits, in order: a `.hero` block
   (greet kicker + name + live status sentence on the left, live
@@ -3026,7 +3054,14 @@ manually for a fresh deploy or environment:
   (2) set Script Property **`SPANISH_INBOX_MEMBERS`** to a comma-separated list
   of the bilingual group members' emails — "resolved" = first reply from one of
   them (with no list it falls back to "first reply from anyone but the
-  requester"); (3) the deploy that ships `GmailApp` **adds the Gmail OAuth
+  requester"). **As of the Dashboard work this property ALSO GATES FEATURE
+  ACCESS:** `canSeeSpanishInbox_(emp)` = `isManager OR email ∈
+  SPANISH_INBOX_MEMBERS`, and the four Spanish endpoints now gate on THAT
+  (not pure-manager — INV-31 amendment), so the bilingual reps get the full
+  Spanish Inbox tab + dashboard card. **It must be populated** for Spanish reps
+  to gain access (an empty property = managers only). The web app runs as the
+  deployer, so a Spanish rep reads the deployer's Gmail through the server
+  (they need no Gmail access of their own); (3) the deploy that ships `GmailApp` **adds the Gmail OAuth
   scope** (auto-detected — `appsscript.json` has no explicit `oauthScopes`), so
   the deployer **re-authorizes once** on the next deploy/run. The address
   defaults to `CONFIG.SPANISH_INBOX_ADDRESS` (Script Property
@@ -3689,7 +3724,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v6`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`, `getSpanishInboxStats`, `getSpanishInboxPending`, `getSpanishInboxResolved`, `getSpanishInboxThreadBody`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; all four Spanish-inbox endpoints gate BEFORE any GmailApp access, and are now pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion). **AMENDMENT (Dashboard work):** the four Spanish-inbox endpoints (`getSpanishInboxStats`/`Pending`/`Resolved`/`ThreadBody`) are NO LONGER pure-manager-gated — they now gate on `canSeeSpanishInbox_(emp)` = `isManager OR email ∈ SPANISH_INBOX_MEMBERS` (the bilingual reps who action the inbox get the FULL feature, bodies included; the gate still fires BEFORE any GmailApp access). The gate test asserts a non-member rep is rejected with the `Spanish Inbox access` error; `getEmployeeState` ships `canSeeSpanish` so the client gates the `metricsSpanish` tab + the dashboard Spanish card | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server
