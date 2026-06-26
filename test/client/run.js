@@ -415,6 +415,17 @@ test('row tone: destructive / degradation / automation / neutral', () => {
   ['CallNoteCreate', '', null, undefined].forEach((a) =>
     assert.strictEqual(adminAuditRowTone_(a), '', String(a)));
 });
+// 2b — KB review-due tone (mirrors the kbGetReviewDue staleness rule, INV-126).
+vm.runInContext(extractRawFunction('Code.js', 'adminKbReviewTone_'), sb,
+  { filename: 'Code.js#adminKbReviewTone_' });
+const adminKbReviewTone_ = sb.adminKbReviewTone_;
+test('KB review tone: null age or age ≥ dueDays → warn; fresher → neutral', () => {
+  assert.strictEqual(adminKbReviewTone_(null, 90), 'warn');   // never reviewed/edited
+  assert.strictEqual(adminKbReviewTone_(120, 90), 'warn');
+  assert.strictEqual(adminKbReviewTone_(90, 90), 'warn');     // boundary inclusive
+  assert.strictEqual(adminKbReviewTone_(30, 90), '');
+  assert.strictEqual(adminKbReviewTone_(0, 90), '');
+});
 // Coupling tripwire: the client view picker must never offer a view the server
 // allowlist doesn't honor — the KEY is the security boundary (INV-32/121/122).
 test('client CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_()', () => {

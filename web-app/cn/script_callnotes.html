@@ -7907,10 +7907,14 @@ function cnSetSysCard_(key, label, tone, value, sub) {
 }
 
 // ── Tier 2 — read-only highlighted sheet viewer (allowlisted, PHI-free) ──────
-// The allowlisted views (label map mirroring the server adminSheetViewKeys_).
-// Only 'auditLog' ships in 2a; built as a picker so 2b views (KB / Training)
-// drop in with one entry here + one server registry case.
-var CN_SHEET_VIEWS = [{ key: 'auditLog', label: 'AuditLog · ADP' }];
+// The allowlisted views (label map mirroring the server adminSheetViewKeys_;
+// a Node coupling tripwire asserts these keys ⊆ adminSheetViewKeys_()).
+var CN_SHEET_VIEWS = [
+  { key: 'auditLog', label: 'AuditLog · ADP' },
+  { key: 'kb', label: 'Knowledge Base · KB' },
+  { key: 'trainingAssign', label: 'Training assignments' },
+  { key: 'trainingComplete', label: 'Training completions' },
+];
 
 function cnLoadSheetView_(viewKey) {
   var slot = document.getElementById('cn-admin-sheets');
@@ -7944,11 +7948,12 @@ function cnRenderSheetView_(res) {
     }).join('') + '</select>';
   var openLink = res.storeUrl ? '<a href="' + esc(res.storeUrl) + '" target="_blank" rel="noopener" style="font-size:12px;margin-left:10px">Open in Sheets ↗</a>' : '';
   var reload = '<button onclick="cnLoadSheetView_(\'' + esc(res.viewKey) + '\')" style="margin-left:10px;font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:6px;background:var(--paper-2);color:var(--ink);cursor:pointer">Reload</button>';
-  var legend = '<div class="cn-sheetview-legend">' +
-    '<span class="sv-leg sv-danger">destructive</span>' +
-    '<span class="sv-leg sv-warn">degradation</span>' +
-    '<span class="sv-leg sv-info">automation</span>' +
-  '</div>';
+  // Legend is server-driven per view (auditLog tones differ from kb/training).
+  var legend = (res.legend && res.legend.length)
+    ? '<div class="cn-sheetview-legend">' + res.legend.map(function (l) {
+        return '<span class="sv-leg sv-' + esc(l.tone) + '">' + esc(l.label) + '</span>';
+      }).join('') + '</div>'
+    : '';
 
   var cols = (res.columns || []).map(function (c) {
     return {
