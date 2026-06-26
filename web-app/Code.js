@@ -570,6 +570,9 @@ function getEmployeeState() {
       selfUndoWindowSeconds: CONFIG.SELF_UNDO_WINDOW_SECONDS,
       payCycle: emp.payCycle, payAnchor: emp.payAnchor,
       isManager: emp.isManager,
+      // Spanish Inbox access — managers OR a SPANISH_INBOX_MEMBERS rep (INV-31
+      // amendment); gates the dashboard Spanish card + the metricsSpanish tab.
+      canSeeSpanish: canSeeSpanishInbox_(emp),
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
       schedule: getShiftSchedule_(empTz),
@@ -9257,6 +9260,19 @@ function getSpanishInboxMembers_() {
   raw.split(',').forEach(function (s) { const e = s.trim().toLowerCase(); if (e) set[e] = true; });
   return set;
 }
+
+/** Spanish Inbox access predicate — managers OR a bilingual rep listed in
+ *  SPANISH_INBOX_MEMBERS (the same roster used to detect "resolved by a member";
+ *  the reps who actually action the inbox). INV-31 amendment: the four Spanish
+ *  endpoints gate on THIS, not isManager. Reps get the FULL feature (pending
+ *  list + bodies + stats) — they're the responders. Bodies stay live-read /
+ *  never stored (the PHI-adjacent posture is unchanged). */
+function canSeeSpanishInbox_(emp) {
+  if (!emp) return false;
+  if (emp.isManager) return true;
+  var members = getSpanishInboxMembers_();
+  return !!members[String(emp.email || '').trim().toLowerCase()];
+}
 /** Stable short hash of the inbox address + member set, used to scope the stats
  *  cache key so editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't masked
  *  by a stale (wrong-resolution) aggregate for up to the 5-min TTL. Mirrors cdrRosterHash_. */
@@ -9296,7 +9312,7 @@ function authorizeGmailScope() {
 function getSpanishInboxStats(days) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
     let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
@@ -9363,7 +9379,7 @@ function getSpanishInboxStats(days) {
 function getSpanishInboxPending(days) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
     let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
@@ -9408,7 +9424,7 @@ function getSpanishInboxPending(days) {
 function getSpanishInboxResolved(days) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
     let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
@@ -9452,7 +9468,7 @@ function getSpanishInboxResolved(days) {
 function getSpanishInboxThreadBody(threadId) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
     const addr = getSpanishInboxAddress_();
     // Fail closed: without a configured inbox there's no scope to guard against,
