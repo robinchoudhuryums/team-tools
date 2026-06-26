@@ -455,6 +455,44 @@ test('client CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_()', () => {
   ck.forEach((k) => assert.ok(sk.includes(k), `client offers "${k}" but server allowlist omits it`));
 });
 
+console.log('\nCode.js — dashboard metrics pure helpers (period range + cohort-guarded team)');
+['dashboardPeriodRange_', 'dashboardTeamAggregate_', 'dashboardTeamTransfer_'].forEach((fn) =>
+  vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn }));
+const dashboardPeriodRange_ = sb.dashboardPeriodRange_;
+const dashboardTeamAggregate_ = sb.dashboardTeamAggregate_;
+const dashboardTeamTransfer_ = sb.dashboardTeamTransfer_;
+test('dashboardPeriodRange_: yesterday/mtd/ytd resolve from today (UTC string math)', () => {
+  const y = dashboardPeriodRange_('yesterday', '2026-03-01');
+  assert.strictEqual(y.from, '2026-02-28'); assert.strictEqual(y.to, '2026-02-28'); // month + leap-safe rollback
+  const m = dashboardPeriodRange_('mtd', '2026-06-17');
+  assert.strictEqual(m.from, '2026-06-01'); assert.strictEqual(m.to, '2026-06-17');
+  const yt = dashboardPeriodRange_('ytd', '2026-06-17');
+  assert.strictEqual(yt.from, '2026-01-01'); assert.strictEqual(yt.to, '2026-06-17');
+  assert.strictEqual(dashboardPeriodRange_('bogus', '2026-06-17'), null);
+  assert.strictEqual(dashboardPeriodRange_('mtd', 'not-a-date'), null);
+});
+test('dashboardTeamAggregate_: sums, recomputes pct, answered-weighted ATT; null below cohort', () => {
+  const agents = {
+    A: { totalRung: 100, totalAnswered: 90, totalMissed: 10, attSeconds: 200 },
+    B: { totalRung: 100, totalAnswered: 80, totalMissed: 20, attSeconds: 100 },
+    C: { totalRung: 0,   totalAnswered: 0,  totalMissed: 0,  attSeconds: 0 },   // no data → not in cohort
+  };
+  const below = dashboardTeamAggregate_(agents, 3);   // only A,B qualify → cohort 2 < 3
+  assert.strictEqual(below.team, null); assert.strictEqual(below.cohort, 2);
+  const ok = dashboardTeamAggregate_(agents, 2);
+  assert.strictEqual(ok.cohort, 2);
+  assert.strictEqual(ok.team.rung, 200); assert.strictEqual(ok.team.answered, 170);
+  assert.strictEqual(ok.team.pctAnswered, 85);  // 170/200
+  assert.strictEqual(ok.team.attSeconds, Math.round((200 * 90 + 100 * 80) / 170)); // answered-weighted
+});
+test('dashboardTeamTransfer_: sums calls/transferred, recomputes pct; null below cohort', () => {
+  const t = { A: { totalCalls: 50, transferred: 10 }, B: { totalCalls: 50, transferred: 20 }, C: { totalCalls: 0, transferred: 0 } };
+  assert.strictEqual(dashboardTeamTransfer_(t, 3).transfer, null);   // cohort 2 < 3
+  const ok = dashboardTeamTransfer_(t, 2);
+  assert.strictEqual(ok.transfer.totalCalls, 100); assert.strictEqual(ok.transfer.transferred, 30);
+  assert.strictEqual(ok.transfer.transferPct, 30);  // 30/100
+});
+
 console.log('\nCode.js — coaching pure helpers (coachValidate_ / coachUnackedOverdue_)');
 // Source the validator + its whitelist/caps from Code.js (no local re-declare).
 const coachSevMatch = codeSrc.match(/const (COACH_SEVERITIES\s*=\s*\[[\s\S]*?\]);/);

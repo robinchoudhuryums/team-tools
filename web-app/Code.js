@@ -570,6 +570,9 @@ function getEmployeeState() {
       selfUndoWindowSeconds: CONFIG.SELF_UNDO_WINDOW_SECONDS,
       payCycle: emp.payCycle, payAnchor: emp.payAnchor,
       isManager: emp.isManager,
+      // Spanish Inbox access — managers OR a SPANISH_INBOX_MEMBERS rep (INV-31
+      // amendment); gates the dashboard Spanish card + the metricsSpanish tab.
+      canSeeSpanish: canSeeSpanishInbox_(emp),
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
       schedule: getShiftSchedule_(empTz),
@@ -9257,6 +9260,19 @@ function getSpanishInboxMembers_() {
   raw.split(',').forEach(function (s) { const e = s.trim().toLowerCase(); if (e) set[e] = true; });
   return set;
 }
+
+/** Spanish Inbox access predicate — managers OR a bilingual rep listed in
+ *  SPANISH_INBOX_MEMBERS (the same roster used to detect "resolved by a member";
+ *  the reps who actually action the inbox). INV-31 amendment: the four Spanish
+ *  endpoints gate on THIS, not isManager. Reps get the FULL feature (pending
+ *  list + bodies + stats) — they're the responders. Bodies stay live-read /
+ *  never stored (the PHI-adjacent posture is unchanged). */
+function canSeeSpanishInbox_(emp) {
+  if (!emp) return false;
+  if (emp.isManager) return true;
+  var members = getSpanishInboxMembers_();
+  return !!members[String(emp.email || '').trim().toLowerCase()];
+}
 /** Stable short hash of the inbox address + member set, used to scope the stats
  *  cache key so editing SPANISH_INBOX_ADDRESS / SPANISH_INBOX_MEMBERS isn't masked
  *  by a stale (wrong-resolution) aggregate for up to the 5-min TTL. Mirrors cdrRosterHash_. */
@@ -9296,7 +9312,7 @@ function authorizeGmailScope() {
 function getSpanishInboxStats(days) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
     let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
@@ -9363,7 +9379,7 @@ function getSpanishInboxStats(days) {
 function getSpanishInboxPending(days) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
     let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
@@ -9408,7 +9424,7 @@ function getSpanishInboxPending(days) {
 function getSpanishInboxResolved(days) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
     let d = parseInt(days, 10); if (!d || d < 1) d = 30; if (d > 90) d = 90;
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured (set Script Property SPANISH_INBOX_ADDRESS).' };
@@ -9452,7 +9468,7 @@ function getSpanishInboxResolved(days) {
 function getSpanishInboxThreadBody(threadId) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
     const addr = getSpanishInboxAddress_();
     // Fail closed: without a configured inbox there's no scope to guard against,
@@ -10912,6 +10928,129 @@ function countCallNotesInRange_(emp, from, to) {
   } catch (e) { return 0; }
 }
 
+
+// ════════════════════════════════════════════════════════════════════════════
+//  DASHBOARD METRICS (Time Clock → Dashboard)
+//  Period-aggregated own + cohort-guarded team CDR for the Dashboard carousels.
+//  Reuses the CDR layer (getCdrAgentMetrics_ / getCsrTransferPerRepDaily_) over a
+//  SERVER-resolved period (Yesterday / MTD / YTD), so the 92-day getMyMetricsRange
+//  cap (INV-129) doesn't apply — the period is server-controlled, not arbitrary
+//  user input. Caller-scoped own; team is ANONYMIZED via the N=3 cohort guard
+//  (INV-124). Result-cached per (emp, period) like getMyMetrics.
+// ════════════════════════════════════════════════════════════════════════════
+var DASHBOARD_PERIOD_KEYS = ['yesterday', 'mtd', 'ytd'];
+
+/** Pure (Node-pinned) — resolve a period key to {from,to,label} given today's
+ *  ISO date (yyyy-MM-dd, in the caller's tz). String/UTC math only. */
+function dashboardPeriodRange_(periodKey, todayIso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return null;
+  var y = todayIso.slice(0, 4), m = todayIso.slice(5, 7);
+  if (periodKey === 'yesterday') {
+    var yi = new Date(Date.parse(todayIso + 'T00:00:00Z') - 86400000);
+    var iso = yi.getUTCFullYear() + '-' + String(yi.getUTCMonth() + 1).padStart(2, '0') + '-' + String(yi.getUTCDate()).padStart(2, '0');
+    return { from: iso, to: iso, label: 'Yesterday' };
+  }
+  if (periodKey === 'mtd') return { from: y + '-' + m + '-01', to: todayIso, label: 'Month to date' };
+  if (periodKey === 'ytd') return { from: y + '-01-01', to: todayIso, label: 'Year to date' };
+  return null;
+}
+
+/** Pure (Node-pinned) — team CDR aggregate from getCdrAgentMetrics_'s .agents
+ *  map. Cohort = agents with totalRung > 0; team is null below minCohort
+ *  (INV-124 — a small team can't be back-solved to an individual). ATT is
+ *  answered-weighted across agents. */
+function dashboardTeamAggregate_(agentsMap, minCohort) {
+  var rung = 0, answered = 0, missed = 0, attWeighted = 0, attDenom = 0, cohort = 0;
+  Object.keys(agentsMap || {}).forEach(function (k) {
+    var a = agentsMap[k];
+    if (!a || !(a.totalRung > 0)) return;
+    cohort++;
+    rung += a.totalRung; answered += a.totalAnswered || 0; missed += a.totalMissed || 0;
+    if (a.attSeconds > 0 && a.totalAnswered > 0) { attWeighted += a.attSeconds * a.totalAnswered; attDenom += a.totalAnswered; }
+  });
+  if (cohort < minCohort) return { cohort: cohort, team: null };
+  return {
+    cohort: cohort,
+    team: {
+      rung: rung, answered: answered, missed: missed,
+      pctAnswered: rung > 0 ? Math.round((answered / rung) * 1000) / 10 : 0,
+      attSeconds: attDenom > 0 ? Math.round(attWeighted / attDenom) : 0,
+    },
+  };
+}
+
+/** Pure (Node-pinned) — team transfer aggregate from getCsrTransferPerRepDaily_'s
+ *  .agents map. Cohort = agents with totalCalls > 0; null below minCohort. */
+function dashboardTeamTransfer_(transferAgentsMap, minCohort) {
+  var calls = 0, transferred = 0, cohort = 0;
+  Object.keys(transferAgentsMap || {}).forEach(function (k) {
+    var a = transferAgentsMap[k];
+    if (!a || !(a.totalCalls > 0)) return;
+    cohort++; calls += a.totalCalls; transferred += a.transferred || 0;
+  });
+  if (cohort < minCohort) return { cohort: cohort, transfer: null };
+  return { cohort: cohort, transfer: { totalCalls: calls, transferred: transferred, transferPct: calls > 0 ? Math.round((transferred / calls) * 1000) / 10 : null } };
+}
+
+/** Dashboard carousels — period-aggregated own + cohort-guarded team CDR.
+ *  Rep-callable (own is the caller's; team is anonymized per INV-124).
+ *  periodKey ∈ DASHBOARD_PERIOD_KEYS. Result-cached per (emp, period) for
+ *  CDR_CACHE_TTL, bypassed under the CDR test override (the getMyMetrics
+ *  discipline). Returns own:null / team:null when there's no data / cohort < 3. */
+function getDashboardMetrics(periodKey) {
+  try {
+    var emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Account not registered.' };
+    periodKey = String(periodKey || '');
+    if (DASHBOARD_PERIOD_KEYS.indexOf(periodKey) < 0) return { error: 'Unknown period.' };
+
+    var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+    var cache = CacheService.getScriptCache();
+    var cacheKey = 'dash_metrics_v1:' + emp.id + ':' + periodKey;
+    if (useCache) {
+      try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
+    }
+
+    var todayIso = Utilities.formatDate(new Date(), empTz_(emp), 'yyyy-MM-dd');
+    var range = dashboardPeriodRange_(periodKey, todayIso);
+    if (!range) return { error: 'Unknown period.' };
+    var from = range.from, to = range.to;
+
+    var roster = getEmployeeRosterRows_();
+    var allNames = [];
+    for (var r = 1; r < roster.length; r++) { var nm = String(roster[r][EMP.NAME] || '').trim(); if (nm) allNames.push(nm); }
+
+    var MIN_COHORT = 3;
+    var ownDq = (getCdrAgentMetrics_(from, to, [emp.name]).agents || {})[emp.name] || null;
+    var teamDqMap = getCdrAgentMetrics_(from, to, allNames).agents || {};
+    var ownTr = (getCsrTransferPerRepDaily_(from, to, [emp.name]).agents || {})[emp.name] || null;
+    var teamTrMap = getCsrTransferPerRepDaily_(from, to, allNames).agents || {};
+
+    var teamAgg = dashboardTeamAggregate_(teamDqMap, MIN_COHORT);
+    var teamTr = dashboardTeamTransfer_(teamTrMap, MIN_COHORT);
+    var noteCount = countCallNotesInRange_(emp, from, to);
+
+    var result = {
+      periodKey: periodKey, from: from, to: to, label: range.label,
+      own: ownDq ? {
+        rung: ownDq.totalRung, answered: ownDq.totalAnswered, missed: ownDq.totalMissed,
+        pctAnswered: ownDq.pctAnswered, attSeconds: ownDq.attSeconds, attFormatted: ownDq.attFormatted,
+        transferPct: ownTr ? ownTr.transferPct : null, calls: ownTr ? ownTr.totalCalls : null,
+      } : null,
+      team: teamAgg.team ? {
+        rung: teamAgg.team.rung, answered: teamAgg.team.answered, missed: teamAgg.team.missed,
+        pctAnswered: teamAgg.team.pctAnswered, attSeconds: teamAgg.team.attSeconds,
+        transferPct: teamTr.transfer ? teamTr.transfer.transferPct : null,
+      } : null,
+      cohort: teamAgg.cohort,
+      noteCount: noteCount,
+      noteCoverage: cnNoteCoverage_(noteCount, ownDq ? ownDq.totalAnswered : 0),
+      kpiMinCohort: MIN_COHORT,
+    };
+    if (useCache) { try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {} }
+    return result;
+  } catch (err) { return { error: err.message }; }
+}
 
 /**
  * Self-view: the calling rep's own call metrics for a date, plus their

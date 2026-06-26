@@ -3942,12 +3942,8 @@ function test_managerGates_rejectNonManager() {
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
-    // Spanish Inbox (Gmail) manager gates — the gate fires BEFORE any GmailApp
-    // access, so these run safely even where Gmail / the inbox is unconfigured.
-    ['getSpanishInboxStats',           function () { return getSpanishInboxStats(30); }],
-    ['getSpanishInboxPending',         function () { return getSpanishInboxPending(30); }],
-    ['getSpanishInboxResolved',        function () { return getSpanishInboxResolved(30); }],
-    ['getSpanishInboxThreadBody',      function () { return getSpanishInboxThreadBody('no-such-thread'); }],
+    // (Spanish Inbox endpoints are gated by canSeeSpanishInbox_ now — manager OR
+    // SPANISH_INBOX_MEMBERS rep — not pure manager-only; asserted separately below.)
     // Punctuality report (manager Time Clock tab) — gate precedes any sheet read.
     ['getPunctualityReport',           function () { return getPunctualityReport(D, D); }],
     // Coaching (Training module) — the gate fires BEFORE any HR_DOCS_SS_ID
@@ -3971,6 +3967,18 @@ function test_managerGates_rejectNonManager() {
   const dr = _asUser(_TEST_INDIA_EMAIL, function () { return getDeptRequests(); });
   _assertTrue(dr && dr.deptStats == null && dr.allOpen == null,
     'getDeptRequests must not leak deptStats/allOpen to a non-manager');
+  // Spanish Inbox endpoints are gated by canSeeSpanishInbox_ (manager OR a
+  // SPANISH_INBOX_MEMBERS rep). The test employee is NOT a member, so all four
+  // must reject with the Spanish-access error (BEFORE any GmailApp access).
+  [['getSpanishInboxStats', function () { return getSpanishInboxStats(30); }],
+   ['getSpanishInboxPending', function () { return getSpanishInboxPending(30); }],
+   ['getSpanishInboxResolved', function () { return getSpanishInboxResolved(30); }],
+   ['getSpanishInboxThreadBody', function () { return getSpanishInboxThreadBody('x'); }]]
+    .forEach(function (c) {
+      const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
+      _assertNotNull(r && r.error, c[0] + ' must error for a non-member rep');
+      _assertContains(r.error, 'Spanish Inbox access', c[0] + ' must be Spanish-gated (INV-31 amendment)');
+    });
 }
 
 // A5 — drFindOpenRequest_ is the re-send dedup lookup: a re-send of the same note
