@@ -76,7 +76,7 @@ const TOOLS = {
     tabs: {
       metricsMyStats:  { label: 'My Stats',      icon: 'chart',  enter: 'enterMetricsMyStatsView' },
       metricsTeam:     { label: 'Team Metrics',   icon: 'manage', enter: 'enterMetricsTeamView', managerOnly: true },
-      metricsSpanish:  { label: 'Spanish Inbox',  icon: 'mail',   enter: 'enterSpanishInboxView', managerOnly: true },
+      metricsSpanish:  { label: 'Spanish Inbox',  icon: 'mail',   enter: 'enterSpanishInboxView', managerOnly: true, also: 'canSeeSpanish' },
       metricsDeptReq:  { label: 'Dept Requests',  icon: 'outbox', enter: 'enterDeptRequestsView' },
     },
   },
@@ -497,7 +497,11 @@ function enterTool(toolKey, tabKey) {
   // Resolve the desired tab — explicit > default. Skip managerOnly for non-managers.
   let chosen = tabKey && tool.tabs[tabKey] ? tabKey : tool.defaultTab;
   const tabDef = tool.tabs[chosen];
-  if (tabDef && tabDef.managerOnly && empState && !empState.isManager) {
+  // managerOnly tabs bump non-managers to the default — UNLESS the tab declares
+  // an `also` flag the caller has on empState (e.g. metricsSpanish → canSeeSpanish
+  // grants Spanish reps the tab without making it rep-wide).
+  if (tabDef && tabDef.managerOnly && empState && !empState.isManager &&
+      !(tabDef.also && empState[tabDef.also])) {
     chosen = tool.defaultTab;
   }
   showView(chosen);
@@ -563,15 +567,21 @@ function renderToolTabBar(toolKey) {
   if (!bar || !tool) return;
   const tabs = Object.keys(tool.tabs).filter(k => {
     const t = tool.tabs[k];
-    return !t.managerOnly || (empState && empState.isManager);
+    // managerOnly tabs are hidden from non-managers, unless the tab declares an
+    // `also` empState flag the caller has (e.g. metricsSpanish → canSeeSpanish).
+    return !t.managerOnly || (empState && empState.isManager) ||
+      (t.also && empState && empState[t.also]);
   });
   bar.innerHTML = tabs.map(k => {
     const t = tool.tabs[k];
     // Manager-only tabs get a subtle upward accent gradient + a small marker
-    // glyph so reps-turned-managers can tell at a glance which tabs are the
-    // privileged, team-facing ones.
-    const mgrCls = t.managerOnly ? ' tt-mgr' : '';
-    const mgrMark = t.managerOnly
+    // glyph so managers can tell at a glance which tabs are the privileged,
+    // team-facing ones. Suppress the marker for a non-manager who reached the
+    // tab via an `also` flag (e.g. a Spanish rep on metricsSpanish) — for them
+    // it's just their tab, not a manager surface.
+    const showMgrMark = t.managerOnly && empState && empState.isManager;
+    const mgrCls = showMgrMark ? ' tt-mgr' : '';
+    const mgrMark = showMgrMark
       ? `<span class="tt-mgr-mark" title="Manager-only">${icon('manage', 10)}</span>`
       : '';
     return `<button class="tt-btn${mgrCls}" data-tab="${k}" onclick="showView('${k}')">
