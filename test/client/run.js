@@ -367,6 +367,19 @@ test('every day-type <select> option is an accepted leave type', () => {
     `UI offers "${v}" but the server validator rejects it`));
 });
 
+console.log('\ntc/script_clock — dashProjection_() (run-rate projection)');
+const dashProjection_ = loadFunction(sb, 'tc/script_clock.html', 'dashProjection_');
+test('projects MTD/YTD counts by elapsed fraction; null for yesterday / <3d / complete', () => {
+  const m = dashProjection_(100, '2026-06-01', '2026-06-10', 'mtd');   // 10 of 30 days → ~300 by EOM
+  assert.strictEqual(m.projected, 300); assert.strictEqual(m.endLabel, 'Jun 30');
+  const y = dashProjection_(1000, '2026-01-01', '2026-03-01', 'ytd');  // 60 of 365 days
+  assert.strictEqual(y.endLabel, 'Dec 31'); assert.ok(y.projected > 6000 && y.projected < 6200);
+  assert.strictEqual(dashProjection_(100, '2026-06-25', '2026-06-25', 'yesterday'), null); // not a range period
+  assert.strictEqual(dashProjection_(100, '2026-06-01', '2026-06-02', 'mtd'), null);        // < 3 days elapsed
+  assert.strictEqual(dashProjection_(null, '2026-06-01', '2026-06-10', 'mtd'), null);       // null value
+  assert.strictEqual(dashProjection_(100, '2026-06-01', '2026-06-30', 'mtd'), null);        // complete period
+});
+
 console.log('\nCode.js — formTokenCellMs_() (coercion-safe form-token expiry read)');
 // Regression for the "every fresh token reads as expired" bug: when FORMS_SS_ID
 // points at a sheet that coerces the ISO-T ExpiresAt string to a datetime,
