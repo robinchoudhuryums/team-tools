@@ -688,9 +688,16 @@
     font-family: var(--ui); font-size: 13px; font-weight: 500;
     color: var(--ink); background: var(--paper-card);
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease);
+    transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+      color var(--t) var(--ease), transform .12s var(--ease);
     -webkit-tap-highlight-color: transparent;
   }
+  /* Tactile press/hover on the punch + adjust buttons. Transform-only (composited,
+     no layout/paint) so it's free; the global reduced-motion block snaps it. */
+  .actions .prime:hover:not(:disabled),
+  .actions .sec:hover:not(:disabled) { transform: translateY(-1px); }
+  .actions .prime:active:not(:disabled),
+  .actions .sec:active:not(:disabled) { transform: translateY(0) scale(.96); }
   .actions .prime svg, .actions .sec svg { width: 18px; height: 18px; }
   .actions .prime {
     background: var(--accent); color: var(--paper-card);
