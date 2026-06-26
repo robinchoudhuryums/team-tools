@@ -88,6 +88,17 @@
   .actions .sec.act-lunchout { color: var(--warning-deep); }
   .actions .sec.act-lunchin, .actions .sec.act-clockin, .actions .sec.act-lunchin svg { color: var(--success-deep); }
 
+  /* Punch-button icon morph (LunchOut: headset→mug, LunchIn: mug→headset),
+     shown as the in-flight loading state. Two glyphs stacked; cross-fade +
+     scale/rotate, transform/opacity only. Ends on the destination glyph and
+     holds it until the state re-render swaps the whole button. */
+  .clk-morph { position: relative; display: inline-flex; width: 18px; height: 18px; }
+  .clk-morph .cm-from, .clk-morph .cm-to { position: absolute; inset: 0; display: inline-flex; }
+  .clk-morph .cm-from { animation: clkMorphOut .42s var(--ease) forwards; }
+  .clk-morph .cm-to   { opacity: 0; animation: clkMorphIn .42s var(--ease) forwards; }
+  @keyframes clkMorphOut { 0% { opacity: 1; transform: none; } 100% { opacity: 0; transform: scale(.55) rotate(-18deg); } }
+  @keyframes clkMorphIn  { 0% { opacity: 0; transform: scale(.55) rotate(18deg); } 100% { opacity: 1; transform: none; } }
+
   /* Bottom one-row: Today's Punches · Team Right Now · compact Annual PTO. */
   .clk-row3 { display: grid; grid-template-columns: 1fr 1fr minmax(170px, .7fr); gap: 14px; align-items: start; margin-top: 14px; }
   .pto-mini { display: flex; align-items: center; gap: 14px; }
@@ -164,6 +175,8 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .dash-vp, .dash-trk, .dash-seg-hi { transition: none; }
+    .clk-morph .cm-from { display: none; }
+    .clk-morph .cm-to { opacity: 1; animation: none; }
   }
 </style>
 
@@ -1465,10 +1478,10 @@ function renderActions(actions) {
   else if (primary === 'ClockOut') primeCls = 'prime prime-neutral act-clockout';
   else primeCls = 'prime ' + clkActTypeCls_(primary);   // ClockIn / LunchIn → accent default
   let html = `<div class="actions">`;
-  html += `<button class="${primeCls}" data-action="${primary}">${icon(pm.icon, 18)}${pm.label}</button>`;
+  html += `<button class="${primeCls}" data-action="${primary}">${icon(clkIdleGlyph_(primary), 18)}${pm.label}</button>`;
   secondaries.forEach(a => {
     const m = PUNCH_META[a];
-    html += `<button class="sec ${clkActTypeCls_(a)}" data-action="${a}">${icon(m.icon, 18)}${m.label}</button>`;
+    html += `<button class="sec ${clkActTypeCls_(a)}" data-action="${a}">${icon(clkIdleGlyph_(a), 18)}${m.label}</button>`;
   });
   html += `<button class="sec" data-action="Adjust">${icon('adjust', 18)}Adjust</button>`;
   html += `</div>`;
@@ -1480,6 +1493,28 @@ function clkActTypeCls_(a) {
     : a === 'LunchIn' ? 'act-lunchin'
     : a === 'ClockIn' ? 'act-clockin'
     : a === 'ClockOut' ? 'act-clockout' : '';
+}
+
+// Punch-button icon morph: the IDLE glyph is the rep's current state, the
+// destination glyph is where the punch takes them. LunchOut (working→break):
+// headset→mug. LunchIn (break→back): mug→headset. The destination also matches
+// the NEXT state's idle glyph, so the morph carries through the re-render.
+const PUNCH_MORPH = {
+  LunchOut: { from: 'headset',   to: 'coffeeMug' },
+  LunchIn:  { from: 'coffeeMug', to: 'headset'   },
+};
+/** Idle glyph for a punch button — the morph's `from` (current state) when the
+ *  action morphs, else the PUNCH_META icon. */
+function clkIdleGlyph_(a) {
+  return (PUNCH_MORPH[a] && PUNCH_MORPH[a].from) || (PUNCH_META[a] && PUNCH_META[a].icon) || 'info';
+}
+/** In-flight morph markup for a punch button (two stacked glyphs cross-fading
+ *  from `from` to `to`). Plays once on insert, then holds the destination. */
+function clkPunchMorphHtml_(morph) {
+  return '<span class="clk-morph">'
+    + '<span class="cm-from">' + icon(morph.from, 18) + '</span>'
+    + '<span class="cm-to">' + icon(morph.to, 18) + '</span>'
+    + '</span>';
 }
 
 function bindClockBtns() {
@@ -1536,7 +1571,11 @@ function submitPunch(punchType, custom) {
   // the toast lands. Restored on failure; replaced by the re-render on success.
   var prime = document.querySelector('.actions .prime');
   var primeHtml = prime ? prime.innerHTML : null;
-  if (prime) prime.innerHTML = '<span class="lo-dots"><span></span><span></span><span></span></span> Working…';
+  // In-flight feedback: lunch punches morph the icon (headset↔mug) toward their
+  // destination; other punches show the dots loader. Both say "Working…".
+  var morph = PUNCH_MORPH[punchType];
+  if (prime) prime.innerHTML = (morph ? clkPunchMorphHtml_(morph)
+    : '<span class="lo-dots"><span></span><span></span><span></span></span>') + ' Working…';
   google.script.run
     .withSuccessHandler(result => {
       setClockBtnsDisabled(false);
