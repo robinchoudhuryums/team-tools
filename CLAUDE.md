@@ -1058,7 +1058,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fifteen client-side localStorage keys total.** All per-browser, all
+- **Fourteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1133,12 +1133,10 @@ this section before touching the relevant area.
     only; `'mine'` | `'team'`, default `'team'`). Reps never write it (they're
     always pinned to `'mine'` and never see the toggle). Read by
     `coachReadMode_`, written by `coachSwitchMode_`.
-  - `umsDashboardCompact` — the Time Clock **Dashboard**'s in-page compact
-    toggle (`'1'`/`'0'`, default off). Collapses the dashboard to just the clock
-    rail (hides the carousel main column). DISTINCT from the URL `?compact=1`
-    pop-out (`COMPACT_MODE` / `data-compact`, which also collapses to the rail);
-    read by `clkDashCompactPref_`, written by `clkDashToggleCompact_`.
-  Clearing browser data wipes all fifteen.
+  Clearing browser data wipes all fourteen. (A 15th key, `umsDashboardCompact`
+  — an in-page Dashboard compact toggle — was REMOVED in the dashboard-feedback
+  batch: the toggle button lived inside the column it hid, so once collapsed
+  there was no way back, and the `?compact=1` pop-out already covers compact.)
 
 ## Key Design Decisions
 
@@ -1424,12 +1422,12 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Fifteen client-side localStorage keys total" entry in
+  authoritative "Fourteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
-  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`, `umsDashboardCompact`)
+  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`)
   — all per-browser, all try/catch-wrapped.
   (An earlier version of this decision listed only four; Round 2 · 8a/8b added
   the sidebar-width and Time/PTO-mode keys, the KB drawer added its single
@@ -1437,7 +1435,8 @@ this section before touching the relevant area.
   #4 added `umsPopoutGeom`, the redesign added `umsIntakeDrafts` (Intake
   form drafts) + a `deptCollapsed` field inside `umsKbPanel`, the
   Clock-card background image added `umsClockBg`, and the merged Coaching tab
-  added `umsCoachingMode`.)
+  added `umsCoachingMode`. The dashboard-feedback batch then REMOVED
+  `umsDashboardCompact` — net 14.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -1859,7 +1858,10 @@ this section before touching the relevant area.
 - **Time Clock → Dashboard (the Clock tab is a two-column Dashboard).** The
   `clock` tab (key + `enterClockCombinedView` handler UNCHANGED — only the visible
   LABEL is now 'Dashboard', so `?tool=clock`/`currentView==='clock'`/`umsLastView`/
-  pop-out all keep working) renders a `.dash-grid` (`360px minmax(0,1fr)` — the
+  pop-out all keep working) renders a `.dash-grid`. **The whole TOOL's sidebar
+  label was also renamed 'Time Clock' → 'Dashboard'** (the `timeClock` TOOLS-registry
+  KEY + `?tool=timeClock` are unchanged — only the `label` string), so the sidebar
+  now reads 'Dashboard' with the first sub-tab also 'Dashboard'. (`360px minmax(0,1fr)` — the
   `minmax(0,1fr)` is LOAD-BEARING for the carousel viewports). **Left rail:** the
   existing `#clk-hero` (now just the sky clock — the greeting moved to the main
   column so the clock fits 360px; `#clk-hero` is KEPT so `umsClockBg` + all clock
@@ -1879,9 +1881,12 @@ this section before touching the relevant area.
   **Your numbers** (own) + **Team**/**Department** (cohort-guarded team) — over
   **Yesterday / MTD / YTD**, fed by `getDashboardMetrics(periodKey)` (all three
   fetched up front, server-cached). **Annual PTO relocated** off the dashboard
-  (already the `.pto-tile` on Time/PTO). Compact: the in-page `umsDashboardCompact`
-  toggle OR `?compact=1` pop-out collapses to the rail (`.dash-compact` /
-  `:root[data-compact]`); mobile (`max-width:860px`) stacks. Every server string
+  (already the `.pto-tile` on Time/PTO). Compact: the `?compact=1` pop-out
+  collapses to the rail (`:root[data-compact] .dash-grid`); mobile
+  (`max-width:860px`) stacks. (The earlier in-page `umsDashboardCompact` toggle
+  was removed in the dashboard-feedback batch — its button sat inside the column
+  it hid, so collapsing was a one-way trip; the pop-out already covers compact.)
+  Every server string
   `esc()`'d; team values respect the N=3 cohort guard (INV-124). **Follow-ons
   (shipped):** (a) a manager **Spanish↔Requests switcher** carousel — a 2-slide
   switcher (segmented chip Spanish/Requests, `clkDashSegHtml_(key, labels)` now
@@ -2811,7 +2816,11 @@ this section before touching the relevant area.
   `clipboardList`, `accessibility`, `airflow`, `outbox`, and `fileText` to the
   `ICONS` set, repointed the Intake tab + sidebar icons, and switched
   `kbItemIcon_`'s article glyph to `fileText` (and `image` was later added for
-  the Clock-card background picker). Same rule as before — add one
+  the Clock-card background picker). The dashboard-feedback batch RE-DREW the
+  four punch glyphs in place (the path-data only — names unchanged, so only
+  `PUNCH_META` consumes them): `clockIn` → headset, `lunchOut`/`lunchIn` →
+  coffee mug (intentionally identical; the button label disambiguates out/in),
+  `clockOut` → log-out/open-door. Same rule as before — add one
   path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
 - **Unified loader + motion system (2nd-pass; `styles.html` + `script_core.html`).**
   One shared CSS+helper set for loading states and purposeful micro-animations,
