@@ -1867,7 +1867,15 @@ this section before touching the relevant area.
   greeting + a compact toggle + the briefing **carousels**. Each carousel is a
   clipped `.dash-vp`/`.dash-trk` (transform-only slides) driven by a sliding
   **segmented chip** (`.dash-seg` + a translateX highlight pill; `clkDashSet_`
-  switches period transform-only, reduced-motion-safe). v1 ships two carousels —
+  switches period transform-only, reduced-motion-safe). **Carousel height fit:**
+  `.dash-trk` is `align-items:flex-start` (so slides keep natural height — flex's
+  default `stretch` would equalize them to the tallest) and `clkDashFit_(key)`
+  pins each `.dash-vp` to its ACTIVE slide's `offsetHeight` (after render via
+  rAF, on every `clkDashSet_`, and on a one-time-bound `resize`; skips a hidden
+  0-height viewport). The `.dash-vp` **height** transition that animates the
+  card grow/shrink is the ONE deliberate exception to the otherwise
+  transform-only carousel motion — one element, user-triggered on a switch,
+  neutralized by the partial's `prefers-reduced-motion` block. v1 ships two carousels —
   **Your numbers** (own) + **Team**/**Department** (cohort-guarded team) — over
   **Yesterday / MTD / YTD**, fed by `getDashboardMetrics(periodKey)` (all three
   fetched up front, server-cached). **Annual PTO relocated** off the dashboard
