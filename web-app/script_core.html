@@ -937,7 +937,10 @@ function mtRenderTable_(opts) {
     return '<th' + clsAttr + onclick + '>' + esc(c.label) + caret + '</th>';
   }).join('');
   var body = rows.map(function (r) {
-    return '<tr>' + cols.map(function (c) {
+    // Optional per-row class (e.g. tone tint) — additive; existing callers that
+    // don't pass opts.rowClass render an unclassed <tr> exactly as before.
+    var rc = opts.rowClass ? opts.rowClass(r) : '';
+    return '<tr' + (rc ? ' class="' + esc(rc) + '"' : '') + '>' + cols.map(function (c) {
       var tdCls = c.numeric ? ' class="m-num"' : (c.name ? ' class="m-name"' : '');
       return '<td' + tdCls + '>' + (c.cell ? c.cell(r) : '') + '</td>';
     }).join('') + '</tr>';

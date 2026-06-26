@@ -399,7 +399,7 @@ this section before touching the relevant area.
   `managerGetPendingAdjustments`, `updatePunchAdjustStatus`,
   `managerSaveDayRange`, `setCallNoteManagerComment`, `reconcileCallNotes`,
   `getCallNotesEnrollment`, `provisionCallNotesSheet`, `getAutomationHealth`,
-  `getStorageHealth`, `getDeployReadiness`,
+  `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`,
   `getRetentionConfig`, `saveRetentionConfig`,
   `kbConvertDriveDoc`, `kbGetUsageStats`, `kbGetReviewDue`,
   `kbMarkReviewed`, `saveKbAiSettings`,
@@ -2727,7 +2727,34 @@ this section before touching the relevant area.
   callers each `esc()`-ing their own cell strings. The earlier ad-hoc
   `mTh_` header helper was removed when the two tables were unified onto this
   component. New manager tables should reuse it rather than hand-rolling
-  `<table>` markup.
+  `<table>` markup. **Optional `opts.rowClass(r)`** (Tier 2) adds a per-`<tr>`
+  class for row-tone tinting — additive/backward-compatible (callers that omit
+  it render an unclassed `<tr>` exactly as before).
+- **Admin sheet viewer (Tier 2 — `getAdminSheetView`).** A manager-gated
+  (INV-02/31), read-only, PHI-free in-app table view of a SAFE, **allowlisted**
+  tab, surfaced as the Call Notes → Admin **"Sheets"** sub-tab
+  (`cnLoadSheetView_` → `cnRenderSheetView_` via the shared `mtRenderTable_` +
+  the new `rowClass` tint). **The view KEY is the security boundary:**
+  `adminSheetViewKeys_()` is the allowlist — a caller can only request a
+  pre-vetted, column-projected, PHI-free view; PHI/payroll/HR tabs
+  (Intake/Forms/per-rep Notes/Timesheet/Employees/EmpDocs, and the Quizzes
+  answer key) are deliberately ABSENT (INV-32/121/122), and there is NO write
+  path (read-only). v1 (2a) ships ONE view — `auditLog` (the PHI-free shared
+  AuditLog, INV-32): a newest-first bounded tail scan (the
+  `cnReadCallNoteAuditRows_` pattern, capped `ADMIN_VIEW_MAX_ROWS`=300), every
+  row tone-flagged by the pure `adminAuditRowTone_(action)` (danger =
+  purge/delete/void; warn = sync-fail/PtoReconciliationFix; info =
+  reconcile/export/archive/provision/install/remove/digest; else neutral) and
+  carrying a per-row `#gid=…&range=A<n>` deep-link to that exact Sheets row (the
+  Tier-1 pattern, per-row). Lazy-loaded on first open of the sub-tab
+  (`CN_STATE._sheetsLoaded` — no AuditLog scan on every Admin landing). Every
+  server string `esc()`'d before `innerHTML`. The client `CN_SHEET_VIEWS` picker
+  list is a coupling-tripwired subset of the server allowlist (a Node test
+  asserts client keys ⊆ `adminSheetViewKeys_()` — the picker can't offer a view
+  the server won't honor). 2b (KB / Training PHI-free views) drops in with one
+  `CN_SHEET_VIEWS` entry + one server registry case + a pure flagger. Pinned by
+  the `adminAuditRowTone_` + allowlist-subset Node tests + the `getAdminSheetView`
+  case in `test_managerGates_rejectNonManager`.
 - **Icon library additions (`script_icons.html`).** The redesign added
   `clipboardList`, `accessibility`, `airflow`, `outbox`, and `fileText` to the
   `ICONS` set, repointed the Intake tab + sidebar icons, and switched
@@ -3655,7 +3682,7 @@ INV-27 | PTO UI visibility is the conjunction of `CONFIG.ENABLE_PTO_TRACKING` (g
 INV-28 | Whenever the `EMP` enum gains or changes columns, `ROSTER_CACHE_KEY` is bumped (currently `employee_roster_v6`) so old cached entries with the wrong column shape are not served | Subsystem: Server
 INV-29 | `normalizeDate_` uses the spreadsheet's timezone (`getAdpSS_().getSpreadsheetTimeZone()`) to format Date cells — not `CONFIG.TIMEZONE` — so dates round-trip consistently regardless of the script's timezone configuration | Subsystem: Server
 INV-30 | All mutating Call Notes server functions (`submitCallNote`, `updateCallNote`, `setCallNoteFlag`, `setCallNoteResolved`, `deleteCallNote`, `emailFromCallNote`, `setCallNoteTrainingReply`, `setCallNotePinned`, `appendCallNoteFeedback`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` (INV-01 generalized) | Subsystem: Server
-INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`, `getSpanishInboxStats`, `getSpanishInboxPending`, `getSpanishInboxResolved`, `getSpanishInboxThreadBody`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; all four Spanish-inbox endpoints gate BEFORE any GmailApp access, and are now pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion) | Subsystem: Server
+INV-31 | Manager-gated Call Notes + Metrics endpoints (`managerGetCallNotes`, `managerSearchCallNotes`, `managerGetTrainingQueue`, `managerGetReviewCandidates`, `setCallNoteTrainingReply`, `managerGetShiftStats`, `managerGetUnresolvedActionCount`, `getTeamMetrics`, `getMetricsAmbient`, `getAdminConfig`, `saveDepartmentEmails`, `saveStateTaxRates`, `saveUpdateSuggestions`, `getCallNotesTagTaxonomy`, `renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`, `managerGetFormSubmission`, `saveEmailTemplates`, `getCallNotesAuditLog`, `getCallNoteAuditHistory`, `getAutomationHealth`, `getStorageHealth`, `getDeployReadiness`, `getAdminSheetView`, `getRetentionConfig`, `saveRetentionConfig`, `kbConvertDriveDoc`, `kbGetUsageStats`, `getCallNotesTagTrends`, `kbGetReviewDue`, `kbMarkReviewed`, `getSpanishInboxStats`, `getSpanishInboxPending`, `getSpanishInboxResolved`, `getSpanishInboxThreadBody`) verify `callerEmp.isManager` before any side effect (INV-02 generalized; all four Spanish-inbox endpoints gate BEFORE any GmailApp access, and are now pinned in `test_managerGates_rejectNonManager` alongside `getPunctualityReport`, `getDeployReadiness`, and a `getDeptRequests` no-manager-fields-leak assertion) | Subsystem: Server
 INV-32 | Every state-changing Call Notes action writes an audit row via `writeAuditLog_` (`CallNoteCreate` / `Edit` / `Flag` / `Resolve` / `Delete` / `Email` / `TrainingReply` / `Pin` / `Feedback` / `TagAdmin`) with `noteId=<uuid>` in the notes field — the audit log is the only cross-rep trail of call-note activity. Manager-actor rows (TrainingReply, TagAdmin) carry the manager's email as actor via the actorEmail parameter. `Feedback` (Round 2 · 8g) records agent acks + clarifications in the multi-turn Q&A thread. `TagAdmin` (Round 2 follow-on) records rename / merge / archive batch operations on the tag taxonomy with `{action, oldTag/newTag, repsTouched, notesUpdated}` summary in the notes field | Subsystem: Server
 INV-33 | `submitCallNote` does NOT send a department email. Sending is a separate two-stage flow: `previewCallNoteEmail` (returns rendered HTML for confirm-before-send) then `emailFromCallNote` (sends + stamps EmailedAt/EmailDepartments + writes audit). Exception: when `flagType=training` and `subformData.trainingQuestion` is non-empty, `submitCallNote` fires a best-effort manager notification via `notifyManagerTrainingQuestion_()` (try/catch, does not block the response — see INV-58) | Subsystem: Server
 INV-34 | `setCallNoteResolved` rejects calls when `FlagType !== 'action'`; only action-flagged notes have a resolved state | Subsystem: Server

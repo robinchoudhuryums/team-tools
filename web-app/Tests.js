@@ -3902,6 +3902,7 @@ function test_managerGates_rejectNonManager() {
     ['getAutomationHealth',            function () { return getAutomationHealth(); }],
     ['getStorageHealth',               function () { return getStorageHealth(); }],
     ['getDeployReadiness',             function () { return getDeployReadiness(); }],
+    ['getAdminSheetView',              function () { return getAdminSheetView('auditLog'); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
     ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
     ['getCallNotesAuditLog',           function () { return getCallNotesAuditLog({}); }],
