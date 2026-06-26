@@ -2816,12 +2816,29 @@ this section before touching the relevant area.
   `clipboardList`, `accessibility`, `airflow`, `outbox`, and `fileText` to the
   `ICONS` set, repointed the Intake tab + sidebar icons, and switched
   `kbItemIcon_`'s article glyph to `fileText` (and `image` was later added for
-  the Clock-card background picker). The dashboard-feedback batch RE-DREW the
-  four punch glyphs in place (the path-data only — names unchanged, so only
-  `PUNCH_META` consumes them): `clockIn` → headset, `lunchOut`/`lunchIn` →
-  coffee mug (intentionally identical; the button label disambiguates out/in),
-  `clockOut` → log-out/open-door. Same rule as before — add one
-  path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
+  the Clock-card background picker). The dashboard-feedback batch RENAMED the
+  punch glyphs to semantic names (single source of truth — `PUNCH_META` + the
+  history render are the only consumers): `headset` (was `clockIn`), `coffeeMug`
+  (was `lunchOut`/`lunchIn`, collapsed to one), `doorExit` (was `clockOut`).
+  PUNCH_META idle icons are now `headset` (ClockIn) / `coffeeMug`
+  (LunchOut+LunchIn, history) / `doorExit` (ClockOut). Same rule as before — add
+  one path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
+- **Punch-button motion (dashboard-feedback batch).** Two transform/opacity-only
+  effects, both reduced-motion-safe. (1) **Tactile press/hover** on every
+  `.actions .prime`/`.sec` (`styles.html`): a `:hover` `translateY(-1px)` lift +
+  an `:active` `scale(.96)` press — composited, free, snapped by the global
+  reduced-motion block. (2) **Lunch icon morph** (`tc/script_clock.html`): the
+  IDLE glyph of the LunchOut/LunchIn buttons is the rep's CURRENT state
+  (`PUNCH_MORPH[a].from` via `clkIdleGlyph_` — LunchOut idle = `headset`, LunchIn
+  idle = `coffeeMug`), and on punch the in-flight loading state (in `submitPunch`,
+  in place of the dots loader) cross-fades the icon to its destination
+  (`clkPunchMorphHtml_`: two stacked `.cm-from`/`.cm-to` glyphs, `clkMorphOut`/
+  `clkMorphIn` keyframes, .42s, holds the destination until the state re-render).
+  The destination glyph EQUALS the next state's idle glyph (LunchOut→mug, then
+  On-Lunch shows LunchIn idle = mug), so the morph carries seamlessly through the
+  re-render. Reduced motion snaps `.cm-to` on (the partial's existing
+  prefers-reduced-motion block). Other punches keep the `lo-dots` "Working…"
+  loader.
 - **Unified loader + motion system (2nd-pass; `styles.html` + `script_core.html`).**
   One shared CSS+helper set for loading states and purposeful micro-animations,
   spec in `docs/design_handoff_team_tools_redesign_update/loaders_and_motion.md`.
