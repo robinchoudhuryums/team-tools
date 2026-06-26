@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter Tight', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #0f1623; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .seclabel { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #737c8c; }
+</style>
+</helmet>
+
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e3e6ec;">
+
+  <div style="max-width:1000px;margin-bottom:8px;">
+    <div class="mono" style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">UMS Team Tools · Metrics — Spanish Inbox redesign</div>
+    <h1 style="font-size:30px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0 0 12px;">Spanish Inbox — parse it, don't dump it</h1>
+    <p style="font-size:14px;line-height:1.6;color:#3e4756;max-width:800px;margin:0;">The stat strip is already good. The problem is the <strong>request card</strong>: it dumps the raw email — subject, body, the full signature block, and the entire Google Groups unsubscribe footer — into a narrow floating column. The redesign <strong>parses</strong> the structured lead (Name / Phone / Email / State / Zip / Source), separates the actual ask from the boilerplate, widens the card, and makes expand/collapse meaningful.</p>
+  </div>
+
+  <div style="display:flex;gap:48px;align-items:flex-start;margin-top:30px;">
+    <div style="flex:none;width:1000px;">
+      <div class="seclabel" style="margin-bottom:10px;">Redesigned Spanish Inbox</div>
+      <div style="background:#f6f7f9;border:1px solid #dce0e7;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:24px 26px;">
+
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:16px;">
+          <h2 style="font-size:23px;font-weight:600;letter-spacing:-.01em;margin:0;">Spanish Inbox</h2>
+          <p style="font-size:12px;color:#737c8c;line-height:1.5;max-width:360px;margin:2px 0 0;text-align:right;">Bilingual-assistance request resolution time — first reply from a group member. Read-only.</p>
+        </div>
+
+        <!-- controls -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+          <span class="seclabel" style="letter-spacing:.06em;">Window</span>
+          <div style="padding:7px 11px;border:1px solid #dce0e7;border-radius:8px;background:#fff;font-size:13px;display:flex;align-items:center;gap:10px;">Last 30 days <span style="color:#a5acb8;">▾</span></div>
+        </div>
+        <div style="font-size:12px;color:#737c8c;margin-bottom:16px;">Inbox <span class="mono" style="color:#0f1623;">spanishcalls@universalmedsupply.com</span> · 20 threads scanned · <span style="color:#8a4500;">no member list set — counting any reply as resolved</span></div>
+
+        <!-- stat strip (kept) -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border:1px solid #dce0e7;border-radius:10px;overflow:hidden;margin-bottom:18px;">
+          <div style="padding:14px 18px;border-right:1px solid #eef0f4;"><div class="seclabel">Resolved</div><div class="mono" style="font-size:28px;font-weight:500;line-height:1;margin-top:8px;color:#0b6e40;">19</div><div class="mono" style="font-size:11px;color:#a5acb8;margin-top:4px;">of 20</div></div>
+          <div style="padding:14px 18px;border-right:1px solid #eef0f4;"><div class="seclabel">Pending</div><div class="mono" style="font-size:28px;font-weight:500;line-height:1;margin-top:8px;color:#8a4500;">1</div><div class="mono" style="font-size:11px;color:#a5acb8;margin-top:4px;">awaiting reply</div></div>
+          <div style="padding:14px 18px;border-right:1px solid #eef0f4;"><div class="seclabel">Avg time</div><div class="mono" style="font-size:28px;font-weight:500;line-height:1;margin-top:8px;">9h 41m</div><div class="mono" style="font-size:11px;color:#a5acb8;margin-top:4px;">to resolve</div></div>
+          <div style="padding:14px 18px;"><div class="seclabel">Median</div><div class="mono" style="font-size:28px;font-weight:500;line-height:1;margin-top:8px;">1h 5m</div><div class="mono" style="font-size:11px;color:#a5acb8;margin-top:4px;">to resolve</div></div>
+        </div>
+
+        <!-- pending tasks -->
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;"><span class="seclabel">Pending tasks</span><span class="mono" style="font-size:10px;font-weight:600;color:#8a4500;background:#fbf1d9;border-radius:5px;padding:2px 7px;">1 awaiting reply</span></div>
+
+        <!-- ░ PARSED REQUEST CARD (expanded) ░ -->
+        <div style="background:#fff;border:1px solid #dce0e7;border-radius:10px;overflow:hidden;margin-bottom:16px;">
+          <!-- card header -->
+          <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid #eef0f4;">
+            <span style="width:34px;height:34px;border-radius:8px;background:#fbf1d9;color:#8a4500;display:inline-flex;align-items:center;justify-content:center;flex:none;font-weight:700;font-size:14px;">MR</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:15px;font-weight:600;line-height:1.2;">María Rodríguez <span style="font-weight:400;color:#a5acb8;font-size:13px;">· new sales lead</span></div>
+              <div class="mono" style="font-size:11px;color:#737c8c;margin-top:3px;">from dani.singh@universalmedsupply.com · request</div>
+            </div>
+            <span class="mono" style="font-size:10px;font-weight:600;color:#8a4500;background:#fbf1d9;border-radius:5px;padding:3px 9px;flex:none;">Pending · 10d 2h</span>
+          </div>
+
+          <!-- the actual ask -->
+          <div style="padding:14px 18px;border-bottom:1px solid #eef0f4;">
+            <div class="seclabel" style="margin-bottom:6px;">Request</div>
+            <div style="font-size:13.5px;color:#0f1623;line-height:1.55;">Please call this patient — she needs assistance <strong>in Spanish</strong>. New sales lead looking for a <strong>power wheelchair or mobility scooter</strong>.</div>
+          </div>
+
+          <!-- PARSED lead fields -->
+          <div style="padding:14px 18px;border-bottom:1px solid #eef0f4;">
+            <div class="seclabel" style="margin-bottom:10px;">Patient details</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 22px;">
+              <div><div class="seclabel" style="letter-spacing:.06em;color:#a5acb8;margin-bottom:3px;">Name</div><div style="font-size:13px;font-weight:600;">María Rodríguez</div></div>
+              <div><div class="seclabel" style="letter-spacing:.06em;color:#a5acb8;margin-bottom:3px;">Phone</div><div style="font-size:13px;"><a href="#" style="color:#1e63b8;text-decoration:none;font-weight:600;">(210) 555-0148</a></div></div>
+              <div><div class="seclabel" style="letter-spacing:.06em;color:#a5acb8;margin-bottom:3px;">Email</div><div style="font-size:13px;"><a href="#" style="color:#1e63b8;text-decoration:none;">m.rodriguez@gmail.com</a></div></div>
+              <div><div class="seclabel" style="letter-spacing:.06em;color:#a5acb8;margin-bottom:3px;">State · Zip</div><div style="font-size:13px;">TX · 78201</div></div>
+              <div><div class="seclabel" style="letter-spacing:.06em;color:#a5acb8;margin-bottom:3px;">Location</div><div style="font-size:13px;">Web Lead</div></div>
+              <div><div class="seclabel" style="letter-spacing:.06em;color:#a5acb8;margin-bottom:3px;">Source</div><div class="mono" style="font-size:11px;color:#3e4756;line-height:1.4;">Ad_Facebook_Conversions_JUL24 · TX BranchOnly</div></div>
+            </div>
+          </div>
+
+          <!-- collapsed boilerplate + actions -->
+          <div style="padding:12px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <span style="font-size:12px;color:#737c8c;display:inline-flex;align-items:center;gap:6px;cursor:pointer;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Sender signature &amp; list footer</span>
+            <div style="flex:1;"></div>
+            <a href="#" style="font-size:12px;font-weight:600;color:#0f8a52;text-decoration:none;display:inline-flex;align-items:center;gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>Open in Gmail</a>
+            <a href="#" style="font-size:12px;font-weight:600;color:#737c8c;text-decoration:none;">Raw email</a>
+          </div>
+        </div>
+
+        <div style="font-size:12px;color:#a5acb8;">Resolved threads aren't listed — only the open request needs action.</div>
+
+      </div>
+    </div>
+
+    <!-- collapsed state + notes -->
+    <div style="flex:none;width:330px;">
+      <div class="seclabel" style="margin-bottom:10px;">Collapsed (default) state</div>
+      <div style="background:#fff;border:1px solid #dce0e7;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:11px;padding:13px 16px;">
+          <span style="width:32px;height:32px;border-radius:8px;background:#fbf1d9;color:#8a4500;display:inline-flex;align-items:center;justify-content:center;flex:none;font-weight:700;font-size:13px;">MR</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:14px;font-weight:600;line-height:1.2;">María Rodríguez</div>
+            <div style="font-size:12px;color:#737c8c;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Power wheelchair / scooter · Spanish</div>
+          </div>
+          <span class="mono" style="font-size:10px;font-weight:600;color:#8a4500;background:#fbf1d9;border-radius:5px;padding:3px 8px;flex:none;">10d</span>
+        </div>
+        <div style="display:flex;gap:14px;padding:0 16px 12px;">
+          <span style="font-size:12px;color:#3e4756;display:inline-flex;align-items:center;gap:5px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>(210) 555-0148</span>
+          <span style="font-size:12px;color:#0f8a52;font-weight:600;display:inline-flex;align-items:center;gap:5px;cursor:pointer;">Show details <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+        </div>
+      </div>
+      <div class="seclabel" style="margin-bottom:10px;">What changed</div>
+      <div style="background:#fff;border:1px solid #dce0e7;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:18px 20px;">
+        <ul style="margin:0;padding-left:18px;font-size:13px;color:#3e4756;line-height:1.7;">
+          <li><strong>Parse the lead</strong> — the <span class="mono" style="font-size:12px;">*Name / *Phone / *Email / *State / *Zip / *Source</span> lines become a clean field grid, not raw text.</li>
+          <li><strong>Separate the ask</strong> from the sender's signature and the Google Groups footer — the boilerplate collapses behind a toggle (and "Raw email" is still one click away).</li>
+          <li><strong>Collapsed default</strong> is a tidy one-line summary (name · need · phone · age) so the list scans; expand for full details.</li>
+          <li><strong>Phone &amp; email are tappable</strong>; phone is surfaced even when collapsed (it's the point of the task).</li>
+          <li>Wider card fills the column instead of a narrow strip; status + age as a chip.</li>
+        </ul>
+      </div>
+      <div style="background:#fff;border:1px solid #dce0e7;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:16px 18px;margin-top:14px;font-size:12px;color:#737c8c;line-height:1.6;">
+        <strong style="color:#0f1623;">Parsing note:</strong> these leads follow a fixed <span class="mono" style="font-size:11px;">*Field:</span> template, so a few regexes extract the grid reliably; fall back to the raw body when a field is absent.
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

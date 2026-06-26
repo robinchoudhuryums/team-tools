@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter Tight', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #0f1623; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .seclabel { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #737c8c; }
+  .num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+</style>
+</helmet>
+
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e3e6ec;">
+
+  <div style="max-width:1040px;margin-bottom:8px;">
+    <div class="mono" style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#737c8c;margin-bottom:10px;">UMS Team Tools · Metrics — My Stats · Daily Call Transfer Report</div>
+    <h1 style="font-size:30px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin:0 0 12px;">The daily report, reframed for "My Stats"</h1>
+    <p style="font-size:14px;line-height:1.6;color:#3e4756;max-width:820px;margin:0;">Your legacy <strong>Daily Call Transfer Report</strong> is a flat spreadsheet — every rep gets the same grid and reads across to find themselves. In <strong>My Stats</strong> the same CDR data is reframed agent-first: <strong>your</strong> numbers lead as a hero with rank + queue breakdown, then the <strong>department</strong> rollup (with the month-over-month + abandonment-goal coding from the legacy header), then the <strong>full team table</strong> with your row pinned and highlighted. Same source spreadsheet, same figures — just legible at a glance.</p>
+  </div>
+
+  <!-- ░░░ TOP: personal hero + department, light & dark ░░░ -->
+  <div style="margin-top:30px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:14px;">01 · Your day + department rollup</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+
+    <!-- LIGHT -->
+    <div style="flex:none;width:680px;">
+      <div class="seclabel" style="margin-bottom:10px;">Light</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:22px;">
+
+        <!-- header row -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+          <span style="font-size:18px;font-weight:600;letter-spacing:-.01em;flex:1;">Daily Call Transfer Report</span>
+          <div style="display:inline-flex;border:1px solid #dce0e7;border-radius:999px;padding:3px;background:#fff;">
+            <span class="mono" style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.06em;background:#0f1623;color:#fff;">YESTERDAY</span>
+            <span class="mono" style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.06em;color:#737c8c;">7D</span>
+            <span class="mono" style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.06em;color:#737c8c;">MTD</span>
+          </div>
+          <div class="mono" style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid #dce0e7;border-radius:8px;font-size:12px;color:#3e4756;">May 29, 2026</div>
+        </div>
+
+        <!-- MY hero -->
+        <div style="border:1px solid #e5e8ee;border-radius:10px;padding:16px 18px;margin-bottom:14px;background:linear-gradient(180deg,#fbfcfd,#fff);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="width:34px;height:34px;border-radius:9px;background:#0f8a52;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">CB</span>
+              <div>
+                <div style="font-size:15px;font-weight:600;line-height:1.15;">Camila (Cheshta) Bhutani</div>
+                <div class="seclabel" style="margin-top:2px;">Your performance · Customer Success</div>
+              </div>
+            </div>
+            <span class="mono" style="font-size:10px;font-weight:600;color:#0b6e40;background:#e4f5ec;border-radius:6px;padding:4px 9px;">Rank #3 of 8 · transfer %</span>
+          </div>
+          <!-- 3 big stats -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            <div style="border:1px solid #eef0f4;border-radius:9px;padding:12px 14px;">
+              <div class="seclabel">Transfer %</div>
+              <div class="num" style="font-size:30px;font-weight:500;line-height:1;margin-top:7px;">38.78<span style="font-size:16px;color:#a5acb8;">%</span></div>
+              <div class="mono" style="font-size:10px;color:#a5acb8;margin-top:5px;">team avg 31.29%</div>
+            </div>
+            <div style="border:1px solid #eef0f4;border-radius:9px;padding:12px 14px;">
+              <div class="seclabel">Total calls</div>
+              <div class="num" style="font-size:30px;font-weight:500;line-height:1;margin-top:7px;">49</div>
+              <div class="mono" style="font-size:10px;color:#a5acb8;margin-top:5px;">handled yesterday</div>
+            </div>
+            <div style="border:1px solid #eef0f4;border-radius:9px;padding:12px 14px;">
+              <div class="seclabel">Transferred</div>
+              <div class="num" style="font-size:30px;font-weight:500;line-height:1;margin-top:7px;">19</div>
+              <div class="mono" style="font-size:10px;color:#a5acb8;margin-top:5px;">of 49 calls</div>
+            </div>
+          </div>
+          <!-- where my transfers went -->
+          <div style="margin-top:14px;">
+            <div class="seclabel" style="margin-bottom:8px;">Where your transfers went</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              <span class="mono" style="font-size:11px;background:#eef2f7;color:#154980;border-radius:6px;padding:3px 9px;">Service · 6</span>
+              <span class="mono" style="font-size:11px;background:#eef2f7;color:#154980;border-radius:6px;padding:3px 9px;">Eligibility · 3</span>
+              <span class="mono" style="font-size:11px;background:#f0f2f6;color:#3e4756;border-radius:6px;padding:3px 9px;">Sales · 2</span>
+              <span class="mono" style="font-size:11px;background:#f0f2f6;color:#3e4756;border-radius:6px;padding:3px 9px;">Billing · 2</span>
+              <span class="mono" style="font-size:11px;background:#f0f2f6;color:#3e4756;border-radius:6px;padding:3px 9px;">FieldOps · 2</span>
+              <span class="mono" style="font-size:11px;background:#f0f2f6;color:#3e4756;border-radius:6px;padding:3px 9px;">FOP · 2</span>
+              <span class="mono" style="font-size:11px;background:#f0f2f6;color:#3e4756;border-radius:6px;padding:3px 9px;">Resupply · 1</span>
+              <span class="mono" style="font-size:11px;background:#f0f2f6;color:#3e4756;border-radius:6px;padding:3px 9px;">Power Chairs · 1</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- DEPARTMENT rollup -->
+        <div style="border:1px solid #e5e8ee;border-radius:10px;overflow:hidden;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 16px;background:#f6f7f9;border-bottom:1px solid #e5e8ee;">
+            <span class="seclabel">Department · A_Q_CustomerSuccess</span>
+            <span class="mono" style="font-size:10px;color:#737c8c;">vs last month</span>
+          </div>
+          <!-- top metrics -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);">
+            <div style="padding:12px 14px;border-right:1px solid #eef0f4;border-bottom:1px solid #eef0f4;">
+              <div class="seclabel">Transfer %</div>
+              <div class="num" style="font-size:19px;font-weight:600;margin-top:5px;">31.29%</div>
+              <div class="mono" style="font-size:10px;color:#a5acb8;margin-top:3px;">LM 28.40%</div>
+            </div>
+            <div style="padding:12px 14px;border-right:1px solid #eef0f4;border-bottom:1px solid #eef0f4;background:#f3faf6;">
+              <div class="seclabel">Abandon % <span style="color:#0b6e40;">·goal&lt;5</span></div>
+              <div class="num" style="font-size:19px;font-weight:600;margin-top:5px;color:#0b6e40;">0.61%</div>
+              <div class="mono" style="font-size:10px;color:#a5acb8;margin-top:3px;">LM 5.96%</div>
+            </div>
+            <div style="padding:12px 14px;border-right:1px solid #eef0f4;border-bottom:1px solid #eef0f4;">
+              <div class="seclabel">Inbound</div>
+              <div class="num" style="font-size:19px;font-weight:600;margin-top:5px;">328</div>
+              <div class="mono" style="font-size:10px;color:#a5acb8;margin-top:3px;">answered 326</div>
+            </div>
+            <div style="padding:12px 14px;border-bottom:1px solid #eef0f4;">
+              <div class="seclabel">Transferred</div>
+              <div class="num" style="font-size:19px;font-weight:600;margin-top:5px;">102</div>
+              <div class="mono" style="font-size:10px;color:#a5acb8;margin-top:3px;">abandoned 2</div>
+            </div>
+          </div>
+          <!-- CM/LM + violations sub-row -->
+          <div style="display:flex;flex-wrap:wrap;gap:8px;padding:11px 16px;">
+            <span class="mono" style="font-size:10px;color:#3e4756;background:#f0f2f6;border-radius:6px;padding:3px 9px;">CM Transfer 27.13% · LM 28.40%</span>
+            <span class="mono" style="font-size:10px;color:#3e4756;background:#f0f2f6;border-radius:6px;padding:3px 9px;">CM Abandon 1.70% · LM 5.96%</span>
+            <span class="mono" style="font-size:10px;color:#0b6e40;background:#e4f5ec;border-radius:6px;padding:3px 9px;">CM Violations 1</span>
+            <span class="mono" style="font-size:10px;color:#8a4500;background:#fbf1d9;border-radius:6px;padding:3px 9px;">LM Violations 12</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- DARK -->
+    <div style="flex:none;width:680px;">
+      <div class="seclabel" style="margin-bottom:10px;">Dark</div>
+      <div style="padding:20px;background:#0a0d14;border-radius:8px;">
+        <div style="background:#10141d;border-radius:2px;border:1px solid #262d3b;padding:22px;">
+
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;">
+            <span style="font-size:18px;font-weight:600;letter-spacing:-.01em;flex:1;color:#e8e6e0;">Daily Call Transfer Report</span>
+            <div style="display:inline-flex;border:1px solid #262d3b;border-radius:999px;padding:3px;background:#10141d;">
+              <span class="mono" style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.06em;background:#e8e6e0;color:#0a0d14;">YESTERDAY</span>
+              <span class="mono" style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.06em;color:#6c7587;">7D</span>
+              <span class="mono" style="padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.06em;color:#6c7587;">MTD</span>
+            </div>
+            <div class="mono" style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid #262d3b;border-radius:8px;font-size:12px;color:#a6adbc;">May 29, 2026</div>
+          </div>
+
+          <div style="border:1px solid #262d3b;border-radius:10px;padding:16px 18px;margin-bottom:14px;background:#0d1118;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="width:34px;height:34px;border-radius:9px;background:#7af2a1;color:#0a0d14;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">CB</span>
+                <div>
+                  <div style="font-size:15px;font-weight:600;line-height:1.15;color:#e8e6e0;">Camila (Cheshta) Bhutani</div>
+                  <div class="seclabel" style="margin-top:2px;color:#6c7587;">Your performance · Customer Success</div>
+                </div>
+              </div>
+              <span class="mono" style="font-size:10px;font-weight:600;color:#b8fbc8;background:rgba(122,242,161,.12);border-radius:6px;padding:4px 9px;">Rank #3 of 8 · transfer %</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+              <div style="border:1px solid #262d3b;border-radius:9px;padding:12px 14px;">
+                <div class="seclabel" style="color:#6c7587;">Transfer %</div>
+                <div class="num" style="font-size:30px;font-weight:500;line-height:1;margin-top:7px;color:#e8e6e0;">38.78<span style="font-size:16px;color:#6c7587;">%</span></div>
+                <div class="mono" style="font-size:10px;color:#6c7587;margin-top:5px;">team avg 31.29%</div>
+              </div>
+              <div style="border:1px solid #262d3b;border-radius:9px;padding:12px 14px;">
+                <div class="seclabel" style="color:#6c7587;">Total calls</div>
+                <div class="num" style="font-size:30px;font-weight:500;line-height:1;margin-top:7px;color:#e8e6e0;">49</div>
+                <div class="mono" style="font-size:10px;color:#6c7587;margin-top:5px;">handled yesterday</div>
+              </div>
+              <div style="border:1px solid #262d3b;border-radius:9px;padding:12px 14px;">
+                <div class="seclabel" style="color:#6c7587;">Transferred</div>
+                <div class="num" style="font-size:30px;font-weight:500;line-height:1;margin-top:7px;color:#e8e6e0;">19</div>
+                <div class="mono" style="font-size:10px;color:#6c7587;margin-top:5px;">of 49 calls</div>
+              </div>
+            </div>
+            <div style="margin-top:14px;">
+              <div class="seclabel" style="margin-bottom:8px;color:#6c7587;">Where your transfers went</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                <span class="mono" style="font-size:11px;background:rgba(116,199,255,.14);color:#b0ddff;border-radius:6px;padding:3px 9px;">Service · 6</span>
+                <span class="mono" style="font-size:11px;background:rgba(116,199,255,.14);color:#b0ddff;border-radius:6px;padding:3px 9px;">Eligibility · 3</span>
+                <span class="mono" style="font-size:11px;background:#1e2532;color:#a6adbc;border-radius:6px;padding:3px 9px;">Sales · 2</span>
+                <span class="mono" style="font-size:11px;background:#1e2532;color:#a6adbc;border-radius:6px;padding:3px 9px;">Billing · 2</span>
+                <span class="mono" style="font-size:11px;background:#1e2532;color:#a6adbc;border-radius:6px;padding:3px 9px;">FieldOps · 2</span>
+                <span class="mono" style="font-size:11px;background:#1e2532;color:#a6adbc;border-radius:6px;padding:3px 9px;">FOP · 2</span>
+                <span class="mono" style="font-size:11px;background:#1e2532;color:#a6adbc;border-radius:6px;padding:3px 9px;">Resupply · 1</span>
+                <span class="mono" style="font-size:11px;background:#1e2532;color:#a6adbc;border-radius:6px;padding:3px 9px;">Power Chairs · 1</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #262d3b;border-radius:10px;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 16px;background:#0a0d14;border-bottom:1px solid #262d3b;">
+              <span class="seclabel" style="color:#6c7587;">Department · A_Q_CustomerSuccess</span>
+              <span class="mono" style="font-size:10px;color:#6c7587;">vs last month</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);">
+              <div style="padding:12px 14px;border-right:1px solid #1e2532;border-bottom:1px solid #1e2532;">
+                <div class="seclabel" style="color:#6c7587;">Transfer %</div>
+                <div class="num" style="font-size:19px;font-weight:600;margin-top:5px;color:#e8e6e0;">31.29%</div>
+                <div class="mono" style="font-size:10px;color:#6c7587;margin-top:3px;">LM 28.40%</div>
+              </div>
+              <div style="padding:12px 14px;border-right:1px solid #1e2532;border-bottom:1px solid #1e2532;background:rgba(122,242,161,.06);">
+                <div class="seclabel" style="color:#6c7587;">Abandon % <span style="color:#7af2a1;">·goal&lt;5</span></div>
+                <div class="num" style="font-size:19px;font-weight:600;margin-top:5px;color:#7af2a1;">0.61%</div>
+                <div class="mono" style="font-size:10px;color:#6c7587;margin-top:3px;">LM 5.96%</div>
+              </div>
+              <div style="padding:12px 14px;border-right:1px solid #1e2532;border-bottom:1px solid #1e2532;">
+                <div class="seclabel" style="color:#6c7587;">Inbound</div>
+                <div class="num" style="font-size:19px;font-weight:600;margin-top:5px;color:#e8e6e0;">328</div>
+                <div class="mono" style="font-size:10px;color:#6c7587;margin-top:3px;">answered 326</div>
+              </div>
+              <div style="padding:12px 14px;border-bottom:1px solid #1e2532;">
+                <div class="seclabel" style="color:#6c7587;">Transferred</div>
+                <div class="num" style="font-size:19px;font-weight:600;margin-top:5px;color:#e8e6e0;">102</div>
+                <div class="mono" style="font-size:10px;color:#6c7587;margin-top:3px;">abandoned 2</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;padding:11px 16px;">
+              <span class="mono" style="font-size:10px;color:#a6adbc;background:#1e2532;border-radius:6px;padding:3px 9px;">CM Transfer 27.13% · LM 28.40%</span>
+              <span class="mono" style="font-size:10px;color:#a6adbc;background:#1e2532;border-radius:6px;padding:3px 9px;">CM Abandon 1.70% · LM 5.96%</span>
+              <span class="mono" style="font-size:10px;color:#b8fbc8;background:rgba(122,242,161,.12);border-radius:6px;padding:3px 9px;">CM Violations 1</span>
+              <span class="mono" style="font-size:10px;color:#ffce85;background:rgba(255,181,71,.14);border-radius:6px;padding:3px 9px;">LM Violations 12</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ░░░ TEAM TABLE ░░░ -->
+  <div style="margin-top:48px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#3e4756;margin-bottom:14px;">02 · Full team table — your row pinned &amp; highlighted</div>
+  <div style="display:flex;gap:40px;align-items:flex-start;">
+    <div style="flex:none;width:1180px;">
+      <div class="seclabel" style="margin-bottom:10px;">Daily Transfer Report · per rep</div>
+      <div style="background:#fff;border-radius:2px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid #dce0e7;padding:18px 20px;">
+        <div style="border:1px solid #e5e8ee;border-radius:10px;overflow:hidden;">
+          <!-- header -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);background:#f6f7f9;border-bottom:1px solid #e5e8ee;align-items:stretch;">
+            <div class="seclabel" style="padding:9px 12px;">Rep</div>
+            <div class="seclabel" style="padding:9px 6px;text-align:right;">Xfer %</div>
+            <div class="seclabel" style="padding:9px 6px;text-align:right;">Calls</div>
+            <div class="seclabel" style="padding:9px 6px;text-align:right;">Xfer'd</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Sales">Sale</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Manual_Mobility">MM</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Resupply">Resu</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Billing">Bill</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Denials">Deni</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Power Chairs">PChr</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_FieldOps">Fld</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_FOP">FOP</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Service">Svc</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Spanish">Spa</div>
+            <div class="seclabel" style="padding:9px 4px;text-align:center;" title="A_Q_Eligibility_MM&R">Elig</div>
+          </div>
+          <!-- rows -->
+          <!-- Daniel -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);border-bottom:1px solid #f0f2f6;align-items:center;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;">Daniel (Dishant) Sahani</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;">50.00%</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">38</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">19</div>
+            <div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">3</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">7</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div>
+          </div>
+          <!-- Una -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);border-bottom:1px solid #f0f2f6;align-items:center;background:#fbfcfd;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;">Una (Ushnata) Gurung</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;">40.54%</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">37</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">15</div>
+            <div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">5</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div>
+          </div>
+          <!-- ME — Camila, highlighted -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);border-bottom:1px solid #e5e8ee;align-items:center;background:#f3faf6;box-shadow:inset 3px 0 0 #0f8a52;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px;">Camila (Cheshta) Bhutani <span class="mono" style="font-size:9px;font-weight:600;color:#0b6e40;background:#e4f5ec;border-radius:5px;padding:1px 6px;">YOU</span></div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:700;color:#0b6e40;">38.78%</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;">49</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;">19</div>
+            <div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#0f1623;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#0f1623;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#0f1623;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#0f1623;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#0f1623;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#0f1623;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#0f1623;font-weight:700;">6</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#0f1623;">3</div>
+          </div>
+          <!-- Darrell -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);border-bottom:1px solid #f0f2f6;align-items:center;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;">Darrell Compton</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;">37.21%</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">43</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">16</div>
+            <div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">3</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">4</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div>
+          </div>
+          <!-- Mia -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);border-bottom:1px solid #f0f2f6;align-items:center;background:#fbfcfd;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;">Mia (Mansi) Chaudhary</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;">29.79%</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">47</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">14</div>
+            <div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">3</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">3</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">4</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div>
+          </div>
+          <!-- Andrew -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);border-bottom:1px solid #f0f2f6;align-items:center;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;">Andrew (Avik) Chakraborty</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;">20.37%</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">54</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">11</div>
+            <div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">4</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">3</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div>
+          </div>
+          <!-- Roman -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);border-bottom:1px solid #f0f2f6;align-items:center;background:#fbfcfd;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;">Roman (Robin) Paulose</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;">7.69%</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">52</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">4</div>
+            <div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">1</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#3e4756;">2</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div>
+          </div>
+          <!-- Lovely -->
+          <div style="display:grid;grid-template-columns:170px 64px 52px 58px repeat(11,46px);align-items:center;">
+            <div style="padding:9px 12px;font-size:13px;font-weight:500;">Lovely Sumbo</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;font-weight:600;color:#a5acb8;">0.00%</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">0</div>
+            <div class="num" style="padding:9px 6px;text-align:right;font-size:13px;color:#3e4756;">0</div>
+            <div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div><div class="num" style="padding:9px 4px;text-align:center;font-size:12px;color:#c3c9d3;">0</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;margin-top:12px;flex-wrap:wrap;">
+          <span class="mono" style="font-size:10px;color:#737c8c;">Sorted by transfer % · click a header to re-sort</span>
+          <div style="flex:1;"></div>
+          <span style="font-size:11px;color:#737c8c;display:inline-flex;align-items:center;gap:5px;"><span style="width:11px;height:11px;border-radius:3px;background:#f3faf6;border:1px solid #0f8a52;display:inline-block;"></span>Your row</span>
+          <span class="mono" style="font-size:10px;color:#a5acb8;">Secondary reps (Asher, Robin C.) appear below the primary group</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- notes -->
+    <div style="flex:none;width:300px;">
+      <div class="seclabel" style="margin-bottom:10px;">The reframe</div>
+      <div style="background:#fff;border:1px solid #dce0e7;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:18px 20px;">
+        <ul style="margin:0;padding-left:18px;font-size:13px;color:#3e4756;line-height:1.7;">
+          <li><strong>You first.</strong> The agent's own row is pulled up into a hero with rank, team-avg context, and their transfer breakdown — no scanning the grid to find yourself.</li>
+          <li><strong>Department rollup</strong> keeps the legacy header's figures + the <span class="mono" style="font-size:12px;">CM/LM</span> month-over-month and the abandonment goal coloring (green under 5%).</li>
+          <li><strong>Full team table</strong> preserves every per-queue column, with your row pinned &amp; highlighted and sortable headers.</li>
+          <li><strong>Same source:</strong> the existing CDR Report spreadsheet — the My Stats date selector picks the report day.</li>
+        </ul>
+      </div>
+      <div style="background:#fff;border:1px solid #dce0e7;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:16px 18px;margin-top:14px;font-size:12px;color:#737c8c;line-height:1.6;">
+        <strong style="color:#0f1623;">Open question:</strong> agents currently get this whole report by email. In-app, should a rep see <em>every</em> rep's row (transparent, shown here) or only their own + department aggregates? Managers clearly see all — say the word and I'll add a rep-scoped variant.
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
