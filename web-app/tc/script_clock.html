@@ -123,13 +123,7 @@
   .dash-hero { display: block; }   /* greeting moved to main → clock fills the rail */
   .dash-main { min-width: 0; }
   .dash-greet { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-  .dash-compact-toggle { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; font-weight: 600;
-    color: var(--muted); background: var(--paper-2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap; }
-  .dash-compact-toggle:hover { color: var(--ink); }
-  /* Compact (the in-dashboard toggle OR the ?compact=1 pop-out): collapse to the
-     rail only. */
-  .dash-grid.dash-compact { grid-template-columns: 1fr; }
-  .dash-grid.dash-compact .dash-main { display: none; }
+  /* Compact is the ?compact=1 pop-out only — collapse to the rail. */
   :root[data-compact] .dash-grid { grid-template-columns: 1fr; }
   :root[data-compact] .dash-grid .dash-main { display: none; }
 
@@ -269,9 +263,8 @@ function renderClockView(area) {
   // so the umsClockBg background + all clock machinery (#clk-sky, #live-time,
   // #clk-regions, ribbon) keep working. Annual PTO relocated to the Time/PTO tab.
   const isMgr = !!(s && s.isManager);
-  const dashCompact = COMPACT_MODE || clkDashCompactPref_();
   area.innerHTML = `
-    <div class="dash-grid${dashCompact ? ' dash-compact' : ''}" id="dash-grid">
+    <div class="dash-grid" id="dash-grid">
       <div class="dash-rail">
         <div class="hero dash-hero" id="clk-hero">
           <div class="clk-hero-bg" id="clk-hero-bg"></div>
@@ -323,7 +316,6 @@ function renderClockView(area) {
             <div class="greet-name">Hi, ${esc(greetName)}</div>
             <div class="status-sentence">${statusSentence}</div>
           </div>
-          <button class="dash-compact-toggle" id="dash-compact-toggle" title="Collapse to just the clock" onclick="clkDashToggleCompact_()">${icon('list', 13)} <span>Compact</span></button>
         </div>
         <div id="dash-cards"><div class="dash-cards-loading">${loSweep()}</div></div>
       </div>
@@ -350,19 +342,6 @@ function renderClockView(area) {
 var CLK_DASH_PERIODS = ['yesterday', 'mtd', 'ytd'];
 var CLK_DASH_LABELS = ['Yesterday', 'MTD', 'YTD'];
 var CLK_DASH = { mine: 0, team: 0, data: {}, isMgr: false };
-
-/** Per-browser dashboard-compact preference (the 15th localStorage key) —
- *  distinct from the URL ?compact=1 pop-out (COMPACT_MODE / data-compact). */
-function clkDashCompactPref_() {
-  try { return localStorage.getItem('umsDashboardCompact') === '1'; } catch (e) { return false; }
-}
-function clkDashToggleCompact_() {
-  var grid = document.getElementById('dash-grid');
-  if (!grid) return;
-  var on = !grid.classList.contains('dash-compact');
-  grid.classList.toggle('dash-compact', on);
-  try { localStorage.setItem('umsDashboardCompact', on ? '1' : '0'); } catch (e) {}
-}
 
 /** Fetch all three periods up front (server-cached per (emp,period)); render the
  *  carousels when they all resolve. Guards on currentView (late-callback). */
