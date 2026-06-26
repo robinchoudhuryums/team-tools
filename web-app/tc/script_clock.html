@@ -144,16 +144,22 @@
   .dash-seg-opt { flex: 1; text-align: center; padding: 5px 9px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .03em;
     cursor: pointer; position: relative; z-index: 1; color: var(--muted); white-space: nowrap; }
   .dash-seg-opt.on { color: var(--ink); }
-  /* Carousel viewport + track (transform-only slides). */
-  .dash-vp { overflow: hidden; }
-  .dash-trk { display: flex; transition: transform .4s cubic-bezier(.4, 0, .2, 1); }
+  /* Carousel viewport + track. align-items:flex-start is LOAD-BEARING — without
+     it flex's default `stretch` equalizes every slide to the tallest, so the JS
+     height-fit (clkDashFit_) would always measure the max, not the active slide,
+     leaving an empty gap under a sparse slide. The .dash-vp height transition
+     animates the card grow/shrink as periods switch — a deliberate, bounded
+     exception to the carousel's otherwise transform-only motion (one element,
+     user-triggered, reduced-motion-neutralized below). */
+  .dash-vp { overflow: hidden; transition: height .38s cubic-bezier(.4, 0, .2, 1); }
+  .dash-trk { display: flex; align-items: flex-start; transition: transform .4s cubic-bezier(.4, 0, .2, 1); }
   .dash-sld { min-width: 100%; }
   .dash-kpis { display: flex; flex-wrap: wrap; gap: 18px 26px; align-items: flex-end; }
   .dash-kpi-v { font-family: var(--display, var(--ui)); font-size: 1.3rem; font-weight: 700; color: var(--ink); line-height: 1; }
   .dash-kpi-l { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: 5px; }
   .dash-kpi-big .dash-kpi-v { font-size: 2rem; color: var(--accent); }
   .dash-card-foot { font-size: 10px; color: var(--muted); margin-top: 12px; }
-  .dash-empty { font-size: 13px; color: var(--muted); padding: 8px 0 4px; }
+  .dash-empty { font-size: 13px; color: var(--muted); min-height: 56px; display: flex; align-items: center; }
   .dash-proj { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--info-deep); margin-top: 8px; }
   .dash-link { font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; }
   .dash-link:hover { text-decoration: underline; }
@@ -163,7 +169,7 @@
     .dash-grid { grid-template-columns: 1fr; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .dash-trk, .dash-seg-hi { transition: none; }
+    .dash-vp, .dash-trk, .dash-seg-hi { transition: none; }
   }
 </style>
 
@@ -378,6 +384,27 @@ function clkLoadDashboard_(isMgr) {
   });
 }
 
+// ── Carousel height-fit ──────────────────────────────────────────────────────
+// Each carousel viewport (.dash-vp) clips a flex track of equal-width slides, so
+// without help it'd take the TALLEST slide's height (a sparse active slide then
+// shows with a gap under it). Pin the viewport to the ACTIVE slide's height —
+// after each render (rAF, so slides have laid out), on every period switch, and
+// on resize (the KPI row wraps). Skip when hidden (offsetHeight 0 — e.g. in-page
+// compact / pop-out) so we never pin 0px and strand the viewport collapsed.
+var _dashFitBound = false;
+function clkDashFit_(key) {
+  var trk = document.getElementById('dash-trk-' + key);
+  if (!trk) return;
+  var active = trk.children[CLK_DASH[key] || 0];
+  if (active && active.offsetHeight) trk.parentElement.style.height = active.offsetHeight + 'px';
+}
+function clkDashFitAll_() { ['mine', 'team', 'sw'].forEach(clkDashFit_); }
+function clkBindDashFit_() {
+  if (_dashFitBound) return;
+  _dashFitBound = true;
+  window.addEventListener('resize', clkDashFitAll_);   // no-op off the dashboard (fit guards on the track)
+}
+
 function clkRenderDashboard_() {
   var host = document.getElementById('dash-cards');
   if (!host) return;
@@ -385,6 +412,8 @@ function clkRenderDashboard_() {
     clkDashCarouselHtml_('mine', 'Your numbers') +
     clkDashCarouselHtml_('team', CLK_DASH.isMgr ? 'Department' : 'Team') +
     '<div id="dash-extra"></div>';
+  clkBindDashFit_();
+  requestAnimationFrame(clkDashFitAll_);   // fit mine/team once laid out (sw fits when its extras render)
   clkLoadDashboardExtras_();   // manager Spanish↔Requests switcher / Spanish-rep card
 }
 
@@ -428,6 +457,7 @@ function clkDashSet_(key, idx) {
     if (hi) hi.style.transform = 'translateX(' + (idx * 100) + '%)';
     seg.querySelectorAll('.dash-seg-opt').forEach(function (o, j) { o.classList.toggle('on', j === idx); });
   }
+  clkDashFit_(key);   // re-fit the viewport to the newly-active slide
 }
 
 function clkDashKpi_(label, val, big) {
@@ -535,6 +565,7 @@ function clkRenderDashboardExtras_() {
   } else {
     host.innerHTML = '';
   }
+  requestAnimationFrame(function () { clkDashFit_('sw'); });   // fit the switcher viewport as its fetches resolve
 }
 
 function clkDashSpanishCard_(res) {
