@@ -1574,7 +1574,7 @@ function test_reconcileCallNotes_nonManagerRejected() {
   _asUser(_TEST_INDIA_EMAIL, function () {
     const r = reconcileCallNotes();
     _assertNotNull(r.error, 'non-manager rejected');
-    _assertContains(r.error, 'Manager access required');
+    _assertContains(r.error, 'Admin access required');
   });
 }
 
@@ -1607,7 +1607,7 @@ function test_provisionCallNotesSheet_nonManagerRejected() {
   _asUser(_TEST_INDIA_EMAIL, function () {
     const r = provisionCallNotesSheet(_TEST_INDIA_ID);
     _assertNotNull(r.error, 'non-manager rejected');
-    _assertContains(r.error, 'Manager access required');
+    _assertContains(r.error, 'Admin access required');
   });
 }
 
@@ -3809,11 +3809,11 @@ function test_cn_normalizeTagForAdmin_rules() {
 
 function test_cn_tagAdmin_nonManagerRejected() {
   const rn = _asUser(_TEST_INDIA_EMAIL, function () { return renameCallNoteTag('src-tag', 'dst-tag'); });
-  _assertFailure(rn, 'Manager access', 'renameCallNoteTag is manager-gated');
+  _assertFailure(rn, 'Admin access', 'renameCallNoteTag is admin-gated');
   const mg = _asUser(_TEST_INDIA_EMAIL, function () { return mergeCallNoteTags('src-tag', 'dst-tag'); });
-  _assertFailure(mg, 'Manager access', 'mergeCallNoteTags is manager-gated');
+  _assertFailure(mg, 'Admin access', 'mergeCallNoteTags is admin-gated');
   const ar = _asUser(_TEST_INDIA_EMAIL, function () { return archiveCallNoteTag('src-tag', true); });
-  _assertFailure(ar, 'Manager access', 'archiveCallNoteTag is manager-gated');
+  _assertFailure(ar, 'Admin access', 'archiveCallNoteTag is admin-gated');
 }
 
 function test_cn_renameCallNoteTag_managerRewritesTag() {
@@ -3952,10 +3952,24 @@ function test_managerGates_rejectNonManager() {
     ['getCoachingDashboard',           function () { return getCoachingDashboard(); }],
     ['voidCoaching',                   function () { return voidCoaching('no-such-coach', ''); }],
   ];
+  // The Manage-module Admin tab's config/system endpoints are ADMIN-gated (a
+  // non-admin caller — incl. this non-manager — gets 'Admin access required.').
+  // Same identity source when ADMIN_EMAILS is unset (the test env): admin ==
+  // manager, so the call still rejects, just with the admin message.
+  const ADMIN_GATED = {
+    getCallNotesTagTaxonomy: 1, getCallNotesTagTrends: 1, getAdminConfig: 1,
+    getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
+    saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
+    getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
+    getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
+    saveExternalLinks: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
+    getCallNotesEnrollment: 1, saveKbAiSettings: 1,
+  };
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
     _assertNotNull(r && r.error, c[0] + ' must return an error for a non-manager caller');
-    _assertContains(r.error, 'Manager access', c[0] + ' must be manager-gated (INV-02)');
+    const expect = ADMIN_GATED[c[0]] ? 'Admin access' : 'Manager access';
+    _assertContains(r.error, expect, c[0] + (ADMIN_GATED[c[0]] ? ' must be admin-gated' : ' must be manager-gated (INV-02)'));
   });
   // getMetricsAmbient gates by silently returning no badge (not an {error}) —
   // assert it never leaks a badge / data to a non-manager.

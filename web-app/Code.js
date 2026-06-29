@@ -570,8 +570,9 @@ function getEmployeeState() {
       selfUndoWindowSeconds: CONFIG.SELF_UNDO_WINDOW_SECONDS,
       payCycle: emp.payCycle, payAnchor: emp.payAnchor,
       isManager: emp.isManager,
-      // Admin tier (Manage module's Admin tab) — a subset of managers; gates the
-      // adminOnly tab client-side (server endpoints stay manager-gated for now).
+      // Admin tier (Manage module's Admin tab) — a subset of managers. Gates the
+      // adminOnly tab client-side AND the config/system endpoints server-side
+      // (they check emp.isAdmin; admin == manager until ADMIN_EMAILS is set).
       isAdmin: emp.isAdmin,
       // Spanish Inbox access — managers OR a SPANISH_INBOX_MEMBERS rep (INV-31
       // amendment); gates the dashboard Spanish card + the metricsSpanish tab.
@@ -2671,7 +2672,7 @@ function getEnrolledCallNotesReps() {
 function getCallNotesEnrollment() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     const rows = getEmployeeRosterRows_();
     const enrolled = [], unenrolled = [];
     for (let i = 1; i < rows.length; i++) {
@@ -2705,7 +2706,7 @@ function getCallNotesEnrollment() {
  *  would orphan the rep's note history). */
 function provisionCallNotesSheet(repEmpId) {
   const callerEmp = getEmployeeInfo_();
-  if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+  if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
   if (!repEmpId || !String(repEmpId).trim()) return { error: 'No employee specified.' };
   repEmpId = String(repEmpId).trim();
   const lock = LockService.getScriptLock();
@@ -2769,7 +2770,7 @@ function provisionCallNotesSheet(repEmpId) {
 function getCallNotesTagTaxonomy() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     // S2: serve the whole aggregate from cache when warm — avoids re-scanning
     // every rep's Sheet on each Admin-tab load. Invalidated by tag-admin ops.
     const taxCache = CacheService.getScriptCache();
@@ -2925,7 +2926,7 @@ function cnTagTrendsFromEvents_(events, refIso, weeks, topK) {
 function getCallNotesTagTrends() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     const cache = CacheService.getScriptCache();
     const cached = cache.get(CN_TAG_TRENDS_CACHE_KEY);
     if (cached) { try { return JSON.parse(cached); } catch (e) { /* recompute */ } }
@@ -3116,7 +3117,7 @@ function renameCallNoteTag(oldTag, newTag) {
   lock.waitLock(15000);
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const oldT = normalizeTagForAdmin_(oldTag);
     const newT = normalizeTagForAdmin_(newTag);
     if (!oldT) return { success: false, error: 'Invalid source tag.' };
@@ -3153,7 +3154,7 @@ function mergeCallNoteTags(sourceTag, targetTag) {
   lock.waitLock(15000);
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const srcT = normalizeTagForAdmin_(sourceTag);
     const tgtT = normalizeTagForAdmin_(targetTag);
     if (!srcT) return { success: false, error: 'Invalid source tag.' };
@@ -3190,7 +3191,7 @@ function archiveCallNoteTag(tag, archived) {
   lock.waitLock(15000);
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const t = normalizeTagForAdmin_(tag);
     if (!t) return { success: false, error: 'Invalid tag.' };
     const set = getArchivedTagsSet_();
@@ -3506,7 +3507,7 @@ function managerGetUnresolvedActionCount() {
 function getAdminConfig() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     return {
       departmentEmails: getDepartmentEmails_(),
       stateTaxRates: getStateTaxRates_(),
@@ -3551,7 +3552,7 @@ function retentionWarnings_(archiveDays, retentionDays, archiveRetentionDays) {
 function getRetentionConfig() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     const props = PropertiesService.getScriptProperties();
     const srcOf = function (propName, cfgVal) {
       const p = props.getProperty(propName);
@@ -3579,7 +3580,7 @@ function getRetentionConfig() {
 function saveRetentionConfig(settings) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     settings = settings || {};
     const parse = function (v) {
       if (v === '' || v == null) return 0;
@@ -3606,7 +3607,7 @@ function saveRetentionConfig(settings) {
 function getFeatureFlags() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     return { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() };
   } catch (err) { return { error: err.message }; }
 }
@@ -3620,7 +3621,7 @@ function getFeatureFlags() {
 function saveFeatureFlags(flagMap) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     if (!flagMap || typeof flagMap !== 'object' || Array.isArray(flagMap)) {
       return { success: false, error: 'Invalid flags payload.' };
     }
@@ -3644,7 +3645,7 @@ function saveFeatureFlags(flagMap) {
 function saveUpdateSuggestions(suggestionsJson) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     if (!suggestionsJson || typeof suggestionsJson !== 'object') return { success: false, error: 'Invalid suggestions map.' };
     var keys = Object.keys(suggestionsJson);
     for (var i = 0; i < keys.length; i++) {
@@ -3666,7 +3667,7 @@ function saveUpdateSuggestions(suggestionsJson) {
 function saveEmailTemplates(templates) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     if (!Array.isArray(templates)) return { success: false, error: 'Invalid templates list.' };
     if (templates.length > CN_EMAIL_TEMPLATE_LIMIT) {
       return { success: false, error: 'Too many templates (max ' + CN_EMAIL_TEMPLATE_LIMIT + ').' };
@@ -3699,7 +3700,7 @@ function saveEmailTemplates(templates) {
 function saveExternalLinks(links) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     if (!Array.isArray(links)) return { success: false, error: 'Invalid links list.' };
     if (links.length > CN_EXTERNAL_LINK_LIMIT) {
       return { success: false, error: 'Too many links (max ' + CN_EXTERNAL_LINK_LIMIT + ').' };
@@ -3734,7 +3735,7 @@ function saveExternalLinks(links) {
 function saveKbAiSettings(settings) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     settings = settings || {};
     const cap = parseFloat(settings.dailyCap);
     if (!isFinite(cap) || cap < 0 || cap > 100) {
@@ -3756,7 +3757,7 @@ function saveKbAiSettings(settings) {
 function saveDepartmentEmails(deptJson) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     if (!deptJson || typeof deptJson !== 'object') return { success: false, error: 'Invalid department map.' };
     var keys = Object.keys(deptJson);
     for (var i = 0; i < keys.length; i++) {
@@ -3773,7 +3774,7 @@ function saveDepartmentEmails(deptJson) {
 function saveStateTaxRates(ratesJson) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     if (!ratesJson || typeof ratesJson !== 'object') return { success: false, error: 'Invalid rates map.' };
     var keys = Object.keys(ratesJson);
     for (var i = 0; i < keys.length; i++) {
@@ -3841,7 +3842,7 @@ function cnReadCallNoteAuditRows_() {
 function getCallNotesAuditLog(filters) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     filters = filters || {};
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     const reDate = /^\d{4}-\d{2}-\d{2}$/;
@@ -3897,7 +3898,7 @@ function getCallNotesAuditLog(filters) {
 function getCallNoteAuditHistory(noteId) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     const id = String(noteId || '').trim();
     if (!id) return { error: 'Missing noteId.' };
     const read = cnReadCallNoteAuditRows_();
@@ -3937,7 +3938,7 @@ const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 function getAutomationHealth() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
 
     // ── (a) + (c): one bounded tail scan of the AuditLog ─────────────────
@@ -4072,7 +4073,7 @@ function getAutomationHealth() {
 function getStorageHealth() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     const props = PropertiesService.getScriptProperties();
     const cfgTz = CONFIG.TIMEZONE;
     const isPlaceholder = function (v) { return !v || /^YOUR_/.test(String(v)); };
@@ -4211,7 +4212,7 @@ function adminAuditRowTone_(action) {
 function getAdminSheetView(viewKey, opts) {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     viewKey = String(viewKey || '');
     if (adminSheetViewKeys_().indexOf(viewKey) < 0) return { error: 'Unknown view.' };
     if (viewKey === 'auditLog') return adminSheetView_auditLog_();
@@ -4474,7 +4475,7 @@ function deployReadinessItems_(storage, automation, managerCount) {
 function getDeployReadiness() {
   try {
     const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
     const storage = getStorageHealth();
     if (storage && storage.error) return { error: storage.error };
     let automation = {};
@@ -7464,7 +7465,7 @@ function purgeArchivedCallNotes() {
  *  are NEVER modified. Writes a CallNotesReconcile audit row. */
 function reconcileCallNotes() {
   const callerEmp = getEmployeeInfo_();
-  if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+  if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -8968,21 +8969,21 @@ function getManagerEmails_() {
 }
 
 /** Admin tier — a distinct, above-manager role for config/system surfaces (the
- *  Manage module's Admin tab). Reads Script Property ADMIN_EMAILS (comma-
- *  separated). UNSET/empty falls back to MANAGER_EMAILS so a fresh deploy never
- *  locks the deployer out of Admin; SET narrows it to exactly that list. Admin
- *  is therefore a SUBSET of manager — an admin always passes the isManager gate.
+ *  Manage module's Admin tab). When Script Property ADMIN_EMAILS is SET (comma-
+ *  separated), admins are EXACTLY that email list. When UNSET/empty, EVERY
+ *  manager is an admin — so a fresh deploy and the test suite behave exactly as
+ *  before (admin == manager, keyed off the SAME roster `isManager` source the
+ *  endpoints already use — NOT the MANAGER_EMAILS property, avoiding the F5
+ *  roster-vs-property mismatch). Admins are always a SUBSET of managers.
  *  Designating admins is operator state (no roster column). */
-function getAdminEmails_() {
+function empIsAdmin_(email, isManager) {
   const prop = PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS');
   const arr = prop ? prop.split(',').map(s => s.trim()).filter(s => s.length > 0) : null;
-  const list = (arr && arr.length) ? arr : getManagerEmails_();
-  return list.filter(e => e && typeof e === 'string' && e.indexOf('YOUR_EMAIL') !== 0 && e.indexOf('@') > 0);
-}
-function isAdminEmail_(email) {
-  const e = String(email || '').toLowerCase().trim();
-  if (!e) return false;
-  return getAdminEmails_().map(x => String(x).toLowerCase()).indexOf(e) >= 0;
+  if (arr && arr.length) {
+    const e = String(email || '').toLowerCase().trim();
+    return arr.map(x => String(x).toLowerCase()).indexOf(e) >= 0;
+  }
+  return !!isManager;   // ADMIN_EMAILS unset → every manager is an admin
 }
 
 /** Throws if the active user is not in MANAGER_EMAILS. Used by trigger-handler
@@ -9851,7 +9852,7 @@ function getEmployeeInfo_() {
         sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
         callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
           ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
-        payCycle: cycle, payAnchor: anchor, isManager, isAdmin: isAdminEmail_(email), timezone, ptoEnabled,
+        payCycle: cycle, payAnchor: anchor, isManager, isAdmin: empIsAdmin_(email, isManager), timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
         managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
