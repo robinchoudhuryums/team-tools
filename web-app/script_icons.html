@@ -20,8 +20,10 @@
     // ── Punch types (idle + morph glyphs) ────────────────────────────────
     // headset — at the desk / on a call (ClockIn idle; the LunchOut↔LunchIn morph endpoint)
     headset: '<path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5a9 9 0 0 1 18 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/><path d="M21 16v2a4 4 0 0 1-4 4h-5"/>',
-    // coffeeMug — on break (LunchOut/LunchIn history + the morph endpoint)
-    coffeeMug: '<path d="M6 2v2"/><path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 0 0 0 8h-1"/>',
+    // coffeeMug — on break (LunchOut/LunchIn history + the morph endpoint).
+    // Mirrored (handle on the left) via the group transform so the handle reads
+    // correctly out of the headset→mug morph.
+    coffeeMug: '<g transform="translate(24,0) scale(-1,1)"><path d="M6 2v2"/><path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 0 0 0 8h-1"/></g>',
     // doorExit — log-out / open door (ClockOut — leaving for the day)
     doorExit: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
     // Adjust — pencil
