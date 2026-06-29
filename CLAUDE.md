@@ -1862,11 +1862,19 @@ this section before touching the relevant area.
   label was also renamed 'Time Clock' → 'Dashboard'** (the `timeClock` TOOLS-registry
   KEY + `?tool=timeClock` are unchanged — only the `label` string), so the sidebar
   now reads 'Dashboard' with the first sub-tab also 'Dashboard'. (`360px minmax(0,1fr)` — the
-  `minmax(0,1fr)` is LOAD-BEARING for the carousel viewports). **Left rail:** the
-  existing `#clk-hero` (now just the sky clock — the greeting moved to the main
-  column so the clock fits 360px; `#clk-hero` is KEPT so `umsClockBg` + all clock
-  machinery work) + shift-strip + Today's Punches + teammate. **Main column:**
-  greeting + a compact toggle + the briefing **carousels**. Each carousel is a
+  `minmax(0,1fr)` is LOAD-BEARING for the carousel viewports). The greeting is a
+  **full-width header bar** (`.dash-greet-bar`, a subtle panel) ABOVE the grid —
+  with an "On the clock"/"On lunch" pill — not trapped in the right column (the
+  earlier right-column placement left the page unbalanced). The whole dashboard
+  view widens to `max-width:1480px` (via `.view-area:has(#dash-grid)`) since it's
+  an app surface, not prose. **Left rail:** the existing `#clk-hero` — now just the
+  sky clock with the white `.hero` card frame STRIPPED on the dashboard
+  (`.dash-hero` zeroes bg/border/padding/shadow) so the gradient IS the card, not
+  a clock boxed inside a white card; `#clk-hero` is KEPT so `umsClockBg` + all
+  clock machinery work — + shift-strip + Today's Punches + teammate. **Main
+  column:** the briefing **carousels**, with the two metric carousels laid
+  **2-up** (`.dash-pair`, `minmax(0,1fr) minmax(0,1fr)`, stacks < 1100px) and the
+  inbox switcher full-width below. Each carousel is a
   clipped `.dash-vp`/`.dash-trk` (transform-only slides) driven by a sliding
   **segmented chip** (`.dash-seg` + a translateX highlight pill; `clkDashSet_`
   switches period transform-only, reduced-motion-safe). **Carousel height fit:**
