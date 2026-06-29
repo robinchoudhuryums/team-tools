@@ -131,22 +131,37 @@
   .dash-rail { min-width: 0; }
   .dash-rail .shift-strip { margin: 14px 0; }
   .dash-rail .card { margin-top: 14px; }
-  .dash-hero { display: block; }   /* greeting moved to main → clock fills the rail */
+  /* On the dashboard the gradient sky IS the card — drop the white .hero frame
+     (bg/border/padding/shadow) so the clock isn't redundantly boxed (d1). */
+  .dash-hero { display: block; background: none; border: none; box-shadow: none; padding: 0; margin: 0; border-radius: var(--radius-lg); }
   .dash-main { min-width: 0; }
-  .dash-greet { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  /* Greeting is a full-width header above both columns, in a subtle panel. */
+  .dash-greet-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 18px; }
+  .dash-onclock { display: inline-flex; align-items: center; gap: 7px; flex: none; font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--success-deep); background: var(--accent-soft); border-radius: 999px; padding: 6px 12px; white-space: nowrap; }
+  .dash-onclock-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success-deep); }
+  /* Metric carousels side by side (the inbox switcher stays full-width below). */
+  .dash-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
+  .dash-pair .dash-card { margin-bottom: 0; }
+  @media (max-width: 1100px) { .dash-pair { grid-template-columns: 1fr; } }
+  /* The dashboard is an app surface, not prose — let it breathe wider than the
+     default --content-max so wide monitors aren't mostly empty margin. */
+  .view-area:has(#dash-grid) { max-width: 1480px; }
   /* Compact is the ?compact=1 pop-out only — collapse to the rail. */
   :root[data-compact] .dash-grid { grid-template-columns: 1fr; }
   :root[data-compact] .dash-grid .dash-main { display: none; }
+  :root[data-compact] .dash-greet-bar { display: none; }
 
   .dash-cards-loading { padding: 20px 0; }
   .dash-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
-  .dash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .dash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; row-gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .dash-seclabel { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
   /* Segmented chip — tinted track, sliding white highlight, labels above it. */
-  .dash-seg { position: relative; display: flex; background: var(--paper-2); border-radius: 8px; padding: 3px; min-width: 190px; }
+  .dash-seg { position: relative; display: flex; background: var(--paper-2); border-radius: 8px; padding: 3px; min-width: 212px; }
   .dash-seg-hi { position: absolute; top: 3px; bottom: 3px; left: 3px; background: var(--paper-card); border-radius: 6px;
     box-shadow: var(--shadow-sm); transition: transform .35s cubic-bezier(.4, 0, .2, 1); }
-  .dash-seg-opt { flex: 1; text-align: center; padding: 5px 9px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .03em;
+  .dash-seg-opt { flex: 1; text-align: center; padding: 5px 6px; font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .02em;
     cursor: pointer; position: relative; z-index: 1; color: var(--muted); white-space: nowrap; }
   .dash-seg-opt.on { color: var(--ink); }
   /* Carousel viewport + track. align-items:flex-start is LOAD-BEARING — without
@@ -276,7 +291,19 @@ function renderClockView(area) {
   // so the umsClockBg background + all clock machinery (#clk-sky, #live-time,
   // #clk-regions, ribbon) keep working. Annual PTO relocated to the Time/PTO tab.
   const isMgr = !!(s && s.isManager);
+  const onClock = !!(stats && (stats.state === 'working' || stats.state === 'lunch'));
+  const onClockPill = onClock
+    ? `<span class="dash-onclock"><span class="dash-onclock-dot"></span>${stats.state === 'lunch' ? 'On lunch' : 'On the clock'}</span>`
+    : '';
   area.innerHTML = `
+    <div class="dash-greet-bar">
+      <div class="dash-greet-text">
+        <div class="greet-kicker">${esc(kicker)}</div>
+        <div class="greet-name">Hi, ${esc(greetName)}</div>
+        <div class="status-sentence">${statusSentence}</div>
+      </div>
+      ${onClockPill}
+    </div>
     <div class="dash-grid" id="dash-grid">
       <div class="dash-rail">
         <div class="hero dash-hero" id="clk-hero">
@@ -323,13 +350,6 @@ function renderClockView(area) {
       </div>
 
       <div class="dash-main" id="dash-main">
-        <div class="dash-greet">
-          <div class="dash-greet-text">
-            <div class="greet-kicker">${esc(kicker)}</div>
-            <div class="greet-name">Hi, ${esc(greetName)}</div>
-            <div class="status-sentence">${statusSentence}</div>
-          </div>
-        </div>
         <div id="dash-cards"><div class="dash-cards-loading">${loSweep()}</div></div>
       </div>
     </div>`;
@@ -401,8 +421,10 @@ function clkRenderDashboard_() {
   var host = document.getElementById('dash-cards');
   if (!host) return;
   host.innerHTML =
-    clkDashCarouselHtml_('mine', 'Your numbers') +
-    clkDashCarouselHtml_('team', CLK_DASH.isMgr ? 'Department' : 'Team') +
+    '<div class="dash-pair">' +
+      clkDashCarouselHtml_('mine', 'Your numbers') +
+      clkDashCarouselHtml_('team', CLK_DASH.isMgr ? 'Department' : 'Team') +
+    '</div>' +
     '<div id="dash-extra"></div>';
   clkBindDashFit_();
   requestAnimationFrame(clkDashFitAll_);   // fit mine/team once laid out (sw fits when its extras render)
