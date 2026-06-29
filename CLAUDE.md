@@ -1909,8 +1909,13 @@ this section before touching the relevant area.
   the compact pop-out because compact now hides `#dash-cards` (the briefing) but
   not `.dash-foot`. **Main column:** the briefing **carousels**, with the two
   metric carousels laid **2-up** (`.dash-pair`, `minmax(0,1fr) minmax(0,1fr)`,
-  stacks < 1100px) and the inbox switcher full-width below, then the
-  punches/teammate foot row. Each carousel is a
+  stacks < 1100px) and a **2-up extras row** below (`#dash-extra` → another
+  `.dash-pair`), then the punches/teammate foot row. **Dashboard data is
+  stale-while-revalidate cached** (`CLK_DASH.loadedAt`/`extraAt`, `CLK_DASH_FRESH_MS`
+  60s): a re-render paints the cache instantly (no loader) and only refetches in
+  the background when stale — `clkRefreshState_` re-renders the WHOLE Clock view
+  on every window focus/visibilitychange (now also throttled 20s), which used to
+  flash the dashboard loader on every alt-tab. Each carousel is a
   clipped `.dash-vp`/`.dash-trk` (transform-only slides) driven by a sliding
   **segmented chip** (`.dash-seg` + a translateX highlight pill; `clkDashSet_`
   switches period transform-only, reduced-motion-safe). **Carousel height fit:**
@@ -1932,11 +1937,14 @@ this section before touching the relevant area.
   it hid, so collapsing was a one-way trip; the pop-out already covers compact.)
   Every server string
   `esc()`'d; team values respect the N=3 cohort guard (INV-124). **Follow-ons
-  (shipped):** (a) a manager **Spanish↔Requests switcher** carousel — a 2-slide
-  switcher (segmented chip Spanish/Requests, `clkDashSegHtml_(key, labels)` now
-  takes a labels arg) backed by `getSpanishInboxStats(7)` + `getDeptRequests()`,
-  each card deep-linking to its Metrics tab; a **Spanish rep** (non-manager,
-  `canSeeSpanish`) gets just the Spanish card. The Spanish card **surfaces
+  (shipped):** (a) the **2-up extras row** (`clkRenderDashboardExtras_`) — a left
+  card + a **Requests** card side by side. The left card is **Spanish Inbox** for
+  Spanish-capable users (`canSeeSpanish`) or a pending-**Training** card
+  (`clkDashTrainingCard_`, `getMyTraining` — to-do / overdue / next-due) for
+  everyone else. The **Requests** card shows the manager team aggregate
+  (`deptStats`) or, for a rep, their own open/resolved (`getDeptRequests().mine`)
+  — every agent now gets the extras row (previously only managers, via a
+  Spanish↔Requests slider that was replaced). The Spanish card **surfaces
   pending-request previews** when there are open requests — a `mail`-iconed
   count + median-reply line + one request (requester · age · snippet) paged by a
   ‹ N/total › nav (`clkSpNav_`, wraps; `CLK_DASH.spIdx`), fed by a best-effort
@@ -1959,7 +1967,13 @@ this section before touching the relevant area.
   the hero CARD background — see the `umsClockBg` gotcha), the
   `.shift-strip` (head + day ribbon + breaks + the `.actions` row —
   one `.prime` CTA ClockIn → LunchIn → ClockOut by state, Adjust last
-  as a `.sec`), and a 3-cell `.ledger.ledger-3` strip
+  as a `.sec`; **after the rep has already taken a lunch today** (a LunchIn
+  exists + currently working), `renderActions(actions, {afterLunch})` makes
+  **ClockOut** the prime CTA instead of a second LunchOut — most CSRs take one
+  lunch, so the big gold "Lunch Out" again risked accidental clicks; LunchOut
+  stays as a `.sec`. The **break chips** are terse `B1 / Lunch / B2` with compact
+  `clkFmtMinShort_` times on one wrapping row, the Lunch chip shaded darker
+  (`.clk-brk-chip.lunch`)), and a 3-cell `.ledger.ledger-3` strip
   (Annual / Sick / Hours today). **Note coverage is now INLINE in the
   shift-strip header (#3):** the per-hour note-volume bars behind the
   day ribbon (`ribbon-hist`, from `getMyNoteHourBuckets`) are the
@@ -2877,8 +2891,10 @@ this section before touching the relevant area.
   history render are the only consumers): `headset` (was `clockIn`), `coffeeMug`
   (was `lunchOut`/`lunchIn`, collapsed to one), `doorExit` (was `clockOut`).
   PUNCH_META idle icons are now `headset` (ClockIn) / `coffeeMug`
-  (LunchOut+LunchIn, history) / `doorExit` (ClockOut). Same rule as before — add
-  one path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
+  (LunchOut+LunchIn, history) / `doorExit` (ClockOut). The `coffeeMug` glyph was
+  re-drawn so the handle sits on the RIGHT with the curve facing outward, joined
+  to the cup frame (the earlier mirror-to-left read wrong). Same rule as before —
+  add one path-data entry to `ICONS` and pass the name to `icon()`; never inline SVG.
 - **Punch-button motion (dashboard-feedback batch).** Two transform/opacity-only
   effects, both reduced-motion-safe. (1) **Tactile press/hover** on every
   `.actions .prime`/`.sec` (`styles.html`): a `:hover` `translateY(-1px)` lift +
