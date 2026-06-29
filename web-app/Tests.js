@@ -3964,6 +3964,8 @@ function test_managerGates_rejectNonManager() {
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
     saveExternalLinks: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
     getCallNotesEnrollment: 1, saveKbAiSettings: 1,
+    // KB content authoring (Reference tool) — admin-gated uploads/edits.
+    kbSaveItem: 1, kbDeleteItem: 1, kbUploadImage: 1, kbConvertDriveDoc: 1,
   };
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);

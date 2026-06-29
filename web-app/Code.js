@@ -12353,7 +12353,7 @@ function getReferenceTree() {
     const cache = CacheService.getScriptCache();
     let cached = null;
     try { cached = cache.get(KB_CACHE_KEY); } catch (_) {}
-    if (cached) { const o = JSON.parse(cached); o.isManager = !!emp.isManager; return o; }
+    if (cached) { const o = JSON.parse(cached); o.isManager = !!emp.isManager; o.isAdmin = !!emp.isAdmin; return o; }
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
     const items = [];
@@ -12369,7 +12369,7 @@ function getReferenceTree() {
       });
     }
     items.sort(function (a, b) { return a.department.localeCompare(b.department) || (a.sortOrder - b.sortOrder) || a.title.localeCompare(b.title); });
-    const out = { items: items, isManager: !!emp.isManager };
+    const out = { items: items, isManager: !!emp.isManager, isAdmin: !!emp.isAdmin };
     try { cache.put(KB_CACHE_KEY, JSON.stringify({ items: items }), KB_CACHE_TTL); } catch (_) {}
     return out;
   } catch (err) { return { error: err.message }; }
@@ -12748,7 +12748,7 @@ function kbGetReviewDue() {
 function kbSaveItem(payload) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     payload = payload || {};
     const department = String(payload.department || '').trim() || 'General';
     const title = String(payload.title || '').trim();
@@ -12809,7 +12809,7 @@ function kbDeleteItem(id) {
   lock.waitLock(15000);
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     id = String(id || '').trim();
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
@@ -12997,7 +12997,7 @@ function kbParseImageDataUrl_(dataUrl) {
 function kbUploadImage(dataUrl) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
     const raw = String(dataUrl || '');
     if (raw.length > KB_IMG_UPLOAD_MAX_CHARS) {
       return { success: false, error: 'Image too large (max ~3MB) — crop or downscale the screenshot.' };
@@ -13537,7 +13537,7 @@ function kbDocBodyToMarkdown_(body, docId) {
 function kbConvertDriveDoc(payload) {
   try {
     const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
     payload = payload || {};
     let fileId = '', title = '', department = '';
     const itemId = String(payload.itemId || '').trim();

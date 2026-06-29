@@ -172,7 +172,7 @@
 //  first so authored content can't inject script). Embeds render the Drive
 //  preview iframe. Managers get inline add/edit/delete.
 // ════════════════════════════════════════════════════════════════════════════
-var KB_STATE = { tree: [], isManager: false, currentId: null, landing: false, usage: null, reviewDue: null };
+var KB_STATE = { tree: [], isManager: false, isAdmin: false, currentId: null, landing: false, usage: null, reviewDue: null };
 var KB_EDIT = null;
 
 // Compact markdown → HTML. Escapes HTML up front (so raw tags/script in the
@@ -303,7 +303,7 @@ function enterReferenceView(area) {
       if (currentView !== requested) return;
       var el = document.getElementById('kb-tree'); if (!el) return;
       if (!res || res.error) { el.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
-      KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager;
+      KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager; KB_STATE.isAdmin = !!res.isAdmin;
       kbRenderTree_();
       if (KB_STATE.landing) kbRenderLanding_();
       if (KB_STATE.isManager) { kbLoadUsageBlock_(); kbLoadReviewDueBlock_(); }
@@ -316,7 +316,9 @@ function enterReferenceView(area) {
 }
 
 function kbAddBtnHtml_() {
-  return KB_STATE.isManager ? '<button class="kb-add" onclick="kbOpenEditor_()">' + icon('plus', 12) + ' Add item</button>' : '';
+  // Authoring (add/edit/delete/convert/upload) is ADMIN-gated (KB content
+  // management). Manager analytics blocks (Most used / Review due) stay isManager.
+  return KB_STATE.isAdmin ? '<button class="kb-add" onclick="kbOpenEditor_()">' + icon('plus', 12) + ' Add item</button>' : '';
 }
 
 function kbItemIcon_(it) {
@@ -330,7 +332,7 @@ function kbRenderTree_() {
   (KB_STATE.tree || []).forEach(function (it) { (byDept[it.department] = byDept[it.department] || []).push(it); });
   var depts = Object.keys(byDept).sort();
   var html = kbAddBtnHtml_();
-  if (!depts.length) { html += '<div class="kb-empty">No reference items yet' + (KB_STATE.isManager ? ' — add one.' : '.') + '</div>'; el.innerHTML = html; return; }
+  if (!depts.length) { html += '<div class="kb-empty">No reference items yet' + (KB_STATE.isAdmin ? ' — add one.' : '.') + '</div>'; el.innerHTML = html; return; }
   var collapsed = kbPanelPrefs_().deptCollapsed || {};
   depts.forEach(function (d) {
     var isCol = !!collapsed[d];
@@ -670,7 +672,7 @@ function kbOpenItem_(id, anchor) {
 
 function kbRenderItem_(item) {
   var main = document.getElementById('kb-main'); if (!main) return;
-  var mgr = KB_STATE.isManager;
+  var mgr = KB_STATE.isAdmin;   // Convert/Edit/Delete are admin-gated authoring
   // Phase 2 — managers can convert a Doc embed into a native markdown article
   // (review-before-save: the converter only pre-fills the editor).
   var convertBtn = (mgr && item.type === 'embed' && item.driveKind === 'doc')
@@ -789,7 +791,7 @@ function kbShowConvertWarnings_(warnings) {
 function kbReloadTree_() {
   google.script.run.withSuccessHandler(function (res) {
     if (!res || res.error) return;
-    KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager;
+    KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager; KB_STATE.isAdmin = !!res.isAdmin;
     var si = document.getElementById('kb-search');
     if (si && si.value.trim().length >= 2) kbDoSearch_(si.value); else kbRenderTree_();
   }).getReferenceTree();
