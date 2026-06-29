@@ -773,6 +773,48 @@ test("every refreshViewIfCurrent('…') literal is a registered tab key", () => 
   });
 });
 
+console.log('\nscript_core — Manage module gating (admin tier)');
+// tabVisibleForUser_ reads the `empState` free var; inject it via a factory
+// closure (the shared sandbox's lexical empState can't be overridden per-call).
+const _tabVisSrc = extractRawFunction('script_core.html', 'tabVisibleForUser_');
+const tabVisFactory = new Function('empState', _tabVisSrc + '; return tabVisibleForUser_;');
+const tabVisWith = (emp, t) => tabVisFactory(emp)(t);
+test('tabVisibleForUser_: adminOnly→isAdmin, managerOnly→isManager|also, plain→all', () => {
+  // before state loads, only ungated tabs show
+  assert.equal(tabVisWith(null, {}), true);
+  assert.equal(tabVisWith(null, { managerOnly: true }), false);
+  assert.equal(tabVisWith(null, { adminOnly: true }), false);
+  // plain rep
+  const rep = { isManager: false, isAdmin: false };
+  assert.equal(tabVisWith(rep, { managerOnly: true }), false, 'rep: no manager tab');
+  assert.equal(tabVisWith(rep, { adminOnly: true }), false, 'rep: no admin tab');
+  assert.equal(tabVisWith(rep, { managerOnly: true, also: 'canSeeSpanish' }), false, 'rep without also');
+  // Spanish rep reaches a managerOnly tab via its `also` flag
+  assert.equal(tabVisWith({ isManager: false, isAdmin: false, canSeeSpanish: true },
+    { managerOnly: true, also: 'canSeeSpanish' }), true, 'also grants the tab');
+  // manager (not admin): manager tabs yes, admin tab NO
+  const mgr = { isManager: true, isAdmin: false };
+  assert.equal(tabVisWith(mgr, { managerOnly: true }), true, 'manager: manager tab');
+  assert.equal(tabVisWith(mgr, { adminOnly: true }), false, 'NON-admin manager: NO admin tab');
+  // admin sees the admin tab
+  assert.equal(tabVisWith({ isManager: true, isAdmin: true }, { adminOnly: true }), true, 'admin: admin tab');
+});
+test('registry reorg: Manage hosts the moved tabs; Admin is adminOnly; old tools cleared', () => {
+  const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const manageBlock = coreSrc.match(/\n  manage:\s*\{[\s\S]*?\n  \},/);
+  assert.ok(manageBlock, 'manage tool block found');
+  ['manage:', 'coverage:', 'punctuality:', 'callNotesAdmin:'].forEach((k) =>
+    assert.ok(manageBlock[0].indexOf(k) >= 0, 'manage tool hosts ' + k));
+  assert.ok(/callNotesAdmin:\s*\{[^}]*adminOnly:\s*true/.test(manageBlock[0]), 'Admin tab is adminOnly');
+  const timeClockBlock = coreSrc.match(/\n  timeClock:\s*\{[\s\S]*?\n  \},/);
+  assert.ok(timeClockBlock && timeClockBlock[0].indexOf('coverage:') < 0 &&
+    timeClockBlock[0].indexOf('punctuality:') < 0 && /\bmanage:/.test(timeClockBlock[0]) === false,
+    'timeClock no longer hosts manage/coverage/punctuality');
+  const callNotesBlock = coreSrc.match(/\n  callNotes:\s*\{[\s\S]*?\n  \},/);
+  assert.ok(callNotesBlock && callNotesBlock[0].indexOf('callNotesAdmin:') < 0,
+    'callNotes no longer hosts callNotesAdmin');
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Intake module — recommendation engine (PPD crown jewel) + layout coupling.
 // ─────────────────────────────────────────────────────────────────────────────

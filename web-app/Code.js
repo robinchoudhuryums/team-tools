@@ -570,6 +570,9 @@ function getEmployeeState() {
       selfUndoWindowSeconds: CONFIG.SELF_UNDO_WINDOW_SECONDS,
       payCycle: emp.payCycle, payAnchor: emp.payAnchor,
       isManager: emp.isManager,
+      // Admin tier (Manage module's Admin tab) — a subset of managers; gates the
+      // adminOnly tab client-side (server endpoints stay manager-gated for now).
+      isAdmin: emp.isAdmin,
       // Spanish Inbox access — managers OR a SPANISH_INBOX_MEMBERS rep (INV-31
       // amendment); gates the dashboard Spanish card + the metricsSpanish tab.
       canSeeSpanish: canSeeSpanishInbox_(emp),
@@ -8964,6 +8967,24 @@ function getManagerEmails_() {
   );
 }
 
+/** Admin tier — a distinct, above-manager role for config/system surfaces (the
+ *  Manage module's Admin tab). Reads Script Property ADMIN_EMAILS (comma-
+ *  separated). UNSET/empty falls back to MANAGER_EMAILS so a fresh deploy never
+ *  locks the deployer out of Admin; SET narrows it to exactly that list. Admin
+ *  is therefore a SUBSET of manager — an admin always passes the isManager gate.
+ *  Designating admins is operator state (no roster column). */
+function getAdminEmails_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS');
+  const arr = prop ? prop.split(',').map(s => s.trim()).filter(s => s.length > 0) : null;
+  const list = (arr && arr.length) ? arr : getManagerEmails_();
+  return list.filter(e => e && typeof e === 'string' && e.indexOf('YOUR_EMAIL') !== 0 && e.indexOf('@') > 0);
+}
+function isAdminEmail_(email) {
+  const e = String(email || '').toLowerCase().trim();
+  if (!e) return false;
+  return getAdminEmails_().map(x => String(x).toLowerCase()).indexOf(e) >= 0;
+}
+
 /** Throws if the active user is not in MANAGER_EMAILS. Used by trigger-handler
  *  endpoints (sendDailyMissedPunchAlerts, runDailyExportCheck,
  *  sendCallNotesEodDigest, sendCallNotesWeeklyDigests) that must be public
@@ -9830,7 +9851,7 @@ function getEmployeeInfo_() {
         sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
         callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
           ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
-        payCycle: cycle, payAnchor: anchor, isManager, timezone, ptoEnabled,
+        payCycle: cycle, payAnchor: anchor, isManager, isAdmin: isAdminEmail_(email), timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
         managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),

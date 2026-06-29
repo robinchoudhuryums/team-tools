@@ -39,6 +39,10 @@ const DOW_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','
 //  script_clock.html — the registry references it by that name.
 //
 //  managerOnly: true hides the tab from non-managers.
+//  adminOnly: true hides the tab from everyone but admins (empState.isAdmin —
+//    the above-manager tier; admins are a subset of managers).
+//  A tool whose tabs are ALL gated away for the user is hidden from the sidebar
+//    entirely (toolVisibleForUser_).
 //  Enter handlers live in the per-tool script_*.html partials; the registry
 //  looks them up by name (window[...]).
 // ════════════════════════════════════════════════════════════════════════════
@@ -50,9 +54,6 @@ const TOOLS = {
     tabs: {
       clock:    { label: 'Dashboard', icon: 'clock',    enter: 'enterClockCombinedView' },
       timeoff:  { label: 'Time / PTO', icon: 'timeoff',  enter: 'enterTimeoffView' },
-      manage:   { label: 'Manage',    icon: 'manage',   enter: 'enterManagerView', managerOnly: true },
-      coverage: { label: 'Coverage',  icon: 'chart',    enter: 'enterCoverageView', managerOnly: true },
-      punctuality: { label: 'Punctuality', icon: 'clock', enter: 'enterPunctualityView', managerOnly: true },
     },
   },
   callNotes: {
@@ -66,7 +67,6 @@ const TOOLS = {
       callNotesSearch:  { label: 'Search',      icon: 'search',  enter: 'enterCallNotesSearchView' },
       callNotesForms:   { label: 'Sent Forms',  icon: 'send',    enter: 'enterCallNotesFormsView' },
       callNotesManage:  { label: 'Team Notes',  icon: 'manage',  enter: 'enterCallNotesManageView', managerOnly: true },
-      callNotesAdmin:   { label: 'Admin',       icon: 'settings', enter: 'enterCallNotesAdminView',  managerOnly: true },
     },
   },
   metrics: {
@@ -111,6 +111,22 @@ const TOOLS = {
       docsManage:     { label: 'Issue Docs',    icon: 'send',   enter: 'enterDocsManageView', managerOnly: true },
     },
   },
+  // Manage — the consolidated manager/admin home. Tabs are MOVED here from their
+  // original tools (keys unchanged, so ?tool=<key> deep-links + `currentView ===`
+  // guards + the enter handlers in tc/cn partials all keep working). The whole
+  // tool is hidden from non-managers (toolVisibleForUser_); the Admin tab is the
+  // above-manager `adminOnly` tier.
+  manage: {
+    label: 'Manage',
+    sidebarIcon: 'manage',
+    defaultTab: 'manage',
+    tabs: {
+      manage:         { label: 'Manage Time', icon: 'manage',   enter: 'enterManagerView',        managerOnly: true },
+      coverage:       { label: 'Coverage',    icon: 'chart',    enter: 'enterCoverageView',       managerOnly: true },
+      punctuality:    { label: 'Punctuality', icon: 'clock',    enter: 'enterPunctualityView',    managerOnly: true },
+      callNotesAdmin: { label: 'Admin',       icon: 'settings', enter: 'enterCallNotesAdminView', adminOnly: true },
+    },
+  },
 };
 // tabKey → toolKey lookup. Tab keys are globally unique by convention so
 // existing call sites that compare `currentView === 'callNotes'` continue
@@ -119,6 +135,23 @@ const VIEW_TO_TOOL = {};
 Object.keys(TOOLS).forEach(toolKey => {
   Object.keys(TOOLS[toolKey].tabs).forEach(tabKey => { VIEW_TO_TOOL[tabKey] = toolKey; });
 });
+
+/** Whether the current user may see a tab. adminOnly → isAdmin; managerOnly →
+ *  isManager OR an `also` empState flag (e.g. metricsSpanish → canSeeSpanish);
+ *  otherwise visible to all. Before empState loads, only ungated tabs show. */
+function tabVisibleForUser_(t) {
+  if (!t) return false;
+  if (t.adminOnly) return !!(empState && empState.isAdmin);
+  if (t.managerOnly) return !!(empState && (empState.isManager || (t.also && empState[t.also])));
+  return true;
+}
+/** A tool is visible iff the user can see at least one of its tabs. Hides a
+ *  fully-gated module (e.g. Manage) from the sidebar/nav for non-managers. */
+function toolVisibleForUser_(toolKey) {
+  const tool = TOOLS[toolKey];
+  if (!tool) return false;
+  return Object.keys(tool.tabs).some(k => tabVisibleForUser_(tool.tabs[k]));
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 //  SHARED STATE
@@ -318,7 +351,8 @@ function renderShell(state) {
   // mirrors the sidebar — two buttons, one per tool.
   // Labels are wrapped in .sb-lbl so the resizable sidebar (Round 2 · 8a)
   // can collapse to icon-only by hiding the labels via .sidebar.collapsed.
-  const toolKeys = Object.keys(TOOLS);
+  // Hide a fully-gated tool (e.g. Manage for non-managers) from the sidebar/nav.
+  const toolKeys = Object.keys(TOOLS).filter(toolVisibleForUser_);
   const sbLinks = toolKeys.map(toolKey => {
     const t = TOOLS[toolKey];
     return `<button class="sb-link" data-tool="${toolKey}" onclick="enterTool('${toolKey}')">
@@ -485,6 +519,13 @@ function applySidebarWidth_(sb, w) {
 function enterTool(toolKey, tabKey) {
   const tool = TOOLS[toolKey];
   if (!tool) return;
+  // If every tab in this tool is gated away for the user (e.g. a non-manager
+  // deep-linking ?tool=manage, or a stale umsLastView), redirect home rather
+  // than render an empty tab bar.
+  if (!toolVisibleForUser_(toolKey)) {
+    if (toolKey !== 'timeClock') enterTool('timeClock', 'clock');
+    return;
+  }
   // Update sidebar/mobile-nav active state
   document.querySelectorAll('.sb-link[data-tool], .nav-btn[data-tool]').forEach(b => {
     b.classList.toggle('active', b.dataset.tool === toolKey);
@@ -496,13 +537,14 @@ function enterTool(toolKey, tabKey) {
   renderToolTabBar(toolKey);
   // Resolve the desired tab — explicit > default. Skip managerOnly for non-managers.
   let chosen = tabKey && tool.tabs[tabKey] ? tabKey : tool.defaultTab;
-  const tabDef = tool.tabs[chosen];
-  // managerOnly tabs bump non-managers to the default — UNLESS the tab declares
-  // an `also` flag the caller has on empState (e.g. metricsSpanish → canSeeSpanish
-  // grants Spanish reps the tab without making it rep-wide).
-  if (tabDef && tabDef.managerOnly && empState && !empState.isManager &&
-      !(tabDef.also && empState[tabDef.also])) {
+  // A gated tab the user can't see (managerOnly/adminOnly, no `also`) bumps to
+  // the tool's default — or, if the default is itself gated away, the first
+  // tab the user CAN see in this tool (the tool is visible, so one exists).
+  if (!tabVisibleForUser_(tool.tabs[chosen])) {
     chosen = tool.defaultTab;
+    if (!tabVisibleForUser_(tool.tabs[chosen])) {
+      chosen = Object.keys(tool.tabs).find(k => tabVisibleForUser_(tool.tabs[k])) || chosen;
+    }
   }
   showView(chosen);
 }
@@ -565,24 +607,19 @@ function renderToolTabBar(toolKey) {
   const tool = TOOLS[toolKey];
   const bar = document.getElementById('tool-tab-bar');
   if (!bar || !tool) return;
-  const tabs = Object.keys(tool.tabs).filter(k => {
-    const t = tool.tabs[k];
-    // managerOnly tabs are hidden from non-managers, unless the tab declares an
-    // `also` empState flag the caller has (e.g. metricsSpanish → canSeeSpanish).
-    return !t.managerOnly || (empState && empState.isManager) ||
-      (t.also && empState && empState[t.also]);
-  });
+  const tabs = Object.keys(tool.tabs).filter(k => tabVisibleForUser_(tool.tabs[k]));
   bar.innerHTML = tabs.map(k => {
     const t = tool.tabs[k];
-    // Manager-only tabs get a subtle upward accent gradient + a small marker
-    // glyph so managers can tell at a glance which tabs are the privileged,
-    // team-facing ones. Suppress the marker for a non-manager who reached the
-    // tab via an `also` flag (e.g. a Spanish rep on metricsSpanish) — for them
-    // it's just their tab, not a manager surface.
-    const showMgrMark = t.managerOnly && empState && empState.isManager;
+    // Privileged (managerOnly/adminOnly) tabs get a subtle upward accent gradient
+    // + a small marker glyph so managers/admins can tell at a glance which tabs
+    // are the privileged surfaces. Suppress the marker for a non-manager who
+    // reached a managerOnly tab via an `also` flag (e.g. a Spanish rep on
+    // metricsSpanish) — for them it's just their tab, not a privileged surface.
+    const showMgrMark = (t.managerOnly && empState && empState.isManager) ||
+      (t.adminOnly && empState && empState.isAdmin);
     const mgrCls = showMgrMark ? ' tt-mgr' : '';
     const mgrMark = showMgrMark
-      ? `<span class="tt-mgr-mark" title="Manager-only">${icon('manage', 10)}</span>`
+      ? `<span class="tt-mgr-mark" title="${t.adminOnly ? 'Admin-only' : 'Manager-only'}">${icon('manage', 10)}</span>`
       : '';
     return `<button class="tt-btn${mgrCls}" data-tab="${k}" onclick="showView('${k}')">
       <span class="tt-icon">${icon(t.icon, 14)}</span>${esc(t.label)}${mgrMark}
