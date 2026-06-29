@@ -1871,10 +1871,14 @@ this section before touching the relevant area.
   sky clock with the white `.hero` card frame STRIPPED on the dashboard
   (`.dash-hero` zeroes bg/border/padding/shadow) so the gradient IS the card, not
   a clock boxed inside a white card; `#clk-hero` is KEPT so `umsClockBg` + all
-  clock machinery work — + shift-strip + Today's Punches + teammate. **Main
-  column:** the briefing **carousels**, with the two metric carousels laid
-  **2-up** (`.dash-pair`, `minmax(0,1fr) minmax(0,1fr)`, stacks < 1100px) and the
-  inbox switcher full-width below. Each carousel is a
+  clock machinery work — + shift-strip. **Today's Punches + teammate moved OFF
+  the rail** into a 2-up `.dash-foot` row at the bottom of the main column (the
+  rail was stacking them tall with blank space opposite); they stay visible in
+  the compact pop-out because compact now hides `#dash-cards` (the briefing) but
+  not `.dash-foot`. **Main column:** the briefing **carousels**, with the two
+  metric carousels laid **2-up** (`.dash-pair`, `minmax(0,1fr) minmax(0,1fr)`,
+  stacks < 1100px) and the inbox switcher full-width below, then the
+  punches/teammate foot row. Each carousel is a
   clipped `.dash-vp`/`.dash-trk` (transform-only slides) driven by a sliding
   **segmented chip** (`.dash-seg` + a translateX highlight pill; `clkDashSet_`
   switches period transform-only, reduced-motion-safe). **Carousel height fit:**
@@ -1900,7 +1904,14 @@ this section before touching the relevant area.
   switcher (segmented chip Spanish/Requests, `clkDashSegHtml_(key, labels)` now
   takes a labels arg) backed by `getSpanishInboxStats(7)` + `getDeptRequests()`,
   each card deep-linking to its Metrics tab; a **Spanish rep** (non-manager,
-  `canSeeSpanish`) gets just the Spanish card. (b) a **run-rate projection** —
+  `canSeeSpanish`) gets just the Spanish card. The Spanish card **surfaces
+  pending-request previews** when there are open requests — a `mail`-iconed
+  count + median-reply line + one request (requester · age · snippet) paged by a
+  ‹ N/total › nav (`clkSpNav_`, wraps; `CLK_DASH.spIdx`), fed by a best-effort
+  `getSpanishInboxPending(7)` — and **falls back to the count tiles** (Pending /
+  Resolved / Median) when none are pending or the fetch errors. The snippet is
+  PHI-adjacent but stays within the same `canSeeSpanish` gate as the rest of the
+  card. (b) a **run-rate projection** —
   the pure, Node-pinned `dashProjection_(value, fromIso, toIso, periodKey)`
   projects an MTD/YTD volume to period end by elapsed fraction (≥3 days elapsed,
   not a complete period, volumes-only — never a rate), rendered as an "On pace

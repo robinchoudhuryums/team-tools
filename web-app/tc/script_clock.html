@@ -143,14 +143,17 @@
   .dash-onclock-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success-deep); }
   /* Metric carousels side by side (the inbox switcher stays full-width below). */
   .dash-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
-  .dash-pair .dash-card { margin-bottom: 0; }
+  .dash-pair .dash-card, .dash-pair .card { margin-bottom: 0; }
+  .dash-foot { margin-bottom: 0; }   /* Today's Punches + teammate, moved off the left rail */
   @media (max-width: 1100px) { .dash-pair { grid-template-columns: 1fr; } }
   /* The dashboard is an app surface, not prose — let it breathe wider than the
      default --content-max so wide monitors aren't mostly empty margin. */
   .view-area:has(#dash-grid) { max-width: 1480px; }
-  /* Compact is the ?compact=1 pop-out only — collapse to the rail. */
+  /* Compact (?compact=1 pop-out): single column, hide the greeting + the briefing
+     carousels, but KEEP the foot (Today's Punches + teammate) so the pinned
+     pop-out still shows punches under the clock. */
   :root[data-compact] .dash-grid { grid-template-columns: 1fr; }
-  :root[data-compact] .dash-grid .dash-main { display: none; }
+  :root[data-compact] #dash-cards { display: none; }
   :root[data-compact] .dash-greet-bar { display: none; }
 
   .dash-cards-loading { padding: 20px 0; }
@@ -180,6 +183,19 @@
   .dash-kpi-big .dash-kpi-v { font-size: 2rem; color: var(--accent); }
   .dash-card-foot { font-size: 10px; color: var(--muted); margin-top: 12px; }
   .dash-empty { font-size: 13px; color: var(--muted); min-height: 56px; display: flex; align-items: center; }
+  /* Spanish pending-request preview (d2) — surfaced when there are open requests. */
+  .dash-sp-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .dash-sp-count { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--ink); }
+  .dash-sp-count svg { width: 13px; height: 13px; color: var(--accent); }
+  .dash-sp-median { font-size: 10px; color: var(--muted); }
+  .dash-sp-nav { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
+  .dash-sp-arrow { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .dash-sp-arrow:hover { background: var(--paper-2); border-color: var(--border-strong); }
+  .dash-sp-req { background: var(--paper-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .dash-sp-from { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .dash-sp-age { font-weight: 400; color: var(--muted); }
+  .dash-sp-snip { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
   .dash-proj { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--info-deep); margin-top: 8px; }
   .dash-link { font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; }
   .dash-link:hover { text-decoration: underline; }
@@ -341,16 +357,17 @@ function renderClockView(area) {
           ${clkBreakScheduleHtml_()}
           ${renderActions(s.nextActions)}
         </div>
-
-        <div class="card">
-          <div class="card-label">Today's Punches</div>
-          ${renderPunchHistory(s.punches)}
-        </div>
-        <div id="teammate-card-slot"></div>
       </div>
 
       <div class="dash-main" id="dash-main">
         <div id="dash-cards"><div class="dash-cards-loading">${loSweep()}</div></div>
+        <div class="dash-pair dash-foot">
+          <div class="card">
+            <div class="card-label">Today's Punches</div>
+            ${renderPunchHistory(s.punches)}
+          </div>
+          <div id="teammate-card-slot"></div>
+        </div>
       </div>
     </div>`;
   bindClockBtns();
@@ -543,7 +560,8 @@ function clkLoadDashboardExtras_() {
   if (!host) return;
   var isMgr = CLK_DASH.isMgr, canSp = !!(empState && empState.canSeeSpanish);
   if (!isMgr && !canSp) { host.innerHTML = ''; return; }
-  CLK_DASH.extra = { spanish: undefined, requests: undefined };
+  CLK_DASH.extra = { spanish: undefined, requests: undefined, spanishPending: undefined };
+  CLK_DASH.spIdx = 0;
   var requestedView = currentView;
   var render = function () { if (currentView === requestedView) clkRenderDashboardExtras_(); };
   render();   // paint the loading shell immediately
@@ -552,6 +570,12 @@ function clkLoadDashboardExtras_() {
       .withSuccessHandler(function (r) { CLK_DASH.extra.spanish = r || { error: 'No data' }; render(); })
       .withFailureHandler(function () { CLK_DASH.extra.spanish = { error: 'Spanish inbox unavailable' }; render(); })
       .getSpanishInboxStats(7);
+    // Pending request previews (best-effort — the card falls back to counts if
+    // this errors or returns none). Same gating as the stats read.
+    google.script.run
+      .withSuccessHandler(function (r) { CLK_DASH.extra.spanishPending = (r && r.pending) ? r : { pending: [] }; render(); })
+      .withFailureHandler(function () { CLK_DASH.extra.spanishPending = { pending: [] }; render(); })
+      .getSpanishInboxPending(7);
   }
   if (isMgr) {
     google.script.run
@@ -568,28 +592,62 @@ function clkRenderDashboardExtras_() {
   if (isMgr) {
     // Switcher — Spanish | Requests (managers see both).
     var idx = CLK_DASH.sw || 0;
-    var slides = '<div class="dash-sld">' + clkDashSpanishCard_(x.spanish) + '</div>' +
+    var slides = '<div class="dash-sld">' + clkDashSpanishCard_(x.spanish, x.spanishPending) + '</div>' +
                  '<div class="dash-sld">' + clkDashRequestsCard_(x.requests) + '</div>';
     host.innerHTML = '<div class="dash-card">' +
       '<div class="dash-card-head"><span class="dash-seclabel">Inbox</span>' + clkDashSegHtml_('sw', ['Spanish', 'Requests']) + '</div>' +
       '<div class="dash-vp"><div class="dash-trk" id="dash-trk-sw" style="transform:translateX(-' + (idx * 100) + '%)">' + slides + '</div></div>' +
     '</div>';
   } else if (canSp) {
-    host.innerHTML = '<div class="dash-card"><div class="dash-card-head"><span class="dash-seclabel">Spanish Inbox</span></div>' + clkDashSpanishCard_(x.spanish) + '</div>';
+    host.innerHTML = '<div class="dash-card"><div class="dash-card-head"><span class="dash-seclabel">Spanish Inbox</span></div>' + clkDashSpanishCard_(x.spanish, x.spanishPending) + '</div>';
   } else {
     host.innerHTML = '';
   }
   requestAnimationFrame(function () { clkDashFit_('sw'); });   // fit the switcher viewport as its fetches resolve
 }
 
-function clkDashSpanishCard_(res) {
+function clkDashSpanishCard_(res, pendingRes) {
   if (res === undefined) return '<div class="dash-empty">' + loSweep() + '</div>';
   if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
+  var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsSpanish\')">Open Spanish Inbox →</a></div>';
+  var pend = (pendingRes && pendingRes.pending) ? pendingRes.pending : null;
+  // With pending requests, preview them (requester · age · snippet) + median
+  // reply, paged by ‹ N/total ›. With none, fall back to the count tiles.
+  if (pend && pend.length) {
+    var n = pend.length;
+    var idx = Math.min(Math.max(CLK_DASH.spIdx || 0, 0), n - 1);
+    var r = pend[idx] || {};
+    var age = r.ageHours >= 24 ? Math.round(r.ageHours / 24) + 'd' : (r.ageHours || 0) + 'h';
+    var snip = String(r.snippet || r.subject || '').replace(/\s+/g, ' ').trim();
+    if (snip.length > 130) snip = snip.slice(0, 130) + '…';
+    var median = res.medianMinutes != null ? '· median reply ' + res.medianMinutes + 'm' : '';
+    var nav = n > 1
+      ? '<span class="dash-sp-nav"><button class="dash-sp-arrow" aria-label="Previous request" onclick="clkSpNav_(-1)">' + icon('chevronLeft', 13) + '</button>' +
+        '<span class="mono">' + (idx + 1) + ' / ' + n + '</span>' +
+        '<button class="dash-sp-arrow" aria-label="Next request" onclick="clkSpNav_(1)">' + icon('chevronRight', 13) + '</button></span>'
+      : '';
+    return '<div class="dash-sp-head">' +
+        '<span class="dash-sp-count">' + icon('mail', 13) + n + ' pending</span>' +
+        '<span class="dash-sp-median mono">' + esc(median) + '</span>' + nav +
+      '</div>' +
+      '<div class="dash-sp-req">' +
+        '<div class="dash-sp-from">' + esc(r.requester || 'Unknown') + ' <span class="dash-sp-age">· ' + esc(age) + ' ago</span></div>' +
+        '<div class="dash-sp-snip">' + esc(snip) + '</div>' +
+      '</div>' + openLink;
+  }
   return '<div class="dash-kpis">' +
     clkDashKpi_('Pending', res.pending != null ? res.pending : '—', true) +
     clkDashKpi_('Resolved · 7d', res.resolved != null ? res.resolved : '—') +
     clkDashKpi_('Median reply', res.medianMinutes != null ? res.medianMinutes + 'm' : '—') +
-  '</div><div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsSpanish\')">Open Spanish Inbox →</a></div>';
+  '</div>' + openLink;
+}
+/** Page the Spanish pending-request preview (wraps); re-renders the extras. */
+function clkSpNav_(delta) {
+  var p = CLK_DASH.extra && CLK_DASH.extra.spanishPending && CLK_DASH.extra.spanishPending.pending;
+  var n = p ? p.length : 0;
+  if (!n) return;
+  CLK_DASH.spIdx = (((CLK_DASH.spIdx || 0) + delta) % n + n) % n;
+  clkRenderDashboardExtras_();
 }
 
 function clkDashRequestsCard_(res) {
