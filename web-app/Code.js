@@ -7464,8 +7464,13 @@ function purgeArchivedCallNotes() {
  *  Manager-gated + locked; per-rep Sheet failures are skipped. Content fields
  *  are NEVER modified. Writes a CallNotesReconcile audit row. */
 function reconcileCallNotes() {
-  const callerEmp = getEmployeeInfo_();
-  if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+  // F1/F2 — this is a DAILY TRIGGER handler (runs as the installer) AS WELL AS a
+  // manual Admin-tab button, so it MUST use the MANAGER_EMAILS trigger-handler
+  // gate (assertManagerCaller_, the INV-44 idiom), NOT emp.isAdmin: under a
+  // narrowed ADMIN_EMAILS, or a MANAGER_EMAILS installer who isn't a roster
+  // employee, an admin/roster gate silently no-ops the nightly reconcile (INV-109).
+  assertManagerCaller_('reconcileCallNotes');
+  const callerEmp = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {

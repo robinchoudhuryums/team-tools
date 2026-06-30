@@ -1571,11 +1571,12 @@ function test_managerSaveDayRange_nonManagerRejected() {
 // #8 — reconcile pass: manager-gated; backfills a hand-entered row (content
 // but no noteId) with a UUID + dates, idempotent, content untouched.
 function test_reconcileCallNotes_nonManagerRejected() {
-  _asUser(_TEST_INDIA_EMAIL, function () {
-    const r = reconcileCallNotes();
-    _assertNotNull(r.error, 'non-manager rejected');
-    _assertContains(r.error, 'Admin access required');
-  });
+  // F1/F2 — reconcile is a trigger handler, so its gate is the MANAGER_EMAILS
+  // assertManagerCaller_ (throws), matching the other trigger-gate tests, NOT
+  // the emp.isAdmin return-{error} gate it briefly carried under #102/INV-136.
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { reconcileCallNotes(); });
+  }, 'manager access required', 'Non-manager should not be able to reconcile');
 }
 
 function test_reconcileCallNotes_backfillsHandEntered() {

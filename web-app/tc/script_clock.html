@@ -1026,25 +1026,35 @@ function clkTickTime_() {
  *  rep's tz, so the hour aligns with the ribbon's 6a–10p axis). Its own endpoint
  *  (not getMyCallNotes) keeps the Clock view's hot path to one extra bounded
  *  read. Best-effort; the histogram is simply absent on failure. */
+// F6 — last-good buckets keyed by day so a focus re-render paints the histogram
+// instantly instead of blanking it until the refetch lands. SWR: refetch in the
+// background to pick up notes logged elsewhere; reset on day change.
+var CLK_NOTEVOL_CACHE = { day: '', buckets: null };
+function clkRenderNoteVolume_(buckets) {
+  const hist = document.getElementById('ribbon-hist');
+  if (!hist || !buckets) return;
+  const max = Math.max(1, Math.max.apply(null, buckets));
+  let html = '';
+  for (let h = 0; h < 24; h++) {
+    if (!buckets[h]) continue;
+    const mid = h * 60 + 30;
+    if (mid < RIBBON_START_MIN || mid > RIBBON_END_MIN) continue;
+    const ht = Math.max(4, Math.round((buckets[h] / max) * 100));
+    html += '<div class="hbar" style="left:' + ribbonPct_(mid).toFixed(2) + '%;height:' + ht + '%" title="' +
+      esc(buckets[h] + ' note' + (buckets[h] === 1 ? '' : 's') + ' · ' + ribbonFormatHm_(h * 60)) + '"></div>';
+  }
+  hist.innerHTML = html;
+}
 function clkLoadNoteVolume_() {
   const today = isoDateTz(empTz());
+  if (CLK_NOTEVOL_CACHE.day === today && CLK_NOTEVOL_CACHE.buckets) clkRenderNoteVolume_(CLK_NOTEVOL_CACHE.buckets);
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== 'clock') return;
-      const hist = document.getElementById('ribbon-hist');
-      if (!hist || !res || res.error || !res.buckets) return;
-      const buckets = res.buckets;
-      const max = Math.max(1, Math.max.apply(null, buckets));
-      let html = '';
-      for (let h = 0; h < 24; h++) {
-        if (!buckets[h]) continue;
-        const mid = h * 60 + 30;
-        if (mid < RIBBON_START_MIN || mid > RIBBON_END_MIN) continue;
-        const ht = Math.max(4, Math.round((buckets[h] / max) * 100));
-        html += '<div class="hbar" style="left:' + ribbonPct_(mid).toFixed(2) + '%;height:' + ht + '%" title="' +
-          esc(buckets[h] + ' note' + (buckets[h] === 1 ? '' : 's') + ' · ' + ribbonFormatHm_(h * 60)) + '"></div>';
-      }
-      hist.innerHTML = html;
+      if (!res || res.error || !res.buckets) return;
+      CLK_NOTEVOL_CACHE.day = today;
+      CLK_NOTEVOL_CACHE.buckets = res.buckets;
+      clkRenderNoteVolume_(res.buckets);
     })
     .withFailureHandler(function () {})
     .getMyNoteHourBuckets(today);
@@ -1454,27 +1464,43 @@ function renderCoverageStrip_(slot, data) {
 }
 
 /** Load teammate status into the slot below Actions (best-effort, silent on failure). */
+// F6 — last-good teammate roster, so a focus/visibility wake (which re-renders
+// the WHOLE Clock view and recreates the slot) doesn't flash the skeleton +
+// refetch-blank every 20s. SWR: paint the cache instantly, refetch in background.
+var CLK_TEAMMATE_CACHE = { teammates: null, enabled: true, loaded: false };
 function loadTeammateStatus() {
   const slot = document.getElementById('teammate-card-slot');
   if (!slot) return;
-  // Loading state (was silent/empty until pop-in) — a card shell + skeleton rows
-  // so the space is reserved and the load is visible.
-  slot.innerHTML =
-    '<div class="card"><div class="card-label with-count"><span>Team Right Now</span></div>' +
-    '<div class="emp-grid">' +
-      '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
-        '<div class="skel skel-bar" style="width:70%;height:11px"></div></div></div>' +
-      '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
-        '<div class="skel skel-bar" style="width:55%;height:11px"></div></div></div>' +
-      '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
-        '<div class="skel skel-bar" style="width:62%;height:11px"></div></div></div>' +
-    '</div></div>';
+  // Paint last-good immediately on a re-render; show the skeleton only on the
+  // very first load (nothing cached yet) so the space is reserved + the load is
+  // visible. The background refetch below always runs to keep the roster fresh.
+  if (CLK_TEAMMATE_CACHE.loaded) {
+    if (CLK_TEAMMATE_CACHE.enabled && CLK_TEAMMATE_CACHE.teammates) renderTeammateCard(slot, CLK_TEAMMATE_CACHE.teammates);
+    else slot.innerHTML = '';
+  } else {
+    slot.innerHTML =
+      '<div class="card"><div class="card-label with-count"><span>Team Right Now</span></div>' +
+      '<div class="emp-grid">' +
+        '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
+          '<div class="skel skel-bar" style="width:70%;height:11px"></div></div></div>' +
+        '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
+          '<div class="skel skel-bar" style="width:55%;height:11px"></div></div></div>' +
+        '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
+          '<div class="skel skel-bar" style="width:62%;height:11px"></div></div></div>' +
+      '</div></div>';
+  }
   google.script.run
     .withSuccessHandler(data => {
-      if (!data || !data.enabled || data.error) { slot.innerHTML = ''; return; }
+      CLK_TEAMMATE_CACHE.loaded = true;
+      if (!data || !data.enabled || data.error) {
+        CLK_TEAMMATE_CACHE.enabled = false; CLK_TEAMMATE_CACHE.teammates = null;
+        slot.innerHTML = ''; return;
+      }
+      CLK_TEAMMATE_CACHE.enabled = true;
+      CLK_TEAMMATE_CACHE.teammates = data.teammates;
       renderTeammateCard(slot, data.teammates);
     })
-    .withFailureHandler(() => { slot.innerHTML = ''; })
+    .withFailureHandler(() => { if (!(CLK_TEAMMATE_CACHE.loaded && CLK_TEAMMATE_CACHE.teammates)) slot.innerHTML = ''; })
     .getTeammateStatus();
 }
 
@@ -1744,18 +1770,23 @@ function submitPunch(punchType, custom) {
   // #3 — immediate visual feedback: the primary action shows an inline loader
   // ("Working…") the instant it's clicked, instead of just going disabled until
   // the toast lands. Restored on failure; replaced by the re-render on success.
-  var prime = document.querySelector('.actions .prime');
-  var primeHtml = prime ? prime.innerHTML : null;
+  // F3 — animate the button that was actually CLICKED, not whichever button is
+  // currently `.prime`. After a lunch return ClockOut becomes prime and LunchOut
+  // demotes to a secondary, so a second-lunch click must morph the LunchOut
+  // button, not the unrelated ClockOut prime. Fall back to `.prime` defensively.
+  var btn = document.querySelector('.actions [data-action="' + punchType + '"]')
+    || document.querySelector('.actions .prime');
+  var btnHtml = btn ? btn.innerHTML : null;
   // In-flight feedback: lunch punches morph the icon (headset↔mug) toward their
   // destination; other punches show the dots loader. Both say "Working…".
   var morph = PUNCH_MORPH[punchType];
-  if (prime) prime.innerHTML = (morph ? clkPunchMorphHtml_(morph)
+  if (btn) btn.innerHTML = (morph ? clkPunchMorphHtml_(morph)
     : '<span class="lo-dots"><span></span><span></span><span></span></span>') + ' Working…';
   google.script.run
     .withSuccessHandler(result => {
       setClockBtnsDisabled(false);
       if (!result.success) {
-        if (prime && primeHtml != null) prime.innerHTML = primeHtml;
+        if (btn && btnHtml != null) btn.innerHTML = btnHtml;
         showToast((result.error||'Error'), 'toast-error'); return;
       }
       const tag = result.isAdjustment ? ' (adj)' : '';

@@ -2,11 +2,45 @@
 
 ## Current
 Cycle: 6
-Phase: idle — operator-feedback feature work (NOT an audit cycle); all merged to main
-Scope: dashboards + Manage module + admin tier + Reference KB-authoring gating + clock/icon polish
+Phase: implement — broad-scan F1–F6 fixes on branch claude/broad-scan-2ll5ok (NOT yet pushed/merged)
+Scope: cycle-6-regression fixes (reconcile trigger gate, clock UX, coaching toast, admin health labels)
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-06-29 (operator-feedback session — see "Where I left off" at the bottom)
+Updated: 2026-06-30 (broad-scan + broad-implement session)
+
+## Cycle 6 broad-scan + implement F1–F6 (2026-06-30, branch claude/broad-scan-2ll5ok)
+AUDIT: 4 parallel deep-read agents + independent verification of every concrete
+finding. Result = NO Critical/High (5th consecutive). One Medium regression (F1)
+from #102/INV-136 + 9 Lows. IMPLEMENTED F1–F6 (NOT yet pushed):
+- F1/F2 (Medium, the headline): reconcileCallNotes is a daily TRIGGER but #102
+  moved its gate to emp.isAdmin — under a narrowed ADMIN_EMAILS (or a non-roster
+  installer) the nightly 5am run silently no-op'd, leaving hand-entered rows
+  un-indexed forever. Reverted to assertManagerCaller_ (the INV-44 trigger idiom,
+  like the other 10 handlers); audit actor falls back to _SYSTEM_AUDIT_EMP_ for a
+  non-roster installer. test_reconcileCallNotes_nonManagerRejected now asserts the
+  throw. INV-109 + INV-136 (29→28 admin endpoints) updated in CLAUDE.md.
+- F3 (Low): submitPunch animated `.actions .prime` not the CLICKED button — after
+  a lunch return (ClockOut=prime, LunchOut demoted) a 2nd-lunch click morphed the
+  wrong button. Now targets `[data-action=<punchType>]`, falls back to .prime.
+- F4 (Low): 3 coaching failure handlers did showToast(esc(...)) but showToast uses
+  textContent → entities shown literally. Dropped the redundant esc().
+- F5 (Low): Automation Health client label maps stale vs server — added
+  trainingOverdue to DIGEST_LABELS + CallNotesArchive/CallNotesArchivePurge to
+  CN_HEALTH_RUN_LABELS (were rendering raw keys).
+- F6 (Low): clkRefreshState_ re-renders the WHOLE clock view on every 20s focus
+  wake, flashing the teammate skeleton + blanking the note-volume histogram +
+  refiring 2 RPCs. Added small module SWR caches (CLK_TEAMMATE_CACHE /
+  CLK_NOTEVOL_CACHE): paint last-good instantly, refetch in background, skeleton
+  only on first load. Same payload cached (INV-24 preserved — no new fields).
+DEFERRED (out of F1–F6 scope, noted for next session): F7 morph carry-through
+LunchIn→ClockOut (cosmetic), F8 training-flag note-ref across async uiPrompt
+(edge), F9 CN more-menu no outside-click close, F10 dispTime() unescaped (latent),
+F11 EmpDocs voidReason shown to employee (design Q). Plus the strategic suggestion:
+a CI tripwire asserting no trigger-TARGETS handler uses an isAdmin/roster gate
+(would have caught F1) + a client-label-map ⊇ server-keys tripwire (F5 class).
+Pure harness 188/0; node --check clean (Code.js + Tests.js). DOM harness needs
+npm ci (CI runs it). NEXT: operator deploy (clasp push -f + New version) +
+runAllTests() in editor (the only check on the reconcile gate test change).
 
 ## Cycle 6 retention 3rd-tier + include-archive search (2026-06-23, branch claude/happy-faraday-0grppg)
 Closed the two archive follow-ons (pushed). Retention is now a full 3-tier system.

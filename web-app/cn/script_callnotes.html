@@ -7896,10 +7896,12 @@ function cnToggleAuditHistory_(btn, noteId) {
 // (same discipline as the compliance panel).
 
 var CN_HEALTH_RUN_LABELS = {
-  CallNotesReconcile: { label: 'Sheet reconcile',            expect: 'expected daily (5am)' },
-  AdpExportAuto:      { label: 'Automated ADP export',       expect: 'expected at period end' },
-  FormDataPurge:      { label: 'Form-data retention purge',  expect: 'writes a row only when retention is enabled' },
-  CallNotesPurge:     { label: 'Call-note retention purge',  expect: 'writes a row only when retention is enabled' },
+  CallNotesReconcile:   { label: 'Sheet reconcile',            expect: 'expected daily (5am)' },
+  AdpExportAuto:        { label: 'Automated ADP export',       expect: 'expected at period end' },
+  FormDataPurge:        { label: 'Form-data retention purge',  expect: 'writes a row only when retention is enabled' },
+  CallNotesPurge:       { label: 'Call-note retention purge',  expect: 'writes a row only when retention is enabled' },
+  CallNotesArchive:     { label: 'Call-note cold-archive',     expect: 'daily 3am — writes a row only when archival is enabled' },
+  CallNotesArchivePurge:{ label: 'Cold-archive purge',         expect: 'daily 2am — writes a row only when archive retention is enabled' },
 };
 
 /** #1 — Storage Health panel. Independent load (contained failure), mirrors
@@ -8215,6 +8217,7 @@ function cnRenderHealthPanel_(res) {
     eod:    { label: 'EOD unresolved-flag digest', expect: 'hourly trigger — stale past 2h' },
     urgent: { label: 'Urgent-flag digest',         expect: 'daily 8am — stale past 26h' },
     weekly: { label: 'Weekly training/review digests', expect: 'Friday 8am — stale past 8d' },
+    trainingOverdue: { label: 'Training-overdue digest', expect: 'daily 7am — stale past 26h' },
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };
