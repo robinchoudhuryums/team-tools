@@ -167,6 +167,7 @@ const CONFIG = {
     EXTERNAL_LINKS: [],
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
+    DR_SLA_DEFAULT_HOURS: 48,            // DeptRequests v2 — default resolution SLA (per-dept overrides via DR_SLA_TARGETS)
     TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
     REVIEW_DIGEST_WEEKDAY:   5,
     DEPARTMENT_EMAILS: {
@@ -276,6 +277,7 @@ const EMP = {
   EMAIL:0, ID:1, NAME:2, SHEET_ID:3, PAY_CYCLE:4, PAY_ANCHOR:5, IS_MANAGER:6,
   TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10, CALL_NOTES_SHEET_ID:11,
   MANAGER_EMAIL:12,   // column M — the rep's manager (Employee Docs team scoping, T3)
+  DEPARTMENTS:13,     // column N — dept names the rep staffs (DeptRequests v2 inbox routing)
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
@@ -438,7 +440,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v6';   // bumped: ManagerEmail column (T3)
+const ROSTER_CACHE_KEY = 'employee_roster_v7';   // bumped: Departments column N (DeptRequests v2)
 const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
@@ -577,6 +579,9 @@ function getEmployeeState() {
       // Spanish Inbox access — managers OR a SPANISH_INBOX_MEMBERS rep (INV-31
       // amendment); gates the dashboard Spanish card + the metricsSpanish tab.
       canSeeSpanish: canSeeSpanishInbox_(emp),
+      // DeptRequests v2 — the rep's department memberships (canonical names);
+      // gates the Dept Requests "Incoming" inbox section client-side.
+      departments: empDepartments_(emp),
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
       schedule: getShiftSchedule_(empTz),
@@ -3515,6 +3520,9 @@ function getAdminConfig() {
       defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
+      deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
+                 targets: getDeptRequestSlaConfig_(),
+                 departments: Object.keys(getDepartmentEmails_() || {}) },
       featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
       kbAi: (function () {
         const c = getKbAiConfig_();
@@ -3939,6 +3947,15 @@ function getAutomationHealth() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    return computeAutomationHealth_();
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Internal, UN-GATED automation-health report — the body of getAutomationHealth,
+ *  factored out so the manager-gated Admin panel AND the automation-failure push
+ *  (sendAutomationHealthDigest) share ONE computation (no parallel-source drift).
+ *  May throw; every caller wraps it in try/catch. */
+function computeAutomationHealth_() {
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
 
     // ── (a) + (c): one bounded tail scan of the AuditLog ─────────────────
@@ -3975,8 +3992,14 @@ function getAutomationHealth() {
             }
           }
         } else if (AUTOMATION_AUDIT_ACTIONS.indexOf(action) >= 0 && !lastRunByAction[action]) {
+          // `ms` (raw run time) is additive — the Admin panel renders timestampMgr/
+          // notes; sendAutomationHealthDigest uses ms to detect a STALE last run
+          // (the F1 class — a daily job that silently stopped).
+          let _runMs = null;
+          try { _runMs = Utilities.parseDate(tsRaw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); } catch (_) {}
           lastRunByAction[action] = {
             timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+            ms: _runMs,
             notes: String(data[i][9]),
           };
         }
@@ -4028,14 +4051,14 @@ function getAutomationHealth() {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue'].map(function (k) {
+    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder'].map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -4060,7 +4083,71 @@ function getAutomationHealth() {
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
     };
-  } catch (err) { return { error: err.message }; }
+}
+
+/** Daily org-wide automation-FAILURE push (manager-tz 9am). Reuses
+ *  computeAutomationHealth_() and emails MANAGER_EMAILS ONLY when something is
+ *  actually wrong — a stale digest heartbeat, a stale nightly reconcile (the F1
+ *  class: a daily trigger that silently stopped), personal-sheet sync failures,
+ *  or CDR unreachable. A HEALTHY system is silent (no daily nag), mirroring the
+ *  urgent digest's "sends nothing when none". Top-level trigger handler, so it
+ *  carries the MANAGER_EMAILS assertManagerCaller_ gate (INV-44); best-effort
+ *  (INV-14, never throws past the catch); PHI-free. */
+function sendAutomationHealthDigest() {
+  assertManagerCaller_('sendAutomationHealthDigest');
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (!mgrEmails.length) { Logger.log('No manager emails — skipping automation-health digest.'); return; }
+    let report = null;
+    try { report = computeAutomationHealth_(); } catch (e) { Logger.log('automation-health digest: report failed: ' + e.message); }
+    if (!report) return;
+
+    const problems = [];
+    // (a) Stale digest heartbeats — a digest whose last run aged past its window
+    // (a previously-alive trigger that stopped). last:null (never run) is NOT a
+    // problem (fresh deploy / not-yet-installed), matching the panel's posture.
+    (report.digests || []).forEach(function (d) {
+      if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+    });
+    // (b) Reconcile liveness — the ONE unconditional daily job (it writes an audit
+    // row every run), so a stale last-run is the F1 signal (a narrowed
+    // ADMIN_EMAILS / dead trigger). Only flag when a prior run EXISTS but is old
+    // (no row at all = fresh deploy / not installed — same posture as (a)).
+    const RECON_STALE_HOURS = 30;   // daily 5am + margin
+    const recon = (report.automationLastRuns || []).filter(function (a) { return a.action === 'CallNotesReconcile'; })[0];
+    if (recon && recon.last && recon.last.ms && (Date.now() - recon.last.ms) > RECON_STALE_HOURS * 3600000) {
+      problems.push('The nightly Sheets reconcile last ran ' + recon.last.timestampMgr + ' (over ' + RECON_STALE_HOURS + 'h ago) — the trigger may be disabled.');
+    }
+    // (c) Personal-sheet sync failures (a rep's Sheet drifting from the source).
+    if (report.syncFails && report.syncFails.count > 0) {
+      problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
+    }
+    // CDR reachability is deliberately NOT pushed here: it isn't a trigger, an
+    // unset CDR_SS_ID legitimately reads as "unreachable" (would false-nag a
+    // non-CDR deployment daily), and the Admin Storage/Automation Health panels
+    // already surface it. The digest stays scoped to automation-TRIGGER failures.
+
+    if (!problems.length) { Logger.log('automation-health digest: all clear, nothing to send.'); return; }
+
+    const itemsHtml = '<ul style="margin:0;padding-left:18px;">' +
+      problems.map(function (p) { return '<li style="margin:4px 0;">' + esc_(p) + '</li>'; }).join('') + '</ul>';
+    const bodyHtml = '<p style="margin:0 0 10px;">Automated checks found ' + problems.length +
+      ' issue(s) with the Team Tools automation. Open Call Notes → Admin → Automation Health for detail.</p>' + itemsHtml;
+    const textBody = 'Automation health — ' + problems.length + ' issue(s):\n\n' +
+      problems.map(function (p) { return '• ' + p; }).join('\n') +
+      '\n\nOpen Call Notes → Admin → Automation Health for detail.';
+    try {
+      MailApp.sendEmail({
+        to: mgrEmails.join(','),
+        subject: 'Team Tools — automation health: ' + problems.length + ' issue(s) need attention',
+        body: textBody,
+        htmlBody: buildBrandedEmailHtml_('Automation health needs attention', bodyHtml, { tone: 'warn', subLabel: 'Automation Health' }),
+      });
+    } catch (mailErr) { Logger.log('automation-health digest send failed: ' + mailErr.message); }
+    Logger.log('sendAutomationHealthDigest: ' + problems.length + ' issue(s) emailed to ' + mgrEmails.length + ' manager(s).');
+  } catch (err) {
+    Logger.log('sendAutomationHealthDigest failed: ' + err.message);
+  }
 }
 
 /** Storage Health (#1) — manager-gated, read-only one-pane-of-glass over every
@@ -7464,8 +7551,13 @@ function purgeArchivedCallNotes() {
  *  Manager-gated + locked; per-rep Sheet failures are skipped. Content fields
  *  are NEVER modified. Writes a CallNotesReconcile audit row. */
 function reconcileCallNotes() {
-  const callerEmp = getEmployeeInfo_();
-  if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+  // F1/F2 — this is a DAILY TRIGGER handler (runs as the installer) AS WELL AS a
+  // manual Admin-tab button, so it MUST use the MANAGER_EMAILS trigger-handler
+  // gate (assertManagerCaller_, the INV-44 idiom), NOT emp.isAdmin: under a
+  // narrowed ADMIN_EMAILS, or a MANAGER_EMAILS installer who isn't a roster
+  // employee, an admin/roster gate silently no-ops the nightly reconcile (INV-109).
+  assertManagerCaller_('reconcileCallNotes');
+  const callerEmp = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -7547,6 +7639,8 @@ function installAutomationTriggers() {
     'purgeOldCallNotes',
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
+    'sendAutomationHealthDigest',
+    'sendDeptRequestReminderDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -7614,6 +7708,19 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendTrainingOverdueDigest')
     .timeBased().atHour(7).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Automation-FAILURE push (manager-tz 9am, AFTER the nightly jobs + digests so
+  // the report reflects their latest runs). Emails MANAGER_EMAILS ONLY when a
+  // check is failing (stale heartbeat / stale reconcile / sync-fails / CDR down);
+  // silent when healthy. Turns a silently-dead nightly trigger (the F1 class)
+  // into a push instead of relying on a manager opening the Health panel.
+  ScriptApp.newTrigger('sendAutomationHealthDigest')
+    .timeBased().atHour(9).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // DeptRequests v2 — daily manager-tz 10am reminder of OPEN dept requests past
+  // their SLA (manager summary; silent when none).
+  ScriptApp.newTrigger('sendDeptRequestReminderDigest')
+    .timeBased().atHour(10).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -7659,6 +7766,8 @@ function removeAutomationTriggers() {
     'purgeOldCallNotes',
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
+    'sendAutomationHealthDigest',
+    'sendDeptRequestReminderDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -9528,6 +9637,65 @@ function getOrCreateDeptRequestsSheet_() {
 }
 function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss"); }
 
+/** Pure (Node-pinned) — parse a roster Departments cell (col N) into canonical
+ *  dept names. Splits on `;`/`,`, matches each token case-insensitively against
+ *  the known department keys (`validKeys`) and returns the CANONICAL key casing,
+ *  deduped; UNKNOWN names are dropped (a typo can't route an inbox to nowhere).
+ *  DeptRequests v2 membership (INV-138). */
+function drParseDepartments_(raw, validKeys) {
+  const lc = {};
+  (validKeys || []).forEach(function (k) { lc[String(k).toLowerCase().trim()] = k; });
+  const out = [], seen = {};
+  String(raw || '').split(/[;,]/).forEach(function (tok) {
+    const t = String(tok).toLowerCase().trim();
+    if (!t || !lc[t] || seen[lc[t]]) return;
+    seen[lc[t]] = true; out.push(lc[t]);
+  });
+  return out;
+}
+
+/** The caller's resolved department memberships (canonical names), validated
+ *  against the LIVE department map. Empty for reps not on a dept desk. */
+function empDepartments_(emp) {
+  if (!emp || !emp.departmentsRaw) return [];
+  return drParseDepartments_(emp.departmentsRaw, Object.keys(getDepartmentEmails_() || {}));
+}
+
+/** Pure (Node-pinned) — SLA status from elapsed minutes vs an SLA in hours
+ *  (wall-clock): `ontime` / `atrisk` (≥75% of SLA) / `overdue` (≥100%). A null
+ *  age or non-positive SLA → null (no badge). DeptRequests v2 (INV-138). */
+function drSlaStatus_(ageMin, slaHours) {
+  if (ageMin == null || !(slaHours > 0)) return null;
+  const frac = ageMin / (slaHours * 60);
+  if (frac >= 1) return 'overdue';
+  if (frac >= 0.75) return 'atrisk';
+  return 'ontime';
+}
+
+/** Per-department SLA target map ({dept: hours}) from Script Property
+ *  DR_SLA_TARGETS, sanitized on read (bad blob → {}). */
+function getDeptRequestSlaConfig_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('DR_SLA_TARGETS');
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (_) { return {}; }
+}
+
+/** SLA (hours) for a department — per-dept override (case-insensitive) from the
+ *  config map, else CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS. Pass an already-read
+ *  `map` to avoid a Script-Property read per row in a loop. */
+function getDeptRequestSla_(dept, map) {
+  const def = CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48;
+  const cfg = map || getDeptRequestSlaConfig_();
+  const want = String(dept || '').toLowerCase().trim();
+  for (const k in cfg) {
+    if (String(k).toLowerCase().trim() === want) { const h = parseInt(cfg[k], 10); return (h > 0) ? h : def; }
+  }
+  return def;
+}
+
 /** Minimize a recipient list to its unique domain(s) for the PHI-free
  *  DeptRequests ToEmail column. The "Other" department lets a rep enter a
  *  free-text (possibly external/customer) address, and the store can fall back
@@ -9620,13 +9788,20 @@ function resolveDeptRequest(requestId) {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Your account is not registered.' };
     const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
-    let owner = null;
+    let owner = null, toDept = '';
     for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][DR.REQ_ID]) === String(requestId)) { owner = String(rows[i][DR.BY_ID]).trim(); break; }
+      if (String(rows[i][DR.REQ_ID]) === String(requestId)) {
+        owner = String(rows[i][DR.BY_ID]).trim();
+        toDept = String(rows[i][DR.TO_DEPT] || '').toLowerCase().trim();
+        break;
+      }
     }
     if (owner === null) return { success: false, error: 'Request not found.' };
-    if (owner !== emp.id && !emp.isManager)
-      return { success: false, error: 'Only the sender or a manager can resolve this request.' };
+    // v2: a member of the RECEIVING department can also resolve in-app (the
+    // "receiving agent marks resolved" path), alongside the sender + any manager.
+    const isDeptMember = empDepartments_(emp).some(function (d) { return String(d).toLowerCase() === toDept; });
+    if (owner !== emp.id && !emp.isManager && !isDeptMember)
+      return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
     const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '');
     if (!res.found) return { success: false, error: 'Request not found.' };
     return { success: true, already: !!res.already };
@@ -9692,6 +9867,10 @@ function getDeptRequests() {
     const fmtTs = function (ms) {
       return ms ? Utilities.formatDate(new Date(ms), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a') : '';
     };
+    // SLA config read ONCE (not per row); each item carries slaHours + slaStatus
+    // (ontime/atrisk/overdue) — for open rows it's current age, for resolved rows
+    // whether resolution beat the SLA (v2 phase 3).
+    const slaCfg = getDeptRequestSlaConfig_();
     for (let i = 0; i < rows.length; i++) {   // i=0: tail slice has no header row
       const r = rows[i];
       if (!r[DR.REQ_ID]) continue;
@@ -9699,12 +9878,14 @@ function getDeptRequests() {
       const resolvedMs = r[DR.STATUS] === 'resolved' ? parseMs(r[DR.RESOLVED_AT]) : null;
       const elapsedMin = (resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000)
                         : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
+      const slaHours = getDeptRequestSla_(String(r[DR.TO_DEPT] || ''), slaCfg);
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
         status: String(r[DR.STATUS] || 'open'), resolvedAt: fmtTs(resolvedMs),
         resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
         elapsedMin: elapsedMin,
+        slaHours: slaHours, slaStatus: drSlaStatus_(elapsedMin, slaHours),
       };
       all.push(item);
       if (String(r[DR.BY_ID]).trim() === emp.id) mine.push(item);
@@ -9713,27 +9894,145 @@ function getDeptRequests() {
     // Departments the composer can target — only those with a resolvable email.
     const deptMap = getDepartmentEmails_() || {};
     const departments = Object.keys(deptMap).filter(function (d) { return !!deptMap[d]; });
-    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments, truncated: truncated };
+    // DeptRequests v2 — the "Incoming" inbox: OPEN requests addressed to a
+    // department the caller staffs (roster column N). PHI-free (requester name +
+    // label + age). A rep on no dept desk gets []. Managers also get allOpen below.
+    const myDepts = empDepartments_(emp);
+    const myDeptsLc = {};
+    myDepts.forEach(function (d) { myDeptsLc[String(d).toLowerCase()] = true; });
+    const incoming = myDepts.length
+      ? all.filter(function (it) { return it.status === 'open' && myDeptsLc[String(it.toDept).toLowerCase().trim()]; })
+            .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100)
+      : [];
+    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments,
+                     myDepts: myDepts, incoming: incoming, truncated: truncated };
     if (emp.isManager) {
       const byDept = {};
       all.forEach(function (it) {
         const k = it.toDept || '—';
-        if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, durations: [] };
+        if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, overdueOpen: 0, durations: [] };
         if (it.status === 'resolved') { byDept[k].resolved++; if (it.elapsedMin != null) byDept[k].durations.push(it.elapsedMin); }
-        else byDept[k].open++;
+        else { byDept[k].open++; if (it.slaStatus === 'overdue') byDept[k].overdueOpen++; }
       });
       result.deptStats = Object.keys(byDept).map(function (k) {
         const b = byDept[k];
         b.durations.sort(function (x, y) { return x - y; });
         const avg = b.durations.length ? Math.round(b.durations.reduce(function (s, x) { return s + x; }, 0) / b.durations.length) : null;
         const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
-        return { dept: b.dept, open: b.open, resolved: b.resolved, avgMinutes: avg, medianMinutes: med };
+        return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
+                 slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
       }).sort(function (a, b) { return b.open - a.open; });
       result.allOpen = all.filter(function (it) { return it.status === 'open'; })
         .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100);
     }
     return result;
   } catch (err) { return { error: err.message }; }
+}
+
+/** Admin-gated (INV-136): read the DeptRequests SLA config for the editor —
+ *  the per-dept overrides + the default + the known departments. */
+function getDeptRequestSla() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    return {
+      defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
+      targets: getDeptRequestSlaConfig_(),
+      departments: Object.keys(getDepartmentEmails_() || {}),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Admin-gated (INV-136 / INV-57 family): persist the per-dept SLA target map to
+ *  Script Property DR_SLA_TARGETS. Each value is whole hours 1–720; unknown depts
+ *  and entries equal to the default are dropped (keeps the map lean). Writes an
+ *  AdminConfigChange audit row. */
+function saveDeptRequestSla(map) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (map == null || typeof map !== 'object' || Array.isArray(map)) return { success: false, error: 'Invalid SLA map.' };
+    const validDepts = {};
+    Object.keys(getDepartmentEmails_() || {}).forEach(function (d) { validDepts[String(d).toLowerCase().trim()] = d; });
+    const def = CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48;
+    const clean = {};
+    for (const k in map) {
+      const canon = validDepts[String(k).toLowerCase().trim()];
+      if (!canon) continue;                          // drop unknown departments
+      const h = parseInt(map[k], 10);
+      if (!(h > 0)) continue;                         // blank/0 → fall back to default (omit)
+      if (h > 720) return { success: false, error: 'SLA for "' + canon + '" must be 1–720 hours.' };
+      if (h === def) continue;                        // equals default → omit (lean map)
+      clean[canon] = h;
+    }
+    PropertiesService.getScriptProperties().setProperty('DR_SLA_TARGETS', JSON.stringify(clean));
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'Updated Dept-Request SLA targets (' + Object.keys(clean).length + ' override(s))', emp.email);
+    return { success: true, targets: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Daily manager-tz reminder of OPEN department requests past their SLA — a
+ *  PHI-free summary push to MANAGER_EMAILS (the operator chose a manager summary
+ *  over per-dept member nudges). Silent when nothing is overdue (the urgent-digest
+ *  posture). Top-level trigger handler (assertManagerCaller_ INV-44, best-effort
+ *  INV-14, never throws past the catch). Heartbeat-stamped. DeptRequests v2 phase 4. */
+function sendDeptRequestReminderDigest() {
+  assertManagerCaller_('sendDeptRequestReminderDigest');
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (!mgrEmails.length) { Logger.log('No manager emails — skipping dept-request reminder.'); return; }
+    const sh = getOrCreateDeptRequestsSheet_();
+    const lastRow = sh.getLastRow();
+    const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+    const numRows = lastRow - firstData + 1;
+    const rows = numRows > 0 ? sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues() : [];
+    const slaCfg = getDeptRequestSlaConfig_();
+    const overdue = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r[DR.REQ_ID] || String(r[DR.STATUS]) === 'resolved') continue;
+      const cv = r[DR.CREATED_AT];
+      const createdMs = (cv instanceof Date) ? cv.getTime() : parseTimestampMs_(String(cv || ''), CONFIG.TIMEZONE);
+      if (!createdMs) continue;
+      const ageMin = Math.round((Date.now() - createdMs) / 60000);
+      const dept = String(r[DR.TO_DEPT] || '');
+      if (drSlaStatus_(ageMin, getDeptRequestSla_(dept, slaCfg)) !== 'overdue') continue;
+      overdue.push({ dept: dept || '—', byName: String(r[DR.BY_NAME] || ''),
+                     label: String(r[DR.LABEL] || ''), ageHours: Math.round(ageMin / 60) });
+    }
+    stampDigestLastRun_('deptReqReminder');
+    if (!overdue.length) { Logger.log('dept-request reminder: nothing overdue.'); return; }
+
+    const byDept = {};
+    overdue.forEach(function (o) { (byDept[o.dept] = byDept[o.dept] || []).push(o); });
+    const depts = Object.keys(byDept).sort();
+    let bodyHtml = '<p style="margin:0 0 10px;">' + overdue.length +
+      ' open department request(s) are past their resolution SLA. Open Metrics → Dept Requests for the full list + to mark them resolved.</p>';
+    depts.forEach(function (dept) {
+      bodyHtml += '<div style="margin:10px 0 4px;font-weight:700;">' + esc_(dept) + ' (' + byDept[dept].length + ')</div><ul style="margin:0;padding-left:18px;">';
+      byDept[dept].slice(0, 25).forEach(function (o) {
+        bodyHtml += '<li style="margin:3px 0;">' + esc_(o.label || 'request') + ' — ' + esc_(o.byName || 'unknown') + ' · ' + o.ageHours + 'h open</li>';
+      });
+      bodyHtml += '</ul>';
+    });
+    const textBody = overdue.length + ' overdue department request(s):\n\n' + depts.map(function (dept) {
+      return dept + ' (' + byDept[dept].length + '):\n' + byDept[dept].slice(0, 25).map(function (o) {
+        return '  • ' + (o.label || 'request') + ' — ' + (o.byName || 'unknown') + ' · ' + o.ageHours + 'h open';
+      }).join('\n');
+    }).join('\n\n') + '\n\nOpen Metrics → Dept Requests for the full list.';
+    try {
+      MailApp.sendEmail({
+        to: mgrEmails.join(','),
+        subject: 'Team Tools — ' + overdue.length + ' department request(s) past SLA',
+        body: textBody,
+        htmlBody: buildBrandedEmailHtml_('Department requests past SLA', bodyHtml, { tone: 'warn', subLabel: 'Dept Requests' }),
+      });
+    } catch (mailErr) { Logger.log('dept-request reminder send failed: ' + mailErr.message); }
+    Logger.log('sendDeptRequestReminderDigest: ' + overdue.length + ' overdue emailed to ' + mgrEmails.length + ' manager(s).');
+  } catch (err) {
+    Logger.log('sendDeptRequestReminderDigest failed: ' + err.message);
+  }
 }
 
 // IANA timezone aliases that resolve to the SAME zone (identical offset + rules).
@@ -9856,6 +10155,7 @@ function getEmployeeInfo_() {
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
         managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
+        departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),   // parsed lazily via empDepartments_
       };
     }
   }
@@ -9885,6 +10185,7 @@ function lookupEmployeeById_(empId) {
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       ptoEnabled,
       managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
+      departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),
     };
   }
   return null;
@@ -11565,10 +11866,14 @@ function getIntakeAgents() {
 // (2) the diagnostic toast is removed. `allProducts` is the raw 2D Offerings
 // array [features, hcpcs, weightCap, seatType, pdfLink, imageUrl]. Pure +
 // self-contained so the Node harness can unit-test the eligibility branches.
-function intakeFilterRecommendations_(answers, allProducts) {
+/** Pure — derive the PPD engine's clinical decision FACTORS from the raw answer
+ *  map (bare question numbers). Extracted from intakeFilterRecommendations_ so the
+ *  engine AND the read-only explainability surface (intakeExplainFactors_) share
+ *  ONE derivation — no parallel-source drift (INV-112). Returns the patient flag
+ *  bag + the eligibility booleans; the engine destructures these back into the
+ *  same local names so the rest of the engine is byte-for-byte unchanged. */
+function intakeDeriveClinicalFactors_(answers) {
   answers = answers || {};
-  allProducts = allProducts || [];
-
   const getAnswerText = (q) => String(answers[q] == null ? '' : answers[q]).toLowerCase().trim();
   const isPositive = (q) => { const a = getAnswerText(q); return a.includes('yes') || a.includes('true'); };
 
@@ -11622,6 +11927,66 @@ function intakeFilterRecommendations_(answers, allProducts) {
   const isSPOEligible = patient.hasSwelling || patient.hasPressureUlcers || isNeuroEligible ||
                         patient.usesCatheters || patient.hasSpineCurvature || patient.hasAmputation;
   const isMPOEligible = patient.usesCatheters || isNeuroEligible;
+
+  return {
+    patient: patient,
+    qualifiesForHemiplegia: qualifiesForHemiplegia,
+    hasStrokeWeakness: hasStrokeWeakness,
+    hemiplegiaSide: hemiplegiaSide,
+    hasValidNeuroDiagnosis: !!hasValidNeuroDiagnosis,
+    isNeuroEligible: isNeuroEligible,
+    isSPOEligible: isSPOEligible,
+    isMPOEligible: isMPOEligible,
+  };
+}
+
+/** Pure — a read-only, human-readable EXPLANATION of the engine's decision
+ *  factors for a PPD answer set (manager-auditable; INV-112 explainability).
+ *  Reuses intakeDeriveClinicalFactors_ (so it can never drift from what the
+ *  engine actually evaluated) and returns a flat list of `{label, value}` rows
+ *  — the clinical inputs that drive solid-seat / Group-3 / SPO / MPO eligibility
+ *  + the substitutions. PHI: derived from the patient's own answers (already in
+ *  the submission); adds no new data. */
+function intakeExplainFactors_(answers) {
+  const F = intakeDeriveClinicalFactors_(answers);
+  const p = F.patient;
+  const yn = (b) => b ? 'Yes' : 'No';
+  const rows = [];
+  rows.push({ label: 'Weight', value: p.weight ? (p.weight + ' lbs') : 'not provided' });
+  rows.push({ label: 'Valid neuro diagnosis (Q43)', value: F.hasValidNeuroDiagnosis ? ('Yes — "' + p.neuroCondition + '"') : 'No' });
+  rows.push({ label: 'Spasticity (Q32)', value: yn(p.hasSpasticity) });
+  rows.push({ label: 'Hemiplegia from stroke (Q31a)', value: F.qualifiesForHemiplegia ? ('Yes — ' + F.hemiplegiaSide + ' side') : (F.hasStrokeWeakness ? 'Weakness only (no hemiplegia)' : 'No') });
+  rows.push({ label: 'Amputation (Q34)', value: yn(p.hasAmputation) });
+  rows.push({ label: 'Pressure ulcers (Q33)', value: yn(p.hasPressureUlcers) });
+  rows.push({ label: 'Spinal curvature (Q35)', value: yn(p.hasSpineCurvature) });
+  rows.push({ label: 'Lower-extremity numbness (Q25)', value: yn(p.hasLowerExtremityNumbness) });
+  rows.push({ label: 'Uses catheters (Q30)', value: yn(p.usesCatheters) });
+  rows.push({ label: 'Swelling/edema (Q36)', value: yn(p.hasSwelling) });
+  rows.push({ label: 'On oxygen (Q44)', value: yn(p.isOnOxygen) + (p.isOnOxygen ? ' — excludes K0837/K0838' : '') });
+  // Derived eligibility — the gates the engine applies to the catalog.
+  rows.push({ label: 'Solid-seat required', value: yn(p.hasSpineCurvature || p.hasPressureUlcers || p.hasSpasticity || F.hasValidNeuroDiagnosis || F.qualifiesForHemiplegia || F.hasStrokeWeakness || p.hasLowerExtremityNumbness || p.usesCatheters || p.hasAmputation) });
+  rows.push({ label: 'Group-3 / neuro eligible', value: yn(F.isNeuroEligible) });
+  rows.push({ label: 'Power-tilt (SPO) eligible', value: yn(F.isSPOEligible) });
+  rows.push({ label: 'Power-options (MPO) eligible', value: yn(F.isMPOEligible) });
+  return rows;
+}
+
+function intakeFilterRecommendations_(answers, allProducts) {
+  answers = answers || {};
+  allProducts = allProducts || [];
+
+  // Decision factors derived ONCE via the shared helper, destructured back into
+  // the original local names so the filter / substitution / justify logic below
+  // is unchanged (the explainability surface reuses the same derivation).
+  const F = intakeDeriveClinicalFactors_(answers);
+  const patient = F.patient;
+  const qualifiesForHemiplegia = F.qualifiesForHemiplegia;
+  const hasStrokeWeakness = F.hasStrokeWeakness;
+  const hemiplegiaSide = F.hemiplegiaSide;
+  const hasValidNeuroDiagnosis = F.hasValidNeuroDiagnosis;
+  const isNeuroEligible = F.isNeuroEligible;
+  const isSPOEligible = F.isSPOEligible;
+  const isMPOEligible = F.isMPOEligible;
 
   const inherentlySolidCodes = [
     'K0822', 'K0824', 'K0826', 'K0828',
@@ -12256,6 +12621,11 @@ function intakeGetSubmission(formType, submissionId) {
     if (isPpd) {
       result.recommendations = parse(row[7]);
       result.selections = parse(row[8]);
+      // Read-only engine explainability (manager-auditable) — recomputed from the
+      // STORED answers via the same derivation the engine used (intakeExplainFactors_
+      // → intakeDeriveClinicalFactors_), so there's no schema change and it can
+      // never drift from what actually fired. PHI-free beyond the answers already here.
+      result.factors = intakeExplainFactors_(result.answers);
     } else {
       // DOB is user-typed text but Sheets may coerce a date-like value
       result.dob = (row[5] instanceof Date)

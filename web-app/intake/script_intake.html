@@ -1358,6 +1358,17 @@ function intakeRenderSentDetail_(d) {
           '<div style="font-size:.82rem;color:var(--muted)">' + esc(bits.join(' · ') || '—') + '</div></div>';
       });
     }
+    // Read-only engine explainability — the clinical factors the recommendation
+    // engine derived from these answers (server `factors`, recomputed via the
+    // shared derivation so it can't drift). Makes "why this HCPCS fired" auditable
+    // without re-reading the engine. Every value esc()'d before innerHTML.
+    if (d.factors && d.factors.length) {
+      rowsHtml += '<div class="intk-head">Why these recommendations · engine factors</div>';
+      d.factors.forEach(function (f) {
+        rowsHtml += '<div class="intk-row"><div class="q" style="font-weight:400">' + esc(String(f.label)) + '</div>' +
+          '<div style="font-size:.82rem">' + esc(String(f.value)) + '</div></div>';
+      });
+    }
   } else {
     var bank = (d.formType === 'PAP') ? INTAKE_PAP_Q : INTAKE_PMD_Q;
     var L = (d.formType === 'PAP') ? INTAKE_PAP_CLIENT : INTAKE_PMD_CLIENT;

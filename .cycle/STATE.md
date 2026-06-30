@@ -2,11 +2,154 @@
 
 ## Current
 Cycle: 6
-Phase: idle — operator-feedback feature work (NOT an audit cycle); all merged to main
-Scope: dashboards + Manage module + admin tier + Reference KB-authoring gating + clock/icon polish
+Phase: implement — broad-scan follow-through + DeptRequests v2 (all 4 phases) on claude/broad-scan-2ll5ok (pushed, not merged)
+Scope: cycle-6-regression fixes + self-defending CI + automation push + P3 strategic depth + DeptRequests v2
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-06-29 (operator-feedback session — see "Where I left off" at the bottom)
+Updated: 2026-06-30 (broad-implement: F1–F11, P1, automation digest, coupling registry, intake explainability, DeptRequests v2)
+
+## Cycle 6 — DeptRequests v2 (all 4 phases, 2026-06-30, claude/broad-scan-2ll5ok)
+Planned (decisions: roster column N membership; manager-summary reminder;
+wall-clock SLA; 48h default) then built as 4 commits + a docs commit:
+- P1 membership: EMP.DEPARTMENTS col N; ROSTER_CACHE_KEY v6→v7; departmentsRaw on
+  the roster readers; pure Node-pinned drParseDepartments_ + empDepartments_;
+  getEmployeeState ships departments.
+- P2 incoming inbox: getDeptRequests → myDepts+incoming (open requests to the
+  caller's depts; PHI-free); resolveDeptRequest widened to sender OR manager OR
+  receiving-dept MEMBER; client Incoming section; integration test.
+- P3 SLA: DR_SLA_DEFAULT_HOURS=48 + DR_SLA_TARGETS property; getDeptRequestSla_/
+  Config_ + pure drSlaStatus_ (ontime/atrisk≥75%/overdue≥100%); slaHours+slaStatus
+  per item + overdueOpen per dept; admin-gated getDeptRequestSla/saveDeptRequestSla
+  (folded into getAdminConfig); client SLA chips + Overdue column + Admin editor.
+- P4 reminder digest: sendDeptRequestReminderDigest (13th trigger, manager-tz 10am,
+  manager summary, silent when none); heartbeat deptReqReminder added to
+  DIGEST_STALE_HOURS+digestHealth (server) + DIGEST_LABELS (client) — the F5
+  coupling registry enforced the client label. Gate test added.
+NEW INV-138; INV-44 12→13; INV-136 28→30; INV-28 v7. Pure harness 188→207/0;
+node --check clean. The trigger-wiring + F1 gate-type + F5 coupling tripwires all
+validate the 13th trigger.
+OPERATOR (new): populate roster column N (Departments) for dept-desk reps; re-run
+installAutomationTriggers() for the 13th trigger; optional DR_SLA_TARGETS via the
+Admin editor (else 48h default); runAllTests() (new deptReq + SLA-gate tests).
+
+## Cycle 6 broad-implement — coupling registry + intake explainability (2026-06-30)
+Two P3 strategic-depth items:
+- Coupling-tripwire registry (test/client/run.js): a declarative COUPLING_REGISTRY
+  + generic runner for SOURCE-LEVEL key-set ⊆ couplings (the Axis-B drift net).
+  Reusable extractors (topLevelObjectKeys_/flatObjectKeys_/stringArrayItems_).
+  Seeded with the 2 F5 Automation-Health label couplings (replaced their ad-hoc
+  tests). The next such coupling is ONE entry. Vm-dependent / custom-shaped
+  couplings (day-type validator, trigger wiring, gate-type, intake layout mirror,
+  forms-ID mirror, token hygiene, SUBMITTED_AT coercion) stay bespoke — documented.
+- Intake recommendation explainability (Code.js + intake client): extracted the
+  engine's clinical-factor derivation into the shared pure intakeDeriveClinicalFactors_
+  (engine destructures it back into the SAME locals — filter/justify byte-for-byte
+  unchanged, so NO drift from the explainability surface). New pure
+  intakeExplainFactors_ → flat {label,value}[] of the factors that drove the rec.
+  intakeGetSubmission returns `factors` for PPD (recomputed from STORED answers —
+  no schema change); the Sent detail renders a read-only "Why these recommendations
+  · engine factors" block (every value esc()'d). Manager-auditable (+ rep sees own).
+  Node harness updated (loads the 2 helpers into the engine vm ctx) + 2 explain
+  tests; the 5 engine tests still pass = behavior-preserving. INV-112/INV-116 updated.
+DECISIONS: explainability reuses the engine's OWN derivation (shared helper) rather
+than re-deriving — the only drift-free design (and the very genus the coupling
+registry fights). Recompute-from-stored-answers avoids a schema migration. Registry
+scoped to source-level key-set couplings (the clean, generalizable shape); didn't
+force-migrate differently-shaped tripwires (would weaken them). Pure harness 204/0;
+node --check clean. NEXT: operator deploy (clasp push -f + New version); no new
+Script Properties/triggers/migrations for these two.
+
+## Cycle 6 broad-implement P1 + automation-failure digest (2026-06-30, claude/broad-scan-2ll5ok)
+Post-F1–F11 follow-up batch (the audit's strategic gaps + the top P2 feature):
+- P1#1 (test/client/run.js): trigger-GATE-TYPE tripwire — every install-TARGETS
+  handler must call assertManagerCaller_ AND reference no `.isAdmin` IN CODE
+  (comment-stripped first — reconcile's comment legitimately says "NOT emp.isAdmin").
+  Would have caught F1. The prior tripwire only checked trigger WIRING, not gate type.
+- P1#2 (run.js): Automation-Health label-map tripwire — client DIGEST_LABELS ⊇
+  server DIGEST_STALE_HOURS keys + CN_HEALTH_RUN_LABELS ⊇ AUTOMATION_AUDIT_ACTIONS.
+  Would have caught F5. Source-level regex (top-level line-anchored keys).
+- P1#3 (CLAUDE.md): folded the F7 LunchIn→doorExit morph note into the
+  "Punch-button motion" decision.
+- Automation-failure digest (Code.js): NEW sendAutomationHealthDigest — daily
+  manager-tz 9am, 12th trigger. Reuses the UN-gated computeAutomationHealth_
+  (extracted from getAutomationHealth — the gate stays in the wrapper, ONE shared
+  computation, no parallel-source drift). Emails MANAGER_EMAILS ONLY on a failing
+  check: stale digest heartbeat / stale nightly reconcile (the F1 class, via the
+  new additive automationLastRuns[].last.ms field, >30h) / personal-sheet
+  sync-fails. Silent when healthy; "never ran yet" not flagged. CDR DROPPED from
+  the push (unset CDR_SS_ID would false-nag a non-CDR deploy; panels still show
+  it). assertManagerCaller_ gate (INV-44, passes the new gate-type tripwire),
+  best-effort, PHI-free. Wired into BOTH TARGETS; gate test added. NEW INV-137.
+DECISIONS: digest scoped to automation-TRIGGER failures (not integration/CDR) so
+"silent when healthy" holds for every deployment. Watcher has no heartbeat/audit
+row of its own (verify from the trigger list) — accepted (meta-watcher out of
+scope). computeAutomationHealth_ may throw; every caller wraps it.
+Pure harness 188→202/0; node --check clean. NEXT: operator deploy (clasp push -f +
+New version) — re-run installAutomationTriggers() to wire the 12th trigger +
+runAllTests() (new gate test). DOM harness via CI.
+
+## Cycle 6 broad-implement F7–F11 (2026-06-30, branch claude/broad-scan-2ll5ok)
+The Low-tier remainder of the broad-scan, all client-only (no Code.js change):
+- F7 (tc/script_clock.html): PUNCH_MORPH.LunchIn.to headset→doorExit — a lunch
+  RETURN sets afterLunch, making ClockOut (doorExit) the next primary, so the
+  morph now carries seamlessly into the re-render (the #103 afterLunch change had
+  left it landing on the old LunchOut-primary headset).
+- F8 (cn/script_callnotes.html): cnToggleFlag_ training branch re-resolves the
+  note from state AFTER the async uiPrompt (a 60s ambient refresh can replace the
+  slot via cnReplaceNoteInState_, detaching the captured ref); fresh prev/next on
+  the current object; null-safe if deleted mid-prompt. INV-56/48 preserved.
+- F9 (cn/script_callnotes.html): cnToggleMoreMenu_ gained outside-click + Escape
+  dismissal via a SINGLE self-removing capture-phase document listener
+  (cnCloseMoreMenus_ + _cnMoreMenuCloser); opening one menu closes others; no
+  accumulating-listener leak (bounded to 1, self-heals on next mousedown).
+- F10 (script_core.html): dispTime() now esc()'s its malformed-input verbatim
+  fallback (several callers inject its output via innerHTML) — defense-in-depth;
+  the formatted branch (valid times) is unchanged.
+- F11 (train/script_empdocs.html): void-reason prompt copy now says the reason is
+  SHOWN TO THE EMPLOYEE ("keep it free of internal/sensitive notes") — closes the
+  manager-assumes-private exposure risk without a data-model change/operator call.
+DECISIONS: F7 fixes the morph to honor the documented carry-through invariant
+(doorExit) rather than rewriting the doc. F11 resolved via labeling (not server
+withholding) — the employee SHOULD know why their doc was voided; the risk was
+the false-privacy assumption, which the prompt now removes. F8 happy-path is
+byte-identical; the fix only bites the replaced-slot edge. Pure harness 188/0;
+node --check clean. The DOM harness exercises cnToggleFlag_('action') (NOT the
+training branch), so no double encoded the old behavior. NEXT: operator deploy
+(clasp push -f + New version) — F1–F11 all ride one deploy.
+
+## Cycle 6 broad-scan + implement F1–F6 (2026-06-30, branch claude/broad-scan-2ll5ok)
+AUDIT: 4 parallel deep-read agents + independent verification of every concrete
+finding. Result = NO Critical/High (5th consecutive). One Medium regression (F1)
+from #102/INV-136 + 9 Lows. IMPLEMENTED F1–F6 (NOT yet pushed):
+- F1/F2 (Medium, the headline): reconcileCallNotes is a daily TRIGGER but #102
+  moved its gate to emp.isAdmin — under a narrowed ADMIN_EMAILS (or a non-roster
+  installer) the nightly 5am run silently no-op'd, leaving hand-entered rows
+  un-indexed forever. Reverted to assertManagerCaller_ (the INV-44 trigger idiom,
+  like the other 10 handlers); audit actor falls back to _SYSTEM_AUDIT_EMP_ for a
+  non-roster installer. test_reconcileCallNotes_nonManagerRejected now asserts the
+  throw. INV-109 + INV-136 (29→28 admin endpoints) updated in CLAUDE.md.
+- F3 (Low): submitPunch animated `.actions .prime` not the CLICKED button — after
+  a lunch return (ClockOut=prime, LunchOut demoted) a 2nd-lunch click morphed the
+  wrong button. Now targets `[data-action=<punchType>]`, falls back to .prime.
+- F4 (Low): 3 coaching failure handlers did showToast(esc(...)) but showToast uses
+  textContent → entities shown literally. Dropped the redundant esc().
+- F5 (Low): Automation Health client label maps stale vs server — added
+  trainingOverdue to DIGEST_LABELS + CallNotesArchive/CallNotesArchivePurge to
+  CN_HEALTH_RUN_LABELS (were rendering raw keys).
+- F6 (Low): clkRefreshState_ re-renders the WHOLE clock view on every 20s focus
+  wake, flashing the teammate skeleton + blanking the note-volume histogram +
+  refiring 2 RPCs. Added small module SWR caches (CLK_TEAMMATE_CACHE /
+  CLK_NOTEVOL_CACHE): paint last-good instantly, refetch in background, skeleton
+  only on first load. Same payload cached (INV-24 preserved — no new fields).
+DEFERRED (out of F1–F6 scope, noted for next session): F7 morph carry-through
+LunchIn→ClockOut (cosmetic), F8 training-flag note-ref across async uiPrompt
+(edge), F9 CN more-menu no outside-click close, F10 dispTime() unescaped (latent),
+F11 EmpDocs voidReason shown to employee (design Q). Plus the strategic suggestion:
+a CI tripwire asserting no trigger-TARGETS handler uses an isAdmin/roster gate
+(would have caught F1) + a client-label-map ⊇ server-keys tripwire (F5 class).
+Pure harness 188/0; node --check clean (Code.js + Tests.js). DOM harness needs
+npm ci (CI runs it). NEXT: operator deploy (clasp push -f + New version) +
+runAllTests() in editor (the only check on the reconcile gate test change).
 
 ## Cycle 6 retention 3rd-tier + include-archive search (2026-06-23, branch claude/happy-faraday-0grppg)
 Closed the two archive follow-ons (pushed). Retention is now a full 3-tier system.

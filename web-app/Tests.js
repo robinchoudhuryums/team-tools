@@ -899,6 +899,7 @@ function _runAllTests() {
   _integrationTest('managerGates_rejectNonManager',           test_managerGates_rejectNonManager);
   // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
   _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
+  _integrationTest('deptReq_incomingAndMemberResolve',        test_deptReq_incomingAndMemberResolve);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
@@ -956,6 +957,8 @@ function _runAllTests() {
   _integrationTest('triggerGate_purgeExpiredFormData_nonManagerThrows', test_triggerGate_purgeExpiredFormData_nonManagerThrows);
   _integrationTest('triggerGate_removeAutomationTriggers_nonManagerThrows', test_triggerGate_removeAutomationTriggers_nonManagerThrows);
   _integrationTest('triggerGate_trainingOverdue_nonManagerThrows', test_triggerGate_trainingOverdue_nonManagerThrows);
+  _integrationTest('triggerGate_automationHealthDigest_nonManagerThrows', test_triggerGate_automationHealthDigest_nonManagerThrows);
+  _integrationTest('triggerGate_deptReqReminder_nonManagerThrows', test_triggerGate_deptReqReminder_nonManagerThrows);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Audit row assertions ───────────────────────────────────────────────
@@ -1571,11 +1574,12 @@ function test_managerSaveDayRange_nonManagerRejected() {
 // #8 — reconcile pass: manager-gated; backfills a hand-entered row (content
 // but no noteId) with a UUID + dates, idempotent, content untouched.
 function test_reconcileCallNotes_nonManagerRejected() {
-  _asUser(_TEST_INDIA_EMAIL, function () {
-    const r = reconcileCallNotes();
-    _assertNotNull(r.error, 'non-manager rejected');
-    _assertContains(r.error, 'Admin access required');
-  });
+  // F1/F2 — reconcile is a trigger handler, so its gate is the MANAGER_EMAILS
+  // assertManagerCaller_ (throws), matching the other trigger-gate tests, NOT
+  // the emp.isAdmin return-{error} gate it briefly carried under #102/INV-136.
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { reconcileCallNotes(); });
+  }, 'manager access required', 'Non-manager should not be able to reconcile');
 }
 
 function test_reconcileCallNotes_backfillsHandEntered() {
@@ -3364,6 +3368,23 @@ function test_triggerGate_trainingOverdue_nonManagerThrows() {
   }, 'manager access required');
 }
 
+// Automation-failure push — a top-level trigger handler reachable via
+// google.script.run, so it carries the MANAGER_EMAILS assertManagerCaller_ gate
+// (INV-44 family), NOT emp.isAdmin (it runs as the installer in a trigger).
+function test_triggerGate_automationHealthDigest_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendAutomationHealthDigest(); });
+  }, 'manager access required');
+}
+
+// DeptRequests v2 — the SLA reminder digest is a trigger handler, so it carries
+// the MANAGER_EMAILS assertManagerCaller_ gate (INV-44 family).
+function test_triggerGate_deptReqReminder_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendDeptRequestReminderDigest(); });
+  }, 'manager access required');
+}
+
 // Aggregation behind the urgent digest — finds urgent-flagged notes (urgent
 // lives in subformData.flags[], NOT the FlagType column). Read-only, no email.
 function test_cn_managerAggregateUrgent_findsUrgentNotOthers() {
@@ -3891,6 +3912,8 @@ function test_managerGates_rejectNonManager() {
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['getRetentionConfig',             function () { return getRetentionConfig(); }],
     ['saveRetentionConfig',            function () { return saveRetentionConfig({ archiveDays: 30 }); }],
+    ['getDeptRequestSla',              function () { return getDeptRequestSla(); }],
+    ['saveDeptRequestSla',             function () { return saveDeptRequestSla({}); }],
     ['saveDepartmentEmails',           function () { return saveDepartmentEmails({ Sales: 'x@y.com' }); }],
     ['saveStateTaxRates',              function () { return saveStateTaxRates({ Texas: 0.05 }); }],
     ['saveUpdateSuggestions',          function () { return saveUpdateSuggestions({ Sales: ['x'] }); }],
@@ -3959,6 +3982,7 @@ function test_managerGates_rejectNonManager() {
   const ADMIN_GATED = {
     getCallNotesTagTaxonomy: 1, getCallNotesTagTrends: 1, getAdminConfig: 1,
     getRetentionConfig: 1, saveRetentionConfig: 1, saveDepartmentEmails: 1,
+    getDeptRequestSla: 1, saveDeptRequestSla: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
     getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
@@ -4022,6 +4046,43 @@ function test_deptReq_resendDedupLookup() {
     _assertEq(drFindOpenRequest_('', 'Sales'), null,
       'no noteId → null (legacy rows never dedupe)');
   } finally {
+    const after = sh.getLastRow();
+    if (after > before) sh.deleteRows(before + 1, after - before);
+  }
+}
+
+// DeptRequests v2 — the Incoming inbox + a receiving-dept MEMBER can resolve an
+// open request in-app (not just the sender/manager). Temporarily makes the India
+// test emp a member of a real department (roster column N), then restores it.
+function test_deptReq_incomingAndMemberResolve() {
+  const deptKeys = Object.keys(getDepartmentEmails_() || {});
+  if (!deptKeys.length) { _assertTrue(true, 'no departments configured — skipped'); return; }
+  const dept = deptKeys[0];
+  const ss = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const roster = ss.getDataRange().getValues();
+  let empRow = -1;
+  for (let i = 1; i < roster.length; i++) {
+    if (String(roster[i][EMP.ID]).trim() === _TEST_INDIA_ID) { empRow = i + 1; break; }
+  }
+  if (empRow < 0) { _assertTrue(true, 'India test emp not on roster — skipped'); return; }
+  const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
+  const sh = getOrCreateDeptRequestsSheet_();
+  const before = sh.getLastRow();
+  try {
+    ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(dept);
+    invalidateRosterCache_();
+    sh.appendRow(['TEST_DR_INC', 'TEST_OTHER_SENDER', 'Other', 'o@x.com', dept, 'x.com',
+      drNowTs_(), 'open', '', '', 'incoming-test', 'TEST_DR_NOTE_INC']);
+    SpreadsheetApp.flush();
+    let res; _asUser(_TEST_INDIA_EMAIL, function () { res = getDeptRequests(); });
+    _assertTrue(res && Array.isArray(res.incoming), 'incoming array present');
+    _assertTrue(res.incoming.some(function (it) { return it.requestId === 'TEST_DR_INC'; }),
+      'the open request to my dept appears in Incoming');
+    let rr; _asUser(_TEST_INDIA_EMAIL, function () { rr = resolveDeptRequest('TEST_DR_INC'); });
+    _assertEq(rr.success, true, 'a receiving-dept member can resolve an incoming request');
+  } finally {
+    ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
+    invalidateRosterCache_();
     const after = sh.getLastRow();
     if (after > before) sh.deleteRows(before + 1, after - before);
   }

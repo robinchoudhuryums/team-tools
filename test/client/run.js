@@ -725,6 +725,85 @@ test('removeAutomationTriggers TARGETS matches the install set (cleans up all it
     'install and remove TARGETS must list the same handlers');
 });
 
+console.log('\nCode.js — every trigger-TARGETS handler uses the assertManagerCaller_ gate (F1 tripwire)');
+// F1 (cycle 6): reconcileCallNotes was a daily TRIGGER gated on emp.isAdmin —
+// under a narrowed ADMIN_EMAILS (or a non-roster installer) the nightly run
+// silently no-op'd. A trigger handler's gate MUST be MANAGER_EMAILS
+// (assertManagerCaller_), NEVER emp.isAdmin/roster, because the installer is
+// validated against MANAGER_EMAILS. The existing tripwire above only checks
+// trigger WIRING; this one checks the GATE TYPE inside each handler body.
+// Strip JS comments first — a handler's comment may legitimately MENTION
+// emp.isAdmin (e.g. reconcileCallNotes documents "NOT emp.isAdmin"); we only
+// care about an isAdmin reference in executable code.
+function stripJsComments_(s) {
+  return s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+newTriggerHandlers.forEach((h) => {
+  test('trigger handler ' + h + ' gates via assertManagerCaller_, not emp.isAdmin', () => {
+    const src = stripJsComments_(extractRawFunction('Code.js', h));
+    assert.ok(/assertManagerCaller_\s*\(/.test(src),
+      h + ': a trigger handler must call assertManagerCaller_ — a narrowed ADMIN_EMAILS / non-roster installer would otherwise silently no-op it (F1)');
+    assert.ok(!/\.isAdmin\b/.test(src),
+      h + ': a trigger handler must NOT gate on .isAdmin in code — the trigger runs as the installer (MANAGER_EMAILS), so an admin/roster gate can diverge (F1)');
+  });
+});
+
+console.log('\nParallel-source coupling registry — key-set ⊆ relations (Axis-B drift net)');
+// The project's recurring bug GENUS: the same value duplicated across places that
+// drift (the F5 Automation-Health labels this cycle; layout mirrors;
+// LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_; CN_EMAIL_PALETTE ↔ tokens; ...).
+// This is the declarative HOME for SOURCE-LEVEL key-set couplings: each entry
+// extracts a `sub` set + a `sup` set and the runner asserts sub ⊆ sup, so the
+// NEXT such coupling is ONE registry entry instead of a hand-rolled test. NOTE:
+// couplings that need a vm-LOADED value or aren't a plain key-set comparison keep
+// their own bespoke tripwires (the day-type↔validator check above; the trigger
+// wiring + gate-type checks; the intake layout-row mirror + forms-ID mirror; the
+// design-token hygiene + SUBMITTED_AT coercion tripwires) — they're registry-
+// ADJACENT but each carries custom logic the generic runner can't express.
+const cnHealthSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+// Reusable extractors over raw source (each returns a string[] of keys/items):
+function topLevelObjectKeys_(src, declRe, label) {   // multi-line `key: {...},`
+  const m = src.match(declRe);
+  assert.ok(m, label + ' object literal not found');
+  // line-leading `key:` — nested { label, expect } sit after `{` on the same line.
+  return [...m[1].matchAll(/^\s*([A-Za-z_]\w*)\s*:/gm)].map((x) => x[1]);
+}
+function flatObjectKeys_(src, declRe, label) {       // single-line `{ a: 1, b: 2 }`
+  const m = src.match(declRe);
+  assert.ok(m, label + ' object literal not found');
+  return [...m[1].matchAll(/([A-Za-z_]\w*)\s*:/g)].map((x) => x[1]);
+}
+function stringArrayItems_(src, declRe, label) {     // `[ 'a', 'b' ]`
+  const m = src.match(declRe);
+  assert.ok(m, label + ' array literal not found');
+  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+}
+const COUPLING_REGISTRY = [
+  {
+    name: 'Automation-Health DIGEST_LABELS ⊇ server DIGEST_STALE_HOURS keys (F5)',
+    sub: () => flatObjectKeys_(codeSrc, /DIGEST_STALE_HOURS\s*=\s*\{([^}]*)\}/, 'DIGEST_STALE_HOURS'),
+    sup: () => topLevelObjectKeys_(cnHealthSrc, /DIGEST_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'DIGEST_LABELS'),
+    why: 'the Automation-Health panel would render the raw digest key',
+    minSub: 4,
+  },
+  {
+    name: 'Automation-Health CN_HEALTH_RUN_LABELS ⊇ AUTOMATION_AUDIT_ACTIONS (F5)',
+    sub: () => stringArrayItems_(codeSrc, /AUTOMATION_AUDIT_ACTIONS\s*=\s*\[([\s\S]*?)\]/, 'AUTOMATION_AUDIT_ACTIONS'),
+    sup: () => topLevelObjectKeys_(cnHealthSrc, /CN_HEALTH_RUN_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'CN_HEALTH_RUN_LABELS'),
+    why: 'the Automation-Health panel would render the raw automation-action key',
+    minSub: 6,
+  },
+];
+COUPLING_REGISTRY.forEach((c) => {
+  test('coupling — ' + c.name, () => {
+    const sub = c.sub(), sup = c.sup();
+    if (c.minSub) assert.ok(sub.length >= c.minSub,
+      c.name + ': parsed only ' + sub.length + ' source keys (' + sub.join(',') + ') — extractor may be stale');
+    sub.forEach((k) => assert.ok(sup.indexOf(k) >= 0,
+      c.name + ': "' + k + '" is in the source set but MISSING downstream — ' + c.why));
+  });
+});
+
 console.log('\nCode.js — Sheets-coerced timestamp columns are read via normalizeAuditTs_ (M1 tripwire)');
 // The Sheets-coercion class has now bitten twice (AuditLog timestamps, then
 // TO.SUBMITTED_AT flattening the pending-trend sparkline to zero). Every read
@@ -848,9 +927,17 @@ function extractClientObject(file, name) {
 
 console.log('\nCode.js — intakeFilterRecommendations_() (PPD engine)');
 const engineCtx = vm.createContext({});
+// The engine now derives its clinical factors via the shared
+// intakeDeriveClinicalFactors_ helper (so the engine + the explainability
+// surface can't drift) — load it into the ctx first or the engine's call throws.
+vm.runInContext(extractRawFunction('Code.js', 'intakeDeriveClinicalFactors_'), engineCtx,
+  { filename: 'Code.js#intakeDeriveClinicalFactors_' });
+vm.runInContext(extractRawFunction('Code.js', 'intakeExplainFactors_'), engineCtx,
+  { filename: 'Code.js#intakeExplainFactors_' });
 vm.runInContext(extractRawFunction('Code.js', 'intakeFilterRecommendations_'), engineCtx,
   { filename: 'Code.js#intakeFilterRecommendations_' });
 const intakeFilterRecommendations_ = engineCtx.intakeFilterRecommendations_;
+const intakeExplainFactors_ = engineCtx.intakeExplainFactors_;
 
 // fixture catalog: [features, hcpcs, weightCap, seatType, pdfLink, imageUrl]
 const CAT = [
@@ -900,6 +987,27 @@ test('engine never throws on empty answers / empty catalog', () => {
   assert.strictEqual(e1.standard.length + e1.complex.length, 0);
   const e2 = intakeFilterRecommendations_(null, null);
   assert.strictEqual(e2.standard.length + e2.complex.length, 0);
+});
+
+// Explainability surface — reuses the SAME derivation the engine does, so a
+// manager auditing a sent PPD submission sees exactly the factors that drove it.
+test('intakeExplainFactors_ surfaces the engine factors that fired (drift-free)', () => {
+  const rows = intakeExplainFactors_({ '38': '250', '43': 'multiple sclerosis', '32': 'yes' });
+  const byLabel = {};
+  rows.forEach((r) => { byLabel[r.label] = r.value; });
+  assert.ok(/Yes — "multiple sclerosis"/.test(byLabel['Valid neuro diagnosis (Q43)']), 'neuro Dx surfaced verbatim');
+  assert.strictEqual(byLabel['Spasticity (Q32)'], 'Yes');
+  assert.strictEqual(byLabel['Group-3 / neuro eligible'], 'Yes', 'neuro Dx → Group-3 eligible');
+  assert.strictEqual(byLabel['Solid-seat required'], 'Yes');
+  assert.strictEqual(byLabel['Weight'], '250 lbs');
+});
+test('intakeExplainFactors_ — a no-condition set reports all gates No, never throws', () => {
+  const rows = intakeExplainFactors_({ '38': '200' });
+  const byLabel = {};
+  rows.forEach((r) => { byLabel[r.label] = r.value; });
+  assert.strictEqual(byLabel['Group-3 / neuro eligible'], 'No');
+  assert.strictEqual(byLabel['Solid-seat required'], 'No');
+  assert.doesNotThrow(() => intakeExplainFactors_(null));
 });
 
 console.log('\nintake — client render layout mirrors the server (coupling tripwire)');
@@ -2132,6 +2240,32 @@ test('clean configs warn-free; unsafe orderings each warn', () => {
   assert.ok(retentionWarnings_(365, 90, 0).some((w) => w.indexOf('LARGER') >= 0));
   // cold purge shorter than archive window → warn
   assert.ok(retentionWarnings_(90, 0, 30).some((w) => w.indexOf('Cold-store') >= 0));
+});
+
+console.log('\nCode.js — DeptRequests v2 (drParseDepartments_ membership)');
+vm.runInContext(extractRawFunction('Code.js', 'drParseDepartments_'), sb,
+  { filename: 'Code.js#drParseDepartments_' });
+const drParseDepartments_ = sb.drParseDepartments_;
+test('drParseDepartments_ canonicalizes, dedupes, drops unknowns', () => {
+  // vm-realm arrays fail deepStrictEqual against main-realm literals — compare via join.
+  const keys = ['Billing', 'Authorizations', 'Shipping'];
+  assert.strictEqual(drParseDepartments_('billing; SHIPPING', keys).join(','), 'Billing,Shipping',
+    'case-insensitive match → canonical key casing');
+  assert.strictEqual(drParseDepartments_('Billing, billing , Billing', keys).join(','), 'Billing', 'deduped');
+  assert.strictEqual(drParseDepartments_('Billing; NotADept', keys).join(','), 'Billing', 'unknown dropped');
+  assert.strictEqual(drParseDepartments_('', keys).length, 0, 'blank → none');
+  assert.strictEqual(drParseDepartments_('Shipping', []).length, 0, 'no valid keys → none');
+  assert.doesNotThrow(() => drParseDepartments_(null, null));
+});
+vm.runInContext(extractRawFunction('Code.js', 'drSlaStatus_'), sb, { filename: 'Code.js#drSlaStatus_' });
+const drSlaStatus_ = sb.drSlaStatus_;
+test('drSlaStatus_ bands ontime / atrisk(≥75%) / overdue(≥100%) wall-clock', () => {
+  assert.strictEqual(drSlaStatus_(60, 48), 'ontime', '1h of a 48h SLA');
+  assert.strictEqual(drSlaStatus_(Math.round(48 * 60 * 0.8), 48), 'atrisk', '80% → at-risk');
+  assert.strictEqual(drSlaStatus_(48 * 60, 48), 'overdue', '100% → overdue');
+  assert.strictEqual(drSlaStatus_(48 * 60 + 100, 48), 'overdue');
+  assert.strictEqual(drSlaStatus_(null, 48), null, 'null age → no badge');
+  assert.strictEqual(drSlaStatus_(60, 0), null, 'no SLA → no badge');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -58,12 +58,27 @@ function drRender_(area, data, errorMsg) {
   const mineSection =
     '<div class="dr-section"><div class="dr-section-title">My requests</div>' + mineHtml + '</div>';
 
+  // v2 Incoming inbox — open requests addressed to a department the rep staffs
+  // (roster column N → data.myDepts). Members can resolve in-app here.
+  let incomingSection = '';
+  if (data && data.myDepts && data.myDepts.length) {
+    const inc = data.incoming || [];
+    const incHtml = inc.length
+      ? '<div class="dr-list">' + inc.map(drRequestRowHtml_).join('') + '</div>'
+      : '<div class="dr-empty">No open requests to your department right now.</div>';
+    incomingSection =
+      '<div class="dr-section"><div class="dr-section-title">Incoming · ' + esc(data.myDepts.join(', ')) + '</div>' +
+      '<div class="dr-note">' + icon('outbox', 13) +
+        ' Open requests addressed to your department. Mark one resolved when it’s handled.</div>' +
+      incHtml + '</div>';
+  }
+
   let mgrSection = '';
   if (data && data.isManager) {
     mgrSection = drManagerSectionHtml_(data);
   }
 
-  area.innerHTML = head + intro + trunc + mineSection + mgrSection;
+  area.innerHTML = head + intro + trunc + incomingSection + mineSection + mgrSection;
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 
@@ -75,6 +90,16 @@ function drStatusChip_(item) {
   }
   return '<span class="dr-chip dr-chip-open">Open' +
     (item.elapsedMin != null ? ' · ' + drFmtMin_(item.elapsedMin) + ' ago' : '') + '</span>';
+}
+
+// v2 SLA badge — only on OPEN requests past 75% of their SLA (ontime is silent,
+// resolved rows show their resolution time instead).
+function drSlaChip_(item) {
+  if (item.status === 'resolved' || !item.slaStatus || item.slaStatus === 'ontime') return '';
+  const overdue = item.slaStatus === 'overdue';
+  const sla = item.slaHours ? ' · ' + item.slaHours + 'h' : '';
+  return '<span class="dr-chip ' + (overdue ? 'dr-sla-overdue' : 'dr-sla-atrisk') + '">' +
+    esc((overdue ? 'Overdue' : 'At risk') + sla) + '</span>';
 }
 
 function drRequestRowHtml_(item) {
@@ -89,16 +114,20 @@ function drRequestRowHtml_(item) {
       '<div class="dr-row-meta">' + esc(item.createdAt || '') +
         (item.byName ? ' · ' + esc(item.byName) : '') + '</div>' +
     '</div>' +
-    '<div class="dr-row-right">' + drStatusChip_(item) + resolveBtn + '</div>' +
+    '<div class="dr-row-right">' + drSlaChip_(item) + drStatusChip_(item) + resolveBtn + '</div>' +
   '</div>';
 }
 
 function drManagerSectionHtml_(data) {
   const stats = data.deptStats || [];
   const statRows = stats.map(function (s) {
+    const overdueCell = s.overdueOpen
+      ? '<td class="dr-num" style="color:var(--danger-deep);font-weight:700">' + s.overdueOpen + '</td>'
+      : '<td class="dr-num">0</td>';
     return '<tr>' +
-      '<td>' + esc(s.dept) + '</td>' +
+      '<td>' + esc(s.dept) + (s.slaHours ? ' <span class="dr-tag">' + esc(s.slaHours + 'h SLA') + '</span>' : '') + '</td>' +
       '<td class="dr-num">' + s.open + '</td>' +
+      overdueCell +
       '<td class="dr-num">' + s.resolved + '</td>' +
       '<td class="dr-num">' + (s.avgMinutes != null ? drFmtMin_(s.avgMinutes) : '—') + '</td>' +
       '<td class="dr-num">' + (s.medianMinutes != null ? drFmtMin_(s.medianMinutes) : '—') + '</td>' +
@@ -106,7 +135,7 @@ function drManagerSectionHtml_(data) {
   }).join('');
   const statTable = stats.length
     ? '<table class="dr-table"><thead><tr>' +
-        '<th>Department</th><th class="dr-num">Open</th><th class="dr-num">Resolved</th>' +
+        '<th>Department</th><th class="dr-num">Open</th><th class="dr-num">Overdue</th><th class="dr-num">Resolved</th>' +
         '<th class="dr-num">Avg</th><th class="dr-num">Median</th></tr></thead>' +
         '<tbody>' + statRows + '</tbody></table>'
     : '<div class="dr-empty">No requests recorded yet.</div>';
@@ -185,6 +214,8 @@ function drFmtMin_(min) {
     padding: 3px 9px; font-size: 11px; font-weight: 600; border-radius: 999px; }
   .dr-chip-open { color: var(--warn); background: var(--warn-soft); }
   .dr-chip-resolved { color: var(--success-deep); background: var(--accent-soft); }
+  .dr-sla-atrisk { color: var(--warning-deep); background: var(--warn-soft); }
+  .dr-sla-overdue { color: var(--danger-deep); background: var(--danger-soft); }
   .dr-resolve-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px;
     font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft);
     border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }

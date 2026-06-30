@@ -692,7 +692,7 @@ function edVoid_(docId) {
     if (!ok) return;
     uiPrompt({
       title: 'Reason (optional)',
-      message: 'Stored on the doc row for context — e.g. "superseded by corrected version".',
+      message: 'Shown to the employee on their voided document — e.g. "superseded by corrected version". Keep it free of internal or sensitive notes.',
       placeholder: 'Reason…',
     }).then(function (reason) {
       if (reason === null) return;   // Esc/cancel on the prompt aborts the void

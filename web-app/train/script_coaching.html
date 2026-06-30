@@ -138,7 +138,7 @@ function coachAck_(coachId) {
         showToast((r && r.error) || 'Could not acknowledge', 'toast-error');
       }
     })
-    .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast(esc((err && err.message) || err), 'toast-error'); })
+    .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error'); })
     .acknowledgeCoaching(coachId);
 }
 
@@ -312,7 +312,7 @@ function coachCreate_() {
     })
     .withFailureHandler(function (err) {
       if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 13) + ' Log coaching'; }
-      if (typeof showToast === 'function') showToast(esc((err && err.message) || err), 'toast-error');
+      if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error');
     })
     .createCoaching({ empId: empId, severity: severity, patientTRX: patientTRX, whatHappened: whatHappened, whatShould: whatShould, noteId: noteId });
 }
@@ -327,7 +327,7 @@ function coachVoid_(coachId) {
           if (r && r.success) { if (typeof showToast === 'function') showToast('Voided', 'toast-success'); coachLoadMgr_(); }
           else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not void', 'toast-error');
         })
-        .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast(esc((err && err.message) || err), 'toast-error'); })
+        .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error'); })
         .voidCoaching(coachId, '');
     });
 }
