@@ -2,11 +2,35 @@
 
 ## Current
 Cycle: 6
-Phase: implement — broad-scan F1–F11 + P1 + automation digest + coupling registry + intake explainability on claude/broad-scan-2ll5ok (pushed, not merged)
-Scope: cycle-6-regression fixes + self-defending CI + automation push + P3 strategic depth
+Phase: implement — broad-scan follow-through + DeptRequests v2 (all 4 phases) on claude/broad-scan-2ll5ok (pushed, not merged)
+Scope: cycle-6-regression fixes + self-defending CI + automation push + P3 strategic depth + DeptRequests v2
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-06-30 (broad-implement: F1–F11, P1, automation digest, coupling registry, intake explainability)
+Updated: 2026-06-30 (broad-implement: F1–F11, P1, automation digest, coupling registry, intake explainability, DeptRequests v2)
+
+## Cycle 6 — DeptRequests v2 (all 4 phases, 2026-06-30, claude/broad-scan-2ll5ok)
+Planned (decisions: roster column N membership; manager-summary reminder;
+wall-clock SLA; 48h default) then built as 4 commits + a docs commit:
+- P1 membership: EMP.DEPARTMENTS col N; ROSTER_CACHE_KEY v6→v7; departmentsRaw on
+  the roster readers; pure Node-pinned drParseDepartments_ + empDepartments_;
+  getEmployeeState ships departments.
+- P2 incoming inbox: getDeptRequests → myDepts+incoming (open requests to the
+  caller's depts; PHI-free); resolveDeptRequest widened to sender OR manager OR
+  receiving-dept MEMBER; client Incoming section; integration test.
+- P3 SLA: DR_SLA_DEFAULT_HOURS=48 + DR_SLA_TARGETS property; getDeptRequestSla_/
+  Config_ + pure drSlaStatus_ (ontime/atrisk≥75%/overdue≥100%); slaHours+slaStatus
+  per item + overdueOpen per dept; admin-gated getDeptRequestSla/saveDeptRequestSla
+  (folded into getAdminConfig); client SLA chips + Overdue column + Admin editor.
+- P4 reminder digest: sendDeptRequestReminderDigest (13th trigger, manager-tz 10am,
+  manager summary, silent when none); heartbeat deptReqReminder added to
+  DIGEST_STALE_HOURS+digestHealth (server) + DIGEST_LABELS (client) — the F5
+  coupling registry enforced the client label. Gate test added.
+NEW INV-138; INV-44 12→13; INV-136 28→30; INV-28 v7. Pure harness 188→207/0;
+node --check clean. The trigger-wiring + F1 gate-type + F5 coupling tripwires all
+validate the 13th trigger.
+OPERATOR (new): populate roster column N (Departments) for dept-desk reps; re-run
+installAutomationTriggers() for the 13th trigger; optional DR_SLA_TARGETS via the
+Admin editor (else 48h default); runAllTests() (new deptReq + SLA-gate tests).
 
 ## Cycle 6 broad-implement — coupling registry + intake explainability (2026-06-30)
 Two P3 strategic-depth items:
