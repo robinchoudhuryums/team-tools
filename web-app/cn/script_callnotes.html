@@ -3717,13 +3717,38 @@ function cnReRenderActiveView_() {
   }
 }
 
+// F9 — outside-click / Escape dismissal for the card "More" popover. The closer
+// is a SINGLE self-removing document listener (capture phase), so there's no
+// accumulating-listener leak: it's detached the moment the menu closes, and a
+// stale closer (after a re-render recreates the card) self-heals on the next
+// document mousedown (closes whatever .cn-more-menu is currently open + detaches).
+var _cnMoreMenuCloser = null;
+function cnCloseMoreMenus_() {
+  document.querySelectorAll('.cn-more-menu').forEach(function (m) { m.style.display = 'none'; });
+  if (_cnMoreMenuCloser) {
+    document.removeEventListener('mousedown', _cnMoreMenuCloser, true);
+    document.removeEventListener('keydown', _cnMoreMenuCloser, true);
+    _cnMoreMenuCloser = null;
+  }
+}
 function cnToggleMoreMenu_(btn) {
   var card = btn.closest('[data-note-id]');
   if (!card) return;
   var menu = card.querySelector('.cn-more-menu');
   if (!menu) return;
-  var open = menu.style.display !== 'none';
-  menu.style.display = open ? 'none' : 'inline-flex';
+  var willOpen = !menu.style.display || menu.style.display === 'none';
+  cnCloseMoreMenus_();          // close any other open menu + detach its closer
+  if (!willOpen) return;        // it was open → this click toggles it closed
+  menu.style.display = 'inline-flex';
+  _cnMoreMenuCloser = function (e) {
+    if (e.type === 'keydown') { if (e.key === 'Escape' || e.key === 'Esc') cnCloseMoreMenus_(); return; }
+    if (menu.contains(e.target) || btn.contains(e.target)) return;   // click inside the menu / on the toggle
+    cnCloseMoreMenus_();
+  };
+  // Bound from the opening CLICK handler, so this interaction's mousedown has
+  // already passed — the next mousedown is a fresh interaction.
+  document.addEventListener('mousedown', _cnMoreMenuCloser, true);
+  document.addEventListener('keydown', _cnMoreMenuCloser, true);
 }
 
 /** Caller display for note cards (view-only — the CRM paste/email keep
@@ -4269,9 +4294,20 @@ function cnToggleFlag_(noteId, kind) {
       placeholder: 'Optional training question',
       confirmLabel: 'Flag',
     }).then(function (raw) {
-      if (raw === null) { note._flagInFlight = false; return; }
+      // F8 — re-resolve the note from state: a 60s ambient refresh while the
+      // prompt was open may have REPLACED the slot (cnReplaceNoteInState_),
+      // leaving our captured `note` detached so the optimistic toggle/revert
+      // would render against the wrong object. Clear the guard on whatever we
+      // set it on, then operate on the CURRENT object with a fresh prev/next.
+      note._flagInFlight = false;
+      const cur = cnFindNoteAnywhere_(noteId);
+      if (raw === null || !cur) return;
+      if (cur._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
+      if (cur._flagInFlight) return;
+      const curPrev = { flagType: cur.flagType, resolved: cur.resolved };
+      const curNext = (cur.flagType === kind) ? '' : kind;
       const trimmed = String(raw).trim() || null;
-      cnDoToggleFlag_(noteId, note, prev, next, trimmed);
+      cnDoToggleFlag_(noteId, cur, curPrev, curNext, trimmed);
     });
     return;
   }

@@ -2,11 +2,40 @@
 
 ## Current
 Cycle: 6
-Phase: implement — broad-scan F1–F6 fixes on branch claude/broad-scan-2ll5ok (NOT yet pushed/merged)
-Scope: cycle-6-regression fixes (reconcile trigger gate, clock UX, coaching toast, admin health labels)
+Phase: implement — broad-scan F1–F11 fixes on branch claude/broad-scan-2ll5ok (pushed, not merged)
+Scope: cycle-6-regression fixes (reconcile trigger gate, clock UX, CN UX, coaching toast, admin health labels)
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-06-30 (broad-scan + broad-implement session)
+Updated: 2026-06-30 (broad-scan + broad-implement F1–F11 + /sync-docs)
+
+## Cycle 6 broad-implement F7–F11 (2026-06-30, branch claude/broad-scan-2ll5ok)
+The Low-tier remainder of the broad-scan, all client-only (no Code.js change):
+- F7 (tc/script_clock.html): PUNCH_MORPH.LunchIn.to headset→doorExit — a lunch
+  RETURN sets afterLunch, making ClockOut (doorExit) the next primary, so the
+  morph now carries seamlessly into the re-render (the #103 afterLunch change had
+  left it landing on the old LunchOut-primary headset).
+- F8 (cn/script_callnotes.html): cnToggleFlag_ training branch re-resolves the
+  note from state AFTER the async uiPrompt (a 60s ambient refresh can replace the
+  slot via cnReplaceNoteInState_, detaching the captured ref); fresh prev/next on
+  the current object; null-safe if deleted mid-prompt. INV-56/48 preserved.
+- F9 (cn/script_callnotes.html): cnToggleMoreMenu_ gained outside-click + Escape
+  dismissal via a SINGLE self-removing capture-phase document listener
+  (cnCloseMoreMenus_ + _cnMoreMenuCloser); opening one menu closes others; no
+  accumulating-listener leak (bounded to 1, self-heals on next mousedown).
+- F10 (script_core.html): dispTime() now esc()'s its malformed-input verbatim
+  fallback (several callers inject its output via innerHTML) — defense-in-depth;
+  the formatted branch (valid times) is unchanged.
+- F11 (train/script_empdocs.html): void-reason prompt copy now says the reason is
+  SHOWN TO THE EMPLOYEE ("keep it free of internal/sensitive notes") — closes the
+  manager-assumes-private exposure risk without a data-model change/operator call.
+DECISIONS: F7 fixes the morph to honor the documented carry-through invariant
+(doorExit) rather than rewriting the doc. F11 resolved via labeling (not server
+withholding) — the employee SHOULD know why their doc was voided; the risk was
+the false-privacy assumption, which the prompt now removes. F8 happy-path is
+byte-identical; the fix only bites the replaced-slot edge. Pure harness 188/0;
+node --check clean. The DOM harness exercises cnToggleFlag_('action') (NOT the
+training branch), so no double encoded the old behavior. NEXT: operator deploy
+(clasp push -f + New version) — F1–F11 all ride one deploy.
 
 ## Cycle 6 broad-scan + implement F1–F6 (2026-06-30, branch claude/broad-scan-2ll5ok)
 AUDIT: 4 parallel deep-read agents + independent verification of every concrete

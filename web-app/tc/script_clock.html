@@ -1697,12 +1697,16 @@ function clkActTypeCls_(a) {
 }
 
 // Punch-button icon morph: the IDLE glyph is the rep's current state, the
-// destination glyph is where the punch takes them. LunchOut (working→break):
-// headset→mug. LunchIn (break→back): mug→headset. The destination also matches
-// the NEXT state's idle glyph, so the morph carries through the re-render.
+// destination glyph is where the punch takes them, and it also matches the NEXT
+// state's PRIMARY idle glyph so the morph carries seamlessly into the re-render.
+// LunchOut (working→break): headset→mug — and On-Lunch's primary is LunchIn
+// (idle = mug). LunchIn (break→back): mug→doorExit — because a lunch RETURN sets
+// afterLunch, which makes ClockOut (idle = doorExit) the primary, NOT LunchOut
+// (F7). A pre-afterLunch build landed on `headset` (the old LunchOut-primary idle)
+// and is now a half-step behind the re-render; doorExit keeps the carry-through.
 const PUNCH_MORPH = {
   LunchOut: { from: 'headset',   to: 'coffeeMug' },
-  LunchIn:  { from: 'coffeeMug', to: 'headset'   },
+  LunchIn:  { from: 'coffeeMug', to: 'doorExit'  },
 };
 /** Idle glyph for a punch button — the morph's `from` (current state) when the
  *  action morphs, else the PUNCH_META icon. */

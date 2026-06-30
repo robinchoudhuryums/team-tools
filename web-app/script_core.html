@@ -922,7 +922,11 @@ function deriveShiftStatus(nextActions, punches) {
 function dispTime(t) {
   if (!t) return '';
   const p = String(t).split(':');
-  if (p.length < 2) return t;
+  // F10 — the formatted branch returns digits/AM-PM (innerHTML-safe), but the
+  // malformed fallback returned the raw value verbatim and several callers inject
+  // dispTime() output via innerHTML. esc() the fallback so a garbage time cell
+  // can't reflect unescaped (defense-in-depth — server times are shape-constrained).
+  if (p.length < 2) return esc(String(t));
   const h = parseInt(p[0],10);
   return `${h%12||12}:${p[1]} ${h>=12?'PM':'AM'}`;
 }
