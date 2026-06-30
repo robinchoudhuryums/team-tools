@@ -2257,6 +2257,16 @@ test('drParseDepartments_ canonicalizes, dedupes, drops unknowns', () => {
   assert.strictEqual(drParseDepartments_('Shipping', []).length, 0, 'no valid keys → none');
   assert.doesNotThrow(() => drParseDepartments_(null, null));
 });
+vm.runInContext(extractRawFunction('Code.js', 'drSlaStatus_'), sb, { filename: 'Code.js#drSlaStatus_' });
+const drSlaStatus_ = sb.drSlaStatus_;
+test('drSlaStatus_ bands ontime / atrisk(≥75%) / overdue(≥100%) wall-clock', () => {
+  assert.strictEqual(drSlaStatus_(60, 48), 'ontime', '1h of a 48h SLA');
+  assert.strictEqual(drSlaStatus_(Math.round(48 * 60 * 0.8), 48), 'atrisk', '80% → at-risk');
+  assert.strictEqual(drSlaStatus_(48 * 60, 48), 'overdue', '100% → overdue');
+  assert.strictEqual(drSlaStatus_(48 * 60 + 100, 48), 'overdue');
+  assert.strictEqual(drSlaStatus_(null, 48), null, 'null age → no badge');
+  assert.strictEqual(drSlaStatus_(60, 0), null, 'no SLA → no badge');
+});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

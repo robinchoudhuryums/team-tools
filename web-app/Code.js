@@ -167,6 +167,7 @@ const CONFIG = {
     EXTERNAL_LINKS: [],
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
     EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
+    DR_SLA_DEFAULT_HOURS: 48,            // DeptRequests v2 — default resolution SLA (per-dept overrides via DR_SLA_TARGETS)
     TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
     REVIEW_DIGEST_WEEKDAY:   5,
     DEPARTMENT_EMAILS: {
@@ -3519,6 +3520,9 @@ function getAdminConfig() {
       defaultSuggestions: CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_DEFAULT,
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
+      deptSla: { defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
+                 targets: getDeptRequestSlaConfig_(),
+                 departments: Object.keys(getDepartmentEmails_() || {}) },
       featureFlags: { registry: FEATURE_FLAGS, values: getFeatureFlagsResolved_() },
       kbAi: (function () {
         const c = getKbAiConfig_();
@@ -9650,6 +9654,41 @@ function empDepartments_(emp) {
   return drParseDepartments_(emp.departmentsRaw, Object.keys(getDepartmentEmails_() || {}));
 }
 
+/** Pure (Node-pinned) — SLA status from elapsed minutes vs an SLA in hours
+ *  (wall-clock): `ontime` / `atrisk` (≥75% of SLA) / `overdue` (≥100%). A null
+ *  age or non-positive SLA → null (no badge). DeptRequests v2 (INV-138). */
+function drSlaStatus_(ageMin, slaHours) {
+  if (ageMin == null || !(slaHours > 0)) return null;
+  const frac = ageMin / (slaHours * 60);
+  if (frac >= 1) return 'overdue';
+  if (frac >= 0.75) return 'atrisk';
+  return 'ontime';
+}
+
+/** Per-department SLA target map ({dept: hours}) from Script Property
+ *  DR_SLA_TARGETS, sanitized on read (bad blob → {}). */
+function getDeptRequestSlaConfig_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('DR_SLA_TARGETS');
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (_) { return {}; }
+}
+
+/** SLA (hours) for a department — per-dept override (case-insensitive) from the
+ *  config map, else CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS. Pass an already-read
+ *  `map` to avoid a Script-Property read per row in a loop. */
+function getDeptRequestSla_(dept, map) {
+  const def = CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48;
+  const cfg = map || getDeptRequestSlaConfig_();
+  const want = String(dept || '').toLowerCase().trim();
+  for (const k in cfg) {
+    if (String(k).toLowerCase().trim() === want) { const h = parseInt(cfg[k], 10); return (h > 0) ? h : def; }
+  }
+  return def;
+}
+
 /** Minimize a recipient list to its unique domain(s) for the PHI-free
  *  DeptRequests ToEmail column. The "Other" department lets a rep enter a
  *  free-text (possibly external/customer) address, and the store can fall back
@@ -9821,6 +9860,10 @@ function getDeptRequests() {
     const fmtTs = function (ms) {
       return ms ? Utilities.formatDate(new Date(ms), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a') : '';
     };
+    // SLA config read ONCE (not per row); each item carries slaHours + slaStatus
+    // (ontime/atrisk/overdue) — for open rows it's current age, for resolved rows
+    // whether resolution beat the SLA (v2 phase 3).
+    const slaCfg = getDeptRequestSlaConfig_();
     for (let i = 0; i < rows.length; i++) {   // i=0: tail slice has no header row
       const r = rows[i];
       if (!r[DR.REQ_ID]) continue;
@@ -9828,12 +9871,14 @@ function getDeptRequests() {
       const resolvedMs = r[DR.STATUS] === 'resolved' ? parseMs(r[DR.RESOLVED_AT]) : null;
       const elapsedMin = (resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000)
                         : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
+      const slaHours = getDeptRequestSla_(String(r[DR.TO_DEPT] || ''), slaCfg);
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
         status: String(r[DR.STATUS] || 'open'), resolvedAt: fmtTs(resolvedMs),
         resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
         elapsedMin: elapsedMin,
+        slaHours: slaHours, slaStatus: drSlaStatus_(elapsedMin, slaHours),
       };
       all.push(item);
       if (String(r[DR.BY_ID]).trim() === emp.id) mine.push(item);
@@ -9858,22 +9903,66 @@ function getDeptRequests() {
       const byDept = {};
       all.forEach(function (it) {
         const k = it.toDept || '—';
-        if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, durations: [] };
+        if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, overdueOpen: 0, durations: [] };
         if (it.status === 'resolved') { byDept[k].resolved++; if (it.elapsedMin != null) byDept[k].durations.push(it.elapsedMin); }
-        else byDept[k].open++;
+        else { byDept[k].open++; if (it.slaStatus === 'overdue') byDept[k].overdueOpen++; }
       });
       result.deptStats = Object.keys(byDept).map(function (k) {
         const b = byDept[k];
         b.durations.sort(function (x, y) { return x - y; });
         const avg = b.durations.length ? Math.round(b.durations.reduce(function (s, x) { return s + x; }, 0) / b.durations.length) : null;
         const med = b.durations.length ? b.durations[Math.floor(b.durations.length / 2)] : null;
-        return { dept: b.dept, open: b.open, resolved: b.resolved, avgMinutes: avg, medianMinutes: med };
+        return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
+                 slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
       }).sort(function (a, b) { return b.open - a.open; });
       result.allOpen = all.filter(function (it) { return it.status === 'open'; })
         .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100);
     }
     return result;
   } catch (err) { return { error: err.message }; }
+}
+
+/** Admin-gated (INV-136): read the DeptRequests SLA config for the editor —
+ *  the per-dept overrides + the default + the known departments. */
+function getDeptRequestSla() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    return {
+      defaultHours: CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48,
+      targets: getDeptRequestSlaConfig_(),
+      departments: Object.keys(getDepartmentEmails_() || {}),
+    };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Admin-gated (INV-136 / INV-57 family): persist the per-dept SLA target map to
+ *  Script Property DR_SLA_TARGETS. Each value is whole hours 1–720; unknown depts
+ *  and entries equal to the default are dropped (keeps the map lean). Writes an
+ *  AdminConfigChange audit row. */
+function saveDeptRequestSla(map) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (map == null || typeof map !== 'object' || Array.isArray(map)) return { success: false, error: 'Invalid SLA map.' };
+    const validDepts = {};
+    Object.keys(getDepartmentEmails_() || {}).forEach(function (d) { validDepts[String(d).toLowerCase().trim()] = d; });
+    const def = CONFIG.CALL_NOTES.DR_SLA_DEFAULT_HOURS || 48;
+    const clean = {};
+    for (const k in map) {
+      const canon = validDepts[String(k).toLowerCase().trim()];
+      if (!canon) continue;                          // drop unknown departments
+      const h = parseInt(map[k], 10);
+      if (!(h > 0)) continue;                         // blank/0 → fall back to default (omit)
+      if (h > 720) return { success: false, error: 'SLA for "' + canon + '" must be 1–720 hours.' };
+      if (h === def) continue;                        // equals default → omit (lean map)
+      clean[canon] = h;
+    }
+    PropertiesService.getScriptProperties().setProperty('DR_SLA_TARGETS', JSON.stringify(clean));
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0,
+      'Updated Dept-Request SLA targets (' + Object.keys(clean).length + ' override(s))', emp.email);
+    return { success: true, targets: clean };
+  } catch (err) { return { success: false, error: err.message }; }
 }
 
 // IANA timezone aliases that resolve to the SAME zone (identical offset + rules).

@@ -8480,6 +8480,15 @@ function cnRenderAdminBody_(cfg) {
       '</div>' +
     '</div>' +
 
+    // DeptRequests v2 — per-department resolution SLA targets (hours)
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('outbox', 14) + ' Dept-Request SLA targets</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Resolution-time target (hours) per department for the Dept Requests tracker. Blank = the default (' +
+        esc(String((cfg.deptSla && cfg.deptSla.defaultHours) || 48)) + 'h). A request past its SLA shows “Overdue” on the tracker and is counted in the daily manager digest.</div>' +
+      '<div id="cn-admin-sla-list">' + cnRenderDeptSlaRows_(cfg.deptSla || {}) + '</div>' +
+      '<button class="btn-modal-ok" id="cn-admin-save-sla" style="margin:0;margin-top:10px">Save SLA targets</button>' +
+    '</div>' +
+
     // Phase A — KB AI guidance settings (cap + model; the on/off switch is
     // the kbAiGuidance feature toggle above; the API key stays editor-only).
     (kbAi ?
@@ -8748,6 +8757,48 @@ function cnRenderAdminBody_(cfg) {
       })
       .saveExternalLinks(out);
   });
+
+  var slaSaveBtn = document.getElementById('cn-admin-save-sla');
+  if (slaSaveBtn) slaSaveBtn.addEventListener('click', function () {
+    var btn = this;
+    var rows = document.querySelectorAll('#cn-admin-sla-list .cn-admin-sla-hours');
+    var map = {};
+    for (var i = 0; i < rows.length; i++) {
+      var dept = rows[i].getAttribute('data-dept');
+      var v = (rows[i].value || '').trim();
+      if (dept && v) map[dept] = parseInt(v, 10);   // blank → server falls back to the default
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Save SLA targets';
+        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
+        showToast('SLA targets saved', 'toast-success');
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false; btn.textContent = 'Save SLA targets';
+        showToast((err && err.message) || 'Save failed', 'toast-error');
+      })
+      .saveDeptRequestSla(map);
+  });
+}
+
+/** Render the per-department SLA editor rows (one numeric hours input each). */
+function cnRenderDeptSlaRows_(deptSla) {
+  deptSla = deptSla || {};
+  var depts = deptSla.departments || [];
+  var def = deptSla.defaultHours || 48;
+  var tlc = {};
+  Object.keys(deptSla.targets || {}).forEach(function (k) { tlc[String(k).toLowerCase()] = deptSla.targets[k]; });
+  if (!depts.length) return '<div style="font-size:12px;color:var(--muted)">No departments configured yet.</div>';
+  return depts.map(function (d) {
+    var cur = tlc[String(d).toLowerCase()];
+    return '<div class="field-row cn-admin-sla-row" style="gap:8px;align-items:center;margin-bottom:6px">' +
+      '<div class="field" style="flex:1"><label>' + esc(d) + '</label></div>' +
+      '<div class="field" style="width:130px"><input type="number" min="1" max="720" class="cn-admin-sla-hours" data-dept="' +
+        esc(d) + '" value="' + (cur != null ? esc(String(cur)) : '') + '" placeholder="' + esc(String(def)) + ' (default)"></div>' +
+    '</div>';
+  }).join('');
 }
 
 /** Render all quick-link editor rows (label + url). */
