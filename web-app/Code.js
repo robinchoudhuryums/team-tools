@@ -9742,13 +9742,20 @@ function resolveDeptRequest(requestId) {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Your account is not registered.' };
     const rows = getOrCreateDeptRequestsSheet_().getDataRange().getValues();
-    let owner = null;
+    let owner = null, toDept = '';
     for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][DR.REQ_ID]) === String(requestId)) { owner = String(rows[i][DR.BY_ID]).trim(); break; }
+      if (String(rows[i][DR.REQ_ID]) === String(requestId)) {
+        owner = String(rows[i][DR.BY_ID]).trim();
+        toDept = String(rows[i][DR.TO_DEPT] || '').toLowerCase().trim();
+        break;
+      }
     }
     if (owner === null) return { success: false, error: 'Request not found.' };
-    if (owner !== emp.id && !emp.isManager)
-      return { success: false, error: 'Only the sender or a manager can resolve this request.' };
+    // v2: a member of the RECEIVING department can also resolve in-app (the
+    // "receiving agent marks resolved" path), alongside the sender + any manager.
+    const isDeptMember = empDepartments_(emp).some(function (d) { return String(d).toLowerCase() === toDept; });
+    if (owner !== emp.id && !emp.isManager && !isDeptMember)
+      return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
     const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '');
     if (!res.found) return { success: false, error: 'Request not found.' };
     return { success: true, already: !!res.already };
@@ -9835,7 +9842,18 @@ function getDeptRequests() {
     // Departments the composer can target — only those with a resolvable email.
     const deptMap = getDepartmentEmails_() || {};
     const departments = Object.keys(deptMap).filter(function (d) { return !!deptMap[d]; });
-    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments, truncated: truncated };
+    // DeptRequests v2 — the "Incoming" inbox: OPEN requests addressed to a
+    // department the caller staffs (roster column N). PHI-free (requester name +
+    // label + age). A rep on no dept desk gets []. Managers also get allOpen below.
+    const myDepts = empDepartments_(emp);
+    const myDeptsLc = {};
+    myDepts.forEach(function (d) { myDeptsLc[String(d).toLowerCase()] = true; });
+    const incoming = myDepts.length
+      ? all.filter(function (it) { return it.status === 'open' && myDeptsLc[String(it.toDept).toLowerCase().trim()]; })
+            .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100)
+      : [];
+    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments,
+                     myDepts: myDepts, incoming: incoming, truncated: truncated };
     if (emp.isManager) {
       const byDept = {};
       all.forEach(function (it) {

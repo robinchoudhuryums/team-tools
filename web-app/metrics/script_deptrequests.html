@@ -58,12 +58,27 @@ function drRender_(area, data, errorMsg) {
   const mineSection =
     '<div class="dr-section"><div class="dr-section-title">My requests</div>' + mineHtml + '</div>';
 
+  // v2 Incoming inbox — open requests addressed to a department the rep staffs
+  // (roster column N → data.myDepts). Members can resolve in-app here.
+  let incomingSection = '';
+  if (data && data.myDepts && data.myDepts.length) {
+    const inc = data.incoming || [];
+    const incHtml = inc.length
+      ? '<div class="dr-list">' + inc.map(drRequestRowHtml_).join('') + '</div>'
+      : '<div class="dr-empty">No open requests to your department right now.</div>';
+    incomingSection =
+      '<div class="dr-section"><div class="dr-section-title">Incoming · ' + esc(data.myDepts.join(', ')) + '</div>' +
+      '<div class="dr-note">' + icon('outbox', 13) +
+        ' Open requests addressed to your department. Mark one resolved when it’s handled.</div>' +
+      incHtml + '</div>';
+  }
+
   let mgrSection = '';
   if (data && data.isManager) {
     mgrSection = drManagerSectionHtml_(data);
   }
 
-  area.innerHTML = head + intro + trunc + mineSection + mgrSection;
+  area.innerHTML = head + intro + trunc + incomingSection + mineSection + mgrSection;
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 

@@ -899,6 +899,7 @@ function _runAllTests() {
   _integrationTest('managerGates_rejectNonManager',           test_managerGates_rejectNonManager);
   // ── A5: DeptRequests re-send dedup lookup ───────────────────────────────────
   _integrationTest('deptReq_resendDedupLookup',               test_deptReq_resendDedupLookup);
+  _integrationTest('deptReq_incomingAndMemberResolve',        test_deptReq_incomingAndMemberResolve);
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
@@ -4033,6 +4034,43 @@ function test_deptReq_resendDedupLookup() {
     _assertEq(drFindOpenRequest_('', 'Sales'), null,
       'no noteId → null (legacy rows never dedupe)');
   } finally {
+    const after = sh.getLastRow();
+    if (after > before) sh.deleteRows(before + 1, after - before);
+  }
+}
+
+// DeptRequests v2 — the Incoming inbox + a receiving-dept MEMBER can resolve an
+// open request in-app (not just the sender/manager). Temporarily makes the India
+// test emp a member of a real department (roster column N), then restores it.
+function test_deptReq_incomingAndMemberResolve() {
+  const deptKeys = Object.keys(getDepartmentEmails_() || {});
+  if (!deptKeys.length) { _assertTrue(true, 'no departments configured — skipped'); return; }
+  const dept = deptKeys[0];
+  const ss = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const roster = ss.getDataRange().getValues();
+  let empRow = -1;
+  for (let i = 1; i < roster.length; i++) {
+    if (String(roster[i][EMP.ID]).trim() === _TEST_INDIA_ID) { empRow = i + 1; break; }
+  }
+  if (empRow < 0) { _assertTrue(true, 'India test emp not on roster — skipped'); return; }
+  const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
+  const sh = getOrCreateDeptRequestsSheet_();
+  const before = sh.getLastRow();
+  try {
+    ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(dept);
+    invalidateRosterCache_();
+    sh.appendRow(['TEST_DR_INC', 'TEST_OTHER_SENDER', 'Other', 'o@x.com', dept, 'x.com',
+      drNowTs_(), 'open', '', '', 'incoming-test', 'TEST_DR_NOTE_INC']);
+    SpreadsheetApp.flush();
+    let res; _asUser(_TEST_INDIA_EMAIL, function () { res = getDeptRequests(); });
+    _assertTrue(res && Array.isArray(res.incoming), 'incoming array present');
+    _assertTrue(res.incoming.some(function (it) { return it.requestId === 'TEST_DR_INC'; }),
+      'the open request to my dept appears in Incoming');
+    let rr; _asUser(_TEST_INDIA_EMAIL, function () { rr = resolveDeptRequest('TEST_DR_INC'); });
+    _assertEq(rr.success, true, 'a receiving-dept member can resolve an incoming request');
+  } finally {
+    ss.getRange(empRow, EMP.DEPARTMENTS + 1).setValue(prevDept);
+    invalidateRosterCache_();
     const after = sh.getLastRow();
     if (after > before) sh.deleteRows(before + 1, after - before);
   }
