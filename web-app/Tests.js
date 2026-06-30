@@ -958,6 +958,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_removeAutomationTriggers_nonManagerThrows', test_triggerGate_removeAutomationTriggers_nonManagerThrows);
   _integrationTest('triggerGate_trainingOverdue_nonManagerThrows', test_triggerGate_trainingOverdue_nonManagerThrows);
   _integrationTest('triggerGate_automationHealthDigest_nonManagerThrows', test_triggerGate_automationHealthDigest_nonManagerThrows);
+  _integrationTest('triggerGate_deptReqReminder_nonManagerThrows', test_triggerGate_deptReqReminder_nonManagerThrows);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Audit row assertions ───────────────────────────────────────────────
@@ -3373,6 +3374,14 @@ function test_triggerGate_trainingOverdue_nonManagerThrows() {
 function test_triggerGate_automationHealthDigest_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendAutomationHealthDigest(); });
+  }, 'manager access required');
+}
+
+// DeptRequests v2 — the SLA reminder digest is a trigger handler, so it carries
+// the MANAGER_EMAILS assertManagerCaller_ gate (INV-44 family).
+function test_triggerGate_deptReqReminder_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendDeptRequestReminderDigest(); });
   }, 'manager access required');
 }
 

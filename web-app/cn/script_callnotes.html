@@ -8254,6 +8254,7 @@ function cnRenderHealthPanel_(res) {
     urgent: { label: 'Urgent-flag digest',         expect: 'daily 8am — stale past 26h' },
     weekly: { label: 'Weekly training/review digests', expect: 'Friday 8am — stale past 8d' },
     trainingOverdue: { label: 'Training-overdue digest', expect: 'daily 7am — stale past 26h' },
+    deptReqReminder: { label: 'Dept-request SLA reminder', expect: 'daily 10am — stale past 26h' },
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };

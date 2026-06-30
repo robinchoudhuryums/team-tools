@@ -4051,14 +4051,14 @@ function computeAutomationHealth_() {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue'].map(function (k) {
+    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder'].map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -7640,6 +7640,7 @@ function installAutomationTriggers() {
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
     'sendAutomationHealthDigest',
+    'sendDeptRequestReminderDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -7715,6 +7716,11 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendAutomationHealthDigest')
     .timeBased().atHour(9).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // DeptRequests v2 — daily manager-tz 10am reminder of OPEN dept requests past
+  // their SLA (manager summary; silent when none).
+  ScriptApp.newTrigger('sendDeptRequestReminderDigest')
+    .timeBased().atHour(10).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -7761,6 +7767,7 @@ function removeAutomationTriggers() {
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
     'sendAutomationHealthDigest',
+    'sendDeptRequestReminderDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -9963,6 +9970,69 @@ function saveDeptRequestSla(map) {
       'Updated Dept-Request SLA targets (' + Object.keys(clean).length + ' override(s))', emp.email);
     return { success: true, targets: clean };
   } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** Daily manager-tz reminder of OPEN department requests past their SLA — a
+ *  PHI-free summary push to MANAGER_EMAILS (the operator chose a manager summary
+ *  over per-dept member nudges). Silent when nothing is overdue (the urgent-digest
+ *  posture). Top-level trigger handler (assertManagerCaller_ INV-44, best-effort
+ *  INV-14, never throws past the catch). Heartbeat-stamped. DeptRequests v2 phase 4. */
+function sendDeptRequestReminderDigest() {
+  assertManagerCaller_('sendDeptRequestReminderDigest');
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (!mgrEmails.length) { Logger.log('No manager emails — skipping dept-request reminder.'); return; }
+    const sh = getOrCreateDeptRequestsSheet_();
+    const lastRow = sh.getLastRow();
+    const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+    const numRows = lastRow - firstData + 1;
+    const rows = numRows > 0 ? sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues() : [];
+    const slaCfg = getDeptRequestSlaConfig_();
+    const overdue = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r[DR.REQ_ID] || String(r[DR.STATUS]) === 'resolved') continue;
+      const cv = r[DR.CREATED_AT];
+      const createdMs = (cv instanceof Date) ? cv.getTime() : parseTimestampMs_(String(cv || ''), CONFIG.TIMEZONE);
+      if (!createdMs) continue;
+      const ageMin = Math.round((Date.now() - createdMs) / 60000);
+      const dept = String(r[DR.TO_DEPT] || '');
+      if (drSlaStatus_(ageMin, getDeptRequestSla_(dept, slaCfg)) !== 'overdue') continue;
+      overdue.push({ dept: dept || '—', byName: String(r[DR.BY_NAME] || ''),
+                     label: String(r[DR.LABEL] || ''), ageHours: Math.round(ageMin / 60) });
+    }
+    stampDigestLastRun_('deptReqReminder');
+    if (!overdue.length) { Logger.log('dept-request reminder: nothing overdue.'); return; }
+
+    const byDept = {};
+    overdue.forEach(function (o) { (byDept[o.dept] = byDept[o.dept] || []).push(o); });
+    const depts = Object.keys(byDept).sort();
+    let bodyHtml = '<p style="margin:0 0 10px;">' + overdue.length +
+      ' open department request(s) are past their resolution SLA. Open Metrics → Dept Requests for the full list + to mark them resolved.</p>';
+    depts.forEach(function (dept) {
+      bodyHtml += '<div style="margin:10px 0 4px;font-weight:700;">' + esc_(dept) + ' (' + byDept[dept].length + ')</div><ul style="margin:0;padding-left:18px;">';
+      byDept[dept].slice(0, 25).forEach(function (o) {
+        bodyHtml += '<li style="margin:3px 0;">' + esc_(o.label || 'request') + ' — ' + esc_(o.byName || 'unknown') + ' · ' + o.ageHours + 'h open</li>';
+      });
+      bodyHtml += '</ul>';
+    });
+    const textBody = overdue.length + ' overdue department request(s):\n\n' + depts.map(function (dept) {
+      return dept + ' (' + byDept[dept].length + '):\n' + byDept[dept].slice(0, 25).map(function (o) {
+        return '  • ' + (o.label || 'request') + ' — ' + (o.byName || 'unknown') + ' · ' + o.ageHours + 'h open';
+      }).join('\n');
+    }).join('\n\n') + '\n\nOpen Metrics → Dept Requests for the full list.';
+    try {
+      MailApp.sendEmail({
+        to: mgrEmails.join(','),
+        subject: 'Team Tools — ' + overdue.length + ' department request(s) past SLA',
+        body: textBody,
+        htmlBody: buildBrandedEmailHtml_('Department requests past SLA', bodyHtml, { tone: 'warn', subLabel: 'Dept Requests' }),
+      });
+    } catch (mailErr) { Logger.log('dept-request reminder send failed: ' + mailErr.message); }
+    Logger.log('sendDeptRequestReminderDigest: ' + overdue.length + ' overdue emailed to ' + mgrEmails.length + ' manager(s).');
+  } catch (err) {
+    Logger.log('sendDeptRequestReminderDigest failed: ' + err.message);
+  }
 }
 
 // IANA timezone aliases that resolve to the SAME zone (identical offset + rules).
