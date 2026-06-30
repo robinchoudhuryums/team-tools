@@ -418,7 +418,7 @@ this section before touching the relevant area.
   (also team-scoped via `coachCanManagerSee_` per INV-134 — the EmpDocs
   fail-closed model; the gate alone is not the boundary).
   Returning a dashboard or accepting writes without this check is a
-  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the 29
+  privilege escalation. **EXCEPTION — the admin tier (INV-136):** the 28
   Manage-module Admin-tab config/system endpoints + the Reference content-
   authoring set (`kbSaveItem`/`kbDeleteItem`/`kbUploadImage`/`kbConvertDriveDoc`)
   gate on `emp.isAdmin` (not `isManager`) and return `'Admin access required.'`.
@@ -430,9 +430,10 @@ this section before touching the relevant area.
   `runDailyExportCheck`, `sendCallNotesEodDigest`,
   `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`,
   `sendTrainingOverdueDigest` (the T4 overdue-training/-docs nudge),
-  `archiveOldCallNotes` (the non-destructive cold-archive tier) and
+  `archiveOldCallNotes` (the non-destructive cold-archive tier),
   `purgeExpiredFormData` (the
-  destructive PHI-retention purge) — are top-level (required: Apps Script
+  destructive PHI-retention purge) and `reconcileCallNotes` (the
+  non-destructive nightly Sheets back-fill) — are top-level (required: Apps Script
   time-based triggers won't bind to underscore-suffix functions), which
   also means a logged-in rep can fire them from the browser console.
   Each calls `assertManagerCaller_(label)` at the top — throws if
@@ -441,7 +442,12 @@ this section before touching the relevant area.
   `installAutomationTriggers`'s own check), so the gate is a no-op for
   triggers. Any new public function that walks the roster, hits Mail,
   or otherwise has side effects you wouldn't want a rep firing should
-  apply the same gate. `removeAutomationTriggers` also uses this
+  apply the same gate. **That gate MUST be the MANAGER_EMAILS
+  `assertManagerCaller_`, NEVER `emp.isAdmin` or the roster `isManager`** —
+  the installer passes `installAutomationTriggers`'s own MANAGER_EMAILS
+  check, so an admin/roster gate silently no-ops the nightly run under a
+  narrowed `ADMIN_EMAILS` or a non-roster installer (the `reconcileCallNotes`
+  F1/F2 cycle-6 regression — INV-109/INV-136). `removeAutomationTriggers` also uses this
   gate — without it, a non-manager rep could silently disable all
   automation triggers.
 - **PTO balance transitions.** `updateTimeOffStatus` only changes
@@ -1169,7 +1175,7 @@ this section before touching the relevant area.
   non-managers). `enterTool` redirects to `timeClock/clock` if the requested
   tool is fully gated, and bumps a gated tab to the first visible tab.
   **The admin tier is enforced BOTH client-side (the `adminOnly` tab) AND
-  server-side** — the 25 Admin-tab config/system endpoints now gate on
+  server-side** — the 24 Admin-tab config/system endpoints now gate on
   `emp.isAdmin` (`empIsAdmin_`: ADMIN_EMAILS set → that email list, else
   `emp.isManager` — so admin == manager until ADMIN_EMAILS is set, keyed off the
   SAME roster source the endpoints already use, avoiding the F5 property-vs-roster
@@ -3151,7 +3157,7 @@ manually for a fresh deploy or environment:
   `empState.isAdmin` → the `adminOnly` tab gate. **To restrict the Admin tab to
   just yourself, set `ADMIN_EMAILS=you@umsupply.com`** (otherwise every manager
   keeps Admin access). No redeploy needed to change it. This gates the Admin tab
-  CLIENT-side AND the 25 Admin config/system endpoints SERVER-side (`emp.isAdmin`,
+  CLIENT-side AND the 24 Admin config/system endpoints SERVER-side (`emp.isAdmin`,
   `'Admin access required.'` — INV-136). Because unset ⇒ admin == manager, a
   fresh deploy and the test suite behave exactly as before; setting it narrows
   both surfaces at once. Make sure YOUR email is in the list before setting it.
@@ -3865,7 +3871,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The ten trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, and per-rep NotesArchive rows past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` | Subsystem: Server
+INV-44 | The eleven trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`) call `assertManagerCaller_(label)` at the top. Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, and per-rep NotesArchive rows past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate) | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise `field ∈ all \| caller \| issue \| phone \| trx`: `all` matches across (caller, callback, patientAndTrx, issue, resolution); `caller` matches (caller, callback, patientAndTrx); `issue` matches (issue, resolution); **`phone` matches the callback number ONLY; `trx` matches patientAndTrx ONLY** (scope-isolated — a `phone` search never matches a TRX token, and vice-versa). The same field-scope set applies to the manager-gated `managerSearchCallNotes`. Used by the "Find prior calls for this TRX" card button + the Search tab's field-scope tabs. Pinned by `test_cn_search_phoneTrxFieldScopes` | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
