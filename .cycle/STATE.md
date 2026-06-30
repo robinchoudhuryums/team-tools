@@ -2,11 +2,11 @@
 
 ## Current
 Cycle: 6
-Phase: implement (broad-scan + broad-implement F1/F2/F4/F5 done 2026-06-23)
-Scope: broad
+Phase: idle — operator-feedback feature work (NOT an audit cycle); all merged to main
+Scope: dashboards + Manage module + admin tier + Reference KB-authoring gating + clock/icon polish
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-06-23 (broad-scan: 0 Critical / 0 High / 6 Low; implemented F1/F2/F4/F5)
+Updated: 2026-06-29 (operator-feedback session — see "Where I left off" at the bottom)
 
 ## Cycle 6 retention 3rd-tier + include-archive search (2026-06-23, branch claude/happy-faraday-0grppg)
 Closed the two archive follow-ons (pushed). Retention is now a full 3-tier system.
@@ -280,13 +280,17 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
   consolidation assessed = NOT advised (boundaries deliberate); consolidated the
   MANAGEMENT surface instead. Operator doing the Drive-folder grouping (#2).
 
-## Pending / not yet done
-- OPERATOR DEPLOY (still): `cd web-app && clasp push -f` + New version; then
-  runAllTests() in the editor.
-- OPERATOR: fix the ADP spreadsheet timezone (Asia/Kolkata) to clear the 3
-  tz-drift test failures; confirm whether the failing run was a TEST copy or
-  prod (if prod, the LA tz is a live data-integrity hazard).
-- 90q3ap straggler 196948c (cycle-4 metrics row) — reconcile if/when merged.
+## Pending / not yet done (current — 2026-06-29 operator-feedback session)
+- OPERATOR DEPLOY: `cd web-app && clasp push -f` + New version. ONE deploy ships
+  every PR merged this session (#97–#103) + the Manage module / admin tier (#102).
+- OPERATOR runAllTests() in the editor — the ONLY check on the #102 admin-gating
+  test split (CI can't run the Apps Script suite). Expect 0 failed.
+- OPERATOR (optional): set Script Property ADMIN_EMAILS=<your email> to narrow the
+  Admin tab + the 29 config/system endpoints + KB content-authoring to just you
+  (unset ⇒ admin == manager, today's behavior).
+- (Older, only if real for you) ADP spreadsheet tz should be Asia/Kolkata to avoid
+  coerced-date drift — carried from a prior cycle; not touched this session.
+- Decided/closed: lunch-icon alternatives (apple/crumbs) — staying with the fixed mug.
 
 ## P1 hardening batch (commit 1732fa2)
 - L-8: getMyCallNotes/Range/searchMyCallNotes → readCallNoteRowsInRange_ (bounded;
@@ -371,12 +375,29 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
   (the kbResolveDocImages_ lesson). Fails OPEN on lock contention (prior best-effort posture).
 
 ## Where I left off
-2026-06-22: Spanish Inbox + DeptRequests targeted audit COMPLETE on
-`claude/practical-gauss-yycwkz` (fast-forwarded to main first) — A1–A6 + /sync-docs
-all landed, nothing deferred. Commits: b4592e5 (A1–A3), f8856d2 (checkpoint),
-6ec0b03 (doc sync), 09896e0 (A4), f9318a7 (A6), 0ab6fd3 (A5). Node 48/48 green
-throughout; node --check clean. New invariant INV-131 (DeptRequests re-send
-idempotency). NEXT: operator deploy (clasp push -f + New version) + runAllTests()
-in the editor (exercises the new gate cases + test_deptReq_resendDedupLookup). No
-PR opened (not requested). Older Cycle-4 thread (M-1/L-1/L-2) is on
-claude/affectionate-cori-q4d2hf, unmerged.
+2026-06-29: operator-feedback session (NOT an audit) — all work merged to main
+(origin at #103), working tree clean, CLAUDE.md kept current inline + /sync-docs
+ran mid-session for the KB-gating change. Merged this session:
+- #97 dashboard-feedback batch (compact toggle removed, sidebar→Dashboard,
+  rolling-stack flash guard); #98 punch-button animations (press/hover + lunch
+  headset↔mug morph) + new punch glyphs; #100 dashboard layout (full-width
+  greeting, 2-up metric cards, 1480px, gradient-clock de-boxed, chip overflow);
+  #101 Spanish pending-request previews + Today's-Punches/teammate moved to a
+  right-column 2-up foot.
+- #102 **Manage module + admin tier**: new `manage` TOOLS tool (Manage Time /
+  Coverage / Punctuality moved from Time Clock + Admin moved from Call Notes,
+  `adminOnly`). empIsAdmin_(email,isManager) — ADMIN_EMAILS set ⇒ that list, unset
+  ⇒ isManager (so admin==manager + tests unchanged until set). tabVisibleForUser_/
+  toolVisibleForUser_. 29 admin-gated endpoints (the 25 Admin config/system +
+  the 4 KB content-authoring: kbSaveItem/kbDeleteItem/kbUploadImage/
+  kbConvertDriveDoc). getEnrolledCallNotesReps stays manager (shared). NEW INV-136.
+  Reference client authoring (Add/Edit/Delete/Convert) gates on KB_STATE.isAdmin.
+- #103 dash/clock batch 3: dashboard SWR cache (kills the focus-driven loader
+  flash) + 20s focus throttle; extras → 2-up [Spanish|Requests] / [Training|
+  Requests] (new clkDashTrainingCard_, getMyTraining); break chips B1/Lunch/B2
+  compact one-row + darker Lunch; renderActions afterLunch ⇒ ClockOut primary;
+  coffeeMug handle redrawn (right side, curve outward).
+Pure 188/0 + DOM 48/0 green throughout; node --check clean. NEXT = the operator
+deploy + runAllTests() + optional ADMIN_EMAILS above. Nothing in-flight on the
+code side. A fresh session for NEW work re-derives with fresh eyes (CLAUDE.md is
+the current substrate — 136 invariants).
