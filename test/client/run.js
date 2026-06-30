@@ -748,41 +748,60 @@ newTriggerHandlers.forEach((h) => {
   });
 });
 
-console.log('\nCode.js ↔ cn client — Automation Health label maps cover every server key (F5 tripwire)');
-// F5 (cycle 6): the server gained a `trainingOverdue` digest heartbeat +
-// CallNotesArchive/CallNotesArchivePurge automation actions, but the client
-// DIGEST_LABELS / CN_HEALTH_RUN_LABELS maps weren't updated, so the Admin
-// Automation-Health panel rendered the raw keys. Assert the client maps are a
-// SUPERSET of the server key sets so the next server addition can't drift.
+console.log('\nParallel-source coupling registry — key-set ⊆ relations (Axis-B drift net)');
+// The project's recurring bug GENUS: the same value duplicated across places that
+// drift (the F5 Automation-Health labels this cycle; layout mirrors;
+// LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_; CN_EMAIL_PALETTE ↔ tokens; ...).
+// This is the declarative HOME for SOURCE-LEVEL key-set couplings: each entry
+// extracts a `sub` set + a `sup` set and the runner asserts sub ⊆ sup, so the
+// NEXT such coupling is ONE registry entry instead of a hand-rolled test. NOTE:
+// couplings that need a vm-LOADED value or aren't a plain key-set comparison keep
+// their own bespoke tripwires (the day-type↔validator check above; the trigger
+// wiring + gate-type checks; the intake layout-row mirror + forms-ID mirror; the
+// design-token hygiene + SUBMITTED_AT coercion tripwires) — they're registry-
+// ADJACENT but each carries custom logic the generic runner can't express.
 const cnHealthSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
-function topLevelObjectKeys_(src, declRe, label) {
+// Reusable extractors over raw source (each returns a string[] of keys/items):
+function topLevelObjectKeys_(src, declRe, label) {   // multi-line `key: {...},`
   const m = src.match(declRe);
   assert.ok(m, label + ' object literal not found');
-  // Keys are line-leading `key:` — the nested { label, expect } sit after `{` on
-  // the same line, so a line-anchored match captures only the top-level keys.
+  // line-leading `key:` — nested { label, expect } sit after `{` on the same line.
   return [...m[1].matchAll(/^\s*([A-Za-z_]\w*)\s*:/gm)].map((x) => x[1]);
 }
-const digestServerKeys = (() => {
-  const m = codeSrc.match(/DIGEST_STALE_HOURS\s*=\s*\{([^}]*)\}/);   // single-line flat numeric map
-  assert.ok(m, 'DIGEST_STALE_HOURS found');
+function flatObjectKeys_(src, declRe, label) {       // single-line `{ a: 1, b: 2 }`
+  const m = src.match(declRe);
+  assert.ok(m, label + ' object literal not found');
   return [...m[1].matchAll(/([A-Za-z_]\w*)\s*:/g)].map((x) => x[1]);
-})();
-const autoActionKeys = (() => {
-  const m = codeSrc.match(/AUTOMATION_AUDIT_ACTIONS\s*=\s*\[([\s\S]*?)\]/);
-  assert.ok(m, 'AUTOMATION_AUDIT_ACTIONS found');
+}
+function stringArrayItems_(src, declRe, label) {     // `[ 'a', 'b' ]`
+  const m = src.match(declRe);
+  assert.ok(m, label + ' array literal not found');
   return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
-})();
-const digestLabelKeys = topLevelObjectKeys_(cnHealthSrc, /DIGEST_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'DIGEST_LABELS');
-const runLabelKeys = topLevelObjectKeys_(cnHealthSrc, /CN_HEALTH_RUN_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'CN_HEALTH_RUN_LABELS');
-test('DIGEST_LABELS covers every server digest heartbeat key (F5)', () => {
-  assert.ok(digestServerKeys.length >= 4, 'parsed DIGEST_STALE_HOURS keys (' + digestServerKeys.join(',') + ')');
-  digestServerKeys.forEach((k) => assert.ok(digestLabelKeys.indexOf(k) >= 0,
-    'DIGEST_LABELS is missing "' + k + '" — Automation Health would render the raw key (F5)'));
-});
-test('CN_HEALTH_RUN_LABELS covers every AUTOMATION_AUDIT_ACTIONS key (F5)', () => {
-  assert.ok(autoActionKeys.length >= 6, 'parsed AUTOMATION_AUDIT_ACTIONS (' + autoActionKeys.join(',') + ')');
-  autoActionKeys.forEach((k) => assert.ok(runLabelKeys.indexOf(k) >= 0,
-    'CN_HEALTH_RUN_LABELS is missing "' + k + '" — Automation Health would render the raw key (F5)'));
+}
+const COUPLING_REGISTRY = [
+  {
+    name: 'Automation-Health DIGEST_LABELS ⊇ server DIGEST_STALE_HOURS keys (F5)',
+    sub: () => flatObjectKeys_(codeSrc, /DIGEST_STALE_HOURS\s*=\s*\{([^}]*)\}/, 'DIGEST_STALE_HOURS'),
+    sup: () => topLevelObjectKeys_(cnHealthSrc, /DIGEST_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'DIGEST_LABELS'),
+    why: 'the Automation-Health panel would render the raw digest key',
+    minSub: 4,
+  },
+  {
+    name: 'Automation-Health CN_HEALTH_RUN_LABELS ⊇ AUTOMATION_AUDIT_ACTIONS (F5)',
+    sub: () => stringArrayItems_(codeSrc, /AUTOMATION_AUDIT_ACTIONS\s*=\s*\[([\s\S]*?)\]/, 'AUTOMATION_AUDIT_ACTIONS'),
+    sup: () => topLevelObjectKeys_(cnHealthSrc, /CN_HEALTH_RUN_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'CN_HEALTH_RUN_LABELS'),
+    why: 'the Automation-Health panel would render the raw automation-action key',
+    minSub: 6,
+  },
+];
+COUPLING_REGISTRY.forEach((c) => {
+  test('coupling — ' + c.name, () => {
+    const sub = c.sub(), sup = c.sup();
+    if (c.minSub) assert.ok(sub.length >= c.minSub,
+      c.name + ': parsed only ' + sub.length + ' source keys (' + sub.join(',') + ') — extractor may be stale');
+    sub.forEach((k) => assert.ok(sup.indexOf(k) >= 0,
+      c.name + ': "' + k + '" is in the source set but MISSING downstream — ' + c.why));
+  });
 });
 
 console.log('\nCode.js — Sheets-coerced timestamp columns are read via normalizeAuditTs_ (M1 tripwire)');
@@ -908,9 +927,17 @@ function extractClientObject(file, name) {
 
 console.log('\nCode.js — intakeFilterRecommendations_() (PPD engine)');
 const engineCtx = vm.createContext({});
+// The engine now derives its clinical factors via the shared
+// intakeDeriveClinicalFactors_ helper (so the engine + the explainability
+// surface can't drift) — load it into the ctx first or the engine's call throws.
+vm.runInContext(extractRawFunction('Code.js', 'intakeDeriveClinicalFactors_'), engineCtx,
+  { filename: 'Code.js#intakeDeriveClinicalFactors_' });
+vm.runInContext(extractRawFunction('Code.js', 'intakeExplainFactors_'), engineCtx,
+  { filename: 'Code.js#intakeExplainFactors_' });
 vm.runInContext(extractRawFunction('Code.js', 'intakeFilterRecommendations_'), engineCtx,
   { filename: 'Code.js#intakeFilterRecommendations_' });
 const intakeFilterRecommendations_ = engineCtx.intakeFilterRecommendations_;
+const intakeExplainFactors_ = engineCtx.intakeExplainFactors_;
 
 // fixture catalog: [features, hcpcs, weightCap, seatType, pdfLink, imageUrl]
 const CAT = [
@@ -960,6 +987,27 @@ test('engine never throws on empty answers / empty catalog', () => {
   assert.strictEqual(e1.standard.length + e1.complex.length, 0);
   const e2 = intakeFilterRecommendations_(null, null);
   assert.strictEqual(e2.standard.length + e2.complex.length, 0);
+});
+
+// Explainability surface — reuses the SAME derivation the engine does, so a
+// manager auditing a sent PPD submission sees exactly the factors that drove it.
+test('intakeExplainFactors_ surfaces the engine factors that fired (drift-free)', () => {
+  const rows = intakeExplainFactors_({ '38': '250', '43': 'multiple sclerosis', '32': 'yes' });
+  const byLabel = {};
+  rows.forEach((r) => { byLabel[r.label] = r.value; });
+  assert.ok(/Yes — "multiple sclerosis"/.test(byLabel['Valid neuro diagnosis (Q43)']), 'neuro Dx surfaced verbatim');
+  assert.strictEqual(byLabel['Spasticity (Q32)'], 'Yes');
+  assert.strictEqual(byLabel['Group-3 / neuro eligible'], 'Yes', 'neuro Dx → Group-3 eligible');
+  assert.strictEqual(byLabel['Solid-seat required'], 'Yes');
+  assert.strictEqual(byLabel['Weight'], '250 lbs');
+});
+test('intakeExplainFactors_ — a no-condition set reports all gates No, never throws', () => {
+  const rows = intakeExplainFactors_({ '38': '200' });
+  const byLabel = {};
+  rows.forEach((r) => { byLabel[r.label] = r.value; });
+  assert.strictEqual(byLabel['Group-3 / neuro eligible'], 'No');
+  assert.strictEqual(byLabel['Solid-seat required'], 'No');
+  assert.doesNotThrow(() => intakeExplainFactors_(null));
 });
 
 console.log('\nintake — client render layout mirrors the server (coupling tripwire)');

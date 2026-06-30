@@ -11659,10 +11659,14 @@ function getIntakeAgents() {
 // (2) the diagnostic toast is removed. `allProducts` is the raw 2D Offerings
 // array [features, hcpcs, weightCap, seatType, pdfLink, imageUrl]. Pure +
 // self-contained so the Node harness can unit-test the eligibility branches.
-function intakeFilterRecommendations_(answers, allProducts) {
+/** Pure — derive the PPD engine's clinical decision FACTORS from the raw answer
+ *  map (bare question numbers). Extracted from intakeFilterRecommendations_ so the
+ *  engine AND the read-only explainability surface (intakeExplainFactors_) share
+ *  ONE derivation — no parallel-source drift (INV-112). Returns the patient flag
+ *  bag + the eligibility booleans; the engine destructures these back into the
+ *  same local names so the rest of the engine is byte-for-byte unchanged. */
+function intakeDeriveClinicalFactors_(answers) {
   answers = answers || {};
-  allProducts = allProducts || [];
-
   const getAnswerText = (q) => String(answers[q] == null ? '' : answers[q]).toLowerCase().trim();
   const isPositive = (q) => { const a = getAnswerText(q); return a.includes('yes') || a.includes('true'); };
 
@@ -11716,6 +11720,66 @@ function intakeFilterRecommendations_(answers, allProducts) {
   const isSPOEligible = patient.hasSwelling || patient.hasPressureUlcers || isNeuroEligible ||
                         patient.usesCatheters || patient.hasSpineCurvature || patient.hasAmputation;
   const isMPOEligible = patient.usesCatheters || isNeuroEligible;
+
+  return {
+    patient: patient,
+    qualifiesForHemiplegia: qualifiesForHemiplegia,
+    hasStrokeWeakness: hasStrokeWeakness,
+    hemiplegiaSide: hemiplegiaSide,
+    hasValidNeuroDiagnosis: !!hasValidNeuroDiagnosis,
+    isNeuroEligible: isNeuroEligible,
+    isSPOEligible: isSPOEligible,
+    isMPOEligible: isMPOEligible,
+  };
+}
+
+/** Pure — a read-only, human-readable EXPLANATION of the engine's decision
+ *  factors for a PPD answer set (manager-auditable; INV-112 explainability).
+ *  Reuses intakeDeriveClinicalFactors_ (so it can never drift from what the
+ *  engine actually evaluated) and returns a flat list of `{label, value}` rows
+ *  — the clinical inputs that drive solid-seat / Group-3 / SPO / MPO eligibility
+ *  + the substitutions. PHI: derived from the patient's own answers (already in
+ *  the submission); adds no new data. */
+function intakeExplainFactors_(answers) {
+  const F = intakeDeriveClinicalFactors_(answers);
+  const p = F.patient;
+  const yn = (b) => b ? 'Yes' : 'No';
+  const rows = [];
+  rows.push({ label: 'Weight', value: p.weight ? (p.weight + ' lbs') : 'not provided' });
+  rows.push({ label: 'Valid neuro diagnosis (Q43)', value: F.hasValidNeuroDiagnosis ? ('Yes — "' + p.neuroCondition + '"') : 'No' });
+  rows.push({ label: 'Spasticity (Q32)', value: yn(p.hasSpasticity) });
+  rows.push({ label: 'Hemiplegia from stroke (Q31a)', value: F.qualifiesForHemiplegia ? ('Yes — ' + F.hemiplegiaSide + ' side') : (F.hasStrokeWeakness ? 'Weakness only (no hemiplegia)' : 'No') });
+  rows.push({ label: 'Amputation (Q34)', value: yn(p.hasAmputation) });
+  rows.push({ label: 'Pressure ulcers (Q33)', value: yn(p.hasPressureUlcers) });
+  rows.push({ label: 'Spinal curvature (Q35)', value: yn(p.hasSpineCurvature) });
+  rows.push({ label: 'Lower-extremity numbness (Q25)', value: yn(p.hasLowerExtremityNumbness) });
+  rows.push({ label: 'Uses catheters (Q30)', value: yn(p.usesCatheters) });
+  rows.push({ label: 'Swelling/edema (Q36)', value: yn(p.hasSwelling) });
+  rows.push({ label: 'On oxygen (Q44)', value: yn(p.isOnOxygen) + (p.isOnOxygen ? ' — excludes K0837/K0838' : '') });
+  // Derived eligibility — the gates the engine applies to the catalog.
+  rows.push({ label: 'Solid-seat required', value: yn(p.hasSpineCurvature || p.hasPressureUlcers || p.hasSpasticity || F.hasValidNeuroDiagnosis || F.qualifiesForHemiplegia || F.hasStrokeWeakness || p.hasLowerExtremityNumbness || p.usesCatheters || p.hasAmputation) });
+  rows.push({ label: 'Group-3 / neuro eligible', value: yn(F.isNeuroEligible) });
+  rows.push({ label: 'Power-tilt (SPO) eligible', value: yn(F.isSPOEligible) });
+  rows.push({ label: 'Power-options (MPO) eligible', value: yn(F.isMPOEligible) });
+  return rows;
+}
+
+function intakeFilterRecommendations_(answers, allProducts) {
+  answers = answers || {};
+  allProducts = allProducts || [];
+
+  // Decision factors derived ONCE via the shared helper, destructured back into
+  // the original local names so the filter / substitution / justify logic below
+  // is unchanged (the explainability surface reuses the same derivation).
+  const F = intakeDeriveClinicalFactors_(answers);
+  const patient = F.patient;
+  const qualifiesForHemiplegia = F.qualifiesForHemiplegia;
+  const hasStrokeWeakness = F.hasStrokeWeakness;
+  const hemiplegiaSide = F.hemiplegiaSide;
+  const hasValidNeuroDiagnosis = F.hasValidNeuroDiagnosis;
+  const isNeuroEligible = F.isNeuroEligible;
+  const isSPOEligible = F.isSPOEligible;
+  const isMPOEligible = F.isMPOEligible;
 
   const inherentlySolidCodes = [
     'K0822', 'K0824', 'K0826', 'K0828',
@@ -12350,6 +12414,11 @@ function intakeGetSubmission(formType, submissionId) {
     if (isPpd) {
       result.recommendations = parse(row[7]);
       result.selections = parse(row[8]);
+      // Read-only engine explainability (manager-auditable) — recomputed from the
+      // STORED answers via the same derivation the engine used (intakeExplainFactors_
+      // → intakeDeriveClinicalFactors_), so there's no schema change and it can
+      // never drift from what actually fired. PHI-free beyond the answers already here.
+      result.factors = intakeExplainFactors_(result.answers);
     } else {
       // DOB is user-typed text but Sheets may coerce a date-like value
       result.dob = (row[5] instanceof Date)

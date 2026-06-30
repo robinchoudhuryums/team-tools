@@ -2,11 +2,38 @@
 
 ## Current
 Cycle: 6
-Phase: implement — broad-scan F1–F11 + P1 tripwires + automation digest on claude/broad-scan-2ll5ok (pushed, not merged)
-Scope: cycle-6-regression fixes + self-defending CI tripwires + automation-failure push
+Phase: implement — broad-scan F1–F11 + P1 + automation digest + coupling registry + intake explainability on claude/broad-scan-2ll5ok (pushed, not merged)
+Scope: cycle-6-regression fixes + self-defending CI + automation push + P3 strategic depth
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-06-30 (broad-scan + broad-implement F1–F11, P1, automation digest)
+Updated: 2026-06-30 (broad-implement: F1–F11, P1, automation digest, coupling registry, intake explainability)
+
+## Cycle 6 broad-implement — coupling registry + intake explainability (2026-06-30)
+Two P3 strategic-depth items:
+- Coupling-tripwire registry (test/client/run.js): a declarative COUPLING_REGISTRY
+  + generic runner for SOURCE-LEVEL key-set ⊆ couplings (the Axis-B drift net).
+  Reusable extractors (topLevelObjectKeys_/flatObjectKeys_/stringArrayItems_).
+  Seeded with the 2 F5 Automation-Health label couplings (replaced their ad-hoc
+  tests). The next such coupling is ONE entry. Vm-dependent / custom-shaped
+  couplings (day-type validator, trigger wiring, gate-type, intake layout mirror,
+  forms-ID mirror, token hygiene, SUBMITTED_AT coercion) stay bespoke — documented.
+- Intake recommendation explainability (Code.js + intake client): extracted the
+  engine's clinical-factor derivation into the shared pure intakeDeriveClinicalFactors_
+  (engine destructures it back into the SAME locals — filter/justify byte-for-byte
+  unchanged, so NO drift from the explainability surface). New pure
+  intakeExplainFactors_ → flat {label,value}[] of the factors that drove the rec.
+  intakeGetSubmission returns `factors` for PPD (recomputed from STORED answers —
+  no schema change); the Sent detail renders a read-only "Why these recommendations
+  · engine factors" block (every value esc()'d). Manager-auditable (+ rep sees own).
+  Node harness updated (loads the 2 helpers into the engine vm ctx) + 2 explain
+  tests; the 5 engine tests still pass = behavior-preserving. INV-112/INV-116 updated.
+DECISIONS: explainability reuses the engine's OWN derivation (shared helper) rather
+than re-deriving — the only drift-free design (and the very genus the coupling
+registry fights). Recompute-from-stored-answers avoids a schema migration. Registry
+scoped to source-level key-set couplings (the clean, generalizable shape); didn't
+force-migrate differently-shaped tripwires (would weaken them). Pure harness 204/0;
+node --check clean. NEXT: operator deploy (clasp push -f + New version); no new
+Script Properties/triggers/migrations for these two.
 
 ## Cycle 6 broad-implement P1 + automation-failure digest (2026-06-30, claude/broad-scan-2ll5ok)
 Post-F1–F11 follow-up batch (the audit's strategic gaps + the top P2 feature):
