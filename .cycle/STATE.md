@@ -2,11 +2,40 @@
 
 ## Current
 Cycle: 6
-Phase: implement — broad-scan F1–F11 fixes on branch claude/broad-scan-2ll5ok (pushed, not merged)
-Scope: cycle-6-regression fixes (reconcile trigger gate, clock UX, CN UX, coaching toast, admin health labels)
+Phase: implement — broad-scan F1–F11 + P1 tripwires + automation digest on claude/broad-scan-2ll5ok (pushed, not merged)
+Scope: cycle-6-regression fixes + self-defending CI tripwires + automation-failure push
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-06-30 (broad-scan + broad-implement F1–F11 + /sync-docs)
+Updated: 2026-06-30 (broad-scan + broad-implement F1–F11, P1, automation digest)
+
+## Cycle 6 broad-implement P1 + automation-failure digest (2026-06-30, claude/broad-scan-2ll5ok)
+Post-F1–F11 follow-up batch (the audit's strategic gaps + the top P2 feature):
+- P1#1 (test/client/run.js): trigger-GATE-TYPE tripwire — every install-TARGETS
+  handler must call assertManagerCaller_ AND reference no `.isAdmin` IN CODE
+  (comment-stripped first — reconcile's comment legitimately says "NOT emp.isAdmin").
+  Would have caught F1. The prior tripwire only checked trigger WIRING, not gate type.
+- P1#2 (run.js): Automation-Health label-map tripwire — client DIGEST_LABELS ⊇
+  server DIGEST_STALE_HOURS keys + CN_HEALTH_RUN_LABELS ⊇ AUTOMATION_AUDIT_ACTIONS.
+  Would have caught F5. Source-level regex (top-level line-anchored keys).
+- P1#3 (CLAUDE.md): folded the F7 LunchIn→doorExit morph note into the
+  "Punch-button motion" decision.
+- Automation-failure digest (Code.js): NEW sendAutomationHealthDigest — daily
+  manager-tz 9am, 12th trigger. Reuses the UN-gated computeAutomationHealth_
+  (extracted from getAutomationHealth — the gate stays in the wrapper, ONE shared
+  computation, no parallel-source drift). Emails MANAGER_EMAILS ONLY on a failing
+  check: stale digest heartbeat / stale nightly reconcile (the F1 class, via the
+  new additive automationLastRuns[].last.ms field, >30h) / personal-sheet
+  sync-fails. Silent when healthy; "never ran yet" not flagged. CDR DROPPED from
+  the push (unset CDR_SS_ID would false-nag a non-CDR deploy; panels still show
+  it). assertManagerCaller_ gate (INV-44, passes the new gate-type tripwire),
+  best-effort, PHI-free. Wired into BOTH TARGETS; gate test added. NEW INV-137.
+DECISIONS: digest scoped to automation-TRIGGER failures (not integration/CDR) so
+"silent when healthy" holds for every deployment. Watcher has no heartbeat/audit
+row of its own (verify from the trigger list) — accepted (meta-watcher out of
+scope). computeAutomationHealth_ may throw; every caller wraps it.
+Pure harness 188→202/0; node --check clean. NEXT: operator deploy (clasp push -f +
+New version) — re-run installAutomationTriggers() to wire the 12th trigger +
+runAllTests() (new gate test). DOM harness via CI.
 
 ## Cycle 6 broad-implement F7–F11 (2026-06-30, branch claude/broad-scan-2ll5ok)
 The Low-tier remainder of the broad-scan, all client-only (no Code.js change):

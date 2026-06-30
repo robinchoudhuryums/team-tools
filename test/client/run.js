@@ -725,6 +725,66 @@ test('removeAutomationTriggers TARGETS matches the install set (cleans up all it
     'install and remove TARGETS must list the same handlers');
 });
 
+console.log('\nCode.js — every trigger-TARGETS handler uses the assertManagerCaller_ gate (F1 tripwire)');
+// F1 (cycle 6): reconcileCallNotes was a daily TRIGGER gated on emp.isAdmin —
+// under a narrowed ADMIN_EMAILS (or a non-roster installer) the nightly run
+// silently no-op'd. A trigger handler's gate MUST be MANAGER_EMAILS
+// (assertManagerCaller_), NEVER emp.isAdmin/roster, because the installer is
+// validated against MANAGER_EMAILS. The existing tripwire above only checks
+// trigger WIRING; this one checks the GATE TYPE inside each handler body.
+// Strip JS comments first — a handler's comment may legitimately MENTION
+// emp.isAdmin (e.g. reconcileCallNotes documents "NOT emp.isAdmin"); we only
+// care about an isAdmin reference in executable code.
+function stripJsComments_(s) {
+  return s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+newTriggerHandlers.forEach((h) => {
+  test('trigger handler ' + h + ' gates via assertManagerCaller_, not emp.isAdmin', () => {
+    const src = stripJsComments_(extractRawFunction('Code.js', h));
+    assert.ok(/assertManagerCaller_\s*\(/.test(src),
+      h + ': a trigger handler must call assertManagerCaller_ — a narrowed ADMIN_EMAILS / non-roster installer would otherwise silently no-op it (F1)');
+    assert.ok(!/\.isAdmin\b/.test(src),
+      h + ': a trigger handler must NOT gate on .isAdmin in code — the trigger runs as the installer (MANAGER_EMAILS), so an admin/roster gate can diverge (F1)');
+  });
+});
+
+console.log('\nCode.js ↔ cn client — Automation Health label maps cover every server key (F5 tripwire)');
+// F5 (cycle 6): the server gained a `trainingOverdue` digest heartbeat +
+// CallNotesArchive/CallNotesArchivePurge automation actions, but the client
+// DIGEST_LABELS / CN_HEALTH_RUN_LABELS maps weren't updated, so the Admin
+// Automation-Health panel rendered the raw keys. Assert the client maps are a
+// SUPERSET of the server key sets so the next server addition can't drift.
+const cnHealthSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+function topLevelObjectKeys_(src, declRe, label) {
+  const m = src.match(declRe);
+  assert.ok(m, label + ' object literal not found');
+  // Keys are line-leading `key:` — the nested { label, expect } sit after `{` on
+  // the same line, so a line-anchored match captures only the top-level keys.
+  return [...m[1].matchAll(/^\s*([A-Za-z_]\w*)\s*:/gm)].map((x) => x[1]);
+}
+const digestServerKeys = (() => {
+  const m = codeSrc.match(/DIGEST_STALE_HOURS\s*=\s*\{([^}]*)\}/);   // single-line flat numeric map
+  assert.ok(m, 'DIGEST_STALE_HOURS found');
+  return [...m[1].matchAll(/([A-Za-z_]\w*)\s*:/g)].map((x) => x[1]);
+})();
+const autoActionKeys = (() => {
+  const m = codeSrc.match(/AUTOMATION_AUDIT_ACTIONS\s*=\s*\[([\s\S]*?)\]/);
+  assert.ok(m, 'AUTOMATION_AUDIT_ACTIONS found');
+  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+})();
+const digestLabelKeys = topLevelObjectKeys_(cnHealthSrc, /DIGEST_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'DIGEST_LABELS');
+const runLabelKeys = topLevelObjectKeys_(cnHealthSrc, /CN_HEALTH_RUN_LABELS\s*=\s*\{([\s\S]*?)\n\s*\};/, 'CN_HEALTH_RUN_LABELS');
+test('DIGEST_LABELS covers every server digest heartbeat key (F5)', () => {
+  assert.ok(digestServerKeys.length >= 4, 'parsed DIGEST_STALE_HOURS keys (' + digestServerKeys.join(',') + ')');
+  digestServerKeys.forEach((k) => assert.ok(digestLabelKeys.indexOf(k) >= 0,
+    'DIGEST_LABELS is missing "' + k + '" — Automation Health would render the raw key (F5)'));
+});
+test('CN_HEALTH_RUN_LABELS covers every AUTOMATION_AUDIT_ACTIONS key (F5)', () => {
+  assert.ok(autoActionKeys.length >= 6, 'parsed AUTOMATION_AUDIT_ACTIONS (' + autoActionKeys.join(',') + ')');
+  autoActionKeys.forEach((k) => assert.ok(runLabelKeys.indexOf(k) >= 0,
+    'CN_HEALTH_RUN_LABELS is missing "' + k + '" — Automation Health would render the raw key (F5)'));
+});
+
 console.log('\nCode.js — Sheets-coerced timestamp columns are read via normalizeAuditTs_ (M1 tripwire)');
 // The Sheets-coercion class has now bitten twice (AuditLog timestamps, then
 // TO.SUBMITTED_AT flattening the pending-trend sparkline to zero). Every read

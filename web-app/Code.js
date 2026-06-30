@@ -3939,6 +3939,15 @@ function getAutomationHealth() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    return computeAutomationHealth_();
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Internal, UN-GATED automation-health report — the body of getAutomationHealth,
+ *  factored out so the manager-gated Admin panel AND the automation-failure push
+ *  (sendAutomationHealthDigest) share ONE computation (no parallel-source drift).
+ *  May throw; every caller wraps it in try/catch. */
+function computeAutomationHealth_() {
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
 
     // ── (a) + (c): one bounded tail scan of the AuditLog ─────────────────
@@ -3975,8 +3984,14 @@ function getAutomationHealth() {
             }
           }
         } else if (AUTOMATION_AUDIT_ACTIONS.indexOf(action) >= 0 && !lastRunByAction[action]) {
+          // `ms` (raw run time) is additive — the Admin panel renders timestampMgr/
+          // notes; sendAutomationHealthDigest uses ms to detect a STALE last run
+          // (the F1 class — a daily job that silently stopped).
+          let _runMs = null;
+          try { _runMs = Utilities.parseDate(tsRaw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); } catch (_) {}
           lastRunByAction[action] = {
             timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+            ms: _runMs,
             notes: String(data[i][9]),
           };
         }
@@ -4060,7 +4075,71 @@ function getAutomationHealth() {
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
     };
-  } catch (err) { return { error: err.message }; }
+}
+
+/** Daily org-wide automation-FAILURE push (manager-tz 9am). Reuses
+ *  computeAutomationHealth_() and emails MANAGER_EMAILS ONLY when something is
+ *  actually wrong — a stale digest heartbeat, a stale nightly reconcile (the F1
+ *  class: a daily trigger that silently stopped), personal-sheet sync failures,
+ *  or CDR unreachable. A HEALTHY system is silent (no daily nag), mirroring the
+ *  urgent digest's "sends nothing when none". Top-level trigger handler, so it
+ *  carries the MANAGER_EMAILS assertManagerCaller_ gate (INV-44); best-effort
+ *  (INV-14, never throws past the catch); PHI-free. */
+function sendAutomationHealthDigest() {
+  assertManagerCaller_('sendAutomationHealthDigest');
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (!mgrEmails.length) { Logger.log('No manager emails — skipping automation-health digest.'); return; }
+    let report = null;
+    try { report = computeAutomationHealth_(); } catch (e) { Logger.log('automation-health digest: report failed: ' + e.message); }
+    if (!report) return;
+
+    const problems = [];
+    // (a) Stale digest heartbeats — a digest whose last run aged past its window
+    // (a previously-alive trigger that stopped). last:null (never run) is NOT a
+    // problem (fresh deploy / not-yet-installed), matching the panel's posture.
+    (report.digests || []).forEach(function (d) {
+      if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+    });
+    // (b) Reconcile liveness — the ONE unconditional daily job (it writes an audit
+    // row every run), so a stale last-run is the F1 signal (a narrowed
+    // ADMIN_EMAILS / dead trigger). Only flag when a prior run EXISTS but is old
+    // (no row at all = fresh deploy / not installed — same posture as (a)).
+    const RECON_STALE_HOURS = 30;   // daily 5am + margin
+    const recon = (report.automationLastRuns || []).filter(function (a) { return a.action === 'CallNotesReconcile'; })[0];
+    if (recon && recon.last && recon.last.ms && (Date.now() - recon.last.ms) > RECON_STALE_HOURS * 3600000) {
+      problems.push('The nightly Sheets reconcile last ran ' + recon.last.timestampMgr + ' (over ' + RECON_STALE_HOURS + 'h ago) — the trigger may be disabled.');
+    }
+    // (c) Personal-sheet sync failures (a rep's Sheet drifting from the source).
+    if (report.syncFails && report.syncFails.count > 0) {
+      problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
+    }
+    // CDR reachability is deliberately NOT pushed here: it isn't a trigger, an
+    // unset CDR_SS_ID legitimately reads as "unreachable" (would false-nag a
+    // non-CDR deployment daily), and the Admin Storage/Automation Health panels
+    // already surface it. The digest stays scoped to automation-TRIGGER failures.
+
+    if (!problems.length) { Logger.log('automation-health digest: all clear, nothing to send.'); return; }
+
+    const itemsHtml = '<ul style="margin:0;padding-left:18px;">' +
+      problems.map(function (p) { return '<li style="margin:4px 0;">' + esc_(p) + '</li>'; }).join('') + '</ul>';
+    const bodyHtml = '<p style="margin:0 0 10px;">Automated checks found ' + problems.length +
+      ' issue(s) with the Team Tools automation. Open Call Notes → Admin → Automation Health for detail.</p>' + itemsHtml;
+    const textBody = 'Automation health — ' + problems.length + ' issue(s):\n\n' +
+      problems.map(function (p) { return '• ' + p; }).join('\n') +
+      '\n\nOpen Call Notes → Admin → Automation Health for detail.';
+    try {
+      MailApp.sendEmail({
+        to: mgrEmails.join(','),
+        subject: 'Team Tools — automation health: ' + problems.length + ' issue(s) need attention',
+        body: textBody,
+        htmlBody: buildBrandedEmailHtml_('Automation health needs attention', bodyHtml, { tone: 'warn', subLabel: 'Automation Health' }),
+      });
+    } catch (mailErr) { Logger.log('automation-health digest send failed: ' + mailErr.message); }
+    Logger.log('sendAutomationHealthDigest: ' + problems.length + ' issue(s) emailed to ' + mgrEmails.length + ' manager(s).');
+  } catch (err) {
+    Logger.log('sendAutomationHealthDigest failed: ' + err.message);
+  }
 }
 
 /** Storage Health (#1) — manager-gated, read-only one-pane-of-glass over every
@@ -7552,6 +7631,7 @@ function installAutomationTriggers() {
     'purgeOldCallNotes',
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
+    'sendAutomationHealthDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -7619,6 +7699,14 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendTrainingOverdueDigest')
     .timeBased().atHour(7).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Automation-FAILURE push (manager-tz 9am, AFTER the nightly jobs + digests so
+  // the report reflects their latest runs). Emails MANAGER_EMAILS ONLY when a
+  // check is failing (stale heartbeat / stale reconcile / sync-fails / CDR down);
+  // silent when healthy. Turns a silently-dead nightly trigger (the F1 class)
+  // into a push instead of relying on a manager opening the Health panel.
+  ScriptApp.newTrigger('sendAutomationHealthDigest')
+    .timeBased().atHour(9).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -7664,6 +7752,7 @@ function removeAutomationTriggers() {
     'purgeOldCallNotes',
     'reconcileCallNotes',
     'sendTrainingOverdueDigest',
+    'sendAutomationHealthDigest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
