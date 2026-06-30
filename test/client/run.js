@@ -2242,5 +2242,21 @@ test('clean configs warn-free; unsafe orderings each warn', () => {
   assert.ok(retentionWarnings_(90, 0, 30).some((w) => w.indexOf('Cold-store') >= 0));
 });
 
+console.log('\nCode.js — DeptRequests v2 (drParseDepartments_ membership)');
+vm.runInContext(extractRawFunction('Code.js', 'drParseDepartments_'), sb,
+  { filename: 'Code.js#drParseDepartments_' });
+const drParseDepartments_ = sb.drParseDepartments_;
+test('drParseDepartments_ canonicalizes, dedupes, drops unknowns', () => {
+  // vm-realm arrays fail deepStrictEqual against main-realm literals — compare via join.
+  const keys = ['Billing', 'Authorizations', 'Shipping'];
+  assert.strictEqual(drParseDepartments_('billing; SHIPPING', keys).join(','), 'Billing,Shipping',
+    'case-insensitive match → canonical key casing');
+  assert.strictEqual(drParseDepartments_('Billing, billing , Billing', keys).join(','), 'Billing', 'deduped');
+  assert.strictEqual(drParseDepartments_('Billing; NotADept', keys).join(','), 'Billing', 'unknown dropped');
+  assert.strictEqual(drParseDepartments_('', keys).length, 0, 'blank → none');
+  assert.strictEqual(drParseDepartments_('Shipping', []).length, 0, 'no valid keys → none');
+  assert.doesNotThrow(() => drParseDepartments_(null, null));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

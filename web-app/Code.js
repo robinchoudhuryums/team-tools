@@ -276,6 +276,7 @@ const EMP = {
   EMAIL:0, ID:1, NAME:2, SHEET_ID:3, PAY_CYCLE:4, PAY_ANCHOR:5, IS_MANAGER:6,
   TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10, CALL_NOTES_SHEET_ID:11,
   MANAGER_EMAIL:12,   // column M — the rep's manager (Employee Docs team scoping, T3)
+  DEPARTMENTS:13,     // column N — dept names the rep staffs (DeptRequests v2 inbox routing)
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
@@ -438,7 +439,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v6';   // bumped: ManagerEmail column (T3)
+const ROSTER_CACHE_KEY = 'employee_roster_v7';   // bumped: Departments column N (DeptRequests v2)
 const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
@@ -577,6 +578,9 @@ function getEmployeeState() {
       // Spanish Inbox access — managers OR a SPANISH_INBOX_MEMBERS rep (INV-31
       // amendment); gates the dashboard Spanish card + the metricsSpanish tab.
       canSeeSpanish: canSeeSpanishInbox_(emp),
+      // DeptRequests v2 — the rep's department memberships (canonical names);
+      // gates the Dept Requests "Incoming" inbox section client-side.
+      departments: empDepartments_(emp),
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
       schedule: getShiftSchedule_(empTz),
@@ -9622,6 +9626,30 @@ function getOrCreateDeptRequestsSheet_() {
 }
 function drNowTs_() { return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss"); }
 
+/** Pure (Node-pinned) — parse a roster Departments cell (col N) into canonical
+ *  dept names. Splits on `;`/`,`, matches each token case-insensitively against
+ *  the known department keys (`validKeys`) and returns the CANONICAL key casing,
+ *  deduped; UNKNOWN names are dropped (a typo can't route an inbox to nowhere).
+ *  DeptRequests v2 membership (INV-138). */
+function drParseDepartments_(raw, validKeys) {
+  const lc = {};
+  (validKeys || []).forEach(function (k) { lc[String(k).toLowerCase().trim()] = k; });
+  const out = [], seen = {};
+  String(raw || '').split(/[;,]/).forEach(function (tok) {
+    const t = String(tok).toLowerCase().trim();
+    if (!t || !lc[t] || seen[lc[t]]) return;
+    seen[lc[t]] = true; out.push(lc[t]);
+  });
+  return out;
+}
+
+/** The caller's resolved department memberships (canonical names), validated
+ *  against the LIVE department map. Empty for reps not on a dept desk. */
+function empDepartments_(emp) {
+  if (!emp || !emp.departmentsRaw) return [];
+  return drParseDepartments_(emp.departmentsRaw, Object.keys(getDepartmentEmails_() || {}));
+}
+
 /** Minimize a recipient list to its unique domain(s) for the PHI-free
  *  DeptRequests ToEmail column. The "Other" department lets a rep enter a
  *  free-text (possibly external/customer) address, and the store can fall back
@@ -9950,6 +9978,7 @@ function getEmployeeInfo_() {
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
         managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
+        departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),   // parsed lazily via empDepartments_
       };
     }
   }
@@ -9979,6 +10008,7 @@ function lookupEmployeeById_(empId) {
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       ptoEnabled,
       managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
+      departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),
     };
   }
   return null;
