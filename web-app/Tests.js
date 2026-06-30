@@ -1591,19 +1591,32 @@ function test_reconcileCallNotes_backfillsHandEntered() {
   row[CN.ISSUE]  = 'typed directly into the sheet';
   sheet.appendRow(row);
   const appended = sheet.getLastRow();
-  let res;
-  _asUser(_TEST_MGR_EMAIL, function () { res = reconcileCallNotes(); });
-  _assertSuccess(res);
-  _assertTrue(res.rowsBackfilled >= 1, 'at least one hand-entered row backfilled');
-  const after = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
-  _assertTrue(String(after[CN.NOTE_ID]).trim().length > 0, 'noteId assigned');
-  _assertEq(String(after[CN.CALLER]).trim(), 'Hand Entered Caller', 'content untouched');
-  // Idempotent: re-run keeps the same noteId (row now has one → skipped).
-  let res2;
-  _asUser(_TEST_MGR_EMAIL, function () { res2 = reconcileCallNotes(); });
-  const after2 = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
-  _assertEq(String(after2[CN.NOTE_ID]).trim(), String(after[CN.NOTE_ID]).trim(), 'noteId stable on re-run (idempotent)');
-  sheet.deleteRow(appended);   // tidy within the run (cleanupTestData also wipes the test Notes tab)
+  // reconcileCallNotes is a TRIGGER handler gated on MANAGER_EMAILS
+  // (assertManagerCaller_, INV-44/INV-109) — NOT the roster isManager column. In
+  // production the nightly trigger runs as the installer, who IS in MANAGER_EMAILS;
+  // mirror that by adding the (roster-only) test manager to the property for the
+  // run, restored after. (The roster gate that the test manager satisfies is no
+  // longer the reconcile gate — cycle-6 F1/F2 fix.)
+  const props = PropertiesService.getScriptProperties();
+  const prevMgr = props.getProperty('MANAGER_EMAILS');
+  props.setProperty('MANAGER_EMAILS', (prevMgr ? prevMgr + ',' : '') + _TEST_MGR_EMAIL);
+  try {
+    let res;
+    _asUser(_TEST_MGR_EMAIL, function () { res = reconcileCallNotes(); });
+    _assertSuccess(res);
+    _assertTrue(res.rowsBackfilled >= 1, 'at least one hand-entered row backfilled');
+    const after = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
+    _assertTrue(String(after[CN.NOTE_ID]).trim().length > 0, 'noteId assigned');
+    _assertEq(String(after[CN.CALLER]).trim(), 'Hand Entered Caller', 'content untouched');
+    // Idempotent: re-run keeps the same noteId (row now has one → skipped).
+    let res2;
+    _asUser(_TEST_MGR_EMAIL, function () { res2 = reconcileCallNotes(); });
+    const after2 = sheet.getRange(appended, 1, 1, CN_HEADERS.length).getValues()[0];
+    _assertEq(String(after2[CN.NOTE_ID]).trim(), String(after[CN.NOTE_ID]).trim(), 'noteId stable on re-run (idempotent)');
+  } finally {
+    if (prevMgr === null) props.deleteProperty('MANAGER_EMAILS'); else props.setProperty('MANAGER_EMAILS', prevMgr);
+    sheet.deleteRow(appended);   // tidy within the run (cleanupTestData also wipes the test Notes tab)
+  }
 }
 
 // Auto-provision (INV-110): non-manager is rejected before any Drive write.
