@@ -104,6 +104,29 @@ Wave-2 rep-facing (Employee-UX). Client-only; no server/schema change.
   umsKbPanel localStorage note.
 - Shipped in #111 (merged).
 
+## PPD intake redesign — planning + Phase 0 (2026-07-01, claude/broad-scan-2ll5ok)
+NEW multi-phase effort (operator request): upgrade PPD question response formats
+(multi-select buttons, condition pickers, validation) WITHOUT touching the fragile
+substring-based recommendation engine (intakeFilterRecommendations_ /
+intakeDeriveClinicalFactors_). KEY INSIGHT: the "must stay free-text" questions
+(Q25/Q34/Q31a/Q43, INV-112) can become STRUCTURED controls if the option VALUES
+emit the exact substrings the engine matches (feet/legs, knee/left/right,
+"Paralysis Left Arm" comma-joined, real neuro condition names). Canonical ENGLISH
+value regardless of display language — also fixes a latent bilingual bug (Spanish
+free-text never matched English substrings).
+- Operator decisions: condition boxes (Q29/Q42/Q43) = CURATED multi-select filter
+  (I'll seed starter lists from Medicare PWC guidance for clinical sign-off);
+  scope THIS ROUND = Phase 0 only (engine-contract lock), then pause for review.
+- Phase 0 DONE (test-only): 6 Node tests in run.js pin that the exact strings the
+  new controls will emit produce the same clinical factors / recommendations as
+  today's free-text (Q25/Q34/Q31a/Q43/Q38 + an end-to-end structured-vs-free-text
+  parity case). Engine untouched. Pure 216/0, DOM 48/0.
+- NOT YET: committed/pushed. NEXT (on approval): Phase 1 control framework →
+  Phase 2 per-question formats → Phase 3 curated condition pickers → Phase 4
+  helpers/conditionals/validation; then UPDATE INV-112 (free-text → engine-safe
+  structured values, pinned by these Phase-0 tests). Full plan in the chat
+  transcript (per-question table + phasing).
+
 ## KB #8 + #7 — search synonyms/filters + see-also (2026-07-01, claude/broad-scan-2ll5ok)
 Wave-3 (final KB roadmap items). The KB non-AI roadmap (#1–#8) is now COMPLETE.
 - #8 synonyms: Script Property KB_SEARCH_SYNONYMS (≥2-term lowercase groups);

@@ -1010,6 +1010,92 @@ test('intakeExplainFactors_ — a no-condition set reports all gates No, never t
   assert.doesNotThrow(() => intakeExplainFactors_(null));
 });
 
+// ── PPD redesign Phase 0 — control→engine contract lock ────────────────────
+// The PPD UI redesign replaces several free-text questions with STRUCTURED
+// controls (multi-select buttons, condition pickers). The engine is fragile +
+// substring-based, so BEFORE any UI is built we pin that the EXACT strings the
+// new controls will emit produce the SAME clinical factors / recommendations as
+// today's free-text. The engine is NOT touched — the control option VALUES are
+// designed to feed it the substrings it already matches (INV-112 upgraded from
+// "must stay free-text" to "must emit engine-safe values, pinned here").
+// BILINGUAL: the emitted value is always canonical ENGLISH ('Feet', 'Paralysis
+// Left Arm', …) regardless of the displayed label, which also FIXES the latent
+// bug where a Spanish free-text answer never matched the English substrings.
+console.log('\nintake — PPD redesign Phase 0: new structured-control values are engine-safe');
+const intakeDeriveClinicalFactors_ = engineCtx.intakeDeriveClinicalFactors_;
+const _F = (answers) => intakeDeriveClinicalFactors_(answers);
+
+test('Q25 numbness multi-select ("No|Hands|Feet|Legs") drives hasLowerExtremityNumbness like free-text', () => {
+  assert.strictEqual(_F({ '25': 'Feet, Legs' }).patient.hasLowerExtremityNumbness, true, 'Feet+Legs → lower-extremity');
+  assert.strictEqual(_F({ '25': 'Feet' }).patient.hasLowerExtremityNumbness, true);
+  assert.strictEqual(_F({ '25': 'Legs' }).patient.hasLowerExtremityNumbness, true);
+  assert.strictEqual(_F({ '25': 'Hands' }).patient.hasLowerExtremityNumbness, false, 'hands is NOT lower-extremity');
+  assert.strictEqual(_F({ '25': 'No' }).patient.hasLowerExtremityNumbness, false);
+  assert.strictEqual(_F({ '25': '' }).patient.hasLowerExtremityNumbness, false);
+  // parity with the free-text the box replaces
+  assert.strictEqual(_F({ '25': 'numbness in feet and legs' }).patient.hasLowerExtremityNumbness,
+    _F({ '25': 'Feet, Legs' }).patient.hasLowerExtremityNumbness);
+});
+
+test('Q34 amputation multi-select values match the engine (knee/left/right, no stray "no")', () => {
+  assert.strictEqual(_F({ '34': 'Left (Above Knee)' }).patient.hasAmputation, true);
+  assert.strictEqual(_F({ '34': 'Right (Below Knee)' }).patient.hasAmputation, true, '"below" must not read as "no"');
+  assert.strictEqual(_F({ '34': 'Left (Above Knee), Right (Below Knee)' }).patient.hasAmputation, true);
+  assert.strictEqual(_F({ '34': 'No' }).patient.hasAmputation, false);
+  assert.strictEqual(_F({ '34': '' }).patient.hasAmputation, false);
+});
+
+test('Q31a stroke multi-select values parse for hemiplegia (comma-join matches the engine split)', () => {
+  const both = _F({ '31a': 'Paralysis Left Arm, Paralysis Left Leg' });
+  assert.strictEqual(both.qualifiesForHemiplegia, true, 'arm+leg on one side = 2 → hemiplegia');
+  assert.strictEqual(both.hemiplegiaSide, 'Left');
+  const right = _F({ '31a': 'Paralysis Right Arm, Paralysis Right Leg' });
+  assert.strictEqual(right.qualifiesForHemiplegia, true);
+  assert.strictEqual(right.hemiplegiaSide, 'Right');
+  const one = _F({ '31a': 'Paralysis Left Arm' });
+  assert.strictEqual(one.qualifiesForHemiplegia, false, 'single limb ≠ hemiplegia');
+  assert.strictEqual(one.hasStrokeWeakness, true, 'but it IS stroke weakness');
+  const weak = _F({ '31a': 'Weakness Left Side' });
+  assert.strictEqual(weak.hasStrokeWeakness, true);
+  assert.strictEqual(weak.qualifiesForHemiplegia, false, 'weakness (no paralysis) ≠ hemiplegia');
+  const none = _F({ '31a': 'No' });
+  assert.strictEqual(none.hasStrokeWeakness, false);
+  assert.strictEqual(none.qualifiesForHemiplegia, false);
+});
+
+test('Q43 neuro curated-condition values → valid neuro Dx (empty/exclude-list still excluded)', () => {
+  assert.strictEqual(_F({ '43': 'multiple sclerosis' }).hasValidNeuroDiagnosis, true);
+  assert.strictEqual(_F({ '43': 'amyotrophic lateral sclerosis' }).hasValidNeuroDiagnosis, true);
+  assert.strictEqual(_F({ '43': 'cerebral palsy, spinal cord injury' }).hasValidNeuroDiagnosis, true, 'multi-select join still valid');
+  assert.strictEqual(_F({ '43': '' }).hasValidNeuroDiagnosis, false);
+  assert.strictEqual(_F({ '43': 'none' }).hasValidNeuroDiagnosis, false);
+});
+
+test('Q38 weight number+unit and Yes/No engine questions unchanged', () => {
+  assert.strictEqual(_F({ '38': '180 lbs' }).patient.weight, 180);
+  assert.strictEqual(_F({ '38': '180' }).patient.weight, 180);
+  assert.strictEqual(_F({ '32': 'Yes' }).patient.hasSpasticity, true);
+  assert.strictEqual(_F({ '32': 'No' }).patient.hasSpasticity, false);
+  assert.strictEqual(_F({ '44': 'Yes' }).patient.isOnOxygen, true);
+  assert.strictEqual(_F({ '30': 'Yes' }).patient.usesCatheters, true);
+});
+
+test('end-to-end: a full structured-control answer set === the free-text equivalent recommendations', () => {
+  // The exact strings the new controls emit …
+  const structured = intakeFilterRecommendations_({
+    '38': '250', '43': 'multiple sclerosis', '25': 'Feet, Legs',
+    '34': 'Left (Above Knee)', '31a': 'Paralysis Left Arm, Paralysis Left Leg', '32': 'Yes',
+  }, CAT);
+  // … vs the free-text an agent would have typed today.
+  const freeText = intakeFilterRecommendations_({
+    '38': '250 lbs', '43': 'multiple sclerosis', '25': 'numbness in feet and legs',
+    '34': 'left leg above the knee', '31a': 'paralysis in left arm and left leg', '32': 'yes',
+  }, CAT);
+  const codes = (r) => r.complex.map((p) => p.hcpcs).join(',') + '|' + r.standard.map((p) => p.hcpcs).join(',');
+  assert.strictEqual(codes(structured), codes(freeText), 'structured controls must yield identical recommendations');
+  assert.strictEqual(codes(structured), 'K0862,K0861|', 'neuro+solid case: substituted Group-3 pair, captain dropped');
+});
+
 console.log('\nintake — client render layout mirrors the server (coupling tripwire)');
 const _lcx = vm.createContext({});
 vm.runInContext('var SRV_PMD = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', _lcx);
