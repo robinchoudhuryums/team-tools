@@ -13041,9 +13041,15 @@ function kbGetUsageStats() {
       const rows = kbSheet.getRange(2, 1, kbLast - 1, 3).getValues();   // Id, Department, Title
       rows.forEach(function (r) { if (r[0]) titles[String(r[0])] = String(r[2] || '(untitled)'); });
     }
+    const fb = kbFeedbackCounts_();   // #2 — surface rep helpful/notHelpful tallies
     const items = ids
       .filter(function (id) { return !!titles[id]; })   // deleted items drop out
-      .map(function (id) { return { id: id, title: titles[id], count: counts[id].count, drawerCount: counts[id].drawerCount }; })
+      .map(function (id) {
+        return {
+          id: id, title: titles[id], count: counts[id].count, drawerCount: counts[id].drawerCount,
+          helpful: (fb[id] && fb[id].helpful) || 0, notHelpful: (fb[id] && fb[id].notHelpful) || 0,
+        };
+      })
       .sort(function (a, b) { return b.count - a.count; })
       .slice(0, KB_USAGE_TOP_N);
     return { items: items, windowDays: KB_USAGE_WINDOW_DAYS };
@@ -13123,6 +13129,7 @@ function kbGetReviewDue() {
       if (id) reviewedTsByItem[id] = kbCellTs_(r[KB.REVIEWED_AT], ssTz);
     });
     const stale = kbStaleFlags_(reviewedTsByItem);
+    const fb = kbFeedbackCounts_();
     const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
     const items = [];
     rows.forEach(function (r) {
@@ -13147,6 +13154,8 @@ function kbGetReviewDue() {
         views: (usage[id] && usage[id].count) || 0,
         staleFlags: staleCount,          // #2 — open "out of date" flags from reps
         staleNote: (stale[id] && stale[id].lastNote) || '',
+        helpful: (fb[id] && fb[id].helpful) || 0,
+        notHelpful: (fb[id] && fb[id].notHelpful) || 0,
       });
     });
     items.sort(function (a, b) {
@@ -13212,6 +13221,32 @@ function kbStaleFlags_(reviewedTsByItem) {
       out[id].count++;
       const note = String(data[i][KBF.NOTE] || '').trim();
       if (note) out[id].lastNote = note;   // chronological append order → latest note wins
+    }
+  } catch (e) { /* best-effort — empty map on any failure */ }
+  return out;
+}
+
+/** #2 — cumulative helpful/notHelpful tallies per item id over the bounded
+ *  feedback tail (KB_FEEDBACK_MAX_SCAN — KbFeedback is low-volume, so an
+ *  unwindowed count is the more useful cumulative signal, same tail as
+ *  kbStaleFlags_). Returns { id: {helpful, notHelpful} }; empty on any failure.
+ *  Folded into the manager Most-used + Review-due blocks. */
+function kbFeedbackCounts_() {
+  const out = {};
+  try {
+    const ss = getKbSS_();
+    const sheet = ss.getSheetByName(KB_FEEDBACK_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return out;
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - KB_FEEDBACK_MAX_SCAN + 1);
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_FEEDBACK_HEADERS.length).getValues();
+    for (let i = 0; i < data.length; i++) {
+      const kind = String(data[i][KBF.KIND] || '');
+      if (kind !== 'helpful' && kind !== 'notHelpful') continue;
+      const id = String(data[i][KBF.ITEM_ID] || '').trim();
+      if (!id) continue;
+      if (!out[id]) out[id] = { helpful: 0, notHelpful: 0 };
+      if (kind === 'helpful') out[id].helpful++; else out[id].notHelpful++;
     }
   } catch (e) { /* best-effort — empty map on any failure */ }
   return out;
