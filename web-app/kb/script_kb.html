@@ -82,6 +82,24 @@
   .kb-land-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex-shrink: 0; }
   .kb-land-rd-open { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; background: none; border: none; text-align: left; font: inherit; cursor: pointer; color: var(--ink); padding: 0; }
   .kb-land-rd-open:hover .kb-land-t { color: var(--accent); }
+  /* #2 — stale-flag marker (rep "out of date") sits red vs the neutral age dot. */
+  .kb-land-dot.stale { background: var(--danger); }
+  .kb-land-flag { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--destructive-soft, var(--warn-soft)); color: var(--danger); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
+  .kb-land-note { display: block; font-size: .78rem; color: var(--muted); font-style: italic; margin-top: 2px; }
+  /* #1 — content-request row: two actions (resolve / dismiss). */
+  .kb-land-req { align-items: flex-start; cursor: default; }
+  .kb-land-req:hover { background: none; }
+  .kb-land-req-body { flex: 1; min-width: 0; }
+  .kb-land-req-acts { display: flex; gap: 4px; flex-shrink: 0; }
+
+  /* #2 — article/embed freshness feedback bar (below the reader content). */
+  .kb-feedback { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .kb-feedback .kb-fb-q { font-size: .82rem; color: var(--muted); }
+  .kb-fb-btns { display: flex; gap: 6px; align-items: center; }
+  .kb-fb-done { font-size: .82rem; color: var(--success-deep); }
+  /* #1 — zero-result "request an article" prompt in the results panel. */
+  .kb-gap { margin: auto; text-align: center; color: var(--muted); display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .kb-gap .kb-btn { color: var(--success-deep); background: var(--accent-soft); border-color: var(--accent-soft); }
 
   /* editor modal */
   .kb-ed { width: min(720px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
@@ -172,7 +190,7 @@
 //  first so authored content can't inject script). Embeds render the Drive
 //  preview iframe. Managers get inline add/edit/delete.
 // ════════════════════════════════════════════════════════════════════════════
-var KB_STATE = { tree: [], isManager: false, isAdmin: false, currentId: null, landing: false, usage: null, reviewDue: null };
+var KB_STATE = { tree: [], isManager: false, isAdmin: false, currentId: null, landing: false, usage: null, reviewDue: null, contentRequests: null };
 var KB_EDIT = null;
 
 // Compact markdown → HTML. Escapes HTML up front (so raw tags/script in the
@@ -306,7 +324,7 @@ function enterReferenceView(area) {
       KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager; KB_STATE.isAdmin = !!res.isAdmin;
       kbRenderTree_();
       if (KB_STATE.landing) kbRenderLanding_();
-      if (KB_STATE.isManager) { kbLoadUsageBlock_(); kbLoadReviewDueBlock_(); }
+      if (KB_STATE.isManager) { kbLoadUsageBlock_(); kbLoadReviewDueBlock_(); kbLoadContentRequestsBlock_(); }
     })
     .withFailureHandler(function (err) { if (currentView === requested) { var el = document.getElementById('kb-tree'); if (el) el.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; } })
     .getReferenceTree();
@@ -427,14 +445,45 @@ function kbRenderLanding_() {
       rd.forEach(function (it) {
         var age = (it.ageDays == null) ? 'never reviewed'
           : (it.basedOnUpdate ? ('edited ' + it.ageDays + 'd ago') : ('reviewed ' + it.ageDays + 'd ago'));
+        var flagged = it.staleFlags > 0;
         h += '<div class="kb-land-row kb-land-rd">' +
-          '<span class="kb-land-dot" title="Review due"></span>' +
+          '<span class="kb-land-dot' + (flagged ? ' stale' : '') + '" title="' + (flagged ? 'Flagged out of date by a rep' : 'Review due') + '"></span>' +
           '<button class="kb-land-rd-open" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
-            '<span class="kb-land-t">' + esc(it.title) + '</span>' +
+            '<span class="kb-land-t">' + esc(it.title) +
+              (flagged ? '<span class="kb-land-flag">out of date · ' + it.staleFlags + '</span>' : '') + '</span>' +
             '<span class="kb-land-meta">' + esc(age) + (it.views ? ' · ' + it.views + ' view' + (it.views === 1 ? '' : 's') : '') + '</span>' +
+            (flagged && it.staleNote ? '<span class="kb-land-note">“' + esc(it.staleNote) + '”</span>' : '') +
           '</button>' +
-          '<button class="kb-btn" data-kb-id="' + esc(it.id) + '" title="Mark reviewed (resets the staleness clock without editing)" ' +
+          '<button class="kb-btn" data-kb-id="' + esc(it.id) + '" title="Mark reviewed (clears rep out-of-date flags + resets the staleness clock, no edit)" ' +
             'onclick="kbMarkReviewedClick_(this.getAttribute(\'data-kb-id\'))">' + icon('check', 13) + ' Reviewed</button>' +
+        '</div>';
+      });
+      h += '</div>';
+    }
+  }
+
+  // #1 — content requests (manager-only): rep "can't find this" asks.
+  if (KB_STATE.isManager) {
+    var reqs = (KB_STATE.contentRequests && KB_STATE.contentRequests.open) || [];
+    if (reqs.length) {
+      h += '<div class="kb-land-sec"><div class="kb-land-h">Content requests <span class="kb-land-pill">' + reqs.length + '</span></div>';
+      reqs.forEach(function (rq) {
+        var meta = esc(rq.repName || 'A rep') +
+          (rq.ageDays != null ? ' · ' + (rq.ageDays === 0 ? 'today' : rq.ageDays + 'd ago') : '');
+        h += '<div class="kb-land-row kb-land-req">' +
+          '<span class="kb-land-dot stale" title="Requested article"></span>' +
+          '<div class="kb-land-req-body">' +
+            '<span class="kb-land-t">' + esc(rq.topic) + '</span>' +
+            '<span class="kb-land-meta">' + meta +
+              (rq.query ? ' · searched “' + esc(rq.query) + '”' : '') + '</span>' +
+            (rq.note ? '<span class="kb-land-note">“' + esc(rq.note) + '”</span>' : '') +
+          '</div>' +
+          '<div class="kb-land-req-acts">' +
+            '<button class="kb-btn" data-kb-req="' + esc(rq.reqId) + '" title="Mark resolved (e.g. an article now covers it)" ' +
+              'onclick="kbResolveRequestClick_(this.getAttribute(\'data-kb-req\'), \'resolved\')">' + icon('check', 13) + '</button>' +
+            '<button class="kb-btn danger" data-kb-req="' + esc(rq.reqId) + '" title="Dismiss" ' +
+              'onclick="kbResolveRequestClick_(this.getAttribute(\'data-kb-req\'), \'dismissed\')">' + icon('x', 13) + '</button>' +
+          '</div>' +
         '</div>';
       });
       h += '</div>';
@@ -644,12 +693,42 @@ function kbDoSearch_(q) {
       if (main) {
         KB_STATE.currentId = null; KB_STATE.landing = false;
         main.innerHTML = '<div class="kb-item-head"><h2>Results for "' + esc(q) + '"</h2></div>' +
-          (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_') : '<div class="kb-empty">No matches.</div>');
+          (results.length ? kbChunkGroupsHtml_(results, 'kbOpenItem_') : kbNoResultsHtml_(q));
         kbHighlightTerms_(main, q);
       }
     })
     .withFailureHandler(function () {})
     .searchReference(q);
+}
+
+// #1 — content-gap surfacing: a zero-result search offers to request an article.
+// A deliberate rep action (not raw query logging) → PHI-clean by construction.
+function kbNoResultsHtml_(q) {
+  return '<div class="kb-gap">' +
+    '<div>No matches for “' + esc(q) + '”.</div>' +
+    '<button class="kb-btn" data-q="' + esc(q) + '" onclick="kbRequestArticlePrompt_(this.getAttribute(\'data-q\'))">' +
+      icon('plus', 13) + ' Request an article on this</button>' +
+  '</div>';
+}
+function kbRequestArticlePrompt_(query) {
+  query = query || '';
+  uiPrompt({
+    title: 'Request an article',
+    message: 'Ask a manager to add this to the Reference library. Describe the topic — not patient specifics (no names, TRX, or PHI).',
+    initialValue: query,
+    placeholder: 'What did you need to look up?',
+    confirmLabel: 'Send request',
+    validator: function (v) { return String(v || '').trim() ? '' : 'Describe what you were looking for.'; },
+  }).then(function (topic) {
+    if (topic === null) return;   // cancelled
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (r && r.success) { if (typeof showToast === 'function') showToast('Request sent — thanks', 'success'); }
+        else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not send request', 'error');
+      })
+      .withFailureHandler(function (e) { if (typeof showToast === 'function') showToast((e && e.message) || 'Could not send request', 'error'); })
+      .kbRequestArticle(topic, '', query);
+  });
 }
 
 function kbOpenItem_(id, anchor) {
@@ -685,10 +764,52 @@ function kbRenderItem_(item) {
            '<button class="kb-btn danger" onclick="kbDeleteItem_(\'' + esc(item.id) + '\')">' + icon('trash', 13) + ' Delete</button>' : '');
   var head = '<div class="kb-item-head"><h2>' + esc(item.title) + '</h2><div class="kb-item-actions">' + actions + '</div></div>';
   if (item.type === 'embed') {
-    main.innerHTML = head + '<iframe class="kb-embed" src="' + esc(item.embedUrl) + '"></iframe>';
+    main.innerHTML = head + '<iframe class="kb-embed" src="' + esc(item.embedUrl) + '"></iframe>' + kbFeedbackBarHtml_(item);
   } else {
-    main.innerHTML = head + '<div class="kb-article">' + kbMd_(item.bodyMd || '') + '</div>';
+    main.innerHTML = head + '<div class="kb-article">' + kbMd_(item.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(item);
   }
+}
+
+// #2 — rep freshness signal: a "Was this helpful?" bar + "Flag as out of date"
+// on every article/embed reader. Helpful/not-helpful are lightweight signal;
+// a stale flag jumps the item to the top of the manager review-due queue.
+function kbFeedbackBarHtml_(item) {
+  return '<div class="kb-feedback" id="kb-fb-' + esc(item.id) + '">' +
+    '<span class="kb-fb-q">Was this helpful?</span>' +
+    '<span class="kb-fb-btns">' +
+      '<button class="kb-btn" title="Helpful" onclick="kbSendFeedback_(\'' + esc(item.id) + '\', \'helpful\', this)">' + icon('thumbsUp', 13) + ' Yes</button>' +
+      '<button class="kb-btn" title="Not helpful" onclick="kbSendFeedback_(\'' + esc(item.id) + '\', \'notHelpful\', this)">No</button>' +
+      '<button class="kb-btn danger" title="Flag this as out of date for a manager to review" onclick="kbFlagStale_(\'' + esc(item.id) + '\')">' + icon('flag', 13) + ' Out of date</button>' +
+    '</span>' +
+  '</div>';
+}
+function kbSendFeedback_(id, kind, btn) {
+  var bar = document.getElementById('kb-fb-' + id);
+  if (bar) bar.innerHTML = '<span class="kb-fb-done">' + icon('check', 13) + ' Thanks for the feedback.</span>';
+  google.script.run
+    .withSuccessHandler(function () {})
+    .withFailureHandler(function () {})
+    .kbFlagItem(id, kind, '');
+}
+function kbFlagStale_(id) {
+  uiPrompt({
+    title: 'Flag as out of date',
+    message: 'This moves the article to the top of the manager review queue. Add a note on what\'s wrong (optional).\n\nDescribe the doc — do NOT include patient names, TRX, or other PHI.',
+    placeholder: 'e.g. the K0823 weight cap changed',
+    confirmLabel: 'Flag for review',
+  }).then(function (note) {
+    if (note === null) return;   // cancelled
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (r && r.success) {
+          if (typeof showToast === 'function') showToast('Flagged for review — thanks', 'success');
+          var bar = document.getElementById('kb-fb-' + id);
+          if (bar) bar.innerHTML = '<span class="kb-fb-done">' + icon('check', 13) + ' Flagged for review.</span>';
+        } else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not flag', 'error');
+      })
+      .withFailureHandler(function (e) { if (typeof showToast === 'function') showToast((e && e.message) || 'Could not flag', 'error'); })
+      .kbFlagItem(id, 'stale', note || '');
+  });
 }
 
 function kbDeleteItem_(id) {
@@ -1388,6 +1509,33 @@ function kbLoadReviewDueBlock_() {
     })
     .withFailureHandler(function () {})
     .kbGetReviewDue();
+}
+
+/** #1 — manager-only "Content requests" → cached in KB_STATE and rendered into
+ *  the landing panel. Best-effort. */
+function kbLoadContentRequestsBlock_() {
+  var requested = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      KB_STATE.contentRequests = (res && !res.error) ? res : { open: [] };
+      if (KB_STATE.landing) kbRenderLanding_();
+    })
+    .withFailureHandler(function () {})
+    .kbGetContentRequests();
+}
+
+function kbResolveRequestClick_(reqId, action) {
+  if (!reqId) return;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (r && r.success) {
+        if (typeof showToast === 'function') showToast(action === 'dismissed' ? 'Dismissed' : 'Marked resolved', 'success');
+        kbLoadContentRequestsBlock_();
+      } else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not update', 'error');
+    })
+    .withFailureHandler(function (e) { if (typeof showToast === 'function') showToast((e && e.message) || 'Could not update', 'error'); })
+    .kbResolveContentRequest(reqId, action);
 }
 
 function kbMarkReviewedClick_(id) {
