@@ -1096,6 +1096,52 @@ test('end-to-end: a full structured-control answer set === the free-text equival
   assert.strictEqual(codes(structured), 'K0862,K0861|', 'neuro+solid case: substituted Group-3 pair, captain dropped');
 });
 
+// PPD redesign Phase 1 — the new control kinds all serialize to/from a STRING so
+// draft autosave, intakeCollectPpd_, the engine, and the email builder keep
+// working unchanged. Pin the PURE serialization helpers here (vm-realm arrays/
+// objects fail deepStrictEqual, so compare via primitives).
+console.log('\nintake — PPD redesign Phase 1: control-kind serialization (pure)');
+const intakeMultiToggle_ = loadFunction(sb, 'intake/script_intake.html', 'intakeMultiToggle_');
+const intakeMultiSerialize_ = loadFunction(sb, 'intake/script_intake.html', 'intakeMultiSerialize_');
+const intakeMultiParse_ = loadFunction(sb, 'intake/script_intake.html', 'intakeMultiParse_');
+const intakeRevealSerialize_ = loadFunction(sb, 'intake/script_intake.html', 'intakeRevealSerialize_');
+const intakeRevealParse_ = loadFunction(sb, 'intake/script_intake.html', 'intakeRevealParse_');
+
+test('multi-select toggle: add / remove, exclusive option clears others (and vice-versa)', () => {
+  assert.strictEqual(intakeMultiToggle_([], 'Feet', 'No').join('|'), 'Feet', 'add');
+  assert.strictEqual(intakeMultiToggle_(['Feet'], 'Legs', 'No').join('|'), 'Feet|Legs', 'add second');
+  assert.strictEqual(intakeMultiToggle_(['Feet', 'Legs'], 'Feet', 'No').join('|'), 'Legs', 're-click removes');
+  assert.strictEqual(intakeMultiToggle_(['Feet', 'Legs'], 'No', 'No').join('|'), 'No', 'exclusive clears others');
+  assert.strictEqual(intakeMultiToggle_(['No'], 'Feet', 'No').join('|'), 'Feet', 'normal pick drops the exclusive');
+  assert.strictEqual(intakeMultiToggle_(['No'], 'No', 'No').length, 0, 're-click exclusive clears it');
+  assert.strictEqual(intakeMultiToggle_(['A'], 'B', '').join('|'), 'A|B', 'no exclusive configured');
+});
+
+test('multi-select serialize (option order) + parse round-trip', () => {
+  const order = ['No', 'Hands', 'Feet', 'Legs'];
+  assert.strictEqual(intakeMultiSerialize_(['Legs', 'Feet'], order), 'Feet, Legs', 'follows OPTION order, not click order');
+  assert.strictEqual(intakeMultiSerialize_([], order), '');
+  assert.strictEqual(intakeMultiSerialize_(['No'], order), 'No');
+  assert.strictEqual(intakeMultiParse_('Feet, Legs').join('|'), 'Feet|Legs');
+  assert.strictEqual(intakeMultiParse_('').length, 0);
+  assert.strictEqual(intakeMultiParse_('  Feet ,, Legs ').join('|'), 'Feet|Legs', 'trims + drops empties');
+  const s = intakeMultiSerialize_(['Feet', 'Legs'], order);
+  assert.strictEqual(intakeMultiSerialize_(intakeMultiParse_(s), order), s, 'parse∘serialize stable');
+});
+
+test('reveal serialize / parse: plain option vs revealOn + text', () => {
+  assert.strictEqual(intakeRevealSerialize_('Alone', '', 'Other'), 'Alone');
+  assert.strictEqual(intakeRevealSerialize_('Other', 'neighbor helps', 'Other'), 'Other: neighbor helps');
+  assert.strictEqual(intakeRevealSerialize_('Other', '', 'Other'), 'Other', 'reveal with no text = just the option');
+  assert.strictEqual(intakeRevealSerialize_('', '', 'Other'), '');
+  const a = intakeRevealParse_('Alone', 'Other');           assert.strictEqual(a.option + '|' + a.text, 'Alone|');
+  const b = intakeRevealParse_('Other: neighbor helps', 'Other'); assert.strictEqual(b.option + '|' + b.text, 'Other|neighbor helps');
+  const c = intakeRevealParse_('Other', 'Other');            assert.strictEqual(c.option + '|' + c.text, 'Other|');
+  const d = intakeRevealParse_('', 'Other');                 assert.strictEqual(d.option + '|' + d.text, '|');
+  const rt = intakeRevealParse_('Other: x', 'Other');
+  assert.strictEqual(intakeRevealSerialize_(rt.option, rt.text, 'Other'), 'Other: x', 'round-trip');
+});
+
 console.log('\nintake — client render layout mirrors the server (coupling tripwire)');
 const _lcx = vm.createContext({});
 vm.runInContext('var SRV_PMD = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', _lcx);
