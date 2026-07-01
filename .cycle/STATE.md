@@ -28,9 +28,25 @@ now, chose these instead). Both feed the manager review workflow; PHI-free-by-po
   test_kb_feedbackAndRequests_requireEmployee (rep-auth + kind/topic validation).
 - Pure 207/0, DOM 48/0, node --check clean. Two tabs auto-provision (deployer edit
   access to KB_SS_ID already required) — NO new Script Property / trigger / migration.
-- NOT YET: committed/pushed; runAllTests() (operator); /sync-docs (INV-139 + storage
-  map + audit actions + a Key Design Decision). Drawer parity + surfacing 👍/👎
-  counts are follow-ons.
+- Shipped in #107 (merged). Docs synced inline (INV-139 + storage map + audit
+  actions + Key Design Decision).
+
+## KB loop follow-ons — drawer parity + 👍/👎 counts (2026-07-01, claude/broad-scan-2ll5ok)
+Both follow-ons noted at #107 close, now built on a fresh branch off merged main:
+- Drawer parity: the reader "helpful/out-of-date" bar + zero-result "Request an
+  article" CTA now render in the Ctrl/⌘+K drawer too (kbDrawerOpenItem_ /
+  kbDrawerSearch_). Feedback bar refactored to locate itself via
+  closest('.kb-feedback') (no DOM id) so tab + drawer can't collide;
+  kbFeedbackDone_ shared helper; kbFlagStale_ now takes the btn.
+- 👍/👎 counts: new kbFeedbackCounts_() (cumulative helpful/notHelpful over the
+  bounded feedback tail) folded into kbGetReviewDue + kbGetUsageStats items;
+  rendered as a kbFbCountHtml_ chip in the manager Most-used + Review-due landing
+  rows (hidden when empty). New thumbsDown icon in script_icons.html (mirrors
+  thumbsUp) — also used for the reader "No" button.
+- No new endpoints/gates (counts fold into existing manager-gated reads) → no
+  test changes. Pure 207/0, DOM 48/0, node --check clean.
+- NOT YET: committed/pushed; operator runAllTests() (unchanged expectation, the
+  loop endpoints are covered).
 
 ## Cycle 6 — DeptRequests v2 (all 4 phases, 2026-06-30, claude/broad-scan-2ll5ok)
 Planned (decisions: roster column N membership; manager-summary reminder;

@@ -97,6 +97,10 @@
   .kb-feedback .kb-fb-q { font-size: .82rem; color: var(--muted); }
   .kb-fb-btns { display: flex; gap: 6px; align-items: center; }
   .kb-fb-done { font-size: .82rem; color: var(--success-deep); }
+  /* #2 — helpful/not-helpful tally on manager landing rows. */
+  .kb-fb-tally { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  .kb-fb-tally .kb-fb-sep { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; }
+  .kb-fb-tally svg { width: 11px; height: 11px; }
   /* #1 — zero-result "request an article" prompt in the results panel. */
   .kb-gap { margin: auto; text-align: center; color: var(--muted); display: flex; flex-direction: column; gap: 12px; align-items: center; }
   .kb-gap .kb-btn { color: var(--success-deep); background: var(--accent-soft); border-color: var(--accent-soft); }
@@ -344,6 +348,15 @@ function kbItemIcon_(it) {
   return 'fileText';
 }
 
+// #2 — inline rep helpful/notHelpful tally (manager Most-used + Review-due rows).
+// Hidden entirely when there's no feedback yet, so it never adds clutter.
+function kbFbCountHtml_(it) {
+  var h = (it && it.helpful) || 0, n = (it && it.notHelpful) || 0;
+  if (!h && !n) return '';
+  return '<span class="kb-fb-tally" title="Rep feedback: ' + h + ' helpful · ' + n + ' not helpful">' +
+    icon('thumbsUp', 11) + ' ' + h + '<span class="kb-fb-sep">' + icon('thumbsDown', 11) + ' ' + n + '</span></span>';
+}
+
 function kbRenderTree_() {
   var el = document.getElementById('kb-tree'); if (!el) return;
   var byDept = {};
@@ -428,7 +441,8 @@ function kbRenderLanding_() {
           '<span class="kb-land-ic">' + icon(it ? kbItemIcon_(it) : 'fileText', 15) + '</span>' +
           '<span class="kb-land-t">' + esc(u.title) + '</span>' +
           '<span class="kb-land-meta">' + u.count + ' open' + (u.count === 1 ? '' : 's') +
-            (u.drawerCount ? ' · ' + u.drawerCount + ' in-call' : '') + '</span></button>';
+            (u.drawerCount ? ' · ' + u.drawerCount + ' in-call' : '') + '</span>' +
+          kbFbCountHtml_(u) + '</button>';
       });
     } else {
       h += '<div class="kb-land-none">No opens recorded in the last 30 days yet.</div>';
@@ -451,7 +465,7 @@ function kbRenderLanding_() {
           '<button class="kb-land-rd-open" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
             '<span class="kb-land-t">' + esc(it.title) +
               (flagged ? '<span class="kb-land-flag">out of date · ' + it.staleFlags + '</span>' : '') + '</span>' +
-            '<span class="kb-land-meta">' + esc(age) + (it.views ? ' · ' + it.views + ' view' + (it.views === 1 ? '' : 's') : '') + '</span>' +
+            '<span class="kb-land-meta">' + esc(age) + (it.views ? ' · ' + it.views + ' view' + (it.views === 1 ? '' : 's') : '') + kbFbCountHtml_(it) + '</span>' +
             (flagged && it.staleNote ? '<span class="kb-land-note">“' + esc(it.staleNote) + '”</span>' : '') +
           '</button>' +
           '<button class="kb-btn" data-kb-id="' + esc(it.id) + '" title="Mark reviewed (clears rep out-of-date flags + resets the staleness clock, no edit)" ' +
@@ -773,25 +787,31 @@ function kbRenderItem_(item) {
 // #2 — rep freshness signal: a "Was this helpful?" bar + "Flag as out of date"
 // on every article/embed reader. Helpful/not-helpful are lightweight signal;
 // a stale flag jumps the item to the top of the manager review-due queue.
+// Shared by the Reference-tab reader AND the Ctrl/⌘+K drawer reader. The bar is
+// located from the clicked button via closest('.kb-feedback') (NOT a DOM id) so
+// the tab + drawer can render the same article's bar without an id collision.
 function kbFeedbackBarHtml_(item) {
-  return '<div class="kb-feedback" id="kb-fb-' + esc(item.id) + '">' +
+  return '<div class="kb-feedback">' +
     '<span class="kb-fb-q">Was this helpful?</span>' +
     '<span class="kb-fb-btns">' +
       '<button class="kb-btn" title="Helpful" onclick="kbSendFeedback_(\'' + esc(item.id) + '\', \'helpful\', this)">' + icon('thumbsUp', 13) + ' Yes</button>' +
-      '<button class="kb-btn" title="Not helpful" onclick="kbSendFeedback_(\'' + esc(item.id) + '\', \'notHelpful\', this)">No</button>' +
-      '<button class="kb-btn danger" title="Flag this as out of date for a manager to review" onclick="kbFlagStale_(\'' + esc(item.id) + '\')">' + icon('flag', 13) + ' Out of date</button>' +
+      '<button class="kb-btn" title="Not helpful" onclick="kbSendFeedback_(\'' + esc(item.id) + '\', \'notHelpful\', this)">' + icon('thumbsDown', 13) + ' No</button>' +
+      '<button class="kb-btn danger" title="Flag this as out of date for a manager to review" onclick="kbFlagStale_(\'' + esc(item.id) + '\', this)">' + icon('flag', 13) + ' Out of date</button>' +
     '</span>' +
   '</div>';
 }
+function kbFeedbackDone_(btn, msg) {
+  var bar = (btn && btn.closest) ? btn.closest('.kb-feedback') : null;
+  if (bar) bar.innerHTML = '<span class="kb-fb-done">' + icon('check', 13) + ' ' + esc(msg) + '</span>';
+}
 function kbSendFeedback_(id, kind, btn) {
-  var bar = document.getElementById('kb-fb-' + id);
-  if (bar) bar.innerHTML = '<span class="kb-fb-done">' + icon('check', 13) + ' Thanks for the feedback.</span>';
+  kbFeedbackDone_(btn, 'Thanks for the feedback.');
   google.script.run
     .withSuccessHandler(function () {})
     .withFailureHandler(function () {})
     .kbFlagItem(id, kind, '');
 }
-function kbFlagStale_(id) {
+function kbFlagStale_(id, btn) {
   uiPrompt({
     title: 'Flag as out of date',
     message: 'This moves the article to the top of the manager review queue. Add a note on what\'s wrong (optional).\n\nDescribe the doc — do NOT include patient names, TRX, or other PHI.',
@@ -803,8 +823,7 @@ function kbFlagStale_(id) {
       .withSuccessHandler(function (r) {
         if (r && r.success) {
           if (typeof showToast === 'function') showToast('Flagged for review — thanks', 'success');
-          var bar = document.getElementById('kb-fb-' + id);
-          if (bar) bar.innerHTML = '<span class="kb-fb-done">' + icon('check', 13) + ' Flagged for review.</span>';
+          kbFeedbackDone_(btn, 'Flagged for review.');
         } else if (typeof showToast === 'function') showToast((r && r.error) || 'Could not flag', 'error');
       })
       .withFailureHandler(function (e) { if (typeof showToast === 'function') showToast((e && e.message) || 'Could not flag', 'error'); })
@@ -1427,7 +1446,7 @@ function kbDrawerSearch_(q) {
       var results = (res && res.results) || [];
       var groups = kbGroupResults_(results);
       var html = '<div class="kbd-sec">Results (' + groups.length + ')</div>';
-      if (!results.length) html += '<div class="kbd-empty">No matches.</div>';
+      if (!results.length) html += kbNoResultsHtml_(q);   // #1 — request-an-article CTA in the drawer too
       else html += kbChunkGroupsHtml_(results, 'kbDrawerOpenItem_');
       body.innerHTML = html;
       kbHighlightTerms_(body, q);
@@ -1451,9 +1470,10 @@ function kbDrawerOpenItem_(id, anchor) {
         body.innerHTML = back +
           '<div class="kbd-embed-card"><strong>' + esc(res.title) + '</strong>' +
           '<div class="kbd-empty" style="padding:6px 0 10px;">This item is an embedded Drive doc - it opens in its own tab.</div>' +
-          '<a class="kb-btn" href="' + esc(res.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a></div>';
+          '<a class="kb-btn" href="' + esc(res.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a></div>' +
+          kbFeedbackBarHtml_(res);
       } else {
-        body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>';
+        body.innerHTML = back + '<div class="kb-article">' + kbMd_(res.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(res);
         if (anchor) kbScrollToAnchor_(body, anchor);
       }
     })
