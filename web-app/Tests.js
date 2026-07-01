@@ -3924,6 +3924,9 @@ function test_managerGates_rejectNonManager() {
     ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
     ['kbGetContentRequests',           function () { return kbGetContentRequests(); }],
     ['kbResolveContentRequest',        function () { return kbResolveContentRequest('no-such-req', 'resolved'); }],
+    ['kbGetRevisions',                 function () { return kbGetRevisions('no-such-id'); }],
+    ['kbRevertItem',                   function () { return kbRevertItem('no-such-id', 'no-rev'); }],
+    ['kbPublishItem',                  function () { return kbPublishItem('no-such-id'); }],
     ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['getRetentionConfig',             function () { return getRetentionConfig(); }],
@@ -4006,6 +4009,8 @@ function test_managerGates_rejectNonManager() {
     getCallNotesEnrollment: 1, saveKbAiSettings: 1,
     // KB content authoring (Reference tool) — admin-gated uploads/edits.
     kbSaveItem: 1, kbDeleteItem: 1, kbUploadImage: 1, kbConvertDriveDoc: 1,
+    // #4 — revision history + draft→publish (authoring-adjacent).
+    kbGetRevisions: 1, kbRevertItem: 1, kbPublishItem: 1,
   };
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);

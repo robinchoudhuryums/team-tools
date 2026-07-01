@@ -12654,9 +12654,13 @@ function intakeGetSubmission(formType, submissionId) {
 //  in-app KB. PHI-free by policy. Backed by a dedicated KB spreadsheet
 //  (KB_SS_ID), read by the server; reps never open the sheet directly.
 // ════════════════════════════════════════════════════════════════════════════
-const KB = { ID:0, DEPARTMENT:1, TITLE:2, TYPE:3, BODY_MD:4, DRIVE_KIND:5, DRIVE_FILE_ID:6, SORT_ORDER:7, UPDATED_AT:8, UPDATED_BY:9, REVIEWED_AT:10, REVIEWED_BY:11 };
-const KB_HEADERS = ['Id','Department','Title','Type','BodyMd','DriveKind','DriveFileId','SortOrder','UpdatedAt','UpdatedBy','ReviewedAt','ReviewedBy'];
-const KB_CACHE_KEY = 'kb_tree_v1';
+const KB = { ID:0, DEPARTMENT:1, TITLE:2, TYPE:3, BODY_MD:4, DRIVE_KIND:5, DRIVE_FILE_ID:6, SORT_ORDER:7, UPDATED_AT:8, UPDATED_BY:9, REVIEWED_AT:10, REVIEWED_BY:11, STATUS:12 };
+const KB_HEADERS = ['Id','Department','Title','Type','BodyMd','DriveKind','DriveFileId','SortOrder','UpdatedAt','UpdatedBy','ReviewedAt','ReviewedBy','Status'];
+// #4 — draft→publish: a blank/absent Status cell (legacy rows) reads as published.
+const KB_STATUS_DRAFT = 'draft';
+const KB_STATUS_PUBLISHED = 'published';
+function kbRowStatus_(v) { return String(v || '').trim().toLowerCase() === KB_STATUS_DRAFT ? KB_STATUS_DRAFT : KB_STATUS_PUBLISHED; }
+const KB_CACHE_KEY = 'kb_tree_v2';   // v2 — items now carry `status` (#4 draft→publish)
 const KB_CACHE_TTL = 300;
 const KB_BODY_MAX = 49000; // under the 50k Sheets cell limit
 
@@ -12733,7 +12737,15 @@ function getReferenceTree() {
     const cache = CacheService.getScriptCache();
     let cached = null;
     try { cached = cache.get(KB_CACHE_KEY); } catch (_) {}
-    if (cached) { const o = JSON.parse(cached); o.isManager = !!emp.isManager; o.isAdmin = !!emp.isAdmin; return o; }
+    // The cache holds ALL items (incl. drafts, each tagged with status); the
+    // draft filter is applied per-viewer below so one cache blob serves both.
+    const filterForViewer = function (all) {
+      return emp.isAdmin ? all : all.filter(function (it) { return it.status !== KB_STATUS_DRAFT; });
+    };
+    if (cached) {
+      const o = JSON.parse(cached);
+      return { items: filterForViewer(o.items || []), isManager: !!emp.isManager, isAdmin: !!emp.isAdmin };
+    }
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
     const items = [];
@@ -12745,13 +12757,13 @@ function getReferenceTree() {
           id: String(r[KB.ID]), department: String(r[KB.DEPARTMENT] || 'General'),
           title: String(r[KB.TITLE] || '(untitled)'), type: String(r[KB.TYPE] || 'article'),
           driveKind: String(r[KB.DRIVE_KIND] || ''), sortOrder: Number(r[KB.SORT_ORDER] || 0),
+          status: kbRowStatus_(r[KB.STATUS]),   // #4 — 'published' | 'draft'
         });
       });
     }
     items.sort(function (a, b) { return a.department.localeCompare(b.department) || (a.sortOrder - b.sortOrder) || a.title.localeCompare(b.title); });
-    const out = { items: items, isManager: !!emp.isManager, isAdmin: !!emp.isAdmin };
     try { cache.put(KB_CACHE_KEY, JSON.stringify({ items: items }), KB_CACHE_TTL); } catch (_) {}
-    return out;
+    return { items: filterForViewer(items), isManager: !!emp.isManager, isAdmin: !!emp.isAdmin };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -12766,8 +12778,12 @@ function getReferenceItem(id) {
     const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
     for (let i = 0; i < rows.length; i++) {
       if (String(rows[i][KB.ID]) !== id) continue;
+      // #4 — a draft is invisible to reps/non-admins (indistinguishable from
+      // not-found so its existence doesn't leak).
+      const status = kbRowStatus_(rows[i][KB.STATUS]);
+      if (status === KB_STATUS_DRAFT && !emp.isAdmin) return { error: 'Not found.' };
       const type = String(rows[i][KB.TYPE] || 'article');
-      const base = { id: id, title: String(rows[i][KB.TITLE] || ''), department: String(rows[i][KB.DEPARTMENT] || '') };
+      const base = { id: id, title: String(rows[i][KB.TITLE] || ''), department: String(rows[i][KB.DEPARTMENT] || ''), status: status };
       if (type === 'embed') {
         const kind = String(rows[i][KB.DRIVE_KIND] || 'doc');
         const fid = String(rows[i][KB.DRIVE_FILE_ID] || '');
@@ -12891,6 +12907,8 @@ function searchReference(query) {
     };
     for (let i = 0; i < rows.length; i++) {
       if (!rows[i][KB.ID]) continue;
+      // #4 — drafts never surface in search to non-admins.
+      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT && !emp.isAdmin) continue;
       const id = String(rows[i][KB.ID]);
       const title = String(rows[i][KB.TITLE] || '');
       const dept = String(rows[i][KB.DEPARTMENT] || '');
@@ -12964,6 +12982,14 @@ const KB_REQUEST_NOTE_MAX = 1000;
 const KB_REQUESTS_MAX_SCAN = 2000;
 const KB_REQUESTS_RESOLVED_TAIL = 10;
 const KB_EMBED_SCAN_CAP = 150;   // #3 — max embeds Drive-probed per Storage Health run
+
+// #4 — article revision history. One append-only snapshot of the PRIOR content
+// per edit/revert (so a manager can view history + roll back). PHI-free by policy.
+const KB_REVISIONS_TAB = 'KbRevisions';
+const KB_REVISIONS_HEADERS = ['CapturedAt', 'RevId', 'ItemId', 'Title', 'Type', 'BodyMd', 'DriveKind', 'DriveFileId', 'PriorUpdatedAt', 'PriorUpdatedBy', 'ReplacedBy', 'Action'];
+const KBREV = { CAPTURED_AT: 0, REV_ID: 1, ITEM_ID: 2, TITLE: 3, TYPE: 4, BODY_MD: 5, DRIVE_KIND: 6, DRIVE_FILE_ID: 7, PRIOR_UPDATED_AT: 8, PRIOR_UPDATED_BY: 9, REPLACED_BY: 10, ACTION: 11 };
+const KB_REVISIONS_MAX_SCAN = 4000;
+const KB_REVISIONS_PER_ITEM = 30;   // most-recent snapshots surfaced per item
 
 function getOrCreateKbViewsSheet_() {
   const ss = getKbSS_();
@@ -13146,6 +13172,7 @@ function kbGetReviewDue() {
     rows.forEach(function (r) {
       const id = String(r[KB.ID] || '').trim();
       if (!id) return;
+      if (kbRowStatus_(r[KB.STATUS]) === KB_STATUS_DRAFT) return;   // #4 — drafts aren't live content to review
       const reviewedIso = kbCellDateIso_(r[KB.REVIEWED_AT], ssTz);
       const updatedIso  = kbCellDateIso_(r[KB.UPDATED_AT], ssTz);
       const baseIso = reviewedIso || updatedIso;   // legacy rows fall back to last edit
@@ -13457,30 +13484,43 @@ function kbSaveItem(payload) {
       if (bodyMd.length > KB_BODY_MAX) return { success: false, error: 'Article is too long (max ~49,000 chars). Split it into multiple articles.' };
     }
     const sortOrder = Number(payload.sortOrder || 0) || 0;
+    // #4 — draft→publish. An explicit payload.status wins; on a plain re-save
+    // (status absent) the existing row's status is PRESERVED (so editing a draft
+    // doesn't silently publish it, and vice-versa). New items default published.
+    const requestedStatus = payload.status
+      ? (payload.status === KB_STATUS_DRAFT ? KB_STATUS_DRAFT : KB_STATUS_PUBLISHED)
+      : null;
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
       const sheet = getOrCreateKbSheet_();
       const id = String(payload.id || '').trim() || Utilities.getUuid();
       const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+      const last = sheet.getLastRow();
+      let found = -1, prior = null;
+      if (last >= 2 && payload.id) {
+        const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+        if (found > 0) prior = sheet.getRange(found, 1, 1, KB_HEADERS.length).getValues()[0];
+      }
+      const status = requestedStatus || (prior ? kbRowStatus_(prior[KB.STATUS]) : KB_STATUS_PUBLISHED);
       // #4 — saving an item (new or edited) counts as reviewing it: stamp
       // ReviewedAt/ReviewedBy alongside UpdatedAt/UpdatedBy so a fresh edit
       // clears the staleness clock. A no-edit "still accurate" confirmation
       // goes through kbMarkReviewed instead.
-      const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email, now, emp.email];
-      const last = sheet.getLastRow();
-      let found = -1;
-      if (last >= 2 && payload.id) {
-        const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
-        for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+      const rowVals = [id, department, title, type, bodyMd, driveKind, driveFileId, sortOrder, now, emp.email, now, emp.email, status];
+      if (found > 0) {
+        // #4 — snapshot the PRIOR content to the revision log before overwriting.
+        kbAppendRevision_(prior, emp.email, 'edit');
+        sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([rowVals]);
+      } else {
+        sheet.appendRow(rowVals);
       }
-      if (found > 0) sheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([rowVals]);
-      else sheet.appendRow(rowVals);
       invalidateKbCache_();
       writeAuditLog_(emp, 'KbItemSave', '', '', false, 0,
-        'id=' + id + '; dept=' + department + '; type=' + type +
+        'id=' + id + '; dept=' + department + '; type=' + type + '; status=' + status +
         (imagesExported ? '; imagesExported=' + imagesExported : ''), emp.email);
-      return { success: true, id: id, imagesExported: imagesExported, imageWarnings: imageWarnings };
+      return { success: true, id: id, status: status, imagesExported: imagesExported, imageWarnings: imageWarnings };
     } finally { lock.releaseLock(); }
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -13501,6 +13541,166 @@ function kbDeleteItem(id) {
     invalidateKbCache_();
     writeAuditLog_(emp, 'KbItemDelete', '', '', false, 0, 'id=' + id, emp.email);
     return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ── #4 — article revision history + draft→publish ──────────────────────────
+
+function getOrCreateKbRevisionsSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_REVISIONS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_REVISIONS_TAB);
+    sheet.appendRow(KB_REVISIONS_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_REVISIONS_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** #4 — append a snapshot of a PRIOR KB row's content to KbRevisions before it's
+ *  overwritten. `prior` is a full KB row (KB_HEADERS-wide). Best-effort — a
+ *  revision-log failure must NEVER fail the save/revert that triggered it. */
+function kbAppendRevision_(prior, replacedBy, action) {
+  try {
+    if (!prior) return;
+    const sheet = getOrCreateKbRevisionsSheet_();
+    const ssTz = sheet.getParent().getSpreadsheetTimeZone();
+    sheet.appendRow([
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+      Utilities.getUuid(),
+      String(prior[KB.ID] || ''),
+      String(prior[KB.TITLE] || ''),
+      String(prior[KB.TYPE] || 'article'),
+      String(prior[KB.BODY_MD] || ''),
+      String(prior[KB.DRIVE_KIND] || ''),
+      String(prior[KB.DRIVE_FILE_ID] || ''),
+      kbCellTs_(prior[KB.UPDATED_AT], ssTz),   // coerced-Date safe
+      String(prior[KB.UPDATED_BY] || ''),
+      replacedBy,
+      action,
+    ]);
+  } catch (e) { /* best-effort */ }
+}
+
+/** #4 — admin-gated, read-only. The revision history for one item, newest-first,
+ *  bounded. PHI-free by policy (KB content). Each entry carries a preview + the
+ *  prior author/timestamp; `revId` is the key kbRevertItem restores. */
+function kbGetRevisions(id) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    id = String(id || '').trim();
+    if (!id) return { error: 'Missing item id.' };
+    const ss = getKbSS_();
+    const sheet = ss.getSheetByName(KB_REVISIONS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { items: [] };
+    const ssTz = ss.getSpreadsheetTimeZone();
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - KB_REVISIONS_MAX_SCAN + 1);
+    const rows = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_REVISIONS_HEADERS.length).getValues();
+    const items = [];
+    for (let i = rows.length - 1; i >= 0; i--) {   // newest snapshot first
+      if (String(rows[i][KBREV.ITEM_ID] || '').trim() !== id) continue;
+      const type = String(rows[i][KBREV.TYPE] || 'article');
+      const body = String(rows[i][KBREV.BODY_MD] || '');
+      items.push({
+        revId: String(rows[i][KBREV.REV_ID] || ''),
+        capturedAt: kbCellTs_(rows[i][KBREV.CAPTURED_AT], ssTz),
+        title: String(rows[i][KBREV.TITLE] || ''),
+        type: type,
+        priorUpdatedAt: kbCellTs_(rows[i][KBREV.PRIOR_UPDATED_AT], ssTz),
+        priorUpdatedBy: String(rows[i][KBREV.PRIOR_UPDATED_BY] || ''),
+        replacedBy: String(rows[i][KBREV.REPLACED_BY] || ''),
+        action: String(rows[i][KBREV.ACTION] || 'edit'),
+        preview: (type === 'embed')
+          ? ('[embed] ' + String(rows[i][KBREV.DRIVE_KIND] || ''))
+          : body.replace(/\s+/g, ' ').trim().substring(0, 160),
+        chars: body.length,
+      });
+      if (items.length >= KB_REVISIONS_PER_ITEM) break;
+    }
+    return { items: items };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** #4 — admin-gated, locked, audited. Restore a prior revision's CONTENT
+ *  (title/type/body/drive fields) into the live row; department, sortOrder,
+ *  status, and id stay as they are now. The current content is snapshotted first
+ *  (action='revert'), so a revert is itself reversible. */
+function kbRevertItem(id, revId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    id = String(id || '').trim(); revId = String(revId || '').trim();
+    if (!id || !revId) return { success: false, error: 'Missing id.' };
+    const ss = getKbSS_();
+    const revSheet = ss.getSheetByName(KB_REVISIONS_TAB);
+    if (!revSheet || revSheet.getLastRow() < 2) return { success: false, error: 'Revision not found.' };
+    const revLast = revSheet.getLastRow();
+    const revStart = Math.max(2, revLast - KB_REVISIONS_MAX_SCAN + 1);
+    const revRows = revSheet.getRange(revStart, 1, revLast - revStart + 1, KB_REVISIONS_HEADERS.length).getValues();
+    let snap = null;
+    for (let i = revRows.length - 1; i >= 0; i--) {
+      if (String(revRows[i][KBREV.REV_ID] || '').trim() === revId && String(revRows[i][KBREV.ITEM_ID] || '').trim() === id) { snap = revRows[i]; break; }
+    }
+    if (!snap) return { success: false, error: 'Revision not found.' };
+    const kbSheet = getOrCreateKbSheet_();
+    const last = kbSheet.getLastRow();
+    let found = -1;
+    if (last >= 2) {
+      const ids = kbSheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+    }
+    if (found < 0) return { success: false, error: 'Item not found.' };
+    const cur = kbSheet.getRange(found, 1, 1, KB_HEADERS.length).getValues()[0];
+    kbAppendRevision_(cur, emp.email, 'revert');   // current content is reversible too
+    const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    const restored = [
+      id,
+      String(cur[KB.DEPARTMENT] || 'General'),
+      String(snap[KBREV.TITLE] || ''),
+      String(snap[KBREV.TYPE] || 'article'),
+      String(snap[KBREV.BODY_MD] || ''),
+      String(snap[KBREV.DRIVE_KIND] || ''),
+      String(snap[KBREV.DRIVE_FILE_ID] || ''),
+      Number(cur[KB.SORT_ORDER] || 0) || 0,
+      now, emp.email, now, emp.email,
+      kbRowStatus_(cur[KB.STATUS]),
+    ];
+    kbSheet.getRange(found, 1, 1, KB_HEADERS.length).setValues([restored]);
+    invalidateKbCache_();
+    writeAuditLog_(emp, 'KbItemRevert', '', '', false, 0, 'id=' + id + '; revId=' + revId, emp.email);
+    return { success: true, id: id };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** #4 — admin-gated, locked, audited. Flip a draft to published (the "Release"
+ *  action, mirroring EmpDocs releaseDoc). No content change. */
+function kbPublishItem(id) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    id = String(id || '').trim();
+    if (!id) return { success: false, error: 'Missing item id.' };
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    let found = -1;
+    if (last >= 2) {
+      const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { found = i + 2; break; } }
+    }
+    if (found < 0) return { success: false, error: 'Item not found.' };
+    sheet.getRange(found, KB.STATUS + 1, 1, 1).setValue(KB_STATUS_PUBLISHED);
+    invalidateKbCache_();
+    writeAuditLog_(emp, 'KbItemPublish', '', '', false, 0, 'id=' + id, emp.email);
+    return { success: true, id: id };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
