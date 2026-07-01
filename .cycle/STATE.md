@@ -2,11 +2,38 @@
 
 ## Current
 Cycle: 6
-Phase: implement — PPD intake redesign, Phase 2 merged (#115) on claude/broad-scan-2ll5ok
+Phase: implement — PPD intake redesign, Phase 3 (curated condition pickers) on claude/broad-scan-2ll5ok
 Scope: PPD intake form structured-control UI/UX (engine untouched)
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-07-01 (broad-implement: PPD redesign Phase 2 merged — per-question formats)
+Updated: 2026-07-01 (broad-implement: PPD redesign Phase 3 — Q29/Q41/Q42/Q43 condition pickers)
+
+## PPD redesign Phase 3 (2026-07-01, claude/broad-scan-2ll5ok)
+Curated `condition` multi-select pickers for the four condition-list questions.
+OPERATOR-CONFIRMED via AskUserQuestion: do ALL of Q29/Q41/Q42/Q43 (Q29 = PVD
+sub-conditions e.g. claudication/lymphedema — the operator's own examples), ship
+seeded lists flagged for clinical review. NOTE: the original spec said "Q29/Q42/
+Q43" but Q29 is really "peripheral vascular disease" and the qualifying-conditions
+Q is actually Q41 — surfaced this + the operator chose to picker-ize Q29 too.
+- New `condition` control (replaced the Phase-1 plain-text stub): filter box +
+  option buttons (from INTAKE_CONDITION_LISTS[list]) + selected-chip row + "Add
+  <typed>" off-list escape. Value = comma-joined selected strings in data-val
+  (round-trips like `multi`). Handlers: intakeCondToggle_/Filter_/FilterKey_/
+  AddCustom_/RemoveChip_/Render_; get/set: intakeConditionGet_/Set_; pure
+  intakeCondToggleValue_. intakePpdGetVal_/SetVal_ + hasInputId updated.
+- INTAKE_CONDITION_LISTS: vascular/qualifying/cardiopulmonary/neuro (seeded,
+  comma-free, English values). INTAKE_PPD_CONTROL += Q29/41/42/43 condition;
+  removed '29':'yn' from INTAKE_PPD_TYPE.
+- ENGINE UNTOUCHED. Q29/41/42 not engine-read; Q43 read ONLY as truthy-vs-exclude
+  (hasValidNeuroDiagnosis) → any non-empty value valid, empty = no Dx. SERVER
+  needed NO edit (Q29/41/42/43 render via the else branch as escaped comma text).
+- Tests: +4 pure (intakeCondToggleValue_; Q29/41/42/43 are condition + lists
+  resolve; every neuro value → valid neuro Dx + none collide with exclude list;
+  all list values comma-free). Pure 227/0, DOM 48/0, node --check clean.
+- CLAUDE.md: updated the "Intake PPD controls engine-safe" gotcha + INV-112 for
+  the Phase-3 condition pickers + drift guard. Q43 free-text framing removed.
+- SEEDED LISTS ARE FLAGGED FOR CLINICAL SIGN-OFF (pure editable content constant,
+  zero engine risk to refine). LOCALIZED condition labels = follow-on.
 
 ## PPD intake redesign (Phases 0–2 merged 2026-07-01, claude/broad-scan-2ll5ok)
 UI/UX upgrade of the PPD form's question response formats WITHOUT touching the
@@ -32,15 +59,13 @@ intakeCollectPpd_ / engine / email builder work unchanged.
   English values, drift-guarded."
 
 ## Where I left off
-2026-07-01: PPD Phase 2 merged (#115). Branch reset from origin/main (at #115).
-NEXT = await operator go-ahead per phase (they approved Phase 0, then requested
-1, then 2 explicitly). Phase 3 = curated condition pickers Q29/Q42/Q43 (operator
-chose "curated multi-select filter"; I offered to draft Medicare-PWC-seeded
-condition lists for clinical sign-off). Phase 4 = Q32 spasticity tooltip, Q33a
-conditional-hide, Q45 reveal-sub-options, Q37 5'1"→61 parse, optional Q31a body
-diagram. OPEN: operator confirm on Q7-Q13 (kept Q7-12 Yes/No + Q13 free-text vs
-literal "free-text" which would downgrade the binary function questions).
-OPERATOR: one deploy (clasp push -f + New version) ships #113-#115 + prior KB batch;
+2026-07-01: PPD Phase 3 built (curated condition pickers Q29/Q41/Q42/Q43); PR
+pending CI. Q7-Q13 confirmed by operator (Q7-12 Yes/No + Q13 free-text). NEXT =
+merge the Phase-3 PR on CI green, then await operator go-ahead for Phase 4 (Q32
+spasticity tooltip, Q33a conditional-hide, Q45 reveal-sub-options, Q37 5'1"→61
+parse, optional Q31a body diagram). SEEDED CONDITION LISTS still want clinical
+sign-off (pure content, editable with zero engine risk). OPERATOR: one deploy
+(clasp push -f + New version) ships #113-#115 + Phase 3 + prior KB batch;
 runAllTests() in editor (CI can't run the Apps Script suite).
 
 ## Prior: KB self-improving loop (#1 + #2, 2026-07-01, claude/broad-scan-2ll5ok)
