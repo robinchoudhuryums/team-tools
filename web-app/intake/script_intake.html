@@ -130,6 +130,11 @@
   .intk-cond-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--accent-soft); color: var(--ink); border-radius: 999px; font-size: .8rem; padding: 3px 6px 3px 11px; }
   .intk-cond-chip-x { appearance: none; border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 3px; }
   .intk-cond-chip-x:hover { color: var(--danger); }
+  /* Phase 4 — label help glyph, Yes/No-reveals-multi, conditional-hide row. */
+  .intk-help { display: inline-flex; vertical-align: middle; margin-left: 5px; color: var(--muted); cursor: help; }
+  .intk-help:hover { color: var(--accent); }
+  .intk-ynreveal { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .intk-yr-sub { display: flex; flex-wrap: wrap; gap: 6px; }
 
   .intk-row .ck { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--muted); }
   .intk-actions { display: flex; gap: 10px; margin-top: 16px; }
@@ -393,15 +398,27 @@ var INTAKE_PPD_CONTROL = {
   '25': { kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Hands' }, { v: 'Feet' }, { v: 'Legs' }] },
   '31a':{ kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Paralysis Left Arm' }, { v: 'Paralysis Right Arm' }, { v: 'Paralysis Left Leg' }, { v: 'Paralysis Right Leg' }, { v: 'Weakness Left Side' }, { v: 'Weakness Right Side' }] },
   '34': { kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Left (Above Knee)' }, { v: 'Left (Below Knee)' }, { v: 'Right (Above Knee)' }, { v: 'Right (Below Knee)' }] },
-  '37': { kind: 'numunit', unit: 'in.' },
+  '37': { kind: 'numunit', unit: 'in.', parse: 'height' },
   '38': { kind: 'numunit', unit: 'lbs.' },
   '39': { kind: 'reveal', revealOn: 'Other', placeholder: 'Please specify', options: [{ v: 'Alone' }, { v: 'Friends/Family' }, { v: 'Other' }] },
   '29': { kind: 'condition', list: 'vascular' },
   '41': { kind: 'condition', list: 'qualifying' },
   '42': { kind: 'condition', list: 'cardiopulmonary' },
   '43': { kind: 'condition', list: 'neuro' },
+  '45': { kind: 'ynreveal', revealOn: 'Yes', sub: ['Rheumatoid', 'Osteoarthritis', 'Psoriatic'] },
 };
 function intakePpdControl_(qNum) { return INTAKE_PPD_CONTROL[qNum] || null; }
+
+// Phase 4 — a hover-help glyph on specific question labels (native title tooltip).
+var INTAKE_PPD_HELP = {
+  '32': 'Spasticity is muscle stiffness or tightness — muscles that involuntarily contract, resist stretching, or spasm. Common after stroke, spinal-cord injury, MS, or cerebral palsy.',
+};
+// Phase 4 — conditional-visibility rules for SECONDARY rows: the row shows only
+// when its parent question's value equals `whenVal` (else it's hidden + cleared).
+// Evaluated by intakePpdApplyReveals_ on every change + after draft restore.
+var INTAKE_PPD_REVEAL = {
+  '33a': { whenQ: '33', whenVal: 'Yes' },   // "where + sensation" only if pressure ulcers = Yes
+};
 
 var INTAKE_PMD_Q = {
   EN: [
@@ -522,6 +539,7 @@ function enterIntakePpdView(area) {
   var pat = document.getElementById('intk-ppd-patient');
   if (pat) pat.addEventListener('input', intakePpdAfterChange_);
   intakeRestoreDraft_('ppd');
+  intakePpdApplyReveals_(form);   // hide Q33a etc. per restored parent answers
   intakePpdUpdateProgress_();
   intakeConsumeNavHint_();
 }
@@ -624,8 +642,33 @@ function intakePpdRowHtml_(qNum, text, isSecondary) {
     control = '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">'; hasInputId = true;
   }
   var labelFor = hasInputId ? ' for="intk-ppd-q' + esc(qNum) + '"' : '';
-  return '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '">' +
-    '<label class="q"' + labelFor + '>' + esc(text) + '</label>' + control + '</div>';
+  // Phase 4 — optional hover-help glyph after the label text.
+  var help = INTAKE_PPD_HELP[qNum]
+    ? '<span class="intk-help" tabindex="0" role="img" title="' + esc(INTAKE_PPD_HELP[qNum]) + '" aria-label="' + esc(INTAKE_PPD_HELP[qNum]) + '">' + icon('info', 13) + '</span>'
+    : '';
+  // Phase 4 — conditional-visibility: a reveal row starts hidden; intakePpdApplyReveals_
+  // shows it when the parent answer matches.
+  var rev = INTAKE_PPD_REVEAL[qNum];
+  var revAttrs = rev ? ' data-reveal-q="' + esc(rev.whenQ) + '" data-reveal-val="' + esc(rev.whenVal) + '" style="display:none"' : '';
+  return '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '"' + revAttrs + '>' +
+    '<label class="q"' + labelFor + '>' + esc(text) + help + '</label>' + control + '</div>';
+}
+
+// Phase 4 — show/hide conditional-reveal rows (INTAKE_PPD_REVEAL) from their parent
+// answer; when hidden, clear the child so a stale value can't ride into the payload.
+function intakePpdApplyReveals_(root) {
+  if (!root) return;
+  root.querySelectorAll('.intk-row[data-reveal-q]').forEach(function (row) {
+    var pq = row.getAttribute('data-reveal-q');
+    var want = row.getAttribute('data-reveal-val') || '';
+    var have = intakePpdGetVal_(root, pq);
+    var show = String(have || '').toLowerCase() === want.toLowerCase();
+    row.style.display = show ? '' : 'none';
+    if (!show) {
+      var cq = row.querySelector('[data-intk-qnum]');
+      if (cq && cq.value) cq.value = '';   // clear the hidden child's text
+    }
+  });
 }
 
 // Yes/No segmented toggle (role=radiogroup). `attrs` carries the identity
@@ -683,6 +726,8 @@ function intakePpdGetVal_(root, qNum) {
   if (multi) return intakeMultiGet_(multi);
   var reveal = root.querySelector('.intk-reveal[data-qnum="' + qNum + '"]');
   if (reveal) return intakeRevealGet_(reveal);
+  var ynrev = root.querySelector('.intk-ynreveal[data-qnum="' + qNum + '"]');
+  if (ynrev) return intakeYnRevealGet_(ynrev);
   var cond = root.querySelector('.intk-condition[data-qnum="' + qNum + '"]');
   if (cond) return intakeConditionGet_(cond);
   var input = root.querySelector('[data-intk-qnum="' + qNum + '"]');
@@ -695,6 +740,8 @@ function intakePpdSetVal_(root, qNum, val) {
   if (multi) { intakeMultiSet_(multi, val); return; }
   var reveal = root.querySelector('.intk-reveal[data-qnum="' + qNum + '"]');
   if (reveal) { intakeRevealSet_(reveal, val); return; }
+  var ynrev = root.querySelector('.intk-ynreveal[data-qnum="' + qNum + '"]');
+  if (ynrev) { intakeYnRevealSet_(ynrev, val); return; }
   var cond = root.querySelector('.intk-condition[data-qnum="' + qNum + '"]');
   if (cond) { intakeConditionSet_(cond, val); return; }
   var input = root.querySelector('[data-intk-qnum="' + qNum + '"]');
@@ -721,6 +768,7 @@ function intakePpdControlHtml_(ctrl, qNum, ariaLabel) {
     case 'multi':     return intakeMultiControlHtml_(ctrl, qNum, ariaLabel);
     case 'numunit':   return intakeNumUnitControlHtml_(ctrl, qNum);
     case 'reveal':    return intakeRevealControlHtml_(ctrl, qNum, ariaLabel);
+    case 'ynreveal':  return intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel);
     case 'condition': return intakeConditionControlHtml_(ctrl, qNum);
     default:          return '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
   }
@@ -777,8 +825,30 @@ function intakeMultiSet_(grp, val) {
 // (c) number + unit suffix. Value = the raw number string (engine strips
 // non-digits; the unit is display-only, so the value round-trips cleanly).
 function intakeNumUnitControlHtml_(ctrl, qNum) {
-  return '<span class="intk-numunit"><input type="text" inputmode="numeric" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">' +
+  // parse:'height' → on blur, convert a feet-inches entry (5'1", 5 ft 1) to total
+  // inches so the stored value is a clean number (display-only; engine ignores Q37).
+  var onblur = (ctrl.parse === 'height') ? ' onblur="intakeNumUnitParseHeight_(this)"' : '';
+  return '<span class="intk-numunit"><input type="text" inputmode="numeric" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '"' + onblur + '>' +
     '<span class="intk-unit">' + esc(ctrl.unit || '') + '</span></span>';
+}
+// On blur, normalize a feet-inches height entry to total inches (fires an input
+// event so the draft + progress react), leaving a plain number untouched.
+function intakeNumUnitParseHeight_(input) {
+  var out = intakeParseHeightInches_(input.value);
+  if (out !== String(input.value == null ? '' : input.value)) {
+    input.value = out;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+// PURE — "5'1\"" / "5 ft 1" / "5'1" → "61" (total inches). A plain number (or any
+// string with no feet marker) is returned unchanged, trimmed.
+function intakeParseHeightInches_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  var m = s.match(/^(\d{1,2})\s*(?:'|’|ft\.?|feet|f)\s*(\d{1,2}(?:\.\d+)?)?\s*(?:"|”|''|in\.?|inch|inches)?$/i);
+  if (!m) return s;
+  var feet = parseInt(m[1], 10);
+  var inches = m[2] ? parseFloat(m[2]) : 0;
+  return String(feet * 12 + inches);
 }
 
 // (d) reveal-text: a single-select whose `revealOn` option shows a free-text box.
@@ -821,6 +891,63 @@ function intakeRevealSet_(grp, val) {
   });
   var ta = grp.querySelector('.intk-reveal-text');
   if (ta) { ta.value = parsed.text || ''; ta.style.display = (parsed.option === revealOn) ? '' : 'none'; }
+}
+
+// (d2) Yes/No that reveals a multi-select of sub-options (Phase 4 — Q45 arthritis
+// type). Value: '' | 'No' | 'Yes' | '<revealOn>: SubA, SubB' (subs in option order).
+// Display-only (engine doesn't read Q45); the email renders it as escaped text.
+function intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel) {
+  var subs = (ctrl.sub || []).map(function (v) {
+    return '<button type="button" class="intk-multi-btn" data-set="' + esc(v) + '" role="checkbox" aria-checked="false" onclick="intakeYrPickSub_(this)">' + esc(v) + '</button>';
+  }).join('');
+  return '<div class="intk-ynreveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || 'Yes') + '" role="group" aria-label="' + esc(ariaLabel) + '">' +
+      '<div class="intk-yn intk-yr-yn" role="radiogroup">' +
+        '<button type="button" class="intk-yn-btn yes" data-set="Yes" role="radio" aria-checked="false" onclick="intakeYrPickYn_(this)">Yes</button>' +
+        '<button type="button" class="intk-yn-btn no" data-set="No" role="radio" aria-checked="false" onclick="intakeYrPickYn_(this)">No</button>' +
+      '</div>' +
+      '<div class="intk-yr-sub" style="display:none">' + subs + '</div>' +
+    '</div>';
+}
+function intakeYrPickYn_(btn) {
+  var grp = btn.closest('.intk-ynreveal'); if (!grp) return;
+  var revealOn = grp.getAttribute('data-reveal-on') || 'Yes';
+  grp.querySelectorAll('.intk-yr-yn .intk-yn-btn').forEach(function (b) {
+    var on = (b === btn); b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  var sub = grp.querySelector('.intk-yr-sub');
+  if (btn.getAttribute('data-set') === revealOn) { if (sub) sub.style.display = ''; }
+  else if (sub) {   // No → hide + clear any chosen sub-types
+    sub.style.display = 'none';
+    sub.querySelectorAll('.intk-multi-btn.on').forEach(function (b) { b.classList.remove('on'); b.setAttribute('aria-checked', 'false'); });
+  }
+  intakePpdAfterChange_();
+}
+function intakeYrPickSub_(btn) {
+  btn.classList.toggle('on');
+  btn.setAttribute('aria-checked', btn.classList.contains('on') ? 'true' : 'false');
+  if (btn.classList.contains('on')) { btn.classList.remove('popping'); void btn.offsetWidth; btn.classList.add('popping'); }
+  intakePpdAfterChange_();
+}
+function intakeYnRevealGet_(grp) {
+  var ynBtn = grp.querySelector('.intk-yr-yn .intk-yn-btn.on');
+  var subs = [];
+  grp.querySelectorAll('.intk-yr-sub .intk-multi-btn.on').forEach(function (b) { subs.push(b.getAttribute('data-set')); });
+  return intakeYnRevealSerialize_(ynBtn ? ynBtn.getAttribute('data-set') : '', subs, grp.getAttribute('data-reveal-on') || 'Yes');
+}
+function intakeYnRevealSet_(grp, val) {
+  var revealOn = grp.getAttribute('data-reveal-on') || 'Yes';
+  var parsed = intakeYnRevealParse_(val, revealOn);
+  grp.querySelectorAll('.intk-yr-yn .intk-yn-btn').forEach(function (b) {
+    var on = (b.getAttribute('data-set') === parsed.yn); b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  var sub = grp.querySelector('.intk-yr-sub');
+  if (sub) {
+    sub.style.display = (parsed.yn === revealOn) ? '' : 'none';
+    sub.querySelectorAll('.intk-multi-btn').forEach(function (b) {
+      var on = parsed.subs.indexOf(b.getAttribute('data-set')) >= 0;
+      b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  }
 }
 
 // (e) curated condition-picker (Phase 3) — a filter box over the curated
@@ -960,8 +1087,30 @@ function intakeRevealParse_(str, revealOn) {
   if (revealOn && str.indexOf(pfx) === 0) return { option: revealOn, text: str.substring(pfx.length) };
   return { option: str, text: '' };
 }
+// PURE — Yes/No-reveals-multi (Q45). Value: '' | 'No' | '<revealOn>' |
+// '<revealOn>: SubA, SubB'. `subs` are joined in the order passed (option order).
+function intakeYnRevealSerialize_(yn, subs, revealOn) {
+  yn = String(yn || '');
+  if (!yn) return '';
+  if (yn !== revealOn) return yn;                                  // 'No'
+  subs = (subs || []).filter(function (s) { return s; });
+  return subs.length ? (yn + ': ' + subs.join(', ')) : yn;        // 'Yes' | 'Yes: A, B'
+}
+function intakeYnRevealParse_(str, revealOn) {
+  str = String(str == null ? '' : str).trim();
+  revealOn = String(revealOn || 'Yes');
+  if (!str) return { yn: '', subs: [] };
+  var pfx = revealOn + ':';
+  if (str.indexOf(pfx) === 0) {
+    return { yn: revealOn, subs: str.substring(pfx.length).split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s; }) };
+  }
+  if (str.toLowerCase() === revealOn.toLowerCase()) return { yn: revealOn, subs: [] };
+  if (str.toLowerCase() === 'no') return { yn: 'No', subs: [] };
+  return { yn: '', subs: [] };   // legacy free-text → unselected (raw text stays in the stored row)
+}
 
 function intakePpdAfterChange_() {
+  intakePpdApplyReveals_(document.getElementById('intk-ppd-form'));
   intakePpdUpdateProgress_();
   intakeSaveDraft_('ppd');
 }

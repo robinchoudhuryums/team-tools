@@ -2,11 +2,32 @@
 
 ## Current
 Cycle: 6
-Phase: implement — PPD intake redesign, Phase 3 (curated condition pickers) on claude/broad-scan-2ll5ok
+Phase: implement — PPD intake redesign, Phase 4 (reveal/height polish) on claude/broad-scan-2ll5ok
 Scope: PPD intake form structured-control UI/UX (engine untouched)
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-07-01 (broad-implement: PPD redesign Phase 3 — Q29/Q41/Q42/Q43 condition pickers)
+Updated: 2026-07-01 (broad-implement: PPD redesign Phase 4 — Q32 help / Q33a hide / Q45 ynreveal / Q37 height)
+
+## PPD redesign Phase 4 (2026-07-01, claude/broad-scan-2ll5ok)
+Display-only polish; ENGINE UNTOUCHED, SERVER UNTOUCHED (none of Q32/Q33a/Q37/Q45
+are engine-read; email renders new values via the else branch as escaped text).
+- Q32 spasticity tooltip: INTAKE_PPD_HELP map → hover-help `info` glyph on the
+  label (native title + aria-label, esc'd).
+- Q33a conditional-hide: INTAKE_PPD_REVEAL {'33a':{whenQ:'33',whenVal:'Yes'}} +
+  intakePpdApplyReveals_ (hooked in intakePpdAfterChange_ + after draft restore);
+  hidden rows are cleared so no stale value rides the payload.
+- Q45 ynreveal: NEW control kind (Yes/No reveals a sub-multi-select of arthritis
+  types Rheumatoid/Osteoarthritis/Psoriatic). Value ''/No/Yes/'Yes: A, B'. Pure
+  intakeYnRevealSerialize_/Parse_ (legacy free-text → unselected, raw text stays
+  in the stored row; Sent viewer displays stored text verbatim, no re-parse).
+- Q37 height parse: numunit parse:'height' → intakeNumUnitParseHeight_ on blur →
+  pure intakeParseHeightInches_ (5'1"→61; plain number untouched).
+- DEFERRED: optional Q31a body diagram (operator "cool but not essential" — a big
+  SVG-interaction feature disproportionate to a polish phase; Q31a multi already
+  captures side/limb structured data).
+- Tests: +3 pure (ynreveal serialize/parse, height parse, Phase-4 config wiring).
+  Pure 230/0, DOM 48/0, Code.js/Tests.js parse OK (intake partial covered by the
+  run.js vm parse-guard). CLAUDE.md gotcha + INV-112 updated.
 
 ## PPD redesign Phase 3 (2026-07-01, claude/broad-scan-2ll5ok)
 Curated `condition` multi-select pickers for the four condition-list questions.
@@ -59,13 +80,13 @@ intakeCollectPpd_ / engine / email builder work unchanged.
   English values, drift-guarded."
 
 ## Where I left off
-2026-07-01: PPD Phase 3 built (curated condition pickers Q29/Q41/Q42/Q43); PR
-pending CI. Q7-Q13 confirmed by operator (Q7-12 Yes/No + Q13 free-text). NEXT =
-merge the Phase-3 PR on CI green, then await operator go-ahead for Phase 4 (Q32
-spasticity tooltip, Q33a conditional-hide, Q45 reveal-sub-options, Q37 5'1"→61
-parse, optional Q31a body diagram). SEEDED CONDITION LISTS still want clinical
-sign-off (pure content, editable with zero engine risk). OPERATOR: one deploy
-(clasp push -f + New version) ships #113-#115 + Phase 3 + prior KB batch;
+2026-07-01: PPD Phase 4 built (Q32 help / Q33a conditional-hide / Q45 ynreveal /
+Q37 height parse); PR pending CI. This COMPLETES the PPD redesign roadmap except
+the DEFERRED optional Q31a body diagram. NEXT = merge the Phase-4 PR on CI green.
+No further PPD phases queued — await operator direction (body diagram, condition-
+list clinical sign-off, or a new area). SEEDED CONDITION LISTS (Phase 3) still
+want clinical sign-off (pure content, zero engine risk). OPERATOR: one deploy
+(clasp push -f + New version) ships #113-#116 + Phase 4 + prior KB batch;
 runAllTests() in editor (CI can't run the Apps Script suite).
 
 ## Prior: KB self-improving loop (#1 + #2, 2026-07-01, claude/broad-scan-2ll5ok)
