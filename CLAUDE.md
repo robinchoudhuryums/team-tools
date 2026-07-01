@@ -2636,7 +2636,20 @@ this section before touching the relevant area.
   is a spreadsheet-level setting, not a cell), and each drifted/unreachable
   per-rep Notes Sheet links straight to its source (`problems[].url`, omitted for
   the unreachable ones we couldn't open). `getStorageHealth` already returns
-  `configTimezone` for the hint.
+  `configTimezone` for the hint. **Broken-embed / lost-access check (#3):**
+  `getStorageHealth` also probes every KB **embed** for Drive reachability
+  (`kbScanBrokenEmbeds_`, bounded `KB_EMBED_SCAN_CAP`=150, best-effort) — a Drive
+  file that was deleted/moved or lost deployer access renders a dead `/preview`
+  iframe that errors NOWHERE, so it's neither "stale" (INV-139) nor an unreachable
+  *store*. Uses `DriveApp.getFileById(id).getName()` (forces the lazy access
+  check; `DriveApp` is already a project scope — KB images/converter — so NO new
+  OAuth). Returns `kbEmbeds:{total,probed,reachable,broken[],truncated}`; the
+  panel renders a danger list of broken embeds (title · dept · kind · open ↗ ·
+  reason — PHI-free, KB is PHI-free-by-policy) and folds a `N broken embed(s)`
+  warn into the Overview Storage summary card. The scan is gated behind
+  `getStorageHealth({scanEmbeds})` (default on) and **skipped by
+  `getDeployReadiness`** (`{scanEmbeds:false}`), which only bands store config —
+  so the Admin Overview doesn't double-scan Drive.
 - **Automation Health panel (Admin tab).** Manager-only, read-only
   surfacing of the silent-degradation signals (`getAutomationHealth`,
   rendered by `cnLoadHealthPanel_`; since the 2nd-pass consolidation it sits

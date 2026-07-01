@@ -8067,9 +8067,14 @@ function cnLoadStoragePanel_() {
       var stores = res.stores || [];
       var unreachable = stores.filter(function (s) { return s.configured && s.reachable === false; }).length;
       var tzDrift = stores.filter(function (s) { return s.tzMatch === false; }).length;
-      var tone = unreachable > 0 ? 'crit' : (tzDrift > 0 ? 'warn' : 'ok');
-      var val = unreachable > 0 ? (unreachable + ' unreachable') : (tzDrift > 0 ? (tzDrift + ' tz mismatch') : 'All OK');
-      var sub = unreachable > 0 ? 'check sharing / access' : (tzDrift > 0 ? 'review config →' : 'reachable · tz matches');
+      var brokenEmbeds = (res.kbEmbeds && res.kbEmbeds.broken && res.kbEmbeds.broken.length) || 0;  // #3
+      var tone = unreachable > 0 ? 'crit' : (tzDrift > 0 || brokenEmbeds > 0 ? 'warn' : 'ok');
+      var val = unreachable > 0 ? (unreachable + ' unreachable')
+        : (tzDrift > 0 ? (tzDrift + ' tz mismatch')
+          : (brokenEmbeds > 0 ? (brokenEmbeds + ' broken embed' + (brokenEmbeds === 1 ? '' : 's')) : 'All OK'));
+      var sub = unreachable > 0 ? 'check sharing / access'
+        : (tzDrift > 0 ? 'review config →'
+          : (brokenEmbeds > 0 ? 'fix Drive links →' : 'reachable · tz matches'));
       cnSetSysCard_('storage', 'Storage', tone, val, sub);
     })
     .withFailureHandler(function (err) {
@@ -8140,7 +8145,40 @@ function cnRenderStoragePanel_(res) {
     : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">All reachable stores match CONFIG.TIMEZONE (' + esc(res.configTimezone || '') + ').</div>';
   return '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;max-width:900px">' +
     '<div class="day-section-label" style="margin-bottom:10px">' + icon('settings', 14) + ' Storage Health</div>' +
-    hdr + rows +
+    hdr + rows + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
+  '</div>';
+}
+
+// #3 — broken-embed / lost-access section: KB embeds whose Drive file is
+// deleted/moved or the deployer lost access (a dead /preview iframe that errors
+// nowhere). Renders only when there ARE embeds; a danger list when any are
+// broken, else a quiet all-clear line. PHI-free (KB is PHI-free by policy).
+function cnRenderKbEmbedsHealth_(ke) {
+  if (!ke || !ke.total) return '';
+  var top = '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">';
+  var checked = (ke.probed != null && ke.probed < ke.total)
+    ? ('checked ' + ke.probed + ' of ' + ke.total)
+    : (ke.total + ' embed' + (ke.total === 1 ? '' : 's'));
+  if (ke.broken && ke.broken.length) {
+    return top +
+      '<div style="font-size:12px;color:var(--danger-deep);margin-bottom:8px">' + icon('warning', 12) + ' ' +
+        ke.broken.length + ' Reference embed' + (ke.broken.length === 1 ? '' : 's') +
+        ' point to a Drive file that’s deleted/moved or the deployer lost access — the preview silently fails. ' +
+        'Re-share the file, fix the link, or convert to a native article.</div>' +
+      ke.broken.map(function (b) {
+        return '<div style="font-size:11px;margin-bottom:4px">' +
+          '<strong>' + esc(b.title) + '</strong>' + (b.department ? ' · ' + esc(b.department) : '') +
+          ' · ' + esc(b.driveKind) +
+          (b.openUrl ? ' · <a href="' + esc(b.openUrl) + '" target="_blank" rel="noopener">open ↗</a>' : '') +
+          '<span style="color:var(--muted)"> — ' + esc(b.reason) + '</span>' +
+        '</div>';
+      }).join('') +
+      (ke.truncated ? '<div style="font-size:11px;color:var(--muted);margin-top:4px">Scan capped — some embeds were not checked.</div>' : '') +
+    '</div>';
+  }
+  return top +
+    '<div style="font-size:11px;color:var(--muted)">' + icon('check', 12) + ' Reference embeds · ' + esc(checked) + ' — all Drive files reachable' +
+    (ke.truncated ? ' (scan capped)' : '') + '</div>' +
   '</div>';
 }
 

@@ -4157,10 +4157,13 @@ function sendAutomationHealthDigest() {
  *  the runAllTests S1.1 tripwire only covers the ADP sheet, this covers all of
  *  them). PHI-free: returns store metadata + names/urls + tz only, never any
  *  row content. Rendered in the Call Notes Admin tab beside Automation Health. */
-function getStorageHealth() {
+function getStorageHealth(opts) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
+    // #3 — the KB-embed Drive scan runs for the Storage Health panel (default)
+    // but is skipped by getDeployReadiness, which only bands store config.
+    const scanEmbeds = !opts || opts.scanEmbeds !== false;
     const props = PropertiesService.getScriptProperties();
     const cfgTz = CONFIG.TIMEZONE;
     const isPlaceholder = function (v) { return !v || /^YOUR_/.test(String(v)); };
@@ -4215,10 +4218,11 @@ function getStorageHealth() {
 
     const kbProp = props.getProperty('KB_SS_ID');
     const kbId = kbProp || (isPlaceholder(CONFIG.KB.SS_ID) ? '' : CONFIG.KB.SS_ID);
-    stores.push(probe({ label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs',
+    const kbStore = probe({ label: 'Knowledge Base + Training', role: 'KB, KbViews, Training/Quiz tabs',
       cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID', id: kbId,
       source: kbProp ? 'Script Property' : (kbId ? 'CONFIG' : 'unset'),
-      note: kbId ? '' : 'Set KB_SS_ID — Reference + Training fail without it.' }));
+      note: kbId ? '' : 'Set KB_SS_ID — Reference + Training fail without it.' });
+    stores.push(kbStore);
 
     const hrProp = props.getProperty('HR_DOCS_SS_ID');
     stores.push(probe({ label: 'Employee Docs (HR)', role: 'EmpDocs + DocSignatures',
@@ -4262,7 +4266,13 @@ function getStorageHealth() {
         : (reachable + '/' + enrolled + ' reachable' + (tzMismatch ? ('; ' + tzMismatch + ' tz-mismatched') : '')),
     });
 
-    return { configTimezone: cfgTz, stores: stores };
+    // #3 — probe KB embeds for a dead/moved Drive file or lost deployer access
+    // (a silently-broken embed reads as neither "stale" nor "unreachable store").
+    // Only when the KB store itself is reachable; bounded + best-effort; PHI-free.
+    let kbEmbeds = null;
+    if (scanEmbeds && kbStore.reachable) kbEmbeds = kbScanBrokenEmbeds_(KB_EMBED_SCAN_CAP);
+
+    return { configTimezone: cfgTz, stores: stores, kbEmbeds: kbEmbeds };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4563,7 +4573,7 @@ function getDeployReadiness() {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
-    const storage = getStorageHealth();
+    const storage = getStorageHealth({ scanEmbeds: false });   // #3 — deploy-readiness bands store config only, skip the Drive scan
     if (storage && storage.error) return { error: storage.error };
     let automation = {};
     try { automation = getAutomationHealth() || {}; } catch (e) { automation = {}; }
@@ -12953,6 +12963,7 @@ const KB_REQUEST_TOPIC_MAX = 200;
 const KB_REQUEST_NOTE_MAX = 1000;
 const KB_REQUESTS_MAX_SCAN = 2000;
 const KB_REQUESTS_RESOLVED_TAIL = 10;
+const KB_EMBED_SCAN_CAP = 150;   // #3 — max embeds Drive-probed per Storage Health run
 
 function getOrCreateKbViewsSheet_() {
   const ss = getKbSS_();
@@ -13249,6 +13260,50 @@ function kbFeedbackCounts_() {
       if (kind === 'helpful') out[id].helpful++; else out[id].notHelpful++;
     }
   } catch (e) { /* best-effort — empty map on any failure */ }
+  return out;
+}
+
+/** #3 — probe KB embeds for Drive reachability (deleted/moved file or lost
+ *  deployer access — a silently-broken embed that renders a dead /preview iframe
+ *  with no error anywhere). Bounded (cap) + best-effort; PHI-free (KB is PHI-free
+ *  by policy — returns title/department/kind/openUrl + a short reason, never
+ *  content). Surfaced in the admin Storage Health panel (getStorageHealth), the
+ *  established reachability-probe home. Uses DriveApp (already a project scope —
+ *  KB images/converter), so no new OAuth scope. Returns
+ *  { total, reachable, broken: [...], truncated }. */
+function kbScanBrokenEmbeds_(cap) {
+  const out = { total: 0, reachable: 0, probed: 0, broken: [], truncated: false };
+  try {
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return out;
+    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
+    let probed = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][KB.TYPE] || 'article') !== 'embed') continue;
+      const fid = String(rows[i][KB.DRIVE_FILE_ID] || '').trim();
+      if (!fid) continue;
+      out.total++;
+      if (probed >= cap) { out.truncated = true; continue; }
+      probed++;
+      const kind = String(rows[i][KB.DRIVE_KIND] || 'doc');
+      try {
+        // getFileById is lazy — getName() forces the existence/access check.
+        DriveApp.getFileById(fid).getName();
+        out.reachable++;
+      } catch (e) {
+        out.broken.push({
+          id: String(rows[i][KB.ID] || ''),
+          title: String(rows[i][KB.TITLE] || '(untitled)'),
+          department: String(rows[i][KB.DEPARTMENT] || ''),
+          driveKind: kind,
+          openUrl: kbOpenUrl_(kind, fid),
+          reason: (e && e.message) ? String(e.message).substring(0, 140) : 'unreachable',
+        });
+      }
+    }
+    out.probed = probed;
+  } catch (e) { /* best-effort — partial/empty result on any failure */ }
   return out;
 }
 

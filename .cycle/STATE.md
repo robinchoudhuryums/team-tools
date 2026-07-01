@@ -45,8 +45,25 @@ Both follow-ons noted at #107 close, now built on a fresh branch off merged main
   thumbsUp) — also used for the reader "No" button.
 - No new endpoints/gates (counts fold into existing manager-gated reads) → no
   test changes. Pure 207/0, DOM 48/0, node --check clean.
-- NOT YET: committed/pushed; operator runAllTests() (unchanged expectation, the
-  loop endpoints are covered).
+- Shipped in #108 (merged).
+
+## KB #3 — broken-embed / lost-access checker (2026-07-01, claude/broad-scan-2ll5ok)
+Next in the suggested KB sequence (Wave 1: #3 reliability, then #4 revision/draft).
+- getStorageHealth now probes every KB embed for Drive reachability via new
+  kbScanBrokenEmbeds_ (bounded KB_EMBED_SCAN_CAP=150, best-effort, PHI-free):
+  DriveApp.getFileById(id).getName() forces the lazy access check — a
+  deleted/moved file or lost deployer access = a dead /preview iframe that errors
+  nowhere (neither "stale" nor an unreachable store). DriveApp already a project
+  scope → no new OAuth.
+- Returns kbEmbeds:{total,probed,reachable,broken[],truncated}; panel
+  (cnRenderKbEmbedsHealth_) renders a danger list (title·dept·kind·open↗·reason)
+  + folds "N broken embed(s)" warn into the Overview Storage summary card.
+- Scan gated by getStorageHealth({scanEmbeds}) (default on); getDeployReadiness
+  passes {scanEmbeds:false} so the Admin Overview never double-scans Drive.
+- No new endpoint/gate (rides admin-gated getStorageHealth). Pure 207/0, DOM 48/0,
+  node --check clean. Docs: Storage Health Key Design Decision updated.
+- NOT YET: committed/pushed. NEXT in sequence = #4 (article revision history +
+  draft→publish), then #6/#5 (rep-facing: snippets, bookmarks).
 
 ## Cycle 6 — DeptRequests v2 (all 4 phases, 2026-06-30, claude/broad-scan-2ll5ok)
 Planned (decisions: roster column N membership; manager-summary reminder;
