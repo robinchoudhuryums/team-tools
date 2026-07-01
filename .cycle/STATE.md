@@ -2,11 +2,67 @@
 
 ## Current
 Cycle: 6
-Phase: implement — non-AI KB enhancements #1+#2 (self-improving-KB loop) on claude/broad-scan-2ll5ok
-Scope: KB (Reference tool) content-gap requests + rep freshness signal
+Phase: implement — PPD intake redesign, Phase 2 merged (#115) on claude/broad-scan-2ll5ok
+Scope: PPD intake form structured-control UI/UX (engine untouched)
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-07-01 (broad-implement: KB #1 content-gap requests + #2 rep freshness signal)
+Updated: 2026-07-01 (broad-implement: PPD redesign Phase 2 merged — per-question formats)
+
+## PPD intake redesign (Phases 0–2 merged 2026-07-01, claude/broad-scan-2ll5ok)
+UI/UX upgrade of the PPD form's question response formats WITHOUT touching the
+fragile recommendation engine (intakeFilterRecommendations_/intakeDeriveClinicalFactors_).
+KEY de-risk: engine-critical questions (Q25/Q31a/Q34/Q43/Q38) CAN become structured
+controls IF option VALUES emit exactly the English substrings the engine matches
+(canonical-English-value rule — also fixes a latent bilingual bug where Spanish
+free-text never matched). All controls serialize to/from a STRING so drafts /
+intakeCollectPpd_ / engine / email builder work unchanged.
+- #113 Phase 0 (merged): engine-contract lock — 6 tests feeding the new structured
+  values through the live engine, engine untouched.
+- #114 Phase 1 (merged): string-valued control framework (INERT) — INTAKE_PPD_CONTROL
+  registry + intakePpdControl_ + control builders (choice/multi/numunit/reveal/
+  condition) + pure serialize helpers (intakeMultiToggle_/Serialize_/Parse_,
+  intakeRevealSerialize_/Parse_). Null control → legacy path byte-identical.
+- #115 Phase 2 (merged): populated INTAKE_PPD_CONTROL per-question (Q1 multi mobility,
+  Q2-6/Q24 choice, Q25/Q31a/Q34 multi w/ No-exclusive, Q37/38 numunit, Q39 reveal),
+  INTAKE_PPD_TYPE Q14-23 sev→yn, removed Q1/24/37/38/40. FIRST visible form change.
+  Server needed NO edit (INTAKE_PPD_YESNO_QS already lists Q14-23; email builder
+  already splits comma-joined multi). NEW Phase-2 drift-guard loads the LIVE config
+  and feeds values through the engine so a rename fails CI. Pure 223/0, DOM 48/0.
+  INV-112 + the "Intake PPD Option A" gotcha rewritten to "engine-safe canonical-
+  English values, drift-guarded."
+
+## Where I left off
+2026-07-01: PPD Phase 2 merged (#115). Branch reset from origin/main (at #115).
+NEXT = await operator go-ahead per phase (they approved Phase 0, then requested
+1, then 2 explicitly). Phase 3 = curated condition pickers Q29/Q42/Q43 (operator
+chose "curated multi-select filter"; I offered to draft Medicare-PWC-seeded
+condition lists for clinical sign-off). Phase 4 = Q32 spasticity tooltip, Q33a
+conditional-hide, Q45 reveal-sub-options, Q37 5'1"→61 parse, optional Q31a body
+diagram. OPEN: operator confirm on Q7-Q13 (kept Q7-12 Yes/No + Q13 free-text vs
+literal "free-text" which would downgrade the binary function questions).
+OPERATOR: one deploy (clasp push -f + New version) ships #113-#115 + prior KB batch;
+runAllTests() in editor (CI can't run the Apps Script suite).
+
+## Prior: KB self-improving loop (#1 + #2, 2026-07-01, claude/broad-scan-2ll5ok)
+Non-AI Reference-tool enhancements (operator declined the KB-AI Phase B route for
+now, chose these instead). Both feed the manager review workflow; PHI-free-by-policy.
+- #2 rep freshness signal: kbFlagItem(itemId, kind∈helpful|notHelpful|stale, note)
+  — rep-callable, append-only, locked; new KbFeedback tab. A 'stale' flag surfaces
+  the item at the TOP of kbGetReviewDue regardless of age (strictly-newer-than-
+  last-review reset, the INV-120 pattern — kbMarkReviewed clears it, no status col;
+  kbStaleFlags_ + kbCellTs_ helpers). Only 'stale' is audited (KbItemFlagged, id
+  only). Reader "Was this helpful? Yes/No + Out of date" bar (kbFeedbackBarHtml_).
+- #1 content-gap requests: kbRequestArticle(topic, note, query) rep-callable append
+  -only locked; new KbContentRequests tab; kbGetContentRequests / kbResolveContent
+  Request(reqId, action) manager-gated. Deliberate rep action on a ZERO-RESULT
+  search (kbNoResultsHtml_ CTA → uiPrompt) = PHI-clean by construction. Manager
+  "Content requests" block in the Reference landing (kbLoadContentRequestsBlock_).
+  Audit PHI-free (reqId only): KbContentRequest / KbContentRequestResolve.
+- Tests: 2 manager-gate cases added to test_managerGates_rejectNonManager
+  (kbGetContentRequests/kbResolveContentRequest, MANAGER tier not admin);
+  test_kb_feedbackAndRequests_requireEmployee (rep-auth + kind/topic validation).
+- Pure 207/0, DOM 48/0, node --check clean. Two tabs auto-provision (deployer edit
+  access to KB_SS_ID already required) — NO new Script Property / trigger / migration.
 
 ## KB self-improving loop (#1 + #2, 2026-07-01, claude/broad-scan-2ll5ok)
 Non-AI Reference-tool enhancements (operator declined the KB-AI Phase B route for
