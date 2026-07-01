@@ -116,7 +116,16 @@
   .kb-typetog button { background: var(--paper-2); border: none; padding: 6px 14px; cursor: pointer; font: inherit; color: var(--muted); }
   .kb-typetog button.on { background: var(--accent); color: #fff; }
   .kb-ed-prev { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: var(--paper); margin-top: 6px; max-height: 240px; overflow: auto; }
-  .kb-ed-foot { display: flex; gap: 10px; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
+  .kb-ed-foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 8px; }
+  /* #4 — draft→publish + revision history */
+  .kb-ed-draft { margin-right: auto; display: inline-flex; align-items: center; gap: 6px; font-size: .82rem; color: var(--muted); cursor: pointer; }
+  .kb-draft-pill { font-family: var(--mono); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; background: var(--warn-soft); color: var(--warning-deep); border-radius: 999px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+  .kb-draft-banner { font-size: .8rem; color: var(--warning-deep); background: var(--warn-soft); border: 1px solid var(--warn-soft); border-radius: 8px; padding: 7px 11px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+  .kb-rev-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line); }
+  .kb-rev-main { flex: 1; min-width: 0; }
+  .kb-rev-meta { font-size: .78rem; color: var(--muted); font-family: var(--mono); }
+  .kb-rev-prev { font-size: .84rem; color: var(--ink); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
+  .kb-rev-row .kb-btn { flex-shrink: 0; }
   :root[data-compact] .kb-wrap { grid-template-columns: 1fr; height: auto; }
   /* - KB slide-over drawer (shell capability) - sits ABOVE the overlay layer
      (z 50) so it stays readable + usable while the email composer or other
@@ -376,7 +385,8 @@ function kbRenderTree_() {
       '<div class="kb-dept-body">';   // §8 — wrap items so collapse can animate (max-height)
     byDept[d].forEach(function (it) {
       html += '<button class="kb-item' + (it.id === KB_STATE.currentId ? ' on' : '') + '" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
-        icon(kbItemIcon_(it), 13) + ' ' + esc(it.title) + '</button>';
+        icon(kbItemIcon_(it), 13) + ' ' + esc(it.title) +
+        (it.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '') + '</button>';   // #4 (admins only receive drafts)
     });
     html += '</div></div>';
   });
@@ -771,17 +781,90 @@ function kbRenderItem_(item) {
   var convertBtn = (mgr && item.type === 'embed' && item.driveKind === 'doc')
     ? '<button class="kb-btn" onclick="kbConvertItem_(\'' + esc(item.id) + '\')">' + icon('refresh', 13) + ' Convert to article</button>'
     : '';
+  // #4 — draft→publish + revision history (admin authoring affordances).
+  var isDraft = item.status === 'draft';
+  var publishBtn = (mgr && isDraft)
+    ? '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="kbPublishItem_(\'' + esc(item.id) + '\')">' + icon('check', 13) + ' Publish</button>'
+    : '';
+  var historyBtn = mgr
+    ? '<button class="kb-btn" onclick="kbOpenRevisions_(\'' + esc(item.id) + '\')">' + icon('list', 13) + ' History</button>'
+    : '';
   var actions =
     (item.type === 'embed' ? '<a class="kb-btn" href="' + esc(item.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a>' : '') +
     convertBtn +
     (mgr ? '<button class="kb-btn" onclick="kbOpenEditor_(\'' + esc(item.id) + '\')">' + icon('adjust', 13) + ' Edit</button>' +
+           historyBtn + publishBtn +
            '<button class="kb-btn danger" onclick="kbDeleteItem_(\'' + esc(item.id) + '\')">' + icon('trash', 13) + ' Delete</button>' : '');
-  var head = '<div class="kb-item-head"><h2>' + esc(item.title) + '</h2><div class="kb-item-actions">' + actions + '</div></div>';
+  var draftBanner = (mgr && isDraft)
+    ? '<div class="kb-draft-banner">' + icon('warning', 13) + ' Draft — hidden from reps until you publish it.</div>'
+    : '';
+  var head = '<div class="kb-item-head"><h2>' + esc(item.title) + (isDraft ? ' <span class="kb-draft-pill">Draft</span>' : '') + '</h2><div class="kb-item-actions">' + actions + '</div></div>';
   if (item.type === 'embed') {
-    main.innerHTML = head + '<iframe class="kb-embed" src="' + esc(item.embedUrl) + '"></iframe>' + kbFeedbackBarHtml_(item);
+    main.innerHTML = head + draftBanner + '<iframe class="kb-embed" src="' + esc(item.embedUrl) + '"></iframe>' + kbFeedbackBarHtml_(item);
   } else {
-    main.innerHTML = head + '<div class="kb-article">' + kbMd_(item.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(item);
+    main.innerHTML = head + draftBanner + '<div class="kb-article">' + kbMd_(item.bodyMd || '') + '</div>' + kbFeedbackBarHtml_(item);
   }
+}
+
+// #4 — flip a draft to published (kbPublishItem), then reload the reader.
+function kbPublishItem_(id) {
+  uiConfirm({ title: 'Publish this item?', message: 'Reps will be able to see and search it immediately.', confirmLabel: 'Publish' })
+    .then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.success) { showToast((r && r.error) || 'Publish failed', 'toast-error'); return; }
+          showToast('Published', 'toast-success');
+          kbReloadTree_();
+          kbOpenItem_(id);
+        })
+        .withFailureHandler(function (e) { showToast((e && e.message) || 'Publish failed', 'toast-error'); })
+        .kbPublishItem(id);
+    });
+}
+
+// #4 — revision history modal: list prior versions, restore one.
+function kbOpenRevisions_(id) {
+  var ov = ensureOverlay('kb-rev-overlay', { onClose: function () { var o = document.getElementById('kb-rev-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-ed" role="dialog" aria-modal="true"><div class="head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">Revision history</h3><button class="kb-btn" data-kb-revclose="1">' + icon('x', 15) + '</button></div><div class="body" id="kb-rev-body">' + loSweep() + '</div></div>';
+  ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-revclose]')) { ov.remove(); } });
+  google.script.run
+    .withSuccessHandler(function (res) {
+      var body = document.getElementById('kb-rev-body'); if (!body) return;
+      if (!res || res.error) { body.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed') + '</div>'; return; }
+      var items = res.items || [];
+      if (!items.length) { body.innerHTML = '<div class="kb-empty">No prior versions yet. Edits from now on are captured here.</div>'; return; }
+      body.innerHTML = items.map(function (r) {
+        var who = esc(r.priorUpdatedBy || 'unknown') + (r.priorUpdatedAt ? ' · ' + esc(r.priorUpdatedAt) : '');
+        var tag = r.action === 'revert' ? '<span class="kb-draft-pill">revert</span>' : '';
+        return '<div class="kb-rev-row">' +
+          '<div class="kb-rev-main">' +
+            '<div class="kb-rev-meta">' + who + ' ' + tag + '</div>' +
+            '<div class="kb-rev-prev">' + esc(r.preview || '') + (r.chars ? ' <span style="color:var(--muted)">· ' + r.chars + ' chars</span>' : '') + '</div>' +
+          '</div>' +
+          '<button class="kb-btn" data-kb-rev="' + esc(r.revId) + '" data-kb-item="' + esc(id) + '" onclick="kbRestoreRevision_(this.getAttribute(\'data-kb-item\'), this.getAttribute(\'data-kb-rev\'))">' + icon('refresh', 13) + ' Restore</button>' +
+        '</div>';
+      }).join('');
+    })
+    .withFailureHandler(function (err) { var body = document.getElementById('kb-rev-body'); if (body) body.innerHTML = '<div class="kb-empty">' + esc((err && err.message) || 'Failed') + '</div>'; })
+    .kbGetRevisions(id);
+}
+
+function kbRestoreRevision_(id, revId) {
+  uiConfirm({ title: 'Restore this version?', message: 'The current content is snapshotted first, so you can undo this restore.', confirmLabel: 'Restore' })
+    .then(function (ok) {
+      if (!ok) return;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (!r || !r.success) { showToast((r && r.error) || 'Restore failed', 'toast-error'); return; }
+          showToast('Restored', 'toast-success');
+          var ov = document.getElementById('kb-rev-overlay'); if (ov) ov.remove();
+          kbReloadTree_();
+          kbOpenItem_(id);
+        })
+        .withFailureHandler(function (e) { showToast((e && e.message) || 'Restore failed', 'toast-error'); })
+        .kbRevertItem(id, revId);
+    });
 }
 
 // #2 — rep freshness signal: a "Was this helpful?" bar + "Flag as out of date"
@@ -939,7 +1022,7 @@ function kbReloadTree_() {
 
 // ── Manager editor ───────────────────────────────────────────────────────
 function kbOpenEditor_(id) {
-  KB_EDIT = { id: id || '', department: '', title: '', type: 'article', body: '', driveUrl: '' };
+  KB_EDIT = { id: id || '', department: '', title: '', type: 'article', body: '', driveUrl: '', status: 'published' };
   if (id) {
     google.script.run.withSuccessHandler(function (res) {
       // L13 — a failed item load used to open a BLANK editor still carrying
@@ -954,6 +1037,7 @@ function kbOpenEditor_(id) {
       KB_EDIT.type = res.type || 'article';
       KB_EDIT.body = res.bodyMd || '';
       KB_EDIT.driveUrl = res.openUrl || '';
+      KB_EDIT.status = res.status || 'published';   // #4
       kbRenderEditor_();
     }).withFailureHandler(function (err) {
       showToast('Could not load the item to edit: ' + ((err && err.message) || 'server error'), 'toast-error');
@@ -984,7 +1068,9 @@ function kbRenderEditor_() {
       '</div></div>' +
       '<div id="kb-ed-body"></div>' +
     '</div>' +
-    '<div class="kb-ed-foot"><button class="kb-btn" data-kb-close="1">Cancel</button>' +
+    '<div class="kb-ed-foot">' +
+      '<label class="kb-ed-draft" title="A draft is hidden from reps until you publish it"><input type="checkbox" id="kb-ed-draft"' + (e.status === 'draft' ? ' checked' : '') + '> Save as draft</label>' +
+      '<button class="kb-btn" data-kb-close="1">Cancel</button>' +
       '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="kbSaveFromEditor_(this)">' + icon('check', 13) + ' Save</button></div>' +
   '</div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-close]')) kbCloseModal_(); });
@@ -1005,6 +1091,7 @@ function kbSnapshotEditor_() {
   var ti = document.getElementById('kb-ed-title'); if (ti) KB_EDIT.title = ti.value;
   var b = document.getElementById('kb-ed-bodymd'); if (b) KB_EDIT.body = b.value;
   var u = document.getElementById('kb-ed-driveurl'); if (u) KB_EDIT.driveUrl = u.value;
+  var dr = document.getElementById('kb-ed-draft'); if (dr) KB_EDIT.status = dr.checked ? 'draft' : 'published';   // #4
 }
 
 function kbRenderEditorBody_() {
@@ -1109,7 +1196,7 @@ function kbSaveFromEditor_(btn) {
       if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
       // Phase 2b — converter image tokens export to Drive during save;
       // surface the count + any per-image degradations.
-      showToast(res.imagesExported ? ('Saved · ' + res.imagesExported + ' image(s) exported to Drive') : 'Saved', 'toast-success');
+      showToast(res.imagesExported ? ('Saved · ' + res.imagesExported + ' image(s) exported to Drive') : (res.status === 'draft' ? 'Saved as draft (hidden from reps)' : 'Saved'), 'toast-success');
       (res.imageWarnings || []).forEach(function (w) { showToast(w, 'toast-warn'); });
       var savedId = res.id;
       kbCloseModal_();
@@ -1117,7 +1204,7 @@ function kbSaveFromEditor_(btn) {
       if (savedId) kbOpenItem_(savedId);
     })
     .withFailureHandler(function (err) { reenable(); showToast((err && err.message) || 'Save failed', 'toast-error'); })
-    .kbSaveItem({ id: e.id, department: e.department, title: e.title, type: e.type, body: e.body, driveUrl: e.driveUrl });
+    .kbSaveItem({ id: e.id, department: e.department, title: e.title, type: e.type, body: e.body, driveUrl: e.driveUrl, status: e.status });
 }
 
 function kbCloseModal_() {

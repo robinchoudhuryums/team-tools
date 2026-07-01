@@ -62,8 +62,31 @@ Next in the suggested KB sequence (Wave 1: #3 reliability, then #4 revision/draf
   passes {scanEmbeds:false} so the Admin Overview never double-scans Drive.
 - No new endpoint/gate (rides admin-gated getStorageHealth). Pure 207/0, DOM 48/0,
   node --check clean. Docs: Storage Health Key Design Decision updated.
-- NOT YET: committed/pushed. NEXT in sequence = #4 (article revision history +
-  draft→publish), then #6/#5 (rep-facing: snippets, bookmarks).
+- Shipped in #109 (merged).
+
+## KB #4 — article revision history + draft→publish (2026-07-01, claude/broad-scan-2ll5ok)
+Wave-1 pair to the review loop. NEW INV-140.
+- Schema: KB gained trailing `Status` col (KB.STATUS=12, KB_HEADERS→13, self-heal;
+  kbRowStatus_ pure — blank→published). KB_CACHE_KEY v1→v2 (items carry status).
+- Draft→publish: kbSaveItem takes payload.status (explicit wins; plain re-save
+  PRESERVES existing status; new=published). Drafts INVISIBLE to reps across all
+  read paths (getReferenceTree per-viewer filter of one cache blob / getReferenceItem
+  'Not found.' / searchReference skip / kbGetReviewDue skip). kbPublishItem flips
+  draft→published (EmpDocs releaseDoc mirror).
+- Revision history: append-only KbRevisions tab; kbAppendRevision_ snapshots PRIOR
+  content on every kbSaveItem UPDATE + every revert (best-effort). kbGetRevisions
+  (read-only, bounded) + kbRevertItem (restores content, snapshots current first →
+  reversible). All 3 ADMIN-gated (authoring tier), mutating 2 locked.
+- Audit PHI-free: KbItemPublish/KbItemRevert (id/revId); KbItemSave now carries status=.
+- Client: "Save as draft" checkbox, Draft pill (tree+reader) + banner, reader
+  Publish/History(→restore) actions (KB_STATE.isAdmin-gated). New CSS
+  kb-draft-pill/-banner, kb-rev-row.
+- Tests: 3 admin-gate cases added to test_managerGates_rejectNonManager. No KB
+  fixture in the automated suite → draft-visibility + revision flow are manual (S-walk).
+- Pure 207/0, DOM 48/0, node --check clean. Docs: INV-140 + Reference decision +
+  storage map (KbRevisions).
+- NOT YET: committed/pushed. NEXT in sequence = #6 + #5 (rep-facing: copyable
+  snippets, per-rep bookmarks) to move Employee UX off 7.5; then #8/#7.
 
 ## Cycle 6 — DeptRequests v2 (all 4 phases, 2026-06-30, claude/broad-scan-2ll5ok)
 Planned (decisions: roster column N membership; manager-summary reminder;
