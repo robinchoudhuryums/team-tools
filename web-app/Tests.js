@@ -3927,6 +3927,8 @@ function test_managerGates_rejectNonManager() {
     ['kbGetRevisions',                 function () { return kbGetRevisions('no-such-id'); }],
     ['kbRevertItem',                   function () { return kbRevertItem('no-such-id', 'no-rev'); }],
     ['kbPublishItem',                  function () { return kbPublishItem('no-such-id'); }],
+    ['kbGetSearchConfig',              function () { return kbGetSearchConfig(); }],
+    ['kbSaveSearchConfig',             function () { return kbSaveSearchConfig([]); }],
     ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['getRetentionConfig',             function () { return getRetentionConfig(); }],
@@ -4011,6 +4013,8 @@ function test_managerGates_rejectNonManager() {
     kbSaveItem: 1, kbDeleteItem: 1, kbUploadImage: 1, kbConvertDriveDoc: 1,
     // #4 — revision history + draft→publish (authoring-adjacent).
     kbGetRevisions: 1, kbRevertItem: 1, kbPublishItem: 1,
+    // #8 — search-synonym config (authoring-adjacent).
+    kbGetSearchConfig: 1, kbSaveSearchConfig: 1,
   };
   cases.forEach(function (c) {
     const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
@@ -4157,6 +4161,9 @@ function test_kb_feedbackAndRequests_requireEmployee() {
   // Empty topic rejected before any KbContentRequests write.
   const r4 = _asUser(_TEST_INDIA_EMAIL, function () { return kbRequestArticle('   ', '', ''); });
   _assertEq(r4.success, false, 'empty topic rejected before any write');
+  // #7 — kbGetRelated is rep-callable but requires a registered employee.
+  const r5 = _asUser('not-a-registered-user@example.invalid', function () { return kbGetRelated('some-item'); });
+  _assertContains((r5 && r5.error) || '', 'Not authorized', 'kbGetRelated requires an employee');
 }
 
 // KB AI Phase A — kbGetFacetGuidance auth + flag gate + saveKbAiSettings

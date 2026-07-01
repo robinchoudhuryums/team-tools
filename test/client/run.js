@@ -1181,6 +1181,31 @@ const kbSplitSections_ = _kbSearchCtx.kbSplitSections_;
 const kbChunkTruncate_ = _kbSearchCtx.kbChunkTruncate_;
 const kbSearchScore_ = _kbSearchCtx.kbSearchScore_;
 
+// #7 — co-view "See also" ranking (pure)
+const _kbRelCtx = vm.createContext({});
+vm.runInContext(extractRawFunction('Code.js', 'kbCoViewRelated_'), _kbRelCtx, { filename: 'Code.js#kbCoViewRelated_' });
+const kbCoViewRelated_ = _kbRelCtx.kbCoViewRelated_;
+test('#7 kbCoViewRelated_: ranks co-viewed items, thresholds thin data, excludes self', () => {
+  // target 'A' co-viewed with 'B' in 2 sessions, 'C' in 1 session.
+  const ev = [
+    { rep: 'r1', day: '2026-07-01', id: 'A' }, { rep: 'r1', day: '2026-07-01', id: 'B' },
+    { rep: 'r2', day: '2026-07-01', id: 'A' }, { rep: 'r2', day: '2026-07-01', id: 'B' }, { rep: 'r2', day: '2026-07-01', id: 'C' },
+    { rep: 'r3', day: '2026-07-02', id: 'X' }, { rep: 'r3', day: '2026-07-02', id: 'Y' },   // unrelated session
+  ];
+  const out = kbCoViewRelated_(ev, 'A', 2, 5);
+  assert.strictEqual(out.length, 1, 'only B clears the ≥2 co-view threshold');
+  assert.strictEqual(out[0].id, 'B');
+  assert.strictEqual(out[0].coviews, 2);
+  // never returns the target itself, even if repeated
+  const self = kbCoViewRelated_([{ rep: 'r', day: 'd', id: 'A' }, { rep: 'r', day: 'd', id: 'A' }], 'A', 1, 5);
+  assert.strictEqual(self.length, 0, 'self excluded');
+  // distinct sessions: same rep+day counts a pair once regardless of repeats
+  const once = kbCoViewRelated_([
+    { rep: 'r', day: 'd', id: 'A' }, { rep: 'r', day: 'd', id: 'B' }, { rep: 'r', day: 'd', id: 'B' },
+  ], 'A', 1, 5);
+  assert.strictEqual(once[0].coviews, 1, 'one session = one co-view');
+});
+
 test('kbSplitSections_: preamble + heading sections, heading excluded from md', () => {
   const secs = kbSplitSections_('intro text\n\n# One\nbody one\n\n## Two\nbody two');
   assert.strictEqual(secs.length, 3);

@@ -12805,6 +12805,19 @@ function getReferenceItem(id) {
 const KB_SEARCH_MAX_RESULTS = 20;
 const KB_SEARCH_MAX_PER_ITEM = 3;
 const KB_CHUNK_MAX_CHARS = 1200;
+// #8 — search synonym groups (Script Property `KB_SEARCH_SYNONYMS`, JSON array
+// of arrays of equivalent lowercase terms, e.g. [["cpap","pap"],["pmd","power
+// chair"]]). Token-level: a query token in a group pulls in the other members'
+// tokens so "cpap" also matches "pap". Admin-editable via kbSaveSearchConfig.
+const KB_SYNONYMS_PROP = 'KB_SEARCH_SYNONYMS';
+const KB_SYNONYM_GROUPS_MAX = 100;
+const KB_SYNONYM_TERMS_MAX = 20;      // per group
+const KB_SYNONYM_TERM_MAXLEN = 40;
+const KB_SEARCH_TOKENS_MAX = 40;      // cap after synonym expansion
+// #7 — "See also" from KbViews co-occurrence (no AI, just counting): items a rep
+// opened in the same (rep, day) session as the current one, ranked by co-views.
+const KB_RELATED_MIN_COVIEWS = 2;     // silent below this — thin data shows nothing
+const KB_RELATED_TOP = 5;
 
 /** Shared anchor slug — MUST stay identical to the client `kbSlug_` in
  *  kb/script_kb.html (kbMd_ stamps id="kb-h-<slug>" on headings; search
@@ -12897,6 +12910,7 @@ function searchReference(query) {
     const tokens = [];
     (q.match(/[a-z0-9]{2,}/g) || []).forEach(function (t) { if (tokens.indexOf(t) < 0) tokens.push(t); });
     if (!tokens.length) return { results: [] };
+    kbExpandSynonymTokens_(tokens);   // #8 — pull in synonym-group siblings
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
     if (last < 2) return { results: [] };
@@ -12950,6 +12964,79 @@ function searchReference(query) {
     if (hits.length > KB_SEARCH_MAX_RESULTS) hits.length = KB_SEARCH_MAX_RESULTS;
     return { results: hits, sectioned: true };
   } catch (err) { return { error: err.message }; }
+}
+
+// #8 — search synonym groups. Read the Script Property, sanitize to an array of
+// ≥2-term lowercase groups (never throws — corrupt blob degrades to []).
+function getKbSearchSynonyms_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(KB_SYNONYMS_PROP);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const groups = [];
+    parsed.forEach(function (g) {
+      if (!Array.isArray(g)) return;
+      const terms = [];
+      g.forEach(function (t) {
+        const s = String(t == null ? '' : t).trim().toLowerCase();
+        if (s && terms.indexOf(s) < 0) terms.push(s);
+      });
+      if (terms.length >= 2) groups.push(terms);
+    });
+    return groups;
+  } catch (e) { return []; }
+}
+
+/** #8 — expand a query's token set in place: if any token is in a synonym group,
+ *  pull in the group's other tokens (multi-word terms split into alnum tokens),
+ *  capped at KB_SEARCH_TOKENS_MAX. So "cpap" also matches "pap". */
+function kbExpandSynonymTokens_(tokens) {
+  const groups = getKbSearchSynonyms_();
+  if (!groups.length) return tokens;
+  const have = {}; tokens.forEach(function (t) { have[t] = 1; });
+  groups.forEach(function (g) {
+    const set = [];
+    g.forEach(function (term) {
+      (term.match(/[a-z0-9]{2,}/g) || []).forEach(function (tk) { if (set.indexOf(tk) < 0) set.push(tk); });
+    });
+    if (!set.some(function (tk) { return have[tk]; })) return;   // no query token in this group
+    set.forEach(function (tk) {
+      if (!have[tk] && tokens.length < KB_SEARCH_TOKENS_MAX) { tokens.push(tk); have[tk] = 1; }
+    });
+  });
+  return tokens;
+}
+
+/** #8 — admin-gated read/write of the search synonym groups. */
+function kbGetSearchConfig() {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+  return { synonyms: getKbSearchSynonyms_() };
+}
+function kbSaveSearchConfig(groups) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { success: false, error: 'Admin access required.' };
+    if (!Array.isArray(groups)) return { success: false, error: 'Invalid synonyms.' };
+    if (groups.length > KB_SYNONYM_GROUPS_MAX) return { success: false, error: 'Too many synonym groups (max ' + KB_SYNONYM_GROUPS_MAX + ').' };
+    const clean = [];
+    for (let i = 0; i < groups.length; i++) {
+      if (!Array.isArray(groups[i])) continue;
+      const terms = [];
+      for (let j = 0; j < groups[i].length && terms.length < KB_SYNONYM_TERMS_MAX; j++) {
+        const s = String(groups[i][j] == null ? '' : groups[i][j]).trim().toLowerCase().substring(0, KB_SYNONYM_TERM_MAXLEN);
+        if (s && terms.indexOf(s) < 0) terms.push(s);
+      }
+      if (terms.length >= 2) clean.push(terms);   // a group needs ≥2 terms to be meaningful
+    }
+    PropertiesService.getScriptProperties().setProperty(KB_SYNONYMS_PROP, JSON.stringify(clean));
+    writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0, 'KB search synonyms: ' + clean.length + ' group(s)', emp.email);
+    return { success: true, synonyms: clean };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 // ── Usage feedback loop (drawer + Reference reader) ───────────────────────
@@ -13061,6 +13148,90 @@ function kbUsageCounts_(windowDays) {
     }
   } catch (e) { /* best-effort — empty map on any failure */ }
   return out;
+}
+
+/** #7 PURE (Node-pinned) — "See also" from co-views. `events` is
+ *  [{rep, day, id}] (KbViews rows). Two items are co-viewed when they appear in
+ *  the same (rep, day) session; the score is the count of DISTINCT sessions that
+ *  co-viewed them with `targetId`. Returns [{id, coviews}] with coviews ≥
+ *  minCoviews, ranked desc, capped topN. Below the threshold it's silent, so
+ *  thin data shows nothing rather than spurious links. */
+function kbCoViewRelated_(events, targetId, minCoviews, topN) {
+  minCoviews = minCoviews || 2; topN = topN || 5;
+  targetId = String(targetId || '');
+  const sessions = {};   // (rep|day) → { id: 1 }  (distinct ids per session)
+  (events || []).forEach(function (e) {
+    if (!e) return;
+    const id = String(e.id || '');
+    if (!id) return;
+    const key = String(e.rep || '') + '|' + String(e.day || '');
+    if (!sessions[key]) sessions[key] = {};
+    sessions[key][id] = 1;
+  });
+  const counts = {};
+  Object.keys(sessions).forEach(function (key) {
+    const ids = sessions[key];
+    if (!ids[targetId]) return;
+    Object.keys(ids).forEach(function (id) {
+      if (id === targetId) return;
+      counts[id] = (counts[id] || 0) + 1;
+    });
+  });
+  return Object.keys(counts)
+    .filter(function (id) { return counts[id] >= minCoviews; })
+    .map(function (id) { return { id: id, coviews: counts[id] }; })
+    .sort(function (a, b) { return (b.coviews - a.coviews) || a.id.localeCompare(b.id); })
+    .slice(0, topN);
+}
+
+/** #7 — "See also" for the reader. Rep-callable, read-only, bounded KbViews tail
+ *  scan. Ranks co-viewed items via the pure kbCoViewRelated_, joins titles from
+ *  the KB sheet, drops deleted items + (for non-admins) drafts. PHI-free. */
+function kbGetRelated(itemId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const targetId = String(itemId || '').trim();
+    if (!targetId) return { items: [] };
+    const ss = getKbSS_();
+    const viewsSheet = ss.getSheetByName(KB_VIEWS_TAB);
+    if (!viewsSheet || viewsSheet.getLastRow() < 2) return { items: [] };
+    const ssTz = ss.getSpreadsheetTimeZone();
+    const lastRow = viewsSheet.getLastRow();
+    const startRow = Math.max(2, lastRow - KB_VIEWS_MAX_SCAN + 1);
+    const data = viewsSheet.getRange(startRow, 1, lastRow - startRow + 1, KB_VIEWS_HEADERS.length).getValues();
+    const events = [];
+    for (let i = 0; i < data.length; i++) {
+      const id = String(data[i][1] || '').trim();
+      if (!id) continue;
+      const day = (data[i][0] instanceof Date)
+        ? Utilities.formatDate(data[i][0], ssTz, 'yyyy-MM-dd')
+        : String(data[i][0] || '').substring(0, 10);
+      events.push({ rep: String(data[i][2] || ''), day: day, id: id });
+    }
+    const related = kbCoViewRelated_(events, targetId, KB_RELATED_MIN_COVIEWS, KB_RELATED_TOP);
+    if (!related.length) return { items: [] };
+    const kbSheet = getOrCreateKbSheet_();
+    const kbLast = kbSheet.getLastRow();
+    const meta = {};
+    if (kbLast >= 2) {
+      const krows = kbSheet.getRange(2, 1, kbLast - 1, KB_HEADERS.length).getValues();
+      krows.forEach(function (r) {
+        const id = String(r[KB.ID] || '');
+        if (!id) return;
+        meta[id] = { title: String(r[KB.TITLE] || '(untitled)'), department: String(r[KB.DEPARTMENT] || ''),
+          type: String(r[KB.TYPE] || 'article'), status: kbRowStatus_(r[KB.STATUS]) };
+      });
+    }
+    const items = [];
+    related.forEach(function (rel) {
+      const m = meta[rel.id];
+      if (!m) return;   // deleted item drops out
+      if (m.status === KB_STATUS_DRAFT && !emp.isAdmin) return;   // draft hidden from reps
+      items.push({ id: rel.id, title: m.title, department: m.department, type: m.type, coviews: rel.coviews });
+    });
+    return { items: items };
+  } catch (err) { return { error: err.message }; }
 }
 
 function kbGetUsageStats() {

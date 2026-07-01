@@ -102,8 +102,28 @@ Wave-2 rep-facing (Employee-UX). Client-only; no server/schema change.
   atop Reference landing + drawer home; stored in umsKbPanel.bookmarks (cap 12).
 - Pure 209/0 (+2), DOM 48/0, node --check clean. Docs: Reference decision +
   umsKbPanel localStorage note.
-- NOT YET: committed/pushed. NEXT (Wave 3) = #8 (search synonyms/filters) then
-  #7 (see-also cross-links — best after KbViews data matures).
+- Shipped in #111 (merged).
+
+## KB #8 + #7 — search synonyms/filters + see-also (2026-07-01, claude/broad-scan-2ll5ok)
+Wave-3 (final KB roadmap items). The KB non-AI roadmap (#1–#8) is now COMPLETE.
+- #8 synonyms: Script Property KB_SEARCH_SYNONYMS (≥2-term lowercase groups);
+  kbExpandSynonymTokens_ expands query tokens in searchReference (unset = no-op,
+  byte-identical). Admin editor: kbGetSearchConfig/kbSaveSearchConfig (admin-gated,
+  AdminConfigChange audit) + a "Synonyms" modal in the Reference tree header.
+- #8 filters: client-side type chips (All/Articles/Embeds + counts) + department
+  <select> over the cached KB_STATE.searchResults (kbRenderSearchResults_/
+  kbSearchFilterBarHtml_/kbSetSearchFilter_); kbDoSearch_ refactored to cache +
+  re-render with NO re-query. Reference tab only; drawer search unchanged.
+- #7 see-also: pure Node-pinned kbCoViewRelated_ (distinct (rep,day)-session
+  co-view count, ≥2 threshold so thin data is silent, top 5) + kbGetRelated
+  (rep-callable, read-only, bounded KbViews tail; drops deleted + non-admin
+  drafts). Reader lazy-loads a "See also" block (kbLoadRelated_). Reference tab
+  only (drawer stays light).
+- Tests: kbCoViewRelated_ Node test; 2 admin-gate cases (kbGetSearchConfig/
+  kbSaveSearchConfig); kbGetRelated rep-auth case. Pure 210/0, DOM 48/0, node
+  --check clean. Docs: Reference decision + KB_SEARCH_SYNONYMS operator note.
+- NOT YET: committed/pushed. KB roadmap #1–#8 DONE. No further KB items queued —
+  next work is operator's call (deploy + runAllTests, or a fresh audit).
 
 ## Cycle 6 — DeptRequests v2 (all 4 phases, 2026-06-30, claude/broad-scan-2ll5ok)
 Planned (decisions: roster column N membership; manager-summary reminder;
