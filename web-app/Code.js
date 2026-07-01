@@ -12935,6 +12935,25 @@ const KB_VIEWS_MAX_SCAN = 4000;   // bounded tail scan, INV-13 spirit
 const KB_USAGE_WINDOW_DAYS = 30;
 const KB_USAGE_TOP_N = 5;
 
+// ── Self-improving-KB loop: rep freshness signal (#2) + content-gap requests
+// (#1). Both feed the manager review workflow. Two new PHI-free-by-policy tabs
+// in the KB spreadsheet (the KbViews posture — deployer-only, append-only, zero
+// new operator state).
+const KB_FEEDBACK_TAB = 'KbFeedback';
+const KB_FEEDBACK_HEADERS = ['Timestamp', 'ItemId', 'RepId', 'RepName', 'Kind', 'Note'];
+const KBF = { TS: 0, ITEM_ID: 1, REP_ID: 2, REP_NAME: 3, KIND: 4, NOTE: 5 };
+const KB_FEEDBACK_KINDS = { helpful: 1, notHelpful: 1, stale: 1 };
+const KB_FEEDBACK_NOTE_MAX = 500;
+const KB_FEEDBACK_MAX_SCAN = 4000;
+
+const KB_REQUESTS_TAB = 'KbContentRequests';
+const KB_REQUESTS_HEADERS = ['Timestamp', 'ReqId', 'RepId', 'RepName', 'Topic', 'Note', 'Query', 'Status', 'ResolvedAt', 'ResolvedBy'];
+const KBR = { TS: 0, REQ_ID: 1, REP_ID: 2, REP_NAME: 3, TOPIC: 4, NOTE: 5, QUERY: 6, STATUS: 7, RESOLVED_AT: 8, RESOLVED_BY: 9 };
+const KB_REQUEST_TOPIC_MAX = 200;
+const KB_REQUEST_NOTE_MAX = 1000;
+const KB_REQUESTS_MAX_SCAN = 2000;
+const KB_REQUESTS_RESOLVED_TAIL = 10;
+
 function getOrCreateKbViewsSheet_() {
   const ss = getKbSS_();
   let sheet = ss.getSheetByName(KB_VIEWS_TAB);
@@ -13040,6 +13059,16 @@ function kbCellDateIso_(v, ssTz) {
   return String(v == null ? '' : v).substring(0, 10);
 }
 
+/** Recover a KB timestamp cell to a full 'yyyy-MM-dd HH:mm:ss' string (Sheets
+ *  coerces the stored string to a Date on read — recover in the KB sheet's own
+ *  tz, the kbCellDateIso_ discipline). Datetime granularity is needed to compare
+ *  a stale flag against an item's last-review time (#2 — a same-day review must
+ *  clear a stale flag raised earlier that day; a date-only compare couldn't). */
+function kbCellTs_(v, ssTz) {
+  if (v instanceof Date) return Utilities.formatDate(v, ssTz, 'yyyy-MM-dd HH:mm:ss');
+  return String(v == null ? '' : v);
+}
+
 /** #4 — manager "Mark reviewed": bumps ReviewedAt/ReviewedBy without touching
  *  content (the "still accurate, no edit needed" path). Manager-gated (INV-02),
  *  locked (INV-01), audited (KbItemReviewed). No cache invalidation needed —
@@ -13084,6 +13113,16 @@ function kbGetReviewDue() {
     if (last < 2) return { items: [], dueDays: dueDays };
     const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
     const usage = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
+    // #2 — a rep "flag as out of date" surfaces the item here regardless of age
+    // and sorts it to the top. Build the full-ts last-review map first so
+    // kbStaleFlags_ can clear a flag that a later review superseded (the same
+    // strictly-newer reset as INV-120, no status column to maintain).
+    const reviewedTsByItem = {};
+    rows.forEach(function (r) {
+      const id = String(r[KB.ID] || '').trim();
+      if (id) reviewedTsByItem[id] = kbCellTs_(r[KB.REVIEWED_AT], ssTz);
+    });
+    const stale = kbStaleFlags_(reviewedTsByItem);
     const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
     const items = [];
     rows.forEach(function (r) {
@@ -13094,8 +13133,9 @@ function kbGetReviewDue() {
       const baseIso = reviewedIso || updatedIso;   // legacy rows fall back to last edit
       let ageDays = null;
       if (baseIso) { const n = cnIsoToDayNum_(baseIso); if (n != null && todayNum != null) ageDays = todayNum - n; }
-      const due = (ageDays == null) || (ageDays >= dueDays);
-      if (!due) return;
+      const ageDue = (ageDays == null) || (ageDays >= dueDays);
+      const staleCount = (stale[id] && stale[id].count) || 0;
+      if (!ageDue && !staleCount) return;
       items.push({
         id: id,
         title: String(r[KB.TITLE] || '(untitled)'),
@@ -13105,13 +13145,194 @@ function kbGetReviewDue() {
         basedOnUpdate: !reviewedIso,     // true = never explicitly reviewed (age is since last edit)
         ageDays: ageDays,
         views: (usage[id] && usage[id].count) || 0,
+        staleFlags: staleCount,          // #2 — open "out of date" flags from reps
+        staleNote: (stale[id] && stale[id].lastNote) || '',
       });
     });
     items.sort(function (a, b) {
-      return (b.views - a.views) || ((b.ageDays || 0) - (a.ageDays || 0)) || a.title.localeCompare(b.title);
+      // Rep-flagged-stale first (then by flag count), then most-used, then oldest.
+      return ((b.staleFlags ? 1 : 0) - (a.staleFlags ? 1 : 0)) ||
+             (b.staleFlags - a.staleFlags) ||
+             (b.views - a.views) || ((b.ageDays || 0) - (a.ageDays || 0)) ||
+             a.title.localeCompare(b.title);
     });
     return { items: items.slice(0, 50), dueDays: dueDays };
   } catch (err) { return { error: err.message }; }
+}
+
+// ── Self-improving-KB loop (#1 content-gap requests + #2 rep freshness) ─────
+
+function getOrCreateKbFeedbackSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_FEEDBACK_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_FEEDBACK_TAB);
+    sheet.appendRow(KB_FEEDBACK_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_FEEDBACK_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+function getOrCreateKbRequestsSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_REQUESTS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_REQUESTS_TAB);
+    sheet.appendRow(KB_REQUESTS_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, KB_REQUESTS_HEADERS.length).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+/** #2 — open stale flags per item id. An item is "flagged stale" when it has a
+ *  KbFeedback 'stale' row NEWER than its last review (reviewedTsByItem[id], a
+ *  full 'yyyy-MM-dd HH:mm:ss' string; '' = never reviewed → any flag counts).
+ *  This mirrors INV-120's strictly-newer completion-vs-assignment reset — a
+ *  manager's kbMarkReviewed bumps ReviewedAt and the flag clears with NO status
+ *  column to maintain. Bounded tail scan. Returns { id: {count, lastNote} }. */
+function kbStaleFlags_(reviewedTsByItem) {
+  const out = {};
+  try {
+    const ss = getKbSS_();
+    const sheet = ss.getSheetByName(KB_FEEDBACK_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return out;
+    const ssTz = ss.getSpreadsheetTimeZone();
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - KB_FEEDBACK_MAX_SCAN + 1);
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_FEEDBACK_HEADERS.length).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][KBF.KIND] || '') !== 'stale') continue;
+      const id = String(data[i][KBF.ITEM_ID] || '').trim();
+      if (!id) continue;
+      const flagTs = kbCellTs_(data[i][KBF.TS], ssTz);
+      const reviewedTs = (reviewedTsByItem && reviewedTsByItem[id]) || '';
+      if (reviewedTs && flagTs <= reviewedTs) continue;   // a later review cleared this flag
+      if (!out[id]) out[id] = { count: 0, lastNote: '' };
+      out[id].count++;
+      const note = String(data[i][KBF.NOTE] || '').trim();
+      if (note) out[id].lastNote = note;   // chronological append order → latest note wins
+    }
+  } catch (e) { /* best-effort — empty map on any failure */ }
+  return out;
+}
+
+/** #2 — rep freshness signal. kind ∈ helpful | notHelpful | stale. Rep-callable,
+ *  append-only, locked (INV-01). PHI-free-by-policy (the KB store; a 'stale' note
+ *  describes the doc, not a patient). A 'stale' flag surfaces the item at the top
+ *  of the manager review-due queue (kbGetReviewDue) until a manager marks it
+ *  reviewed. Only the actionable 'stale' kind writes an audit row (helpful /
+ *  notHelpful are lightweight signal, un-audited like KbViews); the audit row is
+ *  PHI-free (id only — the rep's note never enters the shared AuditLog). */
+function kbFlagItem(itemId, kind, note) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const id = String(itemId || '').trim().substring(0, 100);
+    if (!id) return { success: false, error: 'Missing item id.' };
+    const k = String(kind || '').trim();
+    if (!KB_FEEDBACK_KINDS[k]) return { success: false, error: 'Unknown feedback kind.' };
+    const n = (k === 'stale') ? String(note || '').trim().substring(0, KB_FEEDBACK_NOTE_MAX) : '';
+    getOrCreateKbFeedbackSheet_().appendRow([
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, emp.id, emp.name, k, n,
+    ]);
+    if (k === 'stale') writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + id, emp.email);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** #1 — content-gap request. Rep-callable, append-only, locked (INV-01). A
+ *  DELIBERATE "please write an article about X" (typically fired from a
+ *  zero-result Reference search) — the deliberate rep action is what keeps it
+ *  PHI-free-by-policy (the rep describes a topic, not patient specifics). Lands
+ *  in the manager KbContentRequests queue. Audit row is PHI-free (reqId only —
+ *  the topic/note text never enters the shared AuditLog). */
+function kbRequestArticle(topic, note, query) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Not authorized.' };
+    const t = String(topic || '').trim().substring(0, KB_REQUEST_TOPIC_MAX);
+    if (!t) return { success: false, error: 'Describe what you were looking for.' };
+    const n = String(note || '').trim().substring(0, KB_REQUEST_NOTE_MAX);
+    const q = String(query || '').trim().substring(0, KB_REQUEST_TOPIC_MAX);
+    const reqId = Utilities.getUuid();
+    getOrCreateKbRequestsSheet_().appendRow([
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), reqId, emp.id, emp.name, t, n, q, 'open', '', '',
+    ]);
+    writeAuditLog_(emp, 'KbContentRequest', '', '', false, 0, 'reqId=' + reqId, emp.email);
+    return { success: true, reqId: reqId };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+/** #1 — manager content-gap queue. Manager-gated (INV-02), read-only, bounded
+ *  tail scan (KB_REQUESTS_MAX_SCAN). Returns open requests newest-first + a small
+ *  recent-resolved tail for context. PHI-free-by-policy. */
+function kbGetContentRequests() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const ss = getKbSS_();
+    const sheet = ss.getSheetByName(KB_REQUESTS_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { open: [], resolved: [], openCount: 0 };
+    const ssTz = ss.getSpreadsheetTimeZone();
+    const lastRow = sheet.getLastRow();
+    const startRow = Math.max(2, lastRow - KB_REQUESTS_MAX_SCAN + 1);
+    const rows = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_REQUESTS_HEADERS.length).getValues();
+    const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
+    const open = [], resolved = [];
+    for (let i = rows.length - 1; i >= 0; i--) {   // newest-first
+      const r = rows[i];
+      const reqId = String(r[KBR.REQ_ID] || '').trim();
+      if (!reqId) continue;
+      const status = String(r[KBR.STATUS] || 'open').trim() || 'open';
+      const iso = kbCellDateIso_(r[KBR.TS], ssTz);
+      let ageDays = null;
+      if (iso) { const nDay = cnIsoToDayNum_(iso); if (nDay != null && todayNum != null) ageDays = todayNum - nDay; }
+      const item = {
+        reqId: reqId, repName: String(r[KBR.REP_NAME] || ''),
+        topic: String(r[KBR.TOPIC] || ''), note: String(r[KBR.NOTE] || ''),
+        query: String(r[KBR.QUERY] || ''), createdIso: iso, ageDays: ageDays, status: status,
+      };
+      if (status === 'open') open.push(item);
+      else if (resolved.length < KB_REQUESTS_RESOLVED_TAIL) resolved.push(item);
+    }
+    return { open: open, resolved: resolved, openCount: open.length };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** #1 — manager resolve/dismiss a content request. Manager-gated (INV-02),
+ *  locked (INV-01), audited (PHI-free — reqId + action only). Bounded
+ *  ReqId-column scan → single-row status/resolution write. */
+function kbResolveContentRequest(reqId, action) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    reqId = String(reqId || '').trim();
+    if (!reqId) return { success: false, error: 'Missing request id.' };
+    const act = (action === 'dismissed') ? 'dismissed' : 'resolved';
+    const ss = getKbSS_();
+    const sheet = ss.getSheetByName(KB_REQUESTS_TAB);
+    const last = sheet ? sheet.getLastRow() : 0;
+    if (last < 2) return { success: false, error: 'Request not found.' };
+    const ids = sheet.getRange(2, KBR.REQ_ID + 1, last - 1, 1).getValues();
+    let found = -1;
+    for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]).trim() === reqId) { found = i + 2; break; } }
+    if (found < 0) return { success: false, error: 'Request not found.' };
+    const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+    sheet.getRange(found, KBR.STATUS + 1, 1, 1).setValue(act);
+    sheet.getRange(found, KBR.RESOLVED_AT + 1, 1, 2).setValues([[now, emp.email]]);
+    writeAuditLog_(emp, 'KbContentRequestResolve', '', '', false, 0, 'reqId=' + reqId + '; action=' + act, emp.email);
+    return { success: true, action: act };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 // ── Manager-gated writes (locked + audited) ──────────────────────────────

@@ -2,11 +2,35 @@
 
 ## Current
 Cycle: 6
-Phase: implement — broad-scan follow-through + DeptRequests v2 (all 4 phases) on claude/broad-scan-2ll5ok (pushed, not merged)
-Scope: cycle-6-regression fixes + self-defending CI + automation push + P3 strategic depth + DeptRequests v2
+Phase: implement — non-AI KB enhancements #1+#2 (self-improving-KB loop) on claude/broad-scan-2ll5ok
+Scope: KB (Reference tool) content-gap requests + rep freshness signal
 Test Command: manual
 Subsystem cycles since last Seams audit: 5
-Updated: 2026-06-30 (broad-implement: F1–F11, P1, automation digest, coupling registry, intake explainability, DeptRequests v2)
+Updated: 2026-07-01 (broad-implement: KB #1 content-gap requests + #2 rep freshness signal)
+
+## KB self-improving loop (#1 + #2, 2026-07-01, claude/broad-scan-2ll5ok)
+Non-AI Reference-tool enhancements (operator declined the KB-AI Phase B route for
+now, chose these instead). Both feed the manager review workflow; PHI-free-by-policy.
+- #2 rep freshness signal: kbFlagItem(itemId, kind∈helpful|notHelpful|stale, note)
+  — rep-callable, append-only, locked; new KbFeedback tab. A 'stale' flag surfaces
+  the item at the TOP of kbGetReviewDue regardless of age (strictly-newer-than-
+  last-review reset, the INV-120 pattern — kbMarkReviewed clears it, no status col;
+  kbStaleFlags_ + kbCellTs_ helpers). Only 'stale' is audited (KbItemFlagged, id
+  only). Reader "Was this helpful? Yes/No + Out of date" bar (kbFeedbackBarHtml_).
+- #1 content-gap requests: kbRequestArticle(topic, note, query) rep-callable append
+  -only locked; new KbContentRequests tab; kbGetContentRequests / kbResolveContent
+  Request(reqId, action) manager-gated. Deliberate rep action on a ZERO-RESULT
+  search (kbNoResultsHtml_ CTA → uiPrompt) = PHI-clean by construction. Manager
+  "Content requests" block in the Reference landing (kbLoadContentRequestsBlock_).
+  Audit PHI-free (reqId only): KbContentRequest / KbContentRequestResolve.
+- Tests: 2 manager-gate cases added to test_managerGates_rejectNonManager
+  (kbGetContentRequests/kbResolveContentRequest, MANAGER tier not admin);
+  test_kb_feedbackAndRequests_requireEmployee (rep-auth + kind/topic validation).
+- Pure 207/0, DOM 48/0, node --check clean. Two tabs auto-provision (deployer edit
+  access to KB_SS_ID already required) — NO new Script Property / trigger / migration.
+- NOT YET: committed/pushed; runAllTests() (operator); /sync-docs (INV-139 + storage
+  map + audit actions + a Key Design Decision). Drawer parity + surfacing 👍/👎
+  counts are follow-ons.
 
 ## Cycle 6 — DeptRequests v2 (all 4 phases, 2026-06-30, claude/broad-scan-2ll5ok)
 Planned (decisions: roster column N membership; manager-summary reminder;

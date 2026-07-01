@@ -914,6 +914,7 @@ function _runAllTests() {
 
   // ── KB usage feedback loop ──────────────────────────────────────────────
   _integrationTest('kb_recordView_requiresEmployee',            test_kb_recordView_requiresEmployee);
+  _integrationTest('kb_feedbackAndRequests_requireEmployee',    test_kb_feedbackAndRequests_requireEmployee);
   _integrationTest('kb_uploadImage_rejectsInvalidPayloads',      test_kb_uploadImage_rejectsInvalidPayloads);
   _integrationTest('kbAi_gatesAndSettingsValidation',            test_kbAi_gatesAndSettingsValidation);
 
@@ -3921,6 +3922,8 @@ function test_managerGates_rejectNonManager() {
     ['getCallNotesTagTrends',          function () { return getCallNotesTagTrends(); }],
     ['kbGetReviewDue',                 function () { return kbGetReviewDue(); }],
     ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
+    ['kbGetContentRequests',           function () { return kbGetContentRequests(); }],
+    ['kbResolveContentRequest',        function () { return kbResolveContentRequest('no-such-req', 'resolved'); }],
     ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['getRetentionConfig',             function () { return getRetentionConfig(); }],
@@ -4127,6 +4130,28 @@ function test_kb_recordView_requiresEmployee() {
     return kbRecordView('some-item', 'drawer:callNotes');
   });
   _assertFailure(r, 'Not authorized', 'unregistered caller rejected before any KbViews write');
+}
+
+// Self-improving-KB loop (#1 content requests, #2 rep freshness): the rep-facing
+// writers require an enrolled employee (before any sheet touch), and kbFlagItem
+// validates the feedback kind before appending. The manager-gates are covered in
+// test_managerGates_rejectNonManager; the full backfill flow is exercised manually
+// (no KB fixture in the automated suite).
+function test_kb_feedbackAndRequests_requireEmployee() {
+  const r1 = _asUser('not-a-registered-user@example.invalid', function () {
+    return kbFlagItem('some-item', 'stale', 'note');
+  });
+  _assertFailure(r1, 'Not authorized', 'kbFlagItem rejects unregistered caller before any write');
+  const r2 = _asUser('not-a-registered-user@example.invalid', function () {
+    return kbRequestArticle('a topic', '', '');
+  });
+  _assertFailure(r2, 'Not authorized', 'kbRequestArticle rejects unregistered caller before any write');
+  // Unknown feedback kind rejected (as an enrolled rep) before any append.
+  const r3 = _asUser(_TEST_INDIA_EMAIL, function () { return kbFlagItem('some-item', 'banana', ''); });
+  _assertEq(r3.success, false, 'unknown feedback kind rejected before any KbFeedback write');
+  // Empty topic rejected before any KbContentRequests write.
+  const r4 = _asUser(_TEST_INDIA_EMAIL, function () { return kbRequestArticle('   ', '', ''); });
+  _assertEq(r4.success, false, 'empty topic rejected before any write');
 }
 
 // KB AI Phase A — kbGetFacetGuidance auth + flag gate + saveKbAiSettings
