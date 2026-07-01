@@ -101,6 +101,23 @@
   .intk-sev-chip.on[data-set="Mod"]    { background: var(--warn); color: var(--paper); border-color: var(--warn); }
   .intk-sev-chip.on[data-set="Severe"] { background: var(--destructive); color: var(--paper); border-color: var(--destructive); }
 
+  /* PPD redesign Phase 1 — new control kinds (unused until Phase 2 opts questions in). */
+  .intk-choice { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
+  .intk-choice-btn { appearance: none; border: none; background: var(--paper-2); color: var(--muted); font: inherit; font-size: .85rem; padding: 6px 16px; cursor: pointer; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
+  .intk-choice-btn + .intk-choice-btn { border-left: 1px solid var(--line); }
+  .intk-choice-btn:hover { color: var(--ink); }
+  .intk-choice-btn.on { background: var(--accent); color: var(--paper); }
+  .intk-multi { display: flex; flex-wrap: wrap; gap: 6px; }
+  .intk-multi-btn { appearance: none; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--muted); font: inherit; font-size: .82rem; padding: 6px 14px; cursor: pointer; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
+  .intk-multi-btn:hover { color: var(--ink); }
+  .intk-multi-btn.on { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+  .intk-numunit { display: inline-flex; align-items: center; gap: 8px; }
+  .intk-numunit input { width: 6.5em; }
+  .intk-unit { font-size: .85rem; color: var(--muted); }
+  .intk-reveal { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .intk-reveal-opts { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
+  .intk-reveal-text { min-width: 240px; }
+
   .intk-row .ck { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--muted); }
   .intk-actions { display: flex; gap: 10px; margin-top: 16px; }
 
@@ -287,6 +304,22 @@ var INTAKE_PPD_TYPE = {
 };
 function intakePpdType_(qNum) { return INTAKE_PPD_TYPE[qNum] || 'text'; }
 var INTAKE_SEV_LEVELS = ['None', 'Mild', 'Mod', 'Severe'];
+
+// PPD redesign Phase 1 — richer per-question control config for the NEW control
+// kinds. EMPTY today: every question still renders via INTAKE_PPD_TYPE exactly as
+// before (intakePpdControl_ returns null → the legacy path runs unchanged). Phase
+// 2 opts specific questions in, e.g.:
+//   '24': { kind:'choice',  options:[{v:'Rx'},{v:'Over-the-counter',l:'OTC'},{v:'No'}] }
+//   '25': { kind:'multi',   exclusive:'No', options:[{v:'No'},{v:'Hands'},{v:'Feet'},{v:'Legs'}] }
+//   '37': { kind:'numunit', unit:'in.' }
+//   '39': { kind:'reveal',  revealOn:'Other', options:[{v:'Alone'},{v:'Friends/Family'},{v:'Other'}] }
+//   '43': { kind:'condition', list:'neuro' }
+// CANONICAL-ENGLISH VALUE RULE (load-bearing, engine-safe): the STORED value is
+// always the option's English `v`; only the displayed `l` label is localized. The
+// recommendation engine substring-matches English (Phase 0 tests pin this), so a
+// Spanish PPD emits the same engine-safe values as an English one.
+var INTAKE_PPD_CONTROL = {};
+function intakePpdControl_(qNum) { return INTAKE_PPD_CONTROL[qNum] || null; }
 
 var INTAKE_PMD_Q = {
   EN: [
@@ -491,18 +524,22 @@ function intakePpdGotoSection_(s) {
 }
 
 function intakePpdRowHtml_(qNum, text, isSecondary) {
+  var ctrl = intakePpdControl_(qNum);   // Phase 1: null for every question (framework only)
   var type = intakePpdType_(qNum);
-  var control;
-  if (type === 'yn') {
-    control = intakeYnControlHtml_('data-qnum="' + esc(qNum) + '"', text);
+  var control, hasInputId;
+  if (ctrl) {
+    control = intakePpdControlHtml_(ctrl, qNum, text);
+    hasInputId = (ctrl.kind === 'numunit' || ctrl.kind === 'condition');
+  } else if (type === 'yn') {
+    control = intakeYnControlHtml_('data-qnum="' + esc(qNum) + '"', text); hasInputId = false;
   } else if (type === 'sev') {
-    control = intakeSevControlHtml_('data-qnum="' + esc(qNum) + '"', text);
+    control = intakeSevControlHtml_('data-qnum="' + esc(qNum) + '"', text); hasInputId = false;
   } else if (type === 'num') {
-    control = '<input type="text" inputmode="numeric" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+    control = '<input type="text" inputmode="numeric" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">'; hasInputId = true;
   } else {
-    control = '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+    control = '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">'; hasInputId = true;
   }
-  var labelFor = (type === 'yn' || type === 'sev') ? '' : ' for="intk-ppd-q' + esc(qNum) + '"';
+  var labelFor = hasInputId ? ' for="intk-ppd-q' + esc(qNum) + '"' : '';
   return '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '">' +
     '<label class="q"' + labelFor + '>' + esc(text) + '</label>' + control + '</div>';
 }
@@ -525,7 +562,7 @@ function intakeSevControlHtml_(attrs, ariaLabel) {
 
 // Shared pick handler for Yes/No + severity (PPD and account checkboxes).
 function intakePick_(btn) {
-  var grp = btn.closest('.intk-yn,.intk-sev');
+  var grp = btn.closest('.intk-yn,.intk-sev,.intk-choice');   // .intk-choice = Phase 1 single-select multi-button
   if (!grp) return;
   var val = btn.getAttribute('data-set');
   grp.setAttribute('data-val', val);
@@ -557,15 +594,24 @@ function intakePickKey_(e) {
 
 // Get/set a single PPD answer value across all control types.
 function intakePpdGetVal_(root, qNum) {
+  // Phase 1 new group kinds first (multi/reveal have bespoke serialization).
+  var multi = root.querySelector('.intk-multi[data-qnum="' + qNum + '"]');
+  if (multi) return intakeMultiGet_(multi);
+  var reveal = root.querySelector('.intk-reveal[data-qnum="' + qNum + '"]');
+  if (reveal) return intakeRevealGet_(reveal);
   var input = root.querySelector('[data-intk-qnum="' + qNum + '"]');
   if (input) return String(input.value || '').trim();
-  var grp = root.querySelector('.intk-yn[data-qnum="' + qNum + '"],.intk-sev[data-qnum="' + qNum + '"]');
+  var grp = root.querySelector('.intk-yn[data-qnum="' + qNum + '"],.intk-sev[data-qnum="' + qNum + '"],.intk-choice[data-qnum="' + qNum + '"]');
   return grp ? String(grp.getAttribute('data-val') || '') : '';
 }
 function intakePpdSetVal_(root, qNum, val) {
+  var multi = root.querySelector('.intk-multi[data-qnum="' + qNum + '"]');
+  if (multi) { intakeMultiSet_(multi, val); return; }
+  var reveal = root.querySelector('.intk-reveal[data-qnum="' + qNum + '"]');
+  if (reveal) { intakeRevealSet_(reveal, val); return; }
   var input = root.querySelector('[data-intk-qnum="' + qNum + '"]');
   if (input) { input.value = val == null ? '' : val; return; }
-  var grp = root.querySelector('.intk-yn[data-qnum="' + qNum + '"],.intk-sev[data-qnum="' + qNum + '"]');
+  var grp = root.querySelector('.intk-yn[data-qnum="' + qNum + '"],.intk-sev[data-qnum="' + qNum + '"],.intk-choice[data-qnum="' + qNum + '"]');
   if (!grp) return;
   grp.setAttribute('data-val', val == null ? '' : val);
   grp.querySelectorAll('[data-set]').forEach(function (b) {
@@ -573,6 +619,165 @@ function intakePpdSetVal_(root, qNum, val) {
     b.classList.toggle('on', on);
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
+}
+
+// ── PPD redesign Phase 1: new string-valued control kinds ──────────────────
+// Every kind serializes to/from a STRING so draft autosave (intakeSaveDraft_),
+// intakeCollectPpd_, the recommendation engine, and the email builder keep
+// working unchanged. Pure serialization helpers (intakeMulti*/intakeReveal*) are
+// Node-pinned; the DOM builders/handlers call them.
+
+function intakePpdControlHtml_(ctrl, qNum, ariaLabel) {
+  switch (ctrl.kind) {
+    case 'choice':    return intakeChoiceControlHtml_(ctrl, qNum, ariaLabel);
+    case 'multi':     return intakeMultiControlHtml_(ctrl, qNum, ariaLabel);
+    case 'numunit':   return intakeNumUnitControlHtml_(ctrl, qNum);
+    case 'reveal':    return intakeRevealControlHtml_(ctrl, qNum, ariaLabel);
+    case 'condition': return intakeConditionControlHtml_(ctrl, qNum);
+    default:          return '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+  }
+}
+
+// (a) single-select multi-button — arbitrary options, canonical-English value +
+// localizable label. Reuses intakePick_ / intakePickKey_ (data-val = one value).
+function intakeChoiceControlHtml_(ctrl, qNum, ariaLabel) {
+  var btns = (ctrl.options || []).map(function (o) {
+    return '<button type="button" class="intk-choice-btn" data-set="' + esc(o.v) + '" role="radio" aria-checked="false" onclick="intakePick_(this)">' + esc(o.l || o.v) + '</button>';
+  }).join('');
+  return '<div class="intk-choice" data-qnum="' + esc(qNum) + '" data-val="" role="radiogroup" aria-label="' + esc(ariaLabel) + '" onkeydown="intakePickKey_(event)">' + btns + '</div>';
+}
+
+// (b) multi-select multi-button with an optional exclusive option (e.g. "No"
+// clears the rest). Comma-joined string value in OPTION order (deterministic).
+function intakeMultiControlHtml_(ctrl, qNum, ariaLabel) {
+  var btns = (ctrl.options || []).map(function (o) {
+    return '<button type="button" class="intk-multi-btn" data-set="' + esc(o.v) + '" role="checkbox" aria-checked="false" onclick="intakeMultiPick_(this)">' + esc(o.l || o.v) + '</button>';
+  }).join('');
+  return '<div class="intk-multi" data-qnum="' + esc(qNum) + '" data-exclusive="' + esc(ctrl.exclusive || '') + '" role="group" aria-label="' + esc(ariaLabel) + '">' + btns + '</div>';
+}
+function intakeMultiPick_(btn) {
+  var grp = btn.closest('.intk-multi'); if (!grp) return;
+  var exclusive = grp.getAttribute('data-exclusive') || '';
+  var current = [];
+  grp.querySelectorAll('.intk-multi-btn.on').forEach(function (b) { current.push(b.getAttribute('data-set')); });
+  var next = intakeMultiToggle_(current, btn.getAttribute('data-set'), exclusive);
+  grp.querySelectorAll('.intk-multi-btn').forEach(function (b) {
+    var on = next.indexOf(b.getAttribute('data-set')) >= 0;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+    if (on) { b.classList.remove('popping'); void b.offsetWidth; b.classList.add('popping'); }
+  });
+  intakePpdAfterChange_();
+}
+function intakeMultiGet_(grp) {
+  var selected = [], order = [];
+  grp.querySelectorAll('.intk-multi-btn').forEach(function (b) {
+    var v = b.getAttribute('data-set'); order.push(v);
+    if (b.classList.contains('on')) selected.push(v);
+  });
+  return intakeMultiSerialize_(selected, order);
+}
+function intakeMultiSet_(grp, val) {
+  var want = intakeMultiParse_(val);
+  grp.querySelectorAll('.intk-multi-btn').forEach(function (b) {
+    var on = want.indexOf(b.getAttribute('data-set')) >= 0;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+
+// (c) number + unit suffix. Value = the raw number string (engine strips
+// non-digits; the unit is display-only, so the value round-trips cleanly).
+function intakeNumUnitControlHtml_(ctrl, qNum) {
+  return '<span class="intk-numunit"><input type="text" inputmode="numeric" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">' +
+    '<span class="intk-unit">' + esc(ctrl.unit || '') + '</span></span>';
+}
+
+// (d) reveal-text: a single-select whose `revealOn` option shows a free-text box.
+// Value = the option, or "<revealOn>: <text>" when the reveal option carries text.
+function intakeRevealControlHtml_(ctrl, qNum, ariaLabel) {
+  var btns = (ctrl.options || []).map(function (o) {
+    return '<button type="button" class="intk-choice-btn" data-set="' + esc(o.v) + '" role="radio" aria-checked="false" onclick="intakeRevealPick_(this)">' + esc(o.l || o.v) + '</button>';
+  }).join('');
+  return '<div class="intk-reveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || '') + '" role="radiogroup" aria-label="' + esc(ariaLabel) + '">' +
+    '<div class="intk-reveal-opts">' + btns + '</div>' +
+    '<input type="text" class="intk-reveal-text" style="display:none" autocomplete="off" placeholder="' + esc(ctrl.placeholder || '') + '" oninput="intakePpdAfterChange_()"></div>';
+}
+function intakeRevealPick_(btn) {
+  var grp = btn.closest('.intk-reveal'); if (!grp) return;
+  var val = btn.getAttribute('data-set');
+  var revealOn = grp.getAttribute('data-reveal-on') || '';
+  grp.querySelectorAll('.intk-choice-btn').forEach(function (b) {
+    var on = (b === btn);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+    if (on) { b.classList.remove('popping'); void b.offsetWidth; b.classList.add('popping'); }
+  });
+  var ta = grp.querySelector('.intk-reveal-text');
+  if (ta) ta.style.display = (val === revealOn) ? '' : 'none';
+  intakePpdAfterChange_();
+}
+function intakeRevealGet_(grp) {
+  var revealOn = grp.getAttribute('data-reveal-on') || '';
+  var sel = grp.querySelector('.intk-choice-btn.on');
+  var ta = grp.querySelector('.intk-reveal-text');
+  return intakeRevealSerialize_(sel ? sel.getAttribute('data-set') : '', ta ? ta.value : '', revealOn);
+}
+function intakeRevealSet_(grp, val) {
+  var revealOn = grp.getAttribute('data-reveal-on') || '';
+  var parsed = intakeRevealParse_(val, revealOn);
+  grp.querySelectorAll('.intk-choice-btn').forEach(function (b) {
+    var on = (b.getAttribute('data-set') === parsed.option);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  var ta = grp.querySelector('.intk-reveal-text');
+  if (ta) { ta.value = parsed.text || ''; ta.style.display = (parsed.option === revealOn) ? '' : 'none'; }
+}
+
+// (e) curated condition-picker — PLACEHOLDER for Phase 3, which replaces this
+// render with a filter/multi-select over the curated `ctrl.list`. Phase 1 renders
+// a plain text field (engine-safe: any typed value flows straight through), so an
+// accidental early opt-in degrades gracefully to free-text.
+function intakeConditionControlHtml_(ctrl, qNum) {
+  return '<input type="text" autocomplete="off" class="intk-condition-stub" data-condition-list="' + esc(ctrl.list || '') + '" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
+}
+
+// ── Pure serialization helpers (Node-pinned) ──────────────────────────────
+// PURE — multi-select toggle with exclusive-option logic. current = selected
+// values; value = clicked value; exclusive = the value that clears the rest.
+function intakeMultiToggle_(current, value, exclusive) {
+  current = (current || []).slice();
+  var has = current.indexOf(value) >= 0;
+  if (exclusive && value === exclusive) return has ? [] : [value];   // exclusive → only it (re-click clears)
+  if (exclusive) { var ei = current.indexOf(exclusive); if (ei >= 0) current.splice(ei, 1); }  // a normal pick drops the exclusive
+  if (has) current.splice(current.indexOf(value), 1);
+  else current.push(value);
+  return current;
+}
+// PURE — serialize selected values in OPTION order → deterministic comma string.
+function intakeMultiSerialize_(selected, optionValues) {
+  selected = selected || [];
+  return (optionValues || []).filter(function (v) { return selected.indexOf(v) >= 0; }).join(', ');
+}
+// PURE — parse a comma string → trimmed, non-empty value array.
+function intakeMultiParse_(str) {
+  return String(str == null ? '' : str).split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+}
+// PURE — reveal serialize/parse. Value: '' | '<option>' | '<revealOn>: <text>'.
+function intakeRevealSerialize_(option, text, revealOn) {
+  option = String(option || '');
+  if (!option) return '';
+  if (option === revealOn) { text = String(text || '').trim(); return text ? (option + ': ' + text) : option; }
+  return option;
+}
+function intakeRevealParse_(str, revealOn) {
+  str = String(str == null ? '' : str).trim();
+  if (!str) return { option: '', text: '' };
+  var pfx = String(revealOn || '') + ': ';
+  if (revealOn && str === revealOn) return { option: revealOn, text: '' };
+  if (revealOn && str.indexOf(pfx) === 0) return { option: revealOn, text: str.substring(pfx.length) };
+  return { option: str, text: '' };
 }
 
 function intakePpdAfterChange_() {

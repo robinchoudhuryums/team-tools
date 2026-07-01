@@ -121,7 +121,31 @@ free-text never matched English substrings).
   new controls will emit produce the same clinical factors / recommendations as
   today's free-text (Q25/Q34/Q31a/Q43/Q38 + an end-to-end structured-vs-free-text
   parity case). Engine untouched. Pure 216/0, DOM 48/0.
-- NOT YET: committed/pushed. NEXT (on approval): Phase 1 control framework →
+- Phase 0 shipped in #113 (merged).
+
+## PPD redesign Phase 1 — control framework (2026-07-01, claude/broad-scan-2ll5ok)
+Reusable string-valued PPD control kinds, INERT until Phase 2 opts questions in.
+- INTAKE_PPD_CONTROL = {} (empty) + intakePpdControl_(qNum) resolver; intakePpdRowHtml_
+  checks it first (null today → legacy INTAKE_PPD_TYPE path byte-identical).
+- New kinds (all string-valued): choice (single-select multi-button, canonical-EN
+  value + localizable label, reuses intakePick_ — added .intk-choice), multi
+  (multi-select + optional exclusive option, comma-joined in OPTION order,
+  intakeMultiPick_/Get_/Set_), numunit (number+unit suffix, value=raw number),
+  reveal (option that shows a free-text box, value '<opt>' | '<revealOn>: <text>'),
+  condition (Phase-3 PLACEHOLDER — renders a plain text field, engine-safe).
+- intakePpdGetVal_/SetVal_ extended for multi/reveal/choice (fall through to the
+  existing input/yn/sev path when those groups aren't present → unchanged today).
+- PURE Node-pinned helpers: intakeMultiToggle_/Serialize_/Parse_,
+  intakeRevealSerialize_/Parse_ (3 new tests, primitive comparisons for vm-realm).
+- Engine untouched. Draft/collect/email keep working via the string values.
+- Pure 219/0 (+3), DOM 48/0, node --check clean. NO live behavior change.
+- NOT YET: committed/pushed. NEXT (on approval): Phase 2 (opt questions into the
+  new kinds — the per-question format changes) → Phase 3 (curated condition lists,
+  clinical sign-off) → Phase 4 (helpers/conditionals/validation); INV-112 rewrite
+  ("free-text" → "engine-safe structured values") lands with Phase 2.
+
+## (superseded) original NEXT line
+- NEXT (on approval): Phase 1 control framework →
   Phase 2 per-question formats → Phase 3 curated condition pickers → Phase 4
   helpers/conditionals/validation; then UPDATE INV-112 (free-text → engine-safe
   structured values, pinned by these Phase-0 tests). Full plan in the chat
