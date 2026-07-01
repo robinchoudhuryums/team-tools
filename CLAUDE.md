@@ -2377,6 +2377,28 @@ this section before touching the relevant area.
   surface as title-only hits — another native-first nudge. Pinned by
   `kbMd_` (escaping/links/tables/images/heading-ids) + `kbParseDriveUrl_` +
   the `kbSplitSections_`/`kbChunkTruncate_`/`kbSearchScore_` Node tests.
+  **Search synonyms + filters (#8):** admin-editable synonym groups (Script
+  Property `KB_SEARCH_SYNONYMS`, JSON array of ≥2-term lowercase groups, e.g.
+  `[["cpap","pap"],["pmd","power chair"]]`) let a query token pull in the group's
+  other tokens (`kbExpandSynonymTokens_` in `searchReference`; token-level, so
+  multi-word terms split into tokens), so "cpap" finds "pap". Edited via a compact
+  admin-only "Synonyms" modal in the Reference tree header
+  (`kbGetSearchConfig`/`kbSaveSearchConfig`, **admin-gated** INV-136,
+  `AdminConfigChange` audit; sanitize-on-read → corrupt blob degrades to `[]`, so
+  unset = today's exact behavior). The Reference-tab search results also carry a
+  client-side **filter bar** — type chips (All / Articles / Embeds, with counts)
+  + a department `<select>` — that re-renders the cached `KB_STATE.searchResults`
+  with NO re-query (`kbRenderSearchResults_`/`kbSearchFilterBarHtml_`); the drawer
+  search is unchanged. **"See also" (#7):** the reader lazy-loads
+  `kbGetRelated(itemId)` (rep-callable, read-only, bounded KbViews tail) — items a
+  rep opened in the same (rep, day) session as this one, ranked by the pure,
+  Node-pinned `kbCoViewRelated_` (distinct-session co-view count, **silent below
+  `KB_RELATED_MIN_COVIEWS`=2** so thin data shows nothing, top `KB_RELATED_TOP`=5,
+  deleted items + non-admin-drafts dropped). No AI, just counting; it improves as
+  KbViews accumulates. Both #8 filters + #7 render only in the Reference tab (not
+  the mid-call drawer). Pinned by the `kbCoViewRelated_` Node test + the
+  `kbGetSearchConfig`/`kbSaveSearchConfig` gate cases + the `kbGetRelated`
+  rep-auth case.
 - **KB Phase 2: per-item Doc→article converter, review-before-save.**
   `kbConvertDriveDoc({itemId | driveUrl})` (manager-gated, READ-ONLY)
   opens a Google Doc with the DEPLOYER's access (same trust model as
@@ -3171,6 +3193,14 @@ manually for a fresh deploy or environment:
   never-saved pastes accumulate — trim manually). The first export also
   adds the Drive OAuth scope alongside the Docs scope — the deploying
   account may be prompted to re-authorize once.
+- **Script Property `KB_SEARCH_SYNONYMS`** (auto-managed, #8). JSON array of
+  ≥2-term lowercase synonym groups (e.g. `[["cpap","pap"],["pmd","power chair"]]`)
+  that expand Reference search recall (`kbExpandSynonymTokens_`). Edited via the
+  admin-only "Synonyms" modal in the Reference tree header (`kbSaveSearchConfig`,
+  admin-gated, `AdminConfigChange` audit); created on first save, read by
+  `getKbSearchSynonyms_` (sanitize-on-read → corrupt blob degrades to `[]`). No
+  manual setup — unset = no expansion (today's behavior). Documented so it's
+  recognizable when inspecting Script Properties.
 - **Quiz import from Google Forms requires the Google Forms OAuth scope.**
   `importQuizFromForm` (Team Training → New quiz → "Import from Google
   Forms") is the project's first `FormApp` call, so the deploy that ships it
