@@ -1242,6 +1242,59 @@ test('condition-picker values never contain a comma (breaks comma-join serializa
   });
 });
 
+// PPD redesign Phase 4 — polish: Q32 spasticity tooltip, Q33a conditional-hide,
+// Q45 Yes/No-reveals-multi (arthritis types), Q37 feet-inches → inches parse. None
+// of these are engine-read (Q45/Q37 display-only; Q32/Q33 unchanged Yes/No), so
+// this pins the PURE serialization/parse + the config wiring, not the engine.
+console.log('\nintake — PPD redesign Phase 4: reveal/height polish (pure + config)');
+const intakeYnRevealSerialize_ = loadFunction(sb, 'intake/script_intake.html', 'intakeYnRevealSerialize_');
+const intakeYnRevealParse_ = loadFunction(sb, 'intake/script_intake.html', 'intakeYnRevealParse_');
+const intakeParseHeightInches_ = loadFunction(sb, 'intake/script_intake.html', 'intakeParseHeightInches_');
+
+test('Q45 ynreveal serialize/parse: No / Yes / Yes+subtypes round-trip', () => {
+  assert.strictEqual(intakeYnRevealSerialize_('No', [], 'Yes'), 'No');
+  assert.strictEqual(intakeYnRevealSerialize_('Yes', [], 'Yes'), 'Yes', 'Yes with no subtype');
+  assert.strictEqual(intakeYnRevealSerialize_('Yes', ['Rheumatoid', 'Psoriatic'], 'Yes'), 'Yes: Rheumatoid, Psoriatic');
+  assert.strictEqual(intakeYnRevealSerialize_('', [], 'Yes'), '');
+  assert.strictEqual(intakeYnRevealSerialize_('No', ['Rheumatoid'], 'Yes'), 'No', 'subtypes ignored when not revealOn');
+  const p1 = intakeYnRevealParse_('Yes: Rheumatoid, Osteoarthritis', 'Yes');
+  assert.strictEqual(p1.yn + '|' + p1.subs.join(','), 'Yes|Rheumatoid,Osteoarthritis');
+  const p2 = intakeYnRevealParse_('No', 'Yes');   assert.strictEqual(p2.yn + '|' + p2.subs.length, 'No|0');
+  const p3 = intakeYnRevealParse_('Yes', 'Yes');  assert.strictEqual(p3.yn + '|' + p3.subs.length, 'Yes|0');
+  const p4 = intakeYnRevealParse_('', 'Yes');     assert.strictEqual(p4.yn + '|' + p4.subs.length, '|0');
+  const p5 = intakeYnRevealParse_('some old free text', 'Yes'); assert.strictEqual(p5.yn + '|' + p5.subs.length, '|0', 'legacy free-text → unselected');
+  const rt = intakeYnRevealParse_('Yes: Rheumatoid', 'Yes');
+  assert.strictEqual(intakeYnRevealSerialize_(rt.yn, rt.subs, 'Yes'), 'Yes: Rheumatoid', 'round-trip');
+});
+
+test('Q37 height parse: feet-inches → total inches; plain number untouched', () => {
+  assert.strictEqual(intakeParseHeightInches_("5'1\""), '61');
+  assert.strictEqual(intakeParseHeightInches_("5'1"), '61');
+  assert.strictEqual(intakeParseHeightInches_('5 ft 1 in'), '61');
+  assert.strictEqual(intakeParseHeightInches_("6'"), '72', 'feet only');
+  assert.strictEqual(intakeParseHeightInches_('5ft11'), '71');
+  assert.strictEqual(intakeParseHeightInches_('61'), '61', 'plain inches unchanged');
+  assert.strictEqual(intakeParseHeightInches_(''), '', 'empty unchanged');
+  assert.strictEqual(intakeParseHeightInches_('  70  '), '70', 'trims a plain number');
+  assert.strictEqual(intakeParseHeightInches_('tall'), 'tall', 'non-numeric unchanged');
+});
+
+const _p4 = vm.createContext({});
+vm.runInContext('var CTRL = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PPD_CONTROL') + ';', _p4, { filename: 'INTAKE_PPD_CONTROL' });
+vm.runInContext('var HELP = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PPD_HELP') + ';', _p4, { filename: 'INTAKE_PPD_HELP' });
+vm.runInContext('var REVEAL = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PPD_REVEAL') + ';', _p4, { filename: 'INTAKE_PPD_REVEAL' });
+
+test('Phase 4 config: Q45 ynreveal + subtypes, Q37 height parse, Q32 help, Q33a reveal', () => {
+  assert.strictEqual(_p4.CTRL['45'].kind, 'ynreveal');
+  assert.strictEqual(_p4.CTRL['45'].sub.join('|'), 'Rheumatoid|Osteoarthritis|Psoriatic');
+  assert.strictEqual(_p4.CTRL['45'].revealOn, 'Yes');
+  assert.strictEqual(_p4.CTRL['37'].kind, 'numunit');
+  assert.strictEqual(_p4.CTRL['37'].parse, 'height');
+  assert.ok(_p4.HELP['32'] && _p4.HELP['32'].toLowerCase().indexOf('spasticity') >= 0, 'Q32 spasticity help text');
+  assert.strictEqual(_p4.REVEAL['33a'].whenQ, '33');
+  assert.strictEqual(_p4.REVEAL['33a'].whenVal, 'Yes');
+});
+
 console.log('\nintake — client render layout mirrors the server (coupling tripwire)');
 const _lcx = vm.createContext({});
 vm.runInContext('var SRV_PMD = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', _lcx);
