@@ -1191,6 +1191,57 @@ test('Q38 weight is numunit; end-to-end config-driven recommendation parity', ()
     'K0862,K0861|', 'config values yield the expected neuro+solid recommendation');
 });
 
+// PPD redesign Phase 3 — Q29/Q41/Q42/Q43 become curated `condition` pickers whose
+// value is a comma-joined string (like `multi`). Q29/Q41/Q42 are display-only; Q43
+// is ENGINE-CRITICAL but read only as truthy-vs-the-exclude-list. Pin (a) the pure
+// selection helper and (b) a drift guard that loads the LIVE config + lists and
+// feeds Q43's list values through the engine so a bad list (or an empty-selection
+// regression) fails CI. (Reuses _F / intakeFilterRecommendations_ from above.)
+console.log('\nintake — PPD redesign Phase 3: condition pickers (pure + engine drift guard)');
+const intakeCondToggleValue_ = loadFunction(sb, 'intake/script_intake.html', 'intakeCondToggleValue_');
+
+test('condition select toggle: add appends, re-click removes, no exclusive logic', () => {
+  assert.strictEqual(intakeCondToggleValue_([], 'ALS').join('|'), 'ALS', 'add');
+  assert.strictEqual(intakeCondToggleValue_(['ALS'], 'MS').join('|'), 'ALS|MS', 'append in insertion order');
+  assert.strictEqual(intakeCondToggleValue_(['ALS', 'MS'], 'ALS').join('|'), 'MS', 're-click removes');
+  assert.strictEqual(intakeCondToggleValue_(['ALS'], 'ALS').length, 0, 're-click last clears');
+  // round-trips through the shared comma serialize/parse contract
+  const s = intakeCondToggleValue_(['A'], 'B').join(', ');
+  assert.strictEqual(intakeMultiParse_(s).join('|'), 'A|B');
+});
+
+const _p3 = vm.createContext({});
+vm.runInContext('var CTRL = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PPD_CONTROL') + ';', _p3, { filename: 'INTAKE_PPD_CONTROL' });
+vm.runInContext('var LISTS = ' + extractClientObject('intake/script_intake.html', 'INTAKE_CONDITION_LISTS') + ';', _p3, { filename: 'INTAKE_CONDITION_LISTS' });
+const P3_CTRL = _p3.CTRL, P3_LISTS = _p3.LISTS;
+
+test('Q29/Q41/Q42/Q43 are condition pickers whose lists resolve + are non-empty', () => {
+  ['29', '41', '42', '43'].forEach((q) => {
+    assert.strictEqual(P3_CTRL[q].kind, 'condition', 'Q' + q + ' is a condition picker');
+    const key = P3_CTRL[q].list;
+    assert.ok(P3_LISTS[key] && P3_LISTS[key].length > 0, 'Q' + q + ' list "' + key + '" resolves + non-empty');
+  });
+});
+
+test('Q43 neuro list values every make hasValidNeuroDiagnosis true (engine-safe)', () => {
+  const neuro = P3_LISTS[P3_CTRL['43'].list];
+  neuro.forEach((v) => {
+    assert.strictEqual(_F({ '43': v }).hasValidNeuroDiagnosis, true, '"' + v + '" → valid neuro Dx');
+  });
+  // a multi-select (comma-joined) is still valid; empty selection is NOT a Dx
+  assert.strictEqual(_F({ '43': neuro[0] + ', ' + neuro[1] }).hasValidNeuroDiagnosis, true, 'multi-select valid');
+  assert.strictEqual(_F({ '43': '' }).hasValidNeuroDiagnosis, false, 'empty = no Dx');
+  // none of the seeded values collide with the engine exclude list
+  const EXCLUDE = ['no', 'n/a', 'none', '', 'no.'];
+  neuro.forEach((v) => assert.ok(EXCLUDE.indexOf(v.toLowerCase()) < 0, '"' + v + '" not in exclude list'));
+});
+
+test('condition-picker values never contain a comma (breaks comma-join serialization)', () => {
+  ['vascular', 'qualifying', 'cardiopulmonary', 'neuro'].forEach((k) => {
+    P3_LISTS[k].forEach((v) => assert.ok(v.indexOf(',') < 0, '"' + v + '" (' + k + ') is comma-free'));
+  });
+});
+
 console.log('\nintake — client render layout mirrors the server (coupling tripwire)');
 const _lcx = vm.createContext({});
 vm.runInContext('var SRV_PMD = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', _lcx);
