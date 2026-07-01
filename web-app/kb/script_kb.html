@@ -126,6 +126,20 @@
   .kb-rev-meta { font-size: .78rem; color: var(--muted); font-family: var(--mono); }
   .kb-rev-prev { font-size: .84rem; color: var(--ink); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
   .kb-rev-row .kb-btn { flex-shrink: 0; }
+  /* #6 — copyable "canned response" snippet card (rendered by kbMd_). */
+  .kb-snippet { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; margin: 12px 0; background: var(--paper-2); overflow: hidden; }
+  .kb-snippet-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--accent-soft); }
+  .kb-snippet-label { flex: 1; min-width: 0; font-size: .74rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--success-deep); }
+  .kb-snippet-copy { flex-shrink: 0; font: inherit; font-size: .74rem; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-snippet-copy:hover { background: var(--paper); border-color: var(--border-strong); }
+  .kb-snippet-body { margin: 0; padding: 10px; font: inherit; white-space: pre-wrap; word-break: break-word; color: var(--ink); }
+  /* #5 — bookmark (favorite) star toggle. */
+  .kb-bm { cursor: pointer; }
+  .kb-bm.on { color: var(--warning-deep); border-color: var(--warn-soft); background: var(--warn-soft); }
+  .kb-land-bm-x { flex-shrink: 0; appearance: none; border: none; background: none; color: var(--muted); cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+  .kb-land-bm-x:hover { background: var(--paper-2); color: var(--danger); }
+  .kbd-reader-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .kb-btn.kbd-bm { padding: 4px 7px; }
   :root[data-compact] .kb-wrap { grid-template-columns: 1fr; height: auto; }
   /* - KB slide-over drawer (shell capability) - sits ABOVE the overlay layer
      (z 50) so it stays readable + usable while the email composer or other
@@ -224,7 +238,17 @@ function kbMd_(src) {
   src = String(src == null ? '' : src).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   var blocks = [];
   var hSeen = {};   // duplicate-heading id dedup - same -2/-3 walk as kbSplitSections_
-  src = src.replace(/```([\s\S]*?)```/g, function (_, code) { blocks.push(code); return ' C' + (blocks.length - 1) + ' '; });
+  src = src.replace(/```([\s\S]*?)```/g, function (_, code) {
+    // A `snippet` info-string (```snippet  or  ```snippet: Label) renders a
+    // copy-to-clipboard "canned response" card (#6); any other fence stays a
+    // <pre><code> block (unchanged). The captured content is already HTML-escaped
+    // (the top-level escape ran first), so both paths are inert.
+    var parts = code.match(/^([^\n]*)\n([\s\S]*)$/);
+    var info = parts ? parts[1].trim() : '';
+    var sm = info.match(/^snippet\b\s*:?\s*(.*)$/i);
+    if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: (parts ? parts[2] : '').replace(/\n$/, '') });
+    else blocks.push({ snippet: false, body: code });
+    return ' C' + (blocks.length - 1) + ' '; });
   function inline(t) {
     // Images BEFORE links (otherwise the link rule renders the [alt](url)
     // part as an anchor with a stray "!"). http(s) only - no mailto for an
@@ -262,7 +286,7 @@ function kbMd_(src) {
   while (i < lines.length) {
     var ln = lines[i];
     var cm = ln.trim().match(/^ C(\d+) $/);
-    if (cm) { html += '<pre><code>' + blocks[+cm[1]] + '</code></pre>'; i++; continue; }
+    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
@@ -311,6 +335,25 @@ function kbMd_(src) {
     html += '<p>' + inline(para) + '</p>';
   }
   return html;
+}
+
+// #6 — copy a "canned response" snippet to the clipboard. Reads the sibling
+// <pre>'s textContent (the browser decodes the HTML entities kbMd_ escaped back
+// to raw text), so the paste is the original snippet, not the escaped markup.
+function kbCopySnippet_(btn) {
+  var card = btn && btn.closest ? btn.closest('.kb-snippet') : null;
+  var pre = card ? card.querySelector('.kb-snippet-body') : null;
+  var text = pre ? pre.textContent : '';
+  var done = function () {
+    if (!btn.getAttribute('data-lbl')) btn.setAttribute('data-lbl', btn.textContent);
+    btn.textContent = 'Copied ✓';
+    setTimeout(function () { btn.textContent = btn.getAttribute('data-lbl') || 'Copy'; }, 1500);
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { kbLinkCardCopyFallback_(text); done(); });
+    } else { kbLinkCardCopyFallback_(text); done(); }
+  } catch (e) { kbLinkCardCopyFallback_(text); done(); }
 }
 
 function enterReferenceView(area) {
@@ -424,6 +467,25 @@ function kbRenderLanding_() {
   (KB_STATE.tree || []).forEach(function (it) { treeById[it.id] = it; });
 
   var h = '<div class="kb-land">';
+
+  // #5 — Bookmarks (all users). Explicit favorites, above the auto Recents.
+  var bookmarks = prefs.bookmarks || [];
+  if (bookmarks.length) {
+    h += '<div class="kb-land-sec"><div class="kb-land-h">' + icon('star', 13) + ' Bookmarks</div>';
+    bookmarks.forEach(function (b) {
+      var it = treeById[b.id];
+      h += '<div class="kb-land-row kb-land-rd">' +
+        '<button class="kb-land-rd-open" data-kb-id="' + esc(b.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+          '<span class="kb-land-ic">' + icon(it ? kbItemIcon_(it) : 'fileText', 15) + '</span>' +
+          '<span class="kb-land-t">' + esc(b.title) + '</span>' +
+          (it && it.department ? '<span class="kb-land-meta">' + esc(it.department) + '</span>' : '') +
+        '</button>' +
+        '<button class="kb-land-bm-x" data-kb-id="' + esc(b.id) + '" data-kb-title="' + esc(b.title) + '" title="Remove bookmark" ' +
+          'onclick="kbToggleBookmark_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-title\'), this)">' + icon('x', 13) + '</button>' +
+      '</div>';
+    });
+    h += '</div>';
+  }
 
   // Recently viewed (all users)
   h += '<div class="kb-land-sec"><div class="kb-land-h">Recently viewed</div>';
@@ -790,6 +852,7 @@ function kbRenderItem_(item) {
     ? '<button class="kb-btn" onclick="kbOpenRevisions_(\'' + esc(item.id) + '\')">' + icon('list', 13) + ' History</button>'
     : '';
   var actions =
+    kbBookmarkBtnHtml_(item) +   // #5 — bookmark star (all users)
     (item.type === 'embed' ? '<a class="kb-btn" href="' + esc(item.openUrl) + '" target="_blank" rel="noopener">' + icon('popOut', 13) + ' Open in new tab</a>' : '') +
     convertBtn +
     (mgr ? '<button class="kb-btn" onclick="kbOpenEditor_(\'' + esc(item.id) + '\')">' + icon('adjust', 13) + ' Edit</button>' +
@@ -1247,6 +1310,46 @@ function kbRecentsPush_(list, item, cap) {
   return out;
 }
 
+// PURE (#5 bookmarks): TOGGLE an item in a bookmark list — remove if present,
+// else prepend. Dedupe by id, cap length. Explicit + persistent, unlike recents.
+function kbBookmarksToggle_(list, item, cap) {
+  cap = cap || 12;
+  var id = String(item.id);
+  var existed = (list || []).some(function (b) { return b && String(b.id) === id; });
+  var out = existed ? [] : [{ id: id, title: String(item.title || '') }];
+  (list || []).forEach(function (b) {
+    if (!b || String(b.id) === id || out.length >= cap) return;
+    out.push({ id: String(b.id), title: String(b.title || '') });
+  });
+  return out;
+}
+function kbIsBookmarked_(id) {
+  return (kbPanelPrefs_().bookmarks || []).some(function (b) { return b && String(b.id) === String(id); });
+}
+// Toggle + persist; flips the clicked button's state in place.
+function kbToggleBookmark_(id, title, btn) {
+  var prefs = kbPanelPrefs_();
+  prefs.bookmarks = kbBookmarksToggle_(prefs.bookmarks || [], { id: id, title: title }, 12);
+  kbPanelSave_(prefs);
+  var now = kbIsBookmarked_(id);
+  if (btn) {
+    btn.classList.toggle('on', now);
+    btn.setAttribute('aria-pressed', now ? 'true' : 'false');
+    btn.setAttribute('title', now ? 'Bookmarked — click to remove' : 'Bookmark this');
+  }
+  if (typeof showToast === 'function') showToast(now ? 'Bookmarked' : 'Removed bookmark', 'toast-success');
+  // If the landing/home is the visible surface, refresh its Bookmarks block.
+  if (KB_STATE.landing && document.getElementById('kb-main')) kbRenderLanding_();
+}
+// Reader/drawer bookmark star button (all users).
+function kbBookmarkBtnHtml_(item, extraClass) {
+  var on = kbIsBookmarked_(item.id);
+  return '<button class="kb-btn kb-bm' + (on ? ' on' : '') + (extraClass ? ' ' + extraClass : '') + '" ' +
+    'data-kb-id="' + esc(item.id) + '" data-kb-title="' + esc(item.title || '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" ' +
+    'title="' + (on ? 'Bookmarked — click to remove' : 'Bookmark this') + '" ' +
+    'onclick="kbToggleBookmark_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-title\'), this)">' + icon('star', 14) + '</button>';
+}
+
 // PURE: score KB tree items against free text (the rep's in-progress Issue
 // field). Tokens are 4+ char words; an item scores 1 per distinct token its
 // title contains. Top `cap` scorers, best first. Deliberately title-only and
@@ -1352,6 +1455,13 @@ function kbDrawerRenderHome_() {
   var body = document.getElementById('kbd-body'); if (!body) return;
   var prefs = kbPanelPrefs_();
   var html = '<div id="kbd-guidance"></div><div id="kbd-suggest"></div>';
+  var bookmarks = prefs.bookmarks || [];   // #5
+  if (bookmarks.length) {
+    html += '<div class="kbd-sec">Bookmarks</div>';
+    bookmarks.forEach(function (b) {
+      html += '<button class="kbd-item" data-kb-id="' + esc(b.id) + '" onclick="kbDrawerOpenItem_(this.getAttribute(\'data-kb-id\'))"><span>' + esc(b.title) + '</span></button>';
+    });
+  }
   var recents = prefs.recents || [];
   if (recents.length) {
     html += '<div class="kbd-sec">Recent</div>';
@@ -1359,7 +1469,7 @@ function kbDrawerRenderHome_() {
       html += '<button class="kbd-item" data-kb-id="' + esc(r.id) + '" onclick="kbDrawerOpenItem_(this.getAttribute(\'data-kb-id\'))"><span>' + esc(r.title) + '</span></button>';
     });
   }
-  if (!recents.length) html += '<div class="kbd-empty">Type 2+ characters to search the knowledge base.</div>';
+  if (!recents.length && !bookmarks.length) html += '<div class="kbd-empty">Type 2+ characters to search the knowledge base.</div>';
   body.innerHTML = html;
   kbDrawerRenderGuidance_();
   kbDrawerRenderSuggest_();
@@ -1551,7 +1661,7 @@ function kbDrawerOpenItem_(id, anchor) {
       if (!KB_DRAWER.open || KB_DRAWER.view !== 'item') return;
       if (!res || res.error) { body.innerHTML = '<div class="kbd-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
       kbPanelRecordOpen_(res);
-      var back = '<button class="kbd-back" onclick="kbDrawerBack_()">' + icon('chevronLeft', 12) + ' Back</button>';
+      var back = '<div class="kbd-reader-bar"><button class="kbd-back" onclick="kbDrawerBack_()">' + icon('chevronLeft', 12) + ' Back</button>' + kbBookmarkBtnHtml_(res, 'kbd-bm') + '</div>';   // #5
       if (res.type === 'embed') {
         // Drive embeds are cramped in a 400px drawer - hand off to a tab.
         body.innerHTML = back +

@@ -85,8 +85,25 @@ Wave-1 pair to the review loop. NEW INV-140.
   fixture in the automated suite → draft-visibility + revision flow are manual (S-walk).
 - Pure 207/0, DOM 48/0, node --check clean. Docs: INV-140 + Reference decision +
   storage map (KbRevisions).
-- NOT YET: committed/pushed. NEXT in sequence = #6 + #5 (rep-facing: copyable
-  snippets, per-rep bookmarks) to move Employee UX off 7.5; then #8/#7.
+- Shipped in #110 (merged).
+
+## KB #6 + #5 — copyable snippets + per-rep bookmarks (2026-07-01, claude/broad-scan-2ll5ok)
+Wave-2 rep-facing (Employee-UX). Client-only; no server/schema change.
+- #6 snippets: kbMd_ fence handler extended — a ```snippet (or ```snippet: Label)
+  block renders a copy-to-clipboard "canned response" card (kbCopySnippet_ reads
+  the <pre> textContent = decoded raw). Rides kbMd_'s existing escape boundary
+  (content escaped before fence extraction); kbMd_ stays PURE (markup inlined, no
+  icon() dep). NOTE: the fence sentinel in kbMd_ uses NUL bytes (\x00C<idx>\x00) —
+  the file is "binary" to grep; the fence edit was applied via a latin1
+  byte-preserving Node script, not the Edit tool. Node test added (snippet card +
+  plain/js fence unchanged + body still escaped).
+- #5 bookmarks: pure kbBookmarksToggle_ (Node-pinned) + kbIsBookmarked_/
+  kbToggleBookmark_/kbBookmarkBtnHtml_; star on reader + drawer; Bookmarks block
+  atop Reference landing + drawer home; stored in umsKbPanel.bookmarks (cap 12).
+- Pure 209/0 (+2), DOM 48/0, node --check clean. Docs: Reference decision +
+  umsKbPanel localStorage note.
+- NOT YET: committed/pushed. NEXT (Wave 3) = #8 (search synonyms/filters) then
+  #7 (see-also cross-links — best after KbViews data matures).
 
 ## Cycle 6 — DeptRequests v2 (all 4 phases, 2026-06-30, claude/broad-scan-2ll5ok)
 Planned (decisions: roster column N membership; manager-summary reminder;

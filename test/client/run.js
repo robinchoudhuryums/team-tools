@@ -1141,6 +1141,35 @@ test('renders images (http(s) only) with escaped alt + URL quotes', () => {
   const uq = kbMd_('![x](https://e.com/"o.png)');
   assert.ok(uq.indexOf('"o.png') < 0 && uq.indexOf('%22') >= 0, 'quote in src percent-encoded');
 });
+test('#6 — a ```snippet fence renders a copyable card; other fences stay <pre><code>', () => {
+  const snip = kbMd_('```snippet: Greeting\nHi {name}, thanks for calling\n```');
+  assert.ok(snip.indexOf('class="kb-snippet"') >= 0, 'snippet card emitted');
+  assert.ok(snip.indexOf('kbCopySnippet_(this)') >= 0, 'copy button wired');
+  assert.ok(snip.indexOf('Greeting') >= 0, 'label carried');
+  assert.ok(snip.indexOf('Hi {name}, thanks for calling') >= 0, 'body carried');
+  assert.ok(snip.indexOf('<pre class="kb-snippet-body">') >= 0, 'body in a pre');
+  // a plain fence and a language fence are NOT snippets (unchanged behavior)
+  const code = kbMd_('```\nplain code\n```');
+  assert.ok(code.indexOf('<pre><code>') >= 0 && code.indexOf('kb-snippet') < 0, 'plain fence stays a code block');
+  const lang = kbMd_('```js\nvar x=1;\n```');
+  assert.ok(lang.indexOf('<pre><code>') >= 0 && lang.indexOf('kb-snippet') < 0, 'language fence stays a code block');
+  // the snippet body is still HTML-escaped (the escape boundary is not re-opened)
+  const xss = kbMd_('```snippet\n<img src=x onerror=alert(1)>\n```');
+  assert.ok(xss.indexOf('<img src=x') < 0 && xss.indexOf('&lt;img') >= 0, 'snippet body escaped');
+});
+
+console.log('\nkb — bookmarks (kbBookmarksToggle_ pure list op, #5)');
+const kbBookmarksToggle_ = loadFunction(sb, 'kb/script_kb.html', 'kbBookmarksToggle_');
+test('toggles add/remove, dedupes by id, prepends newest, caps length', () => {
+  let l = kbBookmarksToggle_([], { id: 'a', title: 'A' }, 3);
+  assert.equal(l.length, 1); assert.equal(l[0].id, 'a');
+  l = kbBookmarksToggle_(l, { id: 'a', title: 'A' }, 3);   // toggling again removes it
+  assert.equal(l.length, 0, 'second toggle removes');
+  l = kbBookmarksToggle_([{ id: 'b', title: 'B' }], { id: 'c', title: 'C' }, 3);
+  assert.equal(l[0].id, 'c'); assert.equal(l[1].id, 'b');   // newest first
+  const capped = kbBookmarksToggle_([{ id: '1' }, { id: '2' }, { id: '3' }], { id: '4' }, 3);
+  assert.equal(capped.length, 3); assert.equal(capped[0].id, '4');   // cap on add, '3' dropped
+});
 
 console.log('\nkb — section-aware search helpers (split / truncate / score / slug parity)');
 const _kbSearchCtx = vm.createContext({});

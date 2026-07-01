@@ -1102,7 +1102,10 @@ this section before touching the relevant area.
     ({hash, date} — the Phase A guidance card's collapse-after-seen
     marker; same facet combo renders collapsed for the rest of the
     day) + `deptCollapsed` ({deptName: bool} — the Reference tab's
-    collapsible-department open/closed state, written by `kbToggleDept_`).
+    collapsible-department open/closed state, written by `kbToggleDept_`)
+    + `bookmarks[]` ({id, title}, capped 12, deduped — #5 per-rep favorites,
+    toggled via the reader/drawer star `kbToggleBookmark_`/`kbBookmarksToggle_`,
+    surfaced in a Bookmarks block atop the Reference landing + the drawer home).
     Sanitized on read (corrupt blob → `{}`); deliberately a
     single key so drawer prefs don't multiply the key count.
   - `umsLastView` — the active tab key, written by `showView` on every
@@ -2337,6 +2340,21 @@ this section before touching the relevant area.
   edit snapshots the prior content to an append-only `KbRevisions` tab, viewable +
   restorable (`kbGetRevisions`/`kbRevertItem`, revert is itself reversible). Those
   three are admin-gated like the other authoring writes.
+  **Copyable snippets (#6):** a ` ```snippet ` (or ` ```snippet: Label `) fenced
+  block in an article body renders — via `kbMd_` — as a "canned response" card with
+  a Copy button (`kbCopySnippet_`), so a rep pastes policy language straight into
+  the CRM/email mid-call. It rides `kbMd_`'s existing escape boundary (the fenced
+  content is HTML-escaped by the top-level pass BEFORE fence extraction, so the card
+  is inert); the Copy button reads the rendered `<pre>`'s `textContent`, which the
+  browser decodes back to the ORIGINAL raw snippet — no separate raw store, no new
+  injection surface. `kbMd_` stays pure (the snippet markup is inlined, no `icon()`
+  dep); pinned by a Node case asserting the card + Copy button + that a plain/`js`
+  fence stays `<pre><code>` and the snippet body is still escaped. Works in the
+  drawer reader too (shared `kbMd_`). **Per-rep bookmarks (#5):** a star toggle on
+  the reader + drawer (`kbBookmarkBtnHtml_` → `kbToggleBookmark_`, pure Node-pinned
+  `kbBookmarksToggle_`) stores explicit favorites in `umsKbPanel.bookmarks` (client-
+  only, capped 12); surfaced in a Bookmarks block atop the Reference landing + the
+  drawer home. Both #5/#6 are rep-facing (Employee-UX) and PHI-free-by-policy.
   Native-primary + Drive-fallback was chosen so 100% of content is navigable on
   day one (embed everything) while the most-referenced docs migrate to fast
   native articles over time. **Search is section-aware:** `searchReference`
