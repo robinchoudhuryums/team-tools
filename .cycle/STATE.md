@@ -144,6 +144,30 @@ Reusable string-valued PPD control kinds, INERT until Phase 2 opts questions in.
   clinical sign-off) → Phase 4 (helpers/conditionals/validation); INV-112 rewrite
   ("free-text" → "engine-safe structured values") lands with Phase 2.
 
+## PPD redesign Phase 2 — per-question formats live (2026-07-01, claude/broad-scan-2ll5ok)
+First phase where the PPD form visibly changes. Server needed NO edit (email
+builder already renders comma-joined multi values + INTAKE_PPD_YESNO_QS already
+lists Q14-Q23). Engine untouched.
+- INTAKE_PPD_TYPE: dropped Q1/Q24/Q37/Q38/Q40 (→ CONTROL); Q14-Q23 sev→yn (aligns
+  client with the server's yesno coloring); Q7-Q12 stay yn, Q13 stays text.
+- INTAKE_PPD_CONTROL populated: Q1 multi(devices), Q2-Q6 choice(3 MRADL opts),
+  Q24 choice(Rx/OTC/No), Q25 multi ex:No(No/Hands/Feet/Legs), Q31a multi ex:No
+  (paralysis/weakness), Q34 multi ex:No(amputation), Q37 numunit(in.), Q38
+  numunit(lbs.), Q39 reveal(Alone/Friends-Family/Other→text). Q40 → default text.
+- ENGINE-CRITICAL values (Q25/Q31a/Q34/Q38) exactly match the Phase-0-pinned
+  substrings; NEW Phase-2 drift-guard (run.js) loads the live INTAKE_PPD_CONTROL
+  and feeds its values back through the engine (rename → CI fail, not silent break).
+- Pure 223/0 (+4), DOM 48/0, node --check clean. Docs: rewrote INV-112 + the
+  "Intake PPD Option A" gotcha (free-text → engine-safe canonical-English values).
+- DECISION: Q7-Q13 left as-is (Q7-Q12 Yes/No = my advice; Q13 free-text) rather
+  than the literal "free-text" (which would downgrade the binary function Qs) —
+  awaiting operator confirm. Q29/Q42/Q43 = Phase 3 (curated pickers). Q32 tooltip
+  / Q33a conditional-hide / Q45 reveal-sub-options / Q37 5'1"→61 parse = Phase 4.
+- Follow-on: ES option-label localization (values are EN; labels currently EN);
+  intakeSevControlHtml_/INTAKE_SEV_LEVELS now unused (harmless dead code).
+- NOT YET: committed/pushed. Operator spot-check of the live PPD form recommended
+  (DOM harness doesn't render intake).
+
 ## (superseded) original NEXT line
 - NEXT (on approval): Phase 1 control framework →
   Phase 2 per-question formats → Phase 3 curated condition pickers → Phase 4
