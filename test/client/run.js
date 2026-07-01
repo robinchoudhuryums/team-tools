@@ -1142,6 +1142,55 @@ test('reveal serialize / parse: plain option vs revealOn + text', () => {
   assert.strictEqual(intakeRevealSerialize_(rt.option, rt.text, 'Other'), 'Other: x', 'round-trip');
 });
 
+// PPD redesign Phase 2 — the engine-critical questions (Q25/Q31a/Q34/Q38) now use
+// STRUCTURED controls. Their option VALUES must stay exactly the substrings the
+// engine parses. Load the live INTAKE_PPD_CONTROL config and feed its values back
+// through the engine so a rename (e.g. "Feet" → "Both Feet") fails CI here instead
+// of silently breaking recommendations. (Reuses _F / intakeFilterRecommendations_
+// / CAT from the engine block above.)
+console.log('\nintake — PPD redesign Phase 2: config values stay engine-safe (drift guard)');
+const _p2 = vm.createContext({});
+vm.runInContext('var CTRL = ' + extractClientObject('intake/script_intake.html', 'INTAKE_PPD_CONTROL') + ';', _p2, { filename: 'INTAKE_PPD_CONTROL' });
+const PPD_CTRL = _p2.CTRL;
+const _vals = (q) => PPD_CTRL[q].options.map((o) => o.v);
+
+test('Q25 numbness config drives engine lower-extremity detection', () => {
+  assert.strictEqual(_vals('25').join('|'), 'No|Hands|Feet|Legs', 'canonical values (rename-guard)');
+  assert.strictEqual(PPD_CTRL['25'].exclusive, 'No');
+  assert.strictEqual(_F({ '25': 'Feet, Legs' }).patient.hasLowerExtremityNumbness, true);
+  assert.strictEqual(_F({ '25': 'Feet' }).patient.hasLowerExtremityNumbness, true);
+  assert.strictEqual(_F({ '25': 'Legs' }).patient.hasLowerExtremityNumbness, true);
+  assert.strictEqual(_F({ '25': 'Hands' }).patient.hasLowerExtremityNumbness, false);
+  assert.strictEqual(_F({ '25': 'No' }).patient.hasLowerExtremityNumbness, false);
+});
+test('Q34 amputation config: every non-No value fires hasAmputation, no stray "no"', () => {
+  assert.strictEqual(PPD_CTRL['34'].exclusive, 'No');
+  _vals('34').filter((v) => v !== 'No').forEach((v) => {
+    assert.strictEqual(_F({ '34': v }).patient.hasAmputation, true, v + ' → amputation');
+  });
+  assert.strictEqual(_F({ '34': 'No' }).patient.hasAmputation, false);
+});
+test('Q31a stroke config: hemiplegia + weakness parse correctly', () => {
+  assert.strictEqual(PPD_CTRL['31a'].exclusive, 'No');
+  const F = _F({ '31a': 'Paralysis Left Arm, Paralysis Left Leg' });
+  assert.strictEqual(F.qualifiesForHemiplegia, true);
+  assert.strictEqual(F.hemiplegiaSide, 'Left');
+  assert.ok(_vals('31a').indexOf('Weakness Left Side') >= 0, 'weakness option present');
+  assert.strictEqual(_F({ '31a': 'Weakness Left Side' }).hasStrokeWeakness, true);
+  assert.strictEqual(_F({ '31a': 'Weakness Left Side' }).qualifiesForHemiplegia, false);
+});
+test('Q38 weight is numunit; end-to-end config-driven recommendation parity', () => {
+  assert.strictEqual(PPD_CTRL['38'].kind, 'numunit');
+  const r = intakeFilterRecommendations_({
+    '38': '250', '43': 'multiple sclerosis',
+    '25': _vals('25').filter((v) => v !== 'No' && v !== 'Hands').join(', '),   // 'Feet, Legs'
+    '34': _vals('34')[1],                                                       // 'Left (Above Knee)'
+    '31a': 'Paralysis Left Arm, Paralysis Left Leg',
+  }, CAT);
+  assert.strictEqual(r.complex.map((p) => p.hcpcs).join(',') + '|' + r.standard.map((p) => p.hcpcs).join(','),
+    'K0862,K0861|', 'config values yield the expected neuro+solid recommendation');
+});
+
 console.log('\nintake — client render layout mirrors the server (coupling tripwire)');
 const _lcx = vm.createContext({});
 vm.runInContext('var SRV_PMD = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', _lcx);

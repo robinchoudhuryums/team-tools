@@ -297,10 +297,14 @@ var INTAKE_PPD_Q = {
 // engine-isPositive('yes') questions become Yes/No toggles. Anything not listed
 // (incl. the *a sub-questions and free-text Dx fields) renders as text.
 var INTAKE_PPD_TYPE = {
-  '1':'yn', '7':'yn', '8':'yn', '9':'yn', '10':'yn', '11':'yn', '12':'yn',
-  '14':'sev', '15':'sev', '16':'sev', '17':'sev', '18':'sev', '19':'sev', '20':'sev', '21':'sev', '22':'sev', '23':'sev',
-  '24':'yn', '26':'yn', '27':'yn', '28':'yn', '29':'yn', '30':'yn', '31':'yn', '32':'yn', '33':'yn', '35':'yn', '36':'yn',
-  '37':'num', '38':'num', '40':'yn', '44':'yn',
+  // Q7-Q12 stay Yes/No (binary function questions); Q13 stays free-text ("how
+  // many times"). Q1/Q24/Q37/Q38/Q40 and the engine-critical Q25/Q31a/Q34 moved
+  // to INTAKE_PPD_CONTROL below. Q14-Q23 pain: severity → Yes/No (Phase 2), which
+  // also aligns the client with the server's INTAKE_PPD_YESNO_QS coloring.
+  '7':'yn', '8':'yn', '9':'yn', '10':'yn', '11':'yn', '12':'yn',
+  '14':'yn', '15':'yn', '16':'yn', '17':'yn', '18':'yn', '19':'yn', '20':'yn', '21':'yn', '22':'yn', '23':'yn',
+  '26':'yn', '27':'yn', '28':'yn', '29':'yn', '30':'yn', '31':'yn', '32':'yn', '33':'yn', '35':'yn', '36':'yn',
+  '44':'yn',
 };
 function intakePpdType_(qNum) { return INTAKE_PPD_TYPE[qNum] || 'text'; }
 var INTAKE_SEV_LEVELS = ['None', 'Mild', 'Mod', 'Severe'];
@@ -318,7 +322,28 @@ var INTAKE_SEV_LEVELS = ['None', 'Mild', 'Mod', 'Severe'];
 // always the option's English `v`; only the displayed `l` label is localized. The
 // recommendation engine substring-matches English (Phase 0 tests pin this), so a
 // Spanish PPD emits the same engine-safe values as an English one.
-var INTAKE_PPD_CONTROL = {};
+// Phase 2 — per-question formats. The ENGINE-CRITICAL entries (Q25/Q31a/Q34 —
+// numbness/stroke/amputation, and Q38 weight) use values that exactly match the
+// substrings intakeDeriveClinicalFactors_ parses; a Node drift-guard
+// (test/client/run.js) feeds these values back through the engine so a rename
+// can't silently break recommendations. Q29/Q42/Q43 (condition pickers) are
+// Phase 3; Q32 tooltip / Q33a conditional-hide / Q45 reveal-sub-options / Q37
+// 5'1"→61 parse are Phase 4.
+var INTAKE_PPD_CONTROL = {
+  '1':  { kind: 'multi', options: [{ v: 'Cane' }, { v: 'Walker' }, { v: 'Rollator' }, { v: 'Manual Wheelchair' }, { v: 'Scooter' }, { v: 'Power Wheelchair', l: 'Power Wheelchair (PWC)' }] },
+  '2':  { kind: 'choice', options: [{ v: 'Cannot do at all' }, { v: 'Only with assistance' }, { v: 'Can only do with extended time' }] },
+  '3':  { kind: 'choice', options: [{ v: 'Cannot do at all' }, { v: 'Only with assistance' }, { v: 'Can only do with extended time' }] },
+  '4':  { kind: 'choice', options: [{ v: 'Cannot do at all' }, { v: 'Only with assistance' }, { v: 'Can only do with extended time' }] },
+  '5':  { kind: 'choice', options: [{ v: 'Cannot do at all' }, { v: 'Only with assistance' }, { v: 'Can only do with extended time' }] },
+  '6':  { kind: 'choice', options: [{ v: 'Cannot do at all' }, { v: 'Only with assistance' }, { v: 'Can only do with extended time' }] },
+  '24': { kind: 'choice', options: [{ v: 'Rx' }, { v: 'Over-the-counter' }, { v: 'No' }] },
+  '25': { kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Hands' }, { v: 'Feet' }, { v: 'Legs' }] },
+  '31a':{ kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Paralysis Left Arm' }, { v: 'Paralysis Right Arm' }, { v: 'Paralysis Left Leg' }, { v: 'Paralysis Right Leg' }, { v: 'Weakness Left Side' }, { v: 'Weakness Right Side' }] },
+  '34': { kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Left (Above Knee)' }, { v: 'Left (Below Knee)' }, { v: 'Right (Above Knee)' }, { v: 'Right (Below Knee)' }] },
+  '37': { kind: 'numunit', unit: 'in.' },
+  '38': { kind: 'numunit', unit: 'lbs.' },
+  '39': { kind: 'reveal', revealOn: 'Other', placeholder: 'Please specify', options: [{ v: 'Alone' }, { v: 'Friends/Family' }, { v: 'Other' }] },
+};
 function intakePpdControl_(qNum) { return INTAKE_PPD_CONTROL[qNum] || null; }
 
 var INTAKE_PMD_Q = {
