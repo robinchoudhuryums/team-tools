@@ -2,7 +2,7 @@
 
 ## Current
 Cycle: 7
-Phase: implement — Turn D (per-rep schedules, roster column O) done on claude/broad-scan-45plfi; CYCLE-7 SCAN BACKLOG FULLY CLOSED
+Phase: idle — Cycle 7 closed, deployed, and operator-verified (259/0 + smoke 113/0); no open work
 Scope: broad (full-codebase audit 2026-07-09; ~40 findings: 0 Critical / 2 High / ~15 Medium / ~20 Low — ALL non-deferred items implemented)
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
@@ -118,19 +118,18 @@ fill column O for reps with nonstandard shifts). Next audit cycle = fresh
 /broad-scan (Cycle 8) whenever desired; seams counter is at 0.
 
 ## Pending / not yet done
-- OPERATOR: one `cd web-app && clasp push -f` for the #123 Tests.js assertion
-  fix (no New version needed — tests run from the editor against head), then
-  re-run `runAllTests()` → expect 259 passed / 0 failed. (The 258/259 run
-  already verified the whole cycle; the one failure was the test's own
-  assertion idiom, and the gate it tests was proven working by its output.)
-- OPERATOR (optional): fill Employees column O `Schedule` (`H:mm-H:mm`,
-  rep-local) for reps with nonstandard shifts — Turn D.
-- RESOLVED as a risk (was carried since a prior cycle): the ADP-sheet-tz
-  decision — with H-2 fixed + the createPinnedSpreadsheet_ factory, EITHER tz
-  choice is now export-safe; align to `Asia/Kolkata` at leisure per the
-  Storage Health panel.
-- Next audit cycle = a fresh /broad-scan (Cycle 8) whenever desired; seams
-  counter is 0; INV-142/144/147 got their pins in Turn A.
+- NONE — Cycle 7 is fully closed AND operator-verified in production
+  (2026-07-09): runAllTests 259 passed / 0 failed; runSmokeTests 113 passed /
+  0 failed / 146 skipped-as-integration (the new automationDetectorLiveness
+  smoke check passing among them). No open code work.
+- OPERATOR (optional, no urgency): fill Employees column O `Schedule`
+  (`H:mm-H:mm`, rep-local) for reps with nonstandard shifts; align sheet tzs
+  to `Asia/Kolkata` per Storage Health (cosmetic-risk-only since H-2/INV-141);
+  set ADMIN_EMAILS to narrow the Admin tab.
+- Next audit cycle = a fresh /broad-scan (Cycle 8) whenever desired — seams
+  counter 0, no verification debt. Roadmap candidates when wanted: follow-up
+  date on action flags (the last cycle-5 rep-value item), Spanish condition
+  labels, Q31a body diagram; external-form route stays admin-blocked.
 
 ## Completed this cycle (Cycle 7 — all turns)
 - Turn 1 (3f083a1): H-1 coaching overdue dead; H-2 export-sheet tz pin; M-1
