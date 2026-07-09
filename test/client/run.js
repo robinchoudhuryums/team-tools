@@ -2934,5 +2934,35 @@ test('getWhatsNew hides drafts + non-articles and reads WHATSNEW_KB_ID (source t
   assert.ok(/none:\s*true/.test(src), 'every quiet-failure path returns {none:true} — dormant, never breaks boot');
 });
 
+console.log('\nCode.js — Timesheet cold-archive (#7, INV-153)');
+test('archiveOldTimesheetRows is a move-only tier wired through the shared helper', () => {
+  const src = extractRawFunction('Code.js', 'archiveOldTimesheetRows');
+  assert.ok(/assertManagerCaller_\s*\(/.test(src), 'trigger-handler gate (INV-44)');
+  assert.ok(/waitLock\s*\(\s*15000\s*\)/.test(src), 'locked (INV-01 — it mutates the payroll tab)');
+  assert.ok(/archiveSheetRowsOlderThan_\(/.test(src), 'reuses the shared append-then-delete mover');
+  assert.ok(/headerRows:\s*2/.test(src), 'skips the Timesheet TWO-row header');
+  assert.ok(/getTimesheetArchiveDays_\(/.test(src), 'window resolved through the floor-clamped getter');
+  assert.ok(!/purgeSheetRowsOlderThan_/.test(src), 'NEVER purges — payroll is keep-forever (move-only)');
+});
+test('the archive window clamps UP to the safety floor (a typo cannot strip live payroll rows)', () => {
+  const src = extractRawFunction('Code.js', 'getTimesheetArchiveDays_');
+  assert.ok(/TIMESHEET_ARCHIVE_MIN_DAYS/.test(src), 'floor constant consulted');
+  assert.ok(/return TIMESHEET_ARCHIVE_MIN_DAYS/.test(src), 'sub-floor values clamp UP, never down');
+  const m = codeSrc.match(/const TIMESHEET_ARCHIVE_MIN_DAYS = (\d+)/);
+  assert.ok(m && parseInt(m[1], 10) >= 60,
+    'floor comfortably exceeds every active payroll window (adjust 30d, export ≤31d, trends 14d)');
+  assert.ok(/TIMESHEET_ARCHIVE_DAYS:\s*0/.test(codeSrc), 'CONFIG default 0 — disabled on a fresh deploy');
+});
+test('no Timesheet purge tier exists (keep-forever) and CN archive call sites keep their defaults', () => {
+  assert.ok(codeSrc.indexOf('purgeArchivedTimesheet') === -1 &&
+            !/purgeSheetRowsOlderThan_\([^)]*Timesheet/i.test(codeSrc),
+    'nothing purges the Timesheet archive — payroll rows are only ever MOVED');
+  // The CN cold tier must still call the shared helper 4-arg (defaults
+  // headerRows=1 + CN_HEADERS width preserved → byte-identical CN behavior).
+  const cn = extractRawFunction('Code.js', 'archiveOldCallNotes');
+  assert.ok(/archiveSheetRowsOlderThan_\(live, archive, CN\.DATE_LOCAL, cutoffMs\)/.test(cn),
+    'archiveOldCallNotes still uses the helper defaults (no opts drift)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

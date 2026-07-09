@@ -965,6 +965,8 @@ function _runAllTests() {
   _integrationTest('triggerGate_automationHealthDigest_nonManagerThrows', test_triggerGate_automationHealthDigest_nonManagerThrows);
   _integrationTest('triggerGate_deptReqReminder_nonManagerThrows', test_triggerGate_deptReqReminder_nonManagerThrows);
   _integrationTest('triggerGate_managerDailyBrief_nonManagerThrows', test_triggerGate_managerDailyBrief_nonManagerThrows);
+  _integrationTest('triggerGate_timesheetArchive_nonManagerThrows', test_triggerGate_timesheetArchive_nonManagerThrows);
+  _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Client error beacon (#1, INV-150) + What's new panel (#4, INV-152) ─
@@ -3477,6 +3479,40 @@ function test_triggerGate_managerDailyBrief_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendManagerDailyBrief(); });
   }, 'manager access required');
+}
+
+// The Timesheet cold-archive (#7, INV-153) is a trigger handler mutating the
+// payroll tab, so it carries the MANAGER_EMAILS assertManagerCaller_ gate
+// (INV-44 family). Disabled by default, so the manager-context trigger run is
+// a no-op — this test only exercises the gate.
+function test_triggerGate_timesheetArchive_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { archiveOldTimesheetRows(); });
+  }, 'manager access required');
+}
+
+// INV-153 — the archive window resolver: disabled by default; sub-floor values
+// clamp UP to TIMESHEET_ARCHIVE_MIN_DAYS (an operator typo like 30 must never
+// strip active-payroll-window rows out of the live tab); garbage disables.
+// Writes only the Script Property (restored in finally) — no sheet touch.
+function test_timesheetArchive_windowFloorAndDefault() {
+  const props = PropertiesService.getScriptProperties();
+  const prev = props.getProperty('TIMESHEET_ARCHIVE_DAYS');
+  try {
+    props.deleteProperty('TIMESHEET_ARCHIVE_DAYS');
+    _assertEq(getTimesheetArchiveDays_(), 0, 'unset property + CONFIG 0 → disabled');
+    props.setProperty('TIMESHEET_ARCHIVE_DAYS', '30');
+    _assertEq(getTimesheetArchiveDays_(), TIMESHEET_ARCHIVE_MIN_DAYS, 'sub-floor value clamps UP to the floor');
+    props.setProperty('TIMESHEET_ARCHIVE_DAYS', '400');
+    _assertEq(getTimesheetArchiveDays_(), 400, 'at/above the floor passes through');
+    props.setProperty('TIMESHEET_ARCHIVE_DAYS', 'garbage');
+    _assertEq(getTimesheetArchiveDays_(), 0, 'unparseable → disabled (fail-safe)');
+    props.setProperty('TIMESHEET_ARCHIVE_DAYS', '-5');
+    _assertEq(getTimesheetArchiveDays_(), 0, 'negative → disabled');
+  } finally {
+    if (prev == null) props.deleteProperty('TIMESHEET_ARCHIVE_DAYS');
+    else props.setProperty('TIMESHEET_ARCHIVE_DAYS', prev);
+  }
 }
 
 // ── Client error beacon (#1, INV-150) ──────────────────────────────────────

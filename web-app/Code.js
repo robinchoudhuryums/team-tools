@@ -33,6 +33,16 @@ const CONFIG = {
   // daily purgeExpiredFormData trigger (must be installed).
   FORM_DATA_RETENTION_DAYS: 0,
 
+  // #7 (INV-153) — Timesheet cold-archive window: rows whose DATE is older than
+  // this many days MOVE to a TimesheetArchive tab in the same ADP spreadsheet
+  // (never deleted — payroll is keep-forever; this bounds the LIVE tab that
+  // getManagerDashboard / exports / calendars read whole). 0 = DISABLED (the
+  // safe committed default). Set Script Property TIMESHEET_ARCHIVE_DAYS to
+  // enable (recommended 365+); values below TIMESHEET_ARCHIVE_MIN_DAYS clamp
+  // UP so an operator typo can never rip current-period payroll rows out of
+  // the live tab. Enforced by the daily archiveOldTimesheetRows trigger.
+  TIMESHEET_ARCHIVE_DAYS: 0,
+
   TIMEZONE:         'Asia/Kolkata',
   MANAGER_TIMEZONE: 'America/Chicago',
   COVERAGE_MIN_STAFF: 6,   // #3 — Coverage planner: minimum ADEQUATE reps per
@@ -4071,7 +4081,7 @@ function clientErrorsSummary_(mgrTz) {
 // accordingly so "never seen" isn't misread as "broken".
 const AUTOMATION_AUDIT_ACTIONS = [
   'CallNotesReconcile', 'AdpExportAuto', 'FormDataPurge', 'CallNotesPurge',
-  'CallNotesArchive', 'CallNotesArchivePurge',
+  'CallNotesArchive', 'CallNotesArchivePurge', 'TimesheetArchive',
 ];
 const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 
@@ -7709,22 +7719,30 @@ function getOrCreateNotesArchiveTab_(ss) {
  *  failure can only DUPLICATE into the cold archive (never lose) — the source
  *  still has the row, so the next run re-archives + deletes it. Batched append
  *  (one setValues block) + bottom-up delete. Returns the count moved. Mirrors
- *  purgeSheetRowsOlderThan_ but is NON-destructive (data preserved). */
-function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs) {
+ *  purgeSheetRowsOlderThan_ but is NON-destructive (data preserved).
+ *  opts (#7, INV-153 — optional, defaults preserve the CN call sites exactly):
+ *    headerRows — data starts after this many header rows (default 1; the ADP
+ *                 Timesheet has TWO). A non-date header cell is also skipped by
+ *                 the parseRetentionDateMs_ null-guard, so this is belt+braces.
+ *    width      — normalize moved rows to this column width (default
+ *                 CN_HEADERS.length, the original hardcoded behavior). */
+function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs, opts) {
+  opts = opts || {};
+  const headerRows = opts.headerRows || 1;
   const lastRow = srcSheet.getLastRow();
-  if (lastRow < 2) return 0;
+  if (lastRow < headerRows + 1) return 0;
   const rows = srcSheet.getDataRange().getValues();
   const toMoveRows = [];   // full row values, in sheet order
   const toDelete = [];     // 1-based sheet row indices
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = headerRows; i < rows.length; i++) {
     const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
     if (ms !== null && ms < cutoffMs) { toMoveRows.push(rows[i]); toDelete.push(i + 1); }
   }
   if (!toMoveRows.length) return 0;
   // Normalize every moved row to the archive's column width (live rows may be
-  // narrower/wider than CN_HEADERS for legacy reasons; setValues needs a
-  // uniform rectangle).
-  const width = CN_HEADERS.length;
+  // narrower/wider than the canonical header for legacy reasons; setValues
+  // needs a uniform rectangle).
+  const width = opts.width || CN_HEADERS.length;
   const block = toMoveRows.map(function (r) {
     const out = new Array(width);
     for (let c = 0; c < width; c++) out[c] = (c < r.length) ? r[c] : '';
@@ -7792,6 +7810,102 @@ function archiveOldCallNotes() {
     Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
   } catch (err) {
     Logger.log('archiveOldCallNotes failed: ' + err.message);
+  }
+}
+
+// ── Timesheet cold-archive tier (#7, INV-153) ───────────────────────────────
+// Every store had a retention/archive story EXCEPT the Timesheet itself — it
+// grew unboundedly while getManagerDashboard / the exports / the calendars
+// read it whole (getDataRange), so dashboard opens slow down year over year.
+// This is the CN cold-tier model applied to the payroll tab: rows older than
+// the window MOVE (never delete — payroll is keep-forever) to a
+// TimesheetArchive tab in the SAME ADP spreadsheet via the shared
+// archiveSheetRowsOlderThan_ (append-then-delete + flush: a mid-run failure
+// can only duplicate into the archive, never lose a payroll row).
+const TIMESHEET_ARCHIVE_TAB = 'TimesheetArchive';
+// Floor: the live tab must always retain every ACTIVE window — adjustments
+// (ADJUST_WINDOW_DAYS 30), manager day-edit/delete, the current export period
+// (≤ ~31d), dashboard trends (14d) — with generous margin. A configured window
+// below this clamps UP (never down to "archive more"), so an operator typo
+// like 7 can never rip current-period payroll rows out of the live tab.
+const TIMESHEET_ARCHIVE_MIN_DAYS = 120;
+
+/** Archive window in days: Script Property TIMESHEET_ARCHIVE_DAYS first, else
+ *  CONFIG.TIMESHEET_ARCHIVE_DAYS. 0/neg/unparseable → 0 (disabled). A value in
+ *  (0, TIMESHEET_ARCHIVE_MIN_DAYS) clamps UP to the floor (logged). */
+function getTimesheetArchiveDays_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('TIMESHEET_ARCHIVE_DAYS');
+  const raw = (prop != null && prop !== '') ? prop : (CONFIG.TIMESHEET_ARCHIVE_DAYS || 0);
+  const v = parseInt(raw, 10);
+  if (isNaN(v) || v <= 0) return 0;
+  if (v < TIMESHEET_ARCHIVE_MIN_DAYS) {
+    Logger.log('TIMESHEET_ARCHIVE_DAYS=' + v + ' is below the ' + TIMESHEET_ARCHIVE_MIN_DAYS +
+      '-day safety floor — clamped up (active payroll windows must stay live).');
+    return TIMESHEET_ARCHIVE_MIN_DAYS;
+  }
+  return v;
+}
+
+/** The TimesheetArchive tab in the ADP spreadsheet, created on first use by
+ *  COPYING the live Timesheet's two-row header (the ADP-format shape the
+ *  export also copies) so archived rows read identically for payroll audit. */
+function getOrCreateTimesheetArchiveTab_(ss, liveSheet) {
+  let sheet = ss.getSheetByName(TIMESHEET_ARCHIVE_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(TIMESHEET_ARCHIVE_TAB);
+    const width = Math.max(liveSheet.getLastColumn(), 9);
+    sheet.getRange(1, 1, 2, width).setValues(liveSheet.getRange(1, 1, 2, width).getValues());
+    sheet.getRange(1, 1, 1, width).setFontWeight('bold');
+    sheet.setFrozenRows(2);
+  }
+  return sheet;
+}
+
+/** Timesheet cold-archive (#7, INV-153). MOVES Timesheet rows older than the
+ *  window into TimesheetArchive (same spreadsheet — same payroll/PHI boundary,
+ *  no new operator store); NOTHING is ever deleted from the archive (payroll
+ *  is keep-forever — there is deliberately NO purge tier here, unlike the CN
+ *  3-tier model). DISABLED by default (TIMESHEET_ARCHIVE_DAYS / CONFIG = 0),
+ *  so installing the trigger is harmless. Top-level (time-trigger target) →
+ *  reachable via google.script.run, so gated like the other trigger handlers
+ *  (assertManagerCaller_, INV-44); locked (INV-01 — it mutates the payroll
+ *  tab, and holding the lock makes concurrent punch writes wait out the move).
+ *  Dates read from ADP.DATE (Sheets-coerced; parseRetentionDateMs_ handles
+ *  Date cells + 'yyyy-MM-dd' strings; the Timesheet's APPEND order — NOT date
+ *  order, back-fills land late — is fine because the helper scans every row).
+ *  Archived rows leave the in-app surfaces (old-month calendar/timesheet views
+ *  read the live tab only) but stay in the archive tab for payroll audit; the
+ *  ≥120-day floor keeps every ACTIVE window (adjust/export/dashboard) live.
+ *  Writes a PHI-free TimesheetArchive audit row with counts. */
+function archiveOldTimesheetRows() {
+  assertManagerCaller_('archiveOldTimesheetRows');
+  try {
+    const days = getTimesheetArchiveDays_();
+    if (!days) {
+      Logger.log('archiveOldTimesheetRows: archival disabled (TIMESHEET_ARCHIVE_DAYS=0) — nothing archived.');
+      return;
+    }
+    const cutoffMs = Date.now() - days * 86400000;
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    let moved = 0;
+    try {
+      const ss = getAdpSS_();
+      const live = ss.getSheetByName(CONFIG.ADP_TAB);
+      if (!live) { Logger.log('archiveOldTimesheetRows: no Timesheet tab.'); return; }
+      const archive = getOrCreateTimesheetArchiveTab_(ss, live);
+      moved = archiveSheetRowsOlderThan_(live, archive, ADP.DATE, cutoffMs,
+        { headerRows: 2, width: Math.max(live.getLastColumn(), 9) });
+    } finally {
+      lock.releaseLock();
+    }
+    // Written on every ENABLED run (the CN archive convention) — a zero-moved
+    // row is the Automation Health "last seen" heartbeat proving the job ran.
+    writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'TimesheetArchive', '', '', false, 0,
+      `archiveDays=${days}; rowsArchived=${moved}`);
+    Logger.log(`archiveOldTimesheetRows: moved ${moved} row(s) older than ${days} day(s) to ${TIMESHEET_ARCHIVE_TAB}.`);
+  } catch (err) {
+    Logger.log('archiveOldTimesheetRows failed: ' + err.message);
   }
 }
 
@@ -7964,6 +8078,7 @@ function installAutomationTriggers() {
     'sendAutomationHealthDigest',
     'sendDeptRequestReminderDigest',
     'sendManagerDailyBrief',
+    'archiveOldTimesheetRows',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -8051,6 +8166,14 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendManagerDailyBrief')
     .timeBased().atHour(8).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Timesheet cold-archive (#7, INV-153) — daily manager-tz 1am, before the
+  // 2am–5am Call Notes retention chain (independent stores, but keeping the
+  // whole retention window contiguous). MOVES (never deletes) Timesheet rows
+  // older than TIMESHEET_ARCHIVE_DAYS to the TimesheetArchive tab; no-ops
+  // while the window is 0 (the default), so installing it is harmless.
+  ScriptApp.newTrigger('archiveOldTimesheetRows')
+    .timeBased().atHour(1).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -8099,6 +8222,7 @@ function removeAutomationTriggers() {
     'sendAutomationHealthDigest',
     'sendDeptRequestReminderDigest',
     'sendManagerDailyBrief',
+    'archiveOldTimesheetRows',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);

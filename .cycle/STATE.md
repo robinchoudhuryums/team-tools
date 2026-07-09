@@ -2,11 +2,44 @@
 
 ## Current
 Cycle: 7
-Phase: idle — Cycle 7 closed + operator-verified; a post-cycle FEATURE batch (#1 error beacon / #2 daily brief / #4 What's new) shipped 2026-07-09
-Scope: feature batch (operator-selected suggestions #1/#2/#4), not an audit
+Phase: idle — Cycle 7 closed + operator-verified; post-cycle FEATURE batches #1/#2/#4 (PR #126) and #7 Timesheet cold-archive shipped 2026-07-09
+Scope: feature batches (operator-selected suggestions), not an audit
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-07-09 (feature batch: INV-150 client error beacon, INV-151 consolidated manager daily brief, INV-152 What's-new panel)
+Updated: 2026-07-09 (#7: INV-153 Timesheet cold-archive — archiveOldTimesheetRows, TIMESHEET_ARCHIVE_DAYS + 120d floor, 15th trigger)
+
+## Feature #7 — Timesheet cold-archive (2026-07-09, claude/broad-scan-45plfi)
+The last unbounded store: the Timesheet tab grew forever while
+getManagerDashboard / exports / calendars read it whole. Applied the CN cold-
+tier model to the payroll tab (INV-153):
+- archiveSheetRowsOlderThan_ parameterized with opts {headerRows, width};
+  DEFAULTS (1, CN_HEADERS.length) keep the CN call sites byte-identical
+  (Node-pinned: archiveOldCallNotes still calls 4-arg).
+- archiveOldTimesheetRows (15th trigger, manager-tz 1am, INV-44 gate, INV-01
+  locked): MOVES rows older than the window to a TimesheetArchive tab in the
+  SAME ADP spreadsheet (created by copying the live tab's TWO-row header);
+  scans every row (Timesheet is APPEND order); append-then-delete + flush
+  (worst case duplicate, never lose). NO purge tier — payroll keep-forever.
+- Window: Script Property TIMESHEET_ARCHIVE_DAYS → CONFIG (default 0 =
+  disabled); values in (0,120) clamp UP to TIMESHEET_ARCHIVE_MIN_DAYS so a
+  typo can't strip active-window payroll rows; garbage/negative → disabled.
+- Audit row 'TimesheetArchive' on every enabled run (in
+  AUTOMATION_AUDIT_ACTIONS + client CN_HEALTH_RUN_LABELS — coupling-registry
+  enforced; adminAuditRowTone_ already tints /Archive/ as info).
+- Tests: pure 258→261 (move-only/floor/CN-defaults; gate-type tripwire
+  auto-covered the handler), DOM 59/0 unchanged; editor
+  +test_triggerGate_timesheetArchive_nonManagerThrows +
+  test_timesheetArchive_windowFloorAndDefault → suite 264.
+- Docs: INV-153; INV-44 14→15; trigger list 14→15; operator entry
+  (recommend TIMESHEET_ARCHIVE_DAYS=365); storage-map ADP row now lists
+  TimesheetArchive + ClientErrors tabs.
+- KNOWN TRADEOFF (documented): archived rows leave in-app month navigation
+  (calendar/timesheet views read the live tab only); they stay in
+  TimesheetArchive for payroll audit. Floor guarantees adjust/export/trend
+  windows stay live.
+- OPERATOR: clasp push -f + New version; re-run installAutomationTriggers()
+  once (15th trigger — harmless while window=0); runAllTests() (expect
+  264/0); set TIMESHEET_ARCHIVE_DAYS=365 when ready to enable.
 
 ## Feature batch #1/#2/#4 (2026-07-09, claude/broad-scan-45plfi)
 Operator-selected from the post-cycle suggestions list ("/broad-implement #1, #2, and #4"):
