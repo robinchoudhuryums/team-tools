@@ -702,6 +702,36 @@ test('coupling — showView\'s intakeFlushDraftNow_ hook resolves cross-partial 
   });
 }
 
+console.log('\nCode.js — per-rep shift override (Turn D · parseShiftOverride_)');
+{
+  const shCtx = { String: String, parseInt: parseInt };
+  vm.createContext(shCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'parseShiftOverride_'), shCtx, { filename: 'Code.js#parseShiftOverride_' });
+  const p = (v) => shCtx.parseShiftOverride_(v);
+  test('parseShiftOverride_: valid forms parse to start/length minutes', () => {
+    assert.deepStrictEqual({ ...p('9:15-17:45') }, { startMin: 555, lengthMin: 510 });
+    assert.deepStrictEqual({ ...p('08:00-17:00') }, { startMin: 480, lengthMin: 540 });
+    assert.deepStrictEqual({ ...p('9-17') }, { startMin: 540, lengthMin: 480 }, 'bare hours OK');
+    assert.deepStrictEqual({ ...p(' 9:30 - 18:00 ') }, { startMin: 570, lengthMin: 510 }, 'spaces tolerated');
+    assert.deepStrictEqual({ ...p('0:00-24:00') }, { startMin: 0, lengthMin: 1440 }, 'full-day bounds');
+  });
+  test('parseShiftOverride_: blank/garbage/overnight/out-of-range → null (fail-safe to the per-tz schedule)', () => {
+    ['', null, undefined, 'lol', '9:00', '9:75-17:00', '17:00-9:00', '9:00-9:00', '9:00-25:00', '9:00–17:00'].forEach((v) => {
+      assert.strictEqual(p(v), null, JSON.stringify(v) + ' must fall back');
+    });
+  });
+}
+test('TRIPWIRE (Turn D): every schedule consumer routes through empShiftSchedule_ (no bare getShiftSchedule_)', () => {
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  ['getEmployeeState', 'getCoveragePlan', 'getPunctualityReport'].forEach((fn) => {
+    const src = strip(extractRawFunction('Code.js', fn));
+    assert.ok(/empShiftSchedule_\(/.test(src), fn + ' uses the per-rep resolver');
+    assert.ok(!/getShiftSchedule_\(/.test(src), fn + ' must not call the per-tz schedule directly — the column-O override would be silently ignored');
+  });
+  const calls = (strip(codeSrc).match(/(?<!function )getShiftSchedule_\(/g) || []).length;
+  assert.strictEqual(calls, 1, 'getShiftSchedule_ is called ONLY by empShiftSchedule_ (found ' + calls + ' call sites)');
+});
+
 console.log('\nCode.js — detector-liveness wiring (Turn C)');
 test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by the failure digest', () => {
   const health = extractRawFunction('Code.js', 'computeAutomationHealth_');

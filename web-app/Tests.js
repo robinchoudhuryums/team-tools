@@ -846,6 +846,7 @@ function _runAllTests() {
   _smokeTest('cn_formSubmissionCard_escapes', test_cn_formSubmissionCard_escapes);
   _smokeTest('config_adpSheetTzMatchesConfig', test_config_adpSheetTzMatchesConfig);
   _smokeTest('automationDetectorLiveness',      test_automationDetectorLiveness);
+  _integrationTest('perRepSchedule_overrideAndFallback', test_perRepSchedule_overrideAndFallback);
   _smokeTest('cn_extractAuditNoteId_parses',       test_cn_extractAuditNoteId_parses);
   _smokeTest('cn_extractAuditNoteId_noMatch',      test_cn_extractAuditNoteId_noMatch);
   _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
@@ -2072,6 +2073,55 @@ function _setEmpPtoEnabled(empId, value) {
   throw new Error('Employee not found in Employees sheet: ' + empId);
 }
 
+
+function _setEmpSchedule(empId, value) {
+  // Sets column O (EMP.SCHEDULE — Turn D per-rep shift override) and returns
+  // the original so callers restore in finally. Mirrors _setEmpPtoEnabled.
+  const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][EMP.ID]).trim() === empId) {
+      const cell = sheet.getRange(i + 1, EMP.SCHEDULE + 1);
+      const original = cell.getValue();
+      cell.setValue(value);
+      invalidateRosterCache_();
+      return original;
+    }
+  }
+  throw new Error('Employee not found in Employees sheet: ' + empId);
+}
+
+// Turn D — per-rep shift override (roster column O): a valid override drives
+// the schedule shipped to the client (ribbon/countdown) and used by coverage/
+// punctuality; a garbage cell falls back to the per-tz CONFIG.SHIFT_SCHEDULE
+// (fail-safe); breaks always come from the per-tz schedule.
+function test_perRepSchedule_overrideAndFallback() {
+  const original = _setEmpSchedule(_TEST_INDIA_ID, '9:15-17:45');
+  try {
+    let emp = lookupEmployeeById_(_TEST_INDIA_ID);
+    _assertEq(emp.scheduleRaw, '9:15-17:45', 'roster carries the raw override cell');
+    const tz = safeTimezone_(emp.timezone);
+    let sched = empShiftSchedule_(emp, tz);
+    _assertEq(sched.startMin, 555, 'override start 9:15');
+    _assertEq(sched.lengthMin, 510, 'override length 8.5h');
+    _assertTrue(sched.override === true, 'override flagged');
+    const base = getShiftSchedule_(tz);
+    _assertEq(JSON.stringify(sched.breaks), JSON.stringify(base.breaks), 'breaks still come from the per-tz schedule');
+    // The client-shipped schedule reflects it too.
+    const state = _asUser(_TEST_INDIA_EMAIL, function () { return getEmployeeState(); });
+    _assertEq(state.schedule.startMin, 555, 'getEmployeeState ships the override');
+
+    // Garbage cell -> per-tz fallback, never a broken schedule.
+    _setEmpSchedule(_TEST_INDIA_ID, '17:00-9:00');   // overnight = invalid
+    emp = lookupEmployeeById_(_TEST_INDIA_ID);
+    sched = empShiftSchedule_(emp, tz);
+    _assertEq(sched.startMin, base.startMin, 'invalid override falls back to the per-tz start');
+    _assertEq(sched.lengthMin, base.lengthMin, 'invalid override falls back to the per-tz length');
+    _assertTrue(!sched.override, 'fallback not flagged as override');
+  } finally {
+    _setEmpSchedule(_TEST_INDIA_ID, original);
+  }
+}
 
 // ── recordPunch min-interval debounce (INV-22) ──
 

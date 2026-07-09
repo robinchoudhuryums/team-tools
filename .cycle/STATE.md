@@ -2,11 +2,11 @@
 
 ## Current
 Cycle: 7
-Phase: implement — Turn C (detector liveness) done on claude/broad-scan-45plfi; Turn D (per-rep schedules) awaits the operator decision
+Phase: implement — Turn D (per-rep schedules, roster column O) done on claude/broad-scan-45plfi; CYCLE-7 SCAN BACKLOG FULLY CLOSED
 Scope: broad (full-codebase audit 2026-07-09; ~40 findings: 0 Critical / 2 High / ~15 Medium / ~20 Low — ALL non-deferred items implemented)
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-07-09 (Turn C: automationDetectorChecks_ — detector-liveness in the Automation Health panel + failure digest + smoke test)
+Updated: 2026-07-09 (Turn D: per-rep shift override — EMP.SCHEDULE col O, parseShiftOverride_/empShiftSchedule_, roster cache v8, INV-149)
 
 ## Cycle 7 broad-scan + Turn 1+2 (2026-07-09, claude/broad-scan-45plfi)
 Audit: 6-agent fan-out + personal verification of every Medium+ finding (all
@@ -103,17 +103,19 @@ intakeCollectPpd_ / engine / email builder work unchanged.
   English values, drift-guarded."
 
 ## Where I left off
-2026-07-09 (Turn C): automationDetectorChecks_() ships — 5 pure writer↔parser
-round-trip checks (coachOverdue / auditStaleness / deptReqSla / cnTimestamp /
-formTokenExpiry) + a CDR offRosterAgents channel check appended by the existing
-CDR read. Surfaced in the Automation Health panel ("Detector liveness" block),
-pushed by sendAutomationHealthDigest on failure, pinned by the
-automationDetectorLiveness SMOKE test (editor) + a Node wiring tripwire.
-Pure 245/0, DOM 55/0. NEXT = merge the Turn-C PR on green. The ONLY remaining
-scan item is Turn D (per-rep schedules) — BLOCKED on the operator deciding
-where schedules live (roster column vs new tab vs Admin UI). OPERATOR: one
-deploy + editor runAllTests()/runSmokeTests() ships the whole cycle (now incl.
-the new smoke + 2 integration tests).
+2026-07-09 (Turn D): per-rep shift override shipped per the OPERATOR DECISION
+(roster column, not a tab/Admin UI): Employees column O `Schedule` holds
+'H:mm-H:mm' in the rep's own tz; pure parseShiftOverride_ (fail-safe null on
+garbage/overnight) + empShiftSchedule_ resolver (override start/length, per-tz
+breaks); consumers getEmployeeState / getCoveragePlan / getPunctualityReport
+all routed through it (source tripwire: zero bare getShiftSchedule_ calls);
+ROSTER_CACHE_KEY v7→v8; INV-149 + INV-71/127 amendments + operator-checklist
+entry in CLAUDE.md; editor test test_perRepSchedule_overrideAndFallback +
+_setEmpSchedule helper. Pure 248/0, DOM 55/0. THE CYCLE-7 SCAN BACKLOG IS NOW
+FULLY CLOSED (Turns 1-8 + A-D). NEXT: merge the Turn-D PR on green; then only
+operator steps remain (ONE deploy + runSmokeTests()/runAllTests(); optionally
+fill column O for reps with nonstandard shifts). Next audit cycle = fresh
+/broad-scan (Cycle 8) whenever desired; seams counter is at 0.
 
 ## Completed this cycle (Cycle 7 — all turns)
 - Turn 1 (3f083a1): H-1 coaching overdue dead; H-2 export-sheet tz pin; M-1

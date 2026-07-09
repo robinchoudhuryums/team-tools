@@ -278,6 +278,7 @@ const EMP = {
   TIMEZONE:7, ANNUAL_LEAVE:8, SICK_LEAVE:9, PTO_ENABLED:10, CALL_NOTES_SHEET_ID:11,
   MANAGER_EMAIL:12,   // column M — the rep's manager (Employee Docs team scoping, T3)
   DEPARTMENTS:13,     // column N — dept names the rep staffs (DeptRequests v2 inbox routing)
+  SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 
@@ -440,7 +441,7 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const ROSTER_CACHE_KEY = 'employee_roster_v7';   // bumped: Departments column N (DeptRequests v2)
+const ROSTER_CACHE_KEY = 'employee_roster_v8';   // bumped: Schedule column O (per-rep shift override, Turn D)
 const ROSTER_CACHE_TTL = 300;
 
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
@@ -584,7 +585,7 @@ function getEmployeeState() {
       departments: empDepartments_(emp),
       timezone: empTz,
       timezoneAbbr: tzAbbr_(empTz),
-      schedule: getShiftSchedule_(empTz),
+      schedule: empShiftSchedule_(emp, empTz),   // Turn D: column-O override wins
       ptoEnabled: !!(getFlag_('enablePtoTracking') && emp.ptoEnabled),
       annualLeave: emp.annualLeave,
       sickLeave: emp.sickLeave,
@@ -9394,6 +9395,39 @@ function getShiftSchedule_(timezone) {
     breakReminderMin: parseInt(cfg.BREAK_REMINDER_MINUTES, 10) || 10,
   };
 }
+/** Pure (Node-pinned) — parse a per-rep shift override cell (roster column O,
+ *  Turn D): 'H:mm-H:mm' (or 'H-H', spaces tolerated), times in the REP's own
+ *  timezone. Returns { startMin, lengthMin } or null on blank/garbage/
+ *  overnight (end must be strictly after start; minutes 0-59; within 00:00-
+ *  24:00) — null falls back to the per-tz CONFIG.SHIFT_SCHEDULE, so a typo'd
+ *  cell can never break the ribbon/coverage/punctuality (fail-safe, the
+ *  sanitizeFlagType_ posture). Overnight shifts are deliberately unsupported
+ *  (no consumer models a shift crossing midnight). */
+function parseShiftOverride_(raw) {
+  const m = /^\s*(\d{1,2})(?::(\d{2}))?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*$/.exec(String(raw == null ? '' : raw));
+  if (!m) return null;
+  const sH = parseInt(m[1], 10), sM = m[2] ? parseInt(m[2], 10) : 0;
+  const eH = parseInt(m[3], 10), eM = m[4] ? parseInt(m[4], 10) : 0;
+  if (sM > 59 || eM > 59) return null;
+  const startMin = sH * 60 + sM, endMin = eH * 60 + eM;
+  if (startMin < 0 || endMin > 24 * 60) return null;
+  if (endMin <= startMin) return null;   // overnight/zero-length → fallback
+  return { startMin: startMin, lengthMin: endMin - startMin };
+}
+
+/** Turn D — the per-rep schedule resolver every schedule consumer routes
+ *  through: a valid roster column-O override wins (start/length only; breaks +
+ *  reminder still come from the per-tz schedule), else the per-tz
+ *  CONFIG.SHIFT_SCHEDULE. `empLike` needs only { scheduleRaw }; `tz` is the
+ *  caller's already-resolved rep timezone. */
+function empShiftSchedule_(empLike, tz) {
+  const base = getShiftSchedule_(tz);
+  const ov = parseShiftOverride_(empLike && empLike.scheduleRaw);
+  if (!ov) return base;
+  return { startMin: ov.startMin, lengthMin: ov.lengthMin,
+           breaks: base.breaks, breakReminderMin: base.breakReminderMin, override: true };
+}
+
 function fmtDateTz_(d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
 function fmtTimeTz_(d, tz) { return Utilities.formatDate(d, tz, 'HH:mm:ss'); }
 
@@ -9465,7 +9499,10 @@ function getCoveragePlan(fromDate, toDate) {
       const name = String(roster[i][EMP.NAME] || '').trim();
       if (!name) continue;
       const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
-      reps.push({ id: String(roster[i][EMP.ID]).trim(), name: name, tz: tz, sched: getShiftSchedule_(tz) });
+      // Turn D: per-rep column-O override (INV-127's per-tz-only limitation removed).
+      const schedRaw = String(roster[i][EMP.SCHEDULE] || '').trim();
+      reps.push({ id: String(roster[i][EMP.ID]).trim(), name: name, tz: tz,
+        sched: empShiftSchedule_({ scheduleRaw: schedRaw }, tz) });
     }
 
     // PTO overlay map {empId: {dateIso: 'Approved'|'Pending'}} over a padded
@@ -9568,7 +9605,8 @@ function getPunctualityReport(fromDate, toDate) {
       const id = String(roster[i][EMP.ID]).trim(); if (!id) continue;
       const name = String(roster[i][EMP.NAME] || '').trim(); if (!name) continue;
       const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
-      const sched = getShiftSchedule_(tz);
+      // Turn D: per-rep column-O override (late-start grading uses the rep's REAL shift).
+      const sched = empShiftSchedule_({ scheduleRaw: String(roster[i][EMP.SCHEDULE] || '').trim() }, tz);
       let lunchMin = null;
       (sched.breaks || []).forEach(function (b) { if (/lunch/i.test(b.label)) lunchMin = b.startMin; });
       if (lunchMin === null) {
@@ -10403,6 +10441,7 @@ function getEmployeeInfo_() {
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
         managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
         departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),   // parsed lazily via empDepartments_
+        scheduleRaw: String(rows[i][EMP.SCHEDULE] || '').trim(),          // per-rep shift override (Turn D)
       };
     }
   }
@@ -10433,6 +10472,7 @@ function lookupEmployeeById_(empId) {
       ptoEnabled,
       managerEmail: String(rows[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim(),
       departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),
+      scheduleRaw: String(rows[i][EMP.SCHEDULE] || '').trim(),
     };
   }
   return null;
