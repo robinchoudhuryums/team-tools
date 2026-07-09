@@ -917,6 +917,8 @@ function _runAllTests() {
   _integrationTest('kb_feedbackAndRequests_requireEmployee',    test_kb_feedbackAndRequests_requireEmployee);
   _integrationTest('kb_uploadImage_rejectsInvalidPayloads',      test_kb_uploadImage_rejectsInvalidPayloads);
   _integrationTest('kbAi_gatesAndSettingsValidation',            test_kbAi_gatesAndSettingsValidation);
+  _integrationTest('kb_draftLifecycleAndRevisions',              test_kb_draftLifecycleAndRevisions);
+  _integrationTest('adminEmails_subsetOfManagersEnforced',       test_adminEmails_subsetOfManagersEnforced);
 
   // ── Training & Employee Docs — T1 (spec: docs/training-employee-docs-spec.md) ──
   _integrationTest('training_assignCompleteFlow',               test_training_assignCompleteFlow);
@@ -4131,6 +4133,118 @@ function test_kb_uploadImage_rejectsInvalidPayloads() {
     _assertContains(r4.error, 'too large');
   });
 }
+
+// ── Turn A (INV-147 / INV-140): KB draft lifecycle + revisions ─────────────
+// A draft is invisible to reps across tree/item/search; publishedOnly hides
+// drafts even from admins (the org-wide-cached AI retrieval path, M-12);
+// drafts are unassignable as training and unlinkable from quizzes; an edit
+// snapshots a revision and a revert restores content (and is itself
+// snapshotted, so reverts are reversible).
+function test_kb_draftLifecycleAndRevisions() {
+  let kbId = null;
+  try {
+    // 1) Create as DRAFT (admin == manager while ADMIN_EMAILS is unset).
+    const saved = _asUser(_TEST_MGR_EMAIL, function () {
+      return kbSaveItem({ title: 'TEST_DRAFT_ITEM', type: 'article',
+        body: 'draft body TESTDRAFTTOKEN v1', department: 'TEST', status: 'draft' });
+    });
+    _assertTrue(saved && saved.success, 'draft created');
+    _assertEq(saved.status, 'draft', 'save reports draft status');
+    kbId = saved.id;
+
+    // 2) Rep-invisible across every read path (INV-140).
+    const tree = _asUser(_TEST_INDIA_EMAIL, function () { return getReferenceTree(); });
+    _assertFalse(JSON.stringify(tree).indexOf(kbId) >= 0, 'draft absent from the rep tree');
+    const item = _asUser(_TEST_INDIA_EMAIL, function () { return getReferenceItem(kbId); });
+    _assertTrue(!!(item && item.error), 'draft 404s for a rep (existence does not leak)');
+    const repSearch = _asUser(_TEST_INDIA_EMAIL, function () { return searchReference('TESTDRAFTTOKEN'); });
+    _assertFalse((repSearch.results || []).some(function (r) { return r.id === kbId; }),
+      'draft absent from rep search');
+
+    // 3) publishedOnly narrows even an ADMIN caller (the AI retrieval path).
+    const adminPub = _asUser(_TEST_MGR_EMAIL, function () {
+      return searchReference('TESTDRAFTTOKEN', { publishedOnly: true });
+    });
+    _assertFalse((adminPub.results || []).some(function (r) { return r.id === kbId; }),
+      'publishedOnly hides drafts even for admins');
+    const adminAll = _asUser(_TEST_MGR_EMAIL, function () { return searchReference('TESTDRAFTTOKEN'); });
+    _assertTrue((adminAll.results || []).some(function (r) { return r.id === kbId; }),
+      'plain admin search still sees the draft');
+
+    // 4) Draft is unassignable as training + unlinkable from a quiz.
+    const asg = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveTrainingAssignment({ itemId: kbId, empIds: [_TEST_INDIA_ID] });
+    });
+    _assertFailure(asg, 'draft', 'draft KB item rejected by saveTrainingAssignment');
+    const qz = _asUser(_TEST_MGR_EMAIL, function () {
+      return saveQuiz({ title: 'TEST_DRAFT_QUIZ', passPct: 80, kbItemId: kbId,
+        questions: [{ q: 'q', options: ['a', 'b'], correct: 0 }] });
+    });
+    _assertFailure(qz, 'draft', 'draft KB item rejected as a quiz link');
+
+    // 5) A plain re-save (no explicit status) PRESERVES draft — an edit must
+    // not silently publish (the M-13 class).
+    const edit1 = _asUser(_TEST_MGR_EMAIL, function () {
+      return kbSaveItem({ id: kbId, title: 'TEST_DRAFT_ITEM', type: 'article',
+        body: 'draft body TESTDRAFTTOKEN v2', department: 'TEST' });
+    });
+    _assertTrue(edit1 && edit1.success, 'edited');
+    _assertEq(edit1.status, 'draft', 'plain re-save preserves draft status');
+
+    // 6) Publish -> rep-visible.
+    const pub = _asUser(_TEST_MGR_EMAIL, function () { return kbPublishItem(kbId); });
+    _assertTrue(pub && pub.success, 'published');
+    const item2 = _asUser(_TEST_INDIA_EMAIL, function () { return getReferenceItem(kbId); });
+    _assertTrue(item2 && !item2.error, 'published item readable by a rep');
+    _assertTrue(String(item2.bodyMd || '').indexOf('v2') >= 0, 'rep reads the edited body');
+
+    // 7) Revisions: the edit snapshotted v1; revert restores v1 content and is
+    // itself reversible (the revert snapshots v2 first).
+    const revs = _asUser(_TEST_MGR_EMAIL, function () { return kbGetRevisions(kbId); });
+    _assertTrue(revs && (revs.items || []).length >= 1, 'edit snapshotted at least one revision');
+    const v1rev = (revs.items || []).filter(function (r) { return r.preview.indexOf('v1') >= 0; })[0];
+    _assertNotNull(v1rev, 'v1 snapshot findable');
+    const rvt = _asUser(_TEST_MGR_EMAIL, function () { return kbRevertItem(kbId, v1rev.revId); });
+    _assertTrue(rvt && rvt.success, 'reverted to v1');
+    const after = _asUser(_TEST_MGR_EMAIL, function () { return getReferenceItem(kbId); });
+    _assertTrue(String(after.bodyMd || '').indexOf('v1') >= 0, 'revert restored v1 content');
+    const revs2 = _asUser(_TEST_MGR_EMAIL, function () { return kbGetRevisions(kbId); });
+    const hasV2Snap = (revs2.items || []).some(function (r) { return r.preview.indexOf('v2') >= 0; });
+    _assertTrue(hasV2Snap, 'revert snapshotted the replaced v2 content (reverts are reversible)');
+    _assertEq(String(after.status || 'published'), 'published', 'revert never changes status');
+  } finally {
+    if (kbId) {
+      _asUser(_TEST_MGR_EMAIL, function () { try { kbDeleteItem(kbId); } catch (e) {} });
+    }
+  }
+}
+
+// ── Turn A (INV-144 / M-10): admins are a SUBSET of managers — ENFORCED ────
+// A non-manager listed in ADMIN_EMAILS must NOT gain admin access, and a
+// manager NOT in a set ADMIN_EMAILS loses it (the property NARROWS).
+function test_adminEmails_subsetOfManagersEnforced() {
+  const props = PropertiesService.getScriptProperties();
+  const prev = props.getProperty('ADMIN_EMAILS');
+  try {
+    // List ONLY the non-manager India rep.
+    props.setProperty('ADMIN_EMAILS', _TEST_INDIA_EMAIL);
+    invalidateRosterCache_();
+    _assertFalse(empIsAdmin_(_TEST_INDIA_EMAIL, false),
+      'non-manager in ADMIN_EMAILS is NOT an admin (subset enforced)');
+    _assertFalse(empIsAdmin_(_TEST_MGR_EMAIL, true),
+      'manager NOT in a set ADMIN_EMAILS loses admin (property narrows)');
+    const asRep = _asUser(_TEST_INDIA_EMAIL, function () { return getAdminConfig(); });
+    _assertFailure(asRep, 'Admin access', 'admin endpoint rejects the listed non-manager');
+    // Manager listed -> admin again.
+    props.setProperty('ADMIN_EMAILS', _TEST_MGR_EMAIL);
+    _assertTrue(empIsAdmin_(_TEST_MGR_EMAIL, true), 'listed manager is an admin');
+  } finally {
+    if (prev === null) props.deleteProperty('ADMIN_EMAILS');
+    else props.setProperty('ADMIN_EMAILS', prev);
+    invalidateRosterCache_();
+  }
+}
+
 
 // kbRecordView is rep-callable (append-only KbViews row) but must reject an
 // unregistered caller BEFORE touching the KB spreadsheet.

@@ -2,11 +2,11 @@
 
 ## Current
 Cycle: 7
-Phase: implement DONE — all 8 turns of the broad-scan fix backlog shipped on claude/broad-scan-45plfi (regression + reflect done; /reflect close-out pending)
+Phase: verify — Turn A (verification & residuals) + Turn B (Seams & Invariants audit) on claude/broad-scan-45plfi
 Scope: broad (full-codebase audit 2026-07-09; ~40 findings: 0 Critical / 2 High / ~15 Medium / ~20 Low — ALL non-deferred items implemented)
 Test Command: manual
-Subsystem cycles since last Seams audit: 7
-Updated: 2026-07-09 (Turns 1-8 complete: commits 3f083a1, eda5a08, fbaa878, be3fe85, ef572fa, f6a19ba, 3e54681)
+Subsystem cycles since last Seams audit: 0
+Updated: 2026-07-09 (Turn A+B: verification batch + seams audit; INV-141..148 formalized; seam counter reset)
 
 ## Cycle 7 broad-scan + Turn 1+2 (2026-07-09, claude/broad-scan-45plfi)
 Audit: 6-agent fan-out + personal verification of every Medium+ finding (all
@@ -103,18 +103,23 @@ intakeCollectPpd_ / engine / email builder work unchanged.
   English values, drift-guarded."
 
 ## Where I left off
-2026-07-09: ALL 8 turns of the Cycle-7 backlog are committed + pushed on
-claude/broad-scan-45plfi (7 commits; pure 240/0 + DOM 54/0 + node --check green;
-CLAUDE.md gotchas/INVs synced in Turn 8). NEXT = open/merge the PR, then
-/reflect to close Cycle 7 (score movement: Correctness bugs from the audit are
-all fixed; re-derive at reflect time). Deferred by decision: L-24 transient
-dup-card race (self-heals ≤60s; fuzzy matching risk), diagnostic-liveness in
-computeAutomationHealth_ (design addition — own change), per-rep schedules
-(operator decision), KB draft/revision functional test suite beyond the new
-gate/behavior tests, quiz kbItemId draft-link check (small L-9 sibling).
-OPERATOR: one deploy (clasp push -f + New version) + runAllTests() in the
-editor ships everything; spot-check one ADP export post-deploy; the ADP-sheet-tz
-decision is now safe either way (H-2 fixed + factory).
+2026-07-09 (post-reflect): Turn A (verification & residuals) + Turn B (Seams &
+Invariants audit) implemented. Turn A: CN draft persister had the SAME
+teardown-wipe bug as intake M-2 (removeItem destroyed the draft) — fixed +
+DOM-pinned + bite-checked; INV-142 source tripwire; INV-144 + INV-147 editor
+tests (test_adminEmails_subsetOfManagersEnforced, test_kb_draftLifecycleAndRevisions
+— the KB draft/revision functional suite incl. revert round-trip + plain-resave-
+preserves-draft); deploy-readiness locale banding (warn); quiz kbItemId draft
+guard; kbRowStatus_ Node cases. Turn B: seams verified in sync (AUTO_COPY_FORMAT
+pair, PUNCH_MORPH↔PUNCH_META incl. F7, 5 mgrSubSeq bump sites); TWO unpinned
+seams found and pinned (INV-72 LEAVE_DEDUCTION mirror — the flagship documented
+mirror had NO tripwire, now a behavioral-mirror test; the intakeFlushDraftNow_
+cross-partial hook); INV-141..148 formalized in CLAUDE.md (library now 148);
+seam counter reset to 0. Harnesses: pure 244/0, DOM 55/0. NEXT = merge the
+Turn A+B PR on green; remaining scan items are Turn C (diagnostic-liveness in
+Automation Health, ~half day) and Turn D (per-rep schedules — OPERATOR DECISION
+needed on where schedules live before building). OPERATOR: deploy + editor
+runAllTests() (2 new integration tests) still pending for the whole cycle.
 
 ## Completed this cycle (Cycle 7 — all turns)
 - Turn 1 (3f083a1): H-1 coaching overdue dead; H-2 export-sheet tz pin; M-1

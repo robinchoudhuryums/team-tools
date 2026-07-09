@@ -668,6 +668,40 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
   });
 }
 
+console.log('\nCode.js — CN Timestamp coercion boundary (INV-142) + kbRowStatus_ (INV-147)');
+test('TRIPWIRE (INV-142): CN Timestamp readers route through cnTimestampString_', () => {
+  ['callNoteRowToObject_', 'deleteCallNote', 'getCallNotesAmbient', 'getMyTrainingQA'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/cnTimestampString_\(/.test(src),
+      fn + ' must read CN.TIMESTAMP via cnTimestampString_ — a locale-coerced Date stringified raw breaks ' +
+      'sorting/shift-span/EOD displays and FAIL-OPENS the 5-min delete window (M-14 class)');
+  });
+});
+test('coupling — showView\'s intakeFlushDraftNow_ hook resolves cross-partial (Turn-B seams audit)', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const intake = fs.readFileSync(path.join(__dirname, '../../web-app/intake/script_intake.html'), 'utf8');
+  assert.ok(/typeof intakeFlushDraftNow_ === 'function'/.test(core), 'showView calls the flush hook (typeof-guarded)');
+  assert.ok(/function intakeFlushDraftNow_\(/.test(intake),
+    'intake must define intakeFlushDraftNow_ — a rename silently kills the M-2 nav flush (the typeof guard hides the breakage)');
+});
+{
+  const kbCtx = { String: String };
+  vm.createContext(kbCtx);
+  const stMatch = codeSrc.match(/const (KB_STATUS_DRAFT\s*=\s*'[^']*');/);
+  const spMatch = codeSrc.match(/const (KB_STATUS_PUBLISHED\s*=\s*'[^']*');/);
+  assert.ok(stMatch && spMatch, 'KB status consts found');
+  vm.runInContext(stMatch[1] + ';' + spMatch[1] + ';', kbCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'kbRowStatus_'), kbCtx, { filename: 'Code.js#kbRowStatus_' });
+  test('kbRowStatus_: blank/legacy/garbage → published; only a literal draft (any case/pad) → draft', () => {
+    assert.strictEqual(kbCtx.kbRowStatus_(''), 'published', 'blank legacy cell reads published (back-compat)');
+    assert.strictEqual(kbCtx.kbRowStatus_(undefined), 'published');
+    assert.strictEqual(kbCtx.kbRowStatus_('published'), 'published');
+    assert.strictEqual(kbCtx.kbRowStatus_('draft'), 'draft');
+    assert.strictEqual(kbCtx.kbRowStatus_(' Draft '), 'draft', 'trim + case-insensitive');
+    assert.strictEqual(kbCtx.kbRowStatus_('archived'), 'published', 'unknown value fails PUBLISHED (never hides content by accident)');
+  });
+}
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });
@@ -2639,6 +2673,33 @@ test('empty / missing inputs never throw; blank trx returns all notes', () => {
   assert.strictEqual(all.length, 1, 'blank trx → no filter');
 });
 
+console.log('\ncoupling — LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ behavioral mirror (INV-72; Turn-B seams audit)');
+// The flagship documented mirror (INV-72) had NO tripwire — it was the intro
+// example of the drift class but never got a check. The server side is an
+// if-chain (not a key-set), so this is a BEHAVIORAL mirror: every client map
+// entry must resolve identically through the real server function, and the
+// unknown-type default must agree (annual / 1.0) on both sides.
+{
+  const ldCtx = { String: String, Object: Object };
+  vm.createContext(ldCtx);
+  vm.runInContext(extractRawFunction('Code.js', 'getLeaveDeduction_'), ldCtx, { filename: 'Code.js#getLeaveDeduction_' });
+  vm.runInContext('var LEAVE_DEDUCTION_CLIENT = ' + extractClientObject('tc/script_timeoff.html', 'LEAVE_DEDUCTION_CLIENT') + ';',
+    ldCtx, { filename: 'LEAVE_DEDUCTION_CLIENT' });
+  test('every LEAVE_DEDUCTION_CLIENT entry matches the server deduction (bucket + days)', () => {
+    const keys = Object.keys(ldCtx.LEAVE_DEDUCTION_CLIENT);
+    assert.ok(keys.length >= 5, 'client map parsed (' + keys.length + ' entries)');
+    keys.forEach((k) => {
+      const s = ldCtx.getLeaveDeduction_(k);
+      const c = ldCtx.LEAVE_DEDUCTION_CLIENT[k];
+      assert.strictEqual(s.bucket, c.bucket, k + ': bucket drifted (client mis-previews the balance)');
+      assert.strictEqual(s.days, c.days, k + ': days drifted (client mis-previews the balance)');
+    });
+    const dflt = ldCtx.getLeaveDeduction_('Some Future Type');
+    assert.strictEqual(dflt.bucket, 'annual');
+    assert.strictEqual(dflt.days, 1.0, 'unknown-type default is annual/1.0 — the client fallback must match (INV-72)');
+  });
+}
+
 console.log('\nCode.js — deployReadinessItems_() (#1 pre-deploy checklist)');
 vm.runInContext(extractRawFunction('Code.js', 'deployReadinessItems_'), sb,
   { filename: 'Code.js#deployReadinessItems_' });
@@ -2652,6 +2713,7 @@ test('required store unset → fail; optional unset → warn; tz mismatch → wa
       { label: 'CDR', prop: 'CDR_SS_ID', configured: false },                          // optional → warn
       { label: 'Intake', prop: 'INTAKE_SS_ID', configured: true, reachable: true, tzMatch: false, tz: 'America/Los_Angeles' }, // tz → warn
       { label: 'HR', prop: 'HR_DOCS_SS_ID', configured: true, reachable: false },      // unreachable → fail
+      { label: 'Forms', prop: 'FORMS_SS_ID', configured: true, reachable: true, tzMatch: true, localeMatch: false, locale: 'en_GB' }, // locale → warn (Turn A)
     ],
   };
   const automation = { digests: [{ key: 'eod', last: '2026-06-23 07:00:00', stale: false }], cdr: { ok: true } };
@@ -2664,6 +2726,7 @@ test('required store unset → fail; optional unset → warn; tz mismatch → wa
   assert.strictEqual(byKey['store_CDR_SS_ID'], 'warn', 'optional CDR unset → warn');
   assert.strictEqual(byKey['store_INTAKE_SS_ID'], 'warn', 'tz mismatch → warn');
   assert.strictEqual(byKey['store_HR_DOCS_SS_ID'], 'fail', 'configured-but-unreachable → fail');
+  assert.strictEqual(byKey['store_FORMS_SS_ID'], 'warn', 'locale mismatch → warn (M-14 class, Turn A)');
   assert.strictEqual(byKey['triggers'], 'ok', 'fresh heartbeat → ok');
   assert.strictEqual(byKey['cdr'], 'ok');
   assert.ok(out.summary.fail >= 3 && out.summary.warn >= 2, 'summary tallies statuses');
