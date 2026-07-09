@@ -694,6 +694,32 @@ test('M-2: intakeFlushDraftNow_ captures a pending save synchronously while the 
   assert.strictEqual(draft.pmd.answers['22'], '', 'untouched toggle stays unanswered');
 });
 
+test('M-9: composer refuses to close while a send is in flight, closes once settled', () => {
+  const h = boot();
+  h.read('CN_STATE.composer = { noteId: "n1", selections: { departments: [] }, sending: true, step: "preview" }');
+  h.window.ensureOverlay('cn-compose-overlay', { onClose: h.window.cnCloseComposerModal_ });
+  h.window.closeOverlay(h.$('#cn-compose-overlay'));   // the Esc / backdrop-click path
+  assert.ok(h.$('#cn-compose-overlay'), 'overlay still mounted mid-send (no rollback fired)');
+  assert.ok(h.read('CN_STATE.composer') !== null, 'composer state intact mid-send');
+  h.read('CN_STATE.composer.sending = false');
+  h.window.closeOverlay(h.$('#cn-compose-overlay'));
+  assert.strictEqual(h.$('#cn-compose-overlay'), null, 'closes normally once the send settled');
+  assert.strictEqual(h.read('CN_STATE.composer'), null, 'composer state cleared on the real close');
+});
+
+test('M-8: a late Team Notes queue response cannot clobber the sub-tab opened after it', () => {
+  const h = boot();
+  const host = h.document.createElement('div');
+  host.id = 'cn-mgr-results';
+  h.document.body.appendChild(host);
+  h.read('currentView = "callNotesManage"');
+  h.window.cnMgrLoadQueue_('training');            // slow queue fetch in flight
+  h.window.cnMgrLoadSearchView_();                 // manager switches to Search
+  assert.ok(h.$('#cn-mgr-search-q'), 'search sub-tab rendered');
+  h.run.flushSuccess({ results: [] }, 'managerGetTrainingQueue');   // late response lands
+  assert.ok(h.$('#cn-mgr-search-q'), 'late training-queue response dropped — Search body survives');
+});
+
 test('M-5: search results are NOT dropped when the query carries trailing whitespace', () => {
   const h = boot();
   h.read('currentView = "callNotesSearch"');
