@@ -117,6 +117,21 @@ operator steps remain (ONE deploy + runSmokeTests()/runAllTests(); optionally
 fill column O for reps with nonstandard shifts). Next audit cycle = fresh
 /broad-scan (Cycle 8) whenever desired; seams counter is at 0.
 
+## Pending / not yet done
+- OPERATOR: one `cd web-app && clasp push -f` for the #123 Tests.js assertion
+  fix (no New version needed — tests run from the editor against head), then
+  re-run `runAllTests()` → expect 259 passed / 0 failed. (The 258/259 run
+  already verified the whole cycle; the one failure was the test's own
+  assertion idiom, and the gate it tests was proven working by its output.)
+- OPERATOR (optional): fill Employees column O `Schedule` (`H:mm-H:mm`,
+  rep-local) for reps with nonstandard shifts — Turn D.
+- RESOLVED as a risk (was carried since a prior cycle): the ADP-sheet-tz
+  decision — with H-2 fixed + the createPinnedSpreadsheet_ factory, EITHER tz
+  choice is now export-safe; align to `Asia/Kolkata` at leisure per the
+  Storage Health panel.
+- Next audit cycle = a fresh /broad-scan (Cycle 8) whenever desired; seams
+  counter is 0; INV-142/144/147 got their pins in Turn A.
+
 ## Completed this cycle (Cycle 7 — all turns)
 - Turn 1 (3f083a1): H-1 coaching overdue dead; H-2 export-sheet tz pin; M-1
   submitPunch failure handler; L-1 voidCoaching finally.
@@ -778,7 +793,7 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
   consolidation assessed = NOT advised (boundaries deliberate); consolidated the
   MANAGEMENT surface instead. Operator doing the Drive-folder grouping (#2).
 
-## Pending / not yet done (current — 2026-06-29 operator-feedback session)
+## (historical) Pending — 2026-06-29 operator-feedback session (all items since resolved)
 - OPERATOR DEPLOY: `cd web-app && clasp push -f` + New version. ONE deploy ships
   every PR merged this session (#97–#103) + the Manage module / admin tier (#102).
 - OPERATOR runAllTests() in the editor — the ONLY check on the #102 admin-gating
@@ -844,7 +859,7 @@ operator-feedback+T4 batch — its straggler reflect commit 196948c stays only o
 - L-3 | Code.js intakeDecodeImages_ | robust data-URL parse (require ;base64).
 - L-11 | metrics/script_metrics.html mRenderTeamMetrics_ | null-guard teamTotals/reps.
 
-## Pending / not yet done
+## (historical) Pending — cycle-6 era
 - DEPLOY: `cd web-app && clasp push -f` + New version deployment.
 - Operator: run runAllTests() in editor (exercises the new M-1 test, S2).
 - DOC updates (recommend /sync-docs): M-1 (deduction now per-row gated — reconcile
