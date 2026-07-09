@@ -3988,8 +3988,64 @@ function getAutomationHealth() {
  *  factored out so the manager-gated Admin panel AND the automation-failure push
  *  (sendAutomationHealthDigest) share ONE computation (no parallel-source drift).
  *  May throw; every caller wraps it in try/catch. */
+/** Cycle 7 Turn C — detector-liveness checks ("can the detector detect?").
+ *  Twice in cycle 7 a shipped detector could never fire — H-1: the coaching
+ *  overdue consumers parsed the writer's space-form stamp with a T-only
+ *  parser (null for every row, the digest never nagged); M-11: the
+ *  unmatched-agent diagnostic iterated a pre-filtered set (always empty) —
+ *  and NOTHING surfaced it: CI, the health panels, and the field were all
+ *  blind, because "the job ran" says nothing about "the job's detector
+ *  works". Each check feeds a WRITER's own output through the exact
+ *  PARSER/CHANNEL its consumer uses, so a format/shape drift between the two
+ *  sides fails loudly in the Automation Health panel, the daily failure
+ *  digest, and the test suites. Pure round-trips — NO sheet reads (the CDR
+ *  channel check is appended by computeAutomationHealth_'s existing CDR
+ *  read). Smoke-test-pinned: every check must be ok. */
+function automationDetectorChecks_() {
+  const checks = [];
+  const add = function (key, label, fn) {
+    try { fn(); checks.push({ key: key, label: label, ok: true, detail: '' }); }
+    catch (e) { checks.push({ key: key, label: label, ok: false, detail: e.message }); }
+  };
+  const now = new Date();
+  add('coachOverdue', 'Coaching overdue parser reads the coaching writer stamp', function () {
+    const stamp = fmtDate_(now) + ' ' + fmtTime_(now);   // createCoaching's writer format
+    if (!isFinite(coachParseTs_(stamp))) {               // the overdue consumers' parser
+      throw new Error('coachParseTs_ cannot parse "' + stamp + '" — overdue detection is dead (the H-1 class)');
+    }
+  });
+  add('auditStaleness', 'Automation last-run staleness math reads the audit writer stamp', function () {
+    const stamp = Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');  // writeAuditLog_'s format
+    const ms = Utilities.parseDate(stamp, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
+    if (!isFinite(ms)) throw new Error('audit writer stamp "' + stamp + '" not parseable — stale-run detection (the F1 class) is dead');
+  });
+  add('deptReqSla', 'DeptRequests SLA/elapsed math reads the DR writer stamp', function () {
+    const stamp = drNowTs_();
+    if (!parseTimestampMs_(stamp, CONFIG.TIMEZONE)) {
+      throw new Error('parseTimestampMs_ cannot parse drNowTs_() "' + stamp + '" — SLA banding + elapsed math are dead');
+    }
+  });
+  add('cnTimestamp', 'CN delete-window/stale math reads the CN timestamp boundary', function () {
+    const recovered = cnTimestampString_(now);           // a locale-coerced Date cell, recovered
+    if (!parseTimestampMs_(recovered, CONFIG.TIMEZONE)) {
+      throw new Error('parseTimestampMs_ cannot parse cnTimestampString_(Date) "' + recovered + '" — the 5-min delete window fails open (the M-14 class)');
+    }
+  });
+  add('formTokenExpiry', 'Form-token expiry reads both token cell shapes', function () {
+    const stamp = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");  // the token writer format
+    const asString = formTokenCellMs_(stamp);
+    if (!asString.present || !asString.ms) throw new Error('formTokenCellMs_ cannot read the writer string "' + stamp + '" — fresh tokens would read expired (the #89 class)');
+    const asDate = formTokenCellMs_(now);                // the locale-coerced Date shape
+    if (!asDate.present || !asDate.ms) throw new Error('formTokenCellMs_ cannot read a coerced Date cell — segregated-store tokens would read expired');
+  });
+  return checks;
+}
+
 function computeAutomationHealth_() {
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+
+    // ── (e) detector liveness (Turn C) — pure writer↔parser round-trips ──
+    const detectors = automationDetectorChecks_();
 
     // ── (a) + (c): one bounded tail scan of the AuditLog ─────────────────
     const syncFails = { count: 0, recent: [], windowDays: AUTOMATION_SYNCFAIL_WINDOW_DAYS };
@@ -4075,6 +4131,13 @@ function computeAutomationHealth_() {
           unmatchedAgents: Object.keys(canonicalAgents).filter(function (a) { return !rosterSet[a]; }).sort(),
           rosterWithNoCdr: Object.keys(rosterSet).filter(function (n) { return !canonicalAgents[n]; }).sort(),
         };
+        // Turn C (the M-11 class): the off-roster diagnostic CHANNEL must
+        // exist on the reader's meta — Team Metrics' unmatchedAgents sources
+        // from it, and it was structurally absent (always-empty) until M-11.
+        // Only checkable when CDR is reachable, so it rides this block.
+        const chanOk = Array.isArray(result.meta && result.meta.offRosterAgents);
+        detectors.push({ key: 'cdrOffRoster', label: 'CDR off-roster diagnostic channel present', ok: chanOk,
+          detail: chanOk ? '' : 'getCdrAgentMetrics_ meta lacks offRosterAgents[] — unmatched-agent detection is dead (the M-11 class)' });
       }
     } catch (cdrErr) {
       cdr = { ok: false, error: cdrErr.message };
@@ -4112,6 +4175,7 @@ function computeAutomationHealth_() {
       automationLastRuns: automationLastRuns,
       digests: digestHealth,
       cdr: cdr,
+      detectors: detectors,   // Turn C — detector-liveness checks
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
@@ -4155,6 +4219,13 @@ function sendAutomationHealthDigest() {
     if (report.syncFails && report.syncFails.count > 0) {
       problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
     }
+    // (d) Turn C — detector liveness: a DEAD DETECTOR is the failure class the
+    // rest of this digest can't see ("the job ran" ≠ "the job's detector
+    // works" — the H-1/M-11 lesson). Any failing writer↔parser round-trip or
+    // missing diagnostic channel is pushed.
+    (report.detectors || []).forEach(function (c) {
+      if (c && c.ok === false) problems.push('Detector dead: ' + c.label + ' — ' + c.detail);
+    });
     // CDR reachability is deliberately NOT pushed here: it isn't a trigger, an
     // unset CDR_SS_ID legitimately reads as "unreachable" (would false-nag a
     // non-CDR deployment daily), and the Admin Storage/Automation Health panels

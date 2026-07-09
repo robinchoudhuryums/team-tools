@@ -8393,6 +8393,20 @@ function cnRenderHealthPanel_(res) {
     '</div>';
   }).join('');
 
+  // (e) Turn C — detector liveness ("can the detector detect?"). Each entry is
+  // a writer↔parser round-trip (or diagnostic-channel presence) computed
+  // server-side; a failure means a monitoring loop is silently dead even
+  // though its trigger runs (the H-1/M-11 class).
+  var detHtml = (res.detectors || []).map(function (c) {
+    var state = c.ok
+      ? '<span style="color:var(--success-deep);font-weight:600">' + icon('checkCircle', 11) + ' ok</span>'
+      : '<span style="color:var(--danger-deep);font-weight:600">' + icon('warning', 11) + ' DEAD — ' + esc(c.detail || '') + '</span>';
+    return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:4px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="flex:0 0 200px;font-weight:600">' + esc(c.label) + '</span>' +
+      '<span style="flex:1;min-width:200px">' + state + '</span>' +
+    '</div>';
+  }).join('');
+
   // (c) Automation last-seen
   var runsHtml = (res.automationLastRuns || []).map(function (r) {
     var meta = CN_HEALTH_RUN_LABELS[r.action] || { label: r.action, expect: '' };
@@ -8416,6 +8430,7 @@ function cnRenderHealthPanel_(res) {
     secLabel('CDR data feed · last 7 days') + cdrHtml +
     secLabel('Automation last seen') + runsHtml +
     secLabel('Digest heartbeats') + (digestsHtml || '<div style="font-size:12px;color:var(--muted)">No digest data (server pre-dates heartbeats).</div>') +
+    (detHtml ? secLabel('Detector liveness') + detHtml : '') +
   '</div>';
 }
 

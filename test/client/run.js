@@ -702,6 +702,20 @@ test('coupling — showView\'s intakeFlushDraftNow_ hook resolves cross-partial 
   });
 }
 
+console.log('\nCode.js — detector-liveness wiring (Turn C)');
+test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by the failure digest', () => {
+  const health = extractRawFunction('Code.js', 'computeAutomationHealth_');
+  assert.ok(/automationDetectorChecks_\(\)/.test(health), 'computeAutomationHealth_ computes the detector checks');
+  assert.ok(/detectors:\s*detectors/.test(health), 'computeAutomationHealth_ returns them');
+  const digest = extractRawFunction('Code.js', 'sendAutomationHealthDigest');
+  assert.ok(/report\.detectors/.test(digest),
+    'sendAutomationHealthDigest must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
+  const checksSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
+  ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry'].forEach((k) => {
+    assert.ok(checksSrc.indexOf("'" + k + "'") >= 0, 'detector check "' + k + '" present');
+  });
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });
