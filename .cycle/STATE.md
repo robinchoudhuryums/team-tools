@@ -1,12 +1,35 @@
 # Cycle State
 
 ## Current
-Cycle: 6
-Phase: implement — PPD intake redesign, Phase 4 (reveal/height polish) on claude/broad-scan-2ll5ok
-Scope: PPD intake form structured-control UI/UX (engine untouched)
+Cycle: 7
+Phase: implement — broad-scan fix backlog, Turn 1+2 of 8 done, on claude/broad-scan-45plfi
+Scope: broad (full-codebase audit 2026-07-09; ~40 findings: 0 Critical / 2 High / ~15 Medium / ~20 Low)
 Test Command: manual
-Subsystem cycles since last Seams audit: 5
-Updated: 2026-07-01 (broad-implement: PPD redesign Phase 4 — Q32 help / Q33a hide / Q45 ynreveal / Q37 height)
+Subsystem cycles since last Seams audit: 6
+Updated: 2026-07-09 (broad-implement: Turn 1+2 — H-1/H-2/M-1/L-1 + M-2/M-5/L-15/L-22/L-26)
+
+## Cycle 7 broad-scan + Turn 1+2 (2026-07-09, claude/broad-scan-45plfi)
+Audit: 6-agent fan-out + personal verification of every Medium+ finding (all
+confirmed, zero retractions). Scores: Overall 8, Correctness 7.5 (was 8.5),
+Sec 8.5, Data 8.5, Tz 8, Conc 8.5, Test 8, Docs 8.5, GAS 9, MgrUX 8, EmpUX 7.5,
+Automation 7.5. Full findings list + 8-turn sequencing live in the session
+transcript AND are summarized per-turn below (Pending).
+Turn 1+2 IMPLEMENTED (commit 3f083a1):
+- H-1 coaching overdue dead (space-form CreatedAt vs T-only parseTimestampMs_)
+  → both consumers now use coachParseTs_; +source tripwire.
+- H-2 generateExportSheet_ pins new-sheet tz to the ADP sheet's (raw coerced
+  Date cells; script tz = America/Chicago); +source tripwire. NOTE: interacts
+  with the still-pending operator ADP-sheet-tz decision — safe either way now.
+- M-1 submitPunch failure handler prime→btn (silent punch failures fixed).
+- L-1 voidCoaching finally-release (INV-01).
+- M-2 intake draft: root-guard in the debounced save + intakeFlushDraftNow_
+  flush wired into showView (typeof-guarded, try/catch'd). DOM tests bite-checked.
+- M-5 search stale-guard trimmed-to-trimmed (rep + mgr).
+- L-15 untouched acct Yes/No toggle serializes '' not 'FALSE' (send-safe:
+  server renders any non-'TRUE' as unchecked box — verified).
+- L-22 nav-hint prefill now runs AFTER sticky-draft restore.
+- L-26 form-catalog fetch failure no longer cached as [] ("no forms") — null.
+Tests: pure 233/0 (+3), DOM 52/0 (+4); node --check clean. Net +5/−0.
 
 ## PPD redesign Phase 4 (2026-07-01, claude/broad-scan-2ll5ok)
 Display-only polish; ENGINE UNTOUCHED, SERVER UNTOUCHED (none of Q32/Q33a/Q37/Q45
@@ -80,14 +103,50 @@ intakeCollectPpd_ / engine / email builder work unchanged.
   English values, drift-guarded."
 
 ## Where I left off
-2026-07-01: PPD Phase 4 built (Q32 help / Q33a conditional-hide / Q45 ynreveal /
-Q37 height parse); PR pending CI. This COMPLETES the PPD redesign roadmap except
-the DEFERRED optional Q31a body diagram. NEXT = merge the Phase-4 PR on CI green.
-No further PPD phases queued — await operator direction (body diagram, condition-
-list clinical sign-off, or a new area). SEEDED CONDITION LISTS (Phase 3) still
-want clinical sign-off (pure content, zero engine risk). OPERATOR: one deploy
-(clasp push -f + New version) ships #113-#116 + Phase 4 + prior KB batch;
-runAllTests() in editor (CI can't run the Apps Script suite).
+2026-07-09: Cycle 7 Turn 1+2 committed (3f083a1) on claude/broad-scan-45plfi and
+pushed. NEXT = Turn 3 (manager display correctness: M-3 AuditLog punchTime via
+normalizeTime_, M-4 isAdjustment boolean-safe read, M-6 bulk-btn selector overlap,
+L-6 stranded loaders, L-7 dup title, L-8 esc m.label) — then Turns 4–8 per the
+sequencing in the Pending section. Judgments are from the 2026-07-09 audit; a
+future NEW audit re-derives fresh.
+
+## Pending / not yet done (Cycle 7 turns 3–8, sequenced 2026-07-09)
+- Turn 3 (~2h): M-3 dashboard Recent-Activity punchTime raw String → "12:00 AM";
+  M-4 isAdjustment === 'TRUE' vs coerced boolean (ADJ badge/reason never shown);
+  M-6 bulk Approve/Deny double-wired via .pending-btn class overlap; L-6 error
+  paths strand full-view loaders (calendar/mgr dashboard); L-7 pop-out dup title
+  attr (PowerToys tip dead); L-8 esc() the renderPunchHistory unknown-type label.
+- Turn 4 (~½d): M-10 empIsAdmin_ enforce admins⊆managers; M-15 subformData key
+  whitelist at submit (keep trainingQuestion/flags/tags/completionSeconds/
+  composer keys); M-12 KB-AI retrieval excludes drafts regardless of caller;
+  M-13 kbConvertDriveDoc carries status → editor (draft not silently published);
+  L-9 reject draft KB items in training assignment + getMyTraining.
+- Turn 5 (~½d): M-9 composer cancel-during-send (block close while sending);
+  M-8 Team Notes sub-tab seq guard; M-7 Admin Sheets blank pane; L-20 stuck
+  envelope on empty-form compose; L-21 ext composer note-ref sync; L-23 stale
+  exact badge; L-25 QA ack/clarify in-flight guard.
+- Turn 6 (~½d): M-14 lenient timestamp parser unification (callNoteRowToObject_/
+  deleteCallNote/coaching/DR); createPinnedSpreadsheet_ factory + Node tripwire
+  forbidding bare SpreadsheetApp.create; sheet LOCALE surfacing in Storage
+  Health + provisioning pins locale.
+- Turn 7 (~3h): M-16 skip DeptRequests auto-log/CTA for 'Other'-only sends;
+  M-11 unmatchedAgents derive from unfiltered agent pass; L-10 drop patientTRX
+  from overdue digest; L-11 DR label cap/canonical; L-12 mail outside lock;
+  L-13 fold lone flagType:'urgent' into flags[]; optional diagnostic-liveness
+  in computeAutomationHealth_.
+- Turn 8 (~3h): L-2 future-time guard on adjust queue; L-3 Sat-NYD observance;
+  L-4 recon half-day-pair false positive; L-5 browser-local date defaults →
+  isoDateTz(empTz()); L-14 stale EOD comment; L-16 comma-strip custom condition
+  entries + Q43 exclude-list guard; L-17 lang-flip reveals/progress; L-18 KB
+  item-open seq guard; L-19 http(s) scheme check on Offerings links; L-24
+  dup-card race (optional); /sync-docs — add 3 gotchas (AuditLog PunchTime/
+  IsAdjustment cols; sheet LOCALE coercion; SpreadsheetApp.create inherits
+  script tz) + amend INV-106/134/136.
+- Deferred (operator decisions): per-rep schedules (INV-127); KB draft/revision
+  functional test suite; L-24 if not taken in Turn 8.
+- OPERATOR (carried): deploy (clasp push -f + New version) + runAllTests() in
+  the editor; ADP-sheet-tz decision (H-2 fix makes either choice safe for the
+  export); condition-list clinical sign-off (Phase 3).
 
 ## Prior: KB self-improving loop (#1 + #2, 2026-07-01, claude/broad-scan-2ll5ok)
 Non-AI Reference-tool enhancements (operator declined the KB-AI Phase B route for
