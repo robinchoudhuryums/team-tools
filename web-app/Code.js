@@ -12658,6 +12658,7 @@ function intakeDeriveClinicalFactors_(answers) {
     numbnessAnswer: getAnswerText('25'),
     amputationStatus: getAnswerText('34'),
     strokeDetails: getAnswerText('31a'),
+    dwelling: getAnswerText('39a'),
     hasSpineCurvature: isPositive('35'),
     isOnOxygen: isPositive('44'),
     hasPressureUlcers: isPositive('33'),
@@ -12668,6 +12669,11 @@ function intakeDeriveClinicalFactors_(answers) {
   };
 
   patient.hasLowerExtremityNumbness = patient.numbnessAnswer.includes('feet') || patient.numbnessAnswer.includes('legs');
+  // Q39a dwelling (operator rule 2026-07-09): a Mobile Home constrains what we
+  // can physically deliver — consumed by the K0821-only restriction in
+  // intakeFilterRecommendations_. Old submissions without a 39a answer read ''
+  // → false (no restriction), so historical recomputes are unchanged.
+  patient.livesInMobileHome = patient.dwelling.includes('mobile');
   patient.hasAmputation = (patient.amputationStatus.includes('knee') ||
                            patient.amputationStatus.includes('left') ||
                            patient.amputationStatus.includes('right')) &&
@@ -12728,6 +12734,12 @@ function intakeExplainFactors_(answers) {
   const yn = (b) => b ? 'Yes' : 'No';
   const rows = [];
   rows.push({ label: 'Weight', value: p.weight ? (p.weight + ' lbs') : 'not provided' });
+  rows.push({ label: 'Dwelling (Q39a)', value: p.dwelling || 'not provided' });
+  if (p.livesInMobileHome) {
+    rows.push({ label: 'Mobile-home restriction', value: (p.weight > 0 && p.weight < 285)
+      ? 'Yes — K0821 only (weight under 285 lbs)'
+      : ('No — ' + (p.weight ? 'weight is 285 lbs or more' : 'weight not provided')) });
+  }
   rows.push({ label: 'Valid neuro diagnosis (Q43)', value: F.hasValidNeuroDiagnosis ? ('Yes — "' + p.neuroCondition + '"') : 'No' });
   rows.push({ label: 'Spasticity (Q32)', value: yn(p.hasSpasticity) });
   rows.push({ label: 'Hemiplegia from stroke (Q31a)', value: F.qualifiesForHemiplegia ? ('Yes — ' + F.hemiplegiaSide + ' side') : (F.hasStrokeWeakness ? 'Weakness only (no hemiplegia)' : 'No') });
@@ -12762,6 +12774,35 @@ function intakeFilterRecommendations_(answers, allProducts) {
   const isNeuroEligible = F.isNeuroEligible;
   const isSPOEligible = F.isSPOEligible;
   const isMPOEligible = F.isMPOEligible;
+
+  // ── Q39a mobile-home restriction (operator rule, 2026-07-09) ─────────────
+  // Mobile Home + weight under 285 lbs → K0821 is the ONLY chair we can
+  // provide. Operator decisions: (a) the HOME constraint WINS over the
+  // clinical gates — K0821 returns even when solid-seat / Group-3 eligibility
+  // would normally exclude it, and the justification tells the agent why no
+  // upgrade is offered; (b) at/above 285 lbs the standard logic runs
+  // unchanged; (c) a BLANK weight also runs standard logic (the rule is
+  // "under 285" — fill Q38 for it to apply). K0821 missing from the
+  // operator-owned Offerings catalog → empty result (the panel shows no
+  // recommendations rather than silently ignoring the home constraint).
+  const mobileHomeRestricted = patient.livesInMobileHome && patient.weight > 0 && patient.weight < 285;
+  if (mobileHomeRestricted) {
+    const k0821Row = allProducts.find(r => String(r[1] == null ? '' : r[1]).trim() === 'K0821');
+    if (!k0821Row) return { standard: [], complex: [] };
+    return {
+      standard: [{
+        hcpcs: 'K0821',
+        pdfLink: String(k0821Row[4] == null ? '' : k0821Row[4]),
+        imageUrl: String(k0821Row[5] == null ? '' : k0821Row[5]),
+        category: 'Standard',
+        sortOrder: 821,
+        // Fixed server vocabulary only (the justification is the ONE raw-HTML
+        // exception — never put a user-supplied value in it).
+        justification: 'Mobile-home residence with weight under 285 lbs — <strong>K0821</strong> is the only option we can provide.',
+      }],
+      complex: [],
+    };
+  }
 
   const inherentlySolidCodes = [
     'K0822', 'K0824', 'K0826', 'K0828',

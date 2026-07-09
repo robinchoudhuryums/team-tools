@@ -856,6 +856,7 @@ function _runAllTests() {
 
   // ── Intake — PPD recommendation engine (smoke-safe; pure) ──────────────
   _smokeTest('intake_engine_standardOnly',         test_intake_engine_standardOnly);
+  _smokeTest('intake_engine_mobileHomeRestriction', test_intake_engine_mobileHomeRestriction);
   _smokeTest('intake_engine_neuroUpgradeAndSubs',  test_intake_engine_neuroUpgradeAndSubs);
   _smokeTest('intake_engine_weightCap',            test_intake_engine_weightCap);
   _smokeTest('intake_engine_oxygenExcludesK0837',  test_intake_engine_oxygenExcludesK0837);
@@ -5009,6 +5010,24 @@ function test_intake_engine_standardOnly() {
   var r = intakeFilterRecommendations_({ '38': '250 lbs' }, _INTAKE_TEST_CAT);
   _assertEq(r.standard.map(function (p) { return p.hcpcs; }).join(','), 'K0823');
   _assertEq(r.complex.length, 0, 'group-3/SPO/MPO require eligibility');
+}
+// Q39a dwelling restriction (operator rule 2026-07-09): Mobile Home + weight
+// under 285 → K0821 only, and the HOME constraint wins over the clinical gates
+// (a neuro patient still gets only K0821). ≥285 / House / no answer → standard
+// logic. Mirrors the Node engine-contract tests.
+function test_intake_engine_mobileHomeRestriction() {
+  var cat = [['Std Captain 300', 'K0821', '300', 'C', 'pdf-821', 'img-821']].concat(_INTAKE_TEST_CAT);
+  var r = intakeFilterRecommendations_({ '38': '250', '39a': 'Mobile Home' }, cat);
+  _assertEq(r.standard.map(function (p) { return p.hcpcs; }).join(','), 'K0821', 'K0821 is the sole recommendation');
+  _assertEq(r.complex.length, 0, 'no complex offerings under the home constraint');
+  var rNeuro = intakeFilterRecommendations_({ '38': '250', '39a': 'Mobile Home', '43': 'multiple sclerosis' }, cat);
+  _assertEq(rNeuro.standard.map(function (p) { return p.hcpcs; }).join(','), 'K0821', 'home constraint wins over the neuro upgrade');
+  var heavy = intakeFilterRecommendations_({ '38': '290', '39a': 'Mobile Home' }, cat);
+  _assertEq(heavy.standard.length, 2, '290 lbs (>=285) runs the standard logic');
+  var house = intakeFilterRecommendations_({ '38': '250', '39a': 'House' }, cat);
+  _assertEq(house.standard.length, 2, 'House runs the standard logic');
+  var legacy = intakeFilterRecommendations_({ '38': '250' }, cat);
+  _assertEq(legacy.standard.length, 2, 'no 39a answer (legacy submission) → unrestricted');
 }
 function test_intake_engine_neuroUpgradeAndSubs() {
   var r = intakeFilterRecommendations_({ '38': '250', '43': 'multiple sclerosis' }, _INTAKE_TEST_CAT);

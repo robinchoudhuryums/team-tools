@@ -1184,6 +1184,46 @@ test('engine never throws on empty answers / empty catalog', () => {
   assert.strictEqual(e2.standard.length + e2.complex.length, 0);
 });
 
+// Q39a dwelling restriction (operator rule 2026-07-09): Mobile Home + weight
+// under 285 lbs → K0821 only. Operator decisions pinned here: the HOME
+// constraint wins over the clinical gates; ≥285 lbs / House / blank weight run
+// the standard logic; a catalog with no K0821 yields an EMPTY result (never a
+// silent fall-through past the home constraint).
+test('Q39a mobile home + weight < 285 → K0821 only; home constraint wins over clinical gates', () => {
+  const MH_CAT = [['Std Captain 300', 'K0821', '300', 'C', 'pdf-821', 'img-821']].concat(CAT);
+  const r = intakeFilterRecommendations_({ '38': '250', '39a': 'Mobile Home' }, MH_CAT);
+  assert.strictEqual(r.standard.map((p) => p.hcpcs).join(','), 'K0821', 'K0821 is the sole recommendation');
+  assert.strictEqual(r.complex.length, 0);
+  assert.strictEqual(r.standard[0].pdfLink + '|' + r.standard[0].imageUrl, 'pdf-821|img-821', 'carries the catalog row assets');
+  assert.ok(/mobile-home/i.test(r.standard[0].justification), 'justification names the constraint');
+  // Home constraint WINS: a neuro+spasticity patient who would normally get
+  // solid-seat / Group-3 upgrades still gets ONLY K0821.
+  const rNeuro = intakeFilterRecommendations_({ '38': '250', '39a': 'Mobile Home', '43': 'multiple sclerosis', '32': 'yes' }, MH_CAT);
+  assert.strictEqual(rNeuro.standard.map((p) => p.hcpcs).join(',') + '|' + rNeuro.complex.length, 'K0821|0');
+  // Restriction OFF paths — standard logic (both captain chairs offered).
+  assert.strictEqual(intakeFilterRecommendations_({ '38': '290', '39a': 'Mobile Home' }, MH_CAT).standard.length, 2, '290 lbs (≥285) → standard logic');
+  assert.strictEqual(intakeFilterRecommendations_({ '38': '250', '39a': 'House' }, MH_CAT).standard.length, 2, 'House → standard logic');
+  assert.strictEqual(intakeFilterRecommendations_({ '38': '250', '39a': 'Apartment' }, MH_CAT).standard.length, 2, 'Apartment → standard logic');
+  assert.strictEqual(intakeFilterRecommendations_({ '39a': 'Mobile Home' }, MH_CAT).standard.length, 2, 'blank weight → rule does not fire (fill Q38)');
+  // No K0821 in the catalog → empty result.
+  const noK0821 = intakeFilterRecommendations_({ '38': '250', '39a': 'Mobile Home' }, CAT);
+  assert.strictEqual(noK0821.standard.length + noK0821.complex.length, 0, 'missing K0821 row → no recommendations, never a fall-through');
+});
+
+test('explainability surfaces the dwelling + mobile-home restriction (drift-free)', () => {
+  const rows = intakeExplainFactors_({ '38': '250', '39a': 'Mobile Home' });
+  const byLabel = {};
+  rows.forEach((r) => { byLabel[r.label] = r.value; });
+  assert.strictEqual(byLabel['Dwelling (Q39a)'], 'mobile home');
+  assert.ok(/K0821 only/.test(byLabel['Mobile-home restriction']), 'restriction row explains the K0821-only outcome');
+  const rows2 = intakeExplainFactors_({ '38': '300', '39a': 'Mobile Home' });
+  const byLabel2 = {};
+  rows2.forEach((r) => { byLabel2[r.label] = r.value; });
+  assert.ok(/No — weight is 285/.test(byLabel2['Mobile-home restriction']), '≥285 explains why the rule did not fire');
+  const rows3 = intakeExplainFactors_({ '38': '250' });
+  assert.ok(!rows3.some((r) => r.label === 'Mobile-home restriction'), 'no restriction row when not a mobile home');
+});
+
 // Explainability surface — reuses the SAME derivation the engine does, so a
 // manager auditing a sent PPD submission sees exactly the factors that drove it.
 test('intakeExplainFactors_ surfaces the engine factors that fired (drift-free)', () => {
@@ -1374,6 +1414,15 @@ test('Q31a stroke config: hemiplegia + weakness parse correctly', () => {
   assert.strictEqual(_F({ '31a': 'Weakness Left Side' }).hasStrokeWeakness, true);
   assert.strictEqual(_F({ '31a': 'Weakness Left Side' }).qualifiesForHemiplegia, false);
 });
+test('Q39a dwelling config drives the mobile-home factor (rename-guard)', () => {
+  assert.strictEqual(_vals('39a').join('|'), 'House|Apartment|Mobile Home', 'canonical values (rename-guard)');
+  assert.strictEqual(PPD_CTRL['39a'].kind, 'choice');
+  assert.strictEqual(_F({ '39a': 'Mobile Home' }).patient.livesInMobileHome, true);
+  assert.strictEqual(_F({ '39a': 'House' }).patient.livesInMobileHome, false);
+  assert.strictEqual(_F({ '39a': 'Apartment' }).patient.livesInMobileHome, false);
+  assert.strictEqual(_F({}).patient.livesInMobileHome, false, 'legacy submissions (no 39a answer) stay unrestricted');
+});
+
 test('Q38 weight is numunit; end-to-end config-driven recommendation parity', () => {
   assert.strictEqual(PPD_CTRL['38'].kind, 'numunit');
   const r = intakeFilterRecommendations_({

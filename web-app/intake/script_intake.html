@@ -298,6 +298,7 @@ var INTAKE_PPD_Q = {
     "37. Height (inches):",
     "38. Weight (lbs):",
     "39. Live alone or w/ friends/family?",
+    "39a. Does the patient live in a House, Apartment, or Mobile Home?",
     "40. Do you have a home health attendant at your home for a few hours per week?",
     "41. What diagnoses do you have that would qualify you for the PWC?",
     "42. Any heart or lung conditions not already mentioned?",
@@ -337,6 +338,7 @@ var INTAKE_PPD_Q = {
     "37. Estatura (pulgadas):",
     "38. Peso (libras):",
     "39. ¿Vive solo/a o con amigos/familia?",
+    "39a. ¿El paciente vive en una casa, un apartamento o una casa móvil?",
     "40. ¿Tiene un/a asistente de salud en casa algunas horas a la semana?",
     "41. ¿Qué diagnósticos tiene que lo/la calificarían para la PWC?",
     "42. ¿Alguna condición cardíaca o pulmonar no mencionada?",
@@ -445,6 +447,11 @@ var INTAKE_PPD_CONTROL = {
   '37': { kind: 'numunit', unit: 'in.', parse: 'height' },
   '38': { kind: 'numunit', unit: 'lbs.' },
   '39': { kind: 'reveal', revealOn: 'Other', placeholder: 'Please specify', options: [{ v: 'Alone' }, { v: 'Friends/Family' }, { v: 'Other' }] },
+  // Q39a (operator rule 2026-07-09) — ENGINE-READ: the engine checks the value
+  // for the substring 'mobile' (livesInMobileHome → the K0821-only restriction
+  // when weight < 285). Canonical-English values per INV-112; the drift guard
+  // feeds them through intakeDeriveClinicalFactors_, so a rename fails CI.
+  '39a': { kind: 'choice', options: [{ v: 'House' }, { v: 'Apartment' }, { v: 'Mobile Home' }] },
   // Operator feedback 2026-07-09 — Q40 (home health attendant) is two-part:
   // Yes/No, and Yes reveals a number-only field + "hours". Value: '' | 'No' |
   // 'Yes' | 'Yes: 12 hours' (string, so drafts / collect / email / the engine
