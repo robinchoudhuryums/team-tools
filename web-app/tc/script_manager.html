@@ -1027,8 +1027,14 @@ function enterCoverageView(area) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   };
   if (!COV_STATE.from) {
-    var today = new Date();
-    COV_STATE.from = isoLocal(today);
+    // F(L-5): anchor "today" to the roster tz (isoDateTz/empTz — the F6
+    // discipline the sibling modals in this file follow), not the browser
+    // clock — a manager whose machine tz differs from their roster tz got a
+    // default window starting on the wrong server day.
+    var todayIso = isoDateTz(empTz());
+    var tp = todayIso.split('-');
+    var today = new Date(+tp[0], +tp[1] - 1, +tp[2]);
+    COV_STATE.from = todayIso;
     COV_STATE.to = isoLocal(new Date(today.getTime() + 6 * 86400000));
   }
   area.innerHTML =
@@ -1193,8 +1199,11 @@ function enterPunctualityView(area) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   };
   if (!PUNCT_STATE.from) {
-    var today = new Date();
-    PUNCT_STATE.to = isoLocal(today);
+    // F(L-5): roster-tz "today" (isoDateTz/empTz), not the browser clock.
+    var todayIso = isoDateTz(empTz());
+    var tp = todayIso.split('-');
+    var today = new Date(+tp[0], +tp[1] - 1, +tp[2]);
+    PUNCT_STATE.to = todayIso;
     PUNCT_STATE.from = isoLocal(new Date(today.getTime() - 29 * 86400000));   // default last 30 days
   }
   area.innerHTML =
@@ -1228,8 +1237,11 @@ function punctPreset_(days) {
   var iso = function (d) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   };
-  var today = new Date();
-  PUNCT_STATE.to = iso(today);
+  // F(L-5): roster-tz "today" (isoDateTz/empTz), not the browser clock.
+  var todayIso = isoDateTz(empTz());
+  var tp = todayIso.split('-');
+  var today = new Date(+tp[0], +tp[1] - 1, +tp[2]);
+  PUNCT_STATE.to = todayIso;
   PUNCT_STATE.from = iso(new Date(today.getTime() - (days - 1) * 86400000));
   var f = document.getElementById('punct-from'), t = document.getElementById('punct-to');
   if (f) f.value = PUNCT_STATE.from;

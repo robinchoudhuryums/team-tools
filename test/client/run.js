@@ -668,6 +668,21 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
   });
 }
 
+console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
+{
+  vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });
+  test('ptoLegitHalfDayPair_: Morning+Afternoon pair is legitimate; dup same-half / full-day pairs are not', () => {
+    const legit = [{ type: 'Half Day - Morning', days: 0.5 }, { type: 'Half Day - Afternoon', days: 0.5 }];
+    assert.strictEqual(sb.ptoLegitHalfDayPair_(legit), true, 'complementary halves = a legitimate full day');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_([legit[1], legit[0]]), true, 'order-insensitive');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_([legit[0], legit[0]]), false, 'Morning+Morning IS the double-deduct signature');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_([{ type: 'Full Day', days: 1 }, { type: 'Full Day', days: 1 }]), false);
+    assert.strictEqual(sb.ptoLegitHalfDayPair_([{ type: 'Full Day', days: 1 }, legit[0]]), false, 'Full+Half stays flagged');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_(legit.concat([legit[0]])), false, 'exactly-two only');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_(null), false);
+  });
+}
+
 console.log('\nCode.js — dashboard AuditLog coercion-safe reads (cycle 7 · M-3/M-4)');
 test('TRIPWIRE (M-3/M-4): getManagerDashboard reads PunchTime via normalizeTime_ and IsAdjustment case-insensitively', () => {
   const src = extractRawFunction('Code.js', 'getManagerDashboard');

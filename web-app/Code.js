@@ -1363,7 +1363,7 @@ function getPtoReconciliation() {
       const date = normalizeDate_(toRows[i][TO.DATE]);
       if (!byEmp[id]) byEmp[id] = {};
       if (!byEmp[id][date]) byEmp[id][date] = [];
-      byEmp[id][date].push(dedu);
+      byEmp[id][date].push({ bucket: dedu.bucket, days: dedu.days, type: String(toRows[i][TO.TYPE]) });
     }
 
     const reps = [];
@@ -1377,6 +1377,15 @@ function getPtoReconciliation() {
           if (x.bucket === 'annual') actAnnual += x.days;
           else if (x.bucket === 'sick') actSick += x.days;
         });
+        // F(L-4): a legitimate Morning+Afternoon pair expects the SUM (a full
+        // day), not the single largest deduction — it is not drift.
+        if (ptoLegitHalfDayPair_(list)) {
+          list.forEach(function (x) {
+            if (x.bucket === 'annual') expAnnual += x.days;
+            else if (x.bucket === 'sick') expSick += x.days;
+          });
+          return;
+        }
         const c = list[0];   // canonical = single largest deduction for the day
         if (c.bucket === 'annual') expAnnual += c.days;
         else if (c.bucket === 'sick') expSick += c.days;
@@ -1400,6 +1409,19 @@ function getPtoReconciliation() {
     });
     return { reps: reps, repsScanned: Object.keys(empById).length };
   } catch (err) { return { error: err.message }; }
+}
+
+/** F(L-4): a Morning+Afternoon half-day pair on one date is a legitimate
+ *  0.5 + 0.5 full day (creatable before the INV-94 dup-guard landed), NOT the
+ *  H1 double-deduct signature. Flagging it made the one-click "Credit &
+ *  reconcile" wrongly credit 0.5d and neutralize a legitimate row (making a
+ *  later revert impossible). Exactly-two rows, one morning + one afternoon. */
+function ptoLegitHalfDayPair_(list) {
+  if (!list || list.length !== 2) return false;
+  const t0 = String(list[0].type || '').toLowerCase();
+  const t1 = String(list[1].type || '').toLowerCase();
+  return ((t0.indexOf('morning') >= 0 && t1.indexOf('afternoon') >= 0) ||
+          (t0.indexOf('afternoon') >= 0 && t1.indexOf('morning') >= 0));
 }
 
 /** Manager-gated, locked corrector for the H1 double-deduct (the mutating
@@ -1430,7 +1452,7 @@ function fixPtoReconciliation(empId) {
       if (!dedu.bucket || !(dedu.days > 0)) continue;
       const date = normalizeDate_(rows[i][TO.DATE]);
       if (!byDate[date]) byDate[date] = [];
-      byDate[date].push({ rowIndex: i + 1, days: dedu.days, bucket: dedu.bucket });
+      byDate[date].push({ rowIndex: i + 1, days: dedu.days, bucket: dedu.bucket, type: String(rows[i][TO.TYPE]) });
     }
 
     let creditAnnual = 0, creditSick = 0;
@@ -1438,6 +1460,7 @@ function fixPtoReconciliation(empId) {
     Object.keys(byDate).forEach(function (d) {
       const list = byDate[d];
       if (list.length < 2) return;
+      if (ptoLegitHalfDayPair_(list)) return;   // F(L-4): legitimate pair — never neutralize
       list.sort(function (a, b) { return b.days - a.days; });   // canonical = list[0]
       for (let k = 1; k < list.length; k++) {
         if (list[k].bucket === 'annual') creditAnnual += list[k].days;
@@ -8155,13 +8178,14 @@ function stampDigestLastRun_(key) {
 //  ────────────────────────────────────────────────────────────────────────
 //  Two scheduled jobs:
 //
-//    sendCallNotesEodDigest()         — runs daily at the manager-tz EOD
-//      hour. Walks the roster, computes each enrolled rep's *current*
-//      local hour, and emails any rep whose local time is currently
-//      within ± EOD_WARNING_WINDOW_MINUTES of CONFIG.CALL_NOTES.EOD_WARNING_HOUR
-//      AND has unresolved action-flagged notes from today. The same
-//      trigger covers reps across timezones — one shot per day at the
-//      manager's EOD captures everyone whose own EOD lines up roughly.
+//    sendCallNotesEodDigest()         — runs HOURLY. On each run it walks
+//      the roster and emails a rep only when their *current local hour*
+//      equals CONFIG.CALL_NOTES.EOD_WARNING_HOUR AND they have unresolved
+//      action-flagged notes from today. Hour-equality (not a ±minute
+//      window — EOD_WARNING_WINDOW_MINUTES is legacy, no longer consulted)
+//      reliably reaches every timezone; the prior once-at-manager-5pm
+//      design silently skipped offshore reps. (F L-14: this banner
+//      described the retired design and was restore-bait.)
 //
 //    sendCallNotesWeeklyDigests()    — runs Friday morning. Sends two
 //      separate manager-targeted emails: training queue (rep-flagged
@@ -8862,7 +8886,7 @@ function buildCalendarForEmployee_(emp, year, month) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function getUsHolidays_(year) {
-  return [
+  const list = [
     fixedHoliday_(year, 0,  1,  "New Year's Day"),
     nthWeekday_  (year, 0,  1, 3,  "Martin Luther King Jr. Day"),
     nthWeekday_  (year, 1,  1, 3,  "Presidents' Day"),
@@ -8875,6 +8899,13 @@ function getUsHolidays_(year) {
     nthWeekday_  (year, 10, 4, 4,  "Thanksgiving Day"),
     fixedHoliday_(year, 11, 25,    "Christmas Day"),
   ];
+  // F(L-3): when NEXT year's Jan 1 falls on a Saturday, its observance is
+  // Dec 31 of THIS year — but every consumer builds its holiday map from
+  // getUsHolidays_(yearOfTheDateViewed), so the observed day was invisible in
+  // all December views (next occurrence: Fri Dec 31 2027 for NYD 2028).
+  const nextNy = fixedHoliday_(year + 1, 0, 1, "New Year's Day (observed)");
+  if (nextNy.date.substring(0, 4) === String(year)) list.push(nextNy);
+  return list;
 }
 function fixedHoliday_(year, month, day, name) {
   const d = new Date(year, month, day);
@@ -10467,6 +10498,13 @@ function submitPunchAdjustRequests(requests) {
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { success: false, error: label + ': invalid time (expected HH:mm).' };
       if (PUNCH_LABELS_.indexOf(punchType) < 0) return { success: false, error: label + ': invalid punch type.' };
       if (date > todayStr) return { success: false, error: label + ': cannot request a future date.' };
+      // F(L-2): same-day future-TIME reject — INV-106 claims parity with
+      // recordPunch's adjustment guards, but a request for TODAY at a
+      // not-yet-reached time (e.g. a 23:59 ClockOut filed at 2pm) slipped
+      // through, and approval wrote it with no time re-check.
+      if (date === todayStr && (time + ':00') > fmtTimeTz_(new Date(), empTz)) {
+        return { success: false, error: label + ': cannot request a time that has not happened yet.' };
+      }
       const daysBack = daysBetween_(date, todayStr);
       if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: label + ': older than the ' + CONFIG.ADJUST_WINDOW_DAYS + '-day adjust window.' };
       if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
