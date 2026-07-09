@@ -8175,6 +8175,11 @@ function cnRenderStoragePanel_(res) {
     if (s.tzMatch === true) tzPill = pill(esc(s.tz || 'tz ✓'), 'ok');
     else if (s.tzMatch === false) tzPill = pill('tz ' + esc(s.tz || '?') + ' ≠ CONFIG', 'crit');
     else tzPill = pill('—', 'muted');
+    // Cycle 7 (M-14 class) — locale drift pill: a locale that differs from the
+    // ADP sheet's changes WHICH string shapes Sheets coerces to Dates on read
+    // (the formTokenCellMs_ bug class). Warn-level.
+    var localePill = (s.localeMatch === false)
+      ? ' ' + pill('locale ' + esc(s.locale || '?') + ' ≠ ADP', 'warn') : '';
     var openLink = s.url ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" style="font-size:11px">Open ↗</a>' : '';
     var perRep = '';
     if (s.perRep && s.perRep.problems && s.perRep.problems.length) {
@@ -8202,7 +8207,7 @@ function cnRenderStoragePanel_(res) {
         noteHtml + perRep + fixHtml +
       '</div>' +
       '<div class="cn-storage-meta">' +
-        '<div>' + statusPill + ' ' + tzPill + '</div>' +
+        '<div>' + statusPill + ' ' + tzPill + localePill + '</div>' +
         '<div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-top:3px">' + esc(s.prop) + ' · ' + esc(s.source) + ' · ' + esc(s.retention) + '</div>' +
         (openLink ? '<div style="margin-top:3px">' + openLink + '</div>' : '') +
       '</div>' +

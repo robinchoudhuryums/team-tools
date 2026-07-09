@@ -672,13 +672,31 @@ test('TRIPWIRE (M-3/M-4): getManagerDashboard reads PunchTime via normalizeTime_
     "AuditLog IsAdjustment is a Sheets-coerced native boolean — String(true) === 'TRUE' is always false (ADJ badge + reason never rendered); compare case-insensitively");
 });
 
-console.log('\nCode.js — spreadsheet-creation timezone tripwire (cycle 7 · H-2)');
-test('TRIPWIRE (H-2): generateExportSheet_ pins the new spreadsheet tz to the ADP sheet', () => {
-  const src = extractRawFunction('Code.js', 'generateExportSheet_');
-  assert.ok(/setSpreadsheetTimeZone\(\s*getAdpSS_\(\)\.getSpreadsheetTimeZone\(\)\s*\)/.test(src),
-    'generateExportSheet_ copies RAW coerced Date cells into a fresh SpreadsheetApp.create() sheet, ' +
-    'which inherits the SCRIPT tz — without pinning to the ADP sheet tz every exported date/time ' +
-    'shifts on display and the payroll .xlsx can carry the previous calendar day');
+console.log('\nCode.js — spreadsheet-creation timezone/locale tripwires (cycle 7 · H-2/M-14 class)');
+test('TRIPWIRE (H-2): createPinnedSpreadsheet_ pins BOTH tz and locale to the ADP sheet', () => {
+  const src = extractRawFunction('Code.js', 'createPinnedSpreadsheet_');
+  assert.ok(/setSpreadsheetTimeZone\(/.test(src),
+    'the factory must pin tz — a script-tz sheet shifts every raw coerced Date/time cell copied into it (the payroll export, H-2)');
+  assert.ok(/setSpreadsheetLocale\(/.test(src),
+    'the factory must pin locale — a coercing locale turns stored ISO-T strings into Dates on read (the formTokenCellMs_/M-14 class)');
+});
+test('TRIPWIRE (H-2): no bare SpreadsheetApp.create() outside createPinnedSpreadsheet_', () => {
+  // Strip comments first — the factory's own doc comment (and others) mention
+  // the call by name; only real call sites should count.
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const factorySrc = stripComments(extractRawFunction('Code.js', 'createPinnedSpreadsheet_'));
+  const factoryCreates = (factorySrc.match(/SpreadsheetApp\.create\(/g) || []).length;
+  const totalCreates = (stripComments(codeSrc).match(/SpreadsheetApp\.create\(/g) || []).length;
+  assert.strictEqual(factoryCreates, 1, 'the factory itself creates exactly once');
+  assert.strictEqual(totalCreates, 1,
+    'every new spreadsheet must go through createPinnedSpreadsheet_ (tz+locale pin) — a bare ' +
+    'SpreadsheetApp.create() inherits the script tz + deployer locale, the exact H-2/M-14 bug class');
+});
+test('TRIPWIRE (H-2): export + provisioning route through the factory', () => {
+  ['generateExportSheet_', 'exportCallNotesRange', 'provisionCallNotesSheet'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/createPinnedSpreadsheet_\(/.test(src), fn + ' uses createPinnedSpreadsheet_');
+  });
 });
 
 console.log('\nCode.js — feature-flag registry + getFlag_ (Plan A)');

@@ -2051,7 +2051,10 @@ function deleteCallNote(noteId) {
     if (!located) return { success: false, error: 'Note not found.' };
 
     const empTz = empTz_(emp);
-    const noteMs = parseTimestampMs_(String(located.row[CN.TIMESTAMP] || ''), empTz);
+    // F(M-14): coercion-safe read — a locale-coerced Date cell stringified
+    // raw made parseTimestampMs_ return null, silently DISABLING the 5-min
+    // delete window (fail-open) on a coercing per-rep sheet.
+    const noteMs = parseTimestampMs_(cnTimestampString_(located.row[CN.TIMESTAMP]), empTz);
     if (noteMs) {
       const elapsed = (Date.now() - noteMs) / 1000;
       if (elapsed > CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS) {
@@ -2246,7 +2249,7 @@ function getMyTrainingQA() {
       let sub = null;
       try { sub = JSON.parse(raw); } catch (e) { continue; }
       if (!sub || !sub.trainingReply) continue;
-      candidates.push({ rowIndex: i + 2, ts: String(tsCol[i][0] || '') });
+      candidates.push({ rowIndex: i + 2, ts: cnTimestampString_(tsCol[i][0]) });   // F(M-14): sort key
     }
     candidates.sort(function (a, b) { return b.ts.localeCompare(a.ts); });
     if (candidates.length > 5) candidates.length = 5;
@@ -2443,7 +2446,9 @@ function getCallNotesAmbient() {
           if (!resolved) {
             unresolvedActionCount++;
             flagCounts.unresolved++;
-            const noteMs = parseTimestampMs_(String(tsDate[i][0] || ''), empTz);
+            // F(M-14): coercion-safe — a locale-coerced Date cell zeroed the
+            // stale counter (raw String → parseTimestampMs_ → null).
+            const noteMs = parseTimestampMs_(cnTimestampString_(tsDate[i][0]), empTz);
             if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
           }
         }
@@ -2742,13 +2747,12 @@ function provisionCallNotesSheet(repEmpId) {
     }
     // Create the new per-rep Spreadsheet (owned by the deployer / script-as-Me).
     const title = 'Call Notes — ' + (repName || repEmpId) + ' (' + repEmpId + ')';
-    const ss = SpreadsheetApp.create(title);
-    // Pin the new Sheet's timezone to the ADP sheet's. DateLocal strings are
-    // coerced to Dates in THIS sheet's tz but recovered by normalizeDate_ in
-    // the ADP sheet's tz — the round-trip only holds when the two match. A
-    // deployer account whose default sheet tz differs would otherwise shift
-    // every date-filtered read (coverage, history, digests) by a day.
-    try { ss.setSpreadsheetTimeZone(getAdpSS_().getSpreadsheetTimeZone()); } catch (e) {}
+    // createPinnedSpreadsheet_ pins the new Sheet's TIMEZONE + LOCALE to the
+    // ADP sheet's. DateLocal strings are coerced to Dates in THIS sheet's tz
+    // but recovered by normalizeDate_ in the ADP sheet's tz — the round-trip
+    // only holds when the two match (and a coercing locale would turn the
+    // ISO-T Timestamp column into Dates on read — the M-14 class).
+    const ss = createPinnedSpreadsheet_(title);
     // Provision the Notes tab with the canonical header (rename the default sheet
     // rather than insert a second one, so there's no stray "Sheet1").
     const notes = ss.getSheets()[0];
@@ -4188,6 +4192,10 @@ function getStorageHealth(opts) {
         out.name = ss.getName();
         out.tz = ss.getSpreadsheetTimeZone();
         out.tzMatch = tzEquivalent_(out.tz, cfgTz);   // alias-aware (Calcutta ≡ Kolkata)
+        // Cycle 7 (M-14 class): surface the LOCALE too — a coercing locale
+        // turns stored ISO-T strings into Dates on read (the formTokenCellMs_
+        // bug class); tz checks alone never showed this drift axis.
+        try { out.locale = ss.getSpreadsheetLocale(); } catch (e2) { out.locale = ''; }
         out.url = ss.getUrl();
       } catch (e) { out.error = e.message; }
       return out;
@@ -4278,7 +4286,19 @@ function getStorageHealth(opts) {
     let kbEmbeds = null;
     if (scanEmbeds && kbStore.reachable) kbEmbeds = kbScanBrokenEmbeds_(KB_EMBED_SCAN_CAP);
 
-    return { configTimezone: cfgTz, stores: stores, kbEmbeds: kbEmbeds };
+    // Cycle 7 (M-14 class): locale-consistency pass — every store's locale
+    // should match the ADP sheet's (the baseline the coercion-recovery helpers
+    // assume). A drifted locale is warn-level: it changes WHICH string shapes
+    // Sheets coerces to Dates on read.
+    const adpLocale = (stores[0] && stores[0].locale) || '';
+    if (adpLocale) {
+      stores.forEach(function (s) {
+        if (s.locale === undefined) return;             // per-rep summary row
+        s.localeMatch = s.locale ? (s.locale === adpLocale) : null;
+      });
+    }
+
+    return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4656,7 +4676,7 @@ function exportCallNotesRange(startDate, endDate) {
 
     const stamp = fmtDate_(new Date()).replace(/-/g, '') + '_' + fmtTime_(new Date()).replace(/:/g, '');
     const name = `Call Notes ${startDate} to ${endDate} (${stamp})`;
-    const newSs = SpreadsheetApp.create(name);
+    const newSs = createPinnedSpreadsheet_(name);   // pins tz+locale (H-2/M-14 class)
     const sh = newSs.getActiveSheet();
     sh.setName('CallNotes');
     const headers = [
@@ -5053,6 +5073,44 @@ function findCallNoteRow_(sheet, noteId) {
   return null;
 }
 
+/** Cycle 7 (H-2/M-14 class fix): the ONLY sanctioned way to create a new
+ *  spreadsheet. SpreadsheetApp.create() inherits the SCRIPT timezone
+ *  (appsscript.json = America/Chicago) and the deployer's default LOCALE —
+ *  BOTH have bitten: a tz mismatch shifts every raw coerced Date/time cell
+ *  copied into the new sheet (the ADP payroll export, H-2), and a coercing
+ *  locale turns stored ISO-T strings into Dates on read (the formTokenCellMs_
+ *  / M-14 class). Pin both to the ADP sheet's values so every sheet this app
+ *  creates behaves like the stores it mirrors. A Node tripwire forbids bare
+ *  SpreadsheetApp.create() calls outside this factory. */
+function createPinnedSpreadsheet_(name) {
+  const ss = SpreadsheetApp.create(name);
+  try {
+    const adp = getAdpSS_();
+    try { ss.setSpreadsheetTimeZone(adp.getSpreadsheetTimeZone()); } catch (e) {}
+    try { ss.setSpreadsheetLocale(adp.getSpreadsheetLocale()); } catch (e) {}
+  } catch (e) { /* ADP store unreachable — keep the created sheet usable */ }
+  return ss;
+}
+
+/** F(M-14): CN Timestamp cells are written "yyyy-MM-dd'T'HH:mm:ss", but a
+ *  per-rep sheet whose LOCALE coerces the ISO-T form (the exact class
+ *  formTokenCellMs_ exists for — it bit when FORMS_SS_ID moved to the Intake
+ *  sheet) returns a Date from getValues(). A raw String() then yields
+ *  "Wed Jul 09 2026 …", which silently breaks newest-first sorting, the
+ *  /T(\d{2}:\d{2})/ shift-span + EOD time displays, the ambient stale-flag
+ *  counter, and FAIL-OPENS the 5-minute delete window (parseTimestampMs_ →
+ *  null). Recover a coerced Date back to the as-written T-form digits in the
+ *  tz that coerced it (per-rep sheets are pinned to the ADP sheet's tz at
+ *  provisioning — INV-110); strings pass through untouched. Same family as
+ *  normalizeAuditTs_ / getMyNoteHourBuckets' inline guard. */
+function cnTimestampString_(val) {
+  if (val instanceof Date) {
+    try { return Utilities.formatDate(val, getAdpSS_().getSpreadsheetTimeZone(), "yyyy-MM-dd'T'HH:mm:ss"); }
+    catch (e) { return String(val); }
+  }
+  return String(val || '');
+}
+
 function callNoteRowToObject_(located) {
   const row = located.row;
   const resolvedRaw = row[CN.RESOLVED];
@@ -5066,7 +5124,7 @@ function callNoteRowToObject_(located) {
   }
   return {
     noteId:           String(row[CN.NOTE_ID] || ''),
-    timestamp:        String(row[CN.TIMESTAMP] || ''),
+    timestamp:        cnTimestampString_(row[CN.TIMESTAMP]),   // F(M-14)
     dateLocal:        normalizeDate_(row[CN.DATE_LOCAL]),
     callback:         String(row[CN.CALLBACK] || ''),
     caller:           String(row[CN.CALLER] || ''),
@@ -8595,16 +8653,14 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   const stamp = fmtDate_(new Date()).replace(/-/g,'') + '_' + fmtTime_(new Date()).replace(/:/g,'');
   const prefix = cycleFilter ? `${cycleFilter} ` : 'ADP ';
   const name = `${prefix}Upload ${startDate} to ${endDate} (${stamp})`;
-  const newSs = SpreadsheetApp.create(name);
-  // F(H-2): pin the new spreadsheet's timezone to the ADP sheet's. The rows
-  // below are raw getValues() output whose DATE/TIME cells are Sheets-coerced
-  // Date objects (wall time in the ADP sheet's tz); SpreadsheetApp.create()
-  // inherits the SCRIPT tz (appsscript.json = America/Chicago), so without
-  // this pin a differing ADP-sheet tz shifts every exported date/time on
-  // display — the payroll .xlsx could carry the previous calendar day.
-  // (Same pattern as provisionCallNotesSheet; exportCallNotesRange writes
-  // normalized strings and doesn't need it.)
-  try { newSs.setSpreadsheetTimeZone(getAdpSS_().getSpreadsheetTimeZone()); } catch (e) {}
+  // F(H-2): createPinnedSpreadsheet_ pins the new spreadsheet's tz (+locale)
+  // to the ADP sheet's. The rows below are raw getValues() output whose
+  // DATE/TIME cells are Sheets-coerced Date objects (wall time in the ADP
+  // sheet's tz); a bare SpreadsheetApp.create() inherits the SCRIPT tz
+  // (America/Chicago), so a differing ADP-sheet tz shifted every exported
+  // date/time on display — the payroll .xlsx could carry the previous
+  // calendar day.
+  const newSs = createPinnedSpreadsheet_(name);
   const sh = newSs.getActiveSheet();
   sh.setName('Timesheet');
   sh.getRange(1, 1, 2, 9).setValues([rows[0].slice(0, 9), rows[1].slice(0, 9)]);
