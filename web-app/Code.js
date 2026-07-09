@@ -111,7 +111,7 @@ const CONFIG = {
   CDR_SS_ID:         'YOUR_CDR_SPREADSHEET_ID',
   CDR_DEPARTMENT:    'CSR',
   CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
-  CDR_CACHE_KEY:     'cdr_metrics_v2',
+  CDR_CACHE_KEY:     'cdr_metrics_v3',   // v3 — meta gained offRosterAgents (INV-85: bump on shape change)
   CDR_ALERT_THRESHOLD: 85,  // % Answered below this → warn badge on Metrics sidebar
 
   // ── Call Notes module ────────────────────────────────────────────────
@@ -4985,7 +4985,12 @@ function sanitizeCallNotePayload_(p) {
   // addition to the legacy single-select p.flagType. When p.flags is
   // present, derive FlagType from it (priority order); fall back to
   // p.flagType otherwise so old clients still work.
-  const flagsArr = sanitizeFlagsArray_(p.flags);
+  let flagsArr = sanitizeFlagsArray_(p.flags);
+  // F(L-13): a legacy/direct-RPC payload with flagType='urgent' and NO flags[]
+  // was accepted by validation (F21) and then silently DISCARDED — urgent never
+  // enters the FlagType column (INV-37) and nothing folded it into
+  // subformData.flags. Fold the lone urgent in so it renders + digests.
+  if (flagsArr.length === 0 && s(p.flagType).toLowerCase() === 'urgent') flagsArr = ['urgent'];
   const derivedFromArr = flagsArr.length > 0 ? deriveFlagType_(flagsArr) : '';
   const flagType = derivedFromArr || s(p.flagType).toLowerCase();
   const tagsArr = sanitizeTagsArray_(p.tags);
@@ -5435,12 +5440,22 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // appended to the SENT body ONLY, AFTER the INV-41 hash check, so the
     // preview/hash contract is untouched. The PHI-free DeptRequests row is logged
     // below, after the send succeeds (only when this is a NEW request).
+    // F(M-16): request-track ONLY sends that include a REAL internal
+    // department. 'Other' is the free-text (possibly customer/external)
+    // recipient path — tracking those (a) mailed an external recipient an
+    // internal "Mark this request resolved" button that dead-ends at a Google
+    // login wall on this domain-restricted deployment, and (b) opened an
+    // 'Other' row no department desk would ever resolve, riding the daily SLA
+    // digest as perpetual overdue noise.
+    const drTrackable = selections.departments.some(function (d) { return d !== 'Other'; });
     const drDeptKey = selections.departments.join(', ');
     let drExistingId = null;
-    try { drExistingId = drFindOpenRequest_(noteId, drDeptKey); } catch (e) { drExistingId = null; }
+    if (drTrackable) {
+      try { drExistingId = drFindOpenRequest_(noteId, drDeptKey); } catch (e) { drExistingId = null; }
+    }
     const drId = drExistingId || Utilities.getUuid();
     const drResolveUrl = getWebAppExecUrl_() + '?resolve=' + encodeURIComponent(drId);
-    const sentHtml = htmlBody + drResolveCtaHtml_(drResolveUrl);
+    const sentHtml = htmlBody + (drTrackable ? drResolveCtaHtml_(drResolveUrl) : '');
 
     // Send first. If MailApp throws, nothing is stamped and the rep sees a clean failure.
     try {
@@ -5448,7 +5463,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         to: recipientList.to,
         cc: CONFIG.CALL_NOTES.CC_EMAIL,
         subject,
-        body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
+        body: textBody + (drTrackable ? ('\n\nMark this request resolved: ' + drResolveUrl) : ''),
         htmlBody: sentHtml,
       });
     } catch (sendErr) {
@@ -5502,14 +5517,17 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // we skip the append and just audit the re-notification. Surfaced in
     // Metrics → Dept Requests with elapsed/resolution-time tracking.
     try {
-      if (!drExistingId) {
+      if (drTrackable && !drExistingId) {   // F(M-16): 'Other'-only sends are never tracked
         getOrCreateDeptRequestsSheet_().appendRow([
           drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
           deptLabel, drRecipientDomains_(recipientList.to), drNowTs_(), 'open', '', '',
-          (selections.updateInfo || 'Call note email'), noteId,
+          // F(L-11): the label is free-typed (datalist-SUGGESTED) — cap it so
+          // a long paste (which could carry patient identifiers) can't ride
+          // into the PHI-free store / the dept inbox / the SLA digest whole.
+          String(selections.updateInfo || 'Call note email').slice(0, 80), noteId,
         ]);
       }
-      writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
+      if (drTrackable) writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
         'reqId=' + drId + '; dept=' + (deptLabel || '(none)') + (drExistingId ? '; resend' : ''));
     } catch (drErr) {
       console.warn('emailFromCallNote: dept-request auto-log failed (noteId=' +
@@ -6643,6 +6661,10 @@ function submitFormByToken(token, formData) {
   // Rep-notification payload, captured inside the lock and sent AFTER release
   // (the email's PDF render is slow — see the deferred send in finally).
   let notifyPayload = null;
+  // F(L-12): failure-notification (size-cap rejects) — ALSO deferred past the
+  // lock. The three cap paths previously called MailApp inside the lock,
+  // stalling every mutating endpoint app-wide for the mail call's duration.
+  let failNotify = null;
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -6706,16 +6728,16 @@ function submitFormByToken(token, formData) {
     const FORM_FIELD_LIMIT = 200;
     const FORM_CELL_CHAR_LIMIT = 45000;
     if (Object.keys(sanitizedData).length > FORM_FIELD_LIMIT) {
-      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'too many fields');
+      failNotify = { createdBy: createdBy, recipientEmail: recipientEmail, formType: formType, reason: 'too many fields' };   // F(L-12): sent after lock release
       return { success: false, error: 'This submission has too many fields to save.' };
     }
     const dataJson = JSON.stringify(sanitizedData);
     if (dataJson.length > FORM_CELL_CHAR_LIMIT) {
-      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'the response data exceeds the per-cell size limit');
+      failNotify = { createdBy: createdBy, recipientEmail: recipientEmail, formType: formType, reason: 'the response data exceeds the per-cell size limit' };   // F(L-12): sent after lock release
       return { success: false, error: 'This submission is too large to save. Please shorten your responses and resubmit.' };
     }
     if (signatureData.length > FORM_CELL_CHAR_LIMIT) {
-      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'the signature image exceeds the per-cell size limit');
+      failNotify = { createdBy: createdBy, recipientEmail: recipientEmail, formType: formType, reason: 'the signature image exceeds the per-cell size limit' };   // F(L-12): sent after lock release
       return { success: false, error: 'Your signature image is too large to save. Please redraw a simpler signature and resubmit.' };
     }
 
@@ -6831,6 +6853,10 @@ function submitFormByToken(token, formData) {
     return { success: false, error: 'We could not submit your form. Please try again, or contact UMS if the problem persists.' };
   } finally {
     lock.releaseLock();
+    if (failNotify) {
+      try { notifyRepOfFailedSubmission_(failNotify.createdBy, failNotify.recipientEmail, failNotify.formType, failNotify.reason); }
+      catch (e2) { console.warn('submitFormByToken: failure notice failed: ' + e2.message); }
+    }
     if (notifyPayload) {
       try {
         notifyRepOfFormSubmission_(notifyPayload.createdBy, notifyPayload.formType,
@@ -8500,7 +8526,10 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
   if (coaching && coaching.length) {
     const rows = coaching.map(function (oc) {
       return '<tr>' +
-        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity) + (oc.item.patientTRX ? ' · ' + esc_(oc.item.patientTRX) : '') + '</td>' +
+        // F(L-10): NO patientTRX here — INV-134: coaching notifications are
+        // PHI-minimal (severity only, never the patient/TRX or narrative).
+        // The manager opens the team-scoped Coaching tab for the detail.
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity) + '</td>' +
         '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">since ' + esc_(String(oc.item.createdAt).substring(0, 10)) + '</td>' +
         '</tr>';
     }).join('');
@@ -11076,18 +11105,24 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var useRoster = rosterNames && rosterNames.length > 0;
 
   var agents = {};
+  var offRoster = {};   // F(M-11): canonical in-range agent names NOT on the roster
   var rowsMatched = 0;
 
   for (var i = 0; i < values.length; i++) {
     var rawAgent = String(values[i][CDR.AGENT - 1] || '').trim();
     if (!rawAgent) continue;
     if (isCdrQueueSentinel_(rawAgent)) continue;
-    var agent = (aliasMap[rawAgent] && useRoster && nameSet[aliasMap[rawAgent]])
-      ? aliasMap[rawAgent] : rawAgent;
-    if (useRoster && !nameSet[agent]) continue;
-
+    // F(M-11): date-filter BEFORE the roster drop, and record dropped
+    // (alias-canonicalized) agents. The roster filter previously discarded
+    // off-roster rows outright, so getTeamMetrics' "unmatchedAgents"
+    // diagnostic iterated a set that was a subset of the roster by
+    // construction — it could NEVER be non-empty (a new CDR agent or a
+    // renamed rep never surfaced, INV-66/S42 silently dead).
     var dateIso = cdrRowDateIso_(values[i][CDR.DATE - 1], tz);
     if (!dateIso || dateIso < from || dateIso > to) continue;
+    var agent = (aliasMap[rawAgent] && useRoster && nameSet[aliasMap[rawAgent]])
+      ? aliasMap[rawAgent] : rawAgent;
+    if (useRoster && !nameSet[agent]) { offRoster[aliasMap[rawAgent] || rawAgent] = true; continue; }
 
     rowsMatched++;
     if (!agents[agent]) {
@@ -11118,7 +11153,8 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     delete a._dates; delete a.attSum; delete a.attCount;
   });
 
-  var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched, columnWarning: colWarning } };
+  var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched, columnWarning: colWarning,
+    offRosterAgents: Object.keys(offRoster).sort() } };   // F(M-11)
   try {
     var payload = JSON.stringify(result);
     if (payload.length > 90000) {
@@ -11758,10 +11794,11 @@ function getTeamMetrics(dateOrFrom, to) {
       }
     });
 
-    // Direction 1: CDR agents NOT on the team-tools roster
-    Object.keys(cdrResult.agents).forEach(function (name) {
-      if (!repMap[name]) unmatchedAgents.push(name);
-    });
+    // Direction 1: CDR agents NOT on the team-tools roster. F(M-11): sourced
+    // from the reader's offRosterAgents (recorded BEFORE its roster filter) —
+    // cdrResult.agents is roster-filtered by construction, so the old loop
+    // over its keys could never find an unmatched agent.
+    unmatchedAgents = ((cdrResult.meta && cdrResult.meta.offRosterAgents) || []).slice();
     // Direction 2: team-tools reps with zero CDR match
     var rosterWithNoCdr = [];
     Object.keys(repMap).forEach(function (name) {

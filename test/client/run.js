@@ -661,6 +661,11 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
     const legit = snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { completionSeconds: 90 } });
     assert.strictEqual(legit.subformData.completionSeconds, 90);
   });
+  test('L-13: a lone legacy flagType=urgent folds into subformData.flags instead of being silently dropped', () => {
+    const c = snCtx.sanitizeCallNotePayload_({ issue: 'x', flagType: 'urgent' });
+    assert.strictEqual(JSON.stringify(c.subformData.flags), '["urgent"]', 'urgent preserved in the blob');
+    assert.strictEqual(c.flagType, 'urgent', 'validation still sees the extended value; sanitizeFlagType_ strips it from the COLUMN downstream (INV-37)');
+  });
 }
 
 console.log('\nCode.js — dashboard AuditLog coercion-safe reads (cycle 7 · M-3/M-4)');
