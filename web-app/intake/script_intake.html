@@ -101,22 +101,38 @@
   .intk-sev-chip.on[data-set="Mod"]    { background: var(--warn); color: var(--paper); border-color: var(--warn); }
   .intk-sev-chip.on[data-set="Severe"] { background: var(--destructive); color: var(--paper); border-color: var(--destructive); }
 
-  /* PPD redesign Phase 1 — new control kinds (unused until Phase 2 opts questions in). */
-  .intk-choice { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
-  .intk-choice-btn { appearance: none; border: none; background: var(--paper-2); color: var(--muted); font: inherit; font-size: .85rem; padding: 6px 16px; cursor: pointer; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
-  .intk-choice-btn + .intk-choice-btn { border-left: 1px solid var(--line); }
+  /* PPD redesign Phase 1 — new control kinds (unused until Phase 2 opts questions in).
+     Operator feedback 2026-07-09: `choice` groups were a JOINED segmented box that
+     wrapped awkwardly with 3 long labels (Q2–Q6 — the second line rendered as a
+     detached box with a stray gap). They now render as the same separated pill
+     buttons the `multi` kind uses (the Q1 look), which wrap cleanly; markup and
+     values are unchanged, CSS only. `.intk-reveal-opts` shares .intk-choice-btn
+     children, so it gets the same pill treatment. */
+  .intk-choice { display: flex; flex-wrap: wrap; gap: 6px; }
+  .intk-choice-btn { appearance: none; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--muted); font: inherit; font-size: .82rem; padding: 6px 14px; cursor: pointer; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
   .intk-choice-btn:hover { color: var(--ink); }
-  .intk-choice-btn.on { background: var(--accent); color: var(--paper); }
+  .intk-choice-btn.on { background: var(--accent); color: var(--paper); border-color: var(--accent); }
   .intk-multi { display: flex; flex-wrap: wrap; gap: 6px; }
   .intk-multi-btn { appearance: none; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--muted); font: inherit; font-size: .82rem; padding: 6px 14px; cursor: pointer; transition: background var(--t) var(--ease), color var(--t) var(--ease); }
   .intk-multi-btn:hover { color: var(--ink); }
   .intk-multi-btn.on { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+  /* Operator feedback 2026-07-09 — severity-toned SELECTED states for the
+     engine-critical multis (Q25/Q31a/Q34). data-tone is DISPLAY-ONLY config
+     (the stored value is still the option's canonical-English `v` — INV-112);
+     the palette mirrors the pain scale: warn ≈ Mild, danger ≈ Severe, and
+     'no' = the dark ink chip the scale uses for "None". */
+  .intk-multi-btn.on[data-tone="warn"]   { background: var(--warn-soft); color: var(--warning-deep); border-color: transparent; }
+  .intk-multi-btn.on[data-tone="danger"] { background: var(--destructive-soft); color: var(--danger-deep); border-color: transparent; }
+  .intk-multi-btn.on[data-tone="no"]     { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .intk-numunit { display: inline-flex; align-items: center; gap: 8px; }
   .intk-numunit input { width: 6.5em; }
   .intk-unit { font-size: .85rem; color: var(--muted); }
   .intk-reveal { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-  .intk-reveal-opts { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
+  .intk-reveal-opts { display: flex; flex-wrap: wrap; gap: 6px; }
   .intk-reveal-text { min-width: 240px; }
+  /* Operator feedback 2026-07-09 — Q40 two-part control: Yes/No, then a
+     number-only field + unit text revealed on Yes (the ynreveal layout). */
+  .intk-ynnum { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   /* Phase 3 — curated condition picker (search box + filterable multi-select + chips). */
   .intk-condition { display: flex; flex-direction: column; gap: 8px; max-width: 460px; }
   .intk-cond-filter { width: 100%; }
@@ -130,9 +146,32 @@
   .intk-cond-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--accent-soft); color: var(--ink); border-radius: 999px; font-size: .8rem; padding: 3px 6px 3px 11px; }
   .intk-cond-chip-x { appearance: none; border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 3px; }
   .intk-cond-chip-x:hover { color: var(--danger); }
-  /* Phase 4 — label help glyph, Yes/No-reveals-multi, conditional-hide row. */
-  .intk-help { display: inline-flex; vertical-align: middle; margin-left: 5px; color: var(--muted); cursor: help; }
-  .intk-help:hover { color: var(--accent); }
+  /* Phase 4 — label help glyph, Yes/No-reveals-multi, conditional-hide row.
+     Operator feedback 2026-07-09: the glyph's NATIVE title tooltip clashed with
+     the app's visual language — replaced with a tokened CSS bubble driven by
+     data-tip (attr() content; shows on hover AND keyboard focus). The ink-on-
+     paper inversion flips correctly in dark mode; left-anchored so it grows
+     into the row instead of clipping off the label column's left edge. */
+  .intk-help { position: relative; display: inline-flex; vertical-align: middle; margin-left: 5px; color: var(--muted); cursor: help; }
+  .intk-help:hover, .intk-help:focus-visible { color: var(--accent); outline: none; }
+  .intk-help::after {
+    content: attr(data-tip);
+    position: absolute; left: -10px; bottom: calc(100% + 9px); z-index: 30;
+    width: min(320px, 58vw);
+    background: var(--ink); color: var(--paper);
+    font-size: .76rem; font-weight: 400; line-height: 1.5; text-transform: none; letter-spacing: 0;
+    padding: 9px 12px; border-radius: var(--radius-sm); box-shadow: var(--shadow-md);
+    opacity: 0; visibility: hidden; transform: translateY(4px); pointer-events: none;
+    transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility var(--t);
+  }
+  .intk-help::before {   /* caret */
+    content: ''; position: absolute; left: 2px; bottom: calc(100% + 3px); z-index: 30;
+    border: 6px solid transparent; border-top-color: var(--ink); border-bottom: none;
+    opacity: 0; visibility: hidden; transform: translateY(4px); pointer-events: none;
+    transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility var(--t);
+  }
+  .intk-help:hover::after, .intk-help:focus-visible::after,
+  .intk-help:hover::before, .intk-help:focus-visible::before { opacity: 1; visibility: visible; transform: translateY(0); }
   .intk-ynreveal { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
   .intk-yr-sub { display: flex; flex-wrap: wrap; gap: 6px; }
 
@@ -395,12 +434,22 @@ var INTAKE_PPD_CONTROL = {
   '5':  { kind: 'choice', options: [{ v: 'Cannot do at all' }, { v: 'Only with assistance' }, { v: 'Can only do with extended time' }] },
   '6':  { kind: 'choice', options: [{ v: 'Cannot do at all' }, { v: 'Only with assistance' }, { v: 'Can only do with extended time' }] },
   '24': { kind: 'choice', options: [{ v: 'Rx' }, { v: 'Over-the-counter' }, { v: 'No' }] },
-  '25': { kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Hands' }, { v: 'Feet' }, { v: 'Legs' }] },
-  '31a':{ kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Paralysis Left Arm' }, { v: 'Paralysis Right Arm' }, { v: 'Paralysis Left Leg' }, { v: 'Paralysis Right Leg' }, { v: 'Weakness Left Side' }, { v: 'Weakness Right Side' }] },
-  '34': { kind: 'multi', exclusive: 'No', options: [{ v: 'No' }, { v: 'Left (Above Knee)' }, { v: 'Left (Below Knee)' }, { v: 'Right (Above Knee)' }, { v: 'Right (Below Knee)' }] },
+  // Operator feedback 2026-07-09 — `tone` is DISPLAY-ONLY severity color on the
+  // SELECTED state (warn = light yellow, danger = light red, no = the dark ink
+  // chip). The engine-critical option VALUES are byte-unchanged (INV-112 — the
+  // Phase-2 drift guard pins them); adding/removing a tone can never touch the
+  // engine.
+  '25': { kind: 'multi', exclusive: 'No', options: [{ v: 'No', tone: 'no' }, { v: 'Hands', tone: 'warn' }, { v: 'Feet', tone: 'warn' }, { v: 'Legs', tone: 'warn' }] },
+  '31a':{ kind: 'multi', exclusive: 'No', options: [{ v: 'No', tone: 'no' }, { v: 'Paralysis Left Arm', tone: 'danger' }, { v: 'Paralysis Right Arm', tone: 'danger' }, { v: 'Paralysis Left Leg', tone: 'danger' }, { v: 'Paralysis Right Leg', tone: 'danger' }, { v: 'Weakness Left Side', tone: 'warn' }, { v: 'Weakness Right Side', tone: 'warn' }] },
+  '34': { kind: 'multi', exclusive: 'No', options: [{ v: 'No', tone: 'no' }, { v: 'Left (Above Knee)', tone: 'warn' }, { v: 'Left (Below Knee)', tone: 'warn' }, { v: 'Right (Above Knee)', tone: 'warn' }, { v: 'Right (Below Knee)', tone: 'warn' }] },
   '37': { kind: 'numunit', unit: 'in.', parse: 'height' },
   '38': { kind: 'numunit', unit: 'lbs.' },
   '39': { kind: 'reveal', revealOn: 'Other', placeholder: 'Please specify', options: [{ v: 'Alone' }, { v: 'Friends/Family' }, { v: 'Other' }] },
+  // Operator feedback 2026-07-09 — Q40 (home health attendant) is two-part:
+  // Yes/No, and Yes reveals a number-only field + "hours". Value: '' | 'No' |
+  // 'Yes' | 'Yes: 12 hours' (string, so drafts / collect / email / the engine
+  // path are unchanged; Q40 is NOT engine-read).
+  '40': { kind: 'ynnum', unit: 'hours' },
   '29': { kind: 'condition', list: 'vascular' },
   '41': { kind: 'condition', list: 'qualifying' },
   '42': { kind: 'condition', list: 'cardiopulmonary' },
@@ -643,8 +692,10 @@ function intakePpdRowHtml_(qNum, text, isSecondary) {
   }
   var labelFor = hasInputId ? ' for="intk-ppd-q' + esc(qNum) + '"' : '';
   // Phase 4 — optional hover-help glyph after the label text.
+  // data-tip drives the tokened CSS tooltip (no native `title` — the two
+  // would double up); aria-label keeps it readable to screen readers.
   var help = INTAKE_PPD_HELP[qNum]
-    ? '<span class="intk-help" tabindex="0" role="img" title="' + esc(INTAKE_PPD_HELP[qNum]) + '" aria-label="' + esc(INTAKE_PPD_HELP[qNum]) + '">' + icon('info', 13) + '</span>'
+    ? '<span class="intk-help" tabindex="0" role="img" data-tip="' + esc(INTAKE_PPD_HELP[qNum]) + '" aria-label="' + esc(INTAKE_PPD_HELP[qNum]) + '">' + icon('info', 13) + '</span>'
     : '';
   // Phase 4 — conditional-visibility: a reveal row starts hidden; intakePpdApplyReveals_
   // shows it when the parent answer matches.
@@ -728,6 +779,8 @@ function intakePpdGetVal_(root, qNum) {
   if (reveal) return intakeRevealGet_(reveal);
   var ynrev = root.querySelector('.intk-ynreveal[data-qnum="' + qNum + '"]');
   if (ynrev) return intakeYnRevealGet_(ynrev);
+  var ynnum = root.querySelector('.intk-ynnum[data-qnum="' + qNum + '"]');
+  if (ynnum) return intakeYnNumGet_(ynnum);
   var cond = root.querySelector('.intk-condition[data-qnum="' + qNum + '"]');
   if (cond) return intakeConditionGet_(cond);
   var input = root.querySelector('[data-intk-qnum="' + qNum + '"]');
@@ -742,6 +795,8 @@ function intakePpdSetVal_(root, qNum, val) {
   if (reveal) { intakeRevealSet_(reveal, val); return; }
   var ynrev = root.querySelector('.intk-ynreveal[data-qnum="' + qNum + '"]');
   if (ynrev) { intakeYnRevealSet_(ynrev, val); return; }
+  var ynnum = root.querySelector('.intk-ynnum[data-qnum="' + qNum + '"]');
+  if (ynnum) { intakeYnNumSet_(ynnum, val); return; }
   var cond = root.querySelector('.intk-condition[data-qnum="' + qNum + '"]');
   if (cond) { intakeConditionSet_(cond, val); return; }
   var input = root.querySelector('[data-intk-qnum="' + qNum + '"]');
@@ -769,6 +824,7 @@ function intakePpdControlHtml_(ctrl, qNum, ariaLabel) {
     case 'numunit':   return intakeNumUnitControlHtml_(ctrl, qNum);
     case 'reveal':    return intakeRevealControlHtml_(ctrl, qNum, ariaLabel);
     case 'ynreveal':  return intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel);
+    case 'ynnum':     return intakeYnNumControlHtml_(ctrl, qNum, ariaLabel);
     case 'condition': return intakeConditionControlHtml_(ctrl, qNum);
     default:          return '<input type="text" autocomplete="off" id="intk-ppd-q' + esc(qNum) + '" name="intk-ppd-q' + esc(qNum) + '" data-intk-qnum="' + esc(qNum) + '">';
   }
@@ -787,7 +843,11 @@ function intakeChoiceControlHtml_(ctrl, qNum, ariaLabel) {
 // clears the rest). Comma-joined string value in OPTION order (deterministic).
 function intakeMultiControlHtml_(ctrl, qNum, ariaLabel) {
   var btns = (ctrl.options || []).map(function (o) {
-    return '<button type="button" class="intk-multi-btn" data-set="' + esc(o.v) + '" role="checkbox" aria-checked="false" onclick="intakeMultiPick_(this)">' + esc(o.l || o.v) + '</button>';
+    // data-tone = display-only severity color for the SELECTED state (never
+    // part of the stored value — INV-112 canonical-English values unchanged).
+    return '<button type="button" class="intk-multi-btn" data-set="' + esc(o.v) + '"' +
+      (o.tone ? ' data-tone="' + esc(o.tone) + '"' : '') +
+      ' role="checkbox" aria-checked="false" onclick="intakeMultiPick_(this)">' + esc(o.l || o.v) + '</button>';
   }).join('');
   return '<div class="intk-multi" data-qnum="' + esc(qNum) + '" data-exclusive="' + esc(ctrl.exclusive || '') + '" role="group" aria-label="' + esc(ariaLabel) + '">' + btns + '</div>';
 }
@@ -947,6 +1007,62 @@ function intakeYnRevealSet_(grp, val) {
       var on = parsed.subs.indexOf(b.getAttribute('data-set')) >= 0;
       b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
+  }
+}
+
+// (d2) Yes/No-reveals-NUMBER (operator feedback 2026-07-09 — Q40 attendant
+// hours). Yes reveals a number-only field + unit text; No/unset hide + clear
+// it. Value: '' | 'No' | 'Yes' | 'Yes: <n> <unit>' — a plain string, so
+// drafts / intakeCollectPpd_ / the email builder are unchanged (Q40 is not
+// engine-read). Pure serialize/parse (intakeYnNumSerialize_/Parse_) are
+// Node-pinned; the DOM handlers below call them.
+function intakeYnNumControlHtml_(ctrl, qNum, ariaLabel) {
+  var unit = ctrl.unit || '';
+  return '<div class="intk-ynnum" data-qnum="' + esc(qNum) + '" data-unit="' + esc(unit) + '" role="group" aria-label="' + esc(ariaLabel) + '">' +
+      '<div class="intk-yn intk-yr-yn" role="radiogroup">' +
+        '<button type="button" class="intk-yn-btn yes" data-set="Yes" role="radio" aria-checked="false" onclick="intakeYnNumPickYn_(this)">Yes</button>' +
+        '<button type="button" class="intk-yn-btn no" data-set="No" role="radio" aria-checked="false" onclick="intakeYnNumPickYn_(this)">No</button>' +
+      '</div>' +
+      '<span class="intk-numunit intk-ynnum-num" style="display:none">' +
+        '<input type="text" inputmode="numeric" autocomplete="off" aria-label="' + esc(ariaLabel) + ' — ' + esc(unit) + '" oninput="intakeYnNumInput_(this)">' +
+        '<span class="intk-unit">' + esc(unit) + '</span>' +
+      '</span>' +
+    '</div>';
+}
+function intakeYnNumPickYn_(btn) {
+  var grp = btn.closest('.intk-ynnum'); if (!grp) return;
+  grp.querySelectorAll('.intk-yr-yn .intk-yn-btn').forEach(function (b) {
+    var on = (b === btn); b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+    if (on) { b.classList.remove('popping'); void b.offsetWidth; b.classList.add('popping'); }
+  });
+  var num = grp.querySelector('.intk-ynnum-num');
+  if (btn.getAttribute('data-set') === 'Yes') { if (num) num.style.display = ''; }
+  else if (num) {   // No → hide + clear the hours so a stale count can't ride
+    num.style.display = 'none';
+    var inp = num.querySelector('input'); if (inp) inp.value = '';
+  }
+  intakePpdAfterChange_();
+}
+function intakeYnNumInput_(inp) {
+  var digits = String(inp.value || '').replace(/\D/g, '');   // number-only field
+  if (inp.value !== digits) inp.value = digits;
+  intakePpdAfterChange_();
+}
+function intakeYnNumGet_(grp) {
+  var ynBtn = grp.querySelector('.intk-yr-yn .intk-yn-btn.on');
+  var inp = grp.querySelector('.intk-ynnum-num input');
+  return intakeYnNumSerialize_(ynBtn ? ynBtn.getAttribute('data-set') : '',
+    inp ? inp.value : '', grp.getAttribute('data-unit') || '');
+}
+function intakeYnNumSet_(grp, val) {
+  var parsed = intakeYnNumParse_(val);
+  grp.querySelectorAll('.intk-yr-yn .intk-yn-btn').forEach(function (b) {
+    var on = (b.getAttribute('data-set') === parsed.yn); b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  var num = grp.querySelector('.intk-ynnum-num');
+  if (num) {
+    num.style.display = (parsed.yn === 'Yes') ? '' : 'none';
+    var inp = num.querySelector('input'); if (inp) inp.value = parsed.num;
   }
 }
 
@@ -1119,6 +1235,29 @@ function intakeYnRevealParse_(str, revealOn) {
   if (str.toLowerCase() === revealOn.toLowerCase()) return { yn: revealOn, subs: [] };
   if (str.toLowerCase() === 'no') return { yn: 'No', subs: [] };
   return { yn: '', subs: [] };   // legacy free-text → unselected (raw text stays in the stored row)
+}
+// PURE — Yes/No-reveals-number (Q40 attendant hours). Value: '' | 'No' |
+// 'Yes' | 'Yes: <n> <unit>'. `num` is digits-only (the input sanitizes, but
+// serialize re-strips defensively so drafts round-trip clean).
+function intakeYnNumSerialize_(yn, num, unit) {
+  yn = String(yn || '');
+  if (!yn) return '';
+  if (yn !== 'Yes') return 'No';
+  var digits = String(num == null ? '' : num).replace(/\D/g, '');
+  if (!digits) return 'Yes';
+  return 'Yes: ' + digits + (unit ? ' ' + unit : '');
+}
+function intakeYnNumParse_(str) {
+  str = String(str == null ? '' : str).trim();
+  if (!str) return { yn: '', num: '' };
+  var low = str.toLowerCase();
+  if (low === 'no') return { yn: 'No', num: '' };
+  if (low === 'yes') return { yn: 'Yes', num: '' };
+  if (low.indexOf('yes:') === 0) {
+    var digits = str.substring(4).replace(/\D/g, '');
+    return { yn: 'Yes', num: digits };
+  }
+  return { yn: '', num: '' };   // legacy free-text → unselected (raw text stays in the stored row)
 }
 
 function intakePpdAfterChange_() {
