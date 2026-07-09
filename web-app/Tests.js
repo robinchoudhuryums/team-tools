@@ -845,6 +845,7 @@ function _runAllTests() {
   _smokeTest('cn_buildEmailHtml_escapesUserFields', test_cn_buildEmailHtml_escapesUserFields);
   _smokeTest('cn_formSubmissionCard_escapes', test_cn_formSubmissionCard_escapes);
   _smokeTest('config_adpSheetTzMatchesConfig', test_config_adpSheetTzMatchesConfig);
+  _smokeTest('automationDetectorLiveness',      test_automationDetectorLiveness);
   _smokeTest('cn_extractAuditNoteId_parses',       test_cn_extractAuditNoteId_parses);
   _smokeTest('cn_extractAuditNoteId_noMatch',      test_cn_extractAuditNoteId_noMatch);
   _smokeTest('tpl_formToken_usesUnescapedScriptlet', test_tpl_formToken_usesUnescapedScriptlet);
@@ -2951,6 +2952,20 @@ function test_cn_formSubmissionCard_escapes() {
   _assertFalse(html.indexOf('<script>alert(1)</script>') >= 0, 'raw script tag must NOT appear in the card');
   _assertContains(html, '&lt;script&gt;', 'value rendered escaped');
   _assertContains(html, 'a &amp; b &lt; c', 'ampersand/angle-bracket escaped');
+}
+
+// Turn C — detector liveness: every writer↔parser round-trip the Automation
+// Health panel/digest reports on must be ok. A failure here means a monitoring
+// loop is silently dead even though its trigger runs (the H-1/M-11 class —
+// coaching overdue + unmatched-agent detection both shipped dead and nothing
+// surfaced it). Read-only (cnTimestampString_ opens the ADP sheet for its tz,
+// same class as the tz tripwire below).
+function test_automationDetectorLiveness() {
+  const checks = automationDetectorChecks_();
+  _assertTrue(checks.length >= 5, 'all five pure detector checks ran (' + checks.length + ')');
+  checks.forEach(function (c) {
+    _assertTrue(c.ok, 'detector "' + c.key + '" alive — ' + (c.detail || c.label));
+  });
 }
 
 function test_config_adpSheetTzMatchesConfig() {
