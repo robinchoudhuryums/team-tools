@@ -8341,6 +8341,25 @@ function cnRenderHealthPanel_(res) {
     sfHtml = okLine('No personal-sheet sync failures in the last ' + (sf.windowDays || 30) + ' days.');
   }
 
+  // (#1, INV-150) Client error beacon — exception metadata posted by the
+  // shell's window.onerror / unhandledrejection hook (PHI-safe: message /
+  // stack / view only, never field values). Zero = quiet all-clear; a legacy
+  // server payload without the field renders the same all-clear.
+  var ce = res.clientErrors || { count: 0, recent: [], windowDays: 7 };
+  var ceHtml;
+  if (ce.count > 0) {
+    var ceRows = (ce.recent || []).map(function (r) {
+      return '<div style="font-size:11px;padding:2px 0">' +
+        '<span class="tabular" style="font-family:var(--mono);color:var(--warning-deep)">' + esc(r.timestampMgr) + (tz ? ' ' + esc(tz) : '') + '</span>' +
+        ' · <strong>' + esc(r.empId) + '</strong> · ' + esc(r.view || '?') + ' · ' + esc(r.message) + '</div>';
+    }).join('');
+    ceHtml = warnBox(icon('warning', 11) + ' <strong>' + ce.count + '</strong> client-side error(s) reported in the last ' +
+      (ce.windowDays || 7) + ' days — reps are hitting JS failures the server never sees.' + ceRows +
+      (ce.url ? '<div style="margin-top:4px"><a href="' + esc(ce.url) + '" target="_blank" rel="noopener" style="font-size:11px;color:inherit">Open ClientErrors ↗</a></div>' : ''));
+  } else {
+    ceHtml = okLine('No client-side errors reported in the last ' + (ce.windowDays || 7) + ' days.');
+  }
+
   // (b) CDR data feed
   var cdr = res.cdr || { ok: false };
   var cdrParts = [];
@@ -8374,6 +8393,7 @@ function cnRenderHealthPanel_(res) {
     weekly: { label: 'Weekly training/review digests', expect: 'Friday 8am — stale past 8d' },
     trainingOverdue: { label: 'Training-overdue digest', expect: 'daily 7am — stale past 26h' },
     deptReqReminder: { label: 'Dept-request SLA reminder', expect: 'daily 10am — stale past 26h' },
+    managerBrief: { label: 'Manager daily brief', expect: 'daily 8am — heartbeats even while the managerDailyBrief toggle is off' },
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };
@@ -8427,6 +8447,7 @@ function cnRenderHealthPanel_(res) {
     '</div>' +
     '<div style="font-size:12px;color:var(--muted);margin-bottom:4px">Silent-failure signals in one place: personal-sheet sync, the CDR data feed, and when each automation job last left an audit trail. The source rows live in the AuditLog tab (link above).</div>' +
     secLabel('Personal-sheet sync') + sfHtml +
+    secLabel('Client errors · last 7 days') + ceHtml +
     secLabel('CDR data feed · last 7 days') + cdrHtml +
     secLabel('Automation last seen') + runsHtml +
     secLabel('Digest heartbeats') + (digestsHtml || '<div style="font-size:12px;color:var(--muted)">No digest data (server pre-dates heartbeats).</div>') +

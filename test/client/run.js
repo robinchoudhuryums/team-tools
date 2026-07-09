@@ -2831,5 +2831,108 @@ test('drSlaStatus_ bands ontime / atrisk(≥75%) / overdue(≥100%) wall-clock',
   assert.strictEqual(drSlaStatus_(60, 0), null, 'no SLA → no badge');
 });
 
+console.log('\nscript_core.html — client error beacon (#1, INV-150)');
+const errBeaconPayload_ = loadFunction(sb, 'script_core.html', 'errBeaconPayload_');
+test('errBeaconPayload_ bounds every field and rejects empty messages', () => {
+  assert.strictEqual(errBeaconPayload_('', 'stack', 'clock', 'onerror'), null, 'empty message → nothing to send');
+  assert.strictEqual(errBeaconPayload_('   ', 'stack', 'clock', 'onerror'), null, 'whitespace message → null');
+  assert.strictEqual(errBeaconPayload_(null, null, null, null), null, 'null-safe');
+  const p = errBeaconPayload_('x'.repeat(1000), 'y'.repeat(5000), 'z'.repeat(100), 'unhandledrejection');
+  assert.strictEqual(p.message.length, 400, 'message capped at the server CLIENT_ERR_MSG_MAX mirror');
+  assert.strictEqual(p.stack.length, 1500, 'stack capped at the server CLIENT_ERR_STACK_MAX mirror');
+  assert.strictEqual(p.view.length, 40, 'view capped');
+  assert.strictEqual(p.source, 'unhandledrejection');
+  assert.strictEqual(errBeaconPayload_('boom', '', '', 'garbage').source, 'onerror',
+    'unknown source coerces to onerror (mirrors the server whitelist)');
+  // PHI posture: the payload has EXACTLY these four keys — no DOM/field slots.
+  assert.strictEqual(Object.keys(errBeaconPayload_('m', 's', 'v', 'onerror')).sort().join(','),
+    'message,source,stack,view', 'payload shape is closed — no field-value slot can ride along');
+});
+test('recordClientError is employee-gated, locked, and server-bounded (source tripwire)', () => {
+  const src = extractRawFunction('Code.js', 'recordClientError');
+  assert.ok(/getEmployeeInfo_\s*\(/.test(src), 'requires getEmployeeInfo_ — not a public endpoint');
+  assert.ok(/waitLock\s*\(\s*15000\s*\)/.test(src), 'acquires the ScriptLock (INV-01 — it appends)');
+  assert.ok(/CLIENT_ERR_MSG_MAX/.test(src) && /CLIENT_ERR_STACK_MAX/.test(src),
+    'bounds message + stack server-side (a crafted RPC must not bloat cells)');
+  assert.ok(/CLIENT_ERR_RATE_MAX_PER_HOUR/.test(src), 'rate-caps per rep (flood protection)');
+});
+test('client-error summary is wired end to end (computeAutomationHealth_ → panel)', () => {
+  const healthSrc = extractRawFunction('Code.js', 'computeAutomationHealth_');
+  assert.ok(/clientErrors:\s*clientErrorsSummary_\(/.test(healthSrc),
+    'computeAutomationHealth_ returns clientErrors — the panel reads this one report');
+  const cnSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/res\.clientErrors/.test(cnSrc), 'cnRenderHealthPanel_ renders the clientErrors block');
+});
+
+console.log('\nCode.js — consolidated manager daily brief (#2, INV-151)');
+vm.runInContext(extractRawFunction('Code.js', 'managerBriefSections_'), sb,
+  { filename: 'Code.js#managerBriefSections_' });
+const managerBriefSections_ = sb.managerBriefSections_;
+test('managerBriefSections_ keeps only non-empty sections, in render order, with counts', () => {
+  assert.strictEqual(managerBriefSections_({}).length, 0, 'all-clear → no sections → silent morning');
+  assert.strictEqual(managerBriefSections_(null).length, 0, 'null-safe');
+  const s = managerBriefSections_({
+    missed: [{}], urgent: [{}, {}], training: [], docs: [{}], coaching: null, deptOverdue: [{}, {}, {}],
+  });
+  assert.strictEqual(s.map((x) => x.key).join(','), 'urgent,missed,docs,deptOverdue',
+    'empty/absent sections dropped; order is the fixed render order (urgent first)');
+  assert.strictEqual(s.map((x) => x.count).join(','), '2,1,1,3', 'counts carried for the subject line');
+  assert.ok(s.every((x) => x.label), 'every section carries its display label');
+});
+test('the brief suppresses exactly the four daily manager streams — never the independents (source tripwire)', () => {
+  // Each suppressed handler consults the flag; the employee-facing paths sit
+  // OUTSIDE the gated branch (missed-punch employee reminders + the
+  // training-overdue employee nudges send regardless).
+  ['sendDailyMissedPunchAlerts', 'sendCallNotesUrgentDigest',
+   'sendTrainingOverdueDigest', 'sendDeptRequestReminderDigest'].forEach((h) => {
+    const src = extractRawFunction('Code.js', h);
+    assert.ok(/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(src),
+      h + ' must consult the managerDailyBrief flag (suppression contract)');
+  });
+  // The failure watchdog is deliberately NOT consolidated (it's what reports
+  // a dead brief trigger) and the weekly digests stay weekly.
+  ['sendAutomationHealthDigest', 'sendCallNotesWeeklyDigests'].forEach((h) => {
+    const src = extractRawFunction('Code.js', h);
+    assert.ok(!/managerDailyBrief/.test(src), h + ' must stay independent of the brief flag');
+  });
+  // Suppressed daily digests still stamp their heartbeat (dead-trigger
+  // detection survives the suppression).
+  ['sendCallNotesUrgentDigest', 'sendDeptRequestReminderDigest'].forEach((h) => {
+    const src = extractRawFunction('Code.js', h);
+    assert.ok(src.indexOf("getFlag_('managerDailyBrief')") >= 0 &&
+              src.indexOf('stampDigestLastRun_') >= 0, h + ' has both the gate and a heartbeat');
+  });
+  // The brief itself heartbeats BEFORE its flag check — trigger liveness is
+  // observable even while the feature is off.
+  const briefSrc = extractRawFunction('Code.js', 'sendManagerDailyBrief');
+  assert.ok(briefSrc.indexOf("stampDigestLastRun_('managerBrief')") <
+            briefSrc.indexOf("getFlag_('managerDailyBrief')"),
+    'sendManagerDailyBrief stamps its heartbeat before the flag gate');
+});
+test('managerDailyBrief is a registered server-scope flag defaulting OFF', () => {
+  const m = codeSrc.match(/key:\s*'managerDailyBrief'[\s\S]*?scope:\s*'(\w+)'/);
+  assert.ok(m, 'managerDailyBrief is in the FEATURE_FLAGS registry');
+  assert.strictEqual(m[1], 'server', 'server scope — no client UI gates on it');
+  assert.ok(/key:\s*'managerDailyBrief'[\s\S]{0,700}?default:\s*false/.test(codeSrc),
+    'defaults OFF — a fresh deploy is a behavioral no-op');
+});
+
+console.log("\nscript_core.html — What's new panel (#4, INV-152)");
+const whatsNewShouldShow_ = loadFunction(sb, 'script_core.html', 'whatsNewShouldShow_');
+test('whatsNewShouldShow_ compares the seen-stamp; corrupt blob = never seen; no stamp = never show', () => {
+  assert.strictEqual(whatsNewShouldShow_(null, '2026-07-09 10:00:00'), true, 'never seen → show');
+  assert.strictEqual(whatsNewShouldShow_('{"seenStamp":"2026-07-09 10:00:00"}', '2026-07-09 10:00:00'), false, 'seen this stamp → quiet');
+  assert.strictEqual(whatsNewShouldShow_('{"seenStamp":"2026-07-01 08:00:00"}', '2026-07-09 10:00:00'), true, 'article edited since → re-show');
+  assert.strictEqual(whatsNewShouldShow_('not json{', '2026-07-09 10:00:00'), true, 'corrupt blob → treated as never seen');
+  assert.strictEqual(whatsNewShouldShow_(null, ''), false, 'no stamp → never auto-open');
+});
+test('getWhatsNew hides drafts + non-articles and reads WHATSNEW_KB_ID (source tripwire)', () => {
+  const src = extractRawFunction('Code.js', 'getWhatsNew');
+  assert.ok(/getEmployeeInfo_\s*\(/.test(src), 'rep-gated — not a public endpoint');
+  assert.ok(/WHATSNEW_KB_ID/.test(src), 'configured via the WHATSNEW_KB_ID Script Property');
+  assert.ok(/KB_STATUS_DRAFT/.test(src), 'a draft article stays invisible (INV-140/147 broadcast rule)');
+  assert.ok(/none:\s*true/.test(src), 'every quiet-failure path returns {none:true} — dormant, never breaks boot');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

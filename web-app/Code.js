@@ -3955,6 +3955,108 @@ function getCallNoteAuditHistory(noteId) {
   } catch (err) { return { error: err.message }; }
 }
 
+// ── Client-side error beacon (#1, INV-150) ──────────────────────────────────
+// The field-blindness gap: a throwing client render or a rejected promise
+// chain used to surface NOWHERE — the rep sees a dead button, the operator
+// sees nothing (the M-1 class shipped exactly this way for two cycles). The
+// shell's window.onerror / unhandledrejection hook (script_core.html) posts
+// exception METADATA here; the rows surface in the Automation Health panel.
+// PHI-SAFE BY CONSTRUCTION: a row carries the exception message/stack + the
+// active view key ONLY — never form-field values, note content, or DOM text
+// (the client hook reads only the error event, and both sides truncate).
+const CLIENT_ERRORS_TAB = 'ClientErrors';
+const CLIENT_ERR_MSG_MAX = 400;
+const CLIENT_ERR_STACK_MAX = 1500;
+const CLIENT_ERR_RATE_MAX_PER_HOUR = 20;  // per rep — a render loop can't flood the tab
+const CLIENT_ERR_SCAN_MAX = 2000;         // health-panel tail-scan bound (INV-13 spirit)
+const CLIENT_ERR_WINDOW_DAYS = 7;
+
+function getOrCreateClientErrorsSheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(CLIENT_ERRORS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(CLIENT_ERRORS_TAB);
+    sheet.appendRow([
+      `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`,
+      'EmployeeId', 'View', 'Source', 'Message', 'Stack',
+    ]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** Rep-callable (requires getEmployeeInfo_), locked (INV-01 — it appends),
+ *  append-only. Bounds every field server-side (the client truncates too, but
+ *  a crafted RPC must not bloat cells) and rate-caps per rep via CacheService
+ *  so an error loop can't flood the tab. Every rejection returns quietly —
+ *  the beacon is fire-and-forget and must never surface its own failures. */
+function recordClientError(payload) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false };
+    const p = payload || {};
+    const message = String(p.message || '').trim().substring(0, CLIENT_ERR_MSG_MAX);
+    if (!message) return { success: false };
+    const stack = String(p.stack || '').substring(0, CLIENT_ERR_STACK_MAX);
+    const view = String(p.view || '').substring(0, 40);
+    const source = p.source === 'unhandledrejection' ? 'unhandledrejection' : 'onerror';
+    // Approximate per-rep hourly rate cap. CacheService isn't atomic — close
+    // enough for flood protection on a diagnostics (not audit) channel.
+    const cache = CacheService.getScriptCache();
+    const rateKey = 'client_err_rate:' + emp.id;
+    const n = parseInt(cache.get(rateKey), 10) || 0;
+    if (n >= CLIENT_ERR_RATE_MAX_PER_HOUR) return { success: false };
+    cache.put(rateKey, String(n + 1), 3600);
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      getOrCreateClientErrorsSheet_().appendRow([
+        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+        emp.id, view, source, message, stack,
+      ]);
+    } finally { lock.releaseLock(); }
+    return { success: true };
+  } catch (e) {
+    Logger.log('recordClientError failed: ' + e.message);
+    return { success: false };
+  }
+}
+
+/** Bounded ClientErrors tail summary for the Automation Health panel.
+ *  Read-only + best-effort — no tab yet (no error ever reported) reads as
+ *  zero; timestamps recover via normalizeAuditTs_ (the writer uses the same
+ *  'yyyy-MM-dd HH:mm:ss' CONFIG.TIMEZONE form as writeAuditLog_). */
+function clientErrorsSummary_(mgrTz) {
+  const out = { count: 0, recent: [], windowDays: CLIENT_ERR_WINDOW_DAYS, url: '' };
+  try {
+    const ss = getAdpSS_();
+    const sheet = ss.getSheetByName(CLIENT_ERRORS_TAB);
+    if (!sheet) return out;
+    try { out.url = ss.getUrl() + '#gid=' + sheet.getSheetId(); } catch (e) {}
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return out;
+    const startRow = Math.max(2, lastRow - CLIENT_ERR_SCAN_MAX + 1);
+    const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 5).getValues();
+    const cutD = new Date();
+    cutD.setDate(cutD.getDate() - out.windowDays);
+    const cutoff = fmtDateTz_(cutD, mgrTz);
+    for (let i = data.length - 1; i >= 0; i--) {   // newest-first; append-only tab
+      const tsRaw = normalizeAuditTs_(data[i][0]);
+      if (tsRaw.substring(0, 10) < cutoff) break;  // chronological — older rows follow
+      out.count++;
+      if (out.recent.length < 5) {
+        out.recent.push({
+          timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
+          empId: String(data[i][1]),
+          view: String(data[i][2]),
+          message: String(data[i][4]),
+        });
+      }
+    }
+  } catch (e) { Logger.log('clientErrorsSummary_ skipped: ' + e.message); }
+  return out;
+}
+
 // ── Automation Health (Admin tab) ────────────────────────────────────────
 // Operationalizes the "monitor AuditLog for PersonalSheetSyncFail" gotcha and
 // the silent-degradation posture: one manager-gated, read-only aggregate that
@@ -4148,14 +4250,14 @@ function computeAutomationHealth_() {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder'].map(function (k) {
+    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief'].map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -4177,6 +4279,7 @@ function computeAutomationHealth_() {
       digests: digestHealth,
       cdr: cdr,
       detectors: detectors,   // Turn C — detector-liveness checks
+      clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
@@ -7860,6 +7963,7 @@ function installAutomationTriggers() {
     'sendTrainingOverdueDigest',
     'sendAutomationHealthDigest',
     'sendDeptRequestReminderDigest',
+    'sendManagerDailyBrief',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -7940,6 +8044,13 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendDeptRequestReminderDigest')
     .timeBased().atHour(10).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Consolidated manager daily brief (#2, INV-151) — daily manager-tz 8am.
+  // No-ops (heartbeat only) while the managerDailyBrief flag is off, so
+  // installing it is harmless; when the flag is on it replaces the separate
+  // daily manager emails those handlers suppress.
+  ScriptApp.newTrigger('sendManagerDailyBrief')
+    .timeBased().atHour(8).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -7987,6 +8098,7 @@ function removeAutomationTriggers() {
     'sendTrainingOverdueDigest',
     'sendAutomationHealthDigest',
     'sendDeptRequestReminderDigest',
+    'sendManagerDailyBrief',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -8002,6 +8114,50 @@ function clearCaches_() {
   Logger.log('Caches cleared.');
 }
 
+/** Missed-clock-out detection ("yesterday" in each rep's OWN tz at call time),
+ *  factored from sendDailyMissedPunchAlerts so the consolidated daily brief
+ *  (#2, INV-151) shares ONE computation with the standalone alert run.
+ *  Read-only. Returns [{ id, name, email, timezone, yesterdayStr }]. */
+function computeMissedClockOuts_() {
+  const empRows = getEmployeeRosterRows_();
+  const now = new Date();
+  const employees = {};
+  for (let i = 1; i < empRows.length; i++) {
+    if (!empRows[i][EMP.EMAIL]) continue;
+    let tzRaw = empRows[i][EMP.TIMEZONE];
+    if (tzRaw === null || tzRaw === undefined) tzRaw = '';
+    const tz = safeTimezone_(String(tzRaw).trim());
+    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+    const id = String(empRows[i][EMP.ID]).trim();
+    employees[id] = {
+      id, name: String(empRows[i][EMP.NAME]).trim(),
+      email: String(empRows[i][EMP.EMAIL]).trim(),
+      timezone: tz, yesterdayStr: fmtDateTz_(yesterday, tz),
+    };
+  }
+
+  const adpRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  const punchesByEmp = {};
+  for (let i = 2; i < adpRows.length; i++) {
+    const id = String(adpRows[i][ADP.EMP_ID]).trim();
+    const e = employees[id];
+    if (!e) continue;
+    if (normalizeDate_(adpRows[i][ADP.DATE]) !== e.yesterdayStr) continue;
+    if (!punchesByEmp[id]) punchesByEmp[id] = new Set();
+    punchesByEmp[id].add(normalizeType_(String(adpRows[i][ADP.COMMENTS])));
+  }
+
+  const missed = [];
+  for (const id in punchesByEmp) {
+    const types = punchesByEmp[id];
+    if (types.has('ClockIn') && !types.has('ClockOut')) {
+      const e = employees[id];
+      if (e) missed.push(e);
+    }
+  }
+  return missed;
+}
+
 function sendDailyMissedPunchAlerts() {
   // Trigger handlers are top-level (required for time-based triggers) and
   // therefore reachable via google.script.run. Gate on caller-is-manager so a
@@ -8010,42 +8166,7 @@ function sendDailyMissedPunchAlerts() {
   // installAutomationTriggers' own check), so the gate is a no-op for triggers.
   assertManagerCaller_('sendDailyMissedPunchAlerts');
   try {
-    const empRows = getEmployeeRosterRows_();
-    const now = new Date();
-    const employees = {};
-    for (let i = 1; i < empRows.length; i++) {
-      if (!empRows[i][EMP.EMAIL]) continue;
-      let tzRaw = empRows[i][EMP.TIMEZONE];
-      if (tzRaw === null || tzRaw === undefined) tzRaw = '';
-      const tz = safeTimezone_(String(tzRaw).trim());
-      const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-      const id = String(empRows[i][EMP.ID]).trim();
-      employees[id] = {
-        id, name: String(empRows[i][EMP.NAME]).trim(),
-        email: String(empRows[i][EMP.EMAIL]).trim(),
-        timezone: tz, yesterdayStr: fmtDateTz_(yesterday, tz),
-      };
-    }
-
-    const adpRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
-    const punchesByEmp = {};
-    for (let i = 2; i < adpRows.length; i++) {
-      const id = String(adpRows[i][ADP.EMP_ID]).trim();
-      const e = employees[id];
-      if (!e) continue;
-      if (normalizeDate_(adpRows[i][ADP.DATE]) !== e.yesterdayStr) continue;
-      if (!punchesByEmp[id]) punchesByEmp[id] = new Set();
-      punchesByEmp[id].add(normalizeType_(String(adpRows[i][ADP.COMMENTS])));
-    }
-
-    const missed = [];
-    for (const id in punchesByEmp) {
-      const types = punchesByEmp[id];
-      if (types.has('ClockIn') && !types.has('ClockOut')) {
-        const e = employees[id];
-        if (e) missed.push(e);
-      }
-    }
+    const missed = computeMissedClockOuts_();
     if (missed.length === 0) { Logger.log('No missed clock-outs.'); return; }
 
     missed.forEach(emp => {
@@ -8069,6 +8190,13 @@ function sendDailyMissedPunchAlerts() {
       } catch (e) { Logger.log('Failed to email employee ' + emp.email + ': ' + e.message); }
     });
 
+    // #2 (INV-151): while the consolidated daily brief is on, the manager
+    // summary rides the 8am brief instead — the EMPLOYEE reminders above are
+    // never suppressed (the rep still needs the nudge to fix their punch).
+    if (getFlag_('managerDailyBrief')) {
+      Logger.log('Missed-punch manager summary: consolidated into the daily brief.');
+      return;
+    }
     const recipients = getManagerEmails_();
     if (recipients.length > 0) {
       const list = missed.map(e =>
@@ -8423,6 +8551,14 @@ function sendCallNotesWeeklyDigests() {
 function sendCallNotesUrgentDigest() {
   assertManagerCaller_('sendCallNotesUrgentDigest');  // see sendDailyMissedPunchAlerts note
   try {
+    // #2 (INV-151): while the consolidated daily brief is on, urgent notes
+    // ride the 8am brief instead. Still stamp the heartbeat — the trigger ran
+    // and made its (suppressed) decision; a dead trigger stays detectable.
+    if (getFlag_('managerDailyBrief')) {
+      stampDigestLastRun_('urgent');
+      Logger.log('Urgent digest: consolidated into the daily brief.');
+      return;
+    }
     const mgrEmails = getManagerEmails_();
     if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping urgent digest.'); return; }
     const now = new Date();
@@ -8558,20 +8694,27 @@ function sendTrainingOverdueDigest() {
     const overdueDocs = empDocsOverdueAll_(todayIso);           // scope per manager below
     const overdueCoaching = coachUnackedAll_(Date.now());       // scope per manager below
     let sent = 0;
-    mgrEmails.forEach(function (email) {
-      const mgr = { email: email, isManager: true };
-      const scopedDocs = overdueDocs.filter(function (od) {
-        return empDocCanManagerSee_(mgr, od.doc);
+    // #2 (INV-151): while the consolidated daily brief is on, the MANAGER
+    // nudge rides the 8am brief instead — but the employee-side reminders
+    // below always send (the deadline reminds both sides, INV-135).
+    if (getFlag_('managerDailyBrief')) {
+      Logger.log('Training-overdue manager nudge: consolidated into the daily brief.');
+    } else {
+      mgrEmails.forEach(function (email) {
+        const mgr = { email: email, isManager: true };
+        const scopedDocs = overdueDocs.filter(function (od) {
+          return empDocCanManagerSee_(mgr, od.doc);
+        });
+        const scopedCoaching = overdueCoaching.filter(function (oc) {
+          return coachCanManagerSee_(mgr, oc.item);
+        });
+        if (!overdueTraining.length && !scopedDocs.length && !scopedCoaching.length) return;   // nothing for this manager
+        try {
+          sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso);
+          sent++;
+        } catch (e) { console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + e.message); }
       });
-      const scopedCoaching = overdueCoaching.filter(function (oc) {
-        return coachCanManagerSee_(mgr, oc.item);
-      });
-      if (!overdueTraining.length && !scopedDocs.length && !scopedCoaching.length) return;   // nothing for this manager
-      try {
-        sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso);
-        sent++;
-      } catch (e) { console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + e.message); }
-    });
+    }
     // v2 — also nudge the EMPLOYEE about their own overdue documents (one
     // email per employee). Best-effort per recipient.
     let empNudged = 0;
@@ -8664,6 +8807,191 @@ function sendEmployeeOverdueDocsEmail_(toEmail, empName, docs, todayIso) {
     '\n\nOpen the web app → Training & Employee Docs → My Docs to complete them.';
   const htmlBody = buildBrandedEmailHtml_('Documents need your attention', html, { accent: P.warnDeep });
   MailApp.sendEmail({ to: toEmail, subject: '⏰ Your documents are overdue', body: text, htmlBody: htmlBody });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CONSOLIDATED MANAGER DAILY BRIEF (#2, INV-151)
+//  ────────────────────────────────────────────────────────────────────────
+//  One branded morning email (manager-tz 8am) replacing up to four separate
+//  daily manager emails — the missed-punch summary, the urgent digest, the
+//  training/docs/coaching overdue nudge, and the dept-request SLA reminder —
+//  behind the `managerDailyBrief` feature flag (default OFF = every stream
+//  behaves exactly as before). While ON, those four suppress their MANAGER
+//  sends (each notes the suppression in its own handler); employee-facing
+//  reminders, the WEEKLY training/review digests, and the automation-failure
+//  watchdog (the independent silent-when-healthy watchdog — deliberately NOT
+//  consolidated, so a dead brief trigger still gets reported) all send
+//  unchanged. Data comes from the SAME factored computations the standalone
+//  digests use (computeMissedClockOuts_, managerAggregateUrgent_,
+//  trainOverdueForRoster_, empDocsOverdueAll_, coachUnackedAll_,
+//  deptRequestsOverdueOpen_) — no parallel source to drift.
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Pure — which brief sections have content, in render order. Drives the
+ *  subject line, the section loop, and the send/skip decision (no sections =
+ *  silent all-clear morning). Node-pinned via extractRawFunction. */
+function managerBriefSections_(data) {
+  const d = data || {};
+  const defs = [
+    { key: 'urgent',      label: 'Urgent notes' },
+    { key: 'missed',      label: 'Missed clock-outs' },
+    { key: 'training',    label: 'Overdue training' },
+    { key: 'docs',        label: 'Unsigned documents' },
+    { key: 'coaching',    label: 'Un-acknowledged coaching' },
+    { key: 'deptOverdue', label: 'Dept requests past SLA' },
+  ];
+  const out = [];
+  for (let i = 0; i < defs.length; i++) {
+    const items = d[defs[i].key];
+    if (Array.isArray(items) && items.length > 0) {
+      out.push({ key: defs[i].key, label: defs[i].label, count: items.length });
+    }
+  }
+  return out;
+}
+
+/** One branded brief email to ONE manager. Rows mirror the standalone digests
+ *  (INV-105 — every user field esc_'d; coaching rows stay PHI-minimal per
+ *  INV-134: severity only, never the patient/TRX or narrative). Plain-text
+ *  fallback throughout. */
+function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
+  const P = CN_EMAIL_PALETTE;
+  const secLabel = function (label) {
+    return '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:' + P.muted +
+      ';letter-spacing:.12em;text-transform:uppercase;margin:16px 0 6px;">' + esc_(label) + '</div>';
+  };
+  const row2 = function (leftHtml, rightText) {
+    return '<tr>' +
+      '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;">' + leftHtml + '</td>' +
+      '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;vertical-align:top;">' + esc_(rightText) + '</td>' +
+      '</tr>';
+  };
+  const table = function (rowsHtml) {
+    return '<table style="width:100%;border-collapse:collapse;">' + rowsHtml + '</table>';
+  };
+  const totalItems = sections.reduce(function (s, x) { return s + x.count; }, 0);
+
+  let html = '<p style="margin:0 0 4px;">Your consolidated morning brief — <strong>' + totalItems +
+    '</strong> item(s) across ' + sections.length + ' area(s).</p>';
+  let text = 'Team Tools daily brief (' + todayIso + ') — ' + totalItems + ' item(s):\n';
+
+  sections.forEach(function (s) {
+    html += secLabel(s.label + ' (' + s.count + ')');
+    text += '\n' + s.label + ' (' + s.count + '):\n';
+    if (s.key === 'urgent') {
+      html += table(d.urgent.map(function (n) {
+        return row2('<strong>' + esc_(n.repName) + '</strong> · ' + esc_(n.caller || n.patientAndTrx || '—') +
+          (n.issue ? '<br><span style="color:' + P.muted + ';font-size:12px;">' + esc_(n.issue) + '</span>' : ''),
+          n.dateLocal || '');
+      }).join(''));
+      text += d.urgent.map(function (n) {
+        return '  ' + (n.dateLocal || '') + '  ' + n.repName + ' · ' + (n.caller || n.patientAndTrx || '—') + (n.issue ? ' — ' + n.issue : '');
+      }).join('\n');
+    } else if (s.key === 'missed') {
+      html += table(d.missed.map(function (e) {
+        return row2('<strong>' + esc_(e.name) + '</strong> (' + esc_(e.id) + ')',
+          'missed ' + e.yesterdayStr + ' ' + tzAbbr_(e.timezone));
+      }).join(''));
+      text += d.missed.map(function (e) {
+        return '  ' + e.name + ' (' + e.id + ') — missed ' + e.yesterdayStr + ' ' + tzAbbr_(e.timezone);
+      }).join('\n');
+    } else if (s.key === 'training') {
+      html += table(d.training.map(function (t) {
+        return row2('<strong>' + esc_(t.empName) + '</strong> · ' + esc_(t.title), 'due ' + t.dueDate);
+      }).join(''));
+      text += d.training.map(function (t) { return '  ' + t.empName + ' · ' + t.title + ' (due ' + t.dueDate + ')'; }).join('\n');
+    } else if (s.key === 'docs') {
+      html += table(d.docs.map(function (od) {
+        return row2('<strong>' + esc_(od.empName) + '</strong> · ' + esc_(od.doc.title), 'due ' + od.doc.dueAt);
+      }).join(''));
+      text += d.docs.map(function (od) { return '  ' + od.empName + ' · ' + od.doc.title + ' (due ' + od.doc.dueAt + ')'; }).join('\n');
+    } else if (s.key === 'coaching') {
+      html += table(d.coaching.map(function (oc) {
+        return row2('<strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity),
+          'since ' + String(oc.item.createdAt).substring(0, 10));
+      }).join(''));
+      text += d.coaching.map(function (oc) {
+        return '  ' + oc.empName + ' · ' + oc.item.severity + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')';
+      }).join('\n');
+    } else if (s.key === 'deptOverdue') {
+      html += table(d.deptOverdue.map(function (o) {
+        return row2('<strong>' + esc_(o.dept) + '</strong> · ' + esc_(o.label || 'request') + ' — ' + esc_(o.byName || 'unknown'),
+          o.ageHours + 'h open');
+      }).join(''));
+      text += d.deptOverdue.map(function (o) {
+        return '  ' + o.dept + ' · ' + (o.label || 'request') + ' — ' + (o.byName || 'unknown') + ' · ' + o.ageHours + 'h open';
+      }).join('\n');
+    }
+  });
+
+  html += '<p style="margin:16px 0 0;">Open the web app for detail — the separate digest emails for these streams are suppressed while the brief is on.</p>';
+  text += '\n\nOpen the web app for detail.';
+  MailApp.sendEmail({
+    to: toEmail,
+    subject: 'Team Tools daily brief — ' + totalItems + ' item(s) · ' + todayIso,
+    body: text,
+    htmlBody: buildBrandedEmailHtml_('Daily brief · ' + todayIso, html, { tone: 'info', subLabel: 'Daily brief' }),
+  });
+}
+
+/** Top-level trigger handler (daily manager-tz 8am; reachable via
+ *  google.script.run) → gated with assertManagerCaller_ (INV-44). Best-effort
+ *  end to end: every data source is individually try/catch'd (one broken
+ *  store must not kill the brief) and the whole body never throws past the
+ *  catch (INV-14). Docs + coaching are TEAM-SCOPED (INV-122/134 fail-closed),
+ *  so the brief builds PER MANAGER — the sendTrainingOverdueDigest model. An
+ *  all-clear morning sends nothing (house style: silent when healthy). */
+function sendManagerDailyBrief() {
+  assertManagerCaller_('sendManagerDailyBrief');  // see sendDailyMissedPunchAlerts note
+  try {
+    // Heartbeat stamps even while the flag is off — the trigger ran; the
+    // Automation Health caption explains the flag gate.
+    stampDigestLastRun_('managerBrief');
+    if (!getFlag_('managerDailyBrief')) { Logger.log('managerDailyBrief flag is off — brief not sent.'); return; }
+    const mgrEmails = getManagerEmails_();
+    if (!mgrEmails.length) { Logger.log('No manager emails — skipping daily brief.'); return; }
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const now = new Date();
+    const todayIso = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
+    const back = new Date(now); back.setDate(back.getDate() - 1);
+    const dateRange = { start: Utilities.formatDate(back, mgrTz, 'yyyy-MM-dd'), end: todayIso };
+
+    let missed = [];
+    try { missed = computeMissedClockOuts_(); } catch (e) { Logger.log('brief: missed-punch source failed: ' + e.message); }
+    let urgent = [];
+    try { urgent = managerAggregateUrgent_(dateRange).results || []; } catch (e) { Logger.log('brief: urgent source failed: ' + e.message); }
+    let training = [];
+    try { training = trainOverdueForRoster_(todayIso); } catch (e) { Logger.log('brief: training source failed: ' + e.message); }
+    let docs = [];
+    try { docs = empDocsOverdueAll_(todayIso); } catch (e) { Logger.log('brief: docs source failed: ' + e.message); }
+    let coaching = [];
+    try { coaching = coachUnackedAll_(Date.now()); } catch (e) { Logger.log('brief: coaching source failed: ' + e.message); }
+    let deptOverdue = [];
+    try { deptOverdue = deptRequestsOverdueOpen_(); } catch (e) { Logger.log('brief: dept-request source failed: ' + e.message); }
+
+    let sent = 0;
+    mgrEmails.forEach(function (email) {
+      const mgr = { email: email, isManager: true };
+      const d = {
+        missed: missed,
+        urgent: urgent,
+        training: training,
+        docs: docs.filter(function (od) { return empDocCanManagerSee_(mgr, od.doc); }),
+        coaching: coaching.filter(function (oc) { return coachCanManagerSee_(mgr, oc.item); }),
+        deptOverdue: deptOverdue,
+      };
+      const sections = managerBriefSections_(d);
+      if (!sections.length) return;   // all clear for this manager — silent
+      try { sendManagerBriefEmail_(email, sections, d, todayIso); sent++; }
+      catch (e) { console.warn('daily brief to ' + email + ' failed: ' + e.message); }
+    });
+    Logger.log('sendManagerDailyBrief: managersEmailed=' + sent +
+      ' missed=' + missed.length + ' urgent=' + urgent.length +
+      ' training=' + training.length + ' docs=' + docs.length +
+      ' coaching=' + coaching.length + ' deptOverdue=' + deptOverdue.length);
+  } catch (err) {
+    Logger.log('sendManagerDailyBrief failed: ' + err.message);
+  }
 }
 
 function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
@@ -9167,6 +9495,9 @@ const FEATURE_FLAGS = [
   { key: 'employeeImmediateAdjust', label: 'Employee immediate punch fix',
     description: 'Let employees apply punch adjustments instantly (an "Apply now" button alongside the approval-request flow). Off = all employee adjustments require manager approval (#4a).',
     default: false, scope: 'both' },
+  { key: 'managerDailyBrief', label: 'Consolidated manager daily brief',
+    description: 'One branded morning email (manager-tz 8am) consolidating the daily manager streams — urgent notes, missed clock-outs, overdue training / unsigned docs / un-acknowledged coaching, and dept requests past SLA. While ON, the separate manager emails for those streams are suppressed (employee-facing reminders, the weekly training/review digests, and the automation-failure watchdog still send independently). Run installAutomationTriggers() once after first enabling so the 8am trigger exists. Silent on an all-clear morning.',
+    default: false, scope: 'server' },
   { key: 'kbAiGuidance', label: 'AI guidance (Reference drawer)',
     description: 'Show an AI-generated guidance card in the Reference drawer, built from whitelisted call facets (department / update type / tags / flag) + excerpts from your own KB articles. Configure the cap + model in the "AI Guidance" section below; set Script Property KB_AI_API_KEY first.',
     default: false, scope: 'both',
@@ -9216,7 +9547,8 @@ function getFeatureFlagsResolved_() {
 }
 
 /** Client-deliverable flags — the resolved values for non-server-only flags.
- *  (Pure 'server' kill-switches aren't shipped to the client; none exist yet.)
+ *  (Pure 'server' flags aren't shipped to the client; managerDailyBrief is the
+ *  first — it gates only email routing, no client UI depends on it.)
  *  Rides getEmployeeState (empState.flags) + getCallNotesDepartments
  *  (deptConfig.flags); the client reads them via flagOn_(). */
 function getClientFeatureFlags_() {
@@ -10262,30 +10594,47 @@ function saveDeptRequestSla(map) {
  *  over per-dept member nudges). Silent when nothing is overdue (the urgent-digest
  *  posture). Top-level trigger handler (assertManagerCaller_ INV-44, best-effort
  *  INV-14, never throws past the catch). Heartbeat-stamped. DeptRequests v2 phase 4. */
+/** OPEN dept requests past their resolution SLA (bounded DR tail scan),
+ *  factored from sendDeptRequestReminderDigest so the consolidated daily brief
+ *  (#2, INV-151) shares ONE computation. Read-only.
+ *  Returns [{ dept, byName, label, ageHours }]. */
+function deptRequestsOverdueOpen_() {
+  const sh = getOrCreateDeptRequestsSheet_();
+  const lastRow = sh.getLastRow();
+  const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+  const numRows = lastRow - firstData + 1;
+  const rows = numRows > 0 ? sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues() : [];
+  const slaCfg = getDeptRequestSlaConfig_();
+  const overdue = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[DR.REQ_ID] || String(r[DR.STATUS]) === 'resolved') continue;
+    const cv = r[DR.CREATED_AT];
+    const createdMs = (cv instanceof Date) ? cv.getTime() : parseTimestampMs_(String(cv || ''), CONFIG.TIMEZONE);
+    if (!createdMs) continue;
+    const ageMin = Math.round((Date.now() - createdMs) / 60000);
+    const dept = String(r[DR.TO_DEPT] || '');
+    if (drSlaStatus_(ageMin, getDeptRequestSla_(dept, slaCfg)) !== 'overdue') continue;
+    overdue.push({ dept: dept || '—', byName: String(r[DR.BY_NAME] || ''),
+                   label: String(r[DR.LABEL] || ''), ageHours: Math.round(ageMin / 60) });
+  }
+  return overdue;
+}
+
 function sendDeptRequestReminderDigest() {
   assertManagerCaller_('sendDeptRequestReminderDigest');
   try {
+    // #2 (INV-151): while the consolidated daily brief is on, the SLA overdue
+    // list rides the 8am brief instead. Stamp the heartbeat first — the
+    // trigger ran; a dead trigger stays detectable.
+    if (getFlag_('managerDailyBrief')) {
+      stampDigestLastRun_('deptReqReminder');
+      Logger.log('Dept-request reminder: consolidated into the daily brief.');
+      return;
+    }
     const mgrEmails = getManagerEmails_();
     if (!mgrEmails.length) { Logger.log('No manager emails — skipping dept-request reminder.'); return; }
-    const sh = getOrCreateDeptRequestsSheet_();
-    const lastRow = sh.getLastRow();
-    const firstData = Math.max(2, lastRow - DR_MAX_SCAN + 1);
-    const numRows = lastRow - firstData + 1;
-    const rows = numRows > 0 ? sh.getRange(firstData, 1, numRows, DR_HEADERS.length).getValues() : [];
-    const slaCfg = getDeptRequestSlaConfig_();
-    const overdue = [];
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r[DR.REQ_ID] || String(r[DR.STATUS]) === 'resolved') continue;
-      const cv = r[DR.CREATED_AT];
-      const createdMs = (cv instanceof Date) ? cv.getTime() : parseTimestampMs_(String(cv || ''), CONFIG.TIMEZONE);
-      if (!createdMs) continue;
-      const ageMin = Math.round((Date.now() - createdMs) / 60000);
-      const dept = String(r[DR.TO_DEPT] || '');
-      if (drSlaStatus_(ageMin, getDeptRequestSla_(dept, slaCfg)) !== 'overdue') continue;
-      overdue.push({ dept: dept || '—', byName: String(r[DR.BY_NAME] || ''),
-                     label: String(r[DR.LABEL] || ''), ageHours: Math.round(ageMin / 60) });
-    }
+    const overdue = deptRequestsOverdueOpen_();
     stampDigestLastRun_('deptReqReminder');
     if (!overdue.length) { Logger.log('dept-request reminder: nothing overdue.'); return; }
 
@@ -13087,6 +13436,46 @@ function getReferenceItem(id) {
     }
     return { error: 'Not found.' };
   } catch (err) { return { error: err.message }; }
+}
+
+// ── "What's new" panel (#4, INV-152) ─────────────────────────────────────────
+// A dismissible in-app changelog: Script Property WHATSNEW_KB_ID points at a
+// PUBLISHED KB *article* (the operator maintains it in Reference like any other
+// article — same kbMd_ authoring + escape boundary); the shell auto-opens it
+// once per content change via a localStorage seen-stamp (umsWhatsNew, the
+// umsTour pattern). Rep-callable, read-only; every quiet-failure path (unset
+// property, missing/draft/embed item, any throw) returns { none: true } so the
+// feature is dormant until configured and can never break boot.
+function getWhatsNew() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { none: true };
+    const id = String(PropertiesService.getScriptProperties().getProperty('WHATSNEW_KB_ID') || '').trim();
+    if (!id) return { none: true };
+    const sheet = getOrCreateKbSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return { none: true };
+    const ssTz = getKbSS_().getSpreadsheetTimeZone();
+    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][KB.ID]) !== id) continue;
+      // A DRAFT stays invisible to EVERYONE here (INV-140/147 — this is a
+      // broadcast surface; an admin previews drafts in Reference, not here),
+      // and only native articles render (an embed has no body for kbMd_).
+      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT) return { none: true };
+      if (String(rows[i][KB.TYPE] || 'article') !== 'article') return { none: true };
+      return {
+        id: id,
+        title: String(rows[i][KB.TITLE] || 'What\'s new'),
+        bodyMd: String(rows[i][KB.BODY_MD] || ''),
+        // The edit-time stamp drives the client seen-flag — editing the
+        // article re-surfaces the panel for everyone (datetime-granular via
+        // kbCellTs_, recovered in the KB sheet's own tz).
+        stamp: kbCellTs_(rows[i][KB.UPDATED_AT], ssTz),
+      };
+    }
+    return { none: true };
+  } catch (err) { return { none: true }; }
 }
 
 // ── Section-aware search ──────────────────────────────────────────────────

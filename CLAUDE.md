@@ -457,8 +457,9 @@ this section before touching the relevant area.
   `purgeExpiredFormData` (the
   destructive PHI-retention purge), `reconcileCallNotes` (the
   non-destructive nightly Sheets back-fill), `sendAutomationHealthDigest`
-  (the daily automation-FAILURE push) and `sendDeptRequestReminderDigest`
-  (the daily dept-request SLA reminder) — are top-level (required: Apps Script
+  (the daily automation-FAILURE push), `sendDeptRequestReminderDigest`
+  (the daily dept-request SLA reminder) and `sendManagerDailyBrief`
+  (the flag-gated consolidated morning brief, INV-151) — are top-level (required: Apps Script
   time-based triggers won't bind to underscore-suffix functions), which
   also means a logged-in rep can fire them from the browser console.
   Each calls `assertManagerCaller_(label)` at the top — throws if
@@ -1135,7 +1136,7 @@ this section before touching the relevant area.
   exactly this (a literal `?` typed into Issue/Resolution opened the
   overlay and swallowed the keystroke) until the isContentEditable
   check was added.
-- **Fourteen client-side localStorage keys total.** All per-browser, all
+- **Fifteen client-side localStorage keys total.** All per-browser, all
   wrapped in try/catch so a privacy-mode browser doesn't break:
   - `umsTimeClockMode` — dark/light preference (read by the boot
     script in `index.html`).
@@ -1213,7 +1214,12 @@ this section before touching the relevant area.
     only; `'mine'` | `'team'`, default `'team'`). Reps never write it (they're
     always pinned to `'mine'` and never see the toggle). Read by
     `coachReadMode_`, written by `coachSwitchMode_`.
-  Clearing browser data wipes all fourteen. (A 15th key, `umsDashboardCompact`
+  - `umsWhatsNew` — the "What's new" panel's seen-stamp (`{seenStamp}` — the
+    designated KB article's edit timestamp at last dismissal, INV-152). The
+    panel auto-opens once per content change; ANY dismissal path (Got it, X,
+    Esc, backdrop) stamps it via `whatsNewClose_`. Corrupt blob = never seen
+    (panel re-shows — fail-open by design, it's a one-click dismissal).
+  Clearing browser data wipes all fifteen. (A 16th key, `umsDashboardCompact`
   — an in-page Dashboard compact toggle — was REMOVED in the dashboard-feedback
   batch: the toggle button lived inside the column it hid, so once collapsed
   there was no way back, and the `?compact=1` pop-out already covers compact.)
@@ -1528,21 +1534,21 @@ this section before touching the relevant area.
   the server CONFIG default and the client fallback in
   `cnFormatNoteForCopy_` carry the line; keep them in sync.
 - **Client-side persistence is localStorage-based.** See the
-  authoritative "Fourteen client-side localStorage keys total" entry in
+  authoritative "Fifteen client-side localStorage keys total" entry in
   Common Gotchas for the full key list (`umsTimeClockMode`,
   `umsCallNotesLastDept`, `umsCallNotesActiveFormDraft`,
   `umsCallNotesFormStartedAt`, `umsSidebarW`, `umsMergeMode`,
   `umsKbPanel`, `umsLastView`, `umsTour`, `umsPopoutGeom`,
-  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`)
+  `umsIntakeDrafts`, `umsClockBg`, `umsCoachingMode`, `umsWhatsNew`)
   — all per-browser, all try/catch-wrapped.
   (An earlier version of this decision listed only four; Round 2 · 8a/8b added
   the sidebar-width and Time/PTO-mode keys, the KB drawer added its single
   `umsKbPanel` prefs blob, the refresh-restore behavior added `umsLastView`,
   #4 added `umsPopoutGeom`, the redesign added `umsIntakeDrafts` (Intake
   form drafts) + a `deptCollapsed` field inside `umsKbPanel`, the
-  Clock-card background image added `umsClockBg`, and the merged Coaching tab
-  added `umsCoachingMode`. The dashboard-feedback batch then REMOVED
-  `umsDashboardCompact` — net 14.)
+  Clock-card background image added `umsClockBg`, the merged Coaching tab
+  added `umsCoachingMode`, and the What's-new panel added `umsWhatsNew`.
+  The dashboard-feedback batch REMOVED `umsDashboardCompact` — net 15.)
 - **Optimistic UI is the perceived-speed mechanism for the Call Notes
   hot path.** Apps Script web-app RPCs add 300–800ms baseline; for the
   most-frequent actions (submit a note, toggle a flag, toggle resolved)
@@ -1683,7 +1689,11 @@ this section before touching the relevant area.
   sales-tax field + the email's tax line); `employeeImmediateAdjust`
   (`both`, default off) gates the employee "Apply now" immediate punch fix
   alongside the #4a approval queue — server-enforced in `recordPunch`'s
-  adjustment path so hiding the button can't be bypassed. `getFeatureFlags` /
+  adjustment path so hiding the button can't be bypassed; `managerDailyBrief`
+  (`server`, default off — the registry's FIRST pure-server-scope flag,
+  INV-151) gates the consolidated manager morning brief + the four
+  digest-suppression branches (email routing only — no client UI reads it,
+  so it never rides `getClientFeatureFlags_`/`cnFlagsVersion_`). `getFeatureFlags` /
   `saveFeatureFlags` are manager-gated (INV-57 family, `AdminConfigChange`
   audit). **Flip semantics:** flags are consulted at request boundaries,
   never mid-transaction (a flip can't interrupt an in-flight locked
@@ -3484,7 +3494,7 @@ manually for a fresh deploy or environment:
   need it set manually.
 - **Daily automation triggers** must be installed by a manager
   account via `installAutomationTriggers()` from the editor. The
-  installer now wires thirteen triggers:
+  installer now wires fourteen triggers:
     - `sendDailyMissedPunchAlerts` (time-clock, daily IST 6am)
     - `runDailyExportCheck` (time-clock, daily IST 12pm)
     - `sendCallNotesEodDigest` (call-notes, hourly — emails each rep at their local EOD hour)
@@ -3498,7 +3508,8 @@ manually for a fresh deploy or environment:
     - `sendTrainingOverdueDigest` (training, daily manager-tz 7am — per-manager nudge of overdue training (org-wide) + overdue unsigned employee docs (team-scoped per INV-122); sends nothing to a manager with nothing overdue in their scope)
     - `sendAutomationHealthDigest` (automation, daily manager-tz 9am — org-wide automation-FAILURE push to `MANAGER_EMAILS`: reuses `computeAutomationHealth_()` and emails ONLY when a check is failing (stale digest heartbeat / stale nightly reconcile = the F1 class / personal-sheet sync-fails); silent when healthy. The watcher itself writes no audit row + has no heartbeat, so verify it from the trigger list. INV-137)
     - `sendDeptRequestReminderDigest` (DeptRequests v2, daily manager-tz 10am — PHI-free summary push to `MANAGER_EMAILS` of OPEN department requests past their SLA, grouped by dept; silent when none. Heartbeat-stamped `deptReqReminder`. INV-138)
-  The install + remove TARGETS arrays both list all thirteen, so re-running
+    - `sendManagerDailyBrief` (daily manager-tz 8am — the consolidated manager morning brief behind the `managerDailyBrief` feature flag, default OFF. While off it only stamps its `managerBrief` heartbeat (installing it is harmless); while on it sends ONE per-manager branded email consolidating urgent notes / missed clock-outs / overdue training-docs-coaching / dept-SLA overdue, and those four handlers suppress their separate MANAGER emails (employee-facing reminders + weekly digests + the failure watchdog are untouched). Silent on an all-clear morning. INV-151)
+  The install + remove TARGETS arrays both list all fourteen, so re-running
   install dedupes cleanly (a missing entry would silently duplicate that
   trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
   install, `installAutomationTriggers` emails `MANAGER_EMAILS` a
@@ -3784,12 +3795,40 @@ manually for a fresh deploy or environment:
   take effect server-side on the next request and client-side on the next
   config fetch.
 - **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
-  object `{ eod|urgent|weekly: "yyyy-MM-dd HH:mm:ss" }` (CONFIG.TIMEZONE
+  object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief:
+  "yyyy-MM-dd HH:mm:ss" }` (CONFIG.TIMEZONE
   wall time) stamped by each digest run (`stampDigestLastRun_`) — the
   heartbeat behind the Automation Health panel's "Digest heartbeats"
   block. Created on the first post-deploy digest run; no manual setup.
   Until each digest has run once, the panel shows "no heartbeat recorded
-  yet" — not an error.
+  yet" — not an error. (`managerBrief` stamps on every 8am run even while
+  the `managerDailyBrief` flag is off — the trigger's liveness is
+  observable independent of the feature toggle, INV-151.)
+- **Consolidated manager daily brief is OFF by default (INV-151).** Flip the
+  `managerDailyBrief` feature toggle (Manage → Admin → Feature Toggles; it
+  lives in `CN_FEATURE_FLAGS`, no dedicated Script Property) and **re-run
+  `installAutomationTriggers()` once** so the daily manager-tz 8am
+  `sendManagerDailyBrief` trigger exists. While on: ONE branded morning email
+  per manager consolidates urgent notes / missed clock-outs / overdue
+  training-docs-coaching / dept-SLA overdue, and those four streams suppress
+  their separate MANAGER emails (employee reminders, the weekly digests, and
+  the automation-failure watchdog still send). Silent on an all-clear morning.
+  Flip it off to restore the individual digests instantly (next trigger runs).
+- **`ClientErrors` sheet tab** (auto-provisioned in the ADP spreadsheet on the
+  first client-error beacon, INV-150). PHI-free diagnostics — exception
+  message/stack + view key per row, never form-field values. Read by the
+  Admin → Automation Health "Client errors" section (bounded tail scan,
+  7-day window). Grows slowly (client dedupes + caps 5/session; server caps
+  20/hour/rep); no purge — trim manually if it ever bothers you. The
+  `runAllTests` beacon test deletes its own `TEST_` rows.
+- **Script Property `WHATSNEW_KB_ID`** (optional — the "What's new" panel,
+  INV-152). Set it to the ID of a PUBLISHED Reference **article** (create a
+  "What's new" article in the Reference tool, copy its id from the KB sheet
+  or the reader URL-free id in the editor) and every rep gets a one-time
+  dismissible panel rendering it on next load — re-surfaced automatically
+  whenever the article is EDITED (the edit timestamp is the seen-stamp).
+  Unset = feature fully dormant. Drafts/embeds never show; maintain the
+  changelog like any other KB article.
 - **Call-notes EOD + weekly digest knobs** are
   `CONFIG.CALL_NOTES.EOD_WARNING_HOUR` (default 17 — the local hour at
   which each rep gets the EOD digest) and the
@@ -4099,7 +4138,7 @@ INV-40 | `setCallNoteFlag` clears `Resolved` (sets to `'FALSE'`) on any flag-typ
 INV-41 | `previewCallNoteEmail` returns `bodyHash` (SHA-256 hex over `htmlBody + subject + to`). `emailFromCallNote(noteId, payload, expectedBodyHash)` requires the hash and refuses to send when the freshly re-rendered body's hash doesn't match — guards against the rep editing the note between Preview and Send | Subsystem: Server
 INV-42 | `emailFromCallNote` sends via MailApp first (wrapped in its own try/catch — failure returns `success: false`), then stamps `EmailedAt` / `EmailDepartments` / `Subform` metadata in a separate try/catch. A stamp failure after a successful send logs to console and returns `success: true` so the rep doesn't re-send a duplicate | Subsystem: Server
 INV-43 | Mutating CN endpoints do NOT eagerly invalidate the ambient cache. The 60s `CN_AMBIENT_CACHE_TTL` is the sole freshness ceiling and matches the sidebar polling interval — badge can be at most 60s stale, same as if invalidation happened on every mutation. `invalidateCnAmbientCache_` is retained for manual operator use (e.g., after a direct Sheet edit that should reflect in the badge immediately) but is no longer called from the mutation hot path | Subsystem: Server
-INV-44 | The thirteen trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, and per-rep NotesArchive rows past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate) | Subsystem: Server
+INV-44 | The fourteen trigger-handler endpoints (`sendDailyMissedPunchAlerts`, `runDailyExportCheck`, `sendCallNotesEodDigest`, `sendCallNotesWeeklyDigests`, `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest`, `purgeExpiredFormData`, `purgeOldCallNotes`, `archiveOldCallNotes`, `purgeArchivedCallNotes`, `reconcileCallNotes`, `sendAutomationHealthDigest`, `sendDeptRequestReminderDigest`, `sendManagerDailyBrief`) call `assertManagerCaller_(label)` at the top. **A source-level Node tripwire (`run.js`) now asserts EVERY install-`TARGETS` handler calls `assertManagerCaller_` AND references no `.isAdmin` in code — the exact F1 regression class (a trigger gated on `emp.isAdmin` silently no-ops the nightly run under a narrowed `ADMIN_EMAILS`).** Required because they're top-level (time-based triggers won't bind to underscore-suffix functions) and therefore reachable via `google.script.run`. `purgeExpiredFormData` / `purgeOldCallNotes` / `purgeArchivedCallNotes` are destructive (delete FormSubmissions/FormTokens, per-rep live Notes, and per-rep NotesArchive rows past their retention windows) so the gate is load-bearing; `archiveOldCallNotes` is non-destructive (moves rows to a `NotesArchive` tab, data preserved) but still deletes from the live `Notes` tab, so it carries the same gate. `reconcileCallNotes` is fully non-destructive (it back-fills NoteId/Timestamp/DateLocal, never deletes) but carries the SAME gate because it walks every rep's Sheet + writes — and CRITICALLY a trigger handler's gate MUST be the MANAGER_EMAILS `assertManagerCaller_` (the installer is validated against MANAGER_EMAILS), NEVER `emp.isAdmin`/the roster gate, which would silently no-op the nightly run under a narrowed `ADMIN_EMAILS` or a non-roster installer (the reconcile F1/F2 regression, INV-109/INV-136). Pinned by `test_triggerGate_purgeOldCallNotes_nonManagerThrows` / `_archiveOldCallNotes_` / `_purgeArchivedCallNotes_` / `_purgeExpiredFormData_` (+ `test_reconcileCallNotes_nonManagerRejected` for the reconcile gate) | Subsystem: Server
 INV-45 | `searchMyCallNotes(query, field, dateRange, exact)` — when `exact === true`, matches `patientAndTrx` exactly (case-insensitive, trimmed) and ignores `field`. Otherwise `field ∈ all \| caller \| issue \| phone \| trx`: `all` matches across (caller, callback, patientAndTrx, issue, resolution); `caller` matches (caller, callback, patientAndTrx); `issue` matches (issue, resolution); **`phone` matches the callback number ONLY; `trx` matches patientAndTrx ONLY** (scope-isolated — a `phone` search never matches a TRX token, and vice-versa). The same field-scope set applies to the manager-gated `managerSearchCallNotes`. Used by the "Find prior calls for this TRX" card button + the Search tab's field-scope tabs. Pinned by `test_cn_search_phoneTrxFieldScopes` | Subsystem: Server
 INV-46 | `exportCallNotesRange(startDate, endDate)` is manager-gated, read-only across all enrolled reps' Sheets. Creates a new Sheet with a 15-column schema (RepId, RepName, DateLocal, Timestamp, Callback, Caller, Relationship, PatientAndTRX, Issue, TransferredTo, Resolution, FlagType, Resolved, EmailedAt, EmailDepartments) and writes a `CallNotesExport` audit row before returning. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
 INV-47 | `getManagerDashboard` pending[] entries carry `conflictsOff: [{name, status, type}]` (other reps off the same day, excluding self) and `holidayName: string|null` (US holiday name). Computed from a date→requests index built once per dashboard load + a holiday map keyed by years present in pending requests. The manager dashboard surfaces both inline on each pending card and echoes them into the Approve confirm dialog | Subsystem: Server
@@ -4219,6 +4258,9 @@ INV-147 | Draft KB items (INV-140) are excluded from EVERY rep-reaching surface 
 INV-148 | Debounced client draft persisters are TEARDOWN-SAFE: the deferred save/persist SKIPS when its form root is gone from the DOM (intake `intakeDraftSaveNow_` root-guard; CN `cnPersistActiveFormDraft_` root-guard — a post-teardown fire read every field as '' and REMOVED the sticky draft), and intake additionally FLUSHES a pending debounce synchronously at the top of `showView` (`intakeFlushDraftNow_`, typeof-guarded + try/catch'd — a throw must never block navigation) while the outgoing DOM is intact; `intakeClearDraft_` cancels a pending timer for its form. Any NEW debounced persister must follow the same pattern. Pinned by the M-2 + Turn-A DOM tests and the cross-partial hook tripwire (`script_core` references + intake defines `intakeFlushDraftNow_`) | Subsystem: Client (Intake views) + Client (Call Notes views) + Client (shell)
 
 INV-149 | **Per-rep shift override (Turn D).** Employees column O `Schedule` (`EMP.SCHEDULE=14`; `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` per INV-28) holds an optional `H:mm-H:mm` override in the REP's own timezone, parsed by the pure `parseShiftOverride_` (bare hours OK; blank/garbage/overnight/out-of-range → null — FAIL-SAFE to the per-tz schedule, so a typo'd cell can never break the ribbon/coverage/punctuality; overnight shifts deliberately unsupported). `empShiftSchedule_(empLike, tz)` is the ONLY schedule resolver consumers may call: a valid override supplies start/length (flagged `override:true`) while breaks + the break reminder ALWAYS come from the per-tz `CONFIG.SHIFT_SCHEDULE`; `getShiftSchedule_` is called ONLY by the resolver. Consumers: `getEmployeeState` (ships `schedule` → `CLK_SCHEDULE`, the ribbon/countdown/next-break), `getCoveragePlan`, `getPunctualityReport`. `getEmployeeInfo_`/`lookupEmployeeById_` carry the raw cell as `scheduleRaw`. Pinned by the `parseShiftOverride_` Node cases + a source tripwire (all three consumers use `empShiftSchedule_`, zero bare `getShiftSchedule_` calls outside it) + `test_perRepSchedule_overrideAndFallback` (editor — override drives `getEmployeeState`, invalid cell falls back, breaks inherited) | Subsystem: Server + Client (Time Clock views)
+INV-150 | **Client error beacon is PHI-safe by construction, gated, bounded, and rate-capped.** The shell's `window.onerror` + `unhandledrejection` hooks (`script_core.html`) post ONLY exception metadata — `{message, stack, view, source}`, the payload shape is CLOSED (a Node test pins the exact four keys) — never form-field values, note content, or DOM text; both sides truncate (client `errBeaconPayload_` mirrors the server `CLIENT_ERR_MSG_MAX`=400 / `CLIENT_ERR_STACK_MAX`=1500). The client dedupes identical messages and hard-caps `ERR_BEACON_MAX_PER_SESSION`=5 per session; `recordClientError` requires `getEmployeeInfo_` (NOT a public endpoint), acquires the ScriptLock (INV-01 — it appends to the `ClientErrors` tab in the ADP spreadsheet, auto-provisioned by `getOrCreateClientErrorsSheet_`), and rate-caps `CLIENT_ERR_RATE_MAX_PER_HOUR`=20 per rep via CacheService. The beacon is fire-and-forget end to end — the send path is wrapped so it can never throw inside an error handler, and every server rejection returns quietly. Surfaced read-only in Admin → Automation Health via `clientErrorsSummary_` (bounded `CLIENT_ERR_SCAN_MAX`=2000 tail, 7-day window) on `computeAutomationHealth_().clientErrors`; deliberately NOT pushed by the failure digest (a single benign browser quirk must not nag daily). Pinned by the `errBeaconPayload_` Node cases + the recordClientError/wiring source tripwires + the DOM dedupe/cap tests + `test_recordClientError_authBoundsAndAppend` (editor) | Subsystem: Server + Client (shell)
+INV-151 | **Consolidated manager daily brief (flag-gated, suppression-symmetric).** `sendManagerDailyBrief` is a trigger handler (daily manager-tz 8am; INV-44 gate) behind the `managerDailyBrief` feature flag — the registry's first pure-`server`-scope flag, default OFF so a fresh deploy is a behavioral no-op. It stamps its `managerBrief` heartbeat BEFORE the flag check (trigger liveness stays observable while the feature is off) and, when on, builds ONE branded morning email PER MANAGER (docs + coaching are team-scoped, INV-122/134 — the sendTrainingOverdueDigest model) from the SAME factored computations the standalone digests use (`computeMissedClockOuts_`, `managerAggregateUrgent_`, `trainOverdueForRoster_`, `empDocsOverdueAll_`, `coachUnackedAll_`, `deptRequestsOverdueOpen_` — no parallel source to drift), with every data source individually try/catch'd and coaching rows PHI-minimal (INV-134). While the flag is ON, exactly FOUR handlers suppress their separate MANAGER emails — `sendDailyMissedPunchAlerts` (manager summary only; employee reminders always send), `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest` (manager loop only; employee doc nudges always send), `sendDeptRequestReminderDigest` — each still stamping its heartbeat; `sendCallNotesWeeklyDigests` (weekly cadence) and `sendAutomationHealthDigest` (the independent watchdog that reports a dead brief trigger — consolidating it would be circular) NEVER consult the flag. An all-clear morning sends nothing. The pure `managerBriefSections_` drives section order/counts/send-decision. Pinned by the `managerBriefSections_` + suppression-set + registry-flag Node tests, the auto-covering TARGETS/gate-type/DIGEST_LABELS tripwires, and `test_triggerGate_managerDailyBrief_nonManagerThrows` (editor) | Subsystem: Server
+INV-152 | **"What's new" panel is a dormant-until-configured broadcast of ONE published KB article.** `getWhatsNew` is rep-callable (requires `getEmployeeInfo_`), read-only, and returns `{none:true}` on EVERY quiet-failure path (unset `WHATSNEW_KB_ID` Script Property, missing item, non-article, any throw) so it can never break boot; a DRAFT article is invisible to EVERYONE including admins (INV-140/147 — a broadcast surface has no preview tier; admins preview in Reference). The returned `stamp` is the article's edit time (`kbCellTs_`, KB-sheet-tz recovered) — the client auto-opens the panel once per stamp change (`whatsNewShouldShow_` vs `localStorage.umsWhatsNew`; corrupt blob = never seen = re-show), never in the compact pop-out, and defers to a pending onboarding tour. The overlay is `ensureOverlay`-created (its `onClose` hook `whatsNewClose_` stamps seen on EVERY dismissal path) and renders the body via `kbMd_` — the same escape boundary as every Reference article; the title routes through `esc()`. A sidebar star button (rendered only when configured) reopens it anytime. Pinned by the `whatsNewShouldShow_`/`getWhatsNew` Node cases, the DOM render/Esc-stamp tests, and `test_whatsNew_propertyGateAndDraftHidden` (editor) | Subsystem: Server + Client (shell)
 ### Policy Configuration
 Policy threshold: 4/10
 Consecutive cycles: 2

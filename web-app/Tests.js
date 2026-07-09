@@ -964,7 +964,12 @@ function _runAllTests() {
   _integrationTest('triggerGate_trainingOverdue_nonManagerThrows', test_triggerGate_trainingOverdue_nonManagerThrows);
   _integrationTest('triggerGate_automationHealthDigest_nonManagerThrows', test_triggerGate_automationHealthDigest_nonManagerThrows);
   _integrationTest('triggerGate_deptReqReminder_nonManagerThrows', test_triggerGate_deptReqReminder_nonManagerThrows);
+  _integrationTest('triggerGate_managerDailyBrief_nonManagerThrows', test_triggerGate_managerDailyBrief_nonManagerThrows);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
+
+  // ── Client error beacon (#1, INV-150) + What's new panel (#4, INV-152) ─
+  _integrationTest('recordClientError_authBoundsAndAppend', test_recordClientError_authBoundsAndAppend);
+  _integrationTest('whatsNew_propertyGateAndDraftHidden', test_whatsNew_propertyGateAndDraftHidden);
 
   // ── Audit row assertions ───────────────────────────────────────────────
   _integrationTest('auditRow_recordPunchAdjustment',            test_auditRow_recordPunchAdjustment);
@@ -3464,6 +3469,93 @@ function test_triggerGate_deptReqReminder_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { sendDeptRequestReminderDigest(); });
   }, 'manager access required');
+}
+
+// The consolidated daily brief (#2, INV-151) is a trigger handler, so it
+// carries the MANAGER_EMAILS assertManagerCaller_ gate (INV-44 family).
+function test_triggerGate_managerDailyBrief_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { sendManagerDailyBrief(); });
+  }, 'manager access required');
+}
+
+// ── Client error beacon (#1, INV-150) ──────────────────────────────────────
+// Rep-callable + locked + server-bounded append. Verifies: an unregistered
+// caller is rejected; an oversized payload is truncated to the server caps;
+// the row lands in the ClientErrors tab. Cleans up its own rows (they carry
+// the TEST_ empId but ClientErrors isn't in cleanupTestData's sweep).
+function test_recordClientError_authBoundsAndAppend() {
+  // Reset the per-rep hourly rate cap so repeated suite runs can't starve it.
+  try { CacheService.getScriptCache().remove('client_err_rate:' + _TEST_INDIA_ID); } catch (e) {}
+  const nobody = _asUser('do-not-send-nobody@example.invalid', function () {
+    return recordClientError({ message: 'x', stack: 'y', view: 'clock', source: 'onerror' });
+  });
+  _assertTrue(nobody && nobody.success === false, 'unregistered caller rejected');
+  const empty = _asUser(_TEST_INDIA_EMAIL, function () {
+    return recordClientError({ message: '   ', stack: 'y' });
+  });
+  _assertTrue(empty && empty.success === false, 'empty message rejected (nothing to record)');
+
+  const bigMsg = new Array(1002).join('m');    // 1001 chars
+  const bigStack = new Array(5002).join('s');  // 5001 chars
+  const ok = _asUser(_TEST_INDIA_EMAIL, function () {
+    return recordClientError({ message: bigMsg, stack: bigStack, view: 'callNotes', source: 'unhandledrejection' });
+  });
+  _assertTrue(ok && ok.success === true, 'valid beacon accepted');
+  const sheet = getOrCreateClientErrorsSheet_();
+  const lastRow = sheet.getLastRow();
+  try {
+    const row = sheet.getRange(lastRow, 1, 1, 6).getValues()[0];
+    _assertEq(String(row[1]), _TEST_INDIA_ID, 'row carries the caller empId');
+    _assertEq(String(row[2]), 'callNotes', 'row carries the active view');
+    _assertEq(String(row[3]), 'unhandledrejection', 'source whitelisted');
+    _assertEq(String(row[4]).length, CLIENT_ERR_MSG_MAX, 'message truncated to the server cap');
+    _assertEq(String(row[5]).length, CLIENT_ERR_STACK_MAX, 'stack truncated to the server cap');
+  } finally {
+    // Delete every TEST_ row this (or a prior aborted) run appended.
+    for (let r = sheet.getLastRow(); r >= 2; r--) {
+      if (String(sheet.getRange(r, 2).getValue()).indexOf('TEST_') === 0) sheet.deleteRow(r);
+    }
+  }
+}
+
+// ── What's new panel (#4, INV-152) ─────────────────────────────────────────
+// WHATSNEW_KB_ID gates the feature (unset = dormant); a DRAFT article stays
+// invisible to everyone (broadcast surface — INV-140/147); publishing it
+// makes the body + edit stamp flow to reps.
+function test_whatsNew_propertyGateAndDraftHidden() {
+  const props = PropertiesService.getScriptProperties();
+  const prev = props.getProperty('WHATSNEW_KB_ID');
+  let kbId = null;
+  try {
+    props.deleteProperty('WHATSNEW_KB_ID');
+    const unset = _asUser(_TEST_INDIA_EMAIL, function () { return getWhatsNew(); });
+    _assertTrue(unset && unset.none === true, 'unset property → dormant {none:true}');
+
+    const saved = _asUser(_TEST_MGR_EMAIL, function () {
+      return kbSaveItem({ title: 'TEST_WHATSNEW', type: 'article',
+        body: 'changelog TESTWHATSNEWTOKEN', department: 'TEST', status: 'draft' });
+    });
+    _assertTrue(saved && saved.success, 'draft changelog article created');
+    kbId = saved.id;
+    props.setProperty('WHATSNEW_KB_ID', kbId);
+
+    const draft = _asUser(_TEST_INDIA_EMAIL, function () { return getWhatsNew(); });
+    _assertTrue(draft && draft.none === true, 'draft article stays invisible (broadcast rule)');
+
+    const pub = _asUser(_TEST_MGR_EMAIL, function () { return kbPublishItem(kbId); });
+    _assertTrue(pub && pub.success, 'published');
+    const live = _asUser(_TEST_INDIA_EMAIL, function () { return getWhatsNew(); });
+    _assertTrue(live && !live.none, 'published article flows to reps');
+    _assertContains(String(live.bodyMd || ''), 'TESTWHATSNEWTOKEN', 'body delivered');
+    _assertTrue(!!String(live.stamp || ''), 'edit stamp present (drives the client seen-flag)');
+  } finally {
+    if (prev == null) props.deleteProperty('WHATSNEW_KB_ID');
+    else props.setProperty('WHATSNEW_KB_ID', prev);
+    if (kbId) {
+      _asUser(_TEST_MGR_EMAIL, function () { try { kbDeleteItem(kbId); } catch (e) {} });
+    }
+  }
 }
 
 // Aggregation behind the urgent digest — finds urgent-flagged notes (urgent

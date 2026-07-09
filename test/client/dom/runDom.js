@@ -739,3 +739,68 @@ test('M-5: search results are NOT dropped when the query carries trailing whites
   assert.strictEqual(h.read('CN_STATE.searchResults.length'), 1,
     'trimmed-vs-raw stale-guard no longer discards the response');
 });
+
+section('Client error beacon (#1, INV-150) — window hooks, dedupe, session cap');
+
+test('a window error posts ONE recordClientError with the bounded payload; repeats dedupe', () => {
+  const h = boot();
+  const beaconCalls = () => h.run.calls.filter((c) => c.method === 'recordClientError');
+  const before = beaconCalls().length;   // boot noise, if any
+  h.window.dispatchEvent(new h.window.ErrorEvent('error', {
+    message: 'boom XYZ', error: new Error('boom XYZ'), filename: 'x.js', lineno: 7,
+  }));
+  const after1 = beaconCalls();
+  assert.strictEqual(after1.length, before + 1, 'one beacon RPC fired');
+  const payload = after1[after1.length - 1].args[0];
+  assert.strictEqual(payload.message, 'boom XYZ');
+  assert.strictEqual(payload.source, 'onerror');
+  assert.strictEqual(Object.keys(payload).sort().join(','), 'message,source,stack,view',
+    'payload shape is closed (PHI posture — no field-value slot)');
+  h.window.dispatchEvent(new h.window.ErrorEvent('error', { message: 'boom XYZ' }));
+  assert.strictEqual(beaconCalls().length, before + 1, 'identical message deduped');
+});
+
+test('unhandledrejection posts with its source tag; distinct errors cap at 5 per session', () => {
+  const h = boot();
+  const beaconCalls = () => h.run.calls.filter((c) => c.method === 'recordClientError');
+  const before = beaconCalls().length;
+  const rej = new h.window.Event('unhandledrejection');
+  rej.reason = new Error('rejected ABC');
+  h.window.dispatchEvent(rej);
+  const calls1 = beaconCalls();
+  assert.strictEqual(calls1.length, before + 1, 'rejection beacon fired');
+  assert.strictEqual(calls1[calls1.length - 1].args[0].source, 'unhandledrejection');
+  for (let i = 0; i < 10; i++) {
+    h.window.dispatchEvent(new h.window.ErrorEvent('error', { message: 'distinct err ' + i }));
+  }
+  assert.ok(beaconCalls().length - before <= 5,
+    'session cap (ERR_BEACON_MAX_PER_SESSION) holds — an error loop cannot flood the tab');
+});
+
+section("What's new panel (#4, INV-152) — overlay render, dismissal stamps seen");
+
+test('whatsNewOpen_ renders the KB article via kbMd_ into an ensureOverlay modal', () => {
+  const h = boot();
+  h.window.WHATSNEW_STATE = {
+    id: 'kb1', title: 'What\'s new <b>&</b>', bodyMd: '# July updates\n\nFaster **saves**.', stamp: 'S1',
+  };
+  h.window.whatsNewOpen_();
+  const ov = h.$('#whatsnew-overlay');
+  assert.ok(ov && /\bopen\b/.test(ov.className), 'overlay mounted + open');
+  assert.ok(/July updates/.test(ov.innerHTML), 'kbMd_ rendered the article body');
+  assert.ok(ov.innerHTML.indexOf('<b>&</b>') === -1 && /&lt;b&gt;/.test(ov.innerHTML),
+    'title is esc()-escaped before innerHTML');
+});
+
+test('Escape dismisses through the close hook and stamps the seen-flag (no re-show)', () => {
+  const h = boot();
+  h.window.WHATSNEW_STATE = { id: 'kb1', title: 'T', bodyMd: 'hello', stamp: 'S2' };
+  h.window.whatsNewOpen_();
+  h.dispatchKey('Escape');
+  const ov = h.$('#whatsnew-overlay');
+  assert.ok(ov && !/\bopen\b/.test(ov.className), 'Escape closed the overlay via its hook');
+  const stored = h.window.localStorage.getItem('umsWhatsNew');
+  assert.ok(stored && JSON.parse(stored).seenStamp === 'S2', 'dismissal stamped seen');
+  assert.strictEqual(h.window.whatsNewShouldShow_(stored, 'S2'), false, 'same stamp stays quiet');
+  assert.strictEqual(h.window.whatsNewShouldShow_(stored, 'S3-edited'), true, 'an edit re-surfaces it');
+});
