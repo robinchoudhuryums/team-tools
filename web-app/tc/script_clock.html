@@ -1616,7 +1616,7 @@ function renderPunchHistory(punches) {
       : '';
     return `<div class="punch-row">
       <div class="punch-icon ${dc}">${icon(m.icon, 18)}</div>
-      <div class="punch-name">${m.label} ${adj}</div>
+      <div class="punch-name">${esc(m.label)} ${adj}</div>
       <div class="punch-tag ${dc}">${p.direction}</div>
       <div class="punch-tv">${dispTime(p.time)}</div>
       ${undoBtn}

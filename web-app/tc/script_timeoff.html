@@ -9,12 +9,26 @@
 var CAL_CACHE = {};
 function calCacheKey_(y, m) { return y + '-' + m; }
 
+// F(L-6): a non-silent load renders the full-view spinner first — on error the
+// toast alone stranded the view on "Loading…" forever. Replace the loader with
+// a retryable error state (the Metrics pattern); silent refreshes keep the
+// already-painted view and just toast.
+function calLoadError_(msg, opts) {
+  showToast(msg, 'toast-error');
+  if (opts && opts.silent) return;
+  const area = document.getElementById('view-area');
+  if (area && currentView === 'timeoff') {
+    area.innerHTML = '<div class="state-center"><p>' + esc(msg) + '</p>' +
+      '<button class="refresh-btn" onclick="enterTimeoffView()">' + icon('refresh', 12) + 'Retry</button></div>';
+  }
+}
+
 function loadCalendar(year, month, opts) {
   opts = opts || {};
   google.script.run
     .withSuccessHandler(data => {
       if (opts.silent) viewRefreshingPill_(false);
-      if (data.error) { showToast(data.error, 'toast-error'); return; }
+      if (data.error) { calLoadError_(data.error, opts); return; }
       CAL_CACHE[calCacheKey_(year, month)] = { data: data, at: Date.now() };
       // Render only if the user is still on this exact month — a fast double-nav
       // or a nav-away must not let a late/stale fetch clobber the current view.
@@ -24,7 +38,7 @@ function loadCalendar(year, month, opts) {
       const area = document.getElementById('view-area');
       if (area) renderTimeOffView(area, data);
     })
-    .withFailureHandler(err => { if (opts.silent) viewRefreshingPill_(false); showToast((err.message||'Load failed'),'toast-error'); })
+    .withFailureHandler(err => { if (opts.silent) viewRefreshingPill_(false); calLoadError_((err.message||'Load failed'), opts); })
     .getCalendarData(year, month);
 }
 

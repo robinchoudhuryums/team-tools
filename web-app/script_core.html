@@ -382,8 +382,10 @@ function renderShell(state) {
 
   // Pop-out button — only shown in normal (full) mode. Compact mode is the
   // pop-out target, so hiding the button there keeps the chrome quiet.
+  // F(L-7): this button carried TWO title attributes — HTML keeps the first,
+  // so the PowerToys pin tip (documented in CLAUDE.md + the tour) never showed.
   const popOutBtn = COMPACT_MODE ? '' : `
-    <button type="button" class="sb-popout-btn" title="Pop out to small window"
+    <button type="button" class="sb-popout-btn"
             aria-label="Pop out to small window"
             title="Pop out a compact panel — tip: PowerToys 'Always On Top' (Win+Ctrl+T) keeps it above other windows"
             onclick="popOutCurrentView()">

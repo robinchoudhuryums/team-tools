@@ -63,15 +63,27 @@
 //  MANAGER VIEW
 // ════════════════════════════════════════════════════════════════════════════
 
+// F(L-6): the enter path renders the full-view spinner — on error the toast
+// alone stranded the Manage Time view on "Loading…" forever. Replace the
+// loader with a retryable error state.
+function mgrLoadError_(msg) {
+  showToast(msg, 'toast-error');
+  const area = document.getElementById('view-area');
+  if (area && currentView === 'manage') {
+    area.innerHTML = '<div class="state-center"><p>' + esc(msg) + '</p>' +
+      '<button class="refresh-btn" onclick="enterManagerView()">' + icon('refresh', 12) + 'Retry</button></div>';
+  }
+}
+
 function loadManagerDashboard() {
   google.script.run
     .withSuccessHandler(data => {
-      if (data.error) { showToast(data.error, 'toast-error'); return; }
+      if (data.error) { mgrLoadError_(data.error); return; }
       mgrData = data;
       const area = document.getElementById('view-area');
       if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); loadPendingAdjustments_(); }
     })
-    .withFailureHandler(err => showToast((err.message||'Load failed'),'toast-error'))
+    .withFailureHandler(err => mgrLoadError_(err.message||'Load failed'))
     .getManagerDashboard();
 }
 
@@ -515,8 +527,11 @@ function renderManagerView(area, data) {
   document.getElementById('mgr-export').addEventListener('click', openExportModal);
   document.getElementById('mgr-add-timeoff').addEventListener('click', () => openMgrTimeOffModal(data));
 
-  // Approve / Deny buttons
-  document.querySelectorAll('.pending-btn').forEach(btn => {
+  // Approve / Deny buttons — per-card only. F(M-6): scope by [data-status];
+  // the bulk-bar buttons share the .pending-btn class for styling and were
+  // ALSO receiving this handler (a bogus "…from undefined?" dialog stacked on
+  // the real bulk confirm, TypeError on OK, and Enter resolved both at once).
+  document.querySelectorAll('.pending-btn[data-status]').forEach(btn => {
     btn.addEventListener('click', () => {
       const d = btn.dataset;
       const newStatus = d.status;

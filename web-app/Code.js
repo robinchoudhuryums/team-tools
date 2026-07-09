@@ -1074,8 +1074,14 @@ function getManagerDashboard() {
           empName:      String(auditData[i][2]),
           action:       String(auditData[i][4]),
           punchDate:    normalizeDate_(auditData[i][5]),
-          punchTime:    String(auditData[i][6]),
-          isAdjustment: String(auditData[i][7]) === 'TRUE',
+          // F(M-3): the PunchTime cell is written 'HH:mm:ss' but Sheets coerces
+          // it to a time-of-day Date — raw String() yielded "Sat Dec 30 1899 …"
+          // and the Recent Activity feed rendered a constant "12:00 AM".
+          punchTime:    normalizeTime_(auditData[i][6]),
+          // F(M-4): the cell is written 'TRUE'/'FALSE' but Sheets coerces it to
+          // a native boolean — String(true) === 'TRUE' is always false, so the
+          // ADJ badge + the adjustment REASON never rendered for the manager.
+          isAdjustment: String(auditData[i][7]).toUpperCase() === 'TRUE',
           daysBack:     parseInt(auditData[i][8], 10) || 0,
           notes:        String(auditData[i][9]),
         });

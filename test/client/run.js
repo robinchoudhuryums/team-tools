@@ -620,6 +620,15 @@ test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-
   });
 });
 
+console.log('\nCode.js — dashboard AuditLog coercion-safe reads (cycle 7 · M-3/M-4)');
+test('TRIPWIRE (M-3/M-4): getManagerDashboard reads PunchTime via normalizeTime_ and IsAdjustment case-insensitively', () => {
+  const src = extractRawFunction('Code.js', 'getManagerDashboard');
+  assert.ok(/punchTime:\s*normalizeTime_\(/.test(src),
+    'AuditLog PunchTime is a Sheets-coerced time Date — a raw String() read renders "Sat Dec 30 1899 …" and the Recent Activity feed shows a constant 12:00 AM');
+  assert.ok(!/String\(auditData\[i\]\[7\]\)\s*===\s*'TRUE'/.test(src),
+    "AuditLog IsAdjustment is a Sheets-coerced native boolean — String(true) === 'TRUE' is always false (ADJ badge + reason never rendered); compare case-insensitively");
+});
+
 console.log('\nCode.js — spreadsheet-creation timezone tripwire (cycle 7 · H-2)');
 test('TRIPWIRE (H-2): generateExportSheet_ pins the new spreadsheet tz to the ADP sheet', () => {
   const src = extractRawFunction('Code.js', 'generateExportSheet_');
