@@ -2,11 +2,11 @@
 
 ## Current
 Cycle: 7
-Phase: implement — broad-scan fix backlog, Turn 1+2 of 8 done, on claude/broad-scan-45plfi
-Scope: broad (full-codebase audit 2026-07-09; ~40 findings: 0 Critical / 2 High / ~15 Medium / ~20 Low)
+Phase: implement DONE — all 8 turns of the broad-scan fix backlog shipped on claude/broad-scan-45plfi (regression + reflect done; /reflect close-out pending)
+Scope: broad (full-codebase audit 2026-07-09; ~40 findings: 0 Critical / 2 High / ~15 Medium / ~20 Low — ALL non-deferred items implemented)
 Test Command: manual
 Subsystem cycles since last Seams audit: 6
-Updated: 2026-07-09 (broad-implement: Turn 1+2 — H-1/H-2/M-1/L-1 + M-2/M-5/L-15/L-22/L-26)
+Updated: 2026-07-09 (Turns 1-8 complete: commits 3f083a1, eda5a08, fbaa878, be3fe85, ef572fa, f6a19ba, 3e54681)
 
 ## Cycle 7 broad-scan + Turn 1+2 (2026-07-09, claude/broad-scan-45plfi)
 Audit: 6-agent fan-out + personal verification of every Medium+ finding (all
@@ -103,50 +103,55 @@ intakeCollectPpd_ / engine / email builder work unchanged.
   English values, drift-guarded."
 
 ## Where I left off
-2026-07-09: Cycle 7 Turn 1+2 committed (3f083a1) on claude/broad-scan-45plfi and
-pushed. NEXT = Turn 3 (manager display correctness: M-3 AuditLog punchTime via
-normalizeTime_, M-4 isAdjustment boolean-safe read, M-6 bulk-btn selector overlap,
-L-6 stranded loaders, L-7 dup title, L-8 esc m.label) — then Turns 4–8 per the
-sequencing in the Pending section. Judgments are from the 2026-07-09 audit; a
-future NEW audit re-derives fresh.
+2026-07-09: ALL 8 turns of the Cycle-7 backlog are committed + pushed on
+claude/broad-scan-45plfi (7 commits; pure 240/0 + DOM 54/0 + node --check green;
+CLAUDE.md gotchas/INVs synced in Turn 8). NEXT = open/merge the PR, then
+/reflect to close Cycle 7 (score movement: Correctness bugs from the audit are
+all fixed; re-derive at reflect time). Deferred by decision: L-24 transient
+dup-card race (self-heals ≤60s; fuzzy matching risk), diagnostic-liveness in
+computeAutomationHealth_ (design addition — own change), per-rep schedules
+(operator decision), KB draft/revision functional test suite beyond the new
+gate/behavior tests, quiz kbItemId draft-link check (small L-9 sibling).
+OPERATOR: one deploy (clasp push -f + New version) + runAllTests() in the
+editor ships everything; spot-check one ADP export post-deploy; the ADP-sheet-tz
+decision is now safe either way (H-2 fixed + factory).
 
-## Pending / not yet done (Cycle 7 turns 3–8, sequenced 2026-07-09)
-- Turn 3 (~2h): M-3 dashboard Recent-Activity punchTime raw String → "12:00 AM";
-  M-4 isAdjustment === 'TRUE' vs coerced boolean (ADJ badge/reason never shown);
-  M-6 bulk Approve/Deny double-wired via .pending-btn class overlap; L-6 error
-  paths strand full-view loaders (calendar/mgr dashboard); L-7 pop-out dup title
-  attr (PowerToys tip dead); L-8 esc() the renderPunchHistory unknown-type label.
-- Turn 4 (~½d): M-10 empIsAdmin_ enforce admins⊆managers; M-15 subformData key
-  whitelist at submit (keep trainingQuestion/flags/tags/completionSeconds/
-  composer keys); M-12 KB-AI retrieval excludes drafts regardless of caller;
-  M-13 kbConvertDriveDoc carries status → editor (draft not silently published);
-  L-9 reject draft KB items in training assignment + getMyTraining.
-- Turn 5 (~½d): M-9 composer cancel-during-send (block close while sending);
-  M-8 Team Notes sub-tab seq guard; M-7 Admin Sheets blank pane; L-20 stuck
-  envelope on empty-form compose; L-21 ext composer note-ref sync; L-23 stale
-  exact badge; L-25 QA ack/clarify in-flight guard.
-- Turn 6 (~½d): M-14 lenient timestamp parser unification (callNoteRowToObject_/
-  deleteCallNote/coaching/DR); createPinnedSpreadsheet_ factory + Node tripwire
-  forbidding bare SpreadsheetApp.create; sheet LOCALE surfacing in Storage
-  Health + provisioning pins locale.
-- Turn 7 (~3h): M-16 skip DeptRequests auto-log/CTA for 'Other'-only sends;
-  M-11 unmatchedAgents derive from unfiltered agent pass; L-10 drop patientTRX
-  from overdue digest; L-11 DR label cap/canonical; L-12 mail outside lock;
-  L-13 fold lone flagType:'urgent' into flags[]; optional diagnostic-liveness
-  in computeAutomationHealth_.
-- Turn 8 (~3h): L-2 future-time guard on adjust queue; L-3 Sat-NYD observance;
-  L-4 recon half-day-pair false positive; L-5 browser-local date defaults →
-  isoDateTz(empTz()); L-14 stale EOD comment; L-16 comma-strip custom condition
-  entries + Q43 exclude-list guard; L-17 lang-flip reveals/progress; L-18 KB
-  item-open seq guard; L-19 http(s) scheme check on Offerings links; L-24
-  dup-card race (optional); /sync-docs — add 3 gotchas (AuditLog PunchTime/
-  IsAdjustment cols; sheet LOCALE coercion; SpreadsheetApp.create inherits
-  script tz) + amend INV-106/134/136.
-- Deferred (operator decisions): per-rep schedules (INV-127); KB draft/revision
-  functional test suite; L-24 if not taken in Turn 8.
-- OPERATOR (carried): deploy (clasp push -f + New version) + runAllTests() in
-  the editor; ADP-sheet-tz decision (H-2 fix makes either choice safe for the
-  export); condition-list clinical sign-off (Phase 3).
+## Completed this cycle (Cycle 7 — all turns)
+- Turn 1 (3f083a1): H-1 coaching overdue dead; H-2 export-sheet tz pin; M-1
+  submitPunch failure handler; L-1 voidCoaching finally.
+- Turn 2 (3f083a1): M-2 intake draft teardown wipe + showView flush; M-5 search
+  trim-guard; L-15 acct 'FALSE' fabrication; L-22 nav-hint order; L-26 catalog
+  failure cache.
+- Turn 3 (eda5a08): M-3 punchTime normalize; M-4 isAdjustment boolean-safe; M-6
+  bulk-btn selector overlap; L-6 stranded loaders; L-7 dup title; L-8 esc label.
+- Turn 4 (fbaa878): M-10 admins⊆managers enforced; M-15 subformData whitelist;
+  M-12 KB-AI draft exclusion (searchReference publishedOnly); M-13 convert
+  status carry; L-9 draft-KB training guards.
+- Turn 5 (be3fe85): M-9 composer close-refusal mid-send; M-8 Team Notes sub-tab
+  seq guard; M-7 Admin Sheets empty-pane reload + Retry; L-20 stuck envelope;
+  L-21 note-ref sync; L-23 exact badge; L-25 QA in-flight guard.
+- Turn 6 (ef572fa): M-14 cnTimestampString_ boundary (4 readers);
+  createPinnedSpreadsheet_ factory (tz+locale) + 3 sites + no-bare-create
+  tripwire; Storage Health locale pills.
+- Turn 7 (f6a19ba): M-16 'Other'-dept DR skip; M-11 unmatchedAgents alive
+  (offRosterAgents, CDR cache v3); L-10 digest TRX drop; L-11 label cap; L-12
+  mail-outside-lock; L-13 lone-urgent fold.
+- Turn 8 (3e54681): L-2 future-time guard; L-3 Sat-NYD observance; L-4 half-day
+  pair exemption (Node-pinned); L-5 roster-tz defaults; L-14 EOD banner; L-16
+  comma/negation guard; L-17 lang-flip reveals; L-18 KB item-open seq; L-19
+  Offerings scheme whitelist; intakeClearDraft_ debounce cancel; CLAUDE.md sync.
+- Tests added: 10 pure (incl. 6 source tripwires) + 6 DOM; several bite-checked
+  against pre-fix code. Harnesses: pure 230→240, DOM 48→54.
+
+## Decisions made (so the next session doesn't re-litigate)
+- L-24 dup-card race NOT fixed: needs fuzzy pending↔server note matching (risk
+  of dropping a real pending note) for a ≤60s self-healing cosmetic issue.
+- Diagnostic-liveness in Automation Health deferred as its own designed change.
+- 'Other'-only dept sends are untracked by DeptRequests (mixed sends tracked).
+- coachParseTs_'s fixed-UTC parse is acceptable for the 7-day overdue window
+  (≤tz-offset skew; matches the analytics block's existing tolerance).
+- Untouched acct Yes/No toggles now serialize '' (not 'FALSE') — send rendering
+  identical (server branches on ==='TRUE'); stored submissions record ''.
 
 ## Prior: KB self-improving loop (#1 + #2, 2026-07-01, claude/broad-scan-2ll5ok)
 Non-AI Reference-tool enhancements (operator declined the KB-AI Phase B route for
