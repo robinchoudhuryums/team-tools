@@ -8,6 +8,31 @@ Test Command: manual
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-07-09 (#7: INV-153 Timesheet cold-archive — archiveOldTimesheetRows, TIMESHEET_ARCHIVE_DAYS + 120d floor, 15th trigger)
 
+## Testing-feedback round 2 (2026-07-09, claude/broad-scan-45plfi)
+Five items from continued live testing; three implemented, two answered with
+options (night-shift sky phases; loSweep loader alternatives — operator picks):
+- Spanish Inbox manual mark-resolved: resolveSpanishThread (canSeeSpanishInbox_
+  gate, ThreadBody-style scope guard, locked, idempotent; uiConfirm client
+  button on pending cards; "marked manually" label on Resolved cards).
+  PHI-free SpanishManualResolved tab on the ADP sheet (threadId/resolver/ms —
+  ms as NUMBER cell, no coercion); readers consult spanishManualResolvedMap_
+  (bounded 1000 tail); pending drops immediately, stats within 5-min TTL
+  (INV-43 posture). INV-31 amendment now five Spanish endpoints; gate test +
+  source tripwire added.
+- What's-new → Dashboard greeting carousel: the greet bar's status line now
+  rotates upward-carousel style (status ↔ update slides from the article's
+  list items via pure whatsNewItems_, Node-pinned; 8s cadence, hover-hold,
+  startClock/stopClock lifecycle, clkRegSlide animation reuse, NEW pill gated
+  by whatsNewShouldShow_). The panel NO LONGER auto-opens — slides/sidebar
+  star open it; dismissal still stamps umsWhatsNew. INV-152 updated.
+- Clock background image fix: the upload always worked — the Dashboard
+  redesign made hero == clock tile whose OPAQUE sky sat on top of the photo
+  layer (invisible photo → "doesn't work"). Now .has-bg hides the sky layers
+  + makes the tile transparent, so the photo (baked scrim) IS the clock card.
+  CSS-only; umsClockBg gotcha rewritten.
+- Pure 268/0, DOM 59/0; editor suite: resolveSpanishThread added to the
+  Spanish gate case (five endpoints).
+
 ## Intake PPD operator-feedback batch (2026-07-09, claude/broad-scan-45plfi)
 Live-testing feedback after the #126/#127 deploy. Two PRs:
 - UI polish (PR #128, merged): choice groups → separated pill buttons (the

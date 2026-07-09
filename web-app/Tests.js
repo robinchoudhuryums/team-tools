@@ -4229,12 +4229,14 @@ function test_managerGates_rejectNonManager() {
   _assertTrue(dr && dr.deptStats == null && dr.allOpen == null,
     'getDeptRequests must not leak deptStats/allOpen to a non-manager');
   // Spanish Inbox endpoints are gated by canSeeSpanishInbox_ (manager OR a
-  // SPANISH_INBOX_MEMBERS rep). The test employee is NOT a member, so all four
-  // must reject with the Spanish-access error (BEFORE any GmailApp access).
+  // SPANISH_INBOX_MEMBERS rep). The test employee is NOT a member, so all five
+  // must reject with the Spanish-access error (BEFORE any GmailApp access —
+  // resolveSpanishThread additionally must not touch the store or AuditLog).
   [['getSpanishInboxStats', function () { return getSpanishInboxStats(30); }],
    ['getSpanishInboxPending', function () { return getSpanishInboxPending(30); }],
    ['getSpanishInboxResolved', function () { return getSpanishInboxResolved(30); }],
-   ['getSpanishInboxThreadBody', function () { return getSpanishInboxThreadBody('x'); }]]
+   ['getSpanishInboxThreadBody', function () { return getSpanishInboxThreadBody('x'); }],
+   ['resolveSpanishThread', function () { return resolveSpanishThread('x'); }]]
     .forEach(function (c) {
       const r = _asUser(_TEST_INDIA_EMAIL, c[1]);
       _assertNotNull(r && r.error, c[0] + ' must error for a non-member rep');

@@ -9,15 +9,21 @@
   .clk-sky-layers { position: absolute; inset: 0; z-index: 0; border-radius: inherit; overflow: hidden; }
   .clk-sky > :not(.clk-sky-layers):not(.clk-sky-bg):not(.clk-bg-ctrl) { position: relative; z-index: 1; }
   /* Optional per-browser background image ("for fun") — a downscaled raster
-     data-URL (localStorage) layered behind the whole GREETING (hero) CARD, so
-     both the greeting text and the clock tile sit on top of it. The clock tile
-     keeps its own sky gradient. A dark scrim is baked into the image (in JS) for
-     legibility of the greeting text. */
+     data-URL (localStorage) shown as the CLOCK CARD's background. Operator fix
+     2026-07-09: since the Dashboard redesign the hero IS the clock tile, whose
+     opaque sky gradient sat ON TOP of the photo layer — the upload "worked"
+     (localStorage set, clear button appeared) but the photo was 100% hidden.
+     With a photo set, the tile goes transparent and the sky-gradient layers
+     hide, so the photo (with its baked dark scrim) IS the card; the white
+     time/text + phase glyph render over it unchanged. Clearing restores the
+     time-of-day sky. */
   .hero { position: relative; overflow: hidden; }
   .clk-hero-bg { position: absolute; inset: 0; z-index: 0; display: none;
     background-size: cover; background-position: center; border-radius: inherit; }
   .hero.has-bg .clk-hero-bg { display: block; }
   .hero > .greet, .hero > .clk { position: relative; z-index: 1; }
+  .hero.has-bg .clk.clk-sky { background: transparent; }
+  .hero.has-bg .clk-sky-layers { display: none; }
   /* Over a photo the greeting text turns light for contrast (the clock tile is
      opaque, so it needs no change). */
   .hero.has-bg .greet-kicker { color: rgba(255, 255, 255, .82); }
@@ -37,6 +43,18 @@
      (neutralized by the global prefers-reduced-motion block). */
   .clk-region-rot { display: inline-flex; align-items: baseline; gap: 5px; animation: clkRegSlide .42s var(--ease) both; }
   @keyframes clkRegSlide { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  /* Greeting-bar rotator (operator feedback 2026-07-09) — the status line
+     rotates upward-carousel style with What's-new update slides. Same slide-up
+     animation as the world-clock chip (same reduced-motion neutralization). */
+  .dash-greet-rot { min-height: 1.5em; overflow: hidden; }
+  .greet-rot-item { display: inline-block; max-width: 100%; animation: clkRegSlide .42s var(--ease) both; }
+  .greet-upd { appearance: none; border: none; background: none; padding: 0; font: inherit; color: inherit;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 7px; max-width: 100%; text-align: left; }
+  .greet-upd svg { flex-shrink: 0; color: var(--accent); }
+  .greet-upd:hover .greet-upd-txt { text-decoration: underline; }
+  .greet-upd-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .greet-upd-new { flex-shrink: 0; font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: .1em;
+    color: var(--paper); background: var(--accent); border-radius: 999px; padding: 1px 6px; }
   .clk-sky-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
   .clk-phase { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .95; display: inline-flex; align-items: center; gap: 5px; }
   .clk-tz-pill { appearance: none; background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .4); color: #fff; font: inherit; font-size: 11px; border-radius: 999px; padding: 2px 9px; cursor: pointer; }
@@ -324,12 +342,13 @@ function renderClockView(area) {
   const onClockPill = onClock
     ? `<span class="dash-onclock"><span class="dash-onclock-dot"></span>${stats.state === 'lunch' ? 'On lunch' : 'On the clock'}</span>`
     : '';
+  CLK_GREET_ROT.statusHtml = statusSentence;   // slide 0 of the greeting rotator
   area.innerHTML = `
     <div class="dash-greet-bar">
       <div class="dash-greet-text">
         <div class="greet-kicker">${esc(kicker)}</div>
         <div class="greet-name">Hi, ${esc(greetName)}</div>
-        <div class="status-sentence">${statusSentence}</div>
+        <div class="status-sentence dash-greet-rot" id="greet-rot">${statusSentence}</div>
       </div>
       ${onClockPill}
     </div>
@@ -1732,6 +1751,65 @@ function bindClockBtns() {
   });
 }
 
+// ── Greeting-bar rotator (operator feedback 2026-07-09) ─────────────────────
+// The greeting bar's third line rotates upward-carousel style: slide 0 is the
+// live status sentence; the rest are "What's new" update lines (one per list
+// item of the WHATSNEW_KB_ID article, via the pure whatsNewItems_). Clicking
+// an update slide opens the full What's-new panel (whose dismissal stamps the
+// seen-flag and clears the NEW accent). Rotation pauses on hover, only runs
+// with ≥2 slides, reuses the world-clock strip's slide-up animation (which the
+// global prefers-reduced-motion block neutralizes), and is tied to the
+// startClock/stopClock lifecycle so no timer survives a tab nav-away.
+var CLK_GREET_ROT = { idx: 0, timer: null, statusHtml: '', hover: false };
+var CLK_GREET_ROT_MS = 8000;
+
+function clkGreetSlides_() {
+  var slides = [{ html: CLK_GREET_ROT.statusHtml || '' }];
+  try {
+    if (typeof WHATSNEW_STATE !== 'undefined' && WHATSNEW_STATE && WHATSNEW_STATE.bodyMd &&
+        typeof whatsNewItems_ === 'function') {
+      var unseen = false;
+      try { unseen = whatsNewShouldShow_(localStorage.getItem('umsWhatsNew'), WHATSNEW_STATE.stamp); } catch (e) {}
+      whatsNewItems_(WHATSNEW_STATE.bodyMd).forEach(function (t) {
+        slides.push({
+          html: '<button type="button" class="greet-upd" onclick="whatsNewOpen_()" title="Open What\'s new">' +
+            icon('star', 12) + (unseen ? '<span class="greet-upd-new">NEW</span>' : '') +
+            '<span class="greet-upd-txt">' + esc(t) + '</span></button>',
+        });
+      });
+    }
+  } catch (e) { /* updates are decorative — never break the greeting */ }
+  return slides;
+}
+
+function clkGreetRotStart_() {
+  clkGreetRotStop_();
+  CLK_GREET_ROT.idx = 0;
+  CLK_GREET_ROT.timer = setInterval(clkGreetRotTick_, CLK_GREET_ROT_MS);
+}
+function clkGreetRotStop_() {
+  if (CLK_GREET_ROT.timer) { clearInterval(CLK_GREET_ROT.timer); CLK_GREET_ROT.timer = null; }
+}
+function clkGreetRotTick_() {
+  var el = document.getElementById('greet-rot');
+  if (!el) return;                    // mid-render; stopClock cleans the timer on nav-away
+  if (!el._rotBound) {                // (re)bind hover-hold on the freshly-rendered element
+    el.addEventListener('mouseenter', function () { CLK_GREET_ROT.hover = true; });
+    el.addEventListener('mouseleave', function () { CLK_GREET_ROT.hover = false; });
+    el._rotBound = true;
+  }
+  if (CLK_GREET_ROT.hover) return;    // reading — hold this slide
+  var slides = clkGreetSlides_();
+  if (slides.length < 2) return;      // nothing to rotate (no What's-new configured)
+  CLK_GREET_ROT.idx = (CLK_GREET_ROT.idx + 1) % slides.length;
+  el.innerHTML = '<span class="greet-rot-item">' + slides[CLK_GREET_ROT.idx].html + '</span>';
+}
+/** Called by whatsNewInit_ when the What's-new payload lands after the view
+ *  rendered — ensures the timer is running so the new slides start rotating. */
+function clkGreetRotRefresh_() {
+  if (!CLK_GREET_ROT.timer && document.getElementById('greet-rot')) clkGreetRotStart_();
+}
+
 function startClock() {
   stopClock();
   if (_clkLastDay === null) _clkLastDay = isoDateTz(empTz());
@@ -1748,10 +1826,12 @@ function startClock() {
   };
   tick(); clockInterval = setInterval(tick, 1000);
   startRibbonNowCursor_();
+  clkGreetRotStart_();   // greeting-bar rotator (status ↔ What's-new slides)
 }
 function stopClock() {
   if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
   stopRibbonNowCursor_();
+  clkGreetRotStop_();
 }
 
 function handlePunch(punchType) {
