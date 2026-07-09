@@ -15,3 +15,11 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-06-17,5,Feature #4 KB review-due,S-M (1 session),5,1,"KB schema +ReviewedAt/ReviewedBy (back-compat header self-heal) + kbMarkReviewed/kbGetReviewDue + factored kbUsageCounts_ out of kbGetUsageStats + a manager tree block."
 2026-06-17,5,Feature #3 coverage planner,M (1-2 days),12,2,"Largest of the three: per-tz shift->mgr-tz conversion + PTO overlay (Pending=tentative) + cross-tz straddle + pure hourly bucketing + a new managerOnly tab. Agent execution compressed the 1-2 day estimate ~6x; the heat-strip visual remains operator-eyeball."
 2026-06-17,5,P1 hardening batch (L-4/5/7/8/9/10/12/13 + N-2),S (half day),4,2,"Bounded-read refactors reusing readCallNoteRowsInRange_ + KB-usage tz boundary + verifyDocSignature tampered flag + 5 regression-preventing comments."
+2026-07-09,7,"Turn 1 silent-failure triage (H-1,H-2,M-1,L-1)",S (~2h),2,1,Under: 4 surgical fixes + 3 tests + 2 bite-checks in ~1h.
+2026-07-09,7,"Turn 2 data-loss batch (M-2,M-5,L-15,L-22,L-26)",S/M (~3h),3,1,Under ~3x: the flush-on-navigate hook reused the kbDrawerOnNavigate_ pattern; DOM harness already had intake loaded.
+2026-07-09,7,"Turn 3 manager display (M-3,M-4,M-6,L-6,L-7,L-8)",S (~2h),2,0.75,Under: all six were localized reads/selectors; one combined tripwire.
+2026-07-09,7,"Turn 4 access-control (M-10,M-15,M-12,M-13,L-9)",M (half day),4,1,Under ~4x: M-15 whitelist was simpler than feared (client sends only 2 keys — verified both write sites).
+2026-07-09,7,"Turn 5 CN state machine (M-9,M-8,M-7,L-20,L-21,L-23,L-25)",M (half day),4,1.25,"Under ~3x: closeOverlay delegates fully to the hook, so M-9 was a guard not a redesign; seq token pattern small."
+2026-07-09,7,Turn 6 class fixes (M-14 + factory + locale),M (half day),4,1,Under ~4x: DR reads were already Date-safe (scope shrank); factory migration was 3 sites.
+2026-07-09,7,"Turn 7 signal quality (M-16,M-11,L-10..L-13)",S/M (~3h),3,0.75,Under: M-11 solved inside the existing reader loop + cache-key bump; diagnostic-liveness deliberately deferred.
+2026-07-09,7,Turn 8 remaining Lows + docs sync,S/M (~3h),3,1.5,Closest to estimate: 10 small fixes across 4 files + CLAUDE.md surgery (anchored replacements).
