@@ -3976,7 +3976,18 @@ extracts a `sub` + `sup` key-set from raw source and asserts `sub ⊆ sup`, so t
 next parallel-source coupling is ONE entry — seeded with the F5 Automation-Health
 label maps: `DIGEST_LABELS` ⊇ `DIGEST_STALE_HOURS` + `CN_HEALTH_RUN_LABELS` ⊇
 `AUTOMATION_AUDIT_ACTIONS`; couplings needing a vm-loaded value or custom logic
-keep bespoke tripwires)); it also
+keep bespoke tripwires)). Cycle 7 added the
+next tripwire families: the spreadsheet-factory set (createPinnedSpreadsheet_
+pins tz+locale; a comment-stripped count forbids bare `SpreadsheetApp.create(`
+outside it; the three call sites route through it — INV-141), the CN-timestamp
+boundary (all four `CN.TIMESTAMP` readers use `cnTimestampString_` — INV-142),
+the coaching-parser + dashboard AuditLog coercion-read pins (H-1/M-3/M-4),
+the detector-liveness wiring (compute→return→digest + the five check keys —
+Turn C), the INV-72 `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_`
+BEHAVIORAL mirror (drives the real server function over every client key),
+the `empShiftSchedule_` single-resolver check (zero bare `getShiftSchedule_`
+calls — INV-149), and the cross-partial `intakeFlushDraftNow_` hook check
+(INV-148). It also
 parse-guards every JS-bearing `<script>` partial so a syntax error
 anywhere in the client fails CI. It also runs a **design-token hygiene
 tripwire** (INV-128) that fails CI on any `var(--token)` used in a shared
