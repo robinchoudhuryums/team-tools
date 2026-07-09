@@ -4298,8 +4298,12 @@ function test_adminEmails_subsetOfManagersEnforced() {
       'non-manager in ADMIN_EMAILS is NOT an admin (subset enforced)');
     _assertFalse(empIsAdmin_(_TEST_MGR_EMAIL, true),
       'manager NOT in a set ADMIN_EMAILS loses admin (property narrows)');
+    // getAdminConfig rejects with the {error} shape (no success:false field) —
+    // assert the omnibus gate test's way, not _assertFailure (which demands
+    // success === false and failed on the CORRECTLY-rejecting response).
     const asRep = _asUser(_TEST_INDIA_EMAIL, function () { return getAdminConfig(); });
-    _assertFailure(asRep, 'Admin access', 'admin endpoint rejects the listed non-manager');
+    _assertNotNull(asRep && asRep.error, 'admin endpoint returns an error for the listed non-manager');
+    _assertContains(asRep.error, 'Admin access', 'admin endpoint rejects the listed non-manager');
     // Manager listed -> admin again.
     props.setProperty('ADMIN_EMAILS', _TEST_MGR_EMAIL);
     _assertTrue(empIsAdmin_(_TEST_MGR_EMAIL, true), 'listed manager is an admin');
