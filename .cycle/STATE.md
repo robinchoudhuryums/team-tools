@@ -2,11 +2,56 @@
 
 ## Current
 Cycle: 7
-Phase: idle — Cycle 7 closed, deployed, and operator-verified (259/0 + smoke 113/0); no open work
-Scope: broad (full-codebase audit 2026-07-09; ~40 findings: 0 Critical / 2 High / ~15 Medium / ~20 Low — ALL non-deferred items implemented)
+Phase: idle — Cycle 7 closed + operator-verified; a post-cycle FEATURE batch (#1 error beacon / #2 daily brief / #4 What's new) shipped 2026-07-09
+Scope: feature batch (operator-selected suggestions #1/#2/#4), not an audit
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-07-09 (Turn D: per-rep shift override — EMP.SCHEDULE col O, parseShiftOverride_/empShiftSchedule_, roster cache v8, INV-149)
+Updated: 2026-07-09 (feature batch: INV-150 client error beacon, INV-151 consolidated manager daily brief, INV-152 What's-new panel)
+
+## Feature batch #1/#2/#4 (2026-07-09, claude/broad-scan-45plfi)
+Operator-selected from the post-cycle suggestions list ("/broad-implement #1, #2, and #4"):
+- #1 Client error beacon (INV-150): window.onerror + unhandledrejection hooks in
+  script_core.html post {message, stack, view, source} — CLOSED payload shape,
+  PHI-safe by construction (never field values) — to recordClientError
+  (rep-gated, locked, server-bounded CLIENT_ERR_MSG_MAX/STACK_MAX, 20/hr/rep
+  CacheService rate cap) → append-only ClientErrors tab in the ADP SS
+  (getOrCreateClientErrorsSheet_). Client dedupes + caps 5/session; surfaced in
+  Automation Health via clientErrorsSummary_ (bounded 2000-row tail, 7d window)
+  + a "Client errors" panel section. Deliberately NOT in the failure digest.
+- #2 Consolidated manager daily brief (INV-151): sendManagerDailyBrief (14th
+  trigger, manager-tz 8am, INV-44 gate) behind the managerDailyBrief flag —
+  the registry's FIRST pure-'server'-scope flag, default OFF (behavioral
+  no-op). Per-manager branded email (docs+coaching team-scoped per
+  INV-122/134) from the SAME factored computations the standalone digests use
+  (NEW computeMissedClockOuts_ + deptRequestsOverdueOpen_ factorings; reuses
+  managerAggregateUrgent_/trainOverdueForRoster_/empDocsOverdueAll_/
+  coachUnackedAll_). While ON, exactly 4 handlers suppress their MANAGER
+  sends (missed-punch summary, urgent, training-overdue manager loop,
+  dept-SLA) — employee sends untouched; weekly digests + the failure watchdog
+  NEVER consult the flag (the watchdog reports a dead brief — circularity
+  avoided). Heartbeat 'managerBrief' stamps BEFORE the flag check.
+  Pure managerBriefSections_ drives sections/subject/silence.
+- #4 What's-new panel (INV-152): getWhatsNew (rep-gated, read-only, {none:true}
+  on every quiet-failure path) serves the PUBLISHED KB article named by Script
+  Property WHATSNEW_KB_ID (drafts hidden from EVERYONE — broadcast surface);
+  stamp = kbCellTs_(UPDATED_AT). Client auto-opens once per stamp change
+  (umsWhatsNew seen-stamp — 15th localStorage key; ensureOverlay + kbMd_;
+  every dismissal path stamps via the onClose hook), defers to a pending tour,
+  never in compact; sidebar star button reopens.
+- Tests: pure 248→257 (errBeaconPayload_, managerBriefSections_,
+  whatsNewShouldShow_, suppression-set/flag-registry/wiring tripwires; the
+  existing TARGETS/gate-type/DIGEST_LABELS tripwires auto-covered the new
+  trigger), DOM 55→59 (beacon dedupe+cap, What's-new render + Esc-stamps-seen).
+  Editor: +test_triggerGate_managerDailyBrief_nonManagerThrows,
+  +test_recordClientError_authBoundsAndAppend (self-cleaning),
+  +test_whatsNew_propertyGateAndDraftHidden → suite 262.
+- Docs: INV-150/151/152; INV-44 13→14 handlers; localStorage gotcha 14→15
+  keys; trigger list 13→14; operator entries (managerDailyBrief flip +
+  re-install triggers once, ClientErrors tab, WHATSNEW_KB_ID).
+- OPERATOR: one clasp push -f + New version; re-run installAutomationTriggers()
+  once (wires the 14th trigger — harmless while the flag is off); runAllTests()
+  (expect 262/0). Optional: flip managerDailyBrief in Admin → Feature Toggles;
+  create a "What's new" KB article + set WHATSNEW_KB_ID to enable the panel.
 
 ## Cycle 7 broad-scan + Turn 1+2 (2026-07-09, claude/broad-scan-45plfi)
 Audit: 6-agent fan-out + personal verification of every Medium+ finding (all
@@ -103,19 +148,16 @@ intakeCollectPpd_ / engine / email builder work unchanged.
   English values, drift-guarded."
 
 ## Where I left off
-2026-07-09 (Turn D): per-rep shift override shipped per the OPERATOR DECISION
-(roster column, not a tab/Admin UI): Employees column O `Schedule` holds
-'H:mm-H:mm' in the rep's own tz; pure parseShiftOverride_ (fail-safe null on
-garbage/overnight) + empShiftSchedule_ resolver (override start/length, per-tz
-breaks); consumers getEmployeeState / getCoveragePlan / getPunctualityReport
-all routed through it (source tripwire: zero bare getShiftSchedule_ calls);
-ROSTER_CACHE_KEY v7→v8; INV-149 + INV-71/127 amendments + operator-checklist
-entry in CLAUDE.md; editor test test_perRepSchedule_overrideAndFallback +
-_setEmpSchedule helper. Pure 248/0, DOM 55/0. THE CYCLE-7 SCAN BACKLOG IS NOW
-FULLY CLOSED (Turns 1-8 + A-D). NEXT: merge the Turn-D PR on green; then only
-operator steps remain (ONE deploy + runSmokeTests()/runAllTests(); optionally
-fill column O for reps with nonstandard shifts). Next audit cycle = fresh
-/broad-scan (Cycle 8) whenever desired; seams counter is at 0.
+2026-07-09 (feature batch): shipped the operator-selected suggestions #1
+(client error beacon, INV-150), #2 (consolidated manager daily brief behind
+the managerDailyBrief server flag, INV-151), and #4 (What's-new panel via
+WHATSNEW_KB_ID, INV-152) — see the "Feature batch #1/#2/#4" block above for
+full detail. Pure 257/0, DOM 59/0; editor suite grew to 262 (3 new tests).
+NEXT: merge the feature-batch PR on green; then operator steps — ONE
+clasp push -f + New version, re-run installAutomationTriggers() once (14th
+trigger), runAllTests() expecting 262/0; optionally flip managerDailyBrief +
+set WHATSNEW_KB_ID. Next audit cycle = fresh /broad-scan (Cycle 8) whenever
+desired; seams counter is at 0.
 
 ## Pending / not yet done
 - NONE — Cycle 7 is fully closed AND operator-verified in production

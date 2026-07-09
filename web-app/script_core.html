@@ -191,6 +191,57 @@ const COMPACT_MODE = __URL_PARAMS.get('compact') === '1';
 const INITIAL_VIEW_FROM_URL = __URL_PARAMS.get('tool');
 if (COMPACT_MODE) document.documentElement.setAttribute('data-compact', '1');
 
+// ── Client error beacon (#1, INV-150) ───────────────────────────────────────
+// A throwing render / rejected promise chain used to surface NOWHERE — the rep
+// sees a dead button, the operator sees nothing (the M-1 class from the field).
+// Post exception METADATA (message / stack / active view key — NEVER form-field
+// values or DOM text; only the error event itself is read) to the server's
+// ClientErrors tab, surfaced in Admin → Automation Health. Fire-and-forget,
+// deduped, and hard-capped per session so an error loop can't flood the tab
+// (the server rate-caps per rep too).
+var ERR_BEACON_MAX_PER_SESSION = 5;
+var _errBeaconSent = 0;
+var _errBeaconSeen = {};
+
+/** Pure — bound + shape a beacon payload. Null when there's nothing worth
+ *  sending (empty message). Mirrors the server's recordClientError caps
+ *  (CLIENT_ERR_MSG_MAX / CLIENT_ERR_STACK_MAX). Node-pinned. */
+function errBeaconPayload_(message, stack, view, source) {
+  var msg = String(message == null ? '' : message).trim().substring(0, 400);
+  if (!msg) return null;
+  return {
+    message: msg,
+    stack: String(stack == null ? '' : stack).substring(0, 1500),
+    view: String(view == null ? '' : view).substring(0, 40),
+    source: source === 'unhandledrejection' ? 'unhandledrejection' : 'onerror',
+  };
+}
+
+function errBeaconSend_(message, stack, source) {
+  try {   // the beacon itself must NEVER throw (it runs inside error handlers)
+    if (_errBeaconSent >= ERR_BEACON_MAX_PER_SESSION) return;
+    var payload = errBeaconPayload_(
+      message, stack, typeof currentView !== 'undefined' ? currentView : '', source);
+    if (!payload) return;
+    if (_errBeaconSeen[payload.message]) return;   // dedupe identical repeats
+    _errBeaconSeen[payload.message] = true;
+    _errBeaconSent++;
+    if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+    google.script.run.withFailureHandler(function () {}).recordClientError(payload);
+  } catch (e) { /* swallow — see above */ }
+}
+
+window.addEventListener('error', function (e) {
+  // Resource-load errors (img/script) fire here with no .message — skip them.
+  if (!e || !e.message) return;
+  var stack = (e.error && e.error.stack) || ((e.filename || '') + ':' + (e.lineno || ''));
+  errBeaconSend_(e.message, stack, 'onerror');
+});
+window.addEventListener('unhandledrejection', function (e) {
+  var r = e && e.reason;
+  errBeaconSend_((r && r.message) || String(r || ''), (r && r.stack) || '', 'unhandledrejection');
+});
+
 // ════════════════════════════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════════════════════════════
@@ -243,6 +294,9 @@ window.addEventListener('load', () => {
       // First-load onboarding tour (auto-starts once per TOUR_VERSION; never
       // in the compact pop-out). Replayable from the Call Notes ? menu.
       if (typeof tourMaybeAutoStart_ === 'function') tourMaybeAutoStart_();
+      // "What's new" panel (#4, INV-152) — best-effort fetch; auto-opens once
+      // per content change, defers to the tour on a first-ever load.
+      whatsNewInit_();
     })
     .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
     .getEmployeeState();
@@ -340,6 +394,99 @@ function renderError(msg) {
       <div class="state-icon" style="color:var(--warn)">${icon('warning', 44)}</div>
       <div class="state-title">Couldn't Load</div>
       <div class="state-detail">${esc(msg)}</div></div>`;
+}
+
+// ── "What's new" panel (#4, INV-152) ────────────────────────────────────────
+// A dismissible changelog overlay rendering the operator's designated KB
+// article (Script Property WHATSNEW_KB_ID) via kbMd_ — same escape boundary
+// as every Reference article. Auto-opens once per content change (the server
+// stamp vs the umsWhatsNew localStorage seen-stamp — the umsTour pattern);
+// dismissal by ANY path (Got it, X, Esc, backdrop) stamps seen. A star button
+// joins the sidebar theme row to reopen it anytime. Never in the compact
+// pop-out; defers to the onboarding tour on a first-ever load.
+var WHATSNEW_LS_KEY = 'umsWhatsNew';
+var WHATSNEW_STATE = null;   // last getWhatsNew payload (null until fetched)
+
+/** Pure — should the panel auto-open for this stored blob + content stamp?
+ *  Corrupt/absent blob → true (never seen); empty stamp → false (nothing to
+ *  compare — don't nag on a server that can't stamp). Node-pinned. */
+function whatsNewShouldShow_(storedRaw, stamp) {
+  if (!stamp) return false;
+  var p = {};
+  try { p = JSON.parse(storedRaw) || {}; } catch (e) { p = {}; }
+  return p.seenStamp !== stamp;
+}
+
+function whatsNewInit_() {
+  if (COMPACT_MODE) return;   // never in the pop-out (the tour rule)
+  try {
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || res.none || !res.bodyMd) return;
+        WHATSNEW_STATE = res;
+        whatsNewRenderSidebarBtn_();
+        var stored = null;
+        try { stored = localStorage.getItem(WHATSNEW_LS_KEY); } catch (e) {}
+        // Don't fight the onboarding tour for the first-load spotlight — if
+        // the tour hasn't been seen yet it auto-starts this session; the
+        // panel waits for a later load.
+        var tourPending = false;
+        try {
+          var t = JSON.parse(localStorage.getItem('umsTour')) || {};
+          tourPending = (typeof TOUR_VERSION !== 'undefined') && t.seenVersion !== TOUR_VERSION;
+        } catch (e) {}
+        if (!tourPending && whatsNewShouldShow_(stored, res.stamp)) whatsNewOpen_();
+      })
+      .withFailureHandler(function () {})   // dormant on any failure
+      .getWhatsNew();
+  } catch (e) {}
+}
+
+/** Small star button in the sidebar theme row (next to the pop-out button) —
+ *  renders only when a What's new article is configured; reopens the panel. */
+function whatsNewRenderSidebarBtn_() {
+  try {
+    if (document.getElementById('sb-whatsnew-btn')) return;
+    var host = document.querySelector('.sb-theme-controls');
+    if (!host) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'sb-whatsnew-btn';
+    btn.className = 'sb-popout-btn';
+    btn.title = "What's new in Team Tools";
+    btn.setAttribute('aria-label', "What's new");
+    btn.innerHTML = icon('star', 14);
+    btn.addEventListener('click', whatsNewOpen_);
+    host.appendChild(btn);
+  } catch (e) {}
+}
+
+function whatsNewOpen_() {
+  var res = WHATSNEW_STATE;
+  if (!res) return;
+  var ov = ensureOverlay('whatsnew-overlay', { onClose: whatsNewClose_ });
+  var bodyHtml = (typeof kbMd_ === 'function')
+    ? kbMd_(res.bodyMd)
+    : '<pre style="white-space:pre-wrap">' + esc(res.bodyMd) + '</pre>';
+  ov.innerHTML =
+    '<div class="modal" style="max-width:560px" onclick="event.stopPropagation()">' +
+      '<div class="modal-title">' + icon('star', 15) + ' ' + esc(res.title) + '</div>' +
+      '<div class="kb-article" style="max-height:60vh;overflow-y:auto;margin-top:8px">' + bodyHtml + '</div>' +
+      '<div class="modal-footer">' +
+        '<button type="button" class="btn-modal-ok" onclick="whatsNewClose_()">Got it</button>' +
+      '</div>' +
+    '</div>';
+}
+
+/** Idempotent (the ensureOverlay onClose contract) — stamps seen + hides. */
+function whatsNewClose_() {
+  try {
+    if (WHATSNEW_STATE && WHATSNEW_STATE.stamp) {
+      localStorage.setItem(WHATSNEW_LS_KEY, JSON.stringify({ seenStamp: WHATSNEW_STATE.stamp }));
+    }
+  } catch (e) {}
+  var ov = document.getElementById('whatsnew-overlay');
+  if (ov) ov.classList.remove('open');
 }
 
 function renderShell(state) {
