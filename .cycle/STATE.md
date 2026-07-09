@@ -8,6 +8,32 @@ Test Command: manual
 Subsystem cycles since last Seams audit: 0
 Updated: 2026-07-09 (#7: INV-153 Timesheet cold-archive — archiveOldTimesheetRows, TIMESHEET_ARCHIVE_DAYS + 120d floor, 15th trigger)
 
+## Intake PPD operator-feedback batch (2026-07-09, claude/broad-scan-45plfi)
+Live-testing feedback after the #126/#127 deploy. Two PRs:
+- UI polish (PR #128, merged): choice groups → separated pill buttons (the
+  joined segmented box wrapped awkwardly on Q2-Q6; CSS-only, .intk-reveal-opts
+  too); Q40 → NEW `ynnum` control kind (Yes/No + number-only field + 'hours';
+  value ''/'No'/'Yes'/'Yes: 12 hours'; pure intakeYnNumSerialize_/Parse_
+  Node-pinned; legacy free-text → unselected); Q25/Q31a/Q34 display-only
+  option `tone` (warn/danger/no selected-state colors, No = dark ink chip —
+  values byte-unchanged, tone map Node-pinned); help-glyph tooltip → tokened
+  CSS bubble (data-tip + .intk-help::after, dark-mode-safe, keyboard focus).
+- Q39a dwelling + mobile-home engine rule (OPERATOR-APPROVED via
+  AskUserQuestion: build it; ≥285 → standard logic; home constraint WINS over
+  clinical gates): new ENGINE-READ choice Q39a (House/Apartment/Mobile Home,
+  canonical-EN; numbered 39a so Q40-45 keys/stored answers never shift).
+  Engine: patient.dwelling/livesInMobileHome in intakeDeriveClinicalFactors_;
+  intakeFilterRecommendations_ short-circuits Mobile Home + 0<weight<285 →
+  K0821 ONLY (bypasses seat/group gates, fixed-vocabulary justification;
+  no K0821 catalog row → empty result); blank weight → standard logic
+  (documented). Explainability += Dwelling + Mobile-home restriction rows.
+  Tests: Node engine-contract + rename-guard + explainability (266/0 pure),
+  editor test_intake_engine_mobileHomeRestriction (smoke). INV-112 + the
+  PPD gotcha updated (engine-critical list += '39a').
+- OPERATOR: one clasp push -f + New version; runSmokeTests() picks up the new
+  engine smoke test. VERIFY the live Offerings sheet has a K0821 row with
+  real pdfLink/imageUrl (col E/F) — the restriction returns empty when absent.
+
 ## Feature #7 — Timesheet cold-archive (2026-07-09, claude/broad-scan-45plfi)
 The last unbounded store: the Timesheet tab grew forever while
 getManagerDashboard / exports / calendars read it whole. Applied the CN cold-
