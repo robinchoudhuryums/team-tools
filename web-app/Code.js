@@ -10201,6 +10201,7 @@ function getSpanishInboxStats(days) {
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
     const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const manual = spanishManualResolvedMap_();
     const durations = [], pending = [];
     let resolvedCount = 0;
     const nowMs = Date.now();
@@ -10217,6 +10218,11 @@ function getSpanishInboxStats(days) {
         // list is set, fall back to "first reply from someone else".
         const isResolver = haveMembers ? !!members[from] : (from && from !== requester);
         if (isResolver) { resolveMs = msgs[i].getDate().getTime(); break; }
+      }
+      // Manual mark-resolved (handled outside the thread) counts as resolved;
+      // an in-thread reply wins when both exist. max() guards a skewed stamp.
+      if (resolveMs == null && manual[th.getId()]) {
+        resolveMs = Math.max(reqMs, manual[th.getId()].ms || reqMs);
       }
       if (resolveMs != null) {
         resolvedCount++;
@@ -10259,9 +10265,11 @@ function getSpanishInboxPending(days) {
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
     const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const manual = spanishManualResolvedMap_();
     const out = [];
     const nowMs = Date.now();
     threads.forEach(function (th) {
+      if (manual[th.getId()]) return;   // manually marked resolved — not pending
       const msgs = th.getMessages();
       if (!msgs.length) return;
       const req = msgs[0];
@@ -10304,6 +10312,7 @@ function getSpanishInboxResolved(days) {
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
     const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const manual = spanishManualResolvedMap_();
     const out = [];
     threads.forEach(function (th) {
       const msgs = th.getMessages();
@@ -10311,17 +10320,25 @@ function getSpanishInboxResolved(days) {
       const req = msgs[0];
       const reqMs = req.getDate().getTime();
       const requester = emailAddrOnly_(req.getFrom());
-      let resolveMs = null, resolver = '';
+      let resolveMs = null, resolver = '', wasManual = false;
       for (let i = 1; i < msgs.length; i++) {
         const from = emailAddrOnly_(msgs[i].getFrom());
         const isResolver = haveMembers ? !!members[from] : (from && from !== requester);
         if (isResolver) { resolveMs = msgs[i].getDate().getTime(); resolver = from; break; }
+      }
+      // Manual mark-resolved — an in-thread reply wins when both exist.
+      if (resolveMs == null && manual[th.getId()]) {
+        const man = manual[th.getId()];
+        resolveMs = Math.max(reqMs, man.ms || reqMs);
+        resolver = man.by;
+        wasManual = true;
       }
       if (resolveMs == null) return;   // only resolved
       out.push({
         threadId: th.getId(),
         requester: requester,
         resolver: resolver,
+        manual: wasManual,
         resolveMinutes: Math.max(0, Math.round((resolveMs - reqMs) / 60000)),
         resolvedAtMs: resolveMs,
         subject: req.getSubject() || '(no subject)',
@@ -10360,6 +10377,83 @@ function getSpanishInboxThreadBody(threadId) {
       permalink: th.getPermalink(),
     };
   } catch (err) { return { error: 'Read failed: ' + err.message }; }
+}
+
+// ── Spanish inbox — manual mark-resolved (operator feedback 2026-07-09) ─────
+// A request handled OUTSIDE the thread (phone call, walked over, done in the
+// CRM) never gets a member reply, so it sat "pending" forever with no way to
+// clear it. Members/managers can now mark a thread resolved manually. The
+// record is PHI-FREE — threadId + who + when only, never subject/body (the
+// same minimization as every Spanish surface) — in a small append-only
+// SpanishManualResolved tab on the ADP spreadsheet. The resolved-at ms is
+// stored as a NUMBER cell (immune to the Sheets date-coercion class).
+const SPANISH_RESOLVED_TAB = 'SpanishManualResolved';
+const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays cheap
+
+function getOrCreateSpanishResolvedSheet_() {
+  const ss = getAdpSS_();
+  let sh = ss.getSheetByName(SPANISH_RESOLVED_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(SPANISH_RESOLVED_TAB);
+    sh.appendRow([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'ResolvedBy', 'ResolvedAtMs']);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** Bounded-tail map of manually-resolved threads: { threadId: { by, ms } }.
+ *  Best-effort — no tab yet (nothing ever marked) reads as empty. */
+function spanishManualResolvedMap_() {
+  const out = {};
+  try {
+    const sh = getAdpSS_().getSheetByName(SPANISH_RESOLVED_TAB);
+    if (!sh) return out;
+    const last = sh.getLastRow();
+    if (last < 2) return out;
+    const start = Math.max(2, last - SPANISH_RESOLVED_SCAN + 1);
+    const rows = sh.getRange(start, 1, last - start + 1, 4).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      const tid = String(rows[i][1] || '').trim();
+      if (!tid || out[tid]) continue;
+      out[tid] = { by: String(rows[i][2] || ''), ms: Number(rows[i][3]) || 0 };
+    }
+  } catch (e) { Logger.log('spanishManualResolvedMap_ skipped: ' + e.message); }
+  return out;
+}
+
+/** Manual resolve — gated on canSeeSpanishInbox_ (the members who action the
+ *  inbox + managers), SCOPE-GUARDED like getSpanishInboxThreadBody (the thread
+ *  must be addressed to the configured inbox, so an arbitrary Gmail thread id
+ *  can't be probed), locked (INV-01 — it appends), and idempotent. The pending
+ *  list drops the thread immediately (live-read); the cached stats aggregate
+ *  reflects it within its 5-min TTL (the INV-43 posture). PHI-free audit row
+ *  (threadId only). */
+function resolveSpanishThread(threadId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
+    const addr = getSpanishInboxAddress_();
+    if (!addr) return { error: 'Spanish inbox not configured.' };
+    const tid = String(threadId || '').trim();
+    if (!tid) return { error: 'Missing thread id.' };
+    const th = GmailApp.getThreadById(tid);
+    if (!th) return { error: 'Thread not found.' };
+    const msgs = th.getMessages();
+    if (!msgs.length) return { error: 'Empty thread.' };
+    const recips = (String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || '')).toLowerCase();
+    if (recips.indexOf(addr) < 0) return { error: 'Not a Spanish-inbox thread.' };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      if (spanishManualResolvedMap_()[tid]) return { success: true, already: true };
+      getOrCreateSpanishResolvedSheet_().appendRow([
+        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, emp.email, Date.now(),
+      ]);
+    } finally { lock.releaseLock(); }
+    writeAuditLog_(emp, 'SpanishInboxResolve', '', '', false, 0, 'threadId=' + tid);
+    return { success: true };
+  } catch (err) { return { error: 'Resolve failed: ' + err.message }; }
 }
 
 // ── Inter-department request tracking (Part B) ──────────────────────────────

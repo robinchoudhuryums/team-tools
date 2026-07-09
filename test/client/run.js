@@ -3021,6 +3021,38 @@ test('getWhatsNew hides drafts + non-articles and reads WHATSNEW_KB_ID (source t
   assert.ok(/none:\s*true/.test(src), 'every quiet-failure path returns {none:true} — dormant, never breaks boot');
 });
 
+// Operator feedback 2026-07-09 — updates surface as greeting-bar carousel
+// slides on the Dashboard (whatsNewItems_ extracts them from the article).
+const whatsNewItems_ = loadFunction(sb, 'script_core.html', 'whatsNewItems_');
+test('whatsNewItems_ extracts list items as plain-text slides (caps, stripping, fallback)', () => {
+  const md = '# July updates\n\nIntro line.\n\n- **Faster** saves via [batching](https://x)\n* Second `item`\n3. Third item\n\nOutro.';
+  const items = whatsNewItems_(md);
+  assert.strictEqual(items.join('|'), 'Faster saves via batching|Second item|Third item',
+    'list items extracted with markdown stripped (links keep their text)');
+  assert.strictEqual(whatsNewItems_(md, 2).length, 2, 'maxItems cap');
+  const long = whatsNewItems_('- ' + 'x'.repeat(300), 8, 50)[0];
+  assert.strictEqual(long.length, 50, 'per-item length clamp (ellipsis)');
+  assert.strictEqual(whatsNewItems_('# Title\n\nJust a paragraph, no lists.').join('|'),
+    'Just a paragraph, no lists.', 'no list items → first paragraph as the single slide');
+  assert.strictEqual(whatsNewItems_('').length, 0, 'empty body → no slides');
+  assert.strictEqual(whatsNewItems_(null).length, 0, 'null-safe');
+});
+
+console.log('\nCode.js — Spanish inbox manual mark-resolved (operator feedback)');
+test('resolveSpanishThread is member-gated, scope-guarded, locked, and PHI-free (source tripwire)', () => {
+  const src = extractRawFunction('Code.js', 'resolveSpanishThread');
+  assert.ok(/canSeeSpanishInbox_\s*\(/.test(src), 'gated on canSeeSpanishInbox_ (members + managers)');
+  assert.ok(/recips\.indexOf\(addr\)/.test(src), 'scope guard — the thread must be addressed to the configured inbox');
+  assert.ok(/waitLock\s*\(\s*15000\s*\)/.test(src), 'locked (INV-01 — it appends)');
+  assert.ok(/'SpanishInboxResolve'/.test(src) && /threadId=/.test(src), 'audit row carries the threadId only');
+  assert.ok(!/getSubject|getPlainBody/.test(src), 'PHI-free — never reads/stores subject or body');
+  // All three readers consult the manual map (pending skips; stats + resolved count it).
+  ['getSpanishInboxStats', 'getSpanishInboxPending', 'getSpanishInboxResolved'].forEach((fn) => {
+    assert.ok(/spanishManualResolvedMap_\(/.test(extractRawFunction('Code.js', fn)),
+      fn + ' consults the manual-resolved map');
+  });
+});
+
 console.log('\nCode.js — Timesheet cold-archive (#7, INV-153)');
 test('archiveOldTimesheetRows is a move-only tier wired through the shared helper', () => {
   const src = extractRawFunction('Code.js', 'archiveOldTimesheetRows');

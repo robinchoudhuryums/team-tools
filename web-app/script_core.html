@@ -407,14 +407,57 @@ function renderError(msg) {
 var WHATSNEW_LS_KEY = 'umsWhatsNew';
 var WHATSNEW_STATE = null;   // last getWhatsNew payload (null until fetched)
 
-/** Pure — should the panel auto-open for this stored blob + content stamp?
- *  Corrupt/absent blob → true (never seen); empty stamp → false (nothing to
- *  compare — don't nag on a server that can't stamp). Node-pinned. */
+/** Pure — is this content stamp UNSEEN for the stored blob? Corrupt/absent
+ *  blob → true (never seen); empty stamp → false (nothing to compare).
+ *  Operator feedback 2026-07-09: this no longer gates an auto-open panel — it
+ *  gates the "NEW" accent on the Dashboard greeting-carousel update slides
+ *  (the panel is now reached by clicking a slide / the sidebar star).
+ *  Node-pinned. */
 function whatsNewShouldShow_(storedRaw, stamp) {
   if (!stamp) return false;
   var p = {};
   try { p = JSON.parse(storedRaw) || {}; } catch (e) { p = {}; }
   return p.seenStamp !== stamp;
+}
+
+/** Pure — extract carousel-sized update lines from the What's-new article's
+ *  markdown: top-level list items (`- ` / `* ` / `1. `), inline markdown
+ *  stripped down to plain text (links keep their text), each clamped to
+ *  `maxLen` chars, at most `maxItems` items. An article with NO list items
+ *  falls back to its first non-heading paragraph line (one slide).
+ *  Node-pinned. */
+function whatsNewItems_(bodyMd, maxItems, maxLen) {
+  maxItems = maxItems || 8;
+  maxLen = maxLen || 140;
+  var strip = function (s) {
+    return String(s || '')
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')      // images → alt
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')       // links → text
+      .replace(/[*_`~]/g, '')                         // emphasis/code marks
+      .replace(/\s+/g, ' ').trim();
+  };
+  var out = [];
+  var lines = String(bodyMd || '').split(/\r?\n/);
+  for (var i = 0; i < lines.length && out.length < maxItems; i++) {
+    var m = lines[i].match(/^\s*(?:[-*+]|\d+[.)])\s+(.*)$/);
+    if (!m) continue;
+    var t = strip(m[1]);
+    if (!t) continue;
+    if (t.length > maxLen) t = t.substring(0, maxLen - 1) + '…';
+    out.push(t);
+  }
+  if (!out.length) {
+    for (var j = 0; j < lines.length; j++) {
+      var raw = lines[j].trim();
+      if (!raw || raw.charAt(0) === '#') continue;
+      var p = strip(raw);
+      if (!p) continue;
+      if (p.length > maxLen) p = p.substring(0, maxLen - 1) + '…';
+      out.push(p);
+      break;
+    }
+  }
+  return out;
 }
 
 function whatsNewInit_() {
@@ -425,17 +468,11 @@ function whatsNewInit_() {
         if (!res || res.none || !res.bodyMd) return;
         WHATSNEW_STATE = res;
         whatsNewRenderSidebarBtn_();
-        var stored = null;
-        try { stored = localStorage.getItem(WHATSNEW_LS_KEY); } catch (e) {}
-        // Don't fight the onboarding tour for the first-load spotlight — if
-        // the tour hasn't been seen yet it auto-starts this session; the
-        // panel waits for a later load.
-        var tourPending = false;
-        try {
-          var t = JSON.parse(localStorage.getItem('umsTour')) || {};
-          tourPending = (typeof TOUR_VERSION !== 'undefined') && t.seenVersion !== TOUR_VERSION;
-        } catch (e) {}
-        if (!tourPending && whatsNewShouldShow_(stored, res.stamp)) whatsNewOpen_();
+        // Operator feedback 2026-07-09 — updates surface as rotating slides in
+        // the Dashboard greeting bar (clkGreetRot*) instead of an auto-opened
+        // panel; clicking a slide (or the sidebar star) opens the full panel,
+        // whose dismissal stamps the seen-flag (clears the NEW accent).
+        if (typeof clkGreetRotRefresh_ === 'function') clkGreetRotRefresh_();
       })
       .withFailureHandler(function () {})   // dormant on any failure
       .getWhatsNew();

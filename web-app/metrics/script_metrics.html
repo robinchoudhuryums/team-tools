@@ -1237,7 +1237,7 @@ function spanishResolvedCard_(t) {
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body" style="color:var(--muted)">' +
       (when ? '<span class="sp-resolved-when">' + icon('clock', 11) + ' Resolved ' + esc(when) + '</span> · ' : '') +
-      'by ' + esc(t.resolver || 'a team member') + '</div>' +
+      'by ' + esc(t.resolver || 'a team member') + (t.manual ? ' · marked manually' : '') + '</div>' +
     '<div class="sp-task-actions">' + open + '</div>' +
   '</div>';
 }
@@ -1326,14 +1326,47 @@ function spanishTaskCard_(t) {
   var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
   var more = t.hasMore ? '<button class="sp-more" data-thread="' + esc(t.threadId) + '" onclick="spanishExpand_(this)">Show full request</button>' : '';
   var open = t.permalink ? '<a class="sp-open" href="' + esc(t.permalink) + '" target="_blank" rel="noopener">' + icon('mail', 12) + ' Open in Gmail</a>' : '';
+  // Operator feedback 2026-07-09 — manual mark-resolved for requests handled
+  // OUTSIDE the thread (phone call, done in the CRM) that would otherwise sit
+  // pending forever. uiConfirm-guarded: there is no un-resolve.
+  var resolve = '<button class="sp-more sp-resolve" data-thread="' + esc(t.threadId) + '" onclick="spanishResolve_(this)">' + icon('check', 12) + ' Mark resolved</button>';
   return '<div class="sp-task">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body">' + esc(t.snippet) + (t.hasMore ? '…' : '') + '</div>' +
     '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (t.snippet || '')) + '</div>' +
-    '<div class="sp-task-actions">' + open + ' ' + more + '</div>' +
+    '<div class="sp-task-actions">' + open + ' ' + more + ' ' + resolve + '</div>' +
   '</div>';
+}
+
+/** Manual mark-resolved (member/manager). Confirm first — a mis-click would
+ *  permanently hide a pending request (there is no un-resolve; the thread
+ *  itself stays in Gmail). Success removes the card in place. */
+function spanishResolve_(btn) {
+  var tid = btn.getAttribute('data-thread');
+  var card = btn.closest('.sp-task');
+  if (!tid || !card) return;
+  uiConfirm({
+    title: 'Mark this request resolved?',
+    message: 'Use this when the request was handled outside the email thread (phone call, CRM, in person). It moves to the Resolved list — this can’t be undone in-app.',
+    confirmLabel: 'Mark resolved',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function (r) {
+        btn.disabled = false;
+        if (!r || r.error) { showToast((r && r.error) || 'Could not mark resolved', 'error'); return; }
+        card.remove();
+        showToast(r.already ? 'Already marked resolved' : 'Marked resolved', 'success');
+      })
+      .withFailureHandler(function (e) {
+        btn.disabled = false;
+        showToast((e && e.message) || 'Could not mark resolved', 'error');
+      })
+      .resolveSpanishThread(tid);
+  });
 }
 
 function spanishExpand_(btn) {
