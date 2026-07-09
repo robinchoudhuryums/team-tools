@@ -720,6 +720,16 @@ test('M-8: a late Team Notes queue response cannot clobber the sub-tab opened af
   assert.ok(h.$('#cn-mgr-search-q'), 'late training-queue response dropped — Search body survives');
 });
 
+test('Turn A: a post-teardown CN draft-persist fire does NOT delete the sticky draft', () => {
+  const h = boot();
+  const good = JSON.stringify({ values: { issue: 'wheelchair repair' }, flags: [], tags: [], at: Date.now() });
+  h.window.localStorage.setItem('umsCallNotesActiveFormDraft', good);
+  // No #cn-active-form in the DOM — the rep typed, then navigated within 400ms.
+  h.window.cnPersistActiveFormDraft_();   // pre-fix: all fields read '' → removeItem destroyed the draft
+  assert.strictEqual(h.window.localStorage.getItem('umsCallNotesActiveFormDraft'), good,
+    'sticky draft survives a debounce fire against a torn-down form');
+});
+
 test('M-5: search results are NOT dropped when the query carries trailing whitespace', () => {
   const h = boot();
   h.read('currentView = "callNotesSearch"');

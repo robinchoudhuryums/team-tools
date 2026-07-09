@@ -3036,6 +3036,13 @@ function cnFormTimerReset_() {
  *  rep typed. Called debounced from the input handler. */
 function cnPersistActiveFormDraft_() {
   try {
+    // Turn-A audit (the intake M-2 class, worse here): the 400ms debounce can
+    // fire AFTER a nav-away tore down the form — every field then reads ''
+    // and the no-content branch REMOVES the sticky draft the rep meant to
+    // come back to. No form root → skip; the last persisted draft stands.
+    // (A rep manually clearing every field still clears the draft — the form
+    // is present on that path.)
+    if (!document.getElementById('cn-active-form')) return;
     const values = {};
     ['callback','caller','relationship','patient','issue','transferred','resolution'].forEach(function (k) {
       values[k] = cnGetFieldValue_('cn-fld-' + k);

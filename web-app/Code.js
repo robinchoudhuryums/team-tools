@@ -4588,6 +4588,12 @@ function deployReadinessItems_(storage, automation, managerCount) {
     } else if (s.tzMatch === false) {
       status = 'warn';
       detail = 'Timezone ' + (s.tz || s.note || '?') + ' differs from CONFIG ' + cfgTz + ' — coerced date/time reads drift.';
+    } else if (s.localeMatch === false) {
+      // Turn A: locale drift bands warn like tz drift — a differing locale
+      // changes WHICH string shapes Sheets coerces to Dates on read (the
+      // formTokenCellMs_/M-14 class).
+      status = 'warn';
+      detail = 'Locale ' + (s.locale || '?') + ' differs from the ADP sheet — string→Date coercion behavior drifts.';
     } else {
       status = 'ok';
       detail = s.note || s.name || 'OK';
@@ -15490,8 +15496,14 @@ function saveQuiz(def) {
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const v = trainValidateQuizDef_(def);
     if (!v.ok) return { success: false, error: v.error };
-    if (v.quiz.kbItemId && !trainKbTitles_()[v.quiz.kbItemId]) {
-      return { success: false, error: 'The linked Reference item no longer exists.' };
+    if (v.quiz.kbItemId) {
+      const linkedKb = trainKbTitles_()[v.quiz.kbItemId];
+      if (!linkedKb) return { success: false, error: 'The linked Reference item no longer exists.' };
+      // Turn A (L-9 sibling): a DRAFT is rep-invisible (INV-140) — the quiz's
+      // "Review the material first" link would 404 for every rep.
+      if (linkedKb.status === KB_STATUS_DRAFT) {
+        return { success: false, error: 'The linked Reference item is a draft — publish it before linking it to a quiz.' };
+      }
     }
     const qJson = JSON.stringify(v.quiz.questions);
     if (qJson.length > TRAIN_QUIZ_JSON_MAX) return { success: false, error: 'Quiz is too large — split it into two quizzes.' };
