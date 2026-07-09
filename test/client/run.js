@@ -602,6 +602,33 @@ test('coachAnalytics_ empty input → zeroed shape', () => {
   assert.strictEqual(a.perRep.length, 0);
 });
 
+// Cycle 7 · H-1 — coaching CreatedAt is stamped in SPACE form; the T-only
+// parseTimestampMs_ nulled every row, so overdueUnacked was permanently false
+// and the daily digest never nagged about un-acked coaching.
+test('coachParseTs_ parses BOTH stamp forms (space + T) and NaNs garbage', () => {
+  const ms = sb.coachParseTs_('2026-01-01 09:00:00');
+  assert.strictEqual(ms, Date.UTC(2026, 0, 1, 9, 0, 0), 'space form parses');
+  assert.strictEqual(sb.coachParseTs_('2026-01-01T09:00:00'), ms, 'T form parses identically');
+  assert.ok(isNaN(sb.coachParseTs_('garbage')), 'garbage → NaN (falsy for the overdue guards)');
+});
+test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-only parseTimestampMs_', () => {
+  ['getCoachingDashboard', 'coachUnackedAll_'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/coachParseTs_\(/.test(src), fn + ' parses createdAt via coachParseTs_');
+    assert.ok(!/parseTimestampMs_\(/.test(src),
+      fn + ' must NOT use parseTimestampMs_ on the space-form CreatedAt stamp — it returns null for every row (overdue detection silently dead)');
+  });
+});
+
+console.log('\nCode.js — spreadsheet-creation timezone tripwire (cycle 7 · H-2)');
+test('TRIPWIRE (H-2): generateExportSheet_ pins the new spreadsheet tz to the ADP sheet', () => {
+  const src = extractRawFunction('Code.js', 'generateExportSheet_');
+  assert.ok(/setSpreadsheetTimeZone\(\s*getAdpSS_\(\)\.getSpreadsheetTimeZone\(\)\s*\)/.test(src),
+    'generateExportSheet_ copies RAW coerced Date cells into a fresh SpreadsheetApp.create() sheet, ' +
+    'which inherits the SCRIPT tz — without pinning to the ADP sheet tz every exported date/time ' +
+    'shifts on display and the payroll .xlsx can carry the previous calendar day');
+});
+
 console.log('\nCode.js — feature-flag registry + getFlag_ (Plan A)');
 // These server helpers reference CONFIG (registry defaults) + PropertiesService
 // (the override store). Build a dedicated vm context with minimal stubs, then

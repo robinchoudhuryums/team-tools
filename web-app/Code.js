@@ -8567,6 +8567,15 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   const prefix = cycleFilter ? `${cycleFilter} ` : 'ADP ';
   const name = `${prefix}Upload ${startDate} to ${endDate} (${stamp})`;
   const newSs = SpreadsheetApp.create(name);
+  // F(H-2): pin the new spreadsheet's timezone to the ADP sheet's. The rows
+  // below are raw getValues() output whose DATE/TIME cells are Sheets-coerced
+  // Date objects (wall time in the ADP sheet's tz); SpreadsheetApp.create()
+  // inherits the SCRIPT tz (appsscript.json = America/Chicago), so without
+  // this pin a differing ADP-sheet tz shifts every exported date/time on
+  // display — the payroll .xlsx could carry the previous calendar day.
+  // (Same pattern as provisionCallNotesSheet; exportCallNotesRange writes
+  // normalized strings and doesn't need it.)
+  try { newSs.setSpreadsheetTimeZone(getAdpSS_().getSpreadsheetTimeZone()); } catch (e) {}
   const sh = newSs.getActiveSheet();
   sh.setName('Timesheet');
   sh.getRange(1, 1, 2, 9).setValues([rows[0].slice(0, 9), rows[1].slice(0, 9)]);
@@ -16321,7 +16330,10 @@ function getCoachingDashboard() {
       const c = coachRowToObj_(rows[i], ssTz);
       if (!c.coachId || c.status === 'void') continue;
       if (!coachCanManagerSee_(callerEmp, c)) continue;
-      const createdMs = parseTimestampMs_(c.createdAt, ssTz);
+      // F(H-1): CreatedAt is stamped in SPACE form ('yyyy-MM-dd HH:mm:ss');
+      // parseTimestampMs_ expects the 'T' form and returned null for every row,
+      // so overdueUnacked was permanently false. coachParseTs_ accepts both.
+      const createdMs = coachParseTs_(c.createdAt);
       c.overdueUnacked = (c.status === 'open' && c.severity !== 'praise' && createdMs && createdMs <= (nowMs - reminderDays * 86400000));
       if (c.status === 'open') counts.open++;
       if (c.status === 'acknowledged') counts.acknowledged++;
@@ -16352,6 +16364,7 @@ function voidCoaching(coachId, reason) {
       'coachId=' + found.item.coachId + (reason ? '; reason=' + String(reason).slice(0, 200) : ''), callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 /** All open, non-praise coaching items older than the reminder window, as
@@ -16368,7 +16381,9 @@ function coachUnackedAll_(nowMs) {
     for (let i = 0; i < rows.length; i++) {
       const c = coachRowToObj_(rows[i], ssTz);
       if (!c.coachId) continue;
-      c.createdAtMs = parseTimestampMs_(c.createdAt, ssTz);
+      // F(H-1): coachParseTs_ (both stamp forms), NOT parseTimestampMs_ ('T'-only
+      // — it nulled every space-form stamp and the digest nudge never fired).
+      c.createdAtMs = coachParseTs_(c.createdAt);
       items.push(c);
     }
     return coachUnackedOverdue_(items, nowMs, CONFIG.COACHING_UNACK_REMINDER_DAYS || 7)

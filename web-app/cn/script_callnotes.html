@@ -2350,13 +2350,18 @@ function cnRenderNotesView(area) {
   // When per-call CDR data lands: prefill the form from hint.calls[0]
   // or auto-filter the rolling stack to unmatched-only.
   cnConsumeNavHint_();
-  // Cross-tool nav hint (e.g. a Spanish-inbox tool-suggestion chip): surface a
-  // context banner + prefill the Issue field with the request subject.
-  cnConsumeAppNavHint_();
   // Restore any in-progress draft from a prior session (sticky form). If a
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
   const restored = cnRestoreActiveFormDraft_();
+  // Cross-tool nav hint (e.g. a Spanish-inbox tool-suggestion chip): surface a
+  // context banner + prefill the Issue field with the request subject.
+  // F(L-22): runs AFTER the draft restore — the hint only writes into an EMPTY
+  // Issue field, and the restore used to run last and clobber the prefill with
+  // the draft's (often empty) issue value before the rep ever saw it. Restore-
+  // first means a real draft's Issue wins; an empty one lets the hint land
+  // (and the input event it dispatches persists it into the draft).
+  cnConsumeAppNavHint_();
   setTimeout(function () {
     const el = document.getElementById(restored ? 'cn-fld-resolution' : 'cn-fld-callback');
     if (el) el.focus();
@@ -5920,7 +5925,10 @@ function cnFireSearch_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
-      if (CN_STATE.searchQuery !== requestedQuery) return;
+      // F(M-5): compare trimmed-to-trimmed — requestedQuery is the TRIMMED q
+      // but the state holds the raw input, so a query with surrounding
+      // whitespace (a pasted TRX/phone) fetched results and discarded them.
+      if (String(CN_STATE.searchQuery || '').trim() !== requestedQuery) return;
       if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.searchResults = []; }
       else CN_STATE.searchResults = res.results || [];
       cnRenderSearchResults_();
@@ -6602,7 +6610,8 @@ function cnMgrFireSearch_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
-      if (CN_STATE.mgrSearchQuery !== requestedQuery) return;
+      // F(M-5): trimmed-to-trimmed — same whitespace-guard fix as cnFireSearch_.
+      if (String(CN_STATE.mgrSearchQuery || '').trim() !== requestedQuery) return;
       if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.mgrSearchResults = []; }
       else CN_STATE.mgrSearchResults = res.results || [];
       cnMgrRenderSearchResults_();
@@ -8950,7 +8959,10 @@ function cnOpenExternalEmailModal_(presetNoteId, onMounted) {
       .withSuccessHandler(function (res) {
         if (res.error) {
           showToast(res.error, 'toast-error');
-          CN_STATE.formCatalog = [];
+          // F(L-26): leave formCatalog null on error — [] is truthy, so a
+          // transient failure was cached as "no forms configured" for the
+          // whole session. null → the next open refetches.
+          CN_STATE.formCatalog = null;
         } else {
           CN_STATE.formCatalog = res.forms || [];
         }
@@ -8959,7 +8971,7 @@ function cnOpenExternalEmailModal_(presetNoteId, onMounted) {
       })
       .withFailureHandler(function (err) {
         showToast('Failed to load form catalog: ' + err.message, 'toast-error');
-        CN_STATE.formCatalog = [];
+        CN_STATE.formCatalog = null;   // F(L-26): don't cache the failure
         cnRenderExternalEmailModal_();
         done();
       })

@@ -1809,7 +1809,10 @@ function submitPunch(punchType, custom) {
     })
     .withFailureHandler(err => {
       setClockBtnsDisabled(false);
-      if (prime && primeHtml != null) prime.innerHTML = primeHtml;
+      // F(M-1): these were the pre-F3 names (`prime`/`primeHtml`) — the
+      // ReferenceError swallowed the toast and left the clicked button stuck
+      // on "Working…" for every transport failure / server throw.
+      if (btn && btnHtml != null) btn.innerHTML = btnHtml;
       showToast((err.message||'Server error'), 'toast-error');
     })
     .recordPunch(punchType, custom);

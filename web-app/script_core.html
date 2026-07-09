@@ -636,6 +636,11 @@ function showView(view) {
   // KB drawer (shell capability): close on any navigation + toggle its
   // right-edge tab for the mid-task tools (Call Notes / Intake).
   if (typeof kbDrawerOnNavigate_ === 'function') kbDrawerOnNavigate_(view);
+  // Intake draft flush (M-2): a pending debounced draft save is flushed NOW,
+  // while the outgoing view's DOM still exists — otherwise the 400ms timer
+  // fires against a torn-down form and the keystroke (or, pre-fix, the whole
+  // draft) is lost. No-op when nothing is pending.
+  if (typeof intakeFlushDraftNow_ === 'function') intakeFlushDraftNow_();
   currentView = view;
   // Refresh-restore: remember the active tab so a reload lands back here.
   try { localStorage.setItem('umsLastView', view); } catch (e) {}
