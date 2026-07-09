@@ -1022,6 +1022,18 @@ function intakeCondFilterKey_(e, input) {
 function intakeCondAddCustom_(btn) {
   var grp = btn.closest('.intk-condition'); if (!grp) return;
   var val = btn.getAttribute('data-add'); if (!val) return;
+  // F(L-16): the authoritative data-val is COMMA-JOINED — a typed comma split
+  // one entry into two chips/answers on the next parse. Normalize it out.
+  val = String(val).replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!val) return;
+  // F(L-16): block negation words — on engine-read Q43 a custom "none"/"n/a"
+  // lowercases into the engine's exclude list and silently reads as NO
+  // diagnosis while the UI shows a selected chip. (Meaningless as a selected
+  // condition on the display-only pickers too — leave the picker empty instead.)
+  if (['no', 'n/a', 'na', 'none', 'no.'].indexOf(val.toLowerCase()) >= 0) {
+    if (typeof showToast === 'function') showToast('Leave the picker empty for "none" — a selected chip means a condition IS present.', 'toast-warn');
+    return;
+  }
   var cur = intakeMultiParse_(grp.getAttribute('data-val') || '');
   if (cur.indexOf(val) < 0) cur.push(val);                 // add-only (idempotent)
   grp.setAttribute('data-val', cur.join(', '));
@@ -1223,8 +1235,13 @@ function intakeBuildPpdModal_(html, recs) {
   var panel = items.length
     ? items.map(function (p) {
         var id = String(p.hcpcs).replace(/\s+/g, '-');
-        var imgUrl = p.imageUrl ? esc(p.imageUrl) : '';
-        var pdfUrl = p.pdfLink ? esc(p.pdfLink) : '';
+        // F(L-19): http(s)-only — esc() prevents attribute breakout but a
+        // javascript: URL in the operator-owned Offerings sheet (cols E/F)
+        // would still become a live href/window.open target. Same scheme
+        // whitelist discipline as kbMd_.
+        var httpOnly = function (u) { return /^https?:\/\//i.test(String(u || '').trim()) ? esc(u) : ''; };
+        var imgUrl = httpOnly(p.imageUrl);
+        var pdfUrl = httpOnly(p.pdfLink);
         // Image opens full-size in a new tab (agent can right-click/copy/save to
         // text the patient); code links to the brochure PDF.
         var imgHtml = imgUrl
@@ -1485,8 +1502,13 @@ function intakeAcctGetVal_(root, i, isCheckbox) {
   var grp = root.querySelector('.intk-yn[data-idx="' + i + '"]');
   if (grp) {
     var v = String(grp.getAttribute('data-val') || '');
-    if (v) return v;
-    return grp.getAttribute('data-ynsel') ? '' : 'FALSE';
+    // F(L-15): an UNTOUCHED toggle reads as '' (was 'FALSE' for checkbox-style
+    // groups) — the draft round-trip was fabricating a lit "No" on every
+    // untouched toggle after a restore, indistinguishable from a deliberate
+    // answer. A deliberate "No" click stores data-val='FALSE' and still reads
+    // back as 'FALSE'. The send path is unchanged: the server email renders
+    // any non-'TRUE' checkbox value (''/'FALSE') as the same unchecked box.
+    return v;
   }
   var el = root.querySelector('[data-intk-idx="' + i + '"]');
   return el ? String(el.value).trim() : '';
@@ -1503,7 +1525,9 @@ function intakeCollectAcct_(form) {
     var label = String(qs[i] || '');
     if (L.headers.indexOf(i) >= 0) { rows.push({ qIndex: i, label: label, isHeader: true }); continue; }
     var isCheckbox = L.checkboxes.indexOf(i) >= 0;
-    var val = root ? intakeAcctGetVal_(root, i, isCheckbox) : (isCheckbox ? 'FALSE' : '');
+    // F(L-15): no-root fallback is '' for every control (was 'FALSE' for
+    // checkboxes) — consistent with intakeAcctGetVal_'s untouched value.
+    var val = root ? intakeAcctGetVal_(root, i, isCheckbox) : '';
     answers[i] = val;
     rows.push({ qIndex: i, label: label, value: val, isSecondary: L.secondary.indexOf(i) >= 0 });
   }
@@ -1683,16 +1707,49 @@ function intakeWriteDrafts_(all) {
   try { localStorage.setItem(INTAKE_DRAFT_KEY, JSON.stringify(all)); } catch (e) {}
 }
 
+var _intakeDraftForm = null;   // which form the pending debounce is for (M-2 flush)
+
+function intakeFormRoot_(form) {
+  return document.getElementById(form === 'ppd' ? 'intk-ppd-form' : 'intk-' + form + '-form');
+}
+
+function intakeDraftSaveNow_(form) {
+  // F(M-2): a debounced save can fire AFTER the view is torn down (rep typed /
+  // clicked a chip, then navigated within 400ms). With no form root the
+  // collectors return an all-empty snapshot that would OVERWRITE the good
+  // draft — a half-completed 45-question PPD silently gone. No root → skip;
+  // the last flushed/saved draft stands.
+  if (!intakeFormRoot_(form)) return;
+  var snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form);
+  var draft = { answers: snap.answers || {}, at: Date.now() };
+  if (form === 'ppd') draft.patientInfo = snap.patientInfo || '';
+  var all = intakeReadDrafts_();
+  all[form] = draft;
+  intakeWriteDrafts_(all);
+}
+
 function intakeSaveDraft_(form) {
   if (_intakeDraftTimer) clearTimeout(_intakeDraftTimer);
+  _intakeDraftForm = form;
   _intakeDraftTimer = setTimeout(function () {
-    var snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form);
-    var draft = { answers: snap.answers || {}, at: Date.now() };
-    if (form === 'ppd') draft.patientInfo = snap.patientInfo || '';
-    var all = intakeReadDrafts_();
-    all[form] = draft;
-    intakeWriteDrafts_(all);
+    _intakeDraftTimer = null; _intakeDraftForm = null;
+    intakeDraftSaveNow_(form);
   }, 400);
+}
+
+/** F(M-2) — flush a pending debounced draft save synchronously. Called from the
+ *  shell's showView at the top of every navigation, while the outgoing view's
+ *  DOM is still intact — so a keystroke typed <400ms before switching tools is
+ *  captured instead of lost, and the torn-down-DOM path above never has to
+ *  discard anything. Cheap no-op when nothing is pending. */
+function intakeFlushDraftNow_() {
+  if (!_intakeDraftTimer) return;
+  clearTimeout(_intakeDraftTimer);
+  var form = _intakeDraftForm;
+  _intakeDraftTimer = null; _intakeDraftForm = null;
+  // try/catch: this runs inside showView — a collector throw must never
+  // block navigation (the draft is best-effort, the nav is not).
+  try { if (form) intakeDraftSaveNow_(form); } catch (e) {}
 }
 
 function intakeRestoreDraft_(form) {
@@ -1717,6 +1774,12 @@ function intakeRestoreDraft_(form) {
 }
 
 function intakeClearDraft_(form) {
+  // Cancel a pending debounce for THIS form — a timer armed just before
+  // Clear/send would otherwise fire after the wipe and re-save a snapshot.
+  if (_intakeDraftTimer && _intakeDraftForm === form) {
+    clearTimeout(_intakeDraftTimer);
+    _intakeDraftTimer = null; _intakeDraftForm = null;
+  }
   var all = intakeReadDrafts_();
   if (all[form]) { delete all[form]; intakeWriteDrafts_(all); }
 }
@@ -1955,9 +2018,17 @@ function intakeRestoreAnswers_(form, snapshot) {
     if (root) Object.keys(snapshot.answers || {}).forEach(function (qNum) {
       intakePpdSetVal_(root, qNum, snapshot.answers[qNum]);
     });
+    // F(L-17): re-apply conditional reveals against the OVERLAID answers —
+    // the view enter restored the (≤400ms-stale) draft and applied reveals
+    // against THAT, so e.g. a just-set Q33=Yes left the Q33a row hidden with
+    // its restored text invisible until the next input event.
+    if (typeof intakePpdApplyReveals_ === 'function') intakePpdApplyReveals_(root);
     intakePpdUpdateProgress_();
   } else {
     intakeApplyAcctAnswers_(form, snapshot.answers || {});
+    // F(L-17): sync the progress ring to the overlaid snapshot (it reflected
+    // the stale draft until the next input event).
+    if (typeof intakeAcctUpdateProgress_ === 'function') intakeAcctUpdateProgress_(form);
   }
 }
 

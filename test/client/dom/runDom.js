@@ -639,3 +639,93 @@ test('T-2 contrast: no deep-link + unseen → auto-start IS scheduled', () => {
   h.window.tourMaybeAutoStart_();
   assert.strictEqual(scheduled, 1, 'no deep-link → auto-start scheduled');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CYCLE 7 · Turn 1+2 fixes — punch failure feedback, intake draft lifecycle,
+// search stale-guard trim parity.
+// ═════════════════════════════════════════════════════════════════════════════
+section('DOM harness — cycle 7 fixes (punch failure / intake draft / search guard)');
+
+test('M-1: submitPunch failure restores the clicked button + does not throw', () => {
+  const h = boot();
+  const wrap = h.document.createElement('div');
+  wrap.className = 'actions';
+  wrap.innerHTML = '<button class="prime" data-action="ClockIn">Clock In</button>';
+  h.document.body.appendChild(wrap);
+  h.window.submitPunch('ClockIn');
+  const btn = h.$('.actions [data-action="ClockIn"]');
+  assert.ok(/Working/.test(btn.innerHTML), 'in-flight label shown');
+  // Pre-fix: the failure handler read the undeclared `prime`/`primeHtml`
+  // (pre-F3 names) — the ReferenceError propagated here, no toast fired, and
+  // the button stayed stuck on "Working…".
+  h.run.flushFailure('network down', 'recordPunch');
+  assert.strictEqual(btn.innerHTML, 'Clock In', 'button restored after a transport failure');
+  assert.strictEqual(btn.disabled, false, 'buttons re-enabled');
+});
+
+test('M-2: a debounced intake draft save firing after view teardown does NOT wipe the draft', () => {
+  const h = boot();
+  const good = { ppd: { answers: { '38': '250', '43': 'MS' }, patientInfo: 'Jane Doe TRX1', at: Date.now() } };
+  h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify(good));
+  // No #intk-ppd-form anywhere — the rep typed, then navigated within 400ms.
+  h.window.intakeSaveDraft_('ppd');
+  h.flushTimers();   // pre-fix: collected an all-empty snapshot and overwrote the draft
+  const after = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts'));
+  assert.strictEqual(after.ppd.answers['38'], '250', 'answers survive a post-teardown debounce fire');
+  assert.strictEqual(after.ppd.patientInfo, 'Jane Doe TRX1', 'patient info survives');
+});
+
+test('M-2: intakeFlushDraftNow_ captures a pending save synchronously while the DOM is intact (+ L-15 untouched toggle reads as empty)', () => {
+  const h = boot();
+  const form = h.document.createElement('div');
+  form.id = 'intk-pmd-form';
+  form.innerHTML = '<input data-intk-idx="1" value="Jane Doe">' +
+    '<div class="intk-yn" data-idx="22" data-val="">' +
+    '<button data-set="TRUE">Yes</button><button data-set="FALSE">No</button></div>';
+  h.document.body.appendChild(form);
+  h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.window.intakeSaveDraft_('pmd');    // debounce armed, not yet fired
+  h.window.intakeFlushDraftNow_();     // the showView navigation flush
+  const draft = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
+  assert.ok(draft.pmd, 'pending draft flushed synchronously on navigation');
+  assert.strictEqual(draft.pmd.answers['1'], 'Jane Doe', 'typed value captured');
+  // L-15: an UNTOUCHED .intk-yn toggle serializes as '' (was 'FALSE'), so a
+  // restore can no longer fabricate a deliberately-lit "No".
+  assert.strictEqual(draft.pmd.answers['22'], '', 'untouched toggle stays unanswered');
+});
+
+test('M-9: composer refuses to close while a send is in flight, closes once settled', () => {
+  const h = boot();
+  h.read('CN_STATE.composer = { noteId: "n1", selections: { departments: [] }, sending: true, step: "preview" }');
+  h.window.ensureOverlay('cn-compose-overlay', { onClose: h.window.cnCloseComposerModal_ });
+  h.window.closeOverlay(h.$('#cn-compose-overlay'));   // the Esc / backdrop-click path
+  assert.ok(h.$('#cn-compose-overlay'), 'overlay still mounted mid-send (no rollback fired)');
+  assert.ok(h.read('CN_STATE.composer') !== null, 'composer state intact mid-send');
+  h.read('CN_STATE.composer.sending = false');
+  h.window.closeOverlay(h.$('#cn-compose-overlay'));
+  assert.strictEqual(h.$('#cn-compose-overlay'), null, 'closes normally once the send settled');
+  assert.strictEqual(h.read('CN_STATE.composer'), null, 'composer state cleared on the real close');
+});
+
+test('M-8: a late Team Notes queue response cannot clobber the sub-tab opened after it', () => {
+  const h = boot();
+  const host = h.document.createElement('div');
+  host.id = 'cn-mgr-results';
+  h.document.body.appendChild(host);
+  h.read('currentView = "callNotesManage"');
+  h.window.cnMgrLoadQueue_('training');            // slow queue fetch in flight
+  h.window.cnMgrLoadSearchView_();                 // manager switches to Search
+  assert.ok(h.$('#cn-mgr-search-q'), 'search sub-tab rendered');
+  h.run.flushSuccess({ results: [] }, 'managerGetTrainingQueue');   // late response lands
+  assert.ok(h.$('#cn-mgr-search-q'), 'late training-queue response dropped — Search body survives');
+});
+
+test('M-5: search results are NOT dropped when the query carries trailing whitespace', () => {
+  const h = boot();
+  h.read('currentView = "callNotesSearch"');
+  h.read('CN_STATE.searchQuery = "TRX441 "');   // raw input value, trailing space
+  h.window.cnFireSearch_();
+  h.run.flushSuccess({ results: [{ noteId: 'n1' }] }, 'searchMyCallNotes');
+  assert.strictEqual(h.read('CN_STATE.searchResults.length'), 1,
+    'trimmed-vs-raw stale-guard no longer discards the response');
+});

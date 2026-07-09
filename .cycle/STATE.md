@@ -1,12 +1,35 @@
 # Cycle State
 
 ## Current
-Cycle: 6
-Phase: implement — PPD intake redesign, Phase 4 (reveal/height polish) on claude/broad-scan-2ll5ok
-Scope: PPD intake form structured-control UI/UX (engine untouched)
+Cycle: 7
+Phase: implement DONE — all 8 turns of the broad-scan fix backlog shipped on claude/broad-scan-45plfi (regression + reflect done; /reflect close-out pending)
+Scope: broad (full-codebase audit 2026-07-09; ~40 findings: 0 Critical / 2 High / ~15 Medium / ~20 Low — ALL non-deferred items implemented)
 Test Command: manual
-Subsystem cycles since last Seams audit: 5
-Updated: 2026-07-01 (broad-implement: PPD redesign Phase 4 — Q32 help / Q33a hide / Q45 ynreveal / Q37 height)
+Subsystem cycles since last Seams audit: 6
+Updated: 2026-07-09 (Turns 1-8 complete: commits 3f083a1, eda5a08, fbaa878, be3fe85, ef572fa, f6a19ba, 3e54681)
+
+## Cycle 7 broad-scan + Turn 1+2 (2026-07-09, claude/broad-scan-45plfi)
+Audit: 6-agent fan-out + personal verification of every Medium+ finding (all
+confirmed, zero retractions). Scores: Overall 8, Correctness 7.5 (was 8.5),
+Sec 8.5, Data 8.5, Tz 8, Conc 8.5, Test 8, Docs 8.5, GAS 9, MgrUX 8, EmpUX 7.5,
+Automation 7.5. Full findings list + 8-turn sequencing live in the session
+transcript AND are summarized per-turn below (Pending).
+Turn 1+2 IMPLEMENTED (commit 3f083a1):
+- H-1 coaching overdue dead (space-form CreatedAt vs T-only parseTimestampMs_)
+  → both consumers now use coachParseTs_; +source tripwire.
+- H-2 generateExportSheet_ pins new-sheet tz to the ADP sheet's (raw coerced
+  Date cells; script tz = America/Chicago); +source tripwire. NOTE: interacts
+  with the still-pending operator ADP-sheet-tz decision — safe either way now.
+- M-1 submitPunch failure handler prime→btn (silent punch failures fixed).
+- L-1 voidCoaching finally-release (INV-01).
+- M-2 intake draft: root-guard in the debounced save + intakeFlushDraftNow_
+  flush wired into showView (typeof-guarded, try/catch'd). DOM tests bite-checked.
+- M-5 search stale-guard trimmed-to-trimmed (rep + mgr).
+- L-15 untouched acct Yes/No toggle serializes '' not 'FALSE' (send-safe:
+  server renders any non-'TRUE' as unchecked box — verified).
+- L-22 nav-hint prefill now runs AFTER sticky-draft restore.
+- L-26 form-catalog fetch failure no longer cached as [] ("no forms") — null.
+Tests: pure 233/0 (+3), DOM 52/0 (+4); node --check clean. Net +5/−0.
 
 ## PPD redesign Phase 4 (2026-07-01, claude/broad-scan-2ll5ok)
 Display-only polish; ENGINE UNTOUCHED, SERVER UNTOUCHED (none of Q32/Q33a/Q37/Q45
@@ -80,14 +103,55 @@ intakeCollectPpd_ / engine / email builder work unchanged.
   English values, drift-guarded."
 
 ## Where I left off
-2026-07-01: PPD Phase 4 built (Q32 help / Q33a conditional-hide / Q45 ynreveal /
-Q37 height parse); PR pending CI. This COMPLETES the PPD redesign roadmap except
-the DEFERRED optional Q31a body diagram. NEXT = merge the Phase-4 PR on CI green.
-No further PPD phases queued — await operator direction (body diagram, condition-
-list clinical sign-off, or a new area). SEEDED CONDITION LISTS (Phase 3) still
-want clinical sign-off (pure content, zero engine risk). OPERATOR: one deploy
-(clasp push -f + New version) ships #113-#116 + Phase 4 + prior KB batch;
-runAllTests() in editor (CI can't run the Apps Script suite).
+2026-07-09: ALL 8 turns of the Cycle-7 backlog are committed + pushed on
+claude/broad-scan-45plfi (7 commits; pure 240/0 + DOM 54/0 + node --check green;
+CLAUDE.md gotchas/INVs synced in Turn 8). NEXT = open/merge the PR, then
+/reflect to close Cycle 7 (score movement: Correctness bugs from the audit are
+all fixed; re-derive at reflect time). Deferred by decision: L-24 transient
+dup-card race (self-heals ≤60s; fuzzy matching risk), diagnostic-liveness in
+computeAutomationHealth_ (design addition — own change), per-rep schedules
+(operator decision), KB draft/revision functional test suite beyond the new
+gate/behavior tests, quiz kbItemId draft-link check (small L-9 sibling).
+OPERATOR: one deploy (clasp push -f + New version) + runAllTests() in the
+editor ships everything; spot-check one ADP export post-deploy; the ADP-sheet-tz
+decision is now safe either way (H-2 fixed + factory).
+
+## Completed this cycle (Cycle 7 — all turns)
+- Turn 1 (3f083a1): H-1 coaching overdue dead; H-2 export-sheet tz pin; M-1
+  submitPunch failure handler; L-1 voidCoaching finally.
+- Turn 2 (3f083a1): M-2 intake draft teardown wipe + showView flush; M-5 search
+  trim-guard; L-15 acct 'FALSE' fabrication; L-22 nav-hint order; L-26 catalog
+  failure cache.
+- Turn 3 (eda5a08): M-3 punchTime normalize; M-4 isAdjustment boolean-safe; M-6
+  bulk-btn selector overlap; L-6 stranded loaders; L-7 dup title; L-8 esc label.
+- Turn 4 (fbaa878): M-10 admins⊆managers enforced; M-15 subformData whitelist;
+  M-12 KB-AI draft exclusion (searchReference publishedOnly); M-13 convert
+  status carry; L-9 draft-KB training guards.
+- Turn 5 (be3fe85): M-9 composer close-refusal mid-send; M-8 Team Notes sub-tab
+  seq guard; M-7 Admin Sheets empty-pane reload + Retry; L-20 stuck envelope;
+  L-21 note-ref sync; L-23 exact badge; L-25 QA in-flight guard.
+- Turn 6 (ef572fa): M-14 cnTimestampString_ boundary (4 readers);
+  createPinnedSpreadsheet_ factory (tz+locale) + 3 sites + no-bare-create
+  tripwire; Storage Health locale pills.
+- Turn 7 (f6a19ba): M-16 'Other'-dept DR skip; M-11 unmatchedAgents alive
+  (offRosterAgents, CDR cache v3); L-10 digest TRX drop; L-11 label cap; L-12
+  mail-outside-lock; L-13 lone-urgent fold.
+- Turn 8 (3e54681): L-2 future-time guard; L-3 Sat-NYD observance; L-4 half-day
+  pair exemption (Node-pinned); L-5 roster-tz defaults; L-14 EOD banner; L-16
+  comma/negation guard; L-17 lang-flip reveals; L-18 KB item-open seq; L-19
+  Offerings scheme whitelist; intakeClearDraft_ debounce cancel; CLAUDE.md sync.
+- Tests added: 10 pure (incl. 6 source tripwires) + 6 DOM; several bite-checked
+  against pre-fix code. Harnesses: pure 230→240, DOM 48→54.
+
+## Decisions made (so the next session doesn't re-litigate)
+- L-24 dup-card race NOT fixed: needs fuzzy pending↔server note matching (risk
+  of dropping a real pending note) for a ≤60s self-healing cosmetic issue.
+- Diagnostic-liveness in Automation Health deferred as its own designed change.
+- 'Other'-only dept sends are untracked by DeptRequests (mixed sends tracked).
+- coachParseTs_'s fixed-UTC parse is acceptable for the 7-day overdue window
+  (≤tz-offset skew; matches the analytics block's existing tolerance).
+- Untouched acct Yes/No toggles now serialize '' (not 'FALSE') — send rendering
+  identical (server branches on ==='TRUE'); stored submissions record ''.
 
 ## Prior: KB self-improving loop (#1 + #2, 2026-07-01, claude/broad-scan-2ll5ok)
 Non-AI Reference-tool enhancements (operator declined the KB-AI Phase B route for

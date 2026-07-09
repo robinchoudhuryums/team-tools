@@ -602,6 +602,123 @@ test('coachAnalytics_ empty input → zeroed shape', () => {
   assert.strictEqual(a.perRep.length, 0);
 });
 
+// Cycle 7 · H-1 — coaching CreatedAt is stamped in SPACE form; the T-only
+// parseTimestampMs_ nulled every row, so overdueUnacked was permanently false
+// and the daily digest never nagged about un-acked coaching.
+test('coachParseTs_ parses BOTH stamp forms (space + T) and NaNs garbage', () => {
+  const ms = sb.coachParseTs_('2026-01-01 09:00:00');
+  assert.strictEqual(ms, Date.UTC(2026, 0, 1, 9, 0, 0), 'space form parses');
+  assert.strictEqual(sb.coachParseTs_('2026-01-01T09:00:00'), ms, 'T form parses identically');
+  assert.ok(isNaN(sb.coachParseTs_('garbage')), 'garbage → NaN (falsy for the overdue guards)');
+});
+test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-only parseTimestampMs_', () => {
+  ['getCoachingDashboard', 'coachUnackedAll_'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/coachParseTs_\(/.test(src), fn + ' parses createdAt via coachParseTs_');
+    assert.ok(!/parseTimestampMs_\(/.test(src),
+      fn + ' must NOT use parseTimestampMs_ on the space-form CreatedAt stamp — it returns null for every row (overdue detection silently dead)');
+  });
+});
+
+console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle 7 · M-15)');
+{
+  const snCtx = { Object, Array, JSON, String, Number, Boolean, Math, isFinite, console };
+  vm.createContext(snCtx);
+  const flagConstMatch = codeSrc.match(/const (CN_FLAG_TYPES\s*=\s*\[[^\]]*\]);/);
+  const flagExtMatch = codeSrc.match(/const (CN_FLAG_TYPES_EXTENDED\s*=\s*\[[^\]]*\]);/);
+  const flagPriMatch = codeSrc.match(/const (CN_FLAG_PRIORITY\s*=\s*\[[^\]]*\]);/);
+  assert.ok(flagConstMatch && flagExtMatch && flagPriMatch, 'CN flag consts found');
+  vm.runInContext(flagConstMatch[1] + ';' + flagExtMatch[1] + ';' + flagPriMatch[1] + ';', snCtx);
+  ['sanitizeFlagsArray_', 'deriveFlagType_', 'sanitizeTagsArray_', 'sanitizeCallNotePayload_'].forEach((fn) => {
+    vm.runInContext(extractRawFunction('Code.js', fn), snCtx, { filename: 'Code.js#' + fn });
+  });
+  test('subformData whitelist: forged manager-reply / pin / feedback keys are STRIPPED at submit', () => {
+    const cleaned = snCtx.sanitizeCallNotePayload_({
+      issue: 'x',
+      subformData: {
+        trainingQuestion: ' why? ',
+        completionSeconds: 42.6,
+        trainingReply: 'FORGED', trainingReplyBy: 'boss@x.com', trainingReplyAt: 'now',
+        feedback: [{ role: 'manager', kind: 'reply', message: 'forged' }],
+        pinned: true, pinnedAt: 'now',
+        formSubmission: { token: 'x' }, externalEmails: [{ to: 'a@b.c' }],
+      },
+    });
+    assert.deepStrictEqual(Object.keys(cleaned.subformData).sort(), ['completionSeconds', 'trainingQuestion'],
+      'only the client-legitimate keys survive (INV-49/50 restored to server-enforced)');
+    assert.strictEqual(cleaned.subformData.trainingQuestion, 'why?');
+    assert.strictEqual(cleaned.subformData.completionSeconds, 43);
+  });
+  test('subformData whitelist: flags/tags still fold in; junk-only blob → null; absent blob → null', () => {
+    const withFlags = snCtx.sanitizeCallNotePayload_({ issue: 'x', flags: ['urgent', 'action'], tags: ['My Tag'],
+      subformData: { pinned: true } });
+    assert.strictEqual(JSON.stringify(withFlags.subformData.flags), '["urgent","action"]');
+    assert.strictEqual(JSON.stringify(withFlags.subformData.tags), '["my-tag"]');
+    assert.strictEqual(withFlags.subformData.pinned, undefined, 'pin-cap bypass stripped');
+    assert.strictEqual(withFlags.flagType, 'action', 'FlagType derivation unchanged');
+    assert.strictEqual(snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { pinned: true } }).subformData, null);
+    assert.strictEqual(snCtx.sanitizeCallNotePayload_({ issue: 'x' }).subformData, null);
+    const legit = snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { completionSeconds: 90 } });
+    assert.strictEqual(legit.subformData.completionSeconds, 90);
+  });
+  test('L-13: a lone legacy flagType=urgent folds into subformData.flags instead of being silently dropped', () => {
+    const c = snCtx.sanitizeCallNotePayload_({ issue: 'x', flagType: 'urgent' });
+    assert.strictEqual(JSON.stringify(c.subformData.flags), '["urgent"]', 'urgent preserved in the blob');
+    assert.strictEqual(c.flagType, 'urgent', 'validation still sees the extended value; sanitizeFlagType_ strips it from the COLUMN downstream (INV-37)');
+  });
+}
+
+console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
+{
+  vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });
+  test('ptoLegitHalfDayPair_: Morning+Afternoon pair is legitimate; dup same-half / full-day pairs are not', () => {
+    const legit = [{ type: 'Half Day - Morning', days: 0.5 }, { type: 'Half Day - Afternoon', days: 0.5 }];
+    assert.strictEqual(sb.ptoLegitHalfDayPair_(legit), true, 'complementary halves = a legitimate full day');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_([legit[1], legit[0]]), true, 'order-insensitive');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_([legit[0], legit[0]]), false, 'Morning+Morning IS the double-deduct signature');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_([{ type: 'Full Day', days: 1 }, { type: 'Full Day', days: 1 }]), false);
+    assert.strictEqual(sb.ptoLegitHalfDayPair_([{ type: 'Full Day', days: 1 }, legit[0]]), false, 'Full+Half stays flagged');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_(legit.concat([legit[0]])), false, 'exactly-two only');
+    assert.strictEqual(sb.ptoLegitHalfDayPair_(null), false);
+  });
+}
+
+console.log('\nCode.js — dashboard AuditLog coercion-safe reads (cycle 7 · M-3/M-4)');
+test('TRIPWIRE (M-3/M-4): getManagerDashboard reads PunchTime via normalizeTime_ and IsAdjustment case-insensitively', () => {
+  const src = extractRawFunction('Code.js', 'getManagerDashboard');
+  assert.ok(/punchTime:\s*normalizeTime_\(/.test(src),
+    'AuditLog PunchTime is a Sheets-coerced time Date — a raw String() read renders "Sat Dec 30 1899 …" and the Recent Activity feed shows a constant 12:00 AM');
+  assert.ok(!/String\(auditData\[i\]\[7\]\)\s*===\s*'TRUE'/.test(src),
+    "AuditLog IsAdjustment is a Sheets-coerced native boolean — String(true) === 'TRUE' is always false (ADJ badge + reason never rendered); compare case-insensitively");
+});
+
+console.log('\nCode.js — spreadsheet-creation timezone/locale tripwires (cycle 7 · H-2/M-14 class)');
+test('TRIPWIRE (H-2): createPinnedSpreadsheet_ pins BOTH tz and locale to the ADP sheet', () => {
+  const src = extractRawFunction('Code.js', 'createPinnedSpreadsheet_');
+  assert.ok(/setSpreadsheetTimeZone\(/.test(src),
+    'the factory must pin tz — a script-tz sheet shifts every raw coerced Date/time cell copied into it (the payroll export, H-2)');
+  assert.ok(/setSpreadsheetLocale\(/.test(src),
+    'the factory must pin locale — a coercing locale turns stored ISO-T strings into Dates on read (the formTokenCellMs_/M-14 class)');
+});
+test('TRIPWIRE (H-2): no bare SpreadsheetApp.create() outside createPinnedSpreadsheet_', () => {
+  // Strip comments first — the factory's own doc comment (and others) mention
+  // the call by name; only real call sites should count.
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const factorySrc = stripComments(extractRawFunction('Code.js', 'createPinnedSpreadsheet_'));
+  const factoryCreates = (factorySrc.match(/SpreadsheetApp\.create\(/g) || []).length;
+  const totalCreates = (stripComments(codeSrc).match(/SpreadsheetApp\.create\(/g) || []).length;
+  assert.strictEqual(factoryCreates, 1, 'the factory itself creates exactly once');
+  assert.strictEqual(totalCreates, 1,
+    'every new spreadsheet must go through createPinnedSpreadsheet_ (tz+locale pin) — a bare ' +
+    'SpreadsheetApp.create() inherits the script tz + deployer locale, the exact H-2/M-14 bug class');
+});
+test('TRIPWIRE (H-2): export + provisioning route through the factory', () => {
+  ['generateExportSheet_', 'exportCallNotesRange', 'provisionCallNotesSheet'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/createPinnedSpreadsheet_\(/.test(src), fn + ' uses createPinnedSpreadsheet_');
+  });
+});
+
 console.log('\nCode.js — feature-flag registry + getFlag_ (Plan A)');
 // These server helpers reference CONFIG (registry defaults) + PropertiesService
 // (the override store). Build a dedicated vm context with minimal stubs, then

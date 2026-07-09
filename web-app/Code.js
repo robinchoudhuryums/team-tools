@@ -111,7 +111,7 @@ const CONFIG = {
   CDR_SS_ID:         'YOUR_CDR_SPREADSHEET_ID',
   CDR_DEPARTMENT:    'CSR',
   CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
-  CDR_CACHE_KEY:     'cdr_metrics_v2',
+  CDR_CACHE_KEY:     'cdr_metrics_v3',   // v3 — meta gained offRosterAgents (INV-85: bump on shape change)
   CDR_ALERT_THRESHOLD: 85,  // % Answered below this → warn badge on Metrics sidebar
 
   // ── Call Notes module ────────────────────────────────────────────────
@@ -1074,8 +1074,14 @@ function getManagerDashboard() {
           empName:      String(auditData[i][2]),
           action:       String(auditData[i][4]),
           punchDate:    normalizeDate_(auditData[i][5]),
-          punchTime:    String(auditData[i][6]),
-          isAdjustment: String(auditData[i][7]) === 'TRUE',
+          // F(M-3): the PunchTime cell is written 'HH:mm:ss' but Sheets coerces
+          // it to a time-of-day Date — raw String() yielded "Sat Dec 30 1899 …"
+          // and the Recent Activity feed rendered a constant "12:00 AM".
+          punchTime:    normalizeTime_(auditData[i][6]),
+          // F(M-4): the cell is written 'TRUE'/'FALSE' but Sheets coerces it to
+          // a native boolean — String(true) === 'TRUE' is always false, so the
+          // ADJ badge + the adjustment REASON never rendered for the manager.
+          isAdjustment: String(auditData[i][7]).toUpperCase() === 'TRUE',
           daysBack:     parseInt(auditData[i][8], 10) || 0,
           notes:        String(auditData[i][9]),
         });
@@ -1357,7 +1363,7 @@ function getPtoReconciliation() {
       const date = normalizeDate_(toRows[i][TO.DATE]);
       if (!byEmp[id]) byEmp[id] = {};
       if (!byEmp[id][date]) byEmp[id][date] = [];
-      byEmp[id][date].push(dedu);
+      byEmp[id][date].push({ bucket: dedu.bucket, days: dedu.days, type: String(toRows[i][TO.TYPE]) });
     }
 
     const reps = [];
@@ -1371,6 +1377,15 @@ function getPtoReconciliation() {
           if (x.bucket === 'annual') actAnnual += x.days;
           else if (x.bucket === 'sick') actSick += x.days;
         });
+        // F(L-4): a legitimate Morning+Afternoon pair expects the SUM (a full
+        // day), not the single largest deduction — it is not drift.
+        if (ptoLegitHalfDayPair_(list)) {
+          list.forEach(function (x) {
+            if (x.bucket === 'annual') expAnnual += x.days;
+            else if (x.bucket === 'sick') expSick += x.days;
+          });
+          return;
+        }
         const c = list[0];   // canonical = single largest deduction for the day
         if (c.bucket === 'annual') expAnnual += c.days;
         else if (c.bucket === 'sick') expSick += c.days;
@@ -1394,6 +1409,19 @@ function getPtoReconciliation() {
     });
     return { reps: reps, repsScanned: Object.keys(empById).length };
   } catch (err) { return { error: err.message }; }
+}
+
+/** F(L-4): a Morning+Afternoon half-day pair on one date is a legitimate
+ *  0.5 + 0.5 full day (creatable before the INV-94 dup-guard landed), NOT the
+ *  H1 double-deduct signature. Flagging it made the one-click "Credit &
+ *  reconcile" wrongly credit 0.5d and neutralize a legitimate row (making a
+ *  later revert impossible). Exactly-two rows, one morning + one afternoon. */
+function ptoLegitHalfDayPair_(list) {
+  if (!list || list.length !== 2) return false;
+  const t0 = String(list[0].type || '').toLowerCase();
+  const t1 = String(list[1].type || '').toLowerCase();
+  return ((t0.indexOf('morning') >= 0 && t1.indexOf('afternoon') >= 0) ||
+          (t0.indexOf('afternoon') >= 0 && t1.indexOf('morning') >= 0));
 }
 
 /** Manager-gated, locked corrector for the H1 double-deduct (the mutating
@@ -1424,7 +1452,7 @@ function fixPtoReconciliation(empId) {
       if (!dedu.bucket || !(dedu.days > 0)) continue;
       const date = normalizeDate_(rows[i][TO.DATE]);
       if (!byDate[date]) byDate[date] = [];
-      byDate[date].push({ rowIndex: i + 1, days: dedu.days, bucket: dedu.bucket });
+      byDate[date].push({ rowIndex: i + 1, days: dedu.days, bucket: dedu.bucket, type: String(rows[i][TO.TYPE]) });
     }
 
     let creditAnnual = 0, creditSick = 0;
@@ -1432,6 +1460,7 @@ function fixPtoReconciliation(empId) {
     Object.keys(byDate).forEach(function (d) {
       const list = byDate[d];
       if (list.length < 2) return;
+      if (ptoLegitHalfDayPair_(list)) return;   // F(L-4): legitimate pair — never neutralize
       list.sort(function (a, b) { return b.days - a.days; });   // canonical = list[0]
       for (let k = 1; k < list.length; k++) {
         if (list[k].bucket === 'annual') creditAnnual += list[k].days;
@@ -2045,7 +2074,10 @@ function deleteCallNote(noteId) {
     if (!located) return { success: false, error: 'Note not found.' };
 
     const empTz = empTz_(emp);
-    const noteMs = parseTimestampMs_(String(located.row[CN.TIMESTAMP] || ''), empTz);
+    // F(M-14): coercion-safe read — a locale-coerced Date cell stringified
+    // raw made parseTimestampMs_ return null, silently DISABLING the 5-min
+    // delete window (fail-open) on a coercing per-rep sheet.
+    const noteMs = parseTimestampMs_(cnTimestampString_(located.row[CN.TIMESTAMP]), empTz);
     if (noteMs) {
       const elapsed = (Date.now() - noteMs) / 1000;
       if (elapsed > CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS) {
@@ -2240,7 +2272,7 @@ function getMyTrainingQA() {
       let sub = null;
       try { sub = JSON.parse(raw); } catch (e) { continue; }
       if (!sub || !sub.trainingReply) continue;
-      candidates.push({ rowIndex: i + 2, ts: String(tsCol[i][0] || '') });
+      candidates.push({ rowIndex: i + 2, ts: cnTimestampString_(tsCol[i][0]) });   // F(M-14): sort key
     }
     candidates.sort(function (a, b) { return b.ts.localeCompare(a.ts); });
     if (candidates.length > 5) candidates.length = 5;
@@ -2437,7 +2469,9 @@ function getCallNotesAmbient() {
           if (!resolved) {
             unresolvedActionCount++;
             flagCounts.unresolved++;
-            const noteMs = parseTimestampMs_(String(tsDate[i][0] || ''), empTz);
+            // F(M-14): coercion-safe — a locale-coerced Date cell zeroed the
+            // stale counter (raw String → parseTimestampMs_ → null).
+            const noteMs = parseTimestampMs_(cnTimestampString_(tsDate[i][0]), empTz);
             if (noteMs && (nowMs - noteMs) >= staleMs) staleActionCount++;
           }
         }
@@ -2736,13 +2770,12 @@ function provisionCallNotesSheet(repEmpId) {
     }
     // Create the new per-rep Spreadsheet (owned by the deployer / script-as-Me).
     const title = 'Call Notes — ' + (repName || repEmpId) + ' (' + repEmpId + ')';
-    const ss = SpreadsheetApp.create(title);
-    // Pin the new Sheet's timezone to the ADP sheet's. DateLocal strings are
-    // coerced to Dates in THIS sheet's tz but recovered by normalizeDate_ in
-    // the ADP sheet's tz — the round-trip only holds when the two match. A
-    // deployer account whose default sheet tz differs would otherwise shift
-    // every date-filtered read (coverage, history, digests) by a day.
-    try { ss.setSpreadsheetTimeZone(getAdpSS_().getSpreadsheetTimeZone()); } catch (e) {}
+    // createPinnedSpreadsheet_ pins the new Sheet's TIMEZONE + LOCALE to the
+    // ADP sheet's. DateLocal strings are coerced to Dates in THIS sheet's tz
+    // but recovered by normalizeDate_ in the ADP sheet's tz — the round-trip
+    // only holds when the two match (and a coercing locale would turn the
+    // ISO-T Timestamp column into Dates on read — the M-14 class).
+    const ss = createPinnedSpreadsheet_(title);
     // Provision the Notes tab with the canonical header (rename the default sheet
     // rather than insert a second one, so there's no stray "Sheet1").
     const notes = ss.getSheets()[0];
@@ -4182,6 +4215,10 @@ function getStorageHealth(opts) {
         out.name = ss.getName();
         out.tz = ss.getSpreadsheetTimeZone();
         out.tzMatch = tzEquivalent_(out.tz, cfgTz);   // alias-aware (Calcutta ≡ Kolkata)
+        // Cycle 7 (M-14 class): surface the LOCALE too — a coercing locale
+        // turns stored ISO-T strings into Dates on read (the formTokenCellMs_
+        // bug class); tz checks alone never showed this drift axis.
+        try { out.locale = ss.getSpreadsheetLocale(); } catch (e2) { out.locale = ''; }
         out.url = ss.getUrl();
       } catch (e) { out.error = e.message; }
       return out;
@@ -4272,7 +4309,19 @@ function getStorageHealth(opts) {
     let kbEmbeds = null;
     if (scanEmbeds && kbStore.reachable) kbEmbeds = kbScanBrokenEmbeds_(KB_EMBED_SCAN_CAP);
 
-    return { configTimezone: cfgTz, stores: stores, kbEmbeds: kbEmbeds };
+    // Cycle 7 (M-14 class): locale-consistency pass — every store's locale
+    // should match the ADP sheet's (the baseline the coercion-recovery helpers
+    // assume). A drifted locale is warn-level: it changes WHICH string shapes
+    // Sheets coerces to Dates on read.
+    const adpLocale = (stores[0] && stores[0].locale) || '';
+    if (adpLocale) {
+      stores.forEach(function (s) {
+        if (s.locale === undefined) return;             // per-rep summary row
+        s.localeMatch = s.locale ? (s.locale === adpLocale) : null;
+      });
+    }
+
+    return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4650,7 +4699,7 @@ function exportCallNotesRange(startDate, endDate) {
 
     const stamp = fmtDate_(new Date()).replace(/-/g, '') + '_' + fmtTime_(new Date()).replace(/:/g, '');
     const name = `Call Notes ${startDate} to ${endDate} (${stamp})`;
-    const newSs = SpreadsheetApp.create(name);
+    const newSs = createPinnedSpreadsheet_(name);   // pins tz+locale (H-2/M-14 class)
     const sh = newSs.getActiveSheet();
     sh.setName('CallNotes');
     const headers = [
@@ -4959,14 +5008,37 @@ function sanitizeCallNotePayload_(p) {
   // addition to the legacy single-select p.flagType. When p.flags is
   // present, derive FlagType from it (priority order); fall back to
   // p.flagType otherwise so old clients still work.
-  const flagsArr = sanitizeFlagsArray_(p.flags);
+  let flagsArr = sanitizeFlagsArray_(p.flags);
+  // F(L-13): a legacy/direct-RPC payload with flagType='urgent' and NO flags[]
+  // was accepted by validation (F21) and then silently DISCARDED — urgent never
+  // enters the FlagType column (INV-37) and nothing folded it into
+  // subformData.flags. Fold the lone urgent in so it renders + digests.
+  if (flagsArr.length === 0 && s(p.flagType).toLowerCase() === 'urgent') flagsArr = ['urgent'];
   const derivedFromArr = flagsArr.length > 0 ? deriveFlagType_(flagsArr) : '';
   const flagType = derivedFromArr || s(p.flagType).toLowerCase();
   const tagsArr = sanitizeTagsArray_(p.tags);
+  // F(M-15): WHITELIST the client-supplied subformData keys. The blob was
+  // previously persisted verbatim, so a crafted submit could pre-load a forged
+  // manager trainingReply / feedback[] thread (rendered as a real answer in
+  // the weekly digest + Q&A and cleared from every "unanswered" queue), or
+  // pinned:true bypassing the 3-pin cap setCallNotePinned enforces inside its
+  // lock — INV-49/50 were client-honor-system. Only the keys the shipped
+  // client actually sends at submit survive; everything else (trainingReply*,
+  // feedback[], pinned, formSubmission, externalEmails, …) is written by its
+  // own gated server endpoint after submit.
+  const rawSub = (p.subformData && typeof p.subformData === 'object') ? p.subformData : null;
+  let subformData = null;
+  if (rawSub) {
+    subformData = {};
+    const tq = s(rawSub.trainingQuestion);
+    if (tq) subformData.trainingQuestion = tq.slice(0, 2000);
+    const cs = Number(rawSub.completionSeconds);
+    if (isFinite(cs) && cs > 0) subformData.completionSeconds = Math.round(cs);
+    if (Object.keys(subformData).length === 0) subformData = null;
+  }
   // Merge tags/flags into subformData so the schema stays in one column
   // (per X5 — no new sheet column). Pin stays in subformData.pinned with
   // its 3-cap, separate from this array.
-  let subformData = p.subformData || null;
   if (flagsArr.length > 0 || tagsArr.length > 0) {
     subformData = subformData || {};
     if (flagsArr.length > 0) subformData.flags = flagsArr;
@@ -5029,6 +5101,44 @@ function findCallNoteRow_(sheet, noteId) {
   return null;
 }
 
+/** Cycle 7 (H-2/M-14 class fix): the ONLY sanctioned way to create a new
+ *  spreadsheet. SpreadsheetApp.create() inherits the SCRIPT timezone
+ *  (appsscript.json = America/Chicago) and the deployer's default LOCALE —
+ *  BOTH have bitten: a tz mismatch shifts every raw coerced Date/time cell
+ *  copied into the new sheet (the ADP payroll export, H-2), and a coercing
+ *  locale turns stored ISO-T strings into Dates on read (the formTokenCellMs_
+ *  / M-14 class). Pin both to the ADP sheet's values so every sheet this app
+ *  creates behaves like the stores it mirrors. A Node tripwire forbids bare
+ *  SpreadsheetApp.create() calls outside this factory. */
+function createPinnedSpreadsheet_(name) {
+  const ss = SpreadsheetApp.create(name);
+  try {
+    const adp = getAdpSS_();
+    try { ss.setSpreadsheetTimeZone(adp.getSpreadsheetTimeZone()); } catch (e) {}
+    try { ss.setSpreadsheetLocale(adp.getSpreadsheetLocale()); } catch (e) {}
+  } catch (e) { /* ADP store unreachable — keep the created sheet usable */ }
+  return ss;
+}
+
+/** F(M-14): CN Timestamp cells are written "yyyy-MM-dd'T'HH:mm:ss", but a
+ *  per-rep sheet whose LOCALE coerces the ISO-T form (the exact class
+ *  formTokenCellMs_ exists for — it bit when FORMS_SS_ID moved to the Intake
+ *  sheet) returns a Date from getValues(). A raw String() then yields
+ *  "Wed Jul 09 2026 …", which silently breaks newest-first sorting, the
+ *  /T(\d{2}:\d{2})/ shift-span + EOD time displays, the ambient stale-flag
+ *  counter, and FAIL-OPENS the 5-minute delete window (parseTimestampMs_ →
+ *  null). Recover a coerced Date back to the as-written T-form digits in the
+ *  tz that coerced it (per-rep sheets are pinned to the ADP sheet's tz at
+ *  provisioning — INV-110); strings pass through untouched. Same family as
+ *  normalizeAuditTs_ / getMyNoteHourBuckets' inline guard. */
+function cnTimestampString_(val) {
+  if (val instanceof Date) {
+    try { return Utilities.formatDate(val, getAdpSS_().getSpreadsheetTimeZone(), "yyyy-MM-dd'T'HH:mm:ss"); }
+    catch (e) { return String(val); }
+  }
+  return String(val || '');
+}
+
 function callNoteRowToObject_(located) {
   const row = located.row;
   const resolvedRaw = row[CN.RESOLVED];
@@ -5042,7 +5152,7 @@ function callNoteRowToObject_(located) {
   }
   return {
     noteId:           String(row[CN.NOTE_ID] || ''),
-    timestamp:        String(row[CN.TIMESTAMP] || ''),
+    timestamp:        cnTimestampString_(row[CN.TIMESTAMP]),   // F(M-14)
     dateLocal:        normalizeDate_(row[CN.DATE_LOCAL]),
     callback:         String(row[CN.CALLBACK] || ''),
     caller:           String(row[CN.CALLER] || ''),
@@ -5353,12 +5463,22 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // appended to the SENT body ONLY, AFTER the INV-41 hash check, so the
     // preview/hash contract is untouched. The PHI-free DeptRequests row is logged
     // below, after the send succeeds (only when this is a NEW request).
+    // F(M-16): request-track ONLY sends that include a REAL internal
+    // department. 'Other' is the free-text (possibly customer/external)
+    // recipient path — tracking those (a) mailed an external recipient an
+    // internal "Mark this request resolved" button that dead-ends at a Google
+    // login wall on this domain-restricted deployment, and (b) opened an
+    // 'Other' row no department desk would ever resolve, riding the daily SLA
+    // digest as perpetual overdue noise.
+    const drTrackable = selections.departments.some(function (d) { return d !== 'Other'; });
     const drDeptKey = selections.departments.join(', ');
     let drExistingId = null;
-    try { drExistingId = drFindOpenRequest_(noteId, drDeptKey); } catch (e) { drExistingId = null; }
+    if (drTrackable) {
+      try { drExistingId = drFindOpenRequest_(noteId, drDeptKey); } catch (e) { drExistingId = null; }
+    }
     const drId = drExistingId || Utilities.getUuid();
     const drResolveUrl = getWebAppExecUrl_() + '?resolve=' + encodeURIComponent(drId);
-    const sentHtml = htmlBody + drResolveCtaHtml_(drResolveUrl);
+    const sentHtml = htmlBody + (drTrackable ? drResolveCtaHtml_(drResolveUrl) : '');
 
     // Send first. If MailApp throws, nothing is stamped and the rep sees a clean failure.
     try {
@@ -5366,7 +5486,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         to: recipientList.to,
         cc: CONFIG.CALL_NOTES.CC_EMAIL,
         subject,
-        body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
+        body: textBody + (drTrackable ? ('\n\nMark this request resolved: ' + drResolveUrl) : ''),
         htmlBody: sentHtml,
       });
     } catch (sendErr) {
@@ -5420,14 +5540,17 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // we skip the append and just audit the re-notification. Surfaced in
     // Metrics → Dept Requests with elapsed/resolution-time tracking.
     try {
-      if (!drExistingId) {
+      if (drTrackable && !drExistingId) {   // F(M-16): 'Other'-only sends are never tracked
         getOrCreateDeptRequestsSheet_().appendRow([
           drId, emp.id, emp.name, emp.email || getActiveUserEmail_() || '',
           deptLabel, drRecipientDomains_(recipientList.to), drNowTs_(), 'open', '', '',
-          (selections.updateInfo || 'Call note email'), noteId,
+          // F(L-11): the label is free-typed (datalist-SUGGESTED) — cap it so
+          // a long paste (which could carry patient identifiers) can't ride
+          // into the PHI-free store / the dept inbox / the SLA digest whole.
+          String(selections.updateInfo || 'Call note email').slice(0, 80), noteId,
         ]);
       }
-      writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
+      if (drTrackable) writeAuditLog_(emp, 'DeptRequestSent', note.dateLocal, '', false, 0,
         'reqId=' + drId + '; dept=' + (deptLabel || '(none)') + (drExistingId ? '; resend' : ''));
     } catch (drErr) {
       console.warn('emailFromCallNote: dept-request auto-log failed (noteId=' +
@@ -6561,6 +6684,10 @@ function submitFormByToken(token, formData) {
   // Rep-notification payload, captured inside the lock and sent AFTER release
   // (the email's PDF render is slow — see the deferred send in finally).
   let notifyPayload = null;
+  // F(L-12): failure-notification (size-cap rejects) — ALSO deferred past the
+  // lock. The three cap paths previously called MailApp inside the lock,
+  // stalling every mutating endpoint app-wide for the mail call's duration.
+  let failNotify = null;
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -6624,16 +6751,16 @@ function submitFormByToken(token, formData) {
     const FORM_FIELD_LIMIT = 200;
     const FORM_CELL_CHAR_LIMIT = 45000;
     if (Object.keys(sanitizedData).length > FORM_FIELD_LIMIT) {
-      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'too many fields');
+      failNotify = { createdBy: createdBy, recipientEmail: recipientEmail, formType: formType, reason: 'too many fields' };   // F(L-12): sent after lock release
       return { success: false, error: 'This submission has too many fields to save.' };
     }
     const dataJson = JSON.stringify(sanitizedData);
     if (dataJson.length > FORM_CELL_CHAR_LIMIT) {
-      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'the response data exceeds the per-cell size limit');
+      failNotify = { createdBy: createdBy, recipientEmail: recipientEmail, formType: formType, reason: 'the response data exceeds the per-cell size limit' };   // F(L-12): sent after lock release
       return { success: false, error: 'This submission is too large to save. Please shorten your responses and resubmit.' };
     }
     if (signatureData.length > FORM_CELL_CHAR_LIMIT) {
-      notifyRepOfFailedSubmission_(createdBy, recipientEmail, formType, 'the signature image exceeds the per-cell size limit');
+      failNotify = { createdBy: createdBy, recipientEmail: recipientEmail, formType: formType, reason: 'the signature image exceeds the per-cell size limit' };   // F(L-12): sent after lock release
       return { success: false, error: 'Your signature image is too large to save. Please redraw a simpler signature and resubmit.' };
     }
 
@@ -6749,6 +6876,10 @@ function submitFormByToken(token, formData) {
     return { success: false, error: 'We could not submit your form. Please try again, or contact UMS if the problem persists.' };
   } finally {
     lock.releaseLock();
+    if (failNotify) {
+      try { notifyRepOfFailedSubmission_(failNotify.createdBy, failNotify.recipientEmail, failNotify.formType, failNotify.reason); }
+      catch (e2) { console.warn('submitFormByToken: failure notice failed: ' + e2.message); }
+    }
     if (notifyPayload) {
       try {
         notifyRepOfFormSubmission_(notifyPayload.createdBy, notifyPayload.formType,
@@ -8047,13 +8178,14 @@ function stampDigestLastRun_(key) {
 //  ────────────────────────────────────────────────────────────────────────
 //  Two scheduled jobs:
 //
-//    sendCallNotesEodDigest()         — runs daily at the manager-tz EOD
-//      hour. Walks the roster, computes each enrolled rep's *current*
-//      local hour, and emails any rep whose local time is currently
-//      within ± EOD_WARNING_WINDOW_MINUTES of CONFIG.CALL_NOTES.EOD_WARNING_HOUR
-//      AND has unresolved action-flagged notes from today. The same
-//      trigger covers reps across timezones — one shot per day at the
-//      manager's EOD captures everyone whose own EOD lines up roughly.
+//    sendCallNotesEodDigest()         — runs HOURLY. On each run it walks
+//      the roster and emails a rep only when their *current local hour*
+//      equals CONFIG.CALL_NOTES.EOD_WARNING_HOUR AND they have unresolved
+//      action-flagged notes from today. Hour-equality (not a ±minute
+//      window — EOD_WARNING_WINDOW_MINUTES is legacy, no longer consulted)
+//      reliably reaches every timezone; the prior once-at-manager-5pm
+//      design silently skipped offshore reps. (F L-14: this banner
+//      described the retired design and was restore-bait.)
 //
 //    sendCallNotesWeeklyDigests()    — runs Friday morning. Sends two
 //      separate manager-targeted emails: training queue (rep-flagged
@@ -8264,7 +8396,12 @@ function trainOverdueForRoster_(todayIso) {
   const titles = trainKbTitles_();
   const quizzes = trainReadQuizzes_();
   function itemTitle_(a) {
-    if (a.itemType === 'kb') return titles[a.itemId] ? titles[a.itemId].title : null;
+    // F(L-9): a draft KB item is hidden from the rep checklist, so it must
+    // not nag as "overdue" either — null drops it, same as deleted.
+    if (a.itemType === 'kb') {
+      const kb = titles[a.itemId];
+      return (kb && kb.status !== KB_STATUS_DRAFT) ? kb.title : null;
+    }
     if (a.itemType === 'quiz') return quizzes[a.itemId] ? quizzes[a.itemId].title : null;
     return null;
   }
@@ -8413,7 +8550,10 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso) 
   if (coaching && coaching.length) {
     const rows = coaching.map(function (oc) {
       return '<tr>' +
-        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity) + (oc.item.patientTRX ? ' · ' + esc_(oc.item.patientTRX) : '') + '</td>' +
+        // F(L-10): NO patientTRX here — INV-134: coaching notifications are
+        // PHI-minimal (severity only, never the patient/TRX or narrative).
+        // The manager opens the team-scoped Coaching tab for the detail.
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(oc.empName) + '</strong> · ' + esc_(oc.item.severity) + '</td>' +
         '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">since ' + esc_(String(oc.item.createdAt).substring(0, 10)) + '</td>' +
         '</tr>';
     }).join('');
@@ -8566,7 +8706,14 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   const stamp = fmtDate_(new Date()).replace(/-/g,'') + '_' + fmtTime_(new Date()).replace(/:/g,'');
   const prefix = cycleFilter ? `${cycleFilter} ` : 'ADP ';
   const name = `${prefix}Upload ${startDate} to ${endDate} (${stamp})`;
-  const newSs = SpreadsheetApp.create(name);
+  // F(H-2): createPinnedSpreadsheet_ pins the new spreadsheet's tz (+locale)
+  // to the ADP sheet's. The rows below are raw getValues() output whose
+  // DATE/TIME cells are Sheets-coerced Date objects (wall time in the ADP
+  // sheet's tz); a bare SpreadsheetApp.create() inherits the SCRIPT tz
+  // (America/Chicago), so a differing ADP-sheet tz shifted every exported
+  // date/time on display — the payroll .xlsx could carry the previous
+  // calendar day.
+  const newSs = createPinnedSpreadsheet_(name);
   const sh = newSs.getActiveSheet();
   sh.setName('Timesheet');
   sh.getRange(1, 1, 2, 9).setValues([rows[0].slice(0, 9), rows[1].slice(0, 9)]);
@@ -8739,7 +8886,7 @@ function buildCalendarForEmployee_(emp, year, month) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function getUsHolidays_(year) {
-  return [
+  const list = [
     fixedHoliday_(year, 0,  1,  "New Year's Day"),
     nthWeekday_  (year, 0,  1, 3,  "Martin Luther King Jr. Day"),
     nthWeekday_  (year, 1,  1, 3,  "Presidents' Day"),
@@ -8752,6 +8899,13 @@ function getUsHolidays_(year) {
     nthWeekday_  (year, 10, 4, 4,  "Thanksgiving Day"),
     fixedHoliday_(year, 11, 25,    "Christmas Day"),
   ];
+  // F(L-3): when NEXT year's Jan 1 falls on a Saturday, its observance is
+  // Dec 31 of THIS year — but every consumer builds its holiday map from
+  // getUsHolidays_(yearOfTheDateViewed), so the observed day was invisible in
+  // all December views (next occurrence: Fri Dec 31 2027 for NYD 2028).
+  const nextNy = fixedHoliday_(year + 1, 0, 1, "New Year's Day (observed)");
+  if (nextNy.date.substring(0, 4) === String(year)) list.push(nextNy);
+  return list;
 }
 function fixedHoliday_(year, month, day, name) {
   const d = new Date(year, month, day);
@@ -9096,13 +9250,19 @@ function getManagerEmails_() {
  *  roster-vs-property mismatch). Admins are always a SUBSET of managers.
  *  Designating admins is operator state (no roster column). */
 function empIsAdmin_(email, isManager) {
+  // F(M-10): admins are a SUBSET of managers (INV-136) — ENFORCED, not just
+  // documented. Previously ADMIN_EMAILS membership alone granted admin, so a
+  // non-manager email in the property became an undocumented privilege tier
+  // (all 30 admin endpoints accepted them while manager surfaces rejected
+  // them). Non-managers can never be admins regardless of the property.
+  if (!isManager) return false;
   const prop = PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS');
   const arr = prop ? prop.split(',').map(s => s.trim()).filter(s => s.length > 0) : null;
   if (arr && arr.length) {
     const e = String(email || '').toLowerCase().trim();
     return arr.map(x => String(x).toLowerCase()).indexOf(e) >= 0;
   }
-  return !!isManager;   // ADMIN_EMAILS unset → every manager is an admin
+  return true;   // ADMIN_EMAILS unset → every manager is an admin
 }
 
 /** Throws if the active user is not in MANAGER_EMAILS. Used by trigger-handler
@@ -10338,6 +10498,13 @@ function submitPunchAdjustRequests(requests) {
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { success: false, error: label + ': invalid time (expected HH:mm).' };
       if (PUNCH_LABELS_.indexOf(punchType) < 0) return { success: false, error: label + ': invalid punch type.' };
       if (date > todayStr) return { success: false, error: label + ': cannot request a future date.' };
+      // F(L-2): same-day future-TIME reject — INV-106 claims parity with
+      // recordPunch's adjustment guards, but a request for TODAY at a
+      // not-yet-reached time (e.g. a 23:59 ClockOut filed at 2pm) slipped
+      // through, and approval wrote it with no time re-check.
+      if (date === todayStr && (time + ':00') > fmtTimeTz_(new Date(), empTz)) {
+        return { success: false, error: label + ': cannot request a time that has not happened yet.' };
+      }
       const daysBack = daysBetween_(date, todayStr);
       if (daysBack > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: label + ': older than the ' + CONFIG.ADJUST_WINDOW_DAYS + '-day adjust window.' };
       if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !reason) return { success: false, error: label + ': a reason is required for dates more than ' + CONFIG.OLD_ADJUST_ALERT_DAYS + ' days back.' };
@@ -10976,18 +11143,24 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   var useRoster = rosterNames && rosterNames.length > 0;
 
   var agents = {};
+  var offRoster = {};   // F(M-11): canonical in-range agent names NOT on the roster
   var rowsMatched = 0;
 
   for (var i = 0; i < values.length; i++) {
     var rawAgent = String(values[i][CDR.AGENT - 1] || '').trim();
     if (!rawAgent) continue;
     if (isCdrQueueSentinel_(rawAgent)) continue;
-    var agent = (aliasMap[rawAgent] && useRoster && nameSet[aliasMap[rawAgent]])
-      ? aliasMap[rawAgent] : rawAgent;
-    if (useRoster && !nameSet[agent]) continue;
-
+    // F(M-11): date-filter BEFORE the roster drop, and record dropped
+    // (alias-canonicalized) agents. The roster filter previously discarded
+    // off-roster rows outright, so getTeamMetrics' "unmatchedAgents"
+    // diagnostic iterated a set that was a subset of the roster by
+    // construction — it could NEVER be non-empty (a new CDR agent or a
+    // renamed rep never surfaced, INV-66/S42 silently dead).
     var dateIso = cdrRowDateIso_(values[i][CDR.DATE - 1], tz);
     if (!dateIso || dateIso < from || dateIso > to) continue;
+    var agent = (aliasMap[rawAgent] && useRoster && nameSet[aliasMap[rawAgent]])
+      ? aliasMap[rawAgent] : rawAgent;
+    if (useRoster && !nameSet[agent]) { offRoster[aliasMap[rawAgent] || rawAgent] = true; continue; }
 
     rowsMatched++;
     if (!agents[agent]) {
@@ -11018,7 +11191,8 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     delete a._dates; delete a.attSum; delete a.attCount;
   });
 
-  var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched, columnWarning: colWarning } };
+  var result = { agents: agents, meta: { rowsScanned: values.length, rowsMatched: rowsMatched, columnWarning: colWarning,
+    offRosterAgents: Object.keys(offRoster).sort() } };   // F(M-11)
   try {
     var payload = JSON.stringify(result);
     if (payload.length > 90000) {
@@ -11658,10 +11832,11 @@ function getTeamMetrics(dateOrFrom, to) {
       }
     });
 
-    // Direction 1: CDR agents NOT on the team-tools roster
-    Object.keys(cdrResult.agents).forEach(function (name) {
-      if (!repMap[name]) unmatchedAgents.push(name);
-    });
+    // Direction 1: CDR agents NOT on the team-tools roster. F(M-11): sourced
+    // from the reader's offRosterAgents (recorded BEFORE its roster filter) —
+    // cdrResult.agents is roster-filtered by construction, so the old loop
+    // over its keys could never find an unmatched agent.
+    unmatchedAgents = ((cdrResult.meta && cdrResult.meta.offRosterAgents) || []).slice();
     // Direction 2: team-tools reps with zero CDR match
     var rosterWithNoCdr = [];
     Object.keys(repMap).forEach(function (name) {
@@ -12901,10 +13076,16 @@ function kbSearchScore_(tokens, q, titleLc, headLc, bodyLc) {
   return score;
 }
 
-function searchReference(query) {
+function searchReference(query, opts) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
+    // F(M-12): publishedOnly forces the draft skip REGARDLESS of caller role.
+    // Public-callable and narrowing-only, so it can't widen anyone's access.
+    // Used by kbGetFacetGuidance — its result caches ORG-WIDE (no viewer role
+    // in the key), so admin-triggered retrieval must never include drafts or
+    // reps get guidance text + source titles derived from unpublished content.
+    const publishedOnly = !!(opts && opts.publishedOnly);
     const q = String(query || '').trim().toLowerCase();
     if (q.length < 2) return { results: [] };
     const tokens = [];
@@ -12921,8 +13102,9 @@ function searchReference(query) {
     };
     for (let i = 0; i < rows.length; i++) {
       if (!rows[i][KB.ID]) continue;
-      // #4 — drafts never surface in search to non-admins.
-      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT && !emp.isAdmin) continue;
+      // #4 — drafts never surface in search to non-admins (nor to ANY caller
+      // when publishedOnly is forced — the org-wide-cached AI retrieval path).
+      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT && (publishedOnly || !emp.isAdmin)) continue;
       const id = String(rows[i][KB.ID]);
       const title = String(rows[i][KB.TITLE] || '');
       const dept = String(rows[i][KB.DEPARTMENT] || '');
@@ -14357,7 +14539,9 @@ function kbGetFacetGuidance(facets) {
     // combos free, and the none is cached so they STAY free. A search ERROR
     // (KB sheet unreachable) is NOT cached — transient outages shouldn't
     // pin a 6h none.
-    const search = searchReference(kbAiQueryTerms_(clean));
+    // F(M-12): publishedOnly — guidance caches org-wide, so retrieval must
+    // exclude drafts even when the triggering caller is an admin.
+    const search = searchReference(kbAiQueryTerms_(clean), { publishedOnly: true });
     if (search && search.error) return noneOut('search-failed', false);
     const chunks = (((search && search.results) || [])
       .filter(function (r) { return r.type === 'article' && r.chunkMd; })
@@ -14591,7 +14775,7 @@ function kbConvertDriveDoc(payload) {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
     payload = payload || {};
-    let fileId = '', title = '', department = '';
+    let fileId = '', title = '', department = '', status = '';
     const itemId = String(payload.itemId || '').trim();
     if (itemId) {
       const sheet = getOrCreateKbSheet_();
@@ -14613,6 +14797,11 @@ function kbConvertDriveDoc(payload) {
       fileId = String(row[KB.DRIVE_FILE_ID] || '');
       title = String(row[KB.TITLE] || '');
       department = String(row[KB.DEPARTMENT] || '');
+      // F(M-13): carry the item's status so the editor's "Save as draft"
+      // checkbox seeds correctly — converting a DRAFT embed then saving used
+      // to silently flip it published (the editor always sends an explicit
+      // status, which wins over the stored row).
+      status = kbRowStatus_(row[KB.STATUS]);
     } else {
       const parsed = kbParseDriveUrl_(payload.driveUrl);
       if (!parsed) return { error: 'Could not read that Drive link — paste a Google Doc share URL.' };
@@ -14636,6 +14825,7 @@ function kbConvertDriveDoc(payload) {
       docTitle: String(doc.getName() || ''),
       title: title,
       department: department,
+      status: status,   // F(M-13): '' on the driveUrl (no-row) path
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -14762,9 +14952,16 @@ function trainKbTitles_() {
   const last = sheet.getLastRow();
   const map = {};
   if (last < 2) return map;
-  const rows = sheet.getRange(2, 1, last - 1, 4).getValues();  // Id, Department, Title, Type
+  // F(L-9): read the full row width so `status` rides along — training must
+  // not treat a DRAFT KB item like a published one (draft titles leaked to
+  // reps via the checklist, and the item was unopenable for them anyway).
+  const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
   rows.forEach(function (r) {
-    if (r[0]) map[String(r[0])] = { title: String(r[2] || '(untitled)'), kbType: String(r[3] || 'article') };
+    if (r[0]) map[String(r[0])] = {
+      title: String(r[2] || '(untitled)'),
+      kbType: String(r[3] || 'article'),
+      status: kbRowStatus_(r[KB.STATUS]),
+    };
   });
   return map;
 }
@@ -14790,6 +14987,10 @@ function getMyTraining() {
       if (a.itemType === 'kb') {
         const kb = titles[a.itemId];
         if (!kb) return;                          // KB item deleted — unactionable, drop
+        // F(L-9): a DRAFT is invisible to reps across every read path
+        // (INV-140) — getReferenceItem would 404 the reader anyway, so an
+        // assigned-then-drafted item drops off the checklist until published.
+        if (kb.status === KB_STATUS_DRAFT) return;
         title = kb.title; kbType = kb.kbType;
       } else if (a.itemType === 'quiz') {
         const q = quizzes[a.itemId];
@@ -14957,6 +15158,11 @@ function saveTrainingAssignment(payload) {
     } else {
       const kb = trainKbTitles_()[itemId];
       if (!kb) return { success: false, error: 'That Reference item no longer exists.' };
+      // F(L-9): a draft is rep-invisible (INV-140) — assigning it would leak
+      // its title into every target's checklist and the reader would 404.
+      if (kb.status === KB_STATUS_DRAFT) {
+        return { success: false, error: 'That Reference item is a draft — publish it before assigning it as training.' };
+      }
       itemTitle = kb.title;
     }
     const dueDate = String(payload.dueDate || '').trim();
@@ -16321,7 +16527,10 @@ function getCoachingDashboard() {
       const c = coachRowToObj_(rows[i], ssTz);
       if (!c.coachId || c.status === 'void') continue;
       if (!coachCanManagerSee_(callerEmp, c)) continue;
-      const createdMs = parseTimestampMs_(c.createdAt, ssTz);
+      // F(H-1): CreatedAt is stamped in SPACE form ('yyyy-MM-dd HH:mm:ss');
+      // parseTimestampMs_ expects the 'T' form and returned null for every row,
+      // so overdueUnacked was permanently false. coachParseTs_ accepts both.
+      const createdMs = coachParseTs_(c.createdAt);
       c.overdueUnacked = (c.status === 'open' && c.severity !== 'praise' && createdMs && createdMs <= (nowMs - reminderDays * 86400000));
       if (c.status === 'open') counts.open++;
       if (c.status === 'acknowledged') counts.acknowledged++;
@@ -16352,6 +16561,7 @@ function voidCoaching(coachId, reason) {
       'coachId=' + found.item.coachId + (reason ? '; reason=' + String(reason).slice(0, 200) : ''), callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
 }
 
 /** All open, non-praise coaching items older than the reminder window, as
@@ -16368,7 +16578,9 @@ function coachUnackedAll_(nowMs) {
     for (let i = 0; i < rows.length; i++) {
       const c = coachRowToObj_(rows[i], ssTz);
       if (!c.coachId) continue;
-      c.createdAtMs = parseTimestampMs_(c.createdAt, ssTz);
+      // F(H-1): coachParseTs_ (both stamp forms), NOT parseTimestampMs_ ('T'-only
+      // — it nulled every space-form stamp and the digest nudge never fired).
+      c.createdAtMs = coachParseTs_(c.createdAt);
       items.push(c);
     }
     return coachUnackedOverdue_(items, nowMs, CONFIG.COACHING_UNACK_REMINDER_DAYS || 7)

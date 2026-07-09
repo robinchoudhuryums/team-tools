@@ -930,13 +930,18 @@ function kbOpenItem_(id, anchor) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
+      // F(L-18): two rapid item clicks can resolve out of order (the seq-guard
+      // class this file already fixes for search/suggest) — a stale first
+      // response painted item A while the tree highlighted item B, and the
+      // feedback bar / bookmark star carried A's id.
+      if (KB_STATE.currentId !== id) return;
       if (!res || res.error) { main.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed') + '</div>'; return; }
       kbPanelRecordOpen_(res, 'reference');
       kbRenderItem_(res);
       kbLoadRelated_(id);   // #7 — "See also" from co-views
       if (anchor) kbScrollToAnchor_(document.getElementById('kb-main'), anchor);
     })
-    .withFailureHandler(function (err) { if (currentView === requested) main.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; })
+    .withFailureHandler(function (err) { if (currentView === requested && KB_STATE.currentId === id) main.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; })
     .getReferenceItem(id);
 }
 
@@ -1148,6 +1153,11 @@ function kbConvertItem_(id) {
           type: 'article',
           body: res.markdown || '',
           driveUrl: '',
+          // F(M-13): seed the item's REAL status — omitting it rendered the
+          // "Save as draft" checkbox unchecked, and the editor always sends an
+          // explicit status (which wins server-side), so converting a DRAFT
+          // embed then saving silently published it to every rep.
+          status: res.status || 'published',
         };
         kbRenderEditor_();
         kbShowConvertWarnings_(res.warnings);
@@ -1782,9 +1792,13 @@ function kbDrawerOpenItem_(id, anchor) {
   var body = document.getElementById('kbd-body'); if (!body) return;
   body.innerHTML = loSweep();
   KB_DRAWER.view = 'item';
+  KB_DRAWER.itemId = id;   // F(L-18): latest-open wins
   google.script.run
     .withSuccessHandler(function (res) {
       if (!KB_DRAWER.open || KB_DRAWER.view !== 'item') return;
+      // F(L-18): drop a stale out-of-order response — it painted item A while
+      // the drawer (and its feedback/bookmark controls) belonged to item B.
+      if (KB_DRAWER.itemId !== id) return;
       if (!res || res.error) { body.innerHTML = '<div class="kbd-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
       kbPanelRecordOpen_(res);
       var back = '<div class="kbd-reader-bar"><button class="kbd-back" onclick="kbDrawerBack_()">' + icon('chevronLeft', 12) + ' Back</button>' + kbBookmarkBtnHtml_(res, 'kbd-bm') + '</div>';   // #5

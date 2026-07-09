@@ -382,8 +382,10 @@ function renderShell(state) {
 
   // Pop-out button — only shown in normal (full) mode. Compact mode is the
   // pop-out target, so hiding the button there keeps the chrome quiet.
+  // F(L-7): this button carried TWO title attributes — HTML keeps the first,
+  // so the PowerToys pin tip (documented in CLAUDE.md + the tour) never showed.
   const popOutBtn = COMPACT_MODE ? '' : `
-    <button type="button" class="sb-popout-btn" title="Pop out to small window"
+    <button type="button" class="sb-popout-btn"
             aria-label="Pop out to small window"
             title="Pop out a compact panel — tip: PowerToys 'Always On Top' (Win+Ctrl+T) keeps it above other windows"
             onclick="popOutCurrentView()">
@@ -636,6 +638,11 @@ function showView(view) {
   // KB drawer (shell capability): close on any navigation + toggle its
   // right-edge tab for the mid-task tools (Call Notes / Intake).
   if (typeof kbDrawerOnNavigate_ === 'function') kbDrawerOnNavigate_(view);
+  // Intake draft flush (M-2): a pending debounced draft save is flushed NOW,
+  // while the outgoing view's DOM still exists — otherwise the 400ms timer
+  // fires against a torn-down form and the keystroke (or, pre-fix, the whole
+  // draft) is lost. No-op when nothing is pending.
+  if (typeof intakeFlushDraftNow_ === 'function') intakeFlushDraftNow_();
   currentView = view;
   // Refresh-restore: remember the active tab so a reload lands back here.
   try { localStorage.setItem('umsLastView', view); } catch (e) {}

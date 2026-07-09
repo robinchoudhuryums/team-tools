@@ -2350,13 +2350,18 @@ function cnRenderNotesView(area) {
   // When per-call CDR data lands: prefill the form from hint.calls[0]
   // or auto-filter the rolling stack to unmatched-only.
   cnConsumeNavHint_();
-  // Cross-tool nav hint (e.g. a Spanish-inbox tool-suggestion chip): surface a
-  // context banner + prefill the Issue field with the request subject.
-  cnConsumeAppNavHint_();
   // Restore any in-progress draft from a prior session (sticky form). If a
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
   const restored = cnRestoreActiveFormDraft_();
+  // Cross-tool nav hint (e.g. a Spanish-inbox tool-suggestion chip): surface a
+  // context banner + prefill the Issue field with the request subject.
+  // F(L-22): runs AFTER the draft restore — the hint only writes into an EMPTY
+  // Issue field, and the restore used to run last and clobber the prefill with
+  // the draft's (often empty) issue value before the rep ever saw it. Restore-
+  // first means a real draft's Issue wins; an empty one lets the hint land
+  // (and the input event it dispatches persists it into the draft).
+  cnConsumeAppNavHint_();
   setTimeout(function () {
     const el = document.getElementById(restored ? 'cn-fld-resolution' : 'cn-fld-callback');
     if (el) el.focus();
@@ -3331,6 +3336,9 @@ function cnSubmitActiveForm_(opts) {
   const payload = cnReadActiveForm_();
   if (!payload.callback && !payload.caller && !payload.patientAndTrx && !payload.issue && !payload.resolution) {
     showToast('Note is empty — fill at least one field', 'toast-warn');
+    // F(L-20): Save & Compose mounts its "Saving the note…" envelope BEFORE
+    // this validation — tear it down or it sits on screen forever.
+    cnCloseComposerLoadingIfPending_();
     return;
   }
 
@@ -3668,9 +3676,18 @@ function cnInstallCardDelegation_(area) {
 /** Round 2 · 8g — agent posts a 👍 acknowledgment to a manager's training
  *  feedback. Fires appendCallNoteFeedback(noteId, '', 'ack'). On success,
  *  replaces the note in CN_STATE and re-renders the active view. */
+// F(L-25): per-note in-flight guard for the Q&A ack/clarify buttons — the
+// INV-56 discipline the other card toggles already have. feedback[] is
+// append-only server-side, so a double-click permanently wrote duplicate
+// "Got it"/clarification entries into the thread the manager reads.
+var CN_QA_INFLIGHT = {};
+
 function cnAckTrainingFlag_(noteId) {
+  if (CN_QA_INFLIGHT[noteId]) return;
+  CN_QA_INFLIGHT[noteId] = true;
   google.script.run
     .withSuccessHandler(function (res) {
+      delete CN_QA_INFLIGHT[noteId];
       if (!res || !res.success) {
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not save acknowledgment', 'toast-error');
         return;
@@ -3680,6 +3697,7 @@ function cnAckTrainingFlag_(noteId) {
       if (typeof showToast === 'function') showToast('Acknowledged', 'toast-success');
     })
     .withFailureHandler(function (err) {
+      delete CN_QA_INFLIGHT[noteId];
       if (typeof showToast === 'function') showToast((err && err.message) || 'Server error', 'toast-error');
     })
     .appendCallNoteFeedback(noteId, '', 'ack');
@@ -3693,8 +3711,11 @@ function cnSubmitClarification_(noteId, message) {
     if (typeof showToast === 'function') showToast('Type a question first', 'toast-warn');
     return;
   }
+  if (CN_QA_INFLIGHT[noteId]) return;   // F(L-25)
+  CN_QA_INFLIGHT[noteId] = true;
   google.script.run
     .withSuccessHandler(function (res) {
+      delete CN_QA_INFLIGHT[noteId];
       if (!res || !res.success) {
         if (typeof showToast === 'function') showToast((res && res.error) || 'Could not send', 'toast-error');
         return;
@@ -3704,6 +3725,7 @@ function cnSubmitClarification_(noteId, message) {
       if (typeof showToast === 'function') showToast('Sent', 'toast-success');
     })
     .withFailureHandler(function (err) {
+      delete CN_QA_INFLIGHT[noteId];
       if (typeof showToast === 'function') showToast((err && err.message) || 'Server error', 'toast-error');
     })
     .appendCallNoteFeedback(noteId, trimmed, 'clarification');
@@ -4801,6 +4823,14 @@ function cnLoadComposerDefaults_(note) {
 }
 
 function cnCloseComposerModal_() {
+  // F(M-9): refuse to close while the send RPC is in flight — closeOverlay
+  // delegates entirely to this hook, so returning here keeps the overlay open.
+  // Without this, Esc/backdrop-click mid-send ran the composeFlow rollback and
+  // deleted the note the in-flight email references.
+  if (CN_STATE.composer && CN_STATE.composer.sending) {
+    showToast('Sending — one moment…', 'toast-info');
+    return;
+  }
   CN_STATE.composer = null;
   const overlay = document.getElementById('cn-compose-overlay');
   if (overlay) overlay.remove();
@@ -5428,6 +5458,14 @@ function cnComposerBackToForm_() {
 
 function cnComposerSend_() {
   const c = CN_STATE.composer; if (!c) return;
+  if (c.sending) return;   // F(M-9): double-fire guard while the RPC is in flight
+  // F(M-9): mark the composer in-flight — cnCloseComposerModal_ REFUSES to
+  // close while sending. Previously only the button was disabled: an Esc /
+  // backdrop-click during the ~1s send fired the composeFlow rollback, which
+  // DELETED the just-saved note while the server was completing the send —
+  // the email went out referencing a note that no longer existed, and the
+  // EmailedAt stamp-back silently missed.
+  c.sending = true;
   const btn = document.getElementById('cnC-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   // Pass the previewed bodyHash so the server can refuse to send if the note
@@ -5436,6 +5474,7 @@ function cnComposerSend_() {
   const expectedHash = c.preview && c.preview.bodyHash;
   google.script.run
     .withSuccessHandler(function (res) {
+      c.sending = false;   // F(M-9): settled — closing is allowed again
       if (!res.success) {
         if (btn) { btn.disabled = false; btn.innerHTML = icon('mail', 14) + ' Send Email'; }
         showToast(res.error || 'Send failed', 'toast-error'); return;
@@ -5482,6 +5521,7 @@ function cnComposerSend_() {
       } catch (_) {}
     })
     .withFailureHandler(function (err) {
+      c.sending = false;   // F(M-9): settled — closing is allowed again
       if (btn) { btn.disabled = false; btn.innerHTML = icon('mail', 14) + ' Send Email'; }
       showToast('Send failed: ' + err.message, 'toast-error');
     })
@@ -5805,7 +5845,7 @@ function cnRenderSearchView(area) {
   // this TRX" on a card. Clearing returns to substring search with the same
   // query so they can widen the net without re-typing.
   const exactBadge = CN_STATE.searchExact
-    ? `<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--success-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">
+    ? `<div id="cn-exact-badge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--accent-soft);color:var(--success-deep);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">
          ${icon('search', 12)} Exact: ${esc(CN_STATE.searchExactTrx || '')}
          <button onclick="cnClearExactMode_()" style="appearance:none;border:none;background:transparent;color:inherit;cursor:pointer;padding:0;text-transform:uppercase;font-family:inherit;font-size:inherit;letter-spacing:.06em;text-decoration:underline">clear</button>
        </div>`
@@ -5850,6 +5890,11 @@ function cnSearchQueryChanged_(q) {
   if (CN_STATE.searchExact) {
     CN_STATE.searchExact = false;
     CN_STATE.searchExactTrx = '';
+    // F(L-23): hide the badge in place (a full bar re-render would steal the
+    // input focus mid-typing) — it otherwise kept claiming exact mode while
+    // the results below were substring matches.
+    const badge = document.getElementById('cn-exact-badge');
+    if (badge) badge.style.display = 'none';
   }
   CN_STATE.searchQuery = q;
   if (CN_STATE.searchTimer) clearTimeout(CN_STATE.searchTimer);
@@ -5920,7 +5965,10 @@ function cnFireSearch_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
-      if (CN_STATE.searchQuery !== requestedQuery) return;
+      // F(M-5): compare trimmed-to-trimmed — requestedQuery is the TRIMMED q
+      // but the state holds the raw input, so a query with surrounding
+      // whitespace (a pasted TRX/phone) fetched results and discarded them.
+      if (String(CN_STATE.searchQuery || '').trim() !== requestedQuery) return;
       if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.searchResults = []; }
       else CN_STATE.searchResults = res.results || [];
       cnRenderSearchResults_();
@@ -6040,18 +6088,24 @@ function cnMgrLoadQueue_(kind) {
   });
   const host = document.getElementById('cn-mgr-results');
   if (host) host.innerHTML = loSkeleton(4);
+  // F(M-8): all five Team Notes sub-tabs share the view key + #cn-mgr-results,
+  // so the requestedView guard alone can't stop a late queue response from
+  // overwriting a sub-tab the manager just switched to (tab bar highlighted
+  // Stats, body showed the training queue). Every sub-tab entry bumps
+  // mgrSubSeq; a response landing after a switch is dropped.
   const requestedView = currentView;
+  const requestedSub = CN_STATE.mgrSubSeq = (CN_STATE.mgrSubSeq || 0) + 1;
   const fn = kind === 'training' ? 'managerGetTrainingQueue' : 'managerGetReviewCandidates';
   google.script.run
     .withSuccessHandler(function (res) {
-      if (currentView !== requestedView) return;
+      if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
       const liveHost = document.getElementById('cn-mgr-results');
       if (!liveHost) return;
       if (res.error) { liveHost.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
       cnMgrRenderQueue_(liveHost, res.results || []);
     })
     .withFailureHandler(function (err) {
-      if (currentView !== requestedView) return;
+      if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
       const liveHost = document.getElementById('cn-mgr-results');
       if (liveHost) liveHost.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
     })[fn]();
@@ -6072,19 +6126,23 @@ function cnMgrLoadRepView_() {
   if (!CN_STATE.mgrEnrolledReps) {
     host.innerHTML = loSkeleton(4);
     const requestedView = currentView;   // F1 — drop late callbacks after nav-away
+    // F(M-8): + sub-tab seq — a late rep-list response must not clobber a
+    // sub-tab the manager switched to while it was in flight.
+    const requestedSub = CN_STATE.mgrSubSeq = (CN_STATE.mgrSubSeq || 0) + 1;
     google.script.run
       .withSuccessHandler(function (res) {
-        if (currentView !== requestedView) return;
+        if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
         if (res.error) { host.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
         CN_STATE.mgrEnrolledReps = res.reps || [];
         cnMgrRenderRepViewControls_(host);
       })
       .withFailureHandler(function (err) {
-        if (currentView !== requestedView) return;
+        if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
         host.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
       })
       .getEnrolledCallNotesReps();
   } else {
+    CN_STATE.mgrSubSeq = (CN_STATE.mgrSubSeq || 0) + 1;   // F(M-8): invalidate in-flight fetches
     cnMgrRenderRepViewControls_(host);
   }
 }
@@ -6416,6 +6474,7 @@ function cnMgrLoadStatsView_() {
   });
   const host = document.getElementById('cn-mgr-results');
   if (!host) return;
+  CN_STATE.mgrSubSeq = (CN_STATE.mgrSubSeq || 0) + 1;   // F(M-8): invalidate in-flight fetches
   // Default to today in the manager's tz
   if (!CN_STATE.mgrStatsDate) {
     CN_STATE.mgrStatsDate = new Intl.DateTimeFormat('en-CA', { timeZone: empTz() }).format(new Date());
@@ -6549,6 +6608,7 @@ function cnMgrLoadSearchView_() {
   });
   const host = document.getElementById('cn-mgr-results');
   if (!host) return;
+  CN_STATE.mgrSubSeq = (CN_STATE.mgrSubSeq || 0) + 1;   // F(M-8): invalidate in-flight fetches
   host.innerHTML = `
     <div class="cn-search-bar">
       <input type="text" id="cn-mgr-search-q" placeholder="Search across all reps — caller, phone, TRX, or issue keyword…"
@@ -6602,7 +6662,8 @@ function cnMgrFireSearch_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
-      if (CN_STATE.mgrSearchQuery !== requestedQuery) return;
+      // F(M-5): trimmed-to-trimmed — same whitespace-guard fix as cnFireSearch_.
+      if (String(CN_STATE.mgrSearchQuery || '').trim() !== requestedQuery) return;
       if (res.error) { showToast(res.error, 'toast-error'); CN_STATE.mgrSearchResults = []; }
       else CN_STATE.mgrSearchResults = res.results || [];
       cnMgrRenderSearchResults_();
@@ -7429,10 +7490,16 @@ function cnAdminTab_(key) {
   document.querySelectorAll('.cn-admin-pane').forEach(function (p) {
     p.style.display = (p.getAttribute('data-pane') === key) ? '' : 'none';
   });
-  // Tier 2 — lazy-load the Sheets viewer the first time it's opened (avoids an
-  // AuditLog scan on every Admin landing; the _sheetsLoaded guard makes re-open
-  // a no-op — the Reload button re-fetches on demand).
-  if (key === 'sheets' && !CN_STATE._sheetsLoaded) { CN_STATE._sheetsLoaded = true; cnLoadSheetView_('auditLog'); }
+  // Tier 2 — lazy-load the Sheets viewer when its pane is EMPTY (avoids an
+  // AuditLog scan on every Admin landing; re-clicks on a populated pane stay
+  // free). F(M-7): the old session-scoped _sheetsLoaded flag outlived the
+  // per-enter recreated DOM — re-entering Admin rebuilt an empty pane that
+  // never reloaded (permanently blank until a page refresh), and the flag was
+  // set before the RPC resolved so a failed first load was unrecoverable too.
+  if (key === 'sheets') {
+    var sheetsPane = document.getElementById('cn-admin-sheets');
+    if (sheetsPane && !sheetsPane.firstElementChild) cnLoadSheetView_('auditLog');
+  }
 }
 
 /** 2nd-pass Admin consolidation — toggle the folded System-details disclosure
@@ -7987,7 +8054,8 @@ function cnLoadSheetView_(viewKey) {
       var live = document.getElementById('cn-admin-sheets');
       if (!live) return;
       if (!res || res.error) {
-        live.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sheet view unavailable: ' + esc((res && res.error) || 'load failed') + '</div>';
+        live.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sheet view unavailable: ' + esc((res && res.error) || 'load failed') +
+          ' <button class="refresh-btn" onclick="cnLoadSheetView_(\'' + esc(viewKey) + '\')">Retry</button></div>';
         return;
       }
       live.innerHTML = cnRenderSheetView_(res);
@@ -7995,7 +8063,8 @@ function cnLoadSheetView_(viewKey) {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var live = document.getElementById('cn-admin-sheets');
-      if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sheet view unavailable: ' + esc((err && err.message) || 'load failed') + '</div>';
+      if (live) live.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sheet view unavailable: ' + esc((err && err.message) || 'load failed') +
+        ' <button class="refresh-btn" onclick="cnLoadSheetView_(\'' + esc(viewKey) + '\')">Retry</button></div>';
     })
     .getAdminSheetView(viewKey);
 }
@@ -8106,6 +8175,11 @@ function cnRenderStoragePanel_(res) {
     if (s.tzMatch === true) tzPill = pill(esc(s.tz || 'tz ✓'), 'ok');
     else if (s.tzMatch === false) tzPill = pill('tz ' + esc(s.tz || '?') + ' ≠ CONFIG', 'crit');
     else tzPill = pill('—', 'muted');
+    // Cycle 7 (M-14 class) — locale drift pill: a locale that differs from the
+    // ADP sheet's changes WHICH string shapes Sheets coerces to Dates on read
+    // (the formTokenCellMs_ bug class). Warn-level.
+    var localePill = (s.localeMatch === false)
+      ? ' ' + pill('locale ' + esc(s.locale || '?') + ' ≠ ADP', 'warn') : '';
     var openLink = s.url ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" style="font-size:11px">Open ↗</a>' : '';
     var perRep = '';
     if (s.perRep && s.perRep.problems && s.perRep.problems.length) {
@@ -8133,7 +8207,7 @@ function cnRenderStoragePanel_(res) {
         noteHtml + perRep + fixHtml +
       '</div>' +
       '<div class="cn-storage-meta">' +
-        '<div>' + statusPill + ' ' + tzPill + '</div>' +
+        '<div>' + statusPill + ' ' + tzPill + localePill + '</div>' +
         '<div style="font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-top:3px">' + esc(s.prop) + ' · ' + esc(s.source) + ' · ' + esc(s.retention) + '</div>' +
         (openLink ? '<div style="margin-top:3px">' + openLink + '</div>' : '') +
       '</div>' +
@@ -8950,7 +9024,10 @@ function cnOpenExternalEmailModal_(presetNoteId, onMounted) {
       .withSuccessHandler(function (res) {
         if (res.error) {
           showToast(res.error, 'toast-error');
-          CN_STATE.formCatalog = [];
+          // F(L-26): leave formCatalog null on error — [] is truthy, so a
+          // transient failure was cached as "no forms configured" for the
+          // whole session. null → the next open refetches.
+          CN_STATE.formCatalog = null;
         } else {
           CN_STATE.formCatalog = res.forms || [];
         }
@@ -8959,7 +9036,7 @@ function cnOpenExternalEmailModal_(presetNoteId, onMounted) {
       })
       .withFailureHandler(function (err) {
         showToast('Failed to load form catalog: ' + err.message, 'toast-error');
-        CN_STATE.formCatalog = [];
+        CN_STATE.formCatalog = null;   // F(L-26): don't cache the failure
         cnRenderExternalEmailModal_();
         done();
       })
@@ -9346,6 +9423,14 @@ function cnWireExternalEmailModal_() {
   var msgInput = document.getElementById('cnX-message');
   if (msgInput) {
     msgInput.addEventListener('input', function () { c.message = msgInput.value; });
+  }
+  // F(L-21): the "Link to note" select was the one field the M6 sync missed —
+  // the mode-toggle re-render rebuilt its options from c.noteId (set at open),
+  // silently reverting a changed linkage, and the send then stamped
+  // externalEmails[] onto the WRONG note (or none).
+  var noteRefSel = document.getElementById('cnX-note-ref');
+  if (noteRefSel) {
+    noteRefSel.addEventListener('change', function () { c.noteId = noteRefSel.value || null; });
   }
 
   // Send button
