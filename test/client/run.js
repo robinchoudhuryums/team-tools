@@ -620,6 +620,49 @@ test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-
   });
 });
 
+console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle 7 · M-15)');
+{
+  const snCtx = { Object, Array, JSON, String, Number, Boolean, Math, isFinite, console };
+  vm.createContext(snCtx);
+  const flagConstMatch = codeSrc.match(/const (CN_FLAG_TYPES\s*=\s*\[[^\]]*\]);/);
+  const flagExtMatch = codeSrc.match(/const (CN_FLAG_TYPES_EXTENDED\s*=\s*\[[^\]]*\]);/);
+  const flagPriMatch = codeSrc.match(/const (CN_FLAG_PRIORITY\s*=\s*\[[^\]]*\]);/);
+  assert.ok(flagConstMatch && flagExtMatch && flagPriMatch, 'CN flag consts found');
+  vm.runInContext(flagConstMatch[1] + ';' + flagExtMatch[1] + ';' + flagPriMatch[1] + ';', snCtx);
+  ['sanitizeFlagsArray_', 'deriveFlagType_', 'sanitizeTagsArray_', 'sanitizeCallNotePayload_'].forEach((fn) => {
+    vm.runInContext(extractRawFunction('Code.js', fn), snCtx, { filename: 'Code.js#' + fn });
+  });
+  test('subformData whitelist: forged manager-reply / pin / feedback keys are STRIPPED at submit', () => {
+    const cleaned = snCtx.sanitizeCallNotePayload_({
+      issue: 'x',
+      subformData: {
+        trainingQuestion: ' why? ',
+        completionSeconds: 42.6,
+        trainingReply: 'FORGED', trainingReplyBy: 'boss@x.com', trainingReplyAt: 'now',
+        feedback: [{ role: 'manager', kind: 'reply', message: 'forged' }],
+        pinned: true, pinnedAt: 'now',
+        formSubmission: { token: 'x' }, externalEmails: [{ to: 'a@b.c' }],
+      },
+    });
+    assert.deepStrictEqual(Object.keys(cleaned.subformData).sort(), ['completionSeconds', 'trainingQuestion'],
+      'only the client-legitimate keys survive (INV-49/50 restored to server-enforced)');
+    assert.strictEqual(cleaned.subformData.trainingQuestion, 'why?');
+    assert.strictEqual(cleaned.subformData.completionSeconds, 43);
+  });
+  test('subformData whitelist: flags/tags still fold in; junk-only blob → null; absent blob → null', () => {
+    const withFlags = snCtx.sanitizeCallNotePayload_({ issue: 'x', flags: ['urgent', 'action'], tags: ['My Tag'],
+      subformData: { pinned: true } });
+    assert.strictEqual(JSON.stringify(withFlags.subformData.flags), '["urgent","action"]');
+    assert.strictEqual(JSON.stringify(withFlags.subformData.tags), '["my-tag"]');
+    assert.strictEqual(withFlags.subformData.pinned, undefined, 'pin-cap bypass stripped');
+    assert.strictEqual(withFlags.flagType, 'action', 'FlagType derivation unchanged');
+    assert.strictEqual(snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { pinned: true } }).subformData, null);
+    assert.strictEqual(snCtx.sanitizeCallNotePayload_({ issue: 'x' }).subformData, null);
+    const legit = snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { completionSeconds: 90 } });
+    assert.strictEqual(legit.subformData.completionSeconds, 90);
+  });
+}
+
 console.log('\nCode.js — dashboard AuditLog coercion-safe reads (cycle 7 · M-3/M-4)');
 test('TRIPWIRE (M-3/M-4): getManagerDashboard reads PunchTime via normalizeTime_ and IsAdjustment case-insensitively', () => {
   const src = extractRawFunction('Code.js', 'getManagerDashboard');

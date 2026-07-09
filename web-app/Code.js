@@ -4969,10 +4969,28 @@ function sanitizeCallNotePayload_(p) {
   const derivedFromArr = flagsArr.length > 0 ? deriveFlagType_(flagsArr) : '';
   const flagType = derivedFromArr || s(p.flagType).toLowerCase();
   const tagsArr = sanitizeTagsArray_(p.tags);
+  // F(M-15): WHITELIST the client-supplied subformData keys. The blob was
+  // previously persisted verbatim, so a crafted submit could pre-load a forged
+  // manager trainingReply / feedback[] thread (rendered as a real answer in
+  // the weekly digest + Q&A and cleared from every "unanswered" queue), or
+  // pinned:true bypassing the 3-pin cap setCallNotePinned enforces inside its
+  // lock — INV-49/50 were client-honor-system. Only the keys the shipped
+  // client actually sends at submit survive; everything else (trainingReply*,
+  // feedback[], pinned, formSubmission, externalEmails, …) is written by its
+  // own gated server endpoint after submit.
+  const rawSub = (p.subformData && typeof p.subformData === 'object') ? p.subformData : null;
+  let subformData = null;
+  if (rawSub) {
+    subformData = {};
+    const tq = s(rawSub.trainingQuestion);
+    if (tq) subformData.trainingQuestion = tq.slice(0, 2000);
+    const cs = Number(rawSub.completionSeconds);
+    if (isFinite(cs) && cs > 0) subformData.completionSeconds = Math.round(cs);
+    if (Object.keys(subformData).length === 0) subformData = null;
+  }
   // Merge tags/flags into subformData so the schema stays in one column
   // (per X5 — no new sheet column). Pin stays in subformData.pinned with
   // its 3-cap, separate from this array.
-  let subformData = p.subformData || null;
   if (flagsArr.length > 0 || tagsArr.length > 0) {
     subformData = subformData || {};
     if (flagsArr.length > 0) subformData.flags = flagsArr;
@@ -8270,7 +8288,12 @@ function trainOverdueForRoster_(todayIso) {
   const titles = trainKbTitles_();
   const quizzes = trainReadQuizzes_();
   function itemTitle_(a) {
-    if (a.itemType === 'kb') return titles[a.itemId] ? titles[a.itemId].title : null;
+    // F(L-9): a draft KB item is hidden from the rep checklist, so it must
+    // not nag as "overdue" either — null drops it, same as deleted.
+    if (a.itemType === 'kb') {
+      const kb = titles[a.itemId];
+      return (kb && kb.status !== KB_STATUS_DRAFT) ? kb.title : null;
+    }
     if (a.itemType === 'quiz') return quizzes[a.itemId] ? quizzes[a.itemId].title : null;
     return null;
   }
@@ -9111,13 +9134,19 @@ function getManagerEmails_() {
  *  roster-vs-property mismatch). Admins are always a SUBSET of managers.
  *  Designating admins is operator state (no roster column). */
 function empIsAdmin_(email, isManager) {
+  // F(M-10): admins are a SUBSET of managers (INV-136) — ENFORCED, not just
+  // documented. Previously ADMIN_EMAILS membership alone granted admin, so a
+  // non-manager email in the property became an undocumented privilege tier
+  // (all 30 admin endpoints accepted them while manager surfaces rejected
+  // them). Non-managers can never be admins regardless of the property.
+  if (!isManager) return false;
   const prop = PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS');
   const arr = prop ? prop.split(',').map(s => s.trim()).filter(s => s.length > 0) : null;
   if (arr && arr.length) {
     const e = String(email || '').toLowerCase().trim();
     return arr.map(x => String(x).toLowerCase()).indexOf(e) >= 0;
   }
-  return !!isManager;   // ADMIN_EMAILS unset → every manager is an admin
+  return true;   // ADMIN_EMAILS unset → every manager is an admin
 }
 
 /** Throws if the active user is not in MANAGER_EMAILS. Used by trigger-handler
@@ -12916,10 +12945,16 @@ function kbSearchScore_(tokens, q, titleLc, headLc, bodyLc) {
   return score;
 }
 
-function searchReference(query) {
+function searchReference(query, opts) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
+    // F(M-12): publishedOnly forces the draft skip REGARDLESS of caller role.
+    // Public-callable and narrowing-only, so it can't widen anyone's access.
+    // Used by kbGetFacetGuidance — its result caches ORG-WIDE (no viewer role
+    // in the key), so admin-triggered retrieval must never include drafts or
+    // reps get guidance text + source titles derived from unpublished content.
+    const publishedOnly = !!(opts && opts.publishedOnly);
     const q = String(query || '').trim().toLowerCase();
     if (q.length < 2) return { results: [] };
     const tokens = [];
@@ -12936,8 +12971,9 @@ function searchReference(query) {
     };
     for (let i = 0; i < rows.length; i++) {
       if (!rows[i][KB.ID]) continue;
-      // #4 — drafts never surface in search to non-admins.
-      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT && !emp.isAdmin) continue;
+      // #4 — drafts never surface in search to non-admins (nor to ANY caller
+      // when publishedOnly is forced — the org-wide-cached AI retrieval path).
+      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT && (publishedOnly || !emp.isAdmin)) continue;
       const id = String(rows[i][KB.ID]);
       const title = String(rows[i][KB.TITLE] || '');
       const dept = String(rows[i][KB.DEPARTMENT] || '');
@@ -14372,7 +14408,9 @@ function kbGetFacetGuidance(facets) {
     // combos free, and the none is cached so they STAY free. A search ERROR
     // (KB sheet unreachable) is NOT cached — transient outages shouldn't
     // pin a 6h none.
-    const search = searchReference(kbAiQueryTerms_(clean));
+    // F(M-12): publishedOnly — guidance caches org-wide, so retrieval must
+    // exclude drafts even when the triggering caller is an admin.
+    const search = searchReference(kbAiQueryTerms_(clean), { publishedOnly: true });
     if (search && search.error) return noneOut('search-failed', false);
     const chunks = (((search && search.results) || [])
       .filter(function (r) { return r.type === 'article' && r.chunkMd; })
@@ -14606,7 +14644,7 @@ function kbConvertDriveDoc(payload) {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
     payload = payload || {};
-    let fileId = '', title = '', department = '';
+    let fileId = '', title = '', department = '', status = '';
     const itemId = String(payload.itemId || '').trim();
     if (itemId) {
       const sheet = getOrCreateKbSheet_();
@@ -14628,6 +14666,11 @@ function kbConvertDriveDoc(payload) {
       fileId = String(row[KB.DRIVE_FILE_ID] || '');
       title = String(row[KB.TITLE] || '');
       department = String(row[KB.DEPARTMENT] || '');
+      // F(M-13): carry the item's status so the editor's "Save as draft"
+      // checkbox seeds correctly — converting a DRAFT embed then saving used
+      // to silently flip it published (the editor always sends an explicit
+      // status, which wins over the stored row).
+      status = kbRowStatus_(row[KB.STATUS]);
     } else {
       const parsed = kbParseDriveUrl_(payload.driveUrl);
       if (!parsed) return { error: 'Could not read that Drive link — paste a Google Doc share URL.' };
@@ -14651,6 +14694,7 @@ function kbConvertDriveDoc(payload) {
       docTitle: String(doc.getName() || ''),
       title: title,
       department: department,
+      status: status,   // F(M-13): '' on the driveUrl (no-row) path
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -14777,9 +14821,16 @@ function trainKbTitles_() {
   const last = sheet.getLastRow();
   const map = {};
   if (last < 2) return map;
-  const rows = sheet.getRange(2, 1, last - 1, 4).getValues();  // Id, Department, Title, Type
+  // F(L-9): read the full row width so `status` rides along — training must
+  // not treat a DRAFT KB item like a published one (draft titles leaked to
+  // reps via the checklist, and the item was unopenable for them anyway).
+  const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
   rows.forEach(function (r) {
-    if (r[0]) map[String(r[0])] = { title: String(r[2] || '(untitled)'), kbType: String(r[3] || 'article') };
+    if (r[0]) map[String(r[0])] = {
+      title: String(r[2] || '(untitled)'),
+      kbType: String(r[3] || 'article'),
+      status: kbRowStatus_(r[KB.STATUS]),
+    };
   });
   return map;
 }
@@ -14805,6 +14856,10 @@ function getMyTraining() {
       if (a.itemType === 'kb') {
         const kb = titles[a.itemId];
         if (!kb) return;                          // KB item deleted — unactionable, drop
+        // F(L-9): a DRAFT is invisible to reps across every read path
+        // (INV-140) — getReferenceItem would 404 the reader anyway, so an
+        // assigned-then-drafted item drops off the checklist until published.
+        if (kb.status === KB_STATUS_DRAFT) return;
         title = kb.title; kbType = kb.kbType;
       } else if (a.itemType === 'quiz') {
         const q = quizzes[a.itemId];
@@ -14972,6 +15027,11 @@ function saveTrainingAssignment(payload) {
     } else {
       const kb = trainKbTitles_()[itemId];
       if (!kb) return { success: false, error: 'That Reference item no longer exists.' };
+      // F(L-9): a draft is rep-invisible (INV-140) — assigning it would leak
+      // its title into every target's checklist and the reader would 404.
+      if (kb.status === KB_STATUS_DRAFT) {
+        return { success: false, error: 'That Reference item is a draft — publish it before assigning it as training.' };
+      }
       itemTitle = kb.title;
     }
     const dueDate = String(payload.dueDate || '').trim();

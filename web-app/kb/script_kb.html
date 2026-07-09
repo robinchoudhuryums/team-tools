@@ -1148,6 +1148,11 @@ function kbConvertItem_(id) {
           type: 'article',
           body: res.markdown || '',
           driveUrl: '',
+          // F(M-13): seed the item's REAL status — omitting it rendered the
+          // "Save as draft" checkbox unchecked, and the editor always sends an
+          // explicit status (which wins server-side), so converting a DRAFT
+          // embed then saving silently published it to every rep.
+          status: res.status || 'published',
         };
         kbRenderEditor_();
         kbShowConvertWarnings_(res.warnings);
