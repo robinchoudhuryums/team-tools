@@ -595,7 +595,16 @@ this section before touching the relevant area.
   "Add <typed>" escape for off-list values; value = comma-joined selected strings
   in `data-val`, round-trips exactly like `multi`), `ynreveal` (Phase-4 — a Yes/No
   whose `revealOn` reveals a sub-multi-select; value `''`/`No`/`Yes`/`Yes: SubA, SubB`
-  — Q45 arthritis type). EVERY
+  — Q45 arthritis type), `ynnum` (operator feedback 2026-07-09 — a Yes/No whose
+  Yes reveals a number-only field + unit text; value `''`/`No`/`Yes`/`Yes: 12 hours`,
+  pure `intakeYnNumSerialize_`/`Parse_` Node-pinned — Q40 attendant hours, NOT
+  engine-read). The same feedback round made `choice` groups render as separated
+  pill buttons (the `multi` look — the joined segmented box wrapped awkwardly on
+  Q2–Q6's long labels; CSS-only), added DISPLAY-ONLY `tone` per multi option
+  (`warn`/`danger`/`no` selected-state colors on Q25/Q31a/Q34 — never part of the
+  stored value, so the engine contract is untouched; Node-pinned tone map), and
+  replaced the help glyph's native `title` with a tokened CSS tooltip
+  (`data-tip` + `.intk-help::after`, hover + keyboard focus). EVERY
   kind serializes to/from a STRING via `intakePpdGetVal_`/`SetVal_`, so drafts,
   `intakeCollectPpd_`, the engine, and the email builder are unchanged. **The
   engine-critical questions Q25 (numbness), Q31a (stroke), Q34 (amputation) are

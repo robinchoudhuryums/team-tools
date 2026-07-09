@@ -1490,6 +1490,44 @@ test('Phase 4 config: Q45 ynreveal + subtypes, Q37 height parse, Q32 help, Q33a 
   assert.strictEqual(_p4.REVEAL['33a'].whenVal, 'Yes');
 });
 
+// Operator feedback 2026-07-09 — Q40 two-part control + display-only option
+// tones. Q40 is NOT engine-read; the tone attribute never touches the stored
+// value (the Phase-2 drift guard separately pins the engine-critical values).
+console.log('\nintake — operator feedback: Q40 ynnum + multi option tones (pure + config)');
+const intakeYnNumSerialize_ = loadFunction(sb, 'intake/script_intake.html', 'intakeYnNumSerialize_');
+const intakeYnNumParse_ = loadFunction(sb, 'intake/script_intake.html', 'intakeYnNumParse_');
+
+test('Q40 ynnum serialize/parse: No / Yes / Yes+hours round-trip; digits-only', () => {
+  assert.strictEqual(intakeYnNumSerialize_('', '', 'hours'), '');
+  assert.strictEqual(intakeYnNumSerialize_('No', '', 'hours'), 'No');
+  assert.strictEqual(intakeYnNumSerialize_('No', '12', 'hours'), 'No', 'hours ignored on No');
+  assert.strictEqual(intakeYnNumSerialize_('Yes', '', 'hours'), 'Yes', 'Yes with no count');
+  assert.strictEqual(intakeYnNumSerialize_('Yes', '12', 'hours'), 'Yes: 12 hours');
+  assert.strictEqual(intakeYnNumSerialize_('Yes', ' 1a2 ', 'hours'), 'Yes: 12 hours', 'non-digits stripped defensively');
+  const p1 = intakeYnNumParse_('Yes: 12 hours'); assert.strictEqual(p1.yn + '|' + p1.num, 'Yes|12');
+  const p2 = intakeYnNumParse_('No');            assert.strictEqual(p2.yn + '|' + p2.num, 'No|');
+  const p3 = intakeYnNumParse_('Yes');           assert.strictEqual(p3.yn + '|' + p3.num, 'Yes|');
+  const p4 = intakeYnNumParse_('');              assert.strictEqual(p4.yn + '|' + p4.num, '|');
+  const p5 = intakeYnNumParse_('maybe 10 hrs');  assert.strictEqual(p5.yn + '|' + p5.num, '|', 'legacy free-text → unselected');
+  const rt = intakeYnNumParse_('Yes: 8 hours');
+  assert.strictEqual(intakeYnNumSerialize_(rt.yn, rt.num, 'hours'), 'Yes: 8 hours', 'round-trip');
+});
+
+test('config: Q40 is ynnum(hours); Q25/Q31a/Q34 tones are display-only (values byte-unchanged)', () => {
+  assert.strictEqual(_p4.CTRL['40'].kind, 'ynnum');
+  assert.strictEqual(_p4.CTRL['40'].unit, 'hours');
+  // Tones per the operator spec: No = dark ink chip on all three; Q31a
+  // Paralysis = danger (light red), Weakness = warn (light yellow); Q25/Q34
+  // non-No options = warn.
+  const tones = (q) => _p4.CTRL[q].options.map((o) => o.v + '=' + (o.tone || '')).join('|');
+  assert.strictEqual(tones('25'), 'No=no|Hands=warn|Feet=warn|Legs=warn');
+  assert.strictEqual(tones('34'), 'No=no|Left (Above Knee)=warn|Left (Below Knee)=warn|Right (Above Knee)=warn|Right (Below Knee)=warn');
+  assert.strictEqual(tones('31a'),
+    'No=no|Paralysis Left Arm=danger|Paralysis Right Arm=danger|Paralysis Left Leg=danger|Paralysis Right Leg=danger|Weakness Left Side=warn|Weakness Right Side=warn');
+  // The engine-critical VALUES themselves are additionally pinned by the
+  // Phase-2 drift guard, which feeds them through the live engine.
+});
+
 console.log('\nintake — client render layout mirrors the server (coupling tripwire)');
 const _lcx = vm.createContext({});
 vm.runInContext('var SRV_PMD = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', _lcx);
