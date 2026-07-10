@@ -1624,6 +1624,15 @@
     color: var(--muted); letter-spacing: .04em;
     margin-bottom: 10px;
   }
+  /* F(cycle-8 M-10): active-filter pill on the History stack (the quick-chip
+     "jump filtered" target) — mirrors the Search exact-mode badge vocabulary. */
+  .cn-hist-filterpill {
+    display: inline-block; margin-left: 8px; padding: 1px 8px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--success-deep);
+    background: var(--accent-soft); border-radius: 999px;
+  }
+  .cn-hist-filterpill a { color: inherit; text-decoration: underline; cursor: pointer; }
   /* Collapsible History date groups */
   .cn-hist-group { margin-bottom: 10px; }
   .cn-hist-grouphead {
@@ -2230,6 +2239,16 @@ function cnLoadDateRange_(startDate, endDate, then) {
   }
   rpc(
     function (res) {
+      // F(cycle-8 M-8): drop a response whose RANGE the rep has since moved
+      // off (the preset buttons make rapid changes realistic — a slow
+      // "Last 30" response used to land after a fast "Yesterday" one and
+      // overwrite the stack + SWR cache with 30 days of notes while the
+      // inputs read Yesterday). historyDate/EndDate are set at click time,
+      // BEFORE this load fires, so they are the current selection. Same
+      // class as the Team Notes mgrSubSeq guard (INV-146).
+      const curStart = CN_STATE.historyDate;
+      const curEnd = CN_STATE.historyEndDate || CN_STATE.historyDate;
+      if (curStart !== startDate || curEnd !== endDate) return;   // stale range — drop entirely
       if (res.error) {
         if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
         else if (currentView === requestedView) showToast(res.error, 'toast-error');
@@ -5717,12 +5736,23 @@ function cnRenderHistoryStack_() {
   const stack = document.getElementById('cn-history-stack');
   if (!stack) return;
   const summary = document.getElementById('cn-history-summary');
-  const notes = CN_STATE.historyNotes || [];
+  const allNotes = CN_STATE.historyNotes || [];
+  // F(cycle-8 M-10): History now honors CN_STATE.filter — the Log quick-chips
+  // ("Jump to history: Unresolved · 4") set it and navigated here, but nothing
+  // consumed it (the chips were a silent no-op; the rep hunted manually). The
+  // active filter renders as a clearable pill so it's never invisible state.
+  const flt = CN_STATE.filter || 'all';
+  const notes = (flt === 'all') ? allNotes
+    : allNotes.filter(function (n) { return cnNoteMatchesFilter_(n, flt); });
+  const fltPill = (flt === 'all') ? ''
+    : '<span class="cn-hist-filterpill">Filtered: ' + esc(flt) +
+      ' · <a href="#" onclick="CN_STATE.filter=\'all\';cnRenderHistoryStack_();return false;">clear</a></span>';
   const isRange = CN_STATE.historyEndDate && CN_STATE.historyEndDate !== CN_STATE.historyDate;
 
   if (notes.length === 0) {
-    if (summary) summary.innerHTML = '';
-    stack.innerHTML = '<div class="cn-stack-empty">No notes for ' + (isRange ? 'this range' : 'this date') + '.</div>';
+    if (summary) summary.innerHTML = fltPill;
+    stack.innerHTML = '<div class="cn-stack-empty">No ' + (flt === 'all' ? '' : esc(flt) + '-filtered ') +
+      'notes for ' + (isRange ? 'this range' : 'this date') + '.</div>';
     return;
   }
 
@@ -5730,7 +5760,8 @@ function cnRenderHistoryStack_() {
     var startLabel = cnFormatDateLabel_(CN_STATE.historyDate);
     var endLabel = cnFormatDateLabel_(CN_STATE.historyEndDate);
     if (summary) summary.innerHTML = '<div class="cn-history-summary">' +
-      esc(startLabel) + ' – ' + esc(endLabel) + ' · ' + notes.length + ' note' + (notes.length !== 1 ? 's' : '') + '</div>';
+      esc(startLabel) + ' – ' + esc(endLabel) + ' · ' + notes.length + ' note' + (notes.length !== 1 ? 's' : '') +
+      fltPill + '</div>';
 
     // Group by dateLocal, newest dates first — each group is collapsible with
     // a metadata header (note count + per-flag-type counts).
@@ -5757,7 +5788,7 @@ function cnRenderHistoryStack_() {
     });
     stack.innerHTML = html;
   } else {
-    if (summary) summary.innerHTML = '';
+    if (summary) summary.innerHTML = fltPill;
     stack.innerHTML = notes.map(cnRenderCard_).join('');
   }
 }
@@ -5965,6 +5996,12 @@ function cnSetSearchField_(f) {
     const area = document.getElementById('view-area');
     if (area && currentView === 'callNotesSearch') {
       cnRenderSearchView(area);
+      // F(cycle-8): RE-FIRE as a substring search under the new field scope
+      // (S28's contract). The early return used to repaint the CACHED exact
+      // hits under the freshly highlighted tab — stale results silently
+      // presented as the new field-scoped search. cnClearExactMode_ already
+      // did this correctly; mirror it.
+      cnFireSearch_();
       return;
     }
   }
@@ -6721,7 +6758,13 @@ function cnMgrRenderSearchResults_() {
 // ── Ambient (sidebar badge) polling ────────────────────────────────────
 
 function cnStartAmbientPolling_() {
-  if (CN_STATE.ambientTimer) clearInterval(CN_STATE.ambientTimer);
+  // F(cycle-8): IDEMPOTENT — showView now (re)starts the poller on EVERY CN
+  // tab entry (previously only the Log enter did, so a deep-link/refresh
+  // landing on History/Search/Team Notes left the sidebar badge + the ≤60s
+  // flagsVersion propagation dead until the rep visited Log once). A live
+  // timer is left alone so CN-internal tab hops don't fire an extra RPC per
+  // nav; the fresh-start path still polls immediately.
+  if (CN_STATE.ambientTimer) { cnEnsureLiveRefreshBound_(); return; }
   cnEnsureLiveRefreshBound_();
   cnPollAmbient_();
   CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
@@ -7922,9 +7965,14 @@ function cnRunAuditSearch_() {
     endDate:   (document.getElementById('cn-audit-end')    || {}).value || '',
   };
   var requestedView = currentView;
+  // F(cycle-8): sequence token — Search then a "Last 7" preset (which
+  // re-fires immediately) raced two RPCs into the same #cn-audit-results; a
+  // slower OLDER response could overwrite the newer filter's results with no
+  // indication. The INV-146 class, applied to the audit panel.
+  var seq = (CN_STATE.auditSearchSeq = (CN_STATE.auditSearchSeq || 0) + 1);
   google.script.run
     .withSuccessHandler(function (res) {
-      if (currentView !== requestedView) return;
+      if (currentView !== requestedView || seq !== CN_STATE.auditSearchSeq) return;
       var live = document.getElementById('cn-audit-results');
       if (!live) return;
       if (!res || res.error) { live.innerHTML = '<div class="cn-stack-empty">' + esc((res && res.error) || 'Search failed') + '</div>'; return; }
@@ -7932,7 +7980,7 @@ function cnRunAuditSearch_() {
       live.innerHTML = cnRenderAuditResults_(res);
     })
     .withFailureHandler(function (err) {
-      if (currentView !== requestedView) return;
+      if (currentView !== requestedView || seq !== CN_STATE.auditSearchSeq) return;
       var live = document.getElementById('cn-audit-results');
       if (live) live.innerHTML = '<div class="cn-stack-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
     })

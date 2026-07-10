@@ -1102,11 +1102,15 @@ function covRepsHtml_(day) {
   if (!day.reps || !day.reps.length) return '<div style="font-size:12px;color:var(--muted)">No reps scheduled.</div>';
   return '<div class="cov-reps">' + day.reps.map(function (r) {
     var statusCls = (r.status === 'off') ? 'off' : (r.status === 'tentative' ? 'tentative' : 'working');
+    // F(cycle-8): a cross-tz shift can START on the previous manager-tz day
+    // (IST local Jul-10 → mgr Jul-9 21:30–Jul-10 06:30); without the marker a
+    // bare "9:30 PM – 6:30 AM" read as THIS day's evening coverage.
+    var prevMark = r.startsPrevDay ? '<span style="color:var(--muted);font-size:10px;"> (from prev. day)</span>' : '';
     var lbl = (r.status === 'off')
       ? ('Off' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
       : (r.status === 'tentative'
           ? ('Tentative' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
-          : (esc(r.startMgr) + ' – ' + esc(r.endMgr)));
+          : (esc(r.startMgr) + ' – ' + esc(r.endMgr) + prevMark));
     return '<div class="cov-rep ' + statusCls + '">' +
       '<span class="cov-rep-name">' + esc(r.name) + '</span>' +
       '<span class="cov-rep-tz">' + esc(r.tz) + '</span>' +

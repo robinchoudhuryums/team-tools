@@ -844,6 +844,13 @@ function getManagerDashboard() {
         annualLeave: parseFloat(empRows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(empRows[i][EMP.SICK_LEAVE])   || 0,
       };
+      // F(cycle-8): per-row PTO gate for the pending-card balance projection —
+      // coercion-safe parse (Sheets turns 'FALSE' into a native boolean; the
+      // standard idiom from adjustLeaveBalance_ / getEmployeeInfo_, INV-27).
+      const ptoVal = empRows[i][EMP.PTO_ENABLED];
+      const ptoRaw = (ptoVal === null || ptoVal === undefined || ptoVal === '')
+        ? '' : String(ptoVal).trim().toLowerCase();
+      e.ptoEnabled = !(ptoRaw === 'false' || ptoRaw === 'no' || ptoRaw === 'n' || ptoRaw === '0');
       const lb = new Date(now); lb.setDate(lb.getDate() - CONFIG.MISSED_PUNCH_LOOKBACK_DAYS);
       e.lookbackStr = fmtDateTz_(lb, tz);
       employees.push(e);
@@ -968,7 +975,11 @@ function getManagerDashboard() {
       const dedu = getLeaveDeduction_(reqType);
       const reqEmp = empById[reqEmpId];
       let currentBal = null, projBal = null;
-      if (getFlag_('enablePtoTracking') && reqEmp && dedu.bucket) {
+      // F(cycle-8): ALSO gate on the per-row ptoEnabled (INV-27's conjunction) —
+      // a contractor's pending card used to show a "12 → 11 d" projection (and
+      // the Approve confirm could warn "balance goes negative") even though
+      // adjustLeaveBalance_ correctly no-ops for them on approval.
+      if (getFlag_('enablePtoTracking') && reqEmp && reqEmp.ptoEnabled && dedu.bucket) {
         currentBal = dedu.bucket === 'sick' ? reqEmp.sickLeave : reqEmp.annualLeave;
         projBal = +(currentBal - dedu.days).toFixed(2);
       }
@@ -1249,15 +1260,31 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
 
         sheet.getRange(i + 1, TO.STATUS + 1).setValue(newStatus);
 
-        // Apply leave-balance change if state transition crosses the Approved boundary
+        // Apply leave-balance change if state transition crosses the Approved boundary.
+        // F(cycle-8): if the balance write THROWS, revert the just-written Status
+        // cell before rethrowing — otherwise the row is already 'Approved', so a
+        // manager RETRY sees oldStatus==='Approved', the Pending→Approved
+        // transition never re-fires, and the deduction is silently skipped
+        // forever. (Reordering balance-first was rejected: a status-write
+        // failure after a successful deduction would make the retry
+        // DOUBLE-deduct — the INV-03/94 class. The compensating revert keeps
+        // retry self-healing in both directions; all inside the ScriptLock.)
         let newBalance = null;
         if (getFlag_('enablePtoTracking')) {
           const dedu = getLeaveDeduction_(type);
           if (dedu.bucket) {
-            if (oldStatus !== 'Approved' && newStatus === 'Approved') {
-              newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
-            } else if (oldStatus === 'Approved' && newStatus !== 'Approved') {
-              newBalance = adjustLeaveBalance_(empId, dedu.bucket, dedu.days);
+            try {
+              if (oldStatus !== 'Approved' && newStatus === 'Approved') {
+                newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
+              } else if (oldStatus === 'Approved' && newStatus !== 'Approved') {
+                newBalance = adjustLeaveBalance_(empId, dedu.bucket, dedu.days);
+              }
+            } catch (balErr) {
+              try { sheet.getRange(i + 1, TO.STATUS + 1).setValue(oldStatus); } catch (revertErr) {
+                Logger.log('updateTimeOffStatus: status revert after balance failure ALSO failed (' +
+                  revertErr.message + ') — row ' + (i + 1) + ' may need a manual status fix.');
+              }
+              throw balErr;
             }
           }
         }
@@ -2011,7 +2038,10 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion) {
     if (oldFlag !== t) sheet.getRange(located.rowIndex, CN.RESOLVED + 1).setValue('FALSE');
 
     if (t === 'training' && trainingQuestion) {
-      subformData.trainingQuestion = String(trainingQuestion).trim();
+      // F(cycle-8): same 2000-char cap as the submit path (sanitizeCallNotePayload_,
+      // M-15) — an uncapped write can push the SubformData cell toward the ~50k
+      // Sheets limit, after which EVERY later metadata write to the note throws.
+      subformData.trainingQuestion = String(trainingQuestion).trim().slice(0, 2000);
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
     }
     // Mirror the primary flag into subformData.flags so the form toolbar
@@ -2354,10 +2384,13 @@ function getMyNoteHourBuckets(date) {
     for (let i = 0; i < located.length; i++) {
       const row = located[i].row;
       if (normalizeDate_(row[CN.DATE_LOCAL]) !== d) continue;
-      const ts = row[CN.TIMESTAMP];
-      let hour = -1;
-      if (ts instanceof Date) hour = Number(Utilities.formatDate(ts, empTz, 'H'));
-      else { const m = String(ts || '').match(/[T ](\d{2}):/); if (m) hour = parseInt(m[1], 10); }
+      // F(cycle-8): route the coerced-Date recovery through cnTimestampString_
+      // (INV-142) — the old inline branch formatted in the REP's tz, but a
+      // coercing-locale sheet coerces in the SHEET's tz (pinned to the ADP
+      // tz, INV-110/141), so every CST rep's histogram landed ~11.5h off.
+      // The recovered string's hour digits ARE the as-written rep-local hour.
+      const m = cnTimestampString_(row[CN.TIMESTAMP]).match(/[T ](\d{2}):/);
+      const hour = m ? parseInt(m[1], 10) : -1;
       if (hour >= 0 && hour < 24) buckets[hour]++;
     }
     return { buckets: buckets, date: d };
@@ -3278,12 +3311,16 @@ function managerGetCallNotes(repEmpId, date, filter) {
     const flt = String(filter || 'all').toLowerCase();
 
     const sheet = getCallNotesSheet_(target);
-    const rows = sheet.getDataRange().getValues();
+    // F(cycle-8): the last unbounded per-rep read — every sibling single-day
+    // reader already routes through the bounded date-slice (L-8/S2, INV-46
+    // contiguity). The per-row date re-check below stays as the defensive
+    // guard, same as the rep-facing readers.
+    const located = readCallNoteRowsInRange_(sheet, dateStr, dateStr);
     const notes = [];
-    for (let i = 1; i < rows.length; i++) {
-      const rowDate = normalizeDate_(rows[i][CN.DATE_LOCAL]);
+    for (let i = 0; i < located.length; i++) {
+      const rowDate = normalizeDate_(located[i].row[CN.DATE_LOCAL]);
       if (rowDate !== dateStr) continue;
-      const note = callNoteRowToObject_({ row: rows[i], rowIndex: i + 1 });
+      const note = callNoteRowToObject_(located[i]);
       if (!callNoteMatchesFilter_(note, flt)) continue;
       notes.push(note);
     }
@@ -4151,6 +4188,16 @@ function automationDetectorChecks_() {
     const asDate = formTokenCellMs_(now);                // the locale-coerced Date shape
     if (!asDate.present || !asDate.ms) throw new Error('formTokenCellMs_ cannot read a coerced Date cell — segregated-store tokens would read expired');
   });
+  // F(cycle-8 M-11): config-coherence, not a parser round-trip — the flag's
+  // second operator step (installAutomationTriggers) is easy to miss. The
+  // fail-safe in managerBriefSuppressionActive_ keeps the separate digests
+  // sending meanwhile, so this surfaces the misconfiguration instead of an
+  // outage: the panel shows DEAD and the failure digest emails it.
+  add('briefConfig', 'managerDailyBrief flag has a live brief trigger behind it', function () {
+    if (getFlag_('managerDailyBrief') && !managerBriefSuppressionActive_()) {
+      throw new Error('managerDailyBrief is ON but sendManagerDailyBrief has no fresh heartbeat — run installAutomationTriggers(). The separate manager digests keep sending until then (fail-safe).');
+    }
+  });
   return checks;
 }
 
@@ -4967,7 +5014,8 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
     }
     if (!subformData || typeof subformData !== 'object') subformData = {};
 
-    const trimmed = String(reply || '').trim();
+    // F(cycle-8): cap like the submit path's trainingQuestion (cell-size guard).
+    const trimmed = String(reply || '').trim().slice(0, 2000);
     const empTz = target.timezone || CONFIG.TIMEZONE;
     const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
     if (trimmed) {
@@ -5021,7 +5069,7 @@ function setCallNoteManagerComment(repEmpId, noteId, message) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
-    const msg = String(message || '').trim();
+    const msg = String(message || '').trim().slice(0, 2000);   // F(cycle-8): cell-size guard
     if (!msg) return { success: false, error: 'Comment is empty.' };
     const target = lookupEmployeeById_(repEmpId);
     if (!target) return { success: false, error: 'Employee not found.' };
@@ -5065,7 +5113,7 @@ function appendCallNoteFeedback(noteId, message, kind) {
     if (!emp.callNotesSheetId) return { success: false, error: 'Your call-notes Sheet is not configured.' };
 
     const kindV = (kind === 'ack' || kind === 'clarification') ? kind : 'clarification';
-    const trimmed = String(message || '').trim();
+    const trimmed = String(message || '').trim().slice(0, 2000);   // F(cycle-8): cell-size guard
     if (kindV === 'clarification' && !trimmed) {
       return { success: false, error: 'Please type a question before sending.' };
     }
@@ -5672,16 +5720,42 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     const sentHtml = htmlBody + (drTrackable ? drResolveCtaHtml_(drResolveUrl) : '');
 
     // Send first. If MailApp throws, nothing is stamped and the rep sees a clean failure.
+    // F(cycle-8): on a MIXED send (real department + 'Other') the resolve
+    // token — a credential (serveResolvePage_) — must not leave the org: the
+    // internal copy carries the CTA, the 'Other' (possibly customer/external)
+    // recipient gets the identical body WITHOUT it. The F(M-16) fix only
+    // suppressed tracking for 'Other'-ONLY sends, so mixed sends mailed the
+    // token to the external address. Internal goes first: if the external
+    // copy then fails, a rep re-send duplicates a dept email (annoying),
+    // never the customer's.
+    const splitCta = drTrackable && recipientList.externalTo;
     try {
-      MailApp.sendEmail({
-        to: recipientList.to,
-        cc: CONFIG.CALL_NOTES.CC_EMAIL,
-        subject,
-        body: textBody + (drTrackable ? ('\n\nMark this request resolved: ' + drResolveUrl) : ''),
-        htmlBody: sentHtml,
-      });
+      if (splitCta) {
+        MailApp.sendEmail({
+          to: recipientList.internalTo,
+          cc: CONFIG.CALL_NOTES.CC_EMAIL,
+          subject,
+          body: textBody + '\n\nMark this request resolved: ' + drResolveUrl,
+          htmlBody: sentHtml,
+        });
+        MailApp.sendEmail({
+          to: recipientList.externalTo,
+          cc: CONFIG.CALL_NOTES.CC_EMAIL,
+          subject,
+          body: textBody,
+          htmlBody: htmlBody,   // no CTA
+        });
+      } else {
+        MailApp.sendEmail({
+          to: recipientList.to,
+          cc: CONFIG.CALL_NOTES.CC_EMAIL,
+          subject,
+          body: textBody + (drTrackable ? ('\n\nMark this request resolved: ' + drResolveUrl) : ''),
+          htmlBody: sentHtml,
+        });
+      }
     } catch (sendErr) {
-      return { success: false, error: 'Email send failed: ' + sendErr.message };
+      return { success: false, error: 'Email send failed' + (splitCta ? ' (one of the two copies may have gone out — check before re-sending)' : '') + ': ' + sendErr.message };
     }
 
     // Email is OUT. Past this point we never return failure — a partial stamp
@@ -5792,18 +5866,23 @@ function validateEmailSelections_(selections) {
 
 function resolveEmailRecipients_(selections) {
   const map = getDepartmentEmails_();
-  const out = [];
+  const out = [], internal = [], external = [];
   for (let i = 0; i < selections.departments.length; i++) {
     const dept = selections.departments[i];
     if (dept === 'Other') {
       out.push(selections.individualEmail);
+      external.push(selections.individualEmail);
     } else {
       const addr = map[dept];
       if (!addr) return { error: 'Unknown department: ' + dept };
       out.push(addr);
+      internal.push(addr);
     }
   }
-  return { to: out.join(', ') };
+  // F(cycle-8): `to` is unchanged (the INV-41 hash is computed over it);
+  // internalTo/externalTo are ADDITIVE splits so emailFromCallNote can keep
+  // the resolve-token CTA off the 'Other' (possibly customer/external) copy.
+  return { to: out.join(', '), internalTo: internal.join(', '), externalTo: external.join(', ') };
 }
 
 function callDataFromNote_(note) {
@@ -8166,13 +8245,17 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendManagerDailyBrief')
     .timeBased().atHour(8).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
-  // Timesheet cold-archive (#7, INV-153) — daily manager-tz 1am, before the
-  // 2am–5am Call Notes retention chain (independent stores, but keeping the
-  // whole retention window contiguous). MOVES (never deletes) Timesheet rows
-  // older than TIMESHEET_ARCHIVE_DAYS to the TimesheetArchive tab; no-ops
-  // while the window is 0 (the default), so installing it is harmless.
+  // Timesheet cold-archive (#7, INV-153) — daily manager-tz 6pm. F(cycle-8):
+  // moved OFF the 1am slot — 1am CT is ~11:30am IST / ~2pm PHT, the middle of
+  // both offshore shifts, and the move holds the global ScriptLock while it
+  // deletes rows one at a time (a large first enabled run could starve
+  // concurrent recordPunch calls past their 15s waitLock). 6pm CT sits in the
+  // all-team quiet window (CST shift ended; offshore shifts not yet started).
+  // MOVES (never deletes) Timesheet rows older than TIMESHEET_ARCHIVE_DAYS to
+  // the TimesheetArchive tab; no-ops while the window is 0 (the default), so
+  // installing it is harmless.
   ScriptApp.newTrigger('archiveOldTimesheetRows')
-    .timeBased().atHour(1).everyDays(1)
+    .timeBased().atHour(18).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
@@ -8317,7 +8400,8 @@ function sendDailyMissedPunchAlerts() {
     // #2 (INV-151): while the consolidated daily brief is on, the manager
     // summary rides the 8am brief instead — the EMPLOYEE reminders above are
     // never suppressed (the rep still needs the nudge to fix their punch).
-    if (getFlag_('managerDailyBrief')) {
+    // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
+    if (managerBriefSuppressionActive_()) {
       Logger.log('Missed-punch manager summary: consolidated into the daily brief.');
       return;
     }
@@ -8505,6 +8589,29 @@ function stampDigestLastRun_(key) {
   } catch (e) { /* heartbeat is best-effort */ }
 }
 
+/** F(cycle-8 M-11): the four digest-suppression branches gate on THIS, never
+ *  on the flag alone. Flipping `managerDailyBrief` ON without ALSO re-running
+ *  installAutomationTriggers() (the documented-but-easy-to-miss second step)
+ *  used to suppress every separate manager email while the brief itself never
+ *  fired — and the failure watchdog deliberately doesn't flag a never-stamped
+ *  heartbeat ("fresh deploy" posture), so EVERY daily manager notification
+ *  silently stopped with nothing to surface it. Suppress only while the brief
+ *  trigger is demonstrably ALIVE: its `managerBrief` heartbeat (stamped on
+ *  every 8am run, even while the flag is off — INV-151) is younger than 26h.
+ *  Missing/stale/unparseable heartbeat → FAIL SAFE: the individual digests
+ *  keep sending (a doubled email beats a silent outage). */
+function managerBriefSuppressionActive_() {
+  if (!getFlag_('managerDailyBrief')) return false;
+  try {
+    let map = {};
+    try { map = JSON.parse(PropertiesService.getScriptProperties().getProperty(DIGEST_LAST_RUN_PROP)) || {}; } catch (_) {}
+    const raw = String((map && map.managerBrief) || '');
+    if (!raw) return false;
+    const ms = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
+    return (Date.now() - ms) < 26 * 3600000;
+  } catch (e) { return false; }
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  CALL NOTES — AUTOMATED EMAIL DIGESTS
@@ -8681,7 +8788,8 @@ function sendCallNotesUrgentDigest() {
     // #2 (INV-151): while the consolidated daily brief is on, urgent notes
     // ride the 8am brief instead. Still stamp the heartbeat — the trigger ran
     // and made its (suppressed) decision; a dead trigger stays detectable.
-    if (getFlag_('managerDailyBrief')) {
+    // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
+    if (managerBriefSuppressionActive_()) {
       stampDigestLastRun_('urgent');
       Logger.log('Urgent digest: consolidated into the daily brief.');
       return;
@@ -8824,7 +8932,8 @@ function sendTrainingOverdueDigest() {
     // #2 (INV-151): while the consolidated daily brief is on, the MANAGER
     // nudge rides the 8am brief instead — but the employee-side reminders
     // below always send (the deadline reminds both sides, INV-135).
-    if (getFlag_('managerDailyBrief')) {
+    // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
+    if (managerBriefSuppressionActive_()) {
       Logger.log('Training-overdue manager nudge: consolidated into the daily brief.');
     } else {
       mgrEmails.forEach(function (email) {
@@ -10029,6 +10138,12 @@ function getCoveragePlan(fromDate, toDate) {
             ptoType: pto || null,
             startMgr: conv.displayTime,
             endMgr: endConv.displayTime,
+            // F(cycle-8): an IST rep's local Jul-10 shift converts to mgr-tz
+            // Jul-9 21:30 → Jul-10 06:30 — the Jul-10 card showed a bare
+            // "9:30 PM – 6:30 AM" that read as Jul-10 EVENING coverage. The
+            // hourly strip was always right (absolute minutes); this flag lets
+            // the client label the row "(from prev. day)".
+            startsPrevDay: daysBetween_(localDate, conv.date) < 0,
           });
         }
       }
@@ -10163,6 +10278,27 @@ function emailAddrOnly_(from) {
   return (m ? m[1] : s).trim().toLowerCase();
 }
 
+/** F(cycle-8): exact-address membership test for a To/Cc header list. The
+ *  prior scope guards did a raw substring `indexOf(addr)`, so ANY recipient
+ *  string merely CONTAINING the inbox address (xspanishcalls@…, the address
+ *  inside a display name) passed. Splits on commas, extracts each bare
+ *  address (the emailAddrOnly_ rules), compares exactly. Pure — Node-pinned. */
+function spanishAddrListIncludes_(headerList, addr) {
+  const want = String(addr || '').trim().toLowerCase();
+  if (!want) return false;
+  return String(headerList || '').split(',').some(function (part) {
+    return emailAddrOnly_(part) === want;
+  });
+}
+
+/** F(cycle-8): the Gmail scan query. `to:` matches the To header only, so a
+ *  request where the group inbox was Cc'd (a rep looping the group into an
+ *  existing thread) never entered stats/pending/resolved. Brace-OR covers
+ *  both headers. */
+function spanishSearchQuery_(addr, days) {
+  return '{to:' + addr + ' cc:' + addr + '} newer_than:' + days + 'd';
+}
+
 /** One-shot operator helper to FORCE the Gmail OAuth consent prompt.
  *  The Spanish-inbox features call GmailApp, but `appsscript.json` auto-detects
  *  scopes and NO test exercises GmailApp — so `runAllTests` never needs the
@@ -10203,7 +10339,7 @@ function getSpanishInboxStats(days) {
     const hit = cache.get(ckey);
     if (hit) { try { return JSON.parse(hit); } catch (e) {} }
 
-    const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
     const manual = spanishManualResolvedMap_();
     const durations = [], pending = [];
     let resolvedCount = 0;
@@ -10267,7 +10403,7 @@ function getSpanishInboxPending(days) {
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
-    const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
     const manual = spanishManualResolvedMap_();
     const out = [];
     const nowMs = Date.now();
@@ -10314,7 +10450,7 @@ function getSpanishInboxResolved(days) {
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available in this deployment.' };
     const members = getSpanishInboxMembers_();
     const haveMembers = Object.keys(members).length > 0;
-    const threads = GmailApp.search('to:' + addr + ' newer_than:' + d + 'd', 0, 200);
+    const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, 200);
     const manual = spanishManualResolvedMap_();
     const out = [];
     threads.forEach(function (th) {
@@ -10371,8 +10507,8 @@ function getSpanishInboxThreadBody(threadId) {
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
     const first = msgs[0];
-    const recips = (String(first.getTo() || '') + ',' + String(first.getCc() || '')).toLowerCase();
-    if (recips.indexOf(addr) < 0) return { error: 'Not a Spanish-inbox thread.' };
+    if (!spanishAddrListIncludes_(String(first.getTo() || '') + ',' + String(first.getCc() || ''), addr))
+      return { error: 'Not a Spanish-inbox thread.' };   // F(cycle-8): exact address match, not substring
     return {
       threadId: String(threadId),
       subject: first.getSubject() || '(no subject)',
@@ -10444,8 +10580,8 @@ function resolveSpanishThread(threadId) {
     if (!th) return { error: 'Thread not found.' };
     const msgs = th.getMessages();
     if (!msgs.length) return { error: 'Empty thread.' };
-    const recips = (String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || '')).toLowerCase();
-    if (recips.indexOf(addr) < 0) return { error: 'Not a Spanish-inbox thread.' };
+    if (!spanishAddrListIncludes_(String(msgs[0].getTo() || '') + ',' + String(msgs[0].getCc() || ''), addr))
+      return { error: 'Not a Spanish-inbox thread.' };   // F(cycle-8): exact address match, not substring
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
@@ -10896,7 +11032,8 @@ function sendDeptRequestReminderDigest() {
     // #2 (INV-151): while the consolidated daily brief is on, the SLA overdue
     // list rides the 8am brief instead. Stamp the heartbeat first — the
     // trigger ran; a dead trigger stays detectable.
-    if (getFlag_('managerDailyBrief')) {
+    // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
+    if (managerBriefSuppressionActive_()) {
       stampDigestLastRun_('deptReqReminder');
       Logger.log('Dept-request reminder: consolidated into the daily brief.');
       return;
@@ -12798,7 +12935,10 @@ function intakeDeriveClinicalFactors_(answers) {
   const isPositive = (q) => { const a = getAnswerText(q); return a.includes('yes') || a.includes('true'); };
 
   const patient = {
-    weight: parseInt(getAnswerText('38').replace(/\D/g, ''), 10) || 0,
+    // F(cycle-8): keep the decimal point — the old \D strip turned "250.5"
+    // into 2505 lbs, failing every weight-cap filter AND reading as ≥285 for
+    // the Q39a mobile-home rule. Units/commas still drop.
+    weight: parseFloat(getAnswerText('38').replace(/[^\d.]/g, '')) || 0,
     neuroCondition: getAnswerText('43'),
     numbnessAnswer: getAnswerText('25'),
     amputationStatus: getAnswerText('34'),
@@ -13492,11 +13632,19 @@ const INTAKE_FORM_TYPES_ = ['PPD', 'PMD', 'PAP'];
 const INTAKE_LIST_CAP_ = 100;
 
 /** Timestamp cells ("yyyy-MM-dd HH:mm:ss") are Sheets-coerced to Dates on
- *  read — format them back in CONFIG.TIMEZONE (the tz they were written in). */
+ *  read — recover them in the INTAKE spreadsheet's OWN tz (the tz that did
+ *  the coercing), like every sibling helper (kbCellTs_/trainCellTs_/
+ *  cnTimestampString_). F(cycle-8): this used CONFIG.TIMEZONE, which is only
+ *  equivalent while the Intake sheet's tz matches CONFIG — the exact drift
+ *  Storage Health warns about; under drift the Sent-tab timestamps + the
+ *  ACCT dob shifted by the offset. Falls back to CONFIG.TIMEZONE if the
+ *  spreadsheet is unreachable (the caller is already reading from it, so
+ *  that path is theoretical). */
 function intakeTsString_(v) {
-  return (v instanceof Date)
-    ? Utilities.formatDate(v, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss')
-    : String(v == null ? '' : v);
+  if (!(v instanceof Date)) return String(v == null ? '' : v);
+  let tz = CONFIG.TIMEZONE;
+  try { tz = getIntakeSS_().getSpreadsheetTimeZone() || tz; } catch (e) {}
+  return Utilities.formatDate(v, tz, 'yyyy-MM-dd HH:mm:ss');
 }
 
 /** Metadata-only list across all three submission tabs, newest-first, capped
@@ -13588,9 +13736,11 @@ function intakeGetSubmission(formType, submissionId) {
       // never drift from what actually fired. PHI-free beyond the answers already here.
       result.factors = intakeExplainFactors_(result.answers);
     } else {
-      // DOB is user-typed text but Sheets may coerce a date-like value
+      // DOB is user-typed text but Sheets may coerce a date-like value.
+      // F(cycle-8): recover in the INTAKE sheet's own tz (the coercer), not
+      // CONFIG.TIMEZONE — same rationale as intakeTsString_.
       result.dob = (row[5] instanceof Date)
-        ? Utilities.formatDate(row[5], CONFIG.TIMEZONE, 'yyyy-MM-dd')
+        ? Utilities.formatDate(row[5], (function () { try { return getIntakeSS_().getSpreadsheetTimeZone() || CONFIG.TIMEZONE; } catch (e) { return CONFIG.TIMEZONE; } })(), 'yyyy-MM-dd')
         : String(row[5] || '');
       result.imageCount = Number(row[9]) || 0;
     }
@@ -13766,22 +13916,27 @@ function getWhatsNew() {
     const last = sheet.getLastRow();
     if (last < 2) return { none: true };
     const ssTz = getKbSS_().getSpreadsheetTimeZone();
-    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
-    for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i][KB.ID]) !== id) continue;
+    // F(cycle-8): id-COLUMN scan + one full-row fetch (the findCallNoteRow_
+    // pattern). This fires on every Dashboard load for every rep, and the old
+    // full-tab read pulled all 13 columns INCLUDING every article's BodyMd —
+    // read volume that grew with total KB body size × page loads.
+    const ids = sheet.getRange(2, KB.ID + 1, last - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) !== id) continue;
+      const row = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
       // A DRAFT stays invisible to EVERYONE here (INV-140/147 — this is a
       // broadcast surface; an admin previews drafts in Reference, not here),
       // and only native articles render (an embed has no body for kbMd_).
-      if (kbRowStatus_(rows[i][KB.STATUS]) === KB_STATUS_DRAFT) return { none: true };
-      if (String(rows[i][KB.TYPE] || 'article') !== 'article') return { none: true };
+      if (kbRowStatus_(row[KB.STATUS]) === KB_STATUS_DRAFT) return { none: true };
+      if (String(row[KB.TYPE] || 'article') !== 'article') return { none: true };
       return {
         id: id,
-        title: String(rows[i][KB.TITLE] || 'What\'s new'),
-        bodyMd: String(rows[i][KB.BODY_MD] || ''),
+        title: String(row[KB.TITLE] || 'What\'s new'),
+        bodyMd: String(row[KB.BODY_MD] || ''),
         // The edit-time stamp drives the client seen-flag — editing the
         // article re-surfaces the panel for everyone (datetime-granular via
         // kbCellTs_, recovered in the KB sheet's own tz).
-        stamp: kbCellTs_(rows[i][KB.UPDATED_AT], ssTz),
+        stamp: kbCellTs_(row[KB.UPDATED_AT], ssTz),
       };
     }
     return { none: true };
@@ -15814,7 +15969,14 @@ function getMyTraining() {
         title = q.title;
         if (attempts === null) attempts = trainReadAttempts_(emp.id);
         const stats = trainAttemptStats_(attempts, a.itemId, a.assignedAt);
-        quizMeta = { questionCount: q.questionCount, passPct: q.passPct, kbItemId: q.kbItemId, attempts: stats.count, lastScorePct: stats.lastScorePct };
+        // F(cycle-8): the L-9 draft rule applied to the LINKED material too —
+        // saveQuiz rejects a draft kbItemId at save time, but flipping the
+        // article to draft LATER left the checklist's "Review the material
+        // first" link 404ing (getReferenceItem → 'Not found.'). Null the link
+        // when the item is gone or drafted; the quiz itself stays assigned.
+        const linkedKb = q.kbItemId ? titles[q.kbItemId] : null;
+        const linkedKbId = (linkedKb && linkedKb.status !== KB_STATUS_DRAFT) ? q.kbItemId : '';
+        quizMeta = { questionCount: q.questionCount, passPct: q.passPct, kbItemId: linkedKbId, attempts: stats.count, lastScorePct: stats.lastScorePct };
       } else return;
       let completedAt = '';
       for (let i = 0; i < completions.length; i++) {
@@ -16919,7 +17081,8 @@ function verifyDocSignature(docId) {
     const found = findEmpDocRow_(docId);
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { error: 'Document not found.' };
     const d = found.doc;
-    const contentMatch = !d.contentHash ? null : (empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw) === d.contentHash);
+    const expectContent = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
+    const contentMatch = !d.contentHash ? null : (expectContent === d.contentHash);
     // Newest signature row for the doc (bottom-up id-column scan).
     const sigSheet = getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS);
     const sigLast = sigSheet.getLastRow();
@@ -16935,8 +17098,12 @@ function verifyDocSignature(docId) {
     }
     if (!sigRow) return { signed: false, contentMatch: contentMatch, tampered: (contentMatch === false) };
     const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
+    // F(cycle-8): mirror acknowledgeDoc's blank-stored-hash fallback — the
+    // sign path hashes with `d.contentHash || <freshly computed>`, so a
+    // legitimately-signed hand-entered/legacy row (blank ContentHash cell)
+    // used to recompute against '' here and report a FALSE tampered:true.
     const recomputed = empDocSignatureHash_(
-      d.contentHash, d.empId, d.docId,
+      d.contentHash || expectContent, d.empId, d.docId,
       String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''), d.responsesRaw);
     const match = storedHash ? storedHash === recomputed : null;
     // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a

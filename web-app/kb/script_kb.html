@@ -821,7 +821,13 @@ function kbDoSearch_(q) {
       KB_STATE.searchFilterDept = '';
       kbRenderSearchResults_();
     })
-    .withFailureHandler(function () {})
+    .withFailureHandler(function (err) {
+      // F(cycle-8): was fully silent — a rep typing a query on a flaky
+      // connection saw the previous tree/panel with zero feedback ("nothing
+      // happened"). Same guards as success so a stale failure stays quiet.
+      if (currentView !== requested || seq !== KB_STATE.searchSeq) return;
+      showToast('Reference search failed — check your connection and try again', 'toast-error');
+    })
     .searchReference(q);
 }
 
@@ -986,6 +992,10 @@ function kbLoadRelated_(id) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
+      // F(cycle-8): the L-18 stale-item guard, applied to the follow-on load —
+      // rapid A→B reader clicks let A's slower kbGetRelated response write
+      // A's "See also" block under B's article.
+      if (KB_STATE.currentId !== id) return;
       var host = document.getElementById('kb-related'); if (!host) return;
       var items = (res && res.items) || [];
       if (!items.length) { host.innerHTML = ''; return; }

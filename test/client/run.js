@@ -741,7 +741,8 @@ test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by
   assert.ok(/report\.detectors/.test(digest),
     'sendAutomationHealthDigest must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
   const checksSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
-  ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry'].forEach((k) => {
+  ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry',
+   'briefConfig' /* cycle-8 M-11: flag-on-without-trigger config coherence */].forEach((k) => {
     assert.ok(checksSrc.indexOf("'" + k + "'") >= 0, 'detector check "' + k + '" present');
   });
 });
@@ -1167,6 +1168,15 @@ test('weight cap excludes products below the patient weight ceiling', () => {
   assert.ok(all.indexOf('K0862') >= 0, 'the 600-cap chair survives at 500 lbs');
   assert.ok(all.indexOf('K0861') < 0, 'the 350-cap chair is excluded at 500 lbs');
   assert.ok(all.indexOf('K0843') < 0, 'the 450-cap chair is excluded at 500 lbs');
+});
+
+test('F(cycle-8): a decimal weight parses as its value, not digits-concatenated', () => {
+  // The old \D strip read "250.5 lbs" as 2505 → every cap failed (empty
+  // recommendations) and the Q39a mobile-home <285 rule silently didn't fire.
+  assert.strictEqual(engineCtx.intakeDeriveClinicalFactors_({ '38': '250.5 lbs' }).patient.weight, 250.5, 'decimal preserved');
+  assert.strictEqual(engineCtx.intakeDeriveClinicalFactors_({ '38': '250 lbs' }).patient.weight, 250, 'integer unchanged');
+  const r = intakeFilterRecommendations_({ '38': '250.5 lbs', '43': 'ALS' }, CAT);
+  assert.ok(r.complex.concat(r.standard).length > 0, '250.5 lbs is not treated as 2505');
 });
 
 test('oxygen excludes K0837 (an inherently-solid SPO chair)', () => {
@@ -2944,6 +2954,21 @@ test('drSlaForToDept_ takes the strictest component SLA; single-dept unchanged',
   assert.strictEqual(drSb.drSlaForToDept_('Other', cfg), 48, 'Other-only falls back to the raw lookup → default');
 });
 
+// F(cycle-8): Spanish-inbox scope guard — exact address match, not substring.
+console.log('\nCode.js — Spanish inbox address matching (spanishAddrListIncludes_, cycle-8)');
+const spSb = vm.createContext({});
+['emailAddrOnly_', 'spanishAddrListIncludes_'].forEach((fn) =>
+  vm.runInContext(extractRawFunction('Code.js', fn), spSb, { filename: 'Code.js#' + fn }));
+test('spanishAddrListIncludes_ matches parsed addresses only (the substring-guard fix)', () => {
+  const A = 'spanishcalls@universalmedsupply.com';
+  assert.ok(spSb.spanishAddrListIncludes_('SpanishCalls <' + A + '>', A), 'display-name form matches');
+  assert.ok(spSb.spanishAddrListIncludes_('a@x.com, ' + A.toUpperCase(), A), 'list + case-insensitive');
+  assert.ok(!spSb.spanishAddrListIncludes_('x' + A, A), 'xspanishcalls@… must NOT pass (the old substring hole)');
+  assert.ok(!spSb.spanishAddrListIncludes_('"' + A + '" <other@x.com>', A),
+    'the address inside a display NAME must not pass — only the bare address');
+  assert.ok(!spSb.spanishAddrListIncludes_('', A) && !spSb.spanishAddrListIncludes_('a@x.com', ''));
+});
+
 console.log('\nscript_core.html — client error beacon (#1, INV-150)');
 const errBeaconPayload_ = loadFunction(sb, 'script_core.html', 'errBeaconPayload_');
 test('errBeaconPayload_ bounds every field and rejects empty messages', () => {
@@ -2993,15 +3018,27 @@ test('managerBriefSections_ keeps only non-empty sections, in render order, with
   assert.ok(s.every((x) => x.label), 'every section carries its display label');
 });
 test('the brief suppresses exactly the four daily manager streams — never the independents (source tripwire)', () => {
-  // Each suppressed handler consults the flag; the employee-facing paths sit
-  // OUTSIDE the gated branch (missed-punch employee reminders + the
-  // training-overdue employee nudges send regardless).
+  // F(cycle-8 M-11): each suppressed handler consults the LIVENESS helper
+  // (flag AND a fresh managerBrief heartbeat), never the bare flag — flipping
+  // the flag on without installing the brief trigger used to silently stop
+  // every manager notification. The employee-facing paths sit OUTSIDE the
+  // gated branch (missed-punch employee reminders + the training-overdue
+  // employee nudges send regardless).
   ['sendDailyMissedPunchAlerts', 'sendCallNotesUrgentDigest',
    'sendTrainingOverdueDigest', 'sendDeptRequestReminderDigest'].forEach((h) => {
     const src = extractRawFunction('Code.js', h);
-    assert.ok(/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(src),
-      h + ' must consult the managerDailyBrief flag (suppression contract)');
+    assert.ok(/managerBriefSuppressionActive_\s*\(/.test(src),
+      h + ' must gate suppression on managerBriefSuppressionActive_ (flag + live heartbeat)');
+    assert.ok(!/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(src),
+      h + ' must NOT gate on the bare flag (the M-11 silent-outage class)');
   });
+  // The helper itself is the single place the flag + heartbeat combine:
+  // fail-safe (missing/stale/unparseable heartbeat → false → digests send).
+  const helperSrc = extractRawFunction('Code.js', 'managerBriefSuppressionActive_');
+  assert.ok(/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(helperSrc), 'helper consults the flag');
+  assert.ok(/managerBrief/.test(helperSrc) && /DIGEST_LAST_RUN_PROP/.test(helperSrc),
+    'helper consults the managerBrief heartbeat');
+  assert.ok(/return false/.test(helperSrc), 'helper fails safe (returns false on any doubt)');
   // The failure watchdog is deliberately NOT consolidated (it's what reports
   // a dead brief trigger) and the weekly digests stay weekly.
   ['sendAutomationHealthDigest', 'sendCallNotesWeeklyDigests'].forEach((h) => {
@@ -3012,7 +3049,7 @@ test('the brief suppresses exactly the four daily manager streams — never the 
   // detection survives the suppression).
   ['sendCallNotesUrgentDigest', 'sendDeptRequestReminderDigest'].forEach((h) => {
     const src = extractRawFunction('Code.js', h);
-    assert.ok(src.indexOf("getFlag_('managerDailyBrief')") >= 0 &&
+    assert.ok(src.indexOf('managerBriefSuppressionActive_(') >= 0 &&
               src.indexOf('stampDigestLastRun_') >= 0, h + ' has both the gate and a heartbeat');
   });
   // The brief itself heartbeats BEFORE its flag check — trigger liveness is
@@ -3068,7 +3105,11 @@ console.log('\nCode.js — Spanish inbox manual mark-resolved (operator feedback
 test('resolveSpanishThread is member-gated, scope-guarded, locked, and PHI-free (source tripwire)', () => {
   const src = extractRawFunction('Code.js', 'resolveSpanishThread');
   assert.ok(/canSeeSpanishInbox_\s*\(/.test(src), 'gated on canSeeSpanishInbox_ (members + managers)');
-  assert.ok(/recips\.indexOf\(addr\)/.test(src), 'scope guard — the thread must be addressed to the configured inbox');
+  // F(cycle-8): the scope guard is the EXACT-address matcher, not the old raw
+  // substring indexOf (which passed xspanishcalls@… / the address inside a
+  // display name).
+  assert.ok(/spanishAddrListIncludes_\s*\(/.test(src), 'scope guard — exact-address match against To/Cc');
+  assert.ok(!/recips\.indexOf\(addr\)/.test(src), 'the substring guard must not return');
   assert.ok(/waitLock\s*\(\s*15000\s*\)/.test(src), 'locked (INV-01 — it appends)');
   assert.ok(/'SpanishInboxResolve'/.test(src) && /threadId=/.test(src), 'audit row carries the threadId only');
   assert.ok(!/getSubject|getPlainBody/.test(src), 'PHI-free — never reads/stores subject or body');
