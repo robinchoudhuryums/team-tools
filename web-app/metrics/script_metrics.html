@@ -974,8 +974,11 @@ function mRenderTeamMetrics_(data) {
     deltaHtml = '<div class="m-hero-delta">' +
       '<span class="' + sign + '">' + label + ' pts</span> vs 30-day team average (' + avg.toFixed(1) + '%)</div>';
   }
+  // F(cycle-8): esc() the echoed dates — server-validated shapes today, but
+  // the Metrics-esc() gotcha (the F5 XSS class) says every server string
+  // routes through esc() before innerHTML; My Stats escapes the same fields.
   var heroLabel = (data.from && data.to && data.from !== data.to)
-    ? data.from + ' → ' + data.to + ' · Team % Answered'
+    ? esc(data.from) + ' → ' + esc(data.to) + ' · Team % Answered'
     : 'Team · % Answered';
 
   html += '<div class="m-layout">';

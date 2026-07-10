@@ -2,11 +2,63 @@
 
 ## Current
 Cycle: 8
-Phase: implement — batch 1 (H-1+M-1..M-6) AND batches 2-3 (M-7..M-12 + 16 server/client Lows) IMPLEMENTED on claude/broad-scan-0y5q6b (pure 275/0, DOM 59/0). Remaining: batch 4 (test-integrity M-13..M-15) + batch 5 (UX-polish Lows), then /reflect.
+Phase: implement — ALL FOUR batches done on claude/broad-scan-0y5q6b: batch 1 (H-1+M-1..M-6), batches 2-3 (M-7..M-12 + 16 Lows), batches 4-5 (M-13..M-15 test-integrity + NUL escapes + harness hardening + 14 UX-polish Lows). Pure 277/0, DOM 59/0. Next: /sync-docs (batch 4-5 list), operator deploy + editor run, then /reflect to close cycle 8.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-07-10 (cycle-8 batches 2-3)
+Updated: 2026-07-10 (cycle-8 batches 4-5)
+
+## Batches 4-5 completed (2026-07-10)
+Test-integrity (batch 4): M-13 behavioral editor test for
+archiveSheetRowsOlderThan_ (temp TEST_ tabs; append-order back-fill,
+headerRows:2, width padding, strict-< cutoff, idempotence, append→flush→delete
+pin); M-14 _skipTest() mid-body SKIP mechanism — 11 sites converted from
+_assertTrue(true,'…skipped') and the S1.1 ADP-tz test now FAILS (not passes)
+on an unreachable sheet; M-15 tripwire generalization (SUBMITTED_AT any-index
+scan incl. Tests.js, global [CN.TIMESTAMP] whitelist scan + hour-buckets added
+to the enumerated INV-142 list, TIME_OFF_TYPES⊆LEAVE_DEDUCTION_CLIENT reverse
+check — types without a client entry must resolve to the server default,
+'Other' passes); 9 literal NUL bytes escaped to \u0000 in Code.js +
+script_kb.html (both files grep as TEXT again); harness hardening
+(extractFunction/extractRawFunction paren-anchored — the getQuiz prefix
+collision; DOM flushTimers rethrows the first error instead of swallowing).
+UX polish (batch 5): midnight self-undo works end-to-end (server elapsed-ms
+check accepts yesterday-within-5-min; client -1 sentinel no longer reads
+eligible); Log-enter ambient double-poll removed (cache-paint + staleness-
+gated start; the poll-driven stack refresh skips when the stack is <15s fresh
+— focus/nav refreshes stay unconditional per the DOM pins); stats-mini snaps
+instead of re-counting from 0 every minute; refresh preserves in-flight-toggle
+note objects (INV-56 guard survives); inline-edit typing survives unrelated
+cnRenderStack_ re-renders (snapshot/restore); hover day-popover exempted from
+the focus trap (pinned popovers still trap); stacked ui-dialogs: topmost-only
+key handling + stopImmediatePropagation; Coverage/Punctuality presets use
+UTC-noon mgrAddDaysIso_ (DST-safe); Q39a joined the PPD progress ring/stepper
+(stepper Node tests updated); coachAck_ in-flight guard + button disable;
+intakeYnKey_ arrow-nav on the ynnum/ynreveal inner radiogroups; esc()/Number()
+on p.direction, monthName, covPct, Team-Metrics heroLabel; renderPtoMini_ +
+its CSS cluster removed (orphan); coverage note no longer says "Per-tz (v1)";
+?prefill applies AFTER the draft restore (deep-link intent wins).
+
+## Pending / not yet done
+- /sync-docs for batches 4-5: INV-23 (midnight-wrap self-undo now real),
+  INV-83 (topmost-only dialog keys), INV-142 (global scan + 5th reader),
+  Test Command section (new tripwire families + _skipTest + paren-anchored
+  extraction), 8c hover-popover trap exemption, ambient stats cache note,
+  editor-suite expectation (SKIP rows now appear where fixtures are missing).
+- OPERATOR (deploy): clasp push -f + New version; RE-RUN
+  installAutomationTriggers() once (archive trigger 1am→6pm CT from batch 3);
+  editor runSmokeTests/runAllTests — EXPECT some SKIP statuses where fixtures
+  are unprovisioned (previously masked as PASS) + the new
+  archiveSheetRowsOlderThan_behavioral test.
+- Then /reflect to close cycle 8 (metrics.csv + estimates.csv rows).
+- Cycle-8 findings NOT implemented (deliberately deferred): TO/PAR archive
+  tier (years-horizon), punctuality full-Timesheet read (bounded by the
+  archive once enabled), Spanish `to:`-operator caveat now covered, Q31a body
+  diagram + follow-up-date-on-action-flags (roadmap features, not findings).
+
+## Where I left off
+Batches 4-5 implemented + tested (pure 277/0, DOM 59/0, node --check green);
+next: commit+push, then /sync-docs, then /reflect when the operator says done.
 
 ## Batches 2-3 completed (2026-07-10)
 Client races/dead features: M-7 greet-rotator hover freeze (bind-at-start +

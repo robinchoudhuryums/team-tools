@@ -2354,16 +2354,18 @@ function cnRenderNotesView(area) {
   cnRenderStack_();
   cnReloadPinnedTray_();
   cnLoadTrainingQA_();
-  // V4 Phase 4 — populate stats-mini + quick-chip-row on first paint. The
-  // 60s ambient poller (cnStartAmbientPolling_) keeps them fresh after that.
-  cnPollAmbient_();
+  // V4 Phase 4 — populate stats-mini + quick-chip-row on first paint.
+  // F(cycle-8): from the CACHED ambient result when one exists — the direct
+  // cnPollAmbient_() here doubled the start-path poll (a Log enter cost two
+  // getCallNotesAmbient RPCs); the showView-driven cnStartAmbientPolling_
+  // fires the fresh poll when the cache is stale.
+  if (CN_STATE.lastAmbientRes) {
+    cnUpdateStatsMini_(CN_STATE.lastAmbientRes);
+    cnUpdateQuickChipRow_(CN_STATE.lastAmbientRes);
+  }
   // Ctrl/⌘+K is owned by the KB reference drawer (bound in script_core).
   // The prior V4 search-jump keybind was removed: both handlers fired, so
   // the drawer opened and was immediately closed by the Search-tab nav.
-  // V4 Phase 4 — apply any ?prefill=... query params from the URL (deep-link
-  // contract from the Clock view's coverage strip CTA, future-ready even
-  // though the strip doesn't pass prefill today — no per-call CDR data).
-  cnApplyPrefillFromUrl_();
   // Round 2 · 8z — consume the in-memory nav hint from the Clock view's
   // coverage-strip CTA. Today: just a toast acknowledging the source.
   // When per-call CDR data lands: prefill the form from hint.calls[0]
@@ -2373,6 +2375,15 @@ function cnRenderNotesView(area) {
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
   const restored = cnRestoreActiveFormDraft_();
+  // V4 Phase 4 — apply any ?prefill=... query params from the URL (deep-link
+  // contract from the Clock view's coverage strip CTA, future-ready even
+  // though the strip doesn't pass prefill today — no per-call CDR data).
+  // F(cycle-8): runs AFTER the draft restore (the L-22 ordering) — it used to
+  // run first, and the restore overwrote the just-prefilled fields with the
+  // draft's values (including EMPTY strings) while the rows kept their
+  // .prefilled accent — a visual lie. An explicit ?prefill deep-link is user
+  // intent and wins for exactly the prefilled fields.
+  cnApplyPrefillFromUrl_();
   // Cross-tool nav hint (e.g. a Spanish-inbox tool-suggestion chip): surface a
   // context banner + prefill the Issue field with the request subject.
   // F(L-22): runs AFTER the draft restore — the hint only writes into an EMPTY
@@ -3629,9 +3640,40 @@ function cnFormatTimestampForCopy_(iso) {
 
 // ── Rolling stack render ───────────────────────────────────────────────
 
+/** F(cycle-8): snapshot the OPEN inline editor's typed values before a stack
+ *  re-render and restore them after. cnRefreshRollingStack_ already skips
+ *  while an edit is open, but OTHER cnRenderStack_ callers (a slow optimistic
+ *  submit confirming, a pin toggle's tray reload) rebuild the editing card
+ *  from the note's STORED values — silently discarding everything typed since
+ *  the editor opened. */
+function cnEditSnapshot_() {
+  if (!CN_STATE.editingNoteId) return null;
+  const fields = document.querySelectorAll('[id^="cnE-"]');
+  if (!fields.length) return null;
+  const vals = {};
+  fields.forEach(function (el) {
+    vals[el.id] = el.isContentEditable ? el.textContent : el.value;
+  });
+  return { active: document.activeElement && document.activeElement.id, vals: vals };
+}
+function cnEditRestore_(snap) {
+  if (!snap || !CN_STATE.editingNoteId) return;
+  Object.keys(snap.vals).forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.isContentEditable) el.textContent = snap.vals[id];
+    else el.value = snap.vals[id];
+  });
+  if (snap.active && /^cnE-/.test(snap.active)) {
+    const el = document.getElementById(snap.active);
+    if (el) try { el.focus(); } catch (e) {}
+  }
+}
+
 function cnRenderStack_() {
   const stack = document.getElementById('cn-stack');
   if (!stack) return;
+  const editSnap = cnEditSnapshot_();
   // Pinned notes render in the dedicated tray above; exclude them from the
   // rolling stack so they don't appear twice on the page.
   const pinnedIds = {};
@@ -3654,6 +3696,7 @@ function cnRenderStack_() {
   }
   stack.innerHTML = html;
   cnWireCards_(stack);
+  cnEditRestore_(editSnap);   // F(cycle-8): typed edit values survive the re-render
 }
 
 function cnInstallCardDelegation_(area) {
@@ -6764,10 +6807,12 @@ function cnStartAmbientPolling_() {
   // flagsVersion propagation dead until the rep visited Log once). A live
   // timer is left alone so CN-internal tab hops don't fire an extra RPC per
   // nav; the fresh-start path still polls immediately.
-  if (CN_STATE.ambientTimer) { cnEnsureLiveRefreshBound_(); return; }
   cnEnsureLiveRefreshBound_();
-  cnPollAmbient_();
-  CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
+  // F(cycle-8): staleness-gated immediate poll — a fresh entry (or a return
+  // after >30s away) polls now so the stats-mini/badge populate; a rapid
+  // CN-internal tab hop costs nothing. The 60s timer is created once.
+  if (!CN_STATE.lastAmbientAt || (Date.now() - CN_STATE.lastAmbientAt) > 30000) cnPollAmbient_();
+  if (!CN_STATE.ambientTimer) CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
 }
 
 /** Stable signature of the rolling-note set for the live-refresh skip-render
@@ -6804,10 +6849,20 @@ function cnRefreshRollingStack_(then) {
       const server = res.notes || [];
       const serverIds = {};
       server.forEach(function (n) { serverIds[n.noteId] = true; });
-      const pending = (CN_STATE.rollingNotes || []).filter(function (n) {
+      const local = CN_STATE.rollingNotes || [];
+      const pending = local.filter(function (n) {
         return n._pending && !serverIds[n.noteId];
       });
-      CN_STATE.rollingNotes = pending.concat(server);
+      // F(cycle-8, INV-56): a confirmed note with a flag/resolve/pin RPC in
+      // flight must keep its LOCAL object — replacing it with the server's
+      // pre-write copy visibly reverted the optimistic toggle AND detached
+      // the _flagInFlight guard (a second click could then fire a concurrent
+      // clobbering RPC, the exact race the guard exists to prevent).
+      const inFlightById = {};
+      local.forEach(function (n) { if (n._flagInFlight && !n._pending) inFlightById[n.noteId] = n; });
+      CN_STATE.rollingNotes = pending.concat(server.map(function (n) {
+        return inFlightById[n.noteId] || n;
+      }));
       CN_STATE.autoCopyFormat = res.autoCopyFormat || CN_STATE.autoCopyFormat || '';
       CN_STATE.rollingEntry = { at: Date.now() };   // keep the SWR instant-paint cache warm
       // Skip the re-render (and its visible flash) when the note set is byte-for-byte
@@ -6865,10 +6920,12 @@ function cnRefreshConfigForFlags_() {
 }
 
 function cnPollAmbient_() {
+  CN_STATE.lastAmbientAt = Date.now();   // F(cycle-8): fire-time stamp for the staleness-gated start
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error) return;
       if (res.enrolled === false) return;
+      CN_STATE.lastAmbientRes = res;     // F(cycle-8): instant paint on the next Log enter
       CN_STATE.staleFlagHours = res.staleFlagHours || 1;
       // Runtime feature-flag propagation: if the manager flipped a toggle the
       // ambient flagsVersion changes → refetch deptConfig (flags + templates +
@@ -6888,7 +6945,13 @@ function cnPollAmbient_() {
       // #3 live-sync — re-fetch + re-render today's rolling stack on the Log
       // view so a note logged in another context (pop-out / second window)
       // appears within the 60s poll without a manual nav. Log only.
-      if (currentView === 'callNotes') cnRefreshRollingStack_();
+      // F(cycle-8): skip when the stack was fetched moments ago — the Log
+      // enter's own cnLoadToday_/SWR fetch had just resolved when this poll's
+      // success handler fired, doubling the getMyCallNotes per enter. Only
+      // THIS (poll-driven) call site is staleness-gated; the focus/visibility
+      // wake and nav paths refresh unconditionally (cross-window sync).
+      const stackFresh = CN_STATE.rollingEntry && (Date.now() - (CN_STATE.rollingEntry.at || 0)) < 15000;
+      if (currentView === 'callNotes' && !stackFresh) cnRefreshRollingStack_();
       // Update sidebar badge on the Call Notes nav link
       const link = document.querySelector('.sb-link[data-tool="callNotes"]')
                 || document.querySelector('.nav-btn[data-tool="callNotes"]');
@@ -7091,10 +7154,18 @@ function cnUpdateStatsMini_(res) {
   const flag  = document.getElementById('cn-stat-flag');
   if (!today || !week || !flag) return;
   // §4 count-up — animate from 0 to the value (replaces the loading dots).
-  countUp_(today, res.todayTotal || 0);
-  countUp_(week,  res.weekTotal  || 0);
+  // F(cycle-8): only when the value CHANGED — the 60s poll used to re-run the
+  // animation every minute, so Today/Week/Unresolved visibly re-counted from
+  // 0 while the rep watched. An unchanged value just sets the text.
+  const setOrCount = function (el, v) {
+    if (String(el.textContent).trim() === String(v)) return;
+    if (/^\d+$/.test(String(el.textContent).trim())) { el.textContent = String(v); return; }   // changed number → snap (no from-zero replay)
+    countUp_(el, v);   // first paint (loading dots) → animate
+  };
+  setOrCount(today, res.todayTotal || 0);
+  setOrCount(week,  res.weekTotal  || 0);
   const unresolved = res.unresolvedActionCount || 0;
-  countUp_(flag, unresolved);
+  setOrCount(flag, unresolved);
   flag.classList.remove('warn', 'crit');
   if (unresolved >= 3)      flag.classList.add('crit');
   else if (unresolved >= 1) flag.classList.add('warn');

@@ -89,10 +89,29 @@ function _test(name, fn) {
     Logger.log(`✓ ${name} (${ms}ms)`);
   } catch (e) {
     const ms = new Date() - start;
+    if (e && e._isSkip) {
+      // F(cycle-8 M-14): a mid-body skip (fixture/config unavailable) records
+      // SKIP, never PASS — 13 sites used to `_assertTrue(true, '…skipped')`,
+      // inflating the pass count and hiding fixture rot (worst case: the S1.1
+      // ADP-tz tripwire read GREEN exactly when the ADP sheet was unreachable).
+      _TEST_STATE.results.push({ name, status: 'SKIP', ms, error: e.message });
+      _TEST_STATE.skip++;
+      Logger.log(`⊘ ${name} (skipped — ${e.message})`);
+      return;
+    }
     _TEST_STATE.results.push({ name, status: 'FAIL', ms, error: e.message, stack: e.stack });
     _TEST_STATE.fail++;
     Logger.log(`✗ ${name} (${ms}ms)\n   ${e.message}`);
   }
+}
+
+/** F(cycle-8 M-14): abort the current test as SKIPPED (not passed). Use when a
+ *  fixture / optional config the test needs is unavailable — a skip is honest
+ *  ("didn't verify"), a green PASS is a lie the summary can't distinguish. */
+function _skipTest(reason) {
+  const e = new Error(reason || 'precondition unavailable');
+  e._isSkip = true;
+  throw e;
 }
 
 function _smokeTest(name, fn) { _test(name, fn); }
@@ -967,6 +986,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_managerDailyBrief_nonManagerThrows', test_triggerGate_managerDailyBrief_nonManagerThrows);
   _integrationTest('triggerGate_timesheetArchive_nonManagerThrows', test_triggerGate_timesheetArchive_nonManagerThrows);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
+  _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
 
   // ── Client error beacon (#1, INV-150) + What's new panel (#4, INV-152) ─
@@ -1591,7 +1611,7 @@ function test_reconcileCallNotes_nonManagerRejected() {
 
 function test_reconcileCallNotes_backfillsHandEntered() {
   const emp = lookupEmployeeById_(_TEST_INDIA_ID);
-  if (!emp || !emp.callNotesSheetId) { _assertTrue(true, 'India call-notes Sheet not provisioned — skipped'); return; }
+  if (!emp || !emp.callNotesSheetId) { _skipTest('India call-notes Sheet not provisioned'); }
   const sheet = getCallNotesSheet_(emp);
   const row = new Array(CN_HEADERS.length).fill('');
   row[CN.CALLER] = 'Hand Entered Caller';
@@ -1641,7 +1661,7 @@ function test_provisionCallNotesSheet_nonManagerRejected() {
 // the no-clobber branch without littering Drive with a fresh Sheet.
 function test_provisionCallNotesSheet_idempotentNoClobber() {
   const emp = lookupEmployeeById_(_TEST_INDIA_ID);
-  if (!emp || !emp.callNotesSheetId) { _assertTrue(true, 'India call-notes Sheet not provisioned — skipped'); return; }
+  if (!emp || !emp.callNotesSheetId) { _skipTest('India call-notes Sheet not provisioned'); }
   const before = emp.callNotesSheetId;
   let res;
   _asUser(_TEST_MGR_EMAIL, function () { res = provisionCallNotesSheet(_TEST_INDIA_ID); });
@@ -3029,7 +3049,12 @@ function test_config_adpSheetTzMatchesConfig() {
   // read by the offset. Pin the assumption so an operator tz change surfaces.
   let ssTz;
   try { ssTz = getAdpSS_().getSpreadsheetTimeZone(); }
-  catch (e) { _assertTrue(true, 'ADP spreadsheet unavailable — skipped (' + e.message + ')'); return; }
+  catch (e) {
+    // F(cycle-8 M-14): an unreachable ADP spreadsheet is a BROKEN deployment,
+    // not a skippable precondition — this tripwire used to read GREEN in
+    // exactly the operator state it exists to surface.
+    throw new Error('ADP spreadsheet unreachable — the tz tripwire cannot verify S1.1 (' + e.message + ')');
+  }
   // Alias-aware: Google stores the legacy "Asia/Calcutta" for GMT+5:30, which is
   // functionally identical to CONFIG's "Asia/Kolkata" (tzEquivalent_), so an
   // alias passes; only a genuinely different zone (e.g. America/Los_Angeles) fails.
@@ -3507,6 +3532,67 @@ function test_timesheetArchive_windowFloorAndDefault() {
   } finally {
     if (prev == null) props.deleteProperty('TIMESHEET_ARCHIVE_DAYS');
     else props.setProperty('TIMESHEET_ARCHIVE_DAYS', prev);
+  }
+}
+
+// F(cycle-8 M-13): BEHAVIORAL coverage for the shared mover behind all three
+// archive tiers (CN archive, CN cold purge feeder, Timesheet archive) — it
+// mutates the payroll tab nightly and was pinned only by source tripwires.
+// Uses two throwaway TEST_ tabs in the ADP spreadsheet, removed in finally.
+function test_archiveSheetRowsOlderThan_behavioral() {
+  const ss = getAdpSS_();
+  const SRC = 'TEST_ArchSrc', DST = 'TEST_ArchDst';
+  let src = null, dst = null;
+  try {
+    try { const s0 = ss.getSheetByName(SRC); if (s0) ss.deleteSheet(s0); } catch (e) {}
+    try { const d0 = ss.getSheetByName(DST); if (d0) ss.deleteSheet(d0); } catch (e) {}
+    src = ss.insertSheet(SRC); dst = ss.insertSheet(DST);
+    // Two-row header (the ADP Timesheet shape) — row 2 deliberately carries a
+    // date-LIKE string so headerRows:2 (not just the null-guard) is what saves it.
+    src.getRange(1, 1, 2, 3).setValues([
+      ['Company Code', 'Date', 'Note'],
+      ['2000-01-01', '2000-01-01', 'header row 2 — must never move'],
+    ]);
+    // Data rows in APPEND order (not date order — the INV-153 rationale): a
+    // late BACK-FILL old row lands AFTER newer rows. Cutoff = 2026-01-01.
+    src.getRange(3, 1, 4, 3).setValues([
+      ['r1', '2025-06-10', 'old — moves'],
+      ['r2', '2026-05-01', 'new — stays'],
+      ['r3', '2025-12-31', 'old back-fill AFTER a newer row — moves'],
+      ['r4', '2026-01-01', 'exactly at cutoff — stays (strict <)'],
+    ]);
+    // A short row (2 cells) — must pad to the requested width on the move.
+    src.getRange(7, 1, 1, 2).setValues([['r5', '2025-01-15']]);
+    SpreadsheetApp.flush();
+    // Cutoff derived through the SAME parser the mover uses (CONFIG.TIMEZONE) —
+    // Sheets coerces the fixture date strings to Date cells in the sheet's tz
+    // (== CONFIG.TIMEZONE per S1.1), so a UTC-anchored cutoff would put the
+    // at-cutoff row on the wrong side of the strict <.
+    const cutoffMs = parseRetentionDateMs_('2026-01-01T00:00:00');
+    const moved = archiveSheetRowsOlderThan_(src, dst, 1, cutoffMs, { headerRows: 2, width: 3 });
+    _assertEq(moved, 3, 'moves exactly the 3 pre-cutoff data rows (incl. the append-order back-fill)');
+    const dstVals = dst.getDataRange().getValues();
+    _assertEq(dstVals.length, 3, 'archive holds exactly the moved rows');
+    _assertEq(String(dstVals[0][0]), 'r1', 'sheet order preserved: r1 first');
+    _assertEq(String(dstVals[1][0]), 'r3', 'the late back-fill moved too');
+    _assertEq(String(dstVals[2][0]), 'r5', 'short row moved');
+    _assertEq(String(dstVals[2][2]), '', 'short row padded to width 3');
+    const srcVals = src.getDataRange().getValues();
+    _assertEq(srcVals.length, 4, 'source keeps 2 header rows + r2 + r4');
+    _assertEq(String(srcVals[1][2]), 'header row 2 — must never move', 'headerRows:2 protected the second header row');
+    _assertEq(String(srcVals[2][0]), 'r2', 'post-cutoff row stayed');
+    _assertEq(String(srcVals[3][0]), 'r4', 'at-cutoff row stayed (strict <)');
+    // Idempotence: a second run finds nothing left to move.
+    _assertEq(archiveSheetRowsOlderThan_(src, dst, 1, cutoffMs, { headerRows: 2, width: 3 }), 0, 're-run is a no-op');
+    // Duplicate-never-lose ordering: append → flush → delete (source-level pin;
+    // a mid-run death after the flush can only leave a duplicate in the archive).
+    const fnSrc = String(archiveSheetRowsOlderThan_);
+    _assertTrue(fnSrc.indexOf('setValues') < fnSrc.indexOf('SpreadsheetApp.flush') &&
+                fnSrc.indexOf('SpreadsheetApp.flush') < fnSrc.indexOf('deleteRow'),
+      'append-then-flush-then-delete ordering (a mid-run failure duplicates, never loses)');
+  } finally {
+    try { if (src) ss.deleteSheet(src); } catch (e) {}
+    try { if (dst) ss.deleteSheet(dst); } catch (e) {}
   }
 }
 
@@ -4273,7 +4359,7 @@ function test_deptReq_resendDedupLookup() {
 // test emp a member of a real department (roster column N), then restores it.
 function test_deptReq_incomingAndMemberResolve() {
   const deptKeys = Object.keys(getDepartmentEmails_() || {});
-  if (!deptKeys.length) { _assertTrue(true, 'no departments configured — skipped'); return; }
+  if (!deptKeys.length) { _skipTest('no departments configured'); }
   const dept = deptKeys[0];
   const ss = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
   const roster = ss.getDataRange().getValues();
@@ -4281,7 +4367,7 @@ function test_deptReq_incomingAndMemberResolve() {
   for (let i = 1; i < roster.length; i++) {
     if (String(roster[i][EMP.ID]).trim() === _TEST_INDIA_ID) { empRow = i + 1; break; }
   }
-  if (empRow < 0) { _assertTrue(true, 'India test emp not on roster — skipped'); return; }
+  if (empRow < 0) { _skipTest('India test emp not on roster'); }
   const prevDept = ss.getRange(empRow, EMP.DEPARTMENTS + 1).getValue();
   const sh = getOrCreateDeptRequestsSheet_();
   const before = sh.getLastRow();
@@ -4896,7 +4982,7 @@ function test_auditPanel_searchAndHistory() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function test_metrics_getMyMetrics_cdrIntegration() {
-  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   const r = _withTestCdr_(function () {
     return _asUser(_TEST_INDIA_EMAIL, function () { return getMyMetrics(_TEST_CDR_DATE); });
   });
@@ -4919,7 +5005,7 @@ function test_metrics_cdrFixture_durationsUseDisplayValues() {
   // getDisplayValues() discipline is load-bearing. If the cells were plain text
   // (as before), getValues()==getDisplayValues() and a getValues() regression
   // would silently pass the integration tests.
-  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   const sheet = SpreadsheetApp.openById(_TEST_CDR_SS_ID).getSheetByName('DQE Historical Data');
   // Row 2 = India fixture row; ATT = "0:02:30" (150s) — seconds matter so the
   // raw-Date misparse (120s) is unambiguously wrong.
@@ -4936,7 +5022,7 @@ function test_metrics_cdrFixture_durationsUseDisplayValues() {
 function test_metrics_csrTransferFixture_parsesDateAndPercent() {
   // T4 #6: the Transfer reader parses the M/D/YYYY Date + "%"-string columns
   // (the real sheet shapes) and honors the roster filter.
-  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   _withTestCdr_(function () {
     const res = getCsrTransferPerRepDaily_(_TEST_CDR_DATE, _TEST_CDR_DATE, [_TEST_INDIA_NAME, _TEST_PH_NAME]);
     const day = res.perRepDaily[_TEST_CDR_DATE];
@@ -4950,7 +5036,7 @@ function test_metrics_csrTransferFixture_parsesDateAndPercent() {
 }
 
 function test_metrics_getTeamMetrics_cdrIntegration() {
-  if (!_TEST_CDR_SS_ID) { _assertTrue(true, "CDR fixture unavailable — skipped"); return; }
+  if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
   const r = _withTestCdr_(function () {
     return _asUser(_TEST_MGR_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
   });
@@ -5070,7 +5156,7 @@ function test_intake_resolveRecipient_customValidation() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function test_intake_previewPPD_returnsHashAndRecs() {
-  if (!_TEST_INTAKE_SS_ID) { _assertTrue(true, 'Intake fixture unavailable — skipped'); return; }
+  if (!_TEST_INTAKE_SS_ID) { _skipTest('Intake fixture unavailable'); }
   const r = _withTestIntake_(function () {
     return _asUser(_TEST_INDIA_EMAIL, function () {
       return intakePreviewPPD({
@@ -5089,7 +5175,7 @@ function test_intake_previewPPD_returnsHashAndRecs() {
 }
 
 function test_intake_sendPPD_staleHashRejected() {
-  if (!_TEST_INTAKE_SS_ID) { _assertTrue(true, 'Intake fixture unavailable — skipped'); return; }
+  if (!_TEST_INTAKE_SS_ID) { _skipTest('Intake fixture unavailable'); }
   // The hash check fires BEFORE recipient resolution / MailApp, so a stale
   // hash sends nothing and stores nothing (INV-111 / INV-41 pattern).
   const r = _withTestIntake_(function () {
@@ -5113,7 +5199,7 @@ function test_intake_send_unauthorizedRejected() {
 }
 
 function test_intake_sentViewer_callerScopedAndManager() {
-  if (!_TEST_INTAKE_SS_ID) { _assertTrue(true, 'Intake fixture unavailable — skipped'); return; }
+  if (!_TEST_INTAKE_SS_ID) { _skipTest('Intake fixture unavailable'); }
   _withTestIntake_(function () {
     // PPD submission row layout: [id, ts, repId, repName, patientInfo,
     // language, answersJSON, recommendations, selections, recipient]

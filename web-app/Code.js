@@ -1595,14 +1595,27 @@ function selfDeletePunch(date, time, punchType) {
     if (!PUNCH_LABELS_.includes(punchType))
       return { success: false, error: 'Invalid punch type.' };
 
+    // F(cycle-8): honor the documented midnight wrap. The client deliberately
+    // renders the undo button across a rep-local midnight ("punch at 23:58,
+    // undo at 00:02" — the timeDiffSecondsClient design decision), but the
+    // server rejected that exact case twice over (date !== today, then the
+    // negative same-day diff) — the 5-minute window silently didn't exist
+    // across midnight. Compute the REAL elapsed time from the punch's
+    // rep-local datetime; the date restriction relaxes to today-or-yesterday,
+    // which the 5-minute elapsed window then bounds correctly either way.
     const empTz = empTz_(emp);
+    const nowMs = Date.now();
     const todayStr = fmtDateTz_(new Date(), empTz);
-    if (date !== todayStr) {
+    const yestStr = fmtDateTz_(new Date(nowMs - 86400000), empTz);
+    if (date !== todayStr && date !== yestStr) {
       return { success: false, error: 'You can only undo today\'s punches. For older corrections, use Adjust.' };
     }
-
-    const nowTime = fmtTimeTz_(new Date(), empTz);
-    const secondsSince = timeDiffSeconds_(time, nowTime);
+    let punchMs = null;
+    try {
+      const hms = /^\d{2}:\d{2}$/.test(String(time)) ? time + ':00' : String(time);   // matcher below uses HH:mm:ss
+      punchMs = Utilities.parseDate(date + ' ' + hms, safeTimezone_(empTz), 'yyyy-MM-dd HH:mm:ss').getTime();
+    } catch (e) { punchMs = null; }
+    const secondsSince = punchMs === null ? -1 : Math.round((nowMs - punchMs) / 1000);
     if (secondsSince < 0 || secondsSince > CONFIG.SELF_UNDO_WINDOW_SECONDS) {
       const mins = Math.round(CONFIG.SELF_UNDO_WINDOW_SECONDS / 60);
       return { success: false, error:
@@ -7286,8 +7299,8 @@ function managerGetFormSubmission(repEmpId, token) {
  *  ISO datetime to a Date on read) — its integrity is witnessed by the
  *  append-only FormSubmissionReceived audit row instead. */
 function computeFormSubmissionHash_(dataJson, signatureData, token, consentVersion) {
-  const payload = String(dataJson || '') + ' ' + String(signatureData || '') +
-                  ' ' + String(token || '') + ' ' + String(consentVersion || '');
+  const payload = String(dataJson || '') + '\u0000' + String(signatureData || '') +
+                  '\u0000' + String(token || '') + '\u0000' + String(consentVersion || '');
   const buf = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, payload);
   let out = '';
   for (let i = 0; i < buf.length; i++) {

@@ -670,12 +670,34 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
 
 console.log('\nCode.js — CN Timestamp coercion boundary (INV-142) + kbRowStatus_ (INV-147)');
 test('TRIPWIRE (INV-142): CN Timestamp readers route through cnTimestampString_', () => {
-  ['callNoteRowToObject_', 'deleteCallNote', 'getCallNotesAmbient', 'getMyTrainingQA'].forEach((fn) => {
+  ['callNoteRowToObject_', 'deleteCallNote', 'getCallNotesAmbient', 'getMyTrainingQA',
+   'getMyNoteHourBuckets' /* cycle-8: joined the boundary */].forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
     assert.ok(/cnTimestampString_\(/.test(src),
       fn + ' must read CN.TIMESTAMP via cnTimestampString_ — a locale-coerced Date stringified raw breaks ' +
       'sorting/shift-span/EOD displays and FAIL-OPENS the 5-min delete window (M-14 class)');
   });
+});
+test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere in Code.js', () => {
+  // The enumerated-reader check above can't see a FIFTH reader added
+  // elsewhere (this class bit twice: M-14, cycle-7). Global scan: every
+  // `[CN.TIMESTAMP]` occurrence must sit inside a known-safe expression —
+  // a cnTimestampString_(…) argument, a bare cell WRITE (setValue/appendRow
+  // builders don't read), or the whitelisted inline-guard functions.
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const lines = src.split('\n');
+  const offenders = [];
+  const SAFE_LINE = /cnTimestampString_\(|CN\.TIMESTAMP \+ 1|CN\.TIMESTAMP\]\s*=|^\s*\/\//;
+  // reconcileCallNotes keeps its documented equivalent inline guard (INV-142).
+  const reconcile = extractRawFunction('Code.js', 'reconcileCallNotes');
+  lines.forEach((line, idx) => {
+    if (line.indexOf('[CN.TIMESTAMP]') < 0) return;
+    if (SAFE_LINE.test(line)) return;
+    if (reconcile.indexOf(line) >= 0) return;   // the whitelisted inline guard
+    offenders.push('line ' + (idx + 1) + ': ' + line.trim());
+  });
+  assert.deepStrictEqual(offenders, [],
+    'raw [CN.TIMESTAMP] read(s) outside the cnTimestampString_ boundary — see INV-142');
 });
 test('coupling — showView\'s intakeFlushDraftNow_ hook resolves cross-partial (Turn-B seams audit)', () => {
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
@@ -1009,16 +1031,22 @@ console.log('\nCode.js — Sheets-coerced timestamp columns are read via normali
 // chronological sort downstream.
 test('no raw String() reads of TO/PAR.SUBMITTED_AT remain in Code.js', () => {
   const tsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
-  const raw = [...tsSrc.matchAll(/String\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  // F(cycle-8 M-15): ANY-index scan — the old regex required the loop index to
+  // literally be `i`, so `String(rows[j][TO.SUBMITTED_AT])` or a destructured
+  // `String(row[TO.SUBMITTED_AT])` sailed past, re-opening the exact class the
+  // tripwire exists for. Now any String( … [TO|PAR.SUBMITTED_AT] …) read
+  // trips, whatever the receiver expression looks like.
+  const raw = [...tsSrc.matchAll(/String\(\s*[\w.\[\]]*\[(TO|PAR)\.SUBMITTED_AT\]/g)];
   assert.deepStrictEqual(raw.map((m) => m[0]), [],
     'found raw String() read(s) of a SUBMITTED_AT cell — route through normalizeAuditTs_ (M1)');
-  // And the normalized reads actually exist (the tripwire stays armed).
-  const normalized = [...tsSrc.matchAll(/normalizeAuditTs_\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  // And the normalized reads actually exist (the tripwire stays armed) — same
+  // any-index shape.
+  const normalized = [...tsSrc.matchAll(/normalizeAuditTs_\(\s*[\w.\[\]]*\[(TO|PAR)\.SUBMITTED_AT\]/g)];
   assert.ok(normalized.length >= 8, 'expected ≥8 normalizeAuditTs_ SUBMITTED_AT reads, got ' + normalized.length);
 });
 test('Tests.js reads SUBMITTED_AT through normalizeAuditTs_ too', () => {
   const tSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
-  const raw = [...tSrc.matchAll(/String\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  const raw = [...tSrc.matchAll(/String\(\s*[\w.\[\]]*\[(TO|PAR)\.SUBMITTED_AT\]/g)];
   assert.deepStrictEqual(raw.map((m) => m[0]), [], 'test helper must match the production read');
 });
 
@@ -2708,14 +2736,19 @@ console.log('\nintake — PPD per-section stepper (intakePpdSections_ single sou
 const sbIntake = buildSandbox(['script_icons.html', 'script_core.html', 'intake/script_intake.html']);
 
 ['EN', 'ES'].forEach((lang) => {
-  test('intakePpdSections_(' + lang + '): well-formed sections; mainQNums are bare numbers, unique', () => {
+  test('intakePpdSections_(' + lang + '): well-formed sections; mainQNums are bare numbers + 39a, unique', () => {
     const secs = sbIntake.intakePpdSections_(lang);
     assert.ok(Array.isArray(secs) && secs.length > 0, 'has sections');
     secs.forEach((s, i) => {
       assert.ok(s.title || s.rows.length, 'section ' + i + ' has a title or rows');
-      s.mainQNums.forEach((q) => assert.ok(/^\d+$/.test(q), 'mainQNum "' + q + '" is a bare number (no 31a/33a)'));
+      // F(cycle-8): 39a is a FULL-WEIGHT primary question (the engine's
+      // mobile-home trigger) lettered only to avoid renumbering — it counts.
+      // The conditional sub-questions (31a/33a) still don't.
+      s.mainQNums.forEach((q) => assert.ok(/^\d+$/.test(q) || q === '39a',
+        'mainQNum "' + q + '" is a bare number or 39a (no 31a/33a sub-questions)'));
     });
     const flat = secs.reduce((a, s) => a.concat(s.mainQNums), []);
+    assert.ok(flat.indexOf('39a') >= 0, '39a is in the progress count (the engine-critical dwelling question)');
     assert.strictEqual(new Set(flat).size, flat.length, 'no duplicate main question across sections');
   });
 
@@ -2728,9 +2761,10 @@ const sbIntake = buildSandbox(['script_icons.html', 'script_core.html', 'intake/
     for (let i = 1; i < qs.length; i++) {
       const raw = qs[i];
       if (!raw || !String(raw).trim()) continue;
-      if (/^(\d+)\./.test(String(raw).trim())) expected++;
+      const mm = String(raw).trim().match(/^(\d+[a-z]?)\./);
+      if (mm && (/^\d+$/.test(mm[1]) || mm[1] === '39a')) expected++;   // F(cycle-8): 39a counts
     }
-    assert.strictEqual(total, expected, 'stepper main-count matches the legacy /^(\\d+)\\./ progress count');
+    assert.strictEqual(total, expected, 'stepper main-count matches the progress filter (bare numbers + 39a)');
   });
 
   test('intakePpdSections_(' + lang + '): renderer, stepper, and section list agree on count + indices', () => {
@@ -2838,6 +2872,30 @@ console.log('\ncoupling — LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ behavi
     const dflt = ldCtx.getLeaveDeduction_('Some Future Type');
     assert.strictEqual(dflt.bucket, 'annual');
     assert.strictEqual(dflt.days, 1.0, 'unknown-type default is annual/1.0 — the client fallback must match (INV-72)');
+  });
+  // F(cycle-8 M-15): the mirror above is one-directional — a NEW leave type
+  // added on the SERVER (TIME_OFF_TYPES + a getLeaveDeduction_ branch)
+  // without a client map entry passed both it AND the day-type⊆validator
+  // tripwire, and the PTO modal silently previewed the annual/1.0 fallback.
+  // Reverse subset: every creatable type must have a client preview entry.
+  test('TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT keys (reverse direction of the mirror)', () => {
+    const codeSrcLd = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+    const m = codeSrcLd.match(/const TIME_OFF_TYPES\s*=\s*(\[[^\]]*\])/);
+    assert.ok(m, 'TIME_OFF_TYPES literal found');
+    const types = JSON.parse(m[1].replace(/'/g, '"').replace(/,\s*\]/, ']'));
+    assert.ok(types.length >= 3, 'parsed the type list (' + types.length + ')');
+    const clientKeysLc = Object.keys(ldCtx.LEAVE_DEDUCTION_CLIENT).map((k) => k.toLowerCase());
+    types.forEach((t) => {
+      if (clientKeysLc.indexOf(String(t).toLowerCase()) >= 0) return;   // explicit client entry
+      // No client entry → the modal previews via its annual/1.0 FALLBACK,
+      // which is only correct while the SERVER also serves this type from the
+      // default (e.g. 'Other'). A server branch added without a client entry
+      // fails here — the exact one-directional gap.
+      const s = ldCtx.getLeaveDeduction_(t);
+      assert.ok(s.bucket === 'annual' && s.days === 1.0,
+        'TIME_OFF_TYPES entry "' + t + '" resolves to ' + s.bucket + '/' + s.days +
+        ' on the server but has no LEAVE_DEDUCTION_CLIENT entry — the modal would preview the annual/1.0 fallback');
+    });
   });
 }
 

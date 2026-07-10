@@ -128,9 +128,22 @@ function coachCardMy_(it) {
     '</div>';
 }
 
+var _coachAckInFlight = {};   // F(cycle-8): per-item double-click guard (the INV-56 discipline)
 function coachAck_(coachId) {
+  // F(cycle-8): the server is idempotent (INV-134) so no data damage, but a
+  // double-click fired two RPCs + two reloads + duplicate toasts, and the
+  // button never disabled. Same _flagInFlight pattern as the CN toggles.
+  if (_coachAckInFlight[coachId]) return;
+  _coachAckInFlight[coachId] = true;
+  var btn = document.querySelector('[data-coach-ack="' + coachId + '"]');
+  if (btn) btn.disabled = true;
+  var settle = function () {
+    delete _coachAckInFlight[coachId];
+    if (btn) btn.disabled = false;
+  };
   google.script.run
     .withSuccessHandler(function (r) {
+      settle();
       if (r && r.success) {
         if (typeof showToast === 'function') showToast('Acknowledged', 'toast-success');
         coachLoadMy_();
@@ -138,7 +151,7 @@ function coachAck_(coachId) {
         showToast((r && r.error) || 'Could not acknowledge', 'toast-error');
       }
     })
-    .withFailureHandler(function (err) { if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error'); })
+    .withFailureHandler(function (err) { settle(); if (typeof showToast === 'function') showToast((err && err.message) || err, 'toast-error'); })
     .acknowledgeCoaching(coachId);
 }
 
