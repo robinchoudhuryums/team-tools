@@ -508,11 +508,14 @@ this section before touching the relevant area.
   bypass this check intentionally — back-fills need to land
   arbitrarily close to other times.
 - **Self-undo is narrow on purpose.** `selfDeletePunch` only
-  removes (a) today's punches, (b) within `SELF_UNDO_WINDOW_SECONDS`
-  (5 min), (c) that are NOT adjustments. Older or remote mistakes
-  must go through Adjust so they leave a clear `ADJ-*` row in the
-  audit log. Self-undo writes a `PunchSelfUndo` audit row before
-  deletion.
+  removes (a) punches dated today or yesterday in the rep's tz —
+  yesterday exists solely for the midnight wrap (punch 23:58, undo
+  00:02; cycle-8 made the server honor what the client always
+  offered), (b) within `SELF_UNDO_WINDOW_SECONDS` (5 min) of REAL
+  elapsed time, (c) that are NOT adjustments. Older or remote
+  mistakes must go through Adjust so they leave a clear `ADJ-*` row
+  in the audit log. Self-undo writes a `PunchSelfUndo` audit row
+  before deletion.
 - **`getTeammateStatus` is the low-privilege view.** Returns name +
   status + isSelf only. Adding email, employee ID, last-punch
   time, or tz to the response would leak data to non-managers who
@@ -611,14 +614,21 @@ this section before touching the relevant area.
   now `multi` controls whose option VALUES are exactly the substrings
   `intakeDeriveClinicalFactors_` parses** (`Feet`/`Legs`; `Paralysis Left Arm`…
   comma-joined; `Left (Above Knee)`… with no stray `no`), Q38 (weight) is
-  `numunit` (engine strips non-digits), and **Q39a (dwelling — operator rule
+  `numunit` (the engine parseFloat-parses it keeping the DECIMAL — cycle-8:
+  the old `\D` strip turned "250.5" into 2505 lbs, failing every weight cap
+  and reading as ≥285 for the Q39a mobile-home rule; units/commas still
+  drop), and **Q39a (dwelling — operator rule
   2026-07-09) is an ENGINE-READ `choice`** (`House`/`Apartment`/`Mobile Home`;
   the engine substring-matches `mobile` → `livesInMobileHome`, and Mobile Home
   + weight under 285 lbs short-circuits the whole filter to **K0821 only** —
   the HOME constraint wins over the clinical gates by operator decision;
   ≥285 lbs / blank weight / no answer → standard logic; a catalog with no
   K0821 row → empty result). Never renumber around Q39a — the `39a` key rides
-  stored answers + the engine, like 31a/33a. All of this is MORE reliable than the old free-text (no
+  stored answers + the engine, like 31a/33a. UNLIKE 31a/33a, Q39a COUNTS in
+  the PPD progress ring/stepper (cycle-8: the bare-digit `mainQNums` filter
+  excluded it, so a rep could see "45/45 complete" with the engine-critical
+  dwelling answer blank — it's a full-weight primary question that's lettered
+  only to avoid renumbering; the ring denominator is now 46). All of this is MORE reliable than the old free-text (no
   typos) and pinned by the Phase-0 engine-contract tests + the Phase-2 config
   drift-guard (`test/client/run.js` feeds the live config values back through the
   engine). **CANONICAL-ENGLISH VALUE RULE (load-bearing):** the stored value is
@@ -1340,7 +1350,14 @@ this section before touching the relevant area.
   `TEST_CDR_SS_ID`) for the Metrics integration tests; `getCdrSS_`
   honors a `_TEST_OVERRIDE_CDR_SS_ID` global so those tests read the
   fixture instead of the real CDR Report (`_withTestCdr_` resets the
-  in-memory + CacheService CDR caches around each).
+  in-memory + CacheService CDR caches around each). **Mid-body skips
+  are honest (cycle-8 M-14):** a test whose fixture/optional config is
+  unavailable calls `_skipTest(reason)` — recorded as SKIP, never PASS
+  (13 sites used to `_assertTrue(true, '…skipped')`, inflating the
+  pass count and hiding fixture rot). The S1.1 ADP-tz tripwire is the
+  deliberate exception: an unreachable ADP spreadsheet FAILS it (a
+  broken deployment is not a skippable precondition). Expect SKIP rows
+  in `runAllTests` output wherever fixtures aren't provisioned.
 - **PTO bucket state lives in the Employees sheet** (columns
   I/J = AnnualLeaveBalance / SickLeaveBalance; column K =
   PtoEnabled per-employee toggle). Time-off rows in
@@ -1747,7 +1764,12 @@ this section before touching the relevant area.
   `timeDiffSecondsClient` computes `86400 + diff` when the raw diff
   is negative (punch at 23:58, now at 00:02), capping at
   `SELF_UNDO_WINDOW_SECONDS` so yesterday's punches don't falsely
-  appear eligible. The server re-validates independently.
+  appear eligible; eligibility requires a NON-NEGATIVE diff (cycle-8:
+  the -1 "malformed/beyond-window" sentinel satisfied `<= 300`, so a
+  stale post-midnight list rendered undo buttons on everything). The
+  server re-validates independently — and since cycle 8 it actually
+  ACCEPTS the wrap (INV-23's today-or-yesterday elapsed-ms window),
+  so the button works instead of dead-ending in a server error.
 - **Bulk approve/deny fires parallel RPCs.** The manager Pending
   Time Off section has checkboxes + a bulk bar when 2+ requests are
   pending. Bulk approve/deny calls `updateTimeOffStatus` once per
@@ -2268,7 +2290,11 @@ this section before touching the relevant area.
   query) skip the hover binding entirely — tap always pins. The
   shell's Esc handler still closes any open overlay; a piggybacked
   listener in `tc/script_timeoff.html` resets the pin flag so
-  subsequent hover-opens behave correctly.
+  subsequent hover-opens behave correctly. **The shell focus trap
+  EXEMPTS `.overlay.hover-mode` (cycle-8):** a hover-opened popover is
+  not modal — trapping yanked Tab/month-nav focus into the popover's
+  Close button while the pointer merely rested on a cell; a
+  click-PINNED popover drops `hover-mode` and traps normally.
 - **Rectangular PTO tile (Round 2 · 8d).** The Time / PTO side rail
   (Time Off mode) renders a rectangular `.pto-tile` instead of the
   prior PTO donut. Head label + year/months-left meta + big tabular
@@ -4111,7 +4137,9 @@ keep bespoke tripwires)). Cycle 7 added the
 next tripwire families: the spreadsheet-factory set (createPinnedSpreadsheet_
 pins tz+locale; a comment-stripped count forbids bare `SpreadsheetApp.create(`
 outside it; the three call sites route through it — INV-141), the CN-timestamp
-boundary (all four `CN.TIMESTAMP` readers use `cnTimestampString_` — INV-142),
+boundary (the enumerated readers use `cnTimestampString_` PLUS, since cycle 8,
+a GLOBAL whitelist scan of every `[CN.TIMESTAMP]` occurrence in Code.js — a
+fifth reader added anywhere now trips it — INV-142),
 the coaching-parser + dashboard AuditLog coercion-read pins (H-1/M-3/M-4),
 the detector-liveness wiring (compute→return→digest + the check keys — five
 at Turn C, six since cycle 8's `briefConfig`), the INV-72
@@ -4119,7 +4147,19 @@ at Turn C, six since cycle 8's `briefConfig`), the INV-72
 BEHAVIORAL mirror (drives the real server function over every client key),
 the `empShiftSchedule_` single-resolver check (zero bare `getShiftSchedule_`
 calls — INV-149), and the cross-partial `intakeFlushDraftNow_` hook check
-(INV-148). It also
+(INV-148). Cycle 8 generalized three tripwires that were narrower than their
+invariants: the `TO/PAR.SUBMITTED_AT` raw-read scan is ANY-INDEX (the old
+regex required the loop variable to literally be `i`), the CN-timestamp
+boundary gained the global scan above, and the INV-72 mirror gained its
+REVERSE direction (`TIME_OFF_TYPES` entries without a client preview entry
+must resolve to the server's annual/1.0 default — a server-side branch added
+without a client entry fails; default-served types like `Other` pass). The
+harness itself was hardened in cycle 8: `extractFunction`/`extractRawFunction`
+anchor on `'function name('` (a bare name-prefix match silently extracted the
+wrong body when the name prefixes an earlier declaration — getQuiz vs
+getQuizzes was a live latent collision), and the DOM harness's `flushTimers`
+RETHROWS the first deferred-callback error instead of swallowing it (a
+crashing deferred render used to pass silently). It also
 parse-guards every JS-bearing `<script>` partial so a syntax error
 anywhere in the client fails CI. It also runs a **design-token hygiene
 tripwire** (INV-128) that fails CI on any `var(--token)` used in a shared
@@ -4210,7 +4250,7 @@ INV-19 | US holiday observance shift: Saturday → previous Friday, Sunday → f
 INV-20 | Test impersonation uses `_TEST_OVERRIDE_EMAIL`, consumed only by `getActiveUserEmail_()`, and is cleared in `finally` by every entry point | Subsystem: Test Suite
 INV-21 | `cleanupTestData()` removes every row whose employee ID starts with `TEST_` across Timesheet, TimeOffRequests, and AuditLog; production IDs must never start with `TEST_` | Subsystem: Test Suite
 INV-22 | Live (non-adjustment) punches in `recordPunch` are rejected if within `CONFIG.MIN_PUNCH_INTERVAL_SECONDS` (30s) of the previous punch; adjustments bypass this check | Subsystem: Server
-INV-23 | `selfDeletePunch` only deletes punches that are (a) today's, (b) within `CONFIG.SELF_UNDO_WINDOW_SECONDS` (300s), and (c) not adjustments; it writes a `PunchSelfUndo` audit row before deletion | Subsystem: Server
+INV-23 | `selfDeletePunch` only deletes punches that are (a) dated today OR yesterday in the rep's tz, (b) within `CONFIG.SELF_UNDO_WINDOW_SECONDS` (300s) of REAL elapsed time — computed from the punch's rep-local datetime in ms (cycle-8: the old same-day string-diff check rejected the documented midnight wrap twice over, so "punch 23:58, undo 00:02" never worked server-side; the yesterday allowance is bounded by the same 5-minute elapsed window, and an unparseable time fails closed) — and (c) not adjustments; it writes a `PunchSelfUndo` audit row before deletion | Subsystem: Server
 INV-24 | `getTeammateStatus` response is restricted to `{ name, status, isSelf }` per teammate — no emails, IDs, last-punch times, or timezones leak to non-managers | Subsystem: Server
 INV-25 | `managerSubmitTimeOff` requires `callerEmp.isManager`; when `autoApprove=true` it skips the Pending stage, applies the PTO deduction in the same call, and emails the employee a decision notice | Subsystem: Server
 INV-26 | All reads of `row[ADP.TIME]` (and any cell that may hold a time value) go through `normalizeTime_`, which detects Date objects and re-formats via the spreadsheet's timezone | Subsystem: Server
@@ -4270,7 +4310,7 @@ INV-79 | Resizable sidebar width persists to `localStorage.umsSidebarW` (range 5
 INV-80 | Time / PTO mode (`localStorage.umsMergeMode`, `'timeoff'` \| `'timesheet'`, default `'timeoff'`) persists across reloads. `'timeoff'` mode renders the `.pto-tile` + upcoming-requests in the side rail; `'timesheet'` mode lazy-loads tsData via `loadTimesheetSideRail_` (its own `getTimesheetData` call; the legacy `loadTimesheet` cluster was deleted in Cycle 2 · L11 — INV-74) and renders a pay-period `.pto-tile` mirror + recent-activity list. The TOOLS registry tab key stays `'timeoff'` even though the label changed to `'Time / PTO'` so `?tool=timeoff` deep-links + `currentView === 'timeoff'` guards keep working | Subsystem: Client (Time Clock views)
 INV-81 | The Clock view's coverage-strip "File N missing" CTA fires `fileMissingCalls_(date, missingCount)` which sets `window.CLK_NAV_HINT { source: 'coverageStrip', date, missingCount }` before calling `enterTool('callNotes')`. `cnConsumeNavHint_` on Log-view enter reads + nulls the hint and surfaces a confirmation toast. Per-call CDR data doesn't exist today (DQE Historical Data is per-(agent, date) aggregated only), so unmatched call IDs can't be passed via the hint yet — when a per-call source lands, extend the hint with `hint.calls[]` for prefill | Subsystem: Client (Time Clock views) + Client (Call Notes views)
 INV-82 | Tag taxonomy admin endpoints (`renameCallNoteTag`, `mergeCallNoteTags`, `archiveCallNoteTag`) are manager-gated (INV-02) and acquire `LockService.getScriptLock` with `waitLock(15000)` (INV-01). Rename and merge use `applyTagTransformAcrossReps_` to iterate every enrolled rep's per-rep Sheet and rewrite `subformData.tags[]` in place; dedupe handles the case where the target tag is already present on a note. Archive only mutates the `CN_ARCHIVED_TAGS` Script Property (JSON-encoded array of lowercase tags) — existing note tags are unchanged, so archive does NOT remove the tag from cards already in production. All three write a `CallNoteTagAdmin` audit row (INV-32 extension) with the manager's email + `{action, oldTag/newTag, repsTouched, notesUpdated}` summary. Per-rep Sheet failures are isolated via try/catch in the loop so one broken Sheet doesn't fail the whole rename. All three call `invalidateCnTaxonomyCache_()` after their audit write so the Admin table reflects the change immediately. `getCallNotesTagTaxonomy` returns the `archived` flag on each in-use tag plus an `archivedOnlyTags[]` array for archived tags no longer in active use, and is itself whole-result cached (`CN_TAXONOMY_CACHE_KEY`, 5 min) | Subsystem: Server
-INV-83 | `uiConfirm({title?, message?, confirmLabel?, cancelLabel?, tone?})` and `uiPrompt({title?, message?, initialValue?, placeholder?, validator?, confirmLabel?, cancelLabel?})` in `script_core.html` are Promise-returning replacements for `window.confirm` / `window.prompt`. All 14 native-dialog callsites across `tc/script_clock.html`, `tc/script_manager.html`, `tc/script_timeoff.html`, and `cn/script_callnotes.html` are converted — no `window.confirm` / `window.prompt` usage remains in the codebase. Esc + click-outside resolve `false`/`null`; Enter on a confirm fires OK unless the Cancel button is focused (a keyboard user who Tabs to Cancel and presses Enter gets cancel — confirming from Cancel fired destructive actions until fixed); Enter inside the prompt input submits. `tone:'danger'` paints the OK button destructive via `.ui-dialog-ok.is-danger`. `validator` on uiPrompt returns an error string and the dialog shows it inline WITHOUT closing so the rep can fix and retry. A `resolved` sentinel inside each helper prevents double-resolution if Esc + click-outside fire in quick succession. Multi-statement continuations are extracted into helpers (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`, `handleBulkActionConfirmed_`) so click-handler signatures stay synchronous from the dispatcher's perspective | Subsystem: Client (shell)
+INV-83 | `uiConfirm({title?, message?, confirmLabel?, cancelLabel?, tone?})` and `uiPrompt({title?, message?, initialValue?, placeholder?, validator?, confirmLabel?, cancelLabel?})` in `script_core.html` are Promise-returning replacements for `window.confirm` / `window.prompt`. All 14 native-dialog callsites across `tc/script_clock.html`, `tc/script_manager.html`, `tc/script_timeoff.html`, and `cn/script_callnotes.html` are converted — no `window.confirm` / `window.prompt` usage remains in the codebase. Esc + click-outside resolve `false`/`null`; Enter on a confirm fires OK unless the Cancel button is focused (a keyboard user who Tabs to Cancel and presses Enter gets cancel — confirming from Cancel fired destructive actions until fixed); Enter inside the prompt input submits. `tone:'danger'` paints the OK button destructive via `.ui-dialog-ok.is-danger`. `validator` on uiPrompt returns an error string and the dialog shows it inline WITHOUT closing so the rep can fix and retry. A `resolved` sentinel inside each helper prevents double-resolution if Esc + click-outside fire in quick succession. **Stacked dialogs (cycle-8): each dialog's document-level CAPTURE keydown acts only when its own overlay is the TOPMOST `.overlay.open.ui-dialog`, and handles via `stopImmediatePropagation()`** — `stopPropagation` can't stop same-node-same-phase siblings, so one Escape used to resolve BOTH stacked dialogs (the bottom one with `false`, cancelling its flow). Multi-statement continuations are extracted into helpers (`cnDoDeleteNote_`, `cnDoToggleFlag_`, `cnDoSelfUndo_`, `handleBulkActionConfirmed_`) so click-handler signatures stay synchronous from the dispatcher's perspective | Subsystem: Client (shell)
 INV-84 | `cnRenderComposerTabStrip_(active, noteId)` renders a shared Department | External segmented control prepended to both the department composer (`cn-compose-overlay`, in both `cnRenderComposerFormStep_` + `cnRenderComposerPreviewStep_`) and the external composer (`cn-ext-overlay`, in `cnBuildExternalEmailHtml_`). `cnSwitchComposerTab_(target)` captures the active composer's noteId from `CN_STATE.composer` / `CN_STATE.extComposer`, closes the active modal (clearing its state slot via the close handler), and opens the target modal preserving the noteId. The Department tab is disabled when no noteId is in scope — a dept email needs a saved note to stamp EmailedAt/EmailDepartments — and `cnSwitchComposerTab_` guards defensively with a toast if the disabled state is bypassed | Subsystem: Client (Call Notes views)
 INV-85 | `getCdrAgentMetrics_()` cache key includes an MD5 hash of the sorted roster-names array via `cdrRosterHash_()` so that different roster filters for the same date range don't collide. Cache payload size is logged at 90KB as a warning (Apps Script CacheService limit is 100KB). Cache key prefix is versioned (`CDR_CACHE_KEY`, currently `cdr_metrics_v3` — v3 added `meta.offRosterAgents`, the M-11 fix); bump on any aggregation-rule change | Subsystem: Server
 INV-86 | `getCdrNameMap_()` reads the `Agent Alias Overrides` sheet from the CDR Report spreadsheet (same sheet written by `call-data-reporting`'s `OrphanFix.gs`). Returns `{ oldName → canonicalName }` for active aliases. Cached in-memory for `CDR_CACHE_TTL` seconds. Used by both `getCdrAgentMetrics_()` and `getCdrDailyBreakdown_()` to resolve CDR agent names that don't directly match the team-tools roster. Missing or empty sheet degrades gracefully (empty map) | Subsystem: Server
