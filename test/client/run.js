@@ -3083,5 +3083,45 @@ test('no Timesheet purge tier exists (keep-forever) and CN archive call sites ke
     'archiveOldCallNotes still uses the helper defaults (no opts drift)');
 });
 
+console.log('\ntc/script_clock.html — night-sky phases + moon + skeleton loaders (operator picks a+b+d)');
+const clkSkyFor_ = loadFunction(sb, 'tc/script_clock.html', 'clkSkyFor_');
+const clkMoonPhase_ = loadFunction(sb, 'tc/script_clock.html', 'clkMoonPhase_');
+
+test('clkSkyFor_ walks distinct night sub-phases with star densities (flat "Night" is gone)', () => {
+  assert.strictEqual(clkSkyFor_(10).phase + '|' + clkSkyFor_(10).stars, 'Morning|0', 'day phases carry no stars');
+  assert.strictEqual(clkSkyFor_(18).phase + '|' + clkSkyFor_(18).stars, 'Dusk|1', 'first stars at dusk');
+  assert.strictEqual(clkSkyFor_(21).phase + '|' + clkSkyFor_(21).stars, 'Nightfall|2');
+  assert.strictEqual(clkSkyFor_(0).phase + '|' + clkSkyFor_(0).stars, 'Midnight|3', 'densest at midnight');
+  assert.strictEqual(clkSkyFor_(23).phase, 'Midnight', '23:00 joins the midnight band');
+  assert.strictEqual(clkSkyFor_(3).phase + '|' + clkSkyFor_(3).stars, 'Late night|3');
+  assert.strictEqual(clkSkyFor_(4).phase + '|' + clkSkyFor_(4).stars, 'Pre-dawn|1', 'stars fade toward dawn');
+  // The IST overnight shift (~18:30–03:00 local) now crosses ≥4 distinct looks.
+  const gradients = [18, 21, 0, 3, 4].map((h) => clkSkyFor_(h).grad);
+  assert.strictEqual(new Set(gradients).size, gradients.length, 'each night sub-phase has its own gradient');
+  [18, 21, 0, 3, 4].forEach((h) => assert.strictEqual(clkSkyFor_(h).glyph, 'moon'));
+});
+
+test('clkMoonPhase_ tracks the synodic cycle from the 2000-01-06 reference new moon', () => {
+  const ref = Date.UTC(2000, 0, 6, 18, 14);
+  const day = 86400000;
+  assert.strictEqual(clkMoonPhase_(ref).name, 'New Moon');
+  assert.ok(clkMoonPhase_(ref).frac < 0.01, 'reference instant ≈ frac 0');
+  assert.strictEqual(clkMoonPhase_(ref + 14.765 * day).name, 'Full Moon', 'half a synodic month later');
+  assert.strictEqual(clkMoonPhase_(ref + 7.38 * day).name, 'First Quarter');
+  assert.strictEqual(clkMoonPhase_(ref + 22.15 * day).name, 'Last Quarter');
+  assert.strictEqual(clkMoonPhase_(ref + 29.530588853 * day).name, 'New Moon', 'full cycle wraps');
+  assert.strictEqual(clkMoonPhase_(ref - 14.765 * day).name, 'Full Moon', 'pre-reference dates wrap correctly (negative mod)');
+  const m = clkMoonPhase_(Date.UTC(2026, 6, 10));
+  assert.ok(m.octant >= 0 && m.octant <= 7 && m.name, 'always a valid octant/name');
+});
+
+test('the Dashboard uses card-shaped skeletons — no sweep bar remains (operator pick)', () => {
+  const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(!/loSweep\(/.test(clockSrc), 'no loSweep() call remains in the Dashboard partial');
+  assert.ok(/clkDashSkeleton_\(/.test(clockSrc) && /clkDashSkelKpis_\(/.test(clockSrc),
+    'skeleton helpers are wired (initial pair + per-card KPI shapes)');
+  assert.ok(/class="skel dash-skel-kpi"/.test(clockSrc), 'skeletons compose the shared .skel shimmer');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

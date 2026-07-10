@@ -3130,7 +3130,11 @@ this section before touching the relevant area.
   history/queues = `list`, sent forms = `outbox`, Clock/Manager/Time-Off =
   `clock`, Metrics = `chart`, Training = `check`, EmpDocs = `fileText`); Role B
   `loSkeleton(n)` shimmer rows (CN list/stack loads); Role C `loSweep()`
-  indeterminate bar (admin/coverage/intake panel reloads); Role D `.lo-dots`.
+  indeterminate bar (admin/coverage/intake panel reloads — the DASHBOARD no
+  longer uses it: operator pick 2026-07-10 replaced its loaders with
+  card-shaped skeletons, `clkDashSkeleton_`/`clkDashSkelKpis_` composing the
+  shared `.skel` shimmer into carousel/KPI shapes so loading holds the layout;
+  a Node tripwire pins zero `loSweep(` in `tc/script_clock.html`); Role D `.lo-dots`.
   **Motion:** §1 view-enter fade+rise hooked ONCE in the router (`showView` adds
   `.view-enter` on each nav — optimistic re-renders call render fns directly so
   they're unaffected); a shared `MOTION_IO` IntersectionObserver +
@@ -3145,7 +3149,20 @@ this section before touching the relevant area.
   coverage-heatmap stagger; §8 `.kb-dept-body` / `.cn-qa-cards` max-height
   accordion (KB dept toggles its class LIVE now, not a re-render, so it can
   animate); §10 two stacked `.sky-layer`s cross-fade the Clock big-clock card
-  (CSS can't transition between two gradients). Overlay/modal entrance was
+  (CSS can't transition between two gradients). **Night-sky decor (operator
+  picks a+b+d, 2026-07-10):** `clkSkyFor_` walks night SUB-phases (Dusk /
+  Nightfall / Midnight / Late night / Pre-dawn — overnight-local IST reps now
+  cross ≥4 distinct looks per shift) each carrying a `stars` density 0–3;
+  `clkSkyDecor_` renders a deterministic (index-hashed, never re-scatters)
+  twinkling star field + the REAL moon phase (`clkMoonPhase_`, pure +
+  Node-pinned — synodic cycle from the 2000-01-06 reference new moon, an
+  octant-offset shade disc, name in the tooltip) inside `.clk-sky-layers` (so
+  a background photo hides the decor with the sky, and it all sits under the
+  z-1 content); `clkShootMaybe_` (1Hz-tick piggyback) fires a shooting star
+  every ~2.5–4.5 min ONLY in deep night (density ≥ 2) after the rep-local
+  shift midpoint, and skips entirely under `prefers-reduced-motion` (a
+  non-animating streak would linger — the twinkle keyframes are killed by the
+  global block as usual). Overlay/modal entrance was
   already handled by `.overlay.open` (fadein) + `.modal` (modalin) + the
   `#kb-drawer` slide — NOT re-declared. Inline animation params
   (`--circ/--target/--len/--d`) carry defaults so the INV-128 token tripwire

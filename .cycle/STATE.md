@@ -6,7 +6,36 @@ Phase: idle — Cycle 7 closed + operator-verified; post-cycle FEATURE batches #
 Scope: feature batches (operator-selected suggestions), not an audit
 Test Command: manual
 Subsystem cycles since last Seams audit: 0
-Updated: 2026-07-09 (#7: INV-153 Timesheet cold-archive — archiveOldTimesheetRows, TIMESHEET_ARCHIVE_DAYS + 120d floor, 15th trigger)
+Updated: 2026-07-10 (night-sky phases a+b+d + Dashboard skeleton loaders — client-only visuals batch)
+
+## Night-sky phases + Dashboard skeletons (2026-07-10, claude/broad-scan-45plfi)
+Operator picked options (a) night sub-phases + (b) twinkling/shooting stars +
+(d) real moon phases for the IST-overnight-shift sky, and skeleton shapes to
+replace the loSweep bar on the Dashboard. Client-only (`tc/script_clock.html`),
+zero server/operator state:
+- clkSkyFor_ night split: Dusk 17-20 / Nightfall 20-23 / Midnight 23-2 /
+  Late night 2-4 / Pre-dawn 4-5, each a distinct gradient + a `stars`
+  density 0-3. The existing 10-min sky poll + .sky-layer cross-fade (§10)
+  animates the transitions unchanged.
+- clkSkyDecor_ renders a deterministic star field (index-hashed positions,
+  counts [0,9,16,26] by density; _clkLastStarDensity rebuild guard) + a moon
+  disc INSIDE .clk-sky-layers — so the .has-bg photo mode auto-hides all of
+  it. Moon phase from the pure clkMoonPhase_ (synodic 29.530588853d from the
+  2000-01-06 18:14 UTC new moon; octant → CLK_MOON_SHADE translateX shadow;
+  phase name in title/aria-label). Node-pinned (Full/quarters/wrap/neg-mod).
+- clkShootMaybe_ piggybacks the 1Hz startClock tick: an occasional .clk-shoot
+  streak, only when density≥2 AND rep-local time is past mid-shift
+  (clkSchedStartMin_ + lengthMin/2), ~2.5-4.5 min cadence; skipped under
+  prefers-reduced-motion and .has-bg. Twinkle keyframes are neutralized by
+  the global reduced-motion block.
+- Dashboard loaders: initial #dash-cards + the three extras-card loading
+  branches now render card-shaped .skel skeletons (clkDashSkeleton_/
+  clkDashSkelCard_/clkDashSkelKpis_) instead of loSweep; orphaned
+  .dash-cards-loading CSS removed. A Node tripwire pins ZERO loSweep( in
+  tc/script_clock.html + the skeleton wiring, so the bar can't quietly return.
+- Pure 271/0, DOM 59/0. CLAUDE.md: Loader Role C note + §10 night-sky decor
+  paragraph. No editor-suite change (client-only).
+- OPERATOR: rides the same pending clasp push -f + New version as #128-#130.
 
 ## Testing-feedback round 2 (2026-07-09, claude/broad-scan-45plfi)
 Five items from continued live testing; three implemented, two answered with

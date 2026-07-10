@@ -43,6 +43,38 @@
      (neutralized by the global prefers-reduced-motion block). */
   .clk-region-rot { display: inline-flex; align-items: baseline; gap: 5px; animation: clkRegSlide .42s var(--ease) both; }
   @keyframes clkRegSlide { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  /* Night-sky decor (operator picks a+b+d, 2026-07-10) — star field, shooting
+     star, moon. All inside .clk-sky-layers (z 0, hidden with a photo bg); the
+     twinkle/streak keyframes animate opacity/transform only and are killed by
+     the global prefers-reduced-motion block (clkShootMaybe_ additionally skips
+     spawning streaks there, so no static line lingers). Whites are the same
+     decorative-inline-hex class as the sky gradients. */
+  .clk-stars { position: absolute; inset: 0; pointer-events: none; }
+  .clk-stars .st { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff;
+    opacity: .3; animation: clkTwinkle 3.6s ease-in-out infinite; }
+  .clk-stars .st.big { width: 3px; height: 3px; box-shadow: 0 0 4px rgba(255, 255, 255, .55); }
+  @keyframes clkTwinkle { 0%, 100% { opacity: .22; } 50% { opacity: .95; } }
+  .clk-shoot { position: absolute; width: 74px; height: 2px; border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff);
+    animation: clkShoot 1.15s ease-out forwards; }
+  @keyframes clkShoot {
+    from { opacity: 0; transform: translate(0, 0) rotate(-32deg); }
+    12%  { opacity: .95; }
+    to   { opacity: 0; transform: translate(-150px, 94px) rotate(-32deg); }
+  }
+  .clk-moon { position: absolute; right: 16px; top: 42px; width: 30px; height: 30px; border-radius: 50%;
+    background: #f2eddc; overflow: hidden; box-shadow: 0 0 14px rgba(255, 246, 214, .35); pointer-events: auto; }
+  .clk-moon .shade { position: absolute; inset: 0; border-radius: 50%; background: rgba(14, 18, 38, .92); }
+
+  /* Dashboard card-shaped skeletons (operator pick 2026-07-10) — compose the
+     shared .skel shimmer (styles.html) into the shapes the briefing cards
+     render with, so loading holds the layout instead of a stray sweep bar. */
+  .dash-skel-label { display: block; width: 110px; height: 10px; margin-bottom: 14px; }
+  .dash-skel-seg { display: block; width: 190px; height: 26px; border-radius: 999px; margin-bottom: 14px; }
+  .dash-skel-big { display: block; width: 46%; height: 30px; margin-bottom: 16px; }
+  .dash-skel-kpis { display: flex; gap: 10px; }
+  .dash-skel-kpi { flex: 1; height: 54px; border-radius: var(--radius-sm); }
+
   /* Greeting-bar rotator (operator feedback 2026-07-09) — the status line
      rotates upward-carousel style with What's-new update slides. Same slide-up
      animation as the world-clock chip (same reduced-motion neutralization). */
@@ -176,7 +208,6 @@
   :root[data-compact] #dash-cards { display: none; }
   :root[data-compact] .dash-greet-bar { display: none; }
 
-  .dash-cards-loading { padding: 20px 0; }
   .dash-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
   .dash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; row-gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .dash-seclabel { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
@@ -392,7 +423,7 @@ function renderClockView(area) {
       </div>
 
       <div class="dash-main" id="dash-main">
-        <div id="dash-cards"><div class="dash-cards-loading">${loSweep()}</div></div>
+        <div id="dash-cards">${clkDashSkeleton_()}</div>
         <div class="dash-pair dash-foot">
           <div class="card">
             <div class="card-label">Today's Punches</div>
@@ -430,6 +461,32 @@ var CLK_DASH = { mine: 0, team: 0, data: {}, isMgr: false, loadedDay: '', loaded
 // kills the "cards vanish → line-loader → reappear" flash on every window focus
 // (clkRefreshState_ re-renders the whole Clock view on focus/visibilitychange).
 var CLK_DASH_FRESH_MS = 60000;
+
+// Card-shaped skeletons (operator pick 2026-07-10) — the Dashboard's loading
+// states are placeholders shaped like what will land (the sweep bar read as a
+// stray line and the layout jumped when content arrived). Composed from the
+// shared .skel shimmer (styles.html), so the reduced-motion block and dark
+// mode behave like every other skeleton.
+function clkDashSkelKpis_() {
+  return '<div class="dash-kpis dash-skel-kpis" aria-hidden="true">' +
+    '<span class="skel dash-skel-kpi"></span><span class="skel dash-skel-kpi"></span><span class="skel dash-skel-kpi"></span>' +
+  '</div>';
+}
+function clkDashSkelCard_() {
+  return '<div class="dash-card" aria-hidden="true">' +
+    '<span class="skel dash-skel-label"></span>' +
+    '<span class="skel dash-skel-seg"></span>' +
+    '<span class="skel dash-skel-big"></span>' +
+    clkDashSkelKpis_() +
+  '</div>';
+}
+/** The initial #dash-cards loading state — a 2-up pair mimicking the two
+ *  metric carousels (label + segmented chip + hero value + KPI tiles). */
+function clkDashSkeleton_() {
+  return '<div class="dash-pair" role="status" aria-label="Loading dashboard">' +
+    clkDashSkelCard_() + clkDashSkelCard_() +
+  '</div>';
+}
 
 /** Fetch all three periods up front (server-cached per (emp,period)); render the
  *  carousels when they all resolve. Guards on currentView (late-callback). */
@@ -663,7 +720,7 @@ function clkRenderDashboardExtras_() {
 
 /** Pending-training card for non-Spanish agents (getMyTraining, rep-callable). */
 function clkDashTrainingCard_(res) {
-  if (res === undefined) return '<div class="dash-empty">' + loSweep() + '</div>';
+  if (res === undefined) return clkDashSkelKpis_();   // card-shaped skeleton (operator pick 2026-07-10)
   if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
   var items = res.items || [];
   var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'develop\',\'trainingHome\')">Open My Training →</a></div>';
@@ -689,7 +746,7 @@ function clkDashTrainingCard_(res) {
 }
 
 function clkDashSpanishCard_(res, pendingRes) {
-  if (res === undefined) return '<div class="dash-empty">' + loSweep() + '</div>';
+  if (res === undefined) return clkDashSkelKpis_();   // card-shaped skeleton (operator pick 2026-07-10)
   if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
   var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsSpanish\')">Open Spanish Inbox →</a></div>';
   var pend = (pendingRes && pendingRes.pending) ? pendingRes.pending : null;
@@ -733,7 +790,7 @@ function clkSpNav_(delta) {
 }
 
 function clkDashRequestsCard_(res) {
-  if (res === undefined) return '<div class="dash-empty">' + loSweep() + '</div>';
+  if (res === undefined) return clkDashSkelKpis_();   // card-shaped skeleton (operator pick 2026-07-10)
   if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
   var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsDeptReq\')">Open Dept Requests →</a></div>';
   if (res.deptStats) {   // manager — team aggregate
@@ -919,14 +976,115 @@ function clkDisplayHour_() {
   return h % 24;
 }
 /** Time-of-day gradient + phase label/glyph for an hour. Decorative hexes (no
- *  token equivalent — the CN_EMAIL_PALETTE inline-hex precedent). */
+ *  token equivalent — the CN_EMAIL_PALETTE inline-hex precedent).
+ *  Night sub-phases (operator picks a+b+d, 2026-07-10): overnight-local teams
+ *  (IST) used to sit in one flat "Night" for nearly the whole shift. The night
+ *  now walks Dusk → Nightfall → Midnight → Late night → Pre-dawn, each with
+ *  its own gradient and a `stars` density (0–3) that drives the twinkling
+ *  star field + moon rendered by clkSkyDecor_. Node-pinned. */
 function clkSkyFor_(h) {
-  if (h >= 5 && h < 8)   return { grad: 'linear-gradient(135deg,#e8835a,#f6c177)', phase: 'Sunrise',       glyph: 'sun' };
-  if (h >= 8 && h < 12)  return { grad: 'linear-gradient(135deg,#4a89c8,#9ec9e8)', phase: 'Morning',       glyph: 'sun' };
-  if (h >= 12 && h < 17) return { grad: 'linear-gradient(135deg,#3f78c0,#f0c674)', phase: 'Mid-afternoon', glyph: 'sun' };
-  if (h >= 17 && h < 20) return { grad: 'linear-gradient(135deg,#6a4a8c,#e0916a)', phase: 'Dusk',          glyph: 'moon' };
-  return { grad: 'linear-gradient(135deg,#243056,#5b3a6e)', phase: 'Night', glyph: 'moon' };
+  if (h >= 5 && h < 8)   return { grad: 'linear-gradient(135deg,#e8835a,#f6c177)', phase: 'Sunrise',       glyph: 'sun',  stars: 0 };
+  if (h >= 8 && h < 12)  return { grad: 'linear-gradient(135deg,#4a89c8,#9ec9e8)', phase: 'Morning',       glyph: 'sun',  stars: 0 };
+  if (h >= 12 && h < 17) return { grad: 'linear-gradient(135deg,#3f78c0,#f0c674)', phase: 'Mid-afternoon', glyph: 'sun',  stars: 0 };
+  if (h >= 17 && h < 20) return { grad: 'linear-gradient(135deg,#6a4a8c,#e0916a)', phase: 'Dusk',          glyph: 'moon', stars: 1 };
+  if (h >= 20 && h < 23) return { grad: 'linear-gradient(135deg,#2b3163,#54406e)', phase: 'Nightfall',     glyph: 'moon', stars: 2 };
+  if (h >= 23 || h < 2)  return { grad: 'linear-gradient(135deg,#141a36,#2c2452)', phase: 'Midnight',      glyph: 'moon', stars: 3 };
+  if (h >= 2 && h < 4)   return { grad: 'linear-gradient(135deg,#1a2144,#3b2d5c)', phase: 'Late night',    glyph: 'moon', stars: 3 };
+  return { grad: 'linear-gradient(135deg,#232a52,#7a4a63)', phase: 'Pre-dawn', glyph: 'moon', stars: 1 };   // 4–5
 }
+
+/** (d) Real lunar phase — days since a reference new moon (2000-01-06 18:14
+ *  UTC) mod the synodic month. Returns { frac (0 = new → .5 = full), octant
+ *  0–7, name }. Self-contained + pure (Node-pinned); decorative accuracy
+ *  (±hours) is plenty for a 30px moon. */
+function clkMoonPhase_(ms) {
+  var NAMES = ['New Moon', 'Waxing Crescent', 'First Quarter', 'Waxing Gibbous',
+               'Full Moon', 'Waning Gibbous', 'Last Quarter', 'Waning Crescent'];
+  var SYNODIC = 29.530588853 * 86400000;
+  var ref = Date.UTC(2000, 0, 6, 18, 14);
+  var frac = (((ms - ref) % SYNODIC + SYNODIC) % SYNODIC) / SYNODIC;
+  var octant = Math.floor(frac * 8 + 0.5) % 8;
+  return { frac: frac, octant: octant, name: NAMES[octant] };
+}
+// Two-circle moon rendering: the dark shade disc slides by octant to carve the
+// lit shape (negative = waxing reveals the right limb, positive = waning).
+var CLK_MOON_SHADE = ['0%', '-32%', '-52%', '-74%', '-102%', '74%', '52%', '32%'];
+
+/** (b)+(d) — star field + moon. Lives INSIDE .clk-sky-layers, so a set
+ *  background photo (.has-bg hides the layers) hides the decor with it, and
+ *  everything sits under the z-1 card content. Star positions are
+ *  deterministic (index-hashed), so re-renders never scatter them; the
+ *  twinkle keyframes are neutralized by the global reduced-motion block. */
+var _clkLastStarDensity = -1;
+function clkSkyDecor_(sky) {
+  var host = document.querySelector('#clk-sky .clk-sky-layers');
+  if (!host) return;
+  var deco = document.getElementById('clk-sky-deco');
+  if (!deco) {
+    deco = document.createElement('div');
+    deco.id = 'clk-sky-deco';
+    deco.className = 'clk-stars';
+    host.appendChild(deco);
+    _clkLastStarDensity = -1;   // fresh card — force a rebuild
+  }
+  var density = sky.stars || 0;
+  if (density === _clkLastStarDensity) return;
+  _clkLastStarDensity = density;
+  var counts = [0, 9, 16, 26];
+  var n = counts[density] || 0;
+  var html = '';
+  for (var i = 0; i < n; i++) {
+    var left = (i * 37 + 13) % 100;
+    var top = (i * 53 + 7) % 88;
+    html += '<span class="st' + (i % 5 === 0 ? ' big' : '') + '" style="left:' + left + '%;top:' + top +
+      '%;animation-delay:' + ((i % 7) * 0.55).toFixed(2) + 's;animation-duration:' + (2.8 + (i % 4) * 0.7).toFixed(1) + 's"></span>';
+  }
+  if (density > 0) {
+    var moon = clkMoonPhase_(Date.now());
+    html += '<span class="clk-moon" title="' + esc(moon.name) + '" aria-label="' + esc(moon.name) + '">' +
+      '<span class="shade" style="transform:translateX(' + CLK_MOON_SHADE[moon.octant] + ')"></span></span>';
+  }
+  deco.innerHTML = html;
+}
+
+/** (b) Shooting star — the mid-shift marker: fires only in deep night
+ *  (density ≥ 2), only after the rep-local shift midpoint, every ~2.5–4.5 min
+ *  from the 1Hz tick (a cheap ms compare per second). Skipped under
+ *  prefers-reduced-motion (a non-animating streak would just linger) and when
+ *  a background photo replaces the sky. Purely decorative — every guard
+ *  degrades to "no streak". */
+var _clkNextShootAt = 0;
+function clkShootMaybe_() {
+  if (_clkLastStarDensity < 2) return;
+  var now = Date.now();
+  if (!_clkNextShootAt) { _clkNextShootAt = now + 20000 + Math.random() * 40000; return; }
+  if (now < _clkNextShootAt) return;
+  _clkNextShootAt = now + 150000 + Math.random() * 120000;
+  try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
+  var hero = document.getElementById('clk-hero');
+  if (hero && hero.classList.contains('has-bg')) return;   // photo replaces the sky
+  // After the rep-local shift midpoint only (the operator's "after mid-shift").
+  try {
+    var start = (typeof clkSchedStartMin_ === 'function') ? clkSchedStartMin_() : 480;
+    var len = (typeof clkSchedLenMin_ === 'function') ? clkSchedLenMin_() : 540;
+    var parts = new Intl.DateTimeFormat('en-US', { timeZone: empTz(), hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date());
+    var hh = 0, mm = 0;
+    parts.forEach(function (x) {
+      if (x.type === 'hour') hh = parseInt(x.value, 10) || 0;
+      if (x.type === 'minute') mm = parseInt(x.value, 10) || 0;
+    });
+    if (((hh % 24) * 60 + mm) < start + len / 2) return;
+  } catch (e) { return; }
+  var deco = document.getElementById('clk-sky-deco');
+  if (!deco) return;
+  var s = document.createElement('span');
+  s.className = 'clk-shoot';
+  s.style.left = (35 + Math.random() * 55) + '%';
+  s.style.top = (5 + Math.random() * 30) + '%';
+  deco.appendChild(s);
+  setTimeout(function () { try { s.remove(); } catch (e) {} }, 1600);
+}
+
 function clkApplySky_(force) {
   const card = document.getElementById('clk-sky');
   if (!card) return;
@@ -948,6 +1106,7 @@ function clkApplySky_(force) {
   } else {
     card.style.background = sky.grad;
   }
+  clkSkyDecor_(sky);   // (b)+(d) stars + moon (no-op when the density is unchanged)
   const ph = document.getElementById('clk-phase');
   if (ph) ph.innerHTML = icon(sky.glyph, 12) + ' ' + esc(sky.phase.toUpperCase());
 }
@@ -1817,6 +1976,7 @@ function startClock() {
     if (!document.getElementById('live-time')) return;
     clkTickTime_();        // big time in the displayed tz (#5a)
     clkApplySky_();        // repaint the sky gradient when the displayed hour rolls over
+    clkShootMaybe_();      // (b) occasional shooting star after mid-shift (cheap ms compare)
     clkUpdateRegions_();   // item 5 — refresh the world-clock strip (cached formatters)
     clkUpdateBreak_();     // item 1 — next-break chip + X-min reminder toast
     // Day rollover — a tab open past midnight must reconcile state so a
