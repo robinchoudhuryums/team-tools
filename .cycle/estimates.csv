@@ -23,3 +23,8 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-07-09,7,Turn 6 class fixes (M-14 + factory + locale),M (half day),4,1,Under ~4x: DR reads were already Date-safe (scope shrank); factory migration was 3 sites.
 2026-07-09,7,"Turn 7 signal quality (M-16,M-11,L-10..L-13)",S/M (~3h),3,0.75,Under: M-11 solved inside the existing reader loop + cache-key bump; diagnostic-liveness deliberately deferred.
 2026-07-09,7,Turn 8 remaining Lows + docs sync,S/M (~3h),3,1.5,Closest to estimate: 10 small fixes across 4 files + CLAUDE.md surgery (anchored replacements).
+2026-07-10,8,Batch 1 (H-1 + M-1..M-6),M (1-2 days),12,1.25,~10% of sizing: every fix was a localized guard/reorder; verification reads dominated.
+2026-07-10,8,Batch 2 (client races + dead features),S/M (~0.5 day),4,0.75,~19%: the guards all had in-repo patterns to copy (mgrSubSeq/L-18).
+2026-07-10,8,Batch 3 (server correctness/PHI/automation),M (~1 day),8,1,~13%: M-11 helper + 4 branch swaps; most Lows were one-site edits.
+2026-07-10,8,Batch 4 (test integrity),M (~1 day),8,0.75,~9%: tripwire regex generalization cheaper than feared; the behavioral test was the bulk.
+2026-07-10,8,Batch 5 (UX polish Lows),M (~1 day),8,0.75,~9%: 14 items but all surgical; the DOM suite caught the one wrong placement instantly.
