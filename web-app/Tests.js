@@ -684,7 +684,6 @@ function _runAllTests() {
   _smokeTest('daysBetween_acrossMonth',            test_daysBetween_acrossMonth);
 
   _smokeTest('normalizeType_stripsAdj',            test_normalizeType_stripsAdj);
-  _smokeTest('isLastBusinessDayOfMonth',           test_isLastBusinessDayOfMonth);
   _smokeTest('biweeklyPeriodMath',                 test_biweeklyPeriodMath);
 
   _smokeTest('timeDiffSeconds_positive',           test_timeDiffSeconds_positive);
@@ -1131,15 +1130,10 @@ function test_normalizeType_stripsAdj() {
   _assertEq(normalizeType_(''),              '');
 }
 
-function test_isLastBusinessDayOfMonth() {
-  // 2026-01-30 is Friday; Jan 31 is Saturday → last business day is Jan 30
-  _assertTrue(isLastBusinessDayOfMonth_(new Date(2026, 0, 30)),  '2026-01-30 is last biz day');
-  _assertFalse(isLastBusinessDayOfMonth_(new Date(2026, 0, 31)), '2026-01-31 (Sat) is not');
-  _assertFalse(isLastBusinessDayOfMonth_(new Date(2026, 0, 29)), '2026-01-29 (Thu) is not');
-  // 2026-05-29 is Friday; May 31 is Sunday → last biz day is May 29
-  _assertTrue(isLastBusinessDayOfMonth_(new Date(2026, 4, 29)),  '2026-05-29 is last biz day');
-  _assertFalse(isLastBusinessDayOfMonth_(new Date(2026, 4, 30)), '2026-05-30 (Sat) is not');
-}
+// (test_isLastBusinessDayOfMonth was removed in cycle 8 M-1 along with the
+// helper: the export gate now fires the morning AFTER the period completes —
+// 1st of the month / biweeklyRange.end === yesterday — so the final day's
+// afternoon punches exist when the Timesheet is read.)
 
 function test_biweeklyPeriodMath() {
   // Replicate the math in getCurrentBiweeklyRange_ to test it deterministically.

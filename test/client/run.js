@@ -2918,6 +2918,32 @@ test('drSlaStatus_ bands ontime / atrisk(≥75%) / overdue(≥100%) wall-clock',
   assert.strictEqual(drSlaStatus_(60, 0), null, 'no SLA → no badge');
 });
 
+// F(cycle-8 M-5): multi-dept ToDept split — a joined "Billing, Shipping" send
+// must reach each component department's inbox / member-resolve / SLA instead
+// of behaving as an unknown pseudo-department. Own context: getDeptRequestSla_
+// reads CONFIG, and the shared sb must not inherit the stub.
+console.log('\nCode.js — DeptRequests multi-dept split (drSplitDepts_ / drSlaForToDept_, cycle-8 M-5)');
+const drSb = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_HOURS: 48 } } });
+['drSplitDepts_', 'drSlaForToDept_', 'getDeptRequestSla_'].forEach((fn) =>
+  vm.runInContext(extractRawFunction('Code.js', fn), drSb, { filename: 'Code.js#' + fn }));
+test('drSplitDepts_ splits a joined multi-dept label and drops Other', () => {
+  assert.strictEqual(drSb.drSplitDepts_('Billing, Shipping').join('|'), 'Billing|Shipping');
+  assert.strictEqual(drSb.drSplitDepts_('Billing').join('|'), 'Billing', 'single dept is the identity');
+  assert.strictEqual(drSb.drSplitDepts_('Billing, Other').join('|'), 'Billing', "'Other' (untracked pseudo-dept) dropped");
+  assert.strictEqual(drSb.drSplitDepts_('Other').length, 0, "legacy 'Other'-only → empty (callers fall back to raw)");
+  assert.strictEqual(drSb.drSplitDepts_('').length, 0);
+  assert.doesNotThrow(() => drSb.drSplitDepts_(null));
+});
+test('drSlaForToDept_ takes the strictest component SLA; single-dept unchanged', () => {
+  const cfg = { Billing: 24, Shipping: 72 };
+  assert.strictEqual(drSb.drSlaForToDept_('Billing', cfg), 24, 'single dept = its own SLA');
+  assert.strictEqual(drSb.drSlaForToDept_('Shipping', cfg), 72);
+  assert.strictEqual(drSb.drSlaForToDept_('Billing, Shipping', cfg), 24, 'multi-dept → strictest (min hours)');
+  assert.strictEqual(drSb.drSlaForToDept_('Authorizations', cfg), 48, 'unlisted dept → default');
+  assert.strictEqual(drSb.drSlaForToDept_('Shipping, Other', cfg), 72, "Other never drags in the default's 48");
+  assert.strictEqual(drSb.drSlaForToDept_('Other', cfg), 48, 'Other-only falls back to the raw lookup → default');
+});
+
 console.log('\nscript_core.html — client error beacon (#1, INV-150)');
 const errBeaconPayload_ = loadFunction(sb, 'script_core.html', 'errBeaconPayload_');
 test('errBeaconPayload_ bounds every field and rejects empty messages', () => {

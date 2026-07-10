@@ -2604,11 +2604,19 @@ function cnWireActiveForm_() {
       // ${mod}+Shift+Enter keeps Save & Compose.
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
         e.preventDefault();
+        if (e.repeat) return;   // F(cycle-8 M-3): a held chord auto-repeats keydown
         cnSubmitActiveForm_();
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
+        // F(cycle-8 M-3): keydown AUTO-REPEATS while held. Save & Copy was
+        // accidentally protected (the optimistic clear empties the form
+        // synchronously) but Save & Compose keeps the form (keepForm), so a
+        // held/repeated chord fired N identical submitCallNote RPCs → N
+        // duplicate rows. The in-flight guard in cnSubmitActiveForm_ backstops
+        // the discrete double-press.
+        if (e.repeat) return;
         cnShowComposerLoading_();
         cnSubmitActiveForm_({
           keepForm: true,
@@ -3339,6 +3347,15 @@ function cnNowInTz_(tz) {
  *  it successfully lands. Used by the Save-Copy-Compose button to open
  *  the composer with the real noteId once the server has assigned one. */
 function cnSubmitActiveForm_(opts) {
+  // F(cycle-8 M-3): while a Save & Compose flow is active the form KEEPS its
+  // content (transactional compose, r3) — so any further submit before the
+  // flow settles (send / cancel / failure) would write a DUPLICATE row from
+  // the same text. Refuse re-entry; the flow's own teardown paths all clear
+  // CN_STATE.composeFlow, so this can never wedge.
+  if (CN_STATE.composeFlow) {
+    showToast('Still saving this note — one moment…', 'toast-info');
+    return;
+  }
   const requestedView = currentView;
   const payload = cnReadActiveForm_();
   if (!payload.callback && !payload.caller && !payload.patientAndTrx && !payload.issue && !payload.resolution) {
@@ -9089,6 +9106,15 @@ function cnOpenExternalEmailModal_(presetNoteId, onMounted) {
 }
 
 function cnCloseExternalEmailModal_() {
+  // F(cycle-8 M-4): mirror the department composer's INV-145 guard — refuse to
+  // close while the send RPC is in flight. Without this, an Esc mid-send closed
+  // silently; the rep reopened and started a new draft, and the FIRST send's
+  // late success handler then tore down the reopened modal (destroying the new
+  // typing) — or the rep re-sent, duplicating the customer email.
+  if (CN_STATE.extComposer && CN_STATE.extComposer.sending) {
+    showToast('Sending — one moment…', 'toast-info');
+    return;
+  }
   CN_STATE.extComposer = null;
   var overlay = document.getElementById('cn-ext-overlay');
   if (overlay) overlay.remove();
@@ -9589,7 +9615,11 @@ function cnSendExternalEmail_() {
         showToast(res.error || 'Send failed', 'toast-error');
         return;
       }
-      cnCloseExternalEmailModal_();
+      // F(cycle-8 M-4) defense-in-depth: only close the composer THIS send
+      // belongs to. With the close-guard above the mid-send-close/reopen race
+      // shouldn't occur, but a late handler must never tear down a composer
+      // instance it doesn't own.
+      if (CN_STATE.extComposer === c) cnCloseExternalEmailModal_();
       var parts = [];
       if ((res.formsAttached || []).length > 0) {
         parts.push(res.formsAttached.length + ' PDF(s)');

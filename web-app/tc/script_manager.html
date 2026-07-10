@@ -846,9 +846,12 @@ function openDayEditModal(empId, empName) {
   document.getElementById('de-lunchin').value = '';
   document.getElementById('de-clockout').value = '';
   document.getElementById('de-reason').value = '';
-  // #4b — multi-day "To" picker shares the From picker's bounds; cleared on open.
+  // #4b — multi-day "To" picker; cleared on open. F(cycle-8 M-2): min is the
+  // day AFTER the edit date (range mode requires To > From — a To on/before
+  // the edit date used to silently downgrade to the destructive single-day
+  // save), max stays today.
   var deToEl = document.getElementById('de-date-to');
-  if (deToEl) { deToEl.value = ''; deToEl.min = deDateEl.min; deToEl.max = today; }
+  if (deToEl) { deToEl.value = ''; deToEl.min = deNextDay_(today); deToEl.max = today; }
   document.getElementById('day-edit-overlay').classList.add('open');
   loadDayEditPunches(empId, today, today);
 }
@@ -881,10 +884,21 @@ document.getElementById('day-edit-overlay').addEventListener('click', function (
     document.getElementById('day-edit-overlay').classList.remove('open');
 });
 
+/** ISO day after `iso` (UTC math — DST-immune, the deMin pattern above). */
+function deNextDay_(iso) {
+  var d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().substring(0, 10);
+}
+
 document.getElementById('de-date').addEventListener('change', function () {
   var d = this.value;
   if (!d || !_deEmpId) return;
   _deDate = d;
+  // F(cycle-8 M-2): keep the "To" picker's floor tracking the edit date; a
+  // now-invalid To (≤ the new From) is cleared rather than silently kept.
+  var deToEl = document.getElementById('de-date-to');
+  if (deToEl) { deToEl.min = deNextDay_(d); if (deToEl.value && deToEl.value <= d) deToEl.value = ''; }
   document.getElementById('de-clockin').value = '';
   document.getElementById('de-lunchout').value = '';
   document.getElementById('de-lunchin').value = '';
@@ -902,6 +916,15 @@ document.getElementById('de-save').addEventListener('click', function () {
   };
   var reason = document.getElementById('de-reason').value.trim();
   var toDate = (document.getElementById('de-date-to') || {}).value || '';
+  // F(cycle-8 M-2): a filled "To" on/before the edit date used to silently
+  // DOWNGRADE to the single-day save — a full-day reconcile where every blank
+  // slot DELETES that punch (the deliberate opposite of range mode's additive
+  // blank-is-untouched semantics, INV-108). A manager expecting an additive
+  // range apply could wipe the day's other punches. Reject instead of guessing.
+  if (toDate && toDate <= _deDate) {
+    showToast('“To” must be after the edit date — clear it for a single-day save', 'toast-error');
+    return;
+  }
   var rangeMode = toDate && toDate > _deDate;   // #4b — multi-day additive apply
   var btn = document.getElementById('de-save');
   btn.disabled = true;

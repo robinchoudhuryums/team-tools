@@ -8354,24 +8354,27 @@ function sendDailyMissedPunchAlerts() {
 function runDailyExportCheck() {
   assertManagerCaller_('runDailyExportCheck');  // see sendDailyMissedPunchAlerts note
   try {
+    // F(cycle-8 M-1): export the morning AFTER the period completes, never on
+    // its final day. The trigger fires at 12pm IST — mid-shift for both
+    // offshore teams — so a period-end-day export silently omitted every punch
+    // recorded later that day (the PH team's final-day ClockOut, an IST rep's
+    // whole afternoon), and there was no catch-up run. Gating on YESTERDAY
+    // being the period end guarantees the range is fully in the past when the
+    // Timesheet is read. (The old gate fired on the last BUSINESS day of the
+    // month / on biweeklyRange.end === today.)
     const today = new Date();
-    const todayStr = fmtDate_(today);
-    if (isLastBusinessDayOfMonth_(today)) {
-      sendAutomatedExport_('Monthly', getMonthRange_(today), '📊 Monthly ADP Upload — India Team');
+    const yesterday = new Date(today.getTime() - 86400000);   // no DST in CONFIG.TIMEZONE (Asia/Kolkata)
+    const yestStr = fmtDate_(yesterday);
+    if (fmtDate_(today).slice(8) === '01') {   // 1st of the month → prior month is complete
+      sendAutomatedExport_('Monthly', getMonthRange_(yesterday), '📊 Monthly ADP Upload — India Team');
     }
-    const biweeklyRange = getCurrentBiweeklyRange_(todayStr);
-    if (biweeklyRange && biweeklyRange.end === todayStr) {
+    const biweeklyRange = getCurrentBiweeklyRange_(yestStr);
+    if (biweeklyRange && biweeklyRange.end === yestStr) {
       sendAutomatedExport_('Biweekly', biweeklyRange, '📊 Biweekly Payroll Export — Philippines Team');
     }
   } catch (err) {
     Logger.log('runDailyExportCheck failed: ' + err.message);
   }
-}
-
-function isLastBusinessDayOfMonth_(date) {
-  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  while (lastDay.getDay() === 0 || lastDay.getDay() === 6) lastDay.setDate(lastDay.getDate() - 1);
-  return fmtDate_(date) === fmtDate_(lastDay);
 }
 
 function getMonthRange_(date) {
@@ -10531,6 +10534,36 @@ function getDeptRequestSla_(dept, map) {
   return def;
 }
 
+/** F(cycle-8 M-5): a multi-department send stores the JOINED label
+ *  ("Billing, Shipping" — emailFromCallNote's drDeptKey) in ToDept. Every
+ *  per-dept consumer did an exact whole-string match, so such a request
+ *  appeared in NO department's Incoming inbox, a receiving-dept member could
+ *  not resolve it in-app, and the SLA lookup fell through to the default.
+ *  Split the stored value into its component department names ('Other' is
+ *  dropped — the untracked free-text pseudo-department); callers fall back to
+ *  the raw string when nothing remains (legacy 'Other'-only rows). Pure —
+ *  Node-pinned in test/client/run.js. */
+function drSplitDepts_(toDept) {
+  return String(toDept || '').split(',')
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s && s.toLowerCase() !== 'other'; });
+}
+
+/** Strictest (minimum-hours) SLA across a request's component departments —
+ *  every listed department is expected to respond, so the tightest target
+ *  governs a multi-dept request. Single-dept values behave exactly as before
+ *  (the split is the identity); empty splits fall back to the raw lookup. */
+function drSlaForToDept_(toDept, map) {
+  const parts = drSplitDepts_(toDept);
+  if (!parts.length) return getDeptRequestSla_(toDept, map);
+  let min = null;
+  parts.forEach(function (d) {
+    const h = getDeptRequestSla_(d, map);
+    if (min === null || h < min) min = h;
+  });
+  return min;
+}
+
 /** Minimize a recipient list to its unique domain(s) for the PHI-free
  *  DeptRequests ToEmail column. The "Other" department lets a rep enter a
  *  free-text (possibly external/customer) address, and the store can fall back
@@ -10634,7 +10667,14 @@ function resolveDeptRequest(requestId) {
     if (owner === null) return { success: false, error: 'Request not found.' };
     // v2: a member of the RECEIVING department can also resolve in-app (the
     // "receiving agent marks resolved" path), alongside the sender + any manager.
-    const isDeptMember = empDepartments_(emp).some(function (d) { return String(d).toLowerCase() === toDept; });
+    // F(cycle-8 M-5): match against each component department of a multi-dept
+    // send ("Billing, Shipping"), not just the whole stored string.
+    const partsLc = {};
+    drSplitDepts_(toDept).forEach(function (d) { partsLc[d.toLowerCase()] = true; });
+    const isDeptMember = empDepartments_(emp).some(function (d) {
+      const k = String(d).toLowerCase();
+      return k === toDept || partsLc[k];
+    });
     if (owner !== emp.id && !emp.isManager && !isDeptMember)
       return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
     const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '');
@@ -10713,7 +10753,7 @@ function getDeptRequests() {
       const resolvedMs = r[DR.STATUS] === 'resolved' ? parseMs(r[DR.RESOLVED_AT]) : null;
       const elapsedMin = (resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000)
                         : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
-      const slaHours = getDeptRequestSla_(String(r[DR.TO_DEPT] || ''), slaCfg);
+      const slaHours = drSlaForToDept_(String(r[DR.TO_DEPT] || ''), slaCfg);   // F(cycle-8 M-5): strictest across a multi-dept send
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
@@ -10735,8 +10775,14 @@ function getDeptRequests() {
     const myDepts = empDepartments_(emp);
     const myDeptsLc = {};
     myDepts.forEach(function (d) { myDeptsLc[String(d).toLowerCase()] = true; });
+    // F(cycle-8 M-5): a multi-dept send matches the inbox of EACH component
+    // department (whole-string kept for back-compat with single-dept rows).
     const incoming = myDepts.length
-      ? all.filter(function (it) { return it.status === 'open' && myDeptsLc[String(it.toDept).toLowerCase().trim()]; })
+      ? all.filter(function (it) {
+              if (it.status !== 'open') return false;
+              if (myDeptsLc[String(it.toDept).toLowerCase().trim()]) return true;
+              return drSplitDepts_(it.toDept).some(function (d) { return myDeptsLc[d.toLowerCase()]; });
+            })
             .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100)
       : [];
     const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments,
@@ -10744,10 +10790,15 @@ function getDeptRequests() {
     if (emp.isManager) {
       const byDept = {};
       all.forEach(function (it) {
-        const k = it.toDept || '—';
-        if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, overdueOpen: 0, durations: [] };
-        if (it.status === 'resolved') { byDept[k].resolved++; if (it.elapsedMin != null) byDept[k].durations.push(it.elapsedMin); }
-        else { byDept[k].open++; if (it.slaStatus === 'overdue') byDept[k].overdueOpen++; }
+        // F(cycle-8 M-5): count a multi-dept request under EACH component
+        // department (it awaits each of them) instead of inventing a
+        // "Billing, Shipping" pseudo-department bucket.
+        const parts = drSplitDepts_(it.toDept);
+        (parts.length ? parts : [it.toDept || '—']).forEach(function (k) {
+          if (!byDept[k]) byDept[k] = { dept: k, open: 0, resolved: 0, overdueOpen: 0, durations: [] };
+          if (it.status === 'resolved') { byDept[k].resolved++; if (it.elapsedMin != null) byDept[k].durations.push(it.elapsedMin); }
+          else { byDept[k].open++; if (it.slaStatus === 'overdue') byDept[k].overdueOpen++; }
+        });
       });
       result.deptStats = Object.keys(byDept).map(function (k) {
         const b = byDept[k];
@@ -10832,7 +10883,7 @@ function deptRequestsOverdueOpen_() {
     if (!createdMs) continue;
     const ageMin = Math.round((Date.now() - createdMs) / 60000);
     const dept = String(r[DR.TO_DEPT] || '');
-    if (drSlaStatus_(ageMin, getDeptRequestSla_(dept, slaCfg)) !== 'overdue') continue;
+    if (drSlaStatus_(ageMin, drSlaForToDept_(dept, slaCfg)) !== 'overdue') continue;   // F(cycle-8 M-5)
     overdue.push({ dept: dept || '—', byName: String(r[DR.BY_NAME] || ''),
                    label: String(r[DR.LABEL] || ''), ageHours: Math.round(ageMin / 60) });
   }
@@ -17044,8 +17095,14 @@ function notifyEmpDocSigned_(doc, signer) {
 //  'training' flag via the "Coach on this" prefill.
 // ════════════════════════════════════════════════════════════════════════════
 const COACH_TAB = 'Coaching';
-const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy'];
-const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12 };
+// F(cycle-8 M-6): trailing VoidReason column (back-compat like the EmpDocs v2
+// columns — getOrCreateEmpDocSheet_ self-heals the header width; legacy rows
+// read ''). The void reason is manager free text about a specific patient/TRX
+// interaction, so it belongs ONLY in this team-scoped HR store — the shared
+// AuditLog row must stay content-free (INV-134/INV-32), exactly like voidDoc's
+// VoidReason column.
+const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason'];
+const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13 };
 const COACH_SEVERITIES = ['praise','minor','major','critical'];
 const COACH_TEXT_MAX = 4000;
 const COACH_TRX_MAX = 200;
@@ -17328,8 +17385,14 @@ function voidCoaching(coachId, reason) {
     if (!coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
     sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue('void');
+    // F(cycle-8 M-6): the reason (free text plausibly naming a patient/TRX —
+    // "logged against wrong patient, TRX 4482…") persists in the team-scoped
+    // HR store's VoidReason column, NEVER in the shared PHI-free AuditLog
+    // (INV-134/INV-32 — the row previously carried `reason=` and surfaced in
+    // the compliance panel + admin sheet viewer). Mirrors voidDoc.
+    if (reason) sheet.getRange(found.rowIdx, CO.VOID_REASON + 1).setValue(String(reason).slice(0, 500));
     writeAuditLog_(callerEmp, 'CoachingVoid', '', '', false, 0,
-      'coachId=' + found.item.coachId + (reason ? '; reason=' + String(reason).slice(0, 200) : ''), callerEmp.email);
+      'coachId=' + found.item.coachId, callerEmp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }

@@ -1032,6 +1032,11 @@ function loSkeleton(rows) {
 //  combined Clock+Timesheet enter handler (enterClockCombinedView) lives in
 //  tc/script_clock.html since it composes that partial's render functions.
 function enterTimeoffView(area) {
+  // F(cycle-8 H-1): the calLoadError_ Retry button calls this with NO args —
+  // renderLoading(undefined) threw (into the error beacon) and the retry path
+  // was dead. Re-resolve the view area, the enterCoverageView pattern.
+  area = area || document.getElementById('view-area');
+  if (!area) return;
   stopClock();
   if (!calYear) {
     const todayInTz = isoDateTz(empTz());
@@ -1043,6 +1048,9 @@ function enterTimeoffView(area) {
   loadCalendar(calYear, calMonth);
 }
 function enterManagerView(area) {
+  // F(cycle-8 H-1): same — mgrLoadError_'s Retry button calls this argless.
+  area = area || document.getElementById('view-area');
+  if (!area) return;
   stopClock();
   renderLoading(area, 'Loading dashboard…', 'clock');
   loadManagerDashboard();
