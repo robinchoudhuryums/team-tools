@@ -1,12 +1,160 @@
 # Cycle State
 
 ## Current
-Cycle: 7
-Phase: idle — Cycle 7 closed + operator-verified; post-cycle FEATURE batches #1/#2/#4 (PR #126) and #7 Timesheet cold-archive shipped 2026-07-09
-Scope: feature batches (operator-selected suggestions), not an audit
+Cycle: 8
+Phase: implement — ALL FOUR batches done on claude/broad-scan-0y5q6b: batch 1 (H-1+M-1..M-6), batches 2-3 (M-7..M-12 + 16 Lows), batches 4-5 (M-13..M-15 test-integrity + NUL escapes + harness hardening + 14 UX-polish Lows). Pure 277/0, DOM 59/0. Next: /sync-docs (batch 4-5 list), operator deploy + editor run, then /reflect to close cycle 8.
+Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 0
-Updated: 2026-07-10 (night-sky phases a+b+d + Dashboard skeleton loaders — client-only visuals batch)
+Subsystem cycles since last Seams audit: 1
+Updated: 2026-07-10 (cycle-8 batches 4-5)
+
+## Batches 4-5 completed (2026-07-10)
+Test-integrity (batch 4): M-13 behavioral editor test for
+archiveSheetRowsOlderThan_ (temp TEST_ tabs; append-order back-fill,
+headerRows:2, width padding, strict-< cutoff, idempotence, append→flush→delete
+pin); M-14 _skipTest() mid-body SKIP mechanism — 11 sites converted from
+_assertTrue(true,'…skipped') and the S1.1 ADP-tz test now FAILS (not passes)
+on an unreachable sheet; M-15 tripwire generalization (SUBMITTED_AT any-index
+scan incl. Tests.js, global [CN.TIMESTAMP] whitelist scan + hour-buckets added
+to the enumerated INV-142 list, TIME_OFF_TYPES⊆LEAVE_DEDUCTION_CLIENT reverse
+check — types without a client entry must resolve to the server default,
+'Other' passes); 9 literal NUL bytes escaped to \u0000 in Code.js +
+script_kb.html (both files grep as TEXT again); harness hardening
+(extractFunction/extractRawFunction paren-anchored — the getQuiz prefix
+collision; DOM flushTimers rethrows the first error instead of swallowing).
+UX polish (batch 5): midnight self-undo works end-to-end (server elapsed-ms
+check accepts yesterday-within-5-min; client -1 sentinel no longer reads
+eligible); Log-enter ambient double-poll removed (cache-paint + staleness-
+gated start; the poll-driven stack refresh skips when the stack is <15s fresh
+— focus/nav refreshes stay unconditional per the DOM pins); stats-mini snaps
+instead of re-counting from 0 every minute; refresh preserves in-flight-toggle
+note objects (INV-56 guard survives); inline-edit typing survives unrelated
+cnRenderStack_ re-renders (snapshot/restore); hover day-popover exempted from
+the focus trap (pinned popovers still trap); stacked ui-dialogs: topmost-only
+key handling + stopImmediatePropagation; Coverage/Punctuality presets use
+UTC-noon mgrAddDaysIso_ (DST-safe); Q39a joined the PPD progress ring/stepper
+(stepper Node tests updated); coachAck_ in-flight guard + button disable;
+intakeYnKey_ arrow-nav on the ynnum/ynreveal inner radiogroups; esc()/Number()
+on p.direction, monthName, covPct, Team-Metrics heroLabel; renderPtoMini_ +
+its CSS cluster removed (orphan); coverage note no longer says "Per-tz (v1)";
+?prefill applies AFTER the draft restore (deep-link intent wins).
+
+## Pending / not yet done
+- /sync-docs for batches 4-5: INV-23 (midnight-wrap self-undo now real),
+  INV-83 (topmost-only dialog keys), INV-142 (global scan + 5th reader),
+  Test Command section (new tripwire families + _skipTest + paren-anchored
+  extraction), 8c hover-popover trap exemption, ambient stats cache note,
+  editor-suite expectation (SKIP rows now appear where fixtures are missing).
+- OPERATOR (deploy): clasp push -f + New version; RE-RUN
+  installAutomationTriggers() once (archive trigger 1am→6pm CT from batch 3);
+  editor runSmokeTests/runAllTests — EXPECT some SKIP statuses where fixtures
+  are unprovisioned (previously masked as PASS) + the new
+  archiveSheetRowsOlderThan_behavioral test.
+- Then /reflect to close cycle 8 (metrics.csv + estimates.csv rows).
+- Cycle-8 findings NOT implemented (deliberately deferred): TO/PAR archive
+  tier (years-horizon), punctuality full-Timesheet read (bounded by the
+  archive once enabled), Spanish `to:`-operator caveat now covered, Q31a body
+  diagram + follow-up-date-on-action-flags (roadmap features, not findings).
+
+## Where I left off
+Batches 4-5 implemented + tested (pure 277/0, DOM 59/0, node --check green);
+next: commit+push, then /sync-docs, then /reflect when the operator says done.
+
+## Batches 2-3 completed (2026-07-10)
+Client races/dead features: M-7 greet-rotator hover freeze (bind-at-start +
+reset, clkGreetRotBind_); M-8 History range race (current-selection guard in
+cnLoadDateRange_); M-9 DR resolve view guard; M-10 History honors
+CN_STATE.filter + clearable .cn-hist-filterpill (quick-chips now work); M-12
+compact pop-out gates clkLoadDashboard_/Extras_/greet rotator on COMPACT_MODE;
+exact-tab switch re-fires search (S28 restored); ambient polling starts on ANY
+CN tab via showView (idempotent start); audit-search seq token; KB related
+L-18 guard; KB tab search failure toast.
+Server correctness/PHI/automation: M-11 managerBriefSuppressionActive_ (flag
+AND fresh managerBrief heartbeat; fail-safe) + 6th detector check
+'briefConfig' + tripwires updated; resolve-token CTA per-recipient split
+(internal-only) via resolveEmailRecipients_ internalTo/externalTo; contractor
+pending-card PTO projection gated on per-row ptoEnabled; updateTimeOffStatus
+compensating status-revert on balance-throw (retry self-healing, no
+double-deduct); decimal weight parseFloat (+ engine Node case); hour-buckets
+via cnTimestampString_ (INV-142); intakeTsString_/dob recover in the Intake
+sheet's OWN tz; 2000-char caps on the 4 post-submit subformData writers;
+Spanish exact-address guard (spanishAddrListIncludes_, Node-pinned) + {to: cc:}
+search coverage; getWhatsNew id-column scan + row fetch; managerGetCallNotes
+bounded via readCallNoteRowsInRange_; verifyDocSignature blank-hash fallback
+mirror (no false tamper); quiz dead-KB-link nulled when draft/missing;
+Timesheet archive trigger 1am→6pm CT (offshore quiet window); coverage
+startsPrevDay flag + "(from prev. day)" client marker.
+
+## Pending / not yet done
+- Batch 4 (test-integrity): M-13 archiveSheetRowsOlderThan_ behavioral test;
+  M-14 PASS→SKIP (13 sites incl. the S1.1 tz test); M-15 tripwire
+  generalization (SUBMITTED_AT any-index scan, global CN.TIMESTAMP scan,
+  TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT); NUL→\u0000 escapes; harness
+  hardening (getQuiz prefix collision, DOM flushTimers swallow).
+- Batch 5 (UX polish Lows): midnight self-undo, Log-enter RPC dedupe +
+  countUp-once, refresh in-flight-note preservation, inline-edit wipe, hover
+  popover focus-trap exemption, stacked ui-dialogs, DST preset math, Q39a
+  progress ring, coach ack guard, ynnum/ynreveal keyboard, esc() nits,
+  renderPtoMini_ orphan, coverage "Per-tz (v1)" copy string, prefill-vs-draft
+  order.
+- /sync-docs pass for batches 2-3 (see Decisions below), then /reflect when
+  the operator calls the cycle done.
+- OPERATOR (deploy): clasp push -f + New version; RE-RUN
+  installAutomationTriggers() once (archiveOldTimesheetRows moved 1am→6pm CT);
+  editor runSmokeTests/runAllTests.
+
+## Decisions made (so the next session doesn't re-litigate)
+- M-11: suppression = flag AND managerBrief heartbeat <26h (fail-safe: a
+  doubled manager email beats a silent outage); heartbeat stamps even while
+  the flag is off, so trigger-installed+flag-flip suppresses immediately.
+  Detector 'briefConfig' (6th key) surfaces flag-on-without-trigger.
+- CTA split: internal copy sends FIRST (an external-copy failure duplicates a
+  dept email on retry, never the customer's).
+- updateTimeOffStatus: kept status-first ordering + compensating revert in the
+  catch (balance-first was rejected — it double-deducts when the status write
+  fails after a successful deduction).
+- Timesheet archive hour: 6pm CT = the all-team quiet window (CST ended;
+  IST/PHT not started).
+- Doc updates owed: INV-151 (liveness-gated suppression), INV-142
+  (hour-buckets now via cnTimestampString_), INV-153 + trigger list (6pm),
+  INV-31 (Spanish exact-match + Cc), Turn-C detector count (6 keys), the
+  ambient-polling gotcha (now genuinely any-CN-tab), quick-chips (now filter).
+
+## Where I left off
+Batches 2-3 implemented + tested (pure 275/0, DOM 59/0, node --check green);
+next: commit+push, /sync-docs for the batch 2-3 doc list, then batch 4 and/or
+batch 5 on request.
+
+## Cycle 8 — scan + first fix batch (2026-07-10, claude/broad-scan-0y5q6b)
+Scan: 7-agent fan-out + personal verification of the High + all 15 Mediums
+(all confirmed, none retracted). ~47 findings: 0 Critical / 1 High / 15 Medium
+(+2 Stage-2 Lows) / ~30 Low. Scan-time scores: Overall 8 · Correctness 7.5 ·
+Security 8.5 · Data Integrity 8 · Timezone 8 · Concurrency 8 · Test Coverage 8 ·
+Clarity 8.5 · AS Practices 8.5 · Mgr UX 7.5 · Emp UX 7.5 · Automation 7.5.
+The full findings list lives in the session transcript; the UNIMPLEMENTED
+backlog (M-7..M-15 + ~30 Lows) is re-derivable from the Top-5 + Medium tables.
+
+## Completed this cycle
+- H-1 | script_core.html | enterTimeoffView/enterManagerView default `area` — the load-error Retry buttons (argless onclick) threw and the retry path was dead
+- M-1 | Code.js + Tests.js | runDailyExportCheck exports the morning AFTER the period completes (1st-of-month / biweekly end === yesterday); removed isLastBusinessDayOfMonth_ + its smoke test (old gate fired mid-final-day at 12pm IST and silently omitted afternoon punches)
+- M-2 | tc/script_manager.html | Day Edit rejects "To" ≤ edit date instead of silently downgrading to the destructive single-day reconcile; To-picker min tracks the From date (+ deNextDay_ helper)
+- M-3 | cn/script_callnotes.html | e.repeat guard on both save chords + a composeFlow re-entry guard in cnSubmitActiveForm_ — a held/double Ctrl/⌘+Shift+Enter wrote N duplicate note rows (keepForm kept the form populated)
+- M-4 | cn/script_callnotes.html | external composer mirrors INV-145: close refused while the send RPC is in flight + the success handler only closes its own composer instance (mid-send Esc→reopen destroyed the new draft / duplicated the customer email)
+- M-5 | Code.js + test/client/run.js | drSplitDepts_/drSlaForToDept_ — multi-dept sends ("Billing, Shipping" joined ToDept) now reach each component dept's Incoming inbox, member-resolve, SLA (strictest/min), and deptStats (bucketed per component). 2 new Node pins (273 total)
+- M-6 | Code.js | voidCoaching writes the free-text reason to a NEW trailing Coaching VoidReason column (header self-heals; COACH_HEADERS 13→14, CO.VOID_REASON:13) — the shared AuditLog row is now content-free (coachId only), mirroring voidDoc (INV-134/INV-32)
+
+## Pending / not yet done
+- Cycle-8 backlog NOT selected this batch: M-7 (greet-rotator stale hover freeze), M-8 (History range race), M-9 (DeptRequests resolve view guard), M-10 (quick-chip History filter no-op), M-11 (managerDailyBrief flag-on-without-trigger silence), M-12 (compact pop-out hidden-UI RPCs), M-13 (archiveSheetRowsOlderThan_ behavioral test), M-14 (PASS-instead-of-SKIP masking, incl. the S1.1 tz test), M-15 (tripwire generalization: SUBMITTED_AT any-index scan, global CN.TIMESTAMP scan, TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT), + ~30 Lows (incl. NUL→\u0000 escapes, resolve-token-to-external edge, contractor PTO projection, decimal weight parse, hour-buckets tz recovery).
+- OPERATOR (deploy): one `clasp push -f` + New version; run runSmokeTests/runAllTests in the editor (expect the suite minus the removed isLastBusinessDayOfMonth smoke test = 266 registered).
+
+## Decisions made (so the next session doesn't re-litigate)
+- M-1: exports now arrive the MORNING AFTER the period ends (deliberate ~1-day-later delivery in exchange for completeness; monthly gate = 1st of month, not last business day).
+- M-5: multi-dept SLA = the STRICTEST (minimum hours) component SLA; deptStats counts a multi-dept request under EACH component dept; 'Other' is dropped by the split (legacy 'Other'-only rows fall back to the raw label).
+- M-6: void reason lives ONLY in the HR store (VoidReason column, 500-char cap); it is NOT surfaced in the coaching dashboard yet (investigators read the sheet) — surfacing it is a possible follow-on.
+- M-3: while a Save & Compose flow is active, ALL form submits are refused (the form content belongs to the flow) — not just keepForm ones.
+
+## Where I left off
+Cycle-8 batch H-1+M-1..M-6 implemented + tested (pure 273/0, DOM 59/0, node --check green); next: commit+push this branch, then /sync-docs (INV-134/138/145 + operator-checklist export-timing updates), then either implement the remaining Mediums or /reflect to close the batch.
 
 ## Night-sky phases + Dashboard skeletons (2026-07-10, claude/broad-scan-45plfi)
 Operator picked options (a) night sub-phases + (b) twinkling/shooting stars +

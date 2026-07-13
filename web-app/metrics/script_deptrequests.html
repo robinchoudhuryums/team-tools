@@ -161,11 +161,17 @@ function drResolveClick_(btn) {
   btn.disabled = true; btn.classList.add('is-busy');
   const orig = btn.innerHTML;
   btn.innerHTML = icon('check', 12) + ' Resolving…';
+  // F(cycle-8 M-9): capture the view at CLICK time — the success handler used
+  // to re-enter unconditionally, so a rep who navigated away during the
+  // 300–800ms RPC got the Dept Requests UI painted over the new view (and
+  // because enterDeptRequestsView re-captures currentView, its own guard
+  // passed — a nav-state desync until the next click).
+  const requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
       if (res && res.success) {
         showToast(res.already ? 'Already resolved.' : 'Marked resolved.', 'toast-success');
-        enterDeptRequestsView(getDeptRequestsArea_());
+        if (currentView === requestedView) enterDeptRequestsView(getDeptRequestsArea_());
       } else {
         showToast((res && res.error) || 'Could not resolve.', 'toast-error');
         btn.disabled = false; btn.classList.remove('is-busy'); btn.innerHTML = orig;

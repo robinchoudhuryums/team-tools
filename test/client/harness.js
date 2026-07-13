@@ -48,7 +48,11 @@ function extractMarkup(file) {
  *  only for functions whose bodies contain no `{`/`}` inside string literals. */
 function extractFunction(file, name) {
   const js = extractScript(file);
-  const start = js.indexOf('function ' + name);
+  // F(cycle-8): anchor on the OPEN PAREN — a bare `'function ' + name` prefix
+  // match silently extracted the wrong body when `name` prefixes an
+  // earlier-declared function (getQuiz vs getQuizzes/getQuizAnalytics was a
+  // live latent collision, correct only by declaration order).
+  const start = js.indexOf('function ' + name + '(');
   if (start < 0) throw new Error(`function ${name} not found in ${file}`);
   let i = js.indexOf('{', start);
   let depth = 0;
@@ -64,7 +68,7 @@ function extractFunction(file, name) {
  *  caveat as extractFunction (no `{`/`}` inside string literals in the body). */
 function extractRawFunction(file, name) {
   const js = fs.readFileSync(path.join(WEB_APP, file), 'utf8');
-  const start = js.indexOf('function ' + name);
+  const start = js.indexOf('function ' + name + '(');   // F(cycle-8): paren-anchored — see extractFunction
   if (start < 0) throw new Error(`function ${name} not found in ${file}`);
   let i = js.indexOf('{', start);
   let depth = 0;

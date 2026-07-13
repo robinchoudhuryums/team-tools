@@ -846,9 +846,12 @@ function openDayEditModal(empId, empName) {
   document.getElementById('de-lunchin').value = '';
   document.getElementById('de-clockout').value = '';
   document.getElementById('de-reason').value = '';
-  // #4b — multi-day "To" picker shares the From picker's bounds; cleared on open.
+  // #4b — multi-day "To" picker; cleared on open. F(cycle-8 M-2): min is the
+  // day AFTER the edit date (range mode requires To > From — a To on/before
+  // the edit date used to silently downgrade to the destructive single-day
+  // save), max stays today.
   var deToEl = document.getElementById('de-date-to');
-  if (deToEl) { deToEl.value = ''; deToEl.min = deDateEl.min; deToEl.max = today; }
+  if (deToEl) { deToEl.value = ''; deToEl.min = deNextDay_(today); deToEl.max = today; }
   document.getElementById('day-edit-overlay').classList.add('open');
   loadDayEditPunches(empId, today, today);
 }
@@ -881,10 +884,32 @@ document.getElementById('day-edit-overlay').addEventListener('click', function (
     document.getElementById('day-edit-overlay').classList.remove('open');
 });
 
+/** ISO day after `iso` (UTC math — DST-immune, the deMin pattern above). */
+function deNextDay_(iso) {
+  var d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().substring(0, 10);
+}
+
+/** ISO date ± n days via UTC-noon anchoring (the computeRange pattern —
+ *  DST-immune). F(cycle-8): the Coverage/Punctuality presets computed
+ *  local-midnight ± N*86400000, which lands at 23:00 the PRIOR day across a
+ *  browser-local DST transition (US managers, March/November), silently
+ *  shifting the default window by one day. */
+function mgrAddDaysIso_(iso, n) {
+  var d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().substring(0, 10);
+}
+
 document.getElementById('de-date').addEventListener('change', function () {
   var d = this.value;
   if (!d || !_deEmpId) return;
   _deDate = d;
+  // F(cycle-8 M-2): keep the "To" picker's floor tracking the edit date; a
+  // now-invalid To (≤ the new From) is cleared rather than silently kept.
+  var deToEl = document.getElementById('de-date-to');
+  if (deToEl) { deToEl.min = deNextDay_(d); if (deToEl.value && deToEl.value <= d) deToEl.value = ''; }
   document.getElementById('de-clockin').value = '';
   document.getElementById('de-lunchout').value = '';
   document.getElementById('de-lunchin').value = '';
@@ -902,6 +927,15 @@ document.getElementById('de-save').addEventListener('click', function () {
   };
   var reason = document.getElementById('de-reason').value.trim();
   var toDate = (document.getElementById('de-date-to') || {}).value || '';
+  // F(cycle-8 M-2): a filled "To" on/before the edit date used to silently
+  // DOWNGRADE to the single-day save — a full-day reconcile where every blank
+  // slot DELETES that punch (the deliberate opposite of range mode's additive
+  // blank-is-untouched semantics, INV-108). A manager expecting an additive
+  // range apply could wipe the day's other punches. Reject instead of guessing.
+  if (toDate && toDate <= _deDate) {
+    showToast('“To” must be after the edit date — clear it for a single-day save', 'toast-error');
+    return;
+  }
   var rangeMode = toDate && toDate > _deDate;   // #4b — multi-day additive apply
   var btn = document.getElementById('de-save');
   btn.disabled = true;
@@ -1032,10 +1066,8 @@ function enterCoverageView(area) {
     // clock — a manager whose machine tz differs from their roster tz got a
     // default window starting on the wrong server day.
     var todayIso = isoDateTz(empTz());
-    var tp = todayIso.split('-');
-    var today = new Date(+tp[0], +tp[1] - 1, +tp[2]);
     COV_STATE.from = todayIso;
-    COV_STATE.to = isoLocal(new Date(today.getTime() + 6 * 86400000));
+    COV_STATE.to = mgrAddDaysIso_(todayIso, 6);   // F(cycle-8): DST-safe
   }
   area.innerHTML =
     (COMPACT_MODE
@@ -1079,11 +1111,15 @@ function covRepsHtml_(day) {
   if (!day.reps || !day.reps.length) return '<div style="font-size:12px;color:var(--muted)">No reps scheduled.</div>';
   return '<div class="cov-reps">' + day.reps.map(function (r) {
     var statusCls = (r.status === 'off') ? 'off' : (r.status === 'tentative' ? 'tentative' : 'working');
+    // F(cycle-8): a cross-tz shift can START on the previous manager-tz day
+    // (IST local Jul-10 → mgr Jul-9 21:30–Jul-10 06:30); without the marker a
+    // bare "9:30 PM – 6:30 AM" read as THIS day's evening coverage.
+    var prevMark = r.startsPrevDay ? '<span style="color:var(--muted);font-size:10px;"> (from prev. day)</span>' : '';
     var lbl = (r.status === 'off')
       ? ('Off' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
       : (r.status === 'tentative'
           ? ('Tentative' + (r.ptoType ? (' · ' + esc(r.ptoType)) : ''))
-          : (esc(r.startMgr) + ' – ' + esc(r.endMgr)));
+          : (esc(r.startMgr) + ' – ' + esc(r.endMgr) + prevMark));
     return '<div class="cov-rep ' + statusCls + '">' +
       '<span class="cov-rep-name">' + esc(r.name) + '</span>' +
       '<span class="cov-rep-tz">' + esc(r.tz) + '</span>' +
@@ -1133,7 +1169,7 @@ function covRender_(data) {
 
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Times in ' + esc(data.managerTz || '') +
     ' · business hours ' + covFmtHr_(bizStart) + '–' + covFmtHr_(bizEnd) +
-    '. Per-tz shifts (v1). Hours with fewer than ' + esc(String(minStaff)) + ' working reps are flagged — click a day for the rep breakdown.</div>';
+    '. Shifts use each rep’s roster Schedule override (column O) when set, else their timezone’s default. Hours with fewer than ' + esc(String(minStaff)) + ' working reps are flagged — click a day for the rep breakdown.</div>';
   var accLabel = (minStaff >= good - 1) ? String(minStaff) : (minStaff + '–' + (good - 1));
   var legend = '<div class="cov-legend">' +
     '<span><span class="sw" style="background:var(--accent-soft)"></span>Good (≥' + good + ')</span>' +
@@ -1201,10 +1237,8 @@ function enterPunctualityView(area) {
   if (!PUNCT_STATE.from) {
     // F(L-5): roster-tz "today" (isoDateTz/empTz), not the browser clock.
     var todayIso = isoDateTz(empTz());
-    var tp = todayIso.split('-');
-    var today = new Date(+tp[0], +tp[1] - 1, +tp[2]);
     PUNCT_STATE.to = todayIso;
-    PUNCT_STATE.from = isoLocal(new Date(today.getTime() - 29 * 86400000));   // default last 30 days
+    PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -29);   // default last 30 days (F(cycle-8): DST-safe)
   }
   area.innerHTML =
     (COMPACT_MODE
@@ -1239,10 +1273,8 @@ function punctPreset_(days) {
   };
   // F(L-5): roster-tz "today" (isoDateTz/empTz), not the browser clock.
   var todayIso = isoDateTz(empTz());
-  var tp = todayIso.split('-');
-  var today = new Date(+tp[0], +tp[1] - 1, +tp[2]);
   PUNCT_STATE.to = todayIso;
-  PUNCT_STATE.from = iso(new Date(today.getTime() - (days - 1) * 86400000));
+  PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -(days - 1));   // F(cycle-8): DST-safe
   var f = document.getElementById('punct-from'), t = document.getElementById('punct-to');
   if (f) f.value = PUNCT_STATE.from;
   if (t) t.value = PUNCT_STATE.to;

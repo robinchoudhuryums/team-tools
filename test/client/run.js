@@ -670,12 +670,34 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
 
 console.log('\nCode.js — CN Timestamp coercion boundary (INV-142) + kbRowStatus_ (INV-147)');
 test('TRIPWIRE (INV-142): CN Timestamp readers route through cnTimestampString_', () => {
-  ['callNoteRowToObject_', 'deleteCallNote', 'getCallNotesAmbient', 'getMyTrainingQA'].forEach((fn) => {
+  ['callNoteRowToObject_', 'deleteCallNote', 'getCallNotesAmbient', 'getMyTrainingQA',
+   'getMyNoteHourBuckets' /* cycle-8: joined the boundary */].forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
     assert.ok(/cnTimestampString_\(/.test(src),
       fn + ' must read CN.TIMESTAMP via cnTimestampString_ — a locale-coerced Date stringified raw breaks ' +
       'sorting/shift-span/EOD displays and FAIL-OPENS the 5-min delete window (M-14 class)');
   });
+});
+test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere in Code.js', () => {
+  // The enumerated-reader check above can't see a FIFTH reader added
+  // elsewhere (this class bit twice: M-14, cycle-7). Global scan: every
+  // `[CN.TIMESTAMP]` occurrence must sit inside a known-safe expression —
+  // a cnTimestampString_(…) argument, a bare cell WRITE (setValue/appendRow
+  // builders don't read), or the whitelisted inline-guard functions.
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const lines = src.split('\n');
+  const offenders = [];
+  const SAFE_LINE = /cnTimestampString_\(|CN\.TIMESTAMP \+ 1|CN\.TIMESTAMP\]\s*=|^\s*\/\//;
+  // reconcileCallNotes keeps its documented equivalent inline guard (INV-142).
+  const reconcile = extractRawFunction('Code.js', 'reconcileCallNotes');
+  lines.forEach((line, idx) => {
+    if (line.indexOf('[CN.TIMESTAMP]') < 0) return;
+    if (SAFE_LINE.test(line)) return;
+    if (reconcile.indexOf(line) >= 0) return;   // the whitelisted inline guard
+    offenders.push('line ' + (idx + 1) + ': ' + line.trim());
+  });
+  assert.deepStrictEqual(offenders, [],
+    'raw [CN.TIMESTAMP] read(s) outside the cnTimestampString_ boundary — see INV-142');
 });
 test('coupling — showView\'s intakeFlushDraftNow_ hook resolves cross-partial (Turn-B seams audit)', () => {
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
@@ -741,7 +763,8 @@ test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by
   assert.ok(/report\.detectors/.test(digest),
     'sendAutomationHealthDigest must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
   const checksSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
-  ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry'].forEach((k) => {
+  ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry',
+   'briefConfig' /* cycle-8 M-11: flag-on-without-trigger config coherence */].forEach((k) => {
     assert.ok(checksSrc.indexOf("'" + k + "'") >= 0, 'detector check "' + k + '" present');
   });
 });
@@ -1008,16 +1031,22 @@ console.log('\nCode.js — Sheets-coerced timestamp columns are read via normali
 // chronological sort downstream.
 test('no raw String() reads of TO/PAR.SUBMITTED_AT remain in Code.js', () => {
   const tsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
-  const raw = [...tsSrc.matchAll(/String\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  // F(cycle-8 M-15): ANY-index scan — the old regex required the loop index to
+  // literally be `i`, so `String(rows[j][TO.SUBMITTED_AT])` or a destructured
+  // `String(row[TO.SUBMITTED_AT])` sailed past, re-opening the exact class the
+  // tripwire exists for. Now any String( … [TO|PAR.SUBMITTED_AT] …) read
+  // trips, whatever the receiver expression looks like.
+  const raw = [...tsSrc.matchAll(/String\(\s*[\w.\[\]]*\[(TO|PAR)\.SUBMITTED_AT\]/g)];
   assert.deepStrictEqual(raw.map((m) => m[0]), [],
     'found raw String() read(s) of a SUBMITTED_AT cell — route through normalizeAuditTs_ (M1)');
-  // And the normalized reads actually exist (the tripwire stays armed).
-  const normalized = [...tsSrc.matchAll(/normalizeAuditTs_\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  // And the normalized reads actually exist (the tripwire stays armed) — same
+  // any-index shape.
+  const normalized = [...tsSrc.matchAll(/normalizeAuditTs_\(\s*[\w.\[\]]*\[(TO|PAR)\.SUBMITTED_AT\]/g)];
   assert.ok(normalized.length >= 8, 'expected ≥8 normalizeAuditTs_ SUBMITTED_AT reads, got ' + normalized.length);
 });
 test('Tests.js reads SUBMITTED_AT through normalizeAuditTs_ too', () => {
   const tSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
-  const raw = [...tSrc.matchAll(/String\(\s*\w+\[i\]\[(TO|PAR)\.SUBMITTED_AT\]/g)];
+  const raw = [...tSrc.matchAll(/String\(\s*[\w.\[\]]*\[(TO|PAR)\.SUBMITTED_AT\]/g)];
   assert.deepStrictEqual(raw.map((m) => m[0]), [], 'test helper must match the production read');
 });
 
@@ -1167,6 +1196,15 @@ test('weight cap excludes products below the patient weight ceiling', () => {
   assert.ok(all.indexOf('K0862') >= 0, 'the 600-cap chair survives at 500 lbs');
   assert.ok(all.indexOf('K0861') < 0, 'the 350-cap chair is excluded at 500 lbs');
   assert.ok(all.indexOf('K0843') < 0, 'the 450-cap chair is excluded at 500 lbs');
+});
+
+test('F(cycle-8): a decimal weight parses as its value, not digits-concatenated', () => {
+  // The old \D strip read "250.5 lbs" as 2505 → every cap failed (empty
+  // recommendations) and the Q39a mobile-home <285 rule silently didn't fire.
+  assert.strictEqual(engineCtx.intakeDeriveClinicalFactors_({ '38': '250.5 lbs' }).patient.weight, 250.5, 'decimal preserved');
+  assert.strictEqual(engineCtx.intakeDeriveClinicalFactors_({ '38': '250 lbs' }).patient.weight, 250, 'integer unchanged');
+  const r = intakeFilterRecommendations_({ '38': '250.5 lbs', '43': 'ALS' }, CAT);
+  assert.ok(r.complex.concat(r.standard).length > 0, '250.5 lbs is not treated as 2505');
 });
 
 test('oxygen excludes K0837 (an inherently-solid SPO chair)', () => {
@@ -2698,14 +2736,19 @@ console.log('\nintake — PPD per-section stepper (intakePpdSections_ single sou
 const sbIntake = buildSandbox(['script_icons.html', 'script_core.html', 'intake/script_intake.html']);
 
 ['EN', 'ES'].forEach((lang) => {
-  test('intakePpdSections_(' + lang + '): well-formed sections; mainQNums are bare numbers, unique', () => {
+  test('intakePpdSections_(' + lang + '): well-formed sections; mainQNums are bare numbers + 39a, unique', () => {
     const secs = sbIntake.intakePpdSections_(lang);
     assert.ok(Array.isArray(secs) && secs.length > 0, 'has sections');
     secs.forEach((s, i) => {
       assert.ok(s.title || s.rows.length, 'section ' + i + ' has a title or rows');
-      s.mainQNums.forEach((q) => assert.ok(/^\d+$/.test(q), 'mainQNum "' + q + '" is a bare number (no 31a/33a)'));
+      // F(cycle-8): 39a is a FULL-WEIGHT primary question (the engine's
+      // mobile-home trigger) lettered only to avoid renumbering — it counts.
+      // The conditional sub-questions (31a/33a) still don't.
+      s.mainQNums.forEach((q) => assert.ok(/^\d+$/.test(q) || q === '39a',
+        'mainQNum "' + q + '" is a bare number or 39a (no 31a/33a sub-questions)'));
     });
     const flat = secs.reduce((a, s) => a.concat(s.mainQNums), []);
+    assert.ok(flat.indexOf('39a') >= 0, '39a is in the progress count (the engine-critical dwelling question)');
     assert.strictEqual(new Set(flat).size, flat.length, 'no duplicate main question across sections');
   });
 
@@ -2718,9 +2761,10 @@ const sbIntake = buildSandbox(['script_icons.html', 'script_core.html', 'intake/
     for (let i = 1; i < qs.length; i++) {
       const raw = qs[i];
       if (!raw || !String(raw).trim()) continue;
-      if (/^(\d+)\./.test(String(raw).trim())) expected++;
+      const mm = String(raw).trim().match(/^(\d+[a-z]?)\./);
+      if (mm && (/^\d+$/.test(mm[1]) || mm[1] === '39a')) expected++;   // F(cycle-8): 39a counts
     }
-    assert.strictEqual(total, expected, 'stepper main-count matches the legacy /^(\\d+)\\./ progress count');
+    assert.strictEqual(total, expected, 'stepper main-count matches the progress filter (bare numbers + 39a)');
   });
 
   test('intakePpdSections_(' + lang + '): renderer, stepper, and section list agree on count + indices', () => {
@@ -2829,6 +2873,30 @@ console.log('\ncoupling — LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ behavi
     assert.strictEqual(dflt.bucket, 'annual');
     assert.strictEqual(dflt.days, 1.0, 'unknown-type default is annual/1.0 — the client fallback must match (INV-72)');
   });
+  // F(cycle-8 M-15): the mirror above is one-directional — a NEW leave type
+  // added on the SERVER (TIME_OFF_TYPES + a getLeaveDeduction_ branch)
+  // without a client map entry passed both it AND the day-type⊆validator
+  // tripwire, and the PTO modal silently previewed the annual/1.0 fallback.
+  // Reverse subset: every creatable type must have a client preview entry.
+  test('TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT keys (reverse direction of the mirror)', () => {
+    const codeSrcLd = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+    const m = codeSrcLd.match(/const TIME_OFF_TYPES\s*=\s*(\[[^\]]*\])/);
+    assert.ok(m, 'TIME_OFF_TYPES literal found');
+    const types = JSON.parse(m[1].replace(/'/g, '"').replace(/,\s*\]/, ']'));
+    assert.ok(types.length >= 3, 'parsed the type list (' + types.length + ')');
+    const clientKeysLc = Object.keys(ldCtx.LEAVE_DEDUCTION_CLIENT).map((k) => k.toLowerCase());
+    types.forEach((t) => {
+      if (clientKeysLc.indexOf(String(t).toLowerCase()) >= 0) return;   // explicit client entry
+      // No client entry → the modal previews via its annual/1.0 FALLBACK,
+      // which is only correct while the SERVER also serves this type from the
+      // default (e.g. 'Other'). A server branch added without a client entry
+      // fails here — the exact one-directional gap.
+      const s = ldCtx.getLeaveDeduction_(t);
+      assert.ok(s.bucket === 'annual' && s.days === 1.0,
+        'TIME_OFF_TYPES entry "' + t + '" resolves to ' + s.bucket + '/' + s.days +
+        ' on the server but has no LEAVE_DEDUCTION_CLIENT entry — the modal would preview the annual/1.0 fallback');
+    });
+  });
 }
 
 console.log('\nCode.js — deployReadinessItems_() (#1 pre-deploy checklist)');
@@ -2918,6 +2986,47 @@ test('drSlaStatus_ bands ontime / atrisk(≥75%) / overdue(≥100%) wall-clock',
   assert.strictEqual(drSlaStatus_(60, 0), null, 'no SLA → no badge');
 });
 
+// F(cycle-8 M-5): multi-dept ToDept split — a joined "Billing, Shipping" send
+// must reach each component department's inbox / member-resolve / SLA instead
+// of behaving as an unknown pseudo-department. Own context: getDeptRequestSla_
+// reads CONFIG, and the shared sb must not inherit the stub.
+console.log('\nCode.js — DeptRequests multi-dept split (drSplitDepts_ / drSlaForToDept_, cycle-8 M-5)');
+const drSb = vm.createContext({ CONFIG: { CALL_NOTES: { DR_SLA_DEFAULT_HOURS: 48 } } });
+['drSplitDepts_', 'drSlaForToDept_', 'getDeptRequestSla_'].forEach((fn) =>
+  vm.runInContext(extractRawFunction('Code.js', fn), drSb, { filename: 'Code.js#' + fn }));
+test('drSplitDepts_ splits a joined multi-dept label and drops Other', () => {
+  assert.strictEqual(drSb.drSplitDepts_('Billing, Shipping').join('|'), 'Billing|Shipping');
+  assert.strictEqual(drSb.drSplitDepts_('Billing').join('|'), 'Billing', 'single dept is the identity');
+  assert.strictEqual(drSb.drSplitDepts_('Billing, Other').join('|'), 'Billing', "'Other' (untracked pseudo-dept) dropped");
+  assert.strictEqual(drSb.drSplitDepts_('Other').length, 0, "legacy 'Other'-only → empty (callers fall back to raw)");
+  assert.strictEqual(drSb.drSplitDepts_('').length, 0);
+  assert.doesNotThrow(() => drSb.drSplitDepts_(null));
+});
+test('drSlaForToDept_ takes the strictest component SLA; single-dept unchanged', () => {
+  const cfg = { Billing: 24, Shipping: 72 };
+  assert.strictEqual(drSb.drSlaForToDept_('Billing', cfg), 24, 'single dept = its own SLA');
+  assert.strictEqual(drSb.drSlaForToDept_('Shipping', cfg), 72);
+  assert.strictEqual(drSb.drSlaForToDept_('Billing, Shipping', cfg), 24, 'multi-dept → strictest (min hours)');
+  assert.strictEqual(drSb.drSlaForToDept_('Authorizations', cfg), 48, 'unlisted dept → default');
+  assert.strictEqual(drSb.drSlaForToDept_('Shipping, Other', cfg), 72, "Other never drags in the default's 48");
+  assert.strictEqual(drSb.drSlaForToDept_('Other', cfg), 48, 'Other-only falls back to the raw lookup → default');
+});
+
+// F(cycle-8): Spanish-inbox scope guard — exact address match, not substring.
+console.log('\nCode.js — Spanish inbox address matching (spanishAddrListIncludes_, cycle-8)');
+const spSb = vm.createContext({});
+['emailAddrOnly_', 'spanishAddrListIncludes_'].forEach((fn) =>
+  vm.runInContext(extractRawFunction('Code.js', fn), spSb, { filename: 'Code.js#' + fn }));
+test('spanishAddrListIncludes_ matches parsed addresses only (the substring-guard fix)', () => {
+  const A = 'spanishcalls@universalmedsupply.com';
+  assert.ok(spSb.spanishAddrListIncludes_('SpanishCalls <' + A + '>', A), 'display-name form matches');
+  assert.ok(spSb.spanishAddrListIncludes_('a@x.com, ' + A.toUpperCase(), A), 'list + case-insensitive');
+  assert.ok(!spSb.spanishAddrListIncludes_('x' + A, A), 'xspanishcalls@… must NOT pass (the old substring hole)');
+  assert.ok(!spSb.spanishAddrListIncludes_('"' + A + '" <other@x.com>', A),
+    'the address inside a display NAME must not pass — only the bare address');
+  assert.ok(!spSb.spanishAddrListIncludes_('', A) && !spSb.spanishAddrListIncludes_('a@x.com', ''));
+});
+
 console.log('\nscript_core.html — client error beacon (#1, INV-150)');
 const errBeaconPayload_ = loadFunction(sb, 'script_core.html', 'errBeaconPayload_');
 test('errBeaconPayload_ bounds every field and rejects empty messages', () => {
@@ -2967,15 +3076,27 @@ test('managerBriefSections_ keeps only non-empty sections, in render order, with
   assert.ok(s.every((x) => x.label), 'every section carries its display label');
 });
 test('the brief suppresses exactly the four daily manager streams — never the independents (source tripwire)', () => {
-  // Each suppressed handler consults the flag; the employee-facing paths sit
-  // OUTSIDE the gated branch (missed-punch employee reminders + the
-  // training-overdue employee nudges send regardless).
+  // F(cycle-8 M-11): each suppressed handler consults the LIVENESS helper
+  // (flag AND a fresh managerBrief heartbeat), never the bare flag — flipping
+  // the flag on without installing the brief trigger used to silently stop
+  // every manager notification. The employee-facing paths sit OUTSIDE the
+  // gated branch (missed-punch employee reminders + the training-overdue
+  // employee nudges send regardless).
   ['sendDailyMissedPunchAlerts', 'sendCallNotesUrgentDigest',
    'sendTrainingOverdueDigest', 'sendDeptRequestReminderDigest'].forEach((h) => {
     const src = extractRawFunction('Code.js', h);
-    assert.ok(/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(src),
-      h + ' must consult the managerDailyBrief flag (suppression contract)');
+    assert.ok(/managerBriefSuppressionActive_\s*\(/.test(src),
+      h + ' must gate suppression on managerBriefSuppressionActive_ (flag + live heartbeat)');
+    assert.ok(!/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(src),
+      h + ' must NOT gate on the bare flag (the M-11 silent-outage class)');
   });
+  // The helper itself is the single place the flag + heartbeat combine:
+  // fail-safe (missing/stale/unparseable heartbeat → false → digests send).
+  const helperSrc = extractRawFunction('Code.js', 'managerBriefSuppressionActive_');
+  assert.ok(/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(helperSrc), 'helper consults the flag');
+  assert.ok(/managerBrief/.test(helperSrc) && /DIGEST_LAST_RUN_PROP/.test(helperSrc),
+    'helper consults the managerBrief heartbeat');
+  assert.ok(/return false/.test(helperSrc), 'helper fails safe (returns false on any doubt)');
   // The failure watchdog is deliberately NOT consolidated (it's what reports
   // a dead brief trigger) and the weekly digests stay weekly.
   ['sendAutomationHealthDigest', 'sendCallNotesWeeklyDigests'].forEach((h) => {
@@ -2986,7 +3107,7 @@ test('the brief suppresses exactly the four daily manager streams — never the 
   // detection survives the suppression).
   ['sendCallNotesUrgentDigest', 'sendDeptRequestReminderDigest'].forEach((h) => {
     const src = extractRawFunction('Code.js', h);
-    assert.ok(src.indexOf("getFlag_('managerDailyBrief')") >= 0 &&
+    assert.ok(src.indexOf('managerBriefSuppressionActive_(') >= 0 &&
               src.indexOf('stampDigestLastRun_') >= 0, h + ' has both the gate and a heartbeat');
   });
   // The brief itself heartbeats BEFORE its flag check — trigger liveness is
@@ -3042,7 +3163,11 @@ console.log('\nCode.js — Spanish inbox manual mark-resolved (operator feedback
 test('resolveSpanishThread is member-gated, scope-guarded, locked, and PHI-free (source tripwire)', () => {
   const src = extractRawFunction('Code.js', 'resolveSpanishThread');
   assert.ok(/canSeeSpanishInbox_\s*\(/.test(src), 'gated on canSeeSpanishInbox_ (members + managers)');
-  assert.ok(/recips\.indexOf\(addr\)/.test(src), 'scope guard — the thread must be addressed to the configured inbox');
+  // F(cycle-8): the scope guard is the EXACT-address matcher, not the old raw
+  // substring indexOf (which passed xspanishcalls@… / the address inside a
+  // display name).
+  assert.ok(/spanishAddrListIncludes_\s*\(/.test(src), 'scope guard — exact-address match against To/Cc');
+  assert.ok(!/recips\.indexOf\(addr\)/.test(src), 'the substring guard must not return');
   assert.ok(/waitLock\s*\(\s*15000\s*\)/.test(src), 'locked (INV-01 — it appends)');
   assert.ok(/'SpanishInboxResolve'/.test(src) && /threadId=/.test(src), 'audit row carries the threadId only');
   assert.ok(!/getSubject|getPlainBody/.test(src), 'PHI-free — never reads/stores subject or body');

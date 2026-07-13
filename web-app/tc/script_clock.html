@@ -151,21 +151,10 @@
   @keyframes clkMorphOut { 0% { opacity: 1; transform: none; } 100% { opacity: 0; transform: scale(.55) rotate(-18deg); } }
   @keyframes clkMorphIn  { 0% { opacity: 0; transform: scale(.55) rotate(18deg); } 100% { opacity: 1; transform: none; } }
 
-  /* Bottom one-row: Today's Punches · Team Right Now · compact Annual PTO. */
-  .clk-row3 { display: grid; grid-template-columns: 1fr 1fr minmax(170px, .7fr); gap: 14px; align-items: start; margin-top: 14px; }
-  .pto-mini { display: flex; align-items: center; gap: 14px; }
-  .pto-mini-main { flex: 1; min-width: 0; }
-  .pto-mini-main .sub { font-size: .76rem; color: var(--muted); margin-top: 4px; }
-  /* #6 — segmented day-pips PTO display (replaces the donut) */
-  .pto-big { font-family: var(--mono); font-weight: 700; font-size: 1.4rem; color: var(--ink); line-height: 1.1; margin: 2px 0 7px; }
-  .pto-big-unit { font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-  .pto-pips { display: flex; flex-wrap: wrap; gap: 3px; max-width: 190px; }
-  .pto-pip { width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }          /* remaining */
-  .pto-pip.used { background: var(--paper-3); }                                                    /* used */
-  .pto-pip.used-half { background: linear-gradient(90deg, var(--paper-3) 50%, var(--accent) 50%); }
-  .pto-pip.planned { background: var(--warn); }                                                    /* pending upcoming */
-  :root[data-compact] .clk-row3 { grid-template-columns: 1fr; }
-  @media (max-width: 760px) { .clk-row3 { grid-template-columns: 1fr; } }
+  /* (F(cycle-8): the .clk-row3 / .pto-mini / .pto-pips cluster was removed —
+     the Dashboard redesign relocated Annual PTO to the Time/PTO tab and
+     nothing emitted the markup; the orphaned renderPtoMini_ + CSS read as if
+     the Clock view still rendered PTO. INV-74/L11 class.) */
   /* Pop-out (compact) density: drop the secondary world-clock strip + greeting
      kicker (the big clock already shows the rep's time), and tighten the cards
      so the actionable bits — clock, punch buttons, today's punches — sit higher. */
@@ -173,7 +162,6 @@
   :root[data-compact] .hero .greet-kicker { display: none; }
   :root[data-compact] .hero { padding: 14px 16px 12px; gap: 10px; }
   :root[data-compact] .shift-strip { padding: 12px 14px; margin: 10px 0; }
-  :root[data-compact] .clk-row3 { gap: 10px; margin-top: 10px; }
 
   /* ── Dashboard (Time Clock → Dashboard) ──────────────────────────────────
      Two-column grid: clock rail (left) + briefing carousels (main). The
@@ -491,6 +479,12 @@ function clkDashSkeleton_() {
 /** Fetch all three periods up front (server-cached per (emp,period)); render the
  *  carousels when they all resolve. Guards on currentView (late-callback). */
 function clkLoadDashboard_(isMgr) {
+  // F(cycle-8 M-12): the compact pop-out hides #dash-cards + the greeting bar
+  // entirely (:root[data-compact] CSS) but still paid ~3 getDashboardMetrics
+  // RPCs per launch — and again on every ≥20s focus wake once the 60s SWR
+  // lapsed — for UI that can never be seen. The pinned-all-shift pop-out is
+  // exactly the window that multiplied the waste (deployer-account quota).
+  if (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE) return;
   CLK_DASH.isMgr = !!isMgr;
   var host = document.getElementById('dash-cards');
   if (!host) return;
@@ -663,6 +657,9 @@ function clkDashTeamCard_(res) {
 
 // ── Manager Spanish↔Requests switcher / Spanish-rep card (dashboard extras) ──
 function clkLoadDashboardExtras_() {
+  // F(cycle-8 M-12): same compact gate as clkLoadDashboard_ — the extras row
+  // is inside the hidden #dash-cards column in the pop-out.
+  if (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE) return;
   var host = document.getElementById('dash-extra');
   if (!host) return;
   var canSp = !!(empState && empState.canSeeSpanish);
@@ -900,48 +897,10 @@ function buildStatusSentence_(stats, nextActions, tzAbbr) {
   return `You're ${stateLabel} ${since}. ${workedStr}${lunchStr}${endStr}.`;
 }
 
-/** Compact Annual-PTO card for the bottom one-row (#5a). Sick was removed
- *  entirely (C1 — employees have no sick days; the file-Sick option is also
- *  dropped from the PTO modal, so no new sick request can be created and the
- *  dormant sick balance is never surfaced). Hours-worked moved to the shift-
- *  strip header. Contractors (ptoEnabled=false) show a "not tracked" card. */
-function renderPtoMini_(s) {
-  if (!s.ptoEnabled) {
-    return `<div class="card pto-mini"><div class="pto-mini-main">
-        <div class="card-label">PTO</div>
-        <div class="cell-value muted">—</div>
-        <div class="sub">Not tracked</div></div></div>`;
-  }
-  const max = s.annualLeaveMax || 15;
-  const rem = s.annualLeave || 0;
-  const used = Math.max(0, max - rem);
-  // Segmented day-pips: one pip per allotted day — remaining = accent (filled),
-  // used = muted, with a half-pip for a half-day. Reads exact days at a glance.
-  const totalPips = Math.max(1, Math.round(max));
-  const full = Math.floor(used);
-  const frac = used - full;
-  // Amber "planned" pips = future pending annual days (still in the green
-  // balance but tentatively committed) — the last `planned` remaining pips.
-  const planned = Math.min(Math.round(s.annualPlannedUpcoming || 0), totalPips - full);
-  let pips = '';
-  for (let i = 0; i < totalPips; i++) {
-    const dayNum = i + 1;
-    let cls;
-    if (dayNum <= full) cls = 'used';
-    else if (dayNum === full + 1 && frac > 0) cls = 'used-half';
-    else if (planned > 0 && dayNum > totalPips - planned) cls = 'planned';
-    else cls = '';   // remaining (filled accent)
-    pips += `<span class="pto-pip ${cls}"></span>`;
-  }
-  const plannedSub = planned > 0 ? ` · ${formatLeaveDays(s.annualPlannedUpcoming)} planned` : '';
-  return `<div class="card pto-mini">
-    <div class="pto-mini-main">
-      <div class="card-label">Annual PTO</div>
-      <div class="pto-big">${formatLeaveDays(rem)} <span class="pto-big-unit">days left</span></div>
-      <div class="pto-pips" title="${formatLeaveDays(rem)} of ${formatLeaveDays(max)} days remaining${planned > 0 ? ' (' + formatLeaveDays(s.annualPlannedUpcoming) + ' pending upcoming)' : ''}">${pips}</div>
-      <div class="sub">${formatLeaveDays(used)} used · ${formatLeaveDays(max)} total${plannedSub}</div>
-    </div></div>`;
-}
+// (F(cycle-8): renderPtoMini_ was removed — the Dashboard redesign relocated
+// Annual PTO to the Time/PTO tab's .pto-tile and NOTHING called this since;
+// the orphan still read s.annualPlannedUpcoming/annualLeaveMax as if the
+// Clock view rendered PTO, the exact INV-74/L11 misleading-dead-code class.)
 
 // ── Sky gradient + timezone selector (#5a) ──────────────────────────────────
 // The big clock card carries a time-of-day gradient that recomputes from the
@@ -1617,7 +1576,9 @@ function renderCoverageStrip_(slot, data) {
   // Hide entirely if no call activity today (avoids noise for non-CSR reps)
   if (noteCount === 0 && answered === 0) { slot.innerHTML = ''; return; }
 
-  const covPct = data.noteCoverage != null ? data.noteCoverage : null;
+  // F(cycle-8): coerce the server values to numbers before they enter markup /
+  // the inline onclick (esc() discipline for non-string slots).
+  const covPct = data.noteCoverage != null ? Number(data.noteCoverage) : null;
   const missing = answered - noteCount;
   const toneCls = covPct == null ? '' : (covPct >= 80 ? 'good' : (covPct >= 50 ? 'warn' : 'crit'));
   const title = answered > 0
@@ -1786,7 +1747,12 @@ function renderPunchHistory(punches) {
     const m  = PUNCH_META[p.type] || { label:p.type, icon:'info', dir:p.direction==='IN'?'in':'out' };
     const dc = m.dir === 'in' ? 'in' : 'out';
     const adj = p.isAdjustment ? `<span class="adj-pill">${icon('adjust', 10)} adj</span>` : '';
-    const eligible = !p.isAdjustment && timeDiffSecondsClient(p.time, nowHMS) <= SELF_UNDO_WINDOW_SECONDS;
+    // F(cycle-8): timeDiffSecondsClient returns the -1 SENTINEL for malformed /
+    // wrapped-beyond-window times — and `-1 <= 300` is true, so a stale
+    // post-midnight punch list rendered undo buttons on EVERYTHING (each
+    // rejected server-side). Eligibility requires a non-negative diff.
+    const undoDiff = timeDiffSecondsClient(p.time, nowHMS);
+    const eligible = !p.isAdjustment && undoDiff >= 0 && undoDiff <= SELF_UNDO_WINDOW_SECONDS;
     const undoBtn = eligible
       ? `<button class="punch-undo" title="Undo this punch (within ${Math.round(SELF_UNDO_WINDOW_SECONDS/60)}min)"
            data-date="${esc(empState.today)}" data-time="${esc(p.time)}" data-type="${esc(p.type)}"
@@ -1795,7 +1761,7 @@ function renderPunchHistory(punches) {
     return `<div class="punch-row">
       <div class="punch-icon ${dc}">${icon(m.icon, 18)}</div>
       <div class="punch-name">${esc(m.label)} ${adj}</div>
-      <div class="punch-tag ${dc}">${p.direction}</div>
+      <div class="punch-tag ${dc}">${esc(p.direction)}</div>
       <div class="punch-tv">${dispTime(p.time)}</div>
       ${undoBtn}
     </div>`;
@@ -1943,20 +1909,36 @@ function clkGreetSlides_() {
 
 function clkGreetRotStart_() {
   clkGreetRotStop_();
+  // F(cycle-8 M-12): the greeting bar is display:none in the compact pop-out —
+  // don't tick an 8s timer against invisible slides all shift.
+  if (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE) return;
   CLK_GREET_ROT.idx = 0;
+  // F(cycle-8 M-7): reset the hover-hold — a re-render mid-hover replaced the
+  // element before mouseleave could fire, stranding hover=true so every
+  // future tick held "the slide being read" forever (the carousel silently
+  // froze for the session; the stale flag even survived nav-away/return).
+  CLK_GREET_ROT.hover = false;
+  clkGreetRotBind_();   // bind NOW (render just happened) so hover-hold works during the first cycle too
   CLK_GREET_ROT.timer = setInterval(clkGreetRotTick_, CLK_GREET_ROT_MS);
 }
 function clkGreetRotStop_() {
   if (CLK_GREET_ROT.timer) { clearInterval(CLK_GREET_ROT.timer); CLK_GREET_ROT.timer = null; }
 }
+/** (Re)bind hover-hold on the current #greet-rot element. F(cycle-8 M-7): a
+ *  FRESH element (this render's) also clears a stale hover flag — the pointer
+ *  can't be "in" an element that was just created without a new mouseenter. */
+function clkGreetRotBind_() {
+  var el = document.getElementById('greet-rot');
+  if (!el || el._rotBound) return;
+  el.addEventListener('mouseenter', function () { CLK_GREET_ROT.hover = true; });
+  el.addEventListener('mouseleave', function () { CLK_GREET_ROT.hover = false; });
+  el._rotBound = true;
+  CLK_GREET_ROT.hover = false;
+}
 function clkGreetRotTick_() {
   var el = document.getElementById('greet-rot');
   if (!el) return;                    // mid-render; stopClock cleans the timer on nav-away
-  if (!el._rotBound) {                // (re)bind hover-hold on the freshly-rendered element
-    el.addEventListener('mouseenter', function () { CLK_GREET_ROT.hover = true; });
-    el.addEventListener('mouseleave', function () { CLK_GREET_ROT.hover = false; });
-    el._rotBound = true;
-  }
+  clkGreetRotBind_();                 // re-render replaced the element → rebind + clear stale hover
   if (CLK_GREET_ROT.hover) return;    // reading — hold this slide
   var slides = clkGreetSlides_();
   if (slides.length < 2) return;      // nothing to rotate (no What's-new configured)

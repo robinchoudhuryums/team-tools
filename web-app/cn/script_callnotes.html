@@ -1624,6 +1624,15 @@
     color: var(--muted); letter-spacing: .04em;
     margin-bottom: 10px;
   }
+  /* F(cycle-8 M-10): active-filter pill on the History stack (the quick-chip
+     "jump filtered" target) — mirrors the Search exact-mode badge vocabulary. */
+  .cn-hist-filterpill {
+    display: inline-block; margin-left: 8px; padding: 1px 8px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--success-deep);
+    background: var(--accent-soft); border-radius: 999px;
+  }
+  .cn-hist-filterpill a { color: inherit; text-decoration: underline; cursor: pointer; }
   /* Collapsible History date groups */
   .cn-hist-group { margin-bottom: 10px; }
   .cn-hist-grouphead {
@@ -2230,6 +2239,16 @@ function cnLoadDateRange_(startDate, endDate, then) {
   }
   rpc(
     function (res) {
+      // F(cycle-8 M-8): drop a response whose RANGE the rep has since moved
+      // off (the preset buttons make rapid changes realistic — a slow
+      // "Last 30" response used to land after a fast "Yesterday" one and
+      // overwrite the stack + SWR cache with 30 days of notes while the
+      // inputs read Yesterday). historyDate/EndDate are set at click time,
+      // BEFORE this load fires, so they are the current selection. Same
+      // class as the Team Notes mgrSubSeq guard (INV-146).
+      const curStart = CN_STATE.historyDate;
+      const curEnd = CN_STATE.historyEndDate || CN_STATE.historyDate;
+      if (curStart !== startDate || curEnd !== endDate) return;   // stale range — drop entirely
       if (res.error) {
         if (/not configured/i.test(res.error)) CN_STATE.enrolled = false;
         else if (currentView === requestedView) showToast(res.error, 'toast-error');
@@ -2335,16 +2354,18 @@ function cnRenderNotesView(area) {
   cnRenderStack_();
   cnReloadPinnedTray_();
   cnLoadTrainingQA_();
-  // V4 Phase 4 — populate stats-mini + quick-chip-row on first paint. The
-  // 60s ambient poller (cnStartAmbientPolling_) keeps them fresh after that.
-  cnPollAmbient_();
+  // V4 Phase 4 — populate stats-mini + quick-chip-row on first paint.
+  // F(cycle-8): from the CACHED ambient result when one exists — the direct
+  // cnPollAmbient_() here doubled the start-path poll (a Log enter cost two
+  // getCallNotesAmbient RPCs); the showView-driven cnStartAmbientPolling_
+  // fires the fresh poll when the cache is stale.
+  if (CN_STATE.lastAmbientRes) {
+    cnUpdateStatsMini_(CN_STATE.lastAmbientRes);
+    cnUpdateQuickChipRow_(CN_STATE.lastAmbientRes);
+  }
   // Ctrl/⌘+K is owned by the KB reference drawer (bound in script_core).
   // The prior V4 search-jump keybind was removed: both handlers fired, so
   // the drawer opened and was immediately closed by the Search-tab nav.
-  // V4 Phase 4 — apply any ?prefill=... query params from the URL (deep-link
-  // contract from the Clock view's coverage strip CTA, future-ready even
-  // though the strip doesn't pass prefill today — no per-call CDR data).
-  cnApplyPrefillFromUrl_();
   // Round 2 · 8z — consume the in-memory nav hint from the Clock view's
   // coverage-strip CTA. Today: just a toast acknowledging the source.
   // When per-call CDR data lands: prefill the form from hint.calls[0]
@@ -2354,6 +2375,15 @@ function cnRenderNotesView(area) {
   // draft was restored, focus the resolution field (most likely where the
   // rep left off); otherwise focus the callback for a fresh note.
   const restored = cnRestoreActiveFormDraft_();
+  // V4 Phase 4 — apply any ?prefill=... query params from the URL (deep-link
+  // contract from the Clock view's coverage strip CTA, future-ready even
+  // though the strip doesn't pass prefill today — no per-call CDR data).
+  // F(cycle-8): runs AFTER the draft restore (the L-22 ordering) — it used to
+  // run first, and the restore overwrote the just-prefilled fields with the
+  // draft's values (including EMPTY strings) while the rows kept their
+  // .prefilled accent — a visual lie. An explicit ?prefill deep-link is user
+  // intent and wins for exactly the prefilled fields.
+  cnApplyPrefillFromUrl_();
   // Cross-tool nav hint (e.g. a Spanish-inbox tool-suggestion chip): surface a
   // context banner + prefill the Issue field with the request subject.
   // F(L-22): runs AFTER the draft restore — the hint only writes into an EMPTY
@@ -2604,11 +2634,19 @@ function cnWireActiveForm_() {
       // ${mod}+Shift+Enter keeps Save & Compose.
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
         e.preventDefault();
+        if (e.repeat) return;   // F(cycle-8 M-3): a held chord auto-repeats keydown
         cnSubmitActiveForm_();
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
+        // F(cycle-8 M-3): keydown AUTO-REPEATS while held. Save & Copy was
+        // accidentally protected (the optimistic clear empties the form
+        // synchronously) but Save & Compose keeps the form (keepForm), so a
+        // held/repeated chord fired N identical submitCallNote RPCs → N
+        // duplicate rows. The in-flight guard in cnSubmitActiveForm_ backstops
+        // the discrete double-press.
+        if (e.repeat) return;
         cnShowComposerLoading_();
         cnSubmitActiveForm_({
           keepForm: true,
@@ -3339,6 +3377,15 @@ function cnNowInTz_(tz) {
  *  it successfully lands. Used by the Save-Copy-Compose button to open
  *  the composer with the real noteId once the server has assigned one. */
 function cnSubmitActiveForm_(opts) {
+  // F(cycle-8 M-3): while a Save & Compose flow is active the form KEEPS its
+  // content (transactional compose, r3) — so any further submit before the
+  // flow settles (send / cancel / failure) would write a DUPLICATE row from
+  // the same text. Refuse re-entry; the flow's own teardown paths all clear
+  // CN_STATE.composeFlow, so this can never wedge.
+  if (CN_STATE.composeFlow) {
+    showToast('Still saving this note — one moment…', 'toast-info');
+    return;
+  }
   const requestedView = currentView;
   const payload = cnReadActiveForm_();
   if (!payload.callback && !payload.caller && !payload.patientAndTrx && !payload.issue && !payload.resolution) {
@@ -3593,9 +3640,40 @@ function cnFormatTimestampForCopy_(iso) {
 
 // ── Rolling stack render ───────────────────────────────────────────────
 
+/** F(cycle-8): snapshot the OPEN inline editor's typed values before a stack
+ *  re-render and restore them after. cnRefreshRollingStack_ already skips
+ *  while an edit is open, but OTHER cnRenderStack_ callers (a slow optimistic
+ *  submit confirming, a pin toggle's tray reload) rebuild the editing card
+ *  from the note's STORED values — silently discarding everything typed since
+ *  the editor opened. */
+function cnEditSnapshot_() {
+  if (!CN_STATE.editingNoteId) return null;
+  const fields = document.querySelectorAll('[id^="cnE-"]');
+  if (!fields.length) return null;
+  const vals = {};
+  fields.forEach(function (el) {
+    vals[el.id] = el.isContentEditable ? el.textContent : el.value;
+  });
+  return { active: document.activeElement && document.activeElement.id, vals: vals };
+}
+function cnEditRestore_(snap) {
+  if (!snap || !CN_STATE.editingNoteId) return;
+  Object.keys(snap.vals).forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.isContentEditable) el.textContent = snap.vals[id];
+    else el.value = snap.vals[id];
+  });
+  if (snap.active && /^cnE-/.test(snap.active)) {
+    const el = document.getElementById(snap.active);
+    if (el) try { el.focus(); } catch (e) {}
+  }
+}
+
 function cnRenderStack_() {
   const stack = document.getElementById('cn-stack');
   if (!stack) return;
+  const editSnap = cnEditSnapshot_();
   // Pinned notes render in the dedicated tray above; exclude them from the
   // rolling stack so they don't appear twice on the page.
   const pinnedIds = {};
@@ -3618,6 +3696,7 @@ function cnRenderStack_() {
   }
   stack.innerHTML = html;
   cnWireCards_(stack);
+  cnEditRestore_(editSnap);   // F(cycle-8): typed edit values survive the re-render
 }
 
 function cnInstallCardDelegation_(area) {
@@ -5700,12 +5779,23 @@ function cnRenderHistoryStack_() {
   const stack = document.getElementById('cn-history-stack');
   if (!stack) return;
   const summary = document.getElementById('cn-history-summary');
-  const notes = CN_STATE.historyNotes || [];
+  const allNotes = CN_STATE.historyNotes || [];
+  // F(cycle-8 M-10): History now honors CN_STATE.filter — the Log quick-chips
+  // ("Jump to history: Unresolved · 4") set it and navigated here, but nothing
+  // consumed it (the chips were a silent no-op; the rep hunted manually). The
+  // active filter renders as a clearable pill so it's never invisible state.
+  const flt = CN_STATE.filter || 'all';
+  const notes = (flt === 'all') ? allNotes
+    : allNotes.filter(function (n) { return cnNoteMatchesFilter_(n, flt); });
+  const fltPill = (flt === 'all') ? ''
+    : '<span class="cn-hist-filterpill">Filtered: ' + esc(flt) +
+      ' · <a href="#" onclick="CN_STATE.filter=\'all\';cnRenderHistoryStack_();return false;">clear</a></span>';
   const isRange = CN_STATE.historyEndDate && CN_STATE.historyEndDate !== CN_STATE.historyDate;
 
   if (notes.length === 0) {
-    if (summary) summary.innerHTML = '';
-    stack.innerHTML = '<div class="cn-stack-empty">No notes for ' + (isRange ? 'this range' : 'this date') + '.</div>';
+    if (summary) summary.innerHTML = fltPill;
+    stack.innerHTML = '<div class="cn-stack-empty">No ' + (flt === 'all' ? '' : esc(flt) + '-filtered ') +
+      'notes for ' + (isRange ? 'this range' : 'this date') + '.</div>';
     return;
   }
 
@@ -5713,7 +5803,8 @@ function cnRenderHistoryStack_() {
     var startLabel = cnFormatDateLabel_(CN_STATE.historyDate);
     var endLabel = cnFormatDateLabel_(CN_STATE.historyEndDate);
     if (summary) summary.innerHTML = '<div class="cn-history-summary">' +
-      esc(startLabel) + ' – ' + esc(endLabel) + ' · ' + notes.length + ' note' + (notes.length !== 1 ? 's' : '') + '</div>';
+      esc(startLabel) + ' – ' + esc(endLabel) + ' · ' + notes.length + ' note' + (notes.length !== 1 ? 's' : '') +
+      fltPill + '</div>';
 
     // Group by dateLocal, newest dates first — each group is collapsible with
     // a metadata header (note count + per-flag-type counts).
@@ -5740,7 +5831,7 @@ function cnRenderHistoryStack_() {
     });
     stack.innerHTML = html;
   } else {
-    if (summary) summary.innerHTML = '';
+    if (summary) summary.innerHTML = fltPill;
     stack.innerHTML = notes.map(cnRenderCard_).join('');
   }
 }
@@ -5948,6 +6039,12 @@ function cnSetSearchField_(f) {
     const area = document.getElementById('view-area');
     if (area && currentView === 'callNotesSearch') {
       cnRenderSearchView(area);
+      // F(cycle-8): RE-FIRE as a substring search under the new field scope
+      // (S28's contract). The early return used to repaint the CACHED exact
+      // hits under the freshly highlighted tab — stale results silently
+      // presented as the new field-scoped search. cnClearExactMode_ already
+      // did this correctly; mirror it.
+      cnFireSearch_();
       return;
     }
   }
@@ -6704,10 +6801,18 @@ function cnMgrRenderSearchResults_() {
 // ── Ambient (sidebar badge) polling ────────────────────────────────────
 
 function cnStartAmbientPolling_() {
-  if (CN_STATE.ambientTimer) clearInterval(CN_STATE.ambientTimer);
+  // F(cycle-8): IDEMPOTENT — showView now (re)starts the poller on EVERY CN
+  // tab entry (previously only the Log enter did, so a deep-link/refresh
+  // landing on History/Search/Team Notes left the sidebar badge + the ≤60s
+  // flagsVersion propagation dead until the rep visited Log once). A live
+  // timer is left alone so CN-internal tab hops don't fire an extra RPC per
+  // nav; the fresh-start path still polls immediately.
   cnEnsureLiveRefreshBound_();
-  cnPollAmbient_();
-  CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
+  // F(cycle-8): staleness-gated immediate poll — a fresh entry (or a return
+  // after >30s away) polls now so the stats-mini/badge populate; a rapid
+  // CN-internal tab hop costs nothing. The 60s timer is created once.
+  if (!CN_STATE.lastAmbientAt || (Date.now() - CN_STATE.lastAmbientAt) > 30000) cnPollAmbient_();
+  if (!CN_STATE.ambientTimer) CN_STATE.ambientTimer = setInterval(cnPollAmbient_, 60000);
 }
 
 /** Stable signature of the rolling-note set for the live-refresh skip-render
@@ -6744,10 +6849,20 @@ function cnRefreshRollingStack_(then) {
       const server = res.notes || [];
       const serverIds = {};
       server.forEach(function (n) { serverIds[n.noteId] = true; });
-      const pending = (CN_STATE.rollingNotes || []).filter(function (n) {
+      const local = CN_STATE.rollingNotes || [];
+      const pending = local.filter(function (n) {
         return n._pending && !serverIds[n.noteId];
       });
-      CN_STATE.rollingNotes = pending.concat(server);
+      // F(cycle-8, INV-56): a confirmed note with a flag/resolve/pin RPC in
+      // flight must keep its LOCAL object — replacing it with the server's
+      // pre-write copy visibly reverted the optimistic toggle AND detached
+      // the _flagInFlight guard (a second click could then fire a concurrent
+      // clobbering RPC, the exact race the guard exists to prevent).
+      const inFlightById = {};
+      local.forEach(function (n) { if (n._flagInFlight && !n._pending) inFlightById[n.noteId] = n; });
+      CN_STATE.rollingNotes = pending.concat(server.map(function (n) {
+        return inFlightById[n.noteId] || n;
+      }));
       CN_STATE.autoCopyFormat = res.autoCopyFormat || CN_STATE.autoCopyFormat || '';
       CN_STATE.rollingEntry = { at: Date.now() };   // keep the SWR instant-paint cache warm
       // Skip the re-render (and its visible flash) when the note set is byte-for-byte
@@ -6805,10 +6920,12 @@ function cnRefreshConfigForFlags_() {
 }
 
 function cnPollAmbient_() {
+  CN_STATE.lastAmbientAt = Date.now();   // F(cycle-8): fire-time stamp for the staleness-gated start
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error) return;
       if (res.enrolled === false) return;
+      CN_STATE.lastAmbientRes = res;     // F(cycle-8): instant paint on the next Log enter
       CN_STATE.staleFlagHours = res.staleFlagHours || 1;
       // Runtime feature-flag propagation: if the manager flipped a toggle the
       // ambient flagsVersion changes → refetch deptConfig (flags + templates +
@@ -6828,7 +6945,13 @@ function cnPollAmbient_() {
       // #3 live-sync — re-fetch + re-render today's rolling stack on the Log
       // view so a note logged in another context (pop-out / second window)
       // appears within the 60s poll without a manual nav. Log only.
-      if (currentView === 'callNotes') cnRefreshRollingStack_();
+      // F(cycle-8): skip when the stack was fetched moments ago — the Log
+      // enter's own cnLoadToday_/SWR fetch had just resolved when this poll's
+      // success handler fired, doubling the getMyCallNotes per enter. Only
+      // THIS (poll-driven) call site is staleness-gated; the focus/visibility
+      // wake and nav paths refresh unconditionally (cross-window sync).
+      const stackFresh = CN_STATE.rollingEntry && (Date.now() - (CN_STATE.rollingEntry.at || 0)) < 15000;
+      if (currentView === 'callNotes' && !stackFresh) cnRefreshRollingStack_();
       // Update sidebar badge on the Call Notes nav link
       const link = document.querySelector('.sb-link[data-tool="callNotes"]')
                 || document.querySelector('.nav-btn[data-tool="callNotes"]');
@@ -7031,10 +7154,18 @@ function cnUpdateStatsMini_(res) {
   const flag  = document.getElementById('cn-stat-flag');
   if (!today || !week || !flag) return;
   // §4 count-up — animate from 0 to the value (replaces the loading dots).
-  countUp_(today, res.todayTotal || 0);
-  countUp_(week,  res.weekTotal  || 0);
+  // F(cycle-8): only when the value CHANGED — the 60s poll used to re-run the
+  // animation every minute, so Today/Week/Unresolved visibly re-counted from
+  // 0 while the rep watched. An unchanged value just sets the text.
+  const setOrCount = function (el, v) {
+    if (String(el.textContent).trim() === String(v)) return;
+    if (/^\d+$/.test(String(el.textContent).trim())) { el.textContent = String(v); return; }   // changed number → snap (no from-zero replay)
+    countUp_(el, v);   // first paint (loading dots) → animate
+  };
+  setOrCount(today, res.todayTotal || 0);
+  setOrCount(week,  res.weekTotal  || 0);
   const unresolved = res.unresolvedActionCount || 0;
-  countUp_(flag, unresolved);
+  setOrCount(flag, unresolved);
   flag.classList.remove('warn', 'crit');
   if (unresolved >= 3)      flag.classList.add('crit');
   else if (unresolved >= 1) flag.classList.add('warn');
@@ -7905,9 +8036,14 @@ function cnRunAuditSearch_() {
     endDate:   (document.getElementById('cn-audit-end')    || {}).value || '',
   };
   var requestedView = currentView;
+  // F(cycle-8): sequence token — Search then a "Last 7" preset (which
+  // re-fires immediately) raced two RPCs into the same #cn-audit-results; a
+  // slower OLDER response could overwrite the newer filter's results with no
+  // indication. The INV-146 class, applied to the audit panel.
+  var seq = (CN_STATE.auditSearchSeq = (CN_STATE.auditSearchSeq || 0) + 1);
   google.script.run
     .withSuccessHandler(function (res) {
-      if (currentView !== requestedView) return;
+      if (currentView !== requestedView || seq !== CN_STATE.auditSearchSeq) return;
       var live = document.getElementById('cn-audit-results');
       if (!live) return;
       if (!res || res.error) { live.innerHTML = '<div class="cn-stack-empty">' + esc((res && res.error) || 'Search failed') + '</div>'; return; }
@@ -7915,7 +8051,7 @@ function cnRunAuditSearch_() {
       live.innerHTML = cnRenderAuditResults_(res);
     })
     .withFailureHandler(function (err) {
-      if (currentView !== requestedView) return;
+      if (currentView !== requestedView || seq !== CN_STATE.auditSearchSeq) return;
       var live = document.getElementById('cn-audit-results');
       if (live) live.innerHTML = '<div class="cn-stack-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
     })
@@ -9089,6 +9225,15 @@ function cnOpenExternalEmailModal_(presetNoteId, onMounted) {
 }
 
 function cnCloseExternalEmailModal_() {
+  // F(cycle-8 M-4): mirror the department composer's INV-145 guard — refuse to
+  // close while the send RPC is in flight. Without this, an Esc mid-send closed
+  // silently; the rep reopened and started a new draft, and the FIRST send's
+  // late success handler then tore down the reopened modal (destroying the new
+  // typing) — or the rep re-sent, duplicating the customer email.
+  if (CN_STATE.extComposer && CN_STATE.extComposer.sending) {
+    showToast('Sending — one moment…', 'toast-info');
+    return;
+  }
   CN_STATE.extComposer = null;
   var overlay = document.getElementById('cn-ext-overlay');
   if (overlay) overlay.remove();
@@ -9589,7 +9734,11 @@ function cnSendExternalEmail_() {
         showToast(res.error || 'Send failed', 'toast-error');
         return;
       }
-      cnCloseExternalEmailModal_();
+      // F(cycle-8 M-4) defense-in-depth: only close the composer THIS send
+      // belongs to. With the close-guard above the mid-send-close/reopen race
+      // shouldn't occur, but a late handler must never tear down a composer
+      // instance it doesn't own.
+      if (CN_STATE.extComposer === c) cnCloseExternalEmailModal_();
       var parts = [];
       if ((res.formsAttached || []).length > 0) {
         parts.push(res.formsAttached.length + ' PDF(s)');

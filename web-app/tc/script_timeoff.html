@@ -264,7 +264,7 @@ function renderTimeOffView(area, data) {
     ${COMPACT_MODE ? modeBar : ''}
     <div class="month-nav">
       <button class="month-nav-btn" id="cal-prev" ${!canPrev?'disabled':''} aria-label="Previous month">${icon('chevronLeft', 16)}</button>
-      <span class="month-label">${data.monthName}</span>
+      <span class="month-label">${esc(data.monthName)}</span>
       <button class="month-nav-btn" id="cal-next" ${!canNext?'disabled':''} aria-label="Next month">${icon('chevronRight', 16)}</button>
     </div>
     <div class="timeoff-layout">

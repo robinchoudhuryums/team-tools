@@ -633,7 +633,13 @@ function intakePpdSections_(lang) {
     if (!m) { cur = { title: text, rows: [], mainQNums: [] }; secs.push(cur); continue; }
     if (!cur) { cur = { title: '', rows: [], mainQNums: [] }; secs.push(cur); }
     cur.rows.push({ qNum: m[1], text: text, isSecondary: isSecondary });
-    if (/^\d+$/.test(m[1])) cur.mainQNums.push(m[1]);
+    // F(cycle-8): Q39a counts toward the progress ring/stepper. The bare-digit
+    // filter excludes the lettered SUB-questions (31a/33a — conditional
+    // follow-ups), but 39a is a FULL-WEIGHT primary row that happens to be
+    // lettered only to avoid renumbering — and it is the sole trigger of the
+    // engine's mobile-home K0821 rule. A rep could see "45/45 complete" with
+    // the engine-critical dwelling answer blank.
+    if (/^\d+$/.test(m[1]) || m[1] === '39a') cur.mainQNums.push(m[1]);
   }
   return secs;
 }
@@ -775,6 +781,24 @@ function intakePickKey_(e) {
   e.preventDefault();
   btns[next].focus();
   intakePick_(btns[next]);
+}
+
+// F(cycle-8): arrow-key nav for the ynreveal (Q45) / ynnum (Q40) INNER Yes/No
+// radiogroups — they declared role="radiogroup" but bound no keydown, so
+// keyboard arrow selection silently didn't work on exactly these two while
+// every sibling radiogroup has it. Generic: clicks the next button so each
+// control's own onclick (intakeYrPickYn_ / intakeYnNumPickYn_) runs.
+function intakeYnKey_(e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  var btns = Array.prototype.slice.call(e.currentTarget.querySelectorAll('[data-set]'));
+  if (!btns.length) return;
+  var cur = btns.findIndex(function (b) { return b.classList.contains('on'); });
+  var next = (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+    ? (cur <= 0 ? btns.length - 1 : cur - 1)
+    : (cur < 0 || cur >= btns.length - 1 ? 0 : cur + 1);
+  e.preventDefault();
+  btns[next].focus();
+  btns[next].click();
 }
 
 // Get/set a single PPD answer value across all control types.
@@ -968,7 +992,7 @@ function intakeYnRevealControlHtml_(ctrl, qNum, ariaLabel) {
     return '<button type="button" class="intk-multi-btn" data-set="' + esc(v) + '" role="checkbox" aria-checked="false" onclick="intakeYrPickSub_(this)">' + esc(v) + '</button>';
   }).join('');
   return '<div class="intk-ynreveal" data-qnum="' + esc(qNum) + '" data-reveal-on="' + esc(ctrl.revealOn || 'Yes') + '" role="group" aria-label="' + esc(ariaLabel) + '">' +
-      '<div class="intk-yn intk-yr-yn" role="radiogroup">' +
+      '<div class="intk-yn intk-yr-yn" role="radiogroup" onkeydown="intakeYnKey_(event)">' +
         '<button type="button" class="intk-yn-btn yes" data-set="Yes" role="radio" aria-checked="false" onclick="intakeYrPickYn_(this)">Yes</button>' +
         '<button type="button" class="intk-yn-btn no" data-set="No" role="radio" aria-checked="false" onclick="intakeYrPickYn_(this)">No</button>' +
       '</div>' +
@@ -1026,7 +1050,7 @@ function intakeYnRevealSet_(grp, val) {
 function intakeYnNumControlHtml_(ctrl, qNum, ariaLabel) {
   var unit = ctrl.unit || '';
   return '<div class="intk-ynnum" data-qnum="' + esc(qNum) + '" data-unit="' + esc(unit) + '" role="group" aria-label="' + esc(ariaLabel) + '">' +
-      '<div class="intk-yn intk-yr-yn" role="radiogroup">' +
+      '<div class="intk-yn intk-yr-yn" role="radiogroup" onkeydown="intakeYnKey_(event)">' +
         '<button type="button" class="intk-yn-btn yes" data-set="Yes" role="radio" aria-checked="false" onclick="intakeYnNumPickYn_(this)">Yes</button>' +
         '<button type="button" class="intk-yn-btn no" data-set="No" role="radio" aria-checked="false" onclick="intakeYnNumPickYn_(this)">No</button>' +
       '</div>' +

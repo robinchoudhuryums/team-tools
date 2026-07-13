@@ -296,8 +296,18 @@ function boot(opts) {
       el.dispatchEvent(new window.Event('input', { bubbles: true }));
       return el;
     },
-    /** Run + clear captured setTimeout/rAF callbacks (deferred renders). */
-    flushTimers() { const t = timers.splice(0); t.forEach((fn) => { try { fn(); } catch (e) {} }); },
+    /** Run + clear captured setTimeout/rAF callbacks (deferred renders).
+     *  F(cycle-8): a throwing deferred callback is a REAL client bug — it used
+     *  to be silently swallowed, so a test relying on flushed timers could
+     *  pass over a crashing code path. All timers still run (one bad callback
+     *  can't shadow the others); the first error then surfaces as the test's
+     *  failure. */
+    flushTimers() {
+      const t = timers.splice(0);
+      let firstErr = null;
+      t.forEach((fn) => { try { fn(); } catch (e) { if (!firstErr) firstErr = e; } });
+      if (firstErr) throw firstErr;
+    },
     /** Fire the shell `load` handler and satisfy getEmployeeState with a fixture
      *  so renderShell builds #view-area + the initial tool renders. Returns the
      *  empState used. Other RPCs fired during enter (prewarm, dept config, notes,

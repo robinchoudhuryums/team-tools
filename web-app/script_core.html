@@ -819,6 +819,11 @@ function showView(view) {
   const toolKey = VIEW_TO_TOOL[view];
   if (!toolKey) return;
   if (toolKey !== 'callNotes' && typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
+  // F(cycle-8): symmetric START on any CN tab — the poller used to start only
+  // from the Log enter, so a deep-link/refresh-restore into another CN tab
+  // left the stale-flag badge + feature-flag propagation off. Idempotent
+  // (a live timer is untouched), so CN-internal hops cost nothing extra.
+  if (toolKey === 'callNotes' && typeof cnStartAmbientPolling_ === 'function') cnStartAmbientPolling_();
   // KB drawer (shell capability): close on any navigation + toggle its
   // right-edge tab for the mid-task tools (Call Notes / Intake).
   if (typeof kbDrawerOnNavigate_ === 'function') kbDrawerOnNavigate_(view);
@@ -1032,6 +1037,11 @@ function loSkeleton(rows) {
 //  combined Clock+Timesheet enter handler (enterClockCombinedView) lives in
 //  tc/script_clock.html since it composes that partial's render functions.
 function enterTimeoffView(area) {
+  // F(cycle-8 H-1): the calLoadError_ Retry button calls this with NO args —
+  // renderLoading(undefined) threw (into the error beacon) and the retry path
+  // was dead. Re-resolve the view area, the enterCoverageView pattern.
+  area = area || document.getElementById('view-area');
+  if (!area) return;
   stopClock();
   if (!calYear) {
     const todayInTz = isoDateTz(empTz());
@@ -1043,6 +1053,9 @@ function enterTimeoffView(area) {
   loadCalendar(calYear, calMonth);
 }
 function enterManagerView(area) {
+  // F(cycle-8 H-1): same — mgrLoadError_'s Retry button calls this argless.
+  area = area || document.getElementById('view-area');
+  if (!area) return;
   stopClock();
   renderLoading(area, 'Loading dashboard…', 'clock');
   loadManagerDashboard();
@@ -1299,7 +1312,13 @@ function uiConfirm(opts) {
       resolve(result);
     };
     const onKey = function (e) {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(false); }
+      // F(cycle-8): only the TOPMOST ui-dialog handles keys. Both dialogs
+      // register document-level CAPTURE listeners and stopPropagation can't
+      // stop same-node-same-phase siblings — one Escape used to resolve BOTH
+      // stacked dialogs (the bottom one with false, cancelling its flow).
+      const dlgs = document.querySelectorAll('.overlay.open.ui-dialog');
+      if (!dlgs.length || dlgs[dlgs.length - 1] !== overlay) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); cleanup(false); }
       else if (e.key === 'Enter' && !e.shiftKey) {
         // Enter activates the FOCUSED button: a keyboard user who Tabs to
         // Cancel and presses Enter must get cancel — confirming from the
@@ -1307,6 +1326,7 @@ function uiConfirm(opts) {
         // before this check. Enter anywhere else = OK (the default action,
         // which also holds initial focus).
         e.preventDefault();
+        e.stopImmediatePropagation();
         const onCancel = e.target && e.target.closest && e.target.closest('.ui-dialog-cancel');
         cleanup(!onCancel);
       }
@@ -1369,8 +1389,11 @@ function uiPrompt(opts) {
       cleanup(val);
     };
     const onKey = function (e) {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(null); }
-      else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); submit(); }
+      // F(cycle-8): topmost-only, mirroring uiConfirm's stacked-dialog guard.
+      const dlgs = document.querySelectorAll('.overlay.open.ui-dialog');
+      if (!dlgs.length || dlgs[dlgs.length - 1] !== overlay) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); cleanup(null); }
+      else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); e.stopImmediatePropagation(); submit(); }
     };
     overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(null); });
     overlay.querySelector('.ui-dialog-ok').addEventListener('click', submit);
@@ -1484,7 +1507,15 @@ document.addEventListener('focusin', function (e) {
   // can read reference material while composing — yanking focus out of its
   // search box would make it unusable mid-modal.
   if (e.target && e.target.closest && e.target.closest('#kb-drawer')) return;
-  var opens = document.querySelectorAll('.overlay.open');
+  // F(cycle-8): hover-opened day popovers (.overlay.open.hover-mode — the
+  // Time/PTO calendar) are NOT modal: the rep merely rested the pointer on a
+  // cell, and trapping focus yanked Tab / month-nav clicks into the popover's
+  // Close button while an invisible backdrop sat under them. Exempt them (the
+  // KB-drawer pattern); a CLICK-pinned popover drops hover-mode and traps
+  // normally.
+  var opens = Array.prototype.filter.call(
+    document.querySelectorAll('.overlay.open'),
+    function (o) { return !o.classList.contains('hover-mode'); });
   if (!opens.length) return;
   var open = opens[opens.length - 1];
   var modal = open.querySelector('.modal') || open.querySelector('.cn-compose-modal');

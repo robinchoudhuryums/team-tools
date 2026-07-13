@@ -264,7 +264,7 @@ function kbMd_(src) {
     var sm = info.match(/^snippet\b\s*:?\s*(.*)$/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: (parts ? parts[2] : '').replace(/\n$/, '') });
     else blocks.push({ snippet: false, body: code });
-    return ' C' + (blocks.length - 1) + ' '; });
+    return '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
     // Images BEFORE links (otherwise the link rule renders the [alt](url)
     // part as an anchor with a stray "!"). http(s) only - no mailto for an
@@ -301,7 +301,7 @@ function kbMd_(src) {
   var lines = src.split(/\r?\n/), html = '', i = 0;
   while (i < lines.length) {
     var ln = lines[i];
-    var cm = ln.trim().match(/^ C(\d+) $/);
+    var cm = ln.trim().match(/^\u0000C(\d+)\u0000$/);
     if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
@@ -347,7 +347,7 @@ function kbMd_(src) {
     if (/^\s*>\s?/.test(ln)) { html += '<blockquote>'; while (i < lines.length && /^\s*>\s?/.test(lines[i])) { html += inline(lines[i].replace(/^\s*>\s?/, '')) + ' '; i++; } html += '</blockquote>'; continue; }
     if (/^\s*(---|\*\*\*|___)\s*$/.test(ln)) { html += '<hr>'; i++; continue; }
     var para = ln; i++;
-    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s/.test(lines[i]) && !/^\s*>/.test(lines[i]) && !/^\s*\|/.test(lines[i]) && !/^ C\d+ $/.test(lines[i].trim())) { para += ' ' + lines[i]; i++; }
+    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s/.test(lines[i]) && !/^\s*>/.test(lines[i]) && !/^\s*\|/.test(lines[i]) && !/^\u0000C\d+\u0000$/.test(lines[i].trim())) { para += ' ' + lines[i]; i++; }
     html += '<p>' + inline(para) + '</p>';
   }
   return html;
@@ -821,7 +821,13 @@ function kbDoSearch_(q) {
       KB_STATE.searchFilterDept = '';
       kbRenderSearchResults_();
     })
-    .withFailureHandler(function () {})
+    .withFailureHandler(function (err) {
+      // F(cycle-8): was fully silent — a rep typing a query on a flaky
+      // connection saw the previous tree/panel with zero feedback ("nothing
+      // happened"). Same guards as success so a stale failure stays quiet.
+      if (currentView !== requested || seq !== KB_STATE.searchSeq) return;
+      showToast('Reference search failed — check your connection and try again', 'toast-error');
+    })
     .searchReference(q);
 }
 
@@ -986,6 +992,10 @@ function kbLoadRelated_(id) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
+      // F(cycle-8): the L-18 stale-item guard, applied to the follow-on load —
+      // rapid A→B reader clicks let A's slower kbGetRelated response write
+      // A's "See also" block under B's article.
+      if (KB_STATE.currentId !== id) return;
       var host = document.getElementById('kb-related'); if (!host) return;
       var items = (res && res.items) || [];
       if (!items.length) { host.innerHTML = ''; return; }
