@@ -798,6 +798,47 @@ test('managerSourceDrift_: a demoted email appears once even on duplicate roster
     'dup@y.com');
 });
 
+console.log('\nCode.js — dev/prod instance guards (blue-green deploy support)');
+const instCtx = { String, JSON, Object, console, _p: {} };
+instCtx.PropertiesService = { getScriptProperties: function () {
+  return { getProperty: function (k) {
+    return Object.prototype.hasOwnProperty.call(instCtx._p, k) ? instCtx._p[k] : null;
+  } };
+} };
+vm.createContext(instCtx);
+['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'assertDevInstance_'].forEach(function (fn) {
+  vm.runInContext(extractRawFunction('Code.js', fn), instCtx, { filename: 'Code.js#' + fn });
+});
+test('instance guards: prod default (no props) — destructive tests OK, dev tools refuse', () => {
+  instCtx._p = {};
+  assert.strictEqual(instCtx.instanceLabel_(), '');
+  assert.strictEqual(instCtx.isProdInstance_(), false);
+  assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));   // prod today still runs runAllTests
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a labeled DEV instance/);
+});
+test('instance guards: INSTANCE_IS_PROD=true blocks destructive tests AND dev tools', () => {
+  instCtx._p = { INSTANCE_IS_PROD: 'true', INSTANCE_LABEL: 'PROD' };
+  assert.strictEqual(instCtx.isProdInstance_(), true);
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /PRODUCTION instance/);
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a labeled DEV instance/);
+});
+test('instance guards: a labeled DEV instance allows both dev tools and the full suite', () => {
+  instCtx._p = { INSTANCE_LABEL: 'DEV' };
+  assert.strictEqual(instCtx.instanceLabel_(), 'DEV');
+  assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));
+  assert.doesNotThrow(() => instCtx.assertDevInstance_('devScrubRoster_'));
+});
+test('TRIPWIRE: destructive test writers + dev tools carry the right instance guard', () => {
+  assert.ok(/assertNotProdInstance_\(/.test(extractRawFunction('Tests.js', 'runAllTests')),
+    'runAllTests must refuse on prod (no TEST_ rows in live payroll/PHI)');
+  assert.ok(/assertNotProdInstance_\(/.test(extractRawFunction('Tests.js', 'setupTestEnvironment')),
+    'setupTestEnvironment must refuse on prod');
+  assert.ok(/assertDevInstance_\(/.test(extractRawFunction('DevTools.js', 'devScrubRoster_')),
+    'devScrubRoster_ MUTATES the roster — must be dev-only (bulletproof guard)');
+  assert.ok(/assertDevInstance_\(/.test(extractRawFunction('DevTools.js', 'devShowConfig_')),
+    'devShowConfig_ must be dev-only');
+});
+
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
 {
   vm.runInContext(extractRawFunction('Code.js', 'ptoLegitHalfDayPair_'), sb, { filename: 'Code.js#ptoLegitHalfDayPair_' });

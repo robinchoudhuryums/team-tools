@@ -3317,6 +3317,27 @@ Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`.
 State that exists outside the codebase and must be set up
 manually for a fresh deploy or environment:
 
+- **Blue-green (a personal dev instance alongside the team's prod) — see
+  `docs/deployment.md`.** Run TWO Apps Script projects from the SAME repo source:
+  PROD (the committed `web-app/.clasp.json` scriptId, `ANYONE_ANONYMOUS`, real
+  sheets) and a personal DEV project (`web-app/.clasp.dev.json`, gitignored;
+  access "Only myself"; the `/dev` HEAD URL so every push is instantly live;
+  Script Properties → COPY sheets + your-inbox recipients; PHI stores start
+  EMPTY). `npm run push:dev` / `push:prod` (via `scripts/push-env.sh`) target
+  each; `push:dev` restores the committed prod `.clasp.json` so a bare
+  `clasp push` still hits prod. **Two OPTIONAL Script Properties tag an
+  instance — both UNSET on prod = zero behavior change:** `INSTANCE_LABEL`
+  (e.g. `DEV`) renders a top banner (`getEmployeeState.instanceLabel` →
+  `.instance-banner`) so the two tabs can't be confused; `INSTANCE_IS_PROD=true`
+  (set on prod) makes the destructive `TEST_`-row writers (`runAllTests` /
+  `setupTestEnvironment`) REFUSE via `assertNotProdInstance_`. Dev-only tooling
+  (`web-app/DevTools.js`: `devScrubRoster_(keeperEmail)` anonymizes a copied
+  roster so dev's per-employee emails can't reach real staff; `devShowConfig_()`)
+  is `assertDevInstance_`-guarded (runs only when `INSTANCE_LABEL` is set and
+  `INSTANCE_IS_PROD` is not) so it can never mutate the live roster even though
+  it deploys to both. Pinned by the instance-guard Node tests + the DEV-banner
+  DOM test. Deploy: the same `clasp push -f` + New version; the two new
+  properties are optional and prod is unaffected until you set them.
 - **The 2026-06 redesign + deferred follow-ons #1–#4 + niceties #8–#10
   add NO new operator state** — no new Script Properties, no new triggers,
   no migrations. The new endpoints (`getMyMetricsRange`,
@@ -4278,7 +4299,7 @@ Test Coverage Quality | whether tests actually guard regressions; the client DOM
 
 ### Subsystems
 Server:
-  web-app/Code.js, web-app/appsscript.json, web-app/.clasp.json
+  web-app/Code.js, web-app/DevTools.js, web-app/appsscript.json, web-app/.clasp.json
 Client (shell):
   web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html, web-app/script_tour.html
 Client (Time Clock views):

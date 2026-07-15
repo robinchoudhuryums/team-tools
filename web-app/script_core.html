@@ -576,7 +576,17 @@ function renderShell(state) {
       ${icon('popOut', 14)}
     </button>`;
 
+  // Blue-green: an isolated dev instance (INSTANCE_LABEL set on its Script
+  // Properties) shows a distinct top strip so it can never be mistaken for the
+  // team's live version when both tabs are open. Empty on prod → no banner.
+  const instanceBanner = state.instanceLabel
+    ? `<div class="instance-banner" role="status"
+         title="Isolated ${esc(state.instanceLabel)} instance — separate data + email from production">
+         ${icon('warning', 13)}<span>${esc(state.instanceLabel)} · isolated data &amp; email · not the team&rsquo;s live version</span>
+       </div>`
+    : '';
   document.getElementById('app').innerHTML = `
+    ${instanceBanner}
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sb-brand">

@@ -575,6 +575,45 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+// ── Dev / prod instance environment (blue-green deploy support) ──────────────
+// A separate DEV Apps Script project (its own scriptId + its own Script
+// Properties → COPY sheets + your-inbox email config) runs this SAME source as
+// prod. Two OPTIONAL Script Properties tag an instance so the two can't be
+// confused and so destructive test-data writes can't land on prod. Both UNSET
+// (the prod default) = zero behavior change. See docs/deployment.md.
+//   INSTANCE_LABEL   — a short banner label shown in the shell (e.g. "DEV").
+//   INSTANCE_IS_PROD — set to 'true' on the PROD project only, to REFUSE the
+//                      destructive TEST_-row writers (runAllTests /
+//                      setupTestEnvironment) so they can run on dev only.
+function instanceLabel_() {
+  try { return String(PropertiesService.getScriptProperties().getProperty('INSTANCE_LABEL') || '').trim(); }
+  catch (e) { return ''; }
+}
+function isProdInstance_() {
+  try { return String(PropertiesService.getScriptProperties().getProperty('INSTANCE_IS_PROD') || '').trim().toLowerCase() === 'true'; }
+  catch (e) { return false; }
+}
+/** Throws on the PROD instance (INSTANCE_IS_PROD='true') — guards the destructive
+ *  TEST_-row writers so they can only run against a dev project's copy sheets.
+ *  No-op until an operator sets the property on prod (back-compat: prod today
+ *  runs runAllTests fine, and continues to until the property is set). */
+function assertNotProdInstance_(label) {
+  if (isProdInstance_()) {
+    throw new Error((label || 'This operation') + ' is blocked on the PRODUCTION instance ' +
+      '(INSTANCE_IS_PROD is set). Run it on the DEV Apps Script project — see docs/deployment.md.');
+  }
+}
+/** Throws UNLESS this is a clearly-labeled DEV instance (INSTANCE_LABEL set AND
+ *  INSTANCE_IS_PROD not 'true'). The bulletproof guard for dev-only tooling that
+ *  MUTATES sheets (the roster scrubber). Prod has no INSTANCE_LABEL → refuses, so
+ *  a misfire can never touch the team's live roster. */
+function assertDevInstance_(label) {
+  if (!instanceLabel_() || isProdInstance_()) {
+    throw new Error((label || 'This dev tool') + ' refuses to run: this is not a labeled DEV instance ' +
+      '(set Script Property INSTANCE_LABEL on the dev project — never on prod). See docs/deployment.md.');
+  }
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  EMPLOYEE API
@@ -616,6 +655,9 @@ function getEmployeeState() {
       // mark these amber: still in the green balance but tentatively committed.
       annualPlannedUpcoming: getUpcomingAnnualPlanned_(emp.id, today),
       flags: getClientFeatureFlags_(),
+      // Blue-green: a short label ('DEV') shown as a banner so an isolated dev
+      // instance can't be mistaken for the team's live one. '' on prod → no banner.
+      instanceLabel: instanceLabel_(),
     };
   } catch (err) { return { error: err.message }; }
 }

@@ -295,6 +295,7 @@ function _assertThrows(fn, errSubstring, msg) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function setupTestEnvironment() {
+  assertNotProdInstance_('setupTestEnvironment');   // blue-green guard (see runAllTests)
   const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
 
   // Ensure column K has a PtoEnabled header so getDataRange() reliably
@@ -608,6 +609,10 @@ function _clearRowsByEmp(sheet, empId, colIdx, firstDataRow) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function runAllTests() {
+  // Blue-green guard: refuse on the PROD instance (INSTANCE_IS_PROD='true') so
+  // TEST_ rows never land in the team's live payroll/PHI. No-op until set — run
+  // the full suite on the DEV project. runSmokeTests (pure logic) stays unguarded.
+  assertNotProdInstance_('runAllTests');
   _resetState();
   _SMOKE_ONLY = false;
   Logger.log('═══ UMS TIME CLOCK TEST SUITE ═══');
