@@ -291,6 +291,17 @@ const EMP = {
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
+// Shared AuditLog columns (the ADP-spreadsheet AuditLog tab — writeAuditLog_ /
+// getOrCreateAuditSheet_ header order). Batch 3 (cycle-8): the AuditLog was the
+// ONE core sheet with NO named column enum, so its cells were read as bare
+// numeric indices (`auditData[i][5]`) — untrippable by a source scan, which is
+// exactly why the F1 coerced-PunchDate read slipped every tripwire (they were
+// per-function). Every AuditLog READ of a coerced column (TS / PUNCH_DATE /
+// PUNCH_TIME / IS_ADJUSTMENT) now routes through the typed `auditRowObj_` reader,
+// pinned by a global source tripwire (INV-142 pattern) so the next raw read fails
+// CI. TS(0) yyyy-MM-dd HH:mm:ss, PUNCH_DATE(5) yyyy-MM-dd, PUNCH_TIME(6) HH:mm:ss,
+// IS_ADJUSTMENT(7) TRUE/FALSE — all Sheets-coerced on read (the M-3/M-4/F1 class).
+const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUNCH_TIME:6, IS_ADJUSTMENT:7, DAYS_BACK:8, NOTES:9 };
 
 // Inter-department request tracking (DeptRequests tab). PHI-free: no email body.
 // NOTE_ID (col 11) is a back-compat trailing add (A5): legacy rows read '' for it
@@ -1089,23 +1100,20 @@ function getManagerDashboard() {
       const numRows = lastRow - startRow + 1;
       const auditData = auditSheet.getRange(startRow, 1, numRows, 10).getValues();
       for (let i = auditData.length - 1; i >= 0; i--) {
-        const tsRaw = normalizeAuditTs_(auditData[i][0]);
+        // Batch 3: the typed reader recovers ALL coerced cols once (TS, PunchDate,
+        // PunchTime, IsAdjustment — the M-3/M-4/F1 class). This block used to read
+        // each raw by index; now it maps the canonical object to the display shape.
+        const a = auditRowObj_(auditData[i]);
         recentAudits.push({
-          timestamp:    tsRaw,
-          timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
-          empName:      String(auditData[i][2]),
-          action:       String(auditData[i][4]),
-          punchDate:    normalizeDate_(auditData[i][5]),
-          // F(M-3): the PunchTime cell is written 'HH:mm:ss' but Sheets coerces
-          // it to a time-of-day Date — raw String() yielded "Sat Dec 30 1899 …"
-          // and the Recent Activity feed rendered a constant "12:00 AM".
-          punchTime:    normalizeTime_(auditData[i][6]),
-          // F(M-4): the cell is written 'TRUE'/'FALSE' but Sheets coerces it to
-          // a native boolean — String(true) === 'TRUE' is always false, so the
-          // ADJ badge + the adjustment REASON never rendered for the manager.
-          isAdjustment: String(auditData[i][7]).toUpperCase() === 'TRUE',
-          daysBack:     parseInt(auditData[i][8], 10) || 0,
-          notes:        String(auditData[i][9]),
+          timestamp:    a.ts,
+          timestampMgr: convertAuditTs_(a.ts, CONFIG.TIMEZONE, mgrTz),
+          empName:      a.empName,
+          action:       a.action,
+          punchDate:    a.punchDate,
+          punchTime:    a.punchTime,
+          isAdjustment: a.isAdjustment,
+          daysBack:     a.daysBack,
+          notes:        a.notes,
         });
       }
     }
@@ -3916,28 +3924,22 @@ function cnReadCallNoteAuditRows_() {
   const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
   const out = [];
   for (let i = data.length - 1; i >= 0; i--) {  // newest-first
-    const action = String(data[i][4]);
-    if (CN_AUDIT_ACTIONS.indexOf(action) < 0) continue;
-    const tsRaw = normalizeAuditTs_(data[i][0]);
-    const notes = String(data[i][9]);
+    if (CN_AUDIT_ACTIONS.indexOf(String(data[i][AUDIT.ACTION])) < 0) continue;
+    // Batch 3: the typed reader recovers coerced cols once. `dateLocal` maps from
+    // the recovered PunchDate — the compliance panel's "View note" deep-link hands
+    // it to managerGetCallNotes (^\d{4}-\d{2}-\d{2}$ guard); a raw String() read
+    // yielded "Wed Jul 15 2026 …" and silently killed the drill-through (F1).
+    const a = auditRowObj_(data[i]);
     out.push({
-      timestamp:    tsRaw,
-      timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
-      repId:        String(data[i][1]),
-      repName:      String(data[i][2]),
-      actorEmail:   String(data[i][3]),
-      action:       action,
-      // F(cycle-8): the PunchDate cell (col 5) is written as a yyyy-MM-dd
-      // string but Sheets COERCES it to a Date on read — a raw String() yields
-      // "Wed Jul 15 2026 …", which the compliance panel's "View note" deep-link
-      // then hands to managerGetCallNotes, whose ^\d{4}-\d{2}-\d{2}$ guard
-      // rejects it (drill-through silently dead). getManagerDashboard's sibling
-      // read (line ~1098) already routes col 5 through normalizeDate_; this site
-      // was missed. Non-date rows (tag-admin '', provision repId) have no noteId
-      // → no drill button, so normalizeDate_'s substring fallback is harmless.
-      dateLocal:    normalizeDate_(data[i][5]),
-      noteId:       cnExtractAuditNoteId_(notes),
-      notes:        notes,
+      timestamp:    a.ts,
+      timestampMgr: convertAuditTs_(a.ts, CONFIG.TIMEZONE, mgrTz),
+      repId:        a.empId,
+      repName:      a.empName,
+      actorEmail:   a.actor,
+      action:       a.action,
+      dateLocal:    a.punchDate,
+      noteId:       cnExtractAuditNoteId_(a.notes),
+      notes:        a.notes,
     });
   }
   return { rows: out, scannedAll: scannedAll };
@@ -4303,16 +4305,18 @@ function computeAutomationHealth_() {
       cutD.setDate(cutD.getDate() - AUTOMATION_SYNCFAIL_WINDOW_DAYS);
       const cutoff = fmtDateTz_(cutD, mgrTz);
       for (let i = data.length - 1; i >= 0; i--) {   // newest-first
-        const action = String(data[i][4]);
-        const tsRaw = normalizeAuditTs_(data[i][0]);
+        // Batch 3: named AUDIT cols (this reader touches no coerced date/time
+        // cells — only TS via normalizeAuditTs_ + string cols).
+        const action = String(data[i][AUDIT.ACTION]);
+        const tsRaw = normalizeAuditTs_(data[i][AUDIT.TS]);
         if (action === 'PersonalSheetSyncFail') {
           if (tsRaw.substring(0, 10) >= cutoff) {
             syncFails.count++;
             if (syncFails.recent.length < 5) {
               syncFails.recent.push({
                 timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
-                empName: String(data[i][2]),
-                notes: String(data[i][9]),
+                empName: String(data[i][AUDIT.EMP_NAME]),
+                notes: String(data[i][AUDIT.NOTES]),
               });
             }
           }
@@ -4325,7 +4329,7 @@ function computeAutomationHealth_() {
           lastRunByAction[action] = {
             timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
             ms: _runMs,
-            notes: String(data[i][9]),
+            notes: String(data[i][AUDIT.NOTES]),
           };
         }
       }
@@ -4703,8 +4707,10 @@ function adminSheetView_auditLog_() {
   const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
   const rows = [];
   for (let i = data.length - 1; i >= 0 && rows.length < cap; i--) {  // newest-first
-    const action = String(data[i][4] || '');
-    const tsRaw = normalizeAuditTs_(data[i][0]);
+    // Batch 3: named AUDIT cols (PHI-free projection — TS via normalizeAuditTs_ +
+    // string cols; this view reads no coerced date/time cells).
+    const action = String(data[i][AUDIT.ACTION] || '');
+    const tsRaw = normalizeAuditTs_(data[i][AUDIT.TS]);
     const sheetRow = startRow + i;
     rows.push({
       tone: adminAuditRowTone_(action),
@@ -4712,9 +4718,9 @@ function adminSheetView_auditLog_() {
       cells: {
         ts:     convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
         action: action,
-        rep:    String(data[i][2] || data[i][1] || ''),
-        actor:  String(data[i][3] || ''),
-        notes:  String(data[i][9] || ''),
+        rep:    String(data[i][AUDIT.EMP_NAME] || data[i][AUDIT.EMP_ID] || ''),
+        actor:  String(data[i][AUDIT.ACTOR] || ''),
+        notes:  String(data[i][AUDIT.NOTES] || ''),
       },
     });
   }
@@ -11925,6 +11931,32 @@ function normalizeAuditTs_(val) {
     return Utilities.formatDate(val, ssTz, 'yyyy-MM-dd HH:mm:ss');
   }
   return String(val == null ? '' : val).trim();
+}
+
+/** Typed AuditLog row reader — the SINGLE coercion-recovery point for the shared
+ *  AuditLog (Batch 3, cycle-8). Sheets coerces the Timestamp, PunchDate
+ *  (yyyy-MM-dd), PunchTime (HH:mm:ss), and IsAdjustment (TRUE/FALSE) cells to
+ *  Date/boolean values on read — a raw `String(row[i])` renders "Wed Jul 15 2026
+ *  …" / "Sat Dec 30 1899 …" / the-always-false `=== 'TRUE'` (the M-3/M-4/F1
+ *  class). This recovers ALL of them ONCE via the established normalize helpers,
+ *  so no caller re-derives a raw read. Returns canonical fields keyed by role;
+ *  callers add their own display/derived fields (timestampMgr via convertAuditTs_,
+ *  the `dateLocal` alias, noteId parsed from `notes`). PHI-free by the AuditLog's
+ *  own contract (INV-32) — this only re-shapes what the row already holds. */
+function auditRowObj_(row) {
+  row = row || [];
+  return {
+    ts:           normalizeAuditTs_(row[AUDIT.TS]),
+    empId:        String(row[AUDIT.EMP_ID] == null ? '' : row[AUDIT.EMP_ID]),
+    empName:      String(row[AUDIT.EMP_NAME] == null ? '' : row[AUDIT.EMP_NAME]),
+    actor:        String(row[AUDIT.ACTOR] == null ? '' : row[AUDIT.ACTOR]),
+    action:       String(row[AUDIT.ACTION] == null ? '' : row[AUDIT.ACTION]),
+    punchDate:    normalizeDate_(row[AUDIT.PUNCH_DATE]),
+    punchTime:    normalizeTime_(row[AUDIT.PUNCH_TIME]),
+    isAdjustment: String(row[AUDIT.IS_ADJUSTMENT] == null ? '' : row[AUDIT.IS_ADJUSTMENT]).toUpperCase() === 'TRUE',
+    daysBack:     parseInt(row[AUDIT.DAYS_BACK], 10) || 0,
+    notes:        String(row[AUDIT.NOTES] == null ? '' : row[AUDIT.NOTES]),
+  };
 }
 /** Difference in seconds between two "HH:mm:ss" or "HH:mm" strings (later - earlier).
  *  Returns negative if earlier > later (treat as "different day", skip the check). */
