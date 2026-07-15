@@ -4963,6 +4963,14 @@ function test_auditPanel_searchAndHistory() {
       'audit row must be PHI-free — note content never enters the AuditLog');
     _assertFalse(String(hit.notes).indexOf('Audit Panel Test') >= 0,
       'audit row must not carry the caller name');
+    // F(cycle-8): the compliance panel's "View note" deep-link hands
+    // hit.dateLocal to managerGetCallNotes, whose ^\d{4}-\d{2}-\d{2}$ guard
+    // rejects a raw Sheets-coerced PunchDate ("Wed Jul 15 2026 …"). Assert the
+    // yyyy-MM-dd shape so a coercion regression at cnReadCallNoteAuditRows_
+    // fails HERE instead of silently killing the drill-through (this row's
+    // PunchDate is the rep-local dateLocal written at CallNoteCreate).
+    _assertTrue(/^\d{4}-\d{2}-\d{2}$/.test(String(hit.dateLocal)),
+      'audit row dateLocal is a yyyy-MM-dd string (drill-through deep-link contract)');
 
     // ── History: full lifecycle, oldest-first, independent of date filter ──
     const hist = _asUser(_TEST_MGR_EMAIL, function () {

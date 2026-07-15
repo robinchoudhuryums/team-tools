@@ -3927,7 +3927,15 @@ function cnReadCallNoteAuditRows_() {
       repName:      String(data[i][2]),
       actorEmail:   String(data[i][3]),
       action:       action,
-      dateLocal:    String(data[i][5]),
+      // F(cycle-8): the PunchDate cell (col 5) is written as a yyyy-MM-dd
+      // string but Sheets COERCES it to a Date on read — a raw String() yields
+      // "Wed Jul 15 2026 …", which the compliance panel's "View note" deep-link
+      // then hands to managerGetCallNotes, whose ^\d{4}-\d{2}-\d{2}$ guard
+      // rejects it (drill-through silently dead). getManagerDashboard's sibling
+      // read (line ~1098) already routes col 5 through normalizeDate_; this site
+      // was missed. Non-date rows (tag-admin '', provision repId) have no noteId
+      // → no drill button, so normalizeDate_'s substring fallback is harmless.
+      dateLocal:    normalizeDate_(data[i][5]),
       noteId:       cnExtractAuditNoteId_(notes),
       notes:        notes,
     });
@@ -6924,7 +6932,12 @@ function getFormByToken(token) {
     // value to a Date on read (formTokenCellMs_ handles both; a non-empty
     // unparseable string fail-closes as tamper, S2.1).
     const expFB = formTokenCellMs_(row[FT.EXPIRES_AT]);
-    if (expFB.present && (expFB.ms == null || Date.now() > expFB.ms)) {
+    // Fail CLOSED on an ABSENT expiry too (F cycle-8): createFormToken always
+    // writes ExpiresAt atomically in the appendRow, so a blank cell is only
+    // corruption / a lossy FORMS_SS_ID migration — an anonymous PHI form must
+    // never be served against a token with no expiry. (Unparseable already
+    // fail-closed via ms==null, S2.1; absent was the fail-OPEN asymmetry.)
+    if (!expFB.present || expFB.ms == null || Date.now() > expFB.ms) {
       try { sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired'); } catch (_) {}
       return { error: 'This form link has expired. Please contact UMS to request a new one.' };
     }
@@ -6991,7 +7004,10 @@ function submitFormByToken(token, formData) {
     // non-empty unparseable expiry, S2.1, so a PHI submission is never accepted
     // against a tampered token).
     const expSF = formTokenCellMs_(row[FT.EXPIRES_AT]);
-    if (expSF.present && (expSF.ms == null || Date.now() > expSF.ms)) {
+    // Fail CLOSED on an ABSENT expiry too (F cycle-8) — never accept an
+    // anonymous PHI submission against a token with no expiry (blank = only
+    // corruption / migration; ExpiresAt is written atomically at creation).
+    if (!expSF.present || expSF.ms == null || Date.now() > expSF.ms) {
       tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
       return { success: false, error: 'This form link has expired.' };
     }
@@ -7242,7 +7258,10 @@ function getMySentForms() {
       // when its expiry is genuinely past OR unparseable (tamper).
       if (status === 'pending') {
         const expMS = formTokenCellMs_(rows[i][FT.EXPIRES_AT]);
-        if (expMS.present && (expMS.ms == null || nowMs > expMS.ms)) status = 'expired';
+        // Fail CLOSED on an ABSENT expiry too (F cycle-8) — a blank-expiry
+        // pending token reads as expired (blank = only corruption / migration),
+        // matching the getFormByToken / submitFormByToken gates.
+        if (!expMS.present || expMS.ms == null || nowMs > expMS.ms) status = 'expired';
       }
       forms.push({
         token: String(rows[i][FT.TOKEN] || '').trim(),

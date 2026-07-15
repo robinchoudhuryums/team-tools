@@ -6,7 +6,42 @@ Phase: implement — ALL FOUR batches done on claude/broad-scan-0y5q6b: batch 1 
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1
-Updated: 2026-07-10 (cycle-8 batches 4-5)
+Updated: 2026-07-15 (extra broad-scan F1-F5 on claude/broad-scan-0zvxiu)
+
+## Extra broad-scan + F1-F5 implement (2026-07-15, claude/broad-scan-0zvxiu)
+Fresh 6-agent broad-scan (fan-out + personal verification of every Medium+):
+0 Critical / 0 High / 1 Medium / 8 Low — a very clean result. Scan-time scores:
+Overall 8.5 · Correctness 8.5 · Security 9 · Data 8.5 · Timezone 8.5 · Concurrency 9 ·
+Test 8 · Clarity 9 · GAS 9 · MgrUX 8 · EmpUX 8 · Automation 8.5.
+Operator ran /broad-implement F1-F5 (F2 dropped — operator clarified K0841's
+Offerings pdfLink/imageUrl == K0861's, so no mismatch in practice).
+IMPLEMENTED (pure 277/0, DOM 59/0, node --check green):
+- F1 (Medium) Code.js cnReadCallNoteAuditRows_:~3930 — dateLocal read RAW off the
+  coerced PunchDate (col 5) → compliance-panel "View note" deep-link handed
+  garbage to managerGetCallNotes (^\d{4}-\d{2}-\d{2}$ reject → silent dead link).
+  Now normalizeDate_(data[i][5]) (matches getManagerDashboard:~1098). + Tests.js
+  test_auditPanel_searchAndHistory now asserts hit.dateLocal shape (the missing
+  guard that let it through).
+- F3 (Low) Code.js — form-token ABSENT ExpiresAt now fails CLOSED at all 3 gates
+  (getFormByToken/submitFormByToken/getMySentForms): `!expX.present ||` added.
+  Blank cell was fail-OPEN (perpetual anonymous PHI submit); createFormToken
+  writes ExpiresAt atomically, so blank = only corruption/migration.
+- F4 (Low) tc/script_timeoff.html PTO tile — projected "Nd after DATE" was
+  `annual - plannedDays` but `annual` already reflects APPROVED deductions
+  (INV-03/25), double-counting them. New pendingPlannedDays (pending-only) drives
+  the projection; the "Nd planned" tally still shows pending+approved.
+- F5 (Low) metrics/script_metrics.html spanishRender_ — esc(String()) around
+  d.resolved/pending/total (invariant consistency; integers today).
+Findings NOT implemented (deliberate, out of F1-F5 scope): F6 form_public.html
+esc() no-quote-escape (latent, literals only), F7 kbMd_ emphasis-over-link-markup
+(cosmetic), F8 showView no tabVisibleForUser_ re-check (defense-in-depth), F9
+dual manager-source desync (documented-intentional).
+DOC UPDATES OWED (/sync-docs): the "AuditLog OTHER coerced columns" gotcha claims
+cnReadCallNoteAuditRows_ routes col 5 through a normalize helper — it now does
+(normalizeDate_); INV-92 note; F3 fail-closed note near INV-96/113/114.
+OPERATOR (deploy): one `cd web-app && clasp push -f` + New version (ships Code.js
++ both partials + Tests.js). No new Script Properties/triggers/migrations.
+Optional editor runAllTests to exercise the new dateLocal assertion (India fixture).
 
 ## Batches 4-5 completed (2026-07-10)
 Test-integrity (batch 4): M-13 behavioral editor test for

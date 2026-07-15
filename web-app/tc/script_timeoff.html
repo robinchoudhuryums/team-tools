@@ -108,15 +108,26 @@ function renderTimeOffView(area, data) {
         return s === 'pending' || s === 'approved';
       })
       .sort((a, b) => a.date.localeCompare(b.date));
-    let plannedDays = 0;
+    let plannedDays = 0;         // all upcoming annual PTO (pending + approved) — the "Nd planned" tally
+    let pendingPlannedDays = 0;  // only PENDING is not-yet-deducted (F4)
     upcomingReqs.forEach(r => {
       const ded = (typeof getLeaveDeductionClient_ === 'function')
         ? getLeaveDeductionClient_(r.type)
         : { bucket: 'annual', days: 1.0 };
-      if (ded.bucket === 'annual') plannedDays += ded.days || 0;
+      if (ded.bucket === 'annual') {
+        const days = ded.days || 0;
+        plannedDays += days;
+        if (String(r.status || '').toLowerCase() === 'pending') pendingPlannedDays += days;
+      }
     });
     plannedDays = Math.round(plannedDays * 10) / 10;
-    const remaining = Math.round((annual - plannedDays) * 10) / 10;
+    pendingPlannedDays = Math.round(pendingPlannedDays * 10) / 10;
+    // Projected balance AFTER upcoming plans land. The server already deducted
+    // APPROVED future requests from `annual` (Pending→Approved transition,
+    // INV-03/25), so subtracting them again double-counts — only the PENDING
+    // days are not-yet-deducted. (F4: the old `annual - plannedDays` understated
+    // the post-plan balance by every approved upcoming day.)
+    const remaining = Math.round((annual - pendingPlannedDays) * 10) / 10;
     // Months left in the current calendar year, derived from the employee-tz
     // "today" (todayIso = data.today) — NOT browser-local time, which is wrong
     // across a tz boundary on Dec 31 / Jan 1 (F18). 0-indexed month: January →
