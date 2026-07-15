@@ -4172,6 +4172,38 @@ function getAutomationHealth() {
  *  digest, and the test suites. Pure round-trips — NO sheet reads (the CDR
  *  channel check is appended by computeAutomationHealth_'s existing CDR
  *  read). Smoke-test-pinned: every check must be ok. */
+/** Pure (Node-pinned) — F9 manager-source drift. The trigger handlers gate on the
+ *  MANAGER_EMAILS Script Property (`assertManagerCaller_` — a trigger runs as the
+ *  installer, so it can't do a roster "who's calling" lookup), while every in-app
+ *  endpoint gates on the roster `isManager` column. The split is intentional, but
+ *  the two lists can DRIFT: an off-boarded/demoted manager removed from the roster
+ *  (isManager→false) yet still listed in MANAGER_EMAILS retains trigger + purge
+ *  power via `google.script.run` even though every in-app manager surface now
+ *  rejects them.
+ *
+ *  Given the MANAGER_EMAILS list (`propEmails`) and the roster projected to
+ *  {email, isManager} pairs, returns the lowercased emails that are in
+ *  MANAGER_EMAILS AND have a roster row explicitly marked NOT a manager. Emails
+ *  with NO roster row are DELIBERATELY not flagged — a legitimate non-roster
+ *  deployer / service account in MANAGER_EMAILS is normal — so the check is
+ *  false-positive-free (it never nags the daily failure digest or the smoke
+ *  suite on a well-maintained deployment). */
+function managerSourceDrift_(propEmails, rosterPairs) {
+  const props = {};
+  (propEmails || []).forEach(function (e) {
+    const k = String(e || '').toLowerCase().trim();
+    if (k) props[k] = true;
+  });
+  const out = [], seen = {};
+  (rosterPairs || []).forEach(function (r) {
+    const email = String((r && r.email) || '').toLowerCase().trim();
+    if (!email || !props[email] || (r && r.isManager) || seen[email]) return;
+    seen[email] = true;
+    out.push(email);
+  });
+  return out;
+}
+
 function automationDetectorChecks_() {
   const checks = [];
   const add = function (key, label, fn) {
@@ -4217,6 +4249,29 @@ function automationDetectorChecks_() {
   add('briefConfig', 'managerDailyBrief flag has a live brief trigger behind it', function () {
     if (getFlag_('managerDailyBrief') && !managerBriefSuppressionActive_()) {
       throw new Error('managerDailyBrief is ON but sendManagerDailyBrief has no fresh heartbeat — run installAutomationTriggers(). The separate manager digests keep sending until then (fail-safe).');
+    }
+  });
+  // F9: config-coherence, not a parser round-trip — surfaces MANAGER_EMAILS ↔
+  // roster drift (the intentional dual-source split, `assertManagerCaller_` vs
+  // `emp.isManager`, can leave a demoted manager still trigger-privileged). Only
+  // flags a roster row explicitly marked NOT a manager whose email is still in
+  // MANAGER_EMAILS (false-positive-free — a non-roster deployer email is fine).
+  add('managerSource', 'MANAGER_EMAILS grants no trigger power to a demoted roster manager', function () {
+    const roster = getEmployeeRosterRows_();
+    const pairs = [];
+    for (let i = 1; i < roster.length; i++) {
+      const mgrRaw = String(roster[i][EMP.IS_MANAGER] || '').trim().toLowerCase();
+      pairs.push({
+        email: String(roster[i][EMP.EMAIL] || ''),
+        isManager: (mgrRaw === 'true' || mgrRaw === 'yes' || mgrRaw === 'y' || mgrRaw === '1'),
+      });
+    }
+    const drift = managerSourceDrift_(getManagerEmails_(), pairs);
+    if (drift.length) {
+      throw new Error('MANAGER_EMAILS still grants trigger/purge power to roster row(s) marked NOT a manager: ' +
+        drift.join(', ') + ' — remove them from the MANAGER_EMAILS Script Property. They were likely ' +
+        'off-boarded/demoted: in-app manager access is already revoked, but assertManagerCaller_-gated ' +
+        'trigger endpoints (installs, purges, digests) still accept them (F9).');
     }
   });
   return checks;

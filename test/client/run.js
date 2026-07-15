@@ -764,9 +764,38 @@ test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by
     'sendAutomationHealthDigest must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
   const checksSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
   ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry',
-   'briefConfig' /* cycle-8 M-11: flag-on-without-trigger config coherence */].forEach((k) => {
+   'briefConfig' /* cycle-8 M-11: flag-on-without-trigger config coherence */,
+   'managerSource' /* F9: MANAGER_EMAILS ↔ roster isManager drift */].forEach((k) => {
     assert.ok(checksSrc.indexOf("'" + k + "'") >= 0, 'detector check "' + k + '" present');
   });
+});
+
+console.log('\nCode.js — managerSourceDrift_() (F9 dual-manager-source drift)');
+vm.runInContext(extractRawFunction('Code.js', 'managerSourceDrift_'), sb,
+  { filename: 'Code.js#managerSourceDrift_' });
+const managerSourceDrift_ = sb.managerSourceDrift_;
+test('managerSourceDrift_: flags a demoted roster manager still in MANAGER_EMAILS', () => {
+  const props = ['boss@umsupply.com', 'gone@umsupply.com', 'DEPLOYER@umsupply.com'];
+  const roster = [
+    { email: 'boss@umsupply.com', isManager: true },   // aligned — not flagged
+    { email: 'gone@umsupply.com', isManager: false },  // demoted but still in MANAGER_EMAILS → DRIFT
+    { email: 'rep@umsupply.com',  isManager: false },  // not in MANAGER_EMAILS → not flagged
+    // 'deployer@umsupply.com' has NO roster row → a legit non-roster installer, not flagged
+  ];
+  assert.strictEqual(managerSourceDrift_(props, roster).join(','), 'gone@umsupply.com');
+});
+test('managerSourceDrift_: case-insensitive match; no drift on an aligned list', () => {
+  assert.strictEqual(
+    managerSourceDrift_(['Boss@UMSupply.com'], [{ email: 'boss@umsupply.com', isManager: true }]).join(','), '');
+  assert.strictEqual(managerSourceDrift_([], [{ email: 'x@y.com', isManager: false }]).join(','), '',
+    'empty MANAGER_EMAILS → nothing to drift against');
+  assert.strictEqual(managerSourceDrift_(['x@y.com'], []).join(','), '', 'empty roster → nothing flagged');
+});
+test('managerSourceDrift_: a demoted email appears once even on duplicate roster rows', () => {
+  assert.strictEqual(managerSourceDrift_(
+    ['dup@y.com'],
+    [{ email: 'dup@y.com', isManager: false }, { email: 'DUP@y.com', isManager: false }]).join(','),
+    'dup@y.com');
 });
 
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
