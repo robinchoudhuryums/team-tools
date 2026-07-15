@@ -1708,6 +1708,21 @@ test('percent-encodes quotes in link URLs (no href attribute breakout)', () => {
   const single = kbMd_("[x](https://e.com/'q)");
   assert.ok(single.indexOf('%27') >= 0, 'single quote percent-encoded');
 });
+test('F7: ** / backtick inside a URL do NOT get wrapped in <strong>/<code> (link stays intact)', () => {
+  // The emphasis pass runs AFTER link generation, so it used to inject
+  // <strong>/<code> INSIDE the href of a URL containing ** or a backtick,
+  // producing a broken link. The generated markup is now stashed past that pass.
+  const stars = kbMd_('[go](https://e.com/a**b**c)');
+  assert.ok(stars.indexOf('href="https://e.com/a**b**c"') >= 0, 'href keeps the literal ** — not <strong>');
+  assert.ok(stars.indexOf('<strong>') < 0 && stars.indexOf('<em>') < 0, 'no emphasis injected into the link');
+  const tick = kbMd_('[go](https://e.com/a`b`c)');
+  assert.ok(tick.indexOf('href="https://e.com/a`b`c"') >= 0, 'href keeps the literal backtick — not <code>');
+  assert.ok(tick.indexOf('<code>') < 0, 'no <code> injected into the link');
+  // Emphasis INSIDE the link TEXT still renders (regression guard for the fix).
+  const boldText = kbMd_('[**bold**](https://e.com)');
+  assert.ok(boldText.indexOf('<strong>bold</strong>') >= 0, 'link-text emphasis preserved');
+  assert.ok(boldText.indexOf('href="https://e.com"') >= 0, 'link still rendered');
+});
 test('renders GFM tables (header, body, alignment, pipe escape)', () => {
   const out = kbMd_('| H1 | H2 |\n| --- | :---: |\n| a | b |\n| c | d |');
   assert.ok(out.indexOf('<table>') >= 0 && out.indexOf('</table>') >= 0, 'table element emitted');

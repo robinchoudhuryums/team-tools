@@ -395,9 +395,13 @@ function showSuccess() {
 }
 
 function esc(s) {
-  var d = document.createElement('div');
-  d.textContent = s == null ? '' : String(s);
-  return d.innerHTML;
+  // Escape the quote chars too (F cycle-8): this helper is used in ATTRIBUTE
+  // contexts (value="' + esc(x) + '"), where the textContent→innerHTML form —
+  // which does NOT encode " or ' — would let a value break out of the attribute.
+  // Neutral for the text/innerHTML call sites (browsers decode the entities).
+  return (s == null ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ── Render form ───────────────────────────────────────────────────────────

@@ -902,6 +902,7 @@ function _runAllTests() {
   _integrationTest('cn_getFormSubmission_callerScoped',      test_cn_getFormSubmission_callerScoped);
   _integrationTest('cn_managerGetFormSubmission_gatedAndScoped', test_cn_managerGetFormSubmission_gatedAndScoped);
   _integrationTest('publicForm_tokenLifecycle',               test_publicForm_tokenLifecycle);
+  _integrationTest('publicForm_blankExpiryFailsClosed',       test_publicForm_blankExpiryFailsClosed);
 
   // ── Call Notes — email two-stage send + bodyHash guard (F3 / INV-41/33) ──
   _integrationTest('cn_previewCallNoteEmail_returnsHashAndSubject', test_cn_previewCallNoteEmail_returnsHashAndSubject);
@@ -3982,6 +3983,52 @@ function test_publicForm_tokenLifecycle() {
       const ss = getOrCreateFormSubmissionsSheet_();
       const sLoc2 = findFormSubmissionRow_(ss, token);
       if (sLoc2) ss.deleteRow(sLoc2.rowIndex);
+    } catch (e) {}
+  }
+}
+
+// F3 (cycle-8): a form token whose ExpiresAt cell is BLANK must fail CLOSED —
+// the expiry gates key off formTokenCellMs_(...).present, which is false for an
+// empty cell. Before the fix that read as "not expired" (fail-open), leaving a
+// blank-expiry token perpetually valid for anonymous PHI submission. A blank
+// cell only arises from corruption / a lossy FORMS_SS_ID migration (createFormToken
+// always writes ExpiresAt atomically), so rejecting it is strictly safe.
+function test_publicForm_blankExpiryFailsClosed() {
+  const token = _asUser(_TEST_INDIA_EMAIL, function () {
+    return createFormToken({
+      formType: 'eaa',
+      recipientEmail: 'do-not-send-recipient@example.invalid',
+      recipientName: 'Test Recipient',
+      prefillData: {},
+    }).token;
+  });
+  _assertNotNull(token, 'A token should have been created');
+  try {
+    // Blank out ExpiresAt directly (simulates a corrupted / migration-truncated cell).
+    const ts = getOrCreateFormTokensSheet_();
+    const tLoc = findFormTokenRow_(ts, token);
+    _assertNotNull(tLoc, 'token row located');
+    ts.getRange(tLoc.rowIndex, FT.EXPIRES_AT + 1).setValue('');
+    SpreadsheetApp.flush();
+
+    // Public read fails closed.
+    const def = getFormByToken(token);
+    _assertContains(String(def.error || ''), 'expired', 'blank-expiry token is rejected on read (fail-closed)');
+    // Public submit fails closed too (even with valid consent).
+    const sub = submitFormByToken(token, {
+      q1: 'answer', signature: 'data:image/png;base64,AAaa',
+      _meta: { consentAgreed: true, openedAt: '2026-01-01T00:00:00' },
+    });
+    _assertEq(sub.success, false, 'blank-expiry token cannot be submitted against');
+    _assertContains(String(sub.error || ''), 'expired', 'submit rejection names the expiry gate');
+    // No submission row was written.
+    _assertNull(findFormSubmissionRow_(getOrCreateFormSubmissionsSheet_(), token),
+      'no PHI submission persisted against a blank-expiry token');
+  } finally {
+    try {
+      const ts2 = getOrCreateFormTokensSheet_();
+      const tLoc2 = findFormTokenRow_(ts2, token);
+      if (tLoc2) ts2.deleteRow(tLoc2.rowIndex);
     } catch (e) {}
   }
 }
