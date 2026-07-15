@@ -1154,6 +1154,14 @@ this section before touching the relevant area.
   overlay ("Tap or click and drag here to sign") hides on first stroke /
   shows on Clear. Any new code path that toggles the section's visibility
   must re-resize the canvas the same way.
+- **`form_public.html`'s local `esc()` escapes quotes (F cycle-8) — don't
+  "simplify" it back to `textContent`→`innerHTML`.** Unlike the shell's `esc()`,
+  the standalone public page had its own copy that escaped only `&`/`<`/`>` (the
+  `textContent`→`innerHTML` round-trip doesn't encode `"`/`'`), yet it's used in
+  ATTRIBUTE contexts (`value="' + esc(x) + '"`). Every value there is a hard-coded
+  literal today, so it was latent — but a future server/recipient string rendered
+  into an attribute would break out. `esc()` now escapes `& < > " '` explicitly;
+  keep it that way (matches the shell `esc()`).
 - **Call Notes form fields are contenteditable `.ce` divs, not
   input/textarea.** Read via `cnGetFieldValue_(id)` and write via
   `cnSetFieldValue_(id, value)` — both dispatch on `el.isContentEditable`
@@ -1318,6 +1326,15 @@ this section before touching the relevant area.
   the active tab key, so existing guards like
   `if (currentView === 'callNotes') ...` continue to work — tab keys
   are deliberately globally unique across tools.
+  **`showView` re-checks `tabVisibleForUser_` before dispatching (F8,
+  defense-in-depth):** it is the low-level dispatch reached by DIRECT callers
+  (drill-throughs, `?tool=` deep-links, `umsLastView` restore, tab-bar clicks) —
+  not only via `enterTool`, which already resolves a visible tab — so a direct
+  call for a gated tab (`managerOnly`/`adminOnly`, no `also`) routes back through
+  `enterTool` (which bumps to a visible tab). No recursion (`enterTool` re-enters
+  with a visible tab that passes the guard); `empState` is set at boot before the
+  first nav, so it never wrongly redirects. Server endpoints still re-gate — this
+  is UI-only hardening.
   Adding a new tab: append it to its tool's `tabs` map + implement
   the `enter*` handler in the tool's partial. Adding a new tool:
   add a TOOLS entry + drop tab partials + `include()` them from
@@ -2887,12 +2904,24 @@ this section before touching the relevant area.
   7 a detector shipped dead (H-1, M-11) and nothing surfaced it. A failing
   check renders DEAD in the panel, rides `sendAutomationHealthDigest` as a
   failure, and fails the `automationDetectorLiveness` smoke test; a Node
-  tripwire pins the compute→return→digest wiring + the six check keys
+  tripwire pins the compute→return→digest wiring + the seven check keys
   (cycle 8 added `briefConfig` — a CONFIG-coherence check, not a parser
   round-trip: the `managerDailyBrief` flag ON without a fresh
   `managerBrief` heartbeat = the brief trigger was never installed; the
   fail-safe suppression keeps the individual digests sending meanwhile,
-  and this check emails the misconfiguration via the failure digest).
+  and this check emails the misconfiguration via the failure digest —
+  and F9 added `managerSource`: MANAGER_EMAILS ↔ roster `isManager` drift.
+  The dual manager-source split is intentional (`assertManagerCaller_` gates
+  triggers on the MANAGER_EMAILS property because a trigger runs as the
+  INSTALLER; in-app endpoints gate on the roster `isManager` column) but the two
+  can drift — a demoted/off-boarded manager removed from the roster yet still in
+  MANAGER_EMAILS retains trigger + purge power via `google.script.run`. The pure,
+  Node-pinned `managerSourceDrift_(propEmails, rosterPairs)` flags exactly those
+  emails (in MANAGER_EMAILS AND a roster row marked NOT a manager); an email with
+  NO roster row — a legit non-roster deployer/service account — is deliberately
+  never flagged, so the check is false-positive-free and never nags a clean
+  deployment. It changes NO gate logic (the split stays) and needs no new
+  trigger — it only surfaces the hazard).
 - **"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
@@ -4167,7 +4196,8 @@ a GLOBAL whitelist scan of every `[CN.TIMESTAMP]` occurrence in Code.js — a
 fifth reader added anywhere now trips it — INV-142),
 the coaching-parser + dashboard AuditLog coercion-read pins (H-1/M-3/M-4),
 the detector-liveness wiring (compute→return→digest + the check keys — five
-at Turn C, six since cycle 8's `briefConfig`), the INV-72
+at Turn C, six since cycle 8's `briefConfig`, seven since F9's `managerSource`
+MANAGER_EMAILS↔roster drift check), the INV-72
 `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_`
 BEHAVIORAL mirror (drives the real server function over every client key),
 the `empShiftSchedule_` single-resolver check (zero bare `getShiftSchedule_`
