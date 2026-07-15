@@ -292,7 +292,15 @@ this section before touching the relevant area.
   manager Recent Activity feed) — and `IsAdjustment` (col 8, written
   `'TRUE'`/`'FALSE'`) coerces to a native boolean, so `String(x) === 'TRUE'`
   is always false (compare case-insensitively; the ADJ badge + adjustment
-  reason never rendered until fixed). Pinned by the M-3/M-4 Node tripwire. The SAME class applies to
+  reason never rendered until fixed). **The `PunchDate` cell (col 5, written
+  `yyyy-MM-dd`) coerces to a Date the SAME way (F cycle-8):**
+  `cnReadCallNoteAuditRows_` read it raw into `dateLocal`, so the compliance-panel
+  "View note" deep-link handed a `"Wed Jul 15 2026 …"` string to
+  `managerGetCallNotes` (whose `^\d{4}-\d{2}-\d{2}$` guard rejects it) → the
+  drill-through silently died while the panel looked fine (the visible timestamp
+  uses the correctly-normalized `timestampMgr`). Now read via `normalizeDate_`,
+  matching `getManagerDashboard`'s col-5 read; pinned by a `dateLocal`-shape
+  assertion in `test_auditPanel_searchAndHistory`. Pinned by the M-3/M-4 Node tripwire. The SAME class applies to
   every other `yyyy-MM-dd HH:mm:ss` column in the ADP spreadsheet:
   `TO.SUBMITTED_AT` (a raw `String()` read flattened the manager
   pending-trend sparkline to zero since it shipped, and it doubles as
@@ -2299,9 +2307,13 @@ this section before touching the relevant area.
   (Time Off mode) renders a rectangular `.pto-tile` instead of the
   prior PTO donut. Head label + year/months-left meta + big tabular
   value + denominator + progress bar + footer with planned-upcoming
-  days + projected balance after those plans land. Planned days is
-  summed from `data.allRequests` (future-dated `pending`/`approved`)
-  via `getLeaveDeductionClient_` (INV-72). The donut + `ptoRingSvg` +
+  days + projected balance after those plans land. The **planned-days tally**
+  sums future-dated `pending`+`approved` requests' annual deductions from
+  `data.allRequests` via `getLeaveDeductionClient_` (INV-72); the **projected
+  balance** subtracts only the `pending` portion (F cycle-8 — an `approved`
+  future request was ALREADY deducted server-side on the Pending→Approved
+  transition (INV-03/25), so counting it in `annual - planned` double-subtracted
+  it and understated the projection). The donut + `ptoRingSvg` +
   `.pto-card`/`.pto-rings`/`.pto-ring`/`.pto-svg*` CSS were all
   deleted along with the last caller.
 - **Coverage-strip nav hint (Round 2 · 8z).** The Clock view's
@@ -2455,7 +2467,13 @@ this section before touching the relevant area.
   (`![alt](url)` — `http(s)` only, NO mailto/data:; quotes percent-encoded
   in the src AND entity-escaped in the alt, the same two attribute-breakout
   guards as link `href`; rendered lazy + wrapped in an open-full-size
-  anchor). That's the safety boundary; managers are the only
+  anchor). The bold/italic/inline-code pass runs on link **text** at generation
+  and the generated `<a>`/`<img>` markup is then stashed past the outer emphasis
+  pass via a NUL-delimited sentinel (`\u0000L…\u0000`, the code-fence pattern —
+  written as the `\u0000` ESCAPE, never a literal NUL byte, so the partial greps
+  as text), so a URL containing `**`/backtick can't get `<strong>`/`<code>`
+  injected into its `href`/`src` (F cycle-8; link-text emphasis still renders).
+  That's the safety boundary; managers are the only
   authors but defense-in-depth keeps a bad paste inert. Embeds store only a
   Drive `{kind, fileId}` and render the `/preview` iframe — no content copied, so
   the Drive doc stays the source of truth. The tree is whole-result cached
@@ -3987,7 +4005,14 @@ manually for a fresh deploy or environment:
   `submittedAt`). `formTokenCellMs_(cell)` returns `{present, ms}` — a `Date`
   → `getTime()`, a parseable string → ms, a non-empty unparseable string →
   `ms:null` (caller fail-closes as tamper, S2.1), empty → `present:false`. All
-  three expiry sites route through it. The client-returned `expiresAt` /
+  three expiry sites route through it **and fail CLOSED on `!present` too**
+  (F cycle-8): a blank/absent `ExpiresAt` is treated as expired. Such a cell
+  only arises from corruption or a lossy `FORMS_SS_ID` migration —
+  `createFormToken` writes the cell atomically in the appendRow — so the old
+  `expX.present &&` guard (which read a blank cell as NOT-expired, a fail-OPEN
+  asymmetry with the unparseable-`ms:null` case) let a blank-expiry token stay
+  perpetually valid for anonymous PHI submission. Pinned by
+  `test_publicForm_blankExpiryFailsClosed`. The client-returned `expiresAt` /
   `createdAt` go through the sibling `formTokenIsoString_` so a coerced Date
   never leaks back as a `"Sat Jun 27 …"` blob. Pinned by the `formTokenCellMs_`
   Node test. (This was latent on the ADP-fallback sheet, which didn't coerce; it
@@ -4319,7 +4344,7 @@ INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cache
 INV-89 | `buildCallNoteEmailHtml_` HTML-escapes every user-supplied note field via `esc_` before assembling the email body. The email-preview modal injects that body raw via `innerHTML` (the `${p.htmlBody}` slot in `cnRenderComposerPreviewStep_`), so the escaping is load-bearing — a new field added to the builder without `esc_` is stored XSS in the preview and the sent email. Pinned by `test_cn_buildEmailHtml_escapesUserFields` | Subsystem: Server + Client (Call Notes views)
 INV-90 | `getFormSubmission(token)` is caller-scoped, read-only: it requires `getEmployeeInfo_()` (NOT a public endpoint) and returns submission data only when the calling employee's email matches the token's `FormTokens.CreatedBy` — a rep cannot read another rep's form submissions. Returns `{ submitted: false, status }` when the token isn't completed yet. Pinned by `test_cn_getFormSubmission_callerScoped` | Subsystem: Server
 INV-91 | `managerGetFormSubmission(repEmpId, token)` is manager-gated (INV-02), read-only, and scoped to the target rep — the token must have been created by `repEmpId` (`FormTokens.CreatedBy`), so a manager can only view submissions for forms the selected rep sent. Shares `buildFormSubmissionResult_` with the caller-scoped `getFormSubmission` (INV-90). Surfaced via the form pill on the Team Notes Per-Rep read-only card. Pinned by `test_cn_managerGetFormSubmission_gatedAndScoped` | Subsystem: Server
-INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set; timestamp cells are recovered via `normalizeAuditTs_` since Sheets coerces them to Dates). The search filters by rep / action / date range (default start = last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz; default END = today in `CONFIG.TIMEZONE` — the tz audit rows are stamped in, so IST-stamped rows written "tomorrow" relative to the US-afternoon manager aren't silently hidden), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content. Pinned by `test_auditPanel_searchAndHistory` + the gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server
+INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set; timestamp cells are recovered via `normalizeAuditTs_` since Sheets coerces them to Dates, and the `dateLocal` (PunchDate col 5) via `normalizeDate_` — the client's "View note" deep-link feeds it to `managerGetCallNotes`, which `^\d{4}-\d{2}-\d{2}$`-rejects a raw coerced Date, F cycle-8). The search filters by rep / action / date range (default start = last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz; default END = today in `CONFIG.TIMEZONE` — the tz audit rows are stamped in, so IST-stamped rows written "tomorrow" relative to the US-afternoon manager aren't silently hidden), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content. Pinned by `test_auditPanel_searchAndHistory` + the gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server
 INV-93 | `saveEmailTemplates(templates)` is manager-gated (INV-02, INV-57), persists to Script Property `CN_EMAIL_TEMPLATES` (JSON array of `{name, recipientType, body}`), validates each entry (non-empty name + body, `recipientType ∈ customer|provider|any`, count ≤ `CN_EMAIL_TEMPLATE_LIMIT`=50, body ≤ `CN_EMAIL_TEMPLATE_BODY_MAX`=4000), and writes an `AdminConfigChange` audit row. `getEmailTemplates_()` reads the property first (CONFIG fallback), sanitizing on read so a corrupt blob degrades to the fallback rather than throwing. Templates are exposed to reps via `getCallNotesDepartments` (rep-callable) for the external-email composer picker, and to managers via `getAdminConfig` for the editor | Subsystem: Server
 INV-94 | `submitTimeOffRequest` and `managerSubmitTimeOff` reject a request when the employee already has a Pending or Approved row for that date (`hasActiveTimeOffOnDate_`, inside the existing ScriptLock). Prevents the double-deduct that INV-03's per-row transition guard cannot catch — two sibling rows for one day would each deduct on approval. Denied/cancelled rows don't block a re-request | Subsystem: Server
 INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via `isValidTimeOffType_` (case-insensitive, trimmed) before any write; an unknown/empty type is rejected rather than silently defaulting to `getLeaveDeduction_`'s annual/1.0 (INV-17). `TIME_OFF_TYPES` must stay a superset of the `day-type` `<select>` options in `modals.html` — pinned by a Node-harness coupling test. `TIME_OFF_TYPES` NO LONGER contains `'Sick Leave'` (deferred #2): the day-type `<select>` dropped it too (still ⊆), so no new sick request is creatable via the UI or a direct RPC; the sick BUCKET machinery is intentionally retained for legacy reverts (INV-17/INV-72) | Subsystem: Server
