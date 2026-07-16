@@ -291,6 +291,17 @@ const EMP = {
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
 };
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
+// Shared AuditLog columns (the ADP-spreadsheet AuditLog tab — writeAuditLog_ /
+// getOrCreateAuditSheet_ header order). Batch 3 (cycle-8): the AuditLog was the
+// ONE core sheet with NO named column enum, so its cells were read as bare
+// numeric indices (`auditData[i][5]`) — untrippable by a source scan, which is
+// exactly why the F1 coerced-PunchDate read slipped every tripwire (they were
+// per-function). Every AuditLog READ of a coerced column (TS / PUNCH_DATE /
+// PUNCH_TIME / IS_ADJUSTMENT) now routes through the typed `auditRowObj_` reader,
+// pinned by a global source tripwire (INV-142 pattern) so the next raw read fails
+// CI. TS(0) yyyy-MM-dd HH:mm:ss, PUNCH_DATE(5) yyyy-MM-dd, PUNCH_TIME(6) HH:mm:ss,
+// IS_ADJUSTMENT(7) TRUE/FALSE — all Sheets-coerced on read (the M-3/M-4/F1 class).
+const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUNCH_TIME:6, IS_ADJUSTMENT:7, DAYS_BACK:8, NOTES:9 };
 
 // Inter-department request tracking (DeptRequests tab). PHI-free: no email body.
 // NOTE_ID (col 11) is a back-compat trailing add (A5): legacy rows read '' for it
@@ -564,6 +575,45 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+// ── Dev / prod instance environment (blue-green deploy support) ──────────────
+// A separate DEV Apps Script project (its own scriptId + its own Script
+// Properties → COPY sheets + your-inbox email config) runs this SAME source as
+// prod. Two OPTIONAL Script Properties tag an instance so the two can't be
+// confused and so destructive test-data writes can't land on prod. Both UNSET
+// (the prod default) = zero behavior change. See docs/deployment.md.
+//   INSTANCE_LABEL   — a short banner label shown in the shell (e.g. "DEV").
+//   INSTANCE_IS_PROD — set to 'true' on the PROD project only, to REFUSE the
+//                      destructive TEST_-row writers (runAllTests /
+//                      setupTestEnvironment) so they can run on dev only.
+function instanceLabel_() {
+  try { return String(PropertiesService.getScriptProperties().getProperty('INSTANCE_LABEL') || '').trim(); }
+  catch (e) { return ''; }
+}
+function isProdInstance_() {
+  try { return String(PropertiesService.getScriptProperties().getProperty('INSTANCE_IS_PROD') || '').trim().toLowerCase() === 'true'; }
+  catch (e) { return false; }
+}
+/** Throws on the PROD instance (INSTANCE_IS_PROD='true') — guards the destructive
+ *  TEST_-row writers so they can only run against a dev project's copy sheets.
+ *  No-op until an operator sets the property on prod (back-compat: prod today
+ *  runs runAllTests fine, and continues to until the property is set). */
+function assertNotProdInstance_(label) {
+  if (isProdInstance_()) {
+    throw new Error((label || 'This operation') + ' is blocked on the PRODUCTION instance ' +
+      '(INSTANCE_IS_PROD is set). Run it on the DEV Apps Script project — see docs/deployment.md.');
+  }
+}
+/** Throws UNLESS this is a clearly-labeled DEV instance (INSTANCE_LABEL set AND
+ *  INSTANCE_IS_PROD not 'true'). The bulletproof guard for dev-only tooling that
+ *  MUTATES sheets (the roster scrubber). Prod has no INSTANCE_LABEL → refuses, so
+ *  a misfire can never touch the team's live roster. */
+function assertDevInstance_(label) {
+  if (!instanceLabel_() || isProdInstance_()) {
+    throw new Error((label || 'This dev tool') + ' refuses to run: this is not a labeled DEV instance ' +
+      '(set Script Property INSTANCE_LABEL on the dev project — never on prod). See docs/deployment.md.');
+  }
+}
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  EMPLOYEE API
@@ -605,6 +655,9 @@ function getEmployeeState() {
       // mark these amber: still in the green balance but tentatively committed.
       annualPlannedUpcoming: getUpcomingAnnualPlanned_(emp.id, today),
       flags: getClientFeatureFlags_(),
+      // Blue-green: a short label ('DEV') shown as a banner so an isolated dev
+      // instance can't be mistaken for the team's live one. '' on prod → no banner.
+      instanceLabel: instanceLabel_(),
     };
   } catch (err) { return { error: err.message }; }
 }
@@ -1089,23 +1142,20 @@ function getManagerDashboard() {
       const numRows = lastRow - startRow + 1;
       const auditData = auditSheet.getRange(startRow, 1, numRows, 10).getValues();
       for (let i = auditData.length - 1; i >= 0; i--) {
-        const tsRaw = normalizeAuditTs_(auditData[i][0]);
+        // Batch 3: the typed reader recovers ALL coerced cols once (TS, PunchDate,
+        // PunchTime, IsAdjustment — the M-3/M-4/F1 class). This block used to read
+        // each raw by index; now it maps the canonical object to the display shape.
+        const a = auditRowObj_(auditData[i]);
         recentAudits.push({
-          timestamp:    tsRaw,
-          timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
-          empName:      String(auditData[i][2]),
-          action:       String(auditData[i][4]),
-          punchDate:    normalizeDate_(auditData[i][5]),
-          // F(M-3): the PunchTime cell is written 'HH:mm:ss' but Sheets coerces
-          // it to a time-of-day Date — raw String() yielded "Sat Dec 30 1899 …"
-          // and the Recent Activity feed rendered a constant "12:00 AM".
-          punchTime:    normalizeTime_(auditData[i][6]),
-          // F(M-4): the cell is written 'TRUE'/'FALSE' but Sheets coerces it to
-          // a native boolean — String(true) === 'TRUE' is always false, so the
-          // ADJ badge + the adjustment REASON never rendered for the manager.
-          isAdjustment: String(auditData[i][7]).toUpperCase() === 'TRUE',
-          daysBack:     parseInt(auditData[i][8], 10) || 0,
-          notes:        String(auditData[i][9]),
+          timestamp:    a.ts,
+          timestampMgr: convertAuditTs_(a.ts, CONFIG.TIMEZONE, mgrTz),
+          empName:      a.empName,
+          action:       a.action,
+          punchDate:    a.punchDate,
+          punchTime:    a.punchTime,
+          isAdjustment: a.isAdjustment,
+          daysBack:     a.daysBack,
+          notes:        a.notes,
         });
       }
     }
@@ -3916,20 +3966,22 @@ function cnReadCallNoteAuditRows_() {
   const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
   const out = [];
   for (let i = data.length - 1; i >= 0; i--) {  // newest-first
-    const action = String(data[i][4]);
-    if (CN_AUDIT_ACTIONS.indexOf(action) < 0) continue;
-    const tsRaw = normalizeAuditTs_(data[i][0]);
-    const notes = String(data[i][9]);
+    if (CN_AUDIT_ACTIONS.indexOf(String(data[i][AUDIT.ACTION])) < 0) continue;
+    // Batch 3: the typed reader recovers coerced cols once. `dateLocal` maps from
+    // the recovered PunchDate — the compliance panel's "View note" deep-link hands
+    // it to managerGetCallNotes (^\d{4}-\d{2}-\d{2}$ guard); a raw String() read
+    // yielded "Wed Jul 15 2026 …" and silently killed the drill-through (F1).
+    const a = auditRowObj_(data[i]);
     out.push({
-      timestamp:    tsRaw,
-      timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
-      repId:        String(data[i][1]),
-      repName:      String(data[i][2]),
-      actorEmail:   String(data[i][3]),
-      action:       action,
-      dateLocal:    String(data[i][5]),
-      noteId:       cnExtractAuditNoteId_(notes),
-      notes:        notes,
+      timestamp:    a.ts,
+      timestampMgr: convertAuditTs_(a.ts, CONFIG.TIMEZONE, mgrTz),
+      repId:        a.empId,
+      repName:      a.empName,
+      actorEmail:   a.actor,
+      action:       a.action,
+      dateLocal:    a.punchDate,
+      noteId:       cnExtractAuditNoteId_(a.notes),
+      notes:        a.notes,
     });
   }
   return { rows: out, scannedAll: scannedAll };
@@ -4164,6 +4216,38 @@ function getAutomationHealth() {
  *  digest, and the test suites. Pure round-trips — NO sheet reads (the CDR
  *  channel check is appended by computeAutomationHealth_'s existing CDR
  *  read). Smoke-test-pinned: every check must be ok. */
+/** Pure (Node-pinned) — F9 manager-source drift. The trigger handlers gate on the
+ *  MANAGER_EMAILS Script Property (`assertManagerCaller_` — a trigger runs as the
+ *  installer, so it can't do a roster "who's calling" lookup), while every in-app
+ *  endpoint gates on the roster `isManager` column. The split is intentional, but
+ *  the two lists can DRIFT: an off-boarded/demoted manager removed from the roster
+ *  (isManager→false) yet still listed in MANAGER_EMAILS retains trigger + purge
+ *  power via `google.script.run` even though every in-app manager surface now
+ *  rejects them.
+ *
+ *  Given the MANAGER_EMAILS list (`propEmails`) and the roster projected to
+ *  {email, isManager} pairs, returns the lowercased emails that are in
+ *  MANAGER_EMAILS AND have a roster row explicitly marked NOT a manager. Emails
+ *  with NO roster row are DELIBERATELY not flagged — a legitimate non-roster
+ *  deployer / service account in MANAGER_EMAILS is normal — so the check is
+ *  false-positive-free (it never nags the daily failure digest or the smoke
+ *  suite on a well-maintained deployment). */
+function managerSourceDrift_(propEmails, rosterPairs) {
+  const props = {};
+  (propEmails || []).forEach(function (e) {
+    const k = String(e || '').toLowerCase().trim();
+    if (k) props[k] = true;
+  });
+  const out = [], seen = {};
+  (rosterPairs || []).forEach(function (r) {
+    const email = String((r && r.email) || '').toLowerCase().trim();
+    if (!email || !props[email] || (r && r.isManager) || seen[email]) return;
+    seen[email] = true;
+    out.push(email);
+  });
+  return out;
+}
+
 function automationDetectorChecks_() {
   const checks = [];
   const add = function (key, label, fn) {
@@ -4211,6 +4295,29 @@ function automationDetectorChecks_() {
       throw new Error('managerDailyBrief is ON but sendManagerDailyBrief has no fresh heartbeat — run installAutomationTriggers(). The separate manager digests keep sending until then (fail-safe).');
     }
   });
+  // F9: config-coherence, not a parser round-trip — surfaces MANAGER_EMAILS ↔
+  // roster drift (the intentional dual-source split, `assertManagerCaller_` vs
+  // `emp.isManager`, can leave a demoted manager still trigger-privileged). Only
+  // flags a roster row explicitly marked NOT a manager whose email is still in
+  // MANAGER_EMAILS (false-positive-free — a non-roster deployer email is fine).
+  add('managerSource', 'MANAGER_EMAILS grants no trigger power to a demoted roster manager', function () {
+    const roster = getEmployeeRosterRows_();
+    const pairs = [];
+    for (let i = 1; i < roster.length; i++) {
+      const mgrRaw = String(roster[i][EMP.IS_MANAGER] || '').trim().toLowerCase();
+      pairs.push({
+        email: String(roster[i][EMP.EMAIL] || ''),
+        isManager: (mgrRaw === 'true' || mgrRaw === 'yes' || mgrRaw === 'y' || mgrRaw === '1'),
+      });
+    }
+    const drift = managerSourceDrift_(getManagerEmails_(), pairs);
+    if (drift.length) {
+      throw new Error('MANAGER_EMAILS still grants trigger/purge power to roster row(s) marked NOT a manager: ' +
+        drift.join(', ') + ' — remove them from the MANAGER_EMAILS Script Property. They were likely ' +
+        'off-boarded/demoted: in-app manager access is already revoked, but assertManagerCaller_-gated ' +
+        'trigger endpoints (installs, purges, digests) still accept them (F9).');
+    }
+  });
   return checks;
 }
 
@@ -4240,16 +4347,18 @@ function computeAutomationHealth_() {
       cutD.setDate(cutD.getDate() - AUTOMATION_SYNCFAIL_WINDOW_DAYS);
       const cutoff = fmtDateTz_(cutD, mgrTz);
       for (let i = data.length - 1; i >= 0; i--) {   // newest-first
-        const action = String(data[i][4]);
-        const tsRaw = normalizeAuditTs_(data[i][0]);
+        // Batch 3: named AUDIT cols (this reader touches no coerced date/time
+        // cells — only TS via normalizeAuditTs_ + string cols).
+        const action = String(data[i][AUDIT.ACTION]);
+        const tsRaw = normalizeAuditTs_(data[i][AUDIT.TS]);
         if (action === 'PersonalSheetSyncFail') {
           if (tsRaw.substring(0, 10) >= cutoff) {
             syncFails.count++;
             if (syncFails.recent.length < 5) {
               syncFails.recent.push({
                 timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
-                empName: String(data[i][2]),
-                notes: String(data[i][9]),
+                empName: String(data[i][AUDIT.EMP_NAME]),
+                notes: String(data[i][AUDIT.NOTES]),
               });
             }
           }
@@ -4262,7 +4371,7 @@ function computeAutomationHealth_() {
           lastRunByAction[action] = {
             timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
             ms: _runMs,
-            notes: String(data[i][9]),
+            notes: String(data[i][AUDIT.NOTES]),
           };
         }
       }
@@ -4640,8 +4749,10 @@ function adminSheetView_auditLog_() {
   const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
   const rows = [];
   for (let i = data.length - 1; i >= 0 && rows.length < cap; i--) {  // newest-first
-    const action = String(data[i][4] || '');
-    const tsRaw = normalizeAuditTs_(data[i][0]);
+    // Batch 3: named AUDIT cols (PHI-free projection — TS via normalizeAuditTs_ +
+    // string cols; this view reads no coerced date/time cells).
+    const action = String(data[i][AUDIT.ACTION] || '');
+    const tsRaw = normalizeAuditTs_(data[i][AUDIT.TS]);
     const sheetRow = startRow + i;
     rows.push({
       tone: adminAuditRowTone_(action),
@@ -4649,9 +4760,9 @@ function adminSheetView_auditLog_() {
       cells: {
         ts:     convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
         action: action,
-        rep:    String(data[i][2] || data[i][1] || ''),
-        actor:  String(data[i][3] || ''),
-        notes:  String(data[i][9] || ''),
+        rep:    String(data[i][AUDIT.EMP_NAME] || data[i][AUDIT.EMP_ID] || ''),
+        actor:  String(data[i][AUDIT.ACTOR] || ''),
+        notes:  String(data[i][AUDIT.NOTES] || ''),
       },
     });
   }
@@ -6924,7 +7035,12 @@ function getFormByToken(token) {
     // value to a Date on read (formTokenCellMs_ handles both; a non-empty
     // unparseable string fail-closes as tamper, S2.1).
     const expFB = formTokenCellMs_(row[FT.EXPIRES_AT]);
-    if (expFB.present && (expFB.ms == null || Date.now() > expFB.ms)) {
+    // Fail CLOSED on an ABSENT expiry too (F cycle-8): createFormToken always
+    // writes ExpiresAt atomically in the appendRow, so a blank cell is only
+    // corruption / a lossy FORMS_SS_ID migration — an anonymous PHI form must
+    // never be served against a token with no expiry. (Unparseable already
+    // fail-closed via ms==null, S2.1; absent was the fail-OPEN asymmetry.)
+    if (!expFB.present || expFB.ms == null || Date.now() > expFB.ms) {
       try { sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired'); } catch (_) {}
       return { error: 'This form link has expired. Please contact UMS to request a new one.' };
     }
@@ -6991,7 +7107,10 @@ function submitFormByToken(token, formData) {
     // non-empty unparseable expiry, S2.1, so a PHI submission is never accepted
     // against a tampered token).
     const expSF = formTokenCellMs_(row[FT.EXPIRES_AT]);
-    if (expSF.present && (expSF.ms == null || Date.now() > expSF.ms)) {
+    // Fail CLOSED on an ABSENT expiry too (F cycle-8) — never accept an
+    // anonymous PHI submission against a token with no expiry (blank = only
+    // corruption / migration; ExpiresAt is written atomically at creation).
+    if (!expSF.present || expSF.ms == null || Date.now() > expSF.ms) {
       tokenSheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired');
       return { success: false, error: 'This form link has expired.' };
     }
@@ -7242,7 +7361,10 @@ function getMySentForms() {
       // when its expiry is genuinely past OR unparseable (tamper).
       if (status === 'pending') {
         const expMS = formTokenCellMs_(rows[i][FT.EXPIRES_AT]);
-        if (expMS.present && (expMS.ms == null || nowMs > expMS.ms)) status = 'expired';
+        // Fail CLOSED on an ABSENT expiry too (F cycle-8) — a blank-expiry
+        // pending token reads as expired (blank = only corruption / migration),
+        // matching the getFormByToken / submitFormByToken gates.
+        if (!expMS.present || expMS.ms == null || nowMs > expMS.ms) status = 'expired';
       }
       forms.push({
         token: String(rows[i][FT.TOKEN] || '').trim(),
@@ -11851,6 +11973,32 @@ function normalizeAuditTs_(val) {
     return Utilities.formatDate(val, ssTz, 'yyyy-MM-dd HH:mm:ss');
   }
   return String(val == null ? '' : val).trim();
+}
+
+/** Typed AuditLog row reader — the SINGLE coercion-recovery point for the shared
+ *  AuditLog (Batch 3, cycle-8). Sheets coerces the Timestamp, PunchDate
+ *  (yyyy-MM-dd), PunchTime (HH:mm:ss), and IsAdjustment (TRUE/FALSE) cells to
+ *  Date/boolean values on read — a raw `String(row[i])` renders "Wed Jul 15 2026
+ *  …" / "Sat Dec 30 1899 …" / the-always-false `=== 'TRUE'` (the M-3/M-4/F1
+ *  class). This recovers ALL of them ONCE via the established normalize helpers,
+ *  so no caller re-derives a raw read. Returns canonical fields keyed by role;
+ *  callers add their own display/derived fields (timestampMgr via convertAuditTs_,
+ *  the `dateLocal` alias, noteId parsed from `notes`). PHI-free by the AuditLog's
+ *  own contract (INV-32) — this only re-shapes what the row already holds. */
+function auditRowObj_(row) {
+  row = row || [];
+  return {
+    ts:           normalizeAuditTs_(row[AUDIT.TS]),
+    empId:        String(row[AUDIT.EMP_ID] == null ? '' : row[AUDIT.EMP_ID]),
+    empName:      String(row[AUDIT.EMP_NAME] == null ? '' : row[AUDIT.EMP_NAME]),
+    actor:        String(row[AUDIT.ACTOR] == null ? '' : row[AUDIT.ACTOR]),
+    action:       String(row[AUDIT.ACTION] == null ? '' : row[AUDIT.ACTION]),
+    punchDate:    normalizeDate_(row[AUDIT.PUNCH_DATE]),
+    punchTime:    normalizeTime_(row[AUDIT.PUNCH_TIME]),
+    isAdjustment: String(row[AUDIT.IS_ADJUSTMENT] == null ? '' : row[AUDIT.IS_ADJUSTMENT]).toUpperCase() === 'TRUE',
+    daysBack:     parseInt(row[AUDIT.DAYS_BACK], 10) || 0,
+    notes:        String(row[AUDIT.NOTES] == null ? '' : row[AUDIT.NOTES]),
+  };
 }
 /** Difference in seconds between two "HH:mm:ss" or "HH:mm" strings (later - earlier).
  *  Returns negative if earlier > later (treat as "different day", skip the check). */

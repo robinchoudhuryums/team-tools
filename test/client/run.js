@@ -764,9 +764,79 @@ test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by
     'sendAutomationHealthDigest must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
   const checksSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
   ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry',
-   'briefConfig' /* cycle-8 M-11: flag-on-without-trigger config coherence */].forEach((k) => {
+   'briefConfig' /* cycle-8 M-11: flag-on-without-trigger config coherence */,
+   'managerSource' /* F9: MANAGER_EMAILS ↔ roster isManager drift */].forEach((k) => {
     assert.ok(checksSrc.indexOf("'" + k + "'") >= 0, 'detector check "' + k + '" present');
   });
+});
+
+console.log('\nCode.js — managerSourceDrift_() (F9 dual-manager-source drift)');
+vm.runInContext(extractRawFunction('Code.js', 'managerSourceDrift_'), sb,
+  { filename: 'Code.js#managerSourceDrift_' });
+const managerSourceDrift_ = sb.managerSourceDrift_;
+test('managerSourceDrift_: flags a demoted roster manager still in MANAGER_EMAILS', () => {
+  const props = ['boss@umsupply.com', 'gone@umsupply.com', 'DEPLOYER@umsupply.com'];
+  const roster = [
+    { email: 'boss@umsupply.com', isManager: true },   // aligned — not flagged
+    { email: 'gone@umsupply.com', isManager: false },  // demoted but still in MANAGER_EMAILS → DRIFT
+    { email: 'rep@umsupply.com',  isManager: false },  // not in MANAGER_EMAILS → not flagged
+    // 'deployer@umsupply.com' has NO roster row → a legit non-roster installer, not flagged
+  ];
+  assert.strictEqual(managerSourceDrift_(props, roster).join(','), 'gone@umsupply.com');
+});
+test('managerSourceDrift_: case-insensitive match; no drift on an aligned list', () => {
+  assert.strictEqual(
+    managerSourceDrift_(['Boss@UMSupply.com'], [{ email: 'boss@umsupply.com', isManager: true }]).join(','), '');
+  assert.strictEqual(managerSourceDrift_([], [{ email: 'x@y.com', isManager: false }]).join(','), '',
+    'empty MANAGER_EMAILS → nothing to drift against');
+  assert.strictEqual(managerSourceDrift_(['x@y.com'], []).join(','), '', 'empty roster → nothing flagged');
+});
+test('managerSourceDrift_: a demoted email appears once even on duplicate roster rows', () => {
+  assert.strictEqual(managerSourceDrift_(
+    ['dup@y.com'],
+    [{ email: 'dup@y.com', isManager: false }, { email: 'DUP@y.com', isManager: false }]).join(','),
+    'dup@y.com');
+});
+
+console.log('\nCode.js — dev/prod instance guards (blue-green deploy support)');
+const instCtx = { String, JSON, Object, console, _p: {} };
+instCtx.PropertiesService = { getScriptProperties: function () {
+  return { getProperty: function (k) {
+    return Object.prototype.hasOwnProperty.call(instCtx._p, k) ? instCtx._p[k] : null;
+  } };
+} };
+vm.createContext(instCtx);
+['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'assertDevInstance_'].forEach(function (fn) {
+  vm.runInContext(extractRawFunction('Code.js', fn), instCtx, { filename: 'Code.js#' + fn });
+});
+test('instance guards: prod default (no props) — destructive tests OK, dev tools refuse', () => {
+  instCtx._p = {};
+  assert.strictEqual(instCtx.instanceLabel_(), '');
+  assert.strictEqual(instCtx.isProdInstance_(), false);
+  assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));   // prod today still runs runAllTests
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a labeled DEV instance/);
+});
+test('instance guards: INSTANCE_IS_PROD=true blocks destructive tests AND dev tools', () => {
+  instCtx._p = { INSTANCE_IS_PROD: 'true', INSTANCE_LABEL: 'PROD' };
+  assert.strictEqual(instCtx.isProdInstance_(), true);
+  assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /PRODUCTION instance/);
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a labeled DEV instance/);
+});
+test('instance guards: a labeled DEV instance allows both dev tools and the full suite', () => {
+  instCtx._p = { INSTANCE_LABEL: 'DEV' };
+  assert.strictEqual(instCtx.instanceLabel_(), 'DEV');
+  assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));
+  assert.doesNotThrow(() => instCtx.assertDevInstance_('devScrubRoster_'));
+});
+test('TRIPWIRE: destructive test writers + dev tools carry the right instance guard', () => {
+  assert.ok(/assertNotProdInstance_\(/.test(extractRawFunction('Tests.js', 'runAllTests')),
+    'runAllTests must refuse on prod (no TEST_ rows in live payroll/PHI)');
+  assert.ok(/assertNotProdInstance_\(/.test(extractRawFunction('Tests.js', 'setupTestEnvironment')),
+    'setupTestEnvironment must refuse on prod');
+  assert.ok(/assertDevInstance_\(/.test(extractRawFunction('DevTools.js', 'devScrubRoster_')),
+    'devScrubRoster_ MUTATES the roster — must be dev-only (bulletproof guard)');
+  assert.ok(/assertDevInstance_\(/.test(extractRawFunction('DevTools.js', 'devShowConfig_')),
+    'devShowConfig_ must be dev-only');
 });
 
 console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 · L-4)');
@@ -784,13 +854,71 @@ console.log('\nCode.js — PTO reconciliation half-day-pair exemption (cycle 7 �
   });
 }
 
-console.log('\nCode.js — dashboard AuditLog coercion-safe reads (cycle 7 · M-3/M-4)');
-test('TRIPWIRE (M-3/M-4): getManagerDashboard reads PunchTime via normalizeTime_ and IsAdjustment case-insensitively', () => {
-  const src = extractRawFunction('Code.js', 'getManagerDashboard');
-  assert.ok(/punchTime:\s*normalizeTime_\(/.test(src),
-    'AuditLog PunchTime is a Sheets-coerced time Date — a raw String() read renders "Sat Dec 30 1899 …" and the Recent Activity feed shows a constant 12:00 AM');
-  assert.ok(!/String\(auditData\[i\]\[7\]\)\s*===\s*'TRUE'/.test(src),
-    "AuditLog IsAdjustment is a Sheets-coerced native boolean — String(true) === 'TRUE' is always false (ADJ badge + reason never rendered); compare case-insensitively");
+console.log('\nCode.js — AuditLog typed reader (auditRowObj_) + coercion tripwires (Batch 3; M-3/M-4/F1 class)');
+// Batch 3: the AuditLog was the one core sheet with NO named column enum, so its
+// coerced cells were read by bare index (`auditData[i][5]`) — untrippable, which
+// is why F1 (raw PunchDate) slipped every per-function tripwire. All coerced-col
+// reads now route through the typed auditRowObj_; these pin that boundary.
+test('TRIPWIRE (Batch 3): auditRowObj_ recovers every coerced AuditLog column via its normalize helper', () => {
+  const src = extractRawFunction('Code.js', 'auditRowObj_');
+  assert.ok(/normalizeAuditTs_\(row\[AUDIT\.TS\]\)/.test(src), 'TS recovered via normalizeAuditTs_');
+  assert.ok(/normalizeDate_\(row\[AUDIT\.PUNCH_DATE\]\)/.test(src),
+    'PunchDate is a Sheets-coerced Date — a raw String() yields "Wed Jul 15 2026 …" and breaks the compliance "View note" deep-link (F1)');
+  assert.ok(/normalizeTime_\(row\[AUDIT\.PUNCH_TIME\]\)/.test(src),
+    'PunchTime is a coerced time Date — raw String() renders a constant "12:00 AM" (M-3)');
+  assert.ok(/AUDIT\.IS_ADJUSTMENT\][^;]*\.toUpperCase\(\)\s*===\s*'TRUE'/.test(src),
+    "IsAdjustment is a coerced native boolean — String(true) === 'TRUE' is always false; compare case-insensitively (M-4)");
+});
+test('TRIPWIRE (Batch 3): the AuditLog object-readers route through auditRowObj_', () => {
+  ['getManagerDashboard', 'cnReadCallNoteAuditRows_'].forEach((fn) => {
+    assert.ok(/auditRowObj_\(/.test(extractRawFunction('Code.js', fn)),
+      fn + ' must build its audit rows via auditRowObj_ (single coercion-recovery point)');
+  });
+});
+test('TRIPWIRE (Batch 3): no raw read of a coerced AUDIT column outside auditRowObj_ — the F1-catching net', () => {
+  // Global source scan (the INV-142 pattern): every read of a COERCED AuditLog
+  // column (PUNCH_DATE / PUNCH_TIME / IS_ADJUSTMENT) must sit inside the typed
+  // reader. A write (`= …` / `+ 1`) or a comment line is exempt. A new function
+  // reading `row[AUDIT.PUNCH_DATE]` raw now fails CI (F1 would have).
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const reader = extractRawFunction('Code.js', 'auditRowObj_');
+  const COERCED = /\[AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]/;
+  const WRITE_OR_COMMENT = /AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]\s*=|AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT) \+ 1|^\s*\/\//;
+  const offenders = [];
+  src.split('\n').forEach((line, idx) => {
+    if (!COERCED.test(line) || WRITE_OR_COMMENT.test(line)) return;
+    if (reader.indexOf(line) >= 0) return;   // inside auditRowObj_ — the sanctioned reader
+    offenders.push('line ' + (idx + 1) + ': ' + line.trim());
+  });
+  assert.deepStrictEqual(offenders, [],
+    'raw coerced-AUDIT-column read(s) outside auditRowObj_ — route through the typed reader (Batch 3 / F1 class)');
+});
+
+// Runtime proof the typed reader actually recovers coerced cells (stub its
+// normalize deps, the formTokenCellMs_ pattern).
+vm.runInContext(
+  'var AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUNCH_TIME:6, IS_ADJUSTMENT:7, DAYS_BACK:8, NOTES:9 };' +
+  'function normalizeAuditTs_(v){ return v instanceof Date ? ("TS:"+v.getTime()) : String(v==null?"":v).trim(); }' +
+  'function normalizeDate_(v){ return v instanceof Date ? ("DATE:"+v.getUTCFullYear()) : String(v==null?"":v).substring(0,10); }' +
+  'function normalizeTime_(v){ return v instanceof Date ? ("TIME:"+v.getTime()) : String(v==null?"":v); }',
+  sb, { filename: 'test#auditRowObj_deps' });
+vm.runInContext(extractRawFunction('Code.js', 'auditRowObj_'), sb, { filename: 'Code.js#auditRowObj_' });
+const auditRowObj_ = sb.auditRowObj_;
+test('auditRowObj_: recovers a coerced-Date PunchDate + a native-boolean IsAdjustment', () => {
+  // The F1/M-4 shapes: Sheets returns a Date for PunchDate and a boolean for IsAdjustment.
+  const coerced = auditRowObj_([new Date(), 'E1', 'Ann', 'ann@x.com', 'CallNoteCreate',
+    new Date(Date.UTC(2026, 6, 15)), new Date(), true, 3, 'noteId=abc']);
+  assert.ok(/^DATE:2026/.test(coerced.punchDate), 'coerced-Date PunchDate recovered via normalizeDate_, not a raw blob');
+  assert.strictEqual(coerced.isAdjustment, true, 'native-boolean true → true');
+  assert.strictEqual(coerced.daysBack, 3);
+  assert.strictEqual(coerced.notes, 'noteId=abc');
+});
+test('auditRowObj_: string cells pass through; FALSE/blank isAdjustment is false', () => {
+  const s = auditRowObj_(['2026-07-15 10:00:00', 'E2', 'Bob', 'bob@x.com', 'CallNoteFlag',
+    '2026-07-15', '10:00:00', 'FALSE', 0, 'noteId=xyz']);
+  assert.strictEqual(s.punchDate, '2026-07-15', 'string PunchDate untouched');
+  assert.strictEqual(s.isAdjustment, false, "'FALSE' → false");
+  assert.strictEqual(auditRowObj_([]).isAdjustment, false, 'missing → false');
 });
 
 console.log('\nCode.js — spreadsheet-creation timezone/locale tripwires (cycle 7 · H-2/M-14 class)');
@@ -1707,6 +1835,21 @@ test('percent-encodes quotes in link URLs (no href attribute breakout)', () => {
   assert.ok(out.indexOf('%22') >= 0, 'double quote percent-encoded');
   const single = kbMd_("[x](https://e.com/'q)");
   assert.ok(single.indexOf('%27') >= 0, 'single quote percent-encoded');
+});
+test('F7: ** / backtick inside a URL do NOT get wrapped in <strong>/<code> (link stays intact)', () => {
+  // The emphasis pass runs AFTER link generation, so it used to inject
+  // <strong>/<code> INSIDE the href of a URL containing ** or a backtick,
+  // producing a broken link. The generated markup is now stashed past that pass.
+  const stars = kbMd_('[go](https://e.com/a**b**c)');
+  assert.ok(stars.indexOf('href="https://e.com/a**b**c"') >= 0, 'href keeps the literal ** — not <strong>');
+  assert.ok(stars.indexOf('<strong>') < 0 && stars.indexOf('<em>') < 0, 'no emphasis injected into the link');
+  const tick = kbMd_('[go](https://e.com/a`b`c)');
+  assert.ok(tick.indexOf('href="https://e.com/a`b`c"') >= 0, 'href keeps the literal backtick — not <code>');
+  assert.ok(tick.indexOf('<code>') < 0, 'no <code> injected into the link');
+  // Emphasis INSIDE the link TEXT still renders (regression guard for the fix).
+  const boldText = kbMd_('[**bold**](https://e.com)');
+  assert.ok(boldText.indexOf('<strong>bold</strong>') >= 0, 'link-text emphasis preserved');
+  assert.ok(boldText.indexOf('href="https://e.com"') >= 0, 'link still rendered');
 });
 test('renders GFM tables (header, body, alignment, pipe escape)', () => {
   const out = kbMd_('| H1 | H2 |\n| --- | :---: |\n| a | b |\n| c | d |');

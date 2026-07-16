@@ -266,17 +266,34 @@ function kbMd_(src) {
     else blocks.push({ snippet: false, body: code });
     return '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
+    // Emphasis / inline-code, factored out so it can run on link TEXT at
+    // generation time (below) while the generated <a>/<img> MARKUP is stashed
+    // past the outer pass (F cycle-8). Previously these ran over the whole
+    // string AFTER link/image generation, so a URL containing ** or a backtick
+    // (e.g. [x](https://h/a**b**c)) got <strong>/<code> injected INSIDE the
+    // href/src attribute → a broken link. Link text keeps its emphasis; the URL
+    // is protected. (Inert regardless — quotes are percent-encoded — but this
+    // renders correctly.)
+    function emph(x) {
+      x = x.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      x = x.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
+      x = x.replace(/`([^`]+)`/g, '<code>$1</code>');
+      return x;
+    }
+    var stash = [];
+    function keep(html) { stash.push(html); return '\u0000L' + (stash.length - 1) + '\u0000'; }
     // Images BEFORE links (otherwise the link rule renders the [alt](url)
     // part as an anchor with a stray "!"). http(s) only - no mailto for an
     // img src. Quotes are percent-encoded in the URL and entity-escaped in
     // the alt: the top-level escape covers &/</> but NOT quotes, so either
     // attribute could otherwise be broken out of (same guard as link href).
+    // alt is an attribute → NO emphasis; the whole element is stashed.
     t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (m, alt, url) {
       if (!/^https?:/i.test(url)) return alt;
       url = url.replace(/"/g, '%22').replace(/'/g, '%27');
       alt = alt.replace(/"/g, '&quot;');
-      return '<a href="' + url + '" target="_blank" rel="noopener" class="kb-img-lnk">' +
-        '<img src="' + url + '" alt="' + alt + '" loading="lazy"></a>';
+      return keep('<a href="' + url + '" target="_blank" rel="noopener" class="kb-img-lnk">' +
+        '<img src="' + url + '" alt="' + alt + '" loading="lazy"></a>');
     });
     t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (m, txt, url) {
       if (!/^(https?:|mailto:)/i.test(url)) return txt;
@@ -284,11 +301,12 @@ function kbMd_(src) {
       // would otherwise break out of the href attribute (attribute injection,
       // e.g. an onmouseover handler). Percent-encode both quote characters.
       url = url.replace(/"/g, '%22').replace(/'/g, '%27');
-      return '<a href="' + url + '" target="_blank" rel="noopener">' + txt + '</a>';
+      return keep('<a href="' + url + '" target="_blank" rel="noopener">' + emph(txt) + '</a>');
     });
-    t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    t = t.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
-    t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+    t = emph(t);
+    // Restore the stashed link/image markup (the emphasis pass above can no
+    // longer reach inside its attributes).
+    t = t.replace(/\u0000L(\d+)\u0000/g, function (_, n) { return stash[+n]; });
     return t;
   }
   // Split a GFM table row into cells. \| escapes a literal pipe inside a

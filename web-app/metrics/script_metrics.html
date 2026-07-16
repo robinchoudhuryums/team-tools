@@ -1154,8 +1154,8 @@ function spanishRender_(d) {
     esc(String(d.threadsScanned || 0)) + ' threads scanned' +
     (d.membersConfigured ? '' : ' · <span style="color:var(--warning-deep)">no member list set — counting any reply as resolved</span>') + '</div>';
   var strip = '<div class="telemetry" style="max-width:660px;margin-bottom:16px">' +
-    '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + d.resolved + '</div><div class="tel-sub">of ' + total + '</div></div>' +
-    '<div class="tel-cell"><div class="tel-label">Pending</div><div class="tel-value ' + (d.pending > 0 ? 'warn' : '') + '">' + d.pending + '</div><div class="tel-sub">awaiting reply</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Resolved</div><div class="tel-value success">' + esc(String(d.resolved)) + '</div><div class="tel-sub">of ' + esc(String(total)) + '</div></div>' +
+    '<div class="tel-cell"><div class="tel-label">Pending</div><div class="tel-value ' + (d.pending > 0 ? 'warn' : '') + '">' + esc(String(d.pending)) + '</div><div class="tel-sub">awaiting reply</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Avg time</div><div class="tel-value">' + esc(spanishFmtDur_(d.avgMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
     '<div class="tel-cell"><div class="tel-label">Median</div><div class="tel-value">' + esc(spanishFmtDur_(d.medianMinutes)) + '</div><div class="tel-sub">to resolve</div></div>' +
     '</div>';

@@ -6,7 +6,9 @@
   "scripts": {
     "test": "node test/client/run.js && node test/client/dom/runDom.js",
     "test:client": "node test/client/run.js",
-    "test:dom": "node test/client/dom/runDom.js"
+    "test:dom": "node test/client/dom/runDom.js",
+    "push:dev": "bash scripts/push-env.sh dev",
+    "push:prod": "bash scripts/push-env.sh prod"
   },
   "devDependencies": {
     "jsdom": "^29.1.1"

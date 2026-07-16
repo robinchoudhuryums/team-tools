@@ -2,3 +2,6 @@ node_modules/
 .clasprc.json
 *.log
 .env
+# Dev-project clasp target (holds your personal dev scriptId — never committed).
+# Copy web-app/.clasp.dev.json.example → web-app/.clasp.dev.json. See docs/deployment.md.
+web-app/.clasp.dev.json

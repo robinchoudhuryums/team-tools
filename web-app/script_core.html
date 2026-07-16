@@ -576,7 +576,17 @@ function renderShell(state) {
       ${icon('popOut', 14)}
     </button>`;
 
+  // Blue-green: an isolated dev instance (INSTANCE_LABEL set on its Script
+  // Properties) shows a distinct top strip so it can never be mistaken for the
+  // team's live version when both tabs are open. Empty on prod → no banner.
+  const instanceBanner = state.instanceLabel
+    ? `<div class="instance-banner" role="status"
+         title="Isolated ${esc(state.instanceLabel)} instance — separate data + email from production">
+         ${icon('warning', 13)}<span>${esc(state.instanceLabel)} · isolated data &amp; email · not the team&rsquo;s live version</span>
+       </div>`
+    : '';
   document.getElementById('app').innerHTML = `
+    ${instanceBanner}
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sb-brand">
@@ -818,6 +828,16 @@ function renderToolTabBar(toolKey) {
 function showView(view) {
   const toolKey = VIEW_TO_TOOL[view];
   if (!toolKey) return;
+  // F8 (defense-in-depth): showView is the low-level dispatch reached by direct
+  // callers (drill-throughs, ?tool deep-links, umsLastView restore, tab-bar
+  // clicks) — not just via enterTool, which already resolves a VISIBLE tab. A
+  // direct call for a tab the user can't see (managerOnly/adminOnly, no `also`)
+  // would otherwise run its enter-handler. Route it back through enterTool, which
+  // bumps to the tool's first visible tab (or home if the whole tool is gated).
+  // No recursion loop: enterTool re-enters showView with a visible tab, which
+  // passes this guard. (Server endpoints still re-gate — this is UI-only.)
+  const _tab = TOOLS[toolKey] && TOOLS[toolKey].tabs[view];
+  if (_tab && !tabVisibleForUser_(_tab)) { enterTool(toolKey); return; }
   if (toolKey !== 'callNotes' && typeof cnStopAmbientPolling_ === 'function') cnStopAmbientPolling_();
   // F(cycle-8): symmetric START on any CN tab — the poller used to start only
   // from the Log enter, so a deep-link/refresh-restore into another CN tab

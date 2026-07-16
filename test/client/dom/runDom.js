@@ -103,6 +103,18 @@ test('bootShell builds the real shell (#view-area, sidebar) via renderShell', ()
   assert.ok(h.$('.sidebar .sb-link[data-tool="callNotes"]'), 'sidebar rendered tool links');
 });
 
+test('blue-green: the DEV banner renders only when instanceLabel is set', () => {
+  const prod = boot();
+  prod.bootShell();                                   // default fixture — no instanceLabel
+  assert.ok(!prod.$('.instance-banner'), 'no banner on prod (instanceLabel unset)');
+
+  const dev = boot();
+  dev.bootShell({ instanceLabel: 'DEV' });
+  const banner = dev.$('.instance-banner');
+  assert.ok(banner, 'a labeled dev instance renders the banner');
+  assert.ok(/DEV/.test(banner.textContent), 'the banner shows the instance label');
+});
+
 test('enterTool("callNotes") renders the Log form into #view-area', () => {
   const h = boot();
   h.bootShell();

@@ -212,6 +212,15 @@ until you cut a new deployment: Apps Script editor → Deploy → Manage
 deployments → Edit → Version: **New version** → Deploy. Web app users
 see the change on next page load.
 
+**Blue-green (a personal dev instance alongside the team's prod):** run a
+SEPARATE dev Apps Script project from this same source with `npm run push:dev`
+(prod stays `npm run push:prod` / a bare `clasp push -f`). The dev instance has
+its own copy Sheets + your-inbox email config so you can fully use it — send
+emails, create notes — without touching the team's live data or inbox. Full
+setup + operating procedure (incl. the `INSTANCE_LABEL` / `INSTANCE_IS_PROD`
+Script Properties and the `DevTools.js` roster scrubber) is in
+`docs/deployment.md`.
+
 For Apps Script tests (`Tests.js` in each project), run them from the
 editor: pick a `runSmokeTests` / `runAllTests` function and click ▶.
 
@@ -292,7 +301,27 @@ this section before touching the relevant area.
   manager Recent Activity feed) — and `IsAdjustment` (col 8, written
   `'TRUE'`/`'FALSE'`) coerces to a native boolean, so `String(x) === 'TRUE'`
   is always false (compare case-insensitively; the ADJ badge + adjustment
-  reason never rendered until fixed). Pinned by the M-3/M-4 Node tripwire. The SAME class applies to
+  reason never rendered until fixed). **The `PunchDate` cell (col 5, written
+  `yyyy-MM-dd`) coerces to a Date the SAME way (F cycle-8):**
+  `cnReadCallNoteAuditRows_` read it raw into `dateLocal`, so the compliance-panel
+  "View note" deep-link handed a `"Wed Jul 15 2026 …"` string to
+  `managerGetCallNotes` (whose `^\d{4}-\d{2}-\d{2}$` guard rejects it) → the
+  drill-through silently died while the panel looked fine (the visible timestamp
+  uses the correctly-normalized `timestampMgr`). Now read via `normalizeDate_`,
+  matching `getManagerDashboard`'s col-5 read; pinned by a `dateLocal`-shape
+  assertion in `test_auditPanel_searchAndHistory`. **Batch 3 (cycle-8) gave the
+  AuditLog the named `AUDIT` column enum it lacked plus a single typed reader
+  `auditRowObj_(row)` — the ONE coercion-recovery point (TS / PunchDate /
+  PunchTime / IsAdjustment recovered once via the normalize helpers). All four
+  AuditLog readers now route through `AUDIT.*` (the two coerced-column readers,
+  `getManagerDashboard` + `cnReadCallNoteAuditRows_`, via `auditRowObj_`; the two
+  non-coerced ones, `computeAutomationHealth_` + `adminSheetView`, via `AUDIT.*`
+  for TS/action/name/notes). A GLOBAL Node tripwire (the INV-142 pattern) now
+  fails CI on ANY raw read of a coerced `AUDIT` column outside `auditRowObj_` —
+  the F1-catching net the old per-function M-3/M-4 tripwire (replaced) couldn't
+  provide. NEW AuditLog reads must go through `auditRowObj_`, never a bare index
+  (`auditData[i][5]`) — the bare-index style was the root cause F1 exposed.** The
+  SAME class applies to
   every other `yyyy-MM-dd HH:mm:ss` column in the ADP spreadsheet:
   `TO.SUBMITTED_AT` (a raw `String()` read flattened the manager
   pending-trend sparkline to zero since it shipped, and it doubles as
@@ -1146,6 +1175,14 @@ this section before touching the relevant area.
   overlay ("Tap or click and drag here to sign") hides on first stroke /
   shows on Clear. Any new code path that toggles the section's visibility
   must re-resize the canvas the same way.
+- **`form_public.html`'s local `esc()` escapes quotes (F cycle-8) — don't
+  "simplify" it back to `textContent`→`innerHTML`.** Unlike the shell's `esc()`,
+  the standalone public page had its own copy that escaped only `&`/`<`/`>` (the
+  `textContent`→`innerHTML` round-trip doesn't encode `"`/`'`), yet it's used in
+  ATTRIBUTE contexts (`value="' + esc(x) + '"`). Every value there is a hard-coded
+  literal today, so it was latent — but a future server/recipient string rendered
+  into an attribute would break out. `esc()` now escapes `& < > " '` explicitly;
+  keep it that way (matches the shell `esc()`).
 - **Call Notes form fields are contenteditable `.ce` divs, not
   input/textarea.** Read via `cnGetFieldValue_(id)` and write via
   `cnSetFieldValue_(id, value)` — both dispatch on `el.isContentEditable`
@@ -1310,6 +1347,15 @@ this section before touching the relevant area.
   the active tab key, so existing guards like
   `if (currentView === 'callNotes') ...` continue to work — tab keys
   are deliberately globally unique across tools.
+  **`showView` re-checks `tabVisibleForUser_` before dispatching (F8,
+  defense-in-depth):** it is the low-level dispatch reached by DIRECT callers
+  (drill-throughs, `?tool=` deep-links, `umsLastView` restore, tab-bar clicks) —
+  not only via `enterTool`, which already resolves a visible tab — so a direct
+  call for a gated tab (`managerOnly`/`adminOnly`, no `also`) routes back through
+  `enterTool` (which bumps to a visible tab). No recursion (`enterTool` re-enters
+  with a visible tab that passes the guard); `empState` is set at boot before the
+  first nav, so it never wrongly redirects. Server endpoints still re-gate — this
+  is UI-only hardening.
   Adding a new tab: append it to its tool's `tabs` map + implement
   the `enter*` handler in the tool's partial. Adding a new tool:
   add a TOOLS entry + drop tab partials + `include()` them from
@@ -2299,9 +2345,13 @@ this section before touching the relevant area.
   (Time Off mode) renders a rectangular `.pto-tile` instead of the
   prior PTO donut. Head label + year/months-left meta + big tabular
   value + denominator + progress bar + footer with planned-upcoming
-  days + projected balance after those plans land. Planned days is
-  summed from `data.allRequests` (future-dated `pending`/`approved`)
-  via `getLeaveDeductionClient_` (INV-72). The donut + `ptoRingSvg` +
+  days + projected balance after those plans land. The **planned-days tally**
+  sums future-dated `pending`+`approved` requests' annual deductions from
+  `data.allRequests` via `getLeaveDeductionClient_` (INV-72); the **projected
+  balance** subtracts only the `pending` portion (F cycle-8 — an `approved`
+  future request was ALREADY deducted server-side on the Pending→Approved
+  transition (INV-03/25), so counting it in `annual - planned` double-subtracted
+  it and understated the projection). The donut + `ptoRingSvg` +
   `.pto-card`/`.pto-rings`/`.pto-ring`/`.pto-svg*` CSS were all
   deleted along with the last caller.
 - **Coverage-strip nav hint (Round 2 · 8z).** The Clock view's
@@ -2455,7 +2505,13 @@ this section before touching the relevant area.
   (`![alt](url)` — `http(s)` only, NO mailto/data:; quotes percent-encoded
   in the src AND entity-escaped in the alt, the same two attribute-breakout
   guards as link `href`; rendered lazy + wrapped in an open-full-size
-  anchor). That's the safety boundary; managers are the only
+  anchor). The bold/italic/inline-code pass runs on link **text** at generation
+  and the generated `<a>`/`<img>` markup is then stashed past the outer emphasis
+  pass via a NUL-delimited sentinel (`\u0000L…\u0000`, the code-fence pattern —
+  written as the `\u0000` ESCAPE, never a literal NUL byte, so the partial greps
+  as text), so a URL containing `**`/backtick can't get `<strong>`/`<code>`
+  injected into its `href`/`src` (F cycle-8; link-text emphasis still renders).
+  That's the safety boundary; managers are the only
   authors but defense-in-depth keeps a bad paste inert. Embeds store only a
   Drive `{kind, fileId}` and render the `/preview` iframe — no content copied, so
   the Drive doc stays the source of truth. The tree is whole-result cached
@@ -2869,12 +2925,24 @@ this section before touching the relevant area.
   7 a detector shipped dead (H-1, M-11) and nothing surfaced it. A failing
   check renders DEAD in the panel, rides `sendAutomationHealthDigest` as a
   failure, and fails the `automationDetectorLiveness` smoke test; a Node
-  tripwire pins the compute→return→digest wiring + the six check keys
+  tripwire pins the compute→return→digest wiring + the seven check keys
   (cycle 8 added `briefConfig` — a CONFIG-coherence check, not a parser
   round-trip: the `managerDailyBrief` flag ON without a fresh
   `managerBrief` heartbeat = the brief trigger was never installed; the
   fail-safe suppression keeps the individual digests sending meanwhile,
-  and this check emails the misconfiguration via the failure digest).
+  and this check emails the misconfiguration via the failure digest —
+  and F9 added `managerSource`: MANAGER_EMAILS ↔ roster `isManager` drift.
+  The dual manager-source split is intentional (`assertManagerCaller_` gates
+  triggers on the MANAGER_EMAILS property because a trigger runs as the
+  INSTALLER; in-app endpoints gate on the roster `isManager` column) but the two
+  can drift — a demoted/off-boarded manager removed from the roster yet still in
+  MANAGER_EMAILS retains trigger + purge power via `google.script.run`. The pure,
+  Node-pinned `managerSourceDrift_(propEmails, rosterPairs)` flags exactly those
+  emails (in MANAGER_EMAILS AND a roster row marked NOT a manager); an email with
+  NO roster row — a legit non-roster deployer/service account — is deliberately
+  never flagged, so the check is false-positive-free and never nags a clean
+  deployment. It changes NO gate logic (the split stays) and needs no new
+  trigger — it only surfaces the hazard).
 - **"Open Email" button (Round 2 · 8f).** The Phase-4 "External"
   button on the Log view's action row was renamed "Open Email"
   (still binds `cn-ext-email-btn` → opens the external composer
@@ -3258,6 +3326,27 @@ Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`.
 State that exists outside the codebase and must be set up
 manually for a fresh deploy or environment:
 
+- **Blue-green (a personal dev instance alongside the team's prod) — see
+  `docs/deployment.md`.** Run TWO Apps Script projects from the SAME repo source:
+  PROD (the committed `web-app/.clasp.json` scriptId, `ANYONE_ANONYMOUS`, real
+  sheets) and a personal DEV project (`web-app/.clasp.dev.json`, gitignored;
+  access "Only myself"; the `/dev` HEAD URL so every push is instantly live;
+  Script Properties → COPY sheets + your-inbox recipients; PHI stores start
+  EMPTY). `npm run push:dev` / `push:prod` (via `scripts/push-env.sh`) target
+  each; `push:dev` restores the committed prod `.clasp.json` so a bare
+  `clasp push` still hits prod. **Two OPTIONAL Script Properties tag an
+  instance — both UNSET on prod = zero behavior change:** `INSTANCE_LABEL`
+  (e.g. `DEV`) renders a top banner (`getEmployeeState.instanceLabel` →
+  `.instance-banner`) so the two tabs can't be confused; `INSTANCE_IS_PROD=true`
+  (set on prod) makes the destructive `TEST_`-row writers (`runAllTests` /
+  `setupTestEnvironment`) REFUSE via `assertNotProdInstance_`. Dev-only tooling
+  (`web-app/DevTools.js`: `devScrubRoster_(keeperEmail)` anonymizes a copied
+  roster so dev's per-employee emails can't reach real staff; `devShowConfig_()`)
+  is `assertDevInstance_`-guarded (runs only when `INSTANCE_LABEL` is set and
+  `INSTANCE_IS_PROD` is not) so it can never mutate the live roster even though
+  it deploys to both. Pinned by the instance-guard Node tests + the DEV-banner
+  DOM test. Deploy: the same `clasp push -f` + New version; the two new
+  properties are optional and prod is unaffected until you set them.
 - **The 2026-06 redesign + deferred follow-ons #1–#4 + niceties #8–#10
   add NO new operator state** — no new Script Properties, no new triggers,
   no migrations. The new endpoints (`getMyMetricsRange`,
@@ -3987,7 +4076,14 @@ manually for a fresh deploy or environment:
   `submittedAt`). `formTokenCellMs_(cell)` returns `{present, ms}` — a `Date`
   → `getTime()`, a parseable string → ms, a non-empty unparseable string →
   `ms:null` (caller fail-closes as tamper, S2.1), empty → `present:false`. All
-  three expiry sites route through it. The client-returned `expiresAt` /
+  three expiry sites route through it **and fail CLOSED on `!present` too**
+  (F cycle-8): a blank/absent `ExpiresAt` is treated as expired. Such a cell
+  only arises from corruption or a lossy `FORMS_SS_ID` migration —
+  `createFormToken` writes the cell atomically in the appendRow — so the old
+  `expX.present &&` guard (which read a blank cell as NOT-expired, a fail-OPEN
+  asymmetry with the unparseable-`ms:null` case) let a blank-expiry token stay
+  perpetually valid for anonymous PHI submission. Pinned by
+  `test_publicForm_blankExpiryFailsClosed`. The client-returned `expiresAt` /
   `createdAt` go through the sibling `formTokenIsoString_` so a coerced Date
   never leaks back as a `"Sat Jun 27 …"` blob. Pinned by the `formTokenCellMs_`
   Node test. (This was latent on the ADP-fallback sheet, which didn't coerce; it
@@ -4140,9 +4236,14 @@ outside it; the three call sites route through it — INV-141), the CN-timestamp
 boundary (the enumerated readers use `cnTimestampString_` PLUS, since cycle 8,
 a GLOBAL whitelist scan of every `[CN.TIMESTAMP]` occurrence in Code.js — a
 fifth reader added anywhere now trips it — INV-142),
-the coaching-parser + dashboard AuditLog coercion-read pins (H-1/M-3/M-4),
+the coaching-parser pin (H-1), the **AuditLog typed-reader family** (Batch 3,
+cycle-8 — replaced the narrow dashboard M-3/M-4 pin: `auditRowObj_` recovers each
+coerced `AUDIT` column via its normalize helper, both object-readers route through
+it, and a GLOBAL scan fails CI on any raw coerced-`AUDIT`-column read outside it —
+the F1-catching net + 2 runtime recovery tests),
 the detector-liveness wiring (compute→return→digest + the check keys — five
-at Turn C, six since cycle 8's `briefConfig`), the INV-72
+at Turn C, six since cycle 8's `briefConfig`, seven since F9's `managerSource`
+MANAGER_EMAILS↔roster drift check), the INV-72
 `LEAVE_DEDUCTION_CLIENT` ↔ `getLeaveDeduction_`
 BEHAVIORAL mirror (drives the real server function over every client key),
 the `empShiftSchedule_` single-resolver check (zero bare `getShiftSchedule_`
@@ -4207,7 +4308,7 @@ Test Coverage Quality | whether tests actually guard regressions; the client DOM
 
 ### Subsystems
 Server:
-  web-app/Code.js, web-app/appsscript.json, web-app/.clasp.json
+  web-app/Code.js, web-app/DevTools.js, web-app/appsscript.json, web-app/.clasp.json
 Client (shell):
   web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html, web-app/script_tour.html
 Client (Time Clock views):
@@ -4319,7 +4420,7 @@ INV-88 | `getMetricsAmbient()` is manager-gated (INV-02), read-only, 5-min cache
 INV-89 | `buildCallNoteEmailHtml_` HTML-escapes every user-supplied note field via `esc_` before assembling the email body. The email-preview modal injects that body raw via `innerHTML` (the `${p.htmlBody}` slot in `cnRenderComposerPreviewStep_`), so the escaping is load-bearing — a new field added to the builder without `esc_` is stored XSS in the preview and the sent email. Pinned by `test_cn_buildEmailHtml_escapesUserFields` | Subsystem: Server + Client (Call Notes views)
 INV-90 | `getFormSubmission(token)` is caller-scoped, read-only: it requires `getEmployeeInfo_()` (NOT a public endpoint) and returns submission data only when the calling employee's email matches the token's `FormTokens.CreatedBy` — a rep cannot read another rep's form submissions. Returns `{ submitted: false, status }` when the token isn't completed yet. Pinned by `test_cn_getFormSubmission_callerScoped` | Subsystem: Server
 INV-91 | `managerGetFormSubmission(repEmpId, token)` is manager-gated (INV-02), read-only, and scoped to the target rep — the token must have been created by `repEmpId` (`FormTokens.CreatedBy`), so a manager can only view submissions for forms the selected rep sent. Shares `buildFormSubmissionResult_` with the caller-scoped `getFormSubmission` (INV-90). Surfaced via the form pill on the Team Notes Per-Rep read-only card. Pinned by `test_cn_managerGetFormSubmission_gatedAndScoped` | Subsystem: Server
-INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set; timestamp cells are recovered via `normalizeAuditTs_` since Sheets coerces them to Dates). The search filters by rep / action / date range (default start = last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz; default END = today in `CONFIG.TIMEZONE` — the tz audit rows are stamped in, so IST-stamped rows written "tomorrow" relative to the US-afternoon manager aren't silently hidden), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content. Pinned by `test_auditPanel_searchAndHistory` + the gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server
+INV-92 | `getCallNotesAuditLog(filters)` and `getCallNoteAuditHistory(noteId)` are manager-gated (INV-02), read-only over the shared AuditLog. Both read via the bounded tail helper `cnReadCallNoteAuditRows_` (at most `CN_AUDIT_MAX_SCAN`=4000 most-recent rows — the log is append-only/chronological — keeping only the `CN_AUDIT_ACTIONS` set; timestamp cells are recovered via `normalizeAuditTs_` since Sheets coerces them to Dates, and the `dateLocal` (PunchDate col 5) via `normalizeDate_` — the client's "View note" deep-link feeds it to `managerGetCallNotes`, which `^\d{4}-\d{2}-\d{2}$`-rejects a raw coerced Date, F cycle-8). The search filters by rep / action / date range (default start = last `CN_AUDIT_DEFAULT_DAYS`=30 in the manager tz; default END = today in `CONFIG.TIMEZONE` — the tz audit rows are stamped in, so IST-stamped rows written "tomorrow" relative to the US-afternoon manager aren't silently hidden), caps results at `CN_AUDIT_MAX_RESULTS`=500, and returns `truncated:true` when the result cap is hit or the scan window didn't reach the requested start date. History returns every row carrying the `noteId` (parsed from the Notes field), oldest-first, independent of any date filter. Returned rows are PHI-free — note content never enters the AuditLog (INV-32); the client deep-links a row's `noteId` to the Team Notes Per-Rep view for content. Pinned by `test_auditPanel_searchAndHistory` + the gate cases in `test_managerGates_rejectNonManager` | Subsystem: Server
 INV-93 | `saveEmailTemplates(templates)` is manager-gated (INV-02, INV-57), persists to Script Property `CN_EMAIL_TEMPLATES` (JSON array of `{name, recipientType, body}`), validates each entry (non-empty name + body, `recipientType ∈ customer|provider|any`, count ≤ `CN_EMAIL_TEMPLATE_LIMIT`=50, body ≤ `CN_EMAIL_TEMPLATE_BODY_MAX`=4000), and writes an `AdminConfigChange` audit row. `getEmailTemplates_()` reads the property first (CONFIG fallback), sanitizing on read so a corrupt blob degrades to the fallback rather than throwing. Templates are exposed to reps via `getCallNotesDepartments` (rep-callable) for the external-email composer picker, and to managers via `getAdminConfig` for the editor | Subsystem: Server
 INV-94 | `submitTimeOffRequest` and `managerSubmitTimeOff` reject a request when the employee already has a Pending or Approved row for that date (`hasActiveTimeOffOnDate_`, inside the existing ScriptLock). Prevents the double-deduct that INV-03's per-row transition guard cannot catch — two sibling rows for one day would each deduct on approval. Denied/cancelled rows don't block a re-request | Subsystem: Server
 INV-95 | Both time-off submit paths validate `type` against `TIME_OFF_TYPES` via `isValidTimeOffType_` (case-insensitive, trimmed) before any write; an unknown/empty type is rejected rather than silently defaulting to `getLeaveDeduction_`'s annual/1.0 (INV-17). `TIME_OFF_TYPES` must stay a superset of the `day-type` `<select>` options in `modals.html` — pinned by a Node-harness coupling test. `TIME_OFF_TYPES` NO LONGER contains `'Sick Leave'` (deferred #2): the day-type `<select>` dropped it too (still ⊆), so no new sick request is creatable via the UI or a direct RPC; the sick BUCKET machinery is intentionally retained for legacy reverts (INV-17/INV-72) | Subsystem: Server
@@ -4395,6 +4496,7 @@ INV-150 | **Client error beacon is PHI-safe by construction, gated, bounded, and
 INV-151 | **Consolidated manager daily brief (flag-gated, suppression-symmetric).** `sendManagerDailyBrief` is a trigger handler (daily manager-tz 8am; INV-44 gate) behind the `managerDailyBrief` feature flag — the registry's first pure-`server`-scope flag, default OFF so a fresh deploy is a behavioral no-op. It stamps its `managerBrief` heartbeat BEFORE the flag check (trigger liveness stays observable while the feature is off) and, when on, builds ONE branded morning email PER MANAGER (docs + coaching are team-scoped, INV-122/134 — the sendTrainingOverdueDigest model) from the SAME factored computations the standalone digests use (`computeMissedClockOuts_`, `managerAggregateUrgent_`, `trainOverdueForRoster_`, `empDocsOverdueAll_`, `coachUnackedAll_`, `deptRequestsOverdueOpen_` — no parallel source to drift), with every data source individually try/catch'd and coaching rows PHI-minimal (INV-134). Exactly FOUR handlers suppress their separate MANAGER emails — `sendDailyMissedPunchAlerts` (manager summary only; employee reminders always send), `sendCallNotesUrgentDigest`, `sendTrainingOverdueDigest` (manager loop only; employee doc nudges always send), `sendDeptRequestReminderDigest` — each still stamping its heartbeat. **Suppression gates on `managerBriefSuppressionActive_()` (cycle-8 M-11), NEVER the bare flag: the flag must be ON AND the `managerBrief` heartbeat fresh (<26h).** Flipping the flag without re-running `installAutomationTriggers()` used to silently stop EVERY daily manager notification (the brief never fired; the watchdog deliberately ignores a never-stamped heartbeat); now a missing/stale heartbeat FAILS SAFE (the individual digests keep sending — a doubled email beats a silent outage) and the `briefConfig` detector check surfaces the misconfiguration in the panel + failure digest; `sendCallNotesWeeklyDigests` (weekly cadence) and `sendAutomationHealthDigest` (the independent watchdog that reports a dead brief trigger — consolidating it would be circular) NEVER consult the flag. An all-clear morning sends nothing. The pure `managerBriefSections_` drives section order/counts/send-decision. Pinned by the `managerBriefSections_` + suppression-set + registry-flag Node tests, the auto-covering TARGETS/gate-type/DIGEST_LABELS tripwires, and `test_triggerGate_managerDailyBrief_nonManagerThrows` (editor) | Subsystem: Server
 INV-152 | **"What's new" panel is a dormant-until-configured broadcast of ONE published KB article.** `getWhatsNew` is rep-callable (requires `getEmployeeInfo_`), read-only, and returns `{none:true}` on EVERY quiet-failure path (unset `WHATSNEW_KB_ID` Script Property, missing item, non-article, any throw) so it can never break boot; a DRAFT article is invisible to EVERYONE including admins (INV-140/147 — a broadcast surface has no preview tier; admins preview in Reference). The returned `stamp` is the article's edit time (`kbCellTs_`, KB-sheet-tz recovered). **Surfacing (operator feedback 2026-07-09): the panel does NOT auto-open** — the article's list items rotate as upward-carousel slides in the Dashboard greeting bar (the pure Node-pinned `whatsNewItems_` extracts plain-text lines; `clkGreetRot*` in `tc/script_clock.html` rotates status-sentence ↔ update slides every 8s, hover-holds, ties to the startClock/stopClock lifecycle, reuses the world-clock slide-up animation and its reduced-motion neutralization). `whatsNewShouldShow_` (vs `localStorage.umsWhatsNew`; corrupt blob = never seen) now gates the NEW accent on those slides; clicking a slide or the sidebar star opens the full panel. The overlay is `ensureOverlay`-created (its `onClose` hook `whatsNewClose_` stamps seen on EVERY dismissal path) and renders the body via `kbMd_` — the same escape boundary as every Reference article; the title routes through `esc()`; never fetched in the compact pop-out. Pinned by the `whatsNewShouldShow_`/`getWhatsNew` Node cases, the DOM render/Esc-stamp tests, and `test_whatsNew_propertyGateAndDraftHidden` (editor) | Subsystem: Server + Client (shell)
 INV-153 | **Timesheet cold-archive is MOVE-ONLY (payroll is keep-forever) with a clamped safety floor.** `archiveOldTimesheetRows` is a trigger handler (daily manager-tz 6pm — cycle-8 moved it off 1am, which is IST/PHT mid-shift; INV-44 `assertManagerCaller_` gate; INV-01 locked — it mutates the payroll tab, and holding the lock makes concurrent punch writes wait out the move). It MOVES Timesheet rows whose `ADP.DATE` is older than the window into a `TimesheetArchive` tab in the SAME ADP spreadsheet (created on first use by COPYING the live tab's two-row header) via the shared `archiveSheetRowsOlderThan_` — now parameterized with `opts {headerRows, width}` whose DEFAULTS (`headerRows:1`, `CN_HEADERS.length`) keep the CN call sites byte-identical; the Timesheet passes `headerRows:2` + its own width. There is deliberately NO purge tier for the Timesheet (unlike the CN 3-tier model) — nothing ever deletes from `TimesheetArchive`. Window: Script Property `TIMESHEET_ARCHIVE_DAYS` → `CONFIG.TIMESHEET_ARCHIVE_DAYS` (default **0 = disabled**); a value in `(0, TIMESHEET_ARCHIVE_MIN_DAYS=120)` **clamps UP to the floor** (never down), so an operator typo can never rip active-window payroll rows (adjust 30d, current export period ≤~31d, dashboard trends 14d) out of the live tab; garbage/negative → disabled. The helper scans EVERY data row (the Timesheet is APPEND order, not date order — back-fills land late) and append-then-deletes with a flush between (a mid-run failure can only duplicate into the archive, never lose a payroll row). Archived rows leave the in-app surfaces (old-month calendar/timesheet views read the live tab only) but remain in the archive tab for payroll audit. Writes a PHI-free `TimesheetArchive` audit row on every enabled run (the Automation-Health last-seen heartbeat; in `AUTOMATION_AUDIT_ACTIONS` + the client `CN_HEALTH_RUN_LABELS`, pinned by the coupling registry). Pinned by the move-only/floor/CN-defaults Node tests + `test_triggerGate_timesheetArchive_nonManagerThrows` + `test_timesheetArchive_windowFloorAndDefault` (editor) | Subsystem: Server
+INV-154 | **Every AuditLog READ routes through the `AUDIT` enum + the typed `auditRowObj_(row)` reader — the coercion-recovery boundary (Batch 3, cycle-8).** The shared AuditLog (ADP-spreadsheet tab) was the one core sheet with NO named column enum, so its Sheets-coerced cells were read by bare numeric index (`auditData[i][5]`) — untrippable by a source scan, which is exactly why the F1 raw-PunchDate read slipped every per-function tripwire (M-3/M-4/F1 are one class on this sheet). The named `AUDIT` enum (`{ TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUNCH_TIME:6, IS_ADJUSTMENT:7, DAYS_BACK:8, NOTES:9 }` — the `writeAuditLog_`/`getOrCreateAuditSheet_` header order) + the typed `auditRowObj_(row)` are now the SINGLE coercion-recovery point: `auditRowObj_` recovers TS via `normalizeAuditTs_`, PUNCH_DATE via `normalizeDate_`, PUNCH_TIME via `normalizeTime_`, and IS_ADJUSTMENT via a case-insensitive `=== 'TRUE'` — ONCE — and returns canonical fields; callers add their own display/derived fields (`timestampMgr` via `convertAuditTs_`, the `dateLocal` alias, `noteId` from `notes`). All four AuditLog readers route through it: the two coerced-column readers (`getManagerDashboard` recent-audits, `cnReadCallNoteAuditRows_`) build via `auditRowObj_`; the two non-coerced readers (`computeAutomationHealth_`, `adminSheetView`) use `AUDIT.*` for TS/ACTION/EMP_*/NOTES. A NEW AuditLog read MUST go through `auditRowObj_` (or `AUDIT.*` for non-coerced cols), never a bare index. Pinned by a GLOBAL Node tripwire (the INV-142 pattern) that fails CI on ANY raw read of a coerced `AUDIT` column (PUNCH_DATE/PUNCH_TIME/IS_ADJUSTMENT) outside `auditRowObj_`, a reader-delegation check (both object-readers reference `auditRowObj_`), a helper-usage check (`auditRowObj_` recovers each coerced col via its normalize helper), and 2 runtime recovery tests (a coerced-Date PunchDate + a native-boolean IsAdjustment). The AuditLog schema is UNCHANGED — the enum only names existing columns; behavior is byte-preserving vs. the prior inline reads. (ClientErrors + KbViews are DIFFERENT sheets with their own `instanceof Date` guards — out of this boundary.) Generalizes the retired dashboard M-3/M-4 pin (INV-92 still holds; this is its structural backstop) | Subsystem: Server
 ### Policy Configuration
 Policy threshold: 4/10
 Consecutive cycles: 2
