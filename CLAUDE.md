@@ -212,6 +212,15 @@ until you cut a new deployment: Apps Script editor → Deploy → Manage
 deployments → Edit → Version: **New version** → Deploy. Web app users
 see the change on next page load.
 
+**Blue-green (a personal dev instance alongside the team's prod):** run a
+SEPARATE dev Apps Script project from this same source with `npm run push:dev`
+(prod stays `npm run push:prod` / a bare `clasp push -f`). The dev instance has
+its own copy Sheets + your-inbox email config so you can fully use it — send
+emails, create notes — without touching the team's live data or inbox. Full
+setup + operating procedure (incl. the `INSTANCE_LABEL` / `INSTANCE_IS_PROD`
+Script Properties and the `DevTools.js` roster scrubber) is in
+`docs/deployment.md`.
+
 For Apps Script tests (`Tests.js` in each project), run them from the
 editor: pick a `runSmokeTests` / `runAllTests` function and click ▶.
 
