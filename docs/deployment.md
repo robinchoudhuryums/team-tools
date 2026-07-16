@@ -39,6 +39,40 @@ So isolating data + email = the separate dev project pointed at copies + your in
 
 ---
 
+## Prerequisites (one-time — works in Google Cloud Shell or any shell)
+
+The `git` / `npm` / push steps run in a shell; everything else (Drive copies,
+Script Properties, cutting versions, running `devScrubRoster_`/`runAllTests`) is
+in the browser. In a fresh shell:
+
+```bash
+git clone <this repo> && cd team-tools
+npm install                     # dev deps (jsdom for tests) + enables npm run push:*
+```
+
+Two clasp one-time steps:
+
+1. **Enable the Apps Script API** for your Google account (once, ever):
+   <https://script.google.com/home/usersettings> → turn ON "Google Apps Script
+   API". Without it, `clasp push` fails with a 403.
+2. **Authenticate as the DEPLOYER account** (the one with edit access to the
+   real + copy sheets; the web app runs *as* this account):
+   ```bash
+   npx --yes @google/clasp@2.4.2 login --no-localhost
+   ```
+   `--no-localhost` prints a URL → approve in a browser → paste the code back.
+   Required in headless shells (Cloud Shell) that have no local browser callback.
+   The token persists in `~/.clasprc.json`.
+
+You do **not** need a global `clasp` install: `npm run push:dev` / `push:prod`
+run a **pinned** clasp via `npx` (`scripts/push-env.sh`; override with `CLASP=…`).
+The first push in a fresh shell downloads clasp once, then it is cached.
+
+**Cloud Shell note:** `$HOME` (your clone, `web-app/.clasp.dev.json`,
+`~/.clasprc.json`) persists across sessions; a home idle ~120 days is recycled,
+after which you'd just re-clone + `npm install` + `clasp login` again (nothing is
+lost — it's all in git or Google).
+
 ## One-time dev setup (~30–45 min, only you can do this)
 
 1. **Create the dev Apps Script project.** Easiest: in the Apps Script editor of the

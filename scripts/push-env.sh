@@ -14,6 +14,15 @@ env="${1:-}"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root/web-app"
 
+# clasp is a DEPLOY-only tool — never needed for tests/CI — so we DON'T pin it as
+# a devDependency (that would make every `npm ci` install a large unused package).
+# Instead we run a PINNED clasp via npx: zero global install, reproducible, and
+# it works out of the box in Google Cloud Shell / any clean environment. The
+# first push in a fresh shell downloads clasp once (then it is cached). Override:
+#   CLASP=clasp                        npm run push:dev   # use a global clasp
+#   CLASP="npx --yes @google/clasp@X"  npm run push:dev   # a different version
+CLASP="${CLASP:-npx --yes @google/clasp@2.4.2}"
+
 restore_prod() { git -C "$repo_root" checkout -- web-app/.clasp.json 2>/dev/null || true; }
 
 case "$env" in
@@ -30,13 +39,13 @@ case "$env" in
     trap restore_prod EXIT            # restore prod .clasp.json even on failure
     cp .clasp.dev.json .clasp.json
     echo "→ Pushing to DEV project…"
-    clasp push -f
+    $CLASP push -f
     echo "✓ DEV push complete (open the dev project's HEAD /dev URL — it is live now)."
     ;;
   prod)
     restore_prod                      # be certain we target the committed prod scriptId
     echo "→ Pushing to PROD project…"
-    clasp push -f
+    $CLASP push -f
     echo "✓ PROD push complete. Reminder: the /exec URL still serves the OLD version"
     echo "  until you cut a New version (Apps Script editor → Deploy → Manage deployments)."
     ;;
