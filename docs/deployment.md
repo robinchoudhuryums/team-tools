@@ -59,6 +59,28 @@ Install the two tools if you don't have them:
 - **Git** — <https://git-scm.com> (on Windows this also gives you **Git Bash**,
   the shell to run these commands in — `push-env.sh` needs bash).
 
+**No admin rights to install Node?** You don't need the installer. Two
+fully user-space options (no UAC prompt, no IT ticket), both keep clasp and the
+whole flow below unchanged:
+
+- **Portable Node (zip):** download the Windows **Binary (.zip)** for the current
+  LTS from <https://nodejs.org/en/download> (NOT the .msi installer), unzip it
+  under your home dir (e.g. `C:\Users\<you>\node-lts\`), then in Git Bash:
+  ```bash
+  echo 'export PATH="$HOME/node-lts:$PATH"' >> ~/.bashrc   # match the unzipped folder name
+  source ~/.bashrc && node -v && npx -v
+  ```
+- **Scoop** (a no-admin package manager). In PowerShell:
+  ```powershell
+  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
+  irm get.scoop.sh | iex
+  scoop install nodejs-lts
+  ```
+
+Avoid the third-party "Apps Script GitHub Assistant" browser extension as a
+Node-free shortcut — it takes OAuth access to both your repo and your scripts,
+which isn't appropriate for a PHI-adjacent tool. Portable Node stays first-party.
+
 Then, in a **writable** folder (NOT your bare home dir if it errors "Permission
 denied" — use e.g. `cd ~/Documents && mkdir -p dev && cd dev`):
 
