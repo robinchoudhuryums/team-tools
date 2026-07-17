@@ -39,11 +39,28 @@ So isolating data + email = the separate dev project pointed at copies + your in
 
 ---
 
-## Prerequisites (one-time — works in Google Cloud Shell or any shell)
+## Prerequisites (one-time)
 
 The `git` / `npm` / push steps run in a shell; everything else (Drive copies,
 Script Properties, cutting versions, running `devScrubRoster_`/`runAllTests`) is
-in the browser. In a fresh shell:
+in the browser.
+
+**Do this on a machine with a normal web browser (your laptop), NOT in Google
+Cloud Shell.** `clasp login` now uses a **localhost browser callback** — Google
+**deprecated the old copy-paste (out-of-band) flow**, so `clasp login
+--no-localhost` fails with "request is invalid". A laptop shell has the browser
+callback; a headless Cloud Shell does not (see the Cloud Shell fallback below).
+
+Install the two tools if you don't have them:
+
+- **Node.js LTS** (gives you `node` / `npm` / `npx`) — <https://nodejs.org> or
+  `winget install --id OpenJS.NodeJS.LTS -e` on Windows. **Reopen your terminal
+  after installing** or `npm`/`npx` stay "command not found".
+- **Git** — <https://git-scm.com> (on Windows this also gives you **Git Bash**,
+  the shell to run these commands in — `push-env.sh` needs bash).
+
+Then, in a **writable** folder (NOT your bare home dir if it errors "Permission
+denied" — use e.g. `cd ~/Documents && mkdir -p dev && cd dev`):
 
 ```bash
 git clone <this repo> && cd team-tools
@@ -58,20 +75,24 @@ Two clasp one-time steps:
 2. **Authenticate as the DEPLOYER account** (the one with edit access to the
    real + copy sheets; the web app runs *as* this account):
    ```bash
-   npx --yes @google/clasp@2.4.2 login --no-localhost
+   npx --yes @google/clasp@2.4.2 login
    ```
-   `--no-localhost` prints a URL → approve in a browser → paste the code back.
-   Required in headless shells (Cloud Shell) that have no local browser callback.
-   The token persists in `~/.clasprc.json`.
+   This opens your browser → approve → the localhost callback stores the token
+   in `~/.clasprc.json`. **Do NOT add `--no-localhost`** — that OOB flow is dead.
 
 You do **not** need a global `clasp` install: `npm run push:dev` / `push:prod`
 run a **pinned** clasp via `npx` (`scripts/push-env.sh`; override with `CLASP=…`).
 The first push in a fresh shell downloads clasp once, then it is cached.
 
-**Cloud Shell note:** `$HOME` (your clone, `web-app/.clasp.dev.json`,
-`~/.clasprc.json`) persists across sessions; a home idle ~120 days is recycled,
-after which you'd just re-clone + `npm install` + `clasp login` again (nothing is
-lost — it's all in git or Google).
+**Cloud Shell fallback (only if you must push from Cloud Shell):** since the OOB
+flow is dead, you can't `clasp login` there directly. Log in on your **laptop
+first** with the SAME pinned version (`npx --yes @google/clasp@2.4.2 login`),
+then copy the resulting `~/.clasprc.json` up to Cloud Shell (it's just the OAuth
+token). Version must match — a `.clasprc.json` from clasp 3.x has a different
+shape and `login --status` will error "Cannot read properties of undefined
+(reading 'access_token')" when read by 2.4.2. `$HOME` in Cloud Shell persists
+across sessions (idle ~120 days is recycled — just re-clone + `npm install` +
+re-copy the creds; nothing is lost, it's all in git or Google).
 
 ## One-time dev setup (~30–45 min, only you can do this)
 
