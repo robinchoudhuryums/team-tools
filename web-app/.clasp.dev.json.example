@@ -1,7 +1,7 @@
 {
   "//": "Copy this file to web-app/.clasp.dev.json (gitignored) and paste your SEPARATE dev Apps Script project's scriptId below. `npm run push:dev` swaps this over .clasp.json, pushes, then restores prod. See docs/deployment.md.",
   "scriptId": "PASTE_YOUR_DEV_SCRIPT_ID_HERE",
-  "rootDir": "",
+  "rootDir": ".",
   "scriptExtensions": [
     ".js",
     ".gs"
