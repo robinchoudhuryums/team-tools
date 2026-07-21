@@ -2620,7 +2620,12 @@ function test_managerSaveDay_mixedChanges() {
 
 function test_managerSaveDay_noChangesIsNoOp() {
   _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
-  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ADJ-ClockIn');
+  // Cycle-9 M-1 regression pin: the ClockIn is a LIVE punch with REAL seconds
+  // (recordPunch writes fmtTimeTz_ 'HH:mm:ss') — the Day Edit client prefills
+  // HH:mm, so the no-op guard must compare on HH:mm. The old full-string
+  // compare read '09:00:27' vs '09:00:00' as a change: seconds truncated,
+  // COMMENTS overwritten to ADJ-ClockIn, spurious PunchEdit audit row.
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:27', 'IN',  'ClockIn');
   _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '17:00:00', 'OUT', 'ADJ-ClockOut');
 
   // Submit the same times — no diff. Note: reason still required at the input

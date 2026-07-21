@@ -3477,6 +3477,13 @@ function cnSubmitActiveForm_(opts) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res.success) {
+        // Cycle-9 M-4: a STRUCTURED failure ({success:false} — enrollment /
+        // validation errors) must run the same teardown as the throw path
+        // below, or a Save & Compose flow wedges: composeFlow blocks every
+        // further submit ("Still saving…") and the envelope overlay sits on
+        // screen until an Esc runs a misleading rollback.
+        CN_STATE.composeFlow = null;
+        cnCloseComposerLoadingIfPending_();
         cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed');
         return;
       }
@@ -6419,7 +6426,10 @@ function cnMgrCoachOnNote_(btn) {
     patientTRX: btn.dataset.patientTrx || '',
     noteId: btn.dataset.noteId || '',
   };
-  if (typeof enterTool === 'function') enterTool('training', 'coaching');
+  // The tool's TOOLS-registry key is 'develop' (label "Training & Employee
+  // Docs") — enterTool returns SILENTLY on an unknown key, so the old
+  // enterTool('training', …) call was a dead no-op (cycle-9 H-1).
+  if (typeof enterTool === 'function') enterTool('develop', 'coaching');
   else if (typeof showToast === 'function') showToast('Open Training → Coaching to log it', 'toast-info');
 }
 

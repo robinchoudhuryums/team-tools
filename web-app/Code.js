@@ -1873,7 +1873,15 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       const cur = currentByType[type];
       if (!cur || !newTime) return;
       const newTimeFull = newTime + ':00';
-      if (cur.time === newTimeFull) return;  // no-op
+      // No-op compare on HH:mm, NOT the full HH:mm:ss (cycle-9 M-1): live
+      // punches store REAL seconds (recordPunch → fmtTimeTz_ 'HH:mm:ss') while
+      // the Day Edit client prefills <input type=time> with HH:mm and submits
+      // every slot. A full-string compare made every untouched live punch
+      // read as "changed" — truncating its seconds to :00, overwriting
+      // COMMENTS to ADJ-{type}, and writing a spurious PunchEdit audit row on
+      // EVERY Day Edit save (S7 violation). The UI can only express HH:mm, so
+      // an equal HH:mm IS unchanged.
+      if (cur.time.substring(0, 5) === newTime) return;  // no-op
       const existing = findExistingPunch_(targetEmp.id, date, type);
       if (!existing) return;
       const oldTime = cur.time;
@@ -5397,6 +5405,12 @@ function sanitizeCallNotePayload_(p) {
     if (tq) subformData.trainingQuestion = tq.slice(0, 2000);
     const cs = Number(rawSub.completionSeconds);
     if (isFinite(cs) && cs > 0) subformData.completionSeconds = Math.round(cs);
+    // Cycle-9 M-3: the intake auto-log note's category chip
+    // (cnIntakePillHtml_ keys off subformData.intakeType) — the M-15
+    // whitelist silently stripped it, so every intake-logged note persisted
+    // un-chipped. Bounded enum only; anything else drops.
+    const it = s(rawSub.intakeType).toLowerCase();
+    if (it === 'ppd' || it === 'pmd' || it === 'pap') subformData.intakeType = it;
     if (Object.keys(subformData).length === 0) subformData = null;
   }
   // Merge tags/flags into subformData so the schema stays in one column

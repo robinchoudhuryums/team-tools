@@ -371,6 +371,25 @@ test('submit failure: does NOT clobber new typing started during the in-flight s
   assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 0, 'failed pending card still removed');
 });
 
+// Cycle 9 · M-4 — a STRUCTURED {success:false} (enrollment/validation error)
+// on a Save & Compose flow hit the success handler's error branch, which —
+// unlike the withFailureHandler throw path — never cleared CN_STATE.composeFlow
+// nor tore down the envelope overlay: every later submit was refused with
+// "Still saving this note…" until the rep Esc'd the stuck envelope (which then
+// ran a misleading rollback). Pin the teardown parity.
+test('C9 M-4: structured {success:false} on Save & Compose clears composeFlow — next submit is not wedged', () => {
+  const h = bootLog();
+  h.setField('cn-fld-issue', 'Compose me');
+  h.window.cnSubmitActiveForm_({ keepForm: true });
+  assert.ok(h.read('CN_STATE.composeFlow'), 'compose flow armed (transactional save)');
+  h.run.flushSuccess({ success: false, error: 'Your call-notes Sheet is not configured' }, 'submitCallNote');
+  assert.strictEqual(h.read('CN_STATE.composeFlow'), null, 'composeFlow cleared on structured failure');
+  assert.strictEqual(h.read('CN_STATE.rollingNotes.length'), 0, 'pending card removed');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Compose me', 'keepForm text still in the form');
+  h.window.cnSubmitActiveForm_();
+  assert.strictEqual(h.run.pending('submitCallNote').length, 1, 'follow-up submit fires — the re-entry guard no longer wedges');
+});
+
 section('DOM harness — flag toggle in-flight guard + revert (INV-56)');
 
 test('double flag-toggle while the first RPC is in flight fires exactly ONE RPC', () => {

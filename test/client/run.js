@@ -666,6 +666,21 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
     assert.strictEqual(JSON.stringify(c.subformData.flags), '["urgent"]', 'urgent preserved in the blob');
     assert.strictEqual(c.flagType, 'urgent', 'validation still sees the extended value; sanitizeFlagType_ strips it from the COLUMN downstream (INV-37)');
   });
+  // Cycle 9 · M-3 — the intake auto-log note marks its category via
+  // subformData.intakeType (the cnIntakePillHtml_ chip) + a top-level
+  // 'intake-<type>' tag. The M-15 whitelist silently stripped intakeType, so
+  // every intake-logged note persisted un-chipped. Pin the bounded enum:
+  // ppd|pmd|pap survive (case-normalized), anything else drops.
+  test('C9 M-3: subformData.intakeType survives the whitelist as a bounded enum', () => {
+    const kept = snCtx.sanitizeCallNotePayload_({ issue: 'x', tags: ['intake-ppd'],
+      subformData: { intakeType: 'ppd' } });
+    assert.strictEqual(kept.subformData.intakeType, 'ppd', 'valid intakeType kept');
+    assert.strictEqual(JSON.stringify(kept.subformData.tags), '["intake-ppd"]', 'top-level intake tag folds in');
+    assert.strictEqual(snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { intakeType: 'PMD' } })
+      .subformData.intakeType, 'pmd', 'case-normalized');
+    assert.strictEqual(snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { intakeType: 'evil<script>' } })
+      .subformData, null, 'off-enum value drops (blob then empty → null)');
+  });
 }
 
 console.log('\nCode.js — CN Timestamp coercion boundary (INV-142) + kbRowStatus_ (INV-147)');
@@ -1202,6 +1217,49 @@ test("every refreshViewIfCurrent('…') literal is a registered tab key", () => 
         f + ": refreshViewIfCurrent('" + m[1] + "') is not a TOOLS tab key");
     });
   });
+});
+
+// Cycle 9 · H-1 — the manager "Coach on this" button called
+// enterTool('training', …) but the Training tool's registry key is 'develop';
+// enterTool returns SILENTLY on an unknown tool key, so the INV-134 deep-link
+// was a dead no-op that nothing surfaced. Pin every enterTool('<toolKey>' literal
+// in the client against the LIVE registry's top-level TOOL keys. The keys are
+// extracted with a brace-depth walk (not a regex char class) so nested tab
+// keys can neither satisfy nor pollute the valid set.
+test("every enterTool('…') literal is a registered TOOL key", () => {
+  const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const toolsBlock = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/);
+  assert.ok(toolsBlock, 'TOOLS registry block found');
+  const body = toolsBlock[0].slice(toolsBlock[0].indexOf('{'));
+  const toolKeys = [];
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '{') { depth++; continue; }
+    if (ch === '}') { depth--; continue; }
+    if (depth === 1) {
+      const m = /^(\w+)\s*:/.exec(body.slice(i));
+      if (m) { toolKeys.push(m[1]); i += m[0].length - 1; }
+    }
+  }
+  assert.ok(toolKeys.length >= 5, 'top-level TOOL keys parsed (got ' + toolKeys.join(',') + ')');
+  const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
+    'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
+    'metrics/script_deptrequests.html', 'intake/script_intake.html', 'kb/script_kb.html',
+    'train/script_training.html', 'train/script_empdocs.html', 'train/script_coaching.html',
+    'script_core.html', 'script_tour.html'];
+  let literalCount = 0;
+  const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  partials.forEach((f) => {
+    const src = stripC(fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'));
+    [...src.matchAll(/enterTool\(\s*'([^']+)'/g)].forEach((m) => {
+      if (m[1].indexOf('${') >= 0) return;  // template-literal interpolation — dynamic key, not a literal
+      literalCount++;
+      assert.ok(toolKeys.indexOf(m[1]) >= 0,
+        f + ": enterTool('" + m[1] + "') is not a registered TOOL key (registry keys: " + toolKeys.join(',') + ')');
+    });
+  });
+  assert.ok(literalCount >= 3, 'enterTool literals found (scan is armed — got ' + literalCount + ')');
 });
 
 console.log('\nscript_core — Manage module gating (admin tier)');

@@ -1555,17 +1555,25 @@ function loadCoverageStrip_() {
   const slot = document.getElementById('clk-shift-cov');
   if (!slot) return;
   const today = isoDateTz(empTz());
-  if (CLK_COVERAGE_CACHE.date === today && CLK_COVERAGE_CACHE.data) {
-    if (currentView === 'clock') renderCoverageStrip_(slot, CLK_COVERAGE_CACHE.data);
-    return;
-  }
+  // Cycle-9 M-6 — SWR, matching CLK_NOTEVOL_CACHE (F6): the old cache-hit
+  // early-return froze "N% logged · File N missing" for the WHOLE day — the
+  // documented nav-away-and-back refresh path re-entered here and hit the
+  // cache, so a rep who filed the missing notes kept seeing the stale CTA
+  // until reload/midnight (worst in the pinned all-shift pop-out). Paint the
+  // cache instantly, then ALWAYS refetch in the background — getMyMetrics is
+  // server-result-cached 5 min (L-1), so the refetch is quota-cheap and the
+  // strip is now at most ~5 min stale instead of all-day.
+  const hadCache = CLK_COVERAGE_CACHE.date === today && !!CLK_COVERAGE_CACHE.data;
+  if (hadCache && currentView === 'clock') renderCoverageStrip_(slot, CLK_COVERAGE_CACHE.data);
   google.script.run
     .withSuccessHandler(function (data) {
-      if (!data || data.error) { slot.innerHTML = ''; return; }
+      // Keep the last-good render on an error response (blank only when we
+      // had nothing to show — the pre-SWR behavior for a cold miss).
+      if (!data || data.error) { if (!hadCache) slot.innerHTML = ''; return; }
       CLK_COVERAGE_CACHE = { date: today, data };
       if (currentView === 'clock') renderCoverageStrip_(slot, data);
     })
-    .withFailureHandler(function () { slot.innerHTML = ''; })
+    .withFailureHandler(function () { if (!hadCache) slot.innerHTML = ''; })
     .getMyMetrics(today);
 }
 

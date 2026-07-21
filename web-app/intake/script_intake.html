@@ -2296,13 +2296,18 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
   if (onView) intakeShowNoteDraftModal_(label, text);
 
   // Best-effort history write — reuses the rep-callable submitCallNote (locked +
-  // audited server-side). Marked via subformData.intakeType (chip) + a tag.
+  // audited server-side). Marked via subformData.intakeType (chip) + a TOP-LEVEL
+  // tags array: sanitizeCallNotePayload_ reads tags from p.tags only and
+  // whitelists subformData keys (INV-143) — intakeType is on that whitelist
+  // (bounded ppd|pmd|pap enum); tags nested inside subformData are dropped
+  // (the cycle-9 M-3 regression: both chip + tag silently vanished at submit).
   var notePayload = {
     caller: '',
     patientAndTrx: patient,
     issue: label + ' intake submitted',
     resolution: 'Emailed to ' + (recipient || 'N/A') + (codes.length ? ' · Rec: ' + codes.join(', ') : ''),
-    subformData: { intakeType: ft, tags: ['intake-' + ft] }
+    tags: ['intake-' + ft],
+    subformData: { intakeType: ft }
   };
   google.script.run
     .withSuccessHandler(function (res) {
