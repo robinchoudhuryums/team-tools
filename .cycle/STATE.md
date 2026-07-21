@@ -2,11 +2,100 @@
 
 ## Current
 Cycle: 9
-Phase: implement — fresh broad-scan (8-agent fan-out + personal verification of the High + all 11 Mediums, all confirmed / 0 retracted: 0 Critical / 1 High / 11 Medium / ~36 Low). Operator selected H-1, M-1, M-3, M-4, M-6 → ALL FIVE implemented on claude/broad-scan-5eoypm. Pure 291/0, DOM 61/0, node --check clean; all 3 new tests bite-checked.
+Phase: implement — batch 2 done. Batch 1 (H-1, M-1, M-3, M-4, M-6) + batch 2 ("Batch 1 & 2" of the ranked backlog: M-2, M-5, M-9, M-10, L-34, L-36 + M-8, M-11, L-20, L-17) ALL implemented on claude/broad-scan-5eoypm. Pure 295/0, DOM 61/0, node --check clean (incl. DevTools.js now in CI); 6 bite-checks total.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 2
-Updated: 2026-07-21 (cycle-9 scan + first fix batch)
+Updated: 2026-07-21 (cycle-9 scan + fix batches 1-2)
+
+## Cycle 9 — batch 2: M-2, M-5, M-8, M-9, M-10, M-11, L-17, L-20, L-34, L-36 (2026-07-21, same branch)
+- M-2 | Code.js | managerSubmitTimeOff: thrown balance write now DELETES the
+  just-appended Approved row before rethrowing (retry starts clean; the old
+  strand blocked retry via the dup-guard and made Deny→re-Approve credit a
+  deduction that never happened). fixPtoReconciliation: restructured to
+  PER-BUCKET neutralize→credit units, each with a compensating revert-to-
+  'Approved' on a thrown credit — a failed bucket re-detects/re-credits on
+  re-run; a committed bucket can't double-credit (rows no longer 'Approved');
+  partial commit writes a best-effort audit row before the rethrow. Happy-path
+  behavior/return shape byte-compatible (annual then sick, same keys).
+- M-5 | cn/script_callnotes.html | external composer resolves a preset
+  History/pinned note via cnFindNoteAnywhere_ and pins it atop the note-ref
+  dropdown — the linkage (externalEmails[] stamp / manager recipient lookup)
+  no longer silently drops to "None (standalone email)".
+- M-8 | Code.js + train/script_empdocs.html + Tests.js | fields-only empdoc
+  completions now write an append-only DocSignatures row with an EMPTY
+  signature cell + a completion hash (empDocSignatureHash_ with '' sig; cert
+  kind:'completion'); EmpDocCompleted audit row carries hash=. verifyDocSignature
+  detects the empty-sig row → {completed:true, signed:false, match, tampered};
+  legacy pre-ship completions (no row) still report unsigned/legacy, never
+  tampered. Client verify toast distinguishes completion vs signature. NEW
+  editor test test_empdocs_fieldsOnlyCompletionHash (clean verify + ResponsesJson
+  rewrite → tampered).
+- M-9 | test/client/run.js | the refreshViewIfCurrent tripwire's [^}]* →
+  [^{}]* (the tour test's corrected form) + leaf-key asserts
+  (clock/timeoff/callNotes/manage must parse) so the regression class itself
+  is pinned. Bite-checked.
+- M-10 | run.js + dom/boot.js | metrics/script_deptrequests.html +
+  train/script_coaching.html added to the parse-guard list (now the named
+  PARSE_GUARD_PARTIALS const), the DOM PARTIALS (index.html include order),
+  and the M3 scan list. NEW auto-derive tripwire: every index.html-include()d
+  partial with a <script> block must be in PARSE_GUARD_PARTIALS. Bite-checked.
+- M-11 | run.js + Tests.js | coachCanManagerSee_ Node unit test (stubbed
+  lookupEmployeeById_; creator/column-M/unrelated/blank-narrows/non-manager/
+  no-roster — all six INV-134 rules) — bite-checked against a weakened helper.
+  NEW editor test test_coaching_createAckVoidFlowAndScoping (create→owner-sees→
+  cross-rep denied→live-item scoping→ack+idempotent→void→hidden→VoidReason in
+  the HR column) + _cleanupCoachingRows_ helper.
+- L-17 | Code.js | getTrainingDashboard itemTitle_ drops DRAFT KB items
+  (parity with getMyTraining/overdue digest per L-9 — managers no longer nag
+  reps about items they can't open).
+- L-20 | Code.js | kbDeleteItem snapshots the FINAL row content to KbRevisions
+  (action 'delete', best-effort) before deleteRow — a mistaken admin delete is
+  recoverable by manual copy; an undelete endpoint stays a follow-on.
+- L-34 | .github/workflows/client-tests.yml | node --check web-app/DevTools.js.
+- L-36 | Tests.js | CN fixture pins LOCALE alongside tz (createPinnedSpreadsheet_
+  parity; a coercing deployer locale made the fixture exercise the ISO-T
+  coercion paths unlike a production per-rep sheet).
+
+## Pending / not yet done
+- Cycle-9 backlog remaining (ranked batches 3-7 in the session transcript):
+  Batch 3 concurrency/automation edges (M-7 email-loop-in-lock + no-MailApp
+  tripwire, L-18 brief suppression window, L-19 heartbeat RMW lock, L-6
+  getFormByToken unlocked status write, L-4 manager future-time guard, L-2
+  coverage emailless-row filter); Batch 4 client UX Lows (L-23, L-25..L-33);
+  Batch 5 bounded reads (L-1, L-3, L-9, L-13, L-14, L-16, L-21, L-22);
+  Batch 6 server hygiene (L-5, L-7, L-8, L-11, L-12, L-15); Batch 7 test pins
+  (L-35, payload-contract tripwire, showView-literal extension). Roadmap-tier:
+  archived-month visibility.
+- /sync-docs owed: coverage-strip gotcha → SWR (batch 1); INV-143 +intakeType
+  (batch 1); INV-135 — fields-only completions now hashed (M-8 amends "the
+  responses are attested" to hold for BOTH paths; legacy completions report
+  null); Test Command section (+enterTool tripwire, +PARSE_GUARD auto-derive,
+  +coachCanManagerSee_ pins, M-9 regex note, DevTools in CI); the "parse-guards
+  every JS-bearing partial" claim is now TRUE again (M-10).
+- OPERATOR (deploy): one `cd web-app && clasp push -f` + New version. NO new
+  Script Properties / triggers / migrations. Editor runSmokeTests/runAllTests —
+  suite grew by 2 (test_empdocs_fieldsOnlyCompletionHash,
+  test_coaching_createAckVoidFlowAndScoping); test_managerSaveDay_noChangesIsNoOp
+  changed (live-seconds fixture) and test_fixPtoReconciliation_creditsAndIdempotent
+  exercises the restructured per-bucket path (behavior-compatible).
+- Then /reflect when the operator calls the cycle done.
+
+## Decisions made (batch 2 — so the next session doesn't re-litigate)
+- M-2 fixPtoReconciliation: PER-BUCKET compensated units (annual then sick),
+  NOT all-rows-then-credit — a partial failure must neither double-credit on
+  re-run (bucket committed = rows off 'Approved') nor go invisible (bucket
+  failed = rows reverted to 'Approved'). A partial commit writes its audit row
+  best-effort before the rethrow.
+- M-8: the completion artifact REUSES empDocSignatureHash_ with an empty
+  signature segment (no new hash function; recompute stays byte-stable via the
+  stored responsesRaw cell). An empty SIGNATURE cell in DocSignatures is the
+  completion-row marker — do not "fix" that to a placeholder string.
+- M-8 back-compat: legacy fields-only completions (no sig row) intentionally
+  report {signed:false} with NO completed key — same as pre-fix; never tampered.
+- M-11 Node stub mirrors the production contract (lookupEmployeeById_
+  lowercases managerEmail at read) — keep the stub lowercase if the roster
+  reader ever changes.
 
 ## Cycle 9 — scan + fix batch H-1, M-1, M-3, M-4, M-6 (2026-07-21, claude/broad-scan-5eoypm)
 Scan-time scores: Overall 8 · Correctness 8 · Security 9 · Data Integrity 8 ·

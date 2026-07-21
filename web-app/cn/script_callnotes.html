@@ -9424,7 +9424,17 @@ function cnBuildExternalEmailHtml_() {
 
   // Note reference dropdown
   var noteOptions = '<option value="">None (standalone email)</option>';
-  var notes = CN_STATE.rollingNotes || [];
+  var notes = (CN_STATE.rollingNotes || []).slice();
+  // Cycle-9 M-5: a composer opened FOR a History/pinned note (dept→External
+  // tab switch, win-back nudge) had no matching <option> — the select
+  // silently fell back to "None (standalone email)" and the send dropped the
+  // note linkage (the externalEmails[] stamp / manager recipient lookup /
+  // card pill never happened). Resolve the preset note from any cache
+  // (rolling / history / pinned) and pin it to the top of the list.
+  if (c.noteId && !notes.some(function (n) { return n.noteId === c.noteId; })) {
+    var presetNote = (typeof cnFindNoteAnywhere_ === 'function') ? cnFindNoteAnywhere_(c.noteId) : null;
+    if (presetNote) notes.unshift(presetNote);
+  }
   notes.forEach(function (n) {
     if (n._pending) return;
     var label = (n.caller || n.patientAndTrx || 'Note') + ' — ' + cnFormatTimestampForCopy_(n.timestamp);

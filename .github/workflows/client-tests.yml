@@ -31,10 +31,11 @@ jobs:
       - name: Install dev dependencies (jsdom for the DOM harness)
         run: npm ci
 
-      - name: Syntax-check server JS (Code.js / Tests.js)
+      - name: Syntax-check server JS (Code.js / Tests.js / DevTools.js)
         run: |
           node --check web-app/Code.js
           node --check web-app/Tests.js
+          node --check web-app/DevTools.js
 
       # Zero-dependency pure harness runs first (the always-on floor — green even
       # if the jsdom install ever fails).

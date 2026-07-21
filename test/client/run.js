@@ -25,20 +25,45 @@ function test(name, fn) {
 // syntax error elsewhere in a partial (e.g. a stray token) would otherwise slip
 // past CI — this is the cheap net that catches it across the whole client.
 console.log('\nclient — all partials parse (<script> syntax guard)');
-[
+// Cycle-9 M-10: this list is now tripwired against index.html's include()
+// calls (below) — a newly-included JS-bearing partial that isn't added here
+// fails CI instead of silently shipping outside the parse net (the class
+// that let metrics/script_deptrequests + train/script_coaching fall out of
+// every harness list).
+const PARSE_GUARD_PARTIALS = [
   'script_core.html', 'script_icons.html', 'metrics/script_metrics.html',
+  'metrics/script_deptrequests.html',
   'cn/script_callnotes.html', 'tc/script_clock.html', 'tc/script_timesheet.html',
   'tc/script_timeoff.html', 'tc/script_manager.html', 'index.html', 'form_public.html',
   'intake/script_intake.html',
   'kb/script_kb.html',
   'train/script_training.html',
   'train/script_empdocs.html',
+  'train/script_coaching.html',
   'script_tour.html',
-].forEach((f) => {
+];
+PARSE_GUARD_PARTIALS.forEach((f) => {
   test(f + ' parses', () => {
     const src = extractScript(f);
     assert.ok(src.trim().length > 0, 'has a <script> block');
     new vm.Script(src, { filename: f });  // throws on a syntax error
+  });
+});
+
+// Cycle-9 M-10 — the parse-guard list auto-tracks index.html. Every partial
+// include()'d by the shell that carries a <script> block MUST be in
+// PARSE_GUARD_PARTIALS; a new module's partial can no longer ship outside
+// the net with CI green. (styles/modals have no <script>; form_public.html
+// is standalone — not include()'d — and is listed explicitly above.)
+test('every JS-bearing include()d partial is in the parse-guard list', () => {
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  const included = [...idx.matchAll(/include\('([^']+)'\)/g)].map((m) => m[1] + '.html');
+  assert.ok(included.length >= 10, 'index.html include() calls parsed (got ' + included.length + ')');
+  included.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+    if (!/<script[\s>]/i.test(src)) return;   // style/markup-only partial
+    assert.ok(PARSE_GUARD_PARTIALS.indexOf(f) >= 0,
+      f + ' is include()d with a <script> block but missing from PARSE_GUARD_PARTIALS (and probably the DOM/M3 lists too)');
   });
 });
 
@@ -610,6 +635,34 @@ test('coachParseTs_ parses BOTH stamp forms (space + T) and NaNs garbage', () =>
   assert.strictEqual(ms, Date.UTC(2026, 0, 1, 9, 0, 0), 'space form parses');
   assert.strictEqual(sb.coachParseTs_('2026-01-01T09:00:00'), ms, 'T form parses identically');
   assert.ok(isNaN(sb.coachParseTs_('garbage')), 'garbage → NaN (falsy for the overdue guards)');
+});
+// Cycle 9 · M-11 — the INV-134 fail-closed team-scoping boundary
+// (coachCanManagerSee_) had ZERO tests at any layer while its structurally
+// identical EmpDocs twin (empDocCanManagerSee_) is fully pinned. Unit-pin the
+// scoping rules with a stubbed roster. The stub mirrors the production
+// contract: lookupEmployeeById_ lowercases managerEmail at read.
+test('C9 M-11: coachCanManagerSee_ — creator OR roster column-M manager; blank narrows; fail-closed', () => {
+  const cctx = { String, Boolean };
+  vm.createContext(cctx);
+  vm.runInContext(
+    'var __roster = {};\nfunction lookupEmployeeById_(id) { return __roster[String(id)] || null; }',
+    cctx, { filename: 'coachSee#stub' });
+  vm.runInContext(extractRawFunction('Code.js', 'coachCanManagerSee_'), cctx, { filename: 'Code.js#coachCanManagerSee_' });
+  const see = (caller, item, roster) => { cctx.__roster = roster || {}; return cctx.coachCanManagerSee_(caller, item); };
+  const item = { empId: 'E1', createdBy: 'Creator@X.com' };
+  assert.strictEqual(see({ isManager: false, email: 'creator@x.com' }, item), false,
+    'a non-manager is denied even as the creator');
+  assert.strictEqual(see({ isManager: true, email: 'CREATOR@x.COM' }, item), true,
+    'the creator is allowed (case-insensitive, no roster row needed)');
+  assert.strictEqual(see({ isManager: true, email: 'boss@x.com' }, item,
+    { E1: { managerEmail: 'boss@x.com' } }), true, 'the roster column-M manager is allowed');
+  assert.strictEqual(see({ isManager: true, email: 'other@x.com' }, item,
+    { E1: { managerEmail: 'boss@x.com' } }), false,
+    'an unrelated manager is denied — MANAGER_EMAILS membership alone grants nothing');
+  assert.strictEqual(see({ isManager: true, email: 'boss@x.com' }, item,
+    { E1: { managerEmail: '' } }), false, 'a blank ManagerEmail NARROWS to creator only (fail-closed)');
+  assert.strictEqual(see({ isManager: true, email: 'boss@x.com' }, item), false,
+    'a missing roster row denies (fail-closed)');
 });
 test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-only parseTimestampMs_', () => {
   ['getCoachingDashboard', 'coachUnackedAll_'].forEach((fn) => {
@@ -1201,15 +1254,26 @@ console.log('\nscript_core — view-key literals match the TOOLS registry (M3 tr
 test("every refreshViewIfCurrent('…') literal is a registered tab key", () => {
   const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
     'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
-    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'train/script_empdocs.html', 'script_core.html'];
+    'metrics/script_deptrequests.html',
+    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'train/script_empdocs.html',
+    'train/script_coaching.html',
+    'script_core.html'];
   // TOOLS / VIEW_TO_TOOL are top-level consts (lexical, not on the sandbox
   // global), so parse the tab keys from the registry source: every tab entry
   // carries an `enter:` handler.
   const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
   const toolsBlock = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/);
   assert.ok(toolsBlock, 'TOOLS registry block found');
-  const validKeys = [...toolsBlock[0].matchAll(/(\w+):\s*\{[^}]*enter:\s*'/g)].map((m) => m[1]);
+  // [^{}]* (not [^}]*) so the match can't cross into a nested object — the
+  // old class let the match run from a TOOL wrapper key into its tabs:{}
+  // block, capturing tool keys instead of tab keys (cycle-9 M-9: the tripwire
+  // was false-permissive for exactly the H-1 wrong-key class; the tour test
+  // below had the corrected form all along).
+  const validKeys = [...toolsBlock[0].matchAll(/(\w+):\s*\{[^{}]*enter:\s*'/g)].map((m) => m[1]);
   assert.ok(validKeys.length >= 10, 'TOOLS registry tab keys parsed (got ' + validKeys.length + ')');
+  ['clock', 'timeoff', 'callNotes', 'manage'].forEach((k) => {
+    assert.ok(validKeys.indexOf(k) >= 0, 'leaf TAB key ' + k + ' parsed (the [^}]* regression captured tool wrappers instead)');
+  });
   partials.forEach((f) => {
     const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
     [...src.matchAll(/refreshViewIfCurrent\('([^']+)'/g)].forEach((m) => {

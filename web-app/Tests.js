@@ -341,20 +341,31 @@ function setupTestEnvironment() {
       break;
     }
   }
-  // Pin the test Sheet's timezone to the ADP sheet's (both create and reuse
-  // paths). DateLocal strings are coerced to Dates in the CN sheet's tz but
-  // recovered by normalizeDate_ in the ADP tz — a mismatched fixture tz shifts
-  // every date-filtered read by a day (count/coverage/getMyCallNotes/digests
-  // all silently return nothing). Mirrors provisionCallNotesSheet's tz pin.
+  // Pin the test Sheet's timezone AND locale to the ADP sheet's (both create
+  // and reuse paths). DateLocal strings are coerced to Dates in the CN sheet's
+  // tz but recovered by normalizeDate_ in the ADP tz — a mismatched fixture tz
+  // shifts every date-filtered read by a day (count/coverage/getMyCallNotes/
+  // digests all silently return nothing). Cycle-9 L-36: the LOCALE pin joins
+  // the tz pin — production per-rep sheets go through createPinnedSpreadsheet_
+  // (tz+locale, INV-141), while the bare SpreadsheetApp.create above inherits
+  // the DEPLOYER's locale; a coercing locale would make the fixture exercise
+  // the ISO-T coercion paths differently than a production sheet (the
+  // formTokenCellMs_/cnTimestampString_ class), masking or faking failures.
   if (_TEST_CN_SS_ID) {
     try {
-      const adpTz = getAdpSS_().getSpreadsheetTimeZone();
+      const adpSsHandle = getAdpSS_();
+      const adpTz = adpSsHandle.getSpreadsheetTimeZone();
+      const adpLocale = adpSsHandle.getSpreadsheetLocale();
       const cnSsHandle = SpreadsheetApp.openById(_TEST_CN_SS_ID);
       if (cnSsHandle.getSpreadsheetTimeZone() !== adpTz) {
         cnSsHandle.setSpreadsheetTimeZone(adpTz);
         Logger.log('  CN fixture tz aligned to ADP tz: ' + adpTz);
       }
-    } catch (e) { Logger.log('  CN fixture tz align skipped: ' + e.message); }
+      if (adpLocale && cnSsHandle.getSpreadsheetLocale() !== adpLocale) {
+        cnSsHandle.setSpreadsheetLocale(adpLocale);
+        Logger.log('  CN fixture locale aligned to ADP locale: ' + adpLocale);
+      }
+    } catch (e) { Logger.log('  CN fixture tz/locale align skipped: ' + e.message); }
   }
 
   // Provision the CDR fixture (best-effort — a hiccup here shouldn't block the
@@ -951,6 +962,8 @@ function _runAllTests() {
   _integrationTest('training_assignCompleteFlow',               test_training_assignCompleteFlow);
   _integrationTest('training_quizFlow',                         test_training_quizFlow);
   _integrationTest('empdocs_issueSignVerifyFlow',               test_empdocs_issueSignVerifyFlow);
+  _integrationTest('empdocs_fieldsOnlyCompletionHash',          test_empdocs_fieldsOnlyCompletionHash);
+  _integrationTest('coaching_createAckVoidFlowAndScoping',      test_coaching_createAckVoidFlowAndScoping);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
   _integrationTest('intake_previewPPD_returnsHashAndRecs',      test_intake_previewPPD_returnsHashAndRecs);
@@ -4975,6 +4988,125 @@ function test_empdocs_issueSignVerifyFlow() {
       if (docId) _cleanupEmpDocRows_(docId);
     }
   });
+}
+
+/** Cycle-9 M-8 — a fields-only (no-signature) doc's completion now writes the
+ *  same tamper-evidence artifact class as a signature: an empty-signature
+ *  DocSignatures row whose hash attests the responses. Verify must confirm a
+ *  clean completion and detect an out-of-band ResponsesJson rewrite. */
+function test_empdocs_fieldsOnlyCompletionHash() {
+  _withTestHrDocs_(function () {
+    let docId = null;
+    try {
+      const issued = _asUser(_TEST_MGR_EMAIL, function () {
+        return issueDoc({
+          empId: _TEST_INDIA_ID, docType: 'other', title: 'TEST_EMPDOC Self-review',
+          bodyMd: 'Fill in your comments.', requiresSignature: false,
+          fields: [{ label: 'Comments', type: 'text', required: true }],
+        });
+      });
+      _assertTrue(issued && issued.success, 'fields-only doc issued');
+      docId = issued.docId;
+      const fieldId = findEmpDocRow_(docId).doc.fields[0].id;
+
+      const responses = {}; responses[fieldId] = 'All targets met';
+      const done = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, '', responses); });
+      _assertTrue(done && done.success, 'owner completes the fields-only doc');
+
+      // A completion row exists (empty signature) and verify reports a clean,
+      // hash-matched COMPLETION — not a signature.
+      let v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertEq(v.completed, true,  'verify reports a completion row');
+      _assertEq(v.signed,    false, 'a completion is not reported as signed');
+      _assertEq(v.match,     true,  'completion hash matches');
+      _assertEq(v.tampered,  false, 'clean completion is not tampered');
+
+      // Out-of-band rewrite of the stored responses → hash mismatch → tampered.
+      const found = findEmpDocRow_(docId);
+      getHrDocsSS_().getSheetByName(EMPDOC_TAB).getRange(found.rowIdx, ED.RESPONSES + 1)
+        .setValue(JSON.stringify({ [fieldId]: 'REWRITTEN AFTER COMPLETION' }));
+      v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertEq(v.match, false,   'responses rewrite breaks the completion hash');
+      _assertEq(v.tampered, true, 'tamper flag fires on a responses rewrite');
+    } finally {
+      if (docId) _cleanupEmpDocRows_(docId);
+    }
+  });
+}
+
+/** Cycle-9 M-11 — the Coaching create→ack→void integration flow + the
+ *  INV-134 fail-closed team scoping (the empDocCanManagerSee_ twin had a full
+ *  flow test; coachCanManagerSee_ had ZERO coverage at any layer). */
+function test_coaching_createAckVoidFlowAndScoping() {
+  _withTestHrDocs_(function () {
+    let coachId = null;
+    try {
+      const created = _asUser(_TEST_MGR_EMAIL, function () {
+        return createCoaching({
+          empId: _TEST_INDIA_ID, severity: 'minor', patientTRX: 'TEST_TRX_1',
+          whatHappened: 'TEST_COACH what happened', whatShould: 'TEST_COACH what should',
+        });
+      });
+      _assertTrue(created && created.success, 'coaching item created');
+      coachId = created.coachId;
+
+      // Owner sees it; another rep does not; another rep cannot ack it.
+      const mine = _asUser(_TEST_INDIA_EMAIL, function () { return getMyCoaching(); });
+      _assertNotNull((mine.items || []).filter(function (c) { return c.coachId === coachId; })[0],
+        'owner sees the item in My Coaching');
+      const phList = _asUser(_TEST_PH_EMAIL, function () { return getMyCoaching(); });
+      _assertEq((phList.items || []).filter(function (c) { return c.coachId === coachId; }).length, 0,
+        'another rep never sees it');
+      const phAck = _asUser(_TEST_PH_EMAIL, function () { return acknowledgeCoaching(coachId); });
+      _assertFailure(phAck, 'not found', 'another rep cannot acknowledge it');
+
+      // INV-134 scoping on the LIVE item (unit — mirrors the empdocs test):
+      // creator allowed; a manager who is neither creator nor the roster
+      // column-M ManagerEmail is denied (column M is blank for the test rep).
+      const item = findCoachingRow_(coachId).item;
+      _assertEq(coachCanManagerSee_({ isManager: true, email: item.createdBy }, item), true,
+        'creator manager is allowed');
+      _assertEq(coachCanManagerSee_({ isManager: true, email: 'some-other-manager@example.invalid' }, item), false,
+        'non-creator/non-listed manager is denied (fail-closed)');
+      _assertEq(coachCanManagerSee_({ isManager: false, email: item.createdBy }, item), false,
+        'a non-manager is denied even as creator');
+
+      // Owner acks; a second ack is a friendly idempotent no-op.
+      const ack = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeCoaching(coachId); });
+      _assertTrue(ack && ack.success, 'owner acknowledges');
+      const ack2 = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeCoaching(coachId); });
+      _assertTrue(ack2 && ack2.success && ack2.alreadyAcknowledged === true, 'second ack is idempotent');
+
+      // Creator voids; the item leaves the owner's list (void hidden).
+      const voided = _asUser(_TEST_MGR_EMAIL, function () { return voidCoaching(coachId, 'TEST void reason'); });
+      _assertTrue(voided && voided.success, 'creator voids');
+      const mine2 = _asUser(_TEST_INDIA_EMAIL, function () { return getMyCoaching(); });
+      _assertEq((mine2.items || []).filter(function (c) { return c.coachId === coachId; }).length, 0,
+        'voided item hidden from the owner list');
+      // M-6 (cycle 8): the void reason lives ONLY in the HR store's VoidReason
+      // column — confirm it landed there (and, per INV-134, is not in the
+      // content-free audit row, which carries coachId only).
+      const rowAfter = findCoachingRow_(coachId);
+      _assertNotNull(rowAfter, 'voided row still on record (never deleted)');
+      const storedReason = String(getHrDocsSS_().getSheetByName(COACH_TAB)
+        .getRange(rowAfter.rowIdx, CO.VOID_REASON + 1).getValue() || '');
+      _assertEq(storedReason, 'TEST void reason', 'void reason persisted in the HR store column');
+    } finally {
+      if (coachId) _cleanupCoachingRows_(coachId);
+    }
+  });
+}
+
+/** Deletes TEST coaching rows by coachId (the _cleanupEmpDocRows_ pattern). */
+function _cleanupCoachingRows_(coachId) {
+  try {
+    const sheet = getHrDocsSS_().getSheetByName(COACH_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, CO.COACH_ID + 1).getValues();
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (String(data[i][CO.COACH_ID]).trim() === coachId) sheet.deleteRow(i + 2);
+    }
+  } catch (e) { Logger.log('coaching cleanup failed: ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

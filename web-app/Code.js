@@ -1394,7 +1394,24 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
     let newBalance = null;
     if (autoApprove && getFlag_('enablePtoTracking')) {
       const dedu = getLeaveDeduction_(type);
-      if (dedu.bucket) newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
+      if (dedu.bucket) {
+        try {
+          newBalance = adjustLeaveBalance_(empId, dedu.bucket, -dedu.days);
+        } catch (balErr) {
+          // Cycle-9 M-2 (the updateTimeOffStatus compensating-revert pattern):
+          // the Approved row is already appended — without removing it, a
+          // retry is blocked by hasActiveTimeOffOnDate_ and the natural
+          // Deny → re-Approve recovery CREDITS a deduction that never
+          // happened (balance permanently one day high). Delete the
+          // just-appended row so a retry starts clean — safe under the
+          // ScriptLock (no concurrent appender can interleave).
+          try { toSheet.deleteRow(toSheet.getLastRow()); } catch (revertErr) {
+            Logger.log('managerSubmitTimeOff: row revert after balance failure ALSO failed (' +
+              revertErr.message + ') — the TimeOffRequests last row may need manual removal.');
+          }
+          throw balErr;
+        }
+      }
     }
 
     writeAuditLog_(targetEmp, 'TimeOffRequest', date, '', false, 0,
@@ -1544,47 +1561,75 @@ function fixPtoReconciliation(empId) {
     }
 
     let creditAnnual = 0, creditSick = 0;
-    const toReconcile = [];   // 1-based row indices of the over-charge rows
+    const reconRows = { annual: [], sick: [] };   // 1-based row indices per bucket
     Object.keys(byDate).forEach(function (d) {
       const list = byDate[d];
       if (list.length < 2) return;
       if (ptoLegitHalfDayPair_(list)) return;   // F(L-4): legitimate pair — never neutralize
       list.sort(function (a, b) { return b.days - a.days; });   // canonical = list[0]
       for (let k = 1; k < list.length; k++) {
-        if (list[k].bucket === 'annual') creditAnnual += list[k].days;
-        else if (list[k].bucket === 'sick') creditSick += list[k].days;
-        toReconcile.push(list[k].rowIndex);
+        if (list[k].bucket === 'annual') { creditAnnual += list[k].days; reconRows.annual.push(list[k].rowIndex); }
+        else if (list[k].bucket === 'sick') { creditSick += list[k].days; reconRows.sick.push(list[k].rowIndex); }
       }
     });
     creditAnnual = Math.round(creditAnnual * 100) / 100;
     creditSick   = Math.round(creditSick * 100) / 100;
 
-    if (toReconcile.length === 0) {
+    if (reconRows.annual.length + reconRows.sick.length === 0) {
       return { success: true, fixed: false, message: 'No duplicate approved rows to reconcile.' };
     }
 
-    // Neutralize the extras FIRST (idempotency), then credit the balances.
-    toReconcile.forEach(function (ri) {
-      sheet.getRange(ri, TO.STATUS + 1).setValue('Reconciled');
-    });
-    // Note (M-1 interaction): adjustLeaveBalance_ now no-ops for a PtoEnabled=FALSE
-    // contractor, so the rows are still neutralized (status→Reconciled) but the
-    // credit returns null. That's the right call going forward (contractors no
-    // longer accrue drift). Any pre-M-1 contractor over-charge that needs an
-    // actual balance credit must be corrected by a manual sheet edit — surface
-    // it via the balance line in the dashboard rather than re-enabling PTO.
+    // Cycle-9 M-2 — neutralize + credit PER BUCKET, each as its own
+    // compensated unit (the updateTimeOffStatus revert pattern). The old
+    // shape neutralized ALL rows first, then credited: a thrown credit left
+    // the rows 'Reconciled' (no longer detectable) with the over-charge
+    // never returned — permanently invisible to both the detector and a
+    // re-run. Now a failed bucket reverts ITS rows to 'Approved' and
+    // rethrows, so a re-run re-detects and re-credits cleanly; an earlier
+    // bucket that already committed stays committed (its audit row is
+    // written best-effort before the rethrow) and can never double-credit
+    // because its rows are no longer 'Approved'. All inside the ScriptLock.
+    //
+    // Note (M-1 interaction): adjustLeaveBalance_ RETURNS NULL (no throw) for
+    // a PtoEnabled=FALSE contractor, so their rows still neutralize with no
+    // credit — the right call going forward (contractors no longer accrue
+    // drift). Any pre-M-1 contractor over-charge needing an actual balance
+    // credit remains a manual sheet edit.
     let newAnnual = null, newSick = null;
-    if (creditAnnual > 0) newAnnual = adjustLeaveBalance_(empId, 'annual', creditAnnual);
-    if (creditSick > 0)   newSick   = adjustLeaveBalance_(empId, 'sick', creditSick);
+    let doneAnnual = 0, doneSick = 0, rowsDone = 0;
+    [{ bucket: 'annual', rows: reconRows.annual, credit: creditAnnual },
+     { bucket: 'sick',   rows: reconRows.sick,   credit: creditSick }].forEach(function (u) {
+      if (u.rows.length === 0) return;
+      u.rows.forEach(function (ri) { sheet.getRange(ri, TO.STATUS + 1).setValue('Reconciled'); });
+      try {
+        const nb = (u.credit > 0) ? adjustLeaveBalance_(empId, u.bucket, u.credit) : null;
+        if (u.bucket === 'annual') { newAnnual = nb; doneAnnual = u.credit; }
+        else { newSick = nb; doneSick = u.credit; }
+        rowsDone += u.rows.length;
+      } catch (balErr) {
+        u.rows.forEach(function (ri) {
+          try { sheet.getRange(ri, TO.STATUS + 1).setValue('Approved'); } catch (revertErr) {
+            Logger.log('fixPtoReconciliation: row revert after credit failure ALSO failed (' +
+              revertErr.message + ') — row ' + ri + ' may need a manual status fix.');
+          }
+        });
+        if (rowsDone > 0) {
+          writeAuditLog_(target, 'PtoReconciliationFix', '', '', false, 0,
+            `creditedAnnual=${doneAnnual}; creditedSick=${doneSick}; rowsReconciled=${rowsDone}; partial=${u.bucket}-bucket-failed`,
+            callerEmp.email);
+        }
+        throw balErr;
+      }
+    });
 
     writeAuditLog_(target, 'PtoReconciliationFix', '', '', false, 0,
-      `creditedAnnual=${creditAnnual}; creditedSick=${creditSick}; rowsReconciled=${toReconcile.length}`,
+      `creditedAnnual=${doneAnnual}; creditedSick=${doneSick}; rowsReconciled=${rowsDone}`,
       callerEmp.email);
 
     return {
       success: true, fixed: true,
-      creditedAnnual: creditAnnual, creditedSick: creditSick,
-      rowsReconciled: toReconcile.length,
+      creditedAnnual: doneAnnual, creditedSick: doneSick,
+      rowsReconciled: rowsDone,
       newAnnual: newAnnual, newSick: newSick,
     };
   } catch (err) { return { success: false, error: err.message }; }
@@ -15035,7 +15080,22 @@ function kbDeleteItem(id) {
     const last = sheet.getLastRow();
     if (last >= 2) {
       const ids = sheet.getRange(2, 1, last - 1, 1).getValues();
-      for (let i = 0; i < ids.length; i++) { if (String(ids[i][0]) === id) { sheet.deleteRow(i + 2); break; } }
+      for (let i = 0; i < ids.length; i++) {
+        if (String(ids[i][0]) === id) {
+          // Cycle-9 L-20: snapshot the FINAL content to KbRevisions before the
+          // row disappears — delete was the one content-destroying action with
+          // no revision trail (a mistaken admin delete permanently lost the
+          // article; kbRevertItem needs a live row, so even earlier snapshots
+          // were unreachable). Best-effort (kbAppendRevision_ self-swallows) —
+          // a revision-log failure never blocks the delete. Restoring is a
+          // manual copy from KbRevisions today; an undelete endpoint is a
+          // follow-on.
+          const prior = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
+          kbAppendRevision_(prior, emp.email, 'delete');
+          sheet.deleteRow(i + 2);
+          break;
+        }
+      }
     }
     invalidateKbCache_();
     writeAuditLog_(emp, 'KbItemDelete', '', '', false, 0, 'id=' + id, emp.email);
@@ -16227,7 +16287,14 @@ function getTrainingDashboard() {
     const quizzes = trainReadQuizzes_();
     const allAttempts = trainReadAttempts_(null);
     function itemTitle_(a) {
-      if (a.itemType === 'kb') return titles[a.itemId] ? titles[a.itemId].title : null;
+      // Cycle-9 L-17: drop DRAFT KB items — getMyTraining and the overdue
+      // digest already do (L-9), so the dashboard was counting/overdue-
+      // flagging items reps cannot see on their checklist or open at all
+      // (managers nagged reps about literally uncompletable items).
+      if (a.itemType === 'kb') {
+        const t = titles[a.itemId];
+        return (t && t.status !== KB_STATUS_DRAFT) ? t.title : null;
+      }
       if (a.itemType === 'quiz') return quizzes[a.itemId] ? quizzes[a.itemId].title : null;
       return null;
     }
@@ -17120,10 +17187,27 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
         'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
     } else {
       // Fields-only doc (no signature): completing the fields is the action.
+      // Cycle-9 M-8 — the completion now writes the SAME tamper-evidence
+      // artifact class as a signature: an append-only DocSignatures row
+      // (empty signature cell) whose hash covers
+      // contentHash|empId|docId|(empty sig)|ackVersion(+responses), so an
+      // out-of-band rewrite of the stored ResponsesJson is detectable by
+      // verifyDocSignature. Before this, a completed fields-only doc had
+      // ZERO integrity artifact in a store whose premise is tamper evidence
+      // (INV-135's "responses are attested" held only for signature docs).
+      // Back-compat: docs completed before this ship have no row — verify
+      // reports them as unsigned/legacy (null match), never as tampered.
+      const compHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, '', EMPDOC_ACK_VERSION, responsesRaw);
+      const compCert = JSON.stringify({
+        docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION, kind: 'completion',
+        alg: 'SHA-256', covers: 'contentHash|empId|docId|(no signature)|ackVersion' + (responsesRaw ? '|responses' : ''),
+      });
+      getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
+        .appendRow([d.docId, d.empId, ts, '', EMPDOC_ACK_VERSION, compHash, compCert]);
       sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('completed');
       sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
       writeAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
-        'docId=' + d.docId + '; completedAt=' + ts);
+        'docId=' + d.docId + '; hash=' + compHash + '; completedAt=' + ts);
     }
     notifyEmpDocSigned_(d, emp);
     return { success: true, signedAt: ts };
@@ -17272,6 +17356,12 @@ function verifyDocSignature(docId) {
       }
     }
     if (!sigRow) return { signed: false, contentMatch: contentMatch, tampered: (contentMatch === false) };
+    const rowSig = String(sigRow[EDS.SIGNATURE] || '');
+    // Cycle-9 M-8: an EMPTY signature cell marks a fields-only COMPLETION row
+    // (acknowledgeDoc's else-branch) — same hash machinery, no signature
+    // segment. Report it as completed (not signed) so consumers don't render
+    // a signature that doesn't exist; match/tampered semantics identical.
+    const isCompletion = !rowSig.trim();
     const storedHash = String(sigRow[EDS.SIG_HASH] || '').trim();
     // F(cycle-8): mirror acknowledgeDoc's blank-stored-hash fallback — the
     // sign path hashes with `d.contentHash || <freshly computed>`, so a
@@ -17279,7 +17369,7 @@ function verifyDocSignature(docId) {
     // used to recompute against '' here and report a FALSE tampered:true.
     const recomputed = empDocSignatureHash_(
       d.contentHash || expectContent, d.empId, d.docId,
-      String(sigRow[EDS.SIGNATURE] || ''), String(sigRow[EDS.ACK_VERSION] || ''), d.responsesRaw);
+      rowSig, String(sigRow[EDS.ACK_VERSION] || ''), d.responsesRaw);
     const match = storedHash ? storedHash === recomputed : null;
     // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
     // consistent body+contentHash rewrite trips `match` (the signature hash
@@ -17289,7 +17379,8 @@ function verifyDocSignature(docId) {
     // remains the deeper independent witness. (legacy/unsigned → null, not
     // tampered.)
     return {
-      signed: true,
+      signed: !isCompletion,
+      completed: isCompletion,
       contentMatch: contentMatch,
       match: match,
       tampered: (contentMatch === false || match === false),
