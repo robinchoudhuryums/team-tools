@@ -1340,6 +1340,12 @@ function uiConfirm(opts) {
       if (!dlgs.length || dlgs[dlgs.length - 1] !== overlay) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); cleanup(false); }
       else if (e.key === 'Enter' && !e.shiftKey) {
+        // Cycle-9 L-32: the KB drawer is EXEMPT from the dialog focus trap
+        // (z-55, above the dialog) and Ctrl/⌘+K still opens it while a dialog
+        // is up — an Enter aimed at the drawer's search box used to confirm a
+        // danger dialog (delete punch / deny PTO) from a keystroke that never
+        // targeted it. Let the drawer keep its Enter.
+        if (e.target && e.target.closest && e.target.closest('#kb-drawer')) return;
         // Enter activates the FOCUSED button: a keyboard user who Tabs to
         // Cancel and presses Enter must get cancel — confirming from the
         // Cancel button fired destructive actions (delete punch, deny PTO)

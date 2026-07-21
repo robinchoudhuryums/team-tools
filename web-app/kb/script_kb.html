@@ -1812,7 +1812,14 @@ function kbDrawerSearch_(q) {
       body.innerHTML = html;
       kbHighlightTerms_(body, q);
     })
-    .withFailureHandler(function () { if (seq === KB_DRAWER.searchSeq) kbDrawerSetSearching_(false); })
+    .withFailureHandler(function () {
+      // Cycle-9 L-25: parity with the Reference-tab twin's cycle-8 fix — the
+      // drawer (the mid-call surface where a rep most needs to know) used to
+      // just stop the spinner, leaving the old body with zero feedback.
+      if (seq !== KB_DRAWER.searchSeq) return;
+      kbDrawerSetSearching_(false);
+      showToast('Reference search failed — check your connection and try again', 'toast-error');
+    })
     .searchReference(q);
 }
 

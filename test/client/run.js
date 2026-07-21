@@ -1109,6 +1109,51 @@ test('branded builders never throw on null / empty inputs', () => {
   assert.doesNotThrow(() => brandedKvRows_([['x', null], [null, undefined]]));
 });
 
+// Cycle 9 · M-7 — NO mail send may be reachable inside a locked region. A
+// MailApp send is ~0.3–0.5s (an '*' training assignment looped the WHOLE
+// roster), and every mutating write shares ONE global ScriptLock with a 15s
+// waitLock ceiling — mail inside the lock starves punch/note writes (the
+// kbUploadImage / 6pm-archive class). The converted sites defer via a
+// `notifyAfter = function () { … };` closure that the finally invokes AFTER
+// releaseLock — those closures (and the explicit allowlist) are the only
+// exemptions. Two-level scan: inventory every function whose body touches
+// MailApp., then flag any locked try-region (waitLock → last finally) that
+// references one outside a notifyAfter closure.
+test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock notifyAfter + allowlist exempt)', () => {
+  const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const funcs = {};
+  const fre = /^function (\w+)\(/gm;
+  let fm;
+  while ((fm = fre.exec(codeSrc))) {
+    let i = codeSrc.indexOf('{', fre.lastIndex - 1), depth = 0, j = i;
+    for (; j < codeSrc.length; j++) {
+      if (codeSrc[j] === '{') depth++;
+      else if (codeSrc[j] === '}') { depth--; if (depth === 0) break; }
+    }
+    funcs[fm[1]] = codeSrc.slice(fm.index, j + 1);
+  }
+  const senders = Object.keys(funcs).filter((n) => stripC(funcs[n]).indexOf('MailApp.') >= 0);
+  assert.ok(senders.length >= 15, 'mail-sender inventory armed (got ' + senders.length + ')');
+  // Deliberate in-lock senders, each with a load-bearing reason:
+  const ALLOWLIST = {
+    emailFromCallNote: 'INV-42 — send-then-stamp is one locked unit: the send outcome decides success:false vs stamp, and the stamp must not race a concurrent edit',
+  };
+  const offenders = [];
+  Object.keys(funcs).forEach((n) => {
+    const sb = stripC(funcs[n]);
+    if (sb.indexOf('waitLock(') < 0) return;
+    const finIdx = sb.lastIndexOf('finally');
+    if (finIdx < 0) return;
+    let region = sb.slice(sb.indexOf('waitLock('), finIdx);
+    region = region.replace(/notifyAfter = function \(\) \{[^{}]*\};/g, '');
+    const hits = senders.filter((s) => new RegExp('\\b' + s + '\\s*\\(').test(region));
+    if (region.indexOf('MailApp.') >= 0) hits.push('MailApp.');
+    if (hits.length && !ALLOWLIST[n]) offenders.push(n + ' → ' + hits.join(','));
+  });
+  assert.deepStrictEqual(offenders, [],
+    'mail reachable inside a locked region — move it to a post-lock notifyAfter closure (or allowlist it WITH a reason): ' + offenders.join(' | '));
+});
+
 console.log('\nCode.js — automation trigger wiring is self-consistent (#3 coupling tripwire)');
 // Guards the class of bug that bit purgeOldCallNotes: a ScriptApp.newTrigger('X')
 // whose handler is missing from the TARGETS arrays. TARGETS drives BOTH the
@@ -3352,6 +3397,14 @@ test('the brief suppresses exactly the four daily manager streams — never the 
     const src = extractRawFunction('Code.js', h);
     assert.ok(/managerBriefSuppressionActive_\s*\(/.test(src),
       h + ' must gate suppression on managerBriefSuppressionActive_ (flag + live heartbeat)');
+    // Cycle-9 L-18: the digest call sites additionally require a LIVE brief
+    // trigger ({checkTrigger:true} — visible in their trigger context, where
+    // the runner is the installer). A manual editor run of the brief stamps a
+    // fresh heartbeat with no trigger behind it; without this the four
+    // digests suppressed into a ~26h silent-outage window the briefConfig
+    // detector cannot see (suppression reads active).
+    assert.ok(/managerBriefSuppressionActive_\(\s*\{\s*checkTrigger:\s*true\s*\}\s*\)/.test(src),
+      h + ' must pass {checkTrigger:true} (the L-18 manual-run window)');
     assert.ok(!/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(src),
       h + ' must NOT gate on the bare flag (the M-11 silent-outage class)');
   });
@@ -3362,6 +3415,15 @@ test('the brief suppresses exactly the four daily manager streams — never the 
   assert.ok(/managerBrief/.test(helperSrc) && /DIGEST_LAST_RUN_PROP/.test(helperSrc),
     'helper consults the managerBrief heartbeat');
   assert.ok(/return false/.test(helperSrc), 'helper fails safe (returns false on any doubt)');
+  // L-18: the trigger check lives behind opts.checkTrigger and fails toward
+  // NOT suppressing (a doubled email beats a silent outage); the PANEL
+  // detector must stay argless — a viewing manager isn't the installer, so
+  // getProjectTriggers() would false-alarm in that context.
+  assert.ok(/checkTrigger/.test(helperSrc) && /getProjectTriggers/.test(helperSrc),
+    'helper carries the opts.checkTrigger trigger-existence branch');
+  const detectorSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
+  assert.ok(/!managerBriefSuppressionActive_\(\)/.test(detectorSrc),
+    'the briefConfig detector calls the helper ARGLESS (no trigger check in viewer context)');
   // The failure watchdog is deliberately NOT consolidated (it's what reports
   // a dead brief trigger) and the weekly digests stay weekly.
   ['sendAutomationHealthDigest', 'sendCallNotesWeeklyDigests'].forEach((h) => {

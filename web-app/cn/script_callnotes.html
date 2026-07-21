@@ -2684,6 +2684,14 @@ function cnWireActiveForm_() {
       }
       if (e.key === 'Escape' && !e.defaultPrevented) {
         if (document.querySelector('.overlay.open')) return;
+        // Cycle-9 L-29: the KB drawer is NOT an .overlay (z-55, designed to
+        // stay open while typing in the form). A rep pressing Esc to dismiss
+        // the drawer — focus back in a field — used to ALSO clear their
+        // in-progress note (the shell's document-level handler then closed
+        // the drawer too: one keystroke, both actions). Let the drawer close
+        // take the keystroke; a second Esc clears the form.
+        const kbd = document.getElementById('kb-drawer');
+        if (kbd && kbd.classList.contains('open')) return;
         e.preventDefault();
         cnClearActiveForm_();
       }
@@ -4577,6 +4585,12 @@ function cnReloadPinnedTray_() {
         cnRenderFilterBar_();
       }
     })
+    .withFailureHandler(function () {
+      // Cycle-9 L-28: this is the AUTHORITATIVE tray reload (also invoked
+      // from the pin toggle's revert path) — a silent transport failure left
+      // stale/optimistically-reverted tray state with no signal.
+      if (currentView === requestedView) showToast('Could not refresh pinned notes', 'toast-error');
+    })
     .getMyPinnedCallNotes();
 }
 
@@ -5667,7 +5681,16 @@ function cnMaybeWinbackNudge_(noteId, callerName) {
       var msgEl = document.getElementById('cnX-message'); if (msgEl) msgEl.value = body;
       var nameEl = document.getElementById('cnX-name'); if (nameEl && callerName) nameEl.value = String(callerName).trim();
       var subjEl = document.getElementById('cnX-subject');
-      if (subjEl && !subjEl.value.trim()) { subjEl.value = 'Before you go — we’d value your feedback'; c.subject = subjEl.value; }
+      // Cycle-9 L-27: the modal always renders a NON-empty auto-generated
+      // subject ("UMS — Documents for …"), so the old empty-only check could
+      // never fire and every win-back went out under the generic documents
+      // subject. Replace when the current value is empty OR still the
+      // auto-pattern (the cnExtAutoUpdateSubject_ rule) — a manager-typed
+      // custom subject is left alone.
+      if (subjEl && (!subjEl.value.trim() || /^UMS\s*—\s*(Documents for|Form Request for)\s/i.test(subjEl.value.trim()))) {
+        subjEl.value = 'Before you go — we’d value your feedback';
+        c.subject = subjEl.value;
+      }
     });
   });
 }
@@ -6150,6 +6173,10 @@ function cnRenderManageView(area) {
           icon('flag', 12) + ' ' + res.count + ' unresolved action flag' + (res.count === 1 ? '' : 's') + ' across all reps</div>';
       }
     })
+    // Cycle-9 L-28: the badge is ambient — no toast on failure (a landing
+    // nag would be worse than a missing badge), but attach a handler so the
+    // failure is at least observable in the console instead of vanishing.
+    .withFailureHandler(function (err) { console.warn('unresolved-badge fetch failed: ' + ((err && err.message) || err)); })
     .managerGetUnresolvedActionCount();
   // Compliance audit deep-link (#3): if the Admin audit panel set a pending
   // drill, open the Per-Rep view for that rep+date instead of the default
@@ -8030,6 +8057,10 @@ function cnLoadAuditPanel_() {
       sel.innerHTML = '<option value="">All reps</option>' + res.reps.map(function (r) {
         return '<option value="' + esc(r.id) + '">' + esc(r.name) + '</option>';
       }).join('');
+    })
+    .withFailureHandler(function () {
+      // Cycle-9 L-28: the rep filter silently stayed "All reps" with no hint.
+      if (currentView === 'callNotesAdmin') showToast('Could not load the rep filter list', 'toast-error');
     })
     .getEnrolledCallNotesReps();
   cnRunAuditSearch_();

@@ -534,8 +534,11 @@ function mRenderMyStats_(data) {
   var el = document.getElementById('m-my-content');
   if (!el) return;
 
-  if (data.error) {
-    el.innerHTML = '<div class="m-empty">' + esc(data.error) + '</div>';
+  // Cycle-9 L-26: null-guard BEFORE .error — a null/undefined payload threw
+  // here, stranding the loSweep loader (the throw landed only in the error
+  // beacon, invisible to the rep). Same guard shape as spanishRender_.
+  if (!data || data.error) {
+    el.innerHTML = '<div class="m-empty">' + esc((data && data.error) || 'No data returned — try again.') + '</div>';
     return;
   }
   M_STATE.myData = data;
@@ -942,8 +945,9 @@ function mRenderTeamMetrics_(data) {
   var el = document.getElementById('m-team-content');
   if (!el) return;
 
-  if (data.error) {
-    el.innerHTML = '<div class="m-empty">' + esc(data.error) + '</div>';
+  // Cycle-9 L-26: null-guard BEFORE .error (see mRenderMyStats_).
+  if (!data || data.error) {
+    el.innerHTML = '<div class="m-empty">' + esc((data && data.error) || 'No data returned — try again.') + '</div>';
     return;
   }
 

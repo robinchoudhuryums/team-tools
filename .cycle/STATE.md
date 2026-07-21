@@ -2,11 +2,86 @@
 
 ## Current
 Cycle: 9
-Phase: implement — batch 2 done. Batch 1 (H-1, M-1, M-3, M-4, M-6) + batch 2 ("Batch 1 & 2" of the ranked backlog: M-2, M-5, M-9, M-10, L-34, L-36 + M-8, M-11, L-20, L-17) ALL implemented on claude/broad-scan-5eoypm. Pure 295/0, DOM 61/0, node --check clean (incl. DevTools.js now in CI); 6 bite-checks total.
+Phase: implement — ranked batches 3-4 done (after scan batch + ranked batches 1-2 + the batch-1/2 /sync-docs). Implemented on claude/broad-scan-5eoypm: M-7 (mail out of the lock, 9 sites + tripwire), L-18 (suppression checkTrigger), L-19 (heartbeat RMW lock), L-6 (locked expired write), L-4 (manager future-time guards), L-2 (coverage email filter), and client Lows L-23, L-25..L-33. Pure 296/0, DOM 61/0, node --check ×3 clean; 8 bite-checks total this cycle.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 2
-Updated: 2026-07-21 (cycle-9 scan + fix batches 1-2)
+Updated: 2026-07-21 (cycle-9 batches 3-4)
+
+## Cycle 9 — batches 3-4 (2026-07-21, same branch)
+Batch 3 (concurrency + automation edges):
+- M-7 | Code.js + run.js | NO mail inside the global ScriptLock: 9 sites
+  converted to a `notifyAfter` closure invoked in the finally AFTER
+  releaseLock (updateTimeOffStatus, managerSubmitTimeOff, submitCallNote,
+  saveTrainingAssignment — the '*' roster-loop headline — acknowledgeDoc,
+  issueDoc, releaseDoc, createCoaching, acknowledgeCoaching). NEW two-level
+  tripwire: inventory functions touching MailApp., then flag any locked
+  try-region referencing one outside a notifyAfter closure; ALLOWLIST =
+  emailFromCallNote ONLY (INV-42 send-then-stamp is one locked unit).
+  Bite-checked (re-inlining one notify fails CI).
+- L-18 | Code.js + run.js | managerBriefSuppressionActive_({checkTrigger:true})
+  at the FOUR digest call sites additionally requires a live
+  sendManagerDailyBrief trigger (visible in trigger context — the runner is
+  the installer); the PANEL briefConfig detector stays ARGLESS (a viewing
+  manager isn't the installer — getProjectTriggers would false-alarm). Fail
+  direction on any check miss: NOT suppressed (doubled email beats silent
+  outage). Closes the manual-brief-run ~26h suppression window the detector
+  couldn't see. Suppression tripwire extended (checkTrigger at all 4 sites +
+  argless detector). Bite-checked.
+- L-19 | Code.js | stampDigestLastRun_ RMW under tryLock(3000) fail-open
+  (the kbAiTryReserveSpend_ pattern) — concurrent 8am digests could drop
+  each other's heartbeat stamp.
+- L-6 | Code.js | getFormByToken's mark-expired now RE-LOCATES the row by
+  token under tryLock(2000) — the pre-lock rowIndex could go stale against
+  the 3am purge's descending deleteRows (wrong token marked expired /
+  submitted status clobbered). tryLock: never block the public visitor.
+- L-4 | Code.js | managerSaveDay + managerSaveDayRange reject same-day
+  FUTURE times (recordPunch/adjust-queue parity, target-emp tz; HH:mm vs
+  HH:mm:ss lexicographic compare is correct). Edge documented: a
+  pre-existing future punch now blocks even its no-op re-save (deliberate).
+- L-2 | Code.js | getCoveragePlan skips roster rows with no email (sibling
+  parity) — name-only offboarded/placeholder rows counted as full shifts.
+Batch 4 (client UX / silent-degradation Lows):
+- L-23 intake "Open Call Notes" closes the modal first (intakeOpenCallNotes_);
+- L-25 drawer search failure toasts (tab-twin parity); L-26 metrics renderers
+  null-guard before .error (stranded loader); L-27 win-back subject replaces
+  the AUTO-pattern subject too (was dead code — the auto subject is never
+  empty; custom subjects untouched); L-28 failure handlers on the 3 bare RPCs
+  (pinned-tray toast, ambient badge console-only, audit rep-filter toast);
+  L-29 Esc with the KB drawer open closes the drawer WITHOUT clearing the
+  note (drawer-open check before cnClearActiveForm_); L-30 PTO submit from a
+  pinned day popover resets dayPopoverPinned (hover-open no longer dies);
+  L-31 _covSeq/_punctSeq same-view range-race tokens (INV-146 class);
+  L-32 uiConfirm Enter from inside #kb-drawer no longer confirms a danger
+  dialog; L-33 mgr-timeoff-overlay backdrop-click close (sibling parity).
+
+## Pending / not yet done
+- Cycle-9 backlog remaining: Batch 5 bounded reads (L-1, L-3, L-9, L-13,
+  L-14, L-16, L-21, L-22); Batch 6 server hygiene (L-5, L-7, L-8, L-11,
+  L-12, L-15); Batch 7 test pins (L-35, payload-contract tripwire,
+  showView-literal extension). Roadmap-tier: archived-month visibility;
+  KB undelete endpoint.
+- /sync-docs owed for batches 3-4: INV-151 (+checkTrigger digest-site
+  semantics + the doubled-email tradeoff), the "Fire-and-forget email"
+  gotcha + Test Command section (+M-7 post-lock notifyAfter pattern +
+  no-mail-in-lock tripwire + allowlist), INV-127 (+email-required roster
+  filter), INV-05/108 note (manager same-day future-time guards), INV-83
+  (L-32 drawer Enter exemption), 8c hover-popover note (L-30).
+- OPERATOR (deploy): one `cd web-app && clasp push -f` + New version. NO new
+  Script Properties / triggers / migrations (L-18 reads existing triggers).
+  Editor runSmokeTests/runAllTests (suite unchanged from batch 2's 268-ish
+  count; no new editor tests in batches 3-4).
+- Then /reflect to close cycle 9.
+
+## Decisions made (batches 3-4)
+- M-7 allowlist: emailFromCallNote is the ONLY sanctioned in-lock sender
+  (INV-42 send-then-stamp atomicity). New in-lock mail = move it to a
+  notifyAfter closure or allowlist WITH a reason (tripwire enforces).
+- L-18 fail direction: any trigger-check miss/error → NOT suppressed. A
+  manual digest run by a non-installer now double-emails for that run
+  (deliberate fail-safe; counted as the batch's 1 new failure mode).
+- L-4 edge: a pre-existing same-day FUTURE punch blocks its own no-op
+  re-save in Day Edit (forces cleanup; rare — only pre-fix corruption).
 
 ## Cycle 9 — batch 2: M-2, M-5, M-8, M-9, M-10, M-11, L-17, L-20, L-34, L-36 (2026-07-21, same branch)
 - M-2 | Code.js | managerSubmitTimeOff: thrown balance write now DELETES the

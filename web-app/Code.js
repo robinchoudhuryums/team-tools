@@ -1282,6 +1282,7 @@ function getManagerDashboard() {
 function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
@@ -1346,13 +1347,10 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         writeAuditLog_(targetForAudit, 'TimeOffStatusChange', date, '', false, 0,
           `${oldStatus}→${newStatus} (${type})`, callerEmp.email);
 
-        // Email the employee (best-effort, fire-and-forget)
-        if (oldStatus !== newStatus) {
-          try {
-            if (targetEmp && targetEmp.email) {
-              notifyEmployeeOfDecision_(targetEmp, date, type, notes, newStatus);
-            }
-          } catch (e) { console.warn('Employee notify failed: ' + e.message); }
+        // Email the employee (best-effort — cycle-9 M-7: fires post-lock in
+        // the finally so the send never holds the global ScriptLock).
+        if (oldStatus !== newStatus && targetEmp && targetEmp.email) {
+          notifyAfter = function () { notifyEmployeeOfDecision_(targetEmp, date, type, notes, newStatus); };
         }
 
         return { success: true, newBalance };
@@ -1360,7 +1358,11 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
     }
     return { success: false, error: 'Request not found (may have been modified).' };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Manager files a time-off request on behalf of an employee.
@@ -1368,6 +1370,7 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
 function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager)
@@ -1418,18 +1421,19 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
       `${type}${notes ? ' — ' + notes : ''} (filed by manager${autoApprove ? ', auto-approved' : ''})`,
       callerEmp.email);
 
-    // Only notify employee when auto-approving (Pending is just a queued item, no need to email yet)
-    if (autoApprove) {
-      try {
-        if (targetEmp.email) {
-          notifyEmployeeOfDecision_(targetEmp, date, type, notes || '', status);
-        }
-      } catch (e) { console.warn('Employee notify failed: ' + e.message); }
+    // Only notify employee when auto-approving (Pending is just a queued item,
+    // no need to email yet). Cycle-9 M-7: fires post-lock in the finally.
+    if (autoApprove && targetEmp.email) {
+      notifyAfter = function () { notifyEmployeeOfDecision_(targetEmp, date, type, notes || '', status); };
     }
 
     return { success: true, newBalance, status };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Manager-gated, read-only. Detects PTO balance drift from the H1 bug class:
@@ -1871,6 +1875,23 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       cleanSlots[type] = raw;
     }
 
+    // Cycle-9 L-4 — same-day future times: recordPunch and the employee
+    // adjust queue both reject them (INV-05 / cycle-7 L-2) but the manager
+    // writers didn't, so a Day Edit could write a mid-afternoon 23:00
+    // ClockOut that immediately feeds live-status ("clocked_out" while the
+    // rep is working) and today's-hours. HH:mm-vs-HH:mm:ss lexicographic
+    // compare is correct ('17:01' > '17:00:33'; '17:00' < '17:00:33').
+    // Edge: a PRE-EXISTING future punch (written before this guard) now
+    // blocks even a no-op re-save of its slot — deliberate; blank or fix it.
+    if (daysBack === 0) {
+      const nowTime = fmtTimeTz_(new Date(), empTz);
+      for (let k = 0; k < PUNCH_LABELS_.length; k++) {
+        const t = cleanSlots[PUNCH_LABELS_[k]];
+        if (t && t > nowTime)
+          return { success: false, error: `Cannot set a future time today (${PUNCH_LABELS_[k]} ${t}).` };
+      }
+    }
+
     // Reason requirement
     const trimmedReason = String(reason || '').trim();
     if (daysBack > CONFIG.OLD_ADJUST_ALERT_DAYS && !trimmedReason) {
@@ -2000,6 +2021,7 @@ function exportAdpRange(startDate, endDate) {
 function submitCallNote(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Employee not found.' };
@@ -2045,13 +2067,17 @@ function submitCallNote(payload) {
     const createdNote = callNoteRowToObject_({ row, rowIndex: sheet.getLastRow() });
 
     if (flagType === 'training' && cleaned.subformData && cleaned.subformData.trainingQuestion) {
-      try { notifyManagerTrainingQuestion_(emp, cleaned.subformData.trainingQuestion, dateLocal); }
-      catch (_) {}
+      // Cycle-9 M-7: fires post-lock in the finally.
+      notifyAfter = function () { notifyManagerTrainingQuestion_(emp, cleaned.subformData.trainingQuestion, dateLocal); };
     }
 
     return { success: true, note: createdNote };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Updates an existing call note's content. Inline-edit support for the
@@ -7100,7 +7126,24 @@ function getFormByToken(token) {
     // never be served against a token with no expiry. (Unparseable already
     // fail-closed via ms==null, S2.1; absent was the fail-OPEN asymmetry.)
     if (!expFB.present || expFB.ms == null || Date.now() > expFB.ms) {
-      try { sheet.getRange(located.rowIndex, FT.STATUS + 1).setValue('expired'); } catch (_) {}
+      // Cycle-9 L-6: mark-expired under a brief lock, RE-LOCATING the row by
+      // token first — this was the one unlocked mutating write in the token
+      // lifecycle, and the pre-lock rowIndex can go stale if the 3am
+      // purgeExpiredFormData's descending deleteRows land between locate and
+      // write (marking an UNRELATED pending token expired, or clobbering a
+      // submitted status). tryLock, never waitLock: this is a best-effort
+      // status flip on a public endpoint — don't block the visitor on lock
+      // contention (the row simply stays 'pending'-but-expired, which every
+      // reader already treats as expired via the ExpiresAt check).
+      try {
+        const xlock = LockService.getScriptLock();
+        if (xlock.tryLock(2000)) {
+          try {
+            const fresh = findFormTokenRow_(sheet, token);
+            if (fresh) sheet.getRange(fresh.rowIndex, FT.STATUS + 1).setValue('expired');
+          } finally { try { xlock.releaseLock(); } catch (_) {} }
+        }
+      } catch (_) {}
       return { error: 'This form link has expired. Please contact UMS to request a new one.' };
     }
 
@@ -8595,7 +8638,7 @@ function sendDailyMissedPunchAlerts() {
     // summary rides the 8am brief instead — the EMPLOYEE reminders above are
     // never suppressed (the rep still needs the nudge to fix their punch).
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
-    if (managerBriefSuppressionActive_()) {
+    if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       Logger.log('Missed-punch manager summary: consolidated into the daily brief.');
       return;
     }
@@ -8773,6 +8816,16 @@ const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
 /** Best-effort heartbeat stamp ({ key: "yyyy-MM-dd HH:mm:ss" in
  *  CONFIG.TIMEZONE }) — never blocks or fails the digest itself. */
 function stampDigestLastRun_(key) {
+  // Cycle-9 L-19: the read-modify-write of the shared heartbeat blob runs
+  // under a brief tryLock (the kbAiTryReserveSpend_ pattern) — the urgent
+  // digest and the brief both fire at manager-tz 8am, and two concurrent
+  // unlocked RMWs could drop each other's stamp (a ~24h-stale value = a false
+  // "stale digest" line in the failure digest, or a fail-safe doubled email
+  // via suppression reading stale). Fail-OPEN on lock contention: a missed
+  // stamp beats a digest blocked on its own best-effort heartbeat.
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(3000); } catch (_) {}
   try {
     const props = PropertiesService.getScriptProperties();
     let map = {};
@@ -8781,6 +8834,7 @@ function stampDigestLastRun_(key) {
     map[key] = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
     props.setProperty(DIGEST_LAST_RUN_PROP, JSON.stringify(map));
   } catch (e) { /* heartbeat is best-effort */ }
+  finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
 }
 
 /** F(cycle-8 M-11): the four digest-suppression branches gate on THIS, never
@@ -8794,7 +8848,7 @@ function stampDigestLastRun_(key) {
  *  every 8am run, even while the flag is off — INV-151) is younger than 26h.
  *  Missing/stale/unparseable heartbeat → FAIL SAFE: the individual digests
  *  keep sending (a doubled email beats a silent outage). */
-function managerBriefSuppressionActive_() {
+function managerBriefSuppressionActive_(opts) {
   if (!getFlag_('managerDailyBrief')) return false;
   try {
     let map = {};
@@ -8802,7 +8856,30 @@ function managerBriefSuppressionActive_() {
     const raw = String((map && map.managerBrief) || '');
     if (!raw) return false;
     const ms = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
-    return (Date.now() - ms) < 26 * 3600000;
+    if (!((Date.now() - ms) < 26 * 3600000)) return false;
+    // Cycle-9 L-18: the heartbeat proves "the handler RAN", not "a trigger
+    // exists" — a manual editor/console run of sendManagerDailyBrief stamps
+    // it, opening a ~26h window where the four digests suppress but no 8am
+    // brief will ever fire (the silent-outage class M-11 closed, re-opened by
+    // a manual run; the briefConfig detector can't see it because suppression
+    // reads active). The four DIGEST call sites pass {checkTrigger:true}: in
+    // their trigger context the runner IS the installer, so
+    // ScriptApp.getProjectTriggers() sees the brief trigger. The PANEL
+    // detector must NOT pass it — a viewing manager isn't the installer, so
+    // every trigger is invisible in that context and the check would false-
+    // alarm. Fail direction on any trigger-check miss/error: NOT suppressed
+    // (a doubled manager email beats a silent outage — the M-11 decision).
+    if (opts && opts.checkTrigger) {
+      try {
+        const trigs = ScriptApp.getProjectTriggers();
+        let found = false;
+        for (let i = 0; i < trigs.length; i++) {
+          if (String(trigs[i].getHandlerFunction()) === 'sendManagerDailyBrief') { found = true; break; }
+        }
+        if (!found) return false;
+      } catch (e) { return false; }
+    }
+    return true;
   } catch (e) { return false; }
 }
 
@@ -8983,7 +9060,7 @@ function sendCallNotesUrgentDigest() {
     // ride the 8am brief instead. Still stamp the heartbeat — the trigger ran
     // and made its (suppressed) decision; a dead trigger stays detectable.
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
-    if (managerBriefSuppressionActive_()) {
+    if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       stampDigestLastRun_('urgent');
       Logger.log('Urgent digest: consolidated into the daily brief.');
       return;
@@ -9127,7 +9204,7 @@ function sendTrainingOverdueDigest() {
     // nudge rides the 8am brief instead — but the employee-side reminders
     // below always send (the deadline reminds both sides, INV-135).
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
-    if (managerBriefSuppressionActive_()) {
+    if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       Logger.log('Training-overdue manager nudge: consolidated into the daily brief.');
     } else {
       mgrEmails.forEach(function (email) {
@@ -10260,6 +10337,13 @@ function getCoveragePlan(fromDate, toDate) {
     for (let i = 1; i < roster.length; i++) {
       const name = String(roster[i][EMP.NAME] || '').trim();
       if (!name) continue;
+      // Cycle-9 L-2: skip rows with no email — every sibling roster walk
+      // (getManagerDashboard, getTeammateStatus, getEmployeesList,
+      // computeMissedClockOuts_) does. Coverage assumes presence from the
+      // SCHEDULE alone, so an offboarded/placeholder row (name kept, email
+      // cleared) silently counted as a full working shift every day,
+      // inflating the confirmed band against COVERAGE_MIN_STAFF/GOOD.
+      if (!String(roster[i][EMP.EMAIL] || '').trim()) continue;
       const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
       // Turn D: per-rep column-O override (INV-127's per-tz-only limitation removed).
       const schedRaw = String(roster[i][EMP.SCHEDULE] || '').trim();
@@ -11227,7 +11311,7 @@ function sendDeptRequestReminderDigest() {
     // list rides the 8am brief instead. Stamp the heartbeat first — the
     // trigger ran; a dead trigger stays detectable.
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
-    if (managerBriefSuppressionActive_()) {
+    if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       stampDigestLastRun_('deptReqReminder');
       Logger.log('Dept-request reminder: consolidated into the daily brief.');
       return;
@@ -11779,6 +11863,17 @@ function managerSaveDayRange(targetEmpId, fromDate, toDate, slots, reason) {
       const db = daysBetween_(dates[i], todayStr);
       if (db < 0) return { success: false, error: 'Range includes a future date.' };
       if (db > CONFIG.ADJUST_WINDOW_DAYS) return { success: false, error: `Range includes dates older than the ${CONFIG.ADJUST_WINDOW_DAYS}-day adjust window.` };
+    }
+    // Cycle-9 L-4 — the slots apply to EVERY date incl. a range ending today;
+    // reject a same-day future time atomically like the other validations
+    // (see managerSaveDay's guard for the compare rationale).
+    if (dates[dates.length - 1] === todayStr) {
+      const nowTime = fmtTimeTz_(new Date(), empTz);
+      for (let k = 0; k < PUNCH_LABELS_.length; k++) {
+        const t = cleanSlots[PUNCH_LABELS_[k]];
+        if (t && t > nowTime)
+          return { success: false, error: `Cannot set a future time today (${PUNCH_LABELS_[k]} ${t}). End the range yesterday or clear that slot.` };
+      }
     }
     const trimmedReason = String(reason || '').trim();
     if (daysBetween_(dates[0], todayStr) > CONFIG.OLD_ADJUST_ALERT_DAYS && !trimmedReason) {
@@ -16363,6 +16458,7 @@ function getTrainingDashboard() {
 function saveTrainingAssignment(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
@@ -16416,10 +16512,22 @@ function saveTrainingAssignment(payload) {
     writeAuditLog_(callerEmp, 'TrainingAssign', fmtDate_(now), '', false, 0,
       'itemType=' + itemType + '; itemId=' + itemId + '; targets=' + (allMode ? 'all' : targets.length) + (dueDate ? '; due=' + dueDate : ''),
       callerEmp.email);
-    notifyTrainingAssigned_(allMode ? null : targets, itemTitle, dueDate);
+    // Cycle-9 M-7: the notification loop fires AFTER the lock releases (in
+    // the finally) — an '*' assignment walks the WHOLE roster sending one
+    // MailApp email per employee (~0.3–0.5s each), and holding the global
+    // ScriptLock through that starves every punch/note write toward the 15s
+    // waitLock ceiling (the exact class the kbUploadImage /
+    // kbResolveDocImages_ / 6pm-archive decisions forbid). Same pattern
+    // applied to every single-send notify site; pinned by the
+    // no-mail-inside-the-lock tripwire.
+    notifyAfter = function () { notifyTrainingAssigned_(allMode ? null : targets, itemTitle, dueDate); };
     return { success: true, assigned: allMode ? 'all' : targets.length };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Manager-gated (INV-02), locked (INV-01). Revokes one assignment row
@@ -17142,6 +17250,7 @@ function getMyDoc(docId) {
 function acknowledgeDoc(docId, signatureDataUrl, responses) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Not authorized.' };
@@ -17209,10 +17318,14 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
       writeAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
         'docId=' + d.docId + '; hash=' + compHash + '; completedAt=' + ts);
     }
-    notifyEmpDocSigned_(d, emp);
+    notifyAfter = function () { notifyEmpDocSigned_(d, emp); };   // M-7: post-lock
     return { success: true, signedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Manager-gated (INV-02), locked (INV-01). Issues a doc with FROZEN
@@ -17222,6 +17335,7 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
 function issueDoc(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
@@ -17242,10 +17356,14 @@ function issueDoc(payload) {
     writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
       'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status, callerEmp.email);
     // Only a RELEASED (issued) doc is visible to the employee — drafts stay silent.
-    if (v.doc.status === 'issued') notifyEmpDocIssued_(target, v.doc);
+    if (v.doc.status === 'issued') notifyAfter = function () { notifyEmpDocIssued_(target, v.doc); };   // M-7: post-lock
     return { success: true, docId: docId, status: v.doc.status };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Manager-gated + team-scoped, locked. Releases a DRAFT to the employee
@@ -17254,6 +17372,7 @@ function issueDoc(payload) {
 function releaseDoc(docId) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
@@ -17266,10 +17385,14 @@ function releaseDoc(docId) {
     writeAuditLog_(callerEmp, 'EmpDocRelease', fmtDate_(now), '', false, 0,
       'docId=' + found.doc.docId + '; empId=' + found.doc.empId, callerEmp.email);
     const target = lookupEmployeeById_(found.doc.empId);
-    if (target) notifyEmpDocIssued_(target, found.doc);
+    if (target) notifyAfter = function () { notifyEmpDocIssued_(target, found.doc); };   // M-7: post-lock
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Manager-gated, TEAM-scoped (§3b): only docs the caller issued or where
@@ -17695,6 +17818,7 @@ function coachCanManagerSee_(callerEmp, item) {
 function createCoaching(payload) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
@@ -17712,10 +17836,14 @@ function createCoaching(payload) {
     ]);
     writeAuditLog_(callerEmp, 'CoachingCreate', fmtDate_(now), '', false, 0,
       'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity, callerEmp.email);
-    notifyRepOfCoaching_(target, v.item, callerEmp);
+    notifyAfter = function () { notifyRepOfCoaching_(target, v.item, callerEmp); };   // M-7: post-lock
     return { success: true, coachId: coachId };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Rep-callable, caller-scoped, read-only — the caller's OWN coaching items
@@ -17747,6 +17875,7 @@ function getMyCoaching() {
 function acknowledgeCoaching(coachId) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false, error: 'Not authorized.' };
@@ -17762,10 +17891,14 @@ function acknowledgeCoaching(coachId) {
     sheet.getRange(found.rowIdx, CO.ACK_BY + 1).setValue(emp.email);
     writeAuditLog_(emp, 'CoachingAck', fmtDate_(now), '', false, 0,
       'coachId=' + found.item.coachId + '; ackAt=' + ts);
-    notifyManagerOfCoachingAck_(found.item, emp);
+    notifyAfter = function () { notifyManagerOfCoachingAck_(found.item, emp); };   // M-7: post-lock
     return { success: true, acknowledgedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    // M-7: best-effort mail fires only after the global lock is released.
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 
 /** Manager-gated (INV-02), read-only, TEAM-SCOPED (coachCanManagerSee_).
