@@ -3575,5 +3575,104 @@ test('the Dashboard uses card-shaped skeletons — no sweep bar remains (operato
   assert.ok(/class="skel dash-skel-kpi"/.test(clockSrc), 'skeletons compose the shared .skel shimmer');
 });
 
+// ── Cycle 9 · Batch 7 — pins for previously-unpinned recent features ─────────
+console.log('\ncycle-9 batch 7 — feature pins + payload-contract tripwire');
+
+test('L-35: PUNCH_MORPH destinations equal the NEXT state\'s primary idle glyph (the F7 half-step class)', () => {
+  const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const m = clockSrc.match(/const PUNCH_MORPH = \{[\s\S]*?\n\};/);
+  assert.ok(m, 'PUNCH_MORPH found');
+  const morph = {};
+  [...m[0].matchAll(/(\w+):\s*\{\s*from:\s*'(\w+)',\s*to:\s*'(\w+)'\s*\}/g)]
+    .forEach((mm) => { morph[mm[1]] = { from: mm[2], to: mm[3] }; });
+  // LunchOut → mug (On-Lunch's primary LunchIn idles as the mug). LunchIn →
+  // doorExit, NOT headset: a lunch RETURN sets afterLunch, which makes
+  // ClockOut (idle doorExit) the primary — PUNCH_MORPH.LunchIn.to='headset'
+  // was the documented F7 regression (the morph lagged the re-render).
+  assert.strictEqual(morph.LunchOut && morph.LunchOut.from, 'headset');
+  assert.strictEqual(morph.LunchOut && morph.LunchOut.to, 'coffeeMug');
+  assert.strictEqual(morph.LunchIn && morph.LunchIn.from, 'coffeeMug');
+  assert.strictEqual(morph.LunchIn && morph.LunchIn.to, 'doorExit',
+    "LunchIn morphs to doorExit (afterLunch makes ClockOut primary) — 'headset' is the F7 half-step bug");
+});
+
+test('L-35: spanishSearchQuery_ keeps the {to: cc:} brace-OR (Cc\'d requests enter all three readers)', () => {
+  const sctx = { String };
+  vm.createContext(sctx);
+  vm.runInContext(extractRawFunction('Code.js', 'spanishSearchQuery_'), sctx, { filename: 'Code.js#spanishSearchQuery_' });
+  const q = sctx.spanishSearchQuery_('inbox@x.com', 7);
+  assert.ok(/^\{to:inbox@x\.com cc:inbox@x\.com\}/.test(q),
+    'brace-OR over to: AND cc: — a plain to: silently drops Cc\'d requests from stats/pending/resolved');
+  assert.ok(/newer_than:7d$/.test(q), 'window rides the query');
+});
+
+test('L-35: night-sky runtime gating — shooting stars need deep night + mid-shift + motion-ok + no photo', () => {
+  const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const fn = clockSrc.match(/function clkShootMaybe_\(\) \{[\s\S]*?\n\}/);
+  assert.ok(fn, 'clkShootMaybe_ found');
+  assert.ok(/_clkLastStarDensity < 2/.test(fn[0]), 'deep-night density gate (< 2 returns)');
+  assert.ok(/prefers-reduced-motion/.test(fn[0]), 'reduced-motion skip (a non-animating streak would linger)');
+  assert.ok(/has-bg/.test(fn[0]), 'photo mode skips the decor');
+  assert.ok(/clkSchedStartMin_/.test(fn[0]), 'rep-local shift-midpoint gate');
+});
+
+test('L-35: greeting rotator ties to the startClock/stopClock lifecycle + hover-holds', () => {
+  const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/clkGreetRotStart_|clkGreetRot/.test(clockSrc), 'rotator present');
+  const stopFn = clockSrc.match(/function stopClock\(\) \{[\s\S]*?\n\}/);
+  assert.ok(stopFn && /GreetRot|_greetRot/i.test(stopFn[0]),
+    'stopClock tears the rotator down (interval-leak class)');
+});
+
+// Strategic #2 — the M-3 drift class: the client kept writing subformData /
+// payload keys a later server whitelist silently dropped. Extract every key
+// the CLIENT submits (payload.subformData.X assignments + subformData:{...}
+// literals in submit payloads, ternary form included) and assert each is on
+// sanitizeCallNotePayload_'s whitelist (a rawSub.<key> read).
+test('TRIPWIRE (C9): every client-submitted subformData key is on the server whitelist (INV-143)', () => {
+  const whitelistSrc = extractRawFunction('Code.js', 'sanitizeCallNotePayload_');
+  const serverKeys = new Set([...whitelistSrc.matchAll(/rawSub\.(\w+)/g)].map((m) => m[1]));
+  assert.ok(serverKeys.size >= 3, 'server whitelist parsed (got ' + [...serverKeys].join(',') + ')');
+  const clientKeys = new Set();
+  ['cn/script_callnotes.html', 'intake/script_intake.html'].forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+    [...src.matchAll(/(?:payload|notePayload)\.subformData\.(\w+)\s*=/g)].forEach((m) => clientKeys.add(m[1]));
+    [...src.matchAll(/subformData:\s*(?:\w+\s*\?\s*)?\{([^}]*)\}/g)].forEach((m) => {
+      [...m[1].matchAll(/(\w+)\s*:/g)].forEach((k) => clientKeys.add(k[1]));
+    });
+  });
+  assert.ok(clientKeys.size >= 3, 'client-submitted keys parsed (got ' + [...clientKeys].join(',') + ')');
+  clientKeys.forEach((k) => {
+    assert.ok(serverKeys.has(k),
+      "client submits subformData." + k + " but sanitizeCallNotePayload_'s whitelist never reads it — it is silently dropped at submit (the cycle-9 M-3 class)");
+  });
+});
+
+// Batch 7 — extend the view-key net: showView('…') literals are tab keys too
+// (the H-1/M-9 family; enterTool literals are covered by their own tripwire).
+test("every showView('…') literal is a registered tab key", () => {
+  const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const toolsBlock = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/);
+  assert.ok(toolsBlock, 'TOOLS registry block found');
+  const validKeys = [...toolsBlock[0].matchAll(/(\w+):\s*\{[^{}]*enter:\s*'/g)].map((m) => m[1]);
+  assert.ok(validKeys.length >= 10, 'tab keys parsed');
+  let svLiterals = 0;
+  const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
+   'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
+   'metrics/script_deptrequests.html', 'intake/script_intake.html', 'kb/script_kb.html',
+   'train/script_training.html', 'train/script_empdocs.html', 'train/script_coaching.html',
+   'script_core.html', 'script_tour.html'].forEach((f) => {
+    const src = stripC(fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'));
+    [...src.matchAll(/showView\(\s*'([^']+)'/g)].forEach((m) => {
+      if (m[1].indexOf('${') >= 0) return;
+      svLiterals++;
+      assert.ok(validKeys.indexOf(m[1]) >= 0,
+        f + ": showView('" + m[1] + "') is not a registered tab key");
+    });
+  });
+  assert.ok(svLiterals >= 3, 'showView literals found (scan is armed — got ' + svLiterals + ')');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -2842,28 +2842,38 @@ function getPatientTimeline(trx) {
     const t = String(trx || '').trim();
     if (!t) return { error: 'Enter a patient name or TRX number.' };
 
+    // Cycle-9 L-8: track which sources actually failed — the bare catches
+    // made a failed-to-load stream indistinguishable from "no data", so the
+    // modal rendered an authoritative-looking timeline missing (e.g.) the
+    // entire notes stream. Each delegate can also RETURN {error} without
+    // throwing; both shapes count as a failed source.
+    const failedSources = [];
     let notes = [];
     try {
       const nr = searchMyCallNotes(t, 'trx', null, false);
+      if (nr && nr.error) failedSources.push('call notes');
       notes = (nr && nr.results) || [];
-    } catch (e) {}
+    } catch (e) { failedSources.push('call notes'); }
 
     let submissions = [];
     try {
       const sr = intakeListMySubmissions();
+      if (sr && sr.error) failedSources.push('intake submissions');
       submissions = ((sr && sr.submissions) || []).filter(function (s) {
         return String(s.repId || '') === emp.id;   // caller-scoped even for managers
       });
-    } catch (e) {}
+    } catch (e) { failedSources.push('intake submissions'); }
 
     let forms = [];
     try {
       const fr = getMySentForms();
+      if (fr && fr.error) failedSources.push('sent forms');
       forms = (fr && fr.forms) || [];
-    } catch (e) {}
+    } catch (e) { failedSources.push('sent forms'); }
 
     const events = buildPatientTimeline_(notes, submissions, forms, t);
-    return { trx: t, events: events, timezone: empTz_(emp), count: events.length };
+    return { trx: t, events: events, timezone: empTz_(emp), count: events.length,
+             partial: failedSources.length > 0, failedSources: failedSources };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -2880,7 +2890,11 @@ function getEnrolledCallNotesReps() {
     const reps = [];
     for (let i = 1; i < rows.length; i++) {
       if (!rows[i][EMP.EMAIL]) continue;
-      if (!rows[i][EMP.CALL_NOTES_SHEET_ID]) continue;
+      // Cycle-9 L-11: TRIMMED check, matching getCallNotesEnrollment +
+      // provisionCallNotesSheet's no-clobber test — a whitespace-only column-L
+      // cell showed the rep as enrolled in the Per-Rep picker (whose reads
+      // then fail) while the Admin panel offered to provision them.
+      if (!String(rows[i][EMP.CALL_NOTES_SHEET_ID] || '').trim()) continue;
       reps.push({
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
@@ -4230,7 +4244,12 @@ function clientErrorsSummary_(mgrTz) {
     const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, 5).getValues();
     const cutD = new Date();
     cutD.setDate(cutD.getDate() - out.windowDays);
-    const cutoff = fmtDateTz_(cutD, mgrTz);
+    // Cycle-9 L-15: the cutoff must be formatted in the tz the rows are
+    // STAMPED in (recordClientError writes fmtDate_/fmtTime_ = CONFIG.TIMEZONE)
+    // — comparing IST-stamped dates against a manager-tz (CST) cutoff
+    // over-included up to ~a day of older rows (the mixed-tz date-compare
+    // class INV-92 normalizes the same way).
+    const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
     for (let i = data.length - 1; i >= 0; i--) {   // newest-first; append-only tab
       const tsRaw = normalizeAuditTs_(data[i][0]);
       if (tsRaw.substring(0, 10) < cutoff) break;  // chronological — older rows follow
@@ -5581,7 +5600,7 @@ function createPinnedSpreadsheet_(name) {
  *  normalizeAuditTs_ / getMyNoteHourBuckets' inline guard. */
 function cnTimestampString_(val) {
   if (val instanceof Date) {
-    try { return Utilities.formatDate(val, getAdpSS_().getSpreadsheetTimeZone(), "yyyy-MM-dd'T'HH:mm:ss"); }
+    try { return Utilities.formatDate(val, adpSheetTz_(), "yyyy-MM-dd'T'HH:mm:ss"); }
     catch (e) { return String(val); }
   }
   return String(val || '');
@@ -7280,7 +7299,11 @@ function submitFormByToken(token, formData) {
     // so ConsentAt is effectively SubmittedAt. The server-authoritative
     // `consentVersion` (which language was shown) is the load-bearing record.
     const consentAt = submittedAt; // consent precedes the submit (checkbox-gated)
-    const openedAt = String(meta.openedAt || '');
+    // Cycle-9 L-7: length-cap the one recipient-supplied field the INV-96
+    // size caps missed — an oversized openedAt threw mid-appendRow into the
+    // generic catch (skipping the specific error + the failNotify rep notice).
+    // A legitimate value is a short ISO timestamp; 64 chars is generous.
+    const openedAt = String(meta.openedAt || '').slice(0, 64);
     // Hash over coercion-stable content only (dataJson / signature / token /
     // consentVersion never round-trip as a Date) — submittedAt's independent
     // witness is the FormSubmissionReceived audit row. See verifyFormSubmissionIntegrity_.
@@ -7449,7 +7472,16 @@ function getMySentForms() {
     const sheet = getOrCreateFormTokensSheet_();
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) return { forms: [] };
-    const rows = sheet.getRange(2, 1, lastRow - 1, FT_HEADERS.length).getValues();
+    // Cycle-9 L-9: tail-bound the read (the DR_MAX_SCAN philosophy) — this
+    // full-width read (incl. every token's PHI PrefillData blob) previously
+    // scanned EVERY token ever created, per Sent-Forms view-enter, on a tab
+    // whose retention purge is opt-in-off. The list is newest-first and
+    // output-capped at 200 anyway; a rep's tokens older than the newest
+    // FT_SENT_MAX_SCAN rows age off their in-app list (the raw sheet remains
+    // the archive).
+    const FT_SENT_MAX_SCAN = 2000;
+    const scanCount = Math.min(lastRow - 1, FT_SENT_MAX_SCAN);
+    const rows = sheet.getRange(lastRow - scanCount + 1, 1, scanCount, FT_HEADERS.length).getValues();
     const catalog = CONFIG.CALL_NOTES.FORM_CATALOG || [];
     const nameById = {};
     catalog.forEach(function (f) { nameById[f.id] = f.name; });
@@ -7576,7 +7608,7 @@ function verifyFormSubmissionIntegrity_(token) {
       String(row[FS.FORM_DATA] || ''), String(row[FS.SIGNATURE_DATA] || ''),
       String(row[FS.TOKEN] || ''), String(row[FS.CONSENT_VERSION] || ''));
     return { found: true, match: recomputed === stored, storedHash: stored,
-      recomputedHash: recomputed, submittedAt: String(row[FS.SUBMITTED_AT] || '') };
+      recomputedHash: recomputed, submittedAt: formTokenIsoString_(row[FS.SUBMITTED_AT]) };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -7647,7 +7679,7 @@ function buildFormSubmissionResult_(tLocated, token) {
       submitted: true,
       formType, formName, recipientName,
       recipientEmail: String(sRow[FS.RECIPIENT_EMAIL] || recipientEmail),
-      submittedAt: String(sRow[FS.SUBMITTED_AT] || ''),
+      submittedAt: formTokenIsoString_(sRow[FS.SUBMITTED_AT]),   // L-5 — coercion-safe (a coercing FORMS_SS_ID returned a Date blob)
       fields,
       hasSignature: !!signature,
       signature,
@@ -9655,6 +9687,16 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
 // ════════════════════════════════════════════════════════════════════════════
 
 function buildTimesheetForEmployee_(emp, startDate, endDate) {
+  // Cycle-9 L-1: shape-validate + span-cap the range — this was the only
+  // range read with neither (every sibling caps: CN history 90d, metrics
+  // range 92d, coverage 14d). The per-day while-loop below builds one object
+  // per day, so a garbage/hostile range ('2000-01-01'…'9999-12-31') spun
+  // ~2.9M iterations into the 6-min execution budget. 370 days covers every
+  // legitimate caller (the client requests pay-period / month windows).
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(endDate)))
+    return { error: 'Invalid date range (expected yyyy-MM-dd).' };
+  if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
+  if (daysBetween_(startDate, endDate) > 370) return { error: 'Range too large (max ~1 year).' };
   const empTz = empTz_(emp);
   const todayStr = fmtDateTz_(new Date(), empTz);
   const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
@@ -10079,7 +10121,22 @@ function cnFlagsVersion_() {
 function getStateTaxRates_() {
   const prop = PropertiesService.getScriptProperties().getProperty('CN_STATE_TAX_RATES');
   if (prop) {
-    try { return JSON.parse(prop); } catch (_) {}
+    // Cycle-9 L-12: SANITIZE on read, matching getEmailTemplates_/
+    // getExternalLinks_ — a hand-edited property holding a JSON scalar/array
+    // was returned as-is to getCallNotesDepartments/getAdminConfig and the
+    // OOP tax path (the documented "corrupt blob degrades" claim didn't hold
+    // for these two getters). Keep only string→finite-number entries.
+    try {
+      const parsed = JSON.parse(prop);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const clean = {};
+        Object.keys(parsed).forEach(function (k) {
+          const v = Number(parsed[k]);
+          if (isFinite(v) && v >= 0 && v <= 1) clean[String(k)] = v;
+        });
+        if (Object.keys(clean).length > 0) return clean;
+      }
+    } catch (_) {}
   }
   return CONFIG.CALL_NOTES.STATE_TAX_RATES;
 }
@@ -10087,7 +10144,20 @@ function getStateTaxRates_() {
 function getUpdateSuggestions_() {
   const prop = PropertiesService.getScriptProperties().getProperty('CN_UPDATE_SUGGESTIONS');
   if (prop) {
-    try { return JSON.parse(prop); } catch (_) {}
+    // Cycle-9 L-12: sanitize on read (see getStateTaxRates_) — keep only
+    // deptName → array-of-strings entries.
+    try {
+      const parsed = JSON.parse(prop);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const clean = {};
+        Object.keys(parsed).forEach(function (k) {
+          if (Array.isArray(parsed[k])) {
+            clean[String(k)] = parsed[k].filter(function (s) { return typeof s === 'string'; });
+          }
+        });
+        if (Object.keys(clean).length > 0) return clean;
+      }
+    } catch (_) {}
   }
   return CONFIG.CALL_NOTES.UPDATE_SUGGESTIONS_BY_DEPT;
 }
@@ -11048,7 +11118,8 @@ function markDeptRequestResolved_(token, byEmail) {
       if (String(rows[i][DR.REQ_ID]) !== String(token)) continue;
       if (String(rows[i][DR.STATUS]) === 'resolved') {
         return { found: true, already: true, dept: rows[i][DR.TO_DEPT],
-                 resolvedAt: rows[i][DR.RESOLVED_AT], resolvedBy: rows[i][DR.RESOLVED_BY] };
+                 resolvedAt: formTokenIsoString_(rows[i][DR.RESOLVED_AT]),   // L-5 — coercion-safe for the resolve page
+                 resolvedBy: String(rows[i][DR.RESOLVED_BY] || '') };
       }
       sh.getRange(i + 1, DR.STATUS + 1).setValue('resolved');
       sh.getRange(i + 1, DR.RESOLVED_AT + 1).setValue(drNowTs_());
@@ -12067,9 +12138,26 @@ function getAdpSS_() {
   // to the repo. Set it once in Apps Script editor → Project Settings →
   // Script Properties → add ADP_SS_ID = <real ID>. clasp pull/push leaves
   // Script Properties untouched, so the placeholder in CONFIG stays inert.
+  // Cycle-9 L-3: memoized per execution — the coercion-recovery helpers
+  // (normalizeDate_/normalizeTime_/normalizeAuditTs_/cnTimestampString_)
+  // call this PER COERCED CELL inside whole-sheet loops (getManagerDashboard
+  // makes five passes over adpRows), which was thousands of un-memoized
+  // openById calls per dashboard load. Safe: the resolved ID cannot change
+  // mid-execution, and V8 globals reset per execution.
+  if (_adpSsMemo) return _adpSsMemo;
   const id = PropertiesService.getScriptProperties().getProperty('ADP_SS_ID')
           || CONFIG.ADP_SS_ID;
-  return SpreadsheetApp.openById(id);
+  _adpSsMemo = SpreadsheetApp.openById(id);
+  return _adpSsMemo;
+}
+let _adpSsMemo = null;
+let _adpTzMemo = null;
+/** Cycle-9 L-3 — the ADP sheet's tz, memoized per execution (each
+ *  getSpreadsheetTimeZone() is its own round-trip even on a held object;
+ *  the normalize helpers read it per coerced cell). */
+function adpSheetTz_() {
+  if (!_adpTzMemo) _adpTzMemo = getAdpSS_().getSpreadsheetTimeZone();
+  return _adpTzMemo;
 }
 
 /**
@@ -12098,7 +12186,7 @@ function fmtDate_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'yyyy-
 function fmtTime_(d)    { return Utilities.formatDate(d, CONFIG.TIMEZONE, 'HH:mm:ss'); }
 function normalizeDate_(val) {
   if (val instanceof Date) {
-    const ssTz = getAdpSS_().getSpreadsheetTimeZone();
+    const ssTz = adpSheetTz_();
     return Utilities.formatDate(val, ssTz, 'yyyy-MM-dd');
   }
   return String(val).trim().substring(0, 10);
@@ -12109,7 +12197,7 @@ function normalizeDate_(val) {
  *  whether the cell stored a string or an auto-coerced Date. */
 function normalizeTime_(val) {
   if (val instanceof Date) {
-    const ssTz = getAdpSS_().getSpreadsheetTimeZone();
+    const ssTz = adpSheetTz_();
     return Utilities.formatDate(val, ssTz, 'HH:mm:ss');
   }
   return String(val).trim();
@@ -12123,7 +12211,7 @@ function normalizeTime_(val) {
  *  cells pass through untouched. Same family as normalizeDate_/normalizeTime_. */
 function normalizeAuditTs_(val) {
   if (val instanceof Date) {
-    const ssTz = getAdpSS_().getSpreadsheetTimeZone();
+    const ssTz = adpSheetTz_();
     return Utilities.formatDate(val, ssTz, 'yyyy-MM-dd HH:mm:ss');
   }
   return String(val == null ? '' : val).trim();
@@ -12572,7 +12660,22 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames) {
     let pct = metricsParsePercent_(displays[i][CSRT.TRANSFER_PCT]);
     if (pct == null) pct = totalCalls > 0 ? Math.round((transferred / totalCalls) * 1000) / 10 : null;
     if (!perRepDaily[dateIso]) perRepDaily[dateIso] = {};
-    perRepDaily[dateIso][name] = { totalCalls: totalCalls, transferred: transferred, transferPct: pct };
+    // Cycle-9 L-14: ACCUMULATE like the aggregate below (and the DQE
+    // sibling's `prd.rung +=`) instead of overwriting — two rows collapsing
+    // to one canonical (rep, date) (an alias row + a raw row, a duplicate
+    // import) made the per-day series keep only the LAST row while the range
+    // aggregate double-counted: the two shapes silently disagreed. The
+    // single-row path keeps the sheet's stored pct byte-identical (the
+    // fixture pins 29.79); only a genuine collision recomputes from the
+    // accumulated counts (stored pcts can't be averaged).
+    const prdT = perRepDaily[dateIso][name];
+    if (!prdT) {
+      perRepDaily[dateIso][name] = { totalCalls: totalCalls, transferred: transferred, transferPct: pct };
+    } else {
+      prdT.totalCalls += totalCalls;
+      prdT.transferred += transferred;
+      if (prdT.totalCalls > 0) prdT.transferPct = Math.round((prdT.transferred / prdT.totalCalls) * 1000) / 10;
+    }
     if (!agents[name]) agents[name] = { agent: name, totalCalls: 0, transferred: 0, daysActive: 0, _days: {} };
     const a = agents[name];
     a.totalCalls += totalCalls; a.transferred += transferred;
@@ -12878,6 +12981,22 @@ function getMyMetricsRange(from, to) {
     var spanDays = Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1;
     if (spanDays > 92) return { error: 'Range capped at 92 days.' };
 
+    // Cycle-9 L-13 — the L-1 endpoint-cache pattern: getCdrDailyBreakdown_ is
+    // deliberately uncached (INV-67) and reads the full DQE tab with BOTH
+    // getValues + getDisplayValues, so every Today/7D/30D preset toggle
+    // re-scanned the whole sheet twice. Keyed by emp.id (no cross-rep reads);
+    // error results never cached; bypassed under the CDR test override for
+    // the same fixture-masking reason as getMyMetrics.
+    var rangeCache = CacheService.getScriptCache();
+    var rangeKey = 'metrics_range_v1:' + emp.id + ':' + from + ':' + to;
+    var useRangeCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+    if (useRangeCache) {
+      try {
+        var cachedR = rangeCache.get(rangeKey);
+        if (cachedR) { var ro = JSON.parse(cachedR); ro.cached = true; return ro; }
+      } catch (_) {}
+    }
+
     var agg = getCdrAgentMetrics_(from, to, [emp.name]);
     var c = (agg && agg.agents && agg.agents[emp.name]) || null;
 
@@ -12900,7 +13019,7 @@ function getMyMetricsRange(from, to) {
     } catch (e) { trend = []; }
 
     var noteCount = countCallNotesInRange_(emp, from, to);
-    return {
+    var rangeResult = {
       from: from, to: to, repName: emp.name,
       cdr: c ? {
         totalRung:    c.totalRung,
@@ -12916,6 +13035,10 @@ function getMyMetricsRange(from, to) {
       noteCoverage: cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
       trend: trend,
     };
+    if (useRangeCache) {
+      try { rangeCache.put(rangeKey, JSON.stringify(rangeResult), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    }
+    return rangeResult;
   } catch (err) { return { error: err.message }; }
 }
 
@@ -13977,8 +14100,17 @@ function intakeListMySubmissions() {
       const last = sheet.getLastRow();
       if (last < 2) return;
       const isPpd = ft === 'PPD';
-      const width = isPpd ? INTAKE_PPD_SUB_HEADERS.length : INTAKE_ACCT_SUB_HEADERS.length;
-      const rows = sheet.getRange(2, 1, last - 1, width).getValues();
+      // Cycle-9 L-16: METADATA-ONLY projection — the old full-width read
+      // pulled every patient's AnswersJSON (+ the PPD Recommendations/
+      // Selections blobs) on every Sent-tab open, for a list that surfaces
+      // only id/timestamp/rep/patient/language/recipient. Two column-bounded
+      // reads per tab skip the heavy JSON columns entirely; the detail
+      // endpoint keeps its own bounded one-row lookup (INV-116).
+      const metaWidth = isPpd ? 6 : 7;   // …Language (PPD) / …Language incl. DOB (ACCT)
+      const recipCol = isPpd ? 9 : 8;    // Recipient (0-based; past the JSON blobs)
+      const n = last - 1;
+      const rows = sheet.getRange(2, 1, n, metaWidth).getValues();
+      const recips = sheet.getRange(2, recipCol + 1, n, 1).getValues();
       for (let i = 0; i < rows.length; i++) {
         const repId = String(rows[i][2] || '').trim();
         if (!emp.isManager && repId !== emp.id) continue;
@@ -13990,7 +14122,7 @@ function intakeListMySubmissions() {
           repName: String(rows[i][3] || ''),
           patientInfo: String(rows[i][4] || ''),
           language: isPpd ? String(rows[i][5] || 'EN') : String(rows[i][6] || 'EN'),
-          recipient: isPpd ? String(rows[i][9] || '') : String(rows[i][8] || ''),
+          recipient: String(recips[i][0] || ''),
         });
       }
     });
@@ -14191,22 +14323,28 @@ function getReferenceItem(id) {
     const sheet = getOrCreateKbSheet_();
     const last = sheet.getLastRow();
     if (last < 2) return { error: 'Not found.' };
-    const rows = sheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues();
-    for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i][KB.ID]) !== id) continue;
+    // Cycle-9 L-22: id-column scan + ONE full-row fetch (the getWhatsNew /
+    // kbMarkReviewed pattern) — this is the HOTTEST KB path (reader, drawer,
+    // training reader, every search Open-¶ jump) and the old full-tab read
+    // pulled all 13 columns of every row incl. every article's BodyMd, read
+    // volume that grew with total KB body size × opens.
+    const ids = sheet.getRange(2, KB.ID + 1, last - 1, 1).getValues();
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) !== id) continue;
+      const row = sheet.getRange(i + 2, 1, 1, KB_HEADERS.length).getValues()[0];
       // #4 — a draft is invisible to reps/non-admins (indistinguishable from
       // not-found so its existence doesn't leak).
-      const status = kbRowStatus_(rows[i][KB.STATUS]);
+      const status = kbRowStatus_(row[KB.STATUS]);
       if (status === KB_STATUS_DRAFT && !emp.isAdmin) return { error: 'Not found.' };
-      const type = String(rows[i][KB.TYPE] || 'article');
-      const base = { id: id, title: String(rows[i][KB.TITLE] || ''), department: String(rows[i][KB.DEPARTMENT] || ''), status: status };
+      const type = String(row[KB.TYPE] || 'article');
+      const base = { id: id, title: String(row[KB.TITLE] || ''), department: String(row[KB.DEPARTMENT] || ''), status: status };
       if (type === 'embed') {
-        const kind = String(rows[i][KB.DRIVE_KIND] || 'doc');
-        const fid = String(rows[i][KB.DRIVE_FILE_ID] || '');
+        const kind = String(row[KB.DRIVE_KIND] || 'doc');
+        const fid = String(row[KB.DRIVE_FILE_ID] || '');
         base.type = 'embed'; base.driveKind = kind; base.embedUrl = kbEmbedUrl_(kind, fid); base.openUrl = kbOpenUrl_(kind, fid);
         return base;
       }
-      base.type = 'article'; base.bodyMd = String(rows[i][KB.BODY_MD] || '');
+      base.type = 'article'; base.bodyMd = String(row[KB.BODY_MD] || '');
       return base;
     }
     return { error: 'Not found.' };
@@ -16207,12 +16345,25 @@ function trainReadAssignments_() {
   return out;
 }
 
+// Cycle-9 L-21 — tail bounds for the two append-only-forever training tabs
+// (they sit on hot paths: every getMyTraining open, the dashboard, every quiz
+// submit, the daily overdue digest). Completions are STATE (complete = the
+// newest row strictly after the assignment, INV-120), so their cap is a
+// deliberately-generous quota backstop, not an analytics window: a completion
+// older than the newest 10,000 completion rows would read as Pending again —
+// at realistic volume (tens of reps × dozens of items × annual re-certs)
+// that horizon is decades out. Attempts are display/analytics only (the
+// pass→completion write checks completions, never attempts), so they take
+// the standard 4,000 KbViews-style window.
+const TRAIN_COMPLETE_MAX_SCAN = 10000;
+const TRAIN_ATTEMPT_MAX_SCAN = 4000;
 function trainReadCompletions_(empIdFilter) {
   const sheet = getOrCreateTrainSheet_(TRAIN_COMPLETE_TAB, TRAIN_COMPLETE_HEADERS);
   const last = sheet.getLastRow();
   if (last < 2) return [];
   const ssTz = getKbSS_().getSpreadsheetTimeZone();
-  const rows = sheet.getRange(2, 1, last - 1, TRAIN_COMPLETE_HEADERS.length).getValues();
+  const count = Math.min(last - 1, TRAIN_COMPLETE_MAX_SCAN);
+  const rows = sheet.getRange(last - count + 1, 1, count, TRAIN_COMPLETE_HEADERS.length).getValues();
   const out = [];
   for (let i = 0; i < rows.length; i++) {
     const empId = String(rows[i][TCMP.EMP_ID] || '').trim();
@@ -16695,7 +16846,8 @@ function trainReadAttempts_(empIdFilter) {
   const last = sheet.getLastRow();
   if (last < 2) return [];
   const ssTz = getKbSS_().getSpreadsheetTimeZone();
-  const rows = sheet.getRange(2, 1, last - 1, TRAIN_ATTEMPT_HEADERS.length).getValues();
+  const count = Math.min(last - 1, TRAIN_ATTEMPT_MAX_SCAN);   // L-21 — unlimited retries grow this tab fastest
+  const rows = sheet.getRange(last - count + 1, 1, count, TRAIN_ATTEMPT_HEADERS.length).getValues();
   const out = [];
   for (let i = 0; i < rows.length; i++) {
     const empId = String(rows[i][TQA.EMP_ID] || '').trim();

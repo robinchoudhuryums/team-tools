@@ -4221,13 +4221,20 @@ function cnBuildTimelineHtml_(res) {
   var events = (res && res.events) || [];
   var head = '<div class="head"><h3>Patient timeline · ' + esc(res.trx || '') + '</h3>' +
     '<button class="xclose" onclick="cnCloseTimelineOverlay_()" aria-label="Close">' + icon('x', 16) + '</button></div>';
+  // Cycle-9 L-8: a failed source stream is meaningfully different from "no
+  // data" on a patient-context surface — surface which streams are missing
+  // instead of rendering an authoritative-looking partial timeline.
+  var partialBanner = (res && res.partial && res.failedSources && res.failedSources.length)
+    ? '<div style="font-size:12px;color:var(--warning-deep);background:var(--warn-soft);border-radius:8px;padding:6px 10px;margin-bottom:8px">' +
+      icon('warning', 12) + ' Incomplete — could not load: ' + esc(res.failedSources.join(', ')) + '. Retry for the full picture.</div>'
+    : '';
   if (!events.length) {
     return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
-      '<div class="body"><div class="no-data">No call notes, intake submissions, or sent forms found for this patient / TRX in your own records.</div></div></div>';
+      '<div class="body">' + partialBanner + '<div class="no-data">No call notes, intake submissions, or sent forms found for this patient / TRX in your own records.</div></div></div>';
   }
   var counts = { note: 0, intake: 0, form: 0 };
   events.forEach(function (ev) { counts[ev.kind] = (counts[ev.kind] || 0) + 1; });
-  var summary = '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' +
+  var summary = partialBanner + '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' +
     counts.note + ' note(s) · ' + counts.intake + ' intake · ' + counts.form + ' form(s)</div>';
   var rows = events.map(cnTimelineRowHtml_).join('');
   return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +

@@ -2,11 +2,92 @@
 
 ## Current
 Cycle: 9
-Phase: implement — ranked batches 3-4 done (after scan batch + ranked batches 1-2 + the batch-1/2 /sync-docs). Implemented on claude/broad-scan-5eoypm: M-7 (mail out of the lock, 9 sites + tripwire), L-18 (suppression checkTrigger), L-19 (heartbeat RMW lock), L-6 (locked expired write), L-4 (manager future-time guards), L-2 (coverage email filter), and client Lows L-23, L-25..L-33. Pure 296/0, DOM 61/0, node --check ×3 clean; 8 bite-checks total this cycle.
+Phase: implement — ENTIRE ranked backlog done (scan batch + ranked batches 1-7). Batches 5-7 on claude/broad-scan-5eoypm: bounded reads (L-1, L-3, L-9, L-13, L-14, L-16, L-21, L-22), server hygiene (L-5, L-7, L-8, L-11, L-12, L-15), test pins (L-35 ×4, the payload-contract tripwire, the showView-literal net). Pure 302/0, DOM 61/0, node --check ×3 clean; 10 bite-checks total this cycle. Remaining: /sync-docs (batches 3-7 list), operator deploy, /reflect.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 2
-Updated: 2026-07-21 (cycle-9 batches 3-4)
+Updated: 2026-07-21 (cycle-9 batches 5-7)
+
+## Cycle 9 — batches 5-7 (2026-07-21, same branch)
+Batch 5 (bounded reads / growth-class debt):
+- L-3 getAdpSS_ + adpSheetTz_ memoized per execution (the normalize helpers
+  called openById + getSpreadsheetTimeZone PER COERCED CELL in whole-sheet
+  loops; 4 tz call sites rerouted). NOTE the first sed also hit the new
+  helper itself (infinite recursion) — caught and fixed before any test run;
+  watch for self-referential replaces when adding memo helpers.
+- L-22 getReferenceItem → id-column scan + one-row fetch (the hottest KB
+  path pulled every article's BodyMd per open).
+- L-21 TRAIN_COMPLETE_MAX_SCAN=10000 / TRAIN_ATTEMPT_MAX_SCAN=4000 tails.
+  COMPLETIONS ARE STATE (INV-120: complete = newest row after assignment) so
+  their cap is a deliberately-generous decades-out backstop, NOT an
+  analytics window — a completion older than the newest 10k rows would read
+  Pending again (documented in-code). Attempts are display-only → 4k.
+- L-9 getMySentForms tail-bounded (FT_SENT_MAX_SCAN=2000 newest rows; the
+  full-width read incl. PHI PrefillData blobs scanned every token ever).
+- L-16 intakeListMySubmissions metadata-only projection (two column-bounded
+  reads skip AnswersJSON/Recommendations/Selections entirely).
+- L-13 getMyMetricsRange endpoint result cache (metrics_range_v1:<id>:<from>:<to>,
+  CDR_CACHE_TTL; error results never cached; bypassed under
+  _TEST_OVERRIDE_CDR_SS_ID — the exact L-1 pattern).
+- L-1 buildTimesheetForEmployee_ validates shape + caps span at 370 days
+  (the day-loop could spin ~2.9M iterations on a garbage range); guards BOTH
+  getTimesheetData and getEmployeeTimesheetForManager at the shared builder.
+- L-14 transfer per-day ACCUMULATES on a (rep,date) collision with
+  recomputed pct; the single-row path keeps the sheet's stored pct
+  BYTE-IDENTICAL (the editor fixture pins 29.79 — an unconditional recompute
+  would round to 29.8 and fail it; caught before commit).
+Batch 6 (server hygiene):
+- L-5 FS.SUBMITTED_AT (viewer + verify) + markDeptRequestResolved_'s
+  already-branch cells → formTokenIsoString_ (coercion-safe on the
+  segregated/coercing FORMS_SS_ID — the viewer WAS rendering Date blobs).
+- L-7 _meta.openedAt sliced to 64 chars (the one INV-96 cap gap).
+- L-8 getPatientTimeline returns partial+failedSources (both {error} returns
+  and throws counted); the timeline modal renders a warn banner naming the
+  missing streams (failed ≠ no-data on a patient surface).
+- L-11 getEnrolledCallNotesReps uses the TRIMMED enrollment predicate
+  (parity with getCallNotesEnrollment/provision no-clobber).
+- L-12 getStateTaxRates_/getUpdateSuggestions_ sanitize-on-read
+  (whitelist-rebuilt entries; scalar/array blobs degrade to CONFIG).
+- L-15 clientErrorsSummary_ cutoff formatted in CONFIG.TIMEZONE (the stamped
+  tz), not manager tz.
+Batch 7 (test pins):
+- L-35: PUNCH_MORPH destination pin (LunchIn.to='doorExit' — the F7
+  half-step regression re-armed), spanishSearchQuery_ {to: cc:} brace-OR
+  behavioral pin, clkShootMaybe_ gating source pin (density/motion/photo/
+  midpoint), greeting-rotator stopClock-teardown pin.
+- Strategic #2 payload-contract tripwire: client-submitted subformData keys
+  (payload.subformData.X assignments + subformData:{...} literals, ternary
+  form included, cn + intake) must each be a rawSub.<key> read in
+  sanitizeCallNotePayload_ — the M-3 drift class retired. Bite-checked.
+- showView('…') literal net (arming floor ≥3; 4 live literals) — completes
+  the enterTool/refreshViewIfCurrent registry-key family.
+
+## Pending / not yet done
+- /sync-docs owed (batches 3-7 combined): INV-151 (+checkTrigger), the
+  "Fire-and-forget email" gotcha + M-7 pattern/tripwire/allowlist, INV-127
+  (+email filter), INV-05/108 (manager future-time), INV-83 (drawer Enter),
+  8c note (L-30); batches 5-7: INV-129 (+result cache), INV-116 (projection
+  read), INV-46-family (new bounded reads: getReferenceItem, getMySentForms,
+  training tails incl. the completions-backstop tradeoff, timesheet range
+  cap), Test Command section (+payload-contract + showView + L-35 pins),
+  L-3 memo note near the normalize-helpers decision.
+- OPERATOR (deploy): one `cd web-app && clasp push -f` + New version. NO new
+  Script Properties / triggers / migrations. Editor runAllTests (suite
+  unchanged in 5-7; the transfer fixture + sent-viewer tests exercise the
+  L-14/L-16 edits and were verified shape-compatible by inspection).
+- Then /reflect to close cycle 9 (metrics.csv + estimates.csv rows).
+- Roadmap-tier (not findings): archived-month visibility; KB undelete.
+
+## Decisions made (batches 5-7)
+- L-21: completions cap = 10,000 (state-bearing → generous backstop;
+  attempts 4,000 analytics window). If team scale ever 10×es, revisit.
+- L-14: single-row path preserves the sheet's stored pct byte-identically;
+  only genuine collisions recompute (fixture-pin compatibility).
+- L-12: out-of-range hand-edited rates (>1) are now DROPPED by
+  sanitize-on-read (the save endpoint always enforced 0–1; a dropped key
+  means that state has no tax rate until re-saved).
+- L-1: cap = 370 days at the SHARED builder (one guard covers both
+  endpoints; client requests are month/pay-period sized).
 
 ## Cycle 9 — batches 3-4 (2026-07-21, same branch)
 Batch 3 (concurrency + automation edges):
