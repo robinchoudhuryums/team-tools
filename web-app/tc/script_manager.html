@@ -788,6 +788,13 @@ function openMgrTimeOffModal(data) {
 document.getElementById('mto-cancel').addEventListener('click', () => {
   document.getElementById('mgr-timeoff-overlay').classList.remove('open');
 });
+// Cycle-9 L-33: this was the ONLY static overlay without backdrop-click close
+// (every sibling — export, adjust, day-edit, day popover — wires it), which
+// read as a hang to a manager expecting the app-wide convention.
+document.getElementById('mgr-timeoff-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('mgr-timeoff-overlay'))
+    document.getElementById('mgr-timeoff-overlay').classList.remove('open');
+});
 
 document.getElementById('mto-submit').addEventListener('click', () => {
   const empId = document.getElementById('mto-emp').value;
@@ -1088,14 +1095,20 @@ function enterCoverageView(area) {
   covLoad_();
 }
 
+// Cycle-9 L-31: a view-key guard alone can't stop a SAME-VIEW race — two
+// quick Loads with different ranges both pass it, and if response A lands
+// after B the heatmap shows range A's data under range B's inputs (the
+// INV-146 class). The seq token drops the out-of-order response.
+var _covSeq = 0;
 function covLoad_() {
   var body = document.getElementById('cov-body'); if (!body) return;
   var requested = currentView;
+  var seq = ++_covSeq;
   body.innerHTML = loSweep();
   google.script.run
-    .withSuccessHandler(function (data) { if (currentView !== requested) return; covRender_(data); })
+    .withSuccessHandler(function (data) { if (currentView !== requested || seq !== _covSeq) return; covRender_(data); })
     .withFailureHandler(function (err) {
-      if (currentView !== requested) return;
+      if (currentView !== requested || seq !== _covSeq) return;
       body.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load coverage') + '</div>';
     })
     .getCoveragePlan(COV_STATE.from, COV_STATE.to);
@@ -1286,14 +1299,16 @@ function punctFmtMin_(m) {
   return h12 + ':' + ('0' + mm).slice(-2) + ' ' + ap;
 }
 
+var _punctSeq = 0;   // cycle-9 L-31 — same-view range race (see covLoad_)
 function punctLoad_() {
   var body = document.getElementById('punct-body'); if (!body) return;
   var requested = currentView;
+  var seq = ++_punctSeq;
   body.innerHTML = loSweep();
   google.script.run
-    .withSuccessHandler(function (data) { if (currentView !== requested) return; punctRender_(data); })
+    .withSuccessHandler(function (data) { if (currentView !== requested || seq !== _punctSeq) return; punctRender_(data); })
     .withFailureHandler(function (err) {
-      if (currentView !== requested) return;
+      if (currentView !== requested || seq !== _punctSeq) return;
       body.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load punctuality') + '</div>';
     })
     .getPunctualityReport(PUNCT_STATE.from, PUNCT_STATE.to);

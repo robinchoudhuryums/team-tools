@@ -2684,6 +2684,14 @@ function cnWireActiveForm_() {
       }
       if (e.key === 'Escape' && !e.defaultPrevented) {
         if (document.querySelector('.overlay.open')) return;
+        // Cycle-9 L-29: the KB drawer is NOT an .overlay (z-55, designed to
+        // stay open while typing in the form). A rep pressing Esc to dismiss
+        // the drawer — focus back in a field — used to ALSO clear their
+        // in-progress note (the shell's document-level handler then closed
+        // the drawer too: one keystroke, both actions). Let the drawer close
+        // take the keystroke; a second Esc clears the form.
+        const kbd = document.getElementById('kb-drawer');
+        if (kbd && kbd.classList.contains('open')) return;
         e.preventDefault();
         cnClearActiveForm_();
       }
@@ -3477,6 +3485,13 @@ function cnSubmitActiveForm_(opts) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res.success) {
+        // Cycle-9 M-4: a STRUCTURED failure ({success:false} — enrollment /
+        // validation errors) must run the same teardown as the throw path
+        // below, or a Save & Compose flow wedges: composeFlow blocks every
+        // further submit ("Still saving…") and the envelope overlay sits on
+        // screen until an Esc runs a misleading rollback.
+        CN_STATE.composeFlow = null;
+        cnCloseComposerLoadingIfPending_();
         cnRevertPendingSubmit_(pendingId, restoreSnapshot, res.error || 'Save failed');
         return;
       }
@@ -4206,13 +4221,20 @@ function cnBuildTimelineHtml_(res) {
   var events = (res && res.events) || [];
   var head = '<div class="head"><h3>Patient timeline · ' + esc(res.trx || '') + '</h3>' +
     '<button class="xclose" onclick="cnCloseTimelineOverlay_()" aria-label="Close">' + icon('x', 16) + '</button></div>';
+  // Cycle-9 L-8: a failed source stream is meaningfully different from "no
+  // data" on a patient-context surface — surface which streams are missing
+  // instead of rendering an authoritative-looking partial timeline.
+  var partialBanner = (res && res.partial && res.failedSources && res.failedSources.length)
+    ? '<div style="font-size:12px;color:var(--warning-deep);background:var(--warn-soft);border-radius:8px;padding:6px 10px;margin-bottom:8px">' +
+      icon('warning', 12) + ' Incomplete — could not load: ' + esc(res.failedSources.join(', ')) + '. Retry for the full picture.</div>'
+    : '';
   if (!events.length) {
     return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
-      '<div class="body"><div class="no-data">No call notes, intake submissions, or sent forms found for this patient / TRX in your own records.</div></div></div>';
+      '<div class="body">' + partialBanner + '<div class="no-data">No call notes, intake submissions, or sent forms found for this patient / TRX in your own records.</div></div></div>';
   }
   var counts = { note: 0, intake: 0, form: 0 };
   events.forEach(function (ev) { counts[ev.kind] = (counts[ev.kind] || 0) + 1; });
-  var summary = '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' +
+  var summary = partialBanner + '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">' +
     counts.note + ' note(s) · ' + counts.intake + ' intake · ' + counts.form + ' form(s)</div>';
   var rows = events.map(cnTimelineRowHtml_).join('');
   return '<div class="modal cn-timeline-modal" style="max-width:600px">' + head +
@@ -4569,6 +4591,12 @@ function cnReloadPinnedTray_() {
         cnRenderStack_();
         cnRenderFilterBar_();
       }
+    })
+    .withFailureHandler(function () {
+      // Cycle-9 L-28: this is the AUTHORITATIVE tray reload (also invoked
+      // from the pin toggle's revert path) — a silent transport failure left
+      // stale/optimistically-reverted tray state with no signal.
+      if (currentView === requestedView) showToast('Could not refresh pinned notes', 'toast-error');
     })
     .getMyPinnedCallNotes();
 }
@@ -5660,7 +5688,16 @@ function cnMaybeWinbackNudge_(noteId, callerName) {
       var msgEl = document.getElementById('cnX-message'); if (msgEl) msgEl.value = body;
       var nameEl = document.getElementById('cnX-name'); if (nameEl && callerName) nameEl.value = String(callerName).trim();
       var subjEl = document.getElementById('cnX-subject');
-      if (subjEl && !subjEl.value.trim()) { subjEl.value = 'Before you go — we’d value your feedback'; c.subject = subjEl.value; }
+      // Cycle-9 L-27: the modal always renders a NON-empty auto-generated
+      // subject ("UMS — Documents for …"), so the old empty-only check could
+      // never fire and every win-back went out under the generic documents
+      // subject. Replace when the current value is empty OR still the
+      // auto-pattern (the cnExtAutoUpdateSubject_ rule) — a manager-typed
+      // custom subject is left alone.
+      if (subjEl && (!subjEl.value.trim() || /^UMS\s*—\s*(Documents for|Form Request for)\s/i.test(subjEl.value.trim()))) {
+        subjEl.value = 'Before you go — we’d value your feedback';
+        c.subject = subjEl.value;
+      }
     });
   });
 }
@@ -6143,6 +6180,10 @@ function cnRenderManageView(area) {
           icon('flag', 12) + ' ' + res.count + ' unresolved action flag' + (res.count === 1 ? '' : 's') + ' across all reps</div>';
       }
     })
+    // Cycle-9 L-28: the badge is ambient — no toast on failure (a landing
+    // nag would be worse than a missing badge), but attach a handler so the
+    // failure is at least observable in the console instead of vanishing.
+    .withFailureHandler(function (err) { console.warn('unresolved-badge fetch failed: ' + ((err && err.message) || err)); })
     .managerGetUnresolvedActionCount();
   // Compliance audit deep-link (#3): if the Admin audit panel set a pending
   // drill, open the Per-Rep view for that rep+date instead of the default
@@ -6419,7 +6460,10 @@ function cnMgrCoachOnNote_(btn) {
     patientTRX: btn.dataset.patientTrx || '',
     noteId: btn.dataset.noteId || '',
   };
-  if (typeof enterTool === 'function') enterTool('training', 'coaching');
+  // The tool's TOOLS-registry key is 'develop' (label "Training & Employee
+  // Docs") — enterTool returns SILENTLY on an unknown key, so the old
+  // enterTool('training', …) call was a dead no-op (cycle-9 H-1).
+  if (typeof enterTool === 'function') enterTool('develop', 'coaching');
   else if (typeof showToast === 'function') showToast('Open Training → Coaching to log it', 'toast-info');
 }
 
@@ -8021,6 +8065,10 @@ function cnLoadAuditPanel_() {
         return '<option value="' + esc(r.id) + '">' + esc(r.name) + '</option>';
       }).join('');
     })
+    .withFailureHandler(function () {
+      // Cycle-9 L-28: the rep filter silently stayed "All reps" with no hint.
+      if (currentView === 'callNotesAdmin') showToast('Could not load the rep filter list', 'toast-error');
+    })
     .getEnrolledCallNotesReps();
   cnRunAuditSearch_();
 }
@@ -9414,7 +9462,17 @@ function cnBuildExternalEmailHtml_() {
 
   // Note reference dropdown
   var noteOptions = '<option value="">None (standalone email)</option>';
-  var notes = CN_STATE.rollingNotes || [];
+  var notes = (CN_STATE.rollingNotes || []).slice();
+  // Cycle-9 M-5: a composer opened FOR a History/pinned note (dept→External
+  // tab switch, win-back nudge) had no matching <option> — the select
+  // silently fell back to "None (standalone email)" and the send dropped the
+  // note linkage (the externalEmails[] stamp / manager recipient lookup /
+  // card pill never happened). Resolve the preset note from any cache
+  // (rolling / history / pinned) and pin it to the top of the list.
+  if (c.noteId && !notes.some(function (n) { return n.noteId === c.noteId; })) {
+    var presetNote = (typeof cnFindNoteAnywhere_ === 'function') ? cnFindNoteAnywhere_(c.noteId) : null;
+    if (presetNote) notes.unshift(presetNote);
+  }
   notes.forEach(function (n) {
     if (n._pending) return;
     var label = (n.caller || n.patientAndTrx || 'Note') + ' — ' + cnFormatTimestampForCopy_(n.timestamp);

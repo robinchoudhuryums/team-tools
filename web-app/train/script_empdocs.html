@@ -670,13 +670,17 @@ function edVerify_(docId) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error) { showToast((res && res.error) || 'Verify failed.', 'error'); return; }
-      if (!res.signed) { showToast('Not signed yet' + (res.contentMatch === false ? ' — CONTENT HASH MISMATCH (row altered after issue!)' : '.'), res.contentMatch === false ? 'error' : 'info'); return; }
+      // Cycle-9 M-8: a fields-only completion carries the same hash artifact
+      // (empty-signature DocSignatures row) — res.completed distinguishes it
+      // from a signature so the copy doesn't claim a signature that isn't there.
+      if (!res.signed && !res.completed) { showToast('Not signed yet' + (res.contentMatch === false ? ' — CONTENT HASH MISMATCH (row altered after issue!)' : '.'), res.contentMatch === false ? 'error' : 'info'); return; }
+      var word = res.completed ? 'completed' : 'signed';
       if (!res.tampered && res.match === true) {
-        showToast('✓ Integrity verified — signature and content hashes match (signed ' + String(res.signedAt).substring(0, 10) + ').', 'success');
+        showToast('✓ Integrity verified — ' + (res.completed ? 'completion' : 'signature') + ' and content hashes match (' + word + ' ' + String(res.signedAt).substring(0, 10) + ').', 'success');
       } else if (res.match === null) {
-        showToast('Signed (legacy row — no stored hash to verify).', 'info');
+        showToast((res.completed ? 'Completed' : 'Signed') + ' (legacy row — no stored hash to verify).', 'info');
       } else {
-        showToast('✗ INTEGRITY MISMATCH — the stored record was altered after signing. Investigate via the AuditLog witness row.', 'error');
+        showToast('✗ INTEGRITY MISMATCH — the stored record was altered after ' + word + '. Investigate via the AuditLog witness row.', 'error');
       }
     })
     .withFailureHandler(function (err) { showToast('Verify failed: ' + ((err && err.message) || err), 'error'); })

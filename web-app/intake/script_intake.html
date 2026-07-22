@@ -2296,13 +2296,18 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
   if (onView) intakeShowNoteDraftModal_(label, text);
 
   // Best-effort history write — reuses the rep-callable submitCallNote (locked +
-  // audited server-side). Marked via subformData.intakeType (chip) + a tag.
+  // audited server-side). Marked via subformData.intakeType (chip) + a TOP-LEVEL
+  // tags array: sanitizeCallNotePayload_ reads tags from p.tags only and
+  // whitelists subformData keys (INV-143) — intakeType is on that whitelist
+  // (bounded ppd|pmd|pap enum); tags nested inside subformData are dropped
+  // (the cycle-9 M-3 regression: both chip + tag silently vanished at submit).
   var notePayload = {
     caller: '',
     patientAndTrx: patient,
     issue: label + ' intake submitted',
     resolution: 'Emailed to ' + (recipient || 'N/A') + (codes.length ? ' · Rec: ' + codes.join(', ') : ''),
-    subformData: { intakeType: ft, tags: ['intake-' + ft] }
+    tags: ['intake-' + ft],
+    subformData: { intakeType: ft }
   };
   google.script.run
     .withSuccessHandler(function (res) {
@@ -2323,11 +2328,20 @@ function intakeShowNoteDraftModal_(label, text) {
     '<div class="intk-note-status" id="intk-note-status">' + icon('clock', 12) + ' Saving to Call Notes…</div>' +
     '<div class="intk-foot">' +
       '<button class="intk-btn" onclick="intakeCopyNoteBox_()">' + icon('copy', 14) + ' Copy again</button>' +
-      '<button class="intk-btn" onclick="enterTool(\'callNotes\',\'callNotes\')">' + icon('mail', 14) + ' Open Call Notes</button>' +
+      '<button class="intk-btn" onclick="intakeOpenCallNotes_()">' + icon('mail', 14) + ' Open Call Notes</button>' +
       '<span class="grow"></span>' +
       '<button class="intk-btn primary" data-intk-close="1">Done</button>' +
     '</div>';
   intakeOpenModal_('Note copied for the CRM', body);
+}
+
+// Cycle-9 L-23: close the modal BEFORE navigating — the intake modal is a
+// document.body overlay, and showView only closes the KB drawer on nav, so the
+// old bare enterTool() swapped #view-area BEHIND the still-open full-screen
+// overlay (the button looked dead until the rep also pressed Done/Esc).
+function intakeOpenCallNotes_() {
+  try { intakeCloseModal_(); } catch (_) {}
+  enterTool('callNotes', 'callNotes');
 }
 
 function intakeNoteDraftStatus_(ok, msg) {

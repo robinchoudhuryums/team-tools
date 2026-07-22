@@ -41,10 +41,12 @@ const PARTIALS = [
   'tc/script_manager.html',
   'cn/script_callnotes.html',
   'metrics/script_metrics.html',
+  'metrics/script_deptrequests.html',   // cycle-9 M-10 — was outside every harness net
   'intake/script_intake.html',
   'kb/script_kb.html',
   'train/script_training.html',
   'train/script_empdocs.html',
+  'train/script_coaching.html',         // cycle-9 M-10 — was outside every harness net
   'script_tour.html',
 ];
 

@@ -757,6 +757,11 @@ document.getElementById('day-submit').addEventListener('click', () => {
     .withSuccessHandler(result => {
       btn.disabled = false;
       document.getElementById('day-overlay').classList.remove('open');
+      // Cycle-9 L-30: a request is typically submitted from a CLICK-PINNED
+      // popover, and this close path never reset the pin flag — the re-bound
+      // calendar cells' mouseenter handlers early-return on it, so hover-open
+      // (Round 2 · 8c) was dead until an Esc or cell click.
+      dayPopoverPinned = false;
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       showToast('Time off request submitted','toast-success');
       CAL_CACHE = {};   // a PTO change invalidates every cached month

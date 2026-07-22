@@ -25,20 +25,45 @@ function test(name, fn) {
 // syntax error elsewhere in a partial (e.g. a stray token) would otherwise slip
 // past CI — this is the cheap net that catches it across the whole client.
 console.log('\nclient — all partials parse (<script> syntax guard)');
-[
+// Cycle-9 M-10: this list is now tripwired against index.html's include()
+// calls (below) — a newly-included JS-bearing partial that isn't added here
+// fails CI instead of silently shipping outside the parse net (the class
+// that let metrics/script_deptrequests + train/script_coaching fall out of
+// every harness list).
+const PARSE_GUARD_PARTIALS = [
   'script_core.html', 'script_icons.html', 'metrics/script_metrics.html',
+  'metrics/script_deptrequests.html',
   'cn/script_callnotes.html', 'tc/script_clock.html', 'tc/script_timesheet.html',
   'tc/script_timeoff.html', 'tc/script_manager.html', 'index.html', 'form_public.html',
   'intake/script_intake.html',
   'kb/script_kb.html',
   'train/script_training.html',
   'train/script_empdocs.html',
+  'train/script_coaching.html',
   'script_tour.html',
-].forEach((f) => {
+];
+PARSE_GUARD_PARTIALS.forEach((f) => {
   test(f + ' parses', () => {
     const src = extractScript(f);
     assert.ok(src.trim().length > 0, 'has a <script> block');
     new vm.Script(src, { filename: f });  // throws on a syntax error
+  });
+});
+
+// Cycle-9 M-10 — the parse-guard list auto-tracks index.html. Every partial
+// include()'d by the shell that carries a <script> block MUST be in
+// PARSE_GUARD_PARTIALS; a new module's partial can no longer ship outside
+// the net with CI green. (styles/modals have no <script>; form_public.html
+// is standalone — not include()'d — and is listed explicitly above.)
+test('every JS-bearing include()d partial is in the parse-guard list', () => {
+  const idx = fs.readFileSync(path.join(__dirname, '../../web-app/index.html'), 'utf8');
+  const included = [...idx.matchAll(/include\('([^']+)'\)/g)].map((m) => m[1] + '.html');
+  assert.ok(included.length >= 10, 'index.html include() calls parsed (got ' + included.length + ')');
+  included.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+    if (!/<script[\s>]/i.test(src)) return;   // style/markup-only partial
+    assert.ok(PARSE_GUARD_PARTIALS.indexOf(f) >= 0,
+      f + ' is include()d with a <script> block but missing from PARSE_GUARD_PARTIALS (and probably the DOM/M3 lists too)');
   });
 });
 
@@ -611,6 +636,34 @@ test('coachParseTs_ parses BOTH stamp forms (space + T) and NaNs garbage', () =>
   assert.strictEqual(sb.coachParseTs_('2026-01-01T09:00:00'), ms, 'T form parses identically');
   assert.ok(isNaN(sb.coachParseTs_('garbage')), 'garbage → NaN (falsy for the overdue guards)');
 });
+// Cycle 9 · M-11 — the INV-134 fail-closed team-scoping boundary
+// (coachCanManagerSee_) had ZERO tests at any layer while its structurally
+// identical EmpDocs twin (empDocCanManagerSee_) is fully pinned. Unit-pin the
+// scoping rules with a stubbed roster. The stub mirrors the production
+// contract: lookupEmployeeById_ lowercases managerEmail at read.
+test('C9 M-11: coachCanManagerSee_ — creator OR roster column-M manager; blank narrows; fail-closed', () => {
+  const cctx = { String, Boolean };
+  vm.createContext(cctx);
+  vm.runInContext(
+    'var __roster = {};\nfunction lookupEmployeeById_(id) { return __roster[String(id)] || null; }',
+    cctx, { filename: 'coachSee#stub' });
+  vm.runInContext(extractRawFunction('Code.js', 'coachCanManagerSee_'), cctx, { filename: 'Code.js#coachCanManagerSee_' });
+  const see = (caller, item, roster) => { cctx.__roster = roster || {}; return cctx.coachCanManagerSee_(caller, item); };
+  const item = { empId: 'E1', createdBy: 'Creator@X.com' };
+  assert.strictEqual(see({ isManager: false, email: 'creator@x.com' }, item), false,
+    'a non-manager is denied even as the creator');
+  assert.strictEqual(see({ isManager: true, email: 'CREATOR@x.COM' }, item), true,
+    'the creator is allowed (case-insensitive, no roster row needed)');
+  assert.strictEqual(see({ isManager: true, email: 'boss@x.com' }, item,
+    { E1: { managerEmail: 'boss@x.com' } }), true, 'the roster column-M manager is allowed');
+  assert.strictEqual(see({ isManager: true, email: 'other@x.com' }, item,
+    { E1: { managerEmail: 'boss@x.com' } }), false,
+    'an unrelated manager is denied — MANAGER_EMAILS membership alone grants nothing');
+  assert.strictEqual(see({ isManager: true, email: 'boss@x.com' }, item,
+    { E1: { managerEmail: '' } }), false, 'a blank ManagerEmail NARROWS to creator only (fail-closed)');
+  assert.strictEqual(see({ isManager: true, email: 'boss@x.com' }, item), false,
+    'a missing roster row denies (fail-closed)');
+});
 test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-only parseTimestampMs_', () => {
   ['getCoachingDashboard', 'coachUnackedAll_'].forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
@@ -665,6 +718,21 @@ console.log('\nCode.js — sanitizeCallNotePayload_ subformData whitelist (cycle
     const c = snCtx.sanitizeCallNotePayload_({ issue: 'x', flagType: 'urgent' });
     assert.strictEqual(JSON.stringify(c.subformData.flags), '["urgent"]', 'urgent preserved in the blob');
     assert.strictEqual(c.flagType, 'urgent', 'validation still sees the extended value; sanitizeFlagType_ strips it from the COLUMN downstream (INV-37)');
+  });
+  // Cycle 9 · M-3 — the intake auto-log note marks its category via
+  // subformData.intakeType (the cnIntakePillHtml_ chip) + a top-level
+  // 'intake-<type>' tag. The M-15 whitelist silently stripped intakeType, so
+  // every intake-logged note persisted un-chipped. Pin the bounded enum:
+  // ppd|pmd|pap survive (case-normalized), anything else drops.
+  test('C9 M-3: subformData.intakeType survives the whitelist as a bounded enum', () => {
+    const kept = snCtx.sanitizeCallNotePayload_({ issue: 'x', tags: ['intake-ppd'],
+      subformData: { intakeType: 'ppd' } });
+    assert.strictEqual(kept.subformData.intakeType, 'ppd', 'valid intakeType kept');
+    assert.strictEqual(JSON.stringify(kept.subformData.tags), '["intake-ppd"]', 'top-level intake tag folds in');
+    assert.strictEqual(snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { intakeType: 'PMD' } })
+      .subformData.intakeType, 'pmd', 'case-normalized');
+    assert.strictEqual(snCtx.sanitizeCallNotePayload_({ issue: 'x', subformData: { intakeType: 'evil<script>' } })
+      .subformData, null, 'off-enum value drops (blob then empty → null)');
   });
 }
 
@@ -1041,6 +1109,51 @@ test('branded builders never throw on null / empty inputs', () => {
   assert.doesNotThrow(() => brandedKvRows_([['x', null], [null, undefined]]));
 });
 
+// Cycle 9 · M-7 — NO mail send may be reachable inside a locked region. A
+// MailApp send is ~0.3–0.5s (an '*' training assignment looped the WHOLE
+// roster), and every mutating write shares ONE global ScriptLock with a 15s
+// waitLock ceiling — mail inside the lock starves punch/note writes (the
+// kbUploadImage / 6pm-archive class). The converted sites defer via a
+// `notifyAfter = function () { … };` closure that the finally invokes AFTER
+// releaseLock — those closures (and the explicit allowlist) are the only
+// exemptions. Two-level scan: inventory every function whose body touches
+// MailApp., then flag any locked try-region (waitLock → last finally) that
+// references one outside a notifyAfter closure.
+test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock notifyAfter + allowlist exempt)', () => {
+  const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const funcs = {};
+  const fre = /^function (\w+)\(/gm;
+  let fm;
+  while ((fm = fre.exec(codeSrc))) {
+    let i = codeSrc.indexOf('{', fre.lastIndex - 1), depth = 0, j = i;
+    for (; j < codeSrc.length; j++) {
+      if (codeSrc[j] === '{') depth++;
+      else if (codeSrc[j] === '}') { depth--; if (depth === 0) break; }
+    }
+    funcs[fm[1]] = codeSrc.slice(fm.index, j + 1);
+  }
+  const senders = Object.keys(funcs).filter((n) => stripC(funcs[n]).indexOf('MailApp.') >= 0);
+  assert.ok(senders.length >= 15, 'mail-sender inventory armed (got ' + senders.length + ')');
+  // Deliberate in-lock senders, each with a load-bearing reason:
+  const ALLOWLIST = {
+    emailFromCallNote: 'INV-42 — send-then-stamp is one locked unit: the send outcome decides success:false vs stamp, and the stamp must not race a concurrent edit',
+  };
+  const offenders = [];
+  Object.keys(funcs).forEach((n) => {
+    const sb = stripC(funcs[n]);
+    if (sb.indexOf('waitLock(') < 0) return;
+    const finIdx = sb.lastIndexOf('finally');
+    if (finIdx < 0) return;
+    let region = sb.slice(sb.indexOf('waitLock('), finIdx);
+    region = region.replace(/notifyAfter = function \(\) \{[^{}]*\};/g, '');
+    const hits = senders.filter((s) => new RegExp('\\b' + s + '\\s*\\(').test(region));
+    if (region.indexOf('MailApp.') >= 0) hits.push('MailApp.');
+    if (hits.length && !ALLOWLIST[n]) offenders.push(n + ' → ' + hits.join(','));
+  });
+  assert.deepStrictEqual(offenders, [],
+    'mail reachable inside a locked region — move it to a post-lock notifyAfter closure (or allowlist it WITH a reason): ' + offenders.join(' | '));
+});
+
 console.log('\nCode.js — automation trigger wiring is self-consistent (#3 coupling tripwire)');
 // Guards the class of bug that bit purgeOldCallNotes: a ScriptApp.newTrigger('X')
 // whose handler is missing from the TARGETS arrays. TARGETS drives BOTH the
@@ -1186,15 +1299,26 @@ console.log('\nscript_core — view-key literals match the TOOLS registry (M3 tr
 test("every refreshViewIfCurrent('…') literal is a registered tab key", () => {
   const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
     'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
-    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'train/script_empdocs.html', 'script_core.html'];
+    'metrics/script_deptrequests.html',
+    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'train/script_empdocs.html',
+    'train/script_coaching.html',
+    'script_core.html'];
   // TOOLS / VIEW_TO_TOOL are top-level consts (lexical, not on the sandbox
   // global), so parse the tab keys from the registry source: every tab entry
   // carries an `enter:` handler.
   const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
   const toolsBlock = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/);
   assert.ok(toolsBlock, 'TOOLS registry block found');
-  const validKeys = [...toolsBlock[0].matchAll(/(\w+):\s*\{[^}]*enter:\s*'/g)].map((m) => m[1]);
+  // [^{}]* (not [^}]*) so the match can't cross into a nested object — the
+  // old class let the match run from a TOOL wrapper key into its tabs:{}
+  // block, capturing tool keys instead of tab keys (cycle-9 M-9: the tripwire
+  // was false-permissive for exactly the H-1 wrong-key class; the tour test
+  // below had the corrected form all along).
+  const validKeys = [...toolsBlock[0].matchAll(/(\w+):\s*\{[^{}]*enter:\s*'/g)].map((m) => m[1]);
   assert.ok(validKeys.length >= 10, 'TOOLS registry tab keys parsed (got ' + validKeys.length + ')');
+  ['clock', 'timeoff', 'callNotes', 'manage'].forEach((k) => {
+    assert.ok(validKeys.indexOf(k) >= 0, 'leaf TAB key ' + k + ' parsed (the [^}]* regression captured tool wrappers instead)');
+  });
   partials.forEach((f) => {
     const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
     [...src.matchAll(/refreshViewIfCurrent\('([^']+)'/g)].forEach((m) => {
@@ -1202,6 +1326,49 @@ test("every refreshViewIfCurrent('…') literal is a registered tab key", () => 
         f + ": refreshViewIfCurrent('" + m[1] + "') is not a TOOLS tab key");
     });
   });
+});
+
+// Cycle 9 · H-1 — the manager "Coach on this" button called
+// enterTool('training', …) but the Training tool's registry key is 'develop';
+// enterTool returns SILENTLY on an unknown tool key, so the INV-134 deep-link
+// was a dead no-op that nothing surfaced. Pin every enterTool('<toolKey>' literal
+// in the client against the LIVE registry's top-level TOOL keys. The keys are
+// extracted with a brace-depth walk (not a regex char class) so nested tab
+// keys can neither satisfy nor pollute the valid set.
+test("every enterTool('…') literal is a registered TOOL key", () => {
+  const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const toolsBlock = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/);
+  assert.ok(toolsBlock, 'TOOLS registry block found');
+  const body = toolsBlock[0].slice(toolsBlock[0].indexOf('{'));
+  const toolKeys = [];
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '{') { depth++; continue; }
+    if (ch === '}') { depth--; continue; }
+    if (depth === 1) {
+      const m = /^(\w+)\s*:/.exec(body.slice(i));
+      if (m) { toolKeys.push(m[1]); i += m[0].length - 1; }
+    }
+  }
+  assert.ok(toolKeys.length >= 5, 'top-level TOOL keys parsed (got ' + toolKeys.join(',') + ')');
+  const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
+    'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
+    'metrics/script_deptrequests.html', 'intake/script_intake.html', 'kb/script_kb.html',
+    'train/script_training.html', 'train/script_empdocs.html', 'train/script_coaching.html',
+    'script_core.html', 'script_tour.html'];
+  let literalCount = 0;
+  const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  partials.forEach((f) => {
+    const src = stripC(fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'));
+    [...src.matchAll(/enterTool\(\s*'([^']+)'/g)].forEach((m) => {
+      if (m[1].indexOf('${') >= 0) return;  // template-literal interpolation — dynamic key, not a literal
+      literalCount++;
+      assert.ok(toolKeys.indexOf(m[1]) >= 0,
+        f + ": enterTool('" + m[1] + "') is not a registered TOOL key (registry keys: " + toolKeys.join(',') + ')');
+    });
+  });
+  assert.ok(literalCount >= 3, 'enterTool literals found (scan is armed — got ' + literalCount + ')');
 });
 
 console.log('\nscript_core — Manage module gating (admin tier)');
@@ -3230,6 +3397,14 @@ test('the brief suppresses exactly the four daily manager streams — never the 
     const src = extractRawFunction('Code.js', h);
     assert.ok(/managerBriefSuppressionActive_\s*\(/.test(src),
       h + ' must gate suppression on managerBriefSuppressionActive_ (flag + live heartbeat)');
+    // Cycle-9 L-18: the digest call sites additionally require a LIVE brief
+    // trigger ({checkTrigger:true} — visible in their trigger context, where
+    // the runner is the installer). A manual editor run of the brief stamps a
+    // fresh heartbeat with no trigger behind it; without this the four
+    // digests suppressed into a ~26h silent-outage window the briefConfig
+    // detector cannot see (suppression reads active).
+    assert.ok(/managerBriefSuppressionActive_\(\s*\{\s*checkTrigger:\s*true\s*\}\s*\)/.test(src),
+      h + ' must pass {checkTrigger:true} (the L-18 manual-run window)');
     assert.ok(!/getFlag_\(\s*'managerDailyBrief'\s*\)/.test(src),
       h + ' must NOT gate on the bare flag (the M-11 silent-outage class)');
   });
@@ -3240,6 +3415,15 @@ test('the brief suppresses exactly the four daily manager streams — never the 
   assert.ok(/managerBrief/.test(helperSrc) && /DIGEST_LAST_RUN_PROP/.test(helperSrc),
     'helper consults the managerBrief heartbeat');
   assert.ok(/return false/.test(helperSrc), 'helper fails safe (returns false on any doubt)');
+  // L-18: the trigger check lives behind opts.checkTrigger and fails toward
+  // NOT suppressing (a doubled email beats a silent outage); the PANEL
+  // detector must stay argless — a viewing manager isn't the installer, so
+  // getProjectTriggers() would false-alarm in that context.
+  assert.ok(/checkTrigger/.test(helperSrc) && /getProjectTriggers/.test(helperSrc),
+    'helper carries the opts.checkTrigger trigger-existence branch');
+  const detectorSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
+  assert.ok(/!managerBriefSuppressionActive_\(\)/.test(detectorSrc),
+    'the briefConfig detector calls the helper ARGLESS (no trigger check in viewer context)');
   // The failure watchdog is deliberately NOT consolidated (it's what reports
   // a dead brief trigger) and the weekly digests stay weekly.
   ['sendAutomationHealthDigest', 'sendCallNotesWeeklyDigests'].forEach((h) => {
@@ -3389,6 +3573,105 @@ test('the Dashboard uses card-shaped skeletons — no sweep bar remains (operato
   assert.ok(/clkDashSkeleton_\(/.test(clockSrc) && /clkDashSkelKpis_\(/.test(clockSrc),
     'skeleton helpers are wired (initial pair + per-card KPI shapes)');
   assert.ok(/class="skel dash-skel-kpi"/.test(clockSrc), 'skeletons compose the shared .skel shimmer');
+});
+
+// ── Cycle 9 · Batch 7 — pins for previously-unpinned recent features ─────────
+console.log('\ncycle-9 batch 7 — feature pins + payload-contract tripwire');
+
+test('L-35: PUNCH_MORPH destinations equal the NEXT state\'s primary idle glyph (the F7 half-step class)', () => {
+  const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const m = clockSrc.match(/const PUNCH_MORPH = \{[\s\S]*?\n\};/);
+  assert.ok(m, 'PUNCH_MORPH found');
+  const morph = {};
+  [...m[0].matchAll(/(\w+):\s*\{\s*from:\s*'(\w+)',\s*to:\s*'(\w+)'\s*\}/g)]
+    .forEach((mm) => { morph[mm[1]] = { from: mm[2], to: mm[3] }; });
+  // LunchOut → mug (On-Lunch's primary LunchIn idles as the mug). LunchIn →
+  // doorExit, NOT headset: a lunch RETURN sets afterLunch, which makes
+  // ClockOut (idle doorExit) the primary — PUNCH_MORPH.LunchIn.to='headset'
+  // was the documented F7 regression (the morph lagged the re-render).
+  assert.strictEqual(morph.LunchOut && morph.LunchOut.from, 'headset');
+  assert.strictEqual(morph.LunchOut && morph.LunchOut.to, 'coffeeMug');
+  assert.strictEqual(morph.LunchIn && morph.LunchIn.from, 'coffeeMug');
+  assert.strictEqual(morph.LunchIn && morph.LunchIn.to, 'doorExit',
+    "LunchIn morphs to doorExit (afterLunch makes ClockOut primary) — 'headset' is the F7 half-step bug");
+});
+
+test('L-35: spanishSearchQuery_ keeps the {to: cc:} brace-OR (Cc\'d requests enter all three readers)', () => {
+  const sctx = { String };
+  vm.createContext(sctx);
+  vm.runInContext(extractRawFunction('Code.js', 'spanishSearchQuery_'), sctx, { filename: 'Code.js#spanishSearchQuery_' });
+  const q = sctx.spanishSearchQuery_('inbox@x.com', 7);
+  assert.ok(/^\{to:inbox@x\.com cc:inbox@x\.com\}/.test(q),
+    'brace-OR over to: AND cc: — a plain to: silently drops Cc\'d requests from stats/pending/resolved');
+  assert.ok(/newer_than:7d$/.test(q), 'window rides the query');
+});
+
+test('L-35: night-sky runtime gating — shooting stars need deep night + mid-shift + motion-ok + no photo', () => {
+  const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const fn = clockSrc.match(/function clkShootMaybe_\(\) \{[\s\S]*?\n\}/);
+  assert.ok(fn, 'clkShootMaybe_ found');
+  assert.ok(/_clkLastStarDensity < 2/.test(fn[0]), 'deep-night density gate (< 2 returns)');
+  assert.ok(/prefers-reduced-motion/.test(fn[0]), 'reduced-motion skip (a non-animating streak would linger)');
+  assert.ok(/has-bg/.test(fn[0]), 'photo mode skips the decor');
+  assert.ok(/clkSchedStartMin_/.test(fn[0]), 'rep-local shift-midpoint gate');
+});
+
+test('L-35: greeting rotator ties to the startClock/stopClock lifecycle + hover-holds', () => {
+  const clockSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/clkGreetRotStart_|clkGreetRot/.test(clockSrc), 'rotator present');
+  const stopFn = clockSrc.match(/function stopClock\(\) \{[\s\S]*?\n\}/);
+  assert.ok(stopFn && /GreetRot|_greetRot/i.test(stopFn[0]),
+    'stopClock tears the rotator down (interval-leak class)');
+});
+
+// Strategic #2 — the M-3 drift class: the client kept writing subformData /
+// payload keys a later server whitelist silently dropped. Extract every key
+// the CLIENT submits (payload.subformData.X assignments + subformData:{...}
+// literals in submit payloads, ternary form included) and assert each is on
+// sanitizeCallNotePayload_'s whitelist (a rawSub.<key> read).
+test('TRIPWIRE (C9): every client-submitted subformData key is on the server whitelist (INV-143)', () => {
+  const whitelistSrc = extractRawFunction('Code.js', 'sanitizeCallNotePayload_');
+  const serverKeys = new Set([...whitelistSrc.matchAll(/rawSub\.(\w+)/g)].map((m) => m[1]));
+  assert.ok(serverKeys.size >= 3, 'server whitelist parsed (got ' + [...serverKeys].join(',') + ')');
+  const clientKeys = new Set();
+  ['cn/script_callnotes.html', 'intake/script_intake.html'].forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
+    [...src.matchAll(/(?:payload|notePayload)\.subformData\.(\w+)\s*=/g)].forEach((m) => clientKeys.add(m[1]));
+    [...src.matchAll(/subformData:\s*(?:\w+\s*\?\s*)?\{([^}]*)\}/g)].forEach((m) => {
+      [...m[1].matchAll(/(\w+)\s*:/g)].forEach((k) => clientKeys.add(k[1]));
+    });
+  });
+  assert.ok(clientKeys.size >= 3, 'client-submitted keys parsed (got ' + [...clientKeys].join(',') + ')');
+  clientKeys.forEach((k) => {
+    assert.ok(serverKeys.has(k),
+      "client submits subformData." + k + " but sanitizeCallNotePayload_'s whitelist never reads it — it is silently dropped at submit (the cycle-9 M-3 class)");
+  });
+});
+
+// Batch 7 — extend the view-key net: showView('…') literals are tab keys too
+// (the H-1/M-9 family; enterTool literals are covered by their own tripwire).
+test("every showView('…') literal is a registered tab key", () => {
+  const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const toolsBlock = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/);
+  assert.ok(toolsBlock, 'TOOLS registry block found');
+  const validKeys = [...toolsBlock[0].matchAll(/(\w+):\s*\{[^{}]*enter:\s*'/g)].map((m) => m[1]);
+  assert.ok(validKeys.length >= 10, 'tab keys parsed');
+  let svLiterals = 0;
+  const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
+   'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
+   'metrics/script_deptrequests.html', 'intake/script_intake.html', 'kb/script_kb.html',
+   'train/script_training.html', 'train/script_empdocs.html', 'train/script_coaching.html',
+   'script_core.html', 'script_tour.html'].forEach((f) => {
+    const src = stripC(fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'));
+    [...src.matchAll(/showView\(\s*'([^']+)'/g)].forEach((m) => {
+      if (m[1].indexOf('${') >= 0) return;
+      svLiterals++;
+      assert.ok(validKeys.indexOf(m[1]) >= 0,
+        f + ": showView('" + m[1] + "') is not a registered tab key");
+    });
+  });
+  assert.ok(svLiterals >= 3, 'showView literals found (scan is armed — got ' + svLiterals + ')');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
