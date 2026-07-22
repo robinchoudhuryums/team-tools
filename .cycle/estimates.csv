@@ -28,3 +28,7 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-07-10,8,Batch 3 (server correctness/PHI/automation),M (~1 day),8,1,~13%: M-11 helper + 4 branch swaps; most Lows were one-site edits.
 2026-07-10,8,Batch 4 (test integrity),M (~1 day),8,0.75,~9%: tripwire regex generalization cheaper than feared; the behavioral test was the bulk.
 2026-07-10,8,Batch 5 (UX polish Lows),M (~1 day),8,0.75,~9%: 14 items but all surgical; the DOM suite caught the one wrong placement instantly.
+2026-07-21,9,Scan (8-agent fan-out + verify High+all Mediums),M (~1 day),8,0.9,~11%: parallel fan-out + personal verification of 12 Medium+ in one stretch; agent breadth is the multiplier.
+2026-07-21,9,Batch 1+2 (scan fixes + 10 ranked),L (~2 days),16,1.4,~9%: M-8 back-compat hashing + M-11 flow test were the bulk; the rest surgical from a known-target audit.
+2026-07-21,9,Batch 3-4 (concurrency/automation + 10 client Lows),M (~1 day),8,0.7,~9%: the M-7 9-site refactor + no-mail tripwire was mechanical once the notifyAfter pattern was set.
+2026-07-21,9,"Batch 5-7 (8 bounded reads + 6 hygiene + 6 test pins)",M (~1 day),8,0.7,"~9%: bounded reads were pattern-copies; the L-3 self-recursion sed slip cost a few min, caught pre-run."
