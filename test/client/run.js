@@ -4039,5 +4039,42 @@ test('Metrics loaders carry stale-range seq tokens (M-6, the _covSeq class)', ()
   });
 });
 
+// ── Batch L pins — sheet doctor + C13 hash dual-verify ─────────────────────
+console.log('\nbatch L — sheet doctor + EmpDocs hash dual-verify pins');
+test('sheet doctor: coercion-safe scan, last-row-wins fix, gates + lock', () => {
+  const scan = extractRawFunction('Code.js', 'tsDoctorScan_');
+  ['normalizeDate_', 'normalizeTime_', 'normalizeType_'].forEach((h) => {
+    assert.ok(scan.indexOf(h + '(') >= 0, 'tsDoctorScan_ reads via ' + h + ' (Sheets-coercion discipline)');
+  });
+  assert.ok(/i = 2/.test(scan), 'tsDoctorScan_ starts after the TWO-row Timesheet header');
+  const doctor = extractRawFunction('Code.js', 'getTimesheetDoctor');
+  assert.ok(/isManager/.test(doctor) && /Manager access required/.test(doctor), 'detector is manager-gated (INV-02)');
+  const fix = extractRawFunction('Code.js', 'fixTimesheetDuplicates');
+  assert.ok(/isManager/.test(fix) && /waitLock\(/.test(fix) && /finally/.test(fix) && /releaseLock/.test(fix),
+    'fix is manager-gated + locked with finally release (INV-01/02)');
+  assert.ok(/g\.rows\.length - 1/.test(fix),
+    'fix keeps the LAST row per group — the findExistingPunch_/managerSaveDay convention (INV-155)');
+  assert.ok(/PunchDelete/.test(fix) && /duplicate collapsed/.test(fix),
+    'each deletion writes a duplicate-collapsed PunchDelete audit row (INV-08)');
+  assert.ok(!/inverted/.test(fix),
+    'fix never touches inverted pairs — report-only by the C3 operator decision');
+});
+test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dual-verifies', () => {
+  const NUL_ESC = '\\' + 'u0000';   // the 6-char escape as source text
+  const content = extractRawFunction('Code.js', 'empDocContentHash_');
+  const sig = extractRawFunction('Code.js', 'empDocSignatureHash_');
+  [content, sig].forEach((src, i) => {
+    assert.ok(src.indexOf("(delim === undefined) ? '" + NUL_ESC + "'") >= 0,
+      (i ? 'empDocSignatureHash_' : 'empDocContentHash_') + ' defaults to the NUL delimiter (new writes are v2)');
+  });
+  const ack = extractRawFunction('Code.js', 'acknowledgeDoc');
+  assert.ok(/empDocContentHashMatches_\(/.test(ack),
+    'acknowledgeDoc integrity gate dual-verifies — a pre-C13 doc must still sign');
+  const verify = extractRawFunction('Code.js', 'verifyDocSignature');
+  assert.ok(/empDocContentHashMatches_\(/.test(verify), 'verifyDocSignature content check dual-verifies');
+  assert.ok(/EMPDOC_HASH_DELIM_LEGACY/.test(verify),
+    'verifyDocSignature recomputes the signature hash in the legacy form too');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

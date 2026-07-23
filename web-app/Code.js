@@ -1670,6 +1670,122 @@ function fixPtoReconciliation(empId) {
   finally { lock.releaseLock(); }
 }
 
+// ── Batch L (sheet doctor) — Timesheet duplicate/inversion detector ─────────
+// The getPtoReconciliation/fixPtoReconciliation pattern applied to the
+// Timesheet: a read-only detector + a locked, idempotent one-click collapse.
+// Two detectable signatures over the last TS_DOCTOR_WINDOW_DAYS:
+//   • DUPLICATES — >1 row for one (emp, date, punch type). New ones are
+//     prevented by the live sequence guard (INV-155), so these are pre-guard
+//     rows; the fix keeps the LAST row in append order — the SAME row
+//     findExistingPunch_ updates and managerSaveDay's snapshot displays —
+//     and deletes the rest with `duplicate collapsed` audit rows.
+//   • INVERTED PAIRS — a day whose last ClockOut is at-or-before its first
+//     ClockIn. calcHours_ deliberately wraps out<=in as an overnight +24h
+//     (the pinned C3 decision), so a mis-keyed AM/PM pair silently computes
+//     a huge day. REPORT-ONLY: the doctor can't know intent — the fix is a
+//     manager Day Edit, never an auto-swap.
+var TS_DOCTOR_WINDOW_DAYS = 92;   // ~a quarter — covers every open export period
+var TS_DOCTOR_MAX_GROUPS = 200;   // payload bound; narrow by fixing + re-running
+
+/** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
+ *  days: { 'empId|date': { in:[times], out:[times], name } } } over the window. */
+function tsDoctorScan_() {
+  const adpRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  const mgrTz = CONFIG.MANAGER_TIMEZONE;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - TS_DOCTOR_WINDOW_DAYS);
+  const cutoffStr = fmtDateTz_(cutoff, mgrTz);
+  const byKey = {}, days = {};
+  for (let i = 2; i < adpRows.length; i++) {   // two-row header
+    const id = String(adpRows[i][ADP.EMP_ID]).trim();
+    if (!id) continue;
+    const date = normalizeDate_(adpRows[i][ADP.DATE]);
+    if (!date || date < cutoffStr) continue;
+    const type = normalizeType_(String(adpRows[i][ADP.COMMENTS]));
+    if (!PUNCH_LABELS_.includes(type)) continue;
+    const time = normalizeTime_(adpRows[i][ADP.TIME]);
+    const key = id + '|' + date + '|' + type;
+    if (!byKey[key]) byKey[key] = { rows: [], times: [], empId: id, date: date, type: type, name: String(adpRows[i][ADP.EMP_NAME] || '') };
+    byKey[key].rows.push(i + 1);   // 1-indexed sheet row
+    byKey[key].times.push(time);
+    const dkey = id + '|' + date;
+    if (!days[dkey]) days[dkey] = { in: [], out: [], name: String(adpRows[i][ADP.EMP_NAME] || ''), empId: id, date: date };
+    if (type === 'ClockIn') days[dkey].in.push(time);
+    if (type === 'ClockOut') days[dkey].out.push(time);
+  }
+  return { byKey: byKey, days: days };
+}
+
+/** Manager-gated, READ-ONLY detector. */
+function getTimesheetDoctor() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const scan = tsDoctorScan_();
+    const duplicates = [], inverted = [];
+    Object.keys(scan.byKey).forEach(function (k) {
+      const g = scan.byKey[k];
+      if (g.rows.length > 1 && duplicates.length < TS_DOCTOR_MAX_GROUPS) {
+        duplicates.push({ empId: g.empId, name: g.name, date: g.date, type: g.type,
+          count: g.rows.length, times: g.times.slice() });
+      }
+    });
+    Object.keys(scan.days).forEach(function (k) {
+      const d = scan.days[k];
+      if (!d.in.length || !d.out.length) return;
+      const firstIn = d.in.slice().sort()[0];
+      const lastOut = d.out.slice().sort()[d.out.length - 1];
+      // HH:mm:ss lexicographic = chronological (the INV-155 convention).
+      if (lastOut <= firstIn && inverted.length < TS_DOCTOR_MAX_GROUPS) {
+        inverted.push({ empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
+      }
+    });
+    duplicates.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    inverted.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    return { duplicates: duplicates, inverted: inverted, windowDays: TS_DOCTOR_WINDOW_DAYS };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated, locked, IDEMPOTENT collapse of every duplicate group found
+ *  by a fresh server-side re-scan (never trusts client row indices). Keeps
+ *  the LAST row per (emp, date, type) in append order — agreeing with
+ *  findExistingPunch_'s last-match and managerSaveDay's collapse (INV-155) —
+ *  and deletes the earlier rows bottom-up with a PunchDelete audit row each.
+ *  The kept row is untouched, so the personal-sheet mirror stays correct.
+ *  Inverted pairs are deliberately NOT auto-fixed (Day Edit is the path). */
+function fixTimesheetDuplicates(empIdFilter) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const filter = String(empIdFilter || '').trim();   // optional: one employee only
+    const scan = tsDoctorScan_();
+    const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+    const toDelete = [];   // {rowIdx, empId, name, date, type, time}
+    Object.keys(scan.byKey).forEach(function (k) {
+      const g = scan.byKey[k];
+      if (g.rows.length < 2) return;
+      if (filter && g.empId !== filter) return;
+      // Keep the LAST row (highest row index = latest append); delete the rest.
+      for (let j = 0; j < g.rows.length - 1; j++) {
+        toDelete.push({ rowIdx: g.rows[j], empId: g.empId, name: g.name,
+          date: g.date, type: g.type, time: g.times[j] });
+      }
+    });
+    if (!toDelete.length) return { success: true, collapsed: 0 };
+    // Bottom-up so earlier deletions don't shift later row indices.
+    toDelete.sort(function (a, b) { return b.rowIdx - a.rowIdx; });
+    toDelete.forEach(function (d) {
+      sheet.deleteRow(d.rowIdx);
+      writeAuditLog_({ id: d.empId, name: d.name }, 'PunchDelete', d.date, d.time, false, 0,
+        'duplicate collapsed (sheet doctor); type=' + d.type, callerEmp.email);
+    });
+    return { success: true, collapsed: toDelete.length };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 /** Manager deletes a single punch within the delete window. */
 function deletePunch(empId, date, time, punchType) {
   const lock = LockService.getScriptLock();
@@ -17417,19 +17533,39 @@ function empDocSha256Hex_(payload) {
  *  before (back-compat — old stored hashes stay valid). Callers MUST pass the
  *  RAW stored FieldsJson cell string (not a re-serialized object) so recompute
  *  is byte-stable. */
-function empDocContentHash_(bodyMd, title, docType, empId, fieldsJson) {
-  let base = String(bodyMd || '') + ' ' + String(title || '') + ' ' + String(docType || '') + ' ' + String(empId || '');
-  if (fieldsJson) base += ' ' + String(fieldsJson);
+// C13 (batch L) — NEW hashes join fields with a '\u0000' delimiter (the
+// computeFormSubmissionHash_ discipline): the old ' ' join was field-boundary
+// ambiguous, since titles/bodies themselves contain spaces. Legacy stored
+// hashes keep validating via DUAL-VERIFY — every recompute site tries the
+// NUL form first, then the legacy space form (EMPDOC_HASH_DELIM_LEGACY),
+// through the *HashMatches_ helpers below. The conditional trailing append
+// (INV-135 back-compat) is preserved unchanged in both forms.
+var EMPDOC_HASH_DELIM_LEGACY = ' ';
+function empDocContentHash_(bodyMd, title, docType, empId, fieldsJson, delim) {
+  const d = (delim === undefined) ? '\u0000' : delim;
+  let base = String(bodyMd || '') + d + String(title || '') + d + String(docType || '') + d + String(empId || '');
+  if (fieldsJson) base += d + String(fieldsJson);
   return empDocSha256Hex_(base);
 }
 /** Signature hash — covers the frozen content hash + identity + the ack
  *  version. Deliberately NOT the timestamp (Sheets coerces datetime cells to
  *  Dates on read, which would break recompute — INV-113); the EmpDocSigned
  *  audit row is the independent timestamp witness. */
-function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson) {
-  let base = String(contentHash || '') + ' ' + String(empId || '') + ' ' + String(docId || '') + ' ' + String(signatureDataUrl || '') + ' ' + String(ackVersion || '');
-  if (responsesJson) base += ' ' + String(responsesJson);   // v2 — the signed responses are attested too (back-compat: appended only when present)
+function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson, delim) {
+  const d = (delim === undefined) ? '\u0000' : delim;
+  let base = String(contentHash || '') + d + String(empId || '') + d + String(docId || '') + d + String(signatureDataUrl || '') + d + String(ackVersion || '');
+  if (responsesJson) base += d + String(responsesJson);   // v2 — the signed responses are attested too (back-compat: appended only when present)
   return empDocSha256Hex_(base);
+}
+/** Dual-verify: does `stored` match the content fields under the NEW (NUL)
+ *  form OR the legacy (space) form? Callers pass the RAW stored cell strings
+ *  (INV-135 byte-stability). Returns a boolean; a blank `stored` is the
+ *  caller's legacy/no-hash case, not this helper's. */
+function empDocContentHashMatches_(stored, bodyMd, title, docType, empId, fieldsJson) {
+  const s = String(stored || '');
+  if (!s) return false;
+  if (empDocContentHash_(bodyMd, title, docType, empId, fieldsJson) === s) return true;
+  return empDocContentHash_(bodyMd, title, docType, empId, fieldsJson, EMPDOC_HASH_DELIM_LEGACY) === s;
 }
 
 /** Pure — issueDoc payload validation (Node-pinned). Returns {ok, doc} or
@@ -17679,9 +17815,11 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
       if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
       if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
     }
-    // Integrity gate: the row must still hash to what was issued (incl. fields).
+    // Integrity gate: the row must still hash to what was issued (incl.
+    // fields). C13 dual-verify — a doc issued before the NUL-delimiter change
+    // carries a legacy space-form hash and must still sign.
     const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
-    if (d.contentHash && d.contentHash !== expect) {
+    if (d.contentHash && !empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw)) {
       return { success: false, error: 'Integrity check failed — this document was altered after issue. Ask your manager to re-issue it.' };
     }
     const now = new Date();
@@ -17871,7 +18009,9 @@ function verifyDocSignature(docId) {
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { error: 'Document not found.' };
     const d = found.doc;
     const expectContent = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
-    const contentMatch = !d.contentHash ? null : (expectContent === d.contentHash);
+    // C13 dual-verify — legacy space-form hashes stay valid (never tampered).
+    const contentMatch = !d.contentHash ? null
+      : empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
     // Newest signature row for the doc (bottom-up id-column scan).
     const sigSheet = getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS);
     const sigLast = sigSheet.getLastRow();
@@ -17897,10 +18037,19 @@ function verifyDocSignature(docId) {
     // sign path hashes with `d.contentHash || <freshly computed>`, so a
     // legitimately-signed hand-entered/legacy row (blank ContentHash cell)
     // used to recompute against '' here and report a FALSE tampered:true.
+    // C13 dual-verify — try the NUL form, then the legacy space form. For the
+    // blank-stored-ContentHash fallback each attempt uses ITS OWN era's
+    // content-hash recompute (a pre-change sign hashed a space-form expect;
+    // a post-change sign hashes the NUL form).
+    const ackVer = String(sigRow[EDS.ACK_VERSION] || '');
     const recomputed = empDocSignatureHash_(
-      d.contentHash || expectContent, d.empId, d.docId,
-      rowSig, String(sigRow[EDS.ACK_VERSION] || ''), d.responsesRaw);
-    const match = storedHash ? storedHash === recomputed : null;
+      d.contentHash || expectContent, d.empId, d.docId, rowSig, ackVer, d.responsesRaw);
+    const expectContentLegacy = empDocContentHash_(
+      d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw, EMPDOC_HASH_DELIM_LEGACY);
+    const recomputedLegacy = empDocSignatureHash_(
+      d.contentHash || expectContentLegacy, d.empId, d.docId, rowSig, ackVer,
+      d.responsesRaw, EMPDOC_HASH_DELIM_LEGACY);
+    const match = storedHash ? (storedHash === recomputed || storedHash === recomputedLegacy) : null;
     // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
     // consistent body+contentHash rewrite trips `match` (the signature hash
     // bound the sign-time contentHash). EITHER being false means tamper, so

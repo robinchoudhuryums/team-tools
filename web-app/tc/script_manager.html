@@ -81,7 +81,7 @@ function loadManagerDashboard() {
       if (data.error) { mgrLoadError_(data.error); return; }
       mgrData = data;
       const area = document.getElementById('view-area');
-      if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); loadPendingAdjustments_(); }
+      if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); loadSheetDoctor_(); loadPendingAdjustments_(); }
     })
     .withFailureHandler(err => mgrLoadError_(err.message||'Load failed'))
     .getManagerDashboard();
@@ -164,6 +164,86 @@ function fixPtoReconRep_(btn) {
         btn.disabled = false;
       })
       .fixPtoReconciliation(empId);
+  });
+}
+
+// ── Batch L — Timesheet sheet doctor ────────────────────────────────────
+// Lazy, best-effort (the PTO-recon lazy-card pattern): fills #mgr-sheet-doctor
+// only when getTimesheetDoctor finds duplicate punch rows (pre-INV-155
+// leftovers) or inverted ClockIn/ClockOut pairs (the mis-keyed AM/PM class
+// that calcHours_'s deliberate overnight wrap renders as a huge day — C3).
+// Duplicates get a one-click collapse (keeps the LAST row, the same one
+// findExistingPunch_/managerSaveDay use); inverted pairs are report-only —
+// fixing one is a judgment call for Day Edit.
+function loadSheetDoctor_() {
+  const slot = document.getElementById('mgr-sheet-doctor');
+  if (!slot) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      const s = document.getElementById('mgr-sheet-doctor');
+      if (!s || currentView !== 'manage') return;
+      if (!res || res.error ||
+          ((!res.duplicates || !res.duplicates.length) && (!res.inverted || !res.inverted.length))) {
+        s.innerHTML = ''; return;
+      }
+      s.innerHTML = renderSheetDoctorCard_(res);
+    })
+    .withFailureHandler(function () { /* best-effort — stay silent on failure */ })
+    .getTimesheetDoctor();
+}
+
+function renderSheetDoctorCard_(res) {
+  const dups = (res.duplicates || []).map(function (d) {
+    return '<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="font-weight:600;color:var(--ink)">' + esc(d.name || d.empId) + '</span> · ' +
+      esc(d.date) + ' · ' + esc(d.type) + ' ×' + esc(String(d.count)) +
+      ' <span style="color:var(--muted)">(' + d.times.map(esc).join(', ') + ')</span></div>';
+  }).join('');
+  const invs = (res.inverted || []).map(function (v) {
+    return '<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="font-weight:600;color:var(--ink)">' + esc(v.name || v.empId) + '</span> · ' +
+      esc(v.date) + ' · in ' + esc(v.clockIn) + ' → out ' + esc(v.clockOut) +
+      ' <span style="color:var(--warning-deep)">reads as an overnight day — check AM/PM via Day Edit</span></div>';
+  }).join('');
+  const total = (res.duplicates || []).length + (res.inverted || []).length;
+  return '<div class="card" style="border-color:var(--warn)">' +
+    '<div class="card-label with-count"><span>Timesheet Doctor</span>' +
+      '<span class="count-pill warn">' + total + '</span></div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Scan of the last ' +
+      esc(String(res.windowDays)) + ' days. Duplicate rows predate the live sequence guard; ' +
+      'collapsing keeps the latest row per punch (the row Day Edit already shows). ' +
+      'Inverted in/out pairs are report-only — correct them via Day Edit.</div>' +
+    (dups ? '<div class="card-label" style="margin:6px 0 2px">Duplicate punches</div>' + dups : '') +
+    ((res.duplicates || []).length
+      ? '<div style="margin:8px 0 4px"><button class="pending-btn pb-approve" onclick="fixSheetDoctorDups_(this)">' +
+          icon('check', 14) + 'Collapse ' + (res.duplicates || []).length + ' duplicate group(s)</button></div>'
+      : '') +
+    (invs ? '<div class="card-label" style="margin:10px 0 2px">Inverted in/out pairs</div>' + invs : '') +
+  '</div>';
+}
+
+function fixSheetDoctorDups_(btn) {
+  uiConfirm({
+    title: 'Collapse duplicate punches',
+    message: 'Delete the earlier duplicate row(s) for every flagged (employee, date, punch type), keeping the latest row — the one Day Edit displays? Each deletion writes an audit entry. Idempotent; re-run the scan after.',
+    tone: 'danger', confirmLabel: 'Collapse duplicates',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true; btn.textContent = 'Collapsing…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) {
+          showToast((res && res.error) || 'Collapse failed', 'toast-error');
+          btn.disabled = false; return;
+        }
+        showToast('Collapsed ' + (res.collapsed || 0) + ' duplicate row(s)', 'toast-success');
+        loadSheetDoctor_();   // refresh — clean groups drop off
+      })
+      .withFailureHandler(function (err) {
+        showToast((err && err.message) || 'Collapse failed', 'toast-error');
+        btn.disabled = false;
+      })
+      .fixTimesheetDuplicates();
   });
 }
 
@@ -469,6 +549,7 @@ function renderManagerView(area, data) {
     ${heroHtml}
     ${renderAnalyticsSection(data)}
     <div id="mgr-pto-recon"></div>
+    <div id="mgr-sheet-doctor"></div>
     <div id="mgr-adjust-queue"></div>
 
     <div class="card">

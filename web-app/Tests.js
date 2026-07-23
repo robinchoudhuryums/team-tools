@@ -875,6 +875,7 @@ function _runAllTests() {
   _integrationTest('getPtoReconciliation_nonManagerRejected',  test_getPtoReconciliation_nonManagerRejected);
   _integrationTest('fixPtoReconciliation_creditsAndIdempotent', test_fixPtoReconciliation_creditsAndIdempotent);
   _integrationTest('fixPtoReconciliation_nonManagerRejected',   test_fixPtoReconciliation_nonManagerRejected);
+  _integrationTest('sheetDoctor_detectsAndCollapsesDuplicates', test_sheetDoctor_detectsAndCollapsesDuplicates);
   _integrationTest('setCallNoteManagerComment_nonManagerRejected', test_setCallNoteManagerComment_nonManagerRejected);
 
   _integrationTest('getTeammateStatus_shapeRestricted',        test_getTeammateStatus_shapeRestricted);
@@ -1018,6 +1019,7 @@ function _runAllTests() {
   _integrationTest('training_quizFlow',                         test_training_quizFlow);
   _integrationTest('empdocs_issueSignVerifyFlow',               test_empdocs_issueSignVerifyFlow);
   _integrationTest('empdocs_fieldsOnlyCompletionHash',          test_empdocs_fieldsOnlyCompletionHash);
+  _integrationTest('empdocs_legacyHashDualVerify',              test_empdocs_legacyHashDualVerify);
   _integrationTest('coaching_createAckVoidFlowAndScoping',      test_coaching_createAckVoidFlowAndScoping);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
@@ -2515,6 +2517,51 @@ function test_fixPtoReconciliation_nonManagerRejected() {
     _assertEq(r.success, false, 'non-manager rejected');
     _assertContains(r.error, 'Manager access required');
   });
+}
+
+// ── Batch L — Timesheet sheet doctor ────────────────────────────────────────
+// Detector finds a same-(emp, date, type) duplicate + an inverted in/out
+// pair; the fix (SCOPED to the test employee so it can never collapse a real
+// rep's rows mid-test) keeps the LAST appended row — the same row
+// findExistingPunch_/managerSaveDay use (INV-155) — and is idempotent.
+// Rows use a PAST date (in the 92-day window) so today's live-state tests
+// (sequence guard, dashboards) are untouched.
+function test_sheetDoctor_detectsAndCollapsesDuplicates() {
+  const d = new Date(); d.setDate(d.getDate() - 10);
+  const date = fmtDateTz_(d, CONFIG.MANAGER_TIMEZONE);
+  const emp = { id: _TEST_INDIA_ID, name: 'Test India User' };
+  // Two ClockIn rows (a duplicate group) + an inverted pair (out before in).
+  appendToAdpSheet_(emp, date, '09:00:00', 'IN',  'ClockIn');
+  appendToAdpSheet_(emp, date, '09:05:00', 'IN',  'ClockIn');
+  appendToAdpSheet_(emp, date, '05:00:00', 'OUT', 'ClockOut');   // reads as overnight (C3 wrap)
+
+  const rep = _asUser(_TEST_MGR_EMAIL, () => getTimesheetDoctor());
+  _assertTrue(!rep.error, 'doctor scan runs');
+  const dup = (rep.duplicates || []).filter(g =>
+    g.empId === _TEST_INDIA_ID && g.date === date && g.type === 'ClockIn')[0];
+  _assertNotNull(dup, 'duplicate ClockIn group detected');
+  _assertEq(dup.count, 2, 'both rows counted');
+  const inv = (rep.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date)[0];
+  _assertNotNull(inv, 'inverted in/out pair detected (out 05:00 <= in 09:00)');
+
+  const fix = _asUser(_TEST_MGR_EMAIL, () => fixTimesheetDuplicates(_TEST_INDIA_ID));
+  _assertTrue(fix.success && fix.collapsed >= 1, 'duplicates collapsed');
+  // The KEPT row is the LAST appended (09:05) — the findExistingPunch_ row.
+  const kept = findExistingPunch_(_TEST_INDIA_ID, date, 'ClockIn');
+  _assertNotNull(kept, 'one ClockIn row remains');
+  const keptTime = normalizeTime_(kept.sheet.getRange(kept.rowIndex, ADP.TIME + 1).getValue());
+  _assertEq(keptTime, '09:05:00', 'the LAST appended row was kept (INV-155 last-match convention)');
+  const rep2 = _asUser(_TEST_MGR_EMAIL, () => getTimesheetDoctor());
+  const dup2 = (rep2.duplicates || []).filter(g =>
+    g.empId === _TEST_INDIA_ID && g.date === date && g.type === 'ClockIn')[0];
+  _assertTrue(!dup2, 'idempotent — the group is gone on re-scan');
+  // Inverted pair is REPORT-ONLY — still listed after the fix.
+  const inv2 = (rep2.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date)[0];
+  _assertNotNull(inv2, 'inverted pair untouched by the duplicate fix (report-only, C3)');
+  // Non-manager gate.
+  const gated = _asUser(_TEST_PH_EMAIL, () => fixTimesheetDuplicates(_TEST_INDIA_ID));
+  _assertEq(gated.success, false, 'non-manager fix rejected');
+  // TEST_ rows swept by cleanupTestData at suite end.
 }
 
 function test_managerSubmitTimeOff_writesAudit() {
@@ -4387,6 +4434,8 @@ function test_managerGates_rejectNonManager() {
     ['getCallNotesTagTaxonomy',        function () { return getCallNotesTagTaxonomy(); }],
     ['getCallNotesTagTrends',          function () { return getCallNotesTagTrends(); }],
     ['getAutomationHealthBadge',       function () { return getAutomationHealthBadge(); }],
+    ['getTimesheetDoctor',             function () { return getTimesheetDoctor(); }],
+    ['fixTimesheetDuplicates',         function () { return fixTimesheetDuplicates(); }],
     ['kbGetReviewDue',                 function () { return kbGetReviewDue(); }],
     ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
     ['kbGetContentRequests',           function () { return kbGetContentRequests(); }],
@@ -5164,6 +5213,46 @@ function test_empdocs_fieldsOnlyCompletionHash() {
       v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
       _assertEq(v.match, false,   'responses rewrite breaks the completion hash');
       _assertEq(v.tampered, true, 'tamper flag fires on a responses rewrite');
+    } finally {
+      if (docId) _cleanupEmpDocRows_(docId);
+    }
+  });
+}
+
+/** Batch L (C13) — dual-verify hash back-compat. A doc whose stored
+ *  ContentHash is the LEGACY space-delimited form (pre-NUL-delimiter change)
+ *  must still verify as intact AND still be signable; genuine tamper must
+ *  still be detected. */
+function test_empdocs_legacyHashDualVerify() {
+  _withTestHrDocs_(function () {
+    let docId = null;
+    try {
+      const issued = _asUser(_TEST_MGR_EMAIL, function () {
+        return issueDoc({ empId: _TEST_INDIA_ID, docType: 'policy',
+          title: 'TEST_EMPDOC Legacy Hash', bodyMd: 'legacy-era body', requiresSignature: true });
+      });
+      _assertTrue(issued && issued.success, 'doc issued');
+      docId = issued.docId;
+      // Rewrite the stored ContentHash to the legacy space-delimited form —
+      // simulating a doc issued before C13.
+      const found = findEmpDocRow_(docId);
+      const legacy = empDocContentHash_(found.doc.bodyMd, found.doc.title,
+        found.doc.docType, found.doc.empId, found.doc.fieldsRaw, EMPDOC_HASH_DELIM_LEGACY);
+      getHrDocsSS_().getSheetByName(EMPDOC_TAB).getRange(found.rowIdx, ED.CONTENT_HASH + 1).setValue(legacy);
+      let v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertEq(v.contentMatch, true, 'legacy space-form content hash still verifies (dual-verify)');
+      _assertEq(v.tampered, false, 'legacy hash is never reported as tamper');
+      // The owner can still SIGN the legacy-hashed doc (acknowledgeDoc gate).
+      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
+      _assertTrue(signed && signed.success, 'legacy-hashed doc still signs (dual-verify gate)');
+      v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertTrue(v.signed === true && v.match === true && v.contentMatch === true,
+        'post-sign verify green (v2 signature hash over the stored legacy content hash)');
+      // Genuine tamper is still detected under dual-verify.
+      getHrDocsSS_().getSheetByName(EMPDOC_TAB).getRange(found.rowIdx, ED.TITLE + 1).setValue('TAMPERED');
+      v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertEq(v.tampered, true, 'tamper still detected — dual-verify is not accept-anything');
     } finally {
       if (docId) _cleanupEmpDocRows_(docId);
     }

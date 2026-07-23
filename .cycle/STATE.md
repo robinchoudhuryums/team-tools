@@ -189,8 +189,39 @@ clasp run) DEFERRED — operator-side auth setup (API enablement + OAuth
 creds as GitHub secrets) can't be done from the repo; plan noted in the
 batch summary. Pure 314/0 (2 new tripwires bite-checked), DOM 65/0,
 node --check ×3.
+BATCH L ALSO IMPLEMENTED (same branch) — data-integrity follow-ons. L1
+SHEET DOCTOR (the getPtoReconciliation/fixPtoReconciliation pattern on the
+Timesheet): tsDoctorScan_ (92-day window, two-row header, normalize*
+coercion discipline) + getTimesheetDoctor (manager-gated READ-ONLY —
+duplicate (emp,date,type) groups + inverted first-in/last-out pairs, the
+C3 mis-keyed-AM/PM class that calcHours_'s deliberate wrap renders as an
+overnight day) + fixTimesheetDuplicates(empIdFilter?) (manager-gated,
+locked, IDEMPOTENT — keeps the LAST row per group, the
+findExistingPunch_/managerSaveDay INV-155 convention; deletes earlier rows
+bottom-up with 'duplicate collapsed (sheet doctor)' PunchDelete audit
+rows; inverted pairs are REPORT-ONLY → Day Edit; the optional empId filter
+exists so the integration test can never collapse a real rep's rows).
+Client: lazy #mgr-sheet-doctor warn card beside the PTO-recon card
+(renders only when findings exist; uiConfirm-gated collapse button).
+L2/C13: computeFormSubmissionHash_ ALREADY used NUL delimiters — the gap
+was the EmpDocs pair. empDocContentHash_/empDocSignatureHash_ now take a
+delim param DEFAULTING to the NUL escape (new writes v2); legacy
+space-form hashes keep validating via DUAL-VERIFY (empDocContentHashMatches_
++ the verifyDocSignature legacy recompute using EMPDOC_HASH_DELIM_LEGACY,
+each attempt using its own era's content-hash for the blank-stored
+fallback); acknowledgeDoc's integrity gate dual-verifies so pre-C13 docs
+still SIGN. NOTE the Edit-tool NUL trap fired AGAIN writing Code.js (the
+escape became 3 literal NUL bytes → 'binary file matches'); repaired with
+perl s/backslash-x00/the-6-char-escape/g — when a file needs the NUL
+escape, WRITE it via perl/python, never through a raw Edit payload.
+Tests: editor +4 (sheetDoctor_detectsAndCollapsesDuplicates,
+empdocs_legacyHashDualVerify, + getTimesheetDoctor/fixTimesheetDuplicates
+omnibus gate cases); pure 316/0 (2 new pin tests, both bite-checked:
+last-row-wins loop + NUL default); DOM 65/0; node --check ×3; zero literal
+NULs in every touched file.
 Remaining: operator deploy, /reflect (cycle-10 metrics.csv + estimates.csv
-rows); Batch L + K-A + the typed-signature legal call await user direction.
+rows); K-A (editor-suite CI) + the typed-signature legal call await user
+direction.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
@@ -213,12 +244,12 @@ Updated: 2026-07-23 (cycle-10 top-5 batch)
   doc drift, umsCallNotesLastDept entry.
 
 ## Where I left off (cycle 10)
-Entire scan backlog + Batches G+I+H+J+K(E/D/B) done + pushed. Next: user
-decides on Batch L (sheet doctor + C13 hash delimiters), K-A (editor-suite
-CI — operator auth setup), the .chip consolidation follow-on, and the
-typed-signature e-sign legal call. Then operator deploy (clasp push -f +
-New version + runAllTests — suite +8 this cycle; first run creates
-TEST_KB_Fixture), then /reflect.
+Entire scan backlog + Batches G+I+H+J+K(E/D/B)+L done + pushed — every
+batch except K-A (editor-suite CI, operator auth) and the two decisions
+(typed-signature legal call; .chip consolidation follow-on). Next: run
+/sync-docs (a four-batch doc queue is noted in the batch summaries), then
+operator deploy (clasp push -f + New version + runAllTests — suite +12
+this cycle; first run creates TEST_KB_Fixture), then /reflect.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):
