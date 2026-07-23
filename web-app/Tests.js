@@ -1061,6 +1061,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_deptReqReminder_nonManagerThrows', test_triggerGate_deptReqReminder_nonManagerThrows);
   _integrationTest('triggerGate_managerDailyBrief_nonManagerThrows', test_triggerGate_managerDailyBrief_nonManagerThrows);
   _integrationTest('triggerGate_timesheetArchive_nonManagerThrows', test_triggerGate_timesheetArchive_nonManagerThrows);
+  _integrationTest('triggerGate_selfTest_nonManagerThrows',         test_triggerGate_selfTest_nonManagerThrows);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
@@ -3700,6 +3701,12 @@ function test_triggerGate_managerDailyBrief_nonManagerThrows() {
 function test_triggerGate_timesheetArchive_nonManagerThrows() {
   _assertThrows(function () {
     _asUser(_TEST_INDIA_EMAIL, function () { archiveOldTimesheetRows(); });
+  }, 'manager access required');
+}
+
+function test_triggerGate_selfTest_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { runNightlySelfTest(); });
   }, 'manager access required');
 }
 

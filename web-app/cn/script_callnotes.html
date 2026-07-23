@@ -8698,6 +8698,7 @@ function cnRenderHealthPanel_(res) {
     trainingOverdue: { label: 'Training-overdue digest', expect: 'daily 7am — stale past 26h' },
     deptReqReminder: { label: 'Dept-request SLA reminder', expect: 'daily 10am — stale past 26h' },
     managerBrief: { label: 'Manager daily brief', expect: 'daily 8am — heartbeats even while the managerDailyBrief toggle is off' },
+    selfTest: { label: 'Nightly self-test', expect: 'daily 1am — smoke on prod, full suite on the dev instance' },
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };
@@ -8756,6 +8757,21 @@ function cnRenderHealthPanel_(res) {
     secLabel('Automation last seen') + runsHtml +
     secLabel('Digest heartbeats') + (digestsHtml || '<div style="font-size:12px;color:var(--muted)">No digest data (server pre-dates heartbeats).</div>') +
     (detHtml ? secLabel('Detector liveness') + detHtml : '') +
+    secLabel('Nightly self-test') + cnSelfTestHtml_(res.selfTest) +
+  '</div>';
+}
+
+/** K-A alternative — the last nightly self-test outcome. null = never ran
+ *  (fresh deploy / trigger not installed) — informational, not an error. */
+function cnSelfTestHtml_(st) {
+  if (!st) return '<div style="font-size:12px;color:var(--muted)">No self-test result recorded yet — the daily 1am trigger runs runSmokeTests on prod (the full suite on a dev instance). Install via installAutomationTriggers().</div>';
+  var tone = st.fail > 0 ? 'var(--danger-deep)' : 'var(--success-deep)';
+  return '<div style="font-size:12px;padding:4px 0">' +
+    '<span style="font-weight:600;color:' + tone + '">' +
+      (st.fail > 0 ? icon('warning', 11) + ' ' + esc(String(st.fail)) + ' failing' : icon('checkCircle', 11) + ' all passing') +
+    '</span> · ' + esc(String(st.pass)) + ' passed / ' + esc(String(st.skip)) + ' skipped · ' +
+    esc(st.mode) + ' mode · ' + esc(st.date) +
+    (st.error ? ' · <span style="color:var(--danger-deep)">' + esc(st.error) + '</span>' : '') +
   '</div>';
 }
 

@@ -4074,6 +4074,24 @@ test('typed-signature alternative: both pads carry setTypedName (a11y parity pai
     assert.ok(/aria-expanded/.test(src), name + ' typed toggle is a disclosure (aria-expanded)');
   });
 });
+test('nightly self-test trigger: heartbeat-first, dev-only full suite, failure surfaced', () => {
+  const src = extractRawFunction('Code.js', 'runNightlySelfTest');
+  assert.ok(/assertManagerCaller_\(/.test(src), 'INV-44 trigger-handler gate');
+  // Heartbeat BEFORE the run — trigger liveness stays observable even if the
+  // suite crashes (the INV-151 posture).
+  assert.ok(src.indexOf("stampDigestLastRun_('selfTest')") < src.indexOf('runSmokeTests'),
+    'heartbeat stamps before the suite runs');
+  assert.ok(/INSTANCE_IS_PROD/.test(src) && /INSTANCE_LABEL/.test(src),
+    'full suite gates on the DEV-instance check — smoke-only anywhere else');
+  assert.ok(/isDev\) runAllTests\(\); else runSmokeTests\(\)/.test(src.replace(/\s+/g, ' ')),
+    'runAllTests only on dev; runSmokeTests otherwise');
+  const problems = extractRawFunction('Code.js', 'automationProblems_');
+  assert.ok(/selfTest/.test(problems) && /selfTest\.fail > 0/.test(problems),
+    'a failing self-test rides automationProblems_ (health dot + failure digest)');
+  const health = extractRawFunction('Code.js', 'computeAutomationHealth_');
+  assert.ok(/SELF_TEST_RESULT_PROP/.test(health) && /selfTest: selfTest/.test(health),
+    'computeAutomationHealth_ returns the last self-test outcome');
+});
 test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dual-verifies', () => {
   const NUL_ESC = '\\' + 'u0000';   // the 6-char escape as source text
   const content = extractRawFunction('Code.js', 'empDocContentHash_');

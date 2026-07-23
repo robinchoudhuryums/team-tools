@@ -4740,14 +4740,14 @@ function computeAutomationHealth_() {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief'].map(function (k) {
+    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief', 'selfTest'].map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -4779,6 +4779,20 @@ function computeAutomationHealth_() {
       }
     } catch (_) {}
 
+    // K-A alternative — last nightly self-test outcome (SELF_TEST_LAST_RESULT
+    // Script Property; null = never ran, the fresh-deploy posture).
+    let selfTest = null;
+    try {
+      const st = JSON.parse(PropertiesService.getScriptProperties().getProperty(SELF_TEST_RESULT_PROP));
+      if (st && typeof st === 'object') {
+        selfTest = {
+          date: String(st.date || ''), mode: String(st.mode || ''),
+          pass: Number(st.pass) || 0, fail: Number(st.fail) || 0, skip: Number(st.skip) || 0,
+          error: String(st.error || ''),
+        };
+      }
+    } catch (_) {}
+
     return {
       syncFails: syncFails,
       automationLastRuns: automationLastRuns,
@@ -4787,6 +4801,7 @@ function computeAutomationHealth_() {
       detectors: detectors,   // Turn C — detector-liveness checks
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
+      selfTest: selfTest,     // K-A alternative — nightly self-test outcome
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
@@ -4834,6 +4849,13 @@ function automationProblems_(report) {
   (report.detectors || []).forEach(function (c) {
     if (c && c.ok === false) problems.push('Detector dead: ' + c.label + ' — ' + c.detail);
   });
+  // (e) K-A alternative — the last nightly self-test reported failures (or
+  // crashed). null = never ran, NOT a problem (fresh-deploy posture).
+  if (report.selfTest && report.selfTest.fail > 0) {
+    problems.push('The nightly self-test (' + (report.selfTest.mode || '?') + ') reported ' +
+      report.selfTest.fail + ' failing test(s) on ' + (report.selfTest.date || '?') +
+      (report.selfTest.error ? ' — ' + report.selfTest.error : '') + '.');
+  }
   return problems;
 }
 
@@ -4862,6 +4884,80 @@ function getAutomationHealthBadge() {
   } catch (err) {
     return { failing: false, count: 0 };
   }
+}
+
+/** K-A alternative (operator-approved) — nightly IN-PROJECT self-test, the
+ *  credential-free stand-in for editor-suite CI. Runs where the code lives:
+ *  on the DEV blue-green instance (INSTANCE_LABEL set, INSTANCE_IS_PROD not
+ *  'true') the FULL runAllTests suite executes against the copy sheets; on
+ *  any other instance (incl. plain prod) only runSmokeTests runs — pure
+ *  logic, zero spreadsheet writes, safe on the live store by construction
+ *  (and runAllTests' own assertNotProdInstance_ guard stays the backstop).
+ *  Outcome lands in the SELF_TEST_LAST_RESULT Script Property, which
+ *  computeAutomationHealth_/automationProblems_ surface (Admin panel, shell
+ *  health dot, failure digest); a failing run ALSO emails MANAGER_EMAILS
+ *  directly (best-effort) with the failed test names. Heartbeat-stamped
+ *  BEFORE the run (trigger liveness observable even if the suite crashes,
+ *  the INV-151 posture). INV-44 trigger-handler gate. Silent when green. */
+function runNightlySelfTest() {
+  assertManagerCaller_('runNightlySelfTest');
+  stampDigestLastRun_('selfTest');
+  const props = PropertiesService.getScriptProperties();
+  try {
+    if (typeof runSmokeTests !== 'function' || typeof _TEST_STATE === 'undefined') {
+      Logger.log('runNightlySelfTest: test suite not present in this project — skipping.');
+      return;
+    }
+    const isDev = !!props.getProperty('INSTANCE_LABEL') &&
+      String(props.getProperty('INSTANCE_IS_PROD') || '').toLowerCase() !== 'true';
+    const mode = isDev ? 'full' : 'smoke';
+    if (isDev) runAllTests(); else runSmokeTests();
+    const res = {
+      date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+      mode: mode, pass: _TEST_STATE.pass, fail: _TEST_STATE.fail, skip: _TEST_STATE.skip,
+    };
+    try { props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify(res)); } catch (e) {}
+    if (res.fail > 0) {
+      const names = (_TEST_STATE.results || [])
+        .filter(function (r) { return r.status === 'FAIL'; })
+        .map(function (r) { return r.name; }).slice(0, 20);
+      selfTestFailureEmail_(mode, res, names);
+    }
+    Logger.log('runNightlySelfTest (' + mode + '): ' + res.pass + ' passed, ' + res.fail + ' failed, ' + res.skip + ' skipped.');
+  } catch (err) {
+    // A crashed run IS a failure — record + email best-effort.
+    const res = {
+      date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+      mode: 'error', pass: 0, fail: 1, skip: 0,
+      error: String(err && err.message || err).substring(0, 300),
+    };
+    try { props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify(res)); } catch (e) {}
+    selfTestFailureEmail_('error', res, [res.error]);
+    Logger.log('runNightlySelfTest failed: ' + (err && err.message));
+  }
+}
+
+/** Best-effort failure notification for the nightly self-test (INV-14 —
+ *  never throws). PHI-free: test names / a truncated error only. */
+function selfTestFailureEmail_(mode, res, names) {
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (!mgrEmails.length) return;
+    const items = (names || []).map(function (n) {
+      return '<li style="margin:3px 0;">' + esc_(String(n)) + '</li>';
+    }).join('');
+    const bodyHtml = '<p style="margin:0 0 10px;">The nightly self-test (' + esc_(mode) + ' mode) reported ' +
+      esc_(String(res.fail)) + ' failure(s) — ' + esc_(String(res.pass)) + ' passed, ' +
+      esc_(String(res.skip)) + ' skipped.</p>' +
+      (items ? '<ul style="margin:0;padding-left:18px;">' + items + '</ul>' : '') +
+      '<p style="margin:10px 0 0;">Open the Apps Script editor and run the suite for detail.</p>';
+    MailApp.sendEmail({
+      to: mgrEmails.join(','),
+      subject: 'Team Tools — nightly self-test: ' + res.fail + ' failure(s)',
+      body: 'Nightly self-test (' + mode + '): ' + res.fail + ' failure(s).\n\n' + (names || []).join('\n'),
+      htmlBody: buildBrandedEmailHtml_('Nightly self-test failed', bodyHtml, { tone: 'warn', subLabel: 'Self-Test' }),
+    });
+  } catch (e) { Logger.log('selfTestFailureEmail_ failed: ' + e.message); }
 }
 
 function sendAutomationHealthDigest() {
@@ -8694,6 +8790,7 @@ function installAutomationTriggers() {
     'sendDeptRequestReminderDigest',
     'sendManagerDailyBrief',
     'archiveOldTimesheetRows',
+    'runNightlySelfTest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -8793,6 +8890,11 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('archiveOldTimesheetRows')
     .timeBased().atHour(18).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Nightly self-test (K-A alternative) — daily manager-tz 1am. Smoke-only on
+  // prod (no writes, no locks); the FULL suite only on the DEV instance.
+  ScriptApp.newTrigger('runNightlySelfTest')
+    .timeBased().atHour(1).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -8842,6 +8944,7 @@ function removeAutomationTriggers() {
     'sendDeptRequestReminderDigest',
     'sendManagerDailyBrief',
     'archiveOldTimesheetRows',
+    'runNightlySelfTest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -9123,6 +9226,7 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // Property heartbeat; getAutomationHealth surfaces it with a staleness flag —
 // closing the "silently dead digest trigger" blind spot.
 const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
+const SELF_TEST_RESULT_PROP = 'SELF_TEST_LAST_RESULT';   // {date, mode, pass, fail, skip[, error]} — nightly self-test outcome
 
 /** Best-effort heartbeat stamp ({ key: "yyyy-MM-dd HH:mm:ss" in
  *  CONFIG.TIMEZONE }) — never blocks or fails the digest itself. */
