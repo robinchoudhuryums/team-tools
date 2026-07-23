@@ -264,12 +264,20 @@ Updated: 2026-07-23 (cycle-10 top-5 batch)
   doc drift, umsCallNotesLastDept entry.
 
 ## Where I left off (cycle 10)
-Entire scan backlog + Batches G+I+H+J+K(E/D/B)+L done + pushed — every
-batch except K-A (editor-suite CI, operator auth) and the two decisions
-(typed-signature legal call; .chip consolidation follow-on). Next: run
-/sync-docs (a four-batch doc queue is noted in the batch summaries), then
-operator deploy (clasp push -f + New version + runAllTests — suite +12
-this cycle; first run creates TEST_KB_Fixture), then /reflect.
+EVERYTHING SHIPPED: entire scan backlog + Batches G/I/H/J/K(E,D,B)/L +
+the operator-approved follow-ons (typed signature on both pads,
+lunch-pair inversion, the runNightlySelfTest trigger as the K-A
+credential-free alternative — INV-162) + /sync-docs applied (INV-44
+sixteen handlers, INV-117/150 user-lock amendments, INV-122 C13 pointer,
+NEW INV-159–162, tokens/loader/overlay/signature decision + gotcha
+amendments, sixteen-trigger operator entry + SELF_TEST_LAST_RESULT,
+Test Command net additions). Pure 319/0, DOM 65/0, editor suite ≈297
+(operator-run). PR created + merged per user instruction. Next: operator
+deploy (clasp push -f + New version + re-run installAutomationTriggers()
+ONCE for the new 1am self-test trigger + runAllTests), then /reflect to
+close cycle 10 (metrics.csv + estimates.csv rows). Still open by user
+choice: .chip consolidation follow-on; real pre-merge editor CI if
+credentials ever materialize.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):
