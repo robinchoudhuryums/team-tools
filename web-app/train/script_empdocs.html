@@ -9,6 +9,13 @@
   .ed-sig-section.show { display: block; }
   .ed-sig-wrap { position: relative; border: 1px dashed var(--border-strong); border-radius: 8px; background: var(--paper-card); }
   .ed-sig-wrap canvas { display: block; border-radius: 8px; touch-action: none; }
+  /* Typed-signature alternative (a11y) — link-style disclosure under the pad. */
+  .ed-sig-typed-toggle {
+    display: inline-block; margin-top: 6px; padding: 0;
+    background: none; border: none; cursor: pointer;
+    font-size: 12px; color: var(--accent-2); text-decoration: underline;
+    font-family: inherit;
+  }
   .ed-sig-ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: .82rem; pointer-events: none; }
   .ed-sig-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
   .ed-void-note { border-left: 3px solid var(--danger-deep); background: var(--destructive-soft); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: .84rem; margin-bottom: 12px; }
@@ -119,6 +126,29 @@ function edInitSigPad_(canvas, placeholderEl) {
   canvas.addEventListener('touchstart', start, { passive: false });
   canvas.addEventListener('touchmove', move, { passive: false });
   canvas.addEventListener('touchend', end);
+  // Typed-signature alternative (a11y) — the form_public SIG_PAD twin:
+  // renders the typed name onto the pad so the exported PNG (size cap,
+  // signature hash, certificate) is identical in kind to a drawn one.
+  function drawTypedName(name) {
+    name = String(name || '').trim();
+    resizeCanvas();
+    hasDrawn = false;
+    if (!name) { if (placeholderEl) placeholderEl.style.display = ''; return; }
+    if (placeholderEl) placeholderEl.style.display = 'none';
+    var w = parseFloat(canvas.style.width) || 300;
+    var size = 34;
+    var face = 'italic {s}px "Segoe Script","Brush Script MT","Lucida Handwriting",cursive';
+    ctx.font = face.replace('{s}', size);
+    var tw = ctx.measureText(name).width;
+    if (tw > w - 24) {
+      size = Math.max(14, Math.floor(size * (w - 24) / tw));
+      ctx.font = face.replace('{s}', size);
+    }
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ink') || '#101418';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, 12, 70);
+    hasDrawn = true;
+  }
   return {
     isEmpty: function () { return !hasDrawn; },
     clear: function () {
@@ -128,6 +158,7 @@ function edInitSigPad_(canvas, placeholderEl) {
       if (placeholderEl) placeholderEl.style.display = '';
     },
     resize: function () { if (!hasDrawn) resizeCanvas(); },
+    setTypedName: drawTypedName,
     // Export capped at 600px wide — same INV-96 reasoning as form_public's
     // SIG_PAD.toDataURL (retina capture canvases yield base64 large enough
     // to trip the server's per-cell cap; line art downscales crisply).
@@ -154,7 +185,7 @@ function enterMyDocsView() {
   if (!area) return;
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('paperclip', 16) + ' My Docs</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>My Documents</h2></div>' +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">My Documents</h1></div>' +
     '<div id="ed-my-content"><div class="m-loading"><span class="lo-glyph">' + icon('fileText', 26) + '</span> Loading documents&hellip;</div></div>';
   var requestedView = currentView;
   google.script.run
@@ -208,7 +239,7 @@ function edOpenDoc_(docId) {
   ED_STATE.readerDocId = docId;
   ED_STATE.sigPad = null;
   var overlay = ensureOverlay('ed-reader-overlay', { onClose: edCloseDoc_ });
-  overlay.innerHTML = '<div class="modal ed-reader"><div class="body"><div class="m-loading"><div class="spinner"></div> Loading&hellip;</div></div></div>';
+  overlay.innerHTML = '<div class="modal ed-reader"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (doc) {
       if (ED_STATE.readerDocId !== docId) return;
@@ -263,6 +294,11 @@ function edRenderDoc_(doc) {
       '<label class="ack"><input type="checkbox" id="ed-ack-check"> <span>' + esc(doc.ackText) + '</span></label>' +
       '<div class="ed-sig-section" id="ed-sig-section">' +
         '<div class="ed-sig-wrap"><canvas id="ed-sig-canvas"></canvas><div class="ed-sig-ph" id="ed-sig-ph">Tap or click and drag here to sign</div></div>' +
+        '<button type="button" class="ed-sig-typed-toggle" id="ed-sig-typed-toggle" aria-expanded="false">Can’t use the pad? Type your signature instead</button>' +
+        '<div id="ed-sig-typed-field" style="display:none;margin:6px 0 2px">' +
+          '<label for="ed-sig-typed-input" style="display:block;font-size:12px;color:var(--muted);margin-bottom:3px">Type your full legal name as your signature</label>' +
+          '<input type="text" id="ed-sig-typed-input" maxlength="80" autocomplete="name" style="width:100%;max-width:340px">' +
+        '</div>' +
         '<div class="ed-sig-row">' +
           '<button class="kb-btn" id="ed-sig-clear">Clear</button>' +
           '<div class="tr-spacer" style="flex:1"></div>' +
@@ -296,7 +332,25 @@ function edRenderDoc_(doc) {
     });
     document.getElementById('ed-sig-clear').addEventListener('click', function () {
       if (ED_STATE.sigPad) ED_STATE.sigPad.clear();
+      var ti = document.getElementById('ed-sig-typed-input');
+      if (ti) ti.value = '';
     });
+    // Typed-signature alternative (a11y) — toggle reveals a text input whose
+    // value renders onto the pad via the pad's setTypedName.
+    var tglBtn = document.getElementById('ed-sig-typed-toggle');
+    var tglField = document.getElementById('ed-sig-typed-field');
+    var tglInput = document.getElementById('ed-sig-typed-input');
+    if (tglBtn && tglField && tglInput) {
+      tglBtn.addEventListener('click', function () {
+        var open = tglField.style.display !== 'none';
+        tglField.style.display = open ? 'none' : '';
+        tglBtn.setAttribute('aria-expanded', String(!open));
+        if (!open) tglInput.focus();
+      });
+      tglInput.addEventListener('input', function () {
+        if (ED_STATE.sigPad && ED_STATE.sigPad.setTypedName) ED_STATE.sigPad.setTypedName(tglInput.value);
+      });
+    }
   }
   var signBtn = document.getElementById('ed-sign-btn');
   if (signBtn) signBtn.addEventListener('click', function () { edSubmitSignature_(doc.docId, this, canSign); });
@@ -356,7 +410,7 @@ function enterDocsManageView() {
   if (!area) return;
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('manage', 16) + ' Issue Docs</div>' : '') +
-    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h2>Employee Documents</h2></div>' +
+    '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Employee Documents</h1></div>' +
     '<div id="ed-mgr-content"><div class="m-loading"><span class="lo-glyph">' + icon('fileText', 26) + '</span> Loading&hellip;</div></div>';
   edLoadMgr_();
 }

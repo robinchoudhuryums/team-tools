@@ -120,6 +120,71 @@ test('every var(--token) resolves to a defined custom property', () => {
     [...new Set(violations)].join('\n      '));
 });
 
+// A11y batch G/I (cycle 10) — contrast + flag-color tripwires.
+//   • --muted-2 is the app's "secondary text" tone; it must stay AA-readable
+//     (≥4.5:1) on EVERY surface it renders over, in BOTH modes. It regressed
+//     to 3.9:1 (light) / 4.2:1 (dark) before the batch-I darken — this pins
+//     the fix so a future palette tweak can't silently un-fix it.
+//   • --muted-3 is decoration-only by the same decision; no ratio pinned.
+//   • The three CN flag stripes (action/training/review) must use three
+//     DISTINCT tokens — training + review both rendered the same green until
+//     batch I (flag-training was var(--accent), the alias of --good).
+console.log('\nclient — contrast + flag-color tripwires (a11y batch G/I)');
+test('--muted-2 meets AA (4.5:1) on every surface, both modes', () => {
+  const toks = fs.readFileSync(
+    path.resolve(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
+  function hexes(name) {
+    const re = new RegExp('--' + name + ':\\s*(#[0-9a-fA-F]{6})', 'g');
+    const out = []; let m;
+    while ((m = re.exec(toks))) out.push(m[1]);
+    return out;
+  }
+  function lum(hex) {
+    const c = [1, 3, 5].map((i) => {
+      let v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function ratio(a, b) {
+    const la = lum(a), lb = lum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  }
+  const muted2 = hexes('muted-2');
+  // Hex declarations appear light-block first, dark-block second (the
+  // @supports color-mix overrides don't redeclare these greys as hex).
+  assert.strictEqual(muted2.length, 2, 'expected exactly 2 --muted-2 hex declarations (light, dark)');
+  const surfaces = ['paper', 'paper-2', 'paper-card'];
+  [0, 1].forEach((mode) => {
+    surfaces.forEach((s) => {
+      const surf = hexes(s);
+      assert.strictEqual(surf.length, 2, 'expected 2 --' + s + ' hex declarations');
+      const r = ratio(muted2[mode], surf[mode]);
+      assert.ok(r >= 4.5,
+        (mode ? 'dark' : 'light') + ' --muted-2 ' + muted2[mode] + ' on --' + s + ' ' +
+        surf[mode] + ' is ' + r.toFixed(2) + ':1 (< 4.5:1 AA)');
+    });
+  });
+});
+test('CN flag stripes use three distinct tokens', () => {
+  const cn = fs.readFileSync(
+    path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const stripe = {};
+  ['action', 'training', 'review'].forEach((f) => {
+    const m = cn.match(new RegExp(
+      '\\.cn-card\\.flag-' + f + '\\s*\\{[^}]*inset 3px 0 0 var\\((--[a-z0-9-]+)\\)'));
+    assert.ok(m, '.cn-card.flag-' + f + ' stripe rule found');
+    stripe[f] = m[1];
+  });
+  // Name-distinctness alone can't catch the actual bug (--accent is the same
+  // green family as --good), so pin the exact semantic choice: action=warn,
+  // training=info (the training icon's own tint), review=good.
+  assert.deepStrictEqual(stripe,
+    { action: '--warn', training: '--info', review: '--good' },
+    'flag stripes drifted — training was var(--accent) (== the --good green) ' +
+    'before batch I, making training and review cards indistinguishable');
+});
+
 // Foundational partials: script_icons (icon), script_core (esc, empTz,
 // isoDateTz, __URL_PARAMS), metrics (mTodayIso_, mDaysAgo_). These eval cleanly
 // because their top-level is declarations + an init listener (stubbed).
@@ -160,6 +225,25 @@ test('escapes &, <, >, ", \'', () => {
   assert.strictEqual(sb.esc('a & b'), 'a &amp; b');
   assert.strictEqual(sb.esc('<img src=x onerror=1>'), '&lt;img src=x onerror=1&gt;');
   assert.strictEqual(sb.esc(`"q" 'q'`), '&quot;q&quot; &#39;q&#39;');
+});
+
+console.log('\nscript_core — mtRenderTable_ sortable-header a11y (batch H)');
+test('sortable th carries scope/tabindex/aria-sort + keyboard activation', () => {
+  const html = sb.mtRenderTable_({
+    columns: [
+      { key: 'name', label: 'Rep', sortable: true },
+      { key: 'pct', label: '%', numeric: true, sortable: true },
+      { key: 'note', label: 'Note' },
+    ],
+    rows: [{}],
+    sort: { key: 'pct', dir: 'desc' },
+    onSort: 'mySort',
+  });
+  assert.ok(/th scope="col"[^>]*aria-sort="none"[^>]*>Rep/.test(html), 'inactive sortable th announces aria-sort=none');
+  assert.ok(/aria-sort="descending"[^>]*>%/.test(html), 'active sort col announces direction');
+  assert.ok(/tabindex="0"[^>]*aria-sort/.test(html), 'sortable th is keyboard-reachable');
+  assert.ok(html.indexOf("onkeydown=\"if(event.key==='Enter'||event.key===' ')") >= 0, 'Enter/Space activates the sort');
+  assert.ok(/th scope="col">Note/.test(html), 'non-sortable th gets scope but no interactivity');
 });
 
 console.log('\nscript_core — empTz() / isoDateTz()');
@@ -755,13 +839,18 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
   const lines = src.split('\n');
   const offenders = [];
-  const SAFE_LINE = /cnTimestampString_\(|CN\.TIMESTAMP \+ 1|CN\.TIMESTAMP\]\s*=|^\s*\/\//;
-  // reconcileCallNotes keeps its documented equivalent inline guard (INV-142).
-  const reconcile = extractRawFunction('Code.js', 'reconcileCallNotes');
+  // Cycle 10: the write-exemption is `=` NOT followed by `=` — a raw
+  // COMPARISON read (`row[CN.TIMESTAMP] === x`, a Date-vs-string compare
+  // that is always false, exactly the bug class this scan exists for) used
+  // to match the `\]\s*=` write shape and pass silently.
+  const SAFE_LINE = /cnTimestampString_\(|CN\.TIMESTAMP \+ 1|CN\.TIMESTAMP\]\s*=(?!=)|^\s*\/\//;
+  // C1 (cycle 10): reconcileCallNotes now routes through cnTimestampString_
+  // like every other reader (its "equivalent" inline guard recovered in the
+  // REP's tz, not the sheet's — a real bug, and the whole-line exemption it
+  // needed was itself a copyable false-pass hole). No exemption remains.
   lines.forEach((line, idx) => {
     if (line.indexOf('[CN.TIMESTAMP]') < 0) return;
     if (SAFE_LINE.test(line)) return;
-    if (reconcile.indexOf(line) >= 0) return;   // the whitelisted inline guard
     offenders.push('line ' + (idx + 1) + ': ' + line.trim());
   });
   assert.deepStrictEqual(offenders, [],
@@ -827,9 +916,25 @@ test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by
   const health = extractRawFunction('Code.js', 'computeAutomationHealth_');
   assert.ok(/automationDetectorChecks_\(\)/.test(health), 'computeAutomationHealth_ computes the detector checks');
   assert.ok(/detectors:\s*detectors/.test(health), 'computeAutomationHealth_ returns them');
+  // Batch K (E): the failure derivation is factored into automationProblems_
+  // so the digest AND the shell health badge share ONE source. The digest and
+  // badge must both consume it, and the helper must still cover every failure
+  // class (detectors, witness loss, sync-fails, stale digests, reconcile).
+  const problemsSrc = extractRawFunction('Code.js', 'automationProblems_');
+  assert.ok(/report\.detectors|\(report\.detectors/.test(problemsSrc),
+    'automationProblems_ must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
+  assert.ok(/witnessFails\.recent/.test(problemsSrc), 'automationProblems_ covers recent witness loss (C4/INV-158)');
+  assert.ok(/syncFails/.test(problemsSrc), 'automationProblems_ covers personal-sheet sync failures');
+  assert.ok(/CallNotesReconcile/.test(problemsSrc), 'automationProblems_ covers the stale-reconcile F1 signal');
+  assert.ok(/d\.stale/.test(problemsSrc), 'automationProblems_ covers stale digest heartbeats');
   const digest = extractRawFunction('Code.js', 'sendAutomationHealthDigest');
-  assert.ok(/report\.detectors/.test(digest),
-    'sendAutomationHealthDigest must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
+  assert.ok(/automationProblems_\(/.test(digest),
+    'sendAutomationHealthDigest consumes automationProblems_ (the shared derivation)');
+  const badge = extractRawFunction('Code.js', 'getAutomationHealthBadge');
+  assert.ok(/automationProblems_\(/.test(badge) && /computeAutomationHealth_\(/.test(badge),
+    'getAutomationHealthBadge consumes the SAME derivation (no badge↔digest drift)');
+  assert.ok(/isManager/.test(badge) && /Manager access required/.test(badge),
+    'getAutomationHealthBadge is manager-gated (INV-02)');
   const checksSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
   ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry',
    'briefConfig' /* cycle-8 M-11: flag-on-without-trigger config coherence */,
@@ -951,7 +1056,9 @@ test('TRIPWIRE (Batch 3): no raw read of a coerced AUDIT column outside auditRow
   const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
   const reader = extractRawFunction('Code.js', 'auditRowObj_');
   const COERCED = /\[AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]/;
-  const WRITE_OR_COMMENT = /AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]\s*=|AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT) \+ 1|^\s*\/\//;
+  // Cycle 10: `=(?!=)` — a raw comparison read must NOT pass as a write
+  // (same hardening as the CN.TIMESTAMP scan above).
+  const WRITE_OR_COMMENT = /AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]\s*=(?!=)|AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT) \+ 1|^\s*\/\//;
   const offenders = [];
   src.split('\n').forEach((line, idx) => {
     if (!COERCED.test(line) || WRITE_OR_COMMENT.test(line)) return;
@@ -1132,7 +1239,14 @@ test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock
     }
     funcs[fm[1]] = codeSrc.slice(fm.index, j + 1);
   }
-  const senders = Object.keys(funcs).filter((n) => stripC(funcs[n]).indexOf('MailApp.') >= 0);
+  // Cycle 10: GmailApp.sendEmail joins the inventory — GmailApp is already an
+  // authorized project global (Spanish inbox READS), so a future Gmail-based
+  // sender would have escaped a MailApp-only scan. Reads (search/getThread)
+  // stay out: the documented locked Spanish scope-guard reads are deliberate.
+  const senders = Object.keys(funcs).filter((n) => {
+    const sb = stripC(funcs[n]);
+    return sb.indexOf('MailApp.') >= 0 || sb.indexOf('GmailApp.sendEmail') >= 0;
+  });
   assert.ok(senders.length >= 15, 'mail-sender inventory armed (got ' + senders.length + ')');
   // Deliberate in-lock senders, each with a load-bearing reason:
   const ALLOWLIST = {
@@ -1148,10 +1262,29 @@ test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock
     region = region.replace(/notifyAfter = function \(\) \{[^{}]*\};/g, '');
     const hits = senders.filter((s) => new RegExp('\\b' + s + '\\s*\\(').test(region));
     if (region.indexOf('MailApp.') >= 0) hits.push('MailApp.');
+    if (region.indexOf('GmailApp.sendEmail') >= 0) hits.push('GmailApp.sendEmail');
     if (hits.length && !ALLOWLIST[n]) offenders.push(n + ' → ' + hits.join(','));
   });
   assert.deepStrictEqual(offenders, [],
     'mail reachable inside a locked region — move it to a post-lock notifyAfter closure (or allowlist it WITH a reason): ' + offenders.join(' | '));
+
+  // Cycle 10 — INV-01 structural companion: every waitLock( function must
+  // have a finally that releases the lock. Two compounding holes closed:
+  // INV-01's finally/releaseLock structure had NO pin across the ~60
+  // waitLock sites, and the mail scan above SKIPS a locked function with no
+  // finally — so a lock leak also silently exempted it from the mail check.
+  let lockedCount = 0;
+  const lockOffenders = [];
+  Object.keys(funcs).forEach((n) => {
+    const sb = stripC(funcs[n]);
+    if (sb.indexOf('waitLock(') < 0) return;
+    lockedCount++;
+    const finIdx = sb.lastIndexOf('finally');
+    if (finIdx < 0 || sb.indexOf('releaseLock', finIdx) < 0) lockOffenders.push(n);
+  });
+  assert.ok(lockedCount >= 40, 'locked-function inventory armed (got ' + lockedCount + ')');
+  assert.deepStrictEqual(lockOffenders, [],
+    'waitLock( without a finally releaseLock() — INV-01 requires finally-release: ' + lockOffenders.join(', '));
 });
 
 console.log('\nCode.js — automation trigger wiring is self-consistent (#3 coupling tripwire)');
@@ -1261,6 +1394,87 @@ COUPLING_REGISTRY.forEach((c) => {
     sub.forEach((k) => assert.ok(sup.indexOf(k) >= 0,
       c.name + ': "' + k + '" is in the source set but MISSING downstream — ' + c.why));
   });
+});
+
+// ── Batch K (D) — MIRROR INDEX ──────────────────────────────────────────────
+// The single documented registry of every known client↔server (or
+// file↔file) parallel-source mirror, each pointing at the tripwire that
+// guards it. The index is SELF-CHECKING: each guard string must appear
+// elsewhere in this file (the real test's name/assertion), so a renamed or
+// deleted tripwire breaks the index instead of silently orphaning the
+// mirror. Adding a new mirror = add the pair here + its guard test.
+// `guards: []` entries are deliberate manual-discipline mirrors (documented
+// in CLAUDE.md) that cannot be machine-checked — kept in the index so the
+// full inventory lives in ONE place.
+const MIRROR_INDEX = [
+  { pair: 'LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ (INV-72)',
+    guards: ['every LEAVE_DEDUCTION_CLIENT entry matches the server deduction',
+             'TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT keys'] },
+  { pair: 'day-type <select> options ⊆ TIME_OFF_TYPES (INV-95)',
+    guards: ['every day-type <select> option is an accepted leave type'] },
+  { pair: 'INTAKE_PMD/PAP_LAYOUT ↔ INTAKE_PMD/PAP_CLIENT (INV-112)',
+    guards: ['client render layout mirrors the server'] },
+  { pair: 'server kbSlug_ ↔ client kbSlug_ heading anchors',
+    guards: ['server kbSlug_ matches kbMd_'] },
+  { pair: 'kbCollectDocInlineImages_ ↔ converter Doc walk (INV-115)',
+    guards: ['kbCollectDocInlineImages_ mirrors the converter walk'] },
+  { pair: 'form_public SIG_PAD export cap ↔ EmpDocs pad cap (INV-96/122)',
+    guards: ['signature-pad export cap parity'] },
+  { pair: 'form_public typed-signature ↔ EmpDocs typed-signature (a11y)',
+    guards: ['both pads carry setTypedName'] },
+  { pair: 'client CN_SHEET_VIEWS ⊆ server adminSheetViewKeys_ (Tier 2)',
+    guards: ['CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_'] },
+  { pair: 'DIGEST_LABELS ⊇ DIGEST_STALE_HOURS (COUPLING_REGISTRY)',
+    guards: ['Automation-Health DIGEST_LABELS'] },
+  { pair: 'CN_HEALTH_RUN_LABELS ⊇ AUTOMATION_AUDIT_ACTIONS (COUPLING_REGISTRY)',
+    guards: ['Automation-Health CN_HEALTH_RUN_LABELS'] },
+  { pair: 'health badge ↔ failure digest problem derivation (batch K E)',
+    guards: ['getAutomationHealthBadge consumes the SAME derivation'] },
+  { pair: 'AUTO_COPY_FORMAT server CONFIG default ↔ client fallback',
+    guards: ['client fallback mirrors the server CONFIG default'] },
+  { pair: 'CN_EMAIL_PALETTE ↔ styles_design_tokens palette',
+    guards: [],   // hand-resolved hex by design (email clients strip <style>)
+    manual: 'CLAUDE.md "CN_EMAIL_PALETTE is hand-resolved from design tokens"' },
+  { pair: 'PPD engine option values ↔ INTAKE_PPD_CONTROL (drift guards)',
+    guards: ['end-to-end config-driven recommendation parity'] },
+];
+console.log('\nclient — mirror index (batch K D: every mirror names a live guard)');
+test('mirror index — every listed guard test exists in this file', () => {
+  const self = fs.readFileSync(__filename, 'utf8');
+  MIRROR_INDEX.forEach((m) => {
+    (m.guards || []).forEach((g) => {
+      // The guard string must appear at least twice: once in this index
+      // literal, once in the real test it points at.
+      const n = self.split(g).length - 1;
+      assert.ok(n >= 2, 'mirror "' + m.pair + '": guard "' + g +
+        '" not found elsewhere in run.js — its tripwire was renamed or removed');
+    });
+    if (!m.guards.length) assert.ok(m.manual, 'unguarded mirror "' + m.pair + '" must document its manual discipline');
+  });
+});
+test('AUTO_COPY_FORMAT: client fallback mirrors the server CONFIG default', () => {
+  // Both templates are same-shaped string-concat literals ending at the
+  // {resolution} chunk; parse each and compare byte-for-byte. CLAUDE.md has
+  // required this mirror ("keep them in sync") since the multi-line template
+  // shipped — this is its first machine check.
+  function concatTemplate(src, anchorRe, label) {
+    const m = src.match(anchorRe);
+    assert.ok(m, label + ' template anchor found');
+    const tail = src.slice(m.index, m.index + 900);
+    const chunks = tail.match(/'(?:[^'\\]|\\.)*'/g) || [];
+    const out = [];
+    for (const c of chunks) {
+      out.push(c.slice(1, -1).replace(/\\n/g, '\n'));
+      if (c.indexOf('{resolution}') >= 0) break;
+    }
+    return out.join('');
+  }
+  const cnFullSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const server = concatTemplate(codeSrc, /AUTO_COPY_FORMAT:/, 'server');
+  const client = concatTemplate(cnFullSrc, /CN_STATE\.autoCopyFormat\s*\|\|/, 'client');
+  assert.ok(server.indexOf('{patientAndTrx}') >= 0, 'server template parsed (carries the Patient & TRX line)');
+  assert.strictEqual(client, server,
+    'the client first-copy fallback template drifted from the server CONFIG.CALL_NOTES.AUTO_COPY_FORMAT default');
 });
 
 console.log('\nCode.js — Sheets-coerced timestamp columns are read via normalizeAuditTs_ (M1 tripwire)');
@@ -3672,6 +3886,227 @@ test("every showView('…') literal is a registered tab key", () => {
     });
   });
   assert.ok(svLiterals >= 3, 'showView literals found (scan is armed — got ' + svLiterals + ')');
+});
+
+// ── Cycle 10 — top-5 broad-scan fix pins (M-1/M-2/M-3/M-5/M-6) ────────────
+console.log('\ncycle-10 — top-5 broad-scan fix pins');
+
+// M-5 behavioral: the intake PHI-store cell cap helper (pure). The cap must
+// reject a cell over the Sheets-safe limit and pass ordinary payloads.
+test('intakeStoreOversizeError_ caps store cells (M-5, INV-96 spirit)', () => {
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const capM = codeSrc.match(/const INTAKE_STORE_CELL_MAX = (\d+)/);
+  assert.ok(capM, 'INTAKE_STORE_CELL_MAX declared');
+  const cap = parseInt(capM[1], 10);
+  assert.ok(cap > 0 && cap < 50000, 'cap under the 50k Sheets cell limit');
+  const ctx = { String: String, INTAKE_STORE_CELL_MAX: cap };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'intakeStoreOversizeError_'), ctx,
+    { filename: 'Code.js#intakeStoreOversizeError_' });
+  assert.strictEqual(vm.runInContext('intakeStoreOversizeError_(["{}", "small"])', ctx), null,
+    'small cells pass');
+  assert.ok(/too large/.test(vm.runInContext(
+    'intakeStoreOversizeError_(["x".repeat(' + (cap + 1) + ')])', ctx) || ''),
+    'oversized cell rejected with a clear error');
+  // Both intake send paths must consult the cap BEFORE MailApp and surface
+  // storeWarning on an append failure (never a bare console.warn again).
+  const ppd = extractRawFunction('Code.js', 'intakeSendPPD');
+  const acct = extractRawFunction('Code.js', 'intakeSendAcct_');
+  [ppd, acct].forEach((src, i) => {
+    const label = i === 0 ? 'intakeSendPPD' : 'intakeSendAcct_';
+    assert.ok(src.indexOf('intakeStoreOversizeError_') >= 0, label + ' consults the cap');
+    assert.ok(src.indexOf('intakeStoreOversizeError_') < src.indexOf('MailApp.sendEmail'),
+      label + ' caps BEFORE the send (no email without a record)');
+    assert.ok(src.indexOf('intakeStoreFailWarn_') >= 0, label + ' surfaces store failures');
+    assert.ok(src.indexOf('storeWarning: storeWarning') >= 0, label + ' returns storeWarning');
+  });
+});
+
+// M-1 source pins: the live-punch path enforces the client's own state
+// machine, and the two manager write paths agree on which duplicate row wins.
+test('recordPunch live path enforces getNextActions_; findExistingPunch_ is last-match (M-1)', () => {
+  const rp = extractRawFunction('Code.js', 'recordPunch');
+  assert.ok(/getNextActions_\(todayPunches\)/.test(rp),
+    'recordPunch validates live punches against getNextActions_');
+  // Guard must sit INSIDE the !isAdj branch (adjust back-fills bypass) and
+  // AFTER the min-interval check (rapid-fire keeps its friendlier error).
+  assert.ok(rp.indexOf('MIN_PUNCH_INTERVAL_SECONDS') < rp.indexOf('getNextActions_(todayPunches)'),
+    'sequence guard runs after the min-interval check');
+  const fep = extractRawFunction('Code.js', 'findExistingPunch_');
+  assert.ok(/found = \{ sheet/.test(fep) && !/return \{ sheet/.test(fep),
+    'findExistingPunch_ remembers the LAST match (agrees with managerSaveDay’s snapshot)');
+  const msd = extractRawFunction('Code.js', 'managerSaveDay');
+  assert.ok(/rowsByType/.test(msd) && /collapse/.test(msd),
+    'managerSaveDay snapshots ALL rows per type and collapses duplicates');
+});
+
+// M-2 source pins: Day Edit bounds the picker on the TARGET employee's today.
+test('openDayEditModal uses the target rep timezone; liveStatus ships it (M-2)', () => {
+  const mgrSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const modal = mgrSrc.slice(mgrSrc.indexOf('function openDayEditModal('));
+  const body = modal.slice(0, modal.indexOf('\nfunction ', 10));
+  assert.ok(/targetTz/.test(body) && /\.timezone/.test(body),
+    'openDayEditModal resolves the target’s tz from liveStatus');
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const lsBlock = codeSrc.slice(codeSrc.indexOf('const liveStatus = employees.map'));
+  assert.ok(/timezone: e\.timezone/.test(lsBlock.slice(0, 2000)),
+    'liveStatus entries carry the IANA timezone');
+});
+
+// M-3 source pins: pinned-tray render routing + typed-edit preservation.
+test('cnReRenderActiveView_ re-renders the pinned tray; tray render is edit-safe (M-3)', () => {
+  const cnSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const rr = cnSrc.slice(cnSrc.indexOf('function cnReRenderActiveView_('));
+  const rrBody = rr.slice(0, rr.indexOf('\n}') + 2);
+  assert.ok(/cnRenderPinnedTray_\(\)/.test(rrBody),
+    'cnReRenderActiveView_ routes pinned-tray re-renders');
+  const tray = cnSrc.slice(cnSrc.indexOf('function cnRenderPinnedTray_('));
+  const trayBody = tray.slice(0, tray.indexOf('\n}') + 2);
+  assert.ok(/cnEditSnapshot_\(\)/.test(trayBody) && /cnEditRestore_\(/.test(trayBody),
+    'cnRenderPinnedTray_ preserves typed inline-edit values across re-renders');
+});
+
+// Batch C server pins (cycle 10): witness-audit wiring, validation, and the
+// small silent-degradation guards.
+test('cycle-10 batch C: witness wiring + server guards hold', () => {
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  // C4 — the three witness rows route through writeWitnessAuditLog_, the
+  // health report carries witnessFails, and the failure digest pushes recent.
+  ['FormSubmissionReceived', 'EmpDocSigned', 'EmpDocCompleted'].forEach((a) => {
+    assert.ok(new RegExp("writeWitnessAuditLog_\\([^)]*'" + a + "'").test(codeSrc),
+      a + ' is written via writeWitnessAuditLog_ (C4)');
+  });
+  assert.ok(/witnessFails: witnessFails/.test(codeSrc), 'computeAutomationHealth_ returns witnessFails');
+  assert.ok(/report\.witnessFails\.recent/.test(codeSrc) || /witnessFails && report\.witnessFails\.recent/.test(codeSrc),
+    'the failure digest pushes a recent lost witness');
+  // C2 — exportAdpRange validates its dates before generating.
+  const exp = extractRawFunction('Code.js', 'exportAdpRange');
+  assert.ok(exp.indexOf('generateExportSheet_') > exp.indexOf('Invalid start date'),
+    'exportAdpRange validates before generating');
+  // C7 — backward-only delete window (no symmetric Math.abs).
+  const del = extractRawFunction('Code.js', 'deletePunch');
+  assert.ok(del.indexOf('Math.abs(daysBetween_') < 0, 'deletePunch window is backward-only (C7)');
+  // C8 — auth precedes the feature-flag read.
+  const ts = extractRawFunction('Code.js', 'getTeammateStatus');
+  assert.ok(ts.indexOf('getEmployeeInfo_') < ts.indexOf("getFlag_('showTeammateStatus')"),
+    'getTeammateStatus authenticates before evaluating the flag (C8)');
+  // C1 — reconcile routes its Timestamp reads through the boundary helper.
+  const rec = extractRawFunction('Code.js', 'reconcileCallNotes');
+  assert.ok((rec.match(/cnTimestampString_\(/g) || []).length >= 2,
+    'reconcileCallNotes recovers Timestamps via cnTimestampString_ (C1/INV-142)');
+  // C5 — a deliberately-cleared {} config stays empty.
+  ['getStateTaxRates_', 'getUpdateSuggestions_'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/Object\.keys\(parsed\)\.length === 0 \|\|/.test(src),
+      fn + ' keeps a cleared {} empty (C5)');
+  });
+});
+
+// Batch D client pins (cycle 10): failure-handling order + compact guard.
+test('cycle-10 batch D: client guards hold', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  // D8 — the pop-out never overwrites the main window's restore tab.
+  assert.ok(/if \(!COMPACT_MODE\) \{ try \{ localStorage\.setItem\('umsLastView', view\);/.test(core),
+    'umsLastView persist is compact-guarded (D8)');
+  // D10 — null-prototype beacon dedupe map.
+  assert.ok(/_errBeaconSeen = Object\.create\(null\)/.test(core), 'beacon dedupe map is null-prototype (D10)');
+  // D1 — the PTO day-submit checks the result BEFORE closing the modal.
+  const to = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8');
+  const seg = to.slice(to.indexOf("document.getElementById('day-submit').addEventListener"));
+  assert.ok(seg.indexOf('if (!result.success)') < seg.indexOf("classList.remove('open')"),
+    'day-submit keeps the modal open on a server rejection (D1)');
+  // D3 — unknown live-status enum degrades, never throws.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/MGR_STATUS\[e\.status\] \|\| MGR_STATUS\.not_in/.test(mgr),
+    'live-status card falls back on an unknown enum (D3)');
+  // D2a — a failed dashboard round is never stamped fresh.
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/CLK_DASH\.loadedAt = anyFail \? 0 : Date\.now\(\)/.test(clk),
+    'dashboard freshness stamp skips failed rounds (D2a)');
+  // D12 — the tour Escape suppresses same-node capture siblings.
+  const tour = fs.readFileSync(path.join(__dirname, '../../web-app/script_tour.html'), 'utf8');
+  assert.ok(/Escape'\) \{ e\.preventDefault\(\); e\.stopImmediatePropagation\(\);/.test(tour),
+    'tour Escape uses stopImmediatePropagation (D12)');
+});
+
+// M-6 source pins: all three Metrics loaders carry same-view seq tokens.
+test('Metrics loaders carry stale-range seq tokens (M-6, the _covSeq class)', () => {
+  const mSrc = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  [['mLoadMyStats_', 'M_STATE.mySeq'], ['mLoadTeamMetrics_', 'M_STATE.teamSeq'],
+   ['spanishLoad_', 'SPANISH_STATE.seq']].forEach(([fn, tok]) => {
+    const f = mSrc.slice(mSrc.indexOf('function ' + fn + '('));
+    const fBody = f.slice(0, f.indexOf('\nfunction ', 10));
+    assert.ok(fBody.indexOf(tok + ' = (') >= 0, fn + ' bumps ' + tok);
+    assert.ok(fBody.indexOf('seq !== ' + tok) >= 0, fn + ' handlers re-check ' + tok);
+  });
+});
+
+// ── Batch L pins — sheet doctor + C13 hash dual-verify ─────────────────────
+console.log('\nbatch L — sheet doctor + EmpDocs hash dual-verify pins');
+test('sheet doctor: coercion-safe scan, last-row-wins fix, gates + lock', () => {
+  const scan = extractRawFunction('Code.js', 'tsDoctorScan_');
+  ['normalizeDate_', 'normalizeTime_', 'normalizeType_'].forEach((h) => {
+    assert.ok(scan.indexOf(h + '(') >= 0, 'tsDoctorScan_ reads via ' + h + ' (Sheets-coercion discipline)');
+  });
+  assert.ok(/i = 2/.test(scan), 'tsDoctorScan_ starts after the TWO-row Timesheet header');
+  assert.ok(/LunchOut/.test(scan) && /LunchIn/.test(scan), 'tsDoctorScan_ collects lunch pairs (operator ask)');
+  const doctor = extractRawFunction('Code.js', 'getTimesheetDoctor');
+  assert.ok(/isManager/.test(doctor) && /Manager access required/.test(doctor), 'detector is manager-gated (INV-02)');
+  const fix = extractRawFunction('Code.js', 'fixTimesheetDuplicates');
+  assert.ok(/isManager/.test(fix) && /waitLock\(/.test(fix) && /finally/.test(fix) && /releaseLock/.test(fix),
+    'fix is manager-gated + locked with finally release (INV-01/02)');
+  assert.ok(/g\.rows\.length - 1/.test(fix),
+    'fix keeps the LAST row per group — the findExistingPunch_/managerSaveDay convention (INV-155)');
+  assert.ok(/PunchDelete/.test(fix) && /duplicate collapsed/.test(fix),
+    'each deletion writes a duplicate-collapsed PunchDelete audit row (INV-08)');
+  assert.ok(!/inverted/.test(fix),
+    'fix never touches inverted pairs — report-only by the C3 operator decision');
+});
+test('typed-signature alternative: both pads carry setTypedName (a11y parity pair)', () => {
+  // The canvas pads are deliberate twins (the pad-cap parity pin's pair).
+  // The typed alternative must exist on BOTH — a keyboard/motor/SR user is
+  // equally blocked on the public PHI form and on HR-doc signing.
+  const pub = fs.readFileSync(path.join(__dirname, '../../web-app/form_public.html'), 'utf8');
+  const ed = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_empdocs.html'), 'utf8');
+  [['form_public.html', pub], ['train/script_empdocs.html', ed]].forEach(([name, src]) => {
+    assert.ok(src.indexOf('setTypedName') >= 0, name + ' pad exposes setTypedName');
+    assert.ok(src.indexOf('Segoe Script') >= 0, name + ' renders the typed name in the script face (same PNG artifact class as a drawn signature)');
+    assert.ok(/aria-expanded/.test(src), name + ' typed toggle is a disclosure (aria-expanded)');
+  });
+});
+test('nightly self-test trigger: heartbeat-first, dev-only full suite, failure surfaced', () => {
+  const src = extractRawFunction('Code.js', 'runNightlySelfTest');
+  assert.ok(/assertManagerCaller_\(/.test(src), 'INV-44 trigger-handler gate');
+  // Heartbeat BEFORE the run — trigger liveness stays observable even if the
+  // suite crashes (the INV-151 posture).
+  assert.ok(src.indexOf("stampDigestLastRun_('selfTest')") < src.indexOf('runSmokeTests'),
+    'heartbeat stamps before the suite runs');
+  assert.ok(/INSTANCE_IS_PROD/.test(src) && /INSTANCE_LABEL/.test(src),
+    'full suite gates on the DEV-instance check — smoke-only anywhere else');
+  assert.ok(/isDev\) runAllTests\(\); else runSmokeTests\(\)/.test(src.replace(/\s+/g, ' ')),
+    'runAllTests only on dev; runSmokeTests otherwise');
+  const problems = extractRawFunction('Code.js', 'automationProblems_');
+  assert.ok(/selfTest/.test(problems) && /selfTest\.fail > 0/.test(problems),
+    'a failing self-test rides automationProblems_ (health dot + failure digest)');
+  const health = extractRawFunction('Code.js', 'computeAutomationHealth_');
+  assert.ok(/SELF_TEST_RESULT_PROP/.test(health) && /selfTest: selfTest/.test(health),
+    'computeAutomationHealth_ returns the last self-test outcome');
+});
+test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dual-verifies', () => {
+  const NUL_ESC = '\\' + 'u0000';   // the 6-char escape as source text
+  const content = extractRawFunction('Code.js', 'empDocContentHash_');
+  const sig = extractRawFunction('Code.js', 'empDocSignatureHash_');
+  [content, sig].forEach((src, i) => {
+    assert.ok(src.indexOf("(delim === undefined) ? '" + NUL_ESC + "'") >= 0,
+      (i ? 'empDocSignatureHash_' : 'empDocContentHash_') + ' defaults to the NUL delimiter (new writes are v2)');
+  });
+  const ack = extractRawFunction('Code.js', 'acknowledgeDoc');
+  assert.ok(/empDocContentHashMatches_\(/.test(ack),
+    'acknowledgeDoc integrity gate dual-verifies — a pre-C13 doc must still sign');
+  const verify = extractRawFunction('Code.js', 'verifyDocSignature');
+  assert.ok(/empDocContentHashMatches_\(/.test(verify), 'verifyDocSignature content check dual-verifies');
+  assert.ok(/EMPDOC_HASH_DELIM_LEGACY/.test(verify),
+    'verifyDocSignature recomputes the signature hash in the legacy form too');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

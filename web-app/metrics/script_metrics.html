@@ -145,6 +145,7 @@
   text-align: center;
   color: var(--muted);
   padding: var(--space-lg) var(--space-md);
+  border: 1.5px dashed var(--line-2); border-radius: var(--radius-md);
   font-size: 0.9rem;
 }
 .m-loading {
@@ -421,7 +422,7 @@ function enterMetricsMyStatsView() {
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('chart', 16) + ' My Stats</div>' : '') +
     '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
-      '<h2>My Call Metrics</h2>' +
+      '<h1 class="view-title">My Call Metrics</h1>' +
     '</div>' +
     '<div class="m-controls">' +
       // Today/7D/30D presets — Today = single-day rich view (own-vs-team series);
@@ -431,7 +432,7 @@ function enterMetricsMyStatsView() {
         mMyPresetBtn_('Today', 'today') + mMyPresetBtn_('7D', '7d') + mMyPresetBtn_('30D', '30d') +
       '</div>' +
       '<label style="font-size:0.85rem;color:var(--muted)">Day</label>' +
-      '<input type="date" id="m-my-date" value="' + M_STATE.myDate + '">' +
+      '<input type="date" id="m-my-date" value="' + esc(M_STATE.myDate) + '">' +
       '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px">Range</label>' +
       '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
       '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
@@ -489,6 +490,12 @@ function mMyPreset_(key) {
 function mLoadMyStats_(opts) {
   opts = opts || {};
   var requestedView = currentView;
+  // M-6 (cycle 10): seq token — the view-key guard alone can't stop a
+  // SAME-VIEW race (a slow 30D response landing after a fast Today response
+  // would render 30-day aggregates under Today-labeled chips). The newest
+  // load invalidates every in-flight one — the _covSeq/_punctSeq pattern.
+  M_STATE.mySeq = (M_STATE.mySeq || 0) + 1;
+  var seq = M_STATE.mySeq;
   // Cache key = the exact query (a date toggle is a different key, so we never
   // paint the wrong day from cache).
   var isRange = (M_STATE.myMode === 'range' && M_STATE.myFrom && M_STATE.myTo);
@@ -508,14 +515,15 @@ function mLoadMyStats_(opts) {
 
   var done = function () { if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   var ok = function (data) {
-    if (currentView !== requestedView) { done(); return; }
-    // Cache only good payloads — an {error} response shouldn't poison the cache.
+    // Cache first (key-exact, so a stale response still warms its own key),
+    // then drop the RENDER if a newer load superseded this one (M-6).
     if (data && !data.error) M_STATE.myCache[key] = { data: data, entry: { at: Date.now() } };
+    if (currentView !== requestedView || seq !== M_STATE.mySeq) { done(); return; }
     mRenderMyStats_(data);
     done();
   };
   var fail = function (err) {
-    if (currentView !== requestedView) { done(); return; }
+    if (currentView !== requestedView || seq !== M_STATE.mySeq) { done(); return; }
     done();
     // If a stale view is already on screen, keep it rather than blanking it.
     if (painted) { showToast('Couldn’t refresh metrics — showing last loaded', 'toast-warn'); return; }
@@ -590,7 +598,7 @@ function mRenderMyStats_(data) {
     html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(trend, 'pctAnswered', avg) + '</div>';
     var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
     var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
-    html += '<div class="m-hero-spark-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>';
+    html += '<div class="m-hero-spark-labels"><span>' + esc(firstLabel) + '</span><span>' + esc(lastLabel) + '</span></div>';   // D7 (cycle 10) — the documented Metrics esc() rule
   }
   html += '</div>';
 
@@ -704,7 +712,7 @@ function mBuildDualSparkSvg_(series) {
   var lastOwn = null;
   for (var k = n - 1; k >= 0; k--) { if (series[k].own != null && !isNaN(series[k].own)) { lastOwn = { i: k, v: series[k].own }; break; } }
   var dot = lastOwn ? '<circle class="own-dot" cx="' + (pad + lastOwn.i * xs).toFixed(1) + '" cy="' + (h - pad - lastOwn.v * ys).toFixed(1) + '" r="2.5"/>' : '';
-  return '<svg class="m-dual-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+  return '<svg class="m-dual-spark" aria-hidden="true" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
     lineFor('team', 'team-line') + lineFor('own', 'own-line') + dot +
   '</svg>';
 }
@@ -750,7 +758,7 @@ function mBuildHeroSparkSvg_(trend, metric, avg) {
   // §4 sparkline draw — the polyline draws itself in on render. --len is a safe
   // over-estimate of the path length (viewBox width 300); over-estimating just
   // means it starts fully hidden and animates to fully drawn (end state 0).
-  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+  return '<svg aria-hidden="true" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
     baselineHtml +
     '<polyline class="spark" style="--len:600" points="' + coords.join(' ') + '"/>' +
     '<circle cx="' + lx + '" cy="' + ly + '" r="2.5"/>' +
@@ -771,7 +779,7 @@ function mMiniSparkSvg_(values) {
     var y = h - pad - ((v - min) / range) * (h - pad * 2);
     coords.push((pad + i * xs).toFixed(1) + ',' + y.toFixed(1));
   });
-  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><polyline points="' + coords.join(' ') + '"/></svg>';
+  return '<svg aria-hidden="true" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><polyline points="' + coords.join(' ') + '"/></svg>';
 }
 
 /** Single rail row. Value is rendered with the optional tone class
@@ -852,7 +860,7 @@ function enterMetricsTeamView() {
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('chart', 16) + ' Team Metrics</div>' : '') +
     '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
-      '<h2>Team Call Metrics</h2>' +
+      '<h1 class="view-title">Team Call Metrics</h1>' +
     '</div>' +
     '<div class="m-controls">' +
       '<label style="font-size:0.85rem;color:var(--muted)">From</label>' +
@@ -909,6 +917,9 @@ function mLoadTeamMetrics_(opts) {
   if (!from) return;
   var requestedView = currentView;
   var key = from + ':' + to;   // a range change is a different key — never paints the wrong range
+  // M-6 (cycle 10): same-view stale-range seq token (see mLoadMyStats_).
+  M_STATE.teamSeq = (M_STATE.teamSeq || 0) + 1;
+  var seq = M_STATE.teamSeq;
 
   // Stale-while-revalidate: instant repaint from a fresh cached payload (unless
   // forced via the Refresh button), then refresh quietly behind the pill.
@@ -926,13 +937,13 @@ function mLoadTeamMetrics_(opts) {
   var done = function () { if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   google.script.run
     .withSuccessHandler(function (data) {
-      if (currentView !== requestedView) { done(); return; }
       if (data && !data.error) M_STATE.teamCache[key] = { data: data, entry: { at: Date.now() } };
+      if (currentView !== requestedView || seq !== M_STATE.teamSeq) { done(); return; }
       mRenderTeamMetrics_(data);
       done();
     })
     .withFailureHandler(function (err) {
-      if (currentView !== requestedView) { done(); return; }
+      if (currentView !== requestedView || seq !== M_STATE.teamSeq) { done(); return; }
       done();
       if (painted) { showToast('Couldn’t refresh metrics — showing last loaded', 'toast-warn'); return; }
       document.getElementById('m-team-content').innerHTML =
@@ -994,7 +1005,7 @@ function mRenderTeamMetrics_(data) {
     html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg) + '</div>';
     var firstLabel = data.trend[0].date ? data.trend[0].date.substring(5) : '';
     var lastLabel = data.trend[data.trend.length - 1].date ? data.trend[data.trend.length - 1].date.substring(5) : '';
-    html += '<div class="m-hero-spark-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>';
+    html += '<div class="m-hero-spark-labels"><span>' + esc(firstLabel) + '</span><span>' + esc(lastLabel) + '</span></div>';   // D7 (cycle 10) — the documented Metrics esc() rule
   }
   html += '</div>';
 
@@ -1116,7 +1127,7 @@ function enterSpanishInboxView(area) {
   area.innerHTML =
     (COMPACT_MODE
       ? '<div class="compact-header"><div class="ch-title">' + icon('mail', 16) + ' Spanish Inbox</div></div>'
-      : '<div class="view-title-row"><h2>Spanish Inbox</h2><p>Bilingual-assistance request resolution time — first reply from a group member. Read-only.</p></div>') +
+      : '<div class="view-title-row"><div><h1 class="view-title">Spanish Inbox</h1><p>Bilingual-assistance request resolution time — first reply from a group member. Read-only.</p></div></div>') +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
       '<label style="font-size:12px;color:var(--muted)">Window</label>' +
       '<select id="spanish-days">' + [7, 30, 60, 90].map(function (n) {
@@ -1132,10 +1143,17 @@ function enterSpanishInboxView(area) {
 function spanishLoad_() {
   var body = document.getElementById('spanish-body'); if (!body) return;
   body.innerHTML = loSweep();
+  // M-6 (cycle 10): seq token so a slow 30-day response can't overwrite a
+  // just-loaded 7-day view after a quick window-select double-change.
+  SPANISH_STATE.seq = (SPANISH_STATE.seq || 0) + 1;
+  var seq = SPANISH_STATE.seq;
   google.script.run
-    .withSuccessHandler(function (d) { if (currentView !== 'metricsSpanish') return; spanishRender_(d); })
+    .withSuccessHandler(function (d) {
+      if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
+      spanishRender_(d);
+    })
     .withFailureHandler(function (e) {
-      if (currentView !== 'metricsSpanish') return;
+      if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
       body.innerHTML = '<div class="no-data">' + esc((e && e.message) || 'Failed to load') + '</div>';
     })
     .getSpanishInboxStats(SPANISH_STATE.days);

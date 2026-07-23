@@ -57,7 +57,7 @@
   .kb-dept-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font: inherit; background: none; border: none; cursor: pointer; padding: 8px 6px 4px; }
   .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
   .kb-dept-name { font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-  .kb-dept-count { margin-left: auto; font-family: var(--mono); font-size: .66rem; color: var(--muted-3); }
+  .kb-dept-count { margin-left: auto; font-family: var(--mono); font-size: .66rem; color: var(--muted-2); }
   .kb-chevron { display: inline-flex; color: var(--muted-3); transition: transform .2s var(--ease); }
   /* §8 — animate the department collapse via the body's max-height + chevron rotate */
   .kb-dept-body { overflow: hidden; max-height: 2000px; transition: max-height .26s var(--ease); }
@@ -68,7 +68,7 @@
   .kb-land { max-width: 760px; }
   .kb-land-sec { margin-bottom: 22px; }
   .kb-land-h { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-  .kb-land-h .kb-land-sub { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted-3); }
+  .kb-land-h .kb-land-sub { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted-2); }
   .kb-land-pill { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--warn-soft); color: var(--warning-deep); border-radius: 999px; padding: 1px 7px; }
   .kb-land-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-bottom: 1px solid var(--line); padding: 9px 2px; cursor: pointer; color: var(--ink); }
   .kb-land-row:last-child { border-bottom: none; }
@@ -395,7 +395,7 @@ function enterReferenceView(area) {
   area = area || document.getElementById('view-area');
   if (!area) return;
   area.innerHTML =
-    (COMPACT_MODE ? '<div class="compact-header">' + icon('list', 16) + ' Reference</div>' : '<div class="view-title-row"><h2>Reference</h2></div>') +
+    (COMPACT_MODE ? '<div class="compact-header">' + icon('list', 16) + ' Reference</div>' : '<div class="view-title-row"><h1 class="view-title">Reference</h1></div>') +
     '<div class="kb-wrap">' +
       '<div class="kb-side">' +
         '<input type="text" id="kb-search" placeholder="Search reference…" autocomplete="off">' +
@@ -588,6 +588,8 @@ function kbRenderLanding_() {
             (u.drawerCount ? ' · ' + u.drawerCount + ' in-call' : '') + '</span>' +
           kbFbCountHtml_(u) + '</button>';
       });
+    } else if (KB_STATE.usage && KB_STATE.usage.loadFailed) {
+      h += '<div class="kb-land-none">Usage stats failed to load — retry by re-entering Reference.</div>';   // E11
     } else {
       h += '<div class="kb-land-none">No opens recorded in the last 30 days yet.</div>';
     }
@@ -617,6 +619,12 @@ function kbRenderLanding_() {
         '</div>';
       });
       h += '</div>';
+    } else if (KB_STATE.reviewDue && KB_STATE.reviewDue.loadFailed) {
+      // E11 — a failed load must not look like an empty queue: the review-due
+      // block (incl. rep out-of-date stale flags, INV-139's headline signal)
+      // used to silently vanish.
+      h += '<div class="kb-land-sec"><div class="kb-land-h">Review due</div>' +
+        '<div class="kb-land-none">Failed to load — retry by re-entering Reference.</div></div>';
     }
   }
 
@@ -645,6 +653,9 @@ function kbRenderLanding_() {
         '</div>';
       });
       h += '</div>';
+    } else if (KB_STATE.contentRequests && KB_STATE.contentRequests.loadFailed) {
+      h += '<div class="kb-land-sec"><div class="kb-land-h">Content requests</div>' +
+        '<div class="kb-land-none">Failed to load — retry by re-entering Reference.</div></div>';   // E11
     }
   }
 
@@ -1168,10 +1179,20 @@ function kbConvertItem_(id) {
   }).then(function (ok) {
     if (!ok) return;
     showToast('Converting…', '');
+    var requestedView = currentView;   // M-7 (cycle 10) — see below
     google.script.run
       .withSuccessHandler(function (res) {
         if (!res || res.error || !res.success) {
           showToast((res && res.error) || 'Convert failed', 'toast-error');
+          return;
+        }
+        // M-7 (cycle 10): a DocumentApp conversion is multi-second — don't
+        // pop the body-mounted editor over an unrelated view after nav-away,
+        // and never clobber an editor the admin opened for something else
+        // while the convert was in flight.
+        if (currentView !== requestedView) return;
+        if (document.getElementById('kb-ed-overlay')) {
+          showToast('Convert finished, but another editor is open — close it and convert again.', 'toast-warn');
           return;
         }
         KB_EDIT = {
@@ -1204,6 +1225,13 @@ function kbConvertFromEditor_() {
   var url = String(KB_EDIT.driveUrl || '').trim();
   if (!url) { showToast('Paste a Google Doc share URL first.', 'toast-warn'); return; }
   showToast('Converting…', '');
+  // M-7 (cycle 10): identity guard. Every editor open assigns a FRESH KB_EDIT
+  // object, so capturing the reference pins this convert to the editor it was
+  // fired from — the old "any editor exists" check let a stale response
+  // overwrite a DIFFERENT item's open editor (type flipped to article, body
+  // replaced with the other Doc's markdown; a later Save persisted the wrong
+  // Doc's content over the wrong KB row).
+  var ed = KB_EDIT;
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error || !res.success) {
@@ -1211,6 +1239,7 @@ function kbConvertFromEditor_() {
         return;
       }
       if (!document.getElementById('kb-ed-overlay')) return;   // editor closed mid-convert
+      if (KB_EDIT !== ed) return;   // M-7 — a different item's editor is open now
       KB_EDIT.type = 'article';
       KB_EDIT.body = res.markdown || '';
       if (!String(KB_EDIT.title || '').trim()) KB_EDIT.title = res.docTitle || '';
@@ -1816,7 +1845,10 @@ function kbDrawerSearch_(q) {
       // Cycle-9 L-25: parity with the Reference-tab twin's cycle-8 fix — the
       // drawer (the mid-call surface where a rep most needs to know) used to
       // just stop the spinner, leaving the old body with zero feedback.
-      if (seq !== KB_DRAWER.searchSeq) return;
+      // E15 (cycle 10): also check the drawer is still OPEN (the success
+      // handler already does) — a rep who closed the drawer mid-search got a
+      // "Reference search failed" toast for a surface they'd already left.
+      if (seq !== KB_DRAWER.searchSeq || !KB_DRAWER.open) return;
       kbDrawerSetSearching_(false);
       showToast('Reference search failed — check your connection and try again', 'toast-error');
     })
@@ -1881,10 +1913,19 @@ function kbLoadUsageBlock_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
-      KB_STATE.usage = (res && !res.error) ? res : { items: [] };
+      // E11 (cycle 10): failed ≠ empty — a load failure used to render the
+      // authoritative-sounding "No opens recorded…" (and the Review-due /
+      // Content-requests blocks silently VANISHED), so a manager couldn't
+      // tell "nothing due" from "the load died". loadFailed renders a
+      // distinct failure line in the landing block.
+      KB_STATE.usage = (res && !res.error) ? res : { items: [], loadFailed: true };
       if (KB_STATE.landing) kbRenderLanding_();
     })
-    .withFailureHandler(function () {})
+    .withFailureHandler(function () {
+      if (currentView !== requested) return;
+      KB_STATE.usage = { items: [], loadFailed: true };
+      if (KB_STATE.landing) kbRenderLanding_();
+    })
     .kbGetUsageStats();
 }
 
@@ -1896,10 +1937,14 @@ function kbLoadReviewDueBlock_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
-      KB_STATE.reviewDue = (res && !res.error) ? res : { items: [] };
+      KB_STATE.reviewDue = (res && !res.error) ? res : { items: [], loadFailed: true };   // E11
       if (KB_STATE.landing) kbRenderLanding_();
     })
-    .withFailureHandler(function () {})
+    .withFailureHandler(function () {
+      if (currentView !== requested) return;
+      KB_STATE.reviewDue = { items: [], loadFailed: true };   // E11
+      if (KB_STATE.landing) kbRenderLanding_();
+    })
     .kbGetReviewDue();
 }
 
@@ -1910,10 +1955,14 @@ function kbLoadContentRequestsBlock_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
-      KB_STATE.contentRequests = (res && !res.error) ? res : { open: [] };
+      KB_STATE.contentRequests = (res && !res.error) ? res : { open: [], loadFailed: true };   // E11
       if (KB_STATE.landing) kbRenderLanding_();
     })
-    .withFailureHandler(function () {})
+    .withFailureHandler(function () {
+      if (currentView !== requested) return;
+      KB_STATE.contentRequests = { open: [], loadFailed: true };   // E11
+      if (KB_STATE.landing) kbRenderLanding_();
+    })
     .kbGetContentRequests();
 }
 

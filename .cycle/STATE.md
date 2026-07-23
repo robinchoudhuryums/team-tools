@@ -1,12 +1,283 @@
 # Cycle State
 
 ## Current
-Cycle: 9
-Phase: implement — ENTIRE ranked backlog done (scan batch + ranked batches 1-7). Batches 5-7 on claude/broad-scan-5eoypm: bounded reads (L-1, L-3, L-9, L-13, L-14, L-16, L-21, L-22), server hygiene (L-5, L-7, L-8, L-11, L-12, L-15), test pins (L-35 ×4, the payload-contract tripwire, the showView-literal net). Pure 302/0, DOM 61/0, node --check ×3 clean; 10 bite-checks total this cycle. Remaining: /sync-docs (batches 3-7 list), operator deploy, /reflect.
+Cycle: 10
+Phase: implement — broad scan complete (7-agent fan-out + personal verification;
+0 Critical / 0 High / 11 Medium / ~35 Low, all 11 Mediums confirmed, 0 retracted).
+TOP-5 BATCH IMPLEMENTED on claude/broad-scan-11m0vf: M-1 (recordPunch live
+sequence guard via getNextActions_ + findExistingPunch_ last-match +
+managerSaveDay duplicate collapse), M-2 (Day Edit picker bounds in the TARGET
+rep's tz; liveStatus ships `timezone`), M-3 (cnReRenderActiveView_ re-renders
+the pinned tray; tray render edit-snapshot-safe), M-5 (intake store cell caps
+pre-send + storeWarning + IntakeStoreFail audit row + client warn toast), M-6
+(seq tokens on mLoadMyStats_/mLoadTeamMetrics_/spanishLoad_). Also applied the
+/setup-cycle delta (Seams Audit Cadence = every 4 subsystem cycles; infra files
+assigned to Server/Test Suite; form-generator frozen entry). Pure 307/0 (5 new
+pins, 2 bite-checked), DOM 61/0, node --check ×3 clean; editor suite +2 tests
+(recordPunch_liveSequenceGuard, managerSaveDay_collapsesDuplicateRows;
+test_recordPunch_basic gained a _clearTestState — the sort test's today-rows
+now correctly trip the new guard).
+BATCHES A+B ALSO IMPLEMENTED (same branch): A = M-4 (History edit-snapshot
+preservation), M-7 (KB convert identity guards — KB_EDIT object-ref +
+view/no-open-editor checks), M-8 (Admin Sheets pane loads on the enter path),
+composer Preview instance+in-flight guard. B = M-9 (_withTestKb_ via
+TEST_KB_SS_ID fixture + createPinnedSpreadsheet_; 3 KB-writing tests wrapped;
+cleanupTestData backstops for KB/KbRevisions live+fixture, HR Coaching +
+EmpDocTemplates; HR fixture now factory-pinned), M-10 (2 DOM pins:
+stacked-dialog topmost Escape — bite-checked on the real guard — and
+drawer-Enter exemption), M-11 (5 editor tests: getMyMetricsRange,
+appendCallNoteFeedback, getMyNoteHourBuckets, getPatientTimeline,
+deptRequest resolve-link idempotency), tripwire hardening (=(?!=)
+comparison-read fix in both coercion scans; GmailApp.sendEmail in the mail
+inventory; INV-01 finally/releaseLock structural scan — closes the mail-scan
+no-finally hole). Pure 307/0, DOM 63/0, editor suite +7 tests total this
+cycle. NOTE for operator: the first post-deploy runAllTests creates a
+TEST_KB_Fixture spreadsheet (Script Property TEST_KB_SS_ID) in the deployer's
+Drive — expected, one-time.
+BATCHES C+D ALSO IMPLEMENTED (same branch): C = C1 reconcile Timestamp
+recovery via cnTimestampString_ (INV-142 now strictly true; the scan's
+reconcile whole-line exemption REMOVED), C2 exportAdpRange validation, C4
+witness-audit reliability (writeAuditLog_ returns outcome; writeWitnessAuditLog_
+retry + WITNESS_AUDIT_FAILS property; surfaced in computeAutomationHealth_
++ failure digest (48h recent window) + Admin panel), C5 cleared-{} tax/
+suggestion configs stay empty, C6 clientErrorsSummary_ skips malformed ts
+rows, C7 deletePunch backward-only window, C8 getTeammateStatus auth before
+flag, C9 kbGetRelated column-bound, C10 CDR >95KB cache-put skip, C11
+punchTrend roster filter, C12 export-failure email carries the created
+sheet URL. C3 RETRACTED (calcHours_ overnight wrap is deliberately pinned
+by test_calcHours_overnight — the audit's "unsupported" premise was wrong);
+C13 hash delimiters DEFERRED (needs a dual-verify back-compat design on the
+attestation paths). D = D1 PTO-reject keeps the day modal open, D2a
+dashboard/extras failures keep last-good + never stamp fresh, D2b stranded
+"Working…" restore + warn toast on failed post-punch refresh, D3 MGR_STATUS
+unknown-enum fallback, D4 adjust-modal min via mgrAddDaysIso_, D5
+Coverage/Punctuality default-range day-rollover (defaultDay marker; user
+ranges stick), D6 hover-timer document.contains guard, D7 esc() drift
+(spark labels, myDate, analytics bars, covDayRisks_), D8 umsLastView
+compact-guard, D9 dispTime full escape, D10 beacon Object.create(null),
+D11 What's-new star in BOTH sidebar + mobile header, D12 tour Escape
+stopImmediatePropagation, D13 MOTION_IO unobserve on nav. Pure 309/0
+(2 new grouped pin tests), DOM 63/0.
+BATCHES E+F ALSO IMPLEMENTED (same branch) — THE ENTIRE CYCLE-10 BACKLOG IS
+NOW DONE. E = E1 umsCallNotesLastDept revived (seeds inside the subformData
+branch when the note has no departments), E2 send-success merge whitelisted
+to the 9 sanitizeEmailSelections_ keys, E3 ?prefill one-shot consumption,
+E4 external tab-strip re-render on note-link (CN-8 ext-draft asymmetry
+KEPT-BY-DECISION, doc'd in INV-84), E5 pin-at-capacity client no-op, E6
+duplicate mgrSearchField removed, E7 retention-panel error line, E8
+storage-pill double-escape, E9 dead Team-Notes loader removed, E10 PPD
+agents-hop view guard, E11 KB landing loaders fail-loud (loadFailed →
+distinct failure lines for Most-used/Review-due/Content-requests), E12
+quiz-analytics failure degrades to panel-level (not whole-view), E13 quiz
+submit updates checklist state before the modal-identity guard, E14 PPD
+seed label 46 + stale tooltip comment, E15 drawer-search toast open-guard.
+F = /sync-docs (Spanish endpoints out of the manager-only list + 4 Code.js
+docstrings; What's-new comments match the no-auto-open decision; INV-07/84/
+111/113/122/128/142 amendments; the M-1 state-machine gotcha incl. the C3
+overnight-wrap decision note; testing gotcha + _withTestKb_; TEST_KB_SS_ID +
+WITNESS_AUDIT_FAILS operator entries; Test Command cycle-10 paragraph;
+punchTrend 8-bars; NEW INV-155–158), PROJECT_HEALTH.md rolled forward
+(cycles 8+9 rows + cycle-10 standing), STATE.md literal NUL bytes replaced
+with the six-char backslash-u0000 escape TEXT (greps as text again — and
+NOTE: this checkpoint's own first edit reintroduced one by emitting the
+escape as a literal; if you write about NULs, write the WORD, never the
+sequence). Pure 309/0, DOM 63/0.
+BATCHES G+I ALSO IMPLEMENTED (same branch) — the a11y/visual follow-on from
+the 2026-07-23 accessibility + visual audits. G (a11y quick wins) = G1 the 7
+CN .ce note fields + tag input dropped positive tabindex 1–8 (now tabindex=0 /
+natural order; Enter-nav via CN_FIELD_NAV_ORDER is JS-driven and unaffected),
+G2 role=textbox + aria-label per .ce field (aria-multiline on Issue/
+Resolution), G3 global :focus-visible ring (styles.html, --ring-focus;
+#view-area exempted; form_public carries its own copy — it doesn't include
+styles.html), G4 role=dialog + aria-modal on ensureOverlay AND uiConfirm/
+uiPrompt (aria-labelledby via _uiDialogSeq title ids), G5 role=alert on
+error toasts / renderError / form_public #form-error, G6 aria-hidden on the
+3 metrics chart-SVG builders + role=status on renderLoading, G7 label
+associations (training-q for=, tag-input + intake custom-email aria-label,
+form_public sig-date for=), G8 #view-area is now <main tabindex=-1> + a
+.skip-link in renderShell (class selectors unchanged; DOM harness green —
+boot.js skeleton only carries #app, renderShell builds the rest). I (visual
+defects) = I1 flag-training stripe var(--accent)→var(--info) + the
+.cn-act-btn.training.is-on bg →var(--info-soft) (training no longer renders
+the same green as review), I2 hardcoded-hex fixes (.cn-act-btn.is-on
+#fef3cd/#856404 → warn-soft/warning-deep — dark mode now correct; sf-oop
+#e67e22 → var(--intake-pmd); .intk-prev #fff KEPT + documented as deliberate
+— it hosts rendered EMAIL HTML with inline light-palette hex, a dark canvas
+would be unreadable), I3 --muted-2 darkened to AA on every surface both
+modes (light #737c8c→#5f6878 ≥5.0:1; dark #6c7587→#7b8496 ≥4.58:1;
+--muted-3 documented decoration-only + 11 text-usage sites swapped to
+--muted-2 across cn/styles/intake/kb/manager; 4 genuine decoration uses
+kept), I4 refreshViewIfCurrent passes the tool's sidebarIcon to
+renderLoading (Role-A parity — mutation refreshes no longer leak the legacy
+spinner) + 6 modal spinners (cn ×3, train ×2, empdocs ×1) converted to
+Role-D lo-dots with role=status. Two NEW run.js tripwires, both
+bite-checked: the --muted-2 AA contrast pin (parses the token file, computes
+WCAG ratios vs paper/paper-2/paper-card in both modes — failed on the old
+dark value) and the CN flag-stripe exact-token pin (action=--warn,
+training=--info, review=--good; name-distinctness alone could NOT catch the
+regression since --accent aliases the --good green — first bite-check
+exposed this, pin tightened to deepStrictEqual). Pure 311/0, DOM 63/0,
+node --check ×3.
+BATCH H ALSO IMPLEMENTED (same branch) — a11y structural. H1 calendar day
+cells are keyboard-accessible (role=button + tabindex=0 + a state-summary
+aria-label on cells with content; Enter/Space pins the day modal via a
+per-cell keydown in bindCalHover_ — hover semantics untouched). H2 overlay
+focus lifecycle: ensureOverlay stashes the trigger on a closed→open
+transition and defer-focuses the first focusable INSIDE the dialog (skipped
+when the module already placed focus inside, or for hover-mode);
+closeOverlay restores the trigger ONLY when the overlay actually closed
+(the INV-145 refuse-to-close guard is honored — new DOM pin);
+uiConfirm/uiPrompt cleanup also restores the trigger. H3 mtRenderTable_
+sortable headers: scope=col on every th, tabindex=0 + aria-sort
+(ascending/descending/none) + Enter/Space activation on sortable ones
+(pure pin added). H4 color-only calendar dots got SHAPE cues (worked =
+square, pending = hollow ring, denied day-number struck through; legend
+mirrors). H5 the 10 bare <h2> view titles (metrics ×3, kb, coaching,
+empdocs ×2, training, manager Coverage + Punctuality) promoted to
+<h1 class="view-title"> — consistent hierarchy + display-font typography;
+the three title-rows with a description <p> now stack title+p in a left
+column (was flex-spread). Pure 312/0 (mtRenderTable_ a11y pin), DOM 65/0
+(2 new: focus-lifecycle — bite-checked — and INV-145 no-restore-on-refusal).
+BATCH J ALSO IMPLEMENTED (same branch) — visual elevation. J1 empty-vs-ERROR
+distinction: the three empty-state classes (.cn-stack-empty/.cn-sf-empty/
+.m-empty) restyled as quiet dashed cards; NEW shared errorStateHtml_(msg)
+(script_core — warn-toned .error-state card + warning glyph + role=alert,
+ESCAPES INTERNALLY so callers pass the raw message) adopted at the 11 CN
+sites that previously rendered res.error/Failed: into the empty style
+(the "load failed reads as no data" class E11 fixed once already);
+renderError (boot) gained a Retry (location.reload) button. J2 public-form
+polish (form_public.html): warn-triangle glyph on the error screen tinted
+per state (danger vs expired-warn), a live "N of M required fields
+completed" progress cue (radio/checkbox groups count via :checked — a
+value-check counts them done immediately, caught in-session), a
+security-reassurance lock line above Submit, and a logo text-fallback via
+img onerror. J3 (scoped): --text-xs/sm/base/lg/xl type-scale +
+--radius-pill declared in the tokens partial and adopted in every rule this
+batch touched; styles.html literal radii tokenized (8× 6px→--radius-sm,
+18× 999px→--radius-pill — byte-equivalent). The .chip base extraction /
+20-pill consolidation DEFERRED as follow-on (visual-regression risk with
+zero coverage — the L-effort half of the item). J4 mono-uppercase dialed
+back on the four secondary-label families (.card-label, CN .cnv-row/.cnv-trio
+.lbl, .cn-stat-lbl, .rail-card h4 → sentence-case var(--ui), sizes onto the
+new text scale); kickers/chips/table headers KEEP the mono-uppercase
+register by design. Pure 312/0, DOM 65/0, node --check clean.
+BATCH K ALSO IMPLEMENTED (same branch) — 3 of 4 code suggestions. K-E shell
+health dot: the digest's failure derivation is FACTORED into
+automationProblems_(report) (ONE source — digest + badge can't drift); NEW
+getAutomationHealthBadge() (MANAGER-gated {failing,count}, 10-min org-wide
+CacheService result, best-effort — any failure returns {failing:false}
+silently since the digest/panel are the backstops); the shell polls it
+every 10 min for managers (startHealthBadgePolling_, boot +8s off the
+critical path) and lights a danger .sb-health-dot on BOTH Manage nav
+buttons (data-tool selectors — the badge-selector gotcha). Detector-wiring
+tripwire UPDATED to pin the factored shape (helper covers detectors/
+witness/sync/reconcile/stale-digests; digest AND badge consume it; badge
+manager-gated); editor omnibus gained the getAutomationHealthBadge
+'Manager access' case. K-D mirror registry: NEW self-checking MIRROR_INDEX
+in run.js — all 13 known parallel-source mirrors in ONE place, each naming
+its live guard test (a renamed/deleted tripwire breaks the index —
+bite-checked); plus the previously UNGUARDED AUTO_COPY_FORMAT
+server-default ↔ client-fallback mirror got its first machine check
+(concat-literal parse + byte compare — bite-checked); CN_EMAIL_PALETTE
+stays a documented manual-discipline entry. K-B: kbRecordView +
+recordClientError moved from the GLOBAL ScriptLock to LockService
+.getUserLock() (fire-and-forget single-appendRow logs must never queue
+punch/note writes; user lock still serializes one rep's double-fires;
+INV-01 finally-release scan still passes — INV-117/150 wording needs a
+/sync-docs amendment). K-A (editor suite → CI via Apps Script API /
+clasp run) DEFERRED — operator-side auth setup (API enablement + OAuth
+creds as GitHub secrets) can't be done from the repo; plan noted in the
+batch summary. Pure 314/0 (2 new tripwires bite-checked), DOM 65/0,
+node --check ×3.
+BATCH L ALSO IMPLEMENTED (same branch) — data-integrity follow-ons. L1
+SHEET DOCTOR (the getPtoReconciliation/fixPtoReconciliation pattern on the
+Timesheet): tsDoctorScan_ (92-day window, two-row header, normalize*
+coercion discipline) + getTimesheetDoctor (manager-gated READ-ONLY —
+duplicate (emp,date,type) groups + inverted first-in/last-out pairs, the
+C3 mis-keyed-AM/PM class that calcHours_'s deliberate wrap renders as an
+overnight day) + fixTimesheetDuplicates(empIdFilter?) (manager-gated,
+locked, IDEMPOTENT — keeps the LAST row per group, the
+findExistingPunch_/managerSaveDay INV-155 convention; deletes earlier rows
+bottom-up with 'duplicate collapsed (sheet doctor)' PunchDelete audit
+rows; inverted pairs are REPORT-ONLY → Day Edit; the optional empId filter
+exists so the integration test can never collapse a real rep's rows).
+Client: lazy #mgr-sheet-doctor warn card beside the PTO-recon card
+(renders only when findings exist; uiConfirm-gated collapse button).
+L2/C13: computeFormSubmissionHash_ ALREADY used NUL delimiters — the gap
+was the EmpDocs pair. empDocContentHash_/empDocSignatureHash_ now take a
+delim param DEFAULTING to the NUL escape (new writes v2); legacy
+space-form hashes keep validating via DUAL-VERIFY (empDocContentHashMatches_
++ the verifyDocSignature legacy recompute using EMPDOC_HASH_DELIM_LEGACY,
+each attempt using its own era's content-hash for the blank-stored
+fallback); acknowledgeDoc's integrity gate dual-verifies so pre-C13 docs
+still SIGN. NOTE the Edit-tool NUL trap fired AGAIN writing Code.js (the
+escape became 3 literal NUL bytes → 'binary file matches'); repaired with
+perl s/backslash-x00/the-6-char-escape/g — when a file needs the NUL
+escape, WRITE it via perl/python, never through a raw Edit payload.
+Tests: editor +4 (sheetDoctor_detectsAndCollapsesDuplicates,
+empdocs_legacyHashDualVerify, + getTimesheetDoctor/fixTimesheetDuplicates
+omnibus gate cases); pure 316/0 (2 new pin tests, both bite-checked:
+last-row-wins loop + NUL default); DOM 65/0; node --check ×3; zero literal
+NULs in every touched file.
+OPERATOR-APPROVED FOLLOW-ONS ALSO IMPLEMENTED (same branch, 2026-07-23):
+(1) TYPED-SIGNATURE ALTERNATIVE (the a11y Critical #3, user approved) on
+BOTH pads — form_public SIG_PAD and the EmpDocs edInitSigPad_ twin each
+gained setTypedName(name): a link-style disclosure ("Can't use the pad?
+Type your signature instead", aria-expanded) reveals a labeled text input
+whose value renders onto the canvas in a script face (Segoe Script/Brush
+Script fallbacks, shrink-to-fit) — the exported artifact stays the SAME
+PNG data-URL class as a drawn signature, so the entire downstream pipeline
+(600px export cap, size caps, hashes, certificates, dual-verify) is
+untouched — zero server changes. Clear (both paths) empties the typed
+input too. Node parity pin 'both pads carry setTypedName' (bite-checked)
++ a MIRROR_INDEX entry. (2) LUNCH-PAIR INVERSION CHECK (user approved) in
+the sheet doctor: tsDoctorScan_ collects LunchOut/LunchIn; inverted[]
+entries now carry kind:'clock'|'lunch' (lunch = last return <= first
+leave, so legit multi-lunch never false-flags; report-only like the clock
+pair); client card renders per-kind copy; editor doctor test extended
+with a lunch case; scan pin extended. Pure 317/0, DOM 65/0, checks OK.
+Remaining: operator deploy, /reflect (cycle-10 metrics.csv + estimates.csv
+rows); K-A editor-suite CI — user asked for non-credential alternatives
+(answered in-session: recommended a nightly self-test trigger inside Apps
+Script — runSmokeTests on prod + runAllTests on the dev instance —
+surfaced through the existing failure-digest machinery; not yet built,
+awaiting user pick).
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
-Updated: 2026-07-21 (cycle-9 batches 5-7)
+Updated: 2026-07-23 (cycle-10 top-5 batch)
+
+## Cycle 10 — remaining backlog (facts, not judgments — findings re-verified in-session 2026-07-23)
+- Mediums not yet implemented: M-4 (History edit-snapshot gap), M-7 (KB convert
+  identity guard), M-8 (Admin Sheets blank on re-enter), M-9 (KB tests mutate
+  live store — _withTestKb_), M-10 (stacked-dialog + drawer-Enter DOM pins),
+  M-11 (5 zero-coverage endpoints).
+- Notable Lows: reconcile tz recovery (INV-142 claim false), exportAdpRange
+  validation, calcHours_ inverted-pair wrap, writeAuditLog_ witness swallow,
+  hash delimiters, tax-rates empty-map, Spanish docstrings, CN preview
+  instance guard, dead umsCallNotesLastDept, MGR_STATUS fallback, PTO-reject
+  modal close, dashboard error-as-empty caching, shell Lows (umsLastView
+  pop-out, dispTime, beacon proto-key, tour Esc), intake/KB client Lows.
+- Doc contradictions for /sync-docs: INV-111 (store failure now loud), S7/Day
+  Edit duplicate-collapse note, INV-142 reconcile claim, Spanish manager-only
+  list vs INV-31 amendment, What's-new stale comments, DOM-harness h.t/opts.markup
+  doc drift, umsCallNotesLastDept entry.
+
+## Where I left off (cycle 10)
+EVERYTHING SHIPPED: entire scan backlog + Batches G/I/H/J/K(E,D,B)/L +
+the operator-approved follow-ons (typed signature on both pads,
+lunch-pair inversion, the runNightlySelfTest trigger as the K-A
+credential-free alternative — INV-162) + /sync-docs applied (INV-44
+sixteen handlers, INV-117/150 user-lock amendments, INV-122 C13 pointer,
+NEW INV-159–162, tokens/loader/overlay/signature decision + gotcha
+amendments, sixteen-trigger operator entry + SELF_TEST_LAST_RESULT,
+Test Command net additions). Pure 319/0, DOM 65/0, editor suite ≈297
+(operator-run). PR created + merged per user instruction. Next: operator
+deploy (clasp push -f + New version + re-run installAutomationTriggers()
+ONCE for the new 1am self-test trigger + runAllTests), then /reflect to
+close cycle 10 (metrics.csv + estimates.csv rows). Still open by user
+choice: .chip consolidation follow-on; real pre-merge editor CI if
+credentials ever materialize.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):
@@ -333,10 +604,10 @@ Operator ran /broad-implement "Batch 1 + F6/F7". Implemented (pure 278/0, DOM 59
   so a URL with ** or a backtick got <strong>/<code> injected INSIDE href/src
   (broken link). Factored emph() out, applied to link TEXT at generation, stashed
   the generated <a>/<img> markup past the outer emphasis pass via a NUL-delimited
-  sentinel ( L<idx> , the existing  C fence pattern). Link-text
+  sentinel (\u0000L<idx>\u0000, the existing \u0000C fence pattern). Link-text
   emphasis preserved. + F7 Node regression test (run.js, 277→278). NOTE: my first
   edit accidentally wrote LITERAL NUL bytes (reintroducing the batch-4 binary-file
-  issue); converted all literal 0x00 → the   escape via a Node script — file
+  issue); converted all literal 0x00 → the \u0000 escape via a Node script — file
   greps as text again. WATCH FOR THIS if editing kb/script_kb.html sentinels.
 - F3 integration test (Tests.js): test_publicForm_blankExpiryFailsClosed —
   creates a token, blanks ExpiresAt, asserts getFormByToken + submitFormByToken

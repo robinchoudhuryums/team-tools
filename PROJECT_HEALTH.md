@@ -1,6 +1,42 @@
 # Project Health — team-tools
 
 ## Current Standing
+Cycle 9 (broad) closed 2026-07-21; **cycle 10 is in progress** (scanned +
+implemented 2026-07-23 on `claude/broad-scan-11m0vf`, awaiting operator
+deploy + /reflect).
+
+- **Cycle 8** (2026-07-10): net +14 (16 prod fixes − 2 deliberate fail-safe
+  tradeoffs; 34 defensive). Headliners: the automated payroll export ran
+  mid-final-day so PH afternoon punches were missing from every biweekly
+  .xlsx; both load-error Retry buttons threw. Defining theme: TEST INTEGRITY
+  (the shipped-dead-read-green class lost its habitat — any-index scans,
+  reverse mirrors, honest SKIPs, NUL-byte cleanup, paren-anchored extraction).
+  Pure 248→277, DOM 55→59.
+- **Cycle 9** (2026-07-21): net +9 (10 prod fixes − 1 deliberate fail-safe
+  tradeoff; 37 defensive). Headliners: "Coach on this" dead since the Manage
+  reorg (wrong enterTool key); every Day Edit save rewrote untouched live
+  punches into truncated ADJ- rows. Axis-B lowest: Parallel Source-of-Truth
+  Drift — three durable class-retiring tripwires shipped (no-mail-in-lock,
+  payload-contract, registry-key nets). Pure 289→302, DOM 60→61.
+- **Cycle 10** (2026-07-23, in progress): 7-agent broad scan — **0 Critical /
+  0 High / 11 Medium / ~35 Low** (third consecutive no-High cycle; all 11
+  Mediums personally verified, 0 retracted at scan; 1 Low retracted at
+  implement — C3, contested by pinned tests). Scan-time scores: Overall 8 ·
+  Correctness 7.5 · Security & Access Control 9 · Data Integrity 8 ·
+  Timezone Correctness 8 · Concurrency Safety 8.5 · Test Coverage 7.5 ·
+  Code Clarity & Docs 8.5 · Apps Script Best Practices 8.5 · Manager UX 7.5 ·
+  Employee UX 8 · Automation Reliability 8. Dominant classes: sibling-surface
+  guard gaps (fix patterns applied to the hot path but not its twins) and
+  silent-degradation residue (best-effort writes behind success responses).
+  ~26 findings + the /setup-cycle delta implemented across 5 commits
+  (top-5 Mediums, A: client guard gaps, B: test integrity incl. the
+  live-KB-store fixture isolation, C: server silent-degradation, D: client
+  failure handling, E: module-client Lows, F: docs). New: INV-155–158;
+  punch state machine server-enforced; witness-audit loss signal;
+  `_withTestKb_`. Pure 302→309, DOM 61→63, editor suite +7. Remaining:
+  operator deploy (+ first-run TEST_KB_Fixture creation note) and /reflect.
+
+## Prior standing (Cycle 7 close, 2026-07-09)
 Cycle 7 (broad) closed 2026-07-09 — scanned, FULLY implemented, reflected,
 deployed, and editor-verified in one day. The audit (6-agent fan-out + personal
 verification of every Medium+ finding) broke the three-cycle no-High streak:
@@ -147,3 +183,5 @@ backlog was implemented):
 | 2026-06-17 | 5 | net +1 (1 prod fix − 0 new failure modes; 3 features; 13 defensive; overall 8.5/10) | Audit-opened broad-scan of the mature base — again NO Critical/High; one Medium (**M-1**: adjustLeaveBalance_ gated only on the global PTO flag not the per-employee PtoEnabled column → silently deducted `FALSE` contractors, contradicting S15/INV-27; the ptoEnabled tests only checked display-hiding → undetected; fixed + test). Shipped 3 manager features (**#5** tag-trend analytics INV-125, **#4** KB review-due INV-126, **#3** coverage planner INV-127) + 13 hardenings (getMyMetrics endpoint cache, KB-AI race-safe spend, bounded CN reads L-7/L-8/L-10, verifyDocSignature `tampered` flag, tz boundary, comments). Correctness 8→8.5, Manager UX 8→8.5. Numbered 5 (parallel session held Cycle 4). Pure 128→133 green; node --check clean. Merged PR #53; operator deploy pending. INV-128/129/130 proposed. |
 | 2026-06-18..07-01 | 6 | — (implement-only; no reflect row) | Non-audit threads between audits: the UI-redesign batch + follow-ons, KB self-improving loop (#107–#112), PPD structured-controls redesign Phases 0–4 (#113–#117), DeptRequests v2, Dashboard/Manage-module/admin-tier work, cycle-6 broad-implement F1–F11. No /reflect ran (sessions closed mid-implement), so no net-score row — see .cycle/STATE.md history. |
 | 2026-07-09 | 7 | net +14 (14 prod fixes − 0 new failure modes; 24 defensive; 1 capability; overall 8/10 at scan) | Broad scan broke the no-High streak with TWO silent-dead detectors (H-1 coaching overdue never fired since ship; H-2 payroll export tz) → entire ~35-finding backlog shipped same-cycle (Turns 1–8) + verification/residuals (A), Seams & Invariants audit (B — INV-72 mirror finally tripwired; CN draft-persister live bug found+fixed), detector-liveness monitoring (C), per-rep schedules col O (D). Factory+boundary class fixes tripwired. INV library →149. Pure 230→248, DOM 48→55. Deployed + editor-verified (258/259 → assertion-idiom fix #123). |
+| 2026-07-10 | 8 | net +14 (16 prod fixes − 2 deliberate fail-safe tradeoffs; 34 defensive) | Fresh 7-agent scan (0 Critical / 1 High / 15 Medium / ~31 Low) → backlog minus 4 deferrals implemented. Headliners: mid-final-day payroll export missing PH afternoon punches; dead Retry buttons; multi-dept sends bypassing DeptRequests v2. Defining theme: TEST INTEGRITY (any-index scans, reverse INV-72 mirror, honest SKIPs, NUL-byte cleanup, paren-anchored extraction). Pure 248→277, DOM 55→59. |
+| 2026-07-21 | 9 | net +9 (10 prod fixes − 1 deliberate fail-safe tradeoff; 37 defensive) | Fresh 8-agent scan (0 Critical / 1 High / 11 Medium / ~36 Low, 0 retracted) → ENTIRE backlog across 7 batches, PR #136. Headliners: "Coach on this" dead since the Manage reorg; Day Edit rewriting untouched live punches. Class-retiring tripwires: no-mail-in-lock, payload-contract, registry-key nets. Pure 289→302, DOM 60→61. |

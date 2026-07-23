@@ -730,6 +730,25 @@ function recordPunch(punchType, custom) {
             `(if you made a mistake, use Adjust instead).` };
         }
       }
+      // M-1 (cycle 10): enforce the SAME next-action state machine the client
+      // renders its buttons from (getNextActions_ over today's sorted punches).
+      // A fresh client can only offer valid actions, so this never rejects a
+      // legitimate click; a STALE window (second browser / pinned pop-out that
+      // missed a punch made elsewhere, or a direct RPC) could otherwise append
+      // a duplicate ClockIn/ClockOut or an out-of-sequence lunch punch — rows
+      // every downstream consumer (Day Edit's one-slot-per-type model, hours,
+      // live status, the ADP export) mis-models. Multi-lunch stays legal:
+      // getNextActions_ offers LunchOut again after LunchIn. Adjustments
+      // bypass (back-fills are validated by their own window/format guards).
+      const validNext = getNextActions_(todayPunches);
+      if (validNext.indexOf(punchType) < 0) {
+        const lastAny = todayPunches.length ? todayPunches[todayPunches.length - 1] : null;
+        return { success: false, error:
+          `Cannot record ${punchType} — ` +
+          (lastAny ? `your last punch today is ${lastAny.type} at ${toDisplayTime_(lastAny.time)}.`
+                   : `you haven't clocked in yet.`) +
+          ` Refresh the page for current actions, or use Adjust to fix a mistake.` };
+      }
     }
 
     let daysBack = 0;
@@ -953,6 +972,12 @@ function getManagerDashboard() {
         lastPunchType: last ? last.type : null,
         lastPunchTime: last ? last.time : null,
         lastPunchTimeMgr, empTzAbbr: e.tzAbbr, mgrTzAbbr,
+        // M-2 (cycle 10): the rep's IANA tz, so the Day Edit modal can bound
+        // its date picker on the TARGET's "today" (the server validates
+        // daysBack in the target's tz — a manager-tz max blocked offshore
+        // reps' in-progress local day every CT afternoon). Manager-only
+        // surface, so no INV-24 low-privilege leak concern.
+        timezone: e.timezone,
       };
     });
     const statusRank = { clocked_in: 0, on_lunch: 1, not_in: 2, clocked_out: 3 };
@@ -1160,13 +1185,18 @@ function getManagerDashboard() {
       }
     }
 
-    // Analytics: daily punch counts (last 7 days) + time-off status summary
+    // Analytics: daily punch counts (today + the 7 prior days = 8 bars) +
+    // time-off status summary. C11 (cycle 10): filtered to roster employees —
+    // this was the ONE adpRows pass without the empById filter, so off-roster
+    // / TEST_-remnant ids inflated the trend bars while every other dashboard
+    // aggregate excluded them.
     const analyticsDays = 7;
     const punchCountsByDate = {};
     const analyticsLookback = new Date(now);
     analyticsLookback.setDate(analyticsLookback.getDate() - analyticsDays);
     const analyticsStart = fmtDateTz_(analyticsLookback, mgrTz);
     for (let i = 2; i < adpRows.length; i++) {
+      if (!empById[String(adpRows[i][ADP.EMP_ID]).trim()]) continue;   // C11
       const d = normalizeDate_(adpRows[i][ADP.DATE]);
       if (d >= analyticsStart && d <= todayStr) {
         punchCountsByDate[d] = (punchCountsByDate[d] || 0) + 1;
@@ -1640,6 +1670,135 @@ function fixPtoReconciliation(empId) {
   finally { lock.releaseLock(); }
 }
 
+// ── Batch L (sheet doctor) — Timesheet duplicate/inversion detector ─────────
+// The getPtoReconciliation/fixPtoReconciliation pattern applied to the
+// Timesheet: a read-only detector + a locked, idempotent one-click collapse.
+// Two detectable signatures over the last TS_DOCTOR_WINDOW_DAYS:
+//   • DUPLICATES — >1 row for one (emp, date, punch type). New ones are
+//     prevented by the live sequence guard (INV-155), so these are pre-guard
+//     rows; the fix keeps the LAST row in append order — the SAME row
+//     findExistingPunch_ updates and managerSaveDay's snapshot displays —
+//     and deletes the rest with `duplicate collapsed` audit rows.
+//   • INVERTED PAIRS — a day whose last ClockOut is at-or-before its first
+//     ClockIn. calcHours_ deliberately wraps out<=in as an overnight +24h
+//     (the pinned C3 decision), so a mis-keyed AM/PM pair silently computes
+//     a huge day. REPORT-ONLY: the doctor can't know intent — the fix is a
+//     manager Day Edit, never an auto-swap.
+var TS_DOCTOR_WINDOW_DAYS = 92;   // ~a quarter — covers every open export period
+var TS_DOCTOR_MAX_GROUPS = 200;   // payload bound; narrow by fixing + re-running
+
+/** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
+ *  days: { 'empId|date': { in:[times], out:[times], name } } } over the window. */
+function tsDoctorScan_() {
+  const adpRows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  const mgrTz = CONFIG.MANAGER_TIMEZONE;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - TS_DOCTOR_WINDOW_DAYS);
+  const cutoffStr = fmtDateTz_(cutoff, mgrTz);
+  const byKey = {}, days = {};
+  for (let i = 2; i < adpRows.length; i++) {   // two-row header
+    const id = String(adpRows[i][ADP.EMP_ID]).trim();
+    if (!id) continue;
+    const date = normalizeDate_(adpRows[i][ADP.DATE]);
+    if (!date || date < cutoffStr) continue;
+    const type = normalizeType_(String(adpRows[i][ADP.COMMENTS]));
+    if (!PUNCH_LABELS_.includes(type)) continue;
+    const time = normalizeTime_(adpRows[i][ADP.TIME]);
+    const key = id + '|' + date + '|' + type;
+    if (!byKey[key]) byKey[key] = { rows: [], times: [], empId: id, date: date, type: type, name: String(adpRows[i][ADP.EMP_NAME] || '') };
+    byKey[key].rows.push(i + 1);   // 1-indexed sheet row
+    byKey[key].times.push(time);
+    const dkey = id + '|' + date;
+    if (!days[dkey]) days[dkey] = { in: [], out: [], lo: [], li: [], name: String(adpRows[i][ADP.EMP_NAME] || ''), empId: id, date: date };
+    if (type === 'ClockIn') days[dkey].in.push(time);
+    if (type === 'ClockOut') days[dkey].out.push(time);
+    if (type === 'LunchOut') days[dkey].lo.push(time);
+    if (type === 'LunchIn') days[dkey].li.push(time);
+  }
+  return { byKey: byKey, days: days };
+}
+
+/** Manager-gated, READ-ONLY detector. */
+function getTimesheetDoctor() {
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
+    const scan = tsDoctorScan_();
+    const duplicates = [], inverted = [];
+    Object.keys(scan.byKey).forEach(function (k) {
+      const g = scan.byKey[k];
+      if (g.rows.length > 1 && duplicates.length < TS_DOCTOR_MAX_GROUPS) {
+        duplicates.push({ empId: g.empId, name: g.name, date: g.date, type: g.type,
+          count: g.rows.length, times: g.times.slice() });
+      }
+    });
+    Object.keys(scan.days).forEach(function (k) {
+      const d = scan.days[k];
+      // HH:mm:ss lexicographic = chronological (the INV-155 convention).
+      if (d.in.length && d.out.length) {
+        const firstIn = d.in.slice().sort()[0];
+        const lastOut = d.out.slice().sort()[d.out.length - 1];
+        if (lastOut <= firstIn && inverted.length < TS_DOCTOR_MAX_GROUPS) {
+          inverted.push({ kind: 'clock', empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
+        }
+      }
+      // Lunch-pair inversion (operator ask): the lunch RETURN landing at or
+      // before the lunch LEAVE — the same mis-keyed AM/PM class. Last-return
+      // vs first-leave, so a legitimate multi-lunch day never false-flags.
+      if (d.lo.length && d.li.length) {
+        const firstLo = d.lo.slice().sort()[0];
+        const lastLi = d.li.slice().sort()[d.li.length - 1];
+        if (lastLi <= firstLo && inverted.length < TS_DOCTOR_MAX_GROUPS) {
+          inverted.push({ kind: 'lunch', empId: d.empId, name: d.name, date: d.date, lunchOut: firstLo, lunchIn: lastLi });
+        }
+      }
+    });
+    duplicates.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    inverted.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    return { duplicates: duplicates, inverted: inverted, windowDays: TS_DOCTOR_WINDOW_DAYS };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** Manager-gated, locked, IDEMPOTENT collapse of every duplicate group found
+ *  by a fresh server-side re-scan (never trusts client row indices). Keeps
+ *  the LAST row per (emp, date, type) in append order — agreeing with
+ *  findExistingPunch_'s last-match and managerSaveDay's collapse (INV-155) —
+ *  and deletes the earlier rows bottom-up with a PunchDelete audit row each.
+ *  The kept row is untouched, so the personal-sheet mirror stays correct.
+ *  Inverted pairs are deliberately NOT auto-fixed (Day Edit is the path). */
+function fixTimesheetDuplicates(empIdFilter) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const callerEmp = getEmployeeInfo_();
+    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+    const filter = String(empIdFilter || '').trim();   // optional: one employee only
+    const scan = tsDoctorScan_();
+    const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
+    const toDelete = [];   // {rowIdx, empId, name, date, type, time}
+    Object.keys(scan.byKey).forEach(function (k) {
+      const g = scan.byKey[k];
+      if (g.rows.length < 2) return;
+      if (filter && g.empId !== filter) return;
+      // Keep the LAST row (highest row index = latest append); delete the rest.
+      for (let j = 0; j < g.rows.length - 1; j++) {
+        toDelete.push({ rowIdx: g.rows[j], empId: g.empId, name: g.name,
+          date: g.date, type: g.type, time: g.times[j] });
+      }
+    });
+    if (!toDelete.length) return { success: true, collapsed: 0 };
+    // Bottom-up so earlier deletions don't shift later row indices.
+    toDelete.sort(function (a, b) { return b.rowIdx - a.rowIdx; });
+    toDelete.forEach(function (d) {
+      sheet.deleteRow(d.rowIdx);
+      writeAuditLog_({ id: d.empId, name: d.name }, 'PunchDelete', d.date, d.time, false, 0,
+        'duplicate collapsed (sheet doctor); type=' + d.type, callerEmp.email);
+    });
+    return { success: true, collapsed: toDelete.length };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
 /** Manager deletes a single punch within the delete window. */
 function deletePunch(empId, date, time, punchType) {
   const lock = LockService.getScriptLock();
@@ -1654,7 +1813,13 @@ function deletePunch(empId, date, time, punchType) {
     const targetEmp = lookupEmployeeById_(empId);
     const targetTz = targetEmp ? empTz_(targetEmp) : CONFIG.TIMEZONE;
     const today = fmtDateTz_(new Date(), targetTz);
-    const daysBack = Math.abs(daysBetween_(date, today));
+    // C7 (cycle 10): backward distance, not Math.abs — the symmetric window
+    // let a FUTURE-dated punch row (pre-guard garbage / direct sheet edit) up
+    // to 7 days ahead pass the "older than" check, contradicting INV-07's
+    // backward-only semantics. Future rows within the window stay deletable
+    // (daysBack negative but not > the window) — that's how a manager cleans
+    // up future garbage; only genuinely-old punches are blocked.
+    const daysBack = daysBetween_(date, today);
     if (daysBack > CONFIG.MGR_DELETE_WINDOW_DAYS) {
       return { success: false, error:
         `Cannot delete punches older than ${CONFIG.MGR_DELETE_WINDOW_DAYS} days.` };
@@ -1751,9 +1916,13 @@ function selfDeletePunch(date, time, punchType) {
  *  Returns name + status only — no email, no internal IDs, no last-punch detail. */
 function getTeammateStatus() {
   try {
-    if (!getFlag_('showTeammateStatus')) return { enabled: false, teammates: [] };
+    // C8 (cycle 10): authenticate BEFORE evaluating the feature flag — the
+    // old order let an unregistered/anonymous caller distinguish the flag's
+    // on/off state by which response shape came back (a trivial config-state
+    // disclosure, and the only pre-auth server-derived state in the API).
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
+    if (!getFlag_('showTeammateStatus')) return { enabled: false, teammates: [] };
 
     const rows = getEmployeeRosterRows_();
     const employees = [];
@@ -1900,20 +2069,36 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
     }
     const noteSuffix = trimmedReason ? ` — ${trimmedReason}` : '';
 
-    // Snapshot current state for this employee/date
+    // Snapshot current state for this employee/date. M-1 (cycle 10): collect
+    // ALL rows per type, not just the last — duplicate same-type rows (stale-
+    // window double punches written before the recordPunch sequence guard,
+    // multi-lunch days, direct sheet edits) made the old single-slot snapshot
+    // silently disagree with the write paths: a "delete" removed one duplicate
+    // and left the other, and updates (first-match findExistingPunch_) landed
+    // on a different row than the one displayed (last-match snapshot). The Day
+    // Edit contract is a full-day reconcile to the 4 displayed slots (S7), so
+    // the save now collapses duplicates: a blank slot deletes EVERY row of
+    // that type, and a kept slot deletes all but the last row (the one the
+    // modal displayed) before the update pass runs.
     const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
     const allRows = sheet.getDataRange().getValues();
-    const currentByType = {};
+    const rowsByType = {};   // type → [{rowIndex, time}, …] in sheet order
     for (let i = 2; i < allRows.length; i++) {
       if (String(allRows[i][ADP.EMP_ID]).trim() !== targetEmp.id) continue;
       if (normalizeDate_(allRows[i][ADP.DATE]) !== date) continue;
       const type = normalizeType_(String(allRows[i][ADP.COMMENTS]));
       if (PUNCH_LABELS_.indexOf(type) < 0) continue;
-      currentByType[type] = {
+      if (!rowsByType[type]) rowsByType[type] = [];
+      rowsByType[type].push({
         rowIndex: i + 1,
         time: normalizeTime_(allRows[i][ADP.TIME]).trim(),
-      };
+      });
     }
+    const currentByType = {};  // last row wins — what the modal displayed
+    PUNCH_LABELS_.forEach(type => {
+      const list = rowsByType[type];
+      if (list && list.length) currentByType[type] = list[list.length - 1];
+    });
 
     const changes = [];
 
@@ -1921,16 +2106,24 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
     const deletions = [];
     PUNCH_LABELS_.forEach(type => {
       const newTime = cleanSlots[type];
-      const cur = currentByType[type];
-      if (cur && !newTime) deletions.push({ rowIndex: cur.rowIndex, type, oldTime: cur.time });
+      const list = rowsByType[type] || [];
+      if (!list.length) return;
+      if (!newTime) {
+        // Blank slot → the whole type goes (every row, not just the last).
+        list.forEach(r => deletions.push({ rowIndex: r.rowIndex, type, oldTime: r.time, dup: false }));
+      } else if (list.length > 1) {
+        // Kept slot with duplicates → collapse to the displayed (last) row.
+        list.slice(0, -1).forEach(r =>
+          deletions.push({ rowIndex: r.rowIndex, type, oldTime: r.time, dup: true }));
+      }
     });
     deletions.sort((a, b) => b.rowIndex - a.rowIndex);
     deletions.forEach(d => {
       sheet.deleteRow(d.rowIndex);
-      try { clearFromEmployeeSheet_(targetEmp, date, d.type); } catch (e) {}
+      if (!d.dup) { try { clearFromEmployeeSheet_(targetEmp, date, d.type); } catch (e) {} }
       writeAuditLog_(targetEmp, 'PunchDelete', date, d.oldTime, false, 0,
-        `${d.type} removed by manager${noteSuffix}`, callerEmp.email);
-      changes.push({ type: d.type, action: 'delete' });
+        `${d.type} ${d.dup ? 'duplicate collapsed' : 'removed'} by manager${noteSuffix}`, callerEmp.email);
+      changes.push({ type: d.type, action: d.dup ? 'collapse-dup' : 'delete' });
     });
 
     // Pass 2: updates (use findExistingPunch_ since indices may have shifted)
@@ -1993,6 +2186,15 @@ function exportAdpRange(startDate, endDate) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    // C2 (cycle 10): validate like every sibling range endpoint — with both
+    // args undefined the date filter's relational compares were always false,
+    // so a bare google.script.run.exportAdpRange() silently exported the
+    // ENTIRE timesheet history and wrote an "undefined..undefined" audit row.
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate))
+      return { error: 'Invalid start date (expected yyyy-MM-dd).' };
+    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate))
+      return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
     const result = generateExportSheet_(startDate, endDate, null);
     if (result.error) return result;
     writeAuditLog_(emp, 'AdpExport', startDate + '..' + endDate, '', false, 0,
@@ -4212,7 +4414,13 @@ function recordClientError(payload) {
     const n = parseInt(cache.get(rateKey), 10) || 0;
     if (n >= CLIENT_ERR_RATE_MAX_PER_HOUR) return { success: false };
     cache.put(rateKey, String(n + 1), 3600);
-    const lock = LockService.getScriptLock();
+    // Batch K (B) — USER lock, not the global script lock: this is a
+    // fire-and-forget single-appendRow diagnostics log, and holding the ONE
+    // script lock made punch/note writes queue behind error beacons. The
+    // user lock still serializes a rep's own double-fires; appendRow itself
+    // is atomic, and a rare first-touch tab-create race just fails one
+    // best-effort call.
+    const lock = LockService.getUserLock();
     lock.waitLock(15000);
     try {
       getOrCreateClientErrorsSheet_().appendRow([
@@ -4252,6 +4460,11 @@ function clientErrorsSummary_(mgrTz) {
     const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
     for (let i = data.length - 1; i >= 0; i--) {   // newest-first; append-only tab
       const tsRaw = normalizeAuditTs_(data[i][0]);
+      // C6 (cycle 10): a blank/hand-mangled Timestamp cell normalizes to ''
+      // (< cutoff), and the old `break` hid every OLDER-INDEXED row above it
+      // from the panel with no signal. Skip the malformed row and keep
+      // scanning; only a genuinely-older parsed date ends the tail walk.
+      if (!tsRaw) continue;
       if (tsRaw.substring(0, 10) < cutoff) break;  // chronological — older rows follow
       out.count++;
       if (out.recent.length < 5) {
@@ -4527,14 +4740,14 @@ function computeAutomationHealth_() {
     // Staleness windows: EOD trigger is hourly (stale > 2h), urgent is daily
     // (> 26h), weekly is Friday-only (> 8 days). last:null = no heartbeat
     // recorded yet (pre-heartbeat deploy or trigger never installed).
-    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26 };
+    const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
-    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief'].map(function (k) {
+    const digestHealth = ['eod', 'urgent', 'weekly', 'trainingOverdue', 'deptReqReminder', 'managerBrief', 'selfTest'].map(function (k) {
       const raw = String(digestMap[k] || '');
       let stale = false;
       if (raw) {
@@ -4550,6 +4763,36 @@ function computeAutomationHealth_() {
       };
     });
 
+    // C4 (cycle 10) — lost witness-row counter (WITNESS_AUDIT_FAILS, stamped
+    // by writeWitnessAuditLog_ after a failed retry). `recent` = a loss in the
+    // last 48h (what the failure digest pushes); the panel shows the total.
+    let witnessFails = { count: 0, lastAt: null, lastAction: '', recent: false };
+    try {
+      const wf = JSON.parse(PropertiesService.getScriptProperties()
+        .getProperty('WITNESS_AUDIT_FAILS') || '{}') || {};
+      if (Number(wf.count) > 0) {
+        witnessFails = {
+          count: Number(wf.count), lastAt: Number(wf.lastAt) || null,
+          lastAction: String(wf.lastAction || ''),
+          recent: !!(Number(wf.lastAt) && (Date.now() - Number(wf.lastAt)) < 48 * 3600000),
+        };
+      }
+    } catch (_) {}
+
+    // K-A alternative — last nightly self-test outcome (SELF_TEST_LAST_RESULT
+    // Script Property; null = never ran, the fresh-deploy posture).
+    let selfTest = null;
+    try {
+      const st = JSON.parse(PropertiesService.getScriptProperties().getProperty(SELF_TEST_RESULT_PROP));
+      if (st && typeof st === 'object') {
+        selfTest = {
+          date: String(st.date || ''), mode: String(st.mode || ''),
+          pass: Number(st.pass) || 0, fail: Number(st.fail) || 0, skip: Number(st.skip) || 0,
+          error: String(st.error || ''),
+        };
+      }
+    } catch (_) {}
+
     return {
       syncFails: syncFails,
       automationLastRuns: automationLastRuns,
@@ -4557,6 +4800,8 @@ function computeAutomationHealth_() {
       cdr: cdr,
       detectors: detectors,   // Turn C — detector-liveness checks
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
+      witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
+      selfTest: selfTest,     // K-A alternative — nightly self-test outcome
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
@@ -4571,6 +4816,150 @@ function computeAutomationHealth_() {
  *  urgent digest's "sends nothing when none". Top-level trigger handler, so it
  *  carries the MANAGER_EMAILS assertManagerCaller_ gate (INV-44); best-effort
  *  (INV-14, never throws past the catch); PHI-free. */
+/** Batch K (E) — the ONE derivation of "which automation checks are failing",
+ *  shared by the daily failure digest AND the shell health-badge endpoint so
+ *  the two can never drift (the K-D single-source discipline). Takes a
+ *  computeAutomationHealth_() report; returns human-readable problem strings.
+ *  Failure classes: (a) stale digest heartbeats (never-ran is NOT a problem —
+ *  fresh-deploy posture), (b) stale nightly reconcile (the F1 dead-trigger
+ *  signal; only when a prior run EXISTS), (c) personal-sheet sync failures,
+ *  (c2) a RECENT lost tamper-witness row (48h window, C4/INV-158), (d) dead
+ *  detectors (Turn C — "the job ran" ≠ "the job's detector works"). CDR
+ *  reachability is deliberately EXCLUDED (not a trigger; an unset CDR_SS_ID
+ *  would false-nag a non-CDR deployment — the panels surface it). */
+function automationProblems_(report) {
+  const problems = [];
+  if (!report) return problems;
+  (report.digests || []).forEach(function (d) {
+    if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+  });
+  const RECON_STALE_HOURS = 30;   // daily 5am + margin
+  const recon = (report.automationLastRuns || []).filter(function (a) { return a.action === 'CallNotesReconcile'; })[0];
+  if (recon && recon.last && recon.last.ms && (Date.now() - recon.last.ms) > RECON_STALE_HOURS * 3600000) {
+    problems.push('The nightly Sheets reconcile last ran ' + recon.last.timestampMgr + ' (over ' + RECON_STALE_HOURS + 'h ago) — the trigger may be disabled.');
+  }
+  if (report.syncFails && report.syncFails.count > 0) {
+    problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
+  }
+  if (report.witnessFails && report.witnessFails.recent) {
+    problems.push('A tamper-witness audit row was LOST in the last 48h (' +
+      report.witnessFails.lastAction + '; ' + report.witnessFails.count +
+      ' total) — a signed/submitted record has no independent audit witness. See INV-113/122.');
+  }
+  (report.detectors || []).forEach(function (c) {
+    if (c && c.ok === false) problems.push('Detector dead: ' + c.label + ' — ' + c.detail);
+  });
+  // (e) K-A alternative — the last nightly self-test reported failures (or
+  // crashed). null = never ran, NOT a problem (fresh-deploy posture).
+  if (report.selfTest && report.selfTest.fail > 0) {
+    problems.push('The nightly self-test (' + (report.selfTest.mode || '?') + ') reported ' +
+      report.selfTest.fail + ' failing test(s) on ' + (report.selfTest.date || '?') +
+      (report.selfTest.error ? ' — ' + report.selfTest.error : '') + '.');
+  }
+  return problems;
+}
+
+/** Batch K (E) — lightweight manager health badge behind the shell's Manage
+ *  health dot. MANAGER-gated (the failure digest's audience — the Admin-gated
+ *  panels stay the detail surface; this returns only a count, no config
+ *  detail). Whole-result cached 10 min org-wide; best-effort throughout —
+ *  any failure returns {failing:false} silently (the daily digest and the
+ *  Admin Automation Health panel are the backstops, so a broken badge must
+ *  never noise the shell). */
+function getAutomationHealthBadge() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const cache = CacheService.getScriptCache();
+    const KEY = 'auto_health_badge_v1';
+    const hit = cache.get(KEY);
+    if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+    let res = { failing: false, count: 0 };
+    try {
+      const problems = automationProblems_(computeAutomationHealth_());
+      res = { failing: problems.length > 0, count: problems.length };
+    } catch (e) { Logger.log('getAutomationHealthBadge compute failed: ' + e.message); }
+    try { cache.put(KEY, JSON.stringify(res), 600); } catch (e) {}
+    return res;
+  } catch (err) {
+    return { failing: false, count: 0 };
+  }
+}
+
+/** K-A alternative (operator-approved) — nightly IN-PROJECT self-test, the
+ *  credential-free stand-in for editor-suite CI. Runs where the code lives:
+ *  on the DEV blue-green instance (INSTANCE_LABEL set, INSTANCE_IS_PROD not
+ *  'true') the FULL runAllTests suite executes against the copy sheets; on
+ *  any other instance (incl. plain prod) only runSmokeTests runs — pure
+ *  logic, zero spreadsheet writes, safe on the live store by construction
+ *  (and runAllTests' own assertNotProdInstance_ guard stays the backstop).
+ *  Outcome lands in the SELF_TEST_LAST_RESULT Script Property, which
+ *  computeAutomationHealth_/automationProblems_ surface (Admin panel, shell
+ *  health dot, failure digest); a failing run ALSO emails MANAGER_EMAILS
+ *  directly (best-effort) with the failed test names. Heartbeat-stamped
+ *  BEFORE the run (trigger liveness observable even if the suite crashes,
+ *  the INV-151 posture). INV-44 trigger-handler gate. Silent when green. */
+function runNightlySelfTest() {
+  assertManagerCaller_('runNightlySelfTest');
+  stampDigestLastRun_('selfTest');
+  const props = PropertiesService.getScriptProperties();
+  try {
+    if (typeof runSmokeTests !== 'function' || typeof _TEST_STATE === 'undefined') {
+      Logger.log('runNightlySelfTest: test suite not present in this project — skipping.');
+      return;
+    }
+    const isDev = !!props.getProperty('INSTANCE_LABEL') &&
+      String(props.getProperty('INSTANCE_IS_PROD') || '').toLowerCase() !== 'true';
+    const mode = isDev ? 'full' : 'smoke';
+    if (isDev) runAllTests(); else runSmokeTests();
+    const res = {
+      date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+      mode: mode, pass: _TEST_STATE.pass, fail: _TEST_STATE.fail, skip: _TEST_STATE.skip,
+    };
+    try { props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify(res)); } catch (e) {}
+    if (res.fail > 0) {
+      const names = (_TEST_STATE.results || [])
+        .filter(function (r) { return r.status === 'FAIL'; })
+        .map(function (r) { return r.name; }).slice(0, 20);
+      selfTestFailureEmail_(mode, res, names);
+    }
+    Logger.log('runNightlySelfTest (' + mode + '): ' + res.pass + ' passed, ' + res.fail + ' failed, ' + res.skip + ' skipped.');
+  } catch (err) {
+    // A crashed run IS a failure — record + email best-effort.
+    const res = {
+      date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+      mode: 'error', pass: 0, fail: 1, skip: 0,
+      error: String(err && err.message || err).substring(0, 300),
+    };
+    try { props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify(res)); } catch (e) {}
+    selfTestFailureEmail_('error', res, [res.error]);
+    Logger.log('runNightlySelfTest failed: ' + (err && err.message));
+  }
+}
+
+/** Best-effort failure notification for the nightly self-test (INV-14 —
+ *  never throws). PHI-free: test names / a truncated error only. */
+function selfTestFailureEmail_(mode, res, names) {
+  try {
+    const mgrEmails = getManagerEmails_();
+    if (!mgrEmails.length) return;
+    const items = (names || []).map(function (n) {
+      return '<li style="margin:3px 0;">' + esc_(String(n)) + '</li>';
+    }).join('');
+    const bodyHtml = '<p style="margin:0 0 10px;">The nightly self-test (' + esc_(mode) + ' mode) reported ' +
+      esc_(String(res.fail)) + ' failure(s) — ' + esc_(String(res.pass)) + ' passed, ' +
+      esc_(String(res.skip)) + ' skipped.</p>' +
+      (items ? '<ul style="margin:0;padding-left:18px;">' + items + '</ul>' : '') +
+      '<p style="margin:10px 0 0;">Open the Apps Script editor and run the suite for detail.</p>';
+    MailApp.sendEmail({
+      to: mgrEmails.join(','),
+      subject: 'Team Tools — nightly self-test: ' + res.fail + ' failure(s)',
+      body: 'Nightly self-test (' + mode + '): ' + res.fail + ' failure(s).\n\n' + (names || []).join('\n'),
+      htmlBody: buildBrandedEmailHtml_('Nightly self-test failed', bodyHtml, { tone: 'warn', subLabel: 'Self-Test' }),
+    });
+  } catch (e) { Logger.log('selfTestFailureEmail_ failed: ' + e.message); }
+}
+
 function sendAutomationHealthDigest() {
   assertManagerCaller_('sendAutomationHealthDigest');
   try {
@@ -4580,37 +4969,7 @@ function sendAutomationHealthDigest() {
     try { report = computeAutomationHealth_(); } catch (e) { Logger.log('automation-health digest: report failed: ' + e.message); }
     if (!report) return;
 
-    const problems = [];
-    // (a) Stale digest heartbeats — a digest whose last run aged past its window
-    // (a previously-alive trigger that stopped). last:null (never run) is NOT a
-    // problem (fresh deploy / not-yet-installed), matching the panel's posture.
-    (report.digests || []).forEach(function (d) {
-      if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
-    });
-    // (b) Reconcile liveness — the ONE unconditional daily job (it writes an audit
-    // row every run), so a stale last-run is the F1 signal (a narrowed
-    // ADMIN_EMAILS / dead trigger). Only flag when a prior run EXISTS but is old
-    // (no row at all = fresh deploy / not installed — same posture as (a)).
-    const RECON_STALE_HOURS = 30;   // daily 5am + margin
-    const recon = (report.automationLastRuns || []).filter(function (a) { return a.action === 'CallNotesReconcile'; })[0];
-    if (recon && recon.last && recon.last.ms && (Date.now() - recon.last.ms) > RECON_STALE_HOURS * 3600000) {
-      problems.push('The nightly Sheets reconcile last ran ' + recon.last.timestampMgr + ' (over ' + RECON_STALE_HOURS + 'h ago) — the trigger may be disabled.');
-    }
-    // (c) Personal-sheet sync failures (a rep's Sheet drifting from the source).
-    if (report.syncFails && report.syncFails.count > 0) {
-      problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
-    }
-    // (d) Turn C — detector liveness: a DEAD DETECTOR is the failure class the
-    // rest of this digest can't see ("the job ran" ≠ "the job's detector
-    // works" — the H-1/M-11 lesson). Any failing writer↔parser round-trip or
-    // missing diagnostic channel is pushed.
-    (report.detectors || []).forEach(function (c) {
-      if (c && c.ok === false) problems.push('Detector dead: ' + c.label + ' — ' + c.detail);
-    });
-    // CDR reachability is deliberately NOT pushed here: it isn't a trigger, an
-    // unset CDR_SS_ID legitimately reads as "unreachable" (would false-nag a
-    // non-CDR deployment daily), and the Admin Storage/Automation Health panels
-    // already surface it. The digest stays scoped to automation-TRIGGER failures.
+    const problems = automationProblems_(report);
 
     if (!problems.length) { Logger.log('automation-health digest: all clear, nothing to send.'); return; }
 
@@ -7387,7 +7746,7 @@ function submitFormByToken(token, formData) {
       // PHI-adjacent — lives on the FormTokens row, reachable via the token).
       const fromDomain = intakeEmailDomain_(recipientEmail);
       const auditEmp = { id: 'EXTERNAL', name: 'External recipient', email: fromDomain };
-      writeAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
+      writeWitnessAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
         'token=' + token + '; formType=' + formType + '; fromDomain=' + fromDomain +
         '; hash=' + submissionHash + '; submittedAt=' + submittedAt +
         (noteId ? '; noteId=' + noteId : ''));
@@ -8370,11 +8729,15 @@ function reconcileCallNotes() {
           const hasContent = CONTENT_COLS.some(function (c) { return String(row[c] || '').trim(); });
           if (!hasContent) continue;                             // blank row → skip
           const rowIndex = i + 2;
-          const tsHadValue = !!(String(row[CN.TIMESTAMP] || '').trim() || (row[CN.TIMESTAMP] instanceof Date));
+          const tsHadValue = !!cnTimestampString_(row[CN.TIMESTAMP]).trim();
           let dateLocal = normalizeDate_(row[CN.DATE_LOCAL]);    // '' if blank; handles Date coercion
-          let timestamp = (row[CN.TIMESTAMP] instanceof Date)
-            ? Utilities.formatDate(row[CN.TIMESTAMP], tz, "yyyy-MM-dd'T'HH:mm:ss")
-            : String(row[CN.TIMESTAMP] || '').trim();
+          // C1 (cycle 10): recover a coerced Timestamp via cnTimestampString_
+          // (INV-142) — the old inline branch formatted in the REP's tz, but
+          // the cell was coerced in the SHEET's tz (pinned to the ADP tz,
+          // INV-110/141). For a CST rep, any hand-entered time between
+          // 00:00–11:29 IST recovered ~-11.5h and backfilled dateLocal onto
+          // the PREVIOUS day (the exact getMyNoteHourBuckets cycle-8 class).
+          let timestamp = cnTimestampString_(row[CN.TIMESTAMP]).trim();
           if (!dateLocal && timestamp) dateLocal = timestamp.substring(0, 10);
           if (!dateLocal) dateLocal = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
           if (!timestamp) timestamp = dateLocal + 'T12:00:00';
@@ -8427,6 +8790,7 @@ function installAutomationTriggers() {
     'sendDeptRequestReminderDigest',
     'sendManagerDailyBrief',
     'archiveOldTimesheetRows',
+    'runNightlySelfTest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -8526,6 +8890,11 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('archiveOldTimesheetRows')
     .timeBased().atHour(18).everyDays(1)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
+  // Nightly self-test (K-A alternative) — daily manager-tz 1am. Smoke-only on
+  // prod (no writes, no locks); the FULL suite only on the DEV instance.
+  ScriptApp.newTrigger('runNightlySelfTest')
+    .timeBased().atHour(1).everyDays(1)
+    .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
   Logger.log('Automation triggers installed by ' + userEmail + '.');
 
   // Trigger-ownership warning: Apps Script time-triggers are owned by the
@@ -8575,6 +8944,7 @@ function removeAutomationTriggers() {
     'sendDeptRequestReminderDigest',
     'sendManagerDailyBrief',
     'archiveOldTimesheetRows',
+    'runNightlySelfTest',
   ];
   ScriptApp.getProjectTriggers().forEach(t => {
     if (TARGETS.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
@@ -8768,8 +9138,10 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
       `${payCycleFilter} skipped — no managers configured`);
     return;
   }
+  let createdSheet = null;   // C12 (cycle 10) — see the catch branch
   try {
     const result = generateExportSheet_(range.start, range.end, payCycleFilter);
+    if (!result.error) createdSheet = result;
     if (result.error) {
       MailApp.sendEmail({
         to: recipients.join(','),
@@ -8819,15 +9191,25 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
       MailApp.sendEmail({
         to: recipients.join(','),
         subject: `❌ ${subjectPrefix} FAILED`,
+        // C12 (cycle 10): the export SHEET is usually already created when
+        // this catch fires (the .xlsx Drive fetch is the realistic thrower) —
+        // the old email said "run it manually" without mentioning the valid
+        // sheet, so the manager re-ran and created a duplicate.
         body: `Automated export failed: ${err.message}\n\nRange: ${range.start} to ${range.end}\n\n` +
-              `Please run the export manually from the Manage tab in the UMS Time Clock app.`,
+              (createdSheet
+                ? `NOTE: the export Google Sheet WAS created successfully — only the .xlsx attachment step failed.\n` +
+                  `Open it here (no need to re-run):\n${createdSheet.url}\n`
+                : `Please run the export manually from the Manage tab in the UMS Time Clock app.`),
         htmlBody: buildBrandedEmailHtml_('Automated export failed',
           '<p style="margin:0 0 12px;">The automated export did not complete.</p>' +
           brandedKvRows_([
             ['Error', err.message],
             ['Range', range.start + ' to ' + range.end],
           ]) +
-          '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please run the export manually from the Manage tab in the UMS Time Clock app.</p>',
+          (createdSheet
+            ? '<p style="margin:14px 0 0;">The export Google Sheet <b>was created successfully</b> — only the .xlsx attachment step failed. ' +
+              '<a href="' + esc_(createdSheet.url) + '" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open it →</a> (no need to re-run).</p>'
+            : '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please run the export manually from the Manage tab in the UMS Time Clock app.</p>'),
           { accent: CN_EMAIL_PALETTE.danger }),
       });
     } catch (e) {}
@@ -8844,6 +9226,7 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // Property heartbeat; getAutomationHealth surfaces it with a staleness flag —
 // closing the "silently dead digest trigger" blind spot.
 const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
+const SELF_TEST_RESULT_PROP = 'SELF_TEST_LAST_RESULT';   // {date, mode, pass, fail, skip[, error]} — nightly self-test outcome
 
 /** Best-effort heartbeat stamp ({ key: "yyyy-MM-dd HH:mm:ss" in
  *  CONFIG.TIMEZONE }) — never blocks or fails the digest itself. */
@@ -10134,7 +10517,12 @@ function getStateTaxRates_() {
           const v = Number(parsed[k]);
           if (isFinite(v) && v >= 0 && v <= 1) clean[String(k)] = v;
         });
-        if (Object.keys(clean).length > 0) return clean;
+        // C5 (cycle 10): a deliberately-cleared config ({} saved via the
+        // Admin tab) must stay empty — the old non-empty gate silently
+        // resurrected the CONFIG defaults, making "no tax rates" an
+        // unrepresentable state. An object whose entries ALL failed
+        // validation still degrades to CONFIG (the L-12 corrupt-blob intent).
+        if (Object.keys(parsed).length === 0 || Object.keys(clean).length > 0) return clean;
       }
     } catch (_) {}
   }
@@ -10155,7 +10543,8 @@ function getUpdateSuggestions_() {
             clean[String(k)] = parsed[k].filter(function (s) { return typeof s === 'string'; });
           }
         });
-        if (Object.keys(clean).length > 0) return clean;
+        // C5 (cycle 10): a cleared {} stays empty (see getStateTaxRates_).
+        if (Object.keys(parsed).length === 0 || Object.keys(clean).length > 0) return clean;
       }
     } catch (_) {}
   }
@@ -10662,7 +11051,7 @@ function authorizeGmailScope() {
   return { ok: true, threads: n };
 }
 
-/** Spanish-inbox resolution stats (manager-gated, read-only). Scans the
+/** Spanish-inbox resolution stats (canSeeSpanishInbox_-gated — manager OR SPANISH_INBOX_MEMBERS, INV-31 amendment; read-only). Scans the
  *  DEPLOYER's Gmail for threads addressed to the group inbox over the last
  *  `days` and computes time-to-resolution (first inbound → first reply from a
  *  bilingual group member). PHI-free: returns counts + durations + requester
@@ -10735,11 +11124,11 @@ function getSpanishInboxStats(days) {
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
-/** Pending (unresolved) Spanish-inbox requests as task cards — manager-gated,
+/** Pending (unresolved) Spanish-inbox requests as task cards — canSeeSpanishInbox_-gated (INV-31 amendment),
  *  live-read (NOT cached/stored, since it carries request content). Returns
  *  subject + a short snippet + an Open-in-Gmail permalink per open thread; the
  *  full body is fetched on demand via getSpanishInboxThreadBody. PHI note: the
- *  body may reference a patient/call — that's why it's manager-gated + never
+ *  body may reference a patient/call — that's why it's gate-restricted + never
  *  persisted. */
 function getSpanishInboxPending(days) {
   try {
@@ -10783,7 +11172,7 @@ function getSpanishInboxPending(days) {
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
-/** Resolved Spanish-inbox requests over the window (manager-gated, live-read,
+/** Resolved Spanish-inbox requests over the window (canSeeSpanishInbox_-gated, live-read,
  *  never stored — same posture as the pending list). For each resolved thread
  *  returns who resolved it + how long it took, newest-resolved first. PHI-lean:
  *  subject only (no body snippet — the on-demand getSpanishInboxThreadBody expand
@@ -10837,7 +11226,7 @@ function getSpanishInboxResolved(days) {
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
-/** Full body of one Spanish-inbox request thread (manager-gated, on-demand
+/** Full body of one Spanish-inbox request thread (canSeeSpanishInbox_-gated, on-demand
  *  expand). Scope-guarded: only returns the body if the thread is actually
  *  addressed to the configured inbox, so a manager can't pull arbitrary thread
  *  bodies by id. Live-read, never stored. */
@@ -11485,16 +11874,23 @@ function convertAuditTs_(tsStr, fromTz, toTz) {
   } catch (e) { return tsStr; }
 }
 
+// M-1 (cycle 10): returns the LAST matching row, not the first. When duplicate
+// same-(emp, date, type) rows exist (pre-guard stale-window double punches,
+// direct sheet edits), managerSaveDay's snapshot (`currentByType`) keeps the
+// last row it sees — so the update path MUST target that same row or the
+// manager edits a row different from the one displayed. Single-row days
+// (the normal case) are unaffected.
 function findExistingPunch_(empId, date, punchType) {
   const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sheet.getDataRange().getValues();
+  let found = null;
   for (let i = 2; i < rows.length; i++) {
     if (String(rows[i][ADP.EMP_ID]).trim() !== empId) continue;
     if (normalizeDate_(rows[i][ADP.DATE]) !== date) continue;
     if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== punchType) continue;
-    return { sheet, rowIndex: i + 1 };
+    found = { sheet, rowIndex: i + 1 };
   }
-  return null;
+  return found;
 }
 
 /**
@@ -11995,7 +12391,35 @@ function writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, d
       punchDate, punchTime || '',
       isAdjustment ? 'TRUE' : 'FALSE', daysBack || 0, notes || '',
     ]);
-  } catch (e) { console.warn('writeAuditLog_ failed: ' + e.message); }
+    return true;   // C4 (cycle 10) — witness-class callers need the outcome
+  } catch (e) { console.warn('writeAuditLog_ failed: ' + e.message); return false; }
+}
+
+// C4 (cycle 10) — the WITNESS-class audit writes. Three audit rows are
+// documented as tamper-evidence witnesses (FormSubmissionReceived per
+// INV-113; EmpDocSigned / EmpDocCompleted per INV-122/135): the docs said
+// "the audit row IS the witness", but writeAuditLog_ swallows failures, so a
+// transient ADP-spreadsheet outage could silently drop a witness while the
+// attested mutation (on a DIFFERENT store) succeeded — and nothing counted
+// the gap. This wrapper retries once, then stamps the WITNESS_AUDIT_FAILS
+// Script Property (best-effort — the PersonalSheetSyncFail posture: the
+// witness store itself just failed, so a same-store signal can't work);
+// computeAutomationHealth_ surfaces it and the failure digest pushes a
+// RECENT failure (48h window, so an old blip doesn't nag forever).
+function writeWitnessAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, daysBack, notes, actorEmail) {
+  if (writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, daysBack, notes, actorEmail)) return true;
+  if (writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, daysBack, notes, actorEmail)) return true;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let rec = {};
+    try { rec = JSON.parse(props.getProperty('WITNESS_AUDIT_FAILS') || '{}') || {}; } catch (_) { rec = {}; }
+    rec.count = (Number(rec.count) || 0) + 1;
+    rec.lastAt = Date.now();
+    rec.lastAction = String(action || '');
+    props.setProperty('WITNESS_AUDIT_FAILS', JSON.stringify(rec));
+  } catch (e) { console.error('WITNESS_AUDIT_FAILS stamp failed: ' + e.message); }
+  console.error('WITNESS audit row lost after retry: ' + action);
+  return false;
 }
 
 function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reason) {
@@ -12470,10 +12894,20 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     offRosterAgents: Object.keys(offRoster).sort() } };   // F(M-11)
   try {
     var payload = JSON.stringify(result);
-    if (payload.length > 90000) {
-      console.warn('CDR cache payload near 100KB limit: ' + payload.length + ' bytes for ' + cacheKey);
+    // C10 (cycle 10): CacheService hard-caps values at 100KB — an oversized
+    // put THROWS (caught below, but every subsequent read then re-scans the
+    // whole DQE tab twice per open). Skip the doomed put explicitly with a
+    // headroom margin so the behavior is deliberate + logged, not an
+    // exception path; a large-team YTD aggregate is the realistic trigger.
+    if (payload.length > 95000) {
+      console.warn('CDR cache SKIPPED (payload ' + payload.length + ' bytes > 95KB headroom) for ' +
+        cacheKey + ' — every read of this range re-scans the DQE tab until the range narrows.');
+    } else {
+      if (payload.length > 90000) {
+        console.warn('CDR cache payload near 100KB limit: ' + payload.length + ' bytes for ' + cacheKey);
+      }
+      cache.put(cacheKey, payload, CONFIG.CDR_CACHE_TTL);
     }
-    cache.put(cacheKey, payload, CONFIG.CDR_CACHE_TTL);
   } catch (e) {
     console.warn('CDR cache put failed: ' + (e.message || e));
   }
@@ -13943,6 +14377,34 @@ function intakePreviewPPD(payload) {
   } catch (err) { return { error: err.message }; }
 }
 
+// M-5 (cycle 10) — intake PHI-store integrity helpers.
+// The store append is deliberately best-effort AFTER a successful send (the
+// email can't be unsent), but a failure must be LOUD, not a console.warn: the
+// rep gets a storeWarning toast and the shared AuditLog gains a PHI-free
+// IntakeStoreFail row (submissionId + type + trimmed error — the
+// PersonalSheetSyncFail pattern) so the gap is investigable. Oversized
+// payloads are rejected BEFORE the send so no email ever lacks a record.
+const INTAKE_STORE_CELL_MAX = 45000;   // under the 50k Sheets cell limit (INV-96)
+function intakeStoreOversizeError_(cellStrings) {
+  for (let i = 0; i < cellStrings.length; i++) {
+    if (String(cellStrings[i] || '').length > INTAKE_STORE_CELL_MAX) {
+      return 'This submission is too large to store (a field exceeds the ' +
+        'spreadsheet cell limit). Trim any very long pasted text and try again.';
+    }
+  }
+  return null;
+}
+function intakeStoreFailWarn_(emp, formType, submissionId, err) {
+  const msg = String((err && err.message) || err || 'unknown').substring(0, 300);
+  console.warn('intake ' + formType + ' submission store failed: ' + msg);
+  try {
+    writeAuditLog_(emp, 'IntakeStoreFail', fmtDate_(new Date()), '', false, 0,
+      'type=' + formType + '; submissionId=' + submissionId + '; err=' + msg, emp.email);
+  } catch (e) { console.warn('IntakeStoreFail audit write failed: ' + e.message); }
+  return 'Email sent, but the submission record could NOT be saved (' + msg + '). ' +
+    'The Sent tab will not show this submission — tell your manager.';
+}
+
 function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
   try {
     const emp = getEmployeeInfo_();
@@ -13967,22 +14429,32 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const finalBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {});
     const html = intakeEmailShell_(subject, finalBody);
 
+    // M-5 (cycle 10): size-bound the PHI store cells BEFORE the send (INV-96
+    // spirit — the public form path has had these caps since the hardening
+    // pass; this authenticated path had none). Rejecting pre-send means we
+    // never email a submission we can't record.
+    const answersJson = JSON.stringify(payload.answers || {});
+    const recJson = JSON.stringify(recData);
+    const selJson = JSON.stringify(payload.selections || {});
+    const oversize = intakeStoreOversizeError_([answersJson, recJson, selJson]);
+    if (oversize) return { success: false, error: oversize };
+
     MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });
 
     const submissionId = Utilities.getUuid();
+    let storeWarning = null;
     try {
       getIntakeSubmissionSheet_('PPD').appendRow([
         submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
         patientInfo, String(payload.language || 'EN'),
-        JSON.stringify(payload.answers || {}), JSON.stringify(recData),
-        JSON.stringify(payload.selections || {}), recipient,
+        answersJson, recJson, selJson, recipient,
       ]);
-    } catch (e) { console.warn('intake PPD submission store failed: ' + e.message); }
+    } catch (e) { storeWarning = intakeStoreFailWarn_(emp, 'PPD', submissionId, e); }
 
     writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
       'type=PPD; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient), emp.email);
 
-    return { success: true, recipient: recipient, submissionId: submissionId };
+    return { success: true, recipient: recipient, submissionId: submissionId, storeWarning: storeWarning };
   } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -14033,21 +14505,28 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   }
   const htmlBody = intakeEmailShell_(subject, innerBody);
 
+  // M-5 (cycle 10): size-bound the PHI store cell BEFORE the send (INV-96
+  // spirit) — never email a submission we can't record.
+  const answersJson = JSON.stringify(payload.answers || {});
+  const oversize = intakeStoreOversizeError_([answersJson]);
+  if (oversize) return { success: false, error: oversize };
+
   MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });
 
   const submissionId = Utilities.getUuid();
+  let storeWarning = null;
   try {
     getIntakeSubmissionSheet_(formType).appendRow([
       submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
       patientInfo, dob, String(payload.language || 'EN'),
-      JSON.stringify(payload.answers || {}), recipient, imgCount,
+      answersJson, recipient, imgCount,
     ]);
-  } catch (e) { console.warn('intake ' + formType + ' submission store failed: ' + e.message); }
+  } catch (e) { storeWarning = intakeStoreFailWarn_(emp, formType, submissionId, e); }
 
   writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
     'type=' + formType + '; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) + '; images=' + imgCount, emp.email);
 
-  return { success: true, recipient: recipient, submissionId: submissionId };
+  return { success: true, recipient: recipient, submissionId: submissionId, storeWarning: storeWarning };
 }
 
 function intakePreviewPMD(payload) { try { return intakePreviewAcct_('PMD', payload); } catch (e) { return { error: e.message }; } }
@@ -14700,7 +15179,11 @@ function getOrCreateKbViewsSheet_() {
  *  PHI-free by construction (itemId + repId + a sanitized context token).
  *  The client fires it best-effort; an error here never surfaces. */
 function kbRecordView(itemId, context) {
-  const lock = LockService.getScriptLock();
+  // Batch K (B) — USER lock, not the global script lock: an append-only
+  // fire-and-forget usage log (KbViews) must never make punch/note writes
+  // wait. Same rationale as recordClientError; appendRow is atomic and the
+  // user lock still serializes one rep's double-fires.
+  const lock = LockService.getUserLock();
   lock.waitLock(15000);
   try {
     const emp = getEmployeeInfo_();
@@ -14821,12 +15304,17 @@ function kbGetRelated(itemId) {
     const kbLast = kbSheet.getLastRow();
     const meta = {};
     if (kbLast >= 2) {
-      const krows = kbSheet.getRange(2, 1, kbLast - 1, KB_HEADERS.length).getValues();
-      krows.forEach(function (r) {
+      // C9 (cycle 10): column-bound the title join (the L-16 projection
+      // pattern) — this rep-callable path ran on EVERY reader open and pulled
+      // the full KB width including every article's BodyMd, when it needs
+      // only Id/Dept/Title/Type + Status. Two bounded reads, no body cells.
+      const head = kbSheet.getRange(2, KB.ID + 1, kbLast - 1, KB.TYPE + 1).getValues();
+      const statusCol = kbSheet.getRange(2, KB.STATUS + 1, kbLast - 1, 1).getValues();
+      head.forEach(function (r, i) {
         const id = String(r[KB.ID] || '');
         if (!id) return;
         meta[id] = { title: String(r[KB.TITLE] || '(untitled)'), department: String(r[KB.DEPARTMENT] || ''),
-          type: String(r[KB.TYPE] || 'article'), status: kbRowStatus_(r[KB.STATUS]) };
+          type: String(r[KB.TYPE] || 'article'), status: kbRowStatus_(statusCol[i][0]) };
       });
     }
     const items = [];
@@ -17162,19 +17650,39 @@ function empDocSha256Hex_(payload) {
  *  before (back-compat — old stored hashes stay valid). Callers MUST pass the
  *  RAW stored FieldsJson cell string (not a re-serialized object) so recompute
  *  is byte-stable. */
-function empDocContentHash_(bodyMd, title, docType, empId, fieldsJson) {
-  let base = String(bodyMd || '') + ' ' + String(title || '') + ' ' + String(docType || '') + ' ' + String(empId || '');
-  if (fieldsJson) base += ' ' + String(fieldsJson);
+// C13 (batch L) — NEW hashes join fields with a '\u0000' delimiter (the
+// computeFormSubmissionHash_ discipline): the old ' ' join was field-boundary
+// ambiguous, since titles/bodies themselves contain spaces. Legacy stored
+// hashes keep validating via DUAL-VERIFY — every recompute site tries the
+// NUL form first, then the legacy space form (EMPDOC_HASH_DELIM_LEGACY),
+// through the *HashMatches_ helpers below. The conditional trailing append
+// (INV-135 back-compat) is preserved unchanged in both forms.
+var EMPDOC_HASH_DELIM_LEGACY = ' ';
+function empDocContentHash_(bodyMd, title, docType, empId, fieldsJson, delim) {
+  const d = (delim === undefined) ? '\u0000' : delim;
+  let base = String(bodyMd || '') + d + String(title || '') + d + String(docType || '') + d + String(empId || '');
+  if (fieldsJson) base += d + String(fieldsJson);
   return empDocSha256Hex_(base);
 }
 /** Signature hash — covers the frozen content hash + identity + the ack
  *  version. Deliberately NOT the timestamp (Sheets coerces datetime cells to
  *  Dates on read, which would break recompute — INV-113); the EmpDocSigned
  *  audit row is the independent timestamp witness. */
-function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson) {
-  let base = String(contentHash || '') + ' ' + String(empId || '') + ' ' + String(docId || '') + ' ' + String(signatureDataUrl || '') + ' ' + String(ackVersion || '');
-  if (responsesJson) base += ' ' + String(responsesJson);   // v2 — the signed responses are attested too (back-compat: appended only when present)
+function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson, delim) {
+  const d = (delim === undefined) ? '\u0000' : delim;
+  let base = String(contentHash || '') + d + String(empId || '') + d + String(docId || '') + d + String(signatureDataUrl || '') + d + String(ackVersion || '');
+  if (responsesJson) base += d + String(responsesJson);   // v2 — the signed responses are attested too (back-compat: appended only when present)
   return empDocSha256Hex_(base);
+}
+/** Dual-verify: does `stored` match the content fields under the NEW (NUL)
+ *  form OR the legacy (space) form? Callers pass the RAW stored cell strings
+ *  (INV-135 byte-stability). Returns a boolean; a blank `stored` is the
+ *  caller's legacy/no-hash case, not this helper's. */
+function empDocContentHashMatches_(stored, bodyMd, title, docType, empId, fieldsJson) {
+  const s = String(stored || '');
+  if (!s) return false;
+  if (empDocContentHash_(bodyMd, title, docType, empId, fieldsJson) === s) return true;
+  return empDocContentHash_(bodyMd, title, docType, empId, fieldsJson, EMPDOC_HASH_DELIM_LEGACY) === s;
 }
 
 /** Pure — issueDoc payload validation (Node-pinned). Returns {ok, doc} or
@@ -17424,9 +17932,11 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
       if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
       if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
     }
-    // Integrity gate: the row must still hash to what was issued (incl. fields).
+    // Integrity gate: the row must still hash to what was issued (incl.
+    // fields). C13 dual-verify — a doc issued before the NUL-delimiter change
+    // carries a legacy space-form hash and must still sign.
     const expect = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
-    if (d.contentHash && d.contentHash !== expect) {
+    if (d.contentHash && !empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw)) {
       return { success: false, error: 'Integrity check failed — this document was altered after issue. Ask your manager to re-issue it.' };
     }
     const now = new Date();
@@ -17444,7 +17954,7 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
         .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
       sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
       sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
-      writeAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
+      writeWitnessAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
         'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
     } else {
       // Fields-only doc (no signature): completing the fields is the action.
@@ -17467,7 +17977,7 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
         .appendRow([d.docId, d.empId, ts, '', EMPDOC_ACK_VERSION, compHash, compCert]);
       sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('completed');
       sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
-      writeAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
+      writeWitnessAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
         'docId=' + d.docId + '; hash=' + compHash + '; completedAt=' + ts);
     }
     notifyAfter = function () { notifyEmpDocSigned_(d, emp); };   // M-7: post-lock
@@ -17616,7 +18126,9 @@ function verifyDocSignature(docId) {
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { error: 'Document not found.' };
     const d = found.doc;
     const expectContent = empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
-    const contentMatch = !d.contentHash ? null : (expectContent === d.contentHash);
+    // C13 dual-verify — legacy space-form hashes stay valid (never tampered).
+    const contentMatch = !d.contentHash ? null
+      : empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
     // Newest signature row for the doc (bottom-up id-column scan).
     const sigSheet = getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS);
     const sigLast = sigSheet.getLastRow();
@@ -17642,10 +18154,19 @@ function verifyDocSignature(docId) {
     // sign path hashes with `d.contentHash || <freshly computed>`, so a
     // legitimately-signed hand-entered/legacy row (blank ContentHash cell)
     // used to recompute against '' here and report a FALSE tampered:true.
+    // C13 dual-verify — try the NUL form, then the legacy space form. For the
+    // blank-stored-ContentHash fallback each attempt uses ITS OWN era's
+    // content-hash recompute (a pre-change sign hashed a space-form expect;
+    // a post-change sign hashes the NUL form).
+    const ackVer = String(sigRow[EDS.ACK_VERSION] || '');
     const recomputed = empDocSignatureHash_(
-      d.contentHash || expectContent, d.empId, d.docId,
-      rowSig, String(sigRow[EDS.ACK_VERSION] || ''), d.responsesRaw);
-    const match = storedHash ? storedHash === recomputed : null;
+      d.contentHash || expectContent, d.empId, d.docId, rowSig, ackVer, d.responsesRaw);
+    const expectContentLegacy = empDocContentHash_(
+      d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw, EMPDOC_HASH_DELIM_LEGACY);
+    const recomputedLegacy = empDocSignatureHash_(
+      d.contentHash || expectContentLegacy, d.empId, d.docId, rowSig, ackVer,
+      d.responsesRaw, EMPDOC_HASH_DELIM_LEGACY);
+    const match = storedHash ? (storedHash === recomputed || storedHash === recomputedLegacy) : null;
     // L-4 — a body-only rewrite trips `contentMatch` (body↔stored hash); a
     // consistent body+contentHash rewrite trips `match` (the signature hash
     // bound the sign-time contentHash). EITHER being false means tamper, so

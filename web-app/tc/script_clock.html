@@ -499,11 +499,21 @@ function clkLoadDashboard_(isMgr) {
   } else {
     CLK_DASH.mine = 0; CLK_DASH.team = 0;   // first load (or new day) → reset carousels
   }
-  var requestedView = currentView, got = {}, done = 0;
+  var requestedView = currentView, got = {}, done = 0, anyFail = false;
   var finish = function (pk, res) {
-    got[pk] = (res && !res.error) ? res : null;
+    var ok = !!(res && !res.error);
+    // D2a (cycle 10): a failed refetch keeps the LAST-GOOD payload for that
+    // period instead of overwriting it with null (which rendered the
+    // authoritative-sounding "No call data for this period.").
+    got[pk] = ok ? res : ((CLK_DASH.data && CLK_DASH.data[pk]) || null);
+    if (!ok) anyFail = true;
     if (++done < need || currentView !== requestedView) return;
-    CLK_DASH.data = got; CLK_DASH.loadedDay = today; CLK_DASH.loadedAt = Date.now();
+    CLK_DASH.data = got; CLK_DASH.loadedDay = today;
+    // D2a: never stamp a failed round as FRESH — the old stamp cached the
+    // failure for the full 60s window (re-renders early-return on fresh), so
+    // a transient blip read as confident no-data. A stale stamp makes the
+    // next re-render (focus / nav-back) retry quietly.
+    CLK_DASH.loadedAt = anyFail ? 0 : Date.now();
     clkRenderDashboard_();   // background swap (or first paint); no loader either way
   };
   CLK_DASH_PERIODS.forEach(function (pk) {
@@ -673,31 +683,40 @@ function clkLoadDashboardExtras_() {
     CLK_DASH.extra = { spanish: undefined, requests: undefined, spanishPending: undefined, training: undefined };
     CLK_DASH.spIdx = 0;
   }
-  CLK_DASH.extraDay = today; CLK_DASH.extraAt = Date.now();
+  // D2a (cycle 10): stamp the DAY at request time but freshness only on a
+  // SUCCESS — the old request-time extraAt stamp cached error placeholders as
+  // fresh for the full 60s window. On a failed refetch the prior good card
+  // stays (only a cold miss shows the error placeholder), and the stale
+  // stamp makes the next enter retry.
+  CLK_DASH.extraDay = today;
   var requestedView = currentView;
   var render = function () { if (currentView === requestedView) clkRenderDashboardExtras_(); };
+  var fresh = function () { CLK_DASH.extraAt = Date.now(); };
+  var failSet = function (key, val) {   // keep last-good; placeholder only on a cold miss
+    if (CLK_DASH.extra[key] === undefined) CLK_DASH.extra[key] = val;
+  };
   if (!hasCache) render();   // loading shell on first load; refresh swaps silently
   if (canSp) {
     google.script.run
-      .withSuccessHandler(function (r) { CLK_DASH.extra.spanish = r || { error: 'No data' }; render(); })
-      .withFailureHandler(function () { CLK_DASH.extra.spanish = { error: 'Spanish inbox unavailable' }; render(); })
+      .withSuccessHandler(function (r) { CLK_DASH.extra.spanish = r || { error: 'No data' }; fresh(); render(); })
+      .withFailureHandler(function () { failSet('spanish', { error: 'Spanish inbox unavailable' }); render(); })
       .getSpanishInboxStats(7);
     google.script.run
-      .withSuccessHandler(function (r) { CLK_DASH.extra.spanishPending = (r && r.pending) ? r : { pending: [] }; render(); })
-      .withFailureHandler(function () { CLK_DASH.extra.spanishPending = { pending: [] }; render(); })
+      .withSuccessHandler(function (r) { CLK_DASH.extra.spanishPending = (r && r.pending) ? r : { pending: [] }; fresh(); render(); })
+      .withFailureHandler(function () { failSet('spanishPending', { pending: [] }); render(); })
       .getSpanishInboxPending(7);
   } else {
     // Non-Spanish agents get a pending-training card in place of the Spanish one.
     google.script.run
-      .withSuccessHandler(function (r) { CLK_DASH.extra.training = r || { items: [] }; render(); })
-      .withFailureHandler(function () { CLK_DASH.extra.training = { error: 'Training unavailable' }; render(); })
+      .withSuccessHandler(function (r) { CLK_DASH.extra.training = r || { items: [] }; fresh(); render(); })
+      .withFailureHandler(function () { failSet('training', { error: 'Training unavailable' }); render(); })
       .getMyTraining();
   }
   // Dept Requests — everyone (a rep sees their own open/resolved; a manager the
   // team aggregate).
   google.script.run
-    .withSuccessHandler(function (r) { CLK_DASH.extra.requests = r || { error: 'No data' }; render(); })
-    .withFailureHandler(function () { CLK_DASH.extra.requests = { error: 'Dept requests unavailable' }; render(); })
+    .withSuccessHandler(function (r) { CLK_DASH.extra.requests = r || { error: 'No data' }; fresh(); render(); })
+    .withFailureHandler(function () { failSet('requests', { error: 'Dept requests unavailable' }); render(); })
     .getDeptRequests();
 }
 
@@ -2034,7 +2053,16 @@ function submitPunch(punchType, custom) {
           const area = getClockArea_();
           if (area && currentView === 'clock') { renderClockView(area); startClock(); }
         })
-        .withFailureHandler(()=>{})
+        .withFailureHandler(() => {
+          // D2b (cycle 10): the punch SUCCEEDED but the state refresh died —
+          // the buttons were already re-enabled while the clicked one still
+          // read "Working…" over the PRE-punch action row, inviting a second
+          // click (another recordPunch; the M-1 sequence guard now rejects a
+          // duplicate, but the rep shouldn't be led there). Restore the
+          // label and say the punch was recorded.
+          if (btn && btnHtml != null) btn.innerHTML = btnHtml;
+          showToast('Punch recorded — couldn’t refresh the view. Reload to see current status.', 'toast-warn');
+        })
         .getEmployeeState();
     })
     .withFailureHandler(err => {
@@ -2105,9 +2133,13 @@ function openAdjustModal() {
   const tz = empTz();
   const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz });
   const now = new Date();
-  const back = new Date(now); back.setDate(back.getDate() - adjustWindowDays);
   const todayIso = fmt.format(now);
-  const minIso = fmt.format(back);
+  // D4 (cycle 10): pure ISO-string day math (mgrAddDaysIso_, the cycle-8
+  // Coverage/Punctuality fix) instead of browser-LOCAL setDate() then rep-tz
+  // formatting — the hybrid could land the picker floor a day off when the
+  // browser tz ≠ rep tz (offshore reps on US-imaged machines). Server stays
+  // authoritative (INV-06) — this only stops the picker over/under-blocking.
+  const minIso = mgrAddDaysIso_(todayIso, -adjustWindowDays);
 
   document.getElementById('adj-date').value = todayIso;
   document.getElementById('adj-date').min   = minIso;

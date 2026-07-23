@@ -27,10 +27,10 @@
   .cov-cell.ok   { background: var(--accent-soft); }
   .cov-cell.risk { background: var(--warn-soft); }
   .cov-cell.low  { background: var(--destructive-soft); }
-  .cov-cell.none { background: var(--paper-2); color: var(--muted-3); }
+  .cov-cell.none { background: var(--paper-2); color: var(--muted-2); }
   .cov-cell.closed { background: repeating-linear-gradient(45deg, var(--paper-2), var(--paper-2) 4px, var(--paper) 4px, var(--paper) 8px); }
-  .cov-day-lbl.is-closed { color: var(--muted-3); }
-  .cov-closed-tag { font-family: var(--mono); font-size: 9px; color: var(--muted-3); letter-spacing: .08em; text-transform: uppercase; }
+  .cov-day-lbl.is-closed { color: var(--muted-2); }
+  .cov-closed-tag { font-family: var(--mono); font-size: 9px; color: var(--muted-2); letter-spacing: .08em; text-transform: uppercase; }
   .cov-detail { grid-column: 1 / -1; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
   .cov-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 10px 0; }
   .cov-legend .sw { width: 13px; height: 13px; border-radius: 3px; display: inline-block; vertical-align: -2px; margin-right: 5px; }
@@ -81,7 +81,7 @@ function loadManagerDashboard() {
       if (data.error) { mgrLoadError_(data.error); return; }
       mgrData = data;
       const area = document.getElementById('view-area');
-      if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); loadPendingAdjustments_(); }
+      if (area && currentView === 'manage') { renderManagerView(area, data); loadPtoReconciliation_(); loadSheetDoctor_(); loadPendingAdjustments_(); }
     })
     .withFailureHandler(err => mgrLoadError_(err.message||'Load failed'))
     .getManagerDashboard();
@@ -167,6 +167,90 @@ function fixPtoReconRep_(btn) {
   });
 }
 
+// ── Batch L — Timesheet sheet doctor ────────────────────────────────────
+// Lazy, best-effort (the PTO-recon lazy-card pattern): fills #mgr-sheet-doctor
+// only when getTimesheetDoctor finds duplicate punch rows (pre-INV-155
+// leftovers) or inverted ClockIn/ClockOut pairs (the mis-keyed AM/PM class
+// that calcHours_'s deliberate overnight wrap renders as a huge day — C3).
+// Duplicates get a one-click collapse (keeps the LAST row, the same one
+// findExistingPunch_/managerSaveDay use); inverted pairs are report-only —
+// fixing one is a judgment call for Day Edit.
+function loadSheetDoctor_() {
+  const slot = document.getElementById('mgr-sheet-doctor');
+  if (!slot) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      const s = document.getElementById('mgr-sheet-doctor');
+      if (!s || currentView !== 'manage') return;
+      if (!res || res.error ||
+          ((!res.duplicates || !res.duplicates.length) && (!res.inverted || !res.inverted.length))) {
+        s.innerHTML = ''; return;
+      }
+      s.innerHTML = renderSheetDoctorCard_(res);
+    })
+    .withFailureHandler(function () { /* best-effort — stay silent on failure */ })
+    .getTimesheetDoctor();
+}
+
+function renderSheetDoctorCard_(res) {
+  const dups = (res.duplicates || []).map(function (d) {
+    return '<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="font-weight:600;color:var(--ink)">' + esc(d.name || d.empId) + '</span> · ' +
+      esc(d.date) + ' · ' + esc(d.type) + ' ×' + esc(String(d.count)) +
+      ' <span style="color:var(--muted)">(' + d.times.map(esc).join(', ') + ')</span></div>';
+  }).join('');
+  const invs = (res.inverted || []).map(function (v) {
+    const detail = (v.kind === 'lunch')
+      ? 'lunch out ' + esc(v.lunchOut) + ' → return ' + esc(v.lunchIn) +
+        ' <span style="color:var(--warning-deep)">return precedes the leave — check AM/PM via Day Edit</span>'
+      : 'in ' + esc(v.clockIn) + ' → out ' + esc(v.clockOut) +
+        ' <span style="color:var(--warning-deep)">reads as an overnight day — check AM/PM via Day Edit</span>';
+    return '<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
+      '<span style="font-weight:600;color:var(--ink)">' + esc(v.name || v.empId) + '</span> · ' +
+      esc(v.date) + ' · ' + detail + '</div>';
+  }).join('');
+  const total = (res.duplicates || []).length + (res.inverted || []).length;
+  return '<div class="card" style="border-color:var(--warn)">' +
+    '<div class="card-label with-count"><span>Timesheet Doctor</span>' +
+      '<span class="count-pill warn">' + total + '</span></div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Scan of the last ' +
+      esc(String(res.windowDays)) + ' days. Duplicate rows predate the live sequence guard; ' +
+      'collapsing keeps the latest row per punch (the row Day Edit already shows). ' +
+      'Inverted in/out pairs are report-only — correct them via Day Edit.</div>' +
+    (dups ? '<div class="card-label" style="margin:6px 0 2px">Duplicate punches</div>' + dups : '') +
+    ((res.duplicates || []).length
+      ? '<div style="margin:8px 0 4px"><button class="pending-btn pb-approve" onclick="fixSheetDoctorDups_(this)">' +
+          icon('check', 14) + 'Collapse ' + (res.duplicates || []).length + ' duplicate group(s)</button></div>'
+      : '') +
+    (invs ? '<div class="card-label" style="margin:10px 0 2px">Inverted in/out &amp; lunch pairs</div>' + invs : '') +
+  '</div>';
+}
+
+function fixSheetDoctorDups_(btn) {
+  uiConfirm({
+    title: 'Collapse duplicate punches',
+    message: 'Delete the earlier duplicate row(s) for every flagged (employee, date, punch type), keeping the latest row — the one Day Edit displays? Each deletion writes an audit entry. Idempotent; re-run the scan after.',
+    tone: 'danger', confirmLabel: 'Collapse duplicates',
+  }).then(function (ok) {
+    if (!ok) return;
+    btn.disabled = true; btn.textContent = 'Collapsing…';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) {
+          showToast((res && res.error) || 'Collapse failed', 'toast-error');
+          btn.disabled = false; return;
+        }
+        showToast('Collapsed ' + (res.collapsed || 0) + ' duplicate row(s)', 'toast-success');
+        loadSheetDoctor_();   // refresh — clean groups drop off
+      })
+      .withFailureHandler(function (err) {
+        showToast((err && err.message) || 'Collapse failed', 'toast-error');
+        btn.disabled = false;
+      })
+      .fixTimesheetDuplicates();
+  });
+}
+
 // ── Pending punch-adjustment requests (#4a) ─────────────────────────────
 // Lazy, best-effort: fills #mgr-adjust-queue only when there are pending
 // employee adjustment requests. Approve → server writes the ADJ- punch for the
@@ -221,7 +305,12 @@ function adjDecide_(btn) {
 
 function renderManagerView(area, data) {
   const counts = { clocked_in: 0, on_lunch: 0, clocked_out: 0, not_in: 0 };
-  data.liveStatus.forEach(e => { counts[e.status]++; });
+  // D3 (cycle 10): tolerate an unknown status value — `counts[e.status]++` on
+  // one bad row NaN-poisoned a counter, and the card map's `MGR_STATUS[e.status]`
+  // threw and blanked the ENTIRE manager landing. The Clock-view teammate card
+  // already had this `|| not_in` fallback; one server enum change or hand-edited
+  // row shouldn't brick the view.
+  data.liveStatus.forEach(e => { if (counts[e.status] !== undefined) counts[e.status]++; else counts.not_in++; });
   const totalEmp = data.liveStatus.length;
   const mgrTzAbbr = data.mgrTzAbbr || '';
   const pendingCount = data.pending.length;
@@ -278,7 +367,7 @@ function renderManagerView(area, data) {
   const liveHtml = data.liveStatus.length === 0
     ? '<div class="no-data">No employees registered</div>'
     : '<div class="emp-grid">' + data.liveStatus.map(e => {
-        const meta = MGR_STATUS[e.status];
+        const meta = MGR_STATUS[e.status] || MGR_STATUS.not_in;   // D3 — see counts above
         const initials = e.name.split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase();
         let line;
         if (e.lastPunchType) {
@@ -464,6 +553,7 @@ function renderManagerView(area, data) {
     ${heroHtml}
     ${renderAnalyticsSection(data)}
     <div id="mgr-pto-recon"></div>
+    <div id="mgr-sheet-doctor"></div>
     <div id="mgr-adjust-queue"></div>
 
     <div class="card">
@@ -831,7 +921,20 @@ var _deEmpId = null, _deEmpName = null, _deDate = null;
 function openDayEditModal(empId, empName) {
   _deEmpId = empId;
   _deEmpName = empName;
-  var tz = empTz();
+  // M-2 (cycle 10): bound the picker on the TARGET employee's "today", not the
+  // manager's — the server validates daysBack in the target's tz (INV-05/07),
+  // so an offshore (IST/PHT) rep's in-progress local day is a VALID edit date
+  // that a manager-tz max forbade every CT afternoon (and the modal silently
+  // opened on the rep's previous day). Fall back to the manager's tz when the
+  // live-status entry is missing (server stays authoritative regardless).
+  var targetTz = null;
+  try {
+    var ls = (mgrData && mgrData.liveStatus) || [];
+    for (var i = 0; i < ls.length; i++) {
+      if (ls[i].id === empId) { targetTz = ls[i].timezone || null; break; }
+    }
+  } catch (e) {}
+  var tz = targetTz || empTz();
   var today = isoDateTz(tz);
   _deDate = today;
   document.getElementById('day-edit-subtitle').textContent = empName;
@@ -1027,10 +1130,13 @@ function renderAnalyticsSection(data) {
   const bars = trend.map(d => {
     const h = Math.round((d.count / max) * 80);
     const label = d.date.slice(5);
+    // D7 (cycle 10): esc() the server-derived label + count (shape-bound
+    // today, but the documented rule is every server string routes through
+    // esc() — the inconsistency was accidental, not a decision).
     return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--ink);margin-bottom:2px">${d.count}</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--ink);margin-bottom:2px">${esc(String(d.count))}</div>
       <div style="width:70%;height:${h}px;min-height:2px;background:var(--accent);border-radius:3px 3px 0 0"></div>
-      <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:4px">${label}</div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:4px">${esc(label)}</div>
     </div>`;
   }).join('');
 
@@ -1067,19 +1173,27 @@ function enterCoverageView(area) {
   var isoLocal = function (d) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   };
+  // D5 (cycle 10): re-anchor a still-DEFAULT window after midnight — a
+  // long-lived tab (the pinned pop-out pattern) re-entering Coverage kept
+  // yesterday-anchored defaults with no signal. `defaultDay` marks the range
+  // as default-derived; a user-chosen range (the Load button clears the mark)
+  // is never touched. The Clock view reconciles day rollover the same way.
+  var covToday = isoDateTz(empTz());
+  if (COV_STATE.defaultDay && COV_STATE.defaultDay !== covToday) COV_STATE.from = null;
   if (!COV_STATE.from) {
     // F(L-5): anchor "today" to the roster tz (isoDateTz/empTz — the F6
     // discipline the sibling modals in this file follow), not the browser
     // clock — a manager whose machine tz differs from their roster tz got a
     // default window starting on the wrong server day.
-    var todayIso = isoDateTz(empTz());
+    var todayIso = covToday;
+    COV_STATE.defaultDay = todayIso;
     COV_STATE.from = todayIso;
     COV_STATE.to = mgrAddDaysIso_(todayIso, 6);   // F(cycle-8): DST-safe
   }
   area.innerHTML =
     (COMPACT_MODE
       ? '<div class="compact-header"><div class="ch-title">' + icon('chart', 16) + ' Coverage</div></div>'
-      : '<div class="view-title-row"><h2>Coverage</h2><p>Forward staffing across timezones with PTO overlaid — understaffed manager-tz hours are flagged.</p></div>') +
+      : '<div class="view-title-row"><div><h1 class="view-title">Coverage</h1><p>Forward staffing across timezones with PTO overlaid — understaffed manager-tz hours are flagged.</p></div></div>') +
     '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
       '<div class="field"><label>From</label><input type="date" id="cov-from" value="' + esc(COV_STATE.from) + '"></div>' +
       '<div class="field"><label>To</label><input type="date" id="cov-to" value="' + esc(COV_STATE.to) + '"></div>' +
@@ -1090,6 +1204,7 @@ function enterCoverageView(area) {
   if (loadBtn) loadBtn.onclick = function () {
     COV_STATE.from = document.getElementById('cov-from').value;
     COV_STATE.to = document.getElementById('cov-to').value;
+    COV_STATE.defaultDay = null;   // D5 — user-chosen range sticks across midnight
     covLoad_();
   };
   covLoad_();
@@ -1155,7 +1270,7 @@ function covDayRisks_(day, byHour, hours, minStaff) {
   function flush(endH) {
     if (runStart === null) return;
     out.push('<b>' + esc(day.weekday.slice(0, 3)) + ' ' + covFmtHr_(runStart) + '–' + covFmtHr_(endH + 1) + '</b> · ' +
-      runC + ' working, need ' + minStaff + (who ? (' — ' + who) : ''));
+      esc(String(runC)) + ' working, need ' + esc(String(minStaff)) + (who ? (' — ' + who) : ''));   // D7 — full esc() parity with the function's own claim
     runStart = null; runC = null;
   }
   hours.forEach(function (h) {
@@ -1247,16 +1362,21 @@ function enterPunctualityView(area) {
   var isoLocal = function (d) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   };
+  // D5 (cycle 10): re-anchor a still-DEFAULT window after midnight (see
+  // enterCoverageView) — user-chosen ranges are never touched.
+  var punctToday = isoDateTz(empTz());
+  if (PUNCT_STATE.defaultDay && PUNCT_STATE.defaultDay !== punctToday) PUNCT_STATE.from = null;
   if (!PUNCT_STATE.from) {
     // F(L-5): roster-tz "today" (isoDateTz/empTz), not the browser clock.
-    var todayIso = isoDateTz(empTz());
+    var todayIso = punctToday;
+    PUNCT_STATE.defaultDay = todayIso;
     PUNCT_STATE.to = todayIso;
     PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -29);   // default last 30 days (F(cycle-8): DST-safe)
   }
   area.innerHTML =
     (COMPACT_MODE
       ? '<div class="compact-header"><div class="ch-title">' + icon('clock', 16) + ' Punctuality</div></div>'
-      : '<div class="view-title-row"><h2>Punctuality</h2><p>Start-time adherence vs each rep’s scheduled shift start (per-timezone). On-time = clock-in within the grace window.</p></div>') +
+      : '<div class="view-title-row"><div><h1 class="view-title">Punctuality</h1><p>Start-time adherence vs each rep’s scheduled shift start (per-timezone). On-time = clock-in within the grace window.</p></div></div>') +
     '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
       '<div class="field"><label>From</label><input type="date" id="punct-from" value="' + esc(PUNCT_STATE.from) + '"></div>' +
       '<div class="field"><label>To</label><input type="date" id="punct-to" value="' + esc(PUNCT_STATE.to) + '"></div>' +
@@ -1272,6 +1392,7 @@ function enterPunctualityView(area) {
   if (b) b.onclick = function () {
     PUNCT_STATE.from = document.getElementById('punct-from').value;
     PUNCT_STATE.to = document.getElementById('punct-to').value;
+    PUNCT_STATE.defaultDay = null;   // D5 — user-chosen range sticks across midnight
     punctLoad_();
   };
   area.querySelectorAll('.punct-preset').forEach(function (el) {
@@ -1288,6 +1409,7 @@ function punctPreset_(days) {
   var todayIso = isoDateTz(empTz());
   PUNCT_STATE.to = todayIso;
   PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -(days - 1));   // F(cycle-8): DST-safe
+  PUNCT_STATE.defaultDay = null;   // D5 — a preset is a user choice; sticks across midnight
   var f = document.getElementById('punct-from'), t = document.getElementById('punct-to');
   if (f) f.value = PUNCT_STATE.from;
   if (t) t.value = PUNCT_STATE.to;

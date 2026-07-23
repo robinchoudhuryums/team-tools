@@ -193,10 +193,13 @@
   /* preview modal */
   .intk-modal { width: min(860px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
   .intk-modal .body { overflow: auto; padding: 4px 2px; }
+  /* #fff is DELIBERATE (mode-invariant): the preview hosts the rendered
+     email body, whose colors are inline light-palette hex (CN_EMAIL_PALETTE)
+     — a dark canvas would make the email text unreadable in dark mode. */
   .intk-prev { border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; max-height: 46vh; background: #fff; }
   .intk-recpanel { margin-top: 14px; }
   .intk-rec { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
-  .intk-rec .star { font-size: 22px; color: var(--muted-3); cursor: pointer; line-height: 1; user-select: none; }
+  .intk-rec .star { font-size: 22px; color: var(--muted-2); cursor: pointer; line-height: 1; user-select: none; }
   .intk-rec .star.on { color: var(--accent); }
   .intk-rec .meta { flex: 1; }
   .intk-rec .code { font-weight: 700; }
@@ -465,7 +468,9 @@ var INTAKE_PPD_CONTROL = {
 };
 function intakePpdControl_(qNum) { return INTAKE_PPD_CONTROL[qNum] || null; }
 
-// Phase 4 — a hover-help glyph on specific question labels (native title tooltip).
+// Phase 4 — a hover-help glyph on specific question labels (rendered as the
+// tokened data-tip CSS tooltip — the native `title` was replaced in the
+// 2026-07-09 feedback round; E14 fixed this stale comment).
 var INTAKE_PPD_HELP = {
   '32': 'Spasticity is muscle stiffness or tightness — muscles that involuntarily contract, resist stretching, or spasm. Common after stroke, spinal-cord injury, MS, or cerebral palsy.',
 };
@@ -574,7 +579,12 @@ function enterIntakePpdView(area) {
       '<aside class="intk-rail"><div class="intk-rail-sticky">' +
         '<span class="intk-rail-label">Progress</span>' +
         intakeRingHtml_('ppd') +
-        '<span class="intk-rail-count" id="intk-ppd-count">0 / 45</span>' +
+        // E14 (cycle 10): 46 incl. Q39a (the cycle-8 ring fix) — the updater
+        // overwrites this synchronously today, but the seed literal must not
+        // drift from the real denominator (a future render path without the
+        // updater would show the wrong total).
+        '<span class="intk-rail-count" id="intk-ppd-count">0 / 46</span>' +
+
         intakePpdStepperHtml_(lang) +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
         '<button class="intk-btn" onclick="intakeClearForm_(\'ppd\')">Clear</button>' +
@@ -1391,10 +1401,20 @@ function intakePpdPreview_() {
 
 function intakeOpenPpdPreviewModal_(html, recs) {
   if (!INTAKE_STATE.ppd.agents) {
+    // E10 (cycle 10): guard the SECOND async hop too — the preview RPC's
+    // handler is view-guarded, but on a cold agents cache this extra fetch
+    // wasn't, so a slow getIntakeAgents popped the body-mounted PHI preview
+    // modal over whatever view the rep had navigated to (the INT-5 class).
+    var requestedView = currentView;
     google.script.run.withSuccessHandler(function (r) {
       INTAKE_STATE.ppd.agents = (r && r.agents) || [];
+      if (currentView !== requestedView) return;
       intakeBuildPpdModal_(html, recs);
-    }).withFailureHandler(function () { INTAKE_STATE.ppd.agents = []; intakeBuildPpdModal_(html, recs); }).getIntakeAgents();
+    }).withFailureHandler(function () {
+      INTAKE_STATE.ppd.agents = [];
+      if (currentView !== requestedView) return;
+      intakeBuildPpdModal_(html, recs);
+    }).getIntakeAgents();
   } else {
     intakeBuildPpdModal_(html, recs);
   }
@@ -1550,7 +1570,10 @@ function intakePpdSend_() {
       // State still resets so stale images can't ride into the next send.
       if (currentView === requestedView) intakeClearForm_('ppd');
       else { INTAKE_STATE.ppd.images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
-      showToast('PPD emailed to ' + res.recipient, 'toast-success');
+      // M-5 (cycle 10): the email sent but the PHI submission record didn't
+      // persist — surface it loudly instead of a silent server-side warn.
+      if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
+      else showToast('PPD emailed to ' + res.recipient, 'toast-success');
       intakeAutoLogNote_('ppd', st.payload, res.recipient, st.recommendations, currentView === requestedView);
     })
     .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
@@ -1737,7 +1760,7 @@ function intakeBuildAcctModal_(form, html) {
     '<div class="intk-foot">' +
       '<label><strong>Send to:</strong></label>' +
       '<select id="intk-acct-recipient"><option value="default">' + esc(defLabel) + '</option>' + agentOpts + '<option value="custom">Custom email…</option></select>' +
-      '<input type="email" id="intk-acct-custom" placeholder="recipient@…" style="display:none">' +
+      '<input type="email" id="intk-acct-custom" placeholder="recipient@…" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
       '<button class="intk-btn" data-intk-close="1">Cancel</button>' +
       '<button class="intk-btn primary" id="intk-acct-send" onclick="intakeAcctSend_(\'' + form + '\')">' + icon('send', 14) + ' Send Email</button>' +
@@ -1796,7 +1819,9 @@ function intakeAcctSend_(form) {
       intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
       if (currentView === requestedView) intakeClearForm_(form);
       else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
-      showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
+      // M-5 (cycle 10): loud toast when the PHI submission record didn't persist.
+      if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
+      else showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
       intakeAutoLogNote_(form, st.payload, res.recipient, null, currentView === requestedView);
     })
     .withFailureHandler(function (err) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })

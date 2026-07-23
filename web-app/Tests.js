@@ -164,6 +164,36 @@ function _withTestIntake_(fn) {
   }
 }
 
+/** M-9 (cycle 10): runs `fn` with getKbSS_ redirected at a dedicated KB
+ *  fixture spreadsheet (Script Property TEST_KB_SS_ID — the TEST_CDR_SS_ID
+ *  pattern; created lazily via createPinnedSpreadsheet_ so tz/locale match a
+ *  production KB store). Before this wrapper, the KB integration tests wrote
+ *  to the LIVE KB spreadsheet: every full run bumped KB_AI_GENERATION,
+ *  invalidated the live tree cache, appended PERMANENT rows to the
+ *  append-only KbRevisions tab, and a swallowed kbDeleteItem failure orphaned
+ *  TEST items with no cleanup backstop. The tree cache (KB_CACHE_KEY) is NOT
+ *  keyed by store, so it's invalidated on entry AND exit — a warm live tree
+ *  must never serve fixture reads, and the fixture tree must never serve
+ *  live readers (the _withTestCdr_ cache discipline). */
+function _withTestKb_(fn) {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('TEST_KB_SS_ID');
+  let ok = false;
+  if (id) { try { SpreadsheetApp.openById(id); ok = true; } catch (e) { ok = false; } }
+  if (!ok) {
+    const ss = createPinnedSpreadsheet_('TEST_KB_Fixture');
+    id = ss.getId();
+    props.setProperty('TEST_KB_SS_ID', id);
+  }
+  _TEST_OVERRIDE_KB_SS_ID = id;
+  invalidateKbCache_();
+  try { return fn(); }
+  finally {
+    _TEST_OVERRIDE_KB_SS_ID = null;
+    invalidateKbCache_();
+  }
+}
+
 /** Runs `fn` with the CN_FEATURE_FLAGS Script Property overridden (the given
  *  keys merged over whatever is currently stored), restoring the prior
  *  property afterwards. Needed because the FEATURE_FLAGS registry defaults
@@ -554,7 +584,26 @@ function cleanupTestData() {
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ASSIGN_TAB), 'TEST_', TA.EMP_ID, 2);
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ATTEMPT_TAB), 'TEST_', TQA.EMP_ID, 2);
+    // M-9 (cycle 10) — backstop sweep for KB content orphans. The KB tests
+    // now run against the fixture (_withTestKb_), but earlier runs left
+    // orphaned TEST_-titled items (a swallowed kbDeleteItem failure had no
+    // backstop) and their permanent KbRevisions rows in the LIVE store.
+    // TEST_-prefixed titles are the established cleanup key (INV-21 spirit).
+    _cleanupRowsByPrefix(kbSs.getSheetByName(CONFIG.KB.TAB), 'TEST_', KB.TITLE, 2);
+    _cleanupRowsByPrefix(kbSs.getSheetByName(KB_REVISIONS_TAB), 'TEST_', KBREV.TITLE, 2);
   } catch (e) { Logger.log('cleanupTestData: training tabs cleanup skipped: ' + e.message); }
+  // M-9 — same sweep inside the KB FIXTURE (if provisioned), so repeated runs
+  // don't accumulate residue from aborted tests there either.
+  try {
+    const kbFixtureId = PropertiesService.getScriptProperties().getProperty('TEST_KB_SS_ID');
+    if (kbFixtureId) {
+      const fx = SpreadsheetApp.openById(kbFixtureId);
+      _cleanupRowsByPrefix(fx.getSheetByName(CONFIG.KB.TAB), 'TEST_', KB.TITLE, 2);
+      _cleanupRowsByPrefix(fx.getSheetByName(KB_REVISIONS_TAB), 'TEST_', KBREV.TITLE, 2);
+      _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_ASSIGN_TAB), 'TEST_', TA.EMP_ID, 2);
+      _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
+    }
+  } catch (e) { Logger.log('cleanupTestData: KB fixture cleanup skipped: ' + e.message); }
   // Employee Docs fixture (T3) — sweep TEST_-employee rows if the fixture exists.
   try {
     const hrId = PropertiesService.getScriptProperties().getProperty('TEST_HRDOCS_SS_ID');
@@ -562,6 +611,10 @@ function cleanupTestData() {
       const hrSs = SpreadsheetApp.openById(hrId);
       _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_TAB), 'TEST_', ED.EMP_ID, 2);
       _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_SIG_TAB), 'TEST_', EDS.EMP_ID, 2);
+      // M-9 (cycle 10) — the fixture's Coaching + EmpDocTemplates tabs were
+      // outside the sweep (per-test finally only; an aborted run orphaned rows).
+      _cleanupRowsByPrefix(hrSs.getSheetByName(COACH_TAB), 'TEST_', CO.EMP_ID, 2);
+      _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_TPL_TAB), 'TEST_', EDT.NAME, 2);
     }
   } catch (e) { Logger.log('cleanupTestData: empdocs cleanup skipped: ' + e.message); }
 
@@ -781,6 +834,7 @@ function _runAllTests() {
 
   // ── New endpoints (post-sync coverage backfill) ─────────────────────────
   _integrationTest('recordPunch_minIntervalRejectsRapidLive',  test_recordPunch_minIntervalRejectsRapidLive);
+  _integrationTest('recordPunch_liveSequenceGuard',            test_recordPunch_liveSequenceGuard);
 
   // #4a — punch-adjustment requests (employee batch → manager approval)
   _integrationTest('punchAdjust_submitApproveWritesPunch',     test_punchAdjust_submitApproveWritesPunch);
@@ -821,6 +875,7 @@ function _runAllTests() {
   _integrationTest('getPtoReconciliation_nonManagerRejected',  test_getPtoReconciliation_nonManagerRejected);
   _integrationTest('fixPtoReconciliation_creditsAndIdempotent', test_fixPtoReconciliation_creditsAndIdempotent);
   _integrationTest('fixPtoReconciliation_nonManagerRejected',   test_fixPtoReconciliation_nonManagerRejected);
+  _integrationTest('sheetDoctor_detectsAndCollapsesDuplicates', test_sheetDoctor_detectsAndCollapsesDuplicates);
   _integrationTest('setCallNoteManagerComment_nonManagerRejected', test_setCallNoteManagerComment_nonManagerRejected);
 
   _integrationTest('getTeammateStatus_shapeRestricted',        test_getTeammateStatus_shapeRestricted);
@@ -831,6 +886,7 @@ function _runAllTests() {
 
   // ── managerSaveDay (the most complex single function — backfill, F8) ────
   _integrationTest('managerSaveDay_addOnly',                   test_managerSaveDay_addOnly);
+  _integrationTest('managerSaveDay_collapsesDuplicateRows',    test_managerSaveDay_collapsesDuplicateRows);
   _integrationTest('managerSaveDay_updateOnly',                test_managerSaveDay_updateOnly);
   _integrationTest('managerSaveDay_deleteOnly',                test_managerSaveDay_deleteOnly);
   _integrationTest('managerSaveDay_mixedChanges',              test_managerSaveDay_mixedChanges);
@@ -963,6 +1019,7 @@ function _runAllTests() {
   _integrationTest('training_quizFlow',                         test_training_quizFlow);
   _integrationTest('empdocs_issueSignVerifyFlow',               test_empdocs_issueSignVerifyFlow);
   _integrationTest('empdocs_fieldsOnlyCompletionHash',          test_empdocs_fieldsOnlyCompletionHash);
+  _integrationTest('empdocs_legacyHashDualVerify',              test_empdocs_legacyHashDualVerify);
   _integrationTest('coaching_createAckVoidFlowAndScoping',      test_coaching_createAckVoidFlowAndScoping);
 
   // ── Intake endpoint integration (uses the Intake fixture, P9 + P15) ─────
@@ -1004,6 +1061,7 @@ function _runAllTests() {
   _integrationTest('triggerGate_deptReqReminder_nonManagerThrows', test_triggerGate_deptReqReminder_nonManagerThrows);
   _integrationTest('triggerGate_managerDailyBrief_nonManagerThrows', test_triggerGate_managerDailyBrief_nonManagerThrows);
   _integrationTest('triggerGate_timesheetArchive_nonManagerThrows', test_triggerGate_timesheetArchive_nonManagerThrows);
+  _integrationTest('triggerGate_selfTest_nonManagerThrows',         test_triggerGate_selfTest_nonManagerThrows);
   _integrationTest('timesheetArchive_windowFloorAndDefault', test_timesheetArchive_windowFloorAndDefault);
   _integrationTest('archiveSheetRowsOlderThan_behavioral',   test_archiveSheetRowsOlderThan_behavioral);
   _integrationTest('cn_managerAggregateUrgent_findsUrgentNotOthers', test_cn_managerAggregateUrgent_findsUrgentNotOthers);
@@ -1015,6 +1073,12 @@ function _runAllTests() {
   // ── Audit row assertions ───────────────────────────────────────────────
   _integrationTest('auditRow_recordPunchAdjustment',            test_auditRow_recordPunchAdjustment);
   _integrationTest('auditRow_deletePunch_hasActorEmail',        test_auditRow_deletePunch_hasActorEmail);
+  // Cycle 10 — M-11: the five previously zero-coverage endpoints
+  _integrationTest('getMyMetricsRange_validationAndShape', test_getMyMetricsRange_validationAndShape);
+  _integrationTest('appendCallNoteFeedback_contract',      test_appendCallNoteFeedback_contract);
+  _integrationTest('getMyNoteHourBuckets_contract',        test_getMyNoteHourBuckets_contract);
+  _integrationTest('getPatientTimeline_contract',          test_getPatientTimeline_contract);
+  _integrationTest('deptRequest_resolveLinkIdempotent',    test_deptRequest_resolveLinkIdempotent);
 }
 
 
@@ -1372,12 +1436,40 @@ function test_adjustLeaveBalance_perEmpDisabledNoOp() {
 // ── recordPunch ──
 
 function test_recordPunch_basic() {
+  // M-1 (cycle 10): start from a clean day — the sort test above leaves
+  // today-dated rows ending in ClockOut, which the live sequence guard now
+  // correctly rejects a fresh ClockIn against.
+  _clearTestState(_TEST_INDIA_ID);
   _asUser(_TEST_INDIA_EMAIL, () => {
     const r = recordPunch('ClockIn', null);
     _assertSuccess(r);
     _assertEq(r.isAdjustment, false);
     _assertTrue(!!r.displayTime);
   });
+}
+
+function test_recordPunch_liveSequenceGuard() {
+  // M-1 (cycle 10): the live path enforces the same getNextActions_ state
+  // machine the client renders its buttons from — a stale window (second
+  // browser / pinned pop-out) or direct RPC can no longer append a duplicate
+  // ClockIn/ClockOut or an out-of-sequence lunch punch. Day state is built
+  // via direct row appends (times far in the past) so the min-interval
+  // debounce never interferes; adjustments still bypass the guard.
+  _clearTestState(_TEST_INDIA_ID);
+  const today = fmtDateTz_(new Date(), 'Asia/Kolkata');
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(recordPunch('LunchOut', null), 'Cannot record',
+      'LunchOut with no ClockIn today is rejected by the sequence guard');
+  });
+  _appendTestPunch(_TEST_INDIA_ID, 'Test India User', today, '00:01:00', 'IN',  'ClockIn');
+  _appendTestPunch(_TEST_INDIA_ID, 'Test India User', today, '00:02:00', 'OUT', 'ClockOut');
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(recordPunch('ClockIn', null), 'Cannot record',
+      'Duplicate ClockIn after ClockOut is rejected (the stale-window class)');
+    _assertFailure(recordPunch('LunchOut', null), 'Cannot record',
+      'Lunch punch after ClockOut is rejected');
+  });
+  _clearTestState(_TEST_INDIA_ID);
 }
 
 function test_recordPunch_adjustDedup() {
@@ -2428,6 +2520,56 @@ function test_fixPtoReconciliation_nonManagerRejected() {
   });
 }
 
+// ── Batch L — Timesheet sheet doctor ────────────────────────────────────────
+// Detector finds a same-(emp, date, type) duplicate + an inverted in/out
+// pair; the fix (SCOPED to the test employee so it can never collapse a real
+// rep's rows mid-test) keeps the LAST appended row — the same row
+// findExistingPunch_/managerSaveDay use (INV-155) — and is idempotent.
+// Rows use a PAST date (in the 92-day window) so today's live-state tests
+// (sequence guard, dashboards) are untouched.
+function test_sheetDoctor_detectsAndCollapsesDuplicates() {
+  const d = new Date(); d.setDate(d.getDate() - 10);
+  const date = fmtDateTz_(d, CONFIG.MANAGER_TIMEZONE);
+  const emp = { id: _TEST_INDIA_ID, name: 'Test India User' };
+  // Two ClockIn rows (a duplicate group) + an inverted clock pair (out
+  // before in) + an inverted LUNCH pair (return before leave).
+  appendToAdpSheet_(emp, date, '09:00:00', 'IN',  'ClockIn');
+  appendToAdpSheet_(emp, date, '09:05:00', 'IN',  'ClockIn');
+  appendToAdpSheet_(emp, date, '05:00:00', 'OUT', 'ClockOut');   // reads as overnight (C3 wrap)
+  appendToAdpSheet_(emp, date, '13:00:00', 'OUT', 'LunchOut');
+  appendToAdpSheet_(emp, date, '12:00:00', 'IN',  'LunchIn');    // return an hour BEFORE the leave
+
+  const rep = _asUser(_TEST_MGR_EMAIL, () => getTimesheetDoctor());
+  _assertTrue(!rep.error, 'doctor scan runs');
+  const dup = (rep.duplicates || []).filter(g =>
+    g.empId === _TEST_INDIA_ID && g.date === date && g.type === 'ClockIn')[0];
+  _assertNotNull(dup, 'duplicate ClockIn group detected');
+  _assertEq(dup.count, 2, 'both rows counted');
+  const inv = (rep.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date && v.kind === 'clock')[0];
+  _assertNotNull(inv, 'inverted in/out pair detected (out 05:00 <= in 09:00)');
+  const invL = (rep.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date && v.kind === 'lunch')[0];
+  _assertNotNull(invL, 'inverted lunch pair detected (return 12:00 <= leave 13:00)');
+
+  const fix = _asUser(_TEST_MGR_EMAIL, () => fixTimesheetDuplicates(_TEST_INDIA_ID));
+  _assertTrue(fix.success && fix.collapsed >= 1, 'duplicates collapsed');
+  // The KEPT row is the LAST appended (09:05) — the findExistingPunch_ row.
+  const kept = findExistingPunch_(_TEST_INDIA_ID, date, 'ClockIn');
+  _assertNotNull(kept, 'one ClockIn row remains');
+  const keptTime = normalizeTime_(kept.sheet.getRange(kept.rowIndex, ADP.TIME + 1).getValue());
+  _assertEq(keptTime, '09:05:00', 'the LAST appended row was kept (INV-155 last-match convention)');
+  const rep2 = _asUser(_TEST_MGR_EMAIL, () => getTimesheetDoctor());
+  const dup2 = (rep2.duplicates || []).filter(g =>
+    g.empId === _TEST_INDIA_ID && g.date === date && g.type === 'ClockIn')[0];
+  _assertTrue(!dup2, 'idempotent — the group is gone on re-scan');
+  // Inverted pairs are REPORT-ONLY — still listed after the fix.
+  const inv2 = (rep2.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date && v.kind === 'clock')[0];
+  _assertNotNull(inv2, 'inverted pair untouched by the duplicate fix (report-only, C3)');
+  // Non-manager gate.
+  const gated = _asUser(_TEST_PH_EMAIL, () => fixTimesheetDuplicates(_TEST_INDIA_ID));
+  _assertEq(gated.success, false, 'non-manager fix rejected');
+  // TEST_ rows swept by cleanupTestData at suite end.
+}
+
 function test_managerSubmitTimeOff_writesAudit() {
   // Auto-approve marks "filed by manager, auto-approved" in the notes column.
   _clearTestState(_TEST_INDIA_ID);   // hermetic: dup-date guard now rejects a 2nd same-date submit (H1)
@@ -2548,6 +2690,33 @@ function _countAuditRows(empId, action) {
         && String(rows[i][4]).trim() === action) n++;
   }
   return n;
+}
+
+function test_managerSaveDay_collapsesDuplicateRows() {
+  // M-1 (cycle 10): duplicate same-(emp, date, type) rows reconcile to the
+  // single displayed state — a kept slot collapses extras to the LAST row
+  // (the one the modal showed), a blank slot deletes EVERY row of the type
+  // (the old single-slot snapshot deleted one duplicate and left the other).
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:05:00', 'IN',  'ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:00:00', 'OUT', 'ADJ-LunchOut');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:10:00', 'OUT', 'ADJ-LunchOut');
+  const slots = { ClockIn:'09:05', LunchOut:'', LunchIn:'', ClockOut:'' };
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, slots, 'dedupe test');
+    _assertSuccess(r);
+    _assertEq(r.changes, 3, 'One ClockIn dup collapsed + two LunchOut rows deleted');
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockIn'), 1,
+    'Kept slot collapses duplicate ClockIn rows to one');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 0,
+    'Blank slot deletes EVERY LunchOut row, not just the last');
+  const fep = findExistingPunch_(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockIn');
+  _assertNotNull(fep, 'Surviving ClockIn row locatable');
+  _assertEq(normalizeTime_(fep.sheet.getRange(fep.rowIndex, ADP.TIME + 1).getValue()).substring(0, 5),
+    '09:05', 'Survivor is the LAST (displayed) row, untouched by a no-op slot');
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
 }
 
 function test_managerSaveDay_addOnly() {
@@ -3535,6 +3704,12 @@ function test_triggerGate_timesheetArchive_nonManagerThrows() {
   }, 'manager access required');
 }
 
+function test_triggerGate_selfTest_nonManagerThrows() {
+  _assertThrows(function () {
+    _asUser(_TEST_INDIA_EMAIL, function () { runNightlySelfTest(); });
+  }, 'manager access required');
+}
+
 // INV-153 — the archive window resolver: disabled by default; sub-floor values
 // clamp UP to TIMESHEET_ARCHIVE_MIN_DAYS (an operator typo like 30 must never
 // strip active-payroll-window rows out of the live tab); garbage disables.
@@ -3665,6 +3840,10 @@ function test_recordClientError_authBoundsAndAppend() {
 // invisible to everyone (broadcast surface — INV-140/147); publishing it
 // makes the body + edit stamp flow to reps.
 function test_whatsNew_propertyGateAndDraftHidden() {
+  // M-9 (cycle 10): runs against the KB FIXTURE, not the live store.
+  return _withTestKb_(function () { _test_whatsNew_propertyGateAndDraftHidden_(); });
+}
+function _test_whatsNew_propertyGateAndDraftHidden_() {
   const props = PropertiesService.getScriptProperties();
   const prev = props.getProperty('WHATSNEW_KB_ID');
   let kbId = null;
@@ -4266,6 +4445,9 @@ function test_managerGates_rejectNonManager() {
     ['managerDeleteCallNote',          function () { return managerDeleteCallNote(_TEST_INDIA_ID, 'no-such-note'); }],
     ['getCallNotesTagTaxonomy',        function () { return getCallNotesTagTaxonomy(); }],
     ['getCallNotesTagTrends',          function () { return getCallNotesTagTrends(); }],
+    ['getAutomationHealthBadge',       function () { return getAutomationHealthBadge(); }],
+    ['getTimesheetDoctor',             function () { return getTimesheetDoctor(); }],
+    ['fixTimesheetDuplicates',         function () { return fixTimesheetDuplicates(); }],
     ['kbGetReviewDue',                 function () { return kbGetReviewDue(); }],
     ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
     ['kbGetContentRequests',           function () { return kbGetContentRequests(); }],
@@ -4487,6 +4669,11 @@ function test_kb_uploadImage_rejectsInvalidPayloads() {
 // snapshots a revision and a revert restores content (and is itself
 // snapshotted, so reverts are reversible).
 function test_kb_draftLifecycleAndRevisions() {
+  // M-9 (cycle 10): runs against the KB FIXTURE, not the live store — the
+  // create→edit→revert→delete flow appends PERMANENT KbRevisions rows.
+  return _withTestKb_(function () { _test_kb_draftLifecycleAndRevisions_(); });
+}
+function _test_kb_draftLifecycleAndRevisions_() {
   let kbId = null;
   try {
     // 1) Create as DRAFT (admin == manager while ADMIN_EMAILS is unset).
@@ -4701,6 +4888,11 @@ function _cleanupTrainingRowsForItem_(itemId) {
 }
 
 function test_training_assignCompleteFlow() {
+  // M-9 (cycle 10): the fixture KB article + the TrainingAssignments/
+  // TrainingCompletions rows land in the KB FIXTURE, not the live store.
+  return _withTestKb_(function () { _test_training_assignCompleteFlow_(); });
+}
+function _test_training_assignCompleteFlow_() {
   let kbId = null;
   try {
     // Fixture KB article (manager-gated create — also exercises the content link).
@@ -4884,7 +5076,12 @@ function _withTestHrDocs_(fn) {
   let ss = null;
   if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
   if (!ss) {
-    ss = SpreadsheetApp.create('TEST_HRDOCS_Fixture');
+    // M-9/T-9 (cycle 10): route through the factory so the fixture's tz AND
+    // locale match a production HR store (CONFIG.TIMEZONE) — a bare create
+    // inherits the script tz + deployer locale, so the fixture's coercion
+    // behavior (IssuedAt/SignedAt/CreatedAt cells) could mask or fake
+    // failures a real store would show (the cycle-9 L-36 CN-fixture lesson).
+    ss = createPinnedSpreadsheet_('TEST_HRDOCS_Fixture');
     props.setProperty('TEST_HRDOCS_SS_ID', ss.getId());
   }
   _TEST_OVERRIDE_HRDOCS_SS_ID = ss.getId();
@@ -5028,6 +5225,46 @@ function test_empdocs_fieldsOnlyCompletionHash() {
       v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
       _assertEq(v.match, false,   'responses rewrite breaks the completion hash');
       _assertEq(v.tampered, true, 'tamper flag fires on a responses rewrite');
+    } finally {
+      if (docId) _cleanupEmpDocRows_(docId);
+    }
+  });
+}
+
+/** Batch L (C13) — dual-verify hash back-compat. A doc whose stored
+ *  ContentHash is the LEGACY space-delimited form (pre-NUL-delimiter change)
+ *  must still verify as intact AND still be signable; genuine tamper must
+ *  still be detected. */
+function test_empdocs_legacyHashDualVerify() {
+  _withTestHrDocs_(function () {
+    let docId = null;
+    try {
+      const issued = _asUser(_TEST_MGR_EMAIL, function () {
+        return issueDoc({ empId: _TEST_INDIA_ID, docType: 'policy',
+          title: 'TEST_EMPDOC Legacy Hash', bodyMd: 'legacy-era body', requiresSignature: true });
+      });
+      _assertTrue(issued && issued.success, 'doc issued');
+      docId = issued.docId;
+      // Rewrite the stored ContentHash to the legacy space-delimited form —
+      // simulating a doc issued before C13.
+      const found = findEmpDocRow_(docId);
+      const legacy = empDocContentHash_(found.doc.bodyMd, found.doc.title,
+        found.doc.docType, found.doc.empId, found.doc.fieldsRaw, EMPDOC_HASH_DELIM_LEGACY);
+      getHrDocsSS_().getSheetByName(EMPDOC_TAB).getRange(found.rowIdx, ED.CONTENT_HASH + 1).setValue(legacy);
+      let v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertEq(v.contentMatch, true, 'legacy space-form content hash still verifies (dual-verify)');
+      _assertEq(v.tampered, false, 'legacy hash is never reported as tamper');
+      // The owner can still SIGN the legacy-hashed doc (acknowledgeDoc gate).
+      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
+      _assertTrue(signed && signed.success, 'legacy-hashed doc still signs (dual-verify gate)');
+      v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertTrue(v.signed === true && v.match === true && v.contentMatch === true,
+        'post-sign verify green (v2 signature hash over the stored legacy content hash)');
+      // Genuine tamper is still detected under dual-verify.
+      getHrDocsSS_().getSheetByName(EMPDOC_TAB).getRange(found.rowIdx, ED.TITLE + 1).setValue('TAMPERED');
+      v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });
+      _assertEq(v.tampered, true, 'tamper still detected — dual-verify is not accept-anything');
     } finally {
       if (docId) _cleanupEmpDocRows_(docId);
     }
@@ -5455,4 +5692,139 @@ function test_form_submissionHash_deterministicAndTamperEvident() {
   _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, 'data:image/png;base64,BBBB', 'tok-1', 'forms-consent-2026-06'), 'altered signature → different hash');
   _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, sig, 'tok-2', 'forms-consent-2026-06'), 'different token → different hash');
   _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, sig, 'tok-1', 'forms-consent-2027-01'), 'different consent version → different hash');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Cycle 10 — M-11: coverage for the five zero-pin endpoints
+// ═══════════════════════════════════════════════════════════════════════════
+
+function test_getMyMetricsRange_validationAndShape() {
+  // M-11 (cycle 10) — INV-129 had zero coverage: date validation, the 92-day
+  // cap, and the own-only contract (NO anonymized team series — that is
+  // INV-124's single-day surface). The cache is bypassed under the CDR test
+  // override, so a fixture run can never serve a stale cached result.
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertTrue(!!getMyMetricsRange('2026/01/01', '2026-01-02').error, 'bad start date rejected');
+    _assertTrue(!!getMyMetricsRange('2026-01-01', 'x').error, 'bad end date rejected');
+    _assertTrue(!!getMyMetricsRange('2026-02-01', '2026-01-01').error, 'from>to rejected');
+    _assertTrue(/92/.test(getMyMetricsRange('2026-01-01', '2026-06-01').error || ''),
+      'span capped at 92 days');
+  });
+  const r = _withTestCdr_(function () {
+    return _asUser(_TEST_INDIA_EMAIL, function () {
+      return getMyMetricsRange(_TEST_CDR_DATE, _TEST_CDR_DATE);
+    });
+  });
+  _assertTrue(!(r && r.error), 'fixture-backed range read succeeds: ' + (r && r.error));
+  _assertTrue(Array.isArray(r.trend), 'own-only per-day trend present');
+  _assertTrue(!r.series, 'NO anonymized team series on the range surface (INV-129)');
+  _assertTrue(!r.cached, 'endpoint cache bypassed under the CDR test override');
+}
+
+function test_appendCallNoteFeedback_contract() {
+  // M-11 (cycle 10) — INV-76 had zero coverage anywhere: kind validation, the
+  // training-or-thread gate, ack/clarification shapes, the CallNoteFeedback
+  // audit row.
+  _clearTestCallNotes();
+  let trainingId = null, plainId = null;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    const t = submitCallNote(_cnTestPayload({ flagType: 'training' }));
+    _assertSuccess(t, 'training note filed');
+    trainingId = t.note.noteId;
+    const p = submitCallNote(_cnTestPayload({ callback: '5553334444' }));
+    _assertSuccess(p, 'plain note filed');
+    plainId = p.note.noteId;
+  });
+  const before = _countAuditRows(_TEST_INDIA_ID, 'CallNoteFeedback');
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertFailure(appendCallNoteFeedback(plainId, 'hello?', 'clarification'),
+      'No manager feedback', 'no thread on an unflagged note → rejected');
+    _assertFailure(appendCallNoteFeedback(trainingId, '', 'clarification'),
+      'type a question', 'clarification requires a message');
+    _assertSuccess(appendCallNoteFeedback(trainingId, '', 'ack'),
+      'ack on a training note succeeds');
+    _assertSuccess(appendCallNoteFeedback(trainingId, 'what did you mean?', 'clarification'),
+      'clarification with a message succeeds');
+  });
+  _assertEq(_countAuditRows(_TEST_INDIA_ID, 'CallNoteFeedback'), before + 2,
+    'each successful append writes a CallNoteFeedback audit row');
+  const notes = _asUser(_TEST_INDIA_EMAIL, function () { return getMyCallNotes(); });
+  const tn = (notes.notes || []).filter(function (n) { return n.noteId === trainingId; })[0];
+  _assertNotNull(tn, 'training note readable');
+  const fb = (tn.subformData && tn.subformData.feedback) || [];
+  _assertEq(fb.length, 2, 'two feedback entries appended');
+  _assertEq(fb[0].kind, 'ack', 'first entry is the ack');
+  _assertEq(fb[1].kind, 'clarification', 'second entry is the clarification');
+  _clearTestCallNotes();
+}
+
+function test_getMyNoteHourBuckets_contract() {
+  // M-11 (cycle 10) — INV-130 had only its INV-142 boundary membership pinned;
+  // this pins the behavior: 24 rep-local-hour buckets, the just-filed note
+  // counted at the rep's local hour, malformed dates rejected, and the
+  // not-enrolled path returning cleanly (never a throw).
+  _clearTestCallNotes();
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertSuccess(submitCallNote(_cnTestPayload()), 'note filed');
+    _assertTrue(!!getMyNoteHourBuckets('17/07/2026').error, 'malformed date rejected');
+    const res = getMyNoteHourBuckets(null);   // defaults to rep-local today
+    _assertTrue(!res.error, 'no error: ' + res.error);
+    _assertEq(res.buckets.length, 24, '24 hour buckets');
+    const hour = parseInt(Utilities.formatDate(new Date(), 'Asia/Kolkata', 'HH'), 10);
+    _assertTrue(res.buckets[hour] >= 1, 'the just-filed note is bucketed at the REP-LOCAL hour');
+  });
+  // A rep with no enrolled sheet gets clean all-zero buckets; if the PH test
+  // employee is CN-enrolled in this environment, the shape contract still holds.
+  _asUser(_TEST_PH_EMAIL, function () {
+    const r = getMyNoteHourBuckets(null);
+    _assertTrue(!r.error, 'unenrolled/other-rep path returns cleanly: ' + r.error);
+    _assertEq(r.buckets.length, 24, '24 buckets regardless of enrollment');
+  });
+  _clearTestCallNotes();
+}
+
+function test_getPatientTimeline_contract() {
+  // M-11 (cycle 10) — the endpoint had zero coverage (only the pure merge
+  // helper buildPatientTimeline_ is Node-pinned): caller-scoping via the
+  // rep's own note stream, empty-TRX rejection, and the L-8 partial contract
+  // staying quiet on a healthy read.
+  _clearTestCallNotes();
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertSuccess(submitCallNote(_cnTestPayload({ patientAndTrx: 'Timeline Pt TRX-TL-42' })),
+      'note filed');
+    _assertTrue(!!getPatientTimeline('').error, 'empty TRX rejected');
+    const tl = getPatientTimeline('TRX-TL-42');
+    _assertTrue(!tl.error, 'timeline returns: ' + tl.error);
+    _assertTrue((tl.events || []).length >= 1, 'own note surfaces by TRX substring');
+    _assertTrue(tl.partial !== true, 'no failed sources flagged on a healthy read');
+  });
+  _clearTestCallNotes();
+}
+
+function test_deptRequest_resolveLinkIdempotent() {
+  // M-11 (cycle 10) — the ?resolve= email-link path (markDeptRequestResolved_)
+  // had zero coverage: first-resolve marks the row, a second click is a
+  // friendly idempotent "already" (with a coercion-safe resolvedAt), an
+  // unknown token is not-found, and the DeptRequestResolved audit row lands.
+  const sh = getOrCreateDeptRequestsSheet_();
+  const token = 'TESTDR-' + Utilities.getUuid();
+  sh.appendRow([token, _TEST_INDIA_ID, 'Test India User', _TEST_INDIA_EMAIL,
+    'Billing', 'example.com', drNowTs_(), 'open', '', '', 'test label', '']);
+  try {
+    const before = _countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved');
+    const r1 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL);
+    _assertTrue(r1.found === true && r1.already === false, 'first resolve marks the row');
+    const r2 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL);
+    _assertTrue(r2.found === true && r2.already === true, 'second resolve is idempotent (already)');
+    _assertTrue(!!String(r2.resolvedAt || ''), 'already-branch returns the resolve time');
+    _assertEq(markDeptRequestResolved_('TESTDR-nope', _TEST_MGR_EMAIL).found, false,
+      'unknown token → not found');
+    _assertEq(_countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved'), before + 1,
+      'exactly one DeptRequestResolved audit row (the already-branch writes none)');
+  } finally {
+    const rows = sh.getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (String(rows[i][DR.REQ_ID]) === token) { sh.deleteRow(i + 1); break; }
+    }
+  }
 }

@@ -70,6 +70,23 @@
     .state-success h2 { color: var(--good); }
     .state-error h2 { color: var(--danger); }
     .state-expired h2 { color: var(--warn); }
+    /* Batch J — glyph tint follows the state; expired reads warn, not danger. */
+    .err-glyph { margin-bottom: 12px; color: var(--danger); }
+    .state-expired .err-glyph { color: var(--warn); }
+    .logo-text {
+      font-size: 20px; font-weight: 800; letter-spacing: -.02em;
+      color: #223b5d; padding: 8px 0;
+    }
+    .secure-note {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      font-size: 12px; color: var(--muted); margin: 14px 0 4px;
+      text-align: center;
+    }
+    .secure-note svg { flex: none; }
+    .form-progress {
+      font-size: 12px; color: var(--muted); text-align: center; margin-top: 10px;
+    }
+    .form-progress.all-done { color: var(--good); }
 
     /* ── Privacy consent ───────────────────────────────────────────── */
     .consent-block {
@@ -116,6 +133,13 @@
     .field input:focus, .field textarea:focus, .field select:focus {
       outline: none; border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    /* Keyboard-focus ring for everything else (buttons, checkboxes, links) —
+       the standalone page doesn't include styles.html, so it carries its own. */
+    :focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--accent-soft);
+      border-radius: 4px;
     }
     .field textarea { resize: vertical; min-height: 60px; }
     .field-row {
@@ -203,6 +227,15 @@
       cursor: pointer; letter-spacing: .06em; text-transform: uppercase;
     }
     .sig-clear:hover { background: var(--danger); color: #fff; }
+    /* Typed-signature alternative (a11y): keyboard/motor/SR users can sign
+       by typing; the name renders onto the pad so the stored artifact is the
+       same PNG the drawn path produces. */
+    .sig-typed-toggle {
+      display: inline-block; margin-top: 8px; padding: 0;
+      background: none; border: none; cursor: pointer;
+      font-size: 13px; color: var(--accent-deep); text-decoration: underline;
+      font-family: inherit;
+    }
     .sig-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
     /* ── Submit button ─────────────────────────────────────────────── */
@@ -260,7 +293,9 @@
 <body>
   <div class="page-wrapper">
     <div class="logo-bar">
-      <img src="https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg" alt="Universal Medical Supply">
+      <img src="https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg" alt="Universal Medical Supply"
+           onerror="this.style.display='none';document.getElementById('logo-text-fallback').style.display='block'">
+      <div id="logo-text-fallback" class="logo-text" style="display:none">Universal Medical Supply</div>
     </div>
 
     <!-- Loading state -->
@@ -275,6 +310,7 @@
     <!-- Error state -->
     <div class="form-card" id="state-error" style="display:none">
       <div class="state-screen state-error">
+        <div class="err-glyph"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
         <h2 id="error-title">Unable to Load Form</h2>
         <p id="error-message">An error occurred.</p>
       </div>
@@ -319,17 +355,29 @@
           <button type="button" class="sig-clear" id="sig-clear">Clear</button>
         </div>
         <div class="sig-hint">Sign with your mouse or finger. Tap &ldquo;Clear&rdquo; to start over.</div>
+        <button type="button" class="sig-typed-toggle" id="sig-typed-toggle" aria-expanded="false">
+          Can&rsquo;t use the pad? Type your signature instead
+        </button>
+        <div class="field" id="sig-typed-field" style="display:none;margin-top:8px">
+          <label for="sig-typed-input">Type your full legal name as your signature</label>
+          <input type="text" id="sig-typed-input" autocomplete="name" maxlength="80">
+        </div>
         <div class="field" style="margin-top:10px">
-          <label>Date Signed</label>
+          <label for="sig-date">Date Signed</label>
           <input type="date" id="sig-date" readonly>
         </div>
       </div>
 
-      <div id="form-error" class="form-error-msg" style="display:none"></div>
+      <div id="form-error" class="form-error-msg" role="alert" style="display:none"></div>
 
+      <div class="secure-note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>Your information is transmitted securely and shared only with Universal Medical Supply to process your request.</span>
+      </div>
       <div class="submit-row">
         <button type="button" class="btn-submit" id="btn-submit" disabled>Submit Form</button>
       </div>
+      <div class="form-progress" id="form-progress" aria-live="polite"></div>
     </div>
 
     <div class="footer-note">Universal Medical Supply &mdash; UMS Team Tools</div>
@@ -374,6 +422,29 @@ var PAGE_OPENED_AT = new Date().toISOString();  // forms-hardening: certificate 
     })
     .getFormByToken(FORM_TOKEN);
 })();
+
+function updateFormProgress_() {
+  var host = document.getElementById('form-fields');
+  var bar = document.getElementById('form-progress');
+  if (!host || !bar) return;
+  var fields = host.querySelectorAll('.field');
+  var total = 0, done = 0;
+  for (var i = 0; i < fields.length; i++) {
+    if (!fields[i].querySelector('label .required')) continue;
+    var inp = fields[i].querySelector('input,select,textarea');
+    if (!inp) continue;
+    total++;
+    // Radio/checkbox groups: "filled" = something checked (their .value is
+    // always non-empty, so a value check would count them done immediately).
+    var filled = (inp.type === 'radio' || inp.type === 'checkbox')
+      ? !!fields[i].querySelector('input:checked')
+      : !!String(inp.value || '').trim();
+    if (filled) done++;
+  }
+  if (!total) { bar.textContent = ''; return; }
+  bar.textContent = done + ' of ' + total + ' required field' + (total === 1 ? '' : 's') + ' completed';
+  bar.className = 'form-progress' + (done === total ? ' all-done' : '');
+}
 
 function showError(msg) {
   document.getElementById('state-loading').style.display = 'none';
@@ -462,6 +533,13 @@ function renderForm() {
 
   // Apply prefill values
   applyPrefill(FORM_DATA.prefillData || {});
+
+  // Batch J — required-fields progress cue. Counts each .field whose label
+  // carries a required marker; updates live as the recipient types so long
+  // forms show how much is left before Submit.
+  fieldsArea.addEventListener('input', updateFormProgress_);
+  fieldsArea.addEventListener('change', updateFormProgress_);
+  updateFormProgress_();
 
   // Init signature pad
   initSignaturePad();
@@ -853,11 +931,48 @@ function initSignaturePad() {
   canvas.addEventListener('touchmove', move, { passive: false });
   canvas.addEventListener('touchend', end);
 
+  // Typed-signature alternative (a11y) — renders the typed name onto the
+  // pad in a script face, so the exported PNG (and everything downstream:
+  // size caps, hash, certificate) is identical in kind to a drawn one.
+  function drawTypedName(name) {
+    name = String(name || '').trim();
+    resizeCanvas();               // resets the bitmap + transform (CSS-px coords)
+    hasDrawn = false;
+    if (!name) { showPlaceholder(); return; }
+    hidePlaceholder();
+    var w = parseFloat(canvas.style.width) || 300;
+    var size = 34;
+    var face = 'italic {s}px "Segoe Script","Brush Script MT","Lucida Handwriting",cursive';
+    ctx.font = face.replace('{s}', size);
+    var tw = ctx.measureText(name).width;
+    if (tw > w - 24) {
+      size = Math.max(14, Math.floor(size * (w - 24) / tw));
+      ctx.font = face.replace('{s}', size);
+    }
+    ctx.fillStyle = '#101418';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, 12, 70);
+    hasDrawn = true;
+  }
+  var typedToggle = document.getElementById('sig-typed-toggle');
+  var typedField = document.getElementById('sig-typed-field');
+  var typedInput = document.getElementById('sig-typed-input');
+  if (typedToggle && typedField && typedInput) {
+    typedToggle.addEventListener('click', function () {
+      var open = typedField.style.display !== 'none';
+      typedField.style.display = open ? 'none' : '';
+      typedToggle.setAttribute('aria-expanded', String(!open));
+      if (!open) typedInput.focus();
+    });
+    typedInput.addEventListener('input', function () { drawTypedName(typedInput.value); });
+  }
+
   document.getElementById('sig-clear').addEventListener('click', function() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     hasDrawn = false;
     resizeCanvas();
     showPlaceholder();
+    if (typedInput) typedInput.value = '';
   });
 
   SIG_PAD = {
@@ -888,7 +1003,9 @@ function initSignaturePad() {
       hasDrawn = false;
       resizeCanvas();
       showPlaceholder();
+      if (typedInput) typedInput.value = '';
     },
+    setTypedName: drawTypedName,
   };
 }
 
