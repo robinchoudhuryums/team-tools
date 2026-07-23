@@ -398,7 +398,17 @@ function renderError(msg) {
     <div class="state-center" role="alert">
       <div class="state-icon" style="color:var(--warn)">${icon('warning', 44)}</div>
       <div class="state-title">Couldn't Load</div>
-      <div class="state-detail">${esc(msg)}</div></div>`;
+      <div class="state-detail">${esc(msg)}</div>
+      <button type="button" class="refresh-btn" onclick="location.reload()">${icon('refresh', 14)}Retry</button></div>`;
+}
+
+/** Batch J — shared inline ERROR state for view sections. Visually distinct
+ *  from the quiet dashed empty states (warn-toned card + glyph) so "the load
+ *  failed" never reads as "there's nothing here". Caller does NOT esc() the
+ *  message — this helper does. */
+function errorStateHtml_(msg) {
+  return '<div class="error-state" role="alert">' + icon('warning', 16) +
+    '<span>' + esc(String(msg || 'Something went wrong.')) + '</span></div>';
 }
 
 // ── "What's new" panel (#4, INV-152) ────────────────────────────────────────

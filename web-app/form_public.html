@@ -70,6 +70,23 @@
     .state-success h2 { color: var(--good); }
     .state-error h2 { color: var(--danger); }
     .state-expired h2 { color: var(--warn); }
+    /* Batch J — glyph tint follows the state; expired reads warn, not danger. */
+    .err-glyph { margin-bottom: 12px; color: var(--danger); }
+    .state-expired .err-glyph { color: var(--warn); }
+    .logo-text {
+      font-size: 20px; font-weight: 800; letter-spacing: -.02em;
+      color: #223b5d; padding: 8px 0;
+    }
+    .secure-note {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      font-size: 12px; color: var(--muted); margin: 14px 0 4px;
+      text-align: center;
+    }
+    .secure-note svg { flex: none; }
+    .form-progress {
+      font-size: 12px; color: var(--muted); text-align: center; margin-top: 10px;
+    }
+    .form-progress.all-done { color: var(--good); }
 
     /* ── Privacy consent ───────────────────────────────────────────── */
     .consent-block {
@@ -267,7 +284,9 @@
 <body>
   <div class="page-wrapper">
     <div class="logo-bar">
-      <img src="https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg" alt="Universal Medical Supply">
+      <img src="https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg" alt="Universal Medical Supply"
+           onerror="this.style.display='none';document.getElementById('logo-text-fallback').style.display='block'">
+      <div id="logo-text-fallback" class="logo-text" style="display:none">Universal Medical Supply</div>
     </div>
 
     <!-- Loading state -->
@@ -282,6 +301,7 @@
     <!-- Error state -->
     <div class="form-card" id="state-error" style="display:none">
       <div class="state-screen state-error">
+        <div class="err-glyph"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
         <h2 id="error-title">Unable to Load Form</h2>
         <p id="error-message">An error occurred.</p>
       </div>
@@ -334,9 +354,14 @@
 
       <div id="form-error" class="form-error-msg" role="alert" style="display:none"></div>
 
+      <div class="secure-note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>Your information is transmitted securely and shared only with Universal Medical Supply to process your request.</span>
+      </div>
       <div class="submit-row">
         <button type="button" class="btn-submit" id="btn-submit" disabled>Submit Form</button>
       </div>
+      <div class="form-progress" id="form-progress" aria-live="polite"></div>
     </div>
 
     <div class="footer-note">Universal Medical Supply &mdash; UMS Team Tools</div>
@@ -381,6 +406,29 @@ var PAGE_OPENED_AT = new Date().toISOString();  // forms-hardening: certificate 
     })
     .getFormByToken(FORM_TOKEN);
 })();
+
+function updateFormProgress_() {
+  var host = document.getElementById('form-fields');
+  var bar = document.getElementById('form-progress');
+  if (!host || !bar) return;
+  var fields = host.querySelectorAll('.field');
+  var total = 0, done = 0;
+  for (var i = 0; i < fields.length; i++) {
+    if (!fields[i].querySelector('label .required')) continue;
+    var inp = fields[i].querySelector('input,select,textarea');
+    if (!inp) continue;
+    total++;
+    // Radio/checkbox groups: "filled" = something checked (their .value is
+    // always non-empty, so a value check would count them done immediately).
+    var filled = (inp.type === 'radio' || inp.type === 'checkbox')
+      ? !!fields[i].querySelector('input:checked')
+      : !!String(inp.value || '').trim();
+    if (filled) done++;
+  }
+  if (!total) { bar.textContent = ''; return; }
+  bar.textContent = done + ' of ' + total + ' required field' + (total === 1 ? '' : 's') + ' completed';
+  bar.className = 'form-progress' + (done === total ? ' all-done' : '');
+}
 
 function showError(msg) {
   document.getElementById('state-loading').style.display = 'none';
@@ -469,6 +517,13 @@ function renderForm() {
 
   // Apply prefill values
   applyPrefill(FORM_DATA.prefillData || {});
+
+  // Batch J — required-fields progress cue. Counts each .field whose label
+  // carries a required marker; updates live as the recipient types so long
+  // forms show how much is left before Submit.
+  fieldsArea.addEventListener('input', updateFormProgress_);
+  fieldsArea.addEventListener('change', updateFormProgress_);
+  updateFormProgress_();
 
   // Init signature pad
   initSignaturePad();

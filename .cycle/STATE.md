@@ -138,8 +138,31 @@ empdocs ×2, training, manager Coverage + Punctuality) promoted to
 the three title-rows with a description <p> now stack title+p in a left
 column (was flex-spread). Pure 312/0 (mtRenderTable_ a11y pin), DOM 65/0
 (2 new: focus-lifecycle — bite-checked — and INV-145 no-restore-on-refusal).
+BATCH J ALSO IMPLEMENTED (same branch) — visual elevation. J1 empty-vs-ERROR
+distinction: the three empty-state classes (.cn-stack-empty/.cn-sf-empty/
+.m-empty) restyled as quiet dashed cards; NEW shared errorStateHtml_(msg)
+(script_core — warn-toned .error-state card + warning glyph + role=alert,
+ESCAPES INTERNALLY so callers pass the raw message) adopted at the 11 CN
+sites that previously rendered res.error/Failed: into the empty style
+(the "load failed reads as no data" class E11 fixed once already);
+renderError (boot) gained a Retry (location.reload) button. J2 public-form
+polish (form_public.html): warn-triangle glyph on the error screen tinted
+per state (danger vs expired-warn), a live "N of M required fields
+completed" progress cue (radio/checkbox groups count via :checked — a
+value-check counts them done immediately, caught in-session), a
+security-reassurance lock line above Submit, and a logo text-fallback via
+img onerror. J3 (scoped): --text-xs/sm/base/lg/xl type-scale +
+--radius-pill declared in the tokens partial and adopted in every rule this
+batch touched; styles.html literal radii tokenized (8× 6px→--radius-sm,
+18× 999px→--radius-pill — byte-equivalent). The .chip base extraction /
+20-pill consolidation DEFERRED as follow-on (visual-regression risk with
+zero coverage — the L-effort half of the item). J4 mono-uppercase dialed
+back on the four secondary-label families (.card-label, CN .cnv-row/.cnv-trio
+.lbl, .cn-stat-lbl, .rail-card h4 → sentence-case var(--ui), sizes onto the
+new text scale); kickers/chips/table headers KEEP the mono-uppercase
+register by design. Pure 312/0, DOM 65/0, node --check clean.
 Remaining: operator deploy, /reflect (cycle-10 metrics.csv + estimates.csv
-rows); Batches J/K/L + the typed-signature legal call await user direction.
+rows); Batches K/L + the typed-signature legal call await user direction.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
@@ -162,12 +185,12 @@ Updated: 2026-07-23 (cycle-10 top-5 batch)
   doc drift, umsCallNotesLastDept entry.
 
 ## Where I left off (cycle 10)
-Entire scan backlog + a11y/visual Batches G+I+H done + pushed. Next: user
-decides on Batches J (visual elevation — taste items need user direction),
-K (shell health dot / mirror registry / lock breadth / editor-suite CI),
-L (sheet doctor + C13 hash delimiters), and the typed-signature e-sign
-legal call. Then operator deploy (clasp push -f + New version + runAllTests
-— suite +7 this cycle; first run creates TEST_KB_Fixture), then /reflect.
+Entire scan backlog + a11y/visual Batches G+I+H+J done + pushed. Next: user
+decides on Batches K (shell health dot / mirror registry / lock breadth /
+editor-suite CI), L (sheet doctor + C13 hash delimiters), the .chip
+consolidation follow-on, and the typed-signature e-sign legal call. Then
+operator deploy (clasp push -f + New version + runAllTests — suite +7 this
+cycle; first run creates TEST_KB_Fixture), then /reflect.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):

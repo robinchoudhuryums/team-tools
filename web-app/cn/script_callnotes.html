@@ -52,9 +52,11 @@
   }
   .cnv-row:last-child { border-bottom: none; }
   .cnv-row.full { grid-template-columns: 130px 1fr; }
+  /* Batch J — form field labels read as sentence-case Inter Tight (the
+     mono-uppercase register stays on kickers/chips/table headers). */
   .cnv-row .lbl {
-    font-family: var(--mono); font-size: 10px; font-weight: 600;
-    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    font-family: var(--ui); font-size: var(--text-sm); font-weight: 600;
+    color: var(--muted); letter-spacing: -.01em;
     padding-top: 6px;
     display: flex; align-items: center; gap: 6px;
   }
@@ -103,8 +105,8 @@
     border-bottom: 1px solid color-mix(in oklch, var(--line), transparent 60%);
   }
   .cnv-trio .lbl {
-    font-family: var(--mono); font-size: 10px; font-weight: 600;
-    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    font-family: var(--ui); font-size: var(--text-sm); font-weight: 600;
+    color: var(--muted); letter-spacing: -.01em;
     margin-bottom: 3px; display: flex; align-items: center; gap: 6px;
   }
   .cnv-trio .ce {
@@ -155,8 +157,8 @@
     padding: 10px 12px;
   }
   .rail-card h4 {
-    font-family: var(--mono); font-size: 10px; font-weight: 600;
-    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    font-family: var(--ui); font-size: var(--text-sm); font-weight: 600;
+    color: var(--muted); letter-spacing: -.01em;
     margin: 0 0 8px;
     display: flex; align-items: center; justify-content: space-between; gap: 6px;
   }
@@ -580,8 +582,8 @@
   .cn-stat-num.warn { color: var(--warning-deep); }
   .cn-stat-num.crit { color: var(--danger-deep); }
   .cn-stat-lbl {
-    font-family: var(--mono); font-size: 9px; font-weight: 600;
-    color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    font-family: var(--ui); font-size: var(--text-xs); font-weight: 600;
+    color: var(--muted); letter-spacing: -.01em;
     margin-top: 4px;
   }
 
@@ -1057,8 +1059,9 @@
   /* ── Rolling stack — saved note cards ───────────────────────────── */
   .cn-stack-empty {
     text-align: center; color: var(--muted);
-    font-size: 12px; padding: 18px 8px;
+    font-size: var(--text-sm); padding: 26px 12px;
     font-family: var(--ui);
+    border: 1.5px dashed var(--line-2); border-radius: var(--radius-md);
   }
   .cn-card {
     background: var(--paper-card);
@@ -1745,7 +1748,10 @@
 
   /* ── Sent Forms view ────────────────────────────────────────────── */
   .cn-sf-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-  .cn-sf-empty { color: var(--muted); font-size: 14px; padding: 24px 4px; text-align: center; }
+  .cn-sf-empty {
+    color: var(--muted); font-size: var(--text-base); padding: 28px 12px; text-align: center;
+    border: 1.5px dashed var(--line-2); border-radius: var(--radius-md);
+  }
   .cn-sf-card {
     border: 1px solid var(--line); border-radius: var(--radius, 10px);
     background: var(--paper-card); padding: 12px 14px;
@@ -2122,7 +2128,7 @@ function cnRenderSentFormsView_(area, forms, errorMsg) {
         '<h2 class="cn-head-title">Sent Forms</h2>' +
       '</div></div>';
   if (errorMsg) {
-    area.innerHTML = head + '<div class="cn-sf-empty">' + esc(errorMsg) + '</div>';
+    area.innerHTML = head + errorStateHtml_(errorMsg);
     return;
   }
   if (!forms || forms.length === 0) {
@@ -6321,13 +6327,13 @@ function cnMgrLoadQueue_(kind) {
       if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
       const liveHost = document.getElementById('cn-mgr-results');
       if (!liveHost) return;
-      if (res.error) { liveHost.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+      if (res.error) { liveHost.innerHTML = errorStateHtml_(res.error); return; }
       cnMgrRenderQueue_(liveHost, res.results || []);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
       const liveHost = document.getElementById('cn-mgr-results');
-      if (liveHost) liveHost.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+      if (liveHost) liveHost.innerHTML = errorStateHtml_('Failed: ' + err.message);
     })[fn]();
 }
 
@@ -6352,13 +6358,13 @@ function cnMgrLoadRepView_() {
     google.script.run
       .withSuccessHandler(function (res) {
         if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
-        if (res.error) { host.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+        if (res.error) { host.innerHTML = errorStateHtml_(res.error); return; }
         CN_STATE.mgrEnrolledReps = res.reps || [];
         cnMgrRenderRepViewControls_(host);
       })
       .withFailureHandler(function (err) {
         if (currentView !== requestedView || CN_STATE.mgrSubSeq !== requestedSub) return;
-        host.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+        host.innerHTML = errorStateHtml_('Failed: ' + err.message);
       })
       .getEnrolledCallNotesReps();
   } else {
@@ -6426,7 +6432,7 @@ function cnMgrLoadRepNotes_() {
           || CN_STATE.mgrRepView.date !== requestedDate) return;
       const liveStack = document.getElementById('cn-mgr-rep-stack');
       if (!liveStack) return;
-      if (res.error) { liveStack.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+      if (res.error) { liveStack.innerHTML = errorStateHtml_(res.error); return; }
       if (!res.notes || res.notes.length === 0) {
         liveStack.innerHTML = `<div class="cn-stack-empty">No notes for ${esc(res.repName || '')} on ${esc(res.date || '')}.</div>`;
         return;
@@ -6436,7 +6442,7 @@ function cnMgrLoadRepNotes_() {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       const liveStack = document.getElementById('cn-mgr-rep-stack');
-      if (liveStack) liveStack.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+      if (liveStack) liveStack.innerHTML = errorStateHtml_('Failed: ' + err.message);
     })
     .managerGetCallNotes(requestedRepId, requestedDate, 'all');
 }
@@ -6730,13 +6736,13 @@ function cnMgrLoadStats_() {
       if (CN_STATE.mgrStatsDate !== requestedDate) return;
       const liveBody = document.getElementById('cn-mgr-stats-body');
       if (!liveBody) return;
-      if (res.error) { liveBody.innerHTML = `<div class="cn-stack-empty">${esc(res.error)}</div>`; return; }
+      if (res.error) { liveBody.innerHTML = errorStateHtml_(res.error); return; }
       cnMgrRenderStats_(liveBody, res);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       const liveBody = document.getElementById('cn-mgr-stats-body');
-      if (liveBody) liveBody.innerHTML = `<div class="cn-stack-empty">Failed: ${esc(err.message)}</div>`;
+      if (liveBody) liveBody.innerHTML = errorStateHtml_('Failed: ' + err.message);
     })
     .managerGetShiftStats(CN_STATE.mgrStatsDate);
 }
@@ -8195,14 +8201,14 @@ function cnRunAuditSearch_() {
       if (currentView !== requestedView || seq !== CN_STATE.auditSearchSeq) return;
       var live = document.getElementById('cn-audit-results');
       if (!live) return;
-      if (!res || res.error) { live.innerHTML = '<div class="cn-stack-empty">' + esc((res && res.error) || 'Search failed') + '</div>'; return; }
+      if (!res || res.error) { live.innerHTML = errorStateHtml_((res && res.error) || 'Search failed'); return; }
       cnPopulateAuditActions_(res.actions);
       live.innerHTML = cnRenderAuditResults_(res);
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView || seq !== CN_STATE.auditSearchSeq) return;
       var live = document.getElementById('cn-audit-results');
-      if (live) live.innerHTML = '<div class="cn-stack-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
+      if (live) live.innerHTML = errorStateHtml_('Failed: ' + (err.message || String(err)));
     })
     .getCallNotesAuditLog(filters);
 }

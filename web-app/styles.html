@@ -43,7 +43,7 @@
   .skip-link {
     position: absolute; left: 8px; top: -48px; z-index: 200;
     background: var(--paper-card); color: var(--ink);
-    border: 1px solid var(--line-2); border-radius: 6px;
+    border: 1px solid var(--line-2); border-radius: var(--radius-sm);
     padding: 8px 14px; font-size: .82rem; text-decoration: none;
     box-shadow: var(--shadow-sm); transition: top .15s var(--ease);
   }
@@ -184,12 +184,12 @@
   .sb-theme-toggle {
     display: inline-flex; gap: 0;
     background: var(--paper-2);
-    border: 1px solid var(--line); border-radius: 999px;
+    border: 1px solid var(--line); border-radius: var(--radius-pill);
     padding: 2px;
   }
   .sb-theme-btn {
     appearance: none; border: none; background: transparent;
-    width: 26px; height: 24px; border-radius: 999px; cursor: pointer;
+    width: 26px; height: 24px; border-radius: var(--radius-pill); cursor: pointer;
     color: var(--muted);
     display: inline-flex; align-items: center; justify-content: center;
     transition: background var(--t) var(--ease), color var(--t) var(--ease);
@@ -277,7 +277,7 @@
   }
   .mobile-header .hdr-id {
     font-family: var(--mono); font-size: 10px;
-    background: var(--paper-2); padding: 4px 8px; border-radius: 6px;
+    background: var(--paper-2); padding: 4px 8px; border-radius: var(--radius-sm);
     border: 1px solid var(--line);
     color: var(--muted); letter-spacing: .04em;
   }
@@ -377,11 +377,14 @@
     margin-bottom: 16px; box-shadow: var(--shadow-sm);
     transition: box-shadow var(--t) var(--ease);
   }
+  /* Batch J — secondary labels are sentence-case Inter Tight; the
+     mono-uppercase micro-label register is reserved for kickers, chips,
+     and table headers. */
   .card-label {
-    font-family: var(--mono);
-    font-size: 11px; font-weight: 600;
+    font-family: var(--ui);
+    font-size: var(--text-sm); font-weight: 600;
     color: var(--muted);
-    letter-spacing: .12em; text-transform: uppercase;
+    letter-spacing: -.01em;
     margin-bottom: 16px;
     display: flex; align-items: center; gap: 10px;
   }
@@ -391,7 +394,7 @@
     font-family: var(--mono);
     background: var(--accent-soft); color: var(--info-deep);
     font-size: 10px; font-weight: 600; padding: 2px 8px;
-    border-radius: 999px; letter-spacing: .08em;
+    border-radius: var(--radius-pill); letter-spacing: .08em;
     font-variant-numeric: tabular-nums;
   }
   .count-pill.warn   { background: var(--warn-soft);        color: var(--warning-deep); }
@@ -483,7 +486,7 @@
      animations and tones flow through the semantic tokens. */
   .hero-clock-status {
     display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 12px; border-radius: 999px;
+    padding: 6px 12px; border-radius: var(--radius-pill);
     font-size: 12px; font-weight: 600;
     letter-spacing: .02em;
   }
@@ -544,7 +547,7 @@
   }
   .status-pill {
     display: inline-flex; align-items: center; gap: 7px;
-    padding: 5px 11px; border-radius: 999px;
+    padding: 5px 11px; border-radius: var(--radius-pill);
     font-size: 12px; font-weight: 600;
     transition: background var(--t) var(--ease), color var(--t) var(--ease);
   }
@@ -904,14 +907,14 @@
      in the design tokens partial, just sized smaller for the bar. */
   .mp-modes {
     display: inline-flex; align-items: center; gap: 0;
-    border: 1px solid var(--line); border-radius: 999px;
+    border: 1px solid var(--line); border-radius: var(--radius-pill);
     padding: 3px; background: var(--paper-card);
   }
   .mp-mode {
     appearance: none; cursor: pointer; border: none; background: transparent;
     font-family: var(--mono); font-size: 11px; font-weight: 600;
     color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
-    padding: 5px 12px; border-radius: 999px;
+    padding: 5px 12px; border-radius: var(--radius-pill);
     display: inline-flex; align-items: center; gap: 6px;
     transition: color var(--t) var(--ease), background var(--t) var(--ease);
   }
@@ -1220,7 +1223,7 @@
   .mgr-emp-stat {
     font-family: var(--mono);
     font-size: 10px; font-weight: 600;
-    padding: 3px 8px; border-radius: 999px;
+    padding: 3px 8px; border-radius: var(--radius-pill);
     letter-spacing: .12em; text-transform: uppercase;
     white-space: nowrap;
   }
@@ -1245,7 +1248,7 @@
   }
   .pending-date-block {
     text-align: center; min-width: 44px; flex-shrink: 0;
-    background: var(--paper-2); border-radius: 6px; padding: 6px 4px;
+    background: var(--paper-2); border-radius: var(--radius-sm); padding: 6px 4px;
     border: 1px solid var(--line);
   }
   .pending-date-d {
@@ -1356,7 +1359,7 @@
   .req-card:hover { border-color: var(--border-strong); }
   .req-date-block {
     text-align: center; min-width: 44px;
-    background: var(--paper-2); border-radius: 6px; padding: 6px 4px;
+    background: var(--paper-2); border-radius: var(--radius-sm); padding: 6px 4px;
     border: 1px solid var(--line);
   }
   .req-date-d {
@@ -1376,7 +1379,7 @@
   .req-badge {
     font-family: var(--mono);
     font-size: 10px; font-weight: 600;
-    padding: 3px 8px; border-radius: 999px;
+    padding: 3px 8px; border-radius: var(--radius-pill);
     letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
   }
   .rb-pending  { background: var(--warn-soft);        color: var(--warning-deep); }
@@ -1386,7 +1389,7 @@
     font-family: var(--ui);
     font-size: 11px; font-weight: 500; color: var(--destructive);
     background: transparent; border: 1px solid var(--destructive);
-    border-radius: 6px; padding: 4px 9px; cursor: pointer;
+    border-radius: var(--radius-sm); padding: 4px 9px; cursor: pointer;
     transition: background var(--t) var(--ease);
   }
   .req-cancel-btn:hover { background: var(--destructive-soft); }
@@ -1412,13 +1415,13 @@
     display: inline-flex; gap: 0;
     background: var(--paper-card);
     border: 1px solid var(--line);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     padding: 3px;
     margin-bottom: 16px;
   }
   .vmt-btn {
     appearance: none; border: none; background: transparent;
-    padding: 6px 14px; border-radius: 999px; cursor: pointer;
+    padding: 6px 14px; border-radius: var(--radius-pill); cursor: pointer;
     font-family: var(--mono); font-size: 11px; font-weight: 600;
     color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
     transition: color var(--t) var(--ease), background var(--t) var(--ease);
@@ -1510,7 +1513,7 @@
   .punch-times { display: flex; flex-wrap: wrap; gap: 6px; }
   .pt-chip {
     display: inline-flex; align-items: center; gap: 6px;
-    background: var(--paper-2); border-radius: 6px;
+    background: var(--paper-2); border-radius: var(--radius-sm);
     padding: 3px 9px; font-size: 11px;
     color: var(--muted); font-weight: 500;
     font-family: var(--mono);
@@ -1604,7 +1607,7 @@
   /* ─── PUNCH UNDO BUTTON (×) on Today's Punches ───────────────────────── */
   .punch-undo {
     width: 22px; height: 22px;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--line);
     background: transparent;
     color: var(--muted);
@@ -1676,13 +1679,13 @@
     display: inline-flex; gap: 0;
     background: var(--paper-card);
     border: 1px solid var(--line);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     padding: 3px;
   }
   .layout-btn {
     display: inline-flex; align-items: center; gap: 6px;
     appearance: none; border: none; background: transparent;
-    padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    padding: 6px 12px; border-radius: var(--radius-pill); cursor: pointer;
     font-family: var(--mono); font-size: 11px; font-weight: 600;
     color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
     transition: color var(--t) var(--ease), background var(--t) var(--ease);
@@ -2139,6 +2142,18 @@
     min-height: 50vh; gap: 14px; padding: 24px;
     text-align: center;
   }
+  /* Batch J — designed empty vs ERROR states. Empty = quiet dashed card
+     (the .cn-stack-empty/.m-empty/.cn-sf-empty rules adopt this look in
+     their own partials); error = warn-toned card, visually distinct from
+     "nothing here", rendered via errorStateHtml_() (script_core). */
+  .error-state {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 18px 14px; margin: 6px 0;
+    background: var(--warn-soft); color: var(--warning-deep);
+    border: 1px solid transparent; border-radius: var(--radius-md);
+    font-size: var(--text-sm); text-align: center;
+  }
+  .error-state svg { flex: none; }
   .spinner {
     width: 32px; height: 32px;
     border: 2.5px solid var(--line); border-top-color: var(--accent);
@@ -2161,7 +2176,7 @@
   .lo-glyph { color: var(--lo-accent); animation: lo-pulse 1.25s var(--ease) infinite; display: inline-flex; }
   /* Role B — lists / tables / cards: skeleton shimmer. */
   .skel {
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     background: linear-gradient(90deg, var(--paper-3) 25%, var(--paper-2) 37%, var(--paper-3) 63%);
     background-size: 200% 100%;
     animation: lo-shimmer 1.3s linear infinite;
@@ -2171,10 +2186,10 @@
   .skel-lines { flex: 1; display: flex; flex-direction: column; gap: 7px; }
   .skel-bar { height: 10px; }
   /* Role C — in-place refresh: a thin indeterminate sweep bar at panel top. */
-  .lo-sweep { position: relative; height: 3px; border-radius: 999px; background: var(--lo-track); overflow: hidden; }
+  .lo-sweep { position: relative; height: 3px; border-radius: var(--radius-pill); background: var(--lo-track); overflow: hidden; }
   .lo-sweep::after {
     content: ''; position: absolute; top: 0; bottom: 0; width: 40%;
-    border-radius: 999px; background: var(--lo-accent);
+    border-radius: var(--radius-pill); background: var(--lo-accent);
     animation: lo-bar 1.15s var(--ease) infinite;
   }
   /* Role D — buttons / tiny slots: inline dot pulse (keep the word too). */
@@ -2259,7 +2274,7 @@
     appearance: none; border: 1px solid var(--line);
     background: var(--paper-2);
     width: 28px; height: 28px;
-    border-radius: 999px; cursor: pointer;
+    border-radius: var(--radius-pill); cursor: pointer;
     color: var(--muted);
     display: inline-flex; align-items: center; justify-content: center;
     transition: color var(--t) var(--ease), border-color var(--t) var(--ease), background var(--t) var(--ease);
@@ -2347,7 +2362,7 @@
     appearance: none; border: 1px solid var(--line);
     background: var(--paper-card);
     width: 26px; height: 26px;
-    border-radius: 999px; cursor: pointer;
+    border-radius: var(--radius-pill); cursor: pointer;
     color: var(--muted);
     display: inline-flex; align-items: center; justify-content: center;
     transition: color var(--t) var(--ease), border-color var(--t) var(--ease);
@@ -2482,7 +2497,7 @@
   .view-refreshing {
     position: fixed; bottom: 16px; right: 16px; z-index: 40;
     display: inline-flex; align-items: center; gap: 7px;
-    padding: 6px 12px; border-radius: 999px;
+    padding: 6px 12px; border-radius: var(--radius-pill);
     background: var(--paper-card); border: 1px solid var(--line);
     box-shadow: var(--shadow-sm); color: var(--muted);
     font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
