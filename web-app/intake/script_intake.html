@@ -465,7 +465,9 @@ var INTAKE_PPD_CONTROL = {
 };
 function intakePpdControl_(qNum) { return INTAKE_PPD_CONTROL[qNum] || null; }
 
-// Phase 4 — a hover-help glyph on specific question labels (native title tooltip).
+// Phase 4 — a hover-help glyph on specific question labels (rendered as the
+// tokened data-tip CSS tooltip — the native `title` was replaced in the
+// 2026-07-09 feedback round; E14 fixed this stale comment).
 var INTAKE_PPD_HELP = {
   '32': 'Spasticity is muscle stiffness or tightness — muscles that involuntarily contract, resist stretching, or spasm. Common after stroke, spinal-cord injury, MS, or cerebral palsy.',
 };
@@ -574,7 +576,12 @@ function enterIntakePpdView(area) {
       '<aside class="intk-rail"><div class="intk-rail-sticky">' +
         '<span class="intk-rail-label">Progress</span>' +
         intakeRingHtml_('ppd') +
-        '<span class="intk-rail-count" id="intk-ppd-count">0 / 45</span>' +
+        // E14 (cycle 10): 46 incl. Q39a (the cycle-8 ring fix) — the updater
+        // overwrites this synchronously today, but the seed literal must not
+        // drift from the real denominator (a future render path without the
+        // updater would show the wrong total).
+        '<span class="intk-rail-count" id="intk-ppd-count">0 / 46</span>' +
+
         intakePpdStepperHtml_(lang) +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
         '<button class="intk-btn" onclick="intakeClearForm_(\'ppd\')">Clear</button>' +
@@ -1391,10 +1398,20 @@ function intakePpdPreview_() {
 
 function intakeOpenPpdPreviewModal_(html, recs) {
   if (!INTAKE_STATE.ppd.agents) {
+    // E10 (cycle 10): guard the SECOND async hop too — the preview RPC's
+    // handler is view-guarded, but on a cold agents cache this extra fetch
+    // wasn't, so a slow getIntakeAgents popped the body-mounted PHI preview
+    // modal over whatever view the rep had navigated to (the INT-5 class).
+    var requestedView = currentView;
     google.script.run.withSuccessHandler(function (r) {
       INTAKE_STATE.ppd.agents = (r && r.agents) || [];
+      if (currentView !== requestedView) return;
       intakeBuildPpdModal_(html, recs);
-    }).withFailureHandler(function () { INTAKE_STATE.ppd.agents = []; intakeBuildPpdModal_(html, recs); }).getIntakeAgents();
+    }).withFailureHandler(function () {
+      INTAKE_STATE.ppd.agents = [];
+      if (currentView !== requestedView) return;
+      intakeBuildPpdModal_(html, recs);
+    }).getIntakeAgents();
   } else {
     intakeBuildPpdModal_(html, recs);
   }

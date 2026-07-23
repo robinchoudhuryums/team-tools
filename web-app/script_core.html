@@ -297,8 +297,10 @@ window.addEventListener('load', () => {
       // First-load onboarding tour (auto-starts once per TOUR_VERSION; never
       // in the compact pop-out). Replayable from the Call Notes ? menu.
       if (typeof tourMaybeAutoStart_ === 'function') tourMaybeAutoStart_();
-      // "What's new" panel (#4, INV-152) — best-effort fetch; auto-opens once
-      // per content change, defers to the tour on a first-ever load.
+      // "What's new" (#4, INV-152) — best-effort fetch. F1 (cycle 10): the
+      // panel does NOT auto-open (the 2026-07-09 operator decision — updates
+      // surface as Dashboard greeting slides + the star buttons; this comment
+      // previously claimed auto-open and could invite a regression).
       whatsNewInit_();
     })
     .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
@@ -402,8 +404,10 @@ function renderError(msg) {
 // ── "What's new" panel (#4, INV-152) ────────────────────────────────────────
 // A dismissible changelog overlay rendering the operator's designated KB
 // article (Script Property WHATSNEW_KB_ID) via kbMd_ — same escape boundary
-// as every Reference article. Auto-opens once per content change (the server
-// stamp vs the umsWhatsNew localStorage seen-stamp — the umsTour pattern);
+// as every Reference article. F1 (cycle 10): the panel does NOT auto-open —
+// per the 2026-07-09 operator decision, updates surface as Dashboard greeting
+// slides and the server stamp vs the umsWhatsNew seen-stamp only gates the
+// NEW accent on them; opening is always user-initiated (slide click / star);
 // dismissal by ANY path (Got it, X, Esc, backdrop) stamps seen. A star button
 // joins the sidebar theme row to reopen it anytime. Never in the compact
 // pop-out; defers to the onboarding tour on a first-ever load.

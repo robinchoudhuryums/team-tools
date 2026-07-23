@@ -10786,7 +10786,7 @@ function authorizeGmailScope() {
   return { ok: true, threads: n };
 }
 
-/** Spanish-inbox resolution stats (manager-gated, read-only). Scans the
+/** Spanish-inbox resolution stats (canSeeSpanishInbox_-gated — manager OR SPANISH_INBOX_MEMBERS, INV-31 amendment; read-only). Scans the
  *  DEPLOYER's Gmail for threads addressed to the group inbox over the last
  *  `days` and computes time-to-resolution (first inbound → first reply from a
  *  bilingual group member). PHI-free: returns counts + durations + requester
@@ -10859,11 +10859,11 @@ function getSpanishInboxStats(days) {
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
-/** Pending (unresolved) Spanish-inbox requests as task cards — manager-gated,
+/** Pending (unresolved) Spanish-inbox requests as task cards — canSeeSpanishInbox_-gated (INV-31 amendment),
  *  live-read (NOT cached/stored, since it carries request content). Returns
  *  subject + a short snippet + an Open-in-Gmail permalink per open thread; the
  *  full body is fetched on demand via getSpanishInboxThreadBody. PHI note: the
- *  body may reference a patient/call — that's why it's manager-gated + never
+ *  body may reference a patient/call — that's why it's gate-restricted + never
  *  persisted. */
 function getSpanishInboxPending(days) {
   try {
@@ -10907,7 +10907,7 @@ function getSpanishInboxPending(days) {
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
-/** Resolved Spanish-inbox requests over the window (manager-gated, live-read,
+/** Resolved Spanish-inbox requests over the window (canSeeSpanishInbox_-gated, live-read,
  *  never stored — same posture as the pending list). For each resolved thread
  *  returns who resolved it + how long it took, newest-resolved first. PHI-lean:
  *  subject only (no body snippet — the on-demand getSpanishInboxThreadBody expand
@@ -10961,7 +10961,7 @@ function getSpanishInboxResolved(days) {
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 
-/** Full body of one Spanish-inbox request thread (manager-gated, on-demand
+/** Full body of one Spanish-inbox request thread (canSeeSpanishInbox_-gated, on-demand
  *  expand). Scope-guarded: only returns the body if the thread is actually
  *  addressed to the configured inbox, so a manager can't pull arbitrary thread
  *  bodies by id. Live-read, never stored. */

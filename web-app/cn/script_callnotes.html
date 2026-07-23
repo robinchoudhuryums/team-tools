@@ -1968,7 +1968,9 @@ const CN_STATE = {
   pinnedNotes: [],           // pinned-tray cache; loaded by cnReloadPinnedTray_() on Log view enter
   mgrStatsDate: null,        // selected date in manager Stats tab (defaults to today in mgr tz)
   mgrSearchQuery: '',        // manager cross-rep search query
-  mgrSearchField: 'all',     // 'all' | 'caller' | 'issue'
+  // E6 (cycle 10): the duplicate `mgrSearchField: 'all'` literal that lived
+  // here was removed — it silently overrode the §7a declaration above (a
+  // drift trap: an intentional change to one was clobbered by the other).
   mgrSearchResults: [],      // results from managerSearchCallNotes
   mgrSearchTimer: null,      // debounce timer for manager search
   trainingQA: [],            // rep's recent training Q&A notes (loaded once per Log view enter)
@@ -2167,7 +2169,10 @@ function cnSentFormCardHtml_(f) {
 
 function enterCallNotesManageView(area) {
   stopClock();
-  renderLoading(area, 'Loading team queues…', 'list');
+  // E9 (cycle 10): the renderLoading call that sat here was dead — the
+  // synchronous cnRenderManageView replaced it within the same tick (the
+  // documented Role-A loader never painted); the queue fetch shows its own
+  // skeleton.
   cnRenderManageView(area);
 }
 
@@ -4532,8 +4537,17 @@ function cnTogglePinned_(noteId) {
   if (!note) return;
   if (note._pending) { showToast('Just a moment — still saving', 'toast-warn'); return; }
   if (note._flagInFlight) return;
-  note._flagInFlight = true;
   const wasPinned = !!(note.subformData && note.subformData.pinned);
+  // E5 (cycle 10): the at-capacity pin button only LOOKED disabled
+  // (.pin-full styles the cursor/dim but data-cn-action still dispatches) —
+  // clicking optimistically rendered a "4/3" tray, fired the RPC, and
+  // reverted on the server's cap error. The client knows the cap; no-op with
+  // the tooltip's message instead. Server stays authoritative (INV-50).
+  if (!wasPinned && (CN_STATE.pinnedNotes || []).length >= (CN_STATE.pinLimit || 3)) {
+    showToast('You already have ' + (CN_STATE.pinLimit || 3) + ' pinned notes — unpin one first', 'toast-warn');
+    return;
+  }
+  note._flagInFlight = true;
   var prevPinnedAt = (note.subformData && note.subformData.pinnedAt) || null;
   note.subformData = note.subformData || {};
   note.subformData.pinned = !wasPinned;
@@ -4933,6 +4947,17 @@ function cnLoadComposerDefaults_(note) {
       callbackNeeded: false,
     }, note.subformData);
     if (!base.updateInfo && navTpl) base.updateInfo = navTpl;
+    // E1 (cycle 10): the documented umsCallNotesLastDept default was DEAD —
+    // virtually every app note has subformData (completionSeconds/flags/tags
+    // ride in it), so this branch always won and the localStorage branch
+    // below was unreachable. A never-emailed note (no stored departments)
+    // now seeds from the rep's last composer selection, as documented.
+    if (!Array.isArray(base.departments) || base.departments.length === 0) {
+      try {
+        const last = JSON.parse(localStorage.getItem('umsCallNotesLastDept') || '[]');
+        if (Array.isArray(last)) base.departments = last;
+      } catch (e) {}
+    }
     return base;
   }
   const lsKey = 'umsCallNotesLastDept';
@@ -5632,7 +5657,17 @@ function cnComposerSend_() {
         // Mirror the server's MERGE (not replace) so the cached note keeps its
         // tags / pin / feedback / etc. — overwriting subformData here would drop
         // them from the in-memory card until a reload.
-        sentNote.subformData = Object.assign({}, sentNote.subformData || {}, c.selections);
+        // E2 (cycle 10): merge ONLY the keys the server's
+        // sanitizeEmailSelections_ persists — c.selections was seeded from the
+        // WHOLE subformData at composer open, so a blind merge could overwrite
+        // fresher feedback[]/pinned/flags (appended by a manager mid-compose
+        // and picked up by the 60s live refresh) with composer-open-era copies.
+        var emailKeys = ['departments', 'individualEmail', 'updateInfo', 'callbackNeeded',
+          'overwriteResolution', 'shippingDetails', 'closeDetails', 'resupplyDetails', 'oopDetails'];
+        sentNote.subformData = sentNote.subformData || {};
+        emailKeys.forEach(function (k) {
+          if (c.selections[k] !== undefined) sentNote.subformData[k] = c.selections[k];
+        });
         cnReplaceNoteInState_(sentNote);
       }
       // Save & Compose transaction completes on SEND: clear the form now
@@ -7201,6 +7236,15 @@ function cnApplyPrefillFromUrl_() {
     // actually fire in production (F15).
     const raw = __URL_PARAMS.get('prefill');
     if (!raw) return;
+    // E3 (cycle 10): one-shot — this runs on EVERY Log view enter for the
+    // window's lifetime, and it deliberately wins over the draft restore
+    // ("an explicit ?prefill deep-link is user intent"). Right on the first
+    // enter; on every LATER return it silently overwrote the rep's
+    // since-edited callback/caller/patient values with the URL's originals.
+    // Latent (no producer passes prefill yet) but billed as future-ready —
+    // consume once, the cnConsumeNavHint_ pattern.
+    if (CN_STATE._prefillConsumed) return;
+    CN_STATE._prefillConsumed = true;
     const pairs = raw.split(';').map(s => s.trim()).filter(Boolean);
     const supported = { callback: 'cn-fld-callback', caller: 'cn-fld-caller', patient: 'cn-fld-patient', date: null };
     pairs.forEach(pair => {
@@ -7577,7 +7621,14 @@ function cnLoadRetentionPanel_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== 'callNotesAdmin') return;
-      if (!res || res.error) { slot.innerHTML = ''; return; }   // stay quiet on error — non-critical panel
+      // E7 (cycle 10): failed ≠ absent — the old silent blank made a load
+      // failure (e.g. a gate mismatch) indistinguishable from "feature not
+      // present"; a manager couldn't know retention config was unreachable.
+      if (!res || res.error) {
+        slot.innerHTML = '<div class="no-data" style="font-size:11px">Retention panel failed to load' +
+          (res && res.error ? ': ' + esc(res.error) : '') + '</div>';
+        return;
+      }
       CN_STATE.retentionCfg = res;
       slot.innerHTML = cnRenderRetentionHtml_(res);
     })
@@ -8409,8 +8460,8 @@ function cnRenderStoragePanel_(res) {
     else statusPill = pill('ok', 'ok');
     // tz pill
     var tzPill;
-    if (s.tzMatch === true) tzPill = pill(esc(s.tz || 'tz ✓'), 'ok');
-    else if (s.tzMatch === false) tzPill = pill('tz ' + esc(s.tz || '?') + ' ≠ CONFIG', 'crit');
+    if (s.tzMatch === true) tzPill = pill(s.tz || 'tz ✓', 'ok');   // E8 (cycle 10) — pill() escapes; the outer esc double-encoded entities
+    else if (s.tzMatch === false) tzPill = pill('tz ' + (s.tz || '?') + ' ≠ CONFIG', 'crit');   // E8
     else tzPill = pill('—', 'muted');
     // Cycle 7 (M-14 class) — locale drift pill: a locale that differs from the
     // ADP sheet's changes WHICH string shapes Sheets coerces to Dates on read
@@ -8439,7 +8490,7 @@ function cnRenderStoragePanel_(res) {
     var noteHtml = s.note ? '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + esc(s.note) + '</div>' : '';
     return '<div class="cn-storage-row">' +
       '<div class="cn-storage-main">' +
-        '<div class="cn-storage-label">' + esc(s.label) + ' ' + pill(esc(s.cls), 'muted') + '</div>' +
+        '<div class="cn-storage-label">' + esc(s.label) + ' ' + pill(s.cls, 'muted') + '</div>' +
         '<div class="cn-storage-role">' + esc(s.role) + (s.name ? ' · ' + esc(s.name) : '') + '</div>' +
         noteHtml + perRep + fixHtml +
       '</div>' +
@@ -9734,7 +9785,19 @@ function cnWireExternalEmailModal_() {
   // externalEmails[] onto the WRONG note (or none).
   var noteRefSel = document.getElementById('cnX-note-ref');
   if (noteRefSel) {
-    noteRefSel.addEventListener('change', function () { c.noteId = noteRefSel.value || null; });
+    noteRefSel.addEventListener('change', function () {
+      c.noteId = noteRefSel.value || null;
+      // E4 (cycle 10): the tab strip was built once at mount — a composer
+      // opened standalone (no note) kept its Department tab visually disabled
+      // AND handler-less even after the rep linked a note here, so the
+      // now-legitimate "switch to Department composer" path was unreachable
+      // until the modal was reopened. Re-render just the strip in place.
+      try {
+        var ov = document.getElementById('cn-ext-overlay');
+        var strip = ov && ov.querySelector('.cn-composer-tabs');
+        if (strip) strip.outerHTML = cnRenderComposerTabStrip_('external', c.noteId);
+      } catch (e) {}
+    });
   }
 
   // Send button

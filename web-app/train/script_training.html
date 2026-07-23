@@ -430,6 +430,21 @@ function trainSubmitQuiz_() {
     if (btn) { btn.disabled = true; btn.textContent = 'Grading…'; }
     google.script.run
       .withSuccessHandler(function (res) {
+        // E13 (cycle 10): update the CHECKLIST STATE before the modal-identity
+        // guard — the server recorded the attempt (and, on a pass, the
+        // completion) regardless of whether the rep cancelled the modal while
+        // grading was in flight; the old ordering skipped the bookkeeping, so
+        // the checklist showed Pending + a stale attempt count and the rep
+        // might needlessly retake. Only the RESULT VIEW render stays gated on
+        // the modal still being open.
+        if (res && res.success) {
+          var it = trainItemById_(quizId);
+          if (it) {
+            if (it.quiz) { it.quiz.attempts = res.attempt; it.quiz.lastScorePct = res.scorePct; }
+            if (res.passed) { it.completed = true; it.status = 'done'; }
+          }
+          if (currentView === 'trainingHome') trainRenderMy_();
+        }
         if (TRAIN_STATE.quizTaking !== quizId) return;
         if (!res || !res.success) {
           if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Submit answers'; }
@@ -437,12 +452,6 @@ function trainSubmitQuiz_() {
           return;
         }
         trainRenderQuizResult_(quiz, answers, res);
-        var it = trainItemById_(quizId);
-        if (it) {
-          if (it.quiz) { it.quiz.attempts = res.attempt; it.quiz.lastScorePct = res.scorePct; }
-          if (res.passed) { it.completed = true; it.status = 'done'; }
-        }
-        if (currentView === 'trainingHome') trainRenderMy_();
       })
       .withFailureHandler(function (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + ' Submit answers'; }
@@ -525,7 +534,14 @@ function trainLoadMgr_() {
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.kbTree = d; done(); }).withFailureHandler(onFail).getReferenceTree();
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.quizzes = d; done(); }).withFailureHandler(onFail).getQuizzes();
-  google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.quizAnalytics = d; done(); }).withFailureHandler(onFail).getQuizAnalytics();
+  // E12 (cycle 10): the analytics aggregate is DECORATIVE (a panel), but it
+  // shared the fatal onFail — its failure (the most plausible of the five: a
+  // bounded-tail scan) took down assignment, the completion matrix, and quiz
+  // authoring with it. Degrade to a panel-level "unavailable" instead.
+  google.script.run
+    .withSuccessHandler(function (d) { TRAIN_STATE.quizAnalytics = d; done(); })
+    .withFailureHandler(function () { TRAIN_STATE.quizAnalytics = { error: 'Analytics unavailable' }; done(); })
+    .getQuizAnalytics();
 }
 
 function trainRenderMgr_() {
@@ -674,6 +690,11 @@ function trainRenderMgr_() {
 
   // Quiz analytics (T4) — read-only aggregate; no answer keys, no per-rep rows.
   var qa = (TRAIN_STATE.quizAnalytics && TRAIN_STATE.quizAnalytics.quizzes) || [];
+  if (!qa.length && TRAIN_STATE.quizAnalytics && TRAIN_STATE.quizAnalytics.error) {
+    // E12 — panel-level degradation: the rest of Team Training renders.
+    h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Quiz analytics</span></div>' +
+      '<div class="tr-empty" style="padding:10px">' + esc(TRAIN_STATE.quizAnalytics.error) + ' — re-enter the tab to retry.</div></div>';
+  }
   if (qa.length) {
     h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Quiz analytics</span>' +
         '<span class="tr-card-badge">' + qa.length + '</span></div>' +

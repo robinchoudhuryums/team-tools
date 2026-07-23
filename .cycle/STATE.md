@@ -57,9 +57,32 @@ ranges stick), D6 hover-timer document.contains guard, D7 esc() drift
 compact-guard, D9 dispTime full escape, D10 beacon Object.create(null),
 D11 What's-new star in BOTH sidebar + mobile header, D12 tour Escape
 stopImmediatePropagation, D13 MOTION_IO unobserve on nav. Pure 309/0
-(2 new grouped pin tests), DOM 63/0. Remaining: batches E (CN/module client
-Lows) + F (docs incl. PROJECT_HEALTH roll-forward + STATE NUL cleanup),
-/sync-docs, operator deploy, /reflect.
+(2 new grouped pin tests), DOM 63/0.
+BATCHES E+F ALSO IMPLEMENTED (same branch) — THE ENTIRE CYCLE-10 BACKLOG IS
+NOW DONE. E = E1 umsCallNotesLastDept revived (seeds inside the subformData
+branch when the note has no departments), E2 send-success merge whitelisted
+to the 9 sanitizeEmailSelections_ keys, E3 ?prefill one-shot consumption,
+E4 external tab-strip re-render on note-link (CN-8 ext-draft asymmetry
+KEPT-BY-DECISION, doc'd in INV-84), E5 pin-at-capacity client no-op, E6
+duplicate mgrSearchField removed, E7 retention-panel error line, E8
+storage-pill double-escape, E9 dead Team-Notes loader removed, E10 PPD
+agents-hop view guard, E11 KB landing loaders fail-loud (loadFailed →
+distinct failure lines for Most-used/Review-due/Content-requests), E12
+quiz-analytics failure degrades to panel-level (not whole-view), E13 quiz
+submit updates checklist state before the modal-identity guard, E14 PPD
+seed label 46 + stale tooltip comment, E15 drawer-search toast open-guard.
+F = /sync-docs (Spanish endpoints out of the manager-only list + 4 Code.js
+docstrings; What's-new comments match the no-auto-open decision; INV-07/84/
+111/113/122/128/142 amendments; the M-1 state-machine gotcha incl. the C3
+overnight-wrap decision note; testing gotcha + _withTestKb_; TEST_KB_SS_ID +
+WITNESS_AUDIT_FAILS operator entries; Test Command cycle-10 paragraph;
+punchTrend 8-bars; NEW INV-155–158), PROJECT_HEALTH.md rolled forward
+(cycles 8+9 rows + cycle-10 standing), STATE.md literal NUL bytes replaced
+with the six-char backslash-u0000 escape TEXT (greps as text again — and
+NOTE: this checkpoint's own first edit reintroduced one by emitting the
+escape as a literal; if you write about NULs, write the WORD, never the
+sequence). Pure 309/0, DOM 63/0. Remaining: operator deploy,
+/reflect (cycle-10 metrics.csv + estimates.csv rows).
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
@@ -411,10 +434,10 @@ Operator ran /broad-implement "Batch 1 + F6/F7". Implemented (pure 278/0, DOM 59
   so a URL with ** or a backtick got <strong>/<code> injected INSIDE href/src
   (broken link). Factored emph() out, applied to link TEXT at generation, stashed
   the generated <a>/<img> markup past the outer emphasis pass via a NUL-delimited
-  sentinel ( L<idx> , the existing  C fence pattern). Link-text
+  sentinel (\u0000L<idx>\u0000, the existing \u0000C fence pattern). Link-text
   emphasis preserved. + F7 Node regression test (run.js, 277→278). NOTE: my first
   edit accidentally wrote LITERAL NUL bytes (reintroducing the batch-4 binary-file
-  issue); converted all literal 0x00 → the   escape via a Node script — file
+  issue); converted all literal 0x00 → the \u0000 escape via a Node script — file
   greps as text again. WATCH FOR THIS if editing kb/script_kb.html sentinels.
 - F3 integration test (Tests.js): test_publicForm_blankExpiryFailsClosed —
   creates a token, blanks ExpiresAt, asserts getFormByToken + submitFormByToken
