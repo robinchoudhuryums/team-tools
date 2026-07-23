@@ -1555,11 +1555,15 @@
     font-variant-numeric: tabular-nums;
     color: var(--ink);
   }
+  /* A11y batch H — shape cues so dot meaning isn't color-only:
+     worked = SQUARE, PTO = circle; pending = HOLLOW ring; a denied day's
+     number is struck through. (Color-blind-safe without redesigning.) */
   .cal-dot { width: 5px; height: 5px; border-radius: 50%; }
-  .cal-dot.worked   { background: var(--good); }
-  .cal-dot.pending  { background: var(--warn); }
+  .cal-dot.worked   { background: var(--good); border-radius: 1px; }
+  .cal-dot.pending  { background: transparent; border: 1.5px solid var(--warn); box-sizing: border-box; width: 6px; height: 6px; }
   .cal-dot.approved { background: var(--accent); }
   .cal-dot.denied   { background: var(--destructive); }
+  .cal-cell.has-denied .cal-dn { text-decoration: line-through; }
   /* Holiday glyph — slate-blue star marker, no glowy text-shadow */
   .cal-holiday {
     position: absolute; top: 4px; left: 5px;

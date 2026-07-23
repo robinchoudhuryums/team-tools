@@ -227,6 +227,25 @@ test('escapes &, <, >, ", \'', () => {
   assert.strictEqual(sb.esc(`"q" 'q'`), '&quot;q&quot; &#39;q&#39;');
 });
 
+console.log('\nscript_core — mtRenderTable_ sortable-header a11y (batch H)');
+test('sortable th carries scope/tabindex/aria-sort + keyboard activation', () => {
+  const html = sb.mtRenderTable_({
+    columns: [
+      { key: 'name', label: 'Rep', sortable: true },
+      { key: 'pct', label: '%', numeric: true, sortable: true },
+      { key: 'note', label: 'Note' },
+    ],
+    rows: [{}],
+    sort: { key: 'pct', dir: 'desc' },
+    onSort: 'mySort',
+  });
+  assert.ok(/th scope="col"[^>]*aria-sort="none"[^>]*>Rep/.test(html), 'inactive sortable th announces aria-sort=none');
+  assert.ok(/aria-sort="descending"[^>]*>%/.test(html), 'active sort col announces direction');
+  assert.ok(/tabindex="0"[^>]*aria-sort/.test(html), 'sortable th is keyboard-reachable');
+  assert.ok(html.indexOf("onkeydown=\"if(event.key==='Enter'||event.key===' ')") >= 0, 'Enter/Space activates the sort');
+  assert.ok(/th scope="col">Note/.test(html), 'non-sortable th gets scope but no interactivity');
+});
+
 console.log('\nscript_core — empTz() / isoDateTz()');
 test('empTz falls back to a default when empState is unset', () => {
   assert.strictEqual(typeof sb.empTz(), 'string');

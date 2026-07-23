@@ -173,6 +173,38 @@ test('closeOverlay degrades to a class-strip when the hook throws', () => {
   assert.ok(!el.classList.contains('open'), 'degraded to plain hide');
 });
 
+test('overlay focus lifecycle: focus moves in on open, restores on close (batch H)', () => {
+  const h = boot();
+  const doc = h.window.document;
+  const trigger = doc.createElement('button');
+  trigger.id = 'trg';
+  doc.body.appendChild(trigger);
+  trigger.focus();
+  assert.strictEqual(doc.activeElement, trigger, 'trigger focused pre-open');
+  const el = h.window.ensureOverlay('ov-f', { onClose: () => { el.classList.remove('open'); } });
+  el.innerHTML = '<div class="modal"><button id="in-dlg">ok</button></div>';
+  h.flushTimers();  // fire the deferred focus-into
+  assert.strictEqual(doc.activeElement && doc.activeElement.id, 'in-dlg', 'focus moved into the dialog');
+  h.window.closeOverlay(el);
+  assert.strictEqual(doc.activeElement, trigger, 'focus restored to the trigger on close');
+  trigger.remove();
+});
+
+test('closeOverlay does NOT restore focus when the hook refuses to close (INV-145 class)', () => {
+  const h = boot();
+  const doc = h.window.document;
+  const trigger = doc.createElement('button');
+  doc.body.appendChild(trigger);
+  trigger.focus();
+  const el = h.window.ensureOverlay('ov-g', { onClose: () => { /* refuses: stays open */ } });
+  el.innerHTML = '<div class="modal"><button id="in-g">ok</button></div>';
+  h.flushTimers();
+  h.window.closeOverlay(el);
+  assert.ok(el.classList.contains('open'), 'overlay stayed open (hook refused)');
+  assert.notStrictEqual(doc.activeElement, trigger, 'focus NOT yanked back while the overlay is still up');
+  trigger.remove();
+});
+
 test('Escape with no overlay open closes the KB drawer instead', () => {
   const h = boot();
   h.window.kbDrawerToggle_();                  // mounts + opens #kb-drawer on body

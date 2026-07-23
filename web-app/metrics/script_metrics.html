@@ -421,7 +421,7 @@ function enterMetricsMyStatsView() {
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('chart', 16) + ' My Stats</div>' : '') +
     '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
-      '<h2>My Call Metrics</h2>' +
+      '<h1 class="view-title">My Call Metrics</h1>' +
     '</div>' +
     '<div class="m-controls">' +
       // Today/7D/30D presets — Today = single-day rich view (own-vs-team series);
@@ -859,7 +859,7 @@ function enterMetricsTeamView() {
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('chart', 16) + ' Team Metrics</div>' : '') +
     '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
-      '<h2>Team Call Metrics</h2>' +
+      '<h1 class="view-title">Team Call Metrics</h1>' +
     '</div>' +
     '<div class="m-controls">' +
       '<label style="font-size:0.85rem;color:var(--muted)">From</label>' +
@@ -1126,7 +1126,7 @@ function enterSpanishInboxView(area) {
   area.innerHTML =
     (COMPACT_MODE
       ? '<div class="compact-header"><div class="ch-title">' + icon('mail', 16) + ' Spanish Inbox</div></div>'
-      : '<div class="view-title-row"><h2>Spanish Inbox</h2><p>Bilingual-assistance request resolution time — first reply from a group member. Read-only.</p></div>') +
+      : '<div class="view-title-row"><div><h1 class="view-title">Spanish Inbox</h1><p>Bilingual-assistance request resolution time — first reply from a group member. Read-only.</p></div></div>') +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
       '<label style="font-size:12px;color:var(--muted)">Window</label>' +
       '<select id="spanish-days">' + [7, 30, 60, 90].map(function (n) {

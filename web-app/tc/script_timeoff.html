@@ -188,7 +188,23 @@ function renderTimeOffView(area, data) {
     // Round 2 · 8c — hover-triggered day modal. Use data-date so
     // bindCalHover_ can install mouseenter/leave/click handlers via
     // event delegation; the legacy inline onclick path is replaced.
-    const dataAttr = hasContent ? `data-date="${dateStr}"` : '';
+    // A11y batch H: interactive cells are keyboard-reachable (tabindex=0 +
+    // role=button; Enter/Space pins the day modal — bound in bindCalHover_)
+    // and carry an aria-label summarizing the day's state, since the dots/
+    // badges are visual-only.
+    let ariaLabel = '';
+    if (hasContent) {
+      const parts = [MONTH_NAMES[data.month - 1] + ' ' + d];
+      if (isToday) parts.push('today');
+      if (hol) parts.push('US holiday');
+      if (hasWork) parts.push('worked');
+      if (own) parts.push(((own.type || 'time off') + ' ' + (own.status || '')).trim());
+      if (tms && tms.length) parts.push(tms.length + ' teammate' + (tms.length > 1 ? 's' : '') + ' off');
+      ariaLabel = parts.join(', ');
+    }
+    const dataAttr = hasContent
+      ? `data-date="${dateStr}" role="button" tabindex="0" aria-label="${esc(ariaLabel)}"`
+      : '';
     let dot = '';
     if (hasWork && !own) dot = '<div class="cal-dot worked"></div>';
     if (own) {
@@ -214,8 +230,8 @@ function renderTimeOffView(area, data) {
   // `--ink-s`/`--ink-m` were never defined anywhere and rendered as
   // browser-default colors).
   const legendHtml = `<div class="cal-legend">
-    <div class="leg-item"><div class="leg-dot" style="background:var(--good)"></div>Worked</div>
-    <div class="leg-item"><div class="leg-dot" style="background:var(--warn)"></div>Pending</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--good);border-radius:1px"></div>Worked</div>
+    <div class="leg-item"><div class="leg-dot" style="background:transparent;border:1.5px solid var(--warn);box-sizing:border-box"></div>Pending</div>
     <div class="leg-item"><div class="leg-dot" style="background:var(--accent)"></div>Approved</div>
     <div class="leg-item"><span class="leg-star">${icon('star', 12)}</span>US Holiday</div>
     <div class="leg-item"><span style="font-family:var(--mono);font-weight:600;font-size:10px;color:var(--muted);letter-spacing:.04em">+N</span>Teammates off</div>
@@ -662,6 +678,13 @@ function bindCalHover_() {
   document.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
     // Click always pins the modal (works on hover AND touch devices).
     cell.addEventListener('click', () => {
+      clearTimeout(dayHoverTimer); clearTimeout(dayCloseTimer);
+      openDayPopover_(cell, /* pin */ true);
+    });
+    // A11y batch H: Enter/Space on a focused cell = click (pin the modal).
+    cell.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
       clearTimeout(dayHoverTimer); clearTimeout(dayCloseTimer);
       openDayPopover_(cell, /* pin */ true);
     });

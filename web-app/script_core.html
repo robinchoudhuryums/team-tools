@@ -1249,8 +1249,18 @@ function mtRenderTable_(opts) {
     if (c.numeric) clsList.push('m-num');
     if (c.sortable && opts.onSort) clsList.push('m-sortable');
     var clsAttr = clsList.length ? ' class="' + clsList.join(' ') + '"' : '';
-    var onclick = (c.sortable && opts.onSort) ? ' onclick="' + opts.onSort + '(\'' + esc(c.key) + '\')"' : '';
-    return '<th' + clsAttr + onclick + '>' + esc(c.label) + caret + '</th>';
+    // A11y batch H: sortable headers are keyboard-activatable (tabindex +
+    // Enter/Space) and announce sort state via aria-sort on the columnheader.
+    var interactive = '';
+    if (c.sortable && opts.onSort) {
+      var call = opts.onSort + '(\'' + esc(c.key) + '\')';
+      var ariaSort = (sort.key === c.key)
+        ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+      interactive = ' tabindex="0" aria-sort="' + ariaSort + '"' +
+        ' onclick="' + call + '"' +
+        ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();' + call + '}"';
+    }
+    return '<th scope="col"' + clsAttr + interactive + '>' + esc(c.label) + caret + '</th>';
   }).join('');
   var body = rows.map(function (r) {
     // Optional per-row class (e.g. tone tint) — additive; existing callers that
@@ -1373,12 +1383,15 @@ function uiConfirm(opts) {
         + '</div>'
       + '</div>';
     document.body.appendChild(overlay);
+    // A11y batch H — hand focus back to the trigger element on close.
+    const restoreEl = document.activeElement;
     let resolved = false;
     const cleanup = function (result) {
       if (resolved) return;
       resolved = true;
       document.removeEventListener('keydown', onKey, true);
       overlay.remove();
+      try { if (restoreEl && restoreEl.isConnected && restoreEl !== document.body) restoreEl.focus(); } catch (_) {}
       resolve(result);
     };
     const onKey = function (e) {
@@ -1447,12 +1460,15 @@ function uiPrompt(opts) {
     document.body.appendChild(overlay);
     const input = overlay.querySelector('.ui-dialog-input');
     const errEl = overlay.querySelector('.ui-dialog-err');
+    // A11y batch H — hand focus back to the trigger element on close.
+    const restoreEl = document.activeElement;
     let resolved = false;
     const cleanup = function (result) {
       if (resolved) return;
       resolved = true;
       document.removeEventListener('keydown', onKey, true);
       overlay.remove();
+      try { if (restoreEl && restoreEl.isConnected && restoreEl !== document.body) restoreEl.focus(); } catch (_) {}
       resolve(result);
     };
     const submit = function () {
@@ -1511,10 +1527,27 @@ function ensureOverlay(id, opts) {
       if (e.target === overlay) closeOverlay(overlay);
     });
   }
+  // A11y batch H — focus lifecycle. On a closed→open transition, stash the
+  // trigger element so closeOverlay can hand focus back, and (deferred, so
+  // the caller's innerHTML mount lands first) move focus INTO the dialog —
+  // unless the module already placed it somewhere inside.
+  var wasOpen = overlay.classList.contains('open');
   overlay.className = 'overlay open' + (opts.extraClass ? ' ' + opts.extraClass : '');
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
   if (opts.onClose) OVERLAY_CLOSE_HOOKS[id] = opts.onClose;
+  if (!wasOpen) {
+    var ae = document.activeElement;
+    overlay._restoreFocus = (ae && ae !== document.body) ? ae : null;
+    setTimeout(function () {
+      if (!overlay.classList.contains('open')) return;
+      if (overlay.classList.contains('hover-mode')) return;   // non-modal popover
+      if (overlay.contains(document.activeElement)) return;   // module chose its own
+      var f = overlay.querySelector(
+        'button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])');
+      if (f) { try { f.focus(); } catch (_) {} }
+    }, 0);
+  }
   return overlay;
 }
 
@@ -1526,9 +1559,19 @@ function closeOverlay(el) {
   if (!el) return;
   var hook = el.id && OVERLAY_CLOSE_HOOKS[el.id];
   if (hook) {
-    try { hook(); return; } catch (err) { /* degrade to plain hide */ }
+    try { hook(); } catch (err) { el.classList.remove('open'); /* degrade to plain hide */ }
+  } else {
+    el.classList.remove('open');
   }
-  el.classList.remove('open');
+  // A11y batch H — restore focus to the stashed trigger, but ONLY if the
+  // overlay actually closed: a hook may legitimately refuse (the INV-145
+  // mid-send guard keeps the composer open), and yanking focus then would
+  // fight the module.
+  var restore = el._restoreFocus;
+  if (restore && (!el.isConnected || !el.classList.contains('open'))) {
+    el._restoreFocus = null;
+    try { if (restore.isConnected) restore.focus(); } catch (_) {}
+  }
 }
 
 /** Topmost open overlay = LAST `.overlay.open` in DOM order. Dynamic overlays

@@ -1108,7 +1108,7 @@ function enterCoverageView(area) {
   area.innerHTML =
     (COMPACT_MODE
       ? '<div class="compact-header"><div class="ch-title">' + icon('chart', 16) + ' Coverage</div></div>'
-      : '<div class="view-title-row"><h2>Coverage</h2><p>Forward staffing across timezones with PTO overlaid — understaffed manager-tz hours are flagged.</p></div>') +
+      : '<div class="view-title-row"><div><h1 class="view-title">Coverage</h1><p>Forward staffing across timezones with PTO overlaid — understaffed manager-tz hours are flagged.</p></div></div>') +
     '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
       '<div class="field"><label>From</label><input type="date" id="cov-from" value="' + esc(COV_STATE.from) + '"></div>' +
       '<div class="field"><label>To</label><input type="date" id="cov-to" value="' + esc(COV_STATE.to) + '"></div>' +
@@ -1291,7 +1291,7 @@ function enterPunctualityView(area) {
   area.innerHTML =
     (COMPACT_MODE
       ? '<div class="compact-header"><div class="ch-title">' + icon('clock', 16) + ' Punctuality</div></div>'
-      : '<div class="view-title-row"><h2>Punctuality</h2><p>Start-time adherence vs each rep’s scheduled shift start (per-timezone). On-time = clock-in within the grace window.</p></div>') +
+      : '<div class="view-title-row"><div><h1 class="view-title">Punctuality</h1><p>Start-time adherence vs each rep’s scheduled shift start (per-timezone). On-time = clock-in within the grace window.</p></div></div>') +
     '<div class="cov-controls" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">' +
       '<div class="field"><label>From</label><input type="date" id="punct-from" value="' + esc(PUNCT_STATE.from) + '"></div>' +
       '<div class="field"><label>To</label><input type="date" id="punct-to" value="' + esc(PUNCT_STATE.to) + '"></div>' +

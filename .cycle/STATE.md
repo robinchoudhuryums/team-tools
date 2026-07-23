@@ -117,8 +117,29 @@ dark value) and the CN flag-stripe exact-token pin (action=--warn,
 training=--info, review=--good; name-distinctness alone could NOT catch the
 regression since --accent aliases the --good green — first bite-check
 exposed this, pin tightened to deepStrictEqual). Pure 311/0, DOM 63/0,
-node --check ×3. Remaining: operator deploy, /reflect (cycle-10 metrics.csv
-+ estimates.csv rows); Batches H/J/K/L await user direction.
+node --check ×3.
+BATCH H ALSO IMPLEMENTED (same branch) — a11y structural. H1 calendar day
+cells are keyboard-accessible (role=button + tabindex=0 + a state-summary
+aria-label on cells with content; Enter/Space pins the day modal via a
+per-cell keydown in bindCalHover_ — hover semantics untouched). H2 overlay
+focus lifecycle: ensureOverlay stashes the trigger on a closed→open
+transition and defer-focuses the first focusable INSIDE the dialog (skipped
+when the module already placed focus inside, or for hover-mode);
+closeOverlay restores the trigger ONLY when the overlay actually closed
+(the INV-145 refuse-to-close guard is honored — new DOM pin);
+uiConfirm/uiPrompt cleanup also restores the trigger. H3 mtRenderTable_
+sortable headers: scope=col on every th, tabindex=0 + aria-sort
+(ascending/descending/none) + Enter/Space activation on sortable ones
+(pure pin added). H4 color-only calendar dots got SHAPE cues (worked =
+square, pending = hollow ring, denied day-number struck through; legend
+mirrors). H5 the 10 bare <h2> view titles (metrics ×3, kb, coaching,
+empdocs ×2, training, manager Coverage + Punctuality) promoted to
+<h1 class="view-title"> — consistent hierarchy + display-font typography;
+the three title-rows with a description <p> now stack title+p in a left
+column (was flex-spread). Pure 312/0 (mtRenderTable_ a11y pin), DOM 65/0
+(2 new: focus-lifecycle — bite-checked — and INV-145 no-restore-on-refusal).
+Remaining: operator deploy, /reflect (cycle-10 metrics.csv + estimates.csv
+rows); Batches J/K/L + the typed-signature legal call await user direction.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
@@ -141,14 +162,12 @@ Updated: 2026-07-23 (cycle-10 top-5 batch)
   doc drift, umsCallNotesLastDept entry.
 
 ## Where I left off (cycle 10)
-Entire scan backlog + a11y/visual Batches G+I done + pushed. Next: user
-decides on Batches H (a11y structural: calendar cells→buttons, focus
-capture/restore, onclick spans→buttons+aria-sort, color-only glyphs, h1
-hierarchy), J (visual elevation — taste items need user direction), K (shell
-health dot / mirror registry / lock breadth / editor-suite CI), L (sheet
-doctor + C13 hash delimiters), and the typed-signature e-sign legal call.
-Then operator deploy (clasp push -f + New version + runAllTests — suite +7
-this cycle; first run creates TEST_KB_Fixture), then /reflect.
+Entire scan backlog + a11y/visual Batches G+I+H done + pushed. Next: user
+decides on Batches J (visual elevation — taste items need user direction),
+K (shell health dot / mirror registry / lock breadth / editor-suite CI),
+L (sheet doctor + C13 hash delimiters), and the typed-signature e-sign
+legal call. Then operator deploy (clasp push -f + New version + runAllTests
+— suite +7 this cycle; first run creates TEST_KB_Fixture), then /reflect.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):
