@@ -2154,6 +2154,13 @@
     font-size: var(--text-sm); text-align: center;
   }
   .error-state svg { flex: none; }
+  /* Batch K (E) — manager shell health dot on the Manage nav button: lights
+     when any automation check is failing (the digest's failure set), so
+     silent degradation surfaces without waiting for the daily email. */
+  .sb-health-dot {
+    display: inline-block; width: 7px; height: 7px; flex: none;
+    border-radius: 50%; background: var(--destructive); margin-left: 6px;
+  }
   .spinner {
     width: 32px; height: 32px;
     border: 2.5px solid var(--line); border-top-color: var(--accent);

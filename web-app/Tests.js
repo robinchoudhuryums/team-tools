@@ -4386,6 +4386,7 @@ function test_managerGates_rejectNonManager() {
     ['managerDeleteCallNote',          function () { return managerDeleteCallNote(_TEST_INDIA_ID, 'no-such-note'); }],
     ['getCallNotesTagTaxonomy',        function () { return getCallNotesTagTaxonomy(); }],
     ['getCallNotesTagTrends',          function () { return getCallNotesTagTrends(); }],
+    ['getAutomationHealthBadge',       function () { return getAutomationHealthBadge(); }],
     ['kbGetReviewDue',                 function () { return kbGetReviewDue(); }],
     ['kbMarkReviewed',                 function () { return kbMarkReviewed('no-such-id'); }],
     ['kbGetContentRequests',           function () { return kbGetContentRequests(); }],

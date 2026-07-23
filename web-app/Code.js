@@ -4285,7 +4285,13 @@ function recordClientError(payload) {
     const n = parseInt(cache.get(rateKey), 10) || 0;
     if (n >= CLIENT_ERR_RATE_MAX_PER_HOUR) return { success: false };
     cache.put(rateKey, String(n + 1), 3600);
-    const lock = LockService.getScriptLock();
+    // Batch K (B) — USER lock, not the global script lock: this is a
+    // fire-and-forget single-appendRow diagnostics log, and holding the ONE
+    // script lock made punch/note writes queue behind error beacons. The
+    // user lock still serializes a rep's own double-fires; appendRow itself
+    // is atomic, and a rare first-touch tab-create race just fails one
+    // best-effort call.
+    const lock = LockService.getUserLock();
     lock.waitLock(15000);
     try {
       getOrCreateClientErrorsSheet_().appendRow([
@@ -4666,6 +4672,69 @@ function computeAutomationHealth_() {
  *  urgent digest's "sends nothing when none". Top-level trigger handler, so it
  *  carries the MANAGER_EMAILS assertManagerCaller_ gate (INV-44); best-effort
  *  (INV-14, never throws past the catch); PHI-free. */
+/** Batch K (E) — the ONE derivation of "which automation checks are failing",
+ *  shared by the daily failure digest AND the shell health-badge endpoint so
+ *  the two can never drift (the K-D single-source discipline). Takes a
+ *  computeAutomationHealth_() report; returns human-readable problem strings.
+ *  Failure classes: (a) stale digest heartbeats (never-ran is NOT a problem —
+ *  fresh-deploy posture), (b) stale nightly reconcile (the F1 dead-trigger
+ *  signal; only when a prior run EXISTS), (c) personal-sheet sync failures,
+ *  (c2) a RECENT lost tamper-witness row (48h window, C4/INV-158), (d) dead
+ *  detectors (Turn C — "the job ran" ≠ "the job's detector works"). CDR
+ *  reachability is deliberately EXCLUDED (not a trigger; an unset CDR_SS_ID
+ *  would false-nag a non-CDR deployment — the panels surface it). */
+function automationProblems_(report) {
+  const problems = [];
+  if (!report) return problems;
+  (report.digests || []).forEach(function (d) {
+    if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+  });
+  const RECON_STALE_HOURS = 30;   // daily 5am + margin
+  const recon = (report.automationLastRuns || []).filter(function (a) { return a.action === 'CallNotesReconcile'; })[0];
+  if (recon && recon.last && recon.last.ms && (Date.now() - recon.last.ms) > RECON_STALE_HOURS * 3600000) {
+    problems.push('The nightly Sheets reconcile last ran ' + recon.last.timestampMgr + ' (over ' + RECON_STALE_HOURS + 'h ago) — the trigger may be disabled.');
+  }
+  if (report.syncFails && report.syncFails.count > 0) {
+    problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
+  }
+  if (report.witnessFails && report.witnessFails.recent) {
+    problems.push('A tamper-witness audit row was LOST in the last 48h (' +
+      report.witnessFails.lastAction + '; ' + report.witnessFails.count +
+      ' total) — a signed/submitted record has no independent audit witness. See INV-113/122.');
+  }
+  (report.detectors || []).forEach(function (c) {
+    if (c && c.ok === false) problems.push('Detector dead: ' + c.label + ' — ' + c.detail);
+  });
+  return problems;
+}
+
+/** Batch K (E) — lightweight manager health badge behind the shell's Manage
+ *  health dot. MANAGER-gated (the failure digest's audience — the Admin-gated
+ *  panels stay the detail surface; this returns only a count, no config
+ *  detail). Whole-result cached 10 min org-wide; best-effort throughout —
+ *  any failure returns {failing:false} silently (the daily digest and the
+ *  Admin Automation Health panel are the backstops, so a broken badge must
+ *  never noise the shell). */
+function getAutomationHealthBadge() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const cache = CacheService.getScriptCache();
+    const KEY = 'auto_health_badge_v1';
+    const hit = cache.get(KEY);
+    if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+    let res = { failing: false, count: 0 };
+    try {
+      const problems = automationProblems_(computeAutomationHealth_());
+      res = { failing: problems.length > 0, count: problems.length };
+    } catch (e) { Logger.log('getAutomationHealthBadge compute failed: ' + e.message); }
+    try { cache.put(KEY, JSON.stringify(res), 600); } catch (e) {}
+    return res;
+  } catch (err) {
+    return { failing: false, count: 0 };
+  }
+}
+
 function sendAutomationHealthDigest() {
   assertManagerCaller_('sendAutomationHealthDigest');
   try {
@@ -4675,44 +4744,7 @@ function sendAutomationHealthDigest() {
     try { report = computeAutomationHealth_(); } catch (e) { Logger.log('automation-health digest: report failed: ' + e.message); }
     if (!report) return;
 
-    const problems = [];
-    // (a) Stale digest heartbeats — a digest whose last run aged past its window
-    // (a previously-alive trigger that stopped). last:null (never run) is NOT a
-    // problem (fresh deploy / not-yet-installed), matching the panel's posture.
-    (report.digests || []).forEach(function (d) {
-      if (d && d.stale) problems.push('The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
-    });
-    // (b) Reconcile liveness — the ONE unconditional daily job (it writes an audit
-    // row every run), so a stale last-run is the F1 signal (a narrowed
-    // ADMIN_EMAILS / dead trigger). Only flag when a prior run EXISTS but is old
-    // (no row at all = fresh deploy / not installed — same posture as (a)).
-    const RECON_STALE_HOURS = 30;   // daily 5am + margin
-    const recon = (report.automationLastRuns || []).filter(function (a) { return a.action === 'CallNotesReconcile'; })[0];
-    if (recon && recon.last && recon.last.ms && (Date.now() - recon.last.ms) > RECON_STALE_HOURS * 3600000) {
-      problems.push('The nightly Sheets reconcile last ran ' + recon.last.timestampMgr + ' (over ' + RECON_STALE_HOURS + 'h ago) — the trigger may be disabled.');
-    }
-    // (c) Personal-sheet sync failures (a rep's Sheet drifting from the source).
-    if (report.syncFails && report.syncFails.count > 0) {
-      problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
-    }
-    // (c2) C4 (cycle 10) — a RECENT lost tamper-witness audit row (48h window
-    // so an old blip doesn't nag daily forever; the panel keeps the total).
-    if (report.witnessFails && report.witnessFails.recent) {
-      problems.push('A tamper-witness audit row was LOST in the last 48h (' +
-        report.witnessFails.lastAction + '; ' + report.witnessFails.count +
-        ' total) — a signed/submitted record has no independent audit witness. See INV-113/122.');
-    }
-    // (d) Turn C — detector liveness: a DEAD DETECTOR is the failure class the
-    // rest of this digest can't see ("the job ran" ≠ "the job's detector
-    // works" — the H-1/M-11 lesson). Any failing writer↔parser round-trip or
-    // missing diagnostic channel is pushed.
-    (report.detectors || []).forEach(function (c) {
-      if (c && c.ok === false) problems.push('Detector dead: ' + c.label + ' — ' + c.detail);
-    });
-    // CDR reachability is deliberately NOT pushed here: it isn't a trigger, an
-    // unset CDR_SS_ID legitimately reads as "unreachable" (would false-nag a
-    // non-CDR deployment daily), and the Admin Storage/Automation Health panels
-    // already surface it. The digest stays scoped to automation-TRIGGER failures.
+    const problems = automationProblems_(report);
 
     if (!problems.length) { Logger.log('automation-health digest: all clear, nothing to send.'); return; }
 
@@ -14914,7 +14946,11 @@ function getOrCreateKbViewsSheet_() {
  *  PHI-free by construction (itemId + repId + a sanitized context token).
  *  The client fires it best-effort; an error here never surfaces. */
 function kbRecordView(itemId, context) {
-  const lock = LockService.getScriptLock();
+  // Batch K (B) — USER lock, not the global script lock: an append-only
+  // fire-and-forget usage log (KbViews) must never make punch/note writes
+  // wait. Same rationale as recordClientError; appendRow is atomic and the
+  // user lock still serializes one rep's double-fires.
+  const lock = LockService.getUserLock();
   lock.waitLock(15000);
   try {
     const emp = getEmployeeInfo_();

@@ -291,6 +291,7 @@ window.addEventListener('load', () => {
       enterTool(initialTool, initialTab);
       // Start ambient pollers — badges update regardless of active tool
       if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
+      startHealthBadgePolling_();
       // #4 — in the compact pop-out, persist the window's size/position so the
       // rep's manual resize/reposition sticks across launches.
       popoutPersistGeometryInit_();
@@ -306,6 +307,47 @@ window.addEventListener('load', () => {
     .withFailureHandler(err => renderError(err.message || 'Failed to connect. Please refresh.'))
     .getEmployeeState();
 });
+
+// ── Batch K (E) — manager shell health dot ─────────────────────────────────
+// Polls the lightweight manager-gated getAutomationHealthBadge (10-min server
+// cache) and lights a danger dot on the Manage nav button when any automation
+// check is failing — the same failure set the daily digest emails, surfaced
+// without the email lag. Best-effort throughout: a failed poll leaves the dot
+// as-is. Sidebar selectors use data-tool (NOT data-view — the badge-selector
+// gotcha that silently killed the CN stale-flag badge once).
+var HEALTH_BADGE_TIMER = null;
+function startHealthBadgePolling_() {
+  if (!empState || !empState.isManager) return;   // manager-only signal
+  if (HEALTH_BADGE_TIMER) return;                 // idempotent
+  var poll = function () {
+    try {
+      google.script.run
+        .withSuccessHandler(renderHealthBadge_)
+        .withFailureHandler(function () {})       // badge is best-effort
+        .getAutomationHealthBadge();
+    } catch (e) {}
+  };
+  setTimeout(poll, 8000);                         // off the boot critical path
+  HEALTH_BADGE_TIMER = setInterval(poll, 10 * 60 * 1000);
+}
+function renderHealthBadge_(res) {
+  var failing = !!(res && res.failing);
+  var count = (res && res.count) || 0;
+  ['.sb-link[data-tool="manage"]', '.nav-btn[data-tool="manage"]'].forEach(function (sel) {
+    var btn = document.querySelector(sel);
+    if (!btn) return;
+    var dot = btn.querySelector('.sb-health-dot');
+    if (!failing) { if (dot) dot.remove(); return; }
+    if (!dot) {
+      dot = document.createElement('span');
+      dot.className = 'sb-health-dot';
+      btn.appendChild(dot);
+    }
+    dot.title = count + ' automation issue' + (count === 1 ? '' : 's') +
+      ' — see Manage → Admin → Automation Health';
+    dot.setAttribute('aria-label', dot.title);
+  });
+}
 
 /** Opens the current view in a chromeless pop-out window in compact mode.
  *  ONE window PER TOOL (named target keyed by tool) so e.g. a Call Notes

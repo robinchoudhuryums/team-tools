@@ -161,8 +161,36 @@ back on the four secondary-label families (.card-label, CN .cnv-row/.cnv-trio
 .lbl, .cn-stat-lbl, .rail-card h4 → sentence-case var(--ui), sizes onto the
 new text scale); kickers/chips/table headers KEEP the mono-uppercase
 register by design. Pure 312/0, DOM 65/0, node --check clean.
+BATCH K ALSO IMPLEMENTED (same branch) — 3 of 4 code suggestions. K-E shell
+health dot: the digest's failure derivation is FACTORED into
+automationProblems_(report) (ONE source — digest + badge can't drift); NEW
+getAutomationHealthBadge() (MANAGER-gated {failing,count}, 10-min org-wide
+CacheService result, best-effort — any failure returns {failing:false}
+silently since the digest/panel are the backstops); the shell polls it
+every 10 min for managers (startHealthBadgePolling_, boot +8s off the
+critical path) and lights a danger .sb-health-dot on BOTH Manage nav
+buttons (data-tool selectors — the badge-selector gotcha). Detector-wiring
+tripwire UPDATED to pin the factored shape (helper covers detectors/
+witness/sync/reconcile/stale-digests; digest AND badge consume it; badge
+manager-gated); editor omnibus gained the getAutomationHealthBadge
+'Manager access' case. K-D mirror registry: NEW self-checking MIRROR_INDEX
+in run.js — all 13 known parallel-source mirrors in ONE place, each naming
+its live guard test (a renamed/deleted tripwire breaks the index —
+bite-checked); plus the previously UNGUARDED AUTO_COPY_FORMAT
+server-default ↔ client-fallback mirror got its first machine check
+(concat-literal parse + byte compare — bite-checked); CN_EMAIL_PALETTE
+stays a documented manual-discipline entry. K-B: kbRecordView +
+recordClientError moved from the GLOBAL ScriptLock to LockService
+.getUserLock() (fire-and-forget single-appendRow logs must never queue
+punch/note writes; user lock still serializes one rep's double-fires;
+INV-01 finally-release scan still passes — INV-117/150 wording needs a
+/sync-docs amendment). K-A (editor suite → CI via Apps Script API /
+clasp run) DEFERRED — operator-side auth setup (API enablement + OAuth
+creds as GitHub secrets) can't be done from the repo; plan noted in the
+batch summary. Pure 314/0 (2 new tripwires bite-checked), DOM 65/0,
+node --check ×3.
 Remaining: operator deploy, /reflect (cycle-10 metrics.csv + estimates.csv
-rows); Batches K/L + the typed-signature legal call await user direction.
+rows); Batch L + K-A + the typed-signature legal call await user direction.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
@@ -185,12 +213,12 @@ Updated: 2026-07-23 (cycle-10 top-5 batch)
   doc drift, umsCallNotesLastDept entry.
 
 ## Where I left off (cycle 10)
-Entire scan backlog + a11y/visual Batches G+I+H+J done + pushed. Next: user
-decides on Batches K (shell health dot / mirror registry / lock breadth /
-editor-suite CI), L (sheet doctor + C13 hash delimiters), the .chip
-consolidation follow-on, and the typed-signature e-sign legal call. Then
-operator deploy (clasp push -f + New version + runAllTests — suite +7 this
-cycle; first run creates TEST_KB_Fixture), then /reflect.
+Entire scan backlog + Batches G+I+H+J+K(E/D/B) done + pushed. Next: user
+decides on Batch L (sheet doctor + C13 hash delimiters), K-A (editor-suite
+CI — operator auth setup), the .chip consolidation follow-on, and the
+typed-signature e-sign legal call. Then operator deploy (clasp push -f +
+New version + runAllTests — suite +8 this cycle; first run creates
+TEST_KB_Fixture), then /reflect.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):

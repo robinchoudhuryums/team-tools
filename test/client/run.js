@@ -916,9 +916,25 @@ test('TRIPWIRE (Turn C): detector checks are computed, returned, and consumed by
   const health = extractRawFunction('Code.js', 'computeAutomationHealth_');
   assert.ok(/automationDetectorChecks_\(\)/.test(health), 'computeAutomationHealth_ computes the detector checks');
   assert.ok(/detectors:\s*detectors/.test(health), 'computeAutomationHealth_ returns them');
+  // Batch K (E): the failure derivation is factored into automationProblems_
+  // so the digest AND the shell health badge share ONE source. The digest and
+  // badge must both consume it, and the helper must still cover every failure
+  // class (detectors, witness loss, sync-fails, stale digests, reconcile).
+  const problemsSrc = extractRawFunction('Code.js', 'automationProblems_');
+  assert.ok(/report\.detectors|\(report\.detectors/.test(problemsSrc),
+    'automationProblems_ must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
+  assert.ok(/witnessFails\.recent/.test(problemsSrc), 'automationProblems_ covers recent witness loss (C4/INV-158)');
+  assert.ok(/syncFails/.test(problemsSrc), 'automationProblems_ covers personal-sheet sync failures');
+  assert.ok(/CallNotesReconcile/.test(problemsSrc), 'automationProblems_ covers the stale-reconcile F1 signal');
+  assert.ok(/d\.stale/.test(problemsSrc), 'automationProblems_ covers stale digest heartbeats');
   const digest = extractRawFunction('Code.js', 'sendAutomationHealthDigest');
-  assert.ok(/report\.detectors/.test(digest),
-    'sendAutomationHealthDigest must push failing detectors — a dead detector is the failure class the rest of the digest cannot see (H-1/M-11)');
+  assert.ok(/automationProblems_\(/.test(digest),
+    'sendAutomationHealthDigest consumes automationProblems_ (the shared derivation)');
+  const badge = extractRawFunction('Code.js', 'getAutomationHealthBadge');
+  assert.ok(/automationProblems_\(/.test(badge) && /computeAutomationHealth_\(/.test(badge),
+    'getAutomationHealthBadge consumes the SAME derivation (no badge↔digest drift)');
+  assert.ok(/isManager/.test(badge) && /Manager access required/.test(badge),
+    'getAutomationHealthBadge is manager-gated (INV-02)');
   const checksSrc = extractRawFunction('Code.js', 'automationDetectorChecks_');
   ['coachOverdue', 'auditStaleness', 'deptReqSla', 'cnTimestamp', 'formTokenExpiry',
    'briefConfig' /* cycle-8 M-11: flag-on-without-trigger config coherence */,
@@ -1378,6 +1394,85 @@ COUPLING_REGISTRY.forEach((c) => {
     sub.forEach((k) => assert.ok(sup.indexOf(k) >= 0,
       c.name + ': "' + k + '" is in the source set but MISSING downstream — ' + c.why));
   });
+});
+
+// ── Batch K (D) — MIRROR INDEX ──────────────────────────────────────────────
+// The single documented registry of every known client↔server (or
+// file↔file) parallel-source mirror, each pointing at the tripwire that
+// guards it. The index is SELF-CHECKING: each guard string must appear
+// elsewhere in this file (the real test's name/assertion), so a renamed or
+// deleted tripwire breaks the index instead of silently orphaning the
+// mirror. Adding a new mirror = add the pair here + its guard test.
+// `guards: []` entries are deliberate manual-discipline mirrors (documented
+// in CLAUDE.md) that cannot be machine-checked — kept in the index so the
+// full inventory lives in ONE place.
+const MIRROR_INDEX = [
+  { pair: 'LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ (INV-72)',
+    guards: ['every LEAVE_DEDUCTION_CLIENT entry matches the server deduction',
+             'TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT keys'] },
+  { pair: 'day-type <select> options ⊆ TIME_OFF_TYPES (INV-95)',
+    guards: ['every day-type <select> option is an accepted leave type'] },
+  { pair: 'INTAKE_PMD/PAP_LAYOUT ↔ INTAKE_PMD/PAP_CLIENT (INV-112)',
+    guards: ['client render layout mirrors the server'] },
+  { pair: 'server kbSlug_ ↔ client kbSlug_ heading anchors',
+    guards: ['server kbSlug_ matches kbMd_'] },
+  { pair: 'kbCollectDocInlineImages_ ↔ converter Doc walk (INV-115)',
+    guards: ['kbCollectDocInlineImages_ mirrors the converter walk'] },
+  { pair: 'form_public SIG_PAD export cap ↔ EmpDocs pad cap (INV-96/122)',
+    guards: ['signature-pad export cap parity'] },
+  { pair: 'client CN_SHEET_VIEWS ⊆ server adminSheetViewKeys_ (Tier 2)',
+    guards: ['CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_'] },
+  { pair: 'DIGEST_LABELS ⊇ DIGEST_STALE_HOURS (COUPLING_REGISTRY)',
+    guards: ['Automation-Health DIGEST_LABELS'] },
+  { pair: 'CN_HEALTH_RUN_LABELS ⊇ AUTOMATION_AUDIT_ACTIONS (COUPLING_REGISTRY)',
+    guards: ['Automation-Health CN_HEALTH_RUN_LABELS'] },
+  { pair: 'health badge ↔ failure digest problem derivation (batch K E)',
+    guards: ['getAutomationHealthBadge consumes the SAME derivation'] },
+  { pair: 'AUTO_COPY_FORMAT server CONFIG default ↔ client fallback',
+    guards: ['client fallback mirrors the server CONFIG default'] },
+  { pair: 'CN_EMAIL_PALETTE ↔ styles_design_tokens palette',
+    guards: [],   // hand-resolved hex by design (email clients strip <style>)
+    manual: 'CLAUDE.md "CN_EMAIL_PALETTE is hand-resolved from design tokens"' },
+  { pair: 'PPD engine option values ↔ INTAKE_PPD_CONTROL (drift guards)',
+    guards: ['end-to-end config-driven recommendation parity'] },
+];
+console.log('\nclient — mirror index (batch K D: every mirror names a live guard)');
+test('mirror index — every listed guard test exists in this file', () => {
+  const self = fs.readFileSync(__filename, 'utf8');
+  MIRROR_INDEX.forEach((m) => {
+    (m.guards || []).forEach((g) => {
+      // The guard string must appear at least twice: once in this index
+      // literal, once in the real test it points at.
+      const n = self.split(g).length - 1;
+      assert.ok(n >= 2, 'mirror "' + m.pair + '": guard "' + g +
+        '" not found elsewhere in run.js — its tripwire was renamed or removed');
+    });
+    if (!m.guards.length) assert.ok(m.manual, 'unguarded mirror "' + m.pair + '" must document its manual discipline');
+  });
+});
+test('AUTO_COPY_FORMAT: client fallback mirrors the server CONFIG default', () => {
+  // Both templates are same-shaped string-concat literals ending at the
+  // {resolution} chunk; parse each and compare byte-for-byte. CLAUDE.md has
+  // required this mirror ("keep them in sync") since the multi-line template
+  // shipped — this is its first machine check.
+  function concatTemplate(src, anchorRe, label) {
+    const m = src.match(anchorRe);
+    assert.ok(m, label + ' template anchor found');
+    const tail = src.slice(m.index, m.index + 900);
+    const chunks = tail.match(/'(?:[^'\\]|\\.)*'/g) || [];
+    const out = [];
+    for (const c of chunks) {
+      out.push(c.slice(1, -1).replace(/\\n/g, '\n'));
+      if (c.indexOf('{resolution}') >= 0) break;
+    }
+    return out.join('');
+  }
+  const cnFullSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const server = concatTemplate(codeSrc, /AUTO_COPY_FORMAT:/, 'server');
+  const client = concatTemplate(cnFullSrc, /CN_STATE\.autoCopyFormat\s*\|\|/, 'client');
+  assert.ok(server.indexOf('{patientAndTrx}') >= 0, 'server template parsed (carries the Patient & TRX line)');
+  assert.strictEqual(client, server,
+    'the client first-copy fallback template drifted from the server CONFIG.CALL_NOTES.AUTO_COPY_FORMAT default');
 });
 
 console.log('\nCode.js — Sheets-coerced timestamp columns are read via normalizeAuditTs_ (M1 tripwire)');
