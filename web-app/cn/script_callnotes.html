@@ -8571,6 +8571,18 @@ function cnRenderHealthPanel_(res) {
     sfHtml = okLine('No personal-sheet sync failures in the last ' + (sf.windowDays || 30) + ' days.');
   }
 
+  // (C4, cycle 10) Lost tamper-witness audit rows — writeWitnessAuditLog_
+  // retried and still couldn't append a FormSubmissionReceived / EmpDocSigned /
+  // EmpDocCompleted witness (INV-113/122): the attested record exists in its
+  // own store but has no independent audit witness. A legacy payload without
+  // the field renders the quiet all-clear.
+  var wfr = res.witnessFails || { count: 0 };
+  if (wfr.count > 0) {
+    sfHtml += warnBox(icon('warning', 11) + ' <strong>' + wfr.count + '</strong> lost tamper-witness audit row(s)' +
+      (wfr.lastAction ? ' (last: ' + esc(wfr.lastAction) + ')' : '') +
+      ' — a signed/submitted record has no independent audit witness. See INV-113/122.');
+  }
+
   // (#1, INV-150) Client error beacon — exception metadata posted by the
   // shell's window.onerror / unhandledrejection hook (PHI-safe: message /
   // stack / view only, never field values). Zero = quiet all-clear; a legacy

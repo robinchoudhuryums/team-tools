@@ -431,7 +431,7 @@ function enterMetricsMyStatsView() {
         mMyPresetBtn_('Today', 'today') + mMyPresetBtn_('7D', '7d') + mMyPresetBtn_('30D', '30d') +
       '</div>' +
       '<label style="font-size:0.85rem;color:var(--muted)">Day</label>' +
-      '<input type="date" id="m-my-date" value="' + M_STATE.myDate + '">' +
+      '<input type="date" id="m-my-date" value="' + esc(M_STATE.myDate) + '">' +
       '<label style="font-size:0.85rem;color:var(--muted);margin-left:6px">Range</label>' +
       '<input type="date" id="m-my-from" value="' + esc(M_STATE.myFrom) + '" title="Range start">' +
       '<input type="date" id="m-my-to" value="' + esc(M_STATE.myTo) + '" title="Range end">' +
@@ -597,7 +597,7 @@ function mRenderMyStats_(data) {
     html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(trend, 'pctAnswered', avg) + '</div>';
     var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
     var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
-    html += '<div class="m-hero-spark-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>';
+    html += '<div class="m-hero-spark-labels"><span>' + esc(firstLabel) + '</span><span>' + esc(lastLabel) + '</span></div>';   // D7 (cycle 10) — the documented Metrics esc() rule
   }
   html += '</div>';
 
@@ -1004,7 +1004,7 @@ function mRenderTeamMetrics_(data) {
     html += '<div class="m-hero-spark">' + mBuildHeroSparkSvg_(data.trend, 'pctAnswered', avg) + '</div>';
     var firstLabel = data.trend[0].date ? data.trend[0].date.substring(5) : '';
     var lastLabel = data.trend[data.trend.length - 1].date ? data.trend[data.trend.length - 1].date.substring(5) : '';
-    html += '<div class="m-hero-spark-labels"><span>' + firstLabel + '</span><span>' + lastLabel + '</span></div>';
+    html += '<div class="m-hero-spark-labels"><span>' + esc(firstLabel) + '</span><span>' + esc(lastLabel) + '</span></div>';   // D7 (cycle 10) — the documented Metrics esc() rule
   }
   html += '</div>';
 

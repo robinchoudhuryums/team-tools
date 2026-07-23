@@ -1185,13 +1185,18 @@ function getManagerDashboard() {
       }
     }
 
-    // Analytics: daily punch counts (last 7 days) + time-off status summary
+    // Analytics: daily punch counts (today + the 7 prior days = 8 bars) +
+    // time-off status summary. C11 (cycle 10): filtered to roster employees —
+    // this was the ONE adpRows pass without the empById filter, so off-roster
+    // / TEST_-remnant ids inflated the trend bars while every other dashboard
+    // aggregate excluded them.
     const analyticsDays = 7;
     const punchCountsByDate = {};
     const analyticsLookback = new Date(now);
     analyticsLookback.setDate(analyticsLookback.getDate() - analyticsDays);
     const analyticsStart = fmtDateTz_(analyticsLookback, mgrTz);
     for (let i = 2; i < adpRows.length; i++) {
+      if (!empById[String(adpRows[i][ADP.EMP_ID]).trim()]) continue;   // C11
       const d = normalizeDate_(adpRows[i][ADP.DATE]);
       if (d >= analyticsStart && d <= todayStr) {
         punchCountsByDate[d] = (punchCountsByDate[d] || 0) + 1;
@@ -1679,7 +1684,13 @@ function deletePunch(empId, date, time, punchType) {
     const targetEmp = lookupEmployeeById_(empId);
     const targetTz = targetEmp ? empTz_(targetEmp) : CONFIG.TIMEZONE;
     const today = fmtDateTz_(new Date(), targetTz);
-    const daysBack = Math.abs(daysBetween_(date, today));
+    // C7 (cycle 10): backward distance, not Math.abs — the symmetric window
+    // let a FUTURE-dated punch row (pre-guard garbage / direct sheet edit) up
+    // to 7 days ahead pass the "older than" check, contradicting INV-07's
+    // backward-only semantics. Future rows within the window stay deletable
+    // (daysBack negative but not > the window) — that's how a manager cleans
+    // up future garbage; only genuinely-old punches are blocked.
+    const daysBack = daysBetween_(date, today);
     if (daysBack > CONFIG.MGR_DELETE_WINDOW_DAYS) {
       return { success: false, error:
         `Cannot delete punches older than ${CONFIG.MGR_DELETE_WINDOW_DAYS} days.` };
@@ -1776,9 +1787,13 @@ function selfDeletePunch(date, time, punchType) {
  *  Returns name + status only — no email, no internal IDs, no last-punch detail. */
 function getTeammateStatus() {
   try {
-    if (!getFlag_('showTeammateStatus')) return { enabled: false, teammates: [] };
+    // C8 (cycle 10): authenticate BEFORE evaluating the feature flag — the
+    // old order let an unregistered/anonymous caller distinguish the flag's
+    // on/off state by which response shape came back (a trivial config-state
+    // disclosure, and the only pre-auth server-derived state in the API).
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Employee not found.' };
+    if (!getFlag_('showTeammateStatus')) return { enabled: false, teammates: [] };
 
     const rows = getEmployeeRosterRows_();
     const employees = [];
@@ -2042,6 +2057,15 @@ function exportAdpRange(startDate, endDate) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    // C2 (cycle 10): validate like every sibling range endpoint — with both
+    // args undefined the date filter's relational compares were always false,
+    // so a bare google.script.run.exportAdpRange() silently exported the
+    // ENTIRE timesheet history and wrote an "undefined..undefined" audit row.
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate))
+      return { error: 'Invalid start date (expected yyyy-MM-dd).' };
+    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate))
+      return { error: 'Invalid end date (expected yyyy-MM-dd).' };
+    if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
     const result = generateExportSheet_(startDate, endDate, null);
     if (result.error) return result;
     writeAuditLog_(emp, 'AdpExport', startDate + '..' + endDate, '', false, 0,
@@ -4301,6 +4325,11 @@ function clientErrorsSummary_(mgrTz) {
     const cutoff = fmtDateTz_(cutD, CONFIG.TIMEZONE);
     for (let i = data.length - 1; i >= 0; i--) {   // newest-first; append-only tab
       const tsRaw = normalizeAuditTs_(data[i][0]);
+      // C6 (cycle 10): a blank/hand-mangled Timestamp cell normalizes to ''
+      // (< cutoff), and the old `break` hid every OLDER-INDEXED row above it
+      // from the panel with no signal. Skip the malformed row and keep
+      // scanning; only a genuinely-older parsed date ends the tail walk.
+      if (!tsRaw) continue;
       if (tsRaw.substring(0, 10) < cutoff) break;  // chronological — older rows follow
       out.count++;
       if (out.recent.length < 5) {
@@ -4599,6 +4628,22 @@ function computeAutomationHealth_() {
       };
     });
 
+    // C4 (cycle 10) — lost witness-row counter (WITNESS_AUDIT_FAILS, stamped
+    // by writeWitnessAuditLog_ after a failed retry). `recent` = a loss in the
+    // last 48h (what the failure digest pushes); the panel shows the total.
+    let witnessFails = { count: 0, lastAt: null, lastAction: '', recent: false };
+    try {
+      const wf = JSON.parse(PropertiesService.getScriptProperties()
+        .getProperty('WITNESS_AUDIT_FAILS') || '{}') || {};
+      if (Number(wf.count) > 0) {
+        witnessFails = {
+          count: Number(wf.count), lastAt: Number(wf.lastAt) || null,
+          lastAction: String(wf.lastAction || ''),
+          recent: !!(Number(wf.lastAt) && (Date.now() - Number(wf.lastAt)) < 48 * 3600000),
+        };
+      }
+    } catch (_) {}
+
     return {
       syncFails: syncFails,
       automationLastRuns: automationLastRuns,
@@ -4606,6 +4651,7 @@ function computeAutomationHealth_() {
       cdr: cdr,
       detectors: detectors,   // Turn C — detector-liveness checks
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
+      witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
@@ -4648,6 +4694,13 @@ function sendAutomationHealthDigest() {
     // (c) Personal-sheet sync failures (a rep's Sheet drifting from the source).
     if (report.syncFails && report.syncFails.count > 0) {
       problems.push(report.syncFails.count + ' personal-sheet sync failure(s) in the last ' + report.syncFails.windowDays + ' day(s).');
+    }
+    // (c2) C4 (cycle 10) — a RECENT lost tamper-witness audit row (48h window
+    // so an old blip doesn't nag daily forever; the panel keeps the total).
+    if (report.witnessFails && report.witnessFails.recent) {
+      problems.push('A tamper-witness audit row was LOST in the last 48h (' +
+        report.witnessFails.lastAction + '; ' + report.witnessFails.count +
+        ' total) — a signed/submitted record has no independent audit witness. See INV-113/122.');
     }
     // (d) Turn C — detector liveness: a DEAD DETECTOR is the failure class the
     // rest of this digest can't see ("the job ran" ≠ "the job's detector
@@ -7436,7 +7489,7 @@ function submitFormByToken(token, formData) {
       // PHI-adjacent — lives on the FormTokens row, reachable via the token).
       const fromDomain = intakeEmailDomain_(recipientEmail);
       const auditEmp = { id: 'EXTERNAL', name: 'External recipient', email: fromDomain };
-      writeAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
+      writeWitnessAuditLog_(auditEmp, 'FormSubmissionReceived', '', '', false, 0,
         'token=' + token + '; formType=' + formType + '; fromDomain=' + fromDomain +
         '; hash=' + submissionHash + '; submittedAt=' + submittedAt +
         (noteId ? '; noteId=' + noteId : ''));
@@ -8419,11 +8472,15 @@ function reconcileCallNotes() {
           const hasContent = CONTENT_COLS.some(function (c) { return String(row[c] || '').trim(); });
           if (!hasContent) continue;                             // blank row → skip
           const rowIndex = i + 2;
-          const tsHadValue = !!(String(row[CN.TIMESTAMP] || '').trim() || (row[CN.TIMESTAMP] instanceof Date));
+          const tsHadValue = !!cnTimestampString_(row[CN.TIMESTAMP]).trim();
           let dateLocal = normalizeDate_(row[CN.DATE_LOCAL]);    // '' if blank; handles Date coercion
-          let timestamp = (row[CN.TIMESTAMP] instanceof Date)
-            ? Utilities.formatDate(row[CN.TIMESTAMP], tz, "yyyy-MM-dd'T'HH:mm:ss")
-            : String(row[CN.TIMESTAMP] || '').trim();
+          // C1 (cycle 10): recover a coerced Timestamp via cnTimestampString_
+          // (INV-142) — the old inline branch formatted in the REP's tz, but
+          // the cell was coerced in the SHEET's tz (pinned to the ADP tz,
+          // INV-110/141). For a CST rep, any hand-entered time between
+          // 00:00–11:29 IST recovered ~-11.5h and backfilled dateLocal onto
+          // the PREVIOUS day (the exact getMyNoteHourBuckets cycle-8 class).
+          let timestamp = cnTimestampString_(row[CN.TIMESTAMP]).trim();
           if (!dateLocal && timestamp) dateLocal = timestamp.substring(0, 10);
           if (!dateLocal) dateLocal = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
           if (!timestamp) timestamp = dateLocal + 'T12:00:00';
@@ -8817,8 +8874,10 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
       `${payCycleFilter} skipped — no managers configured`);
     return;
   }
+  let createdSheet = null;   // C12 (cycle 10) — see the catch branch
   try {
     const result = generateExportSheet_(range.start, range.end, payCycleFilter);
+    if (!result.error) createdSheet = result;
     if (result.error) {
       MailApp.sendEmail({
         to: recipients.join(','),
@@ -8868,15 +8927,25 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
       MailApp.sendEmail({
         to: recipients.join(','),
         subject: `❌ ${subjectPrefix} FAILED`,
+        // C12 (cycle 10): the export SHEET is usually already created when
+        // this catch fires (the .xlsx Drive fetch is the realistic thrower) —
+        // the old email said "run it manually" without mentioning the valid
+        // sheet, so the manager re-ran and created a duplicate.
         body: `Automated export failed: ${err.message}\n\nRange: ${range.start} to ${range.end}\n\n` +
-              `Please run the export manually from the Manage tab in the UMS Time Clock app.`,
+              (createdSheet
+                ? `NOTE: the export Google Sheet WAS created successfully — only the .xlsx attachment step failed.\n` +
+                  `Open it here (no need to re-run):\n${createdSheet.url}\n`
+                : `Please run the export manually from the Manage tab in the UMS Time Clock app.`),
         htmlBody: buildBrandedEmailHtml_('Automated export failed',
           '<p style="margin:0 0 12px;">The automated export did not complete.</p>' +
           brandedKvRows_([
             ['Error', err.message],
             ['Range', range.start + ' to ' + range.end],
           ]) +
-          '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please run the export manually from the Manage tab in the UMS Time Clock app.</p>',
+          (createdSheet
+            ? '<p style="margin:14px 0 0;">The export Google Sheet <b>was created successfully</b> — only the .xlsx attachment step failed. ' +
+              '<a href="' + esc_(createdSheet.url) + '" style="color:' + CN_EMAIL_PALETTE.brand + ';font-weight:600;">Open it →</a> (no need to re-run).</p>'
+            : '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Please run the export manually from the Manage tab in the UMS Time Clock app.</p>'),
           { accent: CN_EMAIL_PALETTE.danger }),
       });
     } catch (e) {}
@@ -10183,7 +10252,12 @@ function getStateTaxRates_() {
           const v = Number(parsed[k]);
           if (isFinite(v) && v >= 0 && v <= 1) clean[String(k)] = v;
         });
-        if (Object.keys(clean).length > 0) return clean;
+        // C5 (cycle 10): a deliberately-cleared config ({} saved via the
+        // Admin tab) must stay empty — the old non-empty gate silently
+        // resurrected the CONFIG defaults, making "no tax rates" an
+        // unrepresentable state. An object whose entries ALL failed
+        // validation still degrades to CONFIG (the L-12 corrupt-blob intent).
+        if (Object.keys(parsed).length === 0 || Object.keys(clean).length > 0) return clean;
       }
     } catch (_) {}
   }
@@ -10204,7 +10278,8 @@ function getUpdateSuggestions_() {
             clean[String(k)] = parsed[k].filter(function (s) { return typeof s === 'string'; });
           }
         });
-        if (Object.keys(clean).length > 0) return clean;
+        // C5 (cycle 10): a cleared {} stays empty (see getStateTaxRates_).
+        if (Object.keys(parsed).length === 0 || Object.keys(clean).length > 0) return clean;
       }
     } catch (_) {}
   }
@@ -12051,7 +12126,35 @@ function writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, d
       punchDate, punchTime || '',
       isAdjustment ? 'TRUE' : 'FALSE', daysBack || 0, notes || '',
     ]);
-  } catch (e) { console.warn('writeAuditLog_ failed: ' + e.message); }
+    return true;   // C4 (cycle 10) — witness-class callers need the outcome
+  } catch (e) { console.warn('writeAuditLog_ failed: ' + e.message); return false; }
+}
+
+// C4 (cycle 10) — the WITNESS-class audit writes. Three audit rows are
+// documented as tamper-evidence witnesses (FormSubmissionReceived per
+// INV-113; EmpDocSigned / EmpDocCompleted per INV-122/135): the docs said
+// "the audit row IS the witness", but writeAuditLog_ swallows failures, so a
+// transient ADP-spreadsheet outage could silently drop a witness while the
+// attested mutation (on a DIFFERENT store) succeeded — and nothing counted
+// the gap. This wrapper retries once, then stamps the WITNESS_AUDIT_FAILS
+// Script Property (best-effort — the PersonalSheetSyncFail posture: the
+// witness store itself just failed, so a same-store signal can't work);
+// computeAutomationHealth_ surfaces it and the failure digest pushes a
+// RECENT failure (48h window, so an old blip doesn't nag forever).
+function writeWitnessAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, daysBack, notes, actorEmail) {
+  if (writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, daysBack, notes, actorEmail)) return true;
+  if (writeAuditLog_(targetEmp, action, punchDate, punchTime, isAdjustment, daysBack, notes, actorEmail)) return true;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let rec = {};
+    try { rec = JSON.parse(props.getProperty('WITNESS_AUDIT_FAILS') || '{}') || {}; } catch (_) { rec = {}; }
+    rec.count = (Number(rec.count) || 0) + 1;
+    rec.lastAt = Date.now();
+    rec.lastAction = String(action || '');
+    props.setProperty('WITNESS_AUDIT_FAILS', JSON.stringify(rec));
+  } catch (e) { console.error('WITNESS_AUDIT_FAILS stamp failed: ' + e.message); }
+  console.error('WITNESS audit row lost after retry: ' + action);
+  return false;
 }
 
 function notifyManagerOldAdjustment_(emp, punchType, date, time, daysBack, reason) {
@@ -12526,10 +12629,20 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     offRosterAgents: Object.keys(offRoster).sort() } };   // F(M-11)
   try {
     var payload = JSON.stringify(result);
-    if (payload.length > 90000) {
-      console.warn('CDR cache payload near 100KB limit: ' + payload.length + ' bytes for ' + cacheKey);
+    // C10 (cycle 10): CacheService hard-caps values at 100KB — an oversized
+    // put THROWS (caught below, but every subsequent read then re-scans the
+    // whole DQE tab twice per open). Skip the doomed put explicitly with a
+    // headroom margin so the behavior is deliberate + logged, not an
+    // exception path; a large-team YTD aggregate is the realistic trigger.
+    if (payload.length > 95000) {
+      console.warn('CDR cache SKIPPED (payload ' + payload.length + ' bytes > 95KB headroom) for ' +
+        cacheKey + ' — every read of this range re-scans the DQE tab until the range narrows.');
+    } else {
+      if (payload.length > 90000) {
+        console.warn('CDR cache payload near 100KB limit: ' + payload.length + ' bytes for ' + cacheKey);
+      }
+      cache.put(cacheKey, payload, CONFIG.CDR_CACHE_TTL);
     }
-    cache.put(cacheKey, payload, CONFIG.CDR_CACHE_TTL);
   } catch (e) {
     console.warn('CDR cache put failed: ' + (e.message || e));
   }
@@ -14922,12 +15035,17 @@ function kbGetRelated(itemId) {
     const kbLast = kbSheet.getLastRow();
     const meta = {};
     if (kbLast >= 2) {
-      const krows = kbSheet.getRange(2, 1, kbLast - 1, KB_HEADERS.length).getValues();
-      krows.forEach(function (r) {
+      // C9 (cycle 10): column-bound the title join (the L-16 projection
+      // pattern) — this rep-callable path ran on EVERY reader open and pulled
+      // the full KB width including every article's BodyMd, when it needs
+      // only Id/Dept/Title/Type + Status. Two bounded reads, no body cells.
+      const head = kbSheet.getRange(2, KB.ID + 1, kbLast - 1, KB.TYPE + 1).getValues();
+      const statusCol = kbSheet.getRange(2, KB.STATUS + 1, kbLast - 1, 1).getValues();
+      head.forEach(function (r, i) {
         const id = String(r[KB.ID] || '');
         if (!id) return;
         meta[id] = { title: String(r[KB.TITLE] || '(untitled)'), department: String(r[KB.DEPARTMENT] || ''),
-          type: String(r[KB.TYPE] || 'article'), status: kbRowStatus_(r[KB.STATUS]) };
+          type: String(r[KB.TYPE] || 'article'), status: kbRowStatus_(statusCol[i][0]) };
       });
     }
     const items = [];
@@ -17545,7 +17663,7 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
         .appendRow([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]);
       sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('signed');
       sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
-      writeAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
+      writeWitnessAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
         'docId=' + d.docId + '; hash=' + sigHash + '; signedAt=' + ts);
     } else {
       // Fields-only doc (no signature): completing the fields is the action.
@@ -17568,7 +17686,7 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
         .appendRow([d.docId, d.empId, ts, '', EMPDOC_ACK_VERSION, compHash, compCert]);
       sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue('completed');
       sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(ts);
-      writeAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
+      writeWitnessAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
         'docId=' + d.docId + '; hash=' + compHash + '; completedAt=' + ts);
     }
     notifyAfter = function () { notifyEmpDocSigned_(d, emp); };   // M-7: post-lock

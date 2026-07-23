@@ -33,8 +33,33 @@ inventory; INV-01 finally/releaseLock structural scan — closes the mail-scan
 no-finally hole). Pure 307/0, DOM 63/0, editor suite +7 tests total this
 cycle. NOTE for operator: the first post-deploy runAllTests creates a
 TEST_KB_Fixture spreadsheet (Script Property TEST_KB_SS_ID) in the deployer's
-Drive — expected, one-time. Remaining: batches C–F (server Lows, client Lows,
-CN/module Lows, docs), /sync-docs, operator deploy, /reflect.
+Drive — expected, one-time.
+BATCHES C+D ALSO IMPLEMENTED (same branch): C = C1 reconcile Timestamp
+recovery via cnTimestampString_ (INV-142 now strictly true; the scan's
+reconcile whole-line exemption REMOVED), C2 exportAdpRange validation, C4
+witness-audit reliability (writeAuditLog_ returns outcome; writeWitnessAuditLog_
+retry + WITNESS_AUDIT_FAILS property; surfaced in computeAutomationHealth_
++ failure digest (48h recent window) + Admin panel), C5 cleared-{} tax/
+suggestion configs stay empty, C6 clientErrorsSummary_ skips malformed ts
+rows, C7 deletePunch backward-only window, C8 getTeammateStatus auth before
+flag, C9 kbGetRelated column-bound, C10 CDR >95KB cache-put skip, C11
+punchTrend roster filter, C12 export-failure email carries the created
+sheet URL. C3 RETRACTED (calcHours_ overnight wrap is deliberately pinned
+by test_calcHours_overnight — the audit's "unsupported" premise was wrong);
+C13 hash delimiters DEFERRED (needs a dual-verify back-compat design on the
+attestation paths). D = D1 PTO-reject keeps the day modal open, D2a
+dashboard/extras failures keep last-good + never stamp fresh, D2b stranded
+"Working…" restore + warn toast on failed post-punch refresh, D3 MGR_STATUS
+unknown-enum fallback, D4 adjust-modal min via mgrAddDaysIso_, D5
+Coverage/Punctuality default-range day-rollover (defaultDay marker; user
+ranges stick), D6 hover-timer document.contains guard, D7 esc() drift
+(spark labels, myDate, analytics bars, covDayRisks_), D8 umsLastView
+compact-guard, D9 dispTime full escape, D10 beacon Object.create(null),
+D11 What's-new star in BOTH sidebar + mobile header, D12 tour Escape
+stopImmediatePropagation, D13 MOTION_IO unobserve on nav. Pure 309/0
+(2 new grouped pin tests), DOM 63/0. Remaining: batches E (CN/module client
+Lows) + F (docs incl. PROJECT_HEALTH roll-forward + STATE NUL cleanup),
+/sync-docs, operator deploy, /reflect.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3

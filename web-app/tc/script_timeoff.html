@@ -671,7 +671,11 @@ function bindCalHover_() {
       clearTimeout(dayCloseTimer);
       if (dayPopoverPinned) return;
       clearTimeout(dayHoverTimer);
-      dayHoverTimer = setTimeout(() => openDayPopover_(cell, false), 120);
+      // D6 (cycle 10): a removed cell never fires mouseleave, so a pending
+      // hover timer could open the (static, view-outliving) popover with
+      // stale calData over whatever view replaced the calendar. Fire only if
+      // the cell is still in the live DOM.
+      dayHoverTimer = setTimeout(() => { if (document.contains(cell)) openDayPopover_(cell, false); }, 120);
     });
     cell.addEventListener('mouseleave', () => {
       clearTimeout(dayHoverTimer);
@@ -756,13 +760,18 @@ document.getElementById('day-submit').addEventListener('click', () => {
   google.script.run
     .withSuccessHandler(result => {
       btn.disabled = false;
+      // D1 (cycle 10): check the RESULT before closing — a server-side
+      // rejection (the INV-94 already-requested-date guard is the common one)
+      // used to dismiss the modal and discard the rep's typed notes + type
+      // selection, while a transport failure correctly kept it open. Both
+      // failure shapes now keep the modal open for fix-and-retry.
+      if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       document.getElementById('day-overlay').classList.remove('open');
       // Cycle-9 L-30: a request is typically submitted from a CLICK-PINNED
       // popover, and this close path never reset the pin flag — the re-bound
       // calendar cells' mouseenter handlers early-return on it, so hover-open
       // (Round 2 · 8c) was dead until an Esc or cell click.
       dayPopoverPinned = false;
-      if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       showToast('Time off request submitted','toast-success');
       CAL_CACHE = {};   // a PTO change invalidates every cached month
       refreshViewIfCurrent('timeoff', 'Loading calendar…', function () { loadCalendar(calYear, calMonth); });

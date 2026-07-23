@@ -221,7 +221,12 @@ function adjDecide_(btn) {
 
 function renderManagerView(area, data) {
   const counts = { clocked_in: 0, on_lunch: 0, clocked_out: 0, not_in: 0 };
-  data.liveStatus.forEach(e => { counts[e.status]++; });
+  // D3 (cycle 10): tolerate an unknown status value — `counts[e.status]++` on
+  // one bad row NaN-poisoned a counter, and the card map's `MGR_STATUS[e.status]`
+  // threw and blanked the ENTIRE manager landing. The Clock-view teammate card
+  // already had this `|| not_in` fallback; one server enum change or hand-edited
+  // row shouldn't brick the view.
+  data.liveStatus.forEach(e => { if (counts[e.status] !== undefined) counts[e.status]++; else counts.not_in++; });
   const totalEmp = data.liveStatus.length;
   const mgrTzAbbr = data.mgrTzAbbr || '';
   const pendingCount = data.pending.length;
@@ -278,7 +283,7 @@ function renderManagerView(area, data) {
   const liveHtml = data.liveStatus.length === 0
     ? '<div class="no-data">No employees registered</div>'
     : '<div class="emp-grid">' + data.liveStatus.map(e => {
-        const meta = MGR_STATUS[e.status];
+        const meta = MGR_STATUS[e.status] || MGR_STATUS.not_in;   // D3 — see counts above
         const initials = e.name.split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase();
         let line;
         if (e.lastPunchType) {
@@ -1040,10 +1045,13 @@ function renderAnalyticsSection(data) {
   const bars = trend.map(d => {
     const h = Math.round((d.count / max) * 80);
     const label = d.date.slice(5);
+    // D7 (cycle 10): esc() the server-derived label + count (shape-bound
+    // today, but the documented rule is every server string routes through
+    // esc() — the inconsistency was accidental, not a decision).
     return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--ink);margin-bottom:2px">${d.count}</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--ink);margin-bottom:2px">${esc(String(d.count))}</div>
       <div style="width:70%;height:${h}px;min-height:2px;background:var(--accent);border-radius:3px 3px 0 0"></div>
-      <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:4px">${label}</div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:4px">${esc(label)}</div>
     </div>`;
   }).join('');
 
@@ -1080,12 +1088,20 @@ function enterCoverageView(area) {
   var isoLocal = function (d) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   };
+  // D5 (cycle 10): re-anchor a still-DEFAULT window after midnight — a
+  // long-lived tab (the pinned pop-out pattern) re-entering Coverage kept
+  // yesterday-anchored defaults with no signal. `defaultDay` marks the range
+  // as default-derived; a user-chosen range (the Load button clears the mark)
+  // is never touched. The Clock view reconciles day rollover the same way.
+  var covToday = isoDateTz(empTz());
+  if (COV_STATE.defaultDay && COV_STATE.defaultDay !== covToday) COV_STATE.from = null;
   if (!COV_STATE.from) {
     // F(L-5): anchor "today" to the roster tz (isoDateTz/empTz — the F6
     // discipline the sibling modals in this file follow), not the browser
     // clock — a manager whose machine tz differs from their roster tz got a
     // default window starting on the wrong server day.
-    var todayIso = isoDateTz(empTz());
+    var todayIso = covToday;
+    COV_STATE.defaultDay = todayIso;
     COV_STATE.from = todayIso;
     COV_STATE.to = mgrAddDaysIso_(todayIso, 6);   // F(cycle-8): DST-safe
   }
@@ -1103,6 +1119,7 @@ function enterCoverageView(area) {
   if (loadBtn) loadBtn.onclick = function () {
     COV_STATE.from = document.getElementById('cov-from').value;
     COV_STATE.to = document.getElementById('cov-to').value;
+    COV_STATE.defaultDay = null;   // D5 — user-chosen range sticks across midnight
     covLoad_();
   };
   covLoad_();
@@ -1168,7 +1185,7 @@ function covDayRisks_(day, byHour, hours, minStaff) {
   function flush(endH) {
     if (runStart === null) return;
     out.push('<b>' + esc(day.weekday.slice(0, 3)) + ' ' + covFmtHr_(runStart) + '–' + covFmtHr_(endH + 1) + '</b> · ' +
-      runC + ' working, need ' + minStaff + (who ? (' — ' + who) : ''));
+      esc(String(runC)) + ' working, need ' + esc(String(minStaff)) + (who ? (' — ' + who) : ''));   // D7 — full esc() parity with the function's own claim
     runStart = null; runC = null;
   }
   hours.forEach(function (h) {
@@ -1260,9 +1277,14 @@ function enterPunctualityView(area) {
   var isoLocal = function (d) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   };
+  // D5 (cycle 10): re-anchor a still-DEFAULT window after midnight (see
+  // enterCoverageView) — user-chosen ranges are never touched.
+  var punctToday = isoDateTz(empTz());
+  if (PUNCT_STATE.defaultDay && PUNCT_STATE.defaultDay !== punctToday) PUNCT_STATE.from = null;
   if (!PUNCT_STATE.from) {
     // F(L-5): roster-tz "today" (isoDateTz/empTz), not the browser clock.
-    var todayIso = isoDateTz(empTz());
+    var todayIso = punctToday;
+    PUNCT_STATE.defaultDay = todayIso;
     PUNCT_STATE.to = todayIso;
     PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -29);   // default last 30 days (F(cycle-8): DST-safe)
   }
@@ -1285,6 +1307,7 @@ function enterPunctualityView(area) {
   if (b) b.onclick = function () {
     PUNCT_STATE.from = document.getElementById('punct-from').value;
     PUNCT_STATE.to = document.getElementById('punct-to').value;
+    PUNCT_STATE.defaultDay = null;   // D5 — user-chosen range sticks across midnight
     punctLoad_();
   };
   area.querySelectorAll('.punct-preset').forEach(function (el) {
@@ -1301,6 +1324,7 @@ function punctPreset_(days) {
   var todayIso = isoDateTz(empTz());
   PUNCT_STATE.to = todayIso;
   PUNCT_STATE.from = mgrAddDaysIso_(todayIso, -(days - 1));   // F(cycle-8): DST-safe
+  PUNCT_STATE.defaultDay = null;   // D5 — a preset is a user choice; sticks across midnight
   var f = document.getElementById('punct-from'), t = document.getElementById('punct-to');
   if (f) f.value = PUNCT_STATE.from;
   if (t) t.value = PUNCT_STATE.to;

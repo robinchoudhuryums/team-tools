@@ -201,7 +201,10 @@ if (COMPACT_MODE) document.documentElement.setAttribute('data-compact', '1');
 // (the server rate-caps per rep too).
 var ERR_BEACON_MAX_PER_SESSION = 5;
 var _errBeaconSent = 0;
-var _errBeaconSeen = {};
+// D10 (cycle 10): a null-prototype map — a plain {} inherits Object.prototype,
+// so an error message named "toString"/"constructor"/"valueOf" read truthy on
+// FIRST sight and was never beaconed (and "__proto__" could never be marked).
+var _errBeaconSeen = Object.create(null);
 
 /** Pure — bound + shape a beacon payload. Null when there's nothing worth
  *  sending (empty message). Mirrors the server's recordClientError caps
@@ -483,18 +486,26 @@ function whatsNewInit_() {
  *  renders only when a What's new article is configured; reopens the panel. */
 function whatsNewRenderSidebarBtn_() {
   try {
-    if (document.getElementById('sb-whatsnew-btn')) return;
-    var host = document.querySelector('.sb-theme-controls');
-    if (!host) return;
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.id = 'sb-whatsnew-btn';
-    btn.className = 'sb-popout-btn';
-    btn.title = "What's new in Team Tools";
-    btn.setAttribute('aria-label', "What's new");
-    btn.innerHTML = icon('star', 14);
-    btn.addEventListener('click', whatsNewOpen_);
-    host.appendChild(btn);
+    // D11 (cycle 10): render the star into BOTH the sidebar controls AND the
+    // mobile header's .hdr-right — on mobile the sidebar node still EXISTS
+    // (merely display:none), so a query-with-fallback always found the hidden
+    // sidebar and the panel was unreachable there (only the Dashboard
+    // greeting slides linked it). CSS hides whichever container the active
+    // layout hides, so exactly one star is visible.
+    [['sb-whatsnew-btn', '.sb-theme-controls'], ['hdr-whatsnew-btn', '.hdr-right']].forEach(function (pair) {
+      if (document.getElementById(pair[0])) return;
+      var host = document.querySelector(pair[1]);
+      if (!host) return;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = pair[0];
+      btn.className = 'sb-popout-btn';
+      btn.title = "What's new in Team Tools";
+      btn.setAttribute('aria-label', "What's new");
+      btn.innerHTML = icon('star', 14);
+      btn.addEventListener('click', whatsNewOpen_);
+      host.appendChild(btn);
+    });
   } catch (e) {}
 }
 
@@ -854,7 +865,14 @@ function showView(view) {
   if (typeof intakeFlushDraftNow_ === 'function') intakeFlushDraftNow_();
   currentView = view;
   // Refresh-restore: remember the active tab so a reload lands back here.
-  try { localStorage.setItem('umsLastView', view); } catch (e) {}
+  // D8 (cycle 10): NOT in the compact pop-out — localStorage is shared
+  // same-origin, so navigation inside a pinned pop-out (the operator's
+  // documented primary workflow) overwrote the MAIN window's restore tab;
+  // a later main-window refresh landed on the pop-out's last tab instead of
+  // the mid-note Log view the feature exists to restore. Pop-out boots
+  // always carry ?tool= and never read this key, so skipping the write
+  // loses nothing.
+  if (!COMPACT_MODE) { try { localStorage.setItem('umsLastView', view); } catch (e) {} }
   // Tab bar active state
   document.querySelectorAll('.tt-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === view);
@@ -884,6 +902,15 @@ function showView(view) {
     });
     area._revealObs = obs;
     obs.observe(area, { childList: true });
+  }
+  // D13 (cycle 10): release the SHARED reveal observer's references to the
+  // outgoing view's [data-reveal] nodes before the enter handler rewrites
+  // #view-area — MOTION_IO is page-lifetime and observeReveals() ran on every
+  // render, so it accumulated strong refs to detached DOM for the whole
+  // session (worst in long-lived pinned pop-outs). Memory-only; the sibling
+  // per-nav _revealObs was already disconnected above.
+  if (MOTION_IO) {
+    try { area.querySelectorAll('[data-reveal]').forEach(function (el) { MOTION_IO.unobserve(el); }); } catch (e) {}
   }
   const enterFn = window[TOOLS[toolKey].tabs[view].enter];
   if (typeof enterFn === 'function') enterFn(area);
@@ -1152,7 +1179,11 @@ function dispTime(t) {
   // can't reflect unescaped (defense-in-depth — server times are shape-constrained).
   if (p.length < 2) return esc(String(t));
   const h = parseInt(p[0],10);
-  return `${h%12||12}:${p[1]} ${h>=12?'PM':'AM'}`;
+  // D9 (cycle 10): the F10 fix covered only the no-colon fallback — garbage
+  // WITH a colon flowed p[1] (everything after the first colon, raw) into the
+  // formatted branch unescaped. esc() the minutes segment too, completing
+  // F10's own rationale ("a garbage time cell can't reflect unescaped").
+  return `${h%12||12}:${esc(String(p[1]))} ${h>=12?'PM':'AM'}`;
 }
 
 function fmtHrs(h) {

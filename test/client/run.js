@@ -760,12 +760,13 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   // that is always false, exactly the bug class this scan exists for) used
   // to match the `\]\s*=` write shape and pass silently.
   const SAFE_LINE = /cnTimestampString_\(|CN\.TIMESTAMP \+ 1|CN\.TIMESTAMP\]\s*=(?!=)|^\s*\/\//;
-  // reconcileCallNotes keeps its documented equivalent inline guard (INV-142).
-  const reconcile = extractRawFunction('Code.js', 'reconcileCallNotes');
+  // C1 (cycle 10): reconcileCallNotes now routes through cnTimestampString_
+  // like every other reader (its "equivalent" inline guard recovered in the
+  // REP's tz, not the sheet's — a real bug, and the whole-line exemption it
+  // needed was itself a copyable false-pass hole). No exemption remains.
   lines.forEach((line, idx) => {
     if (line.indexOf('[CN.TIMESTAMP]') < 0) return;
     if (SAFE_LINE.test(line)) return;
-    if (reconcile.indexOf(line) >= 0) return;   // the whitelisted inline guard
     offenders.push('line ' + (idx + 1) + ': ' + line.trim());
   });
   assert.deepStrictEqual(offenders, [],
@@ -3782,6 +3783,69 @@ test('cnReRenderActiveView_ re-renders the pinned tray; tray render is edit-safe
   const trayBody = tray.slice(0, tray.indexOf('\n}') + 2);
   assert.ok(/cnEditSnapshot_\(\)/.test(trayBody) && /cnEditRestore_\(/.test(trayBody),
     'cnRenderPinnedTray_ preserves typed inline-edit values across re-renders');
+});
+
+// Batch C server pins (cycle 10): witness-audit wiring, validation, and the
+// small silent-degradation guards.
+test('cycle-10 batch C: witness wiring + server guards hold', () => {
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  // C4 — the three witness rows route through writeWitnessAuditLog_, the
+  // health report carries witnessFails, and the failure digest pushes recent.
+  ['FormSubmissionReceived', 'EmpDocSigned', 'EmpDocCompleted'].forEach((a) => {
+    assert.ok(new RegExp("writeWitnessAuditLog_\\([^)]*'" + a + "'").test(codeSrc),
+      a + ' is written via writeWitnessAuditLog_ (C4)');
+  });
+  assert.ok(/witnessFails: witnessFails/.test(codeSrc), 'computeAutomationHealth_ returns witnessFails');
+  assert.ok(/report\.witnessFails\.recent/.test(codeSrc) || /witnessFails && report\.witnessFails\.recent/.test(codeSrc),
+    'the failure digest pushes a recent lost witness');
+  // C2 — exportAdpRange validates its dates before generating.
+  const exp = extractRawFunction('Code.js', 'exportAdpRange');
+  assert.ok(exp.indexOf('generateExportSheet_') > exp.indexOf('Invalid start date'),
+    'exportAdpRange validates before generating');
+  // C7 — backward-only delete window (no symmetric Math.abs).
+  const del = extractRawFunction('Code.js', 'deletePunch');
+  assert.ok(del.indexOf('Math.abs(daysBetween_') < 0, 'deletePunch window is backward-only (C7)');
+  // C8 — auth precedes the feature-flag read.
+  const ts = extractRawFunction('Code.js', 'getTeammateStatus');
+  assert.ok(ts.indexOf('getEmployeeInfo_') < ts.indexOf("getFlag_('showTeammateStatus')"),
+    'getTeammateStatus authenticates before evaluating the flag (C8)');
+  // C1 — reconcile routes its Timestamp reads through the boundary helper.
+  const rec = extractRawFunction('Code.js', 'reconcileCallNotes');
+  assert.ok((rec.match(/cnTimestampString_\(/g) || []).length >= 2,
+    'reconcileCallNotes recovers Timestamps via cnTimestampString_ (C1/INV-142)');
+  // C5 — a deliberately-cleared {} config stays empty.
+  ['getStateTaxRates_', 'getUpdateSuggestions_'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/Object\.keys\(parsed\)\.length === 0 \|\|/.test(src),
+      fn + ' keeps a cleared {} empty (C5)');
+  });
+});
+
+// Batch D client pins (cycle 10): failure-handling order + compact guard.
+test('cycle-10 batch D: client guards hold', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  // D8 — the pop-out never overwrites the main window's restore tab.
+  assert.ok(/if \(!COMPACT_MODE\) \{ try \{ localStorage\.setItem\('umsLastView', view\);/.test(core),
+    'umsLastView persist is compact-guarded (D8)');
+  // D10 — null-prototype beacon dedupe map.
+  assert.ok(/_errBeaconSeen = Object\.create\(null\)/.test(core), 'beacon dedupe map is null-prototype (D10)');
+  // D1 — the PTO day-submit checks the result BEFORE closing the modal.
+  const to = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_timeoff.html'), 'utf8');
+  const seg = to.slice(to.indexOf("document.getElementById('day-submit').addEventListener"));
+  assert.ok(seg.indexOf('if (!result.success)') < seg.indexOf("classList.remove('open')"),
+    'day-submit keeps the modal open on a server rejection (D1)');
+  // D3 — unknown live-status enum degrades, never throws.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/MGR_STATUS\[e\.status\] \|\| MGR_STATUS\.not_in/.test(mgr),
+    'live-status card falls back on an unknown enum (D3)');
+  // D2a — a failed dashboard round is never stamped fresh.
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/CLK_DASH\.loadedAt = anyFail \? 0 : Date\.now\(\)/.test(clk),
+    'dashboard freshness stamp skips failed rounds (D2a)');
+  // D12 — the tour Escape suppresses same-node capture siblings.
+  const tour = fs.readFileSync(path.join(__dirname, '../../web-app/script_tour.html'), 'utf8');
+  assert.ok(/Escape'\) \{ e\.preventDefault\(\); e\.stopImmediatePropagation\(\);/.test(tour),
+    'tour Escape uses stopImmediatePropagation (D12)');
 });
 
 // M-6 source pins: all three Metrics loaders carry same-view seq tokens.

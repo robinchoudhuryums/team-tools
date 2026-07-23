@@ -307,7 +307,12 @@ function tourReposition_() {
 }
 function tourKeydown_(e) {
   if (!TOUR_ACTIVE) return;
-  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tourEnd_(false); }
+  // D12 (cycle 10): stopImmediatePropagation, not stopPropagation — the
+  // uiConfirm/uiPrompt key handlers are ALSO document-level capture listeners
+  // (same node, same phase), so plain stopPropagation couldn't stop them and
+  // one Escape would both end the tour AND resolve an open dialog false,
+  // cancelling its flow (the exact INV-83 cycle-8 stacked-dialog lesson).
+  if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); tourEnd_(false); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); tourNext_(); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); tourPrev_(); }
 }
