@@ -831,7 +831,20 @@ var _deEmpId = null, _deEmpName = null, _deDate = null;
 function openDayEditModal(empId, empName) {
   _deEmpId = empId;
   _deEmpName = empName;
-  var tz = empTz();
+  // M-2 (cycle 10): bound the picker on the TARGET employee's "today", not the
+  // manager's — the server validates daysBack in the target's tz (INV-05/07),
+  // so an offshore (IST/PHT) rep's in-progress local day is a VALID edit date
+  // that a manager-tz max forbade every CT afternoon (and the modal silently
+  // opened on the rep's previous day). Fall back to the manager's tz when the
+  // live-status entry is missing (server stays authoritative regardless).
+  var targetTz = null;
+  try {
+    var ls = (mgrData && mgrData.liveStatus) || [];
+    for (var i = 0; i < ls.length; i++) {
+      if (ls[i].id === empId) { targetTz = ls[i].timezone || null; break; }
+    }
+  } catch (e) {}
+  var tz = targetTz || empTz();
   var today = isoDateTz(tz);
   _deDate = today;
   document.getElementById('day-edit-subtitle').textContent = empName;

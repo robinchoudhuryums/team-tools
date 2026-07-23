@@ -3674,5 +3674,95 @@ test("every showView('…') literal is a registered tab key", () => {
   assert.ok(svLiterals >= 3, 'showView literals found (scan is armed — got ' + svLiterals + ')');
 });
 
+// ── Cycle 10 — top-5 broad-scan fix pins (M-1/M-2/M-3/M-5/M-6) ────────────
+console.log('\ncycle-10 — top-5 broad-scan fix pins');
+
+// M-5 behavioral: the intake PHI-store cell cap helper (pure). The cap must
+// reject a cell over the Sheets-safe limit and pass ordinary payloads.
+test('intakeStoreOversizeError_ caps store cells (M-5, INV-96 spirit)', () => {
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const capM = codeSrc.match(/const INTAKE_STORE_CELL_MAX = (\d+)/);
+  assert.ok(capM, 'INTAKE_STORE_CELL_MAX declared');
+  const cap = parseInt(capM[1], 10);
+  assert.ok(cap > 0 && cap < 50000, 'cap under the 50k Sheets cell limit');
+  const ctx = { String: String, INTAKE_STORE_CELL_MAX: cap };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'intakeStoreOversizeError_'), ctx,
+    { filename: 'Code.js#intakeStoreOversizeError_' });
+  assert.strictEqual(vm.runInContext('intakeStoreOversizeError_(["{}", "small"])', ctx), null,
+    'small cells pass');
+  assert.ok(/too large/.test(vm.runInContext(
+    'intakeStoreOversizeError_(["x".repeat(' + (cap + 1) + ')])', ctx) || ''),
+    'oversized cell rejected with a clear error');
+  // Both intake send paths must consult the cap BEFORE MailApp and surface
+  // storeWarning on an append failure (never a bare console.warn again).
+  const ppd = extractRawFunction('Code.js', 'intakeSendPPD');
+  const acct = extractRawFunction('Code.js', 'intakeSendAcct_');
+  [ppd, acct].forEach((src, i) => {
+    const label = i === 0 ? 'intakeSendPPD' : 'intakeSendAcct_';
+    assert.ok(src.indexOf('intakeStoreOversizeError_') >= 0, label + ' consults the cap');
+    assert.ok(src.indexOf('intakeStoreOversizeError_') < src.indexOf('MailApp.sendEmail'),
+      label + ' caps BEFORE the send (no email without a record)');
+    assert.ok(src.indexOf('intakeStoreFailWarn_') >= 0, label + ' surfaces store failures');
+    assert.ok(src.indexOf('storeWarning: storeWarning') >= 0, label + ' returns storeWarning');
+  });
+});
+
+// M-1 source pins: the live-punch path enforces the client's own state
+// machine, and the two manager write paths agree on which duplicate row wins.
+test('recordPunch live path enforces getNextActions_; findExistingPunch_ is last-match (M-1)', () => {
+  const rp = extractRawFunction('Code.js', 'recordPunch');
+  assert.ok(/getNextActions_\(todayPunches\)/.test(rp),
+    'recordPunch validates live punches against getNextActions_');
+  // Guard must sit INSIDE the !isAdj branch (adjust back-fills bypass) and
+  // AFTER the min-interval check (rapid-fire keeps its friendlier error).
+  assert.ok(rp.indexOf('MIN_PUNCH_INTERVAL_SECONDS') < rp.indexOf('getNextActions_(todayPunches)'),
+    'sequence guard runs after the min-interval check');
+  const fep = extractRawFunction('Code.js', 'findExistingPunch_');
+  assert.ok(/found = \{ sheet/.test(fep) && !/return \{ sheet/.test(fep),
+    'findExistingPunch_ remembers the LAST match (agrees with managerSaveDay’s snapshot)');
+  const msd = extractRawFunction('Code.js', 'managerSaveDay');
+  assert.ok(/rowsByType/.test(msd) && /collapse/.test(msd),
+    'managerSaveDay snapshots ALL rows per type and collapses duplicates');
+});
+
+// M-2 source pins: Day Edit bounds the picker on the TARGET employee's today.
+test('openDayEditModal uses the target rep timezone; liveStatus ships it (M-2)', () => {
+  const mgrSrc = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const modal = mgrSrc.slice(mgrSrc.indexOf('function openDayEditModal('));
+  const body = modal.slice(0, modal.indexOf('\nfunction ', 10));
+  assert.ok(/targetTz/.test(body) && /\.timezone/.test(body),
+    'openDayEditModal resolves the target’s tz from liveStatus');
+  const codeSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const lsBlock = codeSrc.slice(codeSrc.indexOf('const liveStatus = employees.map'));
+  assert.ok(/timezone: e\.timezone/.test(lsBlock.slice(0, 2000)),
+    'liveStatus entries carry the IANA timezone');
+});
+
+// M-3 source pins: pinned-tray render routing + typed-edit preservation.
+test('cnReRenderActiveView_ re-renders the pinned tray; tray render is edit-safe (M-3)', () => {
+  const cnSrc = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const rr = cnSrc.slice(cnSrc.indexOf('function cnReRenderActiveView_('));
+  const rrBody = rr.slice(0, rr.indexOf('\n}') + 2);
+  assert.ok(/cnRenderPinnedTray_\(\)/.test(rrBody),
+    'cnReRenderActiveView_ routes pinned-tray re-renders');
+  const tray = cnSrc.slice(cnSrc.indexOf('function cnRenderPinnedTray_('));
+  const trayBody = tray.slice(0, tray.indexOf('\n}') + 2);
+  assert.ok(/cnEditSnapshot_\(\)/.test(trayBody) && /cnEditRestore_\(/.test(trayBody),
+    'cnRenderPinnedTray_ preserves typed inline-edit values across re-renders');
+});
+
+// M-6 source pins: all three Metrics loaders carry same-view seq tokens.
+test('Metrics loaders carry stale-range seq tokens (M-6, the _covSeq class)', () => {
+  const mSrc = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  [['mLoadMyStats_', 'M_STATE.mySeq'], ['mLoadTeamMetrics_', 'M_STATE.teamSeq'],
+   ['spanishLoad_', 'SPANISH_STATE.seq']].forEach(([fn, tok]) => {
+    const f = mSrc.slice(mSrc.indexOf('function ' + fn + '('));
+    const fBody = f.slice(0, f.indexOf('\nfunction ', 10));
+    assert.ok(fBody.indexOf(tok + ' = (') >= 0, fn + ' bumps ' + tok);
+    assert.ok(fBody.indexOf('seq !== ' + tok) >= 0, fn + ' handlers re-check ' + tok);
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -730,6 +730,25 @@ function recordPunch(punchType, custom) {
             `(if you made a mistake, use Adjust instead).` };
         }
       }
+      // M-1 (cycle 10): enforce the SAME next-action state machine the client
+      // renders its buttons from (getNextActions_ over today's sorted punches).
+      // A fresh client can only offer valid actions, so this never rejects a
+      // legitimate click; a STALE window (second browser / pinned pop-out that
+      // missed a punch made elsewhere, or a direct RPC) could otherwise append
+      // a duplicate ClockIn/ClockOut or an out-of-sequence lunch punch — rows
+      // every downstream consumer (Day Edit's one-slot-per-type model, hours,
+      // live status, the ADP export) mis-models. Multi-lunch stays legal:
+      // getNextActions_ offers LunchOut again after LunchIn. Adjustments
+      // bypass (back-fills are validated by their own window/format guards).
+      const validNext = getNextActions_(todayPunches);
+      if (validNext.indexOf(punchType) < 0) {
+        const lastAny = todayPunches.length ? todayPunches[todayPunches.length - 1] : null;
+        return { success: false, error:
+          `Cannot record ${punchType} — ` +
+          (lastAny ? `your last punch today is ${lastAny.type} at ${toDisplayTime_(lastAny.time)}.`
+                   : `you haven't clocked in yet.`) +
+          ` Refresh the page for current actions, or use Adjust to fix a mistake.` };
+      }
     }
 
     let daysBack = 0;
@@ -953,6 +972,12 @@ function getManagerDashboard() {
         lastPunchType: last ? last.type : null,
         lastPunchTime: last ? last.time : null,
         lastPunchTimeMgr, empTzAbbr: e.tzAbbr, mgrTzAbbr,
+        // M-2 (cycle 10): the rep's IANA tz, so the Day Edit modal can bound
+        // its date picker on the TARGET's "today" (the server validates
+        // daysBack in the target's tz — a manager-tz max blocked offshore
+        // reps' in-progress local day every CT afternoon). Manager-only
+        // surface, so no INV-24 low-privilege leak concern.
+        timezone: e.timezone,
       };
     });
     const statusRank = { clocked_in: 0, on_lunch: 1, not_in: 2, clocked_out: 3 };
@@ -1900,20 +1925,36 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
     }
     const noteSuffix = trimmedReason ? ` — ${trimmedReason}` : '';
 
-    // Snapshot current state for this employee/date
+    // Snapshot current state for this employee/date. M-1 (cycle 10): collect
+    // ALL rows per type, not just the last — duplicate same-type rows (stale-
+    // window double punches written before the recordPunch sequence guard,
+    // multi-lunch days, direct sheet edits) made the old single-slot snapshot
+    // silently disagree with the write paths: a "delete" removed one duplicate
+    // and left the other, and updates (first-match findExistingPunch_) landed
+    // on a different row than the one displayed (last-match snapshot). The Day
+    // Edit contract is a full-day reconcile to the 4 displayed slots (S7), so
+    // the save now collapses duplicates: a blank slot deletes EVERY row of
+    // that type, and a kept slot deletes all but the last row (the one the
+    // modal displayed) before the update pass runs.
     const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
     const allRows = sheet.getDataRange().getValues();
-    const currentByType = {};
+    const rowsByType = {};   // type → [{rowIndex, time}, …] in sheet order
     for (let i = 2; i < allRows.length; i++) {
       if (String(allRows[i][ADP.EMP_ID]).trim() !== targetEmp.id) continue;
       if (normalizeDate_(allRows[i][ADP.DATE]) !== date) continue;
       const type = normalizeType_(String(allRows[i][ADP.COMMENTS]));
       if (PUNCH_LABELS_.indexOf(type) < 0) continue;
-      currentByType[type] = {
+      if (!rowsByType[type]) rowsByType[type] = [];
+      rowsByType[type].push({
         rowIndex: i + 1,
         time: normalizeTime_(allRows[i][ADP.TIME]).trim(),
-      };
+      });
     }
+    const currentByType = {};  // last row wins — what the modal displayed
+    PUNCH_LABELS_.forEach(type => {
+      const list = rowsByType[type];
+      if (list && list.length) currentByType[type] = list[list.length - 1];
+    });
 
     const changes = [];
 
@@ -1921,16 +1962,24 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
     const deletions = [];
     PUNCH_LABELS_.forEach(type => {
       const newTime = cleanSlots[type];
-      const cur = currentByType[type];
-      if (cur && !newTime) deletions.push({ rowIndex: cur.rowIndex, type, oldTime: cur.time });
+      const list = rowsByType[type] || [];
+      if (!list.length) return;
+      if (!newTime) {
+        // Blank slot → the whole type goes (every row, not just the last).
+        list.forEach(r => deletions.push({ rowIndex: r.rowIndex, type, oldTime: r.time, dup: false }));
+      } else if (list.length > 1) {
+        // Kept slot with duplicates → collapse to the displayed (last) row.
+        list.slice(0, -1).forEach(r =>
+          deletions.push({ rowIndex: r.rowIndex, type, oldTime: r.time, dup: true }));
+      }
     });
     deletions.sort((a, b) => b.rowIndex - a.rowIndex);
     deletions.forEach(d => {
       sheet.deleteRow(d.rowIndex);
-      try { clearFromEmployeeSheet_(targetEmp, date, d.type); } catch (e) {}
+      if (!d.dup) { try { clearFromEmployeeSheet_(targetEmp, date, d.type); } catch (e) {} }
       writeAuditLog_(targetEmp, 'PunchDelete', date, d.oldTime, false, 0,
-        `${d.type} removed by manager${noteSuffix}`, callerEmp.email);
-      changes.push({ type: d.type, action: 'delete' });
+        `${d.type} ${d.dup ? 'duplicate collapsed' : 'removed'} by manager${noteSuffix}`, callerEmp.email);
+      changes.push({ type: d.type, action: d.dup ? 'collapse-dup' : 'delete' });
     });
 
     // Pass 2: updates (use findExistingPunch_ since indices may have shifted)
@@ -11485,16 +11534,23 @@ function convertAuditTs_(tsStr, fromTz, toTz) {
   } catch (e) { return tsStr; }
 }
 
+// M-1 (cycle 10): returns the LAST matching row, not the first. When duplicate
+// same-(emp, date, type) rows exist (pre-guard stale-window double punches,
+// direct sheet edits), managerSaveDay's snapshot (`currentByType`) keeps the
+// last row it sees — so the update path MUST target that same row or the
+// manager edits a row different from the one displayed. Single-row days
+// (the normal case) are unaffected.
 function findExistingPunch_(empId, date, punchType) {
   const sheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sheet.getDataRange().getValues();
+  let found = null;
   for (let i = 2; i < rows.length; i++) {
     if (String(rows[i][ADP.EMP_ID]).trim() !== empId) continue;
     if (normalizeDate_(rows[i][ADP.DATE]) !== date) continue;
     if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== punchType) continue;
-    return { sheet, rowIndex: i + 1 };
+    found = { sheet, rowIndex: i + 1 };
   }
-  return null;
+  return found;
 }
 
 /**
@@ -13943,6 +13999,34 @@ function intakePreviewPPD(payload) {
   } catch (err) { return { error: err.message }; }
 }
 
+// M-5 (cycle 10) — intake PHI-store integrity helpers.
+// The store append is deliberately best-effort AFTER a successful send (the
+// email can't be unsent), but a failure must be LOUD, not a console.warn: the
+// rep gets a storeWarning toast and the shared AuditLog gains a PHI-free
+// IntakeStoreFail row (submissionId + type + trimmed error — the
+// PersonalSheetSyncFail pattern) so the gap is investigable. Oversized
+// payloads are rejected BEFORE the send so no email ever lacks a record.
+const INTAKE_STORE_CELL_MAX = 45000;   // under the 50k Sheets cell limit (INV-96)
+function intakeStoreOversizeError_(cellStrings) {
+  for (let i = 0; i < cellStrings.length; i++) {
+    if (String(cellStrings[i] || '').length > INTAKE_STORE_CELL_MAX) {
+      return 'This submission is too large to store (a field exceeds the ' +
+        'spreadsheet cell limit). Trim any very long pasted text and try again.';
+    }
+  }
+  return null;
+}
+function intakeStoreFailWarn_(emp, formType, submissionId, err) {
+  const msg = String((err && err.message) || err || 'unknown').substring(0, 300);
+  console.warn('intake ' + formType + ' submission store failed: ' + msg);
+  try {
+    writeAuditLog_(emp, 'IntakeStoreFail', fmtDate_(new Date()), '', false, 0,
+      'type=' + formType + '; submissionId=' + submissionId + '; err=' + msg, emp.email);
+  } catch (e) { console.warn('IntakeStoreFail audit write failed: ' + e.message); }
+  return 'Email sent, but the submission record could NOT be saved (' + msg + '). ' +
+    'The Sent tab will not show this submission — tell your manager.';
+}
+
 function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
   try {
     const emp = getEmployeeInfo_();
@@ -13967,22 +14051,32 @@ function intakeSendPPD(payload, recipientSpec, expectedBodyHash) {
     const finalBody = intakeBuildPpdBodyHtml_(patientInfo, payload.rows || [], recData, payload.selections || {});
     const html = intakeEmailShell_(subject, finalBody);
 
+    // M-5 (cycle 10): size-bound the PHI store cells BEFORE the send (INV-96
+    // spirit — the public form path has had these caps since the hardening
+    // pass; this authenticated path had none). Rejecting pre-send means we
+    // never email a submission we can't record.
+    const answersJson = JSON.stringify(payload.answers || {});
+    const recJson = JSON.stringify(recData);
+    const selJson = JSON.stringify(payload.selections || {});
+    const oversize = intakeStoreOversizeError_([answersJson, recJson, selJson]);
+    if (oversize) return { success: false, error: oversize };
+
     MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: html });
 
     const submissionId = Utilities.getUuid();
+    let storeWarning = null;
     try {
       getIntakeSubmissionSheet_('PPD').appendRow([
         submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
         patientInfo, String(payload.language || 'EN'),
-        JSON.stringify(payload.answers || {}), JSON.stringify(recData),
-        JSON.stringify(payload.selections || {}), recipient,
+        answersJson, recJson, selJson, recipient,
       ]);
-    } catch (e) { console.warn('intake PPD submission store failed: ' + e.message); }
+    } catch (e) { storeWarning = intakeStoreFailWarn_(emp, 'PPD', submissionId, e); }
 
     writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
       'type=PPD; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient), emp.email);
 
-    return { success: true, recipient: recipient, submissionId: submissionId };
+    return { success: true, recipient: recipient, submissionId: submissionId, storeWarning: storeWarning };
   } catch (err) { return { success: false, error: err.message }; }
 }
 
@@ -14033,21 +14127,28 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
   }
   const htmlBody = intakeEmailShell_(subject, innerBody);
 
+  // M-5 (cycle 10): size-bound the PHI store cell BEFORE the send (INV-96
+  // spirit) — never email a submission we can't record.
+  const answersJson = JSON.stringify(payload.answers || {});
+  const oversize = intakeStoreOversizeError_([answersJson]);
+  if (oversize) return { success: false, error: oversize };
+
   MailApp.sendEmail({ to: recipient, bcc: getIntakeBccEmail_(), subject: subject, htmlBody: htmlBody, inlineImages: inlineImagesObj });
 
   const submissionId = Utilities.getUuid();
+  let storeWarning = null;
   try {
     getIntakeSubmissionSheet_(formType).appendRow([
       submissionId, fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), emp.id, emp.name,
       patientInfo, dob, String(payload.language || 'EN'),
-      JSON.stringify(payload.answers || {}), recipient, imgCount,
+      answersJson, recipient, imgCount,
     ]);
-  } catch (e) { console.warn('intake ' + formType + ' submission store failed: ' + e.message); }
+  } catch (e) { storeWarning = intakeStoreFailWarn_(emp, formType, submissionId, e); }
 
   writeAuditLog_(emp, 'IntakeSent', fmtDate_(new Date()), '', false, 0,
     'type=' + formType + '; submissionId=' + submissionId + '; recipientDomain=' + intakeEmailDomain_(recipient) + '; images=' + imgCount, emp.email);
 
-  return { success: true, recipient: recipient, submissionId: submissionId };
+  return { success: true, recipient: recipient, submissionId: submissionId, storeWarning: storeWarning };
 }
 
 function intakePreviewPMD(payload) { try { return intakePreviewAcct_('PMD', payload); } catch (e) { return { error: e.message }; } }

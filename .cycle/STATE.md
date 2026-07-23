@@ -1,12 +1,49 @@
 # Cycle State
 
 ## Current
-Cycle: 9
-Phase: implement — ENTIRE ranked backlog done (scan batch + ranked batches 1-7). Batches 5-7 on claude/broad-scan-5eoypm: bounded reads (L-1, L-3, L-9, L-13, L-14, L-16, L-21, L-22), server hygiene (L-5, L-7, L-8, L-11, L-12, L-15), test pins (L-35 ×4, the payload-contract tripwire, the showView-literal net). Pure 302/0, DOM 61/0, node --check ×3 clean; 10 bite-checks total this cycle. Remaining: /sync-docs (batches 3-7 list), operator deploy, /reflect.
+Cycle: 10
+Phase: implement — broad scan complete (7-agent fan-out + personal verification;
+0 Critical / 0 High / 11 Medium / ~35 Low, all 11 Mediums confirmed, 0 retracted).
+TOP-5 BATCH IMPLEMENTED on claude/broad-scan-11m0vf: M-1 (recordPunch live
+sequence guard via getNextActions_ + findExistingPunch_ last-match +
+managerSaveDay duplicate collapse), M-2 (Day Edit picker bounds in the TARGET
+rep's tz; liveStatus ships `timezone`), M-3 (cnReRenderActiveView_ re-renders
+the pinned tray; tray render edit-snapshot-safe), M-5 (intake store cell caps
+pre-send + storeWarning + IntakeStoreFail audit row + client warn toast), M-6
+(seq tokens on mLoadMyStats_/mLoadTeamMetrics_/spanishLoad_). Also applied the
+/setup-cycle delta (Seams Audit Cadence = every 4 subsystem cycles; infra files
+assigned to Server/Test Suite; form-generator frozen entry). Pure 307/0 (5 new
+pins, 2 bite-checked), DOM 61/0, node --check ×3 clean; editor suite +2 tests
+(recordPunch_liveSequenceGuard, managerSaveDay_collapsesDuplicateRows;
+test_recordPunch_basic gained a _clearTestState — the sort test's today-rows
+now correctly trip the new guard). Remaining: rest of the cycle-10 backlog
+(6 Mediums + Lows, batches proposed in-session), /sync-docs, operator deploy,
+/reflect.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
-Updated: 2026-07-21 (cycle-9 batches 5-7)
+Updated: 2026-07-23 (cycle-10 top-5 batch)
+
+## Cycle 10 — remaining backlog (facts, not judgments — findings re-verified in-session 2026-07-23)
+- Mediums not yet implemented: M-4 (History edit-snapshot gap), M-7 (KB convert
+  identity guard), M-8 (Admin Sheets blank on re-enter), M-9 (KB tests mutate
+  live store — _withTestKb_), M-10 (stacked-dialog + drawer-Enter DOM pins),
+  M-11 (5 zero-coverage endpoints).
+- Notable Lows: reconcile tz recovery (INV-142 claim false), exportAdpRange
+  validation, calcHours_ inverted-pair wrap, writeAuditLog_ witness swallow,
+  hash delimiters, tax-rates empty-map, Spanish docstrings, CN preview
+  instance guard, dead umsCallNotesLastDept, MGR_STATUS fallback, PTO-reject
+  modal close, dashboard error-as-empty caching, shell Lows (umsLastView
+  pop-out, dispTime, beacon proto-key, tour Esc), intake/KB client Lows.
+- Doc contradictions for /sync-docs: INV-111 (store failure now loud), S7/Day
+  Edit duplicate-collapse note, INV-142 reconcile claim, Spanish manager-only
+  list vs INV-31 amendment, What's-new stale comments, DOM-harness h.t/opts.markup
+  doc drift, umsCallNotesLastDept entry.
+
+## Where I left off (cycle 10)
+Top-5 batch done + pushed. Next: implement the remaining batches in priority
+order (proposed in the session transcript), then /sync-docs, operator deploy
+(clasp push -f + New version + runAllTests — suite +2), then /reflect.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):

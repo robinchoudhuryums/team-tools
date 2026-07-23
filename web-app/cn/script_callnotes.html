@@ -3835,6 +3835,15 @@ function cnSubmitClarification_(noteId, message) {
 function cnReRenderActiveView_() {
   if (currentView === 'callNotes') {
     cnRenderStack_();
+    // M-3 (cycle 10): the pinned tray renders full-action cards via
+    // cnRenderCard_ but was never re-rendered by action handlers — a flag /
+    // resolve / QA change on a pinned card left the tray visuals stale, and
+    // Edit on a pinned note (deduped OUT of the stack) rendered its editor
+    // NOWHERE while `editingNoteId` stayed set, freezing the 60s live
+    // refresh (its open-edit skip) until the rep re-entered the view.
+    // Re-rendering the tray here makes the inline editor appear in the tray
+    // card and keeps ring/pill/button state live.
+    cnRenderPinnedTray_();
   } else if (currentView === 'callNotesHistory') {
     cnRenderHistoryStack_();
   }
@@ -4611,9 +4620,15 @@ function cnRenderPinnedTray_() {
   const limit = CN_STATE.pinLimit || 3;
   const isFull = pinned.length >= limit;
   host.classList.toggle('cn-pinned-full', isFull);
+  // M-3 (cycle 10): same typed-edit preservation as cnRenderStack_ — now that
+  // a pinned card can host the open inline editor, a tray re-render (another
+  // card's optimistic toggle, a pin reload) must not rebuild it from stored
+  // values and discard typing (the cycle-8 stack fix, applied to the tray).
+  const editSnap = cnEditSnapshot_();
   host.innerHTML =
     `<div class="cn-pinned-label">${icon('bookmark', 11)}<span>Pinned · ${pinned.length}/${limit}</span></div>` +
     pinned.map(cnRenderCard_).join('');
+  cnEditRestore_(editSnap);
 }
 
 // ── Training Q&A tray (recent answered training questions) ────────────

@@ -781,6 +781,7 @@ function _runAllTests() {
 
   // ── New endpoints (post-sync coverage backfill) ─────────────────────────
   _integrationTest('recordPunch_minIntervalRejectsRapidLive',  test_recordPunch_minIntervalRejectsRapidLive);
+  _integrationTest('recordPunch_liveSequenceGuard',            test_recordPunch_liveSequenceGuard);
 
   // #4a — punch-adjustment requests (employee batch → manager approval)
   _integrationTest('punchAdjust_submitApproveWritesPunch',     test_punchAdjust_submitApproveWritesPunch);
@@ -831,6 +832,7 @@ function _runAllTests() {
 
   // ── managerSaveDay (the most complex single function — backfill, F8) ────
   _integrationTest('managerSaveDay_addOnly',                   test_managerSaveDay_addOnly);
+  _integrationTest('managerSaveDay_collapsesDuplicateRows',    test_managerSaveDay_collapsesDuplicateRows);
   _integrationTest('managerSaveDay_updateOnly',                test_managerSaveDay_updateOnly);
   _integrationTest('managerSaveDay_deleteOnly',                test_managerSaveDay_deleteOnly);
   _integrationTest('managerSaveDay_mixedChanges',              test_managerSaveDay_mixedChanges);
@@ -1372,12 +1374,40 @@ function test_adjustLeaveBalance_perEmpDisabledNoOp() {
 // ── recordPunch ──
 
 function test_recordPunch_basic() {
+  // M-1 (cycle 10): start from a clean day — the sort test above leaves
+  // today-dated rows ending in ClockOut, which the live sequence guard now
+  // correctly rejects a fresh ClockIn against.
+  _clearTestState(_TEST_INDIA_ID);
   _asUser(_TEST_INDIA_EMAIL, () => {
     const r = recordPunch('ClockIn', null);
     _assertSuccess(r);
     _assertEq(r.isAdjustment, false);
     _assertTrue(!!r.displayTime);
   });
+}
+
+function test_recordPunch_liveSequenceGuard() {
+  // M-1 (cycle 10): the live path enforces the same getNextActions_ state
+  // machine the client renders its buttons from — a stale window (second
+  // browser / pinned pop-out) or direct RPC can no longer append a duplicate
+  // ClockIn/ClockOut or an out-of-sequence lunch punch. Day state is built
+  // via direct row appends (times far in the past) so the min-interval
+  // debounce never interferes; adjustments still bypass the guard.
+  _clearTestState(_TEST_INDIA_ID);
+  const today = fmtDateTz_(new Date(), 'Asia/Kolkata');
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(recordPunch('LunchOut', null), 'Cannot record',
+      'LunchOut with no ClockIn today is rejected by the sequence guard');
+  });
+  _appendTestPunch(_TEST_INDIA_ID, 'Test India User', today, '00:01:00', 'IN',  'ClockIn');
+  _appendTestPunch(_TEST_INDIA_ID, 'Test India User', today, '00:02:00', 'OUT', 'ClockOut');
+  _asUser(_TEST_INDIA_EMAIL, () => {
+    _assertFailure(recordPunch('ClockIn', null), 'Cannot record',
+      'Duplicate ClockIn after ClockOut is rejected (the stale-window class)');
+    _assertFailure(recordPunch('LunchOut', null), 'Cannot record',
+      'Lunch punch after ClockOut is rejected');
+  });
+  _clearTestState(_TEST_INDIA_ID);
 }
 
 function test_recordPunch_adjustDedup() {
@@ -2548,6 +2578,33 @@ function _countAuditRows(empId, action) {
         && String(rows[i][4]).trim() === action) n++;
   }
   return n;
+}
+
+function test_managerSaveDay_collapsesDuplicateRows() {
+  // M-1 (cycle 10): duplicate same-(emp, date, type) rows reconcile to the
+  // single displayed state — a kept slot collapses extras to the LAST row
+  // (the one the modal showed), a blank slot deletes EVERY row of the type
+  // (the old single-slot snapshot deleted one duplicate and left the other).
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:00:00', 'IN',  'ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '09:05:00', 'IN',  'ClockIn');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:00:00', 'OUT', 'ADJ-LunchOut');
+  _appendTestPunch(_TEST_PH_ID, 'Test PH User', _TEST_DATE_OLD, '12:10:00', 'OUT', 'ADJ-LunchOut');
+  const slots = { ClockIn:'09:05', LunchOut:'', LunchIn:'', ClockOut:'' };
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD, slots, 'dedupe test');
+    _assertSuccess(r);
+    _assertEq(r.changes, 3, 'One ClockIn dup collapsed + two LunchOut rows deleted');
+  });
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockIn'), 1,
+    'Kept slot collapses duplicate ClockIn rows to one');
+  _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, 'LunchOut'), 0,
+    'Blank slot deletes EVERY LunchOut row, not just the last');
+  const fep = findExistingPunch_(_TEST_PH_ID, _TEST_DATE_OLD, 'ClockIn');
+  _assertNotNull(fep, 'Surviving ClockIn row locatable');
+  _assertEq(normalizeTime_(fep.sheet.getRange(fep.rowIndex, ADP.TIME + 1).getValue()).substring(0, 5),
+    '09:05', 'Survivor is the LAST (displayed) row, untouched by a no-op slot');
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
 }
 
 function test_managerSaveDay_addOnly() {

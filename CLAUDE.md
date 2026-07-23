@@ -4400,7 +4400,7 @@ Test Coverage Quality | whether tests actually guard regressions; the client DOM
 
 ### Subsystems
 Server:
-  web-app/Code.js, web-app/DevTools.js, web-app/appsscript.json, web-app/.clasp.json
+  web-app/Code.js, web-app/DevTools.js, web-app/appsscript.json, web-app/.clasp.json, scripts/push-env.sh
 Client (shell):
   web-app/index.html, web-app/modals.html, web-app/styles.html, web-app/styles_design_tokens.html, web-app/script_core.html, web-app/script_icons.html, web-app/script_tour.html
 Client (Time Clock views):
@@ -4418,7 +4418,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally` | Subsystem: Server
@@ -4592,6 +4592,9 @@ INV-154 | **Every AuditLog READ routes through the `AUDIT` enum + the typed `aud
 ### Policy Configuration
 Policy threshold: 4/10
 Consecutive cycles: 2
+
+### Seams Audit Cadence
+every 4 subsystem cycles
 
 ### Regression Scenarios
 S1 | Smoke test suite | Subsystem: Test Suite
@@ -5255,6 +5258,7 @@ S72 | Coverage planner (#3) | Subsystem: Server, Client (Time Clock views)
 
 ### Frozen Subsystems
 - Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
+- Bound form-generator reference (`incoming/form-generator/`) — the pre-port bound Apps Script the Intake module was rewritten from; kept on disk as porting reference only. Replaced by `web-app/intake/` + the Intake endpoint family (shipped). No unfreeze condition anticipated — delete-candidate once the operator confirms the port needs no further reference. Skipped by default; name it explicitly to audit.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.

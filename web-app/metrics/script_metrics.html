@@ -489,6 +489,12 @@ function mMyPreset_(key) {
 function mLoadMyStats_(opts) {
   opts = opts || {};
   var requestedView = currentView;
+  // M-6 (cycle 10): seq token — the view-key guard alone can't stop a
+  // SAME-VIEW race (a slow 30D response landing after a fast Today response
+  // would render 30-day aggregates under Today-labeled chips). The newest
+  // load invalidates every in-flight one — the _covSeq/_punctSeq pattern.
+  M_STATE.mySeq = (M_STATE.mySeq || 0) + 1;
+  var seq = M_STATE.mySeq;
   // Cache key = the exact query (a date toggle is a different key, so we never
   // paint the wrong day from cache).
   var isRange = (M_STATE.myMode === 'range' && M_STATE.myFrom && M_STATE.myTo);
@@ -508,14 +514,15 @@ function mLoadMyStats_(opts) {
 
   var done = function () { if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   var ok = function (data) {
-    if (currentView !== requestedView) { done(); return; }
-    // Cache only good payloads — an {error} response shouldn't poison the cache.
+    // Cache first (key-exact, so a stale response still warms its own key),
+    // then drop the RENDER if a newer load superseded this one (M-6).
     if (data && !data.error) M_STATE.myCache[key] = { data: data, entry: { at: Date.now() } };
+    if (currentView !== requestedView || seq !== M_STATE.mySeq) { done(); return; }
     mRenderMyStats_(data);
     done();
   };
   var fail = function (err) {
-    if (currentView !== requestedView) { done(); return; }
+    if (currentView !== requestedView || seq !== M_STATE.mySeq) { done(); return; }
     done();
     // If a stale view is already on screen, keep it rather than blanking it.
     if (painted) { showToast('Couldn’t refresh metrics — showing last loaded', 'toast-warn'); return; }
@@ -909,6 +916,9 @@ function mLoadTeamMetrics_(opts) {
   if (!from) return;
   var requestedView = currentView;
   var key = from + ':' + to;   // a range change is a different key — never paints the wrong range
+  // M-6 (cycle 10): same-view stale-range seq token (see mLoadMyStats_).
+  M_STATE.teamSeq = (M_STATE.teamSeq || 0) + 1;
+  var seq = M_STATE.teamSeq;
 
   // Stale-while-revalidate: instant repaint from a fresh cached payload (unless
   // forced via the Refresh button), then refresh quietly behind the pill.
@@ -926,13 +936,13 @@ function mLoadTeamMetrics_(opts) {
   var done = function () { if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false); };
   google.script.run
     .withSuccessHandler(function (data) {
-      if (currentView !== requestedView) { done(); return; }
       if (data && !data.error) M_STATE.teamCache[key] = { data: data, entry: { at: Date.now() } };
+      if (currentView !== requestedView || seq !== M_STATE.teamSeq) { done(); return; }
       mRenderTeamMetrics_(data);
       done();
     })
     .withFailureHandler(function (err) {
-      if (currentView !== requestedView) { done(); return; }
+      if (currentView !== requestedView || seq !== M_STATE.teamSeq) { done(); return; }
       done();
       if (painted) { showToast('Couldn’t refresh metrics — showing last loaded', 'toast-warn'); return; }
       document.getElementById('m-team-content').innerHTML =
@@ -1132,10 +1142,17 @@ function enterSpanishInboxView(area) {
 function spanishLoad_() {
   var body = document.getElementById('spanish-body'); if (!body) return;
   body.innerHTML = loSweep();
+  // M-6 (cycle 10): seq token so a slow 30-day response can't overwrite a
+  // just-loaded 7-day view after a quick window-select double-change.
+  SPANISH_STATE.seq = (SPANISH_STATE.seq || 0) + 1;
+  var seq = SPANISH_STATE.seq;
   google.script.run
-    .withSuccessHandler(function (d) { if (currentView !== 'metricsSpanish') return; spanishRender_(d); })
+    .withSuccessHandler(function (d) {
+      if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
+      spanishRender_(d);
+    })
     .withFailureHandler(function (e) {
-      if (currentView !== 'metricsSpanish') return;
+      if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
       body.innerHTML = '<div class="no-data">' + esc((e && e.message) || 'Failed to load') + '</div>';
     })
     .getSpanishInboxStats(SPANISH_STATE.days);
