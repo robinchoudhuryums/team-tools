@@ -164,6 +164,36 @@ function _withTestIntake_(fn) {
   }
 }
 
+/** M-9 (cycle 10): runs `fn` with getKbSS_ redirected at a dedicated KB
+ *  fixture spreadsheet (Script Property TEST_KB_SS_ID — the TEST_CDR_SS_ID
+ *  pattern; created lazily via createPinnedSpreadsheet_ so tz/locale match a
+ *  production KB store). Before this wrapper, the KB integration tests wrote
+ *  to the LIVE KB spreadsheet: every full run bumped KB_AI_GENERATION,
+ *  invalidated the live tree cache, appended PERMANENT rows to the
+ *  append-only KbRevisions tab, and a swallowed kbDeleteItem failure orphaned
+ *  TEST items with no cleanup backstop. The tree cache (KB_CACHE_KEY) is NOT
+ *  keyed by store, so it's invalidated on entry AND exit — a warm live tree
+ *  must never serve fixture reads, and the fixture tree must never serve
+ *  live readers (the _withTestCdr_ cache discipline). */
+function _withTestKb_(fn) {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('TEST_KB_SS_ID');
+  let ok = false;
+  if (id) { try { SpreadsheetApp.openById(id); ok = true; } catch (e) { ok = false; } }
+  if (!ok) {
+    const ss = createPinnedSpreadsheet_('TEST_KB_Fixture');
+    id = ss.getId();
+    props.setProperty('TEST_KB_SS_ID', id);
+  }
+  _TEST_OVERRIDE_KB_SS_ID = id;
+  invalidateKbCache_();
+  try { return fn(); }
+  finally {
+    _TEST_OVERRIDE_KB_SS_ID = null;
+    invalidateKbCache_();
+  }
+}
+
 /** Runs `fn` with the CN_FEATURE_FLAGS Script Property overridden (the given
  *  keys merged over whatever is currently stored), restoring the prior
  *  property afterwards. Needed because the FEATURE_FLAGS registry defaults
@@ -554,7 +584,26 @@ function cleanupTestData() {
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ASSIGN_TAB), 'TEST_', TA.EMP_ID, 2);
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
     _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_ATTEMPT_TAB), 'TEST_', TQA.EMP_ID, 2);
+    // M-9 (cycle 10) — backstop sweep for KB content orphans. The KB tests
+    // now run against the fixture (_withTestKb_), but earlier runs left
+    // orphaned TEST_-titled items (a swallowed kbDeleteItem failure had no
+    // backstop) and their permanent KbRevisions rows in the LIVE store.
+    // TEST_-prefixed titles are the established cleanup key (INV-21 spirit).
+    _cleanupRowsByPrefix(kbSs.getSheetByName(CONFIG.KB.TAB), 'TEST_', KB.TITLE, 2);
+    _cleanupRowsByPrefix(kbSs.getSheetByName(KB_REVISIONS_TAB), 'TEST_', KBREV.TITLE, 2);
   } catch (e) { Logger.log('cleanupTestData: training tabs cleanup skipped: ' + e.message); }
+  // M-9 — same sweep inside the KB FIXTURE (if provisioned), so repeated runs
+  // don't accumulate residue from aborted tests there either.
+  try {
+    const kbFixtureId = PropertiesService.getScriptProperties().getProperty('TEST_KB_SS_ID');
+    if (kbFixtureId) {
+      const fx = SpreadsheetApp.openById(kbFixtureId);
+      _cleanupRowsByPrefix(fx.getSheetByName(CONFIG.KB.TAB), 'TEST_', KB.TITLE, 2);
+      _cleanupRowsByPrefix(fx.getSheetByName(KB_REVISIONS_TAB), 'TEST_', KBREV.TITLE, 2);
+      _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_ASSIGN_TAB), 'TEST_', TA.EMP_ID, 2);
+      _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
+    }
+  } catch (e) { Logger.log('cleanupTestData: KB fixture cleanup skipped: ' + e.message); }
   // Employee Docs fixture (T3) — sweep TEST_-employee rows if the fixture exists.
   try {
     const hrId = PropertiesService.getScriptProperties().getProperty('TEST_HRDOCS_SS_ID');
@@ -562,6 +611,10 @@ function cleanupTestData() {
       const hrSs = SpreadsheetApp.openById(hrId);
       _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_TAB), 'TEST_', ED.EMP_ID, 2);
       _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_SIG_TAB), 'TEST_', EDS.EMP_ID, 2);
+      // M-9 (cycle 10) — the fixture's Coaching + EmpDocTemplates tabs were
+      // outside the sweep (per-test finally only; an aborted run orphaned rows).
+      _cleanupRowsByPrefix(hrSs.getSheetByName(COACH_TAB), 'TEST_', CO.EMP_ID, 2);
+      _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_TPL_TAB), 'TEST_', EDT.NAME, 2);
     }
   } catch (e) { Logger.log('cleanupTestData: empdocs cleanup skipped: ' + e.message); }
 
@@ -1017,6 +1070,12 @@ function _runAllTests() {
   // ── Audit row assertions ───────────────────────────────────────────────
   _integrationTest('auditRow_recordPunchAdjustment',            test_auditRow_recordPunchAdjustment);
   _integrationTest('auditRow_deletePunch_hasActorEmail',        test_auditRow_deletePunch_hasActorEmail);
+  // Cycle 10 — M-11: the five previously zero-coverage endpoints
+  _integrationTest('getMyMetricsRange_validationAndShape', test_getMyMetricsRange_validationAndShape);
+  _integrationTest('appendCallNoteFeedback_contract',      test_appendCallNoteFeedback_contract);
+  _integrationTest('getMyNoteHourBuckets_contract',        test_getMyNoteHourBuckets_contract);
+  _integrationTest('getPatientTimeline_contract',          test_getPatientTimeline_contract);
+  _integrationTest('deptRequest_resolveLinkIdempotent',    test_deptRequest_resolveLinkIdempotent);
 }
 
 
@@ -3722,6 +3781,10 @@ function test_recordClientError_authBoundsAndAppend() {
 // invisible to everyone (broadcast surface — INV-140/147); publishing it
 // makes the body + edit stamp flow to reps.
 function test_whatsNew_propertyGateAndDraftHidden() {
+  // M-9 (cycle 10): runs against the KB FIXTURE, not the live store.
+  return _withTestKb_(function () { _test_whatsNew_propertyGateAndDraftHidden_(); });
+}
+function _test_whatsNew_propertyGateAndDraftHidden_() {
   const props = PropertiesService.getScriptProperties();
   const prev = props.getProperty('WHATSNEW_KB_ID');
   let kbId = null;
@@ -4544,6 +4607,11 @@ function test_kb_uploadImage_rejectsInvalidPayloads() {
 // snapshots a revision and a revert restores content (and is itself
 // snapshotted, so reverts are reversible).
 function test_kb_draftLifecycleAndRevisions() {
+  // M-9 (cycle 10): runs against the KB FIXTURE, not the live store — the
+  // create→edit→revert→delete flow appends PERMANENT KbRevisions rows.
+  return _withTestKb_(function () { _test_kb_draftLifecycleAndRevisions_(); });
+}
+function _test_kb_draftLifecycleAndRevisions_() {
   let kbId = null;
   try {
     // 1) Create as DRAFT (admin == manager while ADMIN_EMAILS is unset).
@@ -4758,6 +4826,11 @@ function _cleanupTrainingRowsForItem_(itemId) {
 }
 
 function test_training_assignCompleteFlow() {
+  // M-9 (cycle 10): the fixture KB article + the TrainingAssignments/
+  // TrainingCompletions rows land in the KB FIXTURE, not the live store.
+  return _withTestKb_(function () { _test_training_assignCompleteFlow_(); });
+}
+function _test_training_assignCompleteFlow_() {
   let kbId = null;
   try {
     // Fixture KB article (manager-gated create — also exercises the content link).
@@ -4941,7 +5014,12 @@ function _withTestHrDocs_(fn) {
   let ss = null;
   if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
   if (!ss) {
-    ss = SpreadsheetApp.create('TEST_HRDOCS_Fixture');
+    // M-9/T-9 (cycle 10): route through the factory so the fixture's tz AND
+    // locale match a production HR store (CONFIG.TIMEZONE) — a bare create
+    // inherits the script tz + deployer locale, so the fixture's coercion
+    // behavior (IssuedAt/SignedAt/CreatedAt cells) could mask or fake
+    // failures a real store would show (the cycle-9 L-36 CN-fixture lesson).
+    ss = createPinnedSpreadsheet_('TEST_HRDOCS_Fixture');
     props.setProperty('TEST_HRDOCS_SS_ID', ss.getId());
   }
   _TEST_OVERRIDE_HRDOCS_SS_ID = ss.getId();
@@ -5512,4 +5590,139 @@ function test_form_submissionHash_deterministicAndTamperEvident() {
   _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, 'data:image/png;base64,BBBB', 'tok-1', 'forms-consent-2026-06'), 'altered signature → different hash');
   _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, sig, 'tok-2', 'forms-consent-2026-06'), 'different token → different hash');
   _assertTrue(h1 !== computeFormSubmissionHash_(dataJson, sig, 'tok-1', 'forms-consent-2027-01'), 'different consent version → different hash');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Cycle 10 — M-11: coverage for the five zero-pin endpoints
+// ═══════════════════════════════════════════════════════════════════════════
+
+function test_getMyMetricsRange_validationAndShape() {
+  // M-11 (cycle 10) — INV-129 had zero coverage: date validation, the 92-day
+  // cap, and the own-only contract (NO anonymized team series — that is
+  // INV-124's single-day surface). The cache is bypassed under the CDR test
+  // override, so a fixture run can never serve a stale cached result.
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertTrue(!!getMyMetricsRange('2026/01/01', '2026-01-02').error, 'bad start date rejected');
+    _assertTrue(!!getMyMetricsRange('2026-01-01', 'x').error, 'bad end date rejected');
+    _assertTrue(!!getMyMetricsRange('2026-02-01', '2026-01-01').error, 'from>to rejected');
+    _assertTrue(/92/.test(getMyMetricsRange('2026-01-01', '2026-06-01').error || ''),
+      'span capped at 92 days');
+  });
+  const r = _withTestCdr_(function () {
+    return _asUser(_TEST_INDIA_EMAIL, function () {
+      return getMyMetricsRange(_TEST_CDR_DATE, _TEST_CDR_DATE);
+    });
+  });
+  _assertTrue(!(r && r.error), 'fixture-backed range read succeeds: ' + (r && r.error));
+  _assertTrue(Array.isArray(r.trend), 'own-only per-day trend present');
+  _assertTrue(!r.series, 'NO anonymized team series on the range surface (INV-129)');
+  _assertTrue(!r.cached, 'endpoint cache bypassed under the CDR test override');
+}
+
+function test_appendCallNoteFeedback_contract() {
+  // M-11 (cycle 10) — INV-76 had zero coverage anywhere: kind validation, the
+  // training-or-thread gate, ack/clarification shapes, the CallNoteFeedback
+  // audit row.
+  _clearTestCallNotes();
+  let trainingId = null, plainId = null;
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    const t = submitCallNote(_cnTestPayload({ flagType: 'training' }));
+    _assertSuccess(t, 'training note filed');
+    trainingId = t.note.noteId;
+    const p = submitCallNote(_cnTestPayload({ callback: '5553334444' }));
+    _assertSuccess(p, 'plain note filed');
+    plainId = p.note.noteId;
+  });
+  const before = _countAuditRows(_TEST_INDIA_ID, 'CallNoteFeedback');
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertFailure(appendCallNoteFeedback(plainId, 'hello?', 'clarification'),
+      'No manager feedback', 'no thread on an unflagged note → rejected');
+    _assertFailure(appendCallNoteFeedback(trainingId, '', 'clarification'),
+      'type a question', 'clarification requires a message');
+    _assertSuccess(appendCallNoteFeedback(trainingId, '', 'ack'),
+      'ack on a training note succeeds');
+    _assertSuccess(appendCallNoteFeedback(trainingId, 'what did you mean?', 'clarification'),
+      'clarification with a message succeeds');
+  });
+  _assertEq(_countAuditRows(_TEST_INDIA_ID, 'CallNoteFeedback'), before + 2,
+    'each successful append writes a CallNoteFeedback audit row');
+  const notes = _asUser(_TEST_INDIA_EMAIL, function () { return getMyCallNotes(); });
+  const tn = (notes.notes || []).filter(function (n) { return n.noteId === trainingId; })[0];
+  _assertNotNull(tn, 'training note readable');
+  const fb = (tn.subformData && tn.subformData.feedback) || [];
+  _assertEq(fb.length, 2, 'two feedback entries appended');
+  _assertEq(fb[0].kind, 'ack', 'first entry is the ack');
+  _assertEq(fb[1].kind, 'clarification', 'second entry is the clarification');
+  _clearTestCallNotes();
+}
+
+function test_getMyNoteHourBuckets_contract() {
+  // M-11 (cycle 10) — INV-130 had only its INV-142 boundary membership pinned;
+  // this pins the behavior: 24 rep-local-hour buckets, the just-filed note
+  // counted at the rep's local hour, malformed dates rejected, and the
+  // not-enrolled path returning cleanly (never a throw).
+  _clearTestCallNotes();
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertSuccess(submitCallNote(_cnTestPayload()), 'note filed');
+    _assertTrue(!!getMyNoteHourBuckets('17/07/2026').error, 'malformed date rejected');
+    const res = getMyNoteHourBuckets(null);   // defaults to rep-local today
+    _assertTrue(!res.error, 'no error: ' + res.error);
+    _assertEq(res.buckets.length, 24, '24 hour buckets');
+    const hour = parseInt(Utilities.formatDate(new Date(), 'Asia/Kolkata', 'HH'), 10);
+    _assertTrue(res.buckets[hour] >= 1, 'the just-filed note is bucketed at the REP-LOCAL hour');
+  });
+  // A rep with no enrolled sheet gets clean all-zero buckets; if the PH test
+  // employee is CN-enrolled in this environment, the shape contract still holds.
+  _asUser(_TEST_PH_EMAIL, function () {
+    const r = getMyNoteHourBuckets(null);
+    _assertTrue(!r.error, 'unenrolled/other-rep path returns cleanly: ' + r.error);
+    _assertEq(r.buckets.length, 24, '24 buckets regardless of enrollment');
+  });
+  _clearTestCallNotes();
+}
+
+function test_getPatientTimeline_contract() {
+  // M-11 (cycle 10) — the endpoint had zero coverage (only the pure merge
+  // helper buildPatientTimeline_ is Node-pinned): caller-scoping via the
+  // rep's own note stream, empty-TRX rejection, and the L-8 partial contract
+  // staying quiet on a healthy read.
+  _clearTestCallNotes();
+  _asUser(_TEST_INDIA_EMAIL, function () {
+    _assertSuccess(submitCallNote(_cnTestPayload({ patientAndTrx: 'Timeline Pt TRX-TL-42' })),
+      'note filed');
+    _assertTrue(!!getPatientTimeline('').error, 'empty TRX rejected');
+    const tl = getPatientTimeline('TRX-TL-42');
+    _assertTrue(!tl.error, 'timeline returns: ' + tl.error);
+    _assertTrue((tl.events || []).length >= 1, 'own note surfaces by TRX substring');
+    _assertTrue(tl.partial !== true, 'no failed sources flagged on a healthy read');
+  });
+  _clearTestCallNotes();
+}
+
+function test_deptRequest_resolveLinkIdempotent() {
+  // M-11 (cycle 10) — the ?resolve= email-link path (markDeptRequestResolved_)
+  // had zero coverage: first-resolve marks the row, a second click is a
+  // friendly idempotent "already" (with a coercion-safe resolvedAt), an
+  // unknown token is not-found, and the DeptRequestResolved audit row lands.
+  const sh = getOrCreateDeptRequestsSheet_();
+  const token = 'TESTDR-' + Utilities.getUuid();
+  sh.appendRow([token, _TEST_INDIA_ID, 'Test India User', _TEST_INDIA_EMAIL,
+    'Billing', 'example.com', drNowTs_(), 'open', '', '', 'test label', '']);
+  try {
+    const before = _countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved');
+    const r1 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL);
+    _assertTrue(r1.found === true && r1.already === false, 'first resolve marks the row');
+    const r2 = markDeptRequestResolved_(token, _TEST_MGR_EMAIL);
+    _assertTrue(r2.found === true && r2.already === true, 'second resolve is idempotent (already)');
+    _assertTrue(!!String(r2.resolvedAt || ''), 'already-branch returns the resolve time');
+    _assertEq(markDeptRequestResolved_('TESTDR-nope', _TEST_MGR_EMAIL).found, false,
+      'unknown token → not found');
+    _assertEq(_countAuditRows(_TEST_INDIA_ID, 'DeptRequestResolved'), before + 1,
+      'exactly one DeptRequestResolved audit row (the already-branch writes none)');
+  } finally {
+    const rows = sh.getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (String(rows[i][DR.REQ_ID]) === token) { sh.deleteRow(i + 1); break; }
+    }
+  }
 }

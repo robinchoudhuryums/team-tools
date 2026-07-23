@@ -5529,6 +5529,7 @@ function cnGatherComposerSelections_() {
 
 function cnComposerGoToPreview_() {
   const c = CN_STATE.composer; if (!c) return;
+  if (c.previewing) return;   // cycle 10 — drop a double-click while the RPC is in flight
   cnGatherComposerSelections_();
   if (c.selections.departments.length === 0) {
     showToast('Pick at least one recipient first', 'toast-warn'); return;
@@ -5536,14 +5537,25 @@ function cnComposerGoToPreview_() {
   if (!c.selections.updateInfo) {
     showToast('Pick or type an Update type first', 'toast-warn'); return;
   }
+  c.previewing = true;
   google.script.run
     .withSuccessHandler(function (res) {
+      c.previewing = false;
+      // Cycle 10 — instance guard (the M-4/M-9 discipline, applied to the one
+      // composer RPC that lacked it): cnRenderComposerModal_ renders from
+      // CN_STATE.composer, so a stale preview response arriving after this
+      // composer was closed (Esc, Save&Compose rollback) and a NEW composer
+      // opened would force-rerender the new composer's form step — wiping
+      // typed-but-ungathered inputs (and re-creating the overlay if none).
+      if (CN_STATE.composer !== c) return;
       if (res.error) { showToast(res.error, 'toast-error'); return; }
       c.preview = res;
       c.step = 'preview';
       cnRenderComposerModal_();
     })
     .withFailureHandler(function (err) {
+      c.previewing = false;
+      if (CN_STATE.composer !== c) return;
       showToast('Preview failed: ' + err.message, 'toast-error');
     })
     .previewCallNoteEmail(c.noteId, c.selections);
@@ -5844,6 +5856,13 @@ function cnRenderHistoryStack_() {
       ' · <a href="#" onclick="CN_STATE.filter=\'all\';cnRenderHistoryStack_();return false;">clear</a></span>';
   const isRange = CN_STATE.historyEndDate && CN_STATE.historyEndDate !== CN_STATE.historyDate;
 
+  // M-4 (cycle 10): same typed-edit preservation as cnRenderStack_ — History
+  // is the "view & edit prior notes" surface, but an optimistic toggle / QA
+  // ack / delete on ANOTHER card re-rendered this stack from stored values,
+  // silently discarding everything typed in an open inline editor (the exact
+  // cycle-8 stack fix, never applied here).
+  const editSnap = cnEditSnapshot_();
+
   if (notes.length === 0) {
     if (summary) summary.innerHTML = fltPill;
     stack.innerHTML = '<div class="cn-stack-empty">No ' + (flt === 'all' ? '' : esc(flt) + '-filtered ') +
@@ -5886,6 +5905,7 @@ function cnRenderHistoryStack_() {
     if (summary) summary.innerHTML = fltPill;
     stack.innerHTML = notes.map(cnRenderCard_).join('');
   }
+  cnEditRestore_(editSnap);   // M-4 — typed edit values survive the re-render
 }
 
 /** Per-flag-type count chips for a History date group. action/training/review
@@ -7535,6 +7555,16 @@ function enterCallNotesAdminView(area) {
   // Retention panel (Config pane) — the three call-note retention windows +
   // current values + safety-ordering warnings, editable (danger-gated saves).
   cnLoadRetentionPanel_();
+  // M-8 (cycle 10): the Sheets sub-tab's lazy load lived ONLY in cnAdminTab_
+  // (the click handler), so a manager who LEFT Admin on the persisted
+  // adminTab==='sheets' returned to an active-highlighted tab over the empty
+  // rebuilt pane — recoverable only by re-clicking the already-active tab.
+  // The enter path now performs the same empty-pane load the click path does
+  // (the cycle-9 M-7 fix covered the stale-flag variant but not this path).
+  if (CN_STATE.adminTab === 'sheets') {
+    var sheetsPane = document.getElementById('cn-admin-sheets');
+    if (sheetsPane && !sheetsPane.firstElementChild) cnLoadSheetView_('auditLog');
+  }
 }
 
 // Admin Config — call-note retention windows summary + editor. Manager-gated

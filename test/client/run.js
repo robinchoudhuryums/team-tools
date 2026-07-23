@@ -755,7 +755,11 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
   const lines = src.split('\n');
   const offenders = [];
-  const SAFE_LINE = /cnTimestampString_\(|CN\.TIMESTAMP \+ 1|CN\.TIMESTAMP\]\s*=|^\s*\/\//;
+  // Cycle 10: the write-exemption is `=` NOT followed by `=` — a raw
+  // COMPARISON read (`row[CN.TIMESTAMP] === x`, a Date-vs-string compare
+  // that is always false, exactly the bug class this scan exists for) used
+  // to match the `\]\s*=` write shape and pass silently.
+  const SAFE_LINE = /cnTimestampString_\(|CN\.TIMESTAMP \+ 1|CN\.TIMESTAMP\]\s*=(?!=)|^\s*\/\//;
   // reconcileCallNotes keeps its documented equivalent inline guard (INV-142).
   const reconcile = extractRawFunction('Code.js', 'reconcileCallNotes');
   lines.forEach((line, idx) => {
@@ -951,7 +955,9 @@ test('TRIPWIRE (Batch 3): no raw read of a coerced AUDIT column outside auditRow
   const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
   const reader = extractRawFunction('Code.js', 'auditRowObj_');
   const COERCED = /\[AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]/;
-  const WRITE_OR_COMMENT = /AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]\s*=|AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT) \+ 1|^\s*\/\//;
+  // Cycle 10: `=(?!=)` — a raw comparison read must NOT pass as a write
+  // (same hardening as the CN.TIMESTAMP scan above).
+  const WRITE_OR_COMMENT = /AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT)\]\s*=(?!=)|AUDIT\.(PUNCH_DATE|PUNCH_TIME|IS_ADJUSTMENT) \+ 1|^\s*\/\//;
   const offenders = [];
   src.split('\n').forEach((line, idx) => {
     if (!COERCED.test(line) || WRITE_OR_COMMENT.test(line)) return;
@@ -1132,7 +1138,14 @@ test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock
     }
     funcs[fm[1]] = codeSrc.slice(fm.index, j + 1);
   }
-  const senders = Object.keys(funcs).filter((n) => stripC(funcs[n]).indexOf('MailApp.') >= 0);
+  // Cycle 10: GmailApp.sendEmail joins the inventory — GmailApp is already an
+  // authorized project global (Spanish inbox READS), so a future Gmail-based
+  // sender would have escaped a MailApp-only scan. Reads (search/getThread)
+  // stay out: the documented locked Spanish scope-guard reads are deliberate.
+  const senders = Object.keys(funcs).filter((n) => {
+    const sb = stripC(funcs[n]);
+    return sb.indexOf('MailApp.') >= 0 || sb.indexOf('GmailApp.sendEmail') >= 0;
+  });
   assert.ok(senders.length >= 15, 'mail-sender inventory armed (got ' + senders.length + ')');
   // Deliberate in-lock senders, each with a load-bearing reason:
   const ALLOWLIST = {
@@ -1148,10 +1161,29 @@ test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock
     region = region.replace(/notifyAfter = function \(\) \{[^{}]*\};/g, '');
     const hits = senders.filter((s) => new RegExp('\\b' + s + '\\s*\\(').test(region));
     if (region.indexOf('MailApp.') >= 0) hits.push('MailApp.');
+    if (region.indexOf('GmailApp.sendEmail') >= 0) hits.push('GmailApp.sendEmail');
     if (hits.length && !ALLOWLIST[n]) offenders.push(n + ' → ' + hits.join(','));
   });
   assert.deepStrictEqual(offenders, [],
     'mail reachable inside a locked region — move it to a post-lock notifyAfter closure (or allowlist it WITH a reason): ' + offenders.join(' | '));
+
+  // Cycle 10 — INV-01 structural companion: every waitLock( function must
+  // have a finally that releases the lock. Two compounding holes closed:
+  // INV-01's finally/releaseLock structure had NO pin across the ~60
+  // waitLock sites, and the mail scan above SKIPS a locked function with no
+  // finally — so a lock leak also silently exempted it from the mail check.
+  let lockedCount = 0;
+  const lockOffenders = [];
+  Object.keys(funcs).forEach((n) => {
+    const sb = stripC(funcs[n]);
+    if (sb.indexOf('waitLock(') < 0) return;
+    lockedCount++;
+    const finIdx = sb.lastIndexOf('finally');
+    if (finIdx < 0 || sb.indexOf('releaseLock', finIdx) < 0) lockOffenders.push(n);
+  });
+  assert.ok(lockedCount >= 40, 'locked-function inventory armed (got ' + lockedCount + ')');
+  assert.deepStrictEqual(lockOffenders, [],
+    'waitLock( without a finally releaseLock() — INV-01 requires finally-release: ' + lockOffenders.join(', '));
 });
 
 console.log('\nCode.js — automation trigger wiring is self-consistent (#3 coupling tripwire)');

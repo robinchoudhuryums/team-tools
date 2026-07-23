@@ -262,6 +262,42 @@ test('uiConfirm OVER a base overlay: Esc resolves the dialog WITHOUT running the
   assert.strictEqual(baseClosed, 0, 'underlying overlay hook NOT triggered');
 });
 
+test('stacked uiConfirms: one Escape resolves ONLY the topmost (INV-83, M-10 pin)', async () => {
+  // Cycle-8 fix, unpinned until now: each dialog's document-level CAPTURE
+  // keydown acts only when its own overlay is the topmost .ui-dialog and
+  // handles via stopImmediatePropagation — plain stopPropagation can't stop
+  // same-node-same-phase siblings, so one Escape used to resolve BOTH stacked
+  // dialogs (the bottom one with false, cancelling its flow).
+  const h = boot();
+  const s1 = settle(h.window.uiConfirm({ title: 'bottom' }));
+  const s2 = settle(h.window.uiConfirm({ title: 'top' }));
+  h.dispatchKey('Escape');
+  await tick();
+  assert.strictEqual(s2.value, false, 'topmost dialog resolved false');
+  assert.strictEqual(s1.done, false, 'bottom dialog NOT resolved by the same Escape');
+  assert.ok(h.$('.ui-dialog'), 'bottom dialog still open');
+  h.dispatchKey('Escape');
+  await tick();
+  assert.strictEqual(s1.value, false, 'second Escape resolves the bottom dialog');
+});
+
+test('Enter aimed inside #kb-drawer does NOT confirm an open dialog (INV-83 L-32, M-10 pin)', async () => {
+  // The drawer is exempt from the dialog focus trap (z-55, above the dialog)
+  // and Ctrl/⌘+K opens it while a dialog is up — an Enter aimed at the
+  // drawer's search box used to confirm a danger dialog it never targeted.
+  const h = boot();
+  h.window.kbDrawerToggle_();
+  const s = settle(h.window.uiConfirm({ title: 'Delete?', tone: 'danger' }));
+  const q = h.$('#kbd-q');
+  assert.ok(q, 'drawer search box present');
+  h.dispatchKey('Enter', { target: q });
+  await tick();
+  assert.strictEqual(s.done, false, 'drawer-targeted Enter did NOT resolve the dialog');
+  h.dispatchKey('Enter');
+  await tick();
+  assert.strictEqual(s.value, true, 'a plain Enter still confirms the dialog');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // PHASE 2 — focus trap + KB drawer exemption + survives re-render
 // ═════════════════════════════════════════════════════════════════════════════

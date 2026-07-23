@@ -16,9 +16,25 @@ assigned to Server/Test Suite; form-generator frozen entry). Pure 307/0 (5 new
 pins, 2 bite-checked), DOM 61/0, node --check ×3 clean; editor suite +2 tests
 (recordPunch_liveSequenceGuard, managerSaveDay_collapsesDuplicateRows;
 test_recordPunch_basic gained a _clearTestState — the sort test's today-rows
-now correctly trip the new guard). Remaining: rest of the cycle-10 backlog
-(6 Mediums + Lows, batches proposed in-session), /sync-docs, operator deploy,
-/reflect.
+now correctly trip the new guard).
+BATCHES A+B ALSO IMPLEMENTED (same branch): A = M-4 (History edit-snapshot
+preservation), M-7 (KB convert identity guards — KB_EDIT object-ref +
+view/no-open-editor checks), M-8 (Admin Sheets pane loads on the enter path),
+composer Preview instance+in-flight guard. B = M-9 (_withTestKb_ via
+TEST_KB_SS_ID fixture + createPinnedSpreadsheet_; 3 KB-writing tests wrapped;
+cleanupTestData backstops for KB/KbRevisions live+fixture, HR Coaching +
+EmpDocTemplates; HR fixture now factory-pinned), M-10 (2 DOM pins:
+stacked-dialog topmost Escape — bite-checked on the real guard — and
+drawer-Enter exemption), M-11 (5 editor tests: getMyMetricsRange,
+appendCallNoteFeedback, getMyNoteHourBuckets, getPatientTimeline,
+deptRequest resolve-link idempotency), tripwire hardening (=(?!=)
+comparison-read fix in both coercion scans; GmailApp.sendEmail in the mail
+inventory; INV-01 finally/releaseLock structural scan — closes the mail-scan
+no-finally hole). Pure 307/0, DOM 63/0, editor suite +7 tests total this
+cycle. NOTE for operator: the first post-deploy runAllTests creates a
+TEST_KB_Fixture spreadsheet (Script Property TEST_KB_SS_ID) in the deployer's
+Drive — expected, one-time. Remaining: batches C–F (server Lows, client Lows,
+CN/module Lows, docs), /sync-docs, operator deploy, /reflect.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3

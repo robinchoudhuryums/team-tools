@@ -1168,10 +1168,20 @@ function kbConvertItem_(id) {
   }).then(function (ok) {
     if (!ok) return;
     showToast('Converting…', '');
+    var requestedView = currentView;   // M-7 (cycle 10) — see below
     google.script.run
       .withSuccessHandler(function (res) {
         if (!res || res.error || !res.success) {
           showToast((res && res.error) || 'Convert failed', 'toast-error');
+          return;
+        }
+        // M-7 (cycle 10): a DocumentApp conversion is multi-second — don't
+        // pop the body-mounted editor over an unrelated view after nav-away,
+        // and never clobber an editor the admin opened for something else
+        // while the convert was in flight.
+        if (currentView !== requestedView) return;
+        if (document.getElementById('kb-ed-overlay')) {
+          showToast('Convert finished, but another editor is open — close it and convert again.', 'toast-warn');
           return;
         }
         KB_EDIT = {
@@ -1204,6 +1214,13 @@ function kbConvertFromEditor_() {
   var url = String(KB_EDIT.driveUrl || '').trim();
   if (!url) { showToast('Paste a Google Doc share URL first.', 'toast-warn'); return; }
   showToast('Converting…', '');
+  // M-7 (cycle 10): identity guard. Every editor open assigns a FRESH KB_EDIT
+  // object, so capturing the reference pins this convert to the editor it was
+  // fired from — the old "any editor exists" check let a stale response
+  // overwrite a DIFFERENT item's open editor (type flipped to article, body
+  // replaced with the other Doc's markdown; a later Save persisted the wrong
+  // Doc's content over the wrong KB row).
+  var ed = KB_EDIT;
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error || !res.success) {
@@ -1211,6 +1228,7 @@ function kbConvertFromEditor_() {
         return;
       }
       if (!document.getElementById('kb-ed-overlay')) return;   // editor closed mid-convert
+      if (KB_EDIT !== ed) return;   // M-7 — a different item's editor is open now
       KB_EDIT.type = 'article';
       KB_EDIT.body = res.markdown || '';
       if (!String(KB_EDIT.title || '').trim()) KB_EDIT.title = res.docTitle || '';
