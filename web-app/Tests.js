@@ -2530,10 +2530,13 @@ function test_sheetDoctor_detectsAndCollapsesDuplicates() {
   const d = new Date(); d.setDate(d.getDate() - 10);
   const date = fmtDateTz_(d, CONFIG.MANAGER_TIMEZONE);
   const emp = { id: _TEST_INDIA_ID, name: 'Test India User' };
-  // Two ClockIn rows (a duplicate group) + an inverted pair (out before in).
+  // Two ClockIn rows (a duplicate group) + an inverted clock pair (out
+  // before in) + an inverted LUNCH pair (return before leave).
   appendToAdpSheet_(emp, date, '09:00:00', 'IN',  'ClockIn');
   appendToAdpSheet_(emp, date, '09:05:00', 'IN',  'ClockIn');
   appendToAdpSheet_(emp, date, '05:00:00', 'OUT', 'ClockOut');   // reads as overnight (C3 wrap)
+  appendToAdpSheet_(emp, date, '13:00:00', 'OUT', 'LunchOut');
+  appendToAdpSheet_(emp, date, '12:00:00', 'IN',  'LunchIn');    // return an hour BEFORE the leave
 
   const rep = _asUser(_TEST_MGR_EMAIL, () => getTimesheetDoctor());
   _assertTrue(!rep.error, 'doctor scan runs');
@@ -2541,8 +2544,10 @@ function test_sheetDoctor_detectsAndCollapsesDuplicates() {
     g.empId === _TEST_INDIA_ID && g.date === date && g.type === 'ClockIn')[0];
   _assertNotNull(dup, 'duplicate ClockIn group detected');
   _assertEq(dup.count, 2, 'both rows counted');
-  const inv = (rep.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date)[0];
+  const inv = (rep.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date && v.kind === 'clock')[0];
   _assertNotNull(inv, 'inverted in/out pair detected (out 05:00 <= in 09:00)');
+  const invL = (rep.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date && v.kind === 'lunch')[0];
+  _assertNotNull(invL, 'inverted lunch pair detected (return 12:00 <= leave 13:00)');
 
   const fix = _asUser(_TEST_MGR_EMAIL, () => fixTimesheetDuplicates(_TEST_INDIA_ID));
   _assertTrue(fix.success && fix.collapsed >= 1, 'duplicates collapsed');
@@ -2555,8 +2560,8 @@ function test_sheetDoctor_detectsAndCollapsesDuplicates() {
   const dup2 = (rep2.duplicates || []).filter(g =>
     g.empId === _TEST_INDIA_ID && g.date === date && g.type === 'ClockIn')[0];
   _assertTrue(!dup2, 'idempotent — the group is gone on re-scan');
-  // Inverted pair is REPORT-ONLY — still listed after the fix.
-  const inv2 = (rep2.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date)[0];
+  // Inverted pairs are REPORT-ONLY — still listed after the fix.
+  const inv2 = (rep2.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date && v.kind === 'clock')[0];
   _assertNotNull(inv2, 'inverted pair untouched by the duplicate fix (report-only, C3)');
   // Non-manager gate.
   const gated = _asUser(_TEST_PH_EMAIL, () => fixTimesheetDuplicates(_TEST_INDIA_ID));

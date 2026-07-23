@@ -1709,9 +1709,11 @@ function tsDoctorScan_() {
     byKey[key].rows.push(i + 1);   // 1-indexed sheet row
     byKey[key].times.push(time);
     const dkey = id + '|' + date;
-    if (!days[dkey]) days[dkey] = { in: [], out: [], name: String(adpRows[i][ADP.EMP_NAME] || ''), empId: id, date: date };
+    if (!days[dkey]) days[dkey] = { in: [], out: [], lo: [], li: [], name: String(adpRows[i][ADP.EMP_NAME] || ''), empId: id, date: date };
     if (type === 'ClockIn') days[dkey].in.push(time);
     if (type === 'ClockOut') days[dkey].out.push(time);
+    if (type === 'LunchOut') days[dkey].lo.push(time);
+    if (type === 'LunchIn') days[dkey].li.push(time);
   }
   return { byKey: byKey, days: days };
 }
@@ -1732,12 +1734,23 @@ function getTimesheetDoctor() {
     });
     Object.keys(scan.days).forEach(function (k) {
       const d = scan.days[k];
-      if (!d.in.length || !d.out.length) return;
-      const firstIn = d.in.slice().sort()[0];
-      const lastOut = d.out.slice().sort()[d.out.length - 1];
       // HH:mm:ss lexicographic = chronological (the INV-155 convention).
-      if (lastOut <= firstIn && inverted.length < TS_DOCTOR_MAX_GROUPS) {
-        inverted.push({ empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
+      if (d.in.length && d.out.length) {
+        const firstIn = d.in.slice().sort()[0];
+        const lastOut = d.out.slice().sort()[d.out.length - 1];
+        if (lastOut <= firstIn && inverted.length < TS_DOCTOR_MAX_GROUPS) {
+          inverted.push({ kind: 'clock', empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
+        }
+      }
+      // Lunch-pair inversion (operator ask): the lunch RETURN landing at or
+      // before the lunch LEAVE — the same mis-keyed AM/PM class. Last-return
+      // vs first-leave, so a legitimate multi-lunch day never false-flags.
+      if (d.lo.length && d.li.length) {
+        const firstLo = d.lo.slice().sort()[0];
+        const lastLi = d.li.slice().sort()[d.li.length - 1];
+        if (lastLi <= firstLo && inverted.length < TS_DOCTOR_MAX_GROUPS) {
+          inverted.push({ kind: 'lunch', empId: d.empId, name: d.name, date: d.date, lunchOut: firstLo, lunchIn: lastLi });
+        }
       }
     });
     duplicates.sort(function (a, b) { return a.date < b.date ? 1 : -1; });

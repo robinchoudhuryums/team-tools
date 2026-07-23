@@ -200,10 +200,14 @@ function renderSheetDoctorCard_(res) {
       ' <span style="color:var(--muted)">(' + d.times.map(esc).join(', ') + ')</span></div>';
   }).join('');
   const invs = (res.inverted || []).map(function (v) {
+    const detail = (v.kind === 'lunch')
+      ? 'lunch out ' + esc(v.lunchOut) + ' → return ' + esc(v.lunchIn) +
+        ' <span style="color:var(--warning-deep)">return precedes the leave — check AM/PM via Day Edit</span>'
+      : 'in ' + esc(v.clockIn) + ' → out ' + esc(v.clockOut) +
+        ' <span style="color:var(--warning-deep)">reads as an overnight day — check AM/PM via Day Edit</span>';
     return '<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:12px">' +
       '<span style="font-weight:600;color:var(--ink)">' + esc(v.name || v.empId) + '</span> · ' +
-      esc(v.date) + ' · in ' + esc(v.clockIn) + ' → out ' + esc(v.clockOut) +
-      ' <span style="color:var(--warning-deep)">reads as an overnight day — check AM/PM via Day Edit</span></div>';
+      esc(v.date) + ' · ' + detail + '</div>';
   }).join('');
   const total = (res.duplicates || []).length + (res.inverted || []).length;
   return '<div class="card" style="border-color:var(--warn)">' +
@@ -218,7 +222,7 @@ function renderSheetDoctorCard_(res) {
       ? '<div style="margin:8px 0 4px"><button class="pending-btn pb-approve" onclick="fixSheetDoctorDups_(this)">' +
           icon('check', 14) + 'Collapse ' + (res.duplicates || []).length + ' duplicate group(s)</button></div>'
       : '') +
-    (invs ? '<div class="card-label" style="margin:10px 0 2px">Inverted in/out pairs</div>' + invs : '') +
+    (invs ? '<div class="card-label" style="margin:10px 0 2px">Inverted in/out &amp; lunch pairs</div>' + invs : '') +
   '</div>';
 }
 

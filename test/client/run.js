@@ -1420,6 +1420,8 @@ const MIRROR_INDEX = [
     guards: ['kbCollectDocInlineImages_ mirrors the converter walk'] },
   { pair: 'form_public SIG_PAD export cap ↔ EmpDocs pad cap (INV-96/122)',
     guards: ['signature-pad export cap parity'] },
+  { pair: 'form_public typed-signature ↔ EmpDocs typed-signature (a11y)',
+    guards: ['both pads carry setTypedName'] },
   { pair: 'client CN_SHEET_VIEWS ⊆ server adminSheetViewKeys_ (Tier 2)',
     guards: ['CN_SHEET_VIEWS keys ⊆ server adminSheetViewKeys_'] },
   { pair: 'DIGEST_LABELS ⊇ DIGEST_STALE_HOURS (COUPLING_REGISTRY)',
@@ -4047,6 +4049,7 @@ test('sheet doctor: coercion-safe scan, last-row-wins fix, gates + lock', () => 
     assert.ok(scan.indexOf(h + '(') >= 0, 'tsDoctorScan_ reads via ' + h + ' (Sheets-coercion discipline)');
   });
   assert.ok(/i = 2/.test(scan), 'tsDoctorScan_ starts after the TWO-row Timesheet header');
+  assert.ok(/LunchOut/.test(scan) && /LunchIn/.test(scan), 'tsDoctorScan_ collects lunch pairs (operator ask)');
   const doctor = extractRawFunction('Code.js', 'getTimesheetDoctor');
   assert.ok(/isManager/.test(doctor) && /Manager access required/.test(doctor), 'detector is manager-gated (INV-02)');
   const fix = extractRawFunction('Code.js', 'fixTimesheetDuplicates');
@@ -4058,6 +4061,18 @@ test('sheet doctor: coercion-safe scan, last-row-wins fix, gates + lock', () => 
     'each deletion writes a duplicate-collapsed PunchDelete audit row (INV-08)');
   assert.ok(!/inverted/.test(fix),
     'fix never touches inverted pairs — report-only by the C3 operator decision');
+});
+test('typed-signature alternative: both pads carry setTypedName (a11y parity pair)', () => {
+  // The canvas pads are deliberate twins (the pad-cap parity pin's pair).
+  // The typed alternative must exist on BOTH — a keyboard/motor/SR user is
+  // equally blocked on the public PHI form and on HR-doc signing.
+  const pub = fs.readFileSync(path.join(__dirname, '../../web-app/form_public.html'), 'utf8');
+  const ed = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_empdocs.html'), 'utf8');
+  [['form_public.html', pub], ['train/script_empdocs.html', ed]].forEach(([name, src]) => {
+    assert.ok(src.indexOf('setTypedName') >= 0, name + ' pad exposes setTypedName');
+    assert.ok(src.indexOf('Segoe Script') >= 0, name + ' renders the typed name in the script face (same PNG artifact class as a drawn signature)');
+    assert.ok(/aria-expanded/.test(src), name + ' typed toggle is a disclosure (aria-expanded)');
+  });
 });
 test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dual-verifies', () => {
   const NUL_ESC = '\\' + 'u0000';   // the 6-char escape as source text

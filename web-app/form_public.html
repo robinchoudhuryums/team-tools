@@ -227,6 +227,15 @@
       cursor: pointer; letter-spacing: .06em; text-transform: uppercase;
     }
     .sig-clear:hover { background: var(--danger); color: #fff; }
+    /* Typed-signature alternative (a11y): keyboard/motor/SR users can sign
+       by typing; the name renders onto the pad so the stored artifact is the
+       same PNG the drawn path produces. */
+    .sig-typed-toggle {
+      display: inline-block; margin-top: 8px; padding: 0;
+      background: none; border: none; cursor: pointer;
+      font-size: 13px; color: var(--accent-deep); text-decoration: underline;
+      font-family: inherit;
+    }
     .sig-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
     /* ── Submit button ─────────────────────────────────────────────── */
@@ -346,6 +355,13 @@
           <button type="button" class="sig-clear" id="sig-clear">Clear</button>
         </div>
         <div class="sig-hint">Sign with your mouse or finger. Tap &ldquo;Clear&rdquo; to start over.</div>
+        <button type="button" class="sig-typed-toggle" id="sig-typed-toggle" aria-expanded="false">
+          Can&rsquo;t use the pad? Type your signature instead
+        </button>
+        <div class="field" id="sig-typed-field" style="display:none;margin-top:8px">
+          <label for="sig-typed-input">Type your full legal name as your signature</label>
+          <input type="text" id="sig-typed-input" autocomplete="name" maxlength="80">
+        </div>
         <div class="field" style="margin-top:10px">
           <label for="sig-date">Date Signed</label>
           <input type="date" id="sig-date" readonly>
@@ -915,11 +931,48 @@ function initSignaturePad() {
   canvas.addEventListener('touchmove', move, { passive: false });
   canvas.addEventListener('touchend', end);
 
+  // Typed-signature alternative (a11y) — renders the typed name onto the
+  // pad in a script face, so the exported PNG (and everything downstream:
+  // size caps, hash, certificate) is identical in kind to a drawn one.
+  function drawTypedName(name) {
+    name = String(name || '').trim();
+    resizeCanvas();               // resets the bitmap + transform (CSS-px coords)
+    hasDrawn = false;
+    if (!name) { showPlaceholder(); return; }
+    hidePlaceholder();
+    var w = parseFloat(canvas.style.width) || 300;
+    var size = 34;
+    var face = 'italic {s}px "Segoe Script","Brush Script MT","Lucida Handwriting",cursive';
+    ctx.font = face.replace('{s}', size);
+    var tw = ctx.measureText(name).width;
+    if (tw > w - 24) {
+      size = Math.max(14, Math.floor(size * (w - 24) / tw));
+      ctx.font = face.replace('{s}', size);
+    }
+    ctx.fillStyle = '#101418';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, 12, 70);
+    hasDrawn = true;
+  }
+  var typedToggle = document.getElementById('sig-typed-toggle');
+  var typedField = document.getElementById('sig-typed-field');
+  var typedInput = document.getElementById('sig-typed-input');
+  if (typedToggle && typedField && typedInput) {
+    typedToggle.addEventListener('click', function () {
+      var open = typedField.style.display !== 'none';
+      typedField.style.display = open ? 'none' : '';
+      typedToggle.setAttribute('aria-expanded', String(!open));
+      if (!open) typedInput.focus();
+    });
+    typedInput.addEventListener('input', function () { drawTypedName(typedInput.value); });
+  }
+
   document.getElementById('sig-clear').addEventListener('click', function() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     hasDrawn = false;
     resizeCanvas();
     showPlaceholder();
+    if (typedInput) typedInput.value = '';
   });
 
   SIG_PAD = {
@@ -950,7 +1003,9 @@ function initSignaturePad() {
       hasDrawn = false;
       resizeCanvas();
       showPlaceholder();
+      if (typedInput) typedInput.value = '';
     },
+    setTypedName: drawTypedName,
   };
 }
 

@@ -219,9 +219,29 @@ empdocs_legacyHashDualVerify, + getTimesheetDoctor/fixTimesheetDuplicates
 omnibus gate cases); pure 316/0 (2 new pin tests, both bite-checked:
 last-row-wins loop + NUL default); DOM 65/0; node --check ×3; zero literal
 NULs in every touched file.
+OPERATOR-APPROVED FOLLOW-ONS ALSO IMPLEMENTED (same branch, 2026-07-23):
+(1) TYPED-SIGNATURE ALTERNATIVE (the a11y Critical #3, user approved) on
+BOTH pads — form_public SIG_PAD and the EmpDocs edInitSigPad_ twin each
+gained setTypedName(name): a link-style disclosure ("Can't use the pad?
+Type your signature instead", aria-expanded) reveals a labeled text input
+whose value renders onto the canvas in a script face (Segoe Script/Brush
+Script fallbacks, shrink-to-fit) — the exported artifact stays the SAME
+PNG data-URL class as a drawn signature, so the entire downstream pipeline
+(600px export cap, size caps, hashes, certificates, dual-verify) is
+untouched — zero server changes. Clear (both paths) empties the typed
+input too. Node parity pin 'both pads carry setTypedName' (bite-checked)
++ a MIRROR_INDEX entry. (2) LUNCH-PAIR INVERSION CHECK (user approved) in
+the sheet doctor: tsDoctorScan_ collects LunchOut/LunchIn; inverted[]
+entries now carry kind:'clock'|'lunch' (lunch = last return <= first
+leave, so legit multi-lunch never false-flags; report-only like the clock
+pair); client card renders per-kind copy; editor doctor test extended
+with a lunch case; scan pin extended. Pure 317/0, DOM 65/0, checks OK.
 Remaining: operator deploy, /reflect (cycle-10 metrics.csv + estimates.csv
-rows); K-A (editor-suite CI) + the typed-signature legal call await user
-direction.
+rows); K-A editor-suite CI — user asked for non-credential alternatives
+(answered in-session: recommended a nightly self-test trigger inside Apps
+Script — runSmokeTests on prod + runAllTests on the dev instance —
+surfaced through the existing failure-digest machinery; not yet built,
+awaiting user pick).
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
