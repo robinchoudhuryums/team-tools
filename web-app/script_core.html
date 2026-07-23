@@ -395,7 +395,7 @@ function popoutPersistGeometryInit_() {
 
 function renderError(msg) {
   document.getElementById('app').innerHTML = `
-    <div class="state-center">
+    <div class="state-center" role="alert">
       <div class="state-icon" style="color:var(--warn)">${icon('warning', 44)}</div>
       <div class="state-title">Couldn't Load</div>
       <div class="state-detail">${esc(msg)}</div></div>`;
@@ -601,6 +601,7 @@ function renderShell(state) {
        </div>`
     : '';
   document.getElementById('app').innerHTML = `
+    <a class="skip-link" href="#view-area">Skip to content</a>
     ${instanceBanner}
     <div class="app-shell">
       <aside class="sidebar">
@@ -649,7 +650,7 @@ function renderShell(state) {
 
         <div class="tool-tab-bar" id="tool-tab-bar"></div>
 
-        <div class="view-area" id="view-area"></div>
+        <main class="view-area" id="view-area" tabindex="-1"></main>
 
         <nav class="mobile-nav">
           <div class="mobile-nav-inner">
@@ -1119,7 +1120,7 @@ function renderLoading(area, label, iconName) {
   const mark = iconName
     ? `<span class="lo-glyph">${icon(iconName, 30)}</span>`
     : `<div class="spinner"></div>`;
-  area.innerHTML = `<div class="state-center">${mark}
+  area.innerHTML = `<div class="state-center" role="status">${mark}
     <div class="state-label">${esc(label)}</div></div>`;
 }
 
@@ -1131,7 +1132,12 @@ function renderLoading(area, label, iconName) {
  *  Skipping entirely is correct — every tab's enter handler reloads fresh. */
 function refreshViewIfCurrent(viewKey, loadingMsg, reloadFn) {
   if (currentView !== viewKey) return;
-  renderLoading(document.getElementById('view-area'), loadingMsg);
+  // Role-A parity (2nd-pass loaders spec): pass the owning tool's glyph so a
+  // mutation-refresh shows the same loader as the tab's own enter handler
+  // (previously icon-less → the legacy spinner leaked back in).
+  var tool = (typeof VIEW_TO_TOOL === 'object' && VIEW_TO_TOOL[viewKey]) || null;
+  var glyph = (tool && TOOLS[tool] && TOOLS[tool].sidebarIcon) || null;
+  renderLoading(document.getElementById('view-area'), loadingMsg, glyph);
   reloadFn();
 }
 
@@ -1307,6 +1313,9 @@ function showToast(msg, cls) {
   const clean = String(msg).replace(/^[\u2705\u274C\u26A0\uFE0F\u2713\u2717\s]+/, '').trim() || String(msg);
   const t = document.createElement('div');
   t.className = `toast ${cls || ''}`.trim();
+  // Errors interrupt (role=alert); everything else rides the stack's
+  // aria-live=polite region without double-announcing.
+  if (cls === 'toast-error') t.setAttribute('role', 'alert');
   t.innerHTML = `<span class="toast-icon">${icon(iconName, 16)}</span><span class="toast-msg"></span>`;
   t.querySelector('.toast-msg').textContent = clean;
   stack.appendChild(t);
@@ -1319,6 +1328,8 @@ function showToast(msg, cls) {
 }
 
 // ── Custom modal-styled confirm / prompt ──────────────────────────────────
+// Unique aria-labelledby ids for stacked dialogs (each dialog names itself).
+var _uiDialogSeq = 0;
 // Round 2 follow-on — Promise-returning replacements for window.confirm()
 // and window.prompt(). Use the app's existing .overlay / .modal vocabulary
 // so dialogs match dark mode + the Console redesign aesthetic. Returns:
@@ -1343,8 +1354,12 @@ function uiConfirm(opts) {
   return new Promise(function (resolve) {
     const overlay = document.createElement('div');
     overlay.className = 'overlay open ui-dialog';
+    const dlgTitleId = 'ui-dialog-title-' + (++_uiDialogSeq);
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', dlgTitleId);
     const isDanger = opts.tone === 'danger';
-    const titleHtml = '<div class="modal-title">' + esc(opts.title || 'Confirm') + '</div>';
+    const titleHtml = '<div class="modal-title" id="' + dlgTitleId + '">' + esc(opts.title || 'Confirm') + '</div>';
     const bodyHtml = opts.message
       ? '<div class="ui-dialog-body">' + esc(opts.message).replace(/\n/g, '<br>') + '</div>'
       : '';
@@ -1408,7 +1423,11 @@ function uiPrompt(opts) {
   return new Promise(function (resolve) {
     const overlay = document.createElement('div');
     overlay.className = 'overlay open ui-dialog';
-    const titleHtml = '<div class="modal-title">' + esc(opts.title || 'Enter value') + '</div>';
+    const dlgTitleId = 'ui-dialog-title-' + (++_uiDialogSeq);
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', dlgTitleId);
+    const titleHtml = '<div class="modal-title" id="' + dlgTitleId + '">' + esc(opts.title || 'Enter value') + '</div>';
     const messageHtml = opts.message
       ? '<div class="ui-dialog-body">' + esc(opts.message).replace(/\n/g, '<br>') + '</div>'
       : '';
@@ -1493,6 +1512,8 @@ function ensureOverlay(id, opts) {
     });
   }
   overlay.className = 'overlay open' + (opts.extraClass ? ' ' + opts.extraClass : '');
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
   if (opts.onClose) OVERLAY_CLOSE_HOOKS[id] = opts.onClose;
   return overlay;
 }

@@ -307,7 +307,7 @@ function trainMarkComplete_(itemId, btn) {
 function trainOpenReader_(itemId) {
   TRAIN_STATE.readerItemId = itemId;
   var overlay = ensureOverlay('train-reader-overlay', { onClose: trainCloseReader_ });
-  overlay.innerHTML = '<div class="modal tr-reader"><div class="body"><div class="m-loading"><div class="spinner"></div> Loading…</div></div></div>';
+  overlay.innerHTML = '<div class="modal tr-reader"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading…</div></div></div>';
   // Usage loop (INV-117) — fire-and-forget, same as the Reference surfaces.
   try { google.script.run.kbRecordView(itemId, 'training'); } catch (_) {}
   google.script.run
@@ -374,7 +374,7 @@ function trainCloseReader_() {
 function trainOpenQuiz_(quizId) {
   TRAIN_STATE.quizTaking = quizId;
   var overlay = ensureOverlay('train-quiz-overlay', { onClose: trainCloseQuiz_ });
-  overlay.innerHTML = '<div class="modal tr-quiz"><div class="body"><div class="m-loading"><div class="spinner"></div> Loading quiz&hellip;</div></div></div>';
+  overlay.innerHTML = '<div class="modal tr-quiz"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading quiz&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (quiz) {
       if (TRAIN_STATE.quizTaking !== quizId) return;

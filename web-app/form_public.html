@@ -117,6 +117,13 @@
       outline: none; border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
+    /* Keyboard-focus ring for everything else (buttons, checkboxes, links) —
+       the standalone page doesn't include styles.html, so it carries its own. */
+    :focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--accent-soft);
+      border-radius: 4px;
+    }
     .field textarea { resize: vertical; min-height: 60px; }
     .field-row {
       display: flex; gap: 12px; flex-wrap: wrap;
@@ -320,12 +327,12 @@
         </div>
         <div class="sig-hint">Sign with your mouse or finger. Tap &ldquo;Clear&rdquo; to start over.</div>
         <div class="field" style="margin-top:10px">
-          <label>Date Signed</label>
+          <label for="sig-date">Date Signed</label>
           <input type="date" id="sig-date" readonly>
         </div>
       </div>
 
-      <div id="form-error" class="form-error-msg" style="display:none"></div>
+      <div id="form-error" class="form-error-msg" role="alert" style="display:none"></div>
 
       <div class="submit-row">
         <button type="button" class="btn-submit" id="btn-submit" disabled>Submit Form</button>

@@ -81,8 +81,44 @@ punchTrend 8-bars; NEW INV-155–158), PROJECT_HEALTH.md rolled forward
 with the six-char backslash-u0000 escape TEXT (greps as text again — and
 NOTE: this checkpoint's own first edit reintroduced one by emitting the
 escape as a literal; if you write about NULs, write the WORD, never the
-sequence). Pure 309/0, DOM 63/0. Remaining: operator deploy,
-/reflect (cycle-10 metrics.csv + estimates.csv rows).
+sequence). Pure 309/0, DOM 63/0.
+BATCHES G+I ALSO IMPLEMENTED (same branch) — the a11y/visual follow-on from
+the 2026-07-23 accessibility + visual audits. G (a11y quick wins) = G1 the 7
+CN .ce note fields + tag input dropped positive tabindex 1–8 (now tabindex=0 /
+natural order; Enter-nav via CN_FIELD_NAV_ORDER is JS-driven and unaffected),
+G2 role=textbox + aria-label per .ce field (aria-multiline on Issue/
+Resolution), G3 global :focus-visible ring (styles.html, --ring-focus;
+#view-area exempted; form_public carries its own copy — it doesn't include
+styles.html), G4 role=dialog + aria-modal on ensureOverlay AND uiConfirm/
+uiPrompt (aria-labelledby via _uiDialogSeq title ids), G5 role=alert on
+error toasts / renderError / form_public #form-error, G6 aria-hidden on the
+3 metrics chart-SVG builders + role=status on renderLoading, G7 label
+associations (training-q for=, tag-input + intake custom-email aria-label,
+form_public sig-date for=), G8 #view-area is now <main tabindex=-1> + a
+.skip-link in renderShell (class selectors unchanged; DOM harness green —
+boot.js skeleton only carries #app, renderShell builds the rest). I (visual
+defects) = I1 flag-training stripe var(--accent)→var(--info) + the
+.cn-act-btn.training.is-on bg →var(--info-soft) (training no longer renders
+the same green as review), I2 hardcoded-hex fixes (.cn-act-btn.is-on
+#fef3cd/#856404 → warn-soft/warning-deep — dark mode now correct; sf-oop
+#e67e22 → var(--intake-pmd); .intk-prev #fff KEPT + documented as deliberate
+— it hosts rendered EMAIL HTML with inline light-palette hex, a dark canvas
+would be unreadable), I3 --muted-2 darkened to AA on every surface both
+modes (light #737c8c→#5f6878 ≥5.0:1; dark #6c7587→#7b8496 ≥4.58:1;
+--muted-3 documented decoration-only + 11 text-usage sites swapped to
+--muted-2 across cn/styles/intake/kb/manager; 4 genuine decoration uses
+kept), I4 refreshViewIfCurrent passes the tool's sidebarIcon to
+renderLoading (Role-A parity — mutation refreshes no longer leak the legacy
+spinner) + 6 modal spinners (cn ×3, train ×2, empdocs ×1) converted to
+Role-D lo-dots with role=status. Two NEW run.js tripwires, both
+bite-checked: the --muted-2 AA contrast pin (parses the token file, computes
+WCAG ratios vs paper/paper-2/paper-card in both modes — failed on the old
+dark value) and the CN flag-stripe exact-token pin (action=--warn,
+training=--info, review=--good; name-distinctness alone could NOT catch the
+regression since --accent aliases the --good green — first bite-check
+exposed this, pin tightened to deepStrictEqual). Pure 311/0, DOM 63/0,
+node --check ×3. Remaining: operator deploy, /reflect (cycle-10 metrics.csv
++ estimates.csv rows); Batches H/J/K/L await user direction.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 3
@@ -105,9 +141,14 @@ Updated: 2026-07-23 (cycle-10 top-5 batch)
   doc drift, umsCallNotesLastDept entry.
 
 ## Where I left off (cycle 10)
-Top-5 batch done + pushed. Next: implement the remaining batches in priority
-order (proposed in the session transcript), then /sync-docs, operator deploy
-(clasp push -f + New version + runAllTests — suite +2), then /reflect.
+Entire scan backlog + a11y/visual Batches G+I done + pushed. Next: user
+decides on Batches H (a11y structural: calendar cells→buttons, focus
+capture/restore, onclick spans→buttons+aria-sort, color-only glyphs, h1
+hierarchy), J (visual elevation — taste items need user direction), K (shell
+health dot / mirror registry / lock breadth / editor-suite CI), L (sheet
+doctor + C13 hash delimiters), and the typed-signature e-sign legal call.
+Then operator deploy (clasp push -f + New version + runAllTests — suite +7
+this cycle; first run creates TEST_KB_Fixture), then /reflect.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):

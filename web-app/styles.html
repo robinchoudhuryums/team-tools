@@ -25,6 +25,30 @@
      surface's own text color readable in both modes. */
   ::selection { background: var(--selection-bg); }
 
+  /* ─── FOCUS VISIBILITY (a11y batch G) ────────────────────────────
+     One global keyboard-focus ring. :focus-visible only — mouse clicks
+     don't paint it. Inputs keep their own border+ring treatment. */
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+    border-radius: 4px;
+  }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, .ce:focus-visible {
+    border-radius: inherit;
+  }
+  /* The skip-link's target is the whole content region — no ring there. */
+  #view-area:focus-visible { box-shadow: none; }
+
+  /* Skip-link: visually hidden until keyboard-focused. */
+  .skip-link {
+    position: absolute; left: 8px; top: -48px; z-index: 200;
+    background: var(--paper-card); color: var(--ink);
+    border: 1px solid var(--line-2); border-radius: 6px;
+    padding: 8px 14px; font-size: .82rem; text-decoration: none;
+    box-shadow: var(--shadow-sm); transition: top .15s var(--ease);
+  }
+  .skip-link:focus { top: 8px; }
+
   /* ─── APP SHELL ──────────────────────────────────────────────── */
   #app { min-height: 100vh; display: flex; flex-direction: column; }
   .app-shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
@@ -2166,7 +2190,7 @@
   /* §6 mutation feedback — settle (dim + tint + draw check + strike) */
   .mc { transition: opacity .3s var(--ease), background .3s var(--ease); }
   .mc.done { opacity: .72; background: var(--paper-card); }
-  .mc.done .mc-label { text-decoration: line-through; color: var(--muted-3); transition: color .3s var(--ease); }
+  .mc.done .mc-label { text-decoration: line-through; color: var(--muted-2); transition: color .3s var(--ease); }
   @keyframes drawCheck { to { stroke-dashoffset: 0; } }
   .ck { stroke-dasharray: 24; stroke-dashoffset: 24; }
   .mc.done .ck, .mc.checked .ck { animation: drawCheck .35s var(--ease) forwards; }

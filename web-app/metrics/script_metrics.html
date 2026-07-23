@@ -711,7 +711,7 @@ function mBuildDualSparkSvg_(series) {
   var lastOwn = null;
   for (var k = n - 1; k >= 0; k--) { if (series[k].own != null && !isNaN(series[k].own)) { lastOwn = { i: k, v: series[k].own }; break; } }
   var dot = lastOwn ? '<circle class="own-dot" cx="' + (pad + lastOwn.i * xs).toFixed(1) + '" cy="' + (h - pad - lastOwn.v * ys).toFixed(1) + '" r="2.5"/>' : '';
-  return '<svg class="m-dual-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+  return '<svg class="m-dual-spark" aria-hidden="true" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
     lineFor('team', 'team-line') + lineFor('own', 'own-line') + dot +
   '</svg>';
 }
@@ -757,7 +757,7 @@ function mBuildHeroSparkSvg_(trend, metric, avg) {
   // §4 sparkline draw — the polyline draws itself in on render. --len is a safe
   // over-estimate of the path length (viewBox width 300); over-estimating just
   // means it starts fully hidden and animates to fully drawn (end state 0).
-  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+  return '<svg aria-hidden="true" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
     baselineHtml +
     '<polyline class="spark" style="--len:600" points="' + coords.join(' ') + '"/>' +
     '<circle cx="' + lx + '" cy="' + ly + '" r="2.5"/>' +
@@ -778,7 +778,7 @@ function mMiniSparkSvg_(values) {
     var y = h - pad - ((v - min) / range) * (h - pad * 2);
     coords.push((pad + i * xs).toFixed(1) + ',' + y.toFixed(1));
   });
-  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><polyline points="' + coords.join(' ') + '"/></svg>';
+  return '<svg aria-hidden="true" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><polyline points="' + coords.join(' ') + '"/></svg>';
 }
 
 /** Single rail row. Value is rendered with the optional tone class

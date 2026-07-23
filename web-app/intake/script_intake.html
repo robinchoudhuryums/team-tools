@@ -193,10 +193,13 @@
   /* preview modal */
   .intk-modal { width: min(860px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
   .intk-modal .body { overflow: auto; padding: 4px 2px; }
+  /* #fff is DELIBERATE (mode-invariant): the preview hosts the rendered
+     email body, whose colors are inline light-palette hex (CN_EMAIL_PALETTE)
+     — a dark canvas would make the email text unreadable in dark mode. */
   .intk-prev { border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; max-height: 46vh; background: #fff; }
   .intk-recpanel { margin-top: 14px; }
   .intk-rec { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
-  .intk-rec .star { font-size: 22px; color: var(--muted-3); cursor: pointer; line-height: 1; user-select: none; }
+  .intk-rec .star { font-size: 22px; color: var(--muted-2); cursor: pointer; line-height: 1; user-select: none; }
   .intk-rec .star.on { color: var(--accent); }
   .intk-rec .meta { flex: 1; }
   .intk-rec .code { font-weight: 700; }
@@ -1757,7 +1760,7 @@ function intakeBuildAcctModal_(form, html) {
     '<div class="intk-foot">' +
       '<label><strong>Send to:</strong></label>' +
       '<select id="intk-acct-recipient"><option value="default">' + esc(defLabel) + '</option>' + agentOpts + '<option value="custom">Custom email…</option></select>' +
-      '<input type="email" id="intk-acct-custom" placeholder="recipient@…" style="display:none">' +
+      '<input type="email" id="intk-acct-custom" placeholder="recipient@…" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
       '<button class="intk-btn" data-intk-close="1">Cancel</button>' +
       '<button class="intk-btn primary" id="intk-acct-send" onclick="intakeAcctSend_(\'' + form + '\')">' + icon('send', 14) + ' Send Email</button>' +

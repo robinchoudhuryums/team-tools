@@ -120,6 +120,71 @@ test('every var(--token) resolves to a defined custom property', () => {
     [...new Set(violations)].join('\n      '));
 });
 
+// A11y batch G/I (cycle 10) — contrast + flag-color tripwires.
+//   • --muted-2 is the app's "secondary text" tone; it must stay AA-readable
+//     (≥4.5:1) on EVERY surface it renders over, in BOTH modes. It regressed
+//     to 3.9:1 (light) / 4.2:1 (dark) before the batch-I darken — this pins
+//     the fix so a future palette tweak can't silently un-fix it.
+//   • --muted-3 is decoration-only by the same decision; no ratio pinned.
+//   • The three CN flag stripes (action/training/review) must use three
+//     DISTINCT tokens — training + review both rendered the same green until
+//     batch I (flag-training was var(--accent), the alias of --good).
+console.log('\nclient — contrast + flag-color tripwires (a11y batch G/I)');
+test('--muted-2 meets AA (4.5:1) on every surface, both modes', () => {
+  const toks = fs.readFileSync(
+    path.resolve(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
+  function hexes(name) {
+    const re = new RegExp('--' + name + ':\\s*(#[0-9a-fA-F]{6})', 'g');
+    const out = []; let m;
+    while ((m = re.exec(toks))) out.push(m[1]);
+    return out;
+  }
+  function lum(hex) {
+    const c = [1, 3, 5].map((i) => {
+      let v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function ratio(a, b) {
+    const la = lum(a), lb = lum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  }
+  const muted2 = hexes('muted-2');
+  // Hex declarations appear light-block first, dark-block second (the
+  // @supports color-mix overrides don't redeclare these greys as hex).
+  assert.strictEqual(muted2.length, 2, 'expected exactly 2 --muted-2 hex declarations (light, dark)');
+  const surfaces = ['paper', 'paper-2', 'paper-card'];
+  [0, 1].forEach((mode) => {
+    surfaces.forEach((s) => {
+      const surf = hexes(s);
+      assert.strictEqual(surf.length, 2, 'expected 2 --' + s + ' hex declarations');
+      const r = ratio(muted2[mode], surf[mode]);
+      assert.ok(r >= 4.5,
+        (mode ? 'dark' : 'light') + ' --muted-2 ' + muted2[mode] + ' on --' + s + ' ' +
+        surf[mode] + ' is ' + r.toFixed(2) + ':1 (< 4.5:1 AA)');
+    });
+  });
+});
+test('CN flag stripes use three distinct tokens', () => {
+  const cn = fs.readFileSync(
+    path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const stripe = {};
+  ['action', 'training', 'review'].forEach((f) => {
+    const m = cn.match(new RegExp(
+      '\\.cn-card\\.flag-' + f + '\\s*\\{[^}]*inset 3px 0 0 var\\((--[a-z0-9-]+)\\)'));
+    assert.ok(m, '.cn-card.flag-' + f + ' stripe rule found');
+    stripe[f] = m[1];
+  });
+  // Name-distinctness alone can't catch the actual bug (--accent is the same
+  // green family as --good), so pin the exact semantic choice: action=warn,
+  // training=info (the training icon's own tint), review=good.
+  assert.deepStrictEqual(stripe,
+    { action: '--warn', training: '--info', review: '--good' },
+    'flag stripes drifted — training was var(--accent) (== the --good green) ' +
+    'before batch I, making training and review cards indistinguishable');
+});
+
 // Foundational partials: script_icons (icon), script_core (esc, empTz,
 // isoDateTz, __URL_PARAMS), metrics (mTodayIso_, mDaysAgo_). These eval cleanly
 // because their top-level is declarations + an init listener (stubbed).

@@ -208,7 +208,7 @@ function edOpenDoc_(docId) {
   ED_STATE.readerDocId = docId;
   ED_STATE.sigPad = null;
   var overlay = ensureOverlay('ed-reader-overlay', { onClose: edCloseDoc_ });
-  overlay.innerHTML = '<div class="modal ed-reader"><div class="body"><div class="m-loading"><div class="spinner"></div> Loading&hellip;</div></div></div>';
+  overlay.innerHTML = '<div class="modal ed-reader"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (doc) {
       if (ED_STATE.readerDocId !== docId) return;

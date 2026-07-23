@@ -43,7 +43,7 @@
     padding-bottom: 8px; margin-bottom: 6px;
     border-bottom: 1px dashed var(--line);
   }
-  .frame-stamp .meta { color: var(--muted-3); }
+  .frame-stamp .meta { color: var(--muted-2); }
   .frame-stamp .copyhint { margin-left: auto; color: var(--accent-2); }
   .cnv-row {
     display: grid; grid-template-columns: 130px 1fr; gap: 12px;
@@ -160,7 +160,7 @@
     margin: 0 0 8px;
     display: flex; align-items: center; justify-content: space-between; gap: 6px;
   }
-  .rail-card h4 .sub { color: var(--muted-3); font-weight: 500; }
+  .rail-card h4 .sub { color: var(--muted-2); font-weight: 500; }
 
   /* Flag toolbar — multi-select. .on means the flag is active. */
   .rail-flags {
@@ -625,7 +625,7 @@
     gap: 4px; margin-bottom: 4px;
   }
   .cn-field-num {
-    color: var(--muted-3); font-weight: 500;
+    color: var(--muted-2); font-weight: 500;
   }
   .cn-field input,
   .cn-field textarea {
@@ -1074,7 +1074,7 @@
   }
   .cn-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
   .cn-card.flag-action   { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--warn); }
-  .cn-card.flag-training { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--accent); }
+  .cn-card.flag-training { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--info); }
   .cn-card.flag-review   { box-shadow: var(--shadow-sm), inset 3px 0 0 var(--good); }
   .cn-card.stale-action {
     animation: cn-card-in .25s var(--ease), cn-stale-pulse 2.4s var(--ease) infinite 1s;
@@ -1141,7 +1141,7 @@
     background: var(--paper-2); color: var(--ink);
   }
   .cn-card-actions .cn-act-btn.is-on {
-    background: #fef3cd; color: #856404;
+    background: var(--warn-soft); color: var(--warning-deep);
   }
   .cn-card-actions .cn-act-btn.is-sent {
     background: var(--accent-soft); color: var(--info-deep);
@@ -1152,7 +1152,7 @@
   .cn-card-actions .cn-act-btn.training svg { color: var(--info); }
   .cn-card-actions .cn-act-btn.review svg   { color: var(--accent); }
   .cn-card-actions .cn-act-btn.action.is-on   { background: var(--warn-soft);   color: var(--warning-deep); }
-  .cn-card-actions .cn-act-btn.training.is-on { background: var(--accent-soft); color: var(--info-deep);    }
+  .cn-card-actions .cn-act-btn.training.is-on { background: var(--info-soft);   color: var(--info-deep);    }
   .cn-card-actions .cn-act-btn.review.is-on   { background: var(--good-soft);   color: var(--success-deep); }
   .cn-card-actions .cn-act-btn.cn-urgent-toggle.is-on { background: var(--destructive-soft); color: var(--danger-deep); }
   .cn-more-menu {
@@ -1300,7 +1300,7 @@
   .cn-compose-section.sf-shipping { border-left: 3px solid var(--success-deep); padding-left: 14px; }
   .cn-compose-section.sf-close    { border-left: 3px solid var(--danger-deep);  padding-left: 14px; }
   .cn-compose-section.sf-resupply { border-left: 3px solid var(--success-deep); padding-left: 14px; }
-  .cn-compose-section.sf-oop      { border-left: 3px solid #e67e22;             padding-left: 14px; }
+  .cn-compose-section.sf-oop      { border-left: 3px solid var(--intake-pmd);   padding-left: 14px; }
   .cn-compose-note-ref {
     font-size: 12px; color: var(--muted); line-height: 1.5;
     border: 1px solid var(--line); border-radius: var(--radius);
@@ -2436,17 +2436,19 @@ function cnRenderActiveForm_() {
               <div class="ce empty" contenteditable="true" id="cn-fld-callback"
                    data-field="callback" data-placeholder="(555) 123-4567"
                    autocapitalize="off" autocorrect="off" spellcheck="false"
-                   tabindex="1"></div>
+                   role="textbox" aria-label="Callback number" tabindex="0"></div>
             </div>
             <div>
               <div class="lbl">Caller</div>
               <div class="ce empty" contenteditable="true" id="cn-fld-caller"
-                   data-field="caller" data-placeholder="Caller name" tabindex="2"></div>
+                   data-field="caller" data-placeholder="Caller name"
+                   role="textbox" aria-label="Caller name" tabindex="0"></div>
             </div>
             <div>
               <div class="lbl">Relationship</div>
               <div class="ce empty" contenteditable="true" id="cn-fld-relationship"
-                   data-field="relationship" data-placeholder="self / spouse / …" tabindex="3"></div>
+                   data-field="relationship" data-placeholder="self / spouse / …"
+                   role="textbox" aria-label="Relationship to patient" tabindex="0"></div>
             </div>
           </div>
           <div class="cnv-row">
@@ -2454,22 +2456,25 @@ function cnRenderActiveForm_() {
             <div class="ce empty" contenteditable="true" id="cn-fld-patient"
                  data-field="patient" data-placeholder="Patient name TRX# or just TRX#"
                  autocapitalize="off" autocorrect="off" spellcheck="false"
-                 tabindex="4"></div>
+                 role="textbox" aria-label="Patient and TRX number" tabindex="0"></div>
           </div>
           <div class="cnv-row full">
             <div class="lbl">Issue${cnVoiceMicMarkup_('cn-fld-issue')}</div>
             <div class="ce ce-tall empty" contenteditable="true" id="cn-fld-issue"
-                 data-field="issue" data-placeholder="Why did they call?" tabindex="5"></div>
+                 data-field="issue" data-placeholder="Why did they call?"
+                 role="textbox" aria-multiline="true" aria-label="Issue" tabindex="0"></div>
           </div>
           <div class="cnv-row full">
             <div class="lbl">Resolution${cnVoiceMicMarkup_('cn-fld-resolution')}</div>
             <div class="ce ce-tall empty" contenteditable="true" id="cn-fld-resolution"
-                 data-field="resolution" data-placeholder="What did you do?" tabindex="6"></div>
+                 data-field="resolution" data-placeholder="What did you do?"
+                 role="textbox" aria-multiline="true" aria-label="Resolution" tabindex="0"></div>
           </div>
           <div class="cnv-row">
             <div class="lbl">Transferred to</div>
             <div class="ce empty" contenteditable="true" id="cn-fld-transferred"
-                 data-field="transferredTo" data-placeholder="Agent name, or leave blank / N/A" tabindex="7"></div>
+                 data-field="transferredTo" data-placeholder="Agent name, or leave blank / N/A"
+                 role="textbox" aria-label="Transferred to" tabindex="0"></div>
           </div>
         </div>
         <div class="below-doc">
@@ -2494,7 +2499,7 @@ function cnRenderActiveForm_() {
           <div class="rail-tags" id="cn-tag-chips" aria-label="Tag chips"></div>
           <input class="rail-tag-input" id="cn-tag-input" type="text"
                  list="cn-tag-suggestions"
-                 placeholder="type a tag and press ⏎" tabindex="8"
+                 placeholder="type a tag and press ⏎" aria-label="Add a tag"
                  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
           <datalist id="cn-tag-suggestions"></datalist>
           <div class="rail-tag-suggest" id="cn-tag-suggest"></div>
@@ -2525,7 +2530,7 @@ function cnRenderActiveForm_() {
 
       <!-- Training question row — full width below the layout when training flag is on -->
       <div class="cn-training-q-row" id="cn-training-q-row" style="display:none">
-        <label>Training Question</label>
+        <label for="cn-fld-training-q">Training Question</label>
         <input type="text" id="cn-fld-training-q" placeholder="What's the question? (short — manager sees this in the weekly digest)">
       </div>
     </div>
@@ -4136,7 +4141,7 @@ function cnViewFormSubmission_(token) {
   if (!token) return;
   cnRenderFormSubOverlay_(
     '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
-      '<div class="state-center"><div class="spinner"></div>' +
+      '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Loading submission…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
@@ -4175,7 +4180,7 @@ function cnOpenPatientTimeline_(trx) {
   if (!trx) return;
   cnRenderTimelineOverlay_(
     '<div class="modal cn-timeline-modal" style="max-width:600px">' +
-      '<div class="state-center"><div class="spinner"></div>' +
+      '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Building timeline…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
@@ -4264,7 +4269,7 @@ function cnMgrViewFormSubmission_(btn) {
   if (!token || !repId) return;
   cnRenderFormSubOverlay_(
     '<div class="modal cn-form-sub-modal" style="max-width:560px">' +
-      '<div class="state-center"><div class="spinner"></div>' +
+      '<div class="state-center" role="status"><span class="lo-dots"><span></span><span></span><span></span></span>' +
       '<div class="state-label">Loading submission…</div></div></div>');
   google.script.run
     .withSuccessHandler(function (res) {
@@ -7919,8 +7924,8 @@ function cnRenderTagRow_(t, maxCount, trendMap, maxTrend) {
   const ser = (trendMap && trendMap[t.tag]) || null;
   const trendCell = (ser && !archived)
     ? cnTrendSparkSvg_(ser.counts || [], maxTrend || 0)
-    : '<span style="color:var(--muted-3)">—</span>';
-  let deltaCell = '<span style="color:var(--muted-3)">—</span>';
+    : '<span style="color:var(--muted-2)">—</span>';
+  let deltaCell = '<span style="color:var(--muted-2)">—</span>';
   if (ser && !archived) {
     const d = ser.delta || 0;
     deltaCell = d > 0 ? '<span class="cn-trend-delta up">▲ ' + d + '</span>'
