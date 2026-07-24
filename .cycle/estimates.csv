@@ -32,3 +32,10 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-07-21,9,Batch 1+2 (scan fixes + 10 ranked),L (~2 days),16,1.4,~9%: M-8 back-compat hashing + M-11 flow test were the bulk; the rest surgical from a known-target audit.
 2026-07-21,9,Batch 3-4 (concurrency/automation + 10 client Lows),M (~1 day),8,0.7,~9%: the M-7 9-site refactor + no-mail tripwire was mechanical once the notifyAfter pattern was set.
 2026-07-21,9,"Batch 5-7 (8 bounded reads + 6 hygiene + 6 test pins)",M (~1 day),8,0.7,"~9%: bounded reads were pattern-copies; the L-3 self-recursion sed slip cost a few min, caught pre-run."
+2026-07-24,10,Scan + top-5 + batches A-F (entire cycle-10 backlog),"M-L (per-batch, ~4 days total)",32,4.5,Consistent with cycles 7-9: agent execution lands day-priced batches at ~10-15%; verification reads + bite-checks dominate the hours.
+2026-07-24,10,Batch G+I (a11y quick wins + visual defects),M (~1.5 days),12,1.5,"~13%: all surgical CSS/attr edits; the two new tripwires (contrast, flag-stripe) were the bulk."
+2026-07-24,10,Batch H (a11y structural),M (~1-1.5 days),10,1,~10%: the focus lifecycle centralized in ensureOverlay/closeOverlay; calendar keyboard access rode the existing delegation.
+2026-07-24,10,Batch J (visual elevation),L (2-4 days),24,1.5,"~6% BUT scope-reduced: the .chip 20-pill consolidation was deliberately deferred (visual-regression risk, zero coverage); the L price was mostly that sweep."
+2026-07-24,10,Batch K (health dot / mirror index / lock breadth),M (~2 days),16,1.5,~9% with K-A (editor CI) deferred to the self-test alternative; automationProblems_ factoring made the badge nearly free.
+2026-07-24,10,Batch L (sheet doctor + C13 dual-verify),M (~2 days),16,2,~13%: the doctor reused the PTO-recon pattern wholesale; dual-verify was the careful part (per-era content-hash fallback).
+2026-07-24,10,"Follow-ons (typed signature x2 pads, lunch inversion, nightly self-test)",unplanned,0,2.5,Unestimated operator-approved additions; the canvas-render approach made typed signatures zero-server-change. Includes the git-checkout rework (~20 min self-inflicted).
