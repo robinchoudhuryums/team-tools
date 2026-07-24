@@ -222,6 +222,10 @@
   grid-template-columns: 1.4fr 1fr;
   gap: var(--space-md);
   margin-bottom: var(--space-md);
+  /* Natural heights (the .dash-trk precedent): without this the hero card
+     stretches to the 5-row rail's height and the bottom-anchored sparkline
+     leaves a dead blank band through the card's middle. */
+  align-items: start;
 }
 .m-hero {
   background: var(--paper-card);
@@ -257,7 +261,7 @@
 .m-hero-spark {
   margin-top: auto; padding-top: var(--space-sm);
 }
-.m-hero-spark svg { display: block; width: 100%; height: 60px; }
+.m-hero-spark svg { display: block; width: 100%; height: 84px; }   /* viewBox is 60 high — the 1.4x preserveAspectRatio:none stretch is imperceptible; do NOT add vector-effect:non-scaling-stroke (it moves the §4 draw-in dasharray to screen space, where --len:600 under-runs the stretched path) */
 .m-hero-spark line { stroke: var(--line); stroke-width: 0.5; }
 .m-hero-spark polyline {
   fill: none; stroke: var(--accent); stroke-width: 1.5;
