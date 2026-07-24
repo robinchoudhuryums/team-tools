@@ -9,6 +9,12 @@
   .kb-dept-h { font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 8px 6px 4px; }
   .kb-item { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; font: inherit; font-size: .86rem; padding: 7px 9px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }
   .kb-item:hover { background: var(--paper-2); }
+  /* Tree rows: .kb-item is a COLUMN flex (search/review-due rows stack sub-lines),
+     so the tree render wraps icon+title+pill in one line span — without it the
+     icon stacks above the title and the draft pill stretches full width. */
+  .kb-item-line { display: flex; align-items: flex-start; gap: 6px; }
+  .kb-item-line > svg { flex-shrink: 0; margin-top: 2px; }
+  .kb-item-line .kb-draft-pill { flex-shrink: 0; align-self: center; margin-left: 0; }
   .kb-item.on { background: var(--accent-soft); color: var(--success-deep); }
   .kb-item .kb-snip { font-size: .74rem; color: var(--muted); }
   /* #4 — review-due row: the kb-item button + a small Mark-reviewed action. */
@@ -500,8 +506,8 @@ function kbRenderTree_() {
       '<div class="kb-dept-body">';   // §8 — wrap items so collapse can animate (max-height)
     byDept[d].forEach(function (it) {
       html += '<button class="kb-item' + (it.id === KB_STATE.currentId ? ' on' : '') + '" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
-        icon(kbItemIcon_(it), 13) + ' ' + esc(it.title) +
-        (it.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '') + '</button>';   // #4 (admins only receive drafts)
+        '<span class="kb-item-line">' + icon(kbItemIcon_(it), 13) + ' ' + esc(it.title) +
+        (it.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '') + '</span></button>';   // #4 (admins only receive drafts)
     });
     html += '</div></div>';
   });

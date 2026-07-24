@@ -1394,16 +1394,30 @@ function renderDayRibbon_(punches, stats, tz) {
       title="${RIBBON_PUNCH_LABELS[s.type === 'lunch' ? 'LunchOut' : 'ClockIn'] || ''} ${ribbonFormatHm_(s.startMin)}–${ribbonFormatHm_(s.endMin)}"></div>`;
   }).join('');
 
-  const punchHtml = (punches || []).map(p => {
-    const m = ribbonTimeToMin_(p.time);
-    if (isNaN(m)) return '';
-    if (m < RIBBON_START_MIN || m > RIBBON_END_MIN) return '';
-    const lbl = RIBBON_PUNCH_LABELS[p.type] || '';
-    return `<div class="r-punch" style="left:${ribbonPct_(m).toFixed(2)}%">
-      <span class="lbl">${esc(lbl)} ${esc(ribbonFormatHm_(m))}</span>
-      <span class="bar"></span>
-    </div>`;
-  }).join('');
+  // V-2: labels get a greedy two-row stagger so close punches (every
+  // LunchOut→LunchIn pair) don't overlap; a label that fits neither row
+  // (rapid adjust cluster) renders bar-only — Today's Punches carries the
+  // times. Width is estimated at ~5.6px/char (9px mono + chrome) against a
+  // conservative 300px wide-mode ribbon; compact mode hides labels entirely.
+  const rowEnds = [-Infinity, -Infinity];
+  const punchHtml = (punches || [])
+    .map(p => ({ p: p, m: ribbonTimeToMin_(p.time) }))
+    .filter(x => !isNaN(x.m) && x.m >= RIBBON_START_MIN && x.m <= RIBBON_END_MIN)
+    .sort((a, b) => a.m - b.m)
+    .map(x => {
+      const lbl = RIBBON_PUNCH_LABELS[x.p.type] || '';
+      const text = lbl + ' ' + ribbonFormatHm_(x.m);
+      const pct = ribbonPct_(x.m);
+      const halfW = (text.length * 5.6 + 10) / 300 * 100 / 2;
+      let cls = '';
+      if (pct - halfW >= rowEnds[0] + 1) { rowEnds[0] = pct + halfW; }
+      else if (pct - halfW >= rowEnds[1] + 1) { rowEnds[1] = pct + halfW; cls = ' r2'; }
+      else { cls = ' collided'; }
+      return `<div class="r-punch" style="left:${pct.toFixed(2)}%">
+        <span class="lbl${cls}">${esc(text)}</span>
+        <span class="bar"></span>
+      </div>`;
+    }).join('');
 
   // Scheduled break bands (#5a) — amber ticks from CLK_SCHEDULE.breaks, drawn
   // over the work segments so an in-shift break reads as a tint on the bar.

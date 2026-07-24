@@ -540,6 +540,7 @@
        </span>                                                                    */
   .tz-chip {
     display: inline-flex; align-items: stretch;
+    flex-wrap: wrap;   /* V-10: on a narrow card the segments stack (local over manager) instead of clipping */
     border: 1px solid var(--line); border-radius: var(--radius-sm);
     overflow: hidden; vertical-align: -1px;
     background: var(--paper-card);
@@ -548,6 +549,7 @@
     display: inline-flex; align-items: baseline; gap: 5px;
     padding: 2px 7px;
     font-family: var(--mono); font-variant-numeric: tabular-nums;
+    white-space: nowrap;   /* V-10: "8:05 AM" must never break internally — wrap happens between segments only */
   }
   .tz-chip .seg + .seg { border-left: 1px solid var(--line); }
   .tz-chip .seg.local { background: var(--paper-2); }
@@ -802,10 +804,10 @@
     color: var(--muted-2); letter-spacing: .08em;
   }
   .ribbon {
-    position: relative; height: 60px;
+    position: relative; height: 74px;   /* V-2: two label rows above the track (was 60px / one row) */
   }
   .ribbon-track {
-    position: absolute; left: 0; right: 0; top: 18px;
+    position: absolute; left: 0; right: 0; top: 32px;
     height: 28px; background: var(--paper-2);
     border-radius: var(--radius-sm);
   }
@@ -830,21 +832,25 @@
     border: 1px dashed var(--warn);
   }
   .r-punch {
-    position: absolute; top: -18px; height: 50px;
+    position: absolute; top: -32px; height: 64px;
     pointer-events: none;
   }
   .r-punch .bar {
-    position: absolute; top: 18px; bottom: 0; left: -1px;
+    position: absolute; top: 32px; bottom: 0; left: -1px;
     width: 2px; background: var(--ink); opacity: 0.45;
   }
   .r-punch .lbl {
-    position: absolute; top: 0; left: 0; transform: translateX(-50%);
+    position: absolute; top: 16px; left: 0; transform: translateX(-50%);
     font-family: var(--mono); font-size: 9px; font-weight: 600;
     color: var(--ink); letter-spacing: .04em;
     background: var(--paper-card); padding: 1px 4px;
     border: 1px solid var(--line); border-radius: 3px;
     white-space: nowrap;
   }
+  /* V-2 stagger: .r2 is the upper label row; .collided renders bar-only
+     (a 3+ cluster — the times live in Today's Punches). */
+  .r-punch .lbl.r2 { top: 0; }
+  .r-punch .lbl.collided { display: none; }
   .r-now {
     position: absolute; top: 12px; bottom: -6px;
     width: 2px; background: var(--accent);

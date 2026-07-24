@@ -1,0 +1,63 @@
+# Static-render visual audit harness
+
+Renders the **production partials** (the real `index.html` with every
+`include()` inlined) in a real headless Chromium with a fixture-backed
+`google.script.run` mock, and screenshots a scenario matrix
+(tool × viewport × light/dark). This is the layer neither Node harness can
+see: actual pixels — overflow, wrap, collision, dead space, dark-mode holes.
+
+It is **manual / on-demand** (like the editor suite), NOT wired into CI:
+it needs a Chromium install and its findings need human eyes. Run it before
+cutting a deploy that touched `styles*.html` or any view partial, and after
+any layout-affecting change.
+
+## Run
+
+```bash
+cd test/visual
+npm ci                 # playwright package only (browser download is skipped
+                       #   when PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 is set and a
+                       #   system Chromium is provided — see below)
+node build.mjs         # composes web-app/ partials -> page.html (generated)
+node shoot.mjs         # all 20 scenarios -> shots/*.png + report.json
+node shoot.mjs cn-log compact   # substring filter: only matching scenarios
+```
+
+Chromium resolution order (`shoot.mjs`): `CHROMIUM_PATH` env var → newest
+`chromium-*` under `PLAYWRIGHT_BROWSERS_PATH` or `/opt/pw-browsers` (the
+Claude Code remote-env pre-install) → Playwright's own managed download.
+
+## What to look at
+
+- `report.json` — per-scenario console/page errors, missing RPC fixtures
+  (`window.__MISSING__`), and the landed view key. **A missing fixture means
+  the scenario rendered a loader/error state, not the real view** — add the
+  endpoint to `mock.js` before trusting that screenshot.
+- `shots/*.png` — the renders. Wide scenarios are fullPage; compact/mobile are
+  viewport-clipped frames + a `-bottom` frame, because fullPage stitching
+  PAINTS off-viewport fixed elements (the closed KB drawer, the mobile nav)
+  into the image — those read as bugs but are capture artifacts.
+
+## Anatomy
+
+- `build.mjs` — inlines `include()`s, swaps the two `doGet` template
+  scriptlets (query params come from the page URL, so scenarios can pass
+  `?compact=1`), injects `mock.js` into `<head>`.
+- `mock.js` — a chainable Proxy standing in for `google.script.run`:
+  `withSuccessHandler(...).endpoint(args)` resolves async from the `FIXTURES`
+  map. Unknown endpoints record into `window.__MISSING__` and never resolve
+  (matching a hung RPC). Fixtures are deterministic — no `Date.now()` beyond
+  the frozen page clock (`page.clock.install` in shoot.mjs pins time).
+- `shoot.mjs` — the scenario matrix. Add a scenario = one array entry.
+- `page.html`, `shots/`, `report.json` — generated, gitignored.
+
+## Maintenance rules
+
+- **New RPC endpoint rendered on view enter** → add a fixture to `mock.js`
+  (the `report.json` `missing` list tells you exactly which).
+- **New tool/tab worth auditing** → add a `SCENARIOS` entry.
+- Keep fixtures PHI-free and obviously fake (TEST names, example.invalid
+  emails) — screenshots may end up in PRs/issues.
+- The mock intentionally implements only enough of `google.script.run` for
+  render paths (success/failure handlers). It is NOT the DOM harness — for
+  behavior/lifecycle assertions use `test/client/dom/`.

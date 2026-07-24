@@ -116,7 +116,7 @@ function coachRenderMy_() {
 function coachCardMy_(it) {
   var acked = it.status === 'acknowledged';
   var foot = acked
-    ? '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt || '').substring(0, 16)) + '</div>'
+    ? '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt || '').substring(0, 16).replace('T', ' ')) + '</div>'
     : '<button class="tr-complete-btn" data-coach-ack="' + esc(it.coachId) + '">' + icon('check', 13) + ' Acknowledge</button>';
   return '<div class="coach-card' + (acked ? ' is-acked' : '') + '">' +
     '<div class="coach-card-head">' + coachSevChip_(it.severity) +
@@ -241,6 +241,9 @@ function coachKpi_(label, val, tone) {
   return '<div class="coach-kpi"><div class="coach-kpi-num' + (tone ? ' ' + tone : '') + '">' + esc(String(val == null ? 0 : val)) + '</div>' +
     '<div class="coach-kpi-lbl">' + esc(label) + '</div></div>';
 }
+/** Null-guard for analytics numbers concatenated into markup — a partial or
+    legacy server shape must render 0, never the literal "undefined". */
+function coachNum_(v) { return (v == null || isNaN(v)) ? 0 : v; }
 
 /** Coaching metrics panel — headline KPIs, severity breakdown, per-rep table. */
 function coachAnalyticsHtml_(a, counts) {
@@ -253,10 +256,10 @@ function coachAnalyticsHtml_(a, counts) {
       coachKpi_('Praise', counts.praise, '') + '</div>';
   }
   var h = '<div class="coach-kpis">' +
-    coachKpi_('Total', a.total, '') +
-    coachKpi_('Ack rate', a.ackRatePct + '%', '') +
-    coachKpi_('Median days to ack', a.medianDaysToAck, '') +
-    coachKpi_('Overdue', a.overdueUnacked, a.overdueUnacked ? 'crit' : '') +
+    coachKpi_('Total', coachNum_(a.total), '') +
+    coachKpi_('Ack rate', coachNum_(a.ackRatePct) + '%', '') +
+    coachKpi_('Median days to ack', coachNum_(a.medianDaysToAck), '') +
+    coachKpi_('Overdue', coachNum_(a.overdueUnacked), a.overdueUnacked ? 'crit' : '') +
     '</div>';
   // severity breakdown chips
   var sev = a.bySeverity || {};
@@ -270,10 +273,10 @@ function coachAnalyticsHtml_(a, counts) {
     h += '<div class="tr-section-h">By employee</div>' +
       '<table class="tr-table coach-rep-table"><thead><tr><th>Employee</th><th>Total</th><th>Acked</th><th>Ack&nbsp;%</th><th>Median&nbsp;days</th><th>Overdue</th></tr></thead><tbody>';
     reps.forEach(function (r) {
-      h += '<tr><td>' + esc(r.empName) + '</td>' +
-        '<td>' + r.total + '</td><td>' + r.acknowledged + '</td>' +
-        '<td>' + r.ackRatePct + '%</td><td>' + r.medianDaysToAck + '</td>' +
-        '<td>' + (r.overdue ? '<span class="tr-cell-overdue">' + r.overdue + '</span>' : '0') + '</td></tr>';
+      h += '<tr><td>' + esc(String(r.empName || r.empId || '')) + '</td>' +
+        '<td>' + coachNum_(r.total) + '</td><td>' + coachNum_(r.acknowledged) + '</td>' +
+        '<td>' + coachNum_(r.ackRatePct) + '%</td><td>' + coachNum_(r.medianDaysToAck) + '</td>' +
+        '<td>' + (r.overdue ? '<span class="tr-cell-overdue">' + coachNum_(r.overdue) + '</span>' : '0') + '</td></tr>';
     });
     h += '</tbody></table>';
   }
@@ -297,7 +300,7 @@ function coachCardMgr_(it) {
       '<span class="coach-meta">' + esc(String(it.createdAt || '').substring(0, 10)) + '</span></div>' +
     coachNarrativeHtml_('What happened', it.whatHappened) +
     coachNarrativeHtml_('What should have happened', it.whatShould) +
-    (it.acknowledgedAt ? '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt).substring(0, 16)) + '</div>' : '') +
+    (it.acknowledgedAt ? '<div class="coach-acked">' + icon('check', 13) + ' Acknowledged ' + esc(String(it.acknowledgedAt).substring(0, 16).replace('T', ' ')) + '</div>' : '') +
     '<div class="coach-card-foot"><button class="tr-link coach-void" data-coach-void="' + esc(it.coachId) + '">Void</button></div>' +
     '</div>';
 }
