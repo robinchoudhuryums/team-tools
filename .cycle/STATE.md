@@ -2,7 +2,13 @@
 
 ## Current
 Cycle: 10
-Phase: implement — broad scan complete (7-agent fan-out + personal verification;
+Phase: idle — CYCLE 10 CLOSED 2026-07-24: scanned, fully implemented,
+reflected (net +33 = 34 prod fixes − 1 Low new failure mode), PR #138 +
+bookkeeping PR #139 merged, operator DEPLOYED (clasp push + New version),
+runAllTests ALL PASSED, installAutomationTriggers re-run (the 1am
+runNightlySelfTest trigger is live). Seams counter = 4 → the Seams &
+Invariants audit is DUE and is the recommended opener for cycle 11.
+Original audit record: broad scan (7-agent fan-out + personal verification;
 0 Critical / 0 High / 11 Medium / ~35 Low, all 11 Mediums confirmed, 0 retracted).
 TOP-5 BATCH IMPLEMENTED on claude/broad-scan-11m0vf: M-1 (recordPunch live
 sequence guard via getNextActions_ + findExistingPunch_ last-match +
@@ -245,7 +251,7 @@ awaiting user pick).
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 4
-Updated: 2026-07-23 (cycle-10 top-5 batch)
+Updated: 2026-07-24 (cycle 10 closed — deployed + verified)
 
 ## Cycle 10 — remaining backlog (facts, not judgments — findings re-verified in-session 2026-07-23)
 - Mediums not yet implemented: M-4 (History edit-snapshot gap), M-7 (KB convert
@@ -272,12 +278,18 @@ sixteen handlers, INV-117/150 user-lock amendments, INV-122 C13 pointer,
 NEW INV-159–162, tokens/loader/overlay/signature decision + gotcha
 amendments, sixteen-trigger operator entry + SELF_TEST_LAST_RESULT,
 Test Command net additions). Pure 319/0, DOM 65/0, editor suite ≈297
-(operator-run). PR created + merged per user instruction. Next: operator
-deploy (clasp push -f + New version + re-run installAutomationTriggers()
-ONCE for the new 1am self-test trigger + runAllTests), then /reflect to
-close cycle 10 (metrics.csv + estimates.csv rows). Still open by user
-choice: .chip consolidation follow-on; real pre-merge editor CI if
-credentials ever materialize.
+(operator-run). PR #138 merged; /reflect done (metrics + estimates rows,
+PR #139); operator deployed 2026-07-24 — runAllTests ALL PASSED and
+installAutomationTriggers re-run (16 triggers incl. the 1am self-test).
+CYCLE 10 IS FULLY CLOSED. Next session: open cycle 11 with the SEAMS &
+INVARIANTS audit (due — counter at 4/4); suggested seam focus list is in
+the 2026-07-24 session transcript (Code.js↔Tests.js self-test coupling,
+the observability chain, the attestation/pad seam, shell↔module focus
+lifecycle, MIRROR_INDEX completeness, the deploy seam). After seams, the
+targeted rotation: cn views → punch/timesheet server family → test-suite
+quality pass, spaced by real usage. Still open by user choice: .chip
+consolidation follow-on; real pre-merge editor CI if credentials ever
+materialize.
 
 ## Cycle 9 — batches 5-7 (2026-07-21, same branch)
 Batch 5 (bounded reads / growth-class debt):
