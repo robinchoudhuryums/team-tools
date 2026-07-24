@@ -2,7 +2,7 @@
 
 ## Current
 Cycle: 11
-Phase: implement (audit done; batches 1+2 implemented — full selected backlog done; /sync-docs pending)
+Phase: implement complete — audit + batches 1+2 + /sync-docs done; ready for /reflect (which resets the seams counter), PR, operator deploy
 Scope: broad (the DUE Seams & Invariants audit — seams counter was 4)
 Test Command: manual
 Subsystem cycles since last Seams audit: 0 (this cycle IS the seams audit; /reflect confirms the reset)
@@ -133,7 +133,8 @@ Tests: pure 327->330 /0 (net of consolidations), DOM 65/0, node --check x3;
 3 tripwire bite-checks fired + restored (python edits, no git checkout).
 
 ## Pending / not yet done
-- /sync-docs pass ONLY: doc-drift list (admin count 24/28/30, "fifteen" vs
+- /reflect (close the cycle; resets the seams counter), PR + operator deploy.
+- DONE 2026-07-24: the /sync-docs pass — doc-drift list (admin count 24/28/30, "fifteen" vs
   14 localStorage keys, umsLastView compact-guard, INV-23/18 wording,
   INV-94/129/132/142 amendments from batches 1+2, INV-136 stale
   "manager-gated" annotations, example.invalid cleanup key, Transfer-tab
