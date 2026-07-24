@@ -52,6 +52,16 @@
   /* ─── APP SHELL ──────────────────────────────────────────────── */
   #app { min-height: 100vh; display: flex; flex-direction: column; }
   .app-shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+  /* V-1 (cycle-11 visual audit) — LOAD-BEARING, the shell-level twin of the
+     Dashboard's minmax(0,1fr) decision: grid/flex items default to
+     min-width:auto, so the main column's MIN-CONTENT (e.g. a note card's
+     nowrap issue line) propagated up and forced the compact 480px pop-out /
+     mobile to ~822px of horizontal scroll — the card ellipsis rules
+     (.cn-card-main etc. already carry min-width:0) could never engage
+     because this top-level item refused to shrink. min-width:0 here lets
+     every view shrink to the viewport; wide mode is unaffected (space
+     suffices) and wide tables keep their own overflow-x wrappers. */
+  .app-shell > * { min-width: 0; }
 
   /* Blue-green DEV banner — rendered only when INSTANCE_LABEL is set on the
      project's Script Properties (prod leaves it unset → no banner). A strong,
@@ -231,6 +241,11 @@
     margin-top: 3px;
     display: flex; align-items: center; gap: 6px;
     letter-spacing: .04em;
+  }
+  /* V-7 (cycle-11 visual audit) — the employee id wrapped mid-token at its
+     hyphen ("E-" / "1042") at the default 168px sidebar; ellipsize instead. */
+  .sb-user-id {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
   }
   .sb-user-tz {
     font-family: var(--mono);

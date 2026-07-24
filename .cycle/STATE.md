@@ -2,7 +2,7 @@
 
 ## Current
 Cycle: 11
-Phase: implement complete — audit + batches 1+2 + /sync-docs done; ready for /reflect (which resets the seams counter), PR, operator deploy
+Phase: implement complete — audit + batches 1+2 + /sync-docs + VISUAL batch 3 done; ready for /reflect (resets the seams counter), PR, operator deploy
 Scope: broad (the DUE Seams & Invariants audit — seams counter was 4)
 Test Command: manual
 Subsystem cycles since last Seams audit: 0 (this cycle IS the seams audit; /reflect confirms the reset)
@@ -131,6 +131,36 @@ BATCH 2 IMPLEMENTED (M-3, M-4, L-4..L-18, tripwire holes, MIRROR_INDEX):
   paste-cap expression against KB_IMG_UPLOAD_MAX_CHARS.
 Tests: pure 327->330 /0 (net of consolidations), DOM 65/0, node --check x3;
 3 tripwire bite-checks fired + restored (python edits, no git checkout).
+
+VISUAL AUDIT ADDENDUM (2026-07-24, operator-requested "option B"): a
+static-render harness (session scratchpad visual/: production partials
+inlined into one page, real headless Chromium via Playwright, fixture-backed
+google.script.run mock, 20 scenarios = 8 views x light/dark x wide/compact/
+mobile, frozen mid-shift clock). Findings V-1..V-10 (1 Medium, 6 Low, 3
+Info); two apparent horrors PROVEN artifacts (off-viewport fixed drawer in
+fullPage captures; fixed mobile nav stitching). BATCH 3 IMPLEMENTED
+(V-1, V-5, V-6, V-7):
+- V-1 | styles.html | `.app-shell > * { min-width: 0; }` — the shell main
+  column's min-width:auto let note-card nowrap min-content force the 480px
+  compact pop-out / 390px mobile to ~822px horizontal scroll (save rail +
+  flags off-screen). Fix probe-validated pre-edit AND re-verified post-edit
+  in the real partials: scrollWidth 822 -> 480, zero wide elements, ellipsis
+  engages; wide mode re-shot unchanged. The shell-level twin of the
+  Dashboard minmax(0,1fr) decision.
+- V-5 | cn/script_callnotes.html | icon-label gap CSS for the Save &
+  Compose / Open Email / Clear inner spans (icon+text share one span; the
+  button's own flex gap never applied inside it).
+- V-6 | script_core.html | TOOLS.develop gains shortLabel 'Training';
+  mobile nav renders shortLabel || label (the full label wrapped 3 lines in
+  the 7-item 390px bar). Sidebar keeps the full label.
+- V-7 | script_core.html + styles.html | sb-user-id span + nowrap/ellipsis
+  (the id wrapped mid-token "E-"/"1042" at the 168px default sidebar).
+NOT implemented (visual backlog for a later pick): V-2 ribbon label
+collision, V-3 coaching metrics undefined-guards, V-4 coaching ack raw
+T-timestamp display, V-8 metrics hero dead space, V-9 reference tree row
+wrap + full-width DRAFT pill, V-10 tz-chip wrap (verify on prod data).
+Harness stays in the session scratchpad; committing it as test/visual/ was
+offered, not yet requested. Tests: pure 330/0, DOM 65/0 after the batch.
 
 ## Pending / not yet done
 - /reflect (close the cycle; resets the seams counter), PR + operator deploy.

@@ -233,6 +233,14 @@
     font-size: 12px; display: inline-flex; align-items: center; gap: 5px;
   }
   .rail-actions .kbd-chip { display: none; }   /* chips crowd the quadrants — the card sub + tooltips carry the hints */
+  /* V-5 (cycle-11 visual audit) — the icon and label live inside ONE child
+     span (the button's own gap only separates label from kbd-chip), so the
+     glyph rendered flush against the text on Save & Compose / Open Email /
+     Clear. Save & Copy has no icon and is unaffected. */
+  .rail-actions .cn-action-sec > span:first-child,
+  .rail-actions .cn-form-clear-btn > span:first-child {
+    display: inline-flex; align-items: center; gap: 5px;
+  }
   /* circular shortcuts button in the page header (was the 5th rail button) */
   .cn-help-fab {
     appearance: none; width: 34px; height: 34px; border-radius: 50%;

@@ -101,6 +101,10 @@ const TOOLS = {
   },
   develop: {
     label: 'Training & Employee Docs',
+    // V-6 (cycle-11 visual audit): the mobile bottom nav shows 7 tools; the
+    // full label wrapped to three lines at 390px and crowded the bar. The
+    // sidebar keeps the full label (CSS-truncated when narrow).
+    shortLabel: 'Training',
     sidebarIcon: 'checkCircle',
     defaultTab: 'trainingHome',
     tabs: {
@@ -612,7 +616,7 @@ function renderShell(state) {
   const navBtns = toolKeys.map(toolKey => {
     const t = TOOLS[toolKey];
     return `<button class="nav-btn" data-tool="${toolKey}" onclick="enterTool('${toolKey}')">
-       ${nvIcon(t.sidebarIcon)}${esc(t.label)}</button>`;
+       ${nvIcon(t.sidebarIcon)}${esc(t.shortLabel || t.label)}</button>`;
   }).join('');
 
   const tzTag = state.timezoneAbbr
@@ -677,7 +681,7 @@ function renderShell(state) {
           <div class="sb-user-avatar">${esc(initials)}</div>
           <div class="sb-user-info">
             <div class="sb-user-name">${esc(state.name)}</div>
-            <div class="sb-user-meta">${esc(state.id)} ${tzTag}</div>
+            <div class="sb-user-meta"><span class="sb-user-id">${esc(state.id)}</span> ${tzTag}</div>
           </div>
         </div>
         <!-- Round 2 · 8a — drag handle on the right edge. Double-click snaps. -->
