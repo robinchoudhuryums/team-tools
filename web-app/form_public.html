@@ -431,6 +431,12 @@ function updateFormProgress_() {
   var total = 0, done = 0;
   for (var i = 0; i < fields.length; i++) {
     if (!fields[i].querySelector('label .required')) continue;
+    // Cycle-11 L-9: skip required fields inside HIDDEN conditional sections
+    // (e.g. the EAA signer fields when "Are you the patient?" = Yes) —
+    // counting them left the cue stuck below "all done" for patient signers.
+    // offsetParent is null whenever any ancestor is display:none; the reveal
+    // handlers fire input/change events, so the count updates on toggle.
+    if (fields[i].offsetParent === null) continue;
     var inp = fields[i].querySelector('input,select,textarea');
     if (!inp) continue;
     total++;

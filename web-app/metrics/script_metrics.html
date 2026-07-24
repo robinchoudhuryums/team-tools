@@ -1213,9 +1213,14 @@ function spanishLoadList_() {
 function spanishLoadPending_() {
   var slot = document.getElementById('spanish-list'); if (!slot) return;
   slot.innerHTML = loSweep();
+  // L-8 (cycle 11): the INV-156 seq token the stats fetch got in M-6 — a
+  // quick 7d→30d double-change re-runs this loader for the SAME tab, and an
+  // inverted response order rendered the wrong window's list.
+  SPANISH_STATE.listSeq = (SPANISH_STATE.listSeq || 0) + 1;
+  var seq = SPANISH_STATE.listSeq;
   google.script.run
     .withSuccessHandler(function (d) {
-      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending') return;
+      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending' || seq !== SPANISH_STATE.listSeq) return;
       var s = document.getElementById('spanish-list'); if (!s) return;
       if (!d || d.error) { s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((d && d.error) || 'Could not load tasks') + '</div>'; return; }
       var list = d.pending || [];
@@ -1224,7 +1229,7 @@ function spanishLoadPending_() {
         '<div class="sp-tasks">' + list.map(spanishTaskCard_).join('') + '</div>';
     })
     .withFailureHandler(function (e) {
-      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending') return;
+      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending' || seq !== SPANISH_STATE.listSeq) return;
       var s = document.getElementById('spanish-list'); if (s) s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((e && e.message) || 'Could not load tasks') + '</div>';
     })
     .getSpanishInboxPending(SPANISH_STATE.days);
@@ -1235,9 +1240,11 @@ function spanishLoadPending_() {
 function spanishLoadResolved_() {
   var slot = document.getElementById('spanish-list'); if (!slot) return;
   slot.innerHTML = loSweep();
+  SPANISH_STATE.listSeq = (SPANISH_STATE.listSeq || 0) + 1;   // L-8 — see spanishLoadPending_
+  var seq = SPANISH_STATE.listSeq;
   google.script.run
     .withSuccessHandler(function (d) {
-      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved') return;
+      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved' || seq !== SPANISH_STATE.listSeq) return;
       var s = document.getElementById('spanish-list'); if (!s) return;
       if (!d || d.error) { s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((d && d.error) || 'Could not load resolved') + '</div>'; return; }
       var list = d.resolved || [];
@@ -1246,7 +1253,7 @@ function spanishLoadResolved_() {
         '<div class="sp-tasks">' + list.map(spanishResolvedCard_).join('') + '</div>';
     })
     .withFailureHandler(function (e) {
-      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved') return;
+      if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved' || seq !== SPANISH_STATE.listSeq) return;
       var s = document.getElementById('spanish-list'); if (s) s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((e && e.message) || 'Could not load resolved') + '</div>';
     })
     .getSpanishInboxResolved(SPANISH_STATE.days);

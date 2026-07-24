@@ -233,6 +233,14 @@
     font-size: 12px; display: inline-flex; align-items: center; gap: 5px;
   }
   .rail-actions .kbd-chip { display: none; }   /* chips crowd the quadrants — the card sub + tooltips carry the hints */
+  /* V-5 (cycle-11 visual audit) — the icon and label live inside ONE child
+     span (the button's own gap only separates label from kbd-chip), so the
+     glyph rendered flush against the text on Save & Compose / Open Email /
+     Clear. Save & Copy has no icon and is unaffected. */
+  .rail-actions .cn-action-sec > span:first-child,
+  .rail-actions .cn-form-clear-btn > span:first-child {
+    display: inline-flex; align-items: center; gap: 5px;
+  }
   /* circular shortcuts button in the page header (was the 5th rail button) */
   .cn-help-fab {
     appearance: none; width: 34px; height: 34px; border-radius: 50%;
@@ -8303,7 +8311,7 @@ var CN_HEALTH_RUN_LABELS = {
   CallNotesPurge:       { label: 'Call-note retention purge',  expect: 'writes a row only when retention is enabled' },
   CallNotesArchive:     { label: 'Call-note cold-archive',     expect: 'daily 3am — writes a row only when archival is enabled' },
   CallNotesArchivePurge:{ label: 'Cold-archive purge',         expect: 'daily 2am — writes a row only when archive retention is enabled' },
-  TimesheetArchive:     { label: 'Timesheet cold-archive',     expect: 'daily 1am — writes a row only when TIMESHEET_ARCHIVE_DAYS is set' },
+  TimesheetArchive:     { label: 'Timesheet cold-archive',     expect: 'daily 6pm — writes a row only when TIMESHEET_ARCHIVE_DAYS is set' },
 };
 
 /** #1 — Storage Health panel. Independent load (contained failure), mirrors
@@ -8598,11 +8606,15 @@ function cnSetSysFromHealth_(res) {
 
   var cdr = res.cdr || { ok: false };
   var unmatched = (cdr.unmatchedAgents && cdr.unmatchedAgents.length) || 0;
-  var cdrTone = !cdr.ok ? 'warn' : (cdr.columnWarning || unmatched > 0) ? 'warn' : 'ok';
+  // L-2 (cycle 11): the Transfer tab's layout drift warns the same way DQE's does.
+  var anyColWarn = cdr.columnWarning || cdr.transferColumnWarning;
+  var cdrTone = !cdr.ok ? 'warn' : (anyColWarn || unmatched > 0) ? 'warn' : 'ok';
   var cdrVal = !cdr.ok ? 'Unreachable'
-    : (cdr.columnWarning ? 'Column drift' : (unmatched > 0 ? (unmatched + ' unmatched') : 'In sync'));
+    : (anyColWarn ? 'Column drift' : (unmatched > 0 ? (unmatched + ' unmatched') : 'In sync'));
   var cdrSub = !cdr.ok ? 'check CDR_SS_ID / access'
-    : (cdr.columnWarning ? 'DQE layout changed' : (unmatched > 0 ? 'agent name mismatch' : '0 unmatched agents'));
+    : (cdr.columnWarning ? 'DQE layout changed'
+      : (cdr.transferColumnWarning ? 'Transfer-tab layout changed'
+        : (unmatched > 0 ? 'agent name mismatch' : '0 unmatched agents')));
   cnSetSysCard_('cdr', 'CDR', cdrTone, cdrVal, cdrSub);
 }
 
@@ -8674,6 +8686,10 @@ function cnRenderHealthPanel_(res) {
     cdrParts.push(cdr.columnWarning
       ? warnBox(icon('warning', 11) + ' Column drift in DQE Historical Data: ' + esc(cdr.columnWarning))
       : okLine('CDR reachable · column layout OK · ' + esc(cdr.rowsMatched || 0) + ' row(s) ' + esc(cdr.from || '') + ' → ' + esc(cdr.to || '') + '.'));
+    if (cdr.transferColumnWarning) {
+      cdrParts.push(warnBox(icon('warning', 11) + ' Column drift in CSR Transfer Historical Data: ' +
+        esc(cdr.transferColumnWarning) + ' — the Transfer KPI may be reading the wrong cells.'));
+    }
     if (cdr.unmatchedAgents && cdr.unmatchedAgents.length > 0) {
       cdrParts.push(warnBox(icon('warning', 11) + ' ' + cdr.unmatchedAgents.length +
         ' CDR agent(s) not matched to the roster (add an Agent Alias Override or fix the Employees name): ' +
