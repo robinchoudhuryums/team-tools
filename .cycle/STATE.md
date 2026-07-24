@@ -209,9 +209,12 @@ break internally, the chip wraps BETWEEN segments (offshore two-seg chips on
 narrow live-status cards). Verified: pure 330/0, DOM 65/0, node --check x3,
 full 20-scenario matrix 0 missing fixtures / 0 real errors, before/after
 renders for every fix, compact clock byte-identical. Batch reflect tally
-(in-summary, NOT a metrics row — /reflect stays the sole writer): 4 prod fixes
-(V-2, V-3, V-9, V-10) - 0 new failure modes = +4; V-4/V-8 + harness =
-polish/structural. PROCESS NOTE: the first checkpoint of this batch truncated
+(in-summary, NOT a metrics row — /reflect stays the sole writer): 3 prod fixes
+(V-2, V-9, V-10) - 0 new failure modes = +3; V-3/V-4 reclassified DEFENSIVE on
+the implementation read (the live server always sends the full coachAnalytics_
+shape, and coaching timestamps read back SPACE-form via trainCellTs_ — both
+'undefined%' and the 'T' were fixture-shape artifacts; the guards protect
+partial/legacy/future shapes); V-8 + harness = polish/structural. PROCESS NOTE: the first checkpoint of this batch truncated
 STATE.md's rolling history (tail-replace at the FIRST '## Where I left off' in
 a file with many historical ones) — repaired same-session from the parent
 commit; STATE.md edits must locate the CURRENT section by position, never by

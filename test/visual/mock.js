@@ -141,10 +141,10 @@
     getCoachingDashboard: { items: [
       { coachId: 'c1', empId: 'E-1088', empName: 'Sam Ortiz', patientTrx: 'TRX-208', severity: 'minor', status: 'open',
         whatHappened: 'Quoted the wrong resupply window to the caller.', whatShould: 'Confirm the 90-day window in the CRM before quoting.',
-        createdBy: 'avery@umsupply.com', createdAt: daysAgo(3) + 'T10:00:00', acknowledgedAt: '', ackBy: '' },
+        createdBy: 'avery@umsupply.com', createdAt: daysAgo(3) + ' 10:00:00', acknowledgedAt: '', ackBy: '' },
       { coachId: 'c2', empId: 'E-1090', empName: 'Leo Kim', patientTrx: 'TRX-311', severity: 'praise', status: 'acknowledged',
         whatHappened: 'Great de-escalation on a billing dispute.', whatShould: '', createdBy: 'avery@umsupply.com',
-        createdAt: daysAgo(6) + 'T15:20:00', acknowledgedAt: daysAgo(5) + 'T09:00:00', ackBy: 'leo@umsupply.com' }],
+        createdAt: daysAgo(6) + ' 15:20:00', acknowledgedAt: daysAgo(5) + ' 09:00:00', ackBy: 'leo@umsupply.com' }],
       counts: { open: 1, acknowledged: 1, overdueUnacked: 0, praise: 1 },
       analytics: { total: 2, acknowledged: 1, ackRatePct: 50, medianDaysToAck: 1, overdueUnacked: 0,
         bySeverity: { praise: 1, minor: 1, major: 0, critical: 0 },
