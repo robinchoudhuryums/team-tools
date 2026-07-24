@@ -2209,7 +2209,12 @@ this section before touching the relevant area.
   manager needs before approving a PTO request, replacing the prior
   inline mono text rows. Both components live in `styles.html` and
   are consumed today by the manager dashboard's live-status cards
-  and pending PTO queue.
+  and pending PTO queue. **Wrap contract (V-10, cycle-11 visual batch):**
+  `.seg` is `white-space: nowrap` and the chip is `flex-wrap: wrap` — a
+  time like "8:05 AM" must never break internally; on a narrow card the
+  chip wraps BETWEEN segments (local time stacked over manager time).
+  Offshore reps' two-segment chips wrapped mid-time on the 4-up
+  live-status grid until this was fixed.
 - **Time Clock → Dashboard (the Clock tab is a two-column Dashboard).** The
   `clock` tab (key + `enterClockCombinedView` handler UNCHANGED — only the visible
   LABEL is now 'Dashboard', so `?tool=clock`/`currentView==='clock'`/`umsLastView`/
@@ -2217,7 +2222,11 @@ this section before touching the relevant area.
   label was also renamed 'Time Clock' → 'Dashboard'** (the `timeClock` TOOLS-registry
   KEY + `?tool=timeClock` are unchanged — only the `label` string), so the sidebar
   now reads 'Dashboard' with the first sub-tab also 'Dashboard'. (`360px minmax(0,1fr)` — the
-  `minmax(0,1fr)` is LOAD-BEARING for the carousel viewports). The greeting is a
+  `minmax(0,1fr)` is LOAD-BEARING for the carousel viewports; the SHELL-level
+  twin is `.app-shell > * { min-width: 0 }` in `styles.html` — V-1, cycle-11
+  visual batch: without it any wide intrinsic content (the CN form's rail)
+  propagated min-content width and forced the whole 480px compact pop-out to
+  scroll sideways). The greeting is a
   **full-width header bar** (`.dash-greet-bar`, a subtle panel) ABOVE the grid —
   with an "On the clock"/"On lunch" pill — not trapped in the right column (the
   earlier right-column placement left the page unbalanced). The whole dashboard
@@ -2338,7 +2347,14 @@ this section before touching the relevant area.
   (`empShiftSchedule_`); add a `BY_TIMEZONE` entry for a whole-tz exception. The now-cursor is refreshed every 60s by
   `startRibbonNowCursor_` / `stopRibbonNowCursor_`, which are
   bound to the existing `startClock` / `stopClock` lifecycle so
-  the interval cleans up on tab nav-away.
+  the interval cleans up on tab nav-away. **Punch labels are two-row
+  staggered (V-2, cycle-11 visual batch):** a greedy left-to-right pass
+  assigns each mono label row 0 or row 1 (`.lbl.r2`) by estimated width —
+  without it every LunchOut→LunchIn pair overlapped into garble; a label
+  fitting neither row (a 3+ punch cluster within ~3.5 ribbon-hours) renders
+  bar-only (`.lbl.collided`, hidden — Today's Punches carries the times).
+  The `.ribbon` is 74px tall for the second row; compact mode fully
+  re-specifies its 24px label-less geometry and is unaffected.
 - **Manager telemetry strip with sparklines.** The manager
   dashboard's hero is a 4-cell `.telemetry` strip (Active / On Lunch
   / Missed / Pending). Missed + Pending carry 14-day sparklines
@@ -2366,7 +2382,15 @@ this section before touching the relevant area.
   Avg Talk / Total Talk) with optional tonal value variants
   (`good` / `warn` / `crit`). Per-rep table preserved at the
   bottom of Team Metrics. Shared helpers: `mTrendAvg_`,
-  `mBuildHeroSparkSvg_`, `mRailRow_`.
+  `mBuildHeroSparkSvg_`, `mRailRow_`. **`.m-layout` is
+  `align-items: start`** (V-8, cycle-11 visual batch — the `.dash-trk`
+  natural-heights precedent): the hero card hugs its content instead of
+  stretching to the 5-row rail's height with a dead band above the
+  bottom-anchored sparkline (spark height 84px over a 60-unit viewBox —
+  the `preserveAspectRatio:none` stretch is fine at 1.4x, but do NOT add
+  `vector-effect: non-scaling-stroke` to the polyline: it moves the §4
+  draw-in `stroke-dasharray` to screen space, where `--len:600`
+  under-runs the stretched path and the "drawn" end state shows a gap).
 - **Note coverage + count have a single source of truth.**
   `cnNoteCoverage_(noteCount, answeredCalls)` (whole-number percent,
   or null when there's no answered-call denominator) and
@@ -4321,8 +4345,19 @@ Every phase within a cycle (audit → plan → implement → regression → refl
 carries the same number. `/cycle-status` surfaces it.
 
 ### `.cycle/` state directory (committed — survives the ephemeral container)
-- `.cycle/STATE.md` — rolling "where I left off" (template below); written by the
-  implement commands' CHECKPOINT step, read by `/cycle-resume` + `/cycle-status`.
+- `.cycle/STATE.md` — the CURRENT cycle ONLY (template below); written by the
+  implement commands' CHECKPOINT step, read by `/cycle-resume` + `/cycle-status`
+  and the SessionStart hook. **Split (2026-07-24):** STATE.md no longer rolls —
+  closed-cycle blocks live in `.cycle/HISTORY.md`. **Close-out procedure:** when
+  a new audit cycle opens (or the prior cycle's deploy is confirmed), move the
+  finished cycle's whole block into HISTORY.md (newest first, directly below its
+  header) and reset STATE.md from the template. **Editing rule (a truncation
+  bit this file once):** template headings repeat across cycles, so never locate
+  a section by first-occurrence heading SEARCH in a multi-cycle file — the split
+  makes STATE.md's headings unique, but the rule still applies to any edit of
+  HISTORY.md, which is append-only and must never be edited in place.
+- `.cycle/HISTORY.md` — append-only archive of closed-cycle STATE blocks
+  (newest first). Never edited after a block lands; heading names repeat freely.
 - `.cycle/metrics.csv` — per-cycle metrics appended by `/reflect` / synthesis.
   Header: `date,cycle,subsystem,phase,net_score,prod_fixes,new_failure_modes,category_d_ratio,axis_b_lowest,notes,defensive_count`
   **Local convention:** the canonical `/reflect` leaves `category_d_ratio` +
@@ -4559,6 +4594,20 @@ this is the regression net for the client overlay/lifecycle bug class that
 every prior cycle shipped blind. The CI workflow runs it as a second step
 (after `npm ci`); the zero-install pure step stays first as the always-on floor.
 
+A third, **static-render VISUAL harness** lives in `test/visual/` (adopted from
+the cycle-11 visual audit): `node build.mjs` inlines the production partials
+into a standalone `page.html`, and `node shoot.mjs` renders a 20-scenario
+matrix (tool × wide/compact/mobile × light/dark) in headless Chromium with a
+fixture-backed `google.script.run` mock, writing `shots/*.png` + `report.json`.
+It is **manual / on-demand like the editor suite — NOT in CI** (needs a
+Chromium install; findings need human eyes). Run it before deploying changes to
+`styles*.html` or any view partial. Two rules from its own README: **fixtures
+MUST mirror the real server contract** (two fixture-shape bugs — a wrong
+`coachAnalytics_` shape and a pre-formatted `lastPunchTimeMgr` — produced
+convincing fake defects before this rule), and a `report.json` `missing` entry
+means the scenario rendered a loader, not the real view — add the fixture
+before trusting the screenshot. See `test/visual/README.md`.
+
 ### Health Dimensions
 Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability
 
@@ -4590,7 +4639,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally`. DOCUMENTED EXCEPTIONS (cycle-11 seams audit): the intake send endpoints (`intakeSendPPD`/`intakeSendAcct_`) are deliberately lock-free — append-only writes (atomic in Sheets) with an in-body MailApp send that the M-7 no-mail-in-lock rule would otherwise force out; `kbRecordView`/`recordClientError` use the USER lock (batch K-B — diagnostics appends must not queue punch writes) | Subsystem: Server
