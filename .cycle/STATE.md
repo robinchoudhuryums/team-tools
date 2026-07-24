@@ -244,7 +244,7 @@ surfaced through the existing failure-digest machinery; not yet built,
 awaiting user pick).
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 3
+Subsystem cycles since last Seams audit: 4
 Updated: 2026-07-23 (cycle-10 top-5 batch)
 
 ## Cycle 10 — remaining backlog (facts, not judgments — findings re-verified in-session 2026-07-23)
