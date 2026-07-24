@@ -640,6 +640,11 @@ function cleanupTestData() {
     // TEST_-prefixed titles are the established cleanup key (INV-21 spirit).
     _cleanupRowsByPrefix(kbSs.getSheetByName(CONFIG.KB.TAB), 'TEST_', KB.TITLE, 2);
     _cleanupRowsByPrefix(kbSs.getSheetByName(KB_REVISIONS_TAB), 'TEST_', KBREV.TITLE, 2);
+    // Cycle-11 M-3 — the Quizzes tab was the one training tab with NO backstop:
+    // an orphaned TEST_-titled quiz rendered in the real manager quiz list and
+    // the assignment picker permanently. (The quiz flow now runs against the
+    // fixture, so this sweeps pre-fix orphans + any future live-store residue.)
+    _cleanupRowsByPrefix(kbSs.getSheetByName(TRAIN_QUIZ_TAB), 'TEST_', TQ.TITLE, 2);
   } catch (e) { Logger.log('cleanupTestData: training tabs cleanup skipped: ' + e.message); }
   // M-9 — same sweep inside the KB FIXTURE (if provisioned), so repeated runs
   // don't accumulate residue from aborted tests there either.
@@ -651,6 +656,10 @@ function cleanupTestData() {
       _cleanupRowsByPrefix(fx.getSheetByName(KB_REVISIONS_TAB), 'TEST_', KBREV.TITLE, 2);
       _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_ASSIGN_TAB), 'TEST_', TA.EMP_ID, 2);
       _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_COMPLETE_TAB), 'TEST_', TCMP.EMP_ID, 2);
+      // Cycle-11 M-3: the quiz flow lives in the fixture now — sweep its
+      // Quizzes + QuizAttempts residue too (the F-7 gap).
+      _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_QUIZ_TAB), 'TEST_', TQ.TITLE, 2);
+      _cleanupRowsByPrefix(fx.getSheetByName(TRAIN_ATTEMPT_TAB), 'TEST_', TQA.EMP_ID, 2);
     }
   } catch (e) { Logger.log('cleanupTestData: KB fixture cleanup skipped: ' + e.message); }
   // Employee Docs fixture (T3) — sweep TEST_-employee rows if the fixture exists.
@@ -1863,6 +1872,10 @@ function test_submitTimeOff_createsRow() {
 function test_submitTimeOff_rejectsBadDate() {
   _asUser(_TEST_INDIA_EMAIL, () => {
     _assertFailure(submitTimeOffRequest('05/17/2026', 'Full Day', ''), 'Invalid date');
+    // Cycle-11 L-11 — sanity horizon: a typo'd far-future year / deep-past
+    // date is rejected instead of creating an invisible balance-deducting row.
+    _assertFailure(submitTimeOffRequest('2062-07-24', 'Full Day', ''), 'more than a year ahead');
+    _assertFailure(submitTimeOffRequest('2020-01-01', 'Full Day', ''), 'in the past');
   });
 }
 
@@ -5094,7 +5107,12 @@ function _test_training_assignCompleteFlow_() {
 
 // T2 — quiz lifecycle: author → assign → stripped fetch → fail → pass →
 // completion + attempt counts; the answer key never reaches a rep response.
-function test_training_quizFlow() {
+// Cycle-11 M-3 — runs against the KB FIXTURE now (_withTestKb_): the quiz
+// author/take/grade flow previously wrote TEST_TRAINING_QUIZ to the LIVE
+// Quizzes tab, where a timeout-killed run (finally skipped) orphaned it into
+// the real manager quiz list. cleanupTestData also gained a Quizzes sweep.
+function test_training_quizFlow() { _withTestKb_(_trainingQuizFlowBody_); }
+function _trainingQuizFlowBody_() {
   let quizId = null;
   try {
     // Author (manager). passPct 100 → both questions must be right to pass.

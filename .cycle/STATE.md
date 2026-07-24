@@ -2,7 +2,7 @@
 
 ## Current
 Cycle: 11
-Phase: implement (audit done; batch 1 of the selected findings implemented)
+Phase: implement (audit done; batches 1+2 implemented — full selected backlog done; /sync-docs pending)
 Scope: broad (the DUE Seams & Invariants audit — seams counter was 4)
 Test Command: manual
 Subsystem cycles since last Seams audit: 0 (this cycle IS the seams audit; /reflect confirms the reset)
@@ -79,12 +79,67 @@ BATCH 1 IMPLEMENTED (M-1, M-2, L-1, L-2, L-3 — operator-selected):
 Tests: pure 319->327 /0, DOM 65/0, node --check x3 clean. One test-authoring
 fix mid-batch: vm-realm array vs deepStrictEqual (switched to .length).
 
+BATCH 2 IMPLEMENTED (M-3, M-4, L-4..L-18, tripwire holes, MIRROR_INDEX):
+- M-3 | Tests.js | test_training_quizFlow wraps _withTestKb_ (fixture, not the
+  live KB store); cleanupTestData sweeps TRAIN_QUIZ_TAB (live, TQ.TITLE) +
+  fixture Quizzes/QuizAttempts (the F-7 gap).
+- M-4 | run.js | REGISTRY_SCAN_PARTIALS derived from PARSE_GUARD_PARTIALS
+  (minus index/form_public/icons) replaces the 3 hand lists; a new test
+  tracks dom/boot.js PARTIALS against it. One derived source, auto-tracked
+  via the existing index.html net.
+- L-4 | Code.js | cnReadCallNoteAuditRows_ returns oldestScannedDay (window
+  oldest, not oldest matching); getCallNotesAuditLog truncated keys off it.
+- L-5 | Code.js + run.js | callNoteRowToObject_ emailedAt via
+  cnTimestampString_; the INV-142 global scan extended to [CN.EMAILED_AT].
+- L-6 | Code.js | notifyEmpDocSigned_(doc, signer, completedOnly) — a
+  fields-only completion emails "Completed:", not "Signed:".
+- L-7 | Code.js | kbGetUsageStats title join drops drafts (2 thin column
+  reads — no BodyMd pull).
+- L-8 | metrics/script_metrics.html | SPANISH_STATE.listSeq on the pending +
+  resolved list loaders (INV-156 parity with the M-6 stats fetch).
+- L-9 | form_public.html | updateFormProgress_ skips hidden conditional
+  required fields (offsetParent guard).
+- L-10 | script_tour.html | tourVisibleTarget_ — poll + paint require a
+  VISIBLE (non-zero-rect) match; first visible wins on multi-match.
+- L-11 | Code.js + Tests.js | TIMEOFF_MAX_DAYS_AHEAD=370 / _BACK=90 horizon
+  in BOTH submit paths (rep tz / target tz); rejectsBadDate test extended.
+- L-12 | Code.js | getIntakeSS_ memoized per execution (getAdpSS_ L-3
+  pattern; test override never memoized).
+- L-14 | Code.js | deletePunch keeps the personal-sheet mirror when a
+  duplicate row of the same (emp,date,type) survives; dashboard canDelete
+  backward-only (Math.abs dropped — matches C7).
+- L-15 | script_core.html | mtRenderTable_ sortable-header onclick uses
+  identifier-charset sanitization (not HTML-entity escaping in a JS-string
+  context).
+- L-16 | Code.js | archiveSheetRowsOlderThan_ preserves trailing columns
+  (width = max(canonical, widest row)) + grows the archive grid if needed —
+  INV-132 "never lose" now holds for hand-added columns.
+- L-17 | cn/script_callnotes.html | TimesheetArchive health caption 1am→6pm.
+- L-18 | Code.js | getFeatureFlags/getDeptRequestSla KEPT by decision with
+  comments (they delegate to the same helpers getAdminConfig uses — no
+  parallel logic; removal would churn gate tests/INV-136 for zero risk).
+- Tripwire holes | run.js | payload-contract: balanced-brace + depth-masked
+  key extraction (nested objects no longer hide keys — bite-checked);
+  SUBMITTED_AT: new line-whitelist scan over Code.js+Tests.js (alias-proof —
+  bite-checked); no-mail-in-lock: region ends at releaseLock() (finally
+  pre-release now scanned) + TRANSITIVE sender closure over
+  notifyAfter-stripped bodies (bite-checked with a wrapper pair); registry
+  nets accept double-quoted literals.
+- MIRROR_INDEX | run.js | +3 entries (CN_INTERACTIVE_FORM_IDS, errBeacon
+  caps, KB_IMG cap); errBeacon test extracts CLIENT_ERR_MSG_MAX/STACK_MAX
+  from Code.js (was hardcoded 400/1500); NEW guard test evaluates the kb
+  paste-cap expression against KB_IMG_UPLOAD_MAX_CHARS.
+Tests: pure 327->330 /0 (net of consolidations), DOM 65/0, node --check x3;
+3 tripwire bite-checks fired + restored (python edits, no git checkout).
+
 ## Pending / not yet done
-- M-3 (quiz fixture wrap + Quizzes sweep), M-4 (auto-track the 4 partial
-  lists), remaining Lows (L-4..L-18 + Info set), tripwire-hole hardening,
-  MIRROR_INDEX 3 omissions, behavioral pins for witness/badge/self-test.
-- /sync-docs pass for the doc-drift list (admin count, key count, 1am
-  caption, INV-23/18/94/129 wording, INV-136 annotations).
+- /sync-docs pass ONLY: doc-drift list (admin count 24/28/30, "fifteen" vs
+  14 localStorage keys, umsLastView compact-guard, INV-23/18 wording,
+  INV-94/129/132/142 amendments from batches 1+2, INV-136 stale
+  "manager-gated" annotations, example.invalid cleanup key, Transfer-tab
+  validation operator note, What's-new X-button claim).
+- Behavioral pins for witness-loss/health-badge/self-test parse (coverage
+  gaps CG-1/2/5) — deferred, noted as follow-on.
 
 ## Decisions made (so the next session doesn't re-litigate)
 - M-1 guard excludes the row's own index — approving a lone Pending row is
@@ -100,10 +155,11 @@ fix mid-batch: vm-realm array vs deepStrictEqual (switched to .length).
   cache write is skipped (retry on next open).
 
 ## Where I left off
-Batch 1 done + green. Next: operator picks from the remaining backlog
-(M-3/M-4 + Lows + /sync-docs), then commit/PR/deploy; on deploy run editor
-runAllTests (new test updateTimeOff_dupApproveRejected; the run's
-cleanupTestData also purges the legacy EXTERNAL witness rows).
+Batches 1+2 done + green (pure 330/0, DOM 65/0). Next: /sync-docs for the
+doc-drift list, then /reflect (resets the seams counter), PR + operator
+deploy. On deploy: runAllTests — new test updateTimeOff_dupApproveRejected;
+cleanupTestData purges legacy EXTERNAL witness rows + any TEST_ quiz
+orphans; the quiz flow now provisions nothing new (uses TEST_KB_SS_ID).
 
 ## Cycle-10 history (closed 2026-07-24 — deployed, runAllTests passed, triggers re-run)
 Original audit record: broad scan (7-agent fan-out + personal verification;

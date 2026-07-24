@@ -1305,7 +1305,14 @@ function mtRenderTable_(opts) {
     // Enter/Space) and announce sort state via aria-sort on the columnheader.
     var interactive = '';
     if (c.sortable && opts.onSort) {
-      var call = opts.onSort + '(\'' + esc(c.key) + '\')';
+      // Cycle-11 L-15: keys/handler names are code-authored identifiers —
+      // enforce that charset instead of HTML-entity-escaping, which is the
+      // wrong neutralizer inside a JS-string-in-attribute context (the
+      // browser decodes entities BEFORE parsing the JS, so a quote in a
+      // future dynamic key would still break out of the string).
+      var safeFn = String(opts.onSort).replace(/[^\w.$]/g, '');
+      var safeKey = String(c.key).replace(/[^\w.$-]/g, '');
+      var call = safeFn + '(\'' + safeKey + '\')';
       var ariaSort = (sort.key === c.key)
         ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
       interactive = ' tabindex="0" aria-sort="' + ariaSort + '"' +

@@ -50,6 +50,19 @@ PARSE_GUARD_PARTIALS.forEach((f) => {
   });
 });
 
+// Cycle-11 M-4 — ONE derived list for every registry-literal net
+// (enterTool / showView / refreshViewIfCurrent). Previously three
+// hand-maintained copies (plus the DOM harness's boot.js PARTIALS) that only
+// discipline kept in sync — the exact Parallel-Source-Drift genus the suite
+// polices in app code, unpoliced inside the suite itself (the cycle-9 M-10
+// class could recur for any non-parse-guard list). Deriving from
+// PARSE_GUARD_PARTIALS (itself auto-tracked against index.html below) means
+// a newly include()'d JS partial joins every net in one step. Exclusions:
+// index.html (boot script only — no registry literals), form_public.html
+// (standalone page, no shell), script_icons.html (path data only).
+const REGISTRY_SCAN_PARTIALS = PARSE_GUARD_PARTIALS.filter((f) =>
+  f !== 'index.html' && f !== 'form_public.html' && f !== 'script_icons.html');
+
 // Cycle-9 M-10 — the parse-guard list auto-tracks index.html. Every partial
 // include()'d by the shell that carries a <script> block MUST be in
 // PARSE_GUARD_PARTIALS; a new module's partial can no longer ship outside
@@ -64,6 +77,21 @@ test('every JS-bearing include()d partial is in the parse-guard list', () => {
     if (!/<script[\s>]/i.test(src)) return;   // style/markup-only partial
     assert.ok(PARSE_GUARD_PARTIALS.indexOf(f) >= 0,
       f + ' is include()d with a <script> block but missing from PARSE_GUARD_PARTIALS (and probably the DOM/M3 lists too)');
+  });
+});
+
+// Cycle-11 M-4 — the DOM harness's boot.js PARTIALS is the fourth copy of the
+// partial list; track it against the derived registry set so a new partial
+// can't fall out of the DOM harness silently (the cycle-9 M-10 class).
+test('dom/boot.js PARTIALS covers every registry-scan partial', () => {
+  const bootSrc = fs.readFileSync(path.join(__dirname, 'dom/boot.js'), 'utf8');
+  const listM = bootSrc.match(/const PARTIALS = \[([\s\S]*?)\];/);
+  assert.ok(listM, 'boot.js PARTIALS array found');
+  const bootList = [...listM[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  assert.ok(bootList.length >= 10, 'boot.js PARTIALS parsed (got ' + bootList.length + ')');
+  REGISTRY_SCAN_PARTIALS.forEach((f) => {
+    assert.ok(bootList.indexOf(f) >= 0,
+      f + ' is in the registry-scan set but missing from dom/boot.js PARTIALS — the DOM harness never loads it');
   });
 });
 
@@ -843,18 +871,21 @@ test('TRIPWIRE (INV-142, cycle-8 M-15): no NEW raw [CN.TIMESTAMP] reads anywhere
   // COMPARISON read (`row[CN.TIMESTAMP] === x`, a Date-vs-string compare
   // that is always false, exactly the bug class this scan exists for) used
   // to match the `\]\s*=` write shape and pass silently.
-  const SAFE_LINE = /cnTimestampString_\(|CN\.TIMESTAMP \+ 1|CN\.TIMESTAMP\]\s*=(?!=)|^\s*\/\//;
+  const SAFE_LINE = /cnTimestampString_\(|CN\.(TIMESTAMP|EMAILED_AT) \+ 1|CN\.(TIMESTAMP|EMAILED_AT)\]\s*=(?!=)|^\s*\/\//;
   // C1 (cycle 10): reconcileCallNotes now routes through cnTimestampString_
   // like every other reader (its "equivalent" inline guard recovered in the
   // REP's tz, not the sheet's — a real bug, and the whole-line exemption it
   // needed was itself a copyable false-pass hole). No exemption remains.
+  // Cycle-11 L-5: CN.EMAILED_AT joins the scan — it's written in the SAME
+  // locale-coercible ISO-T form (emailFromCallNote's stamp) and its raw read
+  // was the one untripwired sibling of this boundary.
   lines.forEach((line, idx) => {
-    if (line.indexOf('[CN.TIMESTAMP]') < 0) return;
+    if (line.indexOf('[CN.TIMESTAMP]') < 0 && line.indexOf('[CN.EMAILED_AT]') < 0) return;
     if (SAFE_LINE.test(line)) return;
     offenders.push('line ' + (idx + 1) + ': ' + line.trim());
   });
   assert.deepStrictEqual(offenders, [],
-    'raw [CN.TIMESTAMP] read(s) outside the cnTimestampString_ boundary — see INV-142');
+    'raw [CN.TIMESTAMP]/[CN.EMAILED_AT] read(s) outside the cnTimestampString_ boundary — see INV-142');
 });
 test('coupling — showView\'s intakeFlushDraftNow_ hook resolves cross-partial (Turn-B seams audit)', () => {
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
@@ -1248,6 +1279,26 @@ test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock
     return sb.indexOf('MailApp.') >= 0 || sb.indexOf('GmailApp.sendEmail') >= 0;
   });
   assert.ok(senders.length >= 15, 'mail-sender inventory armed (got ' + senders.length + ')');
+  // Cycle-11 (tripwire hole): TRANSITIVE closure — a locked fn calling a
+  // mail-free wrapper that itself calls a sender escaped the depth-1
+  // inventory. Expansion uses notifyAfter-STRIPPED bodies so a function whose
+  // only sender reference is its own post-lock closure (the sanctioned
+  // pattern) doesn't itself become "a sender" and cascade false positives.
+  const senderSet = new Set(senders);
+  const strippedBody = (n) => stripC(funcs[n])
+    .replace(/notifyAfter = function \(\) \{[^{}]*\};/g, '');
+  let grew = true;
+  while (grew) {
+    grew = false;
+    Object.keys(funcs).forEach((n) => {
+      if (senderSet.has(n)) return;
+      const sb2 = strippedBody(n);
+      for (const s of senderSet) {
+        if (new RegExp('\\b' + s + '\\s*\\(').test(sb2)) { senderSet.add(n); grew = true; return; }
+      }
+    });
+  }
+  const sendersAll = [...senderSet];
   // Deliberate in-lock senders, each with a load-bearing reason:
   const ALLOWLIST = {
     emailFromCallNote: 'INV-42 — send-then-stamp is one locked unit: the send outcome decides success:false vs stamp, and the stamp must not race a concurrent edit',
@@ -1258,9 +1309,14 @@ test('TRIPWIRE (M-7): no mail sender is called inside a locked region (post-lock
     if (sb.indexOf('waitLock(') < 0) return;
     const finIdx = sb.lastIndexOf('finally');
     if (finIdx < 0) return;
-    let region = sb.slice(sb.indexOf('waitLock('), finIdx);
+    // Cycle-11 (tripwire hole): the locked region ends at the last
+    // releaseLock() — not at `finally` — so a sender placed inside the
+    // finally BEFORE the release (still in-lock) is scanned too. The
+    // sanctioned post-lock notifyAfter() invocation sits AFTER releaseLock().
+    const relIdx = sb.lastIndexOf('releaseLock()');
+    let region = sb.slice(sb.indexOf('waitLock('), relIdx >= 0 ? relIdx : finIdx);
     region = region.replace(/notifyAfter = function \(\) \{[^{}]*\};/g, '');
-    const hits = senders.filter((s) => new RegExp('\\b' + s + '\\s*\\(').test(region));
+    const hits = sendersAll.filter((s) => new RegExp('\\b' + s + '\\s*\\(').test(region));
     if (region.indexOf('MailApp.') >= 0) hits.push('MailApp.');
     if (region.indexOf('GmailApp.sendEmail') >= 0) hits.push('GmailApp.sendEmail');
     if (hits.length && !ALLOWLIST[n]) offenders.push(n + ' → ' + hits.join(','));
@@ -1430,6 +1486,12 @@ const MIRROR_INDEX = [
     guards: ['Automation-Health CN_HEALTH_RUN_LABELS'] },
   { pair: 'CSR_TRANSFER_EXPECTED_HEADERS ↔ CSRT reader columns (L-2 cycle 11)',
     guards: ['csrTransferHeaderMismatches_'] },
+  { pair: 'client CN_INTERACTIVE_FORM_IDS ↔ server INTERACTIVE_FORM_TYPES',
+    guards: ['CN_INTERACTIVE_FORM_IDS (cn partial) === INTERACTIVE_FORM_TYPES'] },
+  { pair: 'client errBeaconPayload_ caps ↔ server CLIENT_ERR_MSG_MAX/STACK_MAX (INV-150)',
+    guards: ['capped at the server CLIENT_ERR_MSG_MAX mirror'] },
+  { pair: 'client paste-upload cap ↔ server KB_IMG_UPLOAD_MAX_CHARS (INV-118)',
+    guards: ['client paste cap mirrors the server KB_IMG_UPLOAD_MAX_CHARS'] },
   { pair: 'health badge ↔ failure digest problem derivation (batch K E)',
     guards: ['getAutomationHealthBadge consumes the SAME derivation'] },
   { pair: 'AUTO_COPY_FORMAT server CONFIG default ↔ client fallback',
@@ -1506,6 +1568,27 @@ test('Tests.js reads SUBMITTED_AT through normalizeAuditTs_ too', () => {
   const raw = [...tSrc.matchAll(/String\(\s*[\w.\[\]]*\[(TO|PAR)\.SUBMITTED_AT\]/g)];
   assert.deepStrictEqual(raw.map((m) => m[0]), [], 'test helper must match the production read');
 });
+// Cycle-11 (tripwire hole): the String( scans above are defeated by a
+// one-variable indirection (`const ts = row[TO.SUBMITTED_AT]; String(ts)…`).
+// This is the INV-142-style WHITELIST scan: EVERY line touching a
+// SUBMITTED_AT index in Code.js/Tests.js must either wrap it in
+// normalizeAuditTs_( or be a write (`] =`, not `==`). A line-wrapped index
+// still escapes — accepted; the one-variable alias no longer does.
+test('every SUBMITTED_AT index touch is normalizeAuditTs_-wrapped or a write (alias-proof)', () => {
+  const offenders = [];
+  ['Code.js', 'Tests.js'].forEach((f) => {
+    const lines = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8').split('\n');
+    lines.forEach((line, idx) => {
+      if (!/\[(TO|PAR)\.SUBMITTED_AT\]/.test(line)) return;
+      if (/^\s*(\/\/|\*)/.test(line)) return;                              // comment
+      if (/\[(TO|PAR)\.SUBMITTED_AT\]\s*=(?!=)/.test(line)) return;        // write
+      if (/normalizeAuditTs_\s*\(/.test(line)) return;                     // sanctioned read
+      offenders.push(f + ':' + (idx + 1) + ' — ' + line.trim());
+    });
+  });
+  assert.deepStrictEqual(offenders, [],
+    'unwrapped SUBMITTED_AT read(s) — route through normalizeAuditTs_ on the same line: ' + offenders.join(' | '));
+});
 
 console.log('\nscript_core — view-key literals match the TOOLS registry (M3 tripwire)');
 // refreshViewIfCurrent('<tabKey>', …) guards every mutation refresh; a typo'd
@@ -1513,12 +1596,7 @@ console.log('\nscript_core — view-key literals match the TOOLS registry (M3 tr
 // not 'manager' — exactly that mistake was caught in review). Check every
 // literal in the view partials against the LIVE registry from the sandbox.
 test("every refreshViewIfCurrent('…') literal is a registered tab key", () => {
-  const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
-    'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
-    'metrics/script_deptrequests.html',
-    'intake/script_intake.html', 'kb/script_kb.html', 'train/script_training.html', 'train/script_empdocs.html',
-    'train/script_coaching.html',
-    'script_core.html'];
+  const partials = REGISTRY_SCAN_PARTIALS;   // M-4: one derived list, no hand copy
   // TOOLS / VIEW_TO_TOOL are top-level consts (lexical, not on the sandbox
   // global), so parse the tab keys from the registry source: every tab entry
   // carries an `enter:` handler.
@@ -1537,7 +1615,7 @@ test("every refreshViewIfCurrent('…') literal is a registered tab key", () => 
   });
   partials.forEach((f) => {
     const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
-    [...src.matchAll(/refreshViewIfCurrent\('([^']+)'/g)].forEach((m) => {
+    [...src.matchAll(/refreshViewIfCurrent\(\s*['"]([^'"]+)['"]/g)].forEach((m) => {
       assert.ok(validKeys.indexOf(m[1]) >= 0,
         f + ": refreshViewIfCurrent('" + m[1] + "') is not a TOOLS tab key");
     });
@@ -1568,16 +1646,12 @@ test("every enterTool('…') literal is a registered TOOL key", () => {
     }
   }
   assert.ok(toolKeys.length >= 5, 'top-level TOOL keys parsed (got ' + toolKeys.join(',') + ')');
-  const partials = ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
-    'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
-    'metrics/script_deptrequests.html', 'intake/script_intake.html', 'kb/script_kb.html',
-    'train/script_training.html', 'train/script_empdocs.html', 'train/script_coaching.html',
-    'script_core.html', 'script_tour.html'];
+  const partials = REGISTRY_SCAN_PARTIALS;   // M-4: one derived list, no hand copy
   let literalCount = 0;
   const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   partials.forEach((f) => {
     const src = stripC(fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'));
-    [...src.matchAll(/enterTool\(\s*'([^']+)'/g)].forEach((m) => {
+    [...src.matchAll(/enterTool\(\s*['"]([^'"]+)['"]/g)].forEach((m) => {
       if (m[1].indexOf('${') >= 0) return;  // template-literal interpolation — dynamic key, not a literal
       literalCount++;
       assert.ok(toolKeys.indexOf(m[1]) >= 0,
@@ -3559,9 +3633,14 @@ test('errBeaconPayload_ bounds every field and rejects empty messages', () => {
   assert.strictEqual(errBeaconPayload_('', 'stack', 'clock', 'onerror'), null, 'empty message → nothing to send');
   assert.strictEqual(errBeaconPayload_('   ', 'stack', 'clock', 'onerror'), null, 'whitespace message → null');
   assert.strictEqual(errBeaconPayload_(null, null, null, null), null, 'null-safe');
-  const p = errBeaconPayload_('x'.repeat(1000), 'y'.repeat(5000), 'z'.repeat(100), 'unhandledrejection');
-  assert.strictEqual(p.message.length, 400, 'message capped at the server CLIENT_ERR_MSG_MAX mirror');
-  assert.strictEqual(p.stack.length, 1500, 'stack capped at the server CLIENT_ERR_STACK_MAX mirror');
+  const p = errBeaconPayload_('x'.repeat(9000), 'y'.repeat(9000), 'z'.repeat(100), 'unhandledrejection');
+  // Cycle-11 (mirror hardening): caps extracted from Code.js, not hardcoded —
+  // a server cap change now fails here instead of passing green.
+  const msgMax = Number((codeSrc.match(/CLIENT_ERR_MSG_MAX\s*=\s*(\d+)/) || [])[1]);
+  const stackMax = Number((codeSrc.match(/CLIENT_ERR_STACK_MAX\s*=\s*(\d+)/) || [])[1]);
+  assert.ok(msgMax > 0 && stackMax > 0, 'server beacon caps parsed from Code.js');
+  assert.strictEqual(p.message.length, msgMax, 'message capped at the server CLIENT_ERR_MSG_MAX mirror');
+  assert.strictEqual(p.stack.length, stackMax, 'stack capped at the server CLIENT_ERR_STACK_MAX mirror');
   assert.strictEqual(p.view.length, 40, 'view capped');
   assert.strictEqual(p.source, 'unhandledrejection');
   assert.strictEqual(errBeaconPayload_('boom', '', '', 'garbage').source, 'onerror',
@@ -3853,9 +3932,31 @@ test('TRIPWIRE (C9): every client-submitted subformData key is on the server whi
   ['cn/script_callnotes.html', 'intake/script_intake.html'].forEach((f) => {
     const src = fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8');
     [...src.matchAll(/(?:payload|notePayload)\.subformData\.(\w+)\s*=/g)].forEach((m) => clientKeys.add(m[1]));
-    [...src.matchAll(/subformData:\s*(?:\w+\s*\?\s*)?\{([^}]*)\}/g)].forEach((m) => {
-      [...m[1].matchAll(/(\w+)\s*:/g)].forEach((k) => clientKeys.add(k[1]));
-    });
+    // Cycle-11 (tripwire hole): balanced-brace extraction. The old
+    // `\{([^}]*)\}` stopped at the FIRST `}`, so any nested object in a
+    // submit literal hid every key after it from the whitelist check —
+    // re-opening the exact M-3 silent-drop class this tripwire retires.
+    // Top-level keys are read from a depth-masked copy (nested {[( ... )]}
+    // content and quoted strings removed).
+    const openRe = /subformData:\s*(?:\w+\s*\?\s*)?\{/g;
+    let om;
+    while ((om = openRe.exec(src))) {
+      let depth = 1, j = openRe.lastIndex;
+      while (j < src.length && depth > 0) {
+        if (src[j] === '{') depth++;
+        else if (src[j] === '}') depth--;
+        j++;
+      }
+      const inner = src.slice(openRe.lastIndex, j - 1)
+        .replace(/'(?:[^'\\]|\\.)*'/g, "''").replace(/"(?:[^"\\]|\\.)*"/g, '""');
+      let masked = '', d = 0;
+      for (const ch of inner) {
+        if (ch === '{' || ch === '[' || ch === '(') { d++; continue; }
+        if (ch === '}' || ch === ']' || ch === ')') { d--; continue; }
+        if (d === 0) masked += ch;
+      }
+      [...masked.matchAll(/(\w+)\s*:/g)].forEach((k) => clientKeys.add(k[1]));
+    }
   });
   assert.ok(clientKeys.size >= 3, 'client-submitted keys parsed (got ' + [...clientKeys].join(',') + ')');
   clientKeys.forEach((k) => {
@@ -3874,13 +3975,10 @@ test("every showView('…') literal is a registered tab key", () => {
   assert.ok(validKeys.length >= 10, 'tab keys parsed');
   let svLiterals = 0;
   const stripC = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-  ['tc/script_clock.html', 'tc/script_timesheet.html', 'tc/script_timeoff.html',
-   'tc/script_manager.html', 'cn/script_callnotes.html', 'metrics/script_metrics.html',
-   'metrics/script_deptrequests.html', 'intake/script_intake.html', 'kb/script_kb.html',
-   'train/script_training.html', 'train/script_empdocs.html', 'train/script_coaching.html',
-   'script_core.html', 'script_tour.html'].forEach((f) => {
+  REGISTRY_SCAN_PARTIALS.forEach((f) => {   // M-4: one derived list, no hand copy
     const src = stripC(fs.readFileSync(path.join(__dirname, '../../web-app/' + f), 'utf8'));
-    [...src.matchAll(/showView\(\s*'([^']+)'/g)].forEach((m) => {
+    // Cycle-11: both quote styles — a double-quoted literal escaped the net.
+    [...src.matchAll(/showView\(\s*['"]([^'"]+)['"]/g)].forEach((m) => {
       if (m[1].indexOf('${') >= 0) return;
       svLiterals++;
       assert.ok(validKeys.indexOf(m[1]) >= 0,
@@ -4183,6 +4281,21 @@ test('updateTimeOffStatus re-checks hasActiveTimeOffOnDate_ (own row excluded) o
     });
   });
 }
+
+// MIRROR_INDEX omission (cycle 11): the kb editor's paste-upload size check
+// carries a literal that must equal the server constant (INV-118 "mirrored
+// client-side" finally has a guard). Both sides are numeric expressions —
+// evaluate and compare values, so `4*1024*1024` vs a plain number both work.
+test('client paste cap mirrors the server KB_IMG_UPLOAD_MAX_CHARS', () => {
+  const sm = codeSrc.match(/KB_IMG_UPLOAD_MAX_CHARS\s*=\s*([^;]+);/);
+  assert.ok(sm, 'server KB_IMG_UPLOAD_MAX_CHARS found');
+  const kbSrc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const cm = kbSrc.match(/dataUrl\.length\s*>\s*([^)]+)\)[^\n]*mirrors KB_IMG_UPLOAD_MAX_CHARS/);
+  assert.ok(cm, "client mirror line not found (the '// mirrors KB_IMG_UPLOAD_MAX_CHARS' comment is the anchor)");
+  const evalNum = (expr) => Function('"use strict"; return (' + expr.split('//')[0] + ');')();
+  assert.strictEqual(evalNum(cm[1]), evalNum(sm[1]),
+    'the kb editor paste cap drifted from the server KB_IMG_UPLOAD_MAX_CHARS');
+});
 
 // L-3: a failed per-day trend read must never be cached as a fresh result.
 test('getMyMetricsRange skips the cache put when the trend read failed (error-not-cached, L-3)', () => {

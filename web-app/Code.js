@@ -852,6 +852,19 @@ function submitTimeOffRequest(date, type, notes) {
     if (!emp) return { success: false, error: 'Employee not found.' };
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return { success: false, error: 'Invalid date format.' };
+    // Cycle-11 L-11 — sanity horizon. The time-off date was the module's only
+    // unbounded date write: a typo'd year (e.g. 2062) created an approvable,
+    // balance-deducting row that never surfaced in any month view a manager
+    // browses. Bounds are generous (a year ahead for planned leave, 90 days
+    // back for retroactive filing) and measured in the REP's own tz.
+    {
+      const todayRep = fmtDateTz_(new Date(), empTz_(emp));
+      const ahead = daysBetween_(todayRep, date);
+      if (ahead > TIMEOFF_MAX_DAYS_AHEAD)
+        return { success: false, error: 'That date is more than a year ahead — double-check the year.' };
+      if (ahead < -TIMEOFF_MAX_DAYS_BACK)
+        return { success: false, error: 'That date is more than ' + TIMEOFF_MAX_DAYS_BACK + ' days in the past.' };
+    }
     if (!isValidTimeOffType_(type))
       return { success: false, error: 'Invalid leave type.' };
     const toSheet = getOrCreateTimeOffSheet_();
@@ -1160,8 +1173,10 @@ function getManagerDashboard() {
       // Delete window is measured against the EMPLOYEE's local "today"
       // (e.todayStr, same tz deletePunch uses), not the manager's — otherwise
       // an IST/PHT rep near the window edge gets a Delete button the server
-      // then rejects (or vice-versa) (L13).
-      const dBack = Math.abs(daysBetween_(rowDate, e.todayStr));
+      // then rejects (or vice-versa) (L13). Cycle-11 L-14: backward-only
+      // (no Math.abs), matching deletePunch's C7 semantics — a future-dated
+      // garbage row stays deletable from the UI too.
+      const dBack = daysBetween_(rowDate, e.todayStr);
       recentPunches.push({
         empId: id, empName: e.name,
         date: rowDate,
@@ -1446,6 +1461,17 @@ function managerSubmitTimeOff(empId, date, type, notes, autoApprove) {
 
     const targetEmp = lookupEmployeeById_(empId);
     if (!targetEmp) return { success: false, error: 'Employee not found.' };
+
+    // Cycle-11 L-11 — same sanity horizon as submitTimeOffRequest, in the
+    // TARGET employee's tz (the sibling-surface discipline).
+    {
+      const todayTarget = fmtDateTz_(new Date(), empTz_(targetEmp));
+      const ahead = daysBetween_(todayTarget, date);
+      if (ahead > TIMEOFF_MAX_DAYS_AHEAD)
+        return { success: false, error: 'That date is more than a year ahead — double-check the year.' };
+      if (ahead < -TIMEOFF_MAX_DAYS_BACK)
+        return { success: false, error: 'That date is more than ' + TIMEOFF_MAX_DAYS_BACK + ' days in the past.' };
+    }
 
     const toSheet = getOrCreateTimeOffSheet_();
     if (hasActiveTimeOffOnDate_(toSheet, targetEmp.id, date))
@@ -1867,13 +1893,26 @@ function deletePunch(empId, date, time, punchType) {
       if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== punchType) continue;
 
       sheet.deleteRow(i + 1);
-      if (targetEmp && targetEmp.sheetId) {
+      // Cycle-11 L-14: dup-awareness parity with managerSaveDay's M-1 collapse —
+      // if a legacy duplicate row of this same (emp, date, type) SURVIVES the
+      // delete (pre-INV-155 leftovers), the personal-sheet mirror still shows a
+      // live punch, so don't blank it. Re-scan after the deletion.
+      let survivorExists = false;
+      const after = sheet.getDataRange().getValues();
+      for (let k = 2; k < after.length; k++) {
+        if (String(after[k][ADP.EMP_ID]).trim() === empId
+            && normalizeDate_(after[k][ADP.DATE]) === date
+            && normalizeType_(String(after[k][ADP.COMMENTS])) === punchType) {
+          survivorExists = true; break;
+        }
+      }
+      if (targetEmp && targetEmp.sheetId && !survivorExists) {
         try { clearFromEmployeeSheet_(targetEmp, date, punchType); }
         catch (e) { console.warn('clearFromEmployeeSheet_ failed: ' + e.message); }
       }
       const targetForAudit = targetEmp || { id: empId, name: empId, email: '' };
       writeAuditLog_(targetForAudit, 'PunchDelete', date, time, false, 0,
-        `${punchType} removed by manager`, callerEmp.email);
+        `${punchType} removed by manager` + (survivorExists ? ' (duplicate remains; mirror kept)' : ''), callerEmp.email);
       return { success: true };
     }
     return { success: false, error: 'Punch not found (may have already been removed).' };
@@ -4084,6 +4123,11 @@ function saveRetentionConfig(settings) {
 
 /** Manager-gated read of the feature-toggle registry + resolved values
  *  (also embedded in getAdminConfig; kept standalone for testability). */
+// NOTE (cycle-11 L-18, kept by decision): no client calls this today — the
+// Admin UI reads flags via getAdminConfig().featureFlags. Kept as the
+// symmetric read API beside saveFeatureFlags; it delegates to the SAME
+// helpers getAdminConfig uses (no parallel logic to drift) and stays
+// admin-gated. Same note on getDeptRequestSla.
 function getFeatureFlags() {
   try {
     const callerEmp = getEmployeeInfo_();
@@ -4286,12 +4330,18 @@ function cnExtractAuditNoteId_(notes) {
 function cnReadCallNoteAuditRows_() {
   const sheet = getOrCreateAuditSheet_();
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { rows: [], scannedAll: true };
+  if (lastRow <= 1) return { rows: [], scannedAll: true, oldestScannedDay: null };
   const startRow = Math.max(2, lastRow - CN_AUDIT_MAX_SCAN + 1);
   const scannedAll = startRow === 2;
   const numRows = lastRow - startRow + 1;
   const data = sheet.getRange(startRow, 1, numRows, 10).getValues();
   const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+  // Cycle-11 L-4: the WINDOW's true oldest day (data[0] — append-order), not
+  // the oldest MATCHING row. The truncated flag keyed off matching rows only,
+  // so a 4000-row stretch with zero CN-action rows showed an empty result
+  // with no "narrow the range" hint while older matches existed past the cap.
+  const oldestScannedDay =
+    String(normalizeAuditTs_(data[0][AUDIT.TS]) || '').substring(0, 10) || null;
   const out = [];
   for (let i = data.length - 1; i >= 0; i--) {  // newest-first
     if (CN_AUDIT_ACTIONS.indexOf(String(data[i][AUDIT.ACTION])) < 0) continue;
@@ -4312,7 +4362,7 @@ function cnReadCallNoteAuditRows_() {
       notes:        a.notes,
     });
   }
-  return { rows: out, scannedAll: scannedAll };
+  return { rows: out, scannedAll: scannedAll, oldestScannedDay: oldestScannedDay };
 }
 
 /** Manager-gated compliance audit search over the shared AuditLog. Filters by
@@ -4347,11 +4397,9 @@ function getCallNotesAuditLog(filters) {
 
     const read = cnReadCallNoteAuditRows_();
     const rows = [];
-    let oldestScannedDate = null;
     for (let i = 0; i < read.rows.length; i++) {
       const r = read.rows[i];
       const dayStr = r.timestamp.substring(0, 10);  // ts is yyyy-MM-dd HH:mm:ss in CONFIG.TIMEZONE
-      if (dayStr) oldestScannedDate = dayStr;        // rows are newest-first, so this ends on the oldest
       if (repId && r.repId !== repId) continue;
       if (action && r.action !== action) continue;
       if (dayStr < start || dayStr > end) continue;
@@ -4360,8 +4408,11 @@ function getCallNotesAuditLog(filters) {
     }
     // Truncated if we hit the result cap, OR the scan cap kept us from reaching
     // back to the requested start date (older matching rows may exist).
+    // L-4 (cycle 11): keyed off the WINDOW's oldest scanned day (from the
+    // reader), not the oldest matching row — an all-punch scan window used to
+    // read as complete while older CN rows sat beyond the cap.
     const truncated = (rows.length >= CN_AUDIT_MAX_RESULTS) ||
-      (!read.scannedAll && oldestScannedDate && oldestScannedDate > start);
+      (!read.scannedAll && read.oldestScannedDay && read.oldestScannedDay > start);
     return {
       rows: rows,
       truncated: !!truncated,
@@ -6031,7 +6082,10 @@ function callNoteRowToObject_(located) {
     resolution:       String(row[CN.RESOLUTION] || ''),
     flagType:         String(row[CN.FLAG_TYPE] || '').toLowerCase(),
     resolved,
-    emailedAt:        String(row[CN.EMAILED_AT] || ''),
+    // Cycle-11 L-5: EMAILED_AT is written in the same locale-coercible ISO-T
+    // form as CN.TIMESTAMP (INV-142's class) — recover a coerced Date the same
+    // way, or the sent-pill title / export column renders "Wed Jul 09 2026 …".
+    emailedAt:        cnTimestampString_(row[CN.EMAILED_AT]),
     emailDepartments: String(row[CN.EMAIL_DEPARTMENTS] || ''),
     subform:          String(row[CN.SUBFORM] || ''),
     subformData,
@@ -8509,15 +8563,26 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
     if (ms !== null && ms < cutoffMs) { toMoveRows.push(rows[i]); toDelete.push(i + 1); }
   }
   if (!toMoveRows.length) return 0;
-  // Normalize every moved row to the archive's column width (live rows may be
-  // narrower/wider than the canonical header for legacy reasons; setValues
-  // needs a uniform rectangle).
-  const width = opts.width || CN_HEADERS.length;
+  // Normalize every moved row to a uniform rectangle (setValues requires it).
+  // Cycle-11 L-16: the rectangle is max(canonical width, widest source row) —
+  // the old truncate-to-canonical silently DESTROYED human-added trailing
+  // columns on the move, contradicting INV-132's "can only duplicate, never
+  // lose" (two-way Sheet entry makes hand annotations plausible). Shorter
+  // rows still pad with ''.
+  let width = opts.width || CN_HEADERS.length;
+  for (let w = 0; w < toMoveRows.length; w++) {
+    if (toMoveRows[w].length > width) width = toMoveRows[w].length;
+  }
   const block = toMoveRows.map(function (r) {
     const out = new Array(width);
     for (let c = 0; c < width; c++) out[c] = (c < r.length) ? r[c] : '';
     return out;
   });
+  // L-16: a wider-than-grid write would throw (getRange beyond maxColumns) —
+  // grow the archive grid first so the preserved trailing cells actually land.
+  if (archiveSheet.getMaxColumns() < width) {
+    archiveSheet.insertColumnsAfter(archiveSheet.getMaxColumns(), width - archiveSheet.getMaxColumns());
+  }
   archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(block);
   SpreadsheetApp.flush();   // ensure the archive write lands before we delete the source
   for (let j = toDelete.length - 1; j >= 0; j--) srcSheet.deleteRow(toDelete[j]);
@@ -11758,6 +11823,8 @@ function getDeptRequests() {
 
 /** Admin-gated (INV-136): read the DeptRequests SLA config for the editor —
  *  the per-dept overrides + the default + the known departments. */
+// Uncalled by the current Admin UI (reads via getAdminConfig().deptSla) —
+// kept by decision as the symmetric read API; see the getFeatureFlags note.
 function getDeptRequestSla() {
   try {
     const emp = getEmployeeInfo_();
@@ -12612,6 +12679,9 @@ function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
 }
 
 function timeToMins_(t) { const p = String(t).split(':'); return parseInt(p[0],10)*60 + parseInt(p[1],10); }
+// Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
+const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop
+const TIMEOFF_MAX_DAYS_BACK  = 90;    // retroactive filing window
 function daysBetween_(earlierIso, laterIso) {
   return Math.round((new Date(laterIso+'T00:00:00Z') - new Date(earlierIso+'T00:00:00Z')) / 86400000);
 }
@@ -13812,12 +13882,19 @@ const INTAKE_PAP_LAYOUT = {
 };
 
 // ── Isolated spreadsheet + config getters (Script Property first) ──────────
+var _intakeSsMemo = null;
 function getIntakeSS_() {
   if (typeof _TEST_OVERRIDE_INTAKE_SS_ID !== 'undefined' && _TEST_OVERRIDE_INTAKE_SS_ID) {
+    // Test override is never memoized (fixture identity can change mid-run).
     return SpreadsheetApp.openById(_TEST_OVERRIDE_INTAKE_SS_ID);
   }
+  // Cycle-11 L-12: memoized per execution — the cycle-9 L-3 getAdpSS_ pattern.
+  // intakeTsString_ calls this PER COERCED CELL, so intakeListMySubmissions
+  // was up to ~100 un-memoized openById round-trips per Sent-tab open.
+  if (_intakeSsMemo) return _intakeSsMemo;
   const id = PropertiesService.getScriptProperties().getProperty('INTAKE_SS_ID') || CONFIG.INTAKE.SS_ID;
-  return SpreadsheetApp.openById(id);
+  _intakeSsMemo = SpreadsheetApp.openById(id);
+  return _intakeSsMemo;
 }
 function getIntakeSalesEmail_()     { return PropertiesService.getScriptProperties().getProperty('INTAKE_SALES_EMAIL')      || CONFIG.INTAKE.SALES_EMAIL; }
 function getIntakeSleepEmail_()     { return PropertiesService.getScriptProperties().getProperty('INTAKE_SLEEP_EMAIL')      || CONFIG.INTAKE.SLEEP_EMAIL; }
@@ -15445,13 +15522,25 @@ function kbGetUsageStats() {
     const counts = kbUsageCounts_(KB_USAGE_WINDOW_DAYS);
     const ids = Object.keys(counts);
     if (!ids.length) return { items: [] };
-    // Join titles from the KB sheet (small — one bounded read).
+    // Join titles from the KB sheet (small — one bounded read). Cycle-11 L-7:
+    // read through the Status column and DROP drafts — this was the one usage
+    // surface that missed the INV-140 pattern, leaking a draft's title (with
+    // admin-preview view counts) into the manager "Most referenced" block.
+    // Consistent with kbGetReviewDue: drafts aren't live content.
     const titles = {};
     const kbSheet = getOrCreateKbSheet_();
     const kbLast = kbSheet.getLastRow();
     if (kbLast >= 2) {
-      const rows = kbSheet.getRange(2, 1, kbLast - 1, 3).getValues();   // Id, Department, Title
-      rows.forEach(function (r) { if (r[0]) titles[String(r[0])] = String(r[2] || '(untitled)'); });
+      // Two thin reads (Id..Title + the Status column) — a full-width read
+      // would pull every article's BodyMd, the read-volume class cycle-9
+      // batch 5 bounded.
+      const rows = kbSheet.getRange(2, 1, kbLast - 1, 3).getValues();          // Id, Department, Title
+      const statuses = kbSheet.getRange(2, KB.STATUS + 1, kbLast - 1, 1).getValues();
+      rows.forEach(function (r, i) {
+        if (!r[0]) return;
+        if (kbRowStatus_(statuses[i][0]) === KB_STATUS_DRAFT) return;
+        titles[String(r[0])] = String(r[2] || '(untitled)');
+      });
     }
     const fb = kbFeedbackCounts_();   // #2 — surface rep helpful/notHelpful tallies
     const items = ids
@@ -18090,7 +18179,9 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
       writeWitnessAuditLog_(emp, 'EmpDocCompleted', fmtDate_(now), '', false, 0,
         'docId=' + d.docId + '; hash=' + compHash + '; completedAt=' + ts);
     }
-    notifyAfter = function () { notifyEmpDocSigned_(d, emp); };   // M-7: post-lock
+    // L-6: a fields-only completion emails "completed", not "signed".
+    const completedOnly = !d.requiresSignature;
+    notifyAfter = function () { notifyEmpDocSigned_(d, emp, completedOnly); };   // M-7: post-lock
     return { success: true, signedAt: ts };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
@@ -18414,13 +18505,19 @@ function notifyEmpDocIssued_(target, doc) {
 }
 
 /** Best-effort (INV-14) — issuer notification on signature. */
-function notifyEmpDocSigned_(doc, signer) {
+function notifyEmpDocSigned_(doc, signer, completedOnly) {
   try {
     if (!doc.issuedBy) return;
-    const body = signer.name + ' signed "' + doc.title + '".';
-    const htmlBody = buildBrandedEmailHtml_('Document signed',
-      brandedKvRows_([['Document', doc.title], ['Signed by', signer.name]]));
-    MailApp.sendEmail({ to: doc.issuedBy, subject: 'Signed: ' + doc.title, body: body, htmlBody: htmlBody });
+    // Cycle-11 L-6: a fields-only COMPLETION (no signature) must not tell the
+    // issuer the doc was "signed" — an HR paper-trail mislabel. The stored
+    // artifacts (EmpDocCompleted witness row, completion cert) were always
+    // correct; only this notification's wording was wrong.
+    const verb = completedOnly ? 'completed' : 'signed';
+    const body = signer.name + ' ' + verb + ' "' + doc.title + '".';
+    const htmlBody = buildBrandedEmailHtml_(completedOnly ? 'Document completed' : 'Document signed',
+      brandedKvRows_([['Document', doc.title], [completedOnly ? 'Completed by' : 'Signed by', signer.name]]));
+    MailApp.sendEmail({ to: doc.issuedBy, subject: (completedOnly ? 'Completed: ' : 'Signed: ') + doc.title,
+      body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
 }
 

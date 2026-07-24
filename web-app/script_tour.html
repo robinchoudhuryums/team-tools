@@ -201,10 +201,26 @@ function tourGoTo_(i, dir) {
   const MAX = 24;   // ~1.9s at 80ms
   (function poll() {
     if (!TOUR_ACTIVE || TOUR_I !== i) return;   // superseded by a faster click
-    if (document.querySelector(step.selector)) { tourPaint_(step); return; }
-    if (++tries >= MAX) { tourGoTo_(i + dir, dir); return; }   // genuinely absent → skip
+    if (tourVisibleTarget_(step.selector)) { tourPaint_(step); return; }
+    if (++tries >= MAX) { tourGoTo_(i + dir, dir); return; }   // genuinely absent/hidden → skip
     setTimeout(poll, 80);
   })();
+}
+
+// Cycle-11 L-10: DOM presence isn't targetability — below 1024px the sidebar
+// is display:none but still in the DOM, so `.sidebar` / `.sb-popout-btn`
+// "succeeded" and the tour painted a 0×0 spotlight at the viewport corner on
+// tablet/mobile first-runs. A target must be VISIBLE (non-zero rect); when a
+// selector matches several nodes (the pop-out button exists in both the
+// sidebar and the mobile header), the first visible one wins.
+function tourVisibleTarget_(selector) {
+  let nodes;
+  try { nodes = document.querySelectorAll(selector); } catch (_) { return null; }
+  for (let n = 0; n < nodes.length; n++) {
+    const r = nodes[n].getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return nodes[n];
+  }
+  return null;
 }
 
 function tourPaint_(step) {
@@ -214,7 +230,8 @@ function tourPaint_(step) {
   const pop = document.getElementById('tour-pop');
   if (!block || !spot || !pop) return;
   block.classList.add('show');
-  const target = step.selector ? document.querySelector(step.selector) : null;
+  // L-10: first VISIBLE match (not first DOM match) — see tourVisibleTarget_.
+  const target = step.selector ? tourVisibleTarget_(step.selector) : null;
 
   // Swap the content while the tooltip is faded out (tourGoTo_ removed .in),
   // so the new text is never visible at the old position — it fades in only
