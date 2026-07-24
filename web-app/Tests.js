@@ -554,6 +554,55 @@ function cleanupTestData() {
   // AuditLog (header row 1, data from row 2). EmployeeId in column index 1.
   _cleanupRowsByPrefix(ss.getSheetByName(CONFIG.AUDIT_TAB), 'TEST_', 1, 2);
 
+  // Cycle-11 M-2 — the public-form tests' witness rows: submitFormByToken
+  // writes FormSubmissionReceived with the synthetic actor 'EXTERNAL'
+  // (INV-113 — a public endpoint has no employee identity), which the
+  // TEST_-prefix sweep above can never match, so every full run used to
+  // permanently append a test-token witness row that surfaced in the
+  // manager compliance panel. The test recipient domain 'example.invalid'
+  // (a reserved TLD — impossible for a real recipient) is the sweep key.
+  try {
+    const auditSheet = ss.getSheetByName(CONFIG.AUDIT_TAB);
+    if (auditSheet && auditSheet.getLastRow() >= 2) {
+      const aData = auditSheet.getDataRange().getValues();
+      for (let i = aData.length - 1; i >= 1; i--) {
+        if (String(aData[i][AUDIT.ACTION]) === 'FormSubmissionReceived'
+            && String(aData[i][AUDIT.NOTES]).indexOf('example.invalid') >= 0) {
+          auditSheet.deleteRow(i + 1);
+        }
+      }
+    }
+  } catch (e) { Logger.log('cleanupTestData: form-witness sweep skipped: ' + e.message); }
+  // M-2 hard-kill backstop for the LIVE forms store: FormTokens /
+  // FormSubmissions rows whose per-test finally never ran (Apps Script's
+  // 6-min kill skips finally). Matched by the same reserved test domain.
+  // getSheetByName (never getOrCreate*) so a bare environment isn't
+  // provisioned as a side effect of cleanup.
+  try {
+    const formsSs = getFormsSS_();
+    const ftSheet = formsSs.getSheetByName(CONFIG.FORM_TOKENS_TAB);
+    const orphanTokens = {};
+    if (ftSheet && ftSheet.getLastRow() >= 2) {
+      const fData = ftSheet.getDataRange().getValues();
+      for (let i = fData.length - 1; i >= 1; i--) {
+        if (String(fData[i][FT.RECIPIENT_EMAIL]).toLowerCase().indexOf('@example.invalid') >= 0) {
+          orphanTokens[String(fData[i][FT.TOKEN])] = true;
+          ftSheet.deleteRow(i + 1);
+        }
+      }
+    }
+    const fsSheet = formsSs.getSheetByName(CONFIG.FORM_SUBMISSIONS_TAB);
+    if (fsSheet && fsSheet.getLastRow() >= 2) {
+      const sData = fsSheet.getDataRange().getValues();
+      for (let i = sData.length - 1; i >= 1; i--) {
+        if (orphanTokens[String(sData[i][FS.TOKEN])]
+            || String(sData[i][FS.RECIPIENT_EMAIL]).toLowerCase().indexOf('@example.invalid') >= 0) {
+          fsSheet.deleteRow(i + 1);
+        }
+      }
+    }
+  } catch (e) { Logger.log('cleanupTestData: forms-store backstop skipped: ' + e.message); }
+
   // Reset test employee balances back to defaults
   const empSheet = ss.getSheetByName(CONFIG.EMPLOYEE_TAB);
   const empRows = empSheet.getDataRange().getValues();
@@ -819,6 +868,7 @@ function _runAllTests() {
   _integrationTest('updateTimeOff_pendingToDenied_noChange', test_updateTimeOff_pendingToDenied_noChange);
   _integrationTest('updateTimeOff_halfDay_deductsHalf', test_updateTimeOff_halfDay_deductsHalf);
   _integrationTest('updateTimeOff_nonManagerRejected',  test_updateTimeOff_nonManagerRejected);
+  _integrationTest('updateTimeOff_dupApproveRejected',  test_updateTimeOff_dupApproveRejected);
 
   _integrationTest('deletePunch_withinWindow',          test_deletePunch_withinWindow);
   _integrationTest('deletePunch_beyondWindowRejected',  test_deletePunch_beyondWindowRejected);
@@ -1893,6 +1943,48 @@ function test_updateTimeOff_approveDeductsAnnual() {
     _assertEqClose(r.newBalance, before - 1);
   });
   _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 1, 'Annual deducted by 1');
+}
+
+// Cycle-11 M-1 — the INV-94 dup-guard on the STATUS-CHANGE path: flipping an
+// old Denied row to Approved while another Approved row exists for the same
+// date must be rejected (it was the last creator of the double-deduct
+// signature getPtoReconciliation detects after the fact).
+function test_updateTimeOff_dupApproveRejected() {
+  _clearTestState(_TEST_PH_ID);
+  // Row A: submit + deny.
+  _asUser(_TEST_PH_EMAIL, () => {
+    _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'first'));
+  });
+  const rowA = _findTimeOffRow(_TEST_PH_ID, _TEST_DATE_FUTURE);
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, rowA.submittedAt, 'Denied'));
+  });
+  // Row B: re-submit (Denied doesn't block, INV-94) + approve. The sleep
+  // guarantees B's SubmittedAt differs from A's (it is the row-match key).
+  Utilities.sleep(1100);
+  _asUser(_TEST_PH_EMAIL, () => {
+    _assertSuccess(submitTimeOffRequest(_TEST_DATE_FUTURE, 'Full Day', 'second'));
+  });
+  let rowBSubmittedAt = null;
+  const toRows = getAdpSS_().getSheetByName(CONFIG.TIMEOFF_TAB).getDataRange().getValues();
+  for (let i = 1; i < toRows.length; i++) {
+    if (String(toRows[i][TO.EMP_ID]).trim() === _TEST_PH_ID
+        && normalizeDate_(toRows[i][TO.DATE]) === _TEST_DATE_FUTURE
+        && normalizeAuditTs_(toRows[i][TO.SUBMITTED_AT]) !== rowA.submittedAt) {
+      rowBSubmittedAt = normalizeAuditTs_(toRows[i][TO.SUBMITTED_AT]);
+    }
+  }
+  _assertNotNull(rowBSubmittedAt, 'second request row located');
+  const before = _getBalance(_TEST_PH_ID, 'annual');
+  _asUser(_TEST_MGR_EMAIL, () => {
+    _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, rowBSubmittedAt, 'Approved'));
+    // The M-1 guard: approving the old Denied row alongside the Approved one
+    // must be rejected, and the balance must not move again.
+    _assertFailure(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, rowA.submittedAt, 'Approved'),
+      'already has another');
+  });
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 1,
+    'exactly one deduction — the duplicate approve must not double-deduct');
 }
 
 function test_updateTimeOff_approveDeductsSick() {
@@ -4185,8 +4277,32 @@ function test_publicForm_tokenLifecycle() {
       const ss = getOrCreateFormSubmissionsSheet_();
       const sLoc2 = findFormSubmissionRow_(ss, token);
       if (sLoc2) ss.deleteRow(sLoc2.rowIndex);
+      // Cycle-11 M-2: the successful submit above wrote a FormSubmissionReceived
+      // witness row with actor 'EXTERNAL' (not TEST_-sweepable) — remove it by
+      // token here; cleanupTestData's example.invalid sweep is the backstop.
+      _deleteFormWitnessAuditRow_(token);
     } catch (e) {}
   }
+}
+
+// Cycle-11 M-2 — remove the FormSubmissionReceived witness audit row a
+// public-form test submit created (identified by its token). The row's actor
+// is the synthetic 'EXTERNAL' (INV-113), so the TEST_-prefix sweep never
+// matches it; without this, every full run left one behind in the live
+// AuditLog, where the compliance panel's bounded tail surfaces it.
+function _deleteFormWitnessAuditRow_(token) {
+  if (!token) return;
+  try {
+    const sheet = getAdpSS_().getSheetByName(CONFIG.AUDIT_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const data = sheet.getDataRange().getValues();
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][AUDIT.ACTION]) === 'FormSubmissionReceived'
+          && String(data[i][AUDIT.NOTES]).indexOf('token=' + token) >= 0) {
+        sheet.deleteRow(i + 1);
+      }
+    }
+  } catch (e) { Logger.log('_deleteFormWitnessAuditRow_ skipped: ' + e.message); }
 }
 
 // F3 (cycle-8): a form token whose ExpiresAt cell is BLANK must fail CLOSED —

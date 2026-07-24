@@ -1428,6 +1428,8 @@ const MIRROR_INDEX = [
     guards: ['Automation-Health DIGEST_LABELS'] },
   { pair: 'CN_HEALTH_RUN_LABELS ⊇ AUTOMATION_AUDIT_ACTIONS (COUPLING_REGISTRY)',
     guards: ['Automation-Health CN_HEALTH_RUN_LABELS'] },
+  { pair: 'CSR_TRANSFER_EXPECTED_HEADERS ↔ CSRT reader columns (L-2 cycle 11)',
+    guards: ['csrTransferHeaderMismatches_'] },
   { pair: 'health badge ↔ failure digest problem derivation (batch K E)',
     guards: ['getAutomationHealthBadge consumes the SAME derivation'] },
   { pair: 'AUTO_COPY_FORMAT server CONFIG default ↔ client fallback',
@@ -4107,6 +4109,87 @@ test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dua
   assert.ok(/empDocContentHashMatches_\(/.test(verify), 'verifyDocSignature content check dual-verifies');
   assert.ok(/EMPDOC_HASH_DELIM_LEGACY/.test(verify),
     'verifyDocSignature recomputes the signature hash in the legacy form too');
+});
+
+console.log('\nCode.js — cycle-11 fixes (M-1 dup-approve guard, L-1 details cap, L-2 Transfer headers, L-3 range cache)');
+// M-1: the status-change path carries the INV-94 dup-guard (source pin — the
+// behavioral case is the editor test test_updateTimeOff_dupApproveRejected).
+test('updateTimeOffStatus re-checks hasActiveTimeOffOnDate_ (own row excluded) on the approve transition', () => {
+  const src = extractRawFunction('Code.js', 'updateTimeOffStatus');
+  assert.ok(/hasActiveTimeOffOnDate_\(sheet,\s*empId,\s*date,\s*i\)/.test(src),
+    "the →Approved transition must re-run the INV-94 dup-guard excluding the row's own index");
+});
+
+// L-1: the four composer detail objects are the one client-writable
+// subformData input with a size bound — drive the validator behaviorally.
+{
+  const capMatch = codeSrc.match(/const (CN_EMAIL_DETAILS_MAX_CHARS\s*=\s*\d+);/);
+  assert.ok(capMatch, 'CN_EMAIL_DETAILS_MAX_CHARS declaration found in Code.js');
+  vm.runInContext(capMatch[1] + ';', sb, { filename: 'Code.js#CN_EMAIL_DETAILS_MAX_CHARS' });
+  vm.runInContext(extractRawFunction('Code.js', 'sanitizeEmailSelections_'), sb,
+    { filename: 'Code.js#sanitizeEmailSelections_' });
+  vm.runInContext(extractRawFunction('Code.js', 'validateEmailSelections_'), sb,
+    { filename: 'Code.js#validateEmailSelections_' });
+  const base = { departments: ['Billing'], individualEmail: '', updateInfo: 'Close Order',
+    callbackNeeded: false, overwriteResolution: false,
+    shippingDetails: null, closeDetails: null, resupplyDetails: null, oopDetails: null };
+  test('validateEmailSelections_ passes normal-sized subform details', () => {
+    const s = Object.assign({}, base, { shippingDetails: { specialNote: 'left at the side door' } });
+    assert.strictEqual(sb.validateEmailSelections_(s).ok, true);
+  });
+  test('validateEmailSelections_ rejects oversized details with an actionable error (L-1)', () => {
+    const s = Object.assign({}, base, { shippingDetails: { specialNote: 'x'.repeat(sb.CN_EMAIL_DETAILS_MAX_CHARS + 100) } });
+    const r = sb.validateEmailSelections_(s);
+    assert.ok(r.error && r.error.indexOf('too large') >= 0,
+      'an over-cap details blob must be rejected at Preview AND Send, not silently poison the SubformData cell');
+  });
+  test('sanitizeEmailSelections_ coerces non-object details to null', () => {
+    const s = sb.sanitizeEmailSelections_({ shippingDetails: 'crafted-string', closeDetails: [1, 2], oopDetails: { ok: 1 } });
+    assert.strictEqual(s.shippingDetails, null);
+    assert.strictEqual(s.closeDetails, null);
+    assert.deepStrictEqual(s.oopDetails, { ok: 1 });
+  });
+}
+
+// L-2: the CSR Transfer tab gets the validateCdrColumns_ treatment — the
+// pure csrTransferHeaderMismatches_ core is driven behaviorally, and the
+// expected-header map must cover every column CSRT actually reads.
+{
+  const hdrMatch = codeSrc.match(/const (CSR_TRANSFER_EXPECTED_HEADERS\s*=\s*\{[\s\S]*?\});/);
+  assert.ok(hdrMatch, 'CSR_TRANSFER_EXPECTED_HEADERS declaration found in Code.js');
+  vm.runInContext(hdrMatch[1] + ';', sb, { filename: 'Code.js#CSR_TRANSFER_EXPECTED_HEADERS' });
+  vm.runInContext(extractRawFunction('Code.js', 'csrTransferHeaderMismatches_'), sb,
+    { filename: 'Code.js#csrTransferHeaderMismatches_' });
+  const goodHeaders = ['Month-Year', 'Week', 'Date', 'CSR Rep Name', 'Transfer %',
+    'Total Calls', 'Total Calls Transferred'];
+  test('csrTransferHeaderMismatches_ accepts the documented A1:S1 layout', () => {
+    // .length (not deepStrictEqual) — the vm-realm array's prototype differs.
+    assert.strictEqual(sb.csrTransferHeaderMismatches_(goodHeaders).length, 0);
+  });
+  test('csrTransferHeaderMismatches_ flags an inserted/reordered column (the cross-repo seam)', () => {
+    const shifted = ['Month-Year', 'Week', 'Region'].concat(goodHeaders.slice(2));
+    const mismatches = sb.csrTransferHeaderMismatches_(shifted);
+    assert.ok(mismatches.length > 0, 'a column insert before Date must produce mismatches');
+  });
+  test('csrTransferHeaderMismatches_ expected map covers every CSRT reader column (index alignment)', () => {
+    const csrtMatch = codeSrc.match(/const CSRT = \{([^}]*)\}/);
+    assert.ok(csrtMatch, 'CSRT enum found');
+    const entries = [...csrtMatch[1].matchAll(/(\w+):\s*(\d+)/g)];
+    assert.ok(entries.length >= 5, 'CSRT entries parsed');
+    entries.forEach(([, name, idx]) => {
+      assert.ok(sb.CSR_TRANSFER_EXPECTED_HEADERS[Number(idx) + 1] !== undefined,
+        'CSRT.' + name + ' (0-based ' + idx + ') has no expected header at 1-indexed col ' + (Number(idx) + 1) +
+        ' — a reordered Transfer column there would go unvalidated');
+    });
+  });
+}
+
+// L-3: a failed per-day trend read must never be cached as a fresh result.
+test('getMyMetricsRange skips the cache put when the trend read failed (error-not-cached, L-3)', () => {
+  const src = extractRawFunction('Code.js', 'getMyMetricsRange');
+  assert.ok(/trendFailed = true/.test(src), 'the trend catch marks the round degraded');
+  assert.ok(/useRangeCache && !trendFailed/.test(src),
+    'the cache put must be gated on the trend having succeeded — a transient CDR failure was pinned for the full TTL');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

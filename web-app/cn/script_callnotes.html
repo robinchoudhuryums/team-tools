@@ -8598,11 +8598,15 @@ function cnSetSysFromHealth_(res) {
 
   var cdr = res.cdr || { ok: false };
   var unmatched = (cdr.unmatchedAgents && cdr.unmatchedAgents.length) || 0;
-  var cdrTone = !cdr.ok ? 'warn' : (cdr.columnWarning || unmatched > 0) ? 'warn' : 'ok';
+  // L-2 (cycle 11): the Transfer tab's layout drift warns the same way DQE's does.
+  var anyColWarn = cdr.columnWarning || cdr.transferColumnWarning;
+  var cdrTone = !cdr.ok ? 'warn' : (anyColWarn || unmatched > 0) ? 'warn' : 'ok';
   var cdrVal = !cdr.ok ? 'Unreachable'
-    : (cdr.columnWarning ? 'Column drift' : (unmatched > 0 ? (unmatched + ' unmatched') : 'In sync'));
+    : (anyColWarn ? 'Column drift' : (unmatched > 0 ? (unmatched + ' unmatched') : 'In sync'));
   var cdrSub = !cdr.ok ? 'check CDR_SS_ID / access'
-    : (cdr.columnWarning ? 'DQE layout changed' : (unmatched > 0 ? 'agent name mismatch' : '0 unmatched agents'));
+    : (cdr.columnWarning ? 'DQE layout changed'
+      : (cdr.transferColumnWarning ? 'Transfer-tab layout changed'
+        : (unmatched > 0 ? 'agent name mismatch' : '0 unmatched agents')));
   cnSetSysCard_('cdr', 'CDR', cdrTone, cdrVal, cdrSub);
 }
 
@@ -8674,6 +8678,10 @@ function cnRenderHealthPanel_(res) {
     cdrParts.push(cdr.columnWarning
       ? warnBox(icon('warning', 11) + ' Column drift in DQE Historical Data: ' + esc(cdr.columnWarning))
       : okLine('CDR reachable · column layout OK · ' + esc(cdr.rowsMatched || 0) + ' row(s) ' + esc(cdr.from || '') + ' → ' + esc(cdr.to || '') + '.'));
+    if (cdr.transferColumnWarning) {
+      cdrParts.push(warnBox(icon('warning', 11) + ' Column drift in CSR Transfer Historical Data: ' +
+        esc(cdr.transferColumnWarning) + ' — the Transfer KPI may be reading the wrong cells.'));
+    }
     if (cdr.unmatchedAgents && cdr.unmatchedAgents.length > 0) {
       cdrParts.push(warnBox(icon('warning', 11) + ' ' + cdr.unmatchedAgents.length +
         ' CDR agent(s) not matched to the roster (add an Agent Alias Override or fix the Employees name): ' +

@@ -1,13 +1,111 @@
 # Cycle State
 
 ## Current
-Cycle: 10
-Phase: idle — CYCLE 10 CLOSED 2026-07-24: scanned, fully implemented,
-reflected (net +33 = 34 prod fixes − 1 Low new failure mode), PR #138 +
-bookkeeping PR #139 merged, operator DEPLOYED (clasp push + New version),
-runAllTests ALL PASSED, installAutomationTriggers re-run (the 1am
-runNightlySelfTest trigger is live). Seams counter = 4 → the Seams &
-Invariants audit is DUE and is the recommended opener for cycle 11.
+Cycle: 11
+Phase: implement (audit done; batch 1 of the selected findings implemented)
+Scope: broad (the DUE Seams & Invariants audit — seams counter was 4)
+Test Command: manual
+Subsystem cycles since last Seams audit: 0 (this cycle IS the seams audit; /reflect confirms the reset)
+Updated: 2026-07-24
+
+CYCLE 11 AUDIT (2026-07-24, seams-audit lens): 8-agent fan-out (7 subsystem
+auditors + 1 cross-cutting seams specialist) + personal verification of every
+Medium (0 retracted). ~170 invariant checks against live code — ZERO
+substantive drift (every PARTIAL was doc wording: INV-18 anchor rule, INV-23
+audit-ordering claim, INV-01/30 "all mutating" overbreadth re lock-free
+intake sends). Complete seam sweeps CLEAN: 158 RPC names all resolve, 16
+enum-header pairs aligned, 16 triggers wired+gated, 42 script properties all
+documented, no write-format/parser pair that fails to round-trip. Findings:
+0 Critical / 0 High / 4 Medium / ~30 Low (4th consecutive no-High cycle; the
+weight moved into the TEST LAYER — 3 of 4 Mediums are test-integrity).
+MEDIUMS: M-1 updateTimeOffStatus lacked the INV-94 dup-date guard on the
+to-Approved transition (Denied-to-Approved flip alongside an existing
+Approved row double-deducts — the last creator of the H1 signature); M-2
+the public-form test's FormSubmissionReceived witness row (synthetic actor
+'EXTERNAL', Code.js:7748) escaped the TEST_ cleanup key — every full
+runAllTests permanently appended one to the live AuditLog/compliance panel;
+M-3 test_training_quizFlow writes the LIVE Quizzes tab and cleanupTestData
+never sweeps Quizzes (a timeout-killed run orphans TEST_TRAINING_QUIZ into
+the real manager quiz list); M-4 the registry-net/DOM partial lists are four
+hand-maintained copies (run.js x3 + dom/boot.js PARTIALS) — only
+PARSE_GUARD_PARTIALS is auto-tracked. KEY LOWS: L-1 sanitizeEmailSelections_
+passed the four *Details objects through unbounded (SubformData cell
+poisoning); L-2 the CSR Transfer tab had NO header validation (cross-repo
+seam, silent wrong Transfer KPI on a column reorder); L-3 getMyMetricsRange
+cached a failed trend read as fresh for the TTL; L-4 audit-panel truncated
+flag false-negative on a CN-empty scan window; L-5 CN.EMAILED_AT raw-read
+coercion sibling (untripwired); L-6 fields-only doc completion emails
+"Signed"; tripwire false-pass holes (payload-contract nested-brace regex,
+SUBMITTED_AT one-variable aliasing, no-mail-in-lock finally region +
+depth-1 transitivity, registry nets single-quote-only); MIRROR_INDEX misses
+3 documented mirrors (errBeacon caps hardcoded, KB_IMG cap unguarded,
+CN_INTERACTIVE_FORM_IDS unindexed); behavioral-coverage gaps on
+writeWitnessAuditLog_/health badge/self-test parse/typed signature
+(presence-pins only). DOC DRIFT: admin endpoint count 24/28/30 across
+CLAUDE.md sections; "fifteen" vs 14 itemized localStorage keys; umsLastView
+compact-guard missing from the key list; TimesheetArchive health caption
+says 1am (trigger is 6pm); stale "manager-gated" wording on the INV-136
+amended endpoints; What's-new "X" button claim. Scan scores: Overall 8.5,
+Correctness 8, Security 9, Data Integrity 8.5, Tz 8.5, Concurrency 8.5,
+Test Coverage 7.5, Docs 8, GAS Practices 8.5, MgrUX 8, EmpUX 8.5,
+Automation 8.5.
+
+BATCH 1 IMPLEMENTED (M-1, M-2, L-1, L-2, L-3 — operator-selected):
+- M-1 | Code.js | hasActiveTimeOffOnDate_ gained optional excludeRowIndex;
+  updateTimeOffStatus re-runs the dup-guard (own row excluded) before the
+  to-Approved deduct. Editor test test_updateTimeOff_dupApproveRejected
+  (registered; Utilities.sleep(1100) keeps the two rows' SubmittedAt keys
+  distinct; SUBMITTED_AT reads via normalizeAuditTs_ per the tripwire) +
+  a Node source pin.
+- M-2 | Tests.js | _deleteFormWitnessAuditRow_(token) called from
+  test_publicForm_tokenLifecycle's finally; cleanupTestData now sweeps
+  (a) FormSubmissionReceived audit rows containing 'example.invalid' and
+  (b) orphaned FormTokens/FormSubmissions rows by the same reserved test
+  domain (getSheetByName only — never provisions). First post-deploy
+  cleanup also removes the LEGACY accumulated witness rows.
+- L-1 | Code.js | CN_EMAIL_DETAILS_MAX_CHARS=16000 combined serialized cap
+  enforced in validateEmailSelections_ (fires at Preview AND Send);
+  sanitizeEmailSelections_ coerces non-object details to null. 3 behavioral
+  Node tests (oversize rejected, normal passes, coercion).
+- L-2 | Code.js + cn/script_callnotes.html | CSR_TRANSFER_EXPECTED_HEADERS
+  (1-indexed = CSRT+1) + pure csrTransferHeaderMismatches_ + session-flagged
+  validateCsrTransferColumns_ (the validateCdrColumns_ pattern); wired into
+  getCsrTransferPerRepDaily_ (additive meta.columnWarning) and Automation
+  Health (cdr.transferColumnWarning; client CDR card tone + a warnBox).
+  3 behavioral Node tests + a CSRT-alignment pin + a MIRROR_INDEX entry.
+- L-3 | Code.js | getMyMetricsRange: trendFailed marks the round; the cache
+  put is gated on !trendFailed; response carries trendUnavailable:true
+  (additive, client-ignorable). Node pin on both halves.
+Tests: pure 319->327 /0, DOM 65/0, node --check x3 clean. One test-authoring
+fix mid-batch: vm-realm array vs deepStrictEqual (switched to .length).
+
+## Pending / not yet done
+- M-3 (quiz fixture wrap + Quizzes sweep), M-4 (auto-track the 4 partial
+  lists), remaining Lows (L-4..L-18 + Info set), tripwire-hole hardening,
+  MIRROR_INDEX 3 omissions, behavioral pins for witness/badge/self-test.
+- /sync-docs pass for the doc-drift list (admin count, key count, 1am
+  caption, INV-23/18/94/129 wording, INV-136 annotations).
+
+## Decisions made (so the next session doesn't re-litigate)
+- M-1 guard excludes the row's own index — approving a lone Pending row is
+  unaffected. Legacy pre-INV-94 half-day pairs with a still-Pending sibling
+  now require denying the sibling first (fail-safe; matches the submit-path
+  semantics, which already block creating such pairs).
+- M-2 sweep key = the reserved-TLD recipient domain 'example.invalid'
+  (production-impossible); chosen over changing the witness row's actor
+  (production code stays untouched).
+- L-1 cap is COMBINED (16k across the four objects) and rejects loudly at
+  validate (both Preview and Send) rather than truncating silently.
+- L-3 still returns the degraded result for the current render — only the
+  cache write is skipped (retry on next open).
+
+## Where I left off
+Batch 1 done + green. Next: operator picks from the remaining backlog
+(M-3/M-4 + Lows + /sync-docs), then commit/PR/deploy; on deploy run editor
+runAllTests (new test updateTimeOff_dupApproveRejected; the run's
+cleanupTestData also purges the legacy EXTERNAL witness rows).
+
+## Cycle-10 history (closed 2026-07-24 — deployed, runAllTests passed, triggers re-run)
 Original audit record: broad scan (7-agent fan-out + personal verification;
 0 Critical / 0 High / 11 Medium / ~35 Low, all 11 Mediums confirmed, 0 retracted).
 TOP-5 BATCH IMPLEMENTED on claude/broad-scan-11m0vf: M-1 (recordPunch live

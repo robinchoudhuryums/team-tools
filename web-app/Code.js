@@ -362,6 +362,14 @@ const CN_AUDIT_DEFAULT_DAYS = 30;
 const ADMIN_VIEW_MAX_ROWS = 300;  // Tier-2 admin sheet-viewer row cap (browse table)
 const CN_EMAIL_TEMPLATE_LIMIT = 50;
 const CN_EMAIL_TEMPLATE_BODY_MAX = 4000;
+// Cycle-11 L-1 — combined serialized cap on the four email-composer subform
+// detail objects (shipping/close/resupply/oop). They were the one
+// client-writable subformData input with NO size bound: a huge pasted
+// specialNote rode into the ~50k-cap SubformData cell, where the post-send
+// stamp failure is swallowed (INV-42) and a near-cap blob makes every LATER
+// pin/flag/feedback write on that note throw. 16k leaves headroom for the
+// rest of subformData; legitimate details run a few hundred chars.
+const CN_EMAIL_DETAILS_MAX_CHARS = 16000;
 const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
 const CN_EXTERNAL_LINK_LIMIT = 50;
 // Quick-link categories (the official external-collection path — #2). Order is
@@ -457,6 +465,16 @@ const CDR_EXPECTED_HEADERS = {
 const CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
 const CSRT = { DATE: 2, NAME: 3, TRANSFER_PCT: 4, TOTAL_CALLS: 5, TRANSFERRED: 6 };
 const CSR_TRANSFER_NUM_COLS = 19;   // A:S
+// Cycle-11 L-2 — expected headers for the columns CSRT actually reads
+// (1-indexed, so each key = the CSRT index + 1; a Node pin holds the two
+// aligned). The Transfer tab is written by the operator-owned
+// call-data-reporting repo — the same cross-repo seam validateCdrColumns_
+// guards for the DQE tab; without this, a column insert/reorder there fed
+// wrong cells into the Transfer KPI with no warning anywhere.
+const CSR_TRANSFER_EXPECTED_HEADERS = {
+  3: 'Date', 4: 'CSR Rep Name', 5: 'Transfer %',
+  6: 'Total Calls', 7: 'Total Calls Transferred',
+};
 
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
@@ -1337,6 +1355,21 @@ function updateTimeOffStatus(empId, date, submittedAt, newStatus) {
         // terminal — refuse any status change on it.
         if (oldStatus === 'Reconciled') {
           return { success: false, error: 'This request was reconciled (a duplicate already credited back) and can no longer change status.' };
+        }
+
+        // Cycle-11 M-1 — the INV-94 duplicate-date guard applied to the
+        // STATUS-CHANGE path: flipping an old Denied/Pending row to Approved
+        // while ANOTHER Pending/Approved row exists for the same date was the
+        // last creator of the double-deduct signature (two Approved rows, one
+        // date) that getPtoReconciliation exists to detect after the fact.
+        // The submit paths already carry this guard; this row's own index is
+        // excluded so approving a lone Pending row is unaffected.
+        if (oldStatus !== 'Approved' && newStatus === 'Approved'
+            && hasActiveTimeOffOnDate_(sheet, empId, date, i)) {
+          return { success: false, error:
+            'This employee already has another Pending or Approved request for ' + date +
+            ' — approving this one would double-book (and double-deduct) the date. ' +
+            'Deny or cancel the other request first.' };
         }
 
         sheet.getRange(i + 1, TO.STATUS + 1).setValue(newStatus);
@@ -4717,10 +4750,19 @@ function computeAutomationHealth_() {
         Object.keys(result.agents || {}).forEach(function (a) {
           canonicalAgents[aliasMap[a] || a] = true;
         });
+        // L-2 (cycle 11): probe the CSR Transfer tab's header layout too — a
+        // header-row read only (no data scan). The tab is optional (absent →
+        // the Transfer KPI is simply missing, not a drift warning).
+        let transferColumnWarning = null;
+        try {
+          const trSheet = getCdrSS_().getSheetByName(CSR_TRANSFER_TAB);
+          if (trSheet) transferColumnWarning = validateCsrTransferColumns_(trSheet);
+        } catch (trErr) { transferColumnWarning = null; }
         cdr = {
           ok: true, from: from, to: to,
           rowsMatched: (result.meta && result.meta.rowsMatched) || 0,
           columnWarning: (result.meta && result.meta.columnWarning) || null,
+          transferColumnWarning: transferColumnWarning,
           unmatchedAgents: Object.keys(canonicalAgents).filter(function (a) { return !rosterSet[a]; }).sort(),
           rosterWithNoCdr: Object.keys(rosterSet).filter(function (n) { return !canonicalAgents[n]; }).sort(),
         };
@@ -6417,16 +6459,20 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
 function sanitizeEmailSelections_(payload) {
   const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
   const arr = (v) => Array.isArray(v) ? v.map(s).filter(x => x.length > 0) : [];
+  // L-1: details must be plain objects (the client always sends objects; a
+  // string/array here is a crafted payload) — size is bounded in
+  // validateEmailSelections_ so both Preview and Send reject identically.
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v)) ? v : null;
   return {
     departments:     arr(payload.departments),
     individualEmail: s(payload.individualEmail),
     updateInfo:      s(payload.updateInfo),
     callbackNeeded:  !!payload.callbackNeeded,
     overwriteResolution: !!payload.overwriteResolution,
-    shippingDetails: payload.shippingDetails || null,
-    closeDetails:    payload.closeDetails || null,
-    resupplyDetails: payload.resupplyDetails || null,
-    oopDetails:      payload.oopDetails || null,
+    shippingDetails: obj(payload.shippingDetails),
+    closeDetails:    obj(payload.closeDetails),
+    resupplyDetails: obj(payload.resupplyDetails),
+    oopDetails:      obj(payload.oopDetails),
   };
 }
 
@@ -6447,6 +6493,23 @@ function validateEmailSelections_(selections) {
   }
   if (!selections.updateInfo) {
     return { error: 'Specify an Update type before sending.' };
+  }
+  // L-1 — bound the four subform detail objects (combined serialized size)
+  // BEFORE anything is sent or stamped. Runs in previewCallNoteEmail too, so
+  // the rep sees the rejection at Preview, not after a sent-but-unstampable
+  // email. Unserializable details (circular refs — impossible from JSON-over-
+  // RPC, defensive only) are rejected rather than passed through.
+  let detailChars = 0;
+  const detailKeys = ['shippingDetails', 'closeDetails', 'resupplyDetails', 'oopDetails'];
+  for (let i = 0; i < detailKeys.length; i++) {
+    const d = selections[detailKeys[i]];
+    if (!d) continue;
+    try { detailChars += JSON.stringify(d).length; }
+    catch (e) { return { error: 'The email details could not be read — clear the subform fields and re-enter them.' }; }
+  }
+  if (detailChars > CN_EMAIL_DETAILS_MAX_CHARS) {
+    return { error: 'The email details are too large (over ' + CN_EMAIL_DETAILS_MAX_CHARS +
+      ' characters combined) — shorten the free-text fields (e.g. special notes) and try again.' };
   }
   return { ok: true };
 }
@@ -10306,10 +10369,14 @@ function isValidTimeOffType_(type) {
  *  requests: INV-03's transition guard is per-row, so two sibling rows for
  *  one day would each deduct on approval and double-charge the balance (H1).
  *  Denied/cancelled rows never deducted, so they don't block a re-request. */
-function hasActiveTimeOffOnDate_(sheet, empId, date) {
+function hasActiveTimeOffOnDate_(sheet, empId, date, excludeRowIndex) {
   const rows = sheet.getDataRange().getValues();
   const id = String(empId).trim();
   for (let i = 1; i < rows.length; i++) {
+    // Cycle-11 M-1: the status-change re-check passes its own row's index
+    // (same getDataRange indexing, inside the same lock) so a Pending row
+    // being approved doesn't collide with itself.
+    if (excludeRowIndex !== undefined && i === excludeRowIndex) continue;
     if (String(rows[i][TO.EMP_ID]).trim() !== id) continue;
     if (normalizeDate_(rows[i][TO.DATE]) !== date) continue;
     const st = String(rows[i][TO.STATUS]).toLowerCase().trim();
@@ -13067,13 +13134,49 @@ function metricsBuildKpiSeries_(perRepDaily, dates, empName, key, minCohort) {
  *  the CDR spreadsheet-tz gotcha, INV-64), parses the date with the shared
  *  cdrRowDateIso_, canonicalizes names through the alias map, and filters to
  *  rosterNames when supplied. A future data-source swap touches only this. */
+/** Pure core of the Transfer-tab header check (Node-pinned). Same matching
+ *  rule as validateCdrColumns_: case-insensitive substring at the expected
+ *  1-indexed position. Returns an array of mismatch strings (empty = OK). */
+function csrTransferHeaderMismatches_(headers) {
+  const mismatches = [];
+  Object.keys(CSR_TRANSFER_EXPECTED_HEADERS).forEach(function (colStr) {
+    const col = Number(colStr);
+    const expected = CSR_TRANSFER_EXPECTED_HEADERS[col].toLowerCase();
+    const actual = String((headers && headers[col - 1]) || '').toLowerCase().trim();
+    if (actual.indexOf(expected) === -1) {
+      mismatches.push('col ' + col + ': expected "' + CSR_TRANSFER_EXPECTED_HEADERS[col] + '", got "' + ((headers && headers[col - 1]) || '') + '"');
+    }
+  });
+  return mismatches;
+}
+
+// Once-per-session like _cdrColumnsValidated (the validateCdrColumns_ pattern).
+var _csrTransferValidated = false;
+var _csrTransferWarning = null;
+function validateCsrTransferColumns_(sheet) {
+  if (_csrTransferValidated) return _csrTransferWarning;
+  _csrTransferValidated = true;
+  try {
+    const headers = sheet.getRange(1, 1, 1, CSR_TRANSFER_NUM_COLS).getValues()[0];
+    const mismatches = csrTransferHeaderMismatches_(headers);
+    if (mismatches.length > 0) {
+      _csrTransferWarning = mismatches.join('; ');
+      Logger.log('CSR Transfer column validation WARNING: ' + _csrTransferWarning);
+    }
+  } catch (e) {
+    Logger.log('CSR Transfer column validation skipped: ' + e.message);
+  }
+  return _csrTransferWarning;
+}
+
 function getCsrTransferPerRepDaily_(from, to, rosterNames) {
   const ss = getCdrSS_();
   const sheet = ss.getSheetByName(CSR_TRANSFER_TAB);
   if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
+  const colWarning = validateCsrTransferColumns_(sheet);   // L-2: advisory, never blocks
   const tz = ss.getSpreadsheetTimeZone();
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return { perRepDaily: {}, agents: {} };
+  if (lastRow < 2) return { perRepDaily: {}, agents: {}, meta: { columnWarning: colWarning } };
   const range = sheet.getRange(2, 1, lastRow - 1, CSR_TRANSFER_NUM_COLS);
   const displays = range.getDisplayValues();
   const aliasMap = getCdrNameMap_();
@@ -13120,7 +13223,7 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames) {
     a.transferPct = a.totalCalls > 0 ? Math.round((a.transferred / a.totalCalls) * 1000) / 10 : null;
     delete a._days;
   });
-  return { perRepDaily: perRepDaily, agents: agents };
+  return { perRepDaily: perRepDaily, agents: agents, meta: { columnWarning: colWarning } };
 }
 
 // ── Metrics public endpoints ──────────────────────────────────────────
@@ -13435,7 +13538,13 @@ function getMyMetricsRange(from, to) {
     var c = (agg && agg.agents && agg.agents[emp.name]) || null;
 
     // Per-day trend across the range for the sparklines (own row only).
+    // L-3 (cycle 11): a thrown breakdown read degrades to trend=[] for THIS
+    // response, but the degraded result must never be CACHED as fresh — the
+    // "error results never cached" rule applied to the partial-failure case
+    // (a transient CDR read failure used to pin an empty sparkline beside a
+    // healthy aggregate for the full CDR_CACHE_TTL).
     var trend = [];
+    var trendFailed = false;
     try {
       var bd = getCdrDailyBreakdown_(from, to, [emp.name]);
       var prd = (bd && bd.perRepDaily) || {};
@@ -13450,7 +13559,7 @@ function getMyMetricsRange(from, to) {
           missed: own ? own.missed : 0,
         });
       }
-    } catch (e) { trend = []; }
+    } catch (e) { trend = []; trendFailed = true; }
 
     var noteCount = countCallNotesInRange_(emp, from, to);
     var rangeResult = {
@@ -13469,7 +13578,8 @@ function getMyMetricsRange(from, to) {
       noteCoverage: cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
       trend: trend,
     };
-    if (useRangeCache) {
+    if (trendFailed) rangeResult.trendUnavailable = true;   // L-3: honest partial, client-ignorable
+    if (useRangeCache && !trendFailed) {
       try { rangeCache.put(rangeKey, JSON.stringify(rangeResult), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return rangeResult;
