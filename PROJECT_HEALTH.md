@@ -33,8 +33,17 @@ deploy + /reflect).
   live-KB-store fixture isolation, C: server silent-degradation, D: client
   failure handling, E: module-client Lows, F: docs). New: INV-155–158;
   punch state machine server-enforced; witness-audit loss signal;
-  `_withTestKb_`. Pure 302→309, DOM 61→63, editor suite +7. Remaining:
-  operator deploy (+ first-run TEST_KB_Fixture creation note) and /reflect.
+  `_withTestKb_`. Then the operator-approved follow-on batches G–L landed
+  same-cycle: a11y (keyboard calendar/tables/note fields, overlay focus
+  lifecycle, skip-link, typed-signature alternative on both pads), visual
+  (AA contrast tokens, flag-color collision, designed empty-vs-error
+  states), observability (shell health dot on the single-sourced
+  `automationProblems_`, MIRROR_INDEX, nightly `runNightlySelfTest`
+  trigger — INV-159–162), and data integrity (Timesheet sheet doctor,
+  C13 NUL-delimiter hashes with dual-verify). Pure 302→319, DOM 61→65,
+  editor ≈297. CLOSED 2026-07-24: reflected net +33 (34 − 1 Low),
+  PR #138/#139 merged, DEPLOYED — runAllTests ALL PASSED,
+  installAutomationTriggers re-run (16 triggers). Seams audit due next.
 
 ## Prior standing (Cycle 7 close, 2026-07-09)
 Cycle 7 (broad) closed 2026-07-09 — scanned, FULLY implemented, reflected,
