@@ -875,6 +875,47 @@ this section before touching the relevant area.
   end). NOTE the amber-end ratio is a CARD-level question — `.clk-time` itself
   is white-on-amber at the same ~1.5:1 — so it needs an operator design call
   (scrim, or a darker gradient end), not a per-span patch.
+- **A `max-height` on a GRID CONTAINER does not constrain its row (V-9,
+  cycle-12 visual audit).** The Reference two-column shell (`.kb-wrap`) needs
+  two things at once: a SHORT landing must hug its content (a fixed height left
+  ~535px of empty card, reading as a half-failed load) while a LONG article must
+  scroll INSIDE its panel rather than growing the page. Moving the fixed height
+  to `max-height` on the WRAP looks like the fix and is not: measured in
+  Chromium, the grid ROW grew to 13.7k px, the panel overflowed the capped
+  container, and the reader's internal scroll was GONE. The cap belongs on the
+  grid ITEMS (`.kb-wrap > * { min-height: 0; max-height: … }`) plus
+  `align-items: start` so the shorter column doesn't stretch. Verified both
+  directions after the fix (landing panel 260px hugging 241px of content; a
+  400-paragraph article capped at the viewport and scrolling internally). Any
+  new capped-but-content-sized grid here must be MEASURED, not reasoned.
+- **The app has ONE primary-button vocabulary: `--accent` green (V-8,
+  cycle-12).** `.btn-modal-ok` — the SHARED modal primary behind ~25 call sites
+  — was `--ink` on `--ink`, the only inverted button in the app: a near-black
+  full-width bar in light mode (on "Generate ADP Export", the money-facing
+  action, where near-black reads as disabled/error) and near-WHITE in dark,
+  where it visually out-competed the real green primary above it. It now matches
+  `.actions .prime` / `.cn-action-prime` exactly. `.ui-dialog-ok.is-danger`
+  still overrides at (0,2,0), so destructive confirms stay red. A new primary
+  action belongs on this class, not a bespoke one — and never inverted.
+- **A state that can be ZERO must not be painted in a SURFACE colour (V-10,
+  cycle-12).** The live-status sparkline drew a zero-hour day in `--paper-2` at
+  1px — 1.10:1 against the card in light mode and ≈ the card in dark — so a rep
+  with 3 days off rendered as a 4-bar sparkline instead of 7 bars with 3 empty,
+  making "didn't work" indistinguishable from "no data for that day". Now
+  `--muted-3` at 3px (2.28:1 light / 2.20:1 dark). `--muted-3` is the
+  DECORATION-ONLY tone per the token contract, which is exactly what a
+  visible-but-quiet baseline is — don't reach for a text tone here, and don't
+  reach for a surface tone either.
+- **Two chip rows with the same shape must not do different things (V-12,
+  cycle-12).** The CN Log view rendered a FILTER row (toggle pills with real
+  `aria-pressed` state, filtering today's stack in place) and, ~400px below, a
+  JUMP row (navigating to History for the week) — same 999px pills, same
+  colours, same count-badge vocabulary, DIFFERENT numbers and DIFFERENT
+  behaviour, distinguished only by an 11px mono kicker. The navigating row is
+  now a link affordance (no pill outline, `--info-deep`, a per-chip chevron,
+  underline on hover, and a label naming the destination); the filter row keeps
+  the pill because it genuinely carries toggle state. Rule: reserve the pill for
+  stateful toggles, use link treatment for navigation.
 - **`Notes` tab provisions on first touch.** `getCallNotesSheet_`
   creates the tab + header row if it doesn't exist, so a freshly
   enrolled rep's first `submitCallNote` "just works." The header row
@@ -3665,18 +3706,31 @@ manually for a fresh deploy or environment:
   single `clasp push -f` + New version. The redesign record (per-commit
   scope, before/after) is
   `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
-- **The cycle-12 broad-scan batch (F1–F5) adds NO new operator state** — no new
-  Script Properties, no new triggers, no migrations. Two new CONFIG-level
-  constants (`TS_DOCTOR_FIX_MAX_ROWS`, `TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN`) are
-  code-only, and the new endpoint fields (`archivedRowCount`, `truncated`,
-  `remaining`, `noteCountUnavailable`) are additive — a client on a
-  not-yet-redeployed server still renders correctly (verified). Deploys with the
-  normal single `clasp push -f` + New version. **Post-deploy: run
-  `runAllTests()`** — the F3 bounded-move behavioural case and the F2 detector
-  contract execute only in the editor. The one BEHAVIOUR change an operator
-  should expect: on a small team the anonymized team line may now be hidden on
-  days it previously showed (F4 — the INV-124 cohort no longer counts roster
-  rows with no email).
+- **The WHOLE of cycle 12 (all six batches) adds NO new operator state** — no
+  new Script Properties, no new triggers, no migrations. Code-only CONFIG
+  constants: `TS_DOCTOR_FIX_MAX_ROWS`, `TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN`,
+  `CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN`, `SELF_TEST_STUCK_MS`,
+  `CN_SUBFORM_MAX_CHARS`, `CN_FEEDBACK_MAX_ENTRIES`,
+  `CN_EXTERNAL_EMAILS_MAX_ENTRIES`, `DR_LIST_CAP`, `KB_REVIEW_DUE_CAP`,
+  `SPANISH_PENDING_LIST_CAP`. Every new endpoint field is ADDITIVE
+  (`archivedRowCount`, `truncated`, `remaining`, `noteCountUnavailable`,
+  `mineTotal`/`incomingTotal`/`allOpenTotal`/`listCap`, `total`/`cap`,
+  `running`/`startedAt`/`stuck`) — a client on a not-yet-redeployed server
+  renders exactly as before, which was verified per batch, and each client
+  render is guarded so a missing field shows nothing rather than "of undefined".
+  Deploys with the normal single `clasp push -f` + New version.
+  **Post-deploy: run `runAllTests()`** — the F3 bounded-move behavioural case,
+  the F2 detector contract, the F6 cache-reset effect and the two NEW smoke
+  tests (`cn_enrolledSheetId_trimsAndNullGuards`,
+  `cn_appendBounded_capsAndRollsBack`) execute only in the editor.
+  **Three BEHAVIOUR changes an operator should expect:** (a) on a small team the
+  anonymized team line may now be hidden on days it previously showed (F4 — the
+  INV-124 cohort no longer counts roster rows with no email); (b) every modal's
+  primary button is now `--accent` green instead of near-black/near-white (V-8 —
+  one shared class, ~25 call sites); (c) the sidebar and mobile nav now show
+  SHORT tool labels ("Notes", "Training") with the full label on hover (V-5/6/7
+  — nothing ellipsises at the default width and the nav no longer shifts 11px
+  when entering Training & Employee Docs).
 - **The 2nd-pass design batch (pop-up fixes, email styling, loader + motion
   system, Admin consolidation, §6 settle) ALSO adds no new operator state** —
   no Script Properties, triggers, or migrations; client CSS/JS + `Code.js`
@@ -4500,7 +4554,32 @@ carries the same number. `/cycle-status` surfaces it.
   `axis_b_lowest` = the weakest Axis-B horizontal category that cycle.
 - `.cycle/estimates.csv` — estimate-vs-actual calibration, appended by `/reflect`.
   Header: `date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note`
+- `.cycle/blocks/` — **the verbatim handoff blocks** (template R19, adopted
+  2026-07-27). The three implement commands and `/reflect` write their summary
+  block here at CHECKPOINT: `<cycle>-<version-or-scope>-broad-implement.md`,
+  `…-targeted-implement.md`, `…-implement.md`, `<cycle>-<letter>-reflect.md`.
+  It exists because the blocks previously lived ONLY in chat scrollback while
+  STATE.md carried prose *about* them — a Verification Pass or Health Synthesis
+  runs in a FRESH session with none of that context, so a block that never
+  reached disk could not reach them. `/audit` deliberately does NOT write here
+  (its first instruction is "do not make any changes to any files", so its
+  Session Handoff Block still travels by paste). **Cycle 12 predates the
+  adoption**, so its six implementation blocks + one cycle-summary block are not
+  on disk; cycle 13 onward will be.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
+
+**Command templates: synced to `claude-workflow-tools` v1.23.0 (2026-07-27).**
+`.claude/commands/` carries 19 of the template's 20 commands, verified
+byte-identical at sync time; `/pr-review` is the one not installed (it sits
+under the template's separate "Per-Change Review" heading). Record the version
+here on every `/sync-commands` — before this line existed the previous version
+had to be INFERRED from which features were missing (it was ≤1.18.0, five
+releases of command semantics behind: R18's interface lens and R19's block
+persistence were both absent). Note a deliberate scoring discontinuity that
+came with R18: cycles ≤11 scored user-visible interface defects as
+defensive/structural and excluded them from `net_score`, while 12 onward counts
+them as production fixes — nothing was rewritten retroactively, so cumulative
+`net_score` spans two rules at that boundary.
 
 Fully optional + additive: with no `.cycle/`, every command behaves as before
 (emit the handoff/summary block in chat). `scripts/cycle-context.mjs` IS
@@ -4636,8 +4715,8 @@ the H-1 "Coach on this" dead-key class; do NOT simplify it to a regex char
 class) and fixed the sibling `refreshViewIfCurrent` tripwire's `[^}]*` →
 `[^{}]*` (it was capturing TOOL wrapper keys instead of leaf tab keys —
 false-permissive for exactly that class; leaf-key asserts now pin the regex
-itself). The six-rule `coachCanManagerSee_` unit pin (stubbed roster,
-INV-134) also lives in the pure harness. **Cycle 9 (batch 7) added three more
+itself). The six-rule `coachCanManagerSee_` unit pin (stubbed
+roster, INV-134) also lives in the pure harness. **Cycle 9 (batch 7) added three more
 nets:** a **no-mail-inside-the-lock tripwire** (M-7 — inventories every
 function touching `MailApp.`, then fails CI on any locked try-region that
 reaches one outside a post-lock `notifyAfter` closure; sole allowlist entry
@@ -4706,13 +4785,21 @@ truncation/bound contract on BOTH sides of the wire, the shared mover's
 per-run bound + the CN callers' unchanged defaults, the no-email roster skip in
 both Metrics walks (plus a guard that `getCoveragePlan` keeps its cycle-9 L-2
 skip), and the note-read outcome across all four coverage surfaces and all
-three result caches — pure now **335**, DOM 65. Editor suite
+three result caches. **The rest of cycle 12 added five more pin groups across
+five batches:** the V-1 hue-drift bound + V-2/V-3 specificity pins (batch A);
+the F15 running-sentinel, F9 gate-coverage and F7 admin-count nets (batch B);
+the F14 column-L ban, F11 bounded-append, F16 no-silent-blank and F18
+truncation pins (batch C); and the F12 single-read, four F17 mirror guards and
+the eight V-item source pins (batches D/E) — **pure now 356, DOM 66** (the DOM
+addition is the F16 failure path driven in a real jsdom window). Editor suite
 +6 in cycle 10 (sheet-doctor flow, legacy-hash dual-verify, self-test gate + 3
 omnibus gate cases) ≈ 297, +2 cycle-11 (updateTimeOff_dupApproveRejected;
-rejectsBadDate horizon cases) ≈ 299, +cycle-12 assertions folded into the
+rejectsBadDate horizon cases) ≈ 299, +cycle-12: assertions folded into the
 existing `archiveSheetRowsOlderThan_behavioral` (a maxRows case proving bounded
-AND monotonic progress), `test_sheetDoctor_detectsAndCollapsesDuplicates`, and
-the `countCallNotesInRange_` smoke test. Use
+AND monotonic progress), `test_sheetDoctor_detectsAndCollapsesDuplicates` and
+the `countCallNotesInRange_` smoke test, PLUS two new smoke tests for the
+cycle-12 pure helpers (`cn_enrolledSheetId_trimsAndNullGuards`,
+`cn_appendBounded_capsAndRollsBack`) ≈ 301. Use
 the Regression Scenarios below as the canonical full-system
 verification path.
 
@@ -4972,6 +5059,17 @@ INV-159 | **Timesheet sheet doctor (batch L)** — the `getPtoReconciliation`/`f
 INV-160 | **EmpDocs hashes are NUL-delimited for new writes; legacy space-form hashes stay valid via DUAL-VERIFY (C13, batch L).** `empDocContentHash_`/`empDocSignatureHash_` take a trailing `delim` param DEFAULTING to the NUL escape (the `computeFormSubmissionHash_` discipline — the old space join was field-boundary ambiguous since titles/bodies contain spaces); `EMPDOC_HASH_DELIM_LEGACY` (' ') is the legacy form. EVERY recompute site dual-verifies: `acknowledgeDoc`'s integrity gate via `empDocContentHashMatches_` (a pre-C13 doc must still SIGN), and `verifyDocSignature` for both the content check and the signature recompute — where the blank-stored-ContentHash fallback uses ITS OWN era's content hash per attempt (a pre-change sign hashed a space-form expect; a post-change sign hashes the NUL form). Genuine tamper still trips BOTH forms. INV-135's conditional-trailing-append byte-stability is preserved in both forms; callers still pass RAW stored cell strings. Pinned by the C13 Node pin (NUL default — bite-checked; dual-verify wiring) + `test_empdocs_legacyHashDualVerify` (legacy hash verifies + signs; tamper still detected) | Subsystem: Server
 INV-161 | **The automation-failure derivation is SINGLE-SOURCED (batch K-E): `automationProblems_(report)`** — stale digest heartbeats (never-ran is NOT a problem), the stale-reconcile F1 signal, personal-sheet sync-fails, a RECENT lost tamper-witness (INV-158), dead detectors, and a failing nightly self-test (INV-162). BOTH consumers — `sendAutomationHealthDigest` and the manager shell health badge `getAutomationHealthBadge()` (manager-gated INV-02, returns only `{failing, count}`, 10-min org-wide cache, best-effort: any failure yields a silent `{failing:false}` since the digest/panel are the backstops) — consume it, so the badge and the daily email can never disagree. The shell polls the badge every 10 min for managers and lights a danger `.sb-health-dot` on the Manage nav buttons (`data-tool` selectors — the badge-selector gotcha). Pinned by the updated detector-wiring tripwire (helper covers every failure class; digest AND badge consume it; badge gated) + the omnibus gate case | Subsystem: Server + Client (shell)
 INV-162 | **Nightly in-project self-test (the K-A alternative to editor-suite CI).** `runNightlySelfTest` is a trigger handler (daily manager-tz 1am; INV-44 `assertManagerCaller_` gate; in BOTH TARGETS arrays): it heartbeat-stamps `selfTest` BEFORE running (trigger liveness observable even if the suite crashes — the INV-151 posture), then runs `runSmokeTests` (pure logic, ZERO spreadsheet writes — safe on prod by construction) on any instance, and the FULL `runAllTests` suite ONLY on the DEV blue-green instance (`INSTANCE_LABEL` set AND `INSTANCE_IS_PROD` not 'true'; `assertNotProdInstance_` stays the backstop). The outcome persists to Script Property `SELF_TEST_LAST_RESULT` ({date, mode, pass, fail, skip[, error]}; a CRASHED run records fail:1 + the error), is returned by `computeAutomationHealth_().selfTest` (rendered in the Admin Automation panel; null = never ran, not an error), and a fail>0 result rides `automationProblems_` (INV-161 — health dot + failure digest) AND emails MANAGER_EMAILS the failed test names directly (best-effort INV-14, PHI-free). It tests the DEPLOYED code nightly — post-deploy regression detection, not pre-merge CI; the Node harness in GitHub Actions remains the pre-merge gate. Pinned by the self-test Node pin (heartbeat-first — bite-checked; dev-only full suite; problems/health wiring) + `test_triggerGate_selfTest_nonManagerThrows`; the trigger-wiring/gate-type/DIGEST-labels tripwires auto-cover the handler + heartbeat key | Subsystem: Server
+INV-163 | *(number claimed by cycle 11's /reflect but never written to this library — its two proposals were lost between the reflection and the next sync-docs. Left deliberately vacant rather than reused, so the cycle-11 metrics note stays traceable; cycle-12 proposals start at INV-165.)* | — | —
+INV-164 | *(as INV-163 — vacant, cycle-11 proposal never recorded.)* | — | —
+INV-165 | **A `color-mix` producing a SEMANTIC colour must interpolate `in oklab`, never `in oklch`.** oklch interpolates hue on the POLAR arc, so mixing a chromatic token toward a near-neutral drags it through other hue families (light `--ink` sits at hue ≈264, so amber travelled 70→0→264 THROUGH RED: `--warning-deep` resolved to hue 355, `--danger-deep` 330, `--success-deep` 204 across ~254 consumers, and the SAME token meant a different hue family per theme). Hue-SAFE mixes may stay on oklch — `--selection-bg` (mixes with `transparent`), `--border-strong`/`--ring-focus` (low-chroma neutral pair) — as may the `@supports` probe, which only tests "is color-mix supported at all". Reading the token file MISLEADS here (the `@supports` fallback hexes above each mix are correct), and the `--muted-2` tripwire measures LUMINANCE, which a pure hue rotation leaves untouched. Verify: the V-1 tripwire — source-level `in oklab` on all four `-deep` aliases in BOTH mode blocks, plus a computed hue-drift bound ≤20° from each source token (worst measured 10°) | Subsystem: Client (shell)
+INV-166 | **Text on a FIXED-palette surface must use a literal colour, never a theme token.** The clock card's sky gradient does not flip with the theme, so a `--muted`/`--ink` token on it tracks the theme while its background doesn't — `.ampm` measured 1.20–2.00:1 in dark mode on the live clock of a time-tracking app, because `styles.html`'s (0,3,0) `.hero .clk-time .ampm` beat the (0,2,0) `.clk-sky .clk-time` white override. Every other element on that card was already correctly hardcoded. Verify: `.clk-sky` descendants carry literal colours; measured contrast identical in both modes (3.89 / 2.45 / 1.52 against the gradient's blue end / midpoint / amber end) | Subsystem: Client (Time Clock views)
+INV-167 | **`cnEnrolledSheetId_(row)` is the ONLY reader of Employees column L**, returning the trimmed id or `''`, so a WHITESPACE-ONLY cell reads as not-enrolled everywhere. The test was hand-written 21 times and 11 copies tested RAW truthiness while 10 trimmed: with such a cell the trimmed group correctly showed the rep the enrollment splash while every untrimmed cross-rep walk called `openById(' ')`, threw into its per-rep try/catch, and SILENTLY omitted the rep from the aggregate (tag taxonomy, tag trends, the tag-transform walk, cross-rep search, shift stats, the unresolved-action badge, the CN export, team metrics, the EOD digest) — or, in Storage Health, reported a false "unreachable per-rep Sheet". The employee-object builders route through it as `cnEnrolledSheetId_(row) || null`, preserving their null-when-absent contract. Verify: the F14 global scan (no raw `EMP.CALL_NOTES_SHEET_ID` read outside the predicate + `provisionCallNotesSheet`'s setValue WRITE) + a 12-consumer delegation assert + the `cn_enrolledSheetId_trimsAndNullGuards` smoke test | Subsystem: Server
+INV-168 | **The append-only `SubformData` arrays are bounded by entry count AND serialized size, REFUSING rather than dropping.** `feedback[]` grows per manager reply/comment/rep ack/clarification and `externalEmails[]` per external send; unbounded, either walks the cell to its ~50k limit, past which EVERY later write on that note throws — including the flag/pin/resolve ops a rep uses daily. All four appends route through `cnAppendBounded_` (`CN_FEEDBACK_MAX_ENTRIES` 200 / `CN_EXTERNAL_EMAILS_MAX_ENTRIES` 100 / `CN_SUBFORM_MAX_CHARS` 45k), which pops the entry back off on refusal so the caller never half-mutates the record; refuse-not-drop because these arrays ARE the coaching/send record (the INV-96 posture). **The non-growing flag/resolve/pin writes are deliberately NOT size-gated** — they are the recovery path for an already-oversized note. The `externalEmails[]` stamp runs after a successful send, so its refusal only logs (INV-42). Verify: the F11 pins + `cn_appendBounded_capsAndRollsBack` | Subsystem: Server
+INV-169 | **A payload-capped reader must return its pre-slice total**, and the client must render "showing N of M" — and render NOTHING when the list is complete or the total is absent, so an un-redeployed server degrades to prior behaviour. `getDeptRequests` (`listCap` + `mineTotal`/`incomingTotal`/`allOpenTotal`, the magic 100 named `DR_LIST_CAP`), `kbGetReviewDue` (`total`/`cap`, and the landing pill shows the TRUE total, not the payload length), `getSpanishInboxStats` (`pendingListCap` — declared for correctness though NO client reads `pendingList`; see the follow-on). Distinct from a SCAN cap: `getDeptRequests` keeps its separate `truncated` flag, and a run can scan 4000 rows and still have >100 to show. Verify: the F18 pins on both sides of the wire | Subsystem: Server + Client (Metrics/Reference views)
+INV-170 | **`shortLabel` is the nav-label source on all three width-constrained surfaces** — mobile bottom nav, sidebar link, and sidebar sub-label — with the full `label` carried as a `title`. Set it on any tool label longer than ~9 characters. The nav is constrained on three surfaces at once: at the shipped 168px sidebar default the full labels CSS-ellipsised 2 of 7 tools, at 390px "Call Notes" was the one mobile label that wrapped, and the sub-label's two-line wrap pushed every sidebar nav item down 11px — so navigating MOVED the navigation. The two sidebar user fields (name, employee id) carry titles for the same reason. Verify: the V-5/6/7 pin (sidebar renders `shortLabel || label` + a full-label title; sub-label likewise; both user fields have titles) | Subsystem: Client (shell)
+INV-171 | **The gated-endpoint set and the admin-exclusive set are DERIVED from `Code.js` source, not hand-listed.** Every function returning `'Manager access required.'` or `'Admin access required.'` must be referenced by a gate test (the omnibus `test_managerGates_rejectNonManager` cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), and INV-136's stated count AND backticked names must equal what the code enforces — that count drifted four times (24→28→30→35) while calling itself authoritative. Trigger handlers are outside the set by construction (they THROW via `assertManagerCaller_`, so they carry no returned error string) and keep their own INV-44 tripwire. One reasoned allowlist entry: the private helper `managerAggregateFlagged_`, whose public wrappers are both covered. Verify: the F9 + F7 tripwires | Subsystem: Test Suite
+INV-172 | **The nightly self-test stamps a `{running:true, startedAt}` sentinel BEFORE the suite, and a STALE sentinel is a failure.** Extends INV-162: the outcome write happens only on a normal return or a CATCHABLE throw, and an Apps Script execution-limit kill is neither — so a chronically timing-out full suite left the PREVIOUS (green) result in place beside a FRESH heartbeat, i.e. the newest detector could not detect its own failure. `computeAutomationHealth_` derives `stuck` (running + older than `SELF_TEST_STUCK_MS` 2h); `automationProblems_` check (f) pushes it, so it rides the shell health dot AND the failure digest (INV-161); the Admin panel reports "never finished" INSTEAD of the stale pass/fail line, while a FRESH sentinel reads "Running now" and is not a problem. The sentinel is stamped AFTER the "test suite not present" early return, so a project without `Tests.js` never leaves one behind. Verify: the extended nightly-self-test pin (sentinel present + before the suite + carries startedAt + `stuck` from staleness + surfaced in problems and the panel) | Subsystem: Server + Client (Call Notes views)
+
 ### Policy Configuration
 Policy threshold: 4/10
 Consecutive cycles: 2

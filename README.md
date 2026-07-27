@@ -107,7 +107,12 @@ them): a **dependency-free** pure-helper + parse-guard harness
 (`node test/client/run.js`, zero install) and a **DOM-lifecycle** harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
-first). `npm test` runs both. A GitHub Action
-(`.github/workflows/client-tests.yml`) runs the pure harness, then
-`npm ci` + the DOM harness, plus a `node --check` of `Code.js` /
-`Tests.js` on every push and PR — the project's only automated check.
+first). `npm test` runs both. A third, **static-render visual** harness
+(`test/visual/`) renders a 20-scenario matrix in headless Chromium; it is
+manual / on-demand, NOT in CI. A GitHub Action
+(`.github/workflows/client-tests.yml`) runs a `node --check` of `Code.js` /
+`Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
+`npm ci` + the DOM harness, on every push and PR — the project's only
+automated check. (The zero-install steps deliberately run before `npm ci`:
+a registry or jsdom-resolution failure must not stop the only checks that
+need no dependencies from running at all.)
