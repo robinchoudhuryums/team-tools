@@ -1,9 +1,12 @@
 # Project Health — team-tools
 
 ## Current Standing
-Cycle 9 (broad) closed 2026-07-21; **cycle 10 is in progress** (scanned +
-implemented 2026-07-23 on `claude/broad-scan-11m0vf`, awaiting operator
-deploy + /reflect).
+**Cycle 12 (broad) closed 2026-07-27** — scanned, fully implemented across six
+batches, reflected, docs-synced, and merged (PR #143 → main, `3ad80d8`) in one
+session. **The operator deploy is the one piece still unconfirmed** (`clasp
+push -f` + New version + editor `runAllTests`); it also covers cycle 11's
+never-separately-deployed follow-up visual batch. Cycle 13 has not started.
+Seams & Invariants audit due in 2 more subsystem cycles (counter 2 of 4).
 
 - **Cycle 8** (2026-07-10): net +14 (16 prod fixes − 2 deliberate fail-safe
   tradeoffs; 34 defensive). Headliners: the automated payroll export ran
@@ -44,6 +47,42 @@ deploy + /reflect).
   editor ≈297. CLOSED 2026-07-24: reflected net +33 (34 − 1 Low),
   PR #138/#139 merged, DEPLOYED — runAllTests ALL PASSED,
   installAutomationTriggers re-run (16 triggers). Seams audit due next.
+- **Cycle 11** (2026-07-24, the DUE seams audit): net +5 (5 prod fixes − 0 new
+  failure modes; 28 defensive). 8-agent fan-out + a cross-cutting seams
+  specialist ran ~170 invariant checks against live code and found **ZERO
+  substantive drift** — the cleanest audit in project history (158 RPCs, 16
+  enum/header pairs, 16 triggers, 42 Script Properties all clean). 0 Critical /
+  0 High / 4 Medium / ~30 Low, plus a 10-finding static-render VISUAL audit on a
+  brand-new harness. Headliners: every full `runAllTests` permanently appended a
+  fake EXTERNAL witness row to the LIVE AuditLog and compliance panel, and
+  `test_training_quizFlow` wrote the LIVE Quizzes tab with no sweep — 3 of 4
+  Mediums were the test suite polluting production data or under-covering
+  itself. Axis-B lowest: **Test Coverage Quality** (the code was clean; the
+  weight had moved into the test layer). Pure 319→330, DOM 65, editor ≈299.
+- **Cycle 12** (2026-07-27, broad + the first VISUAL/UI-UX addendum): net **+11**
+  (13 prod fixes − 2 Low fail-safe; 17 defensive, 0 features). Single-session
+  scan (no agent fan-out) over the ~520 lines that landed after cycle 11's read,
+  then category sweeps. 0 Critical / 0 High / 5 Medium / 8 Low — **plus 14
+  visual findings from an addendum the operator had to ASK for**, which is the
+  cycle's real lesson: **9 of the 13 production fixes came from that lens**, and
+  eleven prior code-lens cycles could not reach the class. Headliners: `color-mix`
+  in `oklch` interpolating hue on the polar arc, so `--warning-deep` resolved to
+  hue 355 (RED) across ~254 consumers and the same token meant a different hue
+  family per theme; AM/PM at 1.20:1 in dark mode on the live clock of a
+  time-tracking app; a swallowed per-rep Sheet read rendered as a confident 0%,
+  telling reps to re-file work they had already filed. Structural: ONE
+  `cnEnrolledSheetId_` predicate retiring a class where 11 of 21 copies of the
+  same enrollment test disagreed and silently dropped reps from nine manager
+  aggregates; the gated-endpoint + admin sets now DERIVED from source after
+  INV-136's count drifted four times; `TimesheetArchive` gained its first reader
+  anywhere. Axis-B lowest: **Silent Degradation Posture** (again — failures and
+  caps rendered as confident, complete-looking answers). Also: command templates
+  synced to workflow-tools v1.23.0 (five releases behind), `/audit` + 5 Tier-3
+  commands installed, **UI/UX & Accessibility** added as a 13th Health Dimension
+  and **Visual / Interaction Regression Posture** as a 7th Axis-B category,
+  invariants 162→172 (INV-165..172; 163/164 left vacant — cycle 11 claimed them
+  in metrics but they never reached the library). Pure 330→356, DOM 65→66,
+  visual 20/20, editor ≈301. Deploy pending at close-out.
 
 ## Prior standing (Cycle 7 close, 2026-07-09)
 Cycle 7 (broad) closed 2026-07-09 — scanned, FULLY implemented, reflected,
