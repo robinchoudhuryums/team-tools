@@ -2,9 +2,10 @@
 
 ## Current
 Cycle: 12
-Phase: implement — batches 1 (F1–F5), A (V-1–V-3), B (F15/F9/F7/F6/F10),
-       C (F14/F16/F18/F11/F3-sibling) done (2026-07-27); pending: operator
-       deploy + /reflect
+Phase: implement — ALL batches done (1: F1–F5 · A: V-1–V-3 · B: F15/F9/F7/
+       F6/F10 · C: F14/F16/F18/F11/F3-sibling · D: F17/F12/V-14/V-5/V-6/V-7 ·
+       E: V-4/V-8/V-9/V-10/V-11/V-12) 2026-07-27; pending: operator deploy
+       + /reflect
 Scope: broad (fresh broad scan + an operator-requested VISUAL/UI-UX addendum)
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 11 was the seams audit; /reflect increments)
@@ -43,48 +44,45 @@ MEDIUMS (all five implemented — batch 1):
   from "zero notes filed" → the Clock strip rendered "0% logged" in CRIT tone
   + "File <every answered call> missing", telling reps to redo filed work.
 
-LOWS — F6/F7/F9/F10/F15 implemented (batch B); F11/F14/F16/F18 + the
-F3-sibling implemented (batch C). F8/F13 were doc-only and fixed in the
-/sync-docs pass. STILL OPEN: F12 deletePunch's L-14 survivor re-scan does a 2nd
-full Timesheet read inside the lock; F17 MIRROR_INDEX omits >=4 live mirrors
-(CLK_DASH_PERIODS<->DASHBOARD_PERIOD_KEYS, COACH_SEVERITIES<->the severity
-<select>, cnExtLinkOptionsHtml_'s inlined categories, PUNCH_META<->
-PUNCH_LABELS_).
+LOWS — ALL implemented across batches B/C/D: F6/F7/F9/F10/F15 (B),
+F11/F14/F16/F18 + the F3-sibling (C), F12/F17 (D). F8/F13 were doc-only and
+fixed in the /sync-docs pass. Nothing from the cycle-12 Low list remains open.
 
 VISUAL / UI-UX ADDENDUM (2026-07-27, operator asked whether the scan covered
 it — it had NOT; ran test/visual/ + 6 throwaway DOM probes). 20/20 scenarios
-rendered, 0 missing fixtures. V-1/V-2/V-3 implemented (batch A). V-4–V-14
-remain open (see the prioritized batches C/D/E in the /sync-docs reply):
-shift-strip hours wrap mid-value; the sidebar nav shifts 11px entering
-Training & Employee Docs; "Call Notes" wraps in the mobile nav; 4 simultaneous
-ellipses at the DEFAULT 168px sidebar; the ADP Export button is the only
---ink-inverted button in the app; ~535px stretched dead space on the Reference
-landing; zero-hour sparkline bars invisible in both themes; Coaching's
-By-employee table bypasses the documented shared mtRenderTable_; two visually
-identical chip rows on the CN Log view; Metrics has 4 competing date
-affordances + uninterpretable 30-point sparklines; V-14 the harness's own
-fixture is internally inconsistent (noteCount 7 + answered 41 + coverage 85).
+rendered, 0 missing fixtures. V-1/V-2/V-3 (batch A), V-14/V-5/V-6/V-7 (batch D)
+and V-4/V-8/V-9/V-10/V-11/V-12 (batch E) are all implemented and MEASURED.
+DEFERRED BY DESIGN: **V-13** (Metrics' 4 competing date controls +
+uninterpretable 30-point sparklines) — a redesign needing an operator opinion,
+not a defect. **V-9 is PARTIAL by decision:** the Reference landing's ~535px of
+stretched empty card is fixed and measured (panel 260px hugging 241px of
+content; a 400-paragraph article still scrolls INTERNALLY — verified, and the
+first attempt at this REGRESSED it, see Decisions); the other two instances the
+finding named (dashboard rail 284px shorter than the main column, Metrics hero
+119px shorter than its rail) are just SHORTER COLUMNS with no stretched card —
+rebalancing them means moving content between columns, an operator design call.
 RETRACTED after probing (screenshots misled): a suspected mobile bottom-nav
 content clip (view-area padding 76px vs a 60px nav — clean) and an initial
 "the whole clock card flips with the theme" read (only .ampm did).
 PROCESS RECOMMENDATION (still open): add a "Visual & Accessibility" Health
 Dimension + a Stage-1.5 visual step to /broad-scan — the harness takes ~2 min
-and found 2 Mediums the code lens cannot reach. The two cheap machine checks
-it recommended NOW EXIST (the V-1 hue-drift tripwire; the V-2 fixed-surface
-contrast measurement was folded into that batch's verification).
+and found 2 Mediums the code lens cannot reach. Both cheap machine checks it
+recommended now EXIST (the V-1 hue-drift tripwire; the V-2 fixed-surface
+contrast measurement was folded into batch A's verification).
 
 ## In progress (facts to carry forward — NOT judgments)
-- All FOUR batches implemented, pinned, and green: pure 330→343, DOM 65→66,
-  node --check x3, visual harness 20/20 (0 missing fixtures). Every new pin
-  BITE-CHECKED (24/24 across the cycle; restored via a python edit + backup —
+- EVERY batch implemented, pinned, and green: pure 330→356, DOM 65→66,
+  node --check x3, visual harness 20/20 (0 missing fixtures). All new pins
+  BITE-CHECKED (38/38 across the cycle; restored via a python edit + backup —
   never git checkout mid-batch).
-- Batch A was verified EMPIRICALLY in test/visual/: V-1 worst hue drift now 10°
-  (was 48–75°); V-2 .ampm theme-IDENTICAL; V-3 display:none in wide + 480px.
-- Batch C's two new pure helpers were EXECUTED against real inputs (not just
-  source-scanned) and now carry editor smoke tests:
-  cnEnrolledSheetId_('   ') === '' and cnAppendBounded_ refusing + rolling back
-  on both the count cap and the size cap. The F16 failure path was driven in a
-  real jsdom window (loader → .error-state role=alert, message shown).
+- Batch D/E was verified by MEASUREMENT, not reasoning: V-4 both durations
+  render as ONE client rect at 390px (nowrap); V-8 .btn-modal-ok background now
+  equals --accent exactly in both modes (was --ink); V-10 zero-bars went 1.10:1
+  → 2.28:1 (light) / 2.20:1 (dark) against the card; V-9 Reference panel 260px
+  hugging content AND a 400-paragraph article still scrolls internally (page
+  does not grow); V-11 renders .m-table/.m-table-wrap with scope="col" headers,
+  .m-num/.m-name cells, the overdue rowClass and identical values; V-12 chips
+  still set CN_STATE.filter + navigate to callNotesHistory.
 - Next concrete step: operator deploy (cd web-app && clasp push -f, then
   New version) + editor runAllTests, then /reflect.
 
@@ -198,13 +196,63 @@ contrast measurement was folded into that batch's verification).
   extended with the F11 LENGTH bound + why flag/pin stay unguarded; INV-153
   extended with the CN sibling's whole-run budget.
 
+- F17 | test/client/run.js | the 4 missing MIRROR_INDEX entries now have REAL
+  guards, each extracting both sides from raw source: client CLK_DASH_PERIODS ===
+  server DASHBOARD_PERIOD_KEYS (order matters — it drives the carousel chips AND
+  the three up-front fetches); the coaching severity <select> === COACH_SEVERITIES
+  (coachValidate_ whitelists against it, so drift rejects a note AFTER the
+  manager typed it); cnExtLinkOptionsHtml_'s inlined catLabels ===
+  CN_EXTERNAL_LINK_CATEGORIES (a missing category silently never groups and its
+  links vanish from the picker); PUNCH_META ⊇ PUNCH_LABELS_ (a missing type falls
+  through to a raw type name + generic glyph on a punch button — an extra-keys
+  assert pins that only the client-only `Adjust` may be extra).
+- F12 | Code.js | deletePunch derives the duplicate survivor from the
+  ALREADY-LOADED rows (skipping the index being deleted, computed BEFORE
+  deleteRow) instead of a second whole-Timesheet getDataRange read inside the
+  global lock. Equivalent under the lock (every mutating writer takes it), one
+  fewer full read of the tab that grows unboundedly until INV-153 is enabled.
+- V-14 | test/visual/mock.js | the fixture now satisfies the server's own
+  arithmetic: 35 notes / 41 answered → 85% and missing 6 (was 7 / 41 / 85% +
+  missingCount 3, i.e. "85% logged · File 34 missing" — data the server cannot
+  produce). The range fixture got its OWN weekly cdr totals (218/254 → 86%)
+  because it had been reusing the single-day block.
+- V-5/V-6/V-7 | script_core.html | `shortLabel` is now the nav-label source on
+  ALL THREE width-constrained surfaces (mobile nav, sidebar link, sidebar
+  sub-label), with the full label as a title; `callNotes` gained
+  shortLabel:'Notes'; the two sidebar user fields carry titles. Every sidebar
+  label is now a single word ≤9 chars, so nothing ellipsises at the 168px
+  default and the sub-label can never wrap to two lines (which used to push the
+  whole nav down 11px on one tool — navigation moving when you navigate).
+- V-4 | tc/script_clock.html | each shift-strip duration is its own nowrap span
+  (`.ss-val`), so the readout wraps only BETWEEN values, never mid-value.
+- V-8 | styles.html | `.btn-modal-ok` (the SHARED modal primary, 25 call sites)
+  joins the app's green-primary vocabulary — it was --ink on --ink, the only
+  inverted button in the app. `.ui-dialog-ok.is-danger` still wins at (0,2,0).
+- V-9 | kb/script_kb.html | the viewport cap moved from the WRAP to the grid
+  ITEMS + align-items:start, so a short landing hugs its content while the
+  reader keeps internal scroll. PARTIAL — see the addendum note above.
+- V-10 | styles.html | a zero-hour sparkline bar is `--muted-3` at 3px (was
+  --paper-2 at 1px ≈ the card background in both themes).
+- V-11 | train/script_coaching.html | the "By employee" table renders through
+  the shared `mtRenderTable_` (overdue tint via rowClass, bespoke table CSS
+  deleted); the KPI strip is left-aligned to match its `.telemetry` twin.
+- V-12 | cn/script_callnotes.html | the navigating chip row is now a LINK
+  affordance (no pill outline, info tone, per-chip chevron, underline on hover,
+  "Open in History · this week" label) so it cannot be mistaken for the toggle
+  filter pills ~400px above; the click behaviour is unchanged (verified).
+- Docs | CLAUDE.md | `shortLabel` documented in the registry decision with its
+  three surfaces + the ~9-char rule; the mtRenderTable_ decision names Coaching
+  as the third caller; the save-quadrant "kbd-chips hidden" claim notes that
+  V-3 made the dead rule actually win.
+
 ## Pending / not yet done
 - Operator deploy (cd web-app && clasp push -f + New version) + editor
   runAllTests (the F3 maxRows behavioral case, the F2 contract assertions, and
   the F6 cache-reset effect run only there). Covers cycle 11's un-deployed
   visual batch too.
-- The remaining open findings: F12, F17, V-4–V-14, and the /broad-scan process
-  recommendation. These are batches D / E in the prioritized list.
+- NOTHING from the cycle-12 finding list remains open except the two items
+  deferred BY DESIGN (V-13's Metrics redesign; V-9's two column-balance
+  instances) and the /broad-scan process recommendation.
 - /reflect (writes the metrics + estimates rows, increments the seams counter).
 
 ## Open follow-on items
@@ -262,16 +310,39 @@ contrast measurement was folded into that batch's verification).
   admin-gated (getEnrolledCallNotesReps, reconcileCallNotes, the KB review
   set), so an equality assertion would be wrong.
 
+## Decisions made in batch D/E (added)
+- V-9's first attempt put `max-height` on the grid CONTAINER. Measured result:
+  the grid ROW is not constrained by it, so a long article grew the page to
+  13.7k px and the reader's internal scroll was GONE. The cap has to sit on the
+  grid ITEMS. Caught by measuring, not by reasoning — worth remembering.
+- V-9 fixes ONE of the three instances the finding named; the other two are
+  shorter columns with no stretched card, so filling them means moving content
+  between columns — an operator design call, not a defect fix.
+- V-8 changed the SHARED `.btn-modal-ok` rather than the one ADP Export button:
+  the inversion was never per-button, it was this class (25 call sites). The
+  danger variant still overrides at higher specificity.
+- V-12 kept the click behaviour identical (verified: filter + navigate) and
+  changed only the affordance. The filter row keeps the pill (it has real
+  aria-pressed toggle state); the navigating row became a link.
+- V-11 kept `.tr-cell-overdue` on the cell AND added a row tint via rowClass —
+  the component's hook exists for exactly this, so no bespoke table CSS remains.
+- F12's derivation is equivalent ONLY because every mutating writer takes the
+  same global ScriptLock (INV-01). If that ever changes, the survivor scan needs
+  a fresh read again.
+- The F12 pin strips comments before counting `getDataRange().getValues()` — the
+  fix's own comment names the call it removed, which would otherwise have made
+  the pin permanently red.
+
 ## Where I left off
-Cycle 12: audit + visual addendum done; FOUR batches shipped — batch 1 (F1–F5
-Mediums), A (V-1–V-3 visual), B (F15/F9/F7/F6/F10), C (F14/F16/F18/F11 +
-the F3-sibling) — all implemented, pinned, bite-checked and green (pure 343/0,
-DOM 66/0, node --check x3, visual 20/20). Docs synced each round. NEXT: the
-operator deploy (clasp push -f + New version) and an editor runAllTests — batch
-C adds 2 new smoke tests (cn_enrolledSheetId_, cn_appendBounded_) that only run
-there — then /reflect to close the cycle. Remaining prioritized work: batch D
-(F12, F17, V-14, V-5/V-6/V-7) and batch E (V-4/V-8/V-9/V-10/V-11/V-12), plus
-the deferred V-13 + the F1 sibling readers.
+Cycle 12 is IMPLEMENTATION-COMPLETE: the audit + visual addendum found 5 Medium
+/ 8 Low / 14 visual, and every one is either shipped (batches 1/A/B/C/D/E) or
+deferred by an explicit decision (V-13's Metrics redesign, V-9's two
+column-balance instances, the /broad-scan process change, the F1 sibling
+readers). All green: pure 356/0, DOM 66/0, node --check x3, visual 20/20, 38/38
+new pins bite-checked. Docs synced each round. NEXT: the operator deploy
+(cd web-app && clasp push -f, then New version) and an editor runAllTests —
+batch C added 2 smoke tests (cn_enrolledSheetId_, cn_appendBounded_) that only
+run there — then /reflect to close the cycle.
 
 ## History
 Closed-cycle records live in `.cycle/HISTORY.md` (append-only, newest first).

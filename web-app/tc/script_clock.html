@@ -120,6 +120,10 @@
   .ss-grow { flex: 1; }
   .ss-hours { font-family: var(--mono); font-size: .86rem; font-weight: 700; color: var(--ink); }
   .ss-hours .ss-sub { font-weight: 400; color: var(--muted); }
+  /* V-4 — see the render comment: the parent may wrap between readouts,
+     an individual duration may never break inside itself. */
+  .ss-hours { display: inline-flex; flex-wrap: wrap; gap: 0 5px; }
+  .ss-hours .ss-val { white-space: nowrap; }
   /* Inline note-coverage in the shift header (#3 — replaces the donut strip). */
   .ss-cov { display: inline-flex; align-items: center; gap: 8px; }
   .ss-cov-pct { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .03em; color: var(--muted); }
@@ -358,8 +362,13 @@ function renderClockView(area) {
   const stateLabel = stats ? (stats.state === 'lunch' ? 'On lunch' : stats.state === 'out' ? 'Done' : 'Working') : 'Not in';
   const stateCls   = stats ? (stats.state === 'lunch' ? 'lunch' : stats.state === 'out' ? 'out' : 'working') : 'out';
   const hoursReadout = stats
-    ? `<span class="ss-hours">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m worked` +
-        (stats.lunchMinutes ? ` <span class="ss-sub">· ${stats.lunchMinutes}m lunch</span>` : '') + `</span>`
+    // V-4 (cycle 12): each value+unit+word is its own nowrap span, so
+    // "5h 54m worked · 32m lunch" wraps only BETWEEN the two readouts and never
+    // mid-value (it used to break as "5h / 54m / worked / · 32m / lunch" at both
+    // 1440px and 390px). Exactly the rule cycle-11's V-10 applied to `.tz-chip`
+    // — "a time must never break internally" — on its sibling component.
+    ? `<span class="ss-hours"><span class="ss-val">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m worked</span>` +
+        (stats.lunchMinutes ? ` <span class="ss-sub ss-val">· ${stats.lunchMinutes}m lunch</span>` : '') + `</span>`
     : `<span class="ss-hours ss-sub">Not clocked in yet</span>`;
 
   // Dashboard (Time Clock → Dashboard): two-column grid — clock rail (left) +

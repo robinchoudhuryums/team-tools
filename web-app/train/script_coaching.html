@@ -270,15 +270,30 @@ function coachAnalyticsHtml_(a, counts) {
   // per-rep table
   var reps = a.perRep || [];
   if (reps.length) {
+    // V-11 (cycle-12 visual audit): this was hand-rolled `<table class="tr-table
+    // coach-rep-table">` — no header treatment, no hover, no sticky header —
+    // sitting beside the Punctuality and Metrics tables that ARE built with the
+    // shared component, and contradicting CLAUDE.md's explicit decision ("New
+    // manager tables should reuse it rather than hand-rolling <table> markup").
+    // Routed onto mtRenderTable_: same columns, same numbers, and the overdue
+    // cell keeps its danger tone via a per-row class (opts.rowClass) plus the
+    // existing .tr-cell-overdue span.
     h += '<div class="tr-section-h">By employee</div>' +
-      '<table class="tr-table coach-rep-table"><thead><tr><th>Employee</th><th>Total</th><th>Acked</th><th>Ack&nbsp;%</th><th>Median&nbsp;days</th><th>Overdue</th></tr></thead><tbody>';
-    reps.forEach(function (r) {
-      h += '<tr><td>' + esc(String(r.empName || r.empId || '')) + '</td>' +
-        '<td>' + coachNum_(r.total) + '</td><td>' + coachNum_(r.acknowledged) + '</td>' +
-        '<td>' + coachNum_(r.ackRatePct) + '%</td><td>' + coachNum_(r.medianDaysToAck) + '</td>' +
-        '<td>' + (r.overdue ? '<span class="tr-cell-overdue">' + coachNum_(r.overdue) + '</span>' : '0') + '</td></tr>';
-    });
-    h += '</tbody></table>';
+      mtRenderTable_({
+        columns: [
+          { key: 'empName', label: 'Employee', name: true,
+            cell: function (r) { return esc(String(r.empName || r.empId || '')); } },
+          { key: 'total',       label: 'Total',       numeric: true, cell: function (r) { return coachNum_(r.total); } },
+          { key: 'acknowledged',label: 'Acked',       numeric: true, cell: function (r) { return coachNum_(r.acknowledged); } },
+          { key: 'ackRatePct',  label: 'Ack %',       numeric: true, cell: function (r) { return coachNum_(r.ackRatePct) + '%'; } },
+          { key: 'medianDaysToAck', label: 'Median days', numeric: true, cell: function (r) { return coachNum_(r.medianDaysToAck); } },
+          { key: 'overdue',     label: 'Overdue',     numeric: true,
+            cell: function (r) { return r.overdue
+              ? '<span class="tr-cell-overdue">' + coachNum_(r.overdue) + '</span>' : '0'; } },
+        ],
+        rows: reps,
+        rowClass: function (r) { return r.overdue ? 'coach-row-overdue' : ''; },
+      });
   }
   return h;
 }
@@ -384,7 +399,12 @@ document.addEventListener('click', function (e) {
 .coach-void { color:var(--danger-deep); }
 .coach-compose { margin-bottom:6px; }
 .coach-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin:14px 0; }
-.coach-kpi { border:1px solid var(--line); background:var(--paper-card); border-radius:var(--radius); padding:10px 12px; text-align:center; }
+/* V-11: this strip is visually the twin of the Manager Dashboard's `.telemetry`
+   (4 equal cells, big number over a mono uppercase micro-label) but was
+   CENTRE-aligned while its twin is LEFT-aligned, so two identical-looking
+   components on adjacent manager surfaces read differently. Matched to
+   `.telemetry .tel-cell`: left-aligned, same 14px/18px padding. */
+.coach-kpi { border:1px solid var(--line); background:var(--paper-card); border-radius:var(--radius); padding:14px 18px; text-align:left; }
 .coach-kpi-num { font:700 1.5rem/1 var(--display, inherit); color:var(--ink); }
 .coach-kpi-num.crit { color:var(--danger-deep); }
 .coach-kpi-lbl { margin-top:4px; font:600 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
@@ -392,6 +412,8 @@ document.addEventListener('click', function (e) {
 .coach-sevbar { display:flex; flex-wrap:wrap; gap:14px; margin:0 0 14px; }
 .coach-sevstat { display:inline-flex; align-items:center; gap:6px; font-size:.9rem; }
 .coach-sevstat b { font-variant-numeric:tabular-nums; color:var(--ink); }
-.coach-rep-table { width:100%; }
-.coach-rep-table td, .coach-rep-table th { font-variant-numeric:tabular-nums; }
+/* V-11: the bespoke `.coach-rep-table` rules are gone — the shared `.m-table`
+   carries width, header treatment, hover, sticky header and tabular numerals.
+   Only the per-row overdue tint is Coaching-specific. */
+.coach-row-overdue td { background: var(--destructive-soft); }
 </style>

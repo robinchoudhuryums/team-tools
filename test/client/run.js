@@ -1580,6 +1580,18 @@ const MIRROR_INDEX = [
     manual: 'CLAUDE.md "CN_EMAIL_PALETTE is hand-resolved from design tokens"' },
   { pair: 'PPD engine option values ↔ INTAKE_PPD_CONTROL (drift guards)',
     guards: ['end-to-end config-driven recommendation parity'] },
+  // ── F17 (cycle 12): four live mirrors the index had missed. Each is a
+  // client literal that must agree with a server enum; a drift is silent
+  // (an unreachable period, a rejected severity, a chip that never groups,
+  // a punch button with no glyph).
+  { pair: 'client CLK_DASH_PERIODS ↔ server DASHBOARD_PERIOD_KEYS',
+    guards: ['CLK_DASH_PERIODS === DASHBOARD_PERIOD_KEYS'] },
+  { pair: 'coaching severity <select> ⊆ server COACH_SEVERITIES (INV-134)',
+    guards: ['coaching severity options === COACH_SEVERITIES'] },
+  { pair: 'cnExtLinkOptionsHtml_ inlined categories ↔ CN_EXTERNAL_LINK_CATEGORIES',
+    guards: ['ext-link category labels mirror CN_EXTERNAL_LINK_CATEGORIES'] },
+  { pair: 'PUNCH_META keys ⊇ server PUNCH_LABELS_ (INV-155 button render)',
+    guards: ['PUNCH_META covers every PUNCH_LABELS_ type'] },
 ];
 console.log('\nclient — mirror index (batch K D: every mirror names a live guard)');
 test('mirror index — every listed guard test exists in this file', () => {
@@ -1595,6 +1607,65 @@ test('mirror index — every listed guard test exists in this file', () => {
     if (!m.guards.length) assert.ok(m.manual, 'unguarded mirror "' + m.pair + '" must document its manual discipline');
   });
 });
+// ── F17 (cycle 12): the four mirrors the index was missing. ────────────────
+// Each extracts BOTH sides from raw source, so a rename on either side fails.
+function arrayLiteral_(src, name) {
+  const m = new RegExp('(?:const|var|let)\\s+' + name + '\\s*=\\s*\\[([^\\]]*)\\]').exec(src);
+  assert.ok(m, name + ' array literal found');
+  return m[1].split(',').map((x) => x.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+}
+
+test('F17: client CLK_DASH_PERIODS === DASHBOARD_PERIOD_KEYS', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const client = arrayLiteral_(clk, 'CLK_DASH_PERIODS');
+  const server = arrayLiteral_(codeSrc, 'DASHBOARD_PERIOD_KEYS');
+  // Order matters: it drives the carousel's segmented-chip order AND the
+  // three up-front getDashboardMetrics fetches.
+  assert.deepStrictEqual(client, server,
+    'a client period the server rejects renders a permanently-empty carousel slide, ' +
+    'and a server period the client omits is simply unreachable');
+});
+
+test('F17: coaching severity options === COACH_SEVERITIES', () => {
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  const sel = co.slice(co.indexOf("<select id=\"coach-sev\">"));
+  const opts = (sel.slice(0, sel.indexOf('</select>')).match(/value="([a-z]+)"/g) || [])
+    .map((v) => v.replace(/value="|"/g, ''));
+  const server = arrayLiteral_(codeSrc, 'COACH_SEVERITIES');
+  assert.deepStrictEqual(opts, server,
+    'coachValidate_ whitelists against COACH_SEVERITIES — an option outside it is ' +
+    'rejected server-side after the manager has typed the whole coaching note');
+});
+
+test('F17: ext-link category labels mirror CN_EXTERNAL_LINK_CATEGORIES', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const m = /var catLabels = \[([\s\S]*?)\];/.exec(cn);
+  assert.ok(m, 'the composer picker\'s inlined catLabels literal found');
+  const clientCats = (m[1].match(/\['([a-z]+)'/g) || []).map((x) => x.replace(/\['|'/g, ''));
+  const server = arrayLiteral_(codeSrc, 'CN_EXTERNAL_LINK_CATEGORIES');
+  assert.deepStrictEqual(clientCats, server,
+    'cnExtLinkOptionsHtml_ inlines its categories deliberately (so it unit-tests ' +
+    'in isolation) — a server category missing here silently never groups, and its ' +
+    'links vanish from the picker');
+});
+
+test('F17: PUNCH_META covers every PUNCH_LABELS_ type', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const metaBlock = core.slice(core.indexOf('const PUNCH_META = {'));
+  const metaKeys = (metaBlock.slice(0, metaBlock.indexOf('\n};')).match(/^\s{2}(\w+):/gm) || [])
+    .map((k) => k.trim().replace(':', ''));
+  const server = arrayLiteral_(codeSrc, 'PUNCH_LABELS_');
+  const missing = server.filter((t) => metaKeys.indexOf(t) < 0);
+  assert.deepStrictEqual(missing, [],
+    'a server punch type with no PUNCH_META entry renders through the ' +
+    "`|| { label:p.type, icon:'info' }` fallback — a raw type name and a generic " +
+    'glyph on a punch button: ' + missing.join(', '));
+  // Adjust is client-only (it opens a modal, it is not a punch type) — assert
+  // the extra keys are exactly that, so a typo'd key can't hide here.
+  assert.deepStrictEqual(metaKeys.filter((k) => server.indexOf(k) < 0), ['Adjust'],
+    'PUNCH_META may carry only the one client-only entry (Adjust)');
+});
+
 test('AUTO_COPY_FORMAT: client fallback mirrors the server CONFIG default', () => {
   // Both templates are same-shaped string-concat literals ending at the
   // {resolution} chunk; parse each and compare byte-for-byte. CLAUDE.md has
@@ -4759,6 +4830,147 @@ test('F18: payload-capped readers report the pre-slice total', () => {
   const kbc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
   assert.ok(/rdCapped \? rdTotal : rd\.length/.test(kbc),
     'the Review-due pill shows the TRUE total, not the payload length');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-12 batches D+E pins. The visual items are pinned at SOURCE level (the
+// static-render harness in test/visual/ is manual and not in CI), each anchored
+// on the specific mechanism the finding was about — not merely "a rule exists".
+console.log('\ncycle 12 — batch D/E fix pins');
+
+test('F12: deletePunch derives the duplicate survivor from the loaded rows (no 2nd sheet read)', () => {
+  const src = extractRawFunction('Code.js', 'deletePunch');
+  // Strip comments first — the fix's own explanatory comment names the call it
+  // removed, and counting that would make the pin permanently red.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const reads = (code.match(/getDataRange\(\)\.getValues\(\)/g) || []).length;
+  assert.strictEqual(reads, 1,
+    'exactly ONE whole-Timesheet read — the survivor re-scan used a second one INSIDE the lock');
+  // The scan must exclude the row being deleted, and run BEFORE deleteRow so the
+  // indices need no adjustment.
+  assert.ok(/if \(k === i\) continue;/.test(src), 'the row about to be deleted is excluded');
+  assert.ok(src.indexOf('survivorExists = true') < src.indexOf('sheet.deleteRow'),
+    'the survivor is computed BEFORE the delete (pre-delete rows + index skip)');
+});
+
+test('V-5/V-6/V-7: the sidebar + nav use shortLabel and never truncate without a title', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  // V-6: callNotes carries a shortLabel (it was the one mobile label that wrapped).
+  const cnEntry = core.slice(core.indexOf('  callNotes: {'), core.indexOf('  metrics: {'));
+  assert.ok(/shortLabel:/.test(cnEntry), 'callNotes declares a shortLabel');
+  // V-7: the sidebar link renders shortLabel + a full-label title.
+  assert.ok(/class="sb-lbl">\$\{esc\(t\.shortLabel \|\| t\.label\)\}/.test(core),
+    'the sidebar label uses shortLabel (it CSS-ellipsised the full label at the 168px default)');
+  assert.ok(/<button class="sb-link" data-tool="\$\{toolKey\}" title="\$\{esc\(t\.label\)\}"/.test(core),
+    'the full label survives as a title');
+  // V-5: the sub-label uses shortLabel too — the full one wrapped to 2 lines and
+  // pushed every nav item down 11px.
+  assert.ok(/lbl\.textContent = tool\.shortLabel \|\| tool\.label/.test(core),
+    'the sidebar sub-label uses shortLabel (a 2-line wrap moved the whole nav)');
+  // V-7: the two user fields that ellipsis at the default width carry titles.
+  assert.ok(/class="sb-user-name" title=/.test(core) && /class="sb-user-id" title=/.test(core),
+    'name + employee id carry titles — both truncate at the DEFAULT sidebar width');
+});
+
+test('V-4: shift-strip durations never break mid-value', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/\.ss-hours \.ss-val \{ white-space: nowrap; \}/.test(clk),
+    'each value+unit is a nowrap span (the cycle-11 .tz-chip `.seg` rule on its sibling)');
+  assert.ok(/class="ss-hours"><span class="ss-val">/.test(clk) &&
+            /class="ss-sub ss-val">/.test(clk),
+    'BOTH readouts (worked + lunch) are wrapped — one span alone leaves the other breaking');
+});
+
+test('V-8: the shared modal primary uses the app accent, not an inverted --ink', () => {
+  const st = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const rule = st.slice(st.indexOf('  .btn-modal-ok {'));
+  const body = rule.slice(0, rule.indexOf('}'));
+  assert.ok(/background: var\(--accent\)/.test(body),
+    'the app has ONE primary vocabulary (--accent); this was the only inverted button');
+  assert.ok(!/background: var\(--ink\)/.test(body),
+    '--ink on --ink renders near-black in light mode and near-WHITE in dark, ' +
+    'out-competing the real primary');
+  // The danger variant must still win (it is .ui-dialog-ok.is-danger, 0,2,0).
+  assert.ok(/\.ui-dialog-ok\.is-danger \{[^}]*background: var\(--destructive\)/.test(st),
+    'destructive confirms stay red');
+});
+
+test('V-10: a zero-hour sparkline bar is visible, not background-coloured', () => {
+  const st = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const m = /\.emp-spark \.bar\.zero\s*\{([^}]*)\}/.exec(st);
+  assert.ok(m, '.emp-spark .bar.zero rule found');
+  assert.ok(!/var\(--paper-2\)/.test(m[1]),
+    'a zero day painted in a SURFACE colour is invisible in both themes — ' +
+    '"didn\'t work" then looks identical to "no data"');
+  assert.ok(/var\(--muted-3\)/.test(m[1]),
+    'uses the decoration-only tone (per the token contract) for a visible baseline');
+  assert.ok(/min-height: 3px/.test(m[1]), 'tall enough to read as a deliberate floor');
+});
+
+test('V-12: the two CN chip rows are different affordances', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const quick = /\.cn-quick-chip \{([^}]*)\}/.exec(cn);
+  const filter = /\.cn-filter-chip \{([^}]*)\}/.exec(cn);
+  assert.ok(quick && filter, 'both chip rules found');
+  // The FILTER row is the toggle pill (aria-pressed state); the JUMP row must
+  // not look like one — no pill outline, and a link tone.
+  assert.ok(/border-radius: 999px/.test(filter[1]), 'the filter row stays a pill');
+  assert.ok(!/border-radius: 999px/.test(quick[1]),
+    'the navigating row must NOT be a pill — the two rows were the same shape, ' +
+    'same colours and same count vocabulary ~400px apart, doing different things');
+  assert.ok(/border: 0/.test(quick[1]) && /var\(--info-deep\)/.test(quick[1]),
+    'link treatment (no outline, info tone)');
+  assert.ok(/cn-quick-chip:hover \{[^}]*text-decoration: underline/.test(cn),
+    'underline on hover — the standard "this navigates" signal');
+  assert.ok(/cn-qc-arrow/.test(cn), 'each chip carries a direction glyph');
+  assert.ok(/Open in History/.test(cn),
+    'the row label names the destination instead of a bare "Jump to history" kicker');
+});
+
+test('V-11: the Coaching per-rep table uses the shared component', () => {
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  assert.ok(/mtRenderTable_\(\{/.test(co),
+    'CLAUDE.md: "New manager tables should reuse it rather than hand-rolling <table> markup"');
+  assert.ok(!/<table class="tr-table coach-rep-table"/.test(co),
+    'the hand-rolled markup is gone (no header treatment / hover / sticky header)');
+  assert.ok(/rowClass: function \(r\) \{ return r\.overdue/.test(co),
+    'the overdue tone survives via the component\'s rowClass hook');
+  // The KPI strip is the visual twin of .telemetry — same alignment.
+  assert.ok(/\.coach-kpi \{[^}]*text-align:left/.test(co),
+    'the KPI strip is left-aligned like its .telemetry twin (it was centred)');
+});
+
+test('V-9: the Reference panels cap on the ITEMS so a short landing hugs content', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const wrap = /\.kb-wrap \{([^}]*)\}/.exec(kb);
+  assert.ok(wrap, '.kb-wrap rule found');
+  assert.ok(!/height: calc\(100vh/.test(wrap[1]),
+    'a FIXED height stretched both panels on the landing (~535px of empty card)');
+  assert.ok(/align-items: start/.test(wrap[1]), 'the shorter column does not stretch');
+  // Load-bearing: the cap MUST be on the items, or the row overflows the
+  // container and the whole PAGE scrolls instead of the reader panel.
+  assert.ok(/\.kb-wrap > \* \{[^}]*max-height: calc\(100vh - 150px\)/.test(kb),
+    'the viewport cap sits on the grid ITEMS (max-height on a grid CONTAINER does ' +
+    'not constrain its row — measured: the article grew the page to 13.7k px)');
+});
+
+test('V-14: the visual fixture\'s coverage numbers satisfy the server formula', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  // cnNoteCoverage_(noteCount, totalAnswered) = round(n/a*100); the Clock strip
+  // derives missing = answered - noteCount. Both must hold in the fixture, or
+  // the harness renders data the server cannot produce (its README's first rule).
+  const single = /getMyMetrics: \{[^}]*noteCount: (\d+), noteCoverage: (\d+), missingCount: (\d+)/.exec(mock);
+  assert.ok(single, 'getMyMetrics fixture found');
+  const [, n, cov, missing] = single.map(Number);
+  const answered = Number(/totalAnswered: (\d+)/.exec(mock)[1]);
+  assert.strictEqual(Math.round((n / answered) * 100), cov,
+    'noteCoverage must equal round(noteCount / totalAnswered * 100)');
+  assert.strictEqual(answered - n, missing, 'missingCount must equal answered - noteCount');
+  const rangeCount = Number(/getMyMetricsRange: \{[\s\S]{0,400}?noteCount: (\d+)/.exec(mock)[1]);
+  const rangeCov = Number(/getMyMetricsRange: \{[\s\S]{0,400}?noteCoverage: (\d+)/.exec(mock)[1]);
+  const rangeAns = Number(/getMyMetricsRange: \{[\s\S]{0,400}?totalAnswered: (\d+)/.exec(mock)[1]);
+  assert.strictEqual(Math.round((rangeCount / rangeAns) * 100), rangeCov,
+    'the range fixture must satisfy the same formula (it reused the single-day cdr)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

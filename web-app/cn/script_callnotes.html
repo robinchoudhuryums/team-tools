@@ -741,22 +741,37 @@
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
     margin-right: 6px;
+    display: inline-flex; align-items: center; gap: 4px;
   }
+  /* V-12 (cycle-12 visual audit): this row and the FILTER row above it were
+     the same shape, colour and count vocabulary — two 999px pill rows with
+     count badges, ~400px apart, showing DIFFERENT numbers (today's stack vs
+     the week) and doing DIFFERENT things (filter in place vs navigate away),
+     distinguished only by an 11px mono kicker. A rep cannot be expected to
+     read a kicker to know whether a click will move them off the page.
+     The filter row stays the toggle-pill (it has aria-pressed state); this row
+     becomes an unmistakable NAVIGATION affordance: no pill outline, accent
+     text, a trailing chevron, underline on hover. */
   .cn-quick-chip {
     appearance: none; cursor: pointer;
     font-family: var(--ui); font-size: 12px; font-weight: 500;
-    padding: 5px 10px; border-radius: 999px;
-    border: 1px solid var(--line); background: var(--paper-card); color: var(--muted);
-    display: inline-flex; align-items: center; gap: 6px;
-    transition: background var(--t) var(--ease), color var(--t) var(--ease);
+    padding: 4px 2px; border-radius: var(--radius-sm);
+    border: 0; background: none; color: var(--info-deep);
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: color var(--t) var(--ease);
   }
-  .cn-quick-chip:hover { background: var(--paper-2); color: var(--ink); }
+  .cn-quick-chip:hover { color: var(--info); text-decoration: underline; text-underline-offset: 2px; }
+  .cn-quick-chip:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+  .cn-quick-chip .cn-qc-arrow { display: inline-flex; opacity: .7; }
+  .cn-quick-chip:hover .cn-qc-arrow { opacity: 1; }
   .cn-quick-chip .count {
     font-family: var(--mono); font-variant-numeric: tabular-nums;
     font-size: 11px; font-weight: 600;
     padding: 1px 5px; border-radius: 999px;
     background: var(--paper-2); color: var(--muted);
   }
+  /* Keep the two rows' gaps distinct too — links breathe wider than pills. */
+  .cn-quick-chip-row { gap: 6px 14px; }
   .cn-quick-chip[data-flag="action"]   .count { background: var(--warn-soft); color: var(--warning-deep); }
   .cn-quick-chip[data-flag="training"] .count { background: var(--info-soft); color: var(--info-deep); }
   .cn-quick-chip[data-flag="review"]   .count { background: var(--accent-soft); color: var(--success-deep); }
@@ -7339,8 +7354,13 @@ function cnUpdateQuickChipRow_(res) {
     { flag: 'unresolved', label: 'Unresolved',  count: counts.unresolved || 0 },
     { flag: 'qa',         label: 'Q&A',         count: counts.qa || 0 },
   ];
-  row.innerHTML = '<span class="cn-quick-chip-row-label">Jump to history</span>'
-    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}">${esc(c.label)} <span class="count">${c.count}</span></button>`).join('');
+  // V-12: the label names the destination and every chip carries a chevron, so
+  // "this click leaves the page" is legible without reading the kicker.
+  row.innerHTML = '<span class="cn-quick-chip-row-label">' + icon('chevronRight', 11) + ' Open in History · this week</span>'
+    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}" ` +
+        `title="Open History filtered to ${esc(c.label)}">${esc(c.label)} ` +
+        `<span class="count">${c.count}</span>` +
+        `<span class="cn-qc-arrow">${icon('chevronRight', 11)}</span></button>`).join('');
   // Wire chip clicks: navigate to History view with the filter pre-selected.
   // Maps the chip's flag → CN_STATE.filter, then shows the history tab.
   row.querySelectorAll('.cn-quick-chip').forEach(btn => {

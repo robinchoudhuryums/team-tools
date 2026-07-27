@@ -1543,6 +1543,16 @@ this section before touching the relevant area.
   with a visible tab that passes the guard); `empState` is set at boot before the
   first nav, so it never wrongly redirects. Server endpoints still re-gate — this
   is UI-only hardening.
+  **`shortLabel` (optional per TOOL) is the nav-label source everywhere** — the
+  mobile bottom nav (cycle-11 V-6), and since cycle-12 V-5/V-7 the sidebar link
+  AND the sidebar sub-label too. The full `label` rides along as a `title`. It
+  exists because the nav is width-constrained on three surfaces at once: at the
+  shipped 168px sidebar default the full labels CSS-ellipsised 2 of 7 tools
+  ("Call N…", "Training & …"), at 390px "Call Notes" was the one mobile label
+  that wrapped, and the sub-label's two-line wrap pushed every sidebar nav item
+  down 11px — so navigating MOVED the navigation. Set `shortLabel` on any tool
+  whose label is longer than ~9 characters. (The two sidebar user fields carry
+  titles for the same reason — they also truncate at the default width.)
   Adding a new tab: append it to its tool's `tabs` map + implement
   the `enter*` handler in the tool's partial. Adding a new tool:
   add a TOOLS entry + drop tab partials + `include()` them from
@@ -3355,7 +3365,10 @@ this section before touching the relevant area.
   tooltip now carries the Win+Ctrl+T tip; an in-app 8x8 queue-status
   widget would need the 8x8 realtime API (future spec, on demand).
   **Round 2 (same day):** the save card is a 2×2 quadrant grid (Save &
-  Copy / Save & Compose / Open Email / Clear; kbd-chips hidden — tooltips
+  Copy / Save & Compose / Open Email / Clear; kbd-chips hidden (cycle-12 V-3
+  made that rule actually WIN — it had been dead at equal specificity, so the
+  chips rendered and the longest clipped in the 480px pop-out; both shortcuts
+  now ride the buttons' `title`) — tooltips
   carry the hints) with the **?** shortcuts button moved to a circular
   `.cn-help-fab` in the Log header, shortening the rail so the filter bar
   + notes sit higher; saved-note card action icons carry the same
@@ -3440,7 +3453,13 @@ this section before touching the relevant area.
   component. New manager tables should reuse it rather than hand-rolling
   `<table>` markup. **Optional `opts.rowClass(r)`** (Tier 2) adds a per-`<tr>`
   class for row-tone tinting — additive/backward-compatible (callers that omit
-  it render an unclassed `<tr>` exactly as before).
+  it render an unclassed `<tr>` exactly as before). **Cycle-12 V-11 added the
+  third caller:** the Coaching "By employee" table was the one manager table
+  still hand-rolled (`tr-table coach-rep-table` — no header treatment, hover, or
+  sticky header, contradicting this decision); it now renders through the
+  component with its overdue tint via `rowClass`, and the Coaching KPI strip was
+  left-aligned to match its `.telemetry` twin (it was centred). A Node pin
+  asserts the hand-rolled markup does not come back.
 - **Admin sheet viewer (Tier 2 — `getAdminSheetView`).** A manager-gated
   (INV-02/31), read-only, PHI-free in-app table view of a SAFE, **allowlisted**
   tab, surfaced as the Call Notes → Admin **"Sheets"** sub-tab

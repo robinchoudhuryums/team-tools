@@ -1954,20 +1954,29 @@ function deletePunch(empId, date, time, punchType) {
       if (normalizeTime_(rows[i][ADP.TIME]).trim() !== time) continue;
       if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== punchType) continue;
 
-      sheet.deleteRow(i + 1);
       // Cycle-11 L-14: dup-awareness parity with managerSaveDay's M-1 collapse —
       // if a legacy duplicate row of this same (emp, date, type) SURVIVES the
       // delete (pre-INV-155 leftovers), the personal-sheet mirror still shows a
-      // live punch, so don't blank it. Re-scan after the deletion.
+      // live punch, so don't blank it.
+      //
+      // F12 (cycle 12): derived from the ALREADY-LOADED `rows` (every index
+      // except the one being deleted) instead of a SECOND
+      // getDataRange().getValues() after the delete. Exactly equivalent under
+      // the lock — every mutating writer takes the same global ScriptLock
+      // (INV-01), so no row can appear between the two reads — but it drops a
+      // whole-Timesheet read from inside the lock, on the tab that grows
+      // unboundedly until INV-153 archival is enabled. Computed BEFORE the
+      // deleteRow so the index arithmetic needs no adjustment.
       let survivorExists = false;
-      const after = sheet.getDataRange().getValues();
-      for (let k = 2; k < after.length; k++) {
-        if (String(after[k][ADP.EMP_ID]).trim() === empId
-            && normalizeDate_(after[k][ADP.DATE]) === date
-            && normalizeType_(String(after[k][ADP.COMMENTS])) === punchType) {
+      for (let k = 2; k < rows.length; k++) {
+        if (k === i) continue;   // the row we are about to delete
+        if (String(rows[k][ADP.EMP_ID]).trim() === empId
+            && normalizeDate_(rows[k][ADP.DATE]) === date
+            && normalizeType_(String(rows[k][ADP.COMMENTS])) === punchType) {
           survivorExists = true; break;
         }
       }
+      sheet.deleteRow(i + 1);
       if (targetEmp && targetEmp.sheetId && !survivorExists) {
         try { clearFromEmployeeSheet_(targetEmp, date, punchType); }
         catch (e) { console.warn('clearFromEmployeeSheet_ failed: ' + e.message); }

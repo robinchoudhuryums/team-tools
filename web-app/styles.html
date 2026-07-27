@@ -1209,7 +1209,14 @@
     flex: 1; background: var(--accent-soft); border-radius: 1px;
     min-height: 2px;
   }
-  .emp-spark .bar.zero  { background: var(--paper-2); min-height: 1px; }
+  /* V-10 (cycle-12 visual audit): a zero-hour day was `--paper-2` at 1px —
+     ≈ the card background in BOTH themes, so a rep with 3 days off rendered as
+     a 4-bar sparkline instead of 7 bars with 3 empty, making "didn't work"
+     indistinguishable from "no data for that day". `--muted-3` is the
+     decoration-only tone (per the token contract — never body text), which is
+     exactly what a visible-but-quiet baseline is. 3px so it reads as a
+     deliberate floor rather than a rendering artifact. */
+  .emp-spark .bar.zero  { background: var(--muted-3); min-height: 3px; }
   .emp-spark .bar.short { background: var(--warn-soft); }
   .emp-spark-total {
     font-family: var(--mono); font-size: 10px; font-weight: 600;
@@ -1949,18 +1956,27 @@
     background: var(--paper-2); border-color: var(--border-strong); color: var(--ink);
   }
   /* Primary modal action — ink-on-paper, matching the export-btn CTA */
+  /* V-8 (cycle-12 visual audit): this was `--ink` on `--ink` — the app's ONLY
+     inverted button. In light mode it renders a near-black full-width bar (on
+     e.g. "Generate ADP Export", the money-facing action, where near-black reads
+     as disabled/error); in dark mode it goes near-WHITE and visually
+     out-competes the actual green primary above it. Every other action in the
+     app is green-primary / white-secondary, so the shared modal-OK now joins
+     that vocabulary (`--accent`, hovering to `--accent-2`, matching
+     `.actions .prime` and `.cn-action-prime` exactly). One rule, 25 call sites
+     — the inversion was never per-button, it was this shared class. */
   .btn-modal-ok {
     flex: 2; padding: 11px 14px;
-    border: 1px solid var(--ink); border-radius: var(--radius);
-    background: var(--ink);
+    border: 1px solid var(--accent); border-radius: var(--radius);
+    background: var(--accent);
     font-family: var(--ui);
-    font-size: 13px; font-weight: 500; color: var(--paper-card);
+    font-size: 13px; font-weight: 600; color: var(--paper-card);
     cursor: pointer; letter-spacing: .02em;
     transition: background var(--t) var(--ease), border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
   }
   .btn-modal-ok:hover:not(:disabled) {
-    background: color-mix(in oklch, var(--ink), var(--accent) 18%);
-    border-color: color-mix(in oklch, var(--ink), var(--accent) 18%);
+    background: var(--accent-2);
+    border-color: var(--accent-2);
     box-shadow: var(--shadow-sm);
   }
   .btn-modal-ok:disabled { opacity: .5; cursor: not-allowed; }
