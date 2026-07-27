@@ -4751,7 +4751,18 @@ means the scenario rendered a loader, not the real view — add the fixture
 before trusting the screenshot. See `test/visual/README.md`.
 
 ### Health Dimensions
-Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability
+Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability, UI/UX & Accessibility
+
+(**UI/UX & Accessibility** added 2026-07-27, template R18. It is the INTERFACE
+dimension — keyboard/assistive access, empty/loading/error-state completeness,
+responsive posture, theme completeness, design-token adherence, contrast, and
+visual hierarchy across the nine client subsystems. It is deliberately DISTINCT
+from Manager UX / Employee UX, which score workflow EFFECTIVENESS ("does this
+surface serve the job well") rather than interface CORRECTNESS. Cycle 12 is why
+it exists: an operator-requested visual addendum found two Mediums — the four
+`-deep` semantic tokens resolving to the wrong hue family, and AM/PM at 1.20:1
+in dark mode on the live clock — that eleven code-lens cycles could not reach,
+and there was no dimension to score them against.)
 
 ### Horizontal (Axis B) Categories
 Silent Degradation Posture | failures swallowed so the app continues with wrong results instead of surfacing an error (best-effort email, the CDR-overlay try/catch, optimistic-UI reverts, JSON-parse → null)
@@ -4760,6 +4771,7 @@ Operator-Only State Gaps | setup living only in Script Properties / manual trigg
 Sheets-Coercion & Timezone Integrity | Sheets coercing time/date/`TRUE`-`FALSE` on read, the CDR spreadsheet TZ mismatch (`getDisplayValues()`), per-rep-tz "today" derivation
 PHI / Access-Boundary Leakage | audit rows staying PHI-free, manager-gating + caller-scoping, token-only public endpoints, `esc()`-before-`innerHTML`, voice/BAA, signature handling
 Test Coverage Quality | whether tests actually guard regressions; the client DOM/RPC layer is manual-only; coupling tripwires (INV-95)
+Visual / Interaction Regression Posture | whether a change to the shared layer (design tokens, `styles.html`, a shared component) silently breaks a surface no test renders — CSS specificity collisions between partials, `color-mix` hue drift, fixed-palette surfaces painted with theme tokens, dead rules that lose at equal specificity, hand-rolled components bypassing the shared ones (`mtRenderTable_`), and fixture/visual-harness fidelity
 
 ### Subsystems
 Server:
