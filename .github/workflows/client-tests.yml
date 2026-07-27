@@ -28,19 +28,24 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dev dependencies (jsdom for the DOM harness)
-        run: npm ci
-
+      # F10 (cycle 12): the zero-dependency steps run BEFORE `npm ci`. They used
+      # to sit after it, which contradicted the "always-on floor" comment below
+      # — a registry hiccup or a jsdom resolution failure failed the job without
+      # ever running the only dependency-free checks, in a repo where this
+      # workflow is the sole automated gate.
       - name: Syntax-check server JS (Code.js / Tests.js / DevTools.js)
         run: |
           node --check web-app/Code.js
           node --check web-app/Tests.js
           node --check web-app/DevTools.js
 
-      # Zero-dependency pure harness runs first (the always-on floor — green even
-      # if the jsdom install ever fails).
+      # The always-on floor: no dependencies, so it is green even if the jsdom
+      # install below ever fails.
       - name: Run pure-helper unit tests
         run: node test/client/run.js
+
+      - name: Install dev dependencies (jsdom for the DOM harness)
+        run: npm ci
 
       - name: Run DOM-lifecycle tests
         run: node test/client/dom/runDom.js

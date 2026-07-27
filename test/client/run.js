@@ -194,6 +194,85 @@ test('--muted-2 meets AA (4.5:1) on every surface, both modes', () => {
     });
   });
 });
+// V-1 (cycle 12) — the four `-deep` semantic aliases must interpolate in
+// OKLAB, not OKLCH. `color-mix(in oklch, …)` interpolates hue POLARLY: mixing
+// a warm token with the near-neutral `--ink` (a low-chroma blue-ish grey, hue
+// ~265°) drags the result the long way round the hue circle, so
+// --warning-deep rendered OLIVE-GREEN and --danger-deep MAGENTA-PURPLE on
+// every modern browser (48–75° of drift) — while the pre-2023 fallback hexes
+// right above them were correct, which is exactly why reading the file never
+// revealed it. The existing --muted-2 tripwire measures LUMINANCE, which a
+// pure hue rotation leaves untouched, so nothing in CI could see this.
+// Two halves: the space is pinned at source level (a revert to `in oklch`
+// fails immediately), and the chosen colour pairs are pinned to be genuinely
+// hue-stable under a rectangular mix (worst measured drift: 10°).
+test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () => {
+  const toks = fs.readFileSync(
+    path.resolve(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
+  const DEEP = [
+    ['success-deep', 'good'], ['warning-deep', 'warn'],
+    ['danger-deep', 'destructive'], ['info-deep', 'info'],
+  ];
+  // (a) source-level: every color-mix'd -deep declaration uses `in oklab`.
+  const mixes = toks.match(/--(?:success|warning|danger|info)-deep:\s*color-mix\([^)]*\)[^;]*;/g) || [];
+  assert.strictEqual(mixes.length, 8,
+    'expected 8 color-mix -deep declarations (4 aliases x light/dark @supports blocks), found ' + mixes.length);
+  mixes.forEach((d) => {
+    assert.ok(/color-mix\(in oklab,/.test(d),
+      'polar hue interpolation is a colour-family bug, not a nuance — use `in oklab`: ' + d.trim());
+  });
+
+  // (b) behavioural: the mix result must stay in the source hue's family.
+  function hexes(name) {
+    const re = new RegExp('--' + name + ':\\s*(#[0-9a-fA-F]{6})', 'g');
+    const out = []; let m;
+    while ((m = re.exec(toks))) out.push(m[1]);
+    return out;
+  }
+  function toOklab(hex) {
+    const lin = [1, 3, 5].map((i) => {
+      const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    const [r, g, b] = lin;
+    const cb = (x) => (x > 0 ? Math.cbrt(x) : -Math.cbrt(-x));
+    const l = cb(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = cb(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = cb(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [
+      0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+    ];
+  }
+  const hue = (c) => (Math.atan2(c[2], c[1]) * 180 / Math.PI + 360) % 360;
+  const hueDiff = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
+  const MAX_DRIFT_DEG = 20;   // worst measured 10.1 (light --good); oklch was 48–75
+  // Each mode block mixes with its own partner + weight (light: ink 45%;
+  // dark: paper-card 25%) — read them from the source so a retune can't
+  // silently invalidate the pin.
+  [['ink', 0], ['paper-card', 1]].forEach(([partnerTok, mode]) => {
+    const label = mode ? 'dark' : 'light';
+    const declared = new RegExp('--success-deep: color-mix\\(in oklab, var\\(--good\\),\\s*var\\(--' +
+      partnerTok + '\\) (\\d+)%\\)').exec(toks);
+    assert.ok(declared, label + ' block mixes --good with --' + partnerTok);
+    const w = Number(declared[1]) / 100;
+    const partner = toOklab(hexes(partnerTok)[mode]);
+    DEEP.forEach(([, srcTok]) => {
+      const src = toOklab(hexes(srcTok)[mode]);
+      const mix = src.map((v, i) => v * (1 - w) + partner[i] * w);
+      const chroma = Math.hypot(mix[1], mix[2]);
+      assert.ok(chroma > 0.02,
+        label + ' --' + srcTok + ' mix is near-neutral (chroma ' + chroma.toFixed(3) +
+        ') — the hue compare below would be meaningless');
+      const drift = hueDiff(hue(src), hue(mix));
+      assert.ok(drift <= MAX_DRIFT_DEG,
+        label + ' --' + srcTok + ' hue ' + hue(src).toFixed(0) + '° drifts ' +
+        drift.toFixed(0) + '° to ' + hue(mix).toFixed(0) + '° in the -deep mix (max ' +
+        MAX_DRIFT_DEG + '°) — a semantic colour must not change family');
+    });
+  });
+});
 test('CN flag stripes use three distinct tokens', () => {
   const cn = fs.readFileSync(
     path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
@@ -1501,6 +1580,18 @@ const MIRROR_INDEX = [
     manual: 'CLAUDE.md "CN_EMAIL_PALETTE is hand-resolved from design tokens"' },
   { pair: 'PPD engine option values ↔ INTAKE_PPD_CONTROL (drift guards)',
     guards: ['end-to-end config-driven recommendation parity'] },
+  // ── F17 (cycle 12): four live mirrors the index had missed. Each is a
+  // client literal that must agree with a server enum; a drift is silent
+  // (an unreachable period, a rejected severity, a chip that never groups,
+  // a punch button with no glyph).
+  { pair: 'client CLK_DASH_PERIODS ↔ server DASHBOARD_PERIOD_KEYS',
+    guards: ['CLK_DASH_PERIODS === DASHBOARD_PERIOD_KEYS'] },
+  { pair: 'coaching severity <select> ⊆ server COACH_SEVERITIES (INV-134)',
+    guards: ['coaching severity options === COACH_SEVERITIES'] },
+  { pair: 'cnExtLinkOptionsHtml_ inlined categories ↔ CN_EXTERNAL_LINK_CATEGORIES',
+    guards: ['ext-link category labels mirror CN_EXTERNAL_LINK_CATEGORIES'] },
+  { pair: 'PUNCH_META keys ⊇ server PUNCH_LABELS_ (INV-155 button render)',
+    guards: ['PUNCH_META covers every PUNCH_LABELS_ type'] },
 ];
 console.log('\nclient — mirror index (batch K D: every mirror names a live guard)');
 test('mirror index — every listed guard test exists in this file', () => {
@@ -1516,6 +1607,65 @@ test('mirror index — every listed guard test exists in this file', () => {
     if (!m.guards.length) assert.ok(m.manual, 'unguarded mirror "' + m.pair + '" must document its manual discipline');
   });
 });
+// ── F17 (cycle 12): the four mirrors the index was missing. ────────────────
+// Each extracts BOTH sides from raw source, so a rename on either side fails.
+function arrayLiteral_(src, name) {
+  const m = new RegExp('(?:const|var|let)\\s+' + name + '\\s*=\\s*\\[([^\\]]*)\\]').exec(src);
+  assert.ok(m, name + ' array literal found');
+  return m[1].split(',').map((x) => x.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+}
+
+test('F17: client CLK_DASH_PERIODS === DASHBOARD_PERIOD_KEYS', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const client = arrayLiteral_(clk, 'CLK_DASH_PERIODS');
+  const server = arrayLiteral_(codeSrc, 'DASHBOARD_PERIOD_KEYS');
+  // Order matters: it drives the carousel's segmented-chip order AND the
+  // three up-front getDashboardMetrics fetches.
+  assert.deepStrictEqual(client, server,
+    'a client period the server rejects renders a permanently-empty carousel slide, ' +
+    'and a server period the client omits is simply unreachable');
+});
+
+test('F17: coaching severity options === COACH_SEVERITIES', () => {
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  const sel = co.slice(co.indexOf("<select id=\"coach-sev\">"));
+  const opts = (sel.slice(0, sel.indexOf('</select>')).match(/value="([a-z]+)"/g) || [])
+    .map((v) => v.replace(/value="|"/g, ''));
+  const server = arrayLiteral_(codeSrc, 'COACH_SEVERITIES');
+  assert.deepStrictEqual(opts, server,
+    'coachValidate_ whitelists against COACH_SEVERITIES — an option outside it is ' +
+    'rejected server-side after the manager has typed the whole coaching note');
+});
+
+test('F17: ext-link category labels mirror CN_EXTERNAL_LINK_CATEGORIES', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const m = /var catLabels = \[([\s\S]*?)\];/.exec(cn);
+  assert.ok(m, 'the composer picker\'s inlined catLabels literal found');
+  const clientCats = (m[1].match(/\['([a-z]+)'/g) || []).map((x) => x.replace(/\['|'/g, ''));
+  const server = arrayLiteral_(codeSrc, 'CN_EXTERNAL_LINK_CATEGORIES');
+  assert.deepStrictEqual(clientCats, server,
+    'cnExtLinkOptionsHtml_ inlines its categories deliberately (so it unit-tests ' +
+    'in isolation) — a server category missing here silently never groups, and its ' +
+    'links vanish from the picker');
+});
+
+test('F17: PUNCH_META covers every PUNCH_LABELS_ type', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const metaBlock = core.slice(core.indexOf('const PUNCH_META = {'));
+  const metaKeys = (metaBlock.slice(0, metaBlock.indexOf('\n};')).match(/^\s{2}(\w+):/gm) || [])
+    .map((k) => k.trim().replace(':', ''));
+  const server = arrayLiteral_(codeSrc, 'PUNCH_LABELS_');
+  const missing = server.filter((t) => metaKeys.indexOf(t) < 0);
+  assert.deepStrictEqual(missing, [],
+    'a server punch type with no PUNCH_META entry renders through the ' +
+    "`|| { label:p.type, icon:'info' }` fallback — a raw type name and a generic " +
+    'glyph on a punch button: ' + missing.join(', '));
+  // Adjust is client-only (it opens a modal, it is not a punch type) — assert
+  // the extra keys are exactly that, so a typo'd key can't hide here.
+  assert.deepStrictEqual(metaKeys.filter((k) => server.indexOf(k) < 0), ['Adjust'],
+    'PUNCH_META may carry only the one client-only entry (Adjust)');
+});
+
 test('AUTO_COPY_FORMAT: client fallback mirrors the server CONFIG default', () => {
   // Both templates are same-shaped string-concat literals ending at the
   // {resolution} chunk; parse each and compare byte-for-byte. CLAUDE.md has
@@ -3819,15 +3969,19 @@ test('the archive window clamps UP to the safety floor (a typo cannot strip live
     'floor comfortably exceeds every active payroll window (adjust 30d, export ≤31d, trends 14d)');
   assert.ok(/TIMESHEET_ARCHIVE_DAYS:\s*0/.test(codeSrc), 'CONFIG default 0 — disabled on a fresh deploy');
 });
-test('no Timesheet purge tier exists (keep-forever) and CN archive call sites keep their defaults', () => {
+test('no Timesheet purge tier exists (keep-forever); the CN tier keeps the header/width defaults', () => {
   assert.ok(codeSrc.indexOf('purgeArchivedTimesheet') === -1 &&
             !/purgeSheetRowsOlderThan_\([^)]*Timesheet/i.test(codeSrc),
     'nothing purges the Timesheet archive — payroll rows are only ever MOVED');
-  // The CN cold tier must still call the shared helper 4-arg (defaults
-  // headerRows=1 + CN_HEADERS width preserved → byte-identical CN behavior).
+  // The CN cold tier passes ONLY maxRows (cycle-12 F3-sibling). headerRows and
+  // width must stay defaulted — the CN Notes tab has ONE header row and the
+  // CN_HEADERS width, and passing either explicitly here would be drift.
   const cn = extractRawFunction('Code.js', 'archiveOldCallNotes');
-  assert.ok(/archiveSheetRowsOlderThan_\(live, archive, CN\.DATE_LOCAL, cutoffMs\)/.test(cn),
-    'archiveOldCallNotes still uses the helper defaults (no opts drift)');
+  assert.ok(/archiveSheetRowsOlderThan_\(live, archive, CN\.DATE_LOCAL, cutoffMs,\s*\{ maxRows: budget \}\)/
+    .test(cn.replace(/\s*\n\s*/g, ' ')),
+    'archiveOldCallNotes passes only the per-run bound (headerRows/width stay defaulted)');
+  assert.ok(!/headerRows/.test(cn) && !/width:/.test(cn),
+    'no headerRows/width drift at the CN call site');
 });
 
 console.log('\ntc/script_clock.html — night-sky phases + moon + skeleton loaders (operator picks a+b+d)');
@@ -4191,6 +4345,24 @@ test('nightly self-test trigger: heartbeat-first, dev-only full suite, failure s
   const health = extractRawFunction('Code.js', 'computeAutomationHealth_');
   assert.ok(/SELF_TEST_RESULT_PROP/.test(health) && /selfTest: selfTest/.test(health),
     'computeAutomationHealth_ returns the last self-test outcome');
+  // F15 (cycle 12): the RUNNING sentinel. An execution-time-limit kill is not
+  // catchable, so without it a chronically timing-out suite left the PREVIOUS
+  // (green) result in place beside a fresh heartbeat — the newest detector
+  // silently unable to fire.
+  const sentinel = src.indexOf('running: true');
+  assert.ok(sentinel >= 0, 'the run stamps a {running:true} sentinel');
+  assert.ok(sentinel < src.indexOf('if (isDev) runAllTests()'),
+    'the sentinel is stamped BEFORE the suite runs — otherwise a killed run never records it');
+  assert.ok(/startedAt: Date\.now\(\)/.test(src), 'the sentinel carries a start time for the staleness compare');
+  assert.ok(/stuck: !!\(st\.running/.test(health) && /SELF_TEST_STUCK_MS/.test(health),
+    'the health projection derives `stuck` from a STALE running sentinel (a run in flight is not a problem)');
+  assert.ok(/if \(report\.selfTest && report\.selfTest\.stuck\)/.test(problems) &&
+            /never finished/.test(problems),
+    'a stuck self-test rides automationProblems_ (health dot + failure digest)');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const selfHtml = cn.slice(cn.indexOf('function cnSelfTestHtml_'));
+  assert.ok(selfHtml.indexOf('st.stuck') >= 0 && selfHtml.indexOf('st.stuck') < selfHtml.indexOf('all passing'),
+    'the Admin panel reports a stuck run INSTEAD of the stale pass/fail line');
 });
 test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dual-verifies', () => {
   const NUL_ESC = '\\' + 'u0000';   // the 6-char escape as source text
@@ -4303,6 +4475,502 @@ test('getMyMetricsRange skips the cache put when the trend read failed (error-no
   assert.ok(/trendFailed = true/.test(src), 'the trend catch marks the round degraded');
   assert.ok(/useRangeCache && !trendFailed/.test(src),
     'the cache put must be gated on the trend having succeeded — a transient CDR failure was pinned for the full TTL');
+});
+
+// ── Cycle-12 broad-scan fix pins (F1–F5) ───────────────────────────────────
+console.log('\ncycle 12 — broad-scan fix pins (F1–F5)');
+
+// F1: the Timesheet cold archive (INV-153) had NO reader, so a retroactive ADP
+// export silently produced a PARTIAL payroll .xlsx behind {success:true}.
+test('F1: generateExportSheet_ reads through the Timesheet cold archive when the range predates the live tab', () => {
+  const src = extractRawFunction('Code.js', 'generateExportSheet_');
+  assert.ok(src.indexOf('TIMESHEET_ARCHIVE_TAB') >= 0,
+    'the export consults the archive tab — without this the range silently returns live rows only');
+  assert.ok(/getSheetByName\(TIMESHEET_ARCHIVE_TAB\)/.test(src),
+    'read-only w.r.t. tab existence (getSheetByName, never create — the INV-133 discipline)');
+  assert.ok(/oldestLiveDate/.test(src) && /startDate < oldestLiveDate/.test(src),
+    'the archive read is gated on the window reaching past the live tab (current-period exports stay byte-identical)');
+  assert.ok(/liveKeys\.has\(/.test(src),
+    'an archive row identical to a live one is skipped — the INV-132 append-then-delete duplicate must not double-count payroll');
+  assert.ok(/archivedRowCount/.test(src), 'the result reports how many rows came from the archive');
+  const exp = extractRawFunction('Code.js', 'exportAdpRange');
+  assert.ok(/archivedRows=/.test(exp), 'the AdpExport audit row records archived-row provenance');
+  assert.ok(/archivedRowCount/.test(exp), 'the response carries archivedRowCount for the manager toast');
+  // The archive tab must still have no purge tier (payroll is keep-forever).
+  assert.ok(codeSrc.indexOf('purgeArchivedTimesheet') === -1,
+    'reading the archive must not have introduced a purge tier');
+});
+
+// F2: the detector silently truncated at TS_DOCTOR_MAX_GROUPS while the fix
+// collapsed EVERYTHING, unbounded, holding the one project-wide ScriptLock.
+test('F2: sheet doctor reports truncation and the destructive collapse is bounded per run', () => {
+  const doctor = extractRawFunction('Code.js', 'getTimesheetDoctor');
+  assert.ok(/totalDuplicates/.test(doctor) && /totalInverted/.test(doctor),
+    'the detector counts EVERY finding, not just the ones inside the payload cap');
+  assert.ok(/truncated:/.test(doctor),
+    'the detector returns a truncation flag like every sibling bounded reader (getCallNotesAuditLog / getAdminSheetView)');
+  assert.ok(/totalDuplicateRows/.test(doctor),
+    'the ROW count (what a collapse deletes) is reported, not just the group count');
+  const fix = extractRawFunction('Code.js', 'fixTimesheetDuplicates');
+  assert.ok(/TS_DOCTOR_FIX_MAX_ROWS/.test(fix), 'the collapse is bounded by the per-run cap');
+  assert.ok(/remaining/.test(fix), 'the caller learns how much backlog is left (the op is idempotent → re-run)');
+  assert.ok(/toDelete\.slice\(0, TS_DOCTOR_FIX_MAX_ROWS\)/.test(fix),
+    'the batch is a slice of the descending-rowIdx list — bottom-up deletion + last-row-wins still hold (INV-155)');
+  const m = codeSrc.match(/TS_DOCTOR_FIX_MAX_ROWS = (\d+)/);
+  assert.ok(m && parseInt(m[1], 10) > 0 && parseInt(m[1], 10) <= 500,
+    'the cap exists and is small enough that the global lock is not held for minutes');
+  // The client must not promise more than the server will do.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/fixMaxRows/.test(mgr), 'the card labels the button from the server-declared per-run cap');
+  assert.ok(/res\.truncated/.test(mgr), 'the card surfaces "showing N of M" when the scan truncated');
+  assert.ok(/res\.remaining/.test(mgr), 'the toast says how much backlog is left after a bounded run');
+});
+
+// F3: unbounded row-by-row deletion could never finish a large first enable,
+// and each killed run re-appended the undeleted rows into the archive.
+test('F3: archiveSheetRowsOlderThan_ honors a per-run bound; the Timesheet caller passes one', () => {
+  const helper = extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_');
+  assert.ok(/opts\.maxRows/.test(helper), 'the shared mover accepts a per-run row bound');
+  assert.ok(/toMoveRows\.length >= maxRows/.test(helper), 'the scan stops once the bound is reached');
+  assert.ok(/\(opts\.maxRows > 0\) \? opts\.maxRows : 0/.test(helper),
+    'no maxRows → unbounded, so the CN call sites stay byte-identical (their 4-arg pin above)');
+  const ts = extractRawFunction('Code.js', 'archiveOldTimesheetRows');
+  assert.ok(/maxRows: TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN/.test(ts),
+    'the Timesheet archive (the large, unboundedly-growing tab) passes the bound');
+  assert.ok(/hitPerRunCap/.test(ts),
+    'a capped run is visible in the audit trail — a draining backlog must not look like a normal small run');
+  const m = codeSrc.match(/TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = (\d+)/);
+  assert.ok(m && parseInt(m[1], 10) > 0, 'the per-run cap constant exists');
+});
+
+// F4: the INV-124 cohort guard + team average were computed over a roster that
+// still included offboarded/placeholder rows every sibling walk excludes.
+test('F4: both Metrics roster walks apply the no-email skip (INV-124 cohort integrity)', () => {
+  ['getDashboardMetrics', 'getMyMetrics'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/EMP\.EMAIL/.test(src),
+      fn + ' must skip roster rows with no email — they enter the N=3 cohort count and the team average');
+    // The skip has to precede the push, not merely appear somewhere.
+    assert.ok(src.indexOf('EMP.EMAIL') < src.indexOf('allNames.push'),
+      fn + ' checks the email BEFORE collecting the name');
+  });
+  // getCoveragePlan is the sibling that already had it (cycle-9 L-2) — if that
+  // regresses, this family is broken again.
+  assert.ok(/EMP\.EMAIL/.test(extractRawFunction('Code.js', 'getCoveragePlan')),
+    'getCoveragePlan keeps its cycle-9 L-2 no-email skip');
+});
+
+// F5: a swallowed per-rep-Sheet read error was indistinguishable from "zero
+// notes filed", so the Clock strip told reps to re-file work they had done.
+test('F5: a failed note-count read is reported, never rendered as a confident zero', () => {
+  const helper = extractRawFunction('Code.js', 'cnCountNotesResult_');
+  assert.ok(/unavailable: true/.test(helper), 'the catch reports unavailable instead of a bare 0');
+  assert.ok(/unenrolled/.test(helper),
+    'an unenrolled rep (INV-35) is distinguished from a FAILED read — only the latter is an error');
+  const wrapper = extractRawFunction('Code.js', 'countCallNotesInRange_');
+  assert.ok(/cnCountNotesResult_\(emp, from, to\)\.count/.test(wrapper),
+    'the numeric helper delegates — one read path, so the two can never diverge');
+  // Every surface that turns the count into user-facing coverage must null the
+  // percentage and flag the round.
+  ['getDashboardMetrics', 'getMyMetrics', 'getMyMetricsRange', 'getTeamMetrics'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/cnCountNotesResult_\(/.test(src), fn + ' reads the outcome-carrying result');
+    assert.ok(/unavailable/.test(src) && /noteCo(verage|untPartial|untUnavailable)/.test(src),
+      fn + ' nulls/flags coverage when the read failed');
+  });
+  // NONE of the three result caches may pin a failed note read as fresh (L-3).
+  assert.ok(/!trendFailed && !noteRes\.unavailable/.test(extractRawFunction('Code.js', 'getMyMetricsRange')),
+    'a failed note read is the same class of partial as a failed trend read — not cacheable');
+  [['getMyMetrics', /useMetricsCache && !noteRes\.unavailable/],
+   ['getDashboardMetrics', /useCache && !noteRes\.unavailable/]].forEach(([fn, re]) => {
+    assert.ok(re.test(extractRawFunction('Code.js', fn)),
+      fn + ' must not cache a degraded notes read for the full TTL');
+  });
+  // Client: the strip must render the reason, not a "File N missing" CTA.
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const strip = clk.slice(clk.indexOf('function renderCoverageStrip_'));
+  // Anchor on the CTA's MARKUP (ss-cov-cta), not its label text — the label
+  // words also appear in the explanatory comment above the guard.
+  assert.ok(strip.indexOf('data.noteCountUnavailable') >= 0 &&
+            strip.indexOf('data.noteCountUnavailable') < strip.indexOf('ss-cov-cta'),
+    'the unavailable branch returns BEFORE the "File N missing" CTA can render');
+});
+
+// ---------------------------------------------------------------------------
+// F9 / F7 — the access-gate coverage net.
+//
+// INV-02/31/136 are the project's most load-bearing invariants, and the ONLY
+// thing keeping them honest was a hand-maintained list inside the editor-only
+// omnibus (`test_managerGates_rejectNonManager`) — a list nobody is forced to
+// update. Every prior cycle grew the gated surface and the omnibus caught up
+// only by someone remembering. This enumerates the gated set from Code.js
+// itself, so a NEW gated endpoint that no gate test touches fails CI.
+//
+// Trigger handlers are NOT in this set by construction: they gate via
+// `assertManagerCaller_` (which THROWS), so they never contain the returned
+// error string — their own tripwire (INV-44) covers them.
+function gatedEndpointsFromSource_() {
+  const out = { admin: [], manager: [] };
+  const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
+  let m;
+  while ((m = re.exec(codeSrc)) !== null) {
+    const start = codeSrc.indexOf('{', m.index + m[0].length - 1);
+    let depth = 0, k = start;
+    for (; k < codeSrc.length; k++) {
+      const ch = codeSrc[k];
+      if (ch === '{') depth++;
+      else if (ch === '}' && --depth === 0) break;
+    }
+    const body = codeSrc.slice(start, k + 1);
+    // Admin wins: an admin-gated endpoint returns the admin message only.
+    if (body.indexOf("'Admin access required.'") >= 0) out.admin.push(m[1]);
+    else if (body.indexOf("'Manager access required.'") >= 0) out.manager.push(m[1]);
+  }
+  return out;
+}
+
+test('F9: every gated endpoint is covered by a gate test (enumerated from source, not a hand list)', () => {
+  const gated = gatedEndpointsFromSource_();
+  assert.ok(gated.manager.length > 40 && gated.admin.length > 20,
+    'sanity: the enumeration found the gated surface (' + gated.manager.length +
+    ' manager / ' + gated.admin.length + ' admin) — a near-zero count means the scan broke, not that the gates vanished');
+
+  // Concatenate every gate-flavoured editor test body. A dedicated test may
+  // call the endpoint directly (no name string), so membership is checked
+  // against the whole region rather than a parsed case list.
+  const testsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const gateRe = /^function (test_[A-Za-z0-9_]*(?:[Gg]ate|[Nn]onManager|Rejected|Throws)[A-Za-z0-9_]*)\s*\(/gm;
+  let g, blob = '';
+  while ((g = gateRe.exec(testsSrc)) !== null) {
+    const start = testsSrc.indexOf('{', g.index + g[0].length - 1);
+    let depth = 0, k = start;
+    for (; k < testsSrc.length; k++) {
+      const ch = testsSrc[k];
+      if (ch === '{') depth++;
+      else if (ch === '}' && --depth === 0) break;
+    }
+    blob += testsSrc.slice(start, k + 1) + '\n';
+  }
+  assert.ok(blob.length > 5000, 'sanity: the gate-test region was located');
+
+  // Private helpers whose gate is defense-in-depth: not reachable via
+  // google.script.run (trailing underscore), and exercised through public
+  // wrappers that ARE in the omnibus. Keep this list tiny and reasoned.
+  const ALLOW = {
+    // Called only by managerGetTrainingQueue / managerGetReviewCandidates,
+    // both of which are omnibus cases.
+    managerAggregateFlagged_: 'private helper; public wrappers are covered',
+  };
+  const uncovered = gated.admin.concat(gated.manager)
+    .filter((n) => !ALLOW[n] && blob.indexOf(n) < 0);
+  assert.deepStrictEqual(uncovered, [],
+    'gated endpoint(s) with no gate test — add them to test_managerGates_rejectNonManager ' +
+    '(or a dedicated *_nonManagerRejected test): ' + uncovered.join(', '));
+});
+
+test('F7: INV-136 documents exactly the admin-gated set that Code.js enforces', () => {
+  const admin = gatedEndpointsFromSource_().admin;
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const start = claude.indexOf('INV-136 |');
+  assert.ok(start > 0, 'INV-136 is present in the invariant library');
+  const para = claude.slice(start, claude.indexOf('| Subsystem:', start));
+  // The prose count drifted for two cycles (said 30 while the code enforced
+  // 35) — the operator reads it to decide whether to narrow ADMIN_EMAILS.
+  const stated = /\*\*(\d+) Admin-exclusive endpoints\*\*/.exec(para);
+  assert.ok(stated, 'INV-136 states an "N Admin-exclusive endpoints" count');
+  assert.strictEqual(Number(stated[1]), admin.length,
+    'INV-136 says ' + stated[1] + ' admin-exclusive endpoints; Code.js enforces ' + admin.length);
+  const unnamed = admin.filter((n) => para.indexOf('`' + n + '`') < 0);
+  assert.deepStrictEqual(unnamed, [],
+    'admin-gated endpoint(s) missing from INV-136\'s list: ' + unnamed.join(', '));
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-12 Batch C pins.
+console.log('\ncycle 12 — batch C fix pins (F14 / F16 / F18 / F11 / F3-sibling)');
+
+// F14: the enrollment test was hand-written 21 times; 11 copies tested RAW
+// truthiness while 10 trimmed, so a whitespace-only column L made a rep
+// "enrolled" for every cross-rep walk (which then threw into its per-rep catch
+// and SILENTLY dropped them from the aggregate) while their own panel showed
+// the enrollment splash. This is the INV-142 / INV-154 boundary pattern: one
+// predicate, plus a global ban on reading the column any other way.
+test('F14: every column-L read goes through cnEnrolledSheetId_ (no raw truthiness left)', () => {
+  const pred = extractRawFunction('Code.js', 'cnEnrolledSheetId_');
+  assert.ok(/String\(row\[EMP\.CALL_NOTES_SHEET_ID\] \|\| ''\)\.trim\(\)/.test(pred),
+    'the predicate trims and null-guards — a whitespace-only cell reads as NOT enrolled');
+
+  // Global scan: strip comments, then every remaining EMP.CALL_NOTES_SHEET_ID
+  // occurrence must be either the predicate itself or the provisioning WRITE.
+  const stripped = codeSrc
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const offenders = [];
+  stripped.split('\n').forEach((line, i) => {
+    if (line.indexOf('EMP.CALL_NOTES_SHEET_ID') < 0) return;
+    // The predicate's own body.
+    if (/String\(row\[EMP\.CALL_NOTES_SHEET_ID\]/.test(line)) return;
+    // provisionCallNotesSheet's setValue target (a WRITE, not an enrollment test).
+    if (/getRange\([^)]*EMP\.CALL_NOTES_SHEET_ID \+ 1\)/.test(line)) return;
+    offenders.push((i + 1) + ': ' + line.trim());
+  });
+  assert.deepStrictEqual(offenders, [],
+    'read column L via cnEnrolledSheetId_(row) — a raw read re-opens the ' +
+    'whitespace-only split where trimmed and untrimmed sites disagree:\n  ' +
+    offenders.join('\n  '));
+
+  // The predicate must actually be used by the cross-rep walks that had the bug.
+  ['getCallNotesTagTaxonomy', 'getCallNotesTagTrends', 'applyTagTransformAcrossReps_',
+   'managerSearchCallNotes', 'managerGetShiftStats', 'managerGetUnresolvedActionCount',
+   'getStorageHealth', 'exportCallNotesRange', 'managerAggregateFlagged_',
+   'managerAggregateUrgent_', 'sendCallNotesEodDigest', 'getTeamMetrics'].forEach((fn) => {
+    assert.ok(/cnEnrolledSheetId_\(/.test(extractRawFunction('Code.js', fn)),
+      fn + ' must resolve enrollment through the predicate');
+  });
+});
+
+// F3-sibling: the CN cold-archive twin of the bound shipped for the Timesheet.
+test('F3-sibling: archiveOldCallNotes bounds the whole run, not just one rep', () => {
+  const src = extractRawFunction('Code.js', 'archiveOldCallNotes');
+  assert.ok(/CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN/.test(src), 'a per-run budget exists');
+  assert.ok(/if \(budget <= 0\) break;/.test(src),
+    'the REP LOOP stops when the budget is spent — a per-rep cap would not bound ' +
+    'a walk that calls the mover once per rep inside one execution + one lock');
+  assert.ok(/budget -= moved/.test(src), 'the budget is shared across reps, not reset per rep');
+  assert.ok(/hitPerRunCap/.test(src),
+    'a capped run is visible in the audit row — a draining backlog must not read as a normal small run');
+  const m = codeSrc.match(/CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN = (\d+)/);
+  assert.ok(m && parseInt(m[1], 10) > 0, 'the cap constant is a positive number');
+});
+
+// F11: the two append-only SubformData arrays were unbounded in LENGTH (L-1
+// bounded the email-detail objects' SIZE, one surface over). A long coaching
+// thread or a repeatedly-emailed note walks the cell to its ~50k limit, and
+// past that EVERY later write on the note throws — including the flag/pin ops.
+test('F11: the two growing SubformData arrays are bounded (count + serialized size)', () => {
+  const helper = extractRawFunction('Code.js', 'cnAppendBounded_');
+  assert.ok(/arr\.length >= maxEntries/.test(helper), 'entry-count cap');
+  assert.ok(/JSON\.stringify\(subformData\)\.length/.test(helper) &&
+            /CN_SUBFORM_MAX_CHARS/.test(helper),
+    'serialized-size check against the cell limit (a count cap alone cannot bound bytes)');
+  assert.ok(/arr\.pop\(\)/.test(helper),
+    'a rejected entry is REMOVED again — the caller must not half-mutate the record');
+  const cap = codeSrc.match(/CN_SUBFORM_MAX_CHARS = (\d+)/);
+  assert.ok(cap && parseInt(cap[1], 10) < 50000,
+    'the size cap sits UNDER the 50k Sheets cell limit');
+
+  // All FOUR appends route through it: 3 feedback[] + 1 externalEmails[].
+  ['setCallNoteTrainingReply', 'setCallNoteManagerComment', 'appendCallNoteFeedback']
+    .forEach((fn) => {
+      const src = extractRawFunction('Code.js', fn);
+      assert.ok(/cnAppendBounded_\(/.test(src), fn + ' appends through the bounded helper');
+      assert.ok(!/subformData\.feedback\.push\(/.test(src), fn + ' has no raw push left');
+      assert.ok(/if \(fbErr\) return \{ success: false, error: fbErr \}/.test(src),
+        fn + ' surfaces the refusal (the note is left untouched, so it stays writable)');
+    });
+  const ext = extractRawFunction('Code.js', 'sendExternalEmail');
+  assert.ok(/cnAppendBounded_\(/.test(ext) && !/externalEmails\.push\(/.test(ext),
+    'the externalEmails[] stamp is bounded too');
+  // That stamp runs AFTER a successful send (INV-42) — a rejection must NOT be
+  // reported as a send failure, and must not write the oversized cell.
+  const stampRegion = ext.slice(ext.indexOf('cnAppendBounded_'));
+  assert.ok(/console\.warn/.test(stampRegion.slice(0, 500)),
+    'a rejected stamp logs (INV-42: never fail an already-sent email)');
+  assert.ok(/\} else \{[\s\S]{0,200}setValue\(JSON\.stringify\(subformData\)\)/.test(stampRegion),
+    'the cell is written ONLY when the append was accepted');
+
+  // The non-growing writes (flag / resolve / pin) must stay unguarded so an
+  // already-oversized note can still be un-flagged or edited back down.
+  ['setCallNoteFlag', 'setCallNotePinned'].forEach((fn) => {
+    assert.ok(!/cnAppendBounded_|CN_SUBFORM_MAX_CHARS/.test(extractRawFunction('Code.js', fn)),
+      fn + ' must NOT be size-gated — it is the recovery path for an oversized note');
+  });
+});
+
+// F16: the last silently-blanking failure handler. E7 (cycle 10) fixed only the
+// success-with-{error} path, so a transport failure still wiped the panel that
+// configures two IRREVERSIBLE PHI purges — indistinguishable from "not present".
+test('F16: the retention panel reports a failed load instead of blanking', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const fn = cn.slice(cn.indexOf('function cnLoadRetentionPanel_'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  const fh = body.slice(body.indexOf('.withFailureHandler'));
+  assert.ok(/errorStateHtml_\(/.test(fh),
+    'the failure handler renders the shared error state');
+  assert.ok(!/innerHTML = ''/.test(fh), 'no silent blank left');
+  assert.ok(/currentView !== 'callNotesAdmin'/.test(fh),
+    'still guards against a late callback writing into another view (the CN loader rule)');
+});
+
+// F18: four payload-capped readers reported no truncation — the F2 class.
+test('F18: payload-capped readers report the pre-slice total', () => {
+  const dr = extractRawFunction('Code.js', 'getDeptRequests');
+  assert.ok(/DR_LIST_CAP/.test(dr), 'the magic 100 is a named cap');
+  // Match the KEY form exactly — a bare substring test passes on a typo'd
+  // `mineTotalX`, which is precisely the drift this pin exists to catch.
+  ['mineTotal', 'incomingTotal', 'allOpenTotal'].forEach((k) => {
+    assert.ok(new RegExp('\\b' + k + '\\b\\s*[:=]').test(dr), 'getDeptRequests returns ' + k);
+  });
+  assert.ok(/listCap: DR_LIST_CAP/.test(dr), 'the cap itself rides back for the client');
+  const kb = extractRawFunction('Code.js', 'kbGetReviewDue');
+  assert.ok(/KB_REVIEW_DUE_CAP/.test(kb) && /total: items\.length/.test(kb),
+    'kbGetReviewDue returns the pre-slice total');
+  const sp = extractRawFunction('Code.js', 'getSpanishInboxStats');
+  assert.ok(/SPANISH_PENDING_LIST_CAP/.test(sp) && /pendingListCap/.test(sp),
+    'getSpanishInboxStats declares its pendingList cap');
+
+  // Client: "showing N of M", and NOTHING when the list is complete or when an
+  // older server omits the total (so a not-yet-redeployed server is safe).
+  const drc = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
+  const noteFn = drc.slice(drc.indexOf('function drCapNoteHtml_'));
+  assert.ok(/!isFinite\(t\) \|\| t <= shown\) return ''/.test(noteFn),
+    'the suffix is omitted when the list is complete or the total is absent');
+  assert.strictEqual((drc.match(/drCapNoteHtml_\(/g) || []).length, 4,
+    'all three lists (mine / incoming / allOpen) call it, plus the definition');
+  const kbc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/rdCapped \? rdTotal : rd\.length/.test(kbc),
+    'the Review-due pill shows the TRUE total, not the payload length');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-12 batches D+E pins. The visual items are pinned at SOURCE level (the
+// static-render harness in test/visual/ is manual and not in CI), each anchored
+// on the specific mechanism the finding was about — not merely "a rule exists".
+console.log('\ncycle 12 — batch D/E fix pins');
+
+test('F12: deletePunch derives the duplicate survivor from the loaded rows (no 2nd sheet read)', () => {
+  const src = extractRawFunction('Code.js', 'deletePunch');
+  // Strip comments first — the fix's own explanatory comment names the call it
+  // removed, and counting that would make the pin permanently red.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const reads = (code.match(/getDataRange\(\)\.getValues\(\)/g) || []).length;
+  assert.strictEqual(reads, 1,
+    'exactly ONE whole-Timesheet read — the survivor re-scan used a second one INSIDE the lock');
+  // The scan must exclude the row being deleted, and run BEFORE deleteRow so the
+  // indices need no adjustment.
+  assert.ok(/if \(k === i\) continue;/.test(src), 'the row about to be deleted is excluded');
+  assert.ok(src.indexOf('survivorExists = true') < src.indexOf('sheet.deleteRow'),
+    'the survivor is computed BEFORE the delete (pre-delete rows + index skip)');
+});
+
+test('V-5/V-6/V-7: the sidebar + nav use shortLabel and never truncate without a title', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  // V-6: callNotes carries a shortLabel (it was the one mobile label that wrapped).
+  const cnEntry = core.slice(core.indexOf('  callNotes: {'), core.indexOf('  metrics: {'));
+  assert.ok(/shortLabel:/.test(cnEntry), 'callNotes declares a shortLabel');
+  // V-7: the sidebar link renders shortLabel + a full-label title.
+  assert.ok(/class="sb-lbl">\$\{esc\(t\.shortLabel \|\| t\.label\)\}/.test(core),
+    'the sidebar label uses shortLabel (it CSS-ellipsised the full label at the 168px default)');
+  assert.ok(/<button class="sb-link" data-tool="\$\{toolKey\}" title="\$\{esc\(t\.label\)\}"/.test(core),
+    'the full label survives as a title');
+  // V-5: the sub-label uses shortLabel too — the full one wrapped to 2 lines and
+  // pushed every nav item down 11px.
+  assert.ok(/lbl\.textContent = tool\.shortLabel \|\| tool\.label/.test(core),
+    'the sidebar sub-label uses shortLabel (a 2-line wrap moved the whole nav)');
+  // V-7: the two user fields that ellipsis at the default width carry titles.
+  assert.ok(/class="sb-user-name" title=/.test(core) && /class="sb-user-id" title=/.test(core),
+    'name + employee id carry titles — both truncate at the DEFAULT sidebar width');
+});
+
+test('V-4: shift-strip durations never break mid-value', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/\.ss-hours \.ss-val \{ white-space: nowrap; \}/.test(clk),
+    'each value+unit is a nowrap span (the cycle-11 .tz-chip `.seg` rule on its sibling)');
+  assert.ok(/class="ss-hours"><span class="ss-val">/.test(clk) &&
+            /class="ss-sub ss-val">/.test(clk),
+    'BOTH readouts (worked + lunch) are wrapped — one span alone leaves the other breaking');
+});
+
+test('V-8: the shared modal primary uses the app accent, not an inverted --ink', () => {
+  const st = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const rule = st.slice(st.indexOf('  .btn-modal-ok {'));
+  const body = rule.slice(0, rule.indexOf('}'));
+  assert.ok(/background: var\(--accent\)/.test(body),
+    'the app has ONE primary vocabulary (--accent); this was the only inverted button');
+  assert.ok(!/background: var\(--ink\)/.test(body),
+    '--ink on --ink renders near-black in light mode and near-WHITE in dark, ' +
+    'out-competing the real primary');
+  // The danger variant must still win (it is .ui-dialog-ok.is-danger, 0,2,0).
+  assert.ok(/\.ui-dialog-ok\.is-danger \{[^}]*background: var\(--destructive\)/.test(st),
+    'destructive confirms stay red');
+});
+
+test('V-10: a zero-hour sparkline bar is visible, not background-coloured', () => {
+  const st = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const m = /\.emp-spark \.bar\.zero\s*\{([^}]*)\}/.exec(st);
+  assert.ok(m, '.emp-spark .bar.zero rule found');
+  assert.ok(!/var\(--paper-2\)/.test(m[1]),
+    'a zero day painted in a SURFACE colour is invisible in both themes — ' +
+    '"didn\'t work" then looks identical to "no data"');
+  assert.ok(/var\(--muted-3\)/.test(m[1]),
+    'uses the decoration-only tone (per the token contract) for a visible baseline');
+  assert.ok(/min-height: 3px/.test(m[1]), 'tall enough to read as a deliberate floor');
+});
+
+test('V-12: the two CN chip rows are different affordances', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const quick = /\.cn-quick-chip \{([^}]*)\}/.exec(cn);
+  const filter = /\.cn-filter-chip \{([^}]*)\}/.exec(cn);
+  assert.ok(quick && filter, 'both chip rules found');
+  // The FILTER row is the toggle pill (aria-pressed state); the JUMP row must
+  // not look like one — no pill outline, and a link tone.
+  assert.ok(/border-radius: 999px/.test(filter[1]), 'the filter row stays a pill');
+  assert.ok(!/border-radius: 999px/.test(quick[1]),
+    'the navigating row must NOT be a pill — the two rows were the same shape, ' +
+    'same colours and same count vocabulary ~400px apart, doing different things');
+  assert.ok(/border: 0/.test(quick[1]) && /var\(--info-deep\)/.test(quick[1]),
+    'link treatment (no outline, info tone)');
+  assert.ok(/cn-quick-chip:hover \{[^}]*text-decoration: underline/.test(cn),
+    'underline on hover — the standard "this navigates" signal');
+  assert.ok(/cn-qc-arrow/.test(cn), 'each chip carries a direction glyph');
+  assert.ok(/Open in History/.test(cn),
+    'the row label names the destination instead of a bare "Jump to history" kicker');
+});
+
+test('V-11: the Coaching per-rep table uses the shared component', () => {
+  const co = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  assert.ok(/mtRenderTable_\(\{/.test(co),
+    'CLAUDE.md: "New manager tables should reuse it rather than hand-rolling <table> markup"');
+  assert.ok(!/<table class="tr-table coach-rep-table"/.test(co),
+    'the hand-rolled markup is gone (no header treatment / hover / sticky header)');
+  assert.ok(/rowClass: function \(r\) \{ return r\.overdue/.test(co),
+    'the overdue tone survives via the component\'s rowClass hook');
+  // The KPI strip is the visual twin of .telemetry — same alignment.
+  assert.ok(/\.coach-kpi \{[^}]*text-align:left/.test(co),
+    'the KPI strip is left-aligned like its .telemetry twin (it was centred)');
+});
+
+test('V-9: the Reference panels cap on the ITEMS so a short landing hugs content', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const wrap = /\.kb-wrap \{([^}]*)\}/.exec(kb);
+  assert.ok(wrap, '.kb-wrap rule found');
+  assert.ok(!/height: calc\(100vh/.test(wrap[1]),
+    'a FIXED height stretched both panels on the landing (~535px of empty card)');
+  assert.ok(/align-items: start/.test(wrap[1]), 'the shorter column does not stretch');
+  // Load-bearing: the cap MUST be on the items, or the row overflows the
+  // container and the whole PAGE scrolls instead of the reader panel.
+  assert.ok(/\.kb-wrap > \* \{[^}]*max-height: calc\(100vh - 150px\)/.test(kb),
+    'the viewport cap sits on the grid ITEMS (max-height on a grid CONTAINER does ' +
+    'not constrain its row — measured: the article grew the page to 13.7k px)');
+});
+
+test('V-14: the visual fixture\'s coverage numbers satisfy the server formula', () => {
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  // cnNoteCoverage_(noteCount, totalAnswered) = round(n/a*100); the Clock strip
+  // derives missing = answered - noteCount. Both must hold in the fixture, or
+  // the harness renders data the server cannot produce (its README's first rule).
+  const single = /getMyMetrics: \{[^}]*noteCount: (\d+), noteCoverage: (\d+), missingCount: (\d+)/.exec(mock);
+  assert.ok(single, 'getMyMetrics fixture found');
+  const [, n, cov, missing] = single.map(Number);
+  const answered = Number(/totalAnswered: (\d+)/.exec(mock)[1]);
+  assert.strictEqual(Math.round((n / answered) * 100), cov,
+    'noteCoverage must equal round(noteCount / totalAnswered * 100)');
+  assert.strictEqual(answered - n, missing, 'missingCount must equal answered - noteCount');
+  const rangeCount = Number(/getMyMetricsRange: \{[\s\S]{0,400}?noteCount: (\d+)/.exec(mock)[1]);
+  const rangeCov = Number(/getMyMetricsRange: \{[\s\S]{0,400}?noteCoverage: (\d+)/.exec(mock)[1]);
+  const rangeAns = Number(/getMyMetricsRange: \{[\s\S]{0,400}?totalAnswered: (\d+)/.exec(mock)[1]);
+  assert.strictEqual(Math.round((rangeCount / rangeAns) * 100), rangeCov,
+    'the range fixture must satisfy the same formula (it reused the single-day cdr)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

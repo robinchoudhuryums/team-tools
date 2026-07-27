@@ -232,7 +232,17 @@
     width: 100%; justify-content: center; padding: 9px 8px;
     font-size: 12px; display: inline-flex; align-items: center; gap: 5px;
   }
-  .rail-actions .kbd-chip { display: none; }   /* chips crowd the quadrants — the card sub + tooltips carry the hints */
+  /* Chips crowd the quadrants — the card sub + tooltips carry the hints.
+     V-3 (cycle 12): this was `.rail-actions .kbd-chip` (0,2,0), which LOST to
+     `.cn-action-prime .kbd-chip, .cn-action-sec .kbd-chip { display: inline-flex }`
+     (also 0,2,0, declared ~470 lines LATER — equal specificity, source order
+     wins). So the rule was DEAD: the chips rendered inside the 2-up quadrant
+     buttons anyway, and in the 480px pinned pop-out the longest one
+     (Save & Compose's Ctrl+Shift+Enter) visibly CLIPPED at the button edge —
+     while CLAUDE.md asserted the chips were hidden here. Naming both button
+     classes takes this to (0,3,0) so it wins regardless of order. */
+  .rail-actions .cn-action-prime .kbd-chip,
+  .rail-actions .cn-action-sec .kbd-chip { display: none; }
   /* V-5 (cycle-11 visual audit) — the icon and label live inside ONE child
      span (the button's own gap only separates label from kbd-chip), so the
      glyph rendered flush against the text on Save & Compose / Open Email /
@@ -731,22 +741,37 @@
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
     margin-right: 6px;
+    display: inline-flex; align-items: center; gap: 4px;
   }
+  /* V-12 (cycle-12 visual audit): this row and the FILTER row above it were
+     the same shape, colour and count vocabulary — two 999px pill rows with
+     count badges, ~400px apart, showing DIFFERENT numbers (today's stack vs
+     the week) and doing DIFFERENT things (filter in place vs navigate away),
+     distinguished only by an 11px mono kicker. A rep cannot be expected to
+     read a kicker to know whether a click will move them off the page.
+     The filter row stays the toggle-pill (it has aria-pressed state); this row
+     becomes an unmistakable NAVIGATION affordance: no pill outline, accent
+     text, a trailing chevron, underline on hover. */
   .cn-quick-chip {
     appearance: none; cursor: pointer;
     font-family: var(--ui); font-size: 12px; font-weight: 500;
-    padding: 5px 10px; border-radius: 999px;
-    border: 1px solid var(--line); background: var(--paper-card); color: var(--muted);
-    display: inline-flex; align-items: center; gap: 6px;
-    transition: background var(--t) var(--ease), color var(--t) var(--ease);
+    padding: 4px 2px; border-radius: var(--radius-sm);
+    border: 0; background: none; color: var(--info-deep);
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: color var(--t) var(--ease);
   }
-  .cn-quick-chip:hover { background: var(--paper-2); color: var(--ink); }
+  .cn-quick-chip:hover { color: var(--info); text-decoration: underline; text-underline-offset: 2px; }
+  .cn-quick-chip:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+  .cn-quick-chip .cn-qc-arrow { display: inline-flex; opacity: .7; }
+  .cn-quick-chip:hover .cn-qc-arrow { opacity: 1; }
   .cn-quick-chip .count {
     font-family: var(--mono); font-variant-numeric: tabular-nums;
     font-size: 11px; font-weight: 600;
     padding: 1px 5px; border-radius: 999px;
     background: var(--paper-2); color: var(--muted);
   }
+  /* Keep the two rows' gaps distinct too — links breathe wider than pills. */
+  .cn-quick-chip-row { gap: 6px 14px; }
   .cn-quick-chip[data-flag="action"]   .count { background: var(--warn-soft); color: var(--warning-deep); }
   .cn-quick-chip[data-flag="training"] .count { background: var(--info-soft); color: var(--info-deep); }
   .cn-quick-chip[data-flag="review"]   .count { background: var(--accent-soft); color: var(--success-deep); }
@@ -2529,7 +2554,7 @@ function cnRenderActiveForm_() {
             <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM (${esc(mod)}+Shift+C)">
               <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}⇧C</span>
             </button>
-            <button type="button" class="cn-action-sec" id="cn-form-submit-compose" title="Save, copy, and open the email composer">
+            <button type="button" class="cn-action-sec" id="cn-form-submit-compose" title="Save, copy, and open the email composer (${esc(mod)}+Shift+Enter)">
               <span>${icon('mail', 13)}Save &amp; Compose</span><span class="kbd-chip">${esc(mod)}⇧↵</span>
             </button>
             <button type="button" class="cn-action-sec" id="cn-ext-email-btn" title="Open the email composer without saving (for customer / provider emails)">
@@ -7329,8 +7354,13 @@ function cnUpdateQuickChipRow_(res) {
     { flag: 'unresolved', label: 'Unresolved',  count: counts.unresolved || 0 },
     { flag: 'qa',         label: 'Q&A',         count: counts.qa || 0 },
   ];
-  row.innerHTML = '<span class="cn-quick-chip-row-label">Jump to history</span>'
-    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}">${esc(c.label)} <span class="count">${c.count}</span></button>`).join('');
+  // V-12: the label names the destination and every chip carries a chevron, so
+  // "this click leaves the page" is legible without reading the kicker.
+  row.innerHTML = '<span class="cn-quick-chip-row-label">' + icon('chevronRight', 11) + ' Open in History · this week</span>'
+    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}" ` +
+        `title="Open History filtered to ${esc(c.label)}">${esc(c.label)} ` +
+        `<span class="count">${c.count}</span>` +
+        `<span class="cn-qc-arrow">${icon('chevronRight', 11)}</span></button>`).join('');
   // Wire chip clicks: navigate to History view with the filter pre-selected.
   // Maps the chip's flag → CN_STATE.filter, then shows the history tab.
   row.querySelectorAll('.cn-quick-chip').forEach(btn => {
@@ -7651,7 +7681,17 @@ function cnLoadRetentionPanel_() {
       CN_STATE.retentionCfg = res;
       slot.innerHTML = cnRenderRetentionHtml_(res);
     })
-    .withFailureHandler(function () { if (currentView === 'callNotesAdmin') slot.innerHTML = ''; })
+    // F16 (cycle 12): the LAST silently-blanking failure handler in the
+    // codebase. Cycle-10's E7 fixed only the success-with-{error} path above;
+    // a transport/throw failure still wiped the slot to '', so an unreachable
+    // retention config looked exactly like "this deploy has no retention
+    // panel" — on the surface that configures two IRREVERSIBLE PHI purges.
+    // Same shape as the four sibling handlers in this file.
+    .withFailureHandler(function (err) {
+      if (currentView !== 'callNotesAdmin') return;
+      slot.innerHTML = errorStateHtml_('Retention panel failed to load: ' +
+        ((err && err.message) || 'unknown error'));
+    })
     .getRetentionConfig();
 }
 function cnRetentionRowHtml_(key, label, val, destructive) {
@@ -8778,9 +8818,26 @@ function cnRenderHealthPanel_(res) {
 }
 
 /** K-A alternative — the last nightly self-test outcome. null = never ran
- *  (fresh deploy / trigger not installed) — informational, not an error. */
+ *  (fresh deploy / trigger not installed) — informational, not an error.
+ *  F15 (cycle 12): the server now stamps a {running:true, startedAt} sentinel
+ *  BEFORE running, so a run killed by the 6-minute ceiling leaves `running`
+ *  set instead of silently preserving the PREVIOUS night's green result.
+ *  `stuck` (running + older than SELF_TEST_STUCK_MS) is a real problem and
+ *  reads as one here; a fresh `running` is just "in progress". */
 function cnSelfTestHtml_(st) {
   if (!st) return '<div style="font-size:12px;color:var(--muted)">No self-test result recorded yet — the daily 1am trigger runs runSmokeTests on prod (the full suite on a dev instance). Install via installAutomationTriggers().</div>';
+  if (st.stuck) {
+    return '<div style="font-size:12px;padding:4px 0">' +
+      '<span style="font-weight:600;color:var(--danger-deep)">' + icon('warning', 11) + ' never finished</span> · ' +
+      'a run started ' + esc(st.date) + ' (' + esc(st.mode) + ' mode) and never recorded an outcome — it was almost certainly killed by the Apps Script execution ceiling. ' +
+      'Run it manually from the editor to see where it stalls.' +
+    '</div>';
+  }
+  if (st.running) {
+    return '<div style="font-size:12px;padding:4px 0;color:var(--muted)">' +
+      icon('clock', 11) + ' Running now — started ' + esc(st.date) + ' (' + esc(st.mode) + ' mode). Re-open this panel once it finishes.' +
+    '</div>';
+  }
   var tone = st.fail > 0 ? 'var(--danger-deep)' : 'var(--success-deep)';
   return '<div style="font-size:12px;padding:4px 0">' +
     '<span style="font-weight:600;color:' + tone + '">' +

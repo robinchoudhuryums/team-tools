@@ -315,6 +315,11 @@ const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','
 // The resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_)
 // stay FULL so an old token still resolves. INV-13 spirit, mirrors CN_AUDIT_MAX_SCAN.
 const DR_MAX_SCAN = 4000;
+// F18 (cycle 12): the per-LIST payload cap (mine / incoming / allOpen). Distinct
+// from DR_MAX_SCAN (the sheet-read bound) — a run can scan 4000 rows and still
+// have >100 open requests to show. Reported alongside the lists as listCap +
+// *Total so the client can render "showing N of M" instead of implying N is all.
+const DR_LIST_CAP = 100;
 
 // Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
 const CN = {
@@ -370,6 +375,24 @@ const CN_EMAIL_TEMPLATE_BODY_MAX = 4000;
 // pin/flag/feedback write on that note throw. 16k leaves headroom for the
 // rest of subformData; legitimate details run a few hundred chars.
 const CN_EMAIL_DETAILS_MAX_CHARS = 16000;
+// Cycle-12 F11 — the L-1 class one surface over. L-1 bounded each email-detail
+// object's SIZE, but the two APPEND-ONLY arrays in the same cell were unbounded
+// in LENGTH: subformData.feedback[] grows by one entry per manager reply /
+// comment / rep ack / clarification (each ≤2000 chars), and
+// subformData.externalEmails[] by one per external send. A long-running
+// coaching thread on one note, or a note emailed to a customer many times,
+// therefore walks the cell toward its ~50k Sheets limit — and at that point
+// EVERY later write on that note throws, including the flag/pin/resolve ops a
+// rep would use day to day. Two guards per append: an entry-count cap (a
+// pathological loop can't get near the byte limit) and a serialized-size check
+// that REFUSES the append with an actionable error rather than writing a blob
+// that bricks the note (the INV-96 posture — reject, never silently truncate a
+// record). Deliberately applied ONLY at the two GROWING appends: the
+// flag/resolve/pin writes set scalar fields and must stay writable so an
+// already-oversized note can still be un-flagged / edited back down.
+const CN_SUBFORM_MAX_CHARS = 45000;          // under the 50k Sheets cell limit
+const CN_FEEDBACK_MAX_ENTRIES = 200;         // a Q&A thread this long is pathological
+const CN_EXTERNAL_EMAILS_MAX_ENTRIES = 100;  // sends logged per note
 const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
 const CN_EXTERNAL_LINK_LIMIT = 50;
 // Quick-link categories (the official external-collection path — #2). Order is
@@ -1745,6 +1768,13 @@ function fixPtoReconciliation(empId) {
 //     manager Day Edit, never an auto-swap.
 var TS_DOCTOR_WINDOW_DAYS = 92;   // ~a quarter — covers every open export period
 var TS_DOCTOR_MAX_GROUPS = 200;   // payload bound; narrow by fixing + re-running
+// Cycle-12 F2 — work bound on the DESTRUCTIVE collapse. Each collapsed row is
+// a deleteRow + an audit appendRow (~0.5s), and the whole run holds the ONE
+// project-wide ScriptLock, so every rep punch fails on waitLock(15000) for the
+// duration. 200 rows ≈ 100s worst case; the op is idempotent, so a larger
+// backlog drains over successive clicks instead of starving the floor (the
+// same reasoning that moved the Timesheet archive off 1am — INV-153).
+var TS_DOCTOR_FIX_MAX_ROWS = 200;
 
 /** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
  *  days: { 'empId|date': { in:[times], out:[times], name } } } over the window. */
@@ -1784,11 +1814,21 @@ function getTimesheetDoctor() {
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const scan = tsDoctorScan_();
     const duplicates = [], inverted = [];
+    // F2 (cycle 12): count EVERY finding, not just the ones that fit the
+    // payload cap — the old silent truncation made a 512-group backlog read as
+    // exactly 200, and the card ("Scan of the last 92 days" + a count) looked
+    // complete. Every sibling bounded reader returns a truncation signal
+    // (getCallNotesAuditLog, getAdminSheetView, getStorageHealth's kbEmbeds).
+    let totalDuplicates = 0, totalInverted = 0, totalDuplicateRows = 0;
     Object.keys(scan.byKey).forEach(function (k) {
       const g = scan.byKey[k];
-      if (g.rows.length > 1 && duplicates.length < TS_DOCTOR_MAX_GROUPS) {
-        duplicates.push({ empId: g.empId, name: g.name, date: g.date, type: g.type,
-          count: g.rows.length, times: g.times.slice() });
+      if (g.rows.length > 1) {
+        totalDuplicates++;
+        totalDuplicateRows += g.rows.length - 1;   // rows a collapse would delete
+        if (duplicates.length < TS_DOCTOR_MAX_GROUPS) {
+          duplicates.push({ empId: g.empId, name: g.name, date: g.date, type: g.type,
+            count: g.rows.length, times: g.times.slice() });
+        }
       }
     });
     Object.keys(scan.days).forEach(function (k) {
@@ -1797,8 +1837,11 @@ function getTimesheetDoctor() {
       if (d.in.length && d.out.length) {
         const firstIn = d.in.slice().sort()[0];
         const lastOut = d.out.slice().sort()[d.out.length - 1];
-        if (lastOut <= firstIn && inverted.length < TS_DOCTOR_MAX_GROUPS) {
-          inverted.push({ kind: 'clock', empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
+        if (lastOut <= firstIn) {
+          totalInverted++;
+          if (inverted.length < TS_DOCTOR_MAX_GROUPS) {
+            inverted.push({ kind: 'clock', empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
+          }
         }
       }
       // Lunch-pair inversion (operator ask): the lunch RETURN landing at or
@@ -1807,14 +1850,23 @@ function getTimesheetDoctor() {
       if (d.lo.length && d.li.length) {
         const firstLo = d.lo.slice().sort()[0];
         const lastLi = d.li.slice().sort()[d.li.length - 1];
-        if (lastLi <= firstLo && inverted.length < TS_DOCTOR_MAX_GROUPS) {
-          inverted.push({ kind: 'lunch', empId: d.empId, name: d.name, date: d.date, lunchOut: firstLo, lunchIn: lastLi });
+        if (lastLi <= firstLo) {
+          totalInverted++;
+          if (inverted.length < TS_DOCTOR_MAX_GROUPS) {
+            inverted.push({ kind: 'lunch', empId: d.empId, name: d.name, date: d.date, lunchOut: firstLo, lunchIn: lastLi });
+          }
         }
       }
     });
     duplicates.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     inverted.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-    return { duplicates: duplicates, inverted: inverted, windowDays: TS_DOCTOR_WINDOW_DAYS };
+    return { duplicates: duplicates, inverted: inverted, windowDays: TS_DOCTOR_WINDOW_DAYS,
+      // F2: honest totals + the per-run collapse bound, so the client can say
+      // "showing 200 of 512" and "collapses up to 200 rows per run".
+      totalDuplicates: totalDuplicates, totalInverted: totalInverted,
+      totalDuplicateRows: totalDuplicateRows,
+      truncated: (totalDuplicates > duplicates.length) || (totalInverted > inverted.length),
+      fixMaxRows: TS_DOCTOR_FIX_MAX_ROWS };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -1845,15 +1897,25 @@ function fixTimesheetDuplicates(empIdFilter) {
           date: g.date, type: g.type, time: g.times[j] });
       }
     });
-    if (!toDelete.length) return { success: true, collapsed: 0 };
+    if (!toDelete.length) return { success: true, collapsed: 0, remaining: 0 };
     // Bottom-up so earlier deletions don't shift later row indices.
     toDelete.sort(function (a, b) { return b.rowIdx - a.rowIdx; });
-    toDelete.forEach(function (d) {
+    // F2 (cycle 12): BOUND the run. Previously this collapsed every group the
+    // 92-day scan found — regardless of what the button offered (the report is
+    // capped at TS_DOCTOR_MAX_GROUPS, so "Collapse 200 group(s)" could delete
+    // 500+ rows) — with no ceiling on how long the global ScriptLock was held.
+    // Slice bottom-up so the kept row per group is still the LAST one
+    // (INV-155: agreeing with findExistingPunch_ / managerSaveDay) whether or
+    // not this run reaches every group; the op stays idempotent, so the
+    // operator re-clicks until `remaining` is 0.
+    const remaining = Math.max(0, toDelete.length - TS_DOCTOR_FIX_MAX_ROWS);
+    const batch = toDelete.slice(0, TS_DOCTOR_FIX_MAX_ROWS);
+    batch.forEach(function (d) {
       sheet.deleteRow(d.rowIdx);
       writeAuditLog_({ id: d.empId, name: d.name }, 'PunchDelete', d.date, d.time, false, 0,
         'duplicate collapsed (sheet doctor); type=' + d.type, callerEmp.email);
     });
-    return { success: true, collapsed: toDelete.length };
+    return { success: true, collapsed: batch.length, remaining: remaining };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -1892,20 +1954,29 @@ function deletePunch(empId, date, time, punchType) {
       if (normalizeTime_(rows[i][ADP.TIME]).trim() !== time) continue;
       if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== punchType) continue;
 
-      sheet.deleteRow(i + 1);
       // Cycle-11 L-14: dup-awareness parity with managerSaveDay's M-1 collapse —
       // if a legacy duplicate row of this same (emp, date, type) SURVIVES the
       // delete (pre-INV-155 leftovers), the personal-sheet mirror still shows a
-      // live punch, so don't blank it. Re-scan after the deletion.
+      // live punch, so don't blank it.
+      //
+      // F12 (cycle 12): derived from the ALREADY-LOADED `rows` (every index
+      // except the one being deleted) instead of a SECOND
+      // getDataRange().getValues() after the delete. Exactly equivalent under
+      // the lock — every mutating writer takes the same global ScriptLock
+      // (INV-01), so no row can appear between the two reads — but it drops a
+      // whole-Timesheet read from inside the lock, on the tab that grows
+      // unboundedly until INV-153 archival is enabled. Computed BEFORE the
+      // deleteRow so the index arithmetic needs no adjustment.
       let survivorExists = false;
-      const after = sheet.getDataRange().getValues();
-      for (let k = 2; k < after.length; k++) {
-        if (String(after[k][ADP.EMP_ID]).trim() === empId
-            && normalizeDate_(after[k][ADP.DATE]) === date
-            && normalizeType_(String(after[k][ADP.COMMENTS])) === punchType) {
+      for (let k = 2; k < rows.length; k++) {
+        if (k === i) continue;   // the row we are about to delete
+        if (String(rows[k][ADP.EMP_ID]).trim() === empId
+            && normalizeDate_(rows[k][ADP.DATE]) === date
+            && normalizeType_(String(rows[k][ADP.COMMENTS])) === punchType) {
           survivorExists = true; break;
         }
       }
+      sheet.deleteRow(i + 1);
       if (targetEmp && targetEmp.sheetId && !survivorExists) {
         try { clearFromEmployeeSheet_(targetEmp, date, punchType); }
         catch (e) { console.warn('clearFromEmployeeSheet_ failed: ' + e.message); }
@@ -2269,9 +2340,14 @@ function exportAdpRange(startDate, endDate) {
     if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
     const result = generateExportSheet_(startDate, endDate, null);
     if (result.error) return result;
+    // F1 (cycle 12): record how many rows came from the cold archive, so the
+    // audit trail distinguishes "this export reached into archived payroll"
+    // from a normal current-period run.
     writeAuditLog_(emp, 'AdpExport', startDate + '..' + endDate, '', false, 0,
-      `${result.rowCount} rows → ${result.fileId}`);
-    return { success: true, url: result.url, fileName: result.fileName, rowCount: result.rowCount };
+      `${result.rowCount} rows → ${result.fileId}` +
+      (result.archivedRowCount ? `; archivedRows=${result.archivedRowCount}` : ''));
+    return { success: true, url: result.url, fileName: result.fileName, rowCount: result.rowCount,
+      archivedRowCount: result.archivedRowCount || 0 };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -3168,7 +3244,7 @@ function getEnrolledCallNotesReps() {
       // provisionCallNotesSheet's no-clobber test — a whitespace-only column-L
       // cell showed the rep as enrolled in the Per-Rep picker (whose reads
       // then fail) while the Admin panel offered to provision them.
-      if (!String(rows[i][EMP.CALL_NOTES_SHEET_ID] || '').trim()) continue;
+      if (!cnEnrolledSheetId_(rows[i])) continue;
       reps.push({
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
@@ -3194,7 +3270,7 @@ function getCallNotesEnrollment() {
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
       };
-      if (rows[i][EMP.CALL_NOTES_SHEET_ID] && String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim()) {
+      if (cnEnrolledSheetId_(rows[i])) {
         enrolled.push(rec);
       } else {
         unenrolled.push(rec);
@@ -3232,7 +3308,7 @@ function provisionCallNotesSheet(repEmpId) {
       if (String(rows[i][EMP.ID]).trim() !== repEmpId) continue;
       targetRow = i;
       repName = String(rows[i][EMP.NAME]).trim();
-      existing = rows[i][EMP.CALL_NOTES_SHEET_ID] ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : '';
+      existing = cnEnrolledSheetId_(rows[i]);
       break;
     }
     if (targetRow < 0) return { error: 'Employee not found: ' + repEmpId };
@@ -3294,12 +3370,12 @@ function getCallNotesTagTaxonomy() {
     let totalNotes = 0;
     let repsScanned = 0;
     for (let i = 1; i < roster.length; i++) {
-      const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
       if (!sheetId) continue;
       try {
         const repEmp = {
           id: String(roster[i][EMP.ID]).trim(),
-          callNotesSheetId: String(sheetId).trim(),
+          callNotesSheetId: sheetId,
         };
         const sheet = getCallNotesSheet_(repEmp);
         repsScanned++;
@@ -3452,10 +3528,10 @@ function getCallNotesTagTrends() {
     const events = [];
     let repsScanned = 0;
     for (let i = 1; i < roster.length; i++) {
-      const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
       if (!sheetId) continue;
       try {
-        const repEmp = { id: String(roster[i][EMP.ID]).trim(), callNotesSheetId: String(sheetId).trim() };
+        const repEmp = { id: String(roster[i][EMP.ID]).trim(), callNotesSheetId: sheetId };
         const sheet = getCallNotesSheet_(repEmp);
         repsScanned++;
         const lastRow = sheet.getLastRow();
@@ -3581,12 +3657,12 @@ function applyTagTransformAcrossReps_(oldTag, transform) {
   const roster = getEmployeeRosterRows_();
   let repsTouched = 0, notesUpdated = 0;
   for (let i = 1; i < roster.length; i++) {
-    const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+    const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
     if (!sheetId) continue;
     try {
       const repEmp = {
         id: String(roster[i][EMP.ID]).trim(),
-        callNotesSheetId: String(sheetId).trim(),
+        callNotesSheetId: sheetId,
       };
       const sheet = getCallNotesSheet_(repEmp);
       const rows = sheet.getDataRange().getValues();
@@ -3809,12 +3885,12 @@ function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchi
     for (let r = 1; r < roster.length; r++) {
       const repId = String(roster[r][EMP.ID]).trim();
       if (repFilter && repFilter.length && repFilter.indexOf(repId) < 0) continue;
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       const repName = String(roster[r][EMP.NAME]).trim();
       let target;
       try {
-        target = { id: repId, name: repName, callNotesSheetId: String(sheetId).trim() };
+        target = { id: repId, name: repName, callNotesSheetId: sheetId };
         const sheet = getCallNotesSheet_(target);
         // Bounded read when a full date range is supplied; full scan for
         // open-ended search. Per-note date re-checks below stay as defensive
@@ -3887,7 +3963,7 @@ function managerGetShiftStats(date) {
     const roster = getEmployeeRosterRows_();
     const reps = [];
     for (let r = 1; r < roster.length; r++) {
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       const repId = String(roster[r][EMP.ID]).trim();
       const repName = String(roster[r][EMP.NAME]).trim();
@@ -3903,7 +3979,7 @@ function managerGetShiftStats(date) {
       const completionTimes = [];
       const noteTimes = [];
       try {
-        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: sheetId });
         const lastRow = sheet.getLastRow();
         if (lastRow >= 2) {
           // S2: notes are appended in DateLocal order, so a single date maps to
@@ -3997,13 +4073,13 @@ function managerGetUnresolvedActionCount() {
     const roster = getEmployeeRosterRows_();
     let total = 0;
     for (let r = 1; r < roster.length; r++) {
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       try {
         const sheet = getCallNotesSheet_({
           id: String(roster[r][EMP.ID]).trim(),
           name: String(roster[r][EMP.NAME]).trim(),
-          callNotesSheetId: String(sheetId).trim(),
+          callNotesSheetId: sheetId,
         });
         const flagCol = sheet.getRange(2, CN.FLAG_TYPE + 1, Math.max(sheet.getLastRow() - 1, 1), 2).getValues();
         for (let i = 0; i < flagCol.length; i++) {
@@ -4882,6 +4958,14 @@ function computeAutomationHealth_() {
           date: String(st.date || ''), mode: String(st.mode || ''),
           pass: Number(st.pass) || 0, fail: Number(st.fail) || 0, skip: Number(st.skip) || 0,
           error: String(st.error || ''),
+          // F15: the RUNNING sentinel. A run that was KILLED (execution-time
+          // limit — not catchable, so the outcome write never happens) leaves
+          // this set. `stuck` = it has been "running" far longer than any real
+          // suite takes, which means the last run never finished.
+          running: !!st.running,
+          startedAt: Number(st.startedAt) || null,
+          stuck: !!(st.running && Number(st.startedAt) &&
+                    (Date.now() - Number(st.startedAt)) > SELF_TEST_STUCK_MS),
         };
       }
     } catch (_) {}
@@ -4949,6 +5033,17 @@ function automationProblems_(report) {
       report.selfTest.fail + ' failing test(s) on ' + (report.selfTest.date || '?') +
       (report.selfTest.error ? ' — ' + report.selfTest.error : '') + '.');
   }
+  // (f) F15 — the self-test STARTED and never finished (a stuck {running:true}
+  // sentinel). An execution-time-limit kill is not catchable, so without this
+  // the run's outcome stayed at the PREVIOUS value — a chronically
+  // timing-out suite reported green beside a fresh heartbeat. A run in flight
+  // right now is NOT a problem; only a stale sentinel is.
+  if (report.selfTest && report.selfTest.stuck) {
+    problems.push('The nightly self-test (' + (report.selfTest.mode || '?') +
+      ') started on ' + (report.selfTest.date || '?') +
+      ' and never finished — it was almost certainly killed by the 6-minute execution limit, ' +
+      'so its last reported result is stale. Run it from the editor to see where it stalls.');
+  }
   return problems;
 }
 
@@ -5004,6 +5099,25 @@ function runNightlySelfTest() {
     const isDev = !!props.getProperty('INSTANCE_LABEL') &&
       String(props.getProperty('INSTANCE_IS_PROD') || '').toLowerCase() !== 'true';
     const mode = isDev ? 'full' : 'smoke';
+    // F15 (cycle 12) — RUNNING sentinel. The heartbeat above proves the TRIGGER
+    // fired, but the outcome below is written only on a normal return or a
+    // CATCHABLE throw. An Apps Script execution-time-limit kill is not
+    // reliably catchable, and on the dev instance this branch runs the FULL
+    // 281-test suite against live spreadsheets — plausibly over the 6-minute
+    // ceiling. In that case the heartbeat was fresh while
+    // SELF_TEST_LAST_RESULT still held the PREVIOUS result, so a chronically
+    // timing-out suite reported GREEN and nothing surfaced it: the mechanism
+    // built to catch post-deploy regressions could silently stop running (the
+    // cycle-7 "detector that can never fire" class, in the newest detector).
+    // Stamping {running:true} first means a killed run leaves the sentinel
+    // behind, and automationProblems_ treats a STALE one as a failure.
+    try {
+      props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify({
+        running: true, startedAt: Date.now(), mode: mode,
+        date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+        pass: 0, fail: 0, skip: 0,
+      }));
+    } catch (e) {}
     if (isDev) runAllTests(); else runSmokeTests();
     const res = {
       date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
@@ -5178,12 +5292,12 @@ function getStorageHealth(opts) {
     let enrolled = 0, reachable = 0, tzMismatch = 0;
     const problems = [];
     for (let i = 1; i < roster.length; i++) {
-      const sid = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      const sid = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
       if (!sid) continue;
       enrolled++;
       const nm = String(roster[i][EMP.NAME] || '').trim();
       try {
-        const rss = SpreadsheetApp.openById(String(sid).trim());
+        const rss = SpreadsheetApp.openById(sid);
         reachable++;
         const rtz = rss.getSpreadsheetTimeZone();
         if (!tzEquivalent_(rtz, cfgTz)) {
@@ -5566,13 +5680,13 @@ function exportCallNotesRange(startDate, endDate) {
     const roster = getEmployeeRosterRows_();
     const allNotes = [];
     for (let r = 1; r < roster.length; r++) {
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       const repId = String(roster[r][EMP.ID]).trim();
       const repName = String(roster[r][EMP.NAME]).trim();
       try {
         const sheet = getCallNotesSheet_({
-          id: repId, name: repName, callNotesSheetId: String(sheetId).trim()
+          id: repId, name: repName, callNotesSheetId: sheetId
         });
         const lastRow = sheet.getLastRow();
         if (lastRow <= 1) continue;
@@ -5700,13 +5814,14 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
       // build on top. Legacy clients still see trainingReply; new clients
       // walk the feedback array. trainingQuestion stays as the seed entry.
       subformData.feedback = Array.isArray(subformData.feedback) ? subformData.feedback : [];
-      subformData.feedback.push({
+      const fbErr = cnAppendBounded_(subformData, subformData.feedback, {
         role: 'manager',
         message: trimmed,
         at: nowIso,
         by: callerEmp.email,
         kind: 'reply',
-      });
+      }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
+      if (fbErr) return { success: false, error: fbErr };
     } else {
       delete subformData.trainingReply;
       delete subformData.trainingReplyBy;
@@ -5761,11 +5876,12 @@ function setCallNoteManagerComment(repEmpId, noteId, message) {
     if (!Array.isArray(subformData.feedback)) subformData.feedback = [];
 
     const empTz = target.timezone || CONFIG.TIMEZONE;
-    subformData.feedback.push({
+    const fbErr = cnAppendBounded_(subformData, subformData.feedback, {
       role: 'manager', kind: 'comment', message: msg,
       at: Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss"),
       by: callerEmp.email,
-    });
+    }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
+    if (fbErr) return { success: false, error: fbErr };
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
@@ -5813,13 +5929,14 @@ function appendCallNoteFeedback(noteId, message, kind) {
 
     const empTz = empTz_(emp);
     const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
-    subformData.feedback.push({
+    const fbErr = cnAppendBounded_(subformData, subformData.feedback, {
       role: 'agent',
       message: kindV === 'ack' ? '' : trimmed,
       at: nowIso,
       by: emp.email,
       kind: kindV,
-    });
+    }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
+    if (fbErr) return { success: false, error: fbErr };
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
@@ -5849,12 +5966,12 @@ function managerAggregateFlagged_(flagType, dateRange) {
     const roster = getEmployeeRosterRows_();
     const results = [];
     for (let r = 1; r < roster.length; r++) {
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       const repId = String(roster[r][EMP.ID]).trim();
       const repName = String(roster[r][EMP.NAME]).trim();
       try {
-        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: sheetId });
         // Bounded read when a full date range is supplied (the weekly digest
         // passes a 7-day range — big win vs. scanning each rep's full
         // history); full scan otherwise. Per-note re-checks stay defensive.
@@ -5887,12 +6004,12 @@ function managerAggregateUrgent_(dateRange) {
   const roster = getEmployeeRosterRows_();
   const results = [];
   for (let r = 1; r < roster.length; r++) {
-    const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+    const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
     if (!sheetId) continue;
     const repId = String(roster[r][EMP.ID]).trim();
     const repName = String(roster[r][EMP.NAME]).trim();
     try {
-      const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+      const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: sheetId });
       const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
       const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
       for (let i = 0; i < located.length; i++) {
@@ -7176,8 +7293,18 @@ function sendExternalEmail(payload) {
             return { formType: fl.formType, token: fl.token };
           });
         }
-        subformData.externalEmails.push(stampEntry);
-        sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+        // F11: bounded like the feedback thread. This stamp runs AFTER a
+        // successful send (INV-42), so a rejection cannot be surfaced as a send
+        // failure — log it the same way the surrounding catch does and leave
+        // the note's metadata untouched rather than writing a cell that would
+        // brick every later write on it.
+        const stampErrMsg = cnAppendBounded_(subformData, subformData.externalEmails,
+          stampEntry, CN_EXTERNAL_EMAILS_MAX_ENTRIES, 'external email');
+        if (stampErrMsg) {
+          console.warn('sendExternalEmail: stamp skipped (noteId=' + noteId + '): ' + stampErrMsg);
+        } else {
+          sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+        }
       }
     } catch (stampErr) {
       console.warn('sendExternalEmail: note stamp failed (noteId=' + noteId + '): ' + stampErr.message);
@@ -7814,8 +7941,7 @@ function submitFormByToken(token, formData) {
               email: createdBy,
               id: String(empRows[i][EMP.ID]).trim(),
               name: String(empRows[i][EMP.NAME]).trim(),
-              callNotesSheetId: empRows[i][EMP.CALL_NOTES_SHEET_ID]
-                ? String(empRows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
+              callNotesSheetId: cnEnrolledSheetId_(empRows[i]) || null,
             };
             break;
           }
@@ -8487,12 +8613,12 @@ function purgeOldCallNotes() {
     let repsTouched = 0, notesRemoved = 0;
     try {
       for (let r = 1; r < roster.length; r++) {
-        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
-        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const sheetId = cnEnrolledSheetId_(roster[r]);
+        if (!sheetId) continue;
         const emp = {
           id:   String(roster[r][EMP.ID]).trim(),
           name: String(roster[r][EMP.NAME]).trim(),
-          callNotesSheetId: String(sheetIdRaw).trim(),
+          callNotesSheetId: sheetId,
         };
         try {
           const removed = purgeSheetRowsOlderThan_(getCallNotesSheet_(emp), CN.DATE_LOCAL, cutoffMs);
@@ -8521,6 +8647,13 @@ function getNoteArchiveDays_() {
   const v = parseInt(raw, 10);
   return (isNaN(v) || v < 0) ? 0 : v;
 }
+
+// Cycle-12 F3-sibling: rows moved per nightly archiveOldCallNotes run, shared
+// across ALL reps (the walk is one execution + one global ScriptLock, so a
+// per-rep cap would not bound the run). Same order as the Timesheet twin's cap
+// — sized for "drains a multi-year backlog over a couple of weeks of quiet 3am
+// runs" while staying comfortably inside the 6-minute execution ceiling.
+const CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 
 /** Returns the cold-archive tab (CONFIG.CALL_NOTES.ARCHIVE_TAB) in the given
  *  per-rep spreadsheet, creating it with the canonical CN_HEADERS on first use.
@@ -8558,9 +8691,20 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   const rows = srcSheet.getDataRange().getValues();
   const toMoveRows = [];   // full row values, in sheet order
   const toDelete = [];     // 1-based sheet row indices
+  // Cycle-12 F3 — optional per-run bound (opts.maxRows). Without it a large
+  // FIRST enable can never finish: the append lands + flushes, then the deletes
+  // run ONE row at a time (~0.05–0.2s each), so a year of Timesheet rows
+  // (~20k for this team) blows the 6-minute execution ceiling — and because the
+  // append is already committed, every killed run RE-APPENDS the rows it did
+  // not manage to delete, duplicating payroll into the cold store while the
+  // live tab barely shrinks. Capping makes each run finite and monotonic (rows
+  // deleted this run are gone for good), so the backlog drains over successive
+  // nights. Callers that pass no maxRows are byte-identical to before.
+  const maxRows = (opts.maxRows > 0) ? opts.maxRows : 0;
   for (let i = headerRows; i < rows.length; i++) {
     const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
     if (ms !== null && ms < cutoffMs) { toMoveRows.push(rows[i]); toDelete.push(i + 1); }
+    if (maxRows && toMoveRows.length >= maxRows) break;
   }
   if (!toMoveRows.length) return 0;
   // Normalize every moved row to a uniform rectangle (setValues requires it).
@@ -8619,20 +8763,36 @@ function archiveOldCallNotes() {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let repsTouched = 0, notesArchived = 0;
+    // Cycle-12 F3-sibling: a WHOLE-RUN row budget, shared across reps. The
+    // Timesheet twin needed a bound because one tab can hold ~20k rows; here
+    // the compounding is worse — the mover is called once PER REP inside one
+    // execution AND one global ScriptLock, so N reps with backlogs multiply.
+    // A per-rep cap alone would not bound the run, so the budget is shared and
+    // the rep loop STOPS when it is spent. Consequence (deliberate): reps are
+    // drained in roster order, so an early rep with years of notes delays
+    // later reps by a night or two. That is fine because the op is idempotent
+    // and nightly — each run is finite and monotonic (rows deleted this run
+    // are gone for good), which is exactly what the unbounded version was not:
+    // the append is flushed BEFORE the deletes, so a run killed by the
+    // 6-minute ceiling re-appended everything it had not deleted, duplicating
+    // PHI into the cold archive night after night.
+    let budget = CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN;
     try {
       for (let r = 1; r < roster.length; r++) {
-        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
-        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        if (budget <= 0) break;
+        const sheetId = cnEnrolledSheetId_(roster[r]);
+        if (!sheetId) continue;
         const emp = {
           id:   String(roster[r][EMP.ID]).trim(),
           name: String(roster[r][EMP.NAME]).trim(),
-          callNotesSheetId: String(sheetIdRaw).trim(),
+          callNotesSheetId: sheetId,
         };
         try {
           const live = getCallNotesSheet_(emp);
           const archive = getOrCreateNotesArchiveTab_(live.getParent());
-          const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs);
-          if (moved > 0) { notesArchived += moved; repsTouched++; }
+          const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs,
+            { maxRows: budget });
+          if (moved > 0) { notesArchived += moved; repsTouched++; budget -= moved; }
         } catch (e) {
           Logger.log('archiveOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
         }
@@ -8640,8 +8800,9 @@ function archiveOldCallNotes() {
     } finally {
       lock.releaseLock();
     }
+    const capped = budget <= 0 ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN}` : '';
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
-      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}`);
+      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}`);
     Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
   } catch (err) {
     Logger.log('archiveOldCallNotes failed: ' + err.message);
@@ -8664,6 +8825,13 @@ const TIMESHEET_ARCHIVE_TAB = 'TimesheetArchive';
 // below this clamps UP (never down to "archive more"), so an operator typo
 // like 7 can never rip current-period payroll rows out of the live tab.
 const TIMESHEET_ARCHIVE_MIN_DAYS = 120;
+// Cycle-12 F3 — rows moved per nightly run. The move holds the global
+// ScriptLock and deletes row-by-row, so an unbounded first enable (a year is
+// ~20k rows here) cannot finish inside the 6-minute ceiling — and a killed run
+// re-appends whatever it failed to delete, duplicating payroll into the archive
+// run after run. 2000 rows/night drains a multi-year backlog in a couple of
+// weeks of quiet 6pm runs while keeping each run comfortably finite.
+const TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 
 /** Archive window in days: Script Property TIMESHEET_ARCHIVE_DAYS first, else
  *  CONFIG.TIMESHEET_ARCHIVE_DAYS. 0/neg/unparseable → 0 (disabled). A value in
@@ -8730,15 +8898,22 @@ function archiveOldTimesheetRows() {
       if (!live) { Logger.log('archiveOldTimesheetRows: no Timesheet tab.'); return; }
       const archive = getOrCreateTimesheetArchiveTab_(ss, live);
       moved = archiveSheetRowsOlderThan_(live, archive, ADP.DATE, cutoffMs,
-        { headerRows: 2, width: Math.max(live.getLastColumn(), 9) });
+        { headerRows: 2, width: Math.max(live.getLastColumn(), 9),
+          // F3 (cycle 12): bounded per run — see the constant.
+          maxRows: TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN });
     } finally {
       lock.releaseLock();
     }
     // Written on every ENABLED run (the CN archive convention) — a zero-moved
     // row is the Automation Health "last seen" heartbeat proving the job ran.
+    // F3: flag a run that hit the per-run bound, so a draining backlog is
+    // visible in the audit trail instead of looking like a normal small run.
+    const hitCap = (moved >= TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN);
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'TimesheetArchive', '', '', false, 0,
-      `archiveDays=${days}; rowsArchived=${moved}`);
-    Logger.log(`archiveOldTimesheetRows: moved ${moved} row(s) older than ${days} day(s) to ${TIMESHEET_ARCHIVE_TAB}.`);
+      `archiveDays=${days}; rowsArchived=${moved}` +
+      (hitCap ? `; hitPerRunCap=${TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : ''));
+    Logger.log(`archiveOldTimesheetRows: moved ${moved} row(s) older than ${days} day(s) to ${TIMESHEET_ARCHIVE_TAB}.` +
+      (hitCap ? ' Hit the per-run cap — more rows remain for the next run.' : ''));
   } catch (err) {
     Logger.log('archiveOldTimesheetRows failed: ' + err.message);
   }
@@ -8785,12 +8960,12 @@ function purgeArchivedCallNotes() {
     let repsTouched = 0, notesRemoved = 0;
     try {
       for (let r = 1; r < roster.length; r++) {
-        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
-        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const sheetId = cnEnrolledSheetId_(roster[r]);
+        if (!sheetId) continue;
         const emp = {
           id:   String(roster[r][EMP.ID]).trim(),
           name: String(roster[r][EMP.NAME]).trim(),
-          callNotesSheetId: String(sheetIdRaw).trim(),
+          callNotesSheetId: sheetId,
         };
         try {
           // Read-only existence check — never create the archive tab here.
@@ -8836,12 +9011,12 @@ function reconcileCallNotes() {
     const CONTENT_COLS = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
     let repsTouched = 0, rowsBackfilled = 0;
     for (let r = 1; r < roster.length; r++) {
-      const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
-      if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+      const sheetId = cnEnrolledSheetId_(roster[r]);
+      if (!sheetId) continue;
       const emp = {
         id: String(roster[r][EMP.ID]).trim(),
         name: String(roster[r][EMP.NAME]).trim(),
-        callNotesSheetId: String(sheetIdRaw).trim(),
+        callNotesSheetId: sheetId,
         timezone: String(roster[r][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE,
       };
       try {
@@ -9355,6 +9530,11 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // closing the "silently dead digest trigger" blind spot.
 const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
 const SELF_TEST_RESULT_PROP = 'SELF_TEST_LAST_RESULT';   // {date, mode, pass, fail, skip[, error]} — nightly self-test outcome
+// F15 (cycle 12): how long a {running:true} sentinel may persist before it means
+// "the last run never finished". Apps Script kills an execution at 6 minutes and
+// the kill is not reliably catchable, so a killed run leaves the sentinel behind;
+// 2h is far beyond any real suite and well inside the daily cadence.
+const SELF_TEST_STUCK_MS = 2 * 3600000;
 
 /** Best-effort heartbeat stamp ({ key: "yyyy-MM-dd HH:mm:ss" in
  *  CONFIG.TIMEZONE }) — never blocks or fails the digest itself. */
@@ -9459,7 +9639,7 @@ function sendCallNotesEodDigest() {
     let sentCount = 0;
     for (let r = 1; r < roster.length; r++) {
       const emailAddr = String(roster[r][EMP.EMAIL] || '').trim();
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!emailAddr || !sheetId) continue;
       const tzRaw = String(roster[r][EMP.TIMEZONE] || '').trim();
       const tz = safeTimezone_(tzRaw);
@@ -9478,7 +9658,7 @@ function sendCallNotesEodDigest() {
         id: String(roster[r][EMP.ID]).trim(),
         name: String(roster[r][EMP.NAME]).trim(),
         email: emailAddr,
-        callNotesSheetId: String(sheetId).trim(),
+        callNotesSheetId: sheetId,
         timezone: tz,
       };
       const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
@@ -10135,16 +10315,77 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
 
   const matched = [];
   const seenIds = new Set();
+  // Cycle-12 F1: the live-tab key set, used to drop an archive row that is
+  // byte-identical to a live one (see the archive read-through below).
+  const liveKeys = new Set();
+  let oldestLiveDate = null;
+  const rowKey = function (r) {
+    return String(r[ADP.EMP_ID]).trim() + '|' + normalizeDate_(r[ADP.DATE]) + '|' +
+      normalizeTime_(r[ADP.TIME]) + '|' + normalizeType_(String(r[ADP.COMMENTS]));
+  };
   for (let i = 2; i < rows.length; i++) {
     const rowDate = normalizeDate_(rows[i][ADP.DATE]);
+    // Track the live tab's coverage floor BEFORE the range filter — it decides
+    // whether the cold archive has to be consulted at all (F1).
+    if (rowDate && (oldestLiveDate === null || rowDate < oldestLiveDate)) oldestLiveDate = rowDate;
     if (rowDate < startDate || rowDate > endDate) continue;
     const rowId = String(rows[i][ADP.EMP_ID]).trim();
     if (allowedIds && !allowedIds.has(rowId)) continue;
     seenIds.add(rowId);
+    liveKeys.add(rowKey(rows[i]));
     const cleaned = rows[i].slice(0, 9);
     cleaned[ADP.COMMENTS] = '';
     matched.push(cleaned);
   }
+
+  // ── Cold-archive read-through (cycle-12 F1) ───────────────────────────────
+  // TIMESHEET_ARCHIVE_DAYS (INV-153) MOVES old payroll rows to a
+  // TimesheetArchive tab. That tab had NO reader anywhere, so once archiving
+  // was enabled a retroactive export (a payroll dispute, a corrected period)
+  // silently produced a PARTIAL .xlsx with {success:true} and an audit row
+  // that reported the truncated count as authoritative. Read the archive
+  // whenever the requested window reaches past the live tab's oldest row.
+  // Bounded by design: the common case (current period, inside the ≥120-day
+  // floor) never touches the archive, so it stays byte-identical to before.
+  // Read-only w.r.t. tab existence (getSheetByName, never create — the
+  // INV-133 discipline).
+  let archivedRowCount = 0;
+  if (oldestLiveDate === null || startDate < oldestLiveDate) {
+    try {
+      const archiveSheet = getAdpSS_().getSheetByName(TIMESHEET_ARCHIVE_TAB);
+      if (archiveSheet && archiveSheet.getLastRow() > 2) {
+        const aRows = archiveSheet.getDataRange().getValues();
+        for (let a = 2; a < aRows.length; a++) {
+          const aDate = normalizeDate_(aRows[a][ADP.DATE]);
+          if (!aDate || aDate < startDate || aDate > endDate) continue;
+          const aId = String(aRows[a][ADP.EMP_ID]).trim();
+          if (!aId) continue;
+          if (allowedIds && !allowedIds.has(aId)) continue;
+          // A mid-run archive failure appends before it deletes, so the SAME
+          // row can exist in both tabs (INV-132 "can only duplicate, never
+          // lose"). Exporting it twice would overstate payroll, so skip an
+          // exact live match. Genuine duplicate punch rows inside ONE tab are
+          // untouched — the sheet doctor (INV-159) is that fix.
+          if (liveKeys.has(rowKey(aRows[a]))) continue;
+          seenIds.add(aId);
+          const aCleaned = aRows[a].slice(0, 9);
+          aCleaned[ADP.COMMENTS] = '';
+          matched.push(aCleaned);
+          archivedRowCount++;
+        }
+      }
+    } catch (archErr) {
+      // REFUSE rather than return a short file. Producing a partial payroll
+      // export behind {success:true} is the exact F1 failure mode being fixed,
+      // so a broken archive read must be loud even though it costs the manager
+      // a retry. Ranges that do NOT reach the archive never get here.
+      console.warn('generateExportSheet_: archive read failed: ' + archErr.message);
+      return { error: 'The Timesheet cold archive could not be read (' + archErr.message +
+        '), and this date range reaches into it — the export would be incomplete. ' +
+        'Re-try, or narrow the range to ' + (oldestLiveDate || startDate) + ' or later.' };
+    }
+  }
+
   if (matched.length === 0) {
     return { error: `No punches found between ${startDate} and ${endDate}` +
                     (cycleFilter ? ` for ${cycleFilter} employees.` : '.') };
@@ -10189,7 +10430,10 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   } catch (shareErr) { console.warn('Export share failed: ' + shareErr.message); }
 
   return { fileId: newSs.getId(), url: newSs.getUrl(), fileName: name,
-    rowCount: matched.length, employeeCount };
+    rowCount: matched.length, employeeCount,
+    // F1: how many of rowCount came from the cold archive (0 in the normal
+    // current-period case). Additive — existing callers ignore it.
+    archivedRowCount: archivedRowCount };
 }
 
 
@@ -11247,7 +11491,10 @@ function getSpanishInboxStats(days) {
       address: addr, days: d,
       resolved: resolvedCount, pending: pending.length,
       avgMinutes: avg, medianMinutes: median,
-      pendingList: pending.slice(0, 25),
+      // F18: `pending` (the count) is authoritative; pendingList is capped, so
+      // say so rather than letting the rendered list imply completeness.
+      pendingList: pending.slice(0, SPANISH_PENDING_LIST_CAP),
+      pendingListCap: SPANISH_PENDING_LIST_CAP,
       membersConfigured: Object.keys(members).length,
       threadsScanned: threads.length,
     };
@@ -11397,6 +11644,9 @@ function getSpanishInboxThreadBody(threadId) {
 // stored as a NUMBER cell (immune to the Sheets date-coercion class).
 const SPANISH_RESOLVED_TAB = 'SpanishManualResolved';
 const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays cheap
+// F18: pendingList payload cap. The `pending` COUNT is always complete; only
+// the rendered list is capped, so the response says so (pendingListCap).
+const SPANISH_PENDING_LIST_CAP = 25;
 
 function getOrCreateSpanishResolvedSheet_() {
   const ss = getAdpSS_();
@@ -11789,10 +12039,17 @@ function getDeptRequests() {
               if (myDeptsLc[String(it.toDept).toLowerCase().trim()]) return true;
               return drSplitDepts_(it.toDept).some(function (d) { return myDeptsLc[d.toLowerCase()]; });
             })
-            .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100)
+            .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); })
       : [];
-    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments,
-                     myDepts: myDepts, incoming: incoming, truncated: truncated };
+    // F18 (cycle 12): the three lists were silently `.slice(0, 100)`'d with no
+    // signal, so a 240-request backlog rendered as exactly 100 and read as the
+    // complete picture — the F2 class (a bounded reader must say it is bounded).
+    // `truncated` above covers the SCAN cap; these cover the LIST caps.
+    const result = { mine: mine.slice(0, DR_LIST_CAP), isManager: !!emp.isManager,
+                     departments: departments, myDepts: myDepts,
+                     incoming: incoming.slice(0, DR_LIST_CAP), truncated: truncated,
+                     listCap: DR_LIST_CAP, mineTotal: mine.length,
+                     incomingTotal: incoming.length };
     if (emp.isManager) {
       const byDept = {};
       all.forEach(function (it) {
@@ -11814,8 +12071,10 @@ function getDeptRequests() {
         return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
                  slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
       }).sort(function (a, b) { return b.open - a.open; });
-      result.allOpen = all.filter(function (it) { return it.status === 'open'; })
-        .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100);
+      const allOpenSorted = all.filter(function (it) { return it.status === 'open'; })
+        .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); });
+      result.allOpen = allOpenSorted.slice(0, DR_LIST_CAP);
+      result.allOpenTotal = allOpenSorted.length;
     }
     return result;
   } catch (err) { return { error: err.message }; }
@@ -12068,8 +12327,7 @@ function getEmployeeInfo_() {
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
         sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
-        callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
-          ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
+        callNotesSheetId: cnEnrolledSheetId_(rows[i]) || null,
         payCycle: cycle, payAnchor: anchor, isManager, isAdmin: empIsAdmin_(email, isManager), timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
@@ -12099,8 +12357,7 @@ function lookupEmployeeById_(empId) {
       email: String(rows[i][EMP.EMAIL]).trim(),
       timezone: String(tzRaw).trim() || CONFIG.TIMEZONE,
       sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
-      callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
-        ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
+      callNotesSheetId: cnEnrolledSheetId_(rows[i]) || null,
       annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       ptoEnabled,
@@ -12722,6 +12979,61 @@ function adpSheetTz_() {
 }
 
 /**
+ * F11 (cycle 12) — bounded append into one of SubformData's append-only arrays.
+ * Pushes `entry` onto `arr`, then rejects if the resulting blob would be
+ * unwritable: too many entries, or a serialized cell over CN_SUBFORM_MAX_CHARS.
+ * Returns `''` on success or an actionable error string; on rejection the entry
+ * is REMOVED again, so `subformData` is left exactly as it was and the caller
+ * can return the error without having half-mutated the record.
+ *
+ * Refuse-rather-than-drop is deliberate: these arrays are the coaching/Q&A and
+ * external-send record for a note, so silently discarding the oldest entries
+ * would quietly lose a record the manager believes is complete (and the UI
+ * renders the whole thread). INV-96 takes the same line on oversized form
+ * submissions.
+ */
+function cnAppendBounded_(subformData, arr, entry, maxEntries, label) {
+  if (arr.length >= maxEntries) {
+    return 'This note already has the maximum of ' + maxEntries + ' ' + label +
+      ' entries. Start a new note to continue.';
+  }
+  arr.push(entry);
+  const size = JSON.stringify(subformData).length;
+  if (size > CN_SUBFORM_MAX_CHARS) {
+    arr.pop();
+    return 'This ' + label + ' entry was not saved: it would grow the note\'s stored ' +
+      'metadata to ' + size + ' characters, over the ' + CN_SUBFORM_MAX_CHARS +
+      ' limit. Shorten the message, or continue on a new note.';
+  }
+  return '';
+}
+
+/**
+ * THE call-notes enrollment predicate (cycle-12 F14). Given an Employees roster
+ * ROW, returns the rep's trimmed per-rep Sheet id, or `''` when they are not
+ * enrolled. Every read of column L must go through this — a Node tripwire bans
+ * raw `EMP.CALL_NOTES_SHEET_ID` truthiness outside it (the INV-142 / INV-154
+ * boundary pattern).
+ *
+ * WHY a predicate for a one-line read: the enrollment test was written 21 times
+ * and 11 of those copies tested RAW truthiness (`if (!sheetId) continue;`)
+ * while the other 10 trimmed. With a WHITESPACE-ONLY column L the two groups
+ * DISAGREED — the trimmed group correctly read "not enrolled" (the rep's own
+ * panel showed the enrollment splash and the Admin panel offered to provision
+ * them), while every untrimmed cross-rep walk called `openById(' ')`, threw
+ * into its per-rep try/catch, and SILENTLY OMITTED the rep from the aggregate:
+ * tag taxonomy, tag trends, the tag-transform walk, cross-rep search, shift
+ * stats, the unresolved-action badge, the CN export, team metrics, the EOD
+ * digest — and, worse, Storage Health reported a false "unreachable per-rep
+ * Sheet" for a rep who simply is not enrolled. A manager reading any of those
+ * numbers had no way to know a rep was missing. Trimming here makes the whole
+ * module agree on one answer.
+ */
+function cnEnrolledSheetId_(row) {
+  return String(row[EMP.CALL_NOTES_SHEET_ID] || '').trim();
+}
+
+/**
  * Opens (or creates) the `Notes` tab in a rep's per-rep call-notes Sheet
  * and returns it. Throws if the rep has no callNotesSheetId mapped (enrollment
  * is a manual step — manager sets EMP.CALL_NOTES_SHEET_ID in the Employees
@@ -13314,11 +13626,26 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
  *  when the rep has no Sheet configured or it's unreachable. The `emp` arg
  *  only needs { id, name, callNotesSheetId } for getCallNotesSheet_. */
 function countCallNotesInRange_(emp, from, to) {
-  if (!emp || !emp.callNotesSheetId) return 0;
+  return cnCountNotesResult_(emp, from, to).count;
+}
+
+/** Cycle-12 F5 — the same count, but with the READ OUTCOME attached:
+ *  { count, unavailable }. `unavailable:true` means the rep's Sheet could not
+ *  be read (missing / unshared / transient Sheets failure), which is NOT the
+ *  same fact as "they logged zero notes" — the bare `return 0` catch made the
+ *  two indistinguishable, and every coverage surface then reported 0%: the
+ *  Clock strip rendered "0% logged" in CRIT tone plus "File N missing" for
+ *  EVERY answered call, telling a rep to redo notes they had already filed.
+ *  This is the cycle-10 "error reads as empty" class (D1/D2a) in the one
+ *  server helper it was never applied to. `unenrolled` is reported separately
+ *  because a rep with no Sheet configured legitimately has no coverage to
+ *  measure (INV-35), rather than a failed read. */
+function cnCountNotesResult_(emp, from, to) {
+  if (!emp || !emp.callNotesSheetId) return { count: 0, unavailable: false, unenrolled: true };
   try {
     const sheet = getCallNotesSheet_(emp);
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return 0;
+    if (lastRow < 2) return { count: 0, unavailable: false, unenrolled: false };
     // S2: counting only needs the DateLocal column — read 1 column instead
     // of the full 16-column row range (~16x fewer cells off the wire). Still
     // normalize each value (CN.DATE_LOCAL coercion gotcha).
@@ -13328,8 +13655,11 @@ function countCallNotesInRange_(emp, from, to) {
       const d = normalizeDate_(dateCol[i][0]);
       if (d >= from && d <= to) n++;
     }
-    return n;
-  } catch (e) { return 0; }
+    return { count: n, unavailable: false, unenrolled: false };
+  } catch (e) {
+    console.warn('cnCountNotesResult_ failed for ' + ((emp && emp.id) || '?') + ': ' + e.message);
+    return { count: 0, unavailable: true, unenrolled: false };
+  }
 }
 
 
@@ -13422,7 +13752,20 @@ function getDashboardMetrics(periodKey) {
 
     var roster = getEmployeeRosterRows_();
     var allNames = [];
-    for (var r = 1; r < roster.length; r++) { var nm = String(roster[r][EMP.NAME] || '').trim(); if (nm) allNames.push(nm); }
+    for (var r = 1; r < roster.length; r++) {
+      var nm = String(roster[r][EMP.NAME] || '').trim();
+      if (!nm) continue;
+      // F4 (cycle 12): skip rows with no email — the skip every sibling roster
+      // walk applies (getManagerDashboard, getTeammateStatus, getEmployeesList,
+      // computeMissedClockOuts_, and getCoveragePlan since cycle-9 L-2). These
+      // names are the cohort for INV-124's N=3 anonymization guard AND the
+      // team benchmark, so an offboarded/placeholder row (name kept, email
+      // cleared) whose name still appears in DQE history both inflated the
+      // cohort — un-hiding the team line on a day fewer than 3 CURRENT reps
+      // reported — and contaminated the average reps compare themselves to.
+      if (!String(roster[r][EMP.EMAIL] || '').trim()) continue;
+      allNames.push(nm);
+    }
 
     var MIN_COHORT = 3;
     var ownDq = (getCdrAgentMetrics_(from, to, [emp.name]).agents || {})[emp.name] || null;
@@ -13432,7 +13775,9 @@ function getDashboardMetrics(periodKey) {
 
     var teamAgg = dashboardTeamAggregate_(teamDqMap, MIN_COHORT);
     var teamTr = dashboardTeamTransfer_(teamTrMap, MIN_COHORT);
-    var noteCount = countCallNotesInRange_(emp, from, to);
+    // F5: a failed Sheet read must not read as "0 notes filed".
+    var noteRes = cnCountNotesResult_(emp, from, to);
+    var noteCount = noteRes.count;
 
     var result = {
       periodKey: periodKey, from: from, to: to, label: range.label,
@@ -13448,10 +13793,16 @@ function getDashboardMetrics(periodKey) {
       } : null,
       cohort: teamAgg.cohort,
       noteCount: noteCount,
-      noteCoverage: cnNoteCoverage_(noteCount, ownDq ? ownDq.totalAnswered : 0),
+      noteCoverage: noteRes.unavailable
+        ? null : cnNoteCoverage_(noteCount, ownDq ? ownDq.totalAnswered : 0),
+      noteCountUnavailable: !!noteRes.unavailable,   // F5
       kpiMinCohort: MIN_COHORT,
     };
-    if (useCache) { try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {} }
+    // F5: never stamp a degraded round as fresh — a failed notes read would
+    // otherwise be pinned for the full TTL (the L-3 / INV-129 rule).
+    if (useCache && !noteRes.unavailable) {
+      try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    }
     return result;
   } catch (err) { return { error: err.message }; }
 }
@@ -13503,7 +13854,12 @@ function getMyMetrics(date) {
     var allNames = [];
     for (var r = 1; r < roster.length; r++) {
       var nm = String(roster[r][EMP.NAME] || '').trim();
-      if (nm) allNames.push(nm);
+      if (!nm) continue;
+      // F4 (cycle 12): same no-email skip as getDashboardMetrics — this list is
+      // the cohort for the INV-124 N=3 anonymization guard and the team
+      // average. See the comment there for the full rationale.
+      if (!String(roster[r][EMP.EMAIL] || '').trim()) continue;
+      allNames.push(nm);
     }
     var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, allNames);
     var transfer = getCsrTransferPerRepDaily_(trendFrom, trendTo, allNames);
@@ -13541,7 +13897,10 @@ function getMyMetrics(date) {
       transferPct: metricsBuildKpiSeries_(trPRD, dates, emp.name, 'transferPct', MIN_COHORT),
     };
 
-    var noteCount = countCallNotesInRange_(emp, date, date);
+    // F5: distinguish "couldn't read the rep's Sheet" from "zero notes" — this
+    // result feeds the Clock coverage strip's "File N missing" CTA.
+    var noteRes = cnCountNotesResult_(emp, date, date);
+    var noteCount = noteRes.count;
 
     var result = {
       date: date,
@@ -13557,12 +13916,17 @@ function getMyMetrics(date) {
         attSeconds:   todayCdr.attSeconds,
       } : null,
       noteCount: noteCount,
-      noteCoverage: cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
+      noteCoverage: noteRes.unavailable
+        ? null : cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
+      noteCountUnavailable: !!noteRes.unavailable,   // F5
       trend: trend,
       series: series,
       kpiMinCohort: MIN_COHORT,
     };
-    if (useMetricsCache) {
+    // F5: a failed notes read must not be cached as fresh — the Clock coverage
+    // strip reads this endpoint, so a 5-minute-pinned degraded result would
+    // outlive the transient failure that caused it (the L-3 rule).
+    if (useMetricsCache && !noteRes.unavailable) {
       try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return result;
@@ -13631,7 +13995,8 @@ function getMyMetricsRange(from, to) {
       }
     } catch (e) { trend = []; trendFailed = true; }
 
-    var noteCount = countCallNotesInRange_(emp, from, to);
+    var noteRes = cnCountNotesResult_(emp, from, to);   // F5
+    var noteCount = noteRes.count;
     var rangeResult = {
       from: from, to: to, repName: emp.name,
       cdr: c ? {
@@ -13645,11 +14010,15 @@ function getMyMetricsRange(from, to) {
         attSeconds:   c.attSeconds,
       } : null,
       noteCount: noteCount,
-      noteCoverage: cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
+      noteCoverage: noteRes.unavailable
+        ? null : cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
+      noteCountUnavailable: !!noteRes.unavailable,   // F5
       trend: trend,
     };
     if (trendFailed) rangeResult.trendUnavailable = true;   // L-3: honest partial, client-ignorable
-    if (useRangeCache && !trendFailed) {
+    // F5: a failed note read is the same class of partial as a failed trend
+    // read (L-3) — never stamp it into the cache as a fresh, confident 0.
+    if (useRangeCache && !trendFailed && !noteRes.unavailable) {
       try { rangeCache.put(rangeKey, JSON.stringify(rangeResult), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return rangeResult;
@@ -13689,13 +14058,13 @@ function getTeamMetrics(dateOrFrom, to) {
     var repMap = {};
     for (var r = 1; r < roster.length; r++) {
       var name = String(roster[r][EMP.NAME]).trim();
-      var cnSheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      var cnSheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (name) {
         rosterNames.push(name);
         repMap[name] = {
           repId: String(roster[r][EMP.ID]).trim(),
           repName: name,
-          cnSheetId: cnSheetId ? String(cnSheetId).trim() : null,
+          cnSheetId: cnSheetId || null,
         };
       }
     }
@@ -13729,8 +14098,12 @@ function getTeamMetrics(dateOrFrom, to) {
     Object.keys(repMap).forEach(function (name) {
       var rm = repMap[name];
       var cdr = cdrResult.agents[name] || null;
-      var noteCount = countCallNotesInRange_(
+      // F5: an unreadable per-rep Sheet must not render as "0 notes / 0%
+      // coverage" in a manager's team table — that reads as a rep who logged
+      // nothing, which is a performance judgement drawn from a failed read.
+      var noteRes = cnCountNotesResult_(
         { id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId }, from, toDate);
+      var noteCount = noteRes.count;
 
       var rep = {
         repId: rm.repId, repName: rm.repName,
@@ -13743,16 +14116,21 @@ function getTeamMetrics(dateOrFrom, to) {
         tttSeconds:   cdr ? cdr.tttSeconds   : 0,
         attSeconds:   cdr ? cdr.attSeconds   : 0,
         noteCount: noteCount,
-        noteCoverage: cnNoteCoverage_(noteCount, cdr ? cdr.totalAnswered : 0),
+        noteCoverage: noteRes.unavailable
+          ? null : cnNoteCoverage_(noteCount, cdr ? cdr.totalAnswered : 0),
+        noteCountUnavailable: !!noteRes.unavailable,   // F5
         hasCdrData: !!cdr,
       };
-      if (cdr || noteCount > 0) {
+      // F5: a rep whose Sheet failed to read is still listed (their CDR row is
+      // real) — the row just says "—" for notes instead of "0".
+      if (cdr || noteCount > 0 || noteRes.unavailable) {
         reps.push(rep);
         teamTotals.rung += rep.totalRung;
         teamTotals.answered += rep.totalAnswered;
         teamTotals.missed += rep.totalMissed;
         teamTotals.tttSeconds += rep.tttSeconds;
         teamTotals.noteCount += noteCount;
+        if (noteRes.unavailable) teamTotals.noteCountPartial = true;   // F5
       }
     });
 
@@ -15319,6 +15697,9 @@ function kbSaveSearchConfig(groups) {
 const KB_VIEWS_TAB = 'KbViews';
 const KB_VIEWS_HEADERS = ['Timestamp', 'ItemId', 'RepId', 'Context'];
 const KB_VIEWS_MAX_SCAN = 4000;   // bounded tail scan, INV-13 spirit
+// F18: review-due payload cap, reported with the pre-slice total so a long
+// backlog does not render as "exactly 50 items are due".
+const KB_REVIEW_DUE_CAP = 50;
 const KB_USAGE_WINDOW_DAYS = 30;
 const KB_USAGE_TOP_N = 5;
 
@@ -15667,7 +16048,10 @@ function kbGetReviewDue() {
              (b.views - a.views) || ((b.ageDays || 0) - (a.ageDays || 0)) ||
              a.title.localeCompare(b.title);
     });
-    return { items: items.slice(0, 50), dueDays: dueDays };
+    // F18: report the pre-slice total so the manager panel can say "showing
+    // N of M" — a 50-item cap with no signal reads as "only 50 are due".
+    return { items: items.slice(0, KB_REVIEW_DUE_CAP), dueDays: dueDays,
+             total: items.length, cap: KB_REVIEW_DUE_CAP };
   } catch (err) { return { error: err.message }; }
 }
 

@@ -6,8 +6,10 @@ Script project synced via [clasp](https://github.com/google/clasp).
 ## Projects
 
 - **web-app/** — Multi-module browser app deployed at one Web App URL.
-  Hosts six modules today, registered side-by-side in the `TOOLS`
-  registry in `script_core.html`:
+  Hosts seven tools today, registered side-by-side in the `TOOLS`
+  registry in `script_core.html` — the six feature modules below plus
+  **Manage**, the consolidated manager/admin home (Manage Time,
+  Coverage, Punctuality, and an admin-only Admin tab):
   - **Time Clock** — cross-timezone time tracking, PTO requests,
     manager dashboard, ADP-format export, and a manager-only Coverage
     planner (forward staffing across timezones with PTO overlaid and
@@ -28,7 +30,7 @@ Script project synced via [clasp](https://github.com/google/clasp).
     and preset chips). CDR metrics also enrich the Call Notes Stats
     tab via a best-effort overlay.
   - **Intake** — patient-intake forms ported from the bound
-    `form-generator` Apps Script. PPD (a 45-question intake driving a
+    `form-generator` Apps Script. PPD (a 46-item intake driving a
     clinical HCPCS recommendation engine) plus PMD/PAP account-creation
     forms with image attachments. Each renders a branded email (two-stage,
     bodyHash-guarded) and persists a PHI backup row to the Intake
@@ -105,7 +107,12 @@ them): a **dependency-free** pure-helper + parse-guard harness
 (`node test/client/run.js`, zero install) and a **DOM-lifecycle** harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
-first). `npm test` runs both. A GitHub Action
-(`.github/workflows/client-tests.yml`) runs the pure harness, then
-`npm ci` + the DOM harness, plus a `node --check` of `Code.js` /
-`Tests.js` on every push and PR — the project's only automated check.
+first). `npm test` runs both. A third, **static-render visual** harness
+(`test/visual/`) renders a 20-scenario matrix in headless Chromium; it is
+manual / on-demand, NOT in CI. A GitHub Action
+(`.github/workflows/client-tests.yml`) runs a `node --check` of `Code.js` /
+`Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
+`npm ci` + the DOM harness, on every push and PR — the project's only
+automated check. (The zero-install steps deliberately run before `npm ci`:
+a registry or jsdom-resolution failure must not stop the only checks that
+need no dependencies from running at all.)

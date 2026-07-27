@@ -1,6 +1,20 @@
 <style>
   /* ── Reference / Knowledge Base tool ─────────────────────────────────── */
-  .kb-wrap { display: grid; grid-template-columns: 280px 1fr; gap: 16px; height: calc(100vh - 150px); min-height: 420px; }
+  /* V-9 (cycle-12 visual audit): `height: calc(100vh - 150px)` on the WRAP was
+     a FIXED height, so on the LANDING (recents / most-used / review-due — short
+     by nature) both panels stretched to the full viewport, leaving ~535px of
+     empty card below the content, which reads as a half-failed load.
+     The cap moves to the grid ITEMS: each column is at most viewport-tall and
+     keeps its own internal overflow-y:auto (the reader model — a long article
+     must scroll INSIDE the panel, not grow the page), while a short landing
+     sizes to its content. `align-items: start` stops the shorter column
+     stretching to match the taller — the cycle-11 V-8 precedent on `.m-layout`.
+     NOTE the cap MUST sit on the items, not the container: `max-height` on a
+     grid container does not constrain its row, so the panel overflows it and
+     the whole page scrolls instead (measured while fixing this). */
+  .kb-wrap { display: grid; grid-template-columns: 280px 1fr; gap: 16px;
+    align-items: start; min-height: 420px; }
+  .kb-wrap > * { min-height: 0; max-height: calc(100vh - 150px); }
   .kb-side { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; overflow: hidden; }
   .kb-side input#kb-search { padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--paper); color: var(--ink); }
   #kb-tree { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 4px; }
@@ -162,7 +176,7 @@
   .kb-related-row:hover { background: var(--paper-2); border-color: var(--border-strong); }
   .kb-related-t { flex: 1; min-width: 0; }
   .kb-related-meta { font-size: .74rem; color: var(--muted); flex-shrink: 0; }
-  :root[data-compact] .kb-wrap { grid-template-columns: 1fr; height: auto; }
+  :root[data-compact] .kb-wrap { grid-template-columns: 1fr; height: auto; max-height: none; }
   /* - KB slide-over drawer (shell capability) - sits ABOVE the overlay layer
      (z 50) so it stays readable + usable while the email composer or other
      modals are open (the core focusin trap exempts it); survives Call Notes'
@@ -606,8 +620,15 @@ function kbRenderLanding_() {
   if (KB_STATE.isManager) {
     var rd = (KB_STATE.reviewDue && KB_STATE.reviewDue.items) || [];
     if (rd.length) {
-      h += '<div class="kb-land-sec"><div class="kb-land-h">Review due <span class="kb-land-pill">' + rd.length + '</span>' +
-        '<span class="kb-land-sub">· ' + esc(String((KB_STATE.reviewDue && KB_STATE.reviewDue.dueDays) || 90)) + 'd+</span></div>';
+      // F18 (cycle 12): the pill showed the PAYLOAD length, and the payload is
+      // capped server-side — a 120-item backlog read as "exactly 50 are due".
+      // Show the true total in the pill and note that the list is a slice.
+      var rdTotal = Number(KB_STATE.reviewDue && KB_STATE.reviewDue.total);
+      var rdCapped = isFinite(rdTotal) && rdTotal > rd.length;
+      h += '<div class="kb-land-sec"><div class="kb-land-h">Review due <span class="kb-land-pill">' +
+        (rdCapped ? rdTotal : rd.length) + '</span>' +
+        '<span class="kb-land-sub">· ' + esc(String((KB_STATE.reviewDue && KB_STATE.reviewDue.dueDays) || 90)) + 'd+' +
+        (rdCapped ? ' · showing ' + rd.length : '') + '</span></div>';
       rd.forEach(function (it) {
         var age = (it.ageDays == null) ? 'never reviewed'
           : (it.basedOnUpdate ? ('edited ' + it.ageDays + 'd ago') : ('reviewed ' + it.ageDays + 'd ago'));

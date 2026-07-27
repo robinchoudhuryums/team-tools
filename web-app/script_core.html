@@ -58,6 +58,10 @@ const TOOLS = {
   },
   callNotes: {
     label: 'Call Notes',
+    // V-6 (cycle 12): at 390px with 7 tools this was the ONE label that wrapped
+    // to two lines, misaligning every baseline and heightening the bar. Also
+    // used by the sidebar since V-7.
+    shortLabel: 'Notes',
     // `adjust` is the pencil glyph — fits the "logging" surface better than `phone`
     sidebarIcon: 'adjust',
     defaultTab: 'callNotes',
@@ -610,8 +614,13 @@ function renderShell(state) {
   const toolKeys = Object.keys(TOOLS).filter(toolVisibleForUser_);
   const sbLinks = toolKeys.map(toolKey => {
     const t = TOOLS[toolKey];
-    return `<button class="sb-link" data-tool="${toolKey}" onclick="enterTool('${toolKey}')">
-       ${sbIcon(t.sidebarIcon)}<span class="sb-lbl">${esc(t.label)}</span></button>`;
+    // V-7 (cycle 12): the sidebar rendered the FULL label and let CSS ellipsis
+    // it — at the shipped 168px default that truncated 2 of 7 tools out of the
+    // box ("Call N…", "Training & …"), not at some narrow edge case. Use the
+    // same `shortLabel` the mobile nav already uses, and keep the full label in
+    // a title so nothing is lost.
+    return `<button class="sb-link" data-tool="${toolKey}" title="${esc(t.label)}" onclick="enterTool('${toolKey}')">
+       ${sbIcon(t.sidebarIcon)}<span class="sb-lbl">${esc(t.shortLabel || t.label)}</span></button>`;
   }).join('');
   const navBtns = toolKeys.map(toolKey => {
     const t = TOOLS[toolKey];
@@ -677,11 +686,15 @@ function renderShell(state) {
             ${popOutBtn}
           </div>
         </div>
+        <!-- V-7 (cycle 12): both fields ellipsis at the 168px DEFAULT sidebar
+             width ("Avery Bl…", "E-10…"), so titles carry the full values
+             rather than relying on the rep widening the sidebar to read their
+             own name and id. -->
         <div class="sb-user">
           <div class="sb-user-avatar">${esc(initials)}</div>
           <div class="sb-user-info">
-            <div class="sb-user-name">${esc(state.name)}</div>
-            <div class="sb-user-meta"><span class="sb-user-id">${esc(state.id)}</span> ${tzTag}</div>
+            <div class="sb-user-name" title="${esc(state.name)}">${esc(state.name)}</div>
+            <div class="sb-user-meta"><span class="sb-user-id" title="Employee ID ${esc(state.id)}">${esc(state.id)}</span> ${tzTag}</div>
           </div>
         </div>
         <!-- Round 2 · 8a — drag handle on the right edge. Double-click snaps. -->
@@ -800,7 +813,11 @@ function enterTool(toolKey, tabKey) {
   });
   // Swap the sidebar sub-label
   const lbl = document.getElementById('sb-tool-label');
-  if (lbl) lbl.textContent = tool.label;
+  // V-5 (cycle 12): the full label made `develop` ("Training & Employee Docs")
+  // wrap to two lines here, pushing every sidebar nav item down 11px — so
+  // navigating moved the navigation. shortLabel keeps it one line; the full
+  // label is still on the nav button's title (V-7).
+  if (lbl) { lbl.textContent = tool.shortLabel || tool.label; lbl.title = tool.label; }
   // Render the tab bar for this tool
   renderToolTabBar(toolKey);
   // Resolve the desired tab — explicit > default. Skip managerOnly for non-managers.

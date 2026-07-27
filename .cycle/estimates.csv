@@ -43,3 +43,18 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-07-24,11,Batches 1+2 (M-1..M-4 + L-1..L-18 + 4 tripwire holes + MIRROR_INDEX),M (~1-1.5 days),10,1.2,"~12%: consistent with cycles 7-10 — agent execution lands day-priced batches at ~10-15%; the balanced-brace extractor + bite-checks dominated."
 2026-07-24,11,Static-render visual harness (option b) + 10-finding audit,unplanned,0,1.5,"Unestimated operator-requested addition: Playwright + include-inlined page + ~40 RPC fixtures, 20 scenarios. ~20 min spent discriminating fullPage-capture artifacts from real bugs (off-viewport fixed elements) — a lesson now encoded in the harness (viewport-clipped compact/mobile shots)."
 2026-07-24,11,Visual batch V-1/V-5/V-6/V-7,S (~2h),2,0.5,"~25%: the V-1 fix was one line once live DOM probes bisected min-content propagation; empirical verification (re-shoot + scrollWidth probes) dominated — visual fixes should be priced by verification cost, not edit cost."
+2026-07-27,12,F14 — one cnEnrolledSheetId_ predicate + raw-read ban (21 sites),M,1.5,1.25,under: the 21 sites were mechanical once the predicate existed; scripted substitution + a global tripwire
+2026-07-27,12,F16 — retention panel withFailureHandler,S,0.17,0.33,"2x: the fix is 6 lines, but driving the failure path in jsdom (to prove it) took longer than the edit"
+2026-07-27,12,F18 — truncation flags on 4 capped readers,S,1.0,1.0,on estimate; ~15min of it discovered the Spanish field has no consumer
+2026-07-27,12,F11 — bound feedback[]/externalEmails[] by length,S,0.75,1.0,slightly over: the refuse-vs-drop decision + verifying no half-mutation on 3 return paths
+2026-07-27,12,F3-sibling — maxRows for archiveOldCallNotes,S,0.25,0.5,"2x: a per-rep cap does not bound the run, so it became a shared whole-run budget"
+2026-07-27,12,F17 — 4 MIRROR_INDEX entries + guards,S/M,1.5,1.0,under: extracting both sides from source is a repeatable shape once the first guard exists
+2026-07-27,12,F12 — deletePunch survivor from loaded rows,S,0.25,0.33,on estimate (+ the pin needed comment-stripping)
+2026-07-27,12,V-14 — visual fixture coverage arithmetic,S,0.25,0.33,slightly over: the range fixture had the SAME defect and needed its own weekly cdr block
+2026-07-27,12,V-5/V-6/V-7 — shortLabel across nav surfaces,S,0.75,0.5,under: one mechanism (shortLabel) already existed; 3 call sites + 2 titles
+2026-07-27,12,V-4 — shift-strip mid-value wrap,S,0.25,0.25,on estimate
+2026-07-27,12,V-8 — ADP Export button style,S,0.17,0.25,"on estimate; scope grew honestly (the shared class, not one button)"
+2026-07-27,12,V-9 — stretched dead space,S,1.0,1.0,on estimate BUT only 1 of 3 instances fixed; the first attempt regressed the reader and had to be re-done
+2026-07-27,12,V-10 — invisible zero-hour bars,S,0.25,0.25,on estimate
+2026-07-27,12,V-11 — Coaching onto mtRenderTable_,S/M,2.0,0.75,"2.7x UNDER: the component's rowClass hook already existed, so it was a config translation, not a rebuild"
+2026-07-27,12,V-12 — differentiate the two chip rows,S,0.5,0.5,on estimate

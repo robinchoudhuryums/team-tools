@@ -60,11 +60,26 @@
     getMyTrainingQA: { items: [], notes: [] },
     getCallNoteTagSuggestions: { tags: ['resupply', 'billing', 'mask-fit'] },
     getMyNoteHourBuckets: [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 1, 0, 2, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0],
-    getMyMetrics: { date: todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 7, noteCoverage: 85, missingCount: 3 },
-    getMyMetricsRange: { from: daysAgo(6), to: todayIso, repName: 'Avery Blake', cdr: kpis, noteCount: 31, noteCoverage: 81, trend: trend30() },
+    // V-14 (cycle 12): these three MUST agree with the server's own arithmetic —
+    // cnNoteCoverage_(noteCount, totalAnswered) = round(35/41*100) = 85, and the
+    // Clock strip derives `missing` as answered - noteCount = 6. The old fixture
+    // said 7 notes / 41 answered / 85% (the real ratio is 17%) and missingCount
+    // 3, so every screenshot rendered "85% logged · File 34 missing" — data the
+    // server cannot produce. The harness README's first rule is that fixtures
+    // mirror the real server contract; two prior violations produced convincing
+    // FAKE defects, so this is a correctness issue for the harness itself.
+    getMyMetrics: { date: todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6 },
+    // V-14: the range endpoint returns its OWN cdr totals for the span, so the
+    // fixture needs weekly-scale numbers — reusing the single-day `kpis` made
+    // "31 notes / 41 answered / 81%" (the real ratio is 76%). 7 weekdays at the
+    // single-day volume: 254 answered, 218 notes -> round(218/254*100) = 86.
+    getMyMetricsRange: { from: daysAgo(6), to: todayIso, repName: 'Avery Blake',
+      cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 88.5,
+             tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
+      noteCount: 218, noteCoverage: 86, trend: trend30() },
     getDashboardMetrics: function (period) {
       return { period: period, label: period === 'yesterday' ? 'Yesterday' : (period === 'mtd' ? 'Month to date' : 'Year to date'),
-        own: { answered: 41, missed: 5, pctAnswered: 89.1, attFormatted: '4:41', noteCount: 7, noteCoverage: 85, transferPct: 8.2 },
+        own: { answered: 41, missed: 5, pctAnswered: 89.1, attFormatted: '4:41', noteCount: 35, noteCoverage: 85, transferPct: 8.2 },   // V-14: 35/41 = 85%
         team: { answered: 388, missed: 41, pctAnswered: 90.4, attFormatted: '4:12', transferPct: 9.9 },
         cohort: 8, kpiMinCohort: 3, from: daysAgo(period === 'ytd' ? 200 : (period === 'mtd' ? 23 : 1)), to: daysAgo(1) };
     },

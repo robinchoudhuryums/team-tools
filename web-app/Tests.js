@@ -220,6 +220,14 @@ function _resetCdrCaches_() {
     _cdrNameMapExpiry = 0;
     _cdrColumnsValidated = false;
     _cdrColumnWarning = null;
+    // F6 (cycle 12): the CSR Transfer tab's header check is once-per-session
+    // too (cycle-11 L-2 added it with the comment "Once-per-session like
+    // _cdrColumnsValidated") but was never added here — so _withTestCdr_ could
+    // not reset it, and a fixture's verdict (or the "skipped" null from a
+    // fixture with no Transfer tab) leaked into every later read in the same
+    // execution, including computeAutomationHealth_'s probe.
+    _csrTransferValidated = false;
+    _csrTransferWarning = null;
   } catch (e) {}
 }
 
@@ -359,8 +367,9 @@ function setupTestEnvironment() {
   const empRows = sheet.getDataRange().getValues();
   for (let i = 1; i < empRows.length; i++) {
     if (String(empRows[i][EMP.ID]).trim() === _TEST_INDIA_ID) {
-      const existingCnId = empRows[i][EMP.CALL_NOTES_SHEET_ID]
-        ? String(empRows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : '';
+      // F14: same predicate the app uses, so a whitespace-only cell provisions
+      // a fixture instead of being treated as an existing enrollment.
+      const existingCnId = cnEnrolledSheetId_(empRows[i]);
       if (existingCnId) {
         _TEST_CN_SS_ID = existingCnId;
       } else {
@@ -955,6 +964,9 @@ function _runAllTests() {
   _integrationTest('managerSaveDay_invalidTimeFormatRejected', test_managerSaveDay_invalidTimeFormatRejected);
 
   // ── Call Notes — pure logic helpers (smoke-safe; no Sheet I/O) ──────────
+  // Cycle-12 batch C — the two new pure CN helpers (F14 predicate, F11 bound).
+  _smokeTest('cn_enrolledSheetId_trimsAndNullGuards', test_cn_enrolledSheetId_trimsAndNullGuards);
+  _smokeTest('cn_appendBounded_capsAndRollsBack',     test_cn_appendBounded_capsAndRollsBack);
   _smokeTest('cn_sanitizeFlagType_valid',          test_cn_sanitizeFlagType_valid);
   _smokeTest('cn_sanitizeFlagType_invalidCoerces', test_cn_sanitizeFlagType_invalidCoerces);
   _smokeTest('cn_sanitizeFlagType_caseInsensitive',test_cn_sanitizeFlagType_caseInsensitive);
@@ -2654,9 +2666,17 @@ function test_sheetDoctor_detectsAndCollapsesDuplicates() {
   _assertNotNull(inv, 'inverted in/out pair detected (out 05:00 <= in 09:00)');
   const invL = (rep.inverted || []).filter(v => v.empId === _TEST_INDIA_ID && v.date === date && v.kind === 'lunch')[0];
   _assertNotNull(invL, 'inverted lunch pair detected (return 12:00 <= leave 13:00)');
+  // Cycle-12 F2 — the honesty contract: real totals + a truncation flag + the
+  // per-run collapse bound the client labels its button from. This scan is far
+  // under the caps, so truncated must be FALSE (a hard-coded true would fail).
+  _assertTrue(rep.totalDuplicates >= 1, 'totalDuplicates counts every group, not just the shown page');
+  _assertTrue(rep.totalDuplicateRows >= 1, 'totalDuplicateRows counts the rows a collapse would delete');
+  _assertEq(rep.truncated, false, 'a small scan is not truncated');
+  _assertEq(rep.fixMaxRows, TS_DOCTOR_FIX_MAX_ROWS, 'the per-run collapse bound is declared to the client');
 
   const fix = _asUser(_TEST_MGR_EMAIL, () => fixTimesheetDuplicates(_TEST_INDIA_ID));
   _assertTrue(fix.success && fix.collapsed >= 1, 'duplicates collapsed');
+  _assertEq(fix.remaining, 0, 'a small backlog drains in one run (remaining reported, not implied)');
   // The KEPT row is the LAST appended (09:05) — the findExistingPunch_ row.
   const kept = findExistingPunch_(_TEST_INDIA_ID, date, 'ClockIn');
   _assertNotNull(kept, 'one ClockIn row remains');
@@ -2993,6 +3013,55 @@ function test_managerSaveDay_invalidTimeFormatRejected() {
 //  provision a TEST call-notes Sheet and write its ID into the
 //  test employee row.
 // ════════════════════════════════════════════════════════════════════════════
+
+// ── cycle-12 batch C: cnEnrolledSheetId_ (F14) + cnAppendBounded_ (F11) ──
+
+/** F14 — the ONE enrollment predicate. A whitespace-only column L must read as
+ *  NOT enrolled: 11 of the 21 hand-written copies tested raw truthiness, so
+ *  such a cell made every cross-rep walk call openById(' '), throw into its
+ *  per-rep catch, and silently DROP the rep from the aggregate — while the
+ *  rep's own panel (a trimmed reader) correctly showed the enrollment splash. */
+function test_cn_enrolledSheetId_trimsAndNullGuards() {
+  const row = [];
+  row[EMP.CALL_NOTES_SHEET_ID] = '   ';
+  _assertEq(cnEnrolledSheetId_(row), '', 'whitespace-only column L is NOT enrolled');
+  row[EMP.CALL_NOTES_SHEET_ID] = '  1AbC-xyz_9  ';
+  _assertEq(cnEnrolledSheetId_(row), '1AbC-xyz_9', 'a padded id is trimmed, not rejected');
+  row[EMP.CALL_NOTES_SHEET_ID] = '';
+  _assertEq(cnEnrolledSheetId_(row), '', 'empty cell');
+  row[EMP.CALL_NOTES_SHEET_ID] = null;
+  _assertEq(cnEnrolledSheetId_(row), '', 'null cell (no throw)');
+  row[EMP.CALL_NOTES_SHEET_ID] = undefined;
+  _assertEq(cnEnrolledSheetId_(row), '', 'absent cell (no throw)');
+}
+
+/** F11 — bounded append into SubformData's append-only arrays. Both the
+ *  entry-count cap and the serialized-size check must REFUSE and leave the
+ *  object untouched, so an oversized attempt cannot half-mutate the record or
+ *  write a cell that bricks every later write on the note. */
+function test_cn_appendBounded_capsAndRollsBack() {
+  // Accept path — no error, entry landed.
+  let sd = { feedback: [] };
+  _assertEq(cnAppendBounded_(sd, sd.feedback, { m: 'hi' }, CN_FEEDBACK_MAX_ENTRIES, 'feedback'), '',
+    'a normal append returns no error');
+  _assertEq(sd.feedback.length, 1, 'the entry landed');
+
+  // Count cap — refuses, array unchanged.
+  sd = { feedback: [] };
+  for (let i = 0; i < CN_FEEDBACK_MAX_ENTRIES; i++) sd.feedback.push({ m: i });
+  const countErr = cnAppendBounded_(sd, sd.feedback, { m: 'x' }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');
+  _assertTrue(!!countErr, 'the count cap refuses');
+  _assertEq(sd.feedback.length, CN_FEEDBACK_MAX_ENTRIES, 'the array is unchanged on refusal');
+
+  // Size cap — refuses AND rolls the pushed entry back off.
+  sd = { feedback: [] };
+  const sizeErr = cnAppendBounded_(sd, sd.feedback,
+    { m: new Array(CN_SUBFORM_MAX_CHARS + 5000).join('z') }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');
+  _assertTrue(!!sizeErr, 'the size cap refuses');
+  _assertEq(sd.feedback.length, 0, 'the rejected entry is popped back off (no half-mutation)');
+  _assertTrue(JSON.stringify(sd).length < CN_SUBFORM_MAX_CHARS,
+    'the object left behind is writable to the cell');
+}
 
 // ── sanitizeFlagType_ ──
 
@@ -3894,6 +3963,30 @@ function test_archiveSheetRowsOlderThan_behavioral() {
     _assertTrue(fnSrc.indexOf('setValues') < fnSrc.indexOf('SpreadsheetApp.flush') &&
                 fnSrc.indexOf('SpreadsheetApp.flush') < fnSrc.indexOf('deleteRow'),
       'append-then-flush-then-delete ordering (a mid-run failure duplicates, never loses)');
+
+    // ── Cycle-12 F3: opts.maxRows bounds the run and progress is MONOTONIC ──
+    // Without a bound, a large first enable can't finish inside the 6-minute
+    // ceiling, and because the append is already flushed every killed run
+    // RE-APPENDS what it failed to delete — duplicating payroll into the
+    // archive run after run. Capped runs must each move exactly maxRows and
+    // permanently remove them from the source, so the backlog drains.
+    src.getRange(src.getLastRow() + 1, 1, 3, 3).setValues([
+      ['b1', '2025-03-01', 'backlog 1'],
+      ['b2', '2025-03-02', 'backlog 2'],
+      ['b3', '2025-03-03', 'backlog 3'],
+    ]);
+    SpreadsheetApp.flush();
+    const dstBefore = dst.getLastRow();
+    const first = archiveSheetRowsOlderThan_(src, dst, 1, cutoffMs,
+      { headerRows: 2, width: 3, maxRows: 2 });
+    _assertEq(first, 2, 'maxRows:2 moves exactly 2 rows, not the whole backlog');
+    _assertEq(dst.getLastRow(), dstBefore + 2, 'archive grew by exactly 2 rows');
+    const second = archiveSheetRowsOlderThan_(src, dst, 1, cutoffMs,
+      { headerRows: 2, width: 3, maxRows: 2 });
+    _assertEq(second, 1, 'the next run drains the remaining row (monotonic progress)');
+    _assertEq(dst.getLastRow(), dstBefore + 3, 'no row moved twice — total is 3, not 5');
+    _assertEq(archiveSheetRowsOlderThan_(src, dst, 1, cutoffMs,
+      { headerRows: 2, width: 3, maxRows: 2 }), 0, 'drained backlog → no-op');
   } finally {
     try { if (src) ss.deleteSheet(src); } catch (e) {}
     try { if (dst) ss.deleteSheet(dst); } catch (e) {}
@@ -4154,6 +4247,17 @@ function test_metrics_countCallNotesInRange_noSheetReturnsZero() {
   _assertEq(countCallNotesInRange_({ id: 'X', name: 'Y', callNotesSheetId: null }, '2026-01-01', '2026-12-31'), 0,
     'Rep with no call-notes Sheet → 0');
   _assertEq(countCallNotesInRange_(null, '2026-01-01', '2026-12-31'), 0, 'Null emp → 0');
+  // Cycle-12 F5 — the outcome-carrying sibling. An UNENROLLED rep is not a
+  // failed read (INV-35), but an unreadable Sheet id must report unavailable
+  // so no coverage surface renders a confident 0% / "File N missing".
+  const un = cnCountNotesResult_({ id: 'X', name: 'Y', callNotesSheetId: null }, '2026-01-01', '2026-12-31');
+  _assertEq(un.count, 0, 'unenrolled → count 0');
+  _assertEq(un.unavailable, false, 'unenrolled is NOT an unavailable read');
+  _assertEq(un.unenrolled, true, 'unenrolled flagged separately');
+  const bad = cnCountNotesResult_({ id: 'X', name: 'Y', callNotesSheetId: 'NOT_A_REAL_SHEET_ID_F5' },
+    '2026-01-01', '2026-12-31');
+  _assertEq(bad.count, 0, 'unreadable Sheet → count 0');
+  _assertEq(bad.unavailable, true, 'unreadable Sheet → unavailable:true (NOT indistinguishable from zero notes)');
 }
 
 // ── countCallNotesInRange_ (integration) — guards the F1 regression class ──

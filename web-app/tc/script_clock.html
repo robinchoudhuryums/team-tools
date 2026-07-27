@@ -37,6 +37,17 @@
   .clk-sky:hover .clk-bg-btn, .hero:hover .clk-bg-btn, .clk-bg-btn:focus-visible { opacity: 1; }
   .clk-bg-btn:hover { background: rgba(255, 255, 255, .3); }
   .clk-sky .clk-time { color: #fff; }
+  /* V-2 (cycle 12): the AM/PM is a nested span whose own rule in styles.html
+     (`.hero .clk-time .ampm { color: var(--muted) }`, specificity 0,3,0) BEAT
+     the 0,2,0 `.clk-sky .clk-time` override above — so it was the one element
+     on this card still painted with a THEME-FLIPPING token while the card's
+     sky gradient is FIXED (identical in both modes). Measured contrast against
+     that gradient: light 2.08:1 / 3.46 / 5.82; dark 1.20-2.00:1 across the
+     whole card — AM/PM was effectively invisible in dark mode, on the live
+     clock of a time-tracking app. Fixed colour, matching its .clk-meta /
+     .clk-regions siblings. RULE: any text on this card must use a literal
+     colour, never a --muted/--ink token. */
+  .clk-sky .clk-time .ampm { color: rgba(255, 255, 255, .88); }
   .clk-sky .clk-meta, .clk-sky .clk-regions { color: rgba(255, 255, 255, .92); }
   .clk-sky .clk-region b { color: #fff; }
   /* Rotating world-clock chip — one zone at a time, slides in on each rotation
@@ -109,6 +120,10 @@
   .ss-grow { flex: 1; }
   .ss-hours { font-family: var(--mono); font-size: .86rem; font-weight: 700; color: var(--ink); }
   .ss-hours .ss-sub { font-weight: 400; color: var(--muted); }
+  /* V-4 — see the render comment: the parent may wrap between readouts,
+     an individual duration may never break inside itself. */
+  .ss-hours { display: inline-flex; flex-wrap: wrap; gap: 0 5px; }
+  .ss-hours .ss-val { white-space: nowrap; }
   /* Inline note-coverage in the shift header (#3 — replaces the donut strip). */
   .ss-cov { display: inline-flex; align-items: center; gap: 8px; }
   .ss-cov-pct { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .03em; color: var(--muted); }
@@ -347,8 +362,13 @@ function renderClockView(area) {
   const stateLabel = stats ? (stats.state === 'lunch' ? 'On lunch' : stats.state === 'out' ? 'Done' : 'Working') : 'Not in';
   const stateCls   = stats ? (stats.state === 'lunch' ? 'lunch' : stats.state === 'out' ? 'out' : 'working') : 'out';
   const hoursReadout = stats
-    ? `<span class="ss-hours">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m worked` +
-        (stats.lunchMinutes ? ` <span class="ss-sub">· ${stats.lunchMinutes}m lunch</span>` : '') + `</span>`
+    // V-4 (cycle 12): each value+unit+word is its own nowrap span, so
+    // "5h 54m worked · 32m lunch" wraps only BETWEEN the two readouts and never
+    // mid-value (it used to break as "5h / 54m / worked / · 32m / lunch" at both
+    // 1440px and 390px). Exactly the rule cycle-11's V-10 applied to `.tz-chip`
+    // — "a time must never break internally" — on its sibling component.
+    ? `<span class="ss-hours"><span class="ss-val">${stats.workedHM.h}h ${String(stats.workedHM.m).padStart(2,'0')}m worked</span>` +
+        (stats.lunchMinutes ? ` <span class="ss-sub ss-val">· ${stats.lunchMinutes}m lunch</span>` : '') + `</span>`
     : `<span class="ss-hours ss-sub">Not clocked in yet</span>`;
 
   // Dashboard (Time Clock → Dashboard): two-column grid — clock rail (left) +
@@ -1616,6 +1636,17 @@ function renderCoverageStrip_(slot, data) {
   const answered = cdr ? (cdr.totalAnswered || 0) : 0;
   // Hide entirely if no call activity today (avoids noise for non-CSR reps)
   if (noteCount === 0 && answered === 0) { slot.innerHTML = ''; return; }
+
+  // F5 (cycle 12): the server could not read this rep's notes Sheet, so
+  // noteCount is 0 by ignorance, not by fact. Rendering the normal strip would
+  // show "0% logged" in CRIT tone and a "File <every answered call> missing"
+  // CTA — telling the rep to redo work they already did. Say what actually
+  // happened instead (the errorStateHtml_ posture from batch J, inline).
+  if (data.noteCountUnavailable) {
+    slot.innerHTML = '<span class="ss-cov-pct warn" title="Your call-notes Sheet could not be read — the coverage figure is unavailable, not zero">' +
+      icon('warning', 11) + ' notes unavailable</span>';
+    return;
+  }
 
   // F(cycle-8): coerce the server values to numbers before they enter markup /
   // the inline onclick (esc() discipline for non-string slots).
