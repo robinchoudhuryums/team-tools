@@ -128,10 +128,31 @@
     :root {
       --selection-bg: color-mix(in oklch, var(--accent) 30%, transparent);
       --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
-      --success-deep: color-mix(in oklch, var(--good),        var(--ink) 45%);
-      --warning-deep: color-mix(in oklch, var(--warn),        var(--ink) 45%);
-      --danger-deep:  color-mix(in oklch, var(--destructive), var(--ink) 45%);
-      --info-deep:    color-mix(in oklch, var(--info),        var(--ink) 45%);
+      /* ── V-1 (cycle 12): these four MUST mix `in oklab`, not `in oklch` ──
+         oklch interpolates HUE on the polar arc. --ink (#0f1623) sits at hue
+         ~264, so mixing amber (hue 70) toward it takes the short way round —
+         70 -> 0 -> 264, i.e. THROUGH RED. Measured with `in oklch`:
+         --warning-deep resolved to hue 355 (RED, vs the #8a4500 amber
+         fallback right above), --danger-deep to 330 (magenta),
+         --success-deep to 204 (cyan). Only --info-deep looked right, because
+         blue already matches --ink's hue — which is exactly why this went
+         unnoticed for so long. Consequence: `.actions .sec.act-lunchout`
+         (var(--warning-deep)) painted Lunch Out in a destructive red, and
+         warn/danger read as swapped, across ~254 consumers.
+         oklab is RECTANGULAR (a/b axes, no hue arc), so mixing a chromatic
+         colour toward a near-neutral dark just darkens it and PRESERVES the
+         hue: amber -> h68, red -> h19, green -> h166 (verified in Chromium).
+         The dark block below has the same requirement.
+         NOTE the @supports test above still probes `in oklch` deliberately —
+         it is a proxy for "supports color-mix at all" (both spaces shipped
+         together) and it also guards the two oklch mixes above, which are
+         hue-safe: one mixes with `transparent`, the other is a low-chroma
+         neutral pair. A hue-drift tripwire in test/client/run.js fails CI if
+         any of these four regresses to oklch. */
+      --success-deep: color-mix(in oklab, var(--good),        var(--ink) 45%);
+      --warning-deep: color-mix(in oklab, var(--warn),        var(--ink) 45%);
+      --danger-deep:  color-mix(in oklab, var(--destructive), var(--ink) 45%);
+      --info-deep:    color-mix(in oklab, var(--info),        var(--ink) 45%);
     }
   }
 
@@ -191,10 +212,15 @@
     body[data-mode="dark"] {
       --ring-focus: 0 0 0 3px color-mix(in oklch, var(--accent), transparent 70%);
       --selection-bg: color-mix(in oklch, var(--accent) 32%, transparent);
-      --success-deep: color-mix(in oklch, var(--good),        var(--paper-card) 25%);
-      --warning-deep: color-mix(in oklch, var(--warn),        var(--paper-card) 25%);
-      --danger-deep:  color-mix(in oklch, var(--destructive), var(--paper-card) 25%);
-      --info-deep:    color-mix(in oklch, var(--info),        var(--paper-card) 25%);
+      /* V-1: oklab here too. Dark mode was ALREADY close to correct (a 25%
+         mix toward a near-neutral dark barely moves the hue arc), but the
+         light block was catastrophically wrong — so the same token rendered a
+         DIFFERENT hue family per theme. Using oklab in both makes the pair
+         consistent and removes the trap for the next alias added here. */
+      --success-deep: color-mix(in oklab, var(--good),        var(--paper-card) 25%);
+      --warning-deep: color-mix(in oklab, var(--warn),        var(--paper-card) 25%);
+      --danger-deep:  color-mix(in oklab, var(--destructive), var(--paper-card) 25%);
+      --info-deep:    color-mix(in oklab, var(--info),        var(--paper-card) 25%);
       --border-strong: color-mix(in oklch, var(--line), var(--ink) 25%);
     }
   }

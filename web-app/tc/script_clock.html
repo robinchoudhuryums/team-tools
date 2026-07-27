@@ -37,6 +37,17 @@
   .clk-sky:hover .clk-bg-btn, .hero:hover .clk-bg-btn, .clk-bg-btn:focus-visible { opacity: 1; }
   .clk-bg-btn:hover { background: rgba(255, 255, 255, .3); }
   .clk-sky .clk-time { color: #fff; }
+  /* V-2 (cycle 12): the AM/PM is a nested span whose own rule in styles.html
+     (`.hero .clk-time .ampm { color: var(--muted) }`, specificity 0,3,0) BEAT
+     the 0,2,0 `.clk-sky .clk-time` override above — so it was the one element
+     on this card still painted with a THEME-FLIPPING token while the card's
+     sky gradient is FIXED (identical in both modes). Measured contrast against
+     that gradient: light 2.08:1 / 3.46 / 5.82; dark 1.20-2.00:1 across the
+     whole card — AM/PM was effectively invisible in dark mode, on the live
+     clock of a time-tracking app. Fixed colour, matching its .clk-meta /
+     .clk-regions siblings. RULE: any text on this card must use a literal
+     colour, never a --muted/--ink token. */
+  .clk-sky .clk-time .ampm { color: rgba(255, 255, 255, .88); }
   .clk-sky .clk-meta, .clk-sky .clk-regions { color: rgba(255, 255, 255, .92); }
   .clk-sky .clk-region b { color: #fff; }
   /* Rotating world-clock chip — one zone at a time, slides in on each rotation

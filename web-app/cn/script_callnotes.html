@@ -232,7 +232,17 @@
     width: 100%; justify-content: center; padding: 9px 8px;
     font-size: 12px; display: inline-flex; align-items: center; gap: 5px;
   }
-  .rail-actions .kbd-chip { display: none; }   /* chips crowd the quadrants — the card sub + tooltips carry the hints */
+  /* Chips crowd the quadrants — the card sub + tooltips carry the hints.
+     V-3 (cycle 12): this was `.rail-actions .kbd-chip` (0,2,0), which LOST to
+     `.cn-action-prime .kbd-chip, .cn-action-sec .kbd-chip { display: inline-flex }`
+     (also 0,2,0, declared ~470 lines LATER — equal specificity, source order
+     wins). So the rule was DEAD: the chips rendered inside the 2-up quadrant
+     buttons anyway, and in the 480px pinned pop-out the longest one
+     (Save & Compose's Ctrl+Shift+Enter) visibly CLIPPED at the button edge —
+     while CLAUDE.md asserted the chips were hidden here. Naming both button
+     classes takes this to (0,3,0) so it wins regardless of order. */
+  .rail-actions .cn-action-prime .kbd-chip,
+  .rail-actions .cn-action-sec .kbd-chip { display: none; }
   /* V-5 (cycle-11 visual audit) — the icon and label live inside ONE child
      span (the button's own gap only separates label from kbd-chip), so the
      glyph rendered flush against the text on Save & Compose / Open Email /
@@ -2529,7 +2539,7 @@ function cnRenderActiveForm_() {
             <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM (${esc(mod)}+Shift+C)">
               <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}⇧C</span>
             </button>
-            <button type="button" class="cn-action-sec" id="cn-form-submit-compose" title="Save, copy, and open the email composer">
+            <button type="button" class="cn-action-sec" id="cn-form-submit-compose" title="Save, copy, and open the email composer (${esc(mod)}+Shift+Enter)">
               <span>${icon('mail', 13)}Save &amp; Compose</span><span class="kbd-chip">${esc(mod)}⇧↵</span>
             </button>
             <button type="button" class="cn-action-sec" id="cn-ext-email-btn" title="Open the email composer without saving (for customer / provider emails)">
@@ -8778,9 +8788,26 @@ function cnRenderHealthPanel_(res) {
 }
 
 /** K-A alternative — the last nightly self-test outcome. null = never ran
- *  (fresh deploy / trigger not installed) — informational, not an error. */
+ *  (fresh deploy / trigger not installed) — informational, not an error.
+ *  F15 (cycle 12): the server now stamps a {running:true, startedAt} sentinel
+ *  BEFORE running, so a run killed by the 6-minute ceiling leaves `running`
+ *  set instead of silently preserving the PREVIOUS night's green result.
+ *  `stuck` (running + older than SELF_TEST_STUCK_MS) is a real problem and
+ *  reads as one here; a fresh `running` is just "in progress". */
 function cnSelfTestHtml_(st) {
   if (!st) return '<div style="font-size:12px;color:var(--muted)">No self-test result recorded yet — the daily 1am trigger runs runSmokeTests on prod (the full suite on a dev instance). Install via installAutomationTriggers().</div>';
+  if (st.stuck) {
+    return '<div style="font-size:12px;padding:4px 0">' +
+      '<span style="font-weight:600;color:var(--danger-deep)">' + icon('warning', 11) + ' never finished</span> · ' +
+      'a run started ' + esc(st.date) + ' (' + esc(st.mode) + ' mode) and never recorded an outcome — it was almost certainly killed by the Apps Script execution ceiling. ' +
+      'Run it manually from the editor to see where it stalls.' +
+    '</div>';
+  }
+  if (st.running) {
+    return '<div style="font-size:12px;padding:4px 0;color:var(--muted)">' +
+      icon('clock', 11) + ' Running now — started ' + esc(st.date) + ' (' + esc(st.mode) + ' mode). Re-open this panel once it finishes.' +
+    '</div>';
+  }
   var tone = st.fail > 0 ? 'var(--danger-deep)' : 'var(--success-deep)';
   return '<div style="font-size:12px;padding:4px 0">' +
     '<span style="font-weight:600;color:' + tone + '">' +

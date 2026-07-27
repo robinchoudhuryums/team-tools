@@ -194,6 +194,85 @@ test('--muted-2 meets AA (4.5:1) on every surface, both modes', () => {
     });
   });
 });
+// V-1 (cycle 12) — the four `-deep` semantic aliases must interpolate in
+// OKLAB, not OKLCH. `color-mix(in oklch, …)` interpolates hue POLARLY: mixing
+// a warm token with the near-neutral `--ink` (a low-chroma blue-ish grey, hue
+// ~265°) drags the result the long way round the hue circle, so
+// --warning-deep rendered OLIVE-GREEN and --danger-deep MAGENTA-PURPLE on
+// every modern browser (48–75° of drift) — while the pre-2023 fallback hexes
+// right above them were correct, which is exactly why reading the file never
+// revealed it. The existing --muted-2 tripwire measures LUMINANCE, which a
+// pure hue rotation leaves untouched, so nothing in CI could see this.
+// Two halves: the space is pinned at source level (a revert to `in oklch`
+// fails immediately), and the chosen colour pairs are pinned to be genuinely
+// hue-stable under a rectangular mix (worst measured drift: 10°).
+test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () => {
+  const toks = fs.readFileSync(
+    path.resolve(__dirname, '../../web-app/styles_design_tokens.html'), 'utf8');
+  const DEEP = [
+    ['success-deep', 'good'], ['warning-deep', 'warn'],
+    ['danger-deep', 'destructive'], ['info-deep', 'info'],
+  ];
+  // (a) source-level: every color-mix'd -deep declaration uses `in oklab`.
+  const mixes = toks.match(/--(?:success|warning|danger|info)-deep:\s*color-mix\([^)]*\)[^;]*;/g) || [];
+  assert.strictEqual(mixes.length, 8,
+    'expected 8 color-mix -deep declarations (4 aliases x light/dark @supports blocks), found ' + mixes.length);
+  mixes.forEach((d) => {
+    assert.ok(/color-mix\(in oklab,/.test(d),
+      'polar hue interpolation is a colour-family bug, not a nuance — use `in oklab`: ' + d.trim());
+  });
+
+  // (b) behavioural: the mix result must stay in the source hue's family.
+  function hexes(name) {
+    const re = new RegExp('--' + name + ':\\s*(#[0-9a-fA-F]{6})', 'g');
+    const out = []; let m;
+    while ((m = re.exec(toks))) out.push(m[1]);
+    return out;
+  }
+  function toOklab(hex) {
+    const lin = [1, 3, 5].map((i) => {
+      const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    const [r, g, b] = lin;
+    const cb = (x) => (x > 0 ? Math.cbrt(x) : -Math.cbrt(-x));
+    const l = cb(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = cb(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = cb(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [
+      0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+    ];
+  }
+  const hue = (c) => (Math.atan2(c[2], c[1]) * 180 / Math.PI + 360) % 360;
+  const hueDiff = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
+  const MAX_DRIFT_DEG = 20;   // worst measured 10.1 (light --good); oklch was 48–75
+  // Each mode block mixes with its own partner + weight (light: ink 45%;
+  // dark: paper-card 25%) — read them from the source so a retune can't
+  // silently invalidate the pin.
+  [['ink', 0], ['paper-card', 1]].forEach(([partnerTok, mode]) => {
+    const label = mode ? 'dark' : 'light';
+    const declared = new RegExp('--success-deep: color-mix\\(in oklab, var\\(--good\\),\\s*var\\(--' +
+      partnerTok + '\\) (\\d+)%\\)').exec(toks);
+    assert.ok(declared, label + ' block mixes --good with --' + partnerTok);
+    const w = Number(declared[1]) / 100;
+    const partner = toOklab(hexes(partnerTok)[mode]);
+    DEEP.forEach(([, srcTok]) => {
+      const src = toOklab(hexes(srcTok)[mode]);
+      const mix = src.map((v, i) => v * (1 - w) + partner[i] * w);
+      const chroma = Math.hypot(mix[1], mix[2]);
+      assert.ok(chroma > 0.02,
+        label + ' --' + srcTok + ' mix is near-neutral (chroma ' + chroma.toFixed(3) +
+        ') — the hue compare below would be meaningless');
+      const drift = hueDiff(hue(src), hue(mix));
+      assert.ok(drift <= MAX_DRIFT_DEG,
+        label + ' --' + srcTok + ' hue ' + hue(src).toFixed(0) + '° drifts ' +
+        drift.toFixed(0) + '° to ' + hue(mix).toFixed(0) + '° in the -deep mix (max ' +
+        MAX_DRIFT_DEG + '°) — a semantic colour must not change family');
+    });
+  });
+});
 test('CN flag stripes use three distinct tokens', () => {
   const cn = fs.readFileSync(
     path.resolve(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
@@ -4191,6 +4270,24 @@ test('nightly self-test trigger: heartbeat-first, dev-only full suite, failure s
   const health = extractRawFunction('Code.js', 'computeAutomationHealth_');
   assert.ok(/SELF_TEST_RESULT_PROP/.test(health) && /selfTest: selfTest/.test(health),
     'computeAutomationHealth_ returns the last self-test outcome');
+  // F15 (cycle 12): the RUNNING sentinel. An execution-time-limit kill is not
+  // catchable, so without it a chronically timing-out suite left the PREVIOUS
+  // (green) result in place beside a fresh heartbeat — the newest detector
+  // silently unable to fire.
+  const sentinel = src.indexOf('running: true');
+  assert.ok(sentinel >= 0, 'the run stamps a {running:true} sentinel');
+  assert.ok(sentinel < src.indexOf('if (isDev) runAllTests()'),
+    'the sentinel is stamped BEFORE the suite runs — otherwise a killed run never records it');
+  assert.ok(/startedAt: Date\.now\(\)/.test(src), 'the sentinel carries a start time for the staleness compare');
+  assert.ok(/stuck: !!\(st\.running/.test(health) && /SELF_TEST_STUCK_MS/.test(health),
+    'the health projection derives `stuck` from a STALE running sentinel (a run in flight is not a problem)');
+  assert.ok(/if \(report\.selfTest && report\.selfTest\.stuck\)/.test(problems) &&
+            /never finished/.test(problems),
+    'a stuck self-test rides automationProblems_ (health dot + failure digest)');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const selfHtml = cn.slice(cn.indexOf('function cnSelfTestHtml_'));
+  assert.ok(selfHtml.indexOf('st.stuck') >= 0 && selfHtml.indexOf('st.stuck') < selfHtml.indexOf('all passing'),
+    'the Admin panel reports a stuck run INSTEAD of the stale pass/fail line');
 });
 test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dual-verifies', () => {
   const NUL_ESC = '\\' + 'u0000';   // the 6-char escape as source text
@@ -4422,6 +4519,95 @@ test('F5: a failed note-count read is reported, never rendered as a confident ze
   assert.ok(strip.indexOf('data.noteCountUnavailable') >= 0 &&
             strip.indexOf('data.noteCountUnavailable') < strip.indexOf('ss-cov-cta'),
     'the unavailable branch returns BEFORE the "File N missing" CTA can render');
+});
+
+// ---------------------------------------------------------------------------
+// F9 / F7 — the access-gate coverage net.
+//
+// INV-02/31/136 are the project's most load-bearing invariants, and the ONLY
+// thing keeping them honest was a hand-maintained list inside the editor-only
+// omnibus (`test_managerGates_rejectNonManager`) — a list nobody is forced to
+// update. Every prior cycle grew the gated surface and the omnibus caught up
+// only by someone remembering. This enumerates the gated set from Code.js
+// itself, so a NEW gated endpoint that no gate test touches fails CI.
+//
+// Trigger handlers are NOT in this set by construction: they gate via
+// `assertManagerCaller_` (which THROWS), so they never contain the returned
+// error string — their own tripwire (INV-44) covers them.
+function gatedEndpointsFromSource_() {
+  const out = { admin: [], manager: [] };
+  const re = /^function ([A-Za-z0-9_]+)\s*\(/gm;
+  let m;
+  while ((m = re.exec(codeSrc)) !== null) {
+    const start = codeSrc.indexOf('{', m.index + m[0].length - 1);
+    let depth = 0, k = start;
+    for (; k < codeSrc.length; k++) {
+      const ch = codeSrc[k];
+      if (ch === '{') depth++;
+      else if (ch === '}' && --depth === 0) break;
+    }
+    const body = codeSrc.slice(start, k + 1);
+    // Admin wins: an admin-gated endpoint returns the admin message only.
+    if (body.indexOf("'Admin access required.'") >= 0) out.admin.push(m[1]);
+    else if (body.indexOf("'Manager access required.'") >= 0) out.manager.push(m[1]);
+  }
+  return out;
+}
+
+test('F9: every gated endpoint is covered by a gate test (enumerated from source, not a hand list)', () => {
+  const gated = gatedEndpointsFromSource_();
+  assert.ok(gated.manager.length > 40 && gated.admin.length > 20,
+    'sanity: the enumeration found the gated surface (' + gated.manager.length +
+    ' manager / ' + gated.admin.length + ' admin) — a near-zero count means the scan broke, not that the gates vanished');
+
+  // Concatenate every gate-flavoured editor test body. A dedicated test may
+  // call the endpoint directly (no name string), so membership is checked
+  // against the whole region rather than a parsed case list.
+  const testsSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  const gateRe = /^function (test_[A-Za-z0-9_]*(?:[Gg]ate|[Nn]onManager|Rejected|Throws)[A-Za-z0-9_]*)\s*\(/gm;
+  let g, blob = '';
+  while ((g = gateRe.exec(testsSrc)) !== null) {
+    const start = testsSrc.indexOf('{', g.index + g[0].length - 1);
+    let depth = 0, k = start;
+    for (; k < testsSrc.length; k++) {
+      const ch = testsSrc[k];
+      if (ch === '{') depth++;
+      else if (ch === '}' && --depth === 0) break;
+    }
+    blob += testsSrc.slice(start, k + 1) + '\n';
+  }
+  assert.ok(blob.length > 5000, 'sanity: the gate-test region was located');
+
+  // Private helpers whose gate is defense-in-depth: not reachable via
+  // google.script.run (trailing underscore), and exercised through public
+  // wrappers that ARE in the omnibus. Keep this list tiny and reasoned.
+  const ALLOW = {
+    // Called only by managerGetTrainingQueue / managerGetReviewCandidates,
+    // both of which are omnibus cases.
+    managerAggregateFlagged_: 'private helper; public wrappers are covered',
+  };
+  const uncovered = gated.admin.concat(gated.manager)
+    .filter((n) => !ALLOW[n] && blob.indexOf(n) < 0);
+  assert.deepStrictEqual(uncovered, [],
+    'gated endpoint(s) with no gate test — add them to test_managerGates_rejectNonManager ' +
+    '(or a dedicated *_nonManagerRejected test): ' + uncovered.join(', '));
+});
+
+test('F7: INV-136 documents exactly the admin-gated set that Code.js enforces', () => {
+  const admin = gatedEndpointsFromSource_().admin;
+  const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
+  const start = claude.indexOf('INV-136 |');
+  assert.ok(start > 0, 'INV-136 is present in the invariant library');
+  const para = claude.slice(start, claude.indexOf('| Subsystem:', start));
+  // The prose count drifted for two cycles (said 30 while the code enforced
+  // 35) — the operator reads it to decide whether to narrow ADMIN_EMAILS.
+  const stated = /\*\*(\d+) Admin-exclusive endpoints\*\*/.exec(para);
+  assert.ok(stated, 'INV-136 states an "N Admin-exclusive endpoints" count');
+  assert.strictEqual(Number(stated[1]), admin.length,
+    'INV-136 says ' + stated[1] + ' admin-exclusive endpoints; Code.js enforces ' + admin.length);
+  const unnamed = admin.filter((n) => para.indexOf('`' + n + '`') < 0);
+  assert.deepStrictEqual(unnamed, [],
+    'admin-gated endpoint(s) missing from INV-136\'s list: ' + unnamed.join(', '));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

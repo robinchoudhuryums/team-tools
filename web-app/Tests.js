@@ -220,6 +220,14 @@ function _resetCdrCaches_() {
     _cdrNameMapExpiry = 0;
     _cdrColumnsValidated = false;
     _cdrColumnWarning = null;
+    // F6 (cycle 12): the CSR Transfer tab's header check is once-per-session
+    // too (cycle-11 L-2 added it with the comment "Once-per-session like
+    // _cdrColumnsValidated") but was never added here — so _withTestCdr_ could
+    // not reset it, and a fixture's verdict (or the "skipped" null from a
+    // fixture with no Transfer tab) leaked into every later read in the same
+    // execution, including computeAutomationHealth_'s probe.
+    _csrTransferValidated = false;
+    _csrTransferWarning = null;
   } catch (e) {}
 }
 

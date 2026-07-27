@@ -4926,6 +4926,14 @@ function computeAutomationHealth_() {
           date: String(st.date || ''), mode: String(st.mode || ''),
           pass: Number(st.pass) || 0, fail: Number(st.fail) || 0, skip: Number(st.skip) || 0,
           error: String(st.error || ''),
+          // F15: the RUNNING sentinel. A run that was KILLED (execution-time
+          // limit — not catchable, so the outcome write never happens) leaves
+          // this set. `stuck` = it has been "running" far longer than any real
+          // suite takes, which means the last run never finished.
+          running: !!st.running,
+          startedAt: Number(st.startedAt) || null,
+          stuck: !!(st.running && Number(st.startedAt) &&
+                    (Date.now() - Number(st.startedAt)) > SELF_TEST_STUCK_MS),
         };
       }
     } catch (_) {}
@@ -4993,6 +5001,17 @@ function automationProblems_(report) {
       report.selfTest.fail + ' failing test(s) on ' + (report.selfTest.date || '?') +
       (report.selfTest.error ? ' — ' + report.selfTest.error : '') + '.');
   }
+  // (f) F15 — the self-test STARTED and never finished (a stuck {running:true}
+  // sentinel). An execution-time-limit kill is not catchable, so without this
+  // the run's outcome stayed at the PREVIOUS value — a chronically
+  // timing-out suite reported green beside a fresh heartbeat. A run in flight
+  // right now is NOT a problem; only a stale sentinel is.
+  if (report.selfTest && report.selfTest.stuck) {
+    problems.push('The nightly self-test (' + (report.selfTest.mode || '?') +
+      ') started on ' + (report.selfTest.date || '?') +
+      ' and never finished — it was almost certainly killed by the 6-minute execution limit, ' +
+      'so its last reported result is stale. Run it from the editor to see where it stalls.');
+  }
   return problems;
 }
 
@@ -5048,6 +5067,25 @@ function runNightlySelfTest() {
     const isDev = !!props.getProperty('INSTANCE_LABEL') &&
       String(props.getProperty('INSTANCE_IS_PROD') || '').toLowerCase() !== 'true';
     const mode = isDev ? 'full' : 'smoke';
+    // F15 (cycle 12) — RUNNING sentinel. The heartbeat above proves the TRIGGER
+    // fired, but the outcome below is written only on a normal return or a
+    // CATCHABLE throw. An Apps Script execution-time-limit kill is not
+    // reliably catchable, and on the dev instance this branch runs the FULL
+    // 281-test suite against live spreadsheets — plausibly over the 6-minute
+    // ceiling. In that case the heartbeat was fresh while
+    // SELF_TEST_LAST_RESULT still held the PREVIOUS result, so a chronically
+    // timing-out suite reported GREEN and nothing surfaced it: the mechanism
+    // built to catch post-deploy regressions could silently stop running (the
+    // cycle-7 "detector that can never fire" class, in the newest detector).
+    // Stamping {running:true} first means a killed run leaves the sentinel
+    // behind, and automationProblems_ treats a STALE one as a failure.
+    try {
+      props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify({
+        running: true, startedAt: Date.now(), mode: mode,
+        date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+        pass: 0, fail: 0, skip: 0,
+      }));
+    } catch (e) {}
     if (isDev) runAllTests(); else runSmokeTests();
     const res = {
       date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
@@ -9424,6 +9462,11 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // closing the "silently dead digest trigger" blind spot.
 const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
 const SELF_TEST_RESULT_PROP = 'SELF_TEST_LAST_RESULT';   // {date, mode, pass, fail, skip[, error]} — nightly self-test outcome
+// F15 (cycle 12): how long a {running:true} sentinel may persist before it means
+// "the last run never finished". Apps Script kills an execution at 6 minutes and
+// the kill is not reliably catchable, so a killed run leaves the sentinel behind;
+// 2h is far beyond any real suite and well inside the daily cadence.
+const SELF_TEST_STUCK_MS = 2 * 3600000;
 
 /** Best-effort heartbeat stamp ({ key: "yyyy-MM-dd HH:mm:ss" in
  *  CONFIG.TIMEZONE }) — never blocks or fails the digest itself. */
