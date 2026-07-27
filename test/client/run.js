@@ -3898,15 +3898,19 @@ test('the archive window clamps UP to the safety floor (a typo cannot strip live
     'floor comfortably exceeds every active payroll window (adjust 30d, export ≤31d, trends 14d)');
   assert.ok(/TIMESHEET_ARCHIVE_DAYS:\s*0/.test(codeSrc), 'CONFIG default 0 — disabled on a fresh deploy');
 });
-test('no Timesheet purge tier exists (keep-forever) and CN archive call sites keep their defaults', () => {
+test('no Timesheet purge tier exists (keep-forever); the CN tier keeps the header/width defaults', () => {
   assert.ok(codeSrc.indexOf('purgeArchivedTimesheet') === -1 &&
             !/purgeSheetRowsOlderThan_\([^)]*Timesheet/i.test(codeSrc),
     'nothing purges the Timesheet archive — payroll rows are only ever MOVED');
-  // The CN cold tier must still call the shared helper 4-arg (defaults
-  // headerRows=1 + CN_HEADERS width preserved → byte-identical CN behavior).
+  // The CN cold tier passes ONLY maxRows (cycle-12 F3-sibling). headerRows and
+  // width must stay defaulted — the CN Notes tab has ONE header row and the
+  // CN_HEADERS width, and passing either explicitly here would be drift.
   const cn = extractRawFunction('Code.js', 'archiveOldCallNotes');
-  assert.ok(/archiveSheetRowsOlderThan_\(live, archive, CN\.DATE_LOCAL, cutoffMs\)/.test(cn),
-    'archiveOldCallNotes still uses the helper defaults (no opts drift)');
+  assert.ok(/archiveSheetRowsOlderThan_\(live, archive, CN\.DATE_LOCAL, cutoffMs,\s*\{ maxRows: budget \}\)/
+    .test(cn.replace(/\s*\n\s*/g, ' ')),
+    'archiveOldCallNotes passes only the per-run bound (headerRows/width stay defaulted)');
+  assert.ok(!/headerRows/.test(cn) && !/width:/.test(cn),
+    'no headerRows/width drift at the CN call site');
 });
 
 console.log('\ntc/script_clock.html — night-sky phases + moon + skeleton loaders (operator picks a+b+d)');
@@ -4608,6 +4612,153 @@ test('F7: INV-136 documents exactly the admin-gated set that Code.js enforces', 
   const unnamed = admin.filter((n) => para.indexOf('`' + n + '`') < 0);
   assert.deepStrictEqual(unnamed, [],
     'admin-gated endpoint(s) missing from INV-136\'s list: ' + unnamed.join(', '));
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-12 Batch C pins.
+console.log('\ncycle 12 — batch C fix pins (F14 / F16 / F18 / F11 / F3-sibling)');
+
+// F14: the enrollment test was hand-written 21 times; 11 copies tested RAW
+// truthiness while 10 trimmed, so a whitespace-only column L made a rep
+// "enrolled" for every cross-rep walk (which then threw into its per-rep catch
+// and SILENTLY dropped them from the aggregate) while their own panel showed
+// the enrollment splash. This is the INV-142 / INV-154 boundary pattern: one
+// predicate, plus a global ban on reading the column any other way.
+test('F14: every column-L read goes through cnEnrolledSheetId_ (no raw truthiness left)', () => {
+  const pred = extractRawFunction('Code.js', 'cnEnrolledSheetId_');
+  assert.ok(/String\(row\[EMP\.CALL_NOTES_SHEET_ID\] \|\| ''\)\.trim\(\)/.test(pred),
+    'the predicate trims and null-guards — a whitespace-only cell reads as NOT enrolled');
+
+  // Global scan: strip comments, then every remaining EMP.CALL_NOTES_SHEET_ID
+  // occurrence must be either the predicate itself or the provisioning WRITE.
+  const stripped = codeSrc
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const offenders = [];
+  stripped.split('\n').forEach((line, i) => {
+    if (line.indexOf('EMP.CALL_NOTES_SHEET_ID') < 0) return;
+    // The predicate's own body.
+    if (/String\(row\[EMP\.CALL_NOTES_SHEET_ID\]/.test(line)) return;
+    // provisionCallNotesSheet's setValue target (a WRITE, not an enrollment test).
+    if (/getRange\([^)]*EMP\.CALL_NOTES_SHEET_ID \+ 1\)/.test(line)) return;
+    offenders.push((i + 1) + ': ' + line.trim());
+  });
+  assert.deepStrictEqual(offenders, [],
+    'read column L via cnEnrolledSheetId_(row) — a raw read re-opens the ' +
+    'whitespace-only split where trimmed and untrimmed sites disagree:\n  ' +
+    offenders.join('\n  '));
+
+  // The predicate must actually be used by the cross-rep walks that had the bug.
+  ['getCallNotesTagTaxonomy', 'getCallNotesTagTrends', 'applyTagTransformAcrossReps_',
+   'managerSearchCallNotes', 'managerGetShiftStats', 'managerGetUnresolvedActionCount',
+   'getStorageHealth', 'exportCallNotesRange', 'managerAggregateFlagged_',
+   'managerAggregateUrgent_', 'sendCallNotesEodDigest', 'getTeamMetrics'].forEach((fn) => {
+    assert.ok(/cnEnrolledSheetId_\(/.test(extractRawFunction('Code.js', fn)),
+      fn + ' must resolve enrollment through the predicate');
+  });
+});
+
+// F3-sibling: the CN cold-archive twin of the bound shipped for the Timesheet.
+test('F3-sibling: archiveOldCallNotes bounds the whole run, not just one rep', () => {
+  const src = extractRawFunction('Code.js', 'archiveOldCallNotes');
+  assert.ok(/CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN/.test(src), 'a per-run budget exists');
+  assert.ok(/if \(budget <= 0\) break;/.test(src),
+    'the REP LOOP stops when the budget is spent — a per-rep cap would not bound ' +
+    'a walk that calls the mover once per rep inside one execution + one lock');
+  assert.ok(/budget -= moved/.test(src), 'the budget is shared across reps, not reset per rep');
+  assert.ok(/hitPerRunCap/.test(src),
+    'a capped run is visible in the audit row — a draining backlog must not read as a normal small run');
+  const m = codeSrc.match(/CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN = (\d+)/);
+  assert.ok(m && parseInt(m[1], 10) > 0, 'the cap constant is a positive number');
+});
+
+// F11: the two append-only SubformData arrays were unbounded in LENGTH (L-1
+// bounded the email-detail objects' SIZE, one surface over). A long coaching
+// thread or a repeatedly-emailed note walks the cell to its ~50k limit, and
+// past that EVERY later write on the note throws — including the flag/pin ops.
+test('F11: the two growing SubformData arrays are bounded (count + serialized size)', () => {
+  const helper = extractRawFunction('Code.js', 'cnAppendBounded_');
+  assert.ok(/arr\.length >= maxEntries/.test(helper), 'entry-count cap');
+  assert.ok(/JSON\.stringify\(subformData\)\.length/.test(helper) &&
+            /CN_SUBFORM_MAX_CHARS/.test(helper),
+    'serialized-size check against the cell limit (a count cap alone cannot bound bytes)');
+  assert.ok(/arr\.pop\(\)/.test(helper),
+    'a rejected entry is REMOVED again — the caller must not half-mutate the record');
+  const cap = codeSrc.match(/CN_SUBFORM_MAX_CHARS = (\d+)/);
+  assert.ok(cap && parseInt(cap[1], 10) < 50000,
+    'the size cap sits UNDER the 50k Sheets cell limit');
+
+  // All FOUR appends route through it: 3 feedback[] + 1 externalEmails[].
+  ['setCallNoteTrainingReply', 'setCallNoteManagerComment', 'appendCallNoteFeedback']
+    .forEach((fn) => {
+      const src = extractRawFunction('Code.js', fn);
+      assert.ok(/cnAppendBounded_\(/.test(src), fn + ' appends through the bounded helper');
+      assert.ok(!/subformData\.feedback\.push\(/.test(src), fn + ' has no raw push left');
+      assert.ok(/if \(fbErr\) return \{ success: false, error: fbErr \}/.test(src),
+        fn + ' surfaces the refusal (the note is left untouched, so it stays writable)');
+    });
+  const ext = extractRawFunction('Code.js', 'sendExternalEmail');
+  assert.ok(/cnAppendBounded_\(/.test(ext) && !/externalEmails\.push\(/.test(ext),
+    'the externalEmails[] stamp is bounded too');
+  // That stamp runs AFTER a successful send (INV-42) — a rejection must NOT be
+  // reported as a send failure, and must not write the oversized cell.
+  const stampRegion = ext.slice(ext.indexOf('cnAppendBounded_'));
+  assert.ok(/console\.warn/.test(stampRegion.slice(0, 500)),
+    'a rejected stamp logs (INV-42: never fail an already-sent email)');
+  assert.ok(/\} else \{[\s\S]{0,200}setValue\(JSON\.stringify\(subformData\)\)/.test(stampRegion),
+    'the cell is written ONLY when the append was accepted');
+
+  // The non-growing writes (flag / resolve / pin) must stay unguarded so an
+  // already-oversized note can still be un-flagged or edited back down.
+  ['setCallNoteFlag', 'setCallNotePinned'].forEach((fn) => {
+    assert.ok(!/cnAppendBounded_|CN_SUBFORM_MAX_CHARS/.test(extractRawFunction('Code.js', fn)),
+      fn + ' must NOT be size-gated — it is the recovery path for an oversized note');
+  });
+});
+
+// F16: the last silently-blanking failure handler. E7 (cycle 10) fixed only the
+// success-with-{error} path, so a transport failure still wiped the panel that
+// configures two IRREVERSIBLE PHI purges — indistinguishable from "not present".
+test('F16: the retention panel reports a failed load instead of blanking', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const fn = cn.slice(cn.indexOf('function cnLoadRetentionPanel_'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  const fh = body.slice(body.indexOf('.withFailureHandler'));
+  assert.ok(/errorStateHtml_\(/.test(fh),
+    'the failure handler renders the shared error state');
+  assert.ok(!/innerHTML = ''/.test(fh), 'no silent blank left');
+  assert.ok(/currentView !== 'callNotesAdmin'/.test(fh),
+    'still guards against a late callback writing into another view (the CN loader rule)');
+});
+
+// F18: four payload-capped readers reported no truncation — the F2 class.
+test('F18: payload-capped readers report the pre-slice total', () => {
+  const dr = extractRawFunction('Code.js', 'getDeptRequests');
+  assert.ok(/DR_LIST_CAP/.test(dr), 'the magic 100 is a named cap');
+  // Match the KEY form exactly — a bare substring test passes on a typo'd
+  // `mineTotalX`, which is precisely the drift this pin exists to catch.
+  ['mineTotal', 'incomingTotal', 'allOpenTotal'].forEach((k) => {
+    assert.ok(new RegExp('\\b' + k + '\\b\\s*[:=]').test(dr), 'getDeptRequests returns ' + k);
+  });
+  assert.ok(/listCap: DR_LIST_CAP/.test(dr), 'the cap itself rides back for the client');
+  const kb = extractRawFunction('Code.js', 'kbGetReviewDue');
+  assert.ok(/KB_REVIEW_DUE_CAP/.test(kb) && /total: items\.length/.test(kb),
+    'kbGetReviewDue returns the pre-slice total');
+  const sp = extractRawFunction('Code.js', 'getSpanishInboxStats');
+  assert.ok(/SPANISH_PENDING_LIST_CAP/.test(sp) && /pendingListCap/.test(sp),
+    'getSpanishInboxStats declares its pendingList cap');
+
+  // Client: "showing N of M", and NOTHING when the list is complete or when an
+  // older server omits the total (so a not-yet-redeployed server is safe).
+  const drc = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_deptrequests.html'), 'utf8');
+  const noteFn = drc.slice(drc.indexOf('function drCapNoteHtml_'));
+  assert.ok(/!isFinite\(t\) \|\| t <= shown\) return ''/.test(noteFn),
+    'the suffix is omitted when the list is complete or the total is absent');
+  assert.strictEqual((drc.match(/drCapNoteHtml_\(/g) || []).length, 4,
+    'all three lists (mine / incoming / allOpen) call it, plus the definition');
+  const kbc = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/rdCapped \? rdTotal : rd\.length/.test(kbc),
+    'the Review-due pill shows the TRUE total, not the payload length');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

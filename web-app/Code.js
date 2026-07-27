@@ -315,6 +315,11 @@ const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','
 // The resolve-by-token scans (resolveDeptRequest / markDeptRequestResolved_)
 // stay FULL so an old token still resolves. INV-13 spirit, mirrors CN_AUDIT_MAX_SCAN.
 const DR_MAX_SCAN = 4000;
+// F18 (cycle 12): the per-LIST payload cap (mine / incoming / allOpen). Distinct
+// from DR_MAX_SCAN (the sheet-read bound) — a run can scan 4000 rows and still
+// have >100 open requests to show. Reported alongside the lists as listCap +
+// *Total so the client can render "showing N of M" instead of implying N is all.
+const DR_LIST_CAP = 100;
 
 // Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
 const CN = {
@@ -370,6 +375,24 @@ const CN_EMAIL_TEMPLATE_BODY_MAX = 4000;
 // pin/flag/feedback write on that note throw. 16k leaves headroom for the
 // rest of subformData; legitimate details run a few hundred chars.
 const CN_EMAIL_DETAILS_MAX_CHARS = 16000;
+// Cycle-12 F11 — the L-1 class one surface over. L-1 bounded each email-detail
+// object's SIZE, but the two APPEND-ONLY arrays in the same cell were unbounded
+// in LENGTH: subformData.feedback[] grows by one entry per manager reply /
+// comment / rep ack / clarification (each ≤2000 chars), and
+// subformData.externalEmails[] by one per external send. A long-running
+// coaching thread on one note, or a note emailed to a customer many times,
+// therefore walks the cell toward its ~50k Sheets limit — and at that point
+// EVERY later write on that note throws, including the flag/pin/resolve ops a
+// rep would use day to day. Two guards per append: an entry-count cap (a
+// pathological loop can't get near the byte limit) and a serialized-size check
+// that REFUSES the append with an actionable error rather than writing a blob
+// that bricks the note (the INV-96 posture — reject, never silently truncate a
+// record). Deliberately applied ONLY at the two GROWING appends: the
+// flag/resolve/pin writes set scalar fields and must stay writable so an
+// already-oversized note can still be un-flagged / edited back down.
+const CN_SUBFORM_MAX_CHARS = 45000;          // under the 50k Sheets cell limit
+const CN_FEEDBACK_MAX_ENTRIES = 200;         // a Q&A thread this long is pathological
+const CN_EXTERNAL_EMAILS_MAX_ENTRIES = 100;  // sends logged per note
 const CN_TEMPLATE_RECIPIENT_TYPES = ['customer', 'provider', 'any'];
 const CN_EXTERNAL_LINK_LIMIT = 50;
 // Quick-link categories (the official external-collection path — #2). Order is
@@ -3212,7 +3235,7 @@ function getEnrolledCallNotesReps() {
       // provisionCallNotesSheet's no-clobber test — a whitespace-only column-L
       // cell showed the rep as enrolled in the Per-Rep picker (whose reads
       // then fail) while the Admin panel offered to provision them.
-      if (!String(rows[i][EMP.CALL_NOTES_SHEET_ID] || '').trim()) continue;
+      if (!cnEnrolledSheetId_(rows[i])) continue;
       reps.push({
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
@@ -3238,7 +3261,7 @@ function getCallNotesEnrollment() {
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
       };
-      if (rows[i][EMP.CALL_NOTES_SHEET_ID] && String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim()) {
+      if (cnEnrolledSheetId_(rows[i])) {
         enrolled.push(rec);
       } else {
         unenrolled.push(rec);
@@ -3276,7 +3299,7 @@ function provisionCallNotesSheet(repEmpId) {
       if (String(rows[i][EMP.ID]).trim() !== repEmpId) continue;
       targetRow = i;
       repName = String(rows[i][EMP.NAME]).trim();
-      existing = rows[i][EMP.CALL_NOTES_SHEET_ID] ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : '';
+      existing = cnEnrolledSheetId_(rows[i]);
       break;
     }
     if (targetRow < 0) return { error: 'Employee not found: ' + repEmpId };
@@ -3338,12 +3361,12 @@ function getCallNotesTagTaxonomy() {
     let totalNotes = 0;
     let repsScanned = 0;
     for (let i = 1; i < roster.length; i++) {
-      const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
       if (!sheetId) continue;
       try {
         const repEmp = {
           id: String(roster[i][EMP.ID]).trim(),
-          callNotesSheetId: String(sheetId).trim(),
+          callNotesSheetId: sheetId,
         };
         const sheet = getCallNotesSheet_(repEmp);
         repsScanned++;
@@ -3496,10 +3519,10 @@ function getCallNotesTagTrends() {
     const events = [];
     let repsScanned = 0;
     for (let i = 1; i < roster.length; i++) {
-      const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
       if (!sheetId) continue;
       try {
-        const repEmp = { id: String(roster[i][EMP.ID]).trim(), callNotesSheetId: String(sheetId).trim() };
+        const repEmp = { id: String(roster[i][EMP.ID]).trim(), callNotesSheetId: sheetId };
         const sheet = getCallNotesSheet_(repEmp);
         repsScanned++;
         const lastRow = sheet.getLastRow();
@@ -3625,12 +3648,12 @@ function applyTagTransformAcrossReps_(oldTag, transform) {
   const roster = getEmployeeRosterRows_();
   let repsTouched = 0, notesUpdated = 0;
   for (let i = 1; i < roster.length; i++) {
-    const sheetId = roster[i][EMP.CALL_NOTES_SHEET_ID];
+    const sheetId = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
     if (!sheetId) continue;
     try {
       const repEmp = {
         id: String(roster[i][EMP.ID]).trim(),
-        callNotesSheetId: String(sheetId).trim(),
+        callNotesSheetId: sheetId,
       };
       const sheet = getCallNotesSheet_(repEmp);
       const rows = sheet.getDataRange().getValues();
@@ -3853,12 +3876,12 @@ function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchi
     for (let r = 1; r < roster.length; r++) {
       const repId = String(roster[r][EMP.ID]).trim();
       if (repFilter && repFilter.length && repFilter.indexOf(repId) < 0) continue;
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       const repName = String(roster[r][EMP.NAME]).trim();
       let target;
       try {
-        target = { id: repId, name: repName, callNotesSheetId: String(sheetId).trim() };
+        target = { id: repId, name: repName, callNotesSheetId: sheetId };
         const sheet = getCallNotesSheet_(target);
         // Bounded read when a full date range is supplied; full scan for
         // open-ended search. Per-note date re-checks below stay as defensive
@@ -3931,7 +3954,7 @@ function managerGetShiftStats(date) {
     const roster = getEmployeeRosterRows_();
     const reps = [];
     for (let r = 1; r < roster.length; r++) {
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       const repId = String(roster[r][EMP.ID]).trim();
       const repName = String(roster[r][EMP.NAME]).trim();
@@ -3947,7 +3970,7 @@ function managerGetShiftStats(date) {
       const completionTimes = [];
       const noteTimes = [];
       try {
-        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: sheetId });
         const lastRow = sheet.getLastRow();
         if (lastRow >= 2) {
           // S2: notes are appended in DateLocal order, so a single date maps to
@@ -4041,13 +4064,13 @@ function managerGetUnresolvedActionCount() {
     const roster = getEmployeeRosterRows_();
     let total = 0;
     for (let r = 1; r < roster.length; r++) {
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       try {
         const sheet = getCallNotesSheet_({
           id: String(roster[r][EMP.ID]).trim(),
           name: String(roster[r][EMP.NAME]).trim(),
-          callNotesSheetId: String(sheetId).trim(),
+          callNotesSheetId: sheetId,
         });
         const flagCol = sheet.getRange(2, CN.FLAG_TYPE + 1, Math.max(sheet.getLastRow() - 1, 1), 2).getValues();
         for (let i = 0; i < flagCol.length; i++) {
@@ -5260,12 +5283,12 @@ function getStorageHealth(opts) {
     let enrolled = 0, reachable = 0, tzMismatch = 0;
     const problems = [];
     for (let i = 1; i < roster.length; i++) {
-      const sid = roster[i][EMP.CALL_NOTES_SHEET_ID];
+      const sid = cnEnrolledSheetId_(roster[i]);   // F14: trimmed predicate
       if (!sid) continue;
       enrolled++;
       const nm = String(roster[i][EMP.NAME] || '').trim();
       try {
-        const rss = SpreadsheetApp.openById(String(sid).trim());
+        const rss = SpreadsheetApp.openById(sid);
         reachable++;
         const rtz = rss.getSpreadsheetTimeZone();
         if (!tzEquivalent_(rtz, cfgTz)) {
@@ -5648,13 +5671,13 @@ function exportCallNotesRange(startDate, endDate) {
     const roster = getEmployeeRosterRows_();
     const allNotes = [];
     for (let r = 1; r < roster.length; r++) {
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       const repId = String(roster[r][EMP.ID]).trim();
       const repName = String(roster[r][EMP.NAME]).trim();
       try {
         const sheet = getCallNotesSheet_({
-          id: repId, name: repName, callNotesSheetId: String(sheetId).trim()
+          id: repId, name: repName, callNotesSheetId: sheetId
         });
         const lastRow = sheet.getLastRow();
         if (lastRow <= 1) continue;
@@ -5782,13 +5805,14 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
       // build on top. Legacy clients still see trainingReply; new clients
       // walk the feedback array. trainingQuestion stays as the seed entry.
       subformData.feedback = Array.isArray(subformData.feedback) ? subformData.feedback : [];
-      subformData.feedback.push({
+      const fbErr = cnAppendBounded_(subformData, subformData.feedback, {
         role: 'manager',
         message: trimmed,
         at: nowIso,
         by: callerEmp.email,
         kind: 'reply',
-      });
+      }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
+      if (fbErr) return { success: false, error: fbErr };
     } else {
       delete subformData.trainingReply;
       delete subformData.trainingReplyBy;
@@ -5843,11 +5867,12 @@ function setCallNoteManagerComment(repEmpId, noteId, message) {
     if (!Array.isArray(subformData.feedback)) subformData.feedback = [];
 
     const empTz = target.timezone || CONFIG.TIMEZONE;
-    subformData.feedback.push({
+    const fbErr = cnAppendBounded_(subformData, subformData.feedback, {
       role: 'manager', kind: 'comment', message: msg,
       at: Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss"),
       by: callerEmp.email,
-    });
+    }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
+    if (fbErr) return { success: false, error: fbErr };
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
@@ -5895,13 +5920,14 @@ function appendCallNoteFeedback(noteId, message, kind) {
 
     const empTz = empTz_(emp);
     const nowIso = Utilities.formatDate(new Date(), empTz, "yyyy-MM-dd'T'HH:mm:ss");
-    subformData.feedback.push({
+    const fbErr = cnAppendBounded_(subformData, subformData.feedback, {
       role: 'agent',
       message: kindV === 'ack' ? '' : trimmed,
       at: nowIso,
       by: emp.email,
       kind: kindV,
-    });
+    }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');   // F11
+    if (fbErr) return { success: false, error: fbErr };
     sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
 
     const dateLocal = normalizeDate_(located.row[CN.DATE_LOCAL]);
@@ -5931,12 +5957,12 @@ function managerAggregateFlagged_(flagType, dateRange) {
     const roster = getEmployeeRosterRows_();
     const results = [];
     for (let r = 1; r < roster.length; r++) {
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!sheetId) continue;
       const repId = String(roster[r][EMP.ID]).trim();
       const repName = String(roster[r][EMP.NAME]).trim();
       try {
-        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+        const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: sheetId });
         // Bounded read when a full date range is supplied (the weekly digest
         // passes a 7-day range — big win vs. scanning each rep's full
         // history); full scan otherwise. Per-note re-checks stay defensive.
@@ -5969,12 +5995,12 @@ function managerAggregateUrgent_(dateRange) {
   const roster = getEmployeeRosterRows_();
   const results = [];
   for (let r = 1; r < roster.length; r++) {
-    const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+    const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
     if (!sheetId) continue;
     const repId = String(roster[r][EMP.ID]).trim();
     const repName = String(roster[r][EMP.NAME]).trim();
     try {
-      const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: String(sheetId).trim() });
+      const sheet = getCallNotesSheet_({ id: repId, name: repName, callNotesSheetId: sheetId });
       const dr = (dateRange && dateRange.start && dateRange.end) ? dateRange : {};
       const located = readCallNoteRowsInRange_(sheet, dr.start, dr.end);
       for (let i = 0; i < located.length; i++) {
@@ -7258,8 +7284,18 @@ function sendExternalEmail(payload) {
             return { formType: fl.formType, token: fl.token };
           });
         }
-        subformData.externalEmails.push(stampEntry);
-        sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+        // F11: bounded like the feedback thread. This stamp runs AFTER a
+        // successful send (INV-42), so a rejection cannot be surfaced as a send
+        // failure — log it the same way the surrounding catch does and leave
+        // the note's metadata untouched rather than writing a cell that would
+        // brick every later write on it.
+        const stampErrMsg = cnAppendBounded_(subformData, subformData.externalEmails,
+          stampEntry, CN_EXTERNAL_EMAILS_MAX_ENTRIES, 'external email');
+        if (stampErrMsg) {
+          console.warn('sendExternalEmail: stamp skipped (noteId=' + noteId + '): ' + stampErrMsg);
+        } else {
+          sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(JSON.stringify(subformData));
+        }
       }
     } catch (stampErr) {
       console.warn('sendExternalEmail: note stamp failed (noteId=' + noteId + '): ' + stampErr.message);
@@ -7896,8 +7932,7 @@ function submitFormByToken(token, formData) {
               email: createdBy,
               id: String(empRows[i][EMP.ID]).trim(),
               name: String(empRows[i][EMP.NAME]).trim(),
-              callNotesSheetId: empRows[i][EMP.CALL_NOTES_SHEET_ID]
-                ? String(empRows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
+              callNotesSheetId: cnEnrolledSheetId_(empRows[i]) || null,
             };
             break;
           }
@@ -8569,12 +8604,12 @@ function purgeOldCallNotes() {
     let repsTouched = 0, notesRemoved = 0;
     try {
       for (let r = 1; r < roster.length; r++) {
-        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
-        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const sheetId = cnEnrolledSheetId_(roster[r]);
+        if (!sheetId) continue;
         const emp = {
           id:   String(roster[r][EMP.ID]).trim(),
           name: String(roster[r][EMP.NAME]).trim(),
-          callNotesSheetId: String(sheetIdRaw).trim(),
+          callNotesSheetId: sheetId,
         };
         try {
           const removed = purgeSheetRowsOlderThan_(getCallNotesSheet_(emp), CN.DATE_LOCAL, cutoffMs);
@@ -8603,6 +8638,13 @@ function getNoteArchiveDays_() {
   const v = parseInt(raw, 10);
   return (isNaN(v) || v < 0) ? 0 : v;
 }
+
+// Cycle-12 F3-sibling: rows moved per nightly archiveOldCallNotes run, shared
+// across ALL reps (the walk is one execution + one global ScriptLock, so a
+// per-rep cap would not bound the run). Same order as the Timesheet twin's cap
+// — sized for "drains a multi-year backlog over a couple of weeks of quiet 3am
+// runs" while staying comfortably inside the 6-minute execution ceiling.
+const CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 
 /** Returns the cold-archive tab (CONFIG.CALL_NOTES.ARCHIVE_TAB) in the given
  *  per-rep spreadsheet, creating it with the canonical CN_HEADERS on first use.
@@ -8712,20 +8754,36 @@ function archiveOldCallNotes() {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let repsTouched = 0, notesArchived = 0;
+    // Cycle-12 F3-sibling: a WHOLE-RUN row budget, shared across reps. The
+    // Timesheet twin needed a bound because one tab can hold ~20k rows; here
+    // the compounding is worse — the mover is called once PER REP inside one
+    // execution AND one global ScriptLock, so N reps with backlogs multiply.
+    // A per-rep cap alone would not bound the run, so the budget is shared and
+    // the rep loop STOPS when it is spent. Consequence (deliberate): reps are
+    // drained in roster order, so an early rep with years of notes delays
+    // later reps by a night or two. That is fine because the op is idempotent
+    // and nightly — each run is finite and monotonic (rows deleted this run
+    // are gone for good), which is exactly what the unbounded version was not:
+    // the append is flushed BEFORE the deletes, so a run killed by the
+    // 6-minute ceiling re-appended everything it had not deleted, duplicating
+    // PHI into the cold archive night after night.
+    let budget = CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN;
     try {
       for (let r = 1; r < roster.length; r++) {
-        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
-        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        if (budget <= 0) break;
+        const sheetId = cnEnrolledSheetId_(roster[r]);
+        if (!sheetId) continue;
         const emp = {
           id:   String(roster[r][EMP.ID]).trim(),
           name: String(roster[r][EMP.NAME]).trim(),
-          callNotesSheetId: String(sheetIdRaw).trim(),
+          callNotesSheetId: sheetId,
         };
         try {
           const live = getCallNotesSheet_(emp);
           const archive = getOrCreateNotesArchiveTab_(live.getParent());
-          const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs);
-          if (moved > 0) { notesArchived += moved; repsTouched++; }
+          const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs,
+            { maxRows: budget });
+          if (moved > 0) { notesArchived += moved; repsTouched++; budget -= moved; }
         } catch (e) {
           Logger.log('archiveOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
         }
@@ -8733,8 +8791,9 @@ function archiveOldCallNotes() {
     } finally {
       lock.releaseLock();
     }
+    const capped = budget <= 0 ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN}` : '';
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
-      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}`);
+      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}`);
     Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
   } catch (err) {
     Logger.log('archiveOldCallNotes failed: ' + err.message);
@@ -8892,12 +8951,12 @@ function purgeArchivedCallNotes() {
     let repsTouched = 0, notesRemoved = 0;
     try {
       for (let r = 1; r < roster.length; r++) {
-        const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
-        if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+        const sheetId = cnEnrolledSheetId_(roster[r]);
+        if (!sheetId) continue;
         const emp = {
           id:   String(roster[r][EMP.ID]).trim(),
           name: String(roster[r][EMP.NAME]).trim(),
-          callNotesSheetId: String(sheetIdRaw).trim(),
+          callNotesSheetId: sheetId,
         };
         try {
           // Read-only existence check — never create the archive tab here.
@@ -8943,12 +9002,12 @@ function reconcileCallNotes() {
     const CONTENT_COLS = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
     let repsTouched = 0, rowsBackfilled = 0;
     for (let r = 1; r < roster.length; r++) {
-      const sheetIdRaw = roster[r][EMP.CALL_NOTES_SHEET_ID];
-      if (!sheetIdRaw || !String(sheetIdRaw).trim()) continue;
+      const sheetId = cnEnrolledSheetId_(roster[r]);
+      if (!sheetId) continue;
       const emp = {
         id: String(roster[r][EMP.ID]).trim(),
         name: String(roster[r][EMP.NAME]).trim(),
-        callNotesSheetId: String(sheetIdRaw).trim(),
+        callNotesSheetId: sheetId,
         timezone: String(roster[r][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE,
       };
       try {
@@ -9571,7 +9630,7 @@ function sendCallNotesEodDigest() {
     let sentCount = 0;
     for (let r = 1; r < roster.length; r++) {
       const emailAddr = String(roster[r][EMP.EMAIL] || '').trim();
-      const sheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (!emailAddr || !sheetId) continue;
       const tzRaw = String(roster[r][EMP.TIMEZONE] || '').trim();
       const tz = safeTimezone_(tzRaw);
@@ -9590,7 +9649,7 @@ function sendCallNotesEodDigest() {
         id: String(roster[r][EMP.ID]).trim(),
         name: String(roster[r][EMP.NAME]).trim(),
         email: emailAddr,
-        callNotesSheetId: String(sheetId).trim(),
+        callNotesSheetId: sheetId,
         timezone: tz,
       };
       const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
@@ -11423,7 +11482,10 @@ function getSpanishInboxStats(days) {
       address: addr, days: d,
       resolved: resolvedCount, pending: pending.length,
       avgMinutes: avg, medianMinutes: median,
-      pendingList: pending.slice(0, 25),
+      // F18: `pending` (the count) is authoritative; pendingList is capped, so
+      // say so rather than letting the rendered list imply completeness.
+      pendingList: pending.slice(0, SPANISH_PENDING_LIST_CAP),
+      pendingListCap: SPANISH_PENDING_LIST_CAP,
       membersConfigured: Object.keys(members).length,
       threadsScanned: threads.length,
     };
@@ -11573,6 +11635,9 @@ function getSpanishInboxThreadBody(threadId) {
 // stored as a NUMBER cell (immune to the Sheets date-coercion class).
 const SPANISH_RESOLVED_TAB = 'SpanishManualResolved';
 const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays cheap
+// F18: pendingList payload cap. The `pending` COUNT is always complete; only
+// the rendered list is capped, so the response says so (pendingListCap).
+const SPANISH_PENDING_LIST_CAP = 25;
 
 function getOrCreateSpanishResolvedSheet_() {
   const ss = getAdpSS_();
@@ -11965,10 +12030,17 @@ function getDeptRequests() {
               if (myDeptsLc[String(it.toDept).toLowerCase().trim()]) return true;
               return drSplitDepts_(it.toDept).some(function (d) { return myDeptsLc[d.toLowerCase()]; });
             })
-            .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100)
+            .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); })
       : [];
-    const result = { mine: mine.slice(0, 100), isManager: !!emp.isManager, departments: departments,
-                     myDepts: myDepts, incoming: incoming, truncated: truncated };
+    // F18 (cycle 12): the three lists were silently `.slice(0, 100)`'d with no
+    // signal, so a 240-request backlog rendered as exactly 100 and read as the
+    // complete picture — the F2 class (a bounded reader must say it is bounded).
+    // `truncated` above covers the SCAN cap; these cover the LIST caps.
+    const result = { mine: mine.slice(0, DR_LIST_CAP), isManager: !!emp.isManager,
+                     departments: departments, myDepts: myDepts,
+                     incoming: incoming.slice(0, DR_LIST_CAP), truncated: truncated,
+                     listCap: DR_LIST_CAP, mineTotal: mine.length,
+                     incomingTotal: incoming.length };
     if (emp.isManager) {
       const byDept = {};
       all.forEach(function (it) {
@@ -11990,8 +12062,10 @@ function getDeptRequests() {
         return { dept: b.dept, open: b.open, resolved: b.resolved, overdueOpen: b.overdueOpen,
                  slaHours: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };
       }).sort(function (a, b) { return b.open - a.open; });
-      result.allOpen = all.filter(function (it) { return it.status === 'open'; })
-        .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); }).slice(0, 100);
+      const allOpenSorted = all.filter(function (it) { return it.status === 'open'; })
+        .sort(function (a, b) { return (b.elapsedMin || 0) - (a.elapsedMin || 0); });
+      result.allOpen = allOpenSorted.slice(0, DR_LIST_CAP);
+      result.allOpenTotal = allOpenSorted.length;
     }
     return result;
   } catch (err) { return { error: err.message }; }
@@ -12244,8 +12318,7 @@ function getEmployeeInfo_() {
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
         sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
-        callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
-          ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
+        callNotesSheetId: cnEnrolledSheetId_(rows[i]) || null,
         payCycle: cycle, payAnchor: anchor, isManager, isAdmin: empIsAdmin_(email, isManager), timezone, ptoEnabled,
         annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
         sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
@@ -12275,8 +12348,7 @@ function lookupEmployeeById_(empId) {
       email: String(rows[i][EMP.EMAIL]).trim(),
       timezone: String(tzRaw).trim() || CONFIG.TIMEZONE,
       sheetId: rows[i][EMP.SHEET_ID] ? String(rows[i][EMP.SHEET_ID]).trim() : null,
-      callNotesSheetId: rows[i][EMP.CALL_NOTES_SHEET_ID]
-        ? String(rows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : null,
+      callNotesSheetId: cnEnrolledSheetId_(rows[i]) || null,
       annualLeave: parseFloat(rows[i][EMP.ANNUAL_LEAVE]) || 0,
       sickLeave:   parseFloat(rows[i][EMP.SICK_LEAVE])   || 0,
       ptoEnabled,
@@ -12895,6 +12967,61 @@ let _adpTzMemo = null;
 function adpSheetTz_() {
   if (!_adpTzMemo) _adpTzMemo = getAdpSS_().getSpreadsheetTimeZone();
   return _adpTzMemo;
+}
+
+/**
+ * F11 (cycle 12) — bounded append into one of SubformData's append-only arrays.
+ * Pushes `entry` onto `arr`, then rejects if the resulting blob would be
+ * unwritable: too many entries, or a serialized cell over CN_SUBFORM_MAX_CHARS.
+ * Returns `''` on success or an actionable error string; on rejection the entry
+ * is REMOVED again, so `subformData` is left exactly as it was and the caller
+ * can return the error without having half-mutated the record.
+ *
+ * Refuse-rather-than-drop is deliberate: these arrays are the coaching/Q&A and
+ * external-send record for a note, so silently discarding the oldest entries
+ * would quietly lose a record the manager believes is complete (and the UI
+ * renders the whole thread). INV-96 takes the same line on oversized form
+ * submissions.
+ */
+function cnAppendBounded_(subformData, arr, entry, maxEntries, label) {
+  if (arr.length >= maxEntries) {
+    return 'This note already has the maximum of ' + maxEntries + ' ' + label +
+      ' entries. Start a new note to continue.';
+  }
+  arr.push(entry);
+  const size = JSON.stringify(subformData).length;
+  if (size > CN_SUBFORM_MAX_CHARS) {
+    arr.pop();
+    return 'This ' + label + ' entry was not saved: it would grow the note\'s stored ' +
+      'metadata to ' + size + ' characters, over the ' + CN_SUBFORM_MAX_CHARS +
+      ' limit. Shorten the message, or continue on a new note.';
+  }
+  return '';
+}
+
+/**
+ * THE call-notes enrollment predicate (cycle-12 F14). Given an Employees roster
+ * ROW, returns the rep's trimmed per-rep Sheet id, or `''` when they are not
+ * enrolled. Every read of column L must go through this — a Node tripwire bans
+ * raw `EMP.CALL_NOTES_SHEET_ID` truthiness outside it (the INV-142 / INV-154
+ * boundary pattern).
+ *
+ * WHY a predicate for a one-line read: the enrollment test was written 21 times
+ * and 11 of those copies tested RAW truthiness (`if (!sheetId) continue;`)
+ * while the other 10 trimmed. With a WHITESPACE-ONLY column L the two groups
+ * DISAGREED — the trimmed group correctly read "not enrolled" (the rep's own
+ * panel showed the enrollment splash and the Admin panel offered to provision
+ * them), while every untrimmed cross-rep walk called `openById(' ')`, threw
+ * into its per-rep try/catch, and SILENTLY OMITTED the rep from the aggregate:
+ * tag taxonomy, tag trends, the tag-transform walk, cross-rep search, shift
+ * stats, the unresolved-action badge, the CN export, team metrics, the EOD
+ * digest — and, worse, Storage Health reported a false "unreachable per-rep
+ * Sheet" for a rep who simply is not enrolled. A manager reading any of those
+ * numbers had no way to know a rep was missing. Trimming here makes the whole
+ * module agree on one answer.
+ */
+function cnEnrolledSheetId_(row) {
+  return String(row[EMP.CALL_NOTES_SHEET_ID] || '').trim();
 }
 
 /**
@@ -13922,13 +14049,13 @@ function getTeamMetrics(dateOrFrom, to) {
     var repMap = {};
     for (var r = 1; r < roster.length; r++) {
       var name = String(roster[r][EMP.NAME]).trim();
-      var cnSheetId = roster[r][EMP.CALL_NOTES_SHEET_ID];
+      var cnSheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (name) {
         rosterNames.push(name);
         repMap[name] = {
           repId: String(roster[r][EMP.ID]).trim(),
           repName: name,
-          cnSheetId: cnSheetId ? String(cnSheetId).trim() : null,
+          cnSheetId: cnSheetId || null,
         };
       }
     }
@@ -15561,6 +15688,9 @@ function kbSaveSearchConfig(groups) {
 const KB_VIEWS_TAB = 'KbViews';
 const KB_VIEWS_HEADERS = ['Timestamp', 'ItemId', 'RepId', 'Context'];
 const KB_VIEWS_MAX_SCAN = 4000;   // bounded tail scan, INV-13 spirit
+// F18: review-due payload cap, reported with the pre-slice total so a long
+// backlog does not render as "exactly 50 items are due".
+const KB_REVIEW_DUE_CAP = 50;
 const KB_USAGE_WINDOW_DAYS = 30;
 const KB_USAGE_TOP_N = 5;
 
@@ -15909,7 +16039,10 @@ function kbGetReviewDue() {
              (b.views - a.views) || ((b.ageDays || 0) - (a.ageDays || 0)) ||
              a.title.localeCompare(b.title);
     });
-    return { items: items.slice(0, 50), dueDays: dueDays };
+    // F18: report the pre-slice total so the manager panel can say "showing
+    // N of M" — a 50-item cap with no signal reads as "only 50 are due".
+    return { items: items.slice(0, KB_REVIEW_DUE_CAP), dueDays: dueDays,
+             total: items.length, cap: KB_REVIEW_DUE_CAP };
   } catch (err) { return { error: err.message }; }
 }
 

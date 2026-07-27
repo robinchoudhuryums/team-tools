@@ -7661,7 +7661,17 @@ function cnLoadRetentionPanel_() {
       CN_STATE.retentionCfg = res;
       slot.innerHTML = cnRenderRetentionHtml_(res);
     })
-    .withFailureHandler(function () { if (currentView === 'callNotesAdmin') slot.innerHTML = ''; })
+    // F16 (cycle 12): the LAST silently-blanking failure handler in the
+    // codebase. Cycle-10's E7 fixed only the success-with-{error} path above;
+    // a transport/throw failure still wiped the slot to '', so an unreachable
+    // retention config looked exactly like "this deploy has no retention
+    // panel" — on the surface that configures two IRREVERSIBLE PHI purges.
+    // Same shape as the four sibling handlers in this file.
+    .withFailureHandler(function (err) {
+      if (currentView !== 'callNotesAdmin') return;
+      slot.innerHTML = errorStateHtml_('Retention panel failed to load: ' +
+        ((err && err.message) || 'unknown error'));
+    })
     .getRetentionConfig();
 }
 function cnRetentionRowHtml_(key, label, val, destructive) {

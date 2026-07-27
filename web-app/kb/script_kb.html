@@ -606,8 +606,15 @@ function kbRenderLanding_() {
   if (KB_STATE.isManager) {
     var rd = (KB_STATE.reviewDue && KB_STATE.reviewDue.items) || [];
     if (rd.length) {
-      h += '<div class="kb-land-sec"><div class="kb-land-h">Review due <span class="kb-land-pill">' + rd.length + '</span>' +
-        '<span class="kb-land-sub">· ' + esc(String((KB_STATE.reviewDue && KB_STATE.reviewDue.dueDays) || 90)) + 'd+</span></div>';
+      // F18 (cycle 12): the pill showed the PAYLOAD length, and the payload is
+      // capped server-side — a 120-item backlog read as "exactly 50 are due".
+      // Show the true total in the pill and note that the list is a slice.
+      var rdTotal = Number(KB_STATE.reviewDue && KB_STATE.reviewDue.total);
+      var rdCapped = isFinite(rdTotal) && rdTotal > rd.length;
+      h += '<div class="kb-land-sec"><div class="kb-land-h">Review due <span class="kb-land-pill">' +
+        (rdCapped ? rdTotal : rd.length) + '</span>' +
+        '<span class="kb-land-sub">· ' + esc(String((KB_STATE.reviewDue && KB_STATE.reviewDue.dueDays) || 90)) + 'd+' +
+        (rdCapped ? ' · showing ' + rd.length : '') + '</span></div>';
       rd.forEach(function (it) {
         var age = (it.ageDays == null) ? 'never reviewed'
           : (it.basedOnUpdate ? ('edited ' + it.ageDays + 'd ago') : ('reviewed ' + it.ageDays + 'd ago'));

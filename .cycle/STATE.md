@@ -2,8 +2,9 @@
 
 ## Current
 Cycle: 12
-Phase: implement — batches 1 (F1–F5), A (V-1–V-3), B (F15/F9/F7/F6/F10) done
-       (2026-07-27); pending: operator deploy + /reflect
+Phase: implement — batches 1 (F1–F5), A (V-1–V-3), B (F15/F9/F7/F6/F10),
+       C (F14/F16/F18/F11/F3-sibling) done (2026-07-27); pending: operator
+       deploy + /reflect
 Scope: broad (fresh broad scan + an operator-requested VISUAL/UI-UX addendum)
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 11 was the seams audit; /reflect increments)
@@ -42,20 +43,13 @@ MEDIUMS (all five implemented — batch 1):
   from "zero notes filed" → the Clock strip rendered "0% logged" in CRIT tone
   + "File <every answered call> missing", telling reps to redo filed work.
 
-LOWS — F6/F7/F9/F10/F15 implemented (batch B). STILL OPEN: F8 "six modules" vs
-7 TOOLS entries (fixed in the /sync-docs pass); F11 subformData.feedback[]
-unbounded in LENGTH (the L-1 class, one surface over); F12 deletePunch's L-14
-survivor re-scan does a 2nd full Timesheet read inside the lock; F13 README
-"45-question" vs the 46 ring (fixed in /sync-docs); F14 "column L trimmed
-EVERYWHERE" is false (11 of 21 sites untrimmed — a whitespace-only cell makes
-a rep enrolled-but-broken, silently skipped from every manager aggregate; the
-DOC claim was corrected in /sync-docs, the CODE gap remains); F16 the
-retention panel's withFailureHandler still blanks silently (cycle-10's E7
-fixed only the success-with-error path; the last such site); F17 MIRROR_INDEX
-omits >=4 live mirrors (CLK_DASH_PERIODS<->DASHBOARD_PERIOD_KEYS,
-COACH_SEVERITIES<->the severity <select>, cnExtLinkOptionsHtml_'s inlined
-categories, PUNCH_META<->PUNCH_LABELS_); F18 four capped readers with no
-truncation flag (getDeptRequests x2, kbGetReviewDue, getSpanishInboxStats).
+LOWS — F6/F7/F9/F10/F15 implemented (batch B); F11/F14/F16/F18 + the
+F3-sibling implemented (batch C). F8/F13 were doc-only and fixed in the
+/sync-docs pass. STILL OPEN: F12 deletePunch's L-14 survivor re-scan does a 2nd
+full Timesheet read inside the lock; F17 MIRROR_INDEX omits >=4 live mirrors
+(CLK_DASH_PERIODS<->DASHBOARD_PERIOD_KEYS, COACH_SEVERITIES<->the severity
+<select>, cnExtLinkOptionsHtml_'s inlined categories, PUNCH_META<->
+PUNCH_LABELS_).
 
 VISUAL / UI-UX ADDENDUM (2026-07-27, operator asked whether the scan covered
 it — it had NOT; ran test/visual/ + 6 throwaway DOM probes). 20/20 scenarios
@@ -80,14 +74,17 @@ it recommended NOW EXIST (the V-1 hue-drift tripwire; the V-2 fixed-surface
 contrast measurement was folded into that batch's verification).
 
 ## In progress (facts to carry forward — NOT judgments)
-- All three batches implemented, pinned, and green: pure 330→338, DOM 65,
-  node --check x3. Every new Node pin BITE-CHECKED (14/14 across the cycle;
-  restored via a python edit + backup — never git checkout mid-batch).
-- Batch A was verified EMPIRICALLY in test/visual/, not just reasoned:
-  V-1 worst hue drift now 10° (was 48–75°, with warn/danger in the wrong
-  colour family); V-2 .ampm now theme-IDENTICAL (3.89 / 2.45 / 1.52 against
-  the gradient's blue end / midpoint / amber end, vs dark's prior 1.20–2.00);
-  V-3 display:none confirmed in both wide and 480px compact.
+- All FOUR batches implemented, pinned, and green: pure 330→343, DOM 65→66,
+  node --check x3, visual harness 20/20 (0 missing fixtures). Every new pin
+  BITE-CHECKED (24/24 across the cycle; restored via a python edit + backup —
+  never git checkout mid-batch).
+- Batch A was verified EMPIRICALLY in test/visual/: V-1 worst hue drift now 10°
+  (was 48–75°); V-2 .ampm theme-IDENTICAL; V-3 display:none in wide + 480px.
+- Batch C's two new pure helpers were EXECUTED against real inputs (not just
+  source-scanned) and now carry editor smoke tests:
+  cnEnrolledSheetId_('   ') === '' and cnAppendBounded_ refusing + rolling back
+  on both the count cap and the size cap. The F16 failure path was driven in a
+  real jsdom window (loader → .error-state role=alert, message shown).
 - Next concrete step: operator deploy (cd web-app && clasp push -f, then
   New version) + editor runAllTests, then /reflect.
 
@@ -168,20 +165,58 @@ contrast measurement was folded into that batch's verification).
   before/after, and the rule for the next author; INV-136's drift warning
   replaced with the machine-check note.
 
+- F14 | Code.js, Tests.js | ONE `cnEnrolledSheetId_(row)` predicate (trimmed,
+  null-guarded) now the ONLY reader of column L — all 21 hand-written sites
+  converted (11 of which tested RAW truthiness), the now-redundant re-trims
+  removed, and a Node tripwire bans every raw `EMP.CALL_NOTES_SHEET_ID` read
+  outside it (exempting only the predicate body + provisionCallNotesSheet's
+  setValue WRITE). The employee-object builders keep their `|| null` contract.
+  + an editor smoke test on the predicate.
+- F16 | cn/script_callnotes.html | the retention panel's withFailureHandler
+  renders `errorStateHtml_` instead of blanking the slot (the last
+  silently-blanking handler; cycle-10's E7 fixed only the success-with-{error}
+  path). Pinned by a source pin AND a new DOM test.
+- F18 | Code.js, metrics/script_deptrequests.html, kb/script_kb.html | the
+  payload-capped readers now report the pre-slice total: getDeptRequests gains
+  listCap/mineTotal/incomingTotal/allOpenTotal (and the magic 100 became
+  DR_LIST_CAP), kbGetReviewDue gains total/cap, getSpanishInboxStats gains
+  pendingListCap. Clients render "showing N of M" (Dept Requests) and a
+  true-total Review-due pill — and render NOTHING when the list is complete or
+  the total is absent, so a client on an un-redeployed server is unchanged.
+- F11 | Code.js, Tests.js | `cnAppendBounded_` bounds the two APPEND-ONLY
+  SubformData arrays (feedback[] x3 sites, externalEmails[] x1) by entry count
+  AND serialized size, REFUSING + popping the entry back off rather than
+  dropping the oldest (they are the coaching/send record — the INV-96 posture).
+  The non-growing flag/resolve/pin writes stay unguarded on purpose: they are
+  the recovery path for an already-oversized note. + an editor smoke test.
+- F3-sibling | Code.js | archiveOldCallNotes passes a WHOLE-RUN budget
+  (CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN=2000) and stops the rep loop when spent —
+  a per-rep cap cannot bound a walk that calls the mover once per rep inside
+  one execution + one lock. Capped runs stamp hitPerRunCap=.
+- Docs | CLAUDE.md | the F14 gotcha rewritten from "NOT yet everywhere / fix
+  not yet applied" to the enforced-predicate form; the SubformData gotcha
+  extended with the F11 LENGTH bound + why flag/pin stay unguarded; INV-153
+  extended with the CN sibling's whole-run budget.
+
 ## Pending / not yet done
 - Operator deploy (cd web-app && clasp push -f + New version) + editor
   runAllTests (the F3 maxRows behavioral case, the F2 contract assertions, and
   the F6 cache-reset effect run only there). Covers cycle 11's un-deployed
   visual batch too.
-- The remaining open findings: F11, F12, F14 (code side), F16, F17, F18,
-  V-4–V-14, and the /broad-scan process recommendation. These are batches
-  C / D / E in the prioritized list from the /sync-docs reply.
+- The remaining open findings: F12, F17, V-4–V-14, and the /broad-scan process
+  recommendation. These are batches D / E in the prioritized list.
 - /reflect (writes the metrics + estimates rows, increments the seams counter).
 
 ## Open follow-on items
-- Code.js archiveOldCallNotes | the CN cold-archive twin still calls the mover
-  UNBOUNDED — same non-convergence hazard as F3 for a rep with years of notes.
-  One-line fix (pass maxRows) whenever it is in scope.
+- Code.js getSpanishInboxStats | `pendingList` is a DEAD field — nothing in the
+  client reads it (the Spanish tab and the dashboard card both use the separate
+  live-read getSpanishInboxPending, which is uncapped). F18's cap flag there is
+  therefore correct-but-unobservable; removing the field is the real cleanup,
+  deferred as a response-shape change.
+- tc/script_clock.html loadCoverageStrip_ | blanks the strip on a COLD-miss
+  failure (`if (!hadCache) slot.innerHTML = ''`). Deliberate + documented as
+  the SWR keep-last-good rule, so it was left alone in F16 — but it is the one
+  remaining place a failed load renders as absence rather than an error.
 - Code.js | the OTHER archive readers are still live-tab-only:
   buildTimesheetForEmployee_ (employee calendar), getPunctualityReport,
   tsDoctorScan_. F1 fixed the money path (the export) only.
@@ -228,14 +263,15 @@ contrast measurement was folded into that batch's verification).
   set), so an equality assertion would be wrong.
 
 ## Where I left off
-Cycle 12: audit + visual addendum done; batch 1 (F1–F5 Mediums), batch A
-(V-1–V-3 visual) and batch B (F15/F9/F7/F6/F10) all implemented, pinned,
-bite-checked and green (pure 338/0, DOM 65/0, node --check x3, visual harness
-20/20). Docs synced (CLAUDE.md gotchas + INV-136). NEXT: commit + push to
-claude/broad-scan-it3br5, then the operator deploy (clasp push -f + New
-version) and an editor runAllTests, then /reflect to close the cycle. Batches
-C/D/E (F11/F12/F14/F16/F17/F18 + V-4–V-14 + the /broad-scan process change)
-are the remaining prioritized work.
+Cycle 12: audit + visual addendum done; FOUR batches shipped — batch 1 (F1–F5
+Mediums), A (V-1–V-3 visual), B (F15/F9/F7/F6/F10), C (F14/F16/F18/F11 +
+the F3-sibling) — all implemented, pinned, bite-checked and green (pure 343/0,
+DOM 66/0, node --check x3, visual 20/20). Docs synced each round. NEXT: the
+operator deploy (clasp push -f + New version) and an editor runAllTests — batch
+C adds 2 new smoke tests (cn_enrolledSheetId_, cn_appendBounded_) that only run
+there — then /reflect to close the cycle. Remaining prioritized work: batch D
+(F12, F17, V-14, V-5/V-6/V-7) and batch E (V-4/V-8/V-9/V-10/V-11/V-12), plus
+the deferred V-13 + the F1 sibling readers.
 
 ## History
 Closed-cycle records live in `.cycle/HISTORY.md` (append-only, newest first).

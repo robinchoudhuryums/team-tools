@@ -819,6 +819,20 @@ test('M-8: a late Team Notes queue response cannot clobber the sub-tab opened af
   assert.ok(h.$('#cn-mgr-search-q'), 'late training-queue response dropped — Search body survives');
 });
 
+test('F16: a failed retention-config load renders an error, not a silent blank', () => {
+  const h = boot();
+  const slot = h.document.createElement('div');
+  slot.id = 'cn-admin-retention';
+  h.document.body.appendChild(slot);
+  h.read('currentView = "callNotesAdmin"');
+  h.window.cnLoadRetentionPanel_();
+  h.run.flushFailure(new Error('transport blew up'), 'getRetentionConfig');
+  const html = h.$('#cn-admin-retention').innerHTML;
+  assert.ok(html.trim() !== '', 'the slot is NOT blanked — a blank reads as "no retention panel in this deploy"');
+  assert.ok(/role="alert"/.test(html), 'renders the shared error state');
+  assert.ok(html.indexOf('transport blew up') >= 0, 'names the reason so the manager can act');
+});
+
 test('Turn A: a post-teardown CN draft-persist fire does NOT delete the sticky draft', () => {
   const h = boot();
   const good = JSON.stringify({ values: { issue: 'wheelchair repair' }, flags: [], tags: [], at: Date.now() });

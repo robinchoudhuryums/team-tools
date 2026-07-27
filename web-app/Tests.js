@@ -367,8 +367,9 @@ function setupTestEnvironment() {
   const empRows = sheet.getDataRange().getValues();
   for (let i = 1; i < empRows.length; i++) {
     if (String(empRows[i][EMP.ID]).trim() === _TEST_INDIA_ID) {
-      const existingCnId = empRows[i][EMP.CALL_NOTES_SHEET_ID]
-        ? String(empRows[i][EMP.CALL_NOTES_SHEET_ID]).trim() : '';
+      // F14: same predicate the app uses, so a whitespace-only cell provisions
+      // a fixture instead of being treated as an existing enrollment.
+      const existingCnId = cnEnrolledSheetId_(empRows[i]);
       if (existingCnId) {
         _TEST_CN_SS_ID = existingCnId;
       } else {
@@ -963,6 +964,9 @@ function _runAllTests() {
   _integrationTest('managerSaveDay_invalidTimeFormatRejected', test_managerSaveDay_invalidTimeFormatRejected);
 
   // ── Call Notes — pure logic helpers (smoke-safe; no Sheet I/O) ──────────
+  // Cycle-12 batch C — the two new pure CN helpers (F14 predicate, F11 bound).
+  _smokeTest('cn_enrolledSheetId_trimsAndNullGuards', test_cn_enrolledSheetId_trimsAndNullGuards);
+  _smokeTest('cn_appendBounded_capsAndRollsBack',     test_cn_appendBounded_capsAndRollsBack);
   _smokeTest('cn_sanitizeFlagType_valid',          test_cn_sanitizeFlagType_valid);
   _smokeTest('cn_sanitizeFlagType_invalidCoerces', test_cn_sanitizeFlagType_invalidCoerces);
   _smokeTest('cn_sanitizeFlagType_caseInsensitive',test_cn_sanitizeFlagType_caseInsensitive);
@@ -3009,6 +3013,55 @@ function test_managerSaveDay_invalidTimeFormatRejected() {
 //  provision a TEST call-notes Sheet and write its ID into the
 //  test employee row.
 // ════════════════════════════════════════════════════════════════════════════
+
+// ── cycle-12 batch C: cnEnrolledSheetId_ (F14) + cnAppendBounded_ (F11) ──
+
+/** F14 — the ONE enrollment predicate. A whitespace-only column L must read as
+ *  NOT enrolled: 11 of the 21 hand-written copies tested raw truthiness, so
+ *  such a cell made every cross-rep walk call openById(' '), throw into its
+ *  per-rep catch, and silently DROP the rep from the aggregate — while the
+ *  rep's own panel (a trimmed reader) correctly showed the enrollment splash. */
+function test_cn_enrolledSheetId_trimsAndNullGuards() {
+  const row = [];
+  row[EMP.CALL_NOTES_SHEET_ID] = '   ';
+  _assertEq(cnEnrolledSheetId_(row), '', 'whitespace-only column L is NOT enrolled');
+  row[EMP.CALL_NOTES_SHEET_ID] = '  1AbC-xyz_9  ';
+  _assertEq(cnEnrolledSheetId_(row), '1AbC-xyz_9', 'a padded id is trimmed, not rejected');
+  row[EMP.CALL_NOTES_SHEET_ID] = '';
+  _assertEq(cnEnrolledSheetId_(row), '', 'empty cell');
+  row[EMP.CALL_NOTES_SHEET_ID] = null;
+  _assertEq(cnEnrolledSheetId_(row), '', 'null cell (no throw)');
+  row[EMP.CALL_NOTES_SHEET_ID] = undefined;
+  _assertEq(cnEnrolledSheetId_(row), '', 'absent cell (no throw)');
+}
+
+/** F11 — bounded append into SubformData's append-only arrays. Both the
+ *  entry-count cap and the serialized-size check must REFUSE and leave the
+ *  object untouched, so an oversized attempt cannot half-mutate the record or
+ *  write a cell that bricks every later write on the note. */
+function test_cn_appendBounded_capsAndRollsBack() {
+  // Accept path — no error, entry landed.
+  let sd = { feedback: [] };
+  _assertEq(cnAppendBounded_(sd, sd.feedback, { m: 'hi' }, CN_FEEDBACK_MAX_ENTRIES, 'feedback'), '',
+    'a normal append returns no error');
+  _assertEq(sd.feedback.length, 1, 'the entry landed');
+
+  // Count cap — refuses, array unchanged.
+  sd = { feedback: [] };
+  for (let i = 0; i < CN_FEEDBACK_MAX_ENTRIES; i++) sd.feedback.push({ m: i });
+  const countErr = cnAppendBounded_(sd, sd.feedback, { m: 'x' }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');
+  _assertTrue(!!countErr, 'the count cap refuses');
+  _assertEq(sd.feedback.length, CN_FEEDBACK_MAX_ENTRIES, 'the array is unchanged on refusal');
+
+  // Size cap — refuses AND rolls the pushed entry back off.
+  sd = { feedback: [] };
+  const sizeErr = cnAppendBounded_(sd, sd.feedback,
+    { m: new Array(CN_SUBFORM_MAX_CHARS + 5000).join('z') }, CN_FEEDBACK_MAX_ENTRIES, 'feedback');
+  _assertTrue(!!sizeErr, 'the size cap refuses');
+  _assertEq(sd.feedback.length, 0, 'the rejected entry is popped back off (no half-mutation)');
+  _assertTrue(JSON.stringify(sd).length < CN_SUBFORM_MAX_CHARS,
+    'the object left behind is writable to the cell');
+}
 
 // ── sanitizeFlagType_ ──
 
