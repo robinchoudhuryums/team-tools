@@ -610,8 +610,13 @@ function mRenderMyStats_(data) {
   // the trend; Avg talk from the own attSeconds series (single mode only — range
   // returns no per-day series). Notes filed + Total talk stay plain.
   html += '<div class="m-rail">';
-  html += mRailRow_('Notes filed', data.noteCount,
-    data.noteCoverage != null ? data.noteCoverage + '% coverage' : null);
+  // F5 (cycle 12): an unreadable notes Sheet is not "0 notes filed" — show a
+  // dash + the reason rather than a confident zero (the server sends
+  // noteCountUnavailable and nulls noteCoverage in that case).
+  html += data.noteCountUnavailable
+    ? mRailRow_('Notes filed', '—', 'warn', 'notes Sheet unreadable — count unavailable')
+    : mRailRow_('Notes filed', data.noteCount,
+        data.noteCoverage != null ? data.noteCoverage + '% coverage' : null);
   html += mRailRow_('Calls answered', c.totalAnswered, 'good', null,
     { values: trend.map(function (t) { return t.answered; }) });
   html += mRailRow_('Missed', c.totalMissed, c.totalMissed > 0 ? 'warn' : 'good',
@@ -1019,8 +1024,13 @@ function mRenderTeamMetrics_(data) {
   html += mRailRow_('Answered', t.answered, 'good');
   html += mRailRow_('Missed', t.missed, t.missed > 0 ? 'warn' : 'good');
   html += mRailRow_('Total talk', t.tttFormatted);
-  html += mRailRow_('Notes filed', t.noteCount,
-    t.noteCoverage != null ? t.noteCoverage + '% coverage' : null);
+  // F5: flag a team total assembled from at least one unreadable rep Sheet.
+  // NOTE mRailRow_'s 3rd arg is polymorphic (tone OR sub-line) and `sub` is
+  // only rendered on the TONE branch — so the two cases need distinct calls.
+  html += t.noteCountPartial
+    ? mRailRow_('Notes filed', t.noteCount, 'warn', 'partial — at least one rep Sheet was unreadable')
+    : mRailRow_('Notes filed', t.noteCount,
+        t.noteCoverage != null ? t.noteCoverage + '% coverage' : null);
   html += '</div>';
   html += '</div>';
 
@@ -1048,7 +1058,9 @@ function mRenderTeamMetrics_(data) {
         { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'; } },
         { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return '<span class="' + mPctClass_(r.pctAnswered) + '">' + esc(r.pctAnswered) + '%</span>'; } },
         { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return esc(r.attFormatted); } },
-        { key: 'noteCount', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return esc(r.noteCount); } },
+        // F5 (cycle 12): a rep whose notes Sheet could not be read shows "—",
+        // not "0" — a zero here reads as a rep who logged nothing.
+        { key: 'noteCount', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return r.noteCountUnavailable ? '<span style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>' : esc(r.noteCount); } },
         { key: 'noteCoverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
       ],
     });

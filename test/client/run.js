@@ -4305,5 +4305,124 @@ test('getMyMetricsRange skips the cache put when the trend read failed (error-no
     'the cache put must be gated on the trend having succeeded — a transient CDR failure was pinned for the full TTL');
 });
 
+// ── Cycle-12 broad-scan fix pins (F1–F5) ───────────────────────────────────
+console.log('\ncycle 12 — broad-scan fix pins (F1–F5)');
+
+// F1: the Timesheet cold archive (INV-153) had NO reader, so a retroactive ADP
+// export silently produced a PARTIAL payroll .xlsx behind {success:true}.
+test('F1: generateExportSheet_ reads through the Timesheet cold archive when the range predates the live tab', () => {
+  const src = extractRawFunction('Code.js', 'generateExportSheet_');
+  assert.ok(src.indexOf('TIMESHEET_ARCHIVE_TAB') >= 0,
+    'the export consults the archive tab — without this the range silently returns live rows only');
+  assert.ok(/getSheetByName\(TIMESHEET_ARCHIVE_TAB\)/.test(src),
+    'read-only w.r.t. tab existence (getSheetByName, never create — the INV-133 discipline)');
+  assert.ok(/oldestLiveDate/.test(src) && /startDate < oldestLiveDate/.test(src),
+    'the archive read is gated on the window reaching past the live tab (current-period exports stay byte-identical)');
+  assert.ok(/liveKeys\.has\(/.test(src),
+    'an archive row identical to a live one is skipped — the INV-132 append-then-delete duplicate must not double-count payroll');
+  assert.ok(/archivedRowCount/.test(src), 'the result reports how many rows came from the archive');
+  const exp = extractRawFunction('Code.js', 'exportAdpRange');
+  assert.ok(/archivedRows=/.test(exp), 'the AdpExport audit row records archived-row provenance');
+  assert.ok(/archivedRowCount/.test(exp), 'the response carries archivedRowCount for the manager toast');
+  // The archive tab must still have no purge tier (payroll is keep-forever).
+  assert.ok(codeSrc.indexOf('purgeArchivedTimesheet') === -1,
+    'reading the archive must not have introduced a purge tier');
+});
+
+// F2: the detector silently truncated at TS_DOCTOR_MAX_GROUPS while the fix
+// collapsed EVERYTHING, unbounded, holding the one project-wide ScriptLock.
+test('F2: sheet doctor reports truncation and the destructive collapse is bounded per run', () => {
+  const doctor = extractRawFunction('Code.js', 'getTimesheetDoctor');
+  assert.ok(/totalDuplicates/.test(doctor) && /totalInverted/.test(doctor),
+    'the detector counts EVERY finding, not just the ones inside the payload cap');
+  assert.ok(/truncated:/.test(doctor),
+    'the detector returns a truncation flag like every sibling bounded reader (getCallNotesAuditLog / getAdminSheetView)');
+  assert.ok(/totalDuplicateRows/.test(doctor),
+    'the ROW count (what a collapse deletes) is reported, not just the group count');
+  const fix = extractRawFunction('Code.js', 'fixTimesheetDuplicates');
+  assert.ok(/TS_DOCTOR_FIX_MAX_ROWS/.test(fix), 'the collapse is bounded by the per-run cap');
+  assert.ok(/remaining/.test(fix), 'the caller learns how much backlog is left (the op is idempotent → re-run)');
+  assert.ok(/toDelete\.slice\(0, TS_DOCTOR_FIX_MAX_ROWS\)/.test(fix),
+    'the batch is a slice of the descending-rowIdx list — bottom-up deletion + last-row-wins still hold (INV-155)');
+  const m = codeSrc.match(/TS_DOCTOR_FIX_MAX_ROWS = (\d+)/);
+  assert.ok(m && parseInt(m[1], 10) > 0 && parseInt(m[1], 10) <= 500,
+    'the cap exists and is small enough that the global lock is not held for minutes');
+  // The client must not promise more than the server will do.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/fixMaxRows/.test(mgr), 'the card labels the button from the server-declared per-run cap');
+  assert.ok(/res\.truncated/.test(mgr), 'the card surfaces "showing N of M" when the scan truncated');
+  assert.ok(/res\.remaining/.test(mgr), 'the toast says how much backlog is left after a bounded run');
+});
+
+// F3: unbounded row-by-row deletion could never finish a large first enable,
+// and each killed run re-appended the undeleted rows into the archive.
+test('F3: archiveSheetRowsOlderThan_ honors a per-run bound; the Timesheet caller passes one', () => {
+  const helper = extractRawFunction('Code.js', 'archiveSheetRowsOlderThan_');
+  assert.ok(/opts\.maxRows/.test(helper), 'the shared mover accepts a per-run row bound');
+  assert.ok(/toMoveRows\.length >= maxRows/.test(helper), 'the scan stops once the bound is reached');
+  assert.ok(/\(opts\.maxRows > 0\) \? opts\.maxRows : 0/.test(helper),
+    'no maxRows → unbounded, so the CN call sites stay byte-identical (their 4-arg pin above)');
+  const ts = extractRawFunction('Code.js', 'archiveOldTimesheetRows');
+  assert.ok(/maxRows: TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN/.test(ts),
+    'the Timesheet archive (the large, unboundedly-growing tab) passes the bound');
+  assert.ok(/hitPerRunCap/.test(ts),
+    'a capped run is visible in the audit trail — a draining backlog must not look like a normal small run');
+  const m = codeSrc.match(/TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = (\d+)/);
+  assert.ok(m && parseInt(m[1], 10) > 0, 'the per-run cap constant exists');
+});
+
+// F4: the INV-124 cohort guard + team average were computed over a roster that
+// still included offboarded/placeholder rows every sibling walk excludes.
+test('F4: both Metrics roster walks apply the no-email skip (INV-124 cohort integrity)', () => {
+  ['getDashboardMetrics', 'getMyMetrics'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/EMP\.EMAIL/.test(src),
+      fn + ' must skip roster rows with no email — they enter the N=3 cohort count and the team average');
+    // The skip has to precede the push, not merely appear somewhere.
+    assert.ok(src.indexOf('EMP.EMAIL') < src.indexOf('allNames.push'),
+      fn + ' checks the email BEFORE collecting the name');
+  });
+  // getCoveragePlan is the sibling that already had it (cycle-9 L-2) — if that
+  // regresses, this family is broken again.
+  assert.ok(/EMP\.EMAIL/.test(extractRawFunction('Code.js', 'getCoveragePlan')),
+    'getCoveragePlan keeps its cycle-9 L-2 no-email skip');
+});
+
+// F5: a swallowed per-rep-Sheet read error was indistinguishable from "zero
+// notes filed", so the Clock strip told reps to re-file work they had done.
+test('F5: a failed note-count read is reported, never rendered as a confident zero', () => {
+  const helper = extractRawFunction('Code.js', 'cnCountNotesResult_');
+  assert.ok(/unavailable: true/.test(helper), 'the catch reports unavailable instead of a bare 0');
+  assert.ok(/unenrolled/.test(helper),
+    'an unenrolled rep (INV-35) is distinguished from a FAILED read — only the latter is an error');
+  const wrapper = extractRawFunction('Code.js', 'countCallNotesInRange_');
+  assert.ok(/cnCountNotesResult_\(emp, from, to\)\.count/.test(wrapper),
+    'the numeric helper delegates — one read path, so the two can never diverge');
+  // Every surface that turns the count into user-facing coverage must null the
+  // percentage and flag the round.
+  ['getDashboardMetrics', 'getMyMetrics', 'getMyMetricsRange', 'getTeamMetrics'].forEach((fn) => {
+    const src = extractRawFunction('Code.js', fn);
+    assert.ok(/cnCountNotesResult_\(/.test(src), fn + ' reads the outcome-carrying result');
+    assert.ok(/unavailable/.test(src) && /noteCo(verage|untPartial|untUnavailable)/.test(src),
+      fn + ' nulls/flags coverage when the read failed');
+  });
+  // NONE of the three result caches may pin a failed note read as fresh (L-3).
+  assert.ok(/!trendFailed && !noteRes\.unavailable/.test(extractRawFunction('Code.js', 'getMyMetricsRange')),
+    'a failed note read is the same class of partial as a failed trend read — not cacheable');
+  [['getMyMetrics', /useMetricsCache && !noteRes\.unavailable/],
+   ['getDashboardMetrics', /useCache && !noteRes\.unavailable/]].forEach(([fn, re]) => {
+    assert.ok(re.test(extractRawFunction('Code.js', fn)),
+      fn + ' must not cache a degraded notes read for the full TTL');
+  });
+  // Client: the strip must render the reason, not a "File N missing" CTA.
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const strip = clk.slice(clk.indexOf('function renderCoverageStrip_'));
+  // Anchor on the CTA's MARKUP (ss-cov-cta), not its label text — the label
+  // words also appear in the explanatory comment above the guard.
+  assert.ok(strip.indexOf('data.noteCountUnavailable') >= 0 &&
+            strip.indexOf('data.noteCountUnavailable') < strip.indexOf('ss-cov-cta'),
+    'the unavailable branch returns BEFORE the "File N missing" CTA can render');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

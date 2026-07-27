@@ -209,7 +209,22 @@ function renderSheetDoctorCard_(res) {
       '<span style="font-weight:600;color:var(--ink)">' + esc(v.name || v.empId) + '</span> · ' +
       esc(v.date) + ' · ' + detail + '</div>';
   }).join('');
-  const total = (res.duplicates || []).length + (res.inverted || []).length;
+  // F2 (cycle 12): report the REAL totals, not the payload-capped list length,
+  // and label the button with what the server will actually do this run.
+  const shownDup = (res.duplicates || []).length;
+  const shownInv = (res.inverted || []).length;
+  const totDup = (res.totalDuplicates != null) ? res.totalDuplicates : shownDup;
+  const totInv = (res.totalInverted != null) ? res.totalInverted : shownInv;
+  const total = totDup + totInv;
+  const fixCap = res.fixMaxRows || 0;
+  const dupRows = (res.totalDuplicateRows != null) ? res.totalDuplicateRows : shownDup;
+  const willFix = (fixCap && dupRows > fixCap) ? fixCap : dupRows;
+  const truncNote = res.truncated
+    ? '<div style="font-size:12px;color:var(--warning-deep);margin-bottom:8px">' +
+        icon('warning', 11) + ' Showing ' + esc(String(shownDup)) + ' of ' + esc(String(totDup)) +
+        ' duplicate group(s) and ' + esc(String(shownInv)) + ' of ' + esc(String(totInv)) +
+        ' inverted pair(s) — fix these, then re-run to see the rest.</div>'
+    : '';
   return '<div class="card" style="border-color:var(--warn)">' +
     '<div class="card-label with-count"><span>Timesheet Doctor</span>' +
       '<span class="count-pill warn">' + total + '</span></div>' +
@@ -217,10 +232,13 @@ function renderSheetDoctorCard_(res) {
       esc(String(res.windowDays)) + ' days. Duplicate rows predate the live sequence guard; ' +
       'collapsing keeps the latest row per punch (the row Day Edit already shows). ' +
       'Inverted in/out pairs are report-only — correct them via Day Edit.</div>' +
+    truncNote +
     (dups ? '<div class="card-label" style="margin:6px 0 2px">Duplicate punches</div>' + dups : '') +
-    ((res.duplicates || []).length
+    (dupRows
       ? '<div style="margin:8px 0 4px"><button class="pending-btn pb-approve" onclick="fixSheetDoctorDups_(this)">' +
-          icon('check', 14) + 'Collapse ' + (res.duplicates || []).length + ' duplicate group(s)</button></div>'
+          icon('check', 14) + 'Collapse ' + willFix + ' duplicate row(s)' +
+          (willFix < dupRows ? ' (of ' + dupRows + ' — re-run for the rest)' : '') +
+          '</button></div>'
       : '') +
     (invs ? '<div class="card-label" style="margin:10px 0 2px">Inverted in/out &amp; lunch pairs</div>' + invs : '') +
   '</div>';
@@ -229,7 +247,7 @@ function renderSheetDoctorCard_(res) {
 function fixSheetDoctorDups_(btn) {
   uiConfirm({
     title: 'Collapse duplicate punches',
-    message: 'Delete the earlier duplicate row(s) for every flagged (employee, date, punch type), keeping the latest row — the one Day Edit displays? Each deletion writes an audit entry. Idempotent; re-run the scan after.',
+    message: 'Delete the earlier duplicate row(s) per (employee, date, punch type), keeping the latest row — the one Day Edit displays? Each deletion writes an audit entry. Runs in bounded batches (punches are briefly blocked while it runs), so a large backlog may need more than one click; idempotent either way.',
     tone: 'danger', confirmLabel: 'Collapse duplicates',
   }).then(function (ok) {
     if (!ok) return;
@@ -240,7 +258,12 @@ function fixSheetDoctorDups_(btn) {
           showToast((res && res.error) || 'Collapse failed', 'toast-error');
           btn.disabled = false; return;
         }
-        showToast('Collapsed ' + (res.collapsed || 0) + ' duplicate row(s)', 'toast-success');
+        // F2: `remaining` > 0 means the run hit its per-run bound — say so
+        // instead of implying the backlog is clear.
+        const rem = res.remaining || 0;
+        showToast('Collapsed ' + (res.collapsed || 0) + ' duplicate row(s)' +
+          (rem ? ' — ' + rem + ' left, click again' : ''),
+          rem ? 'toast-warn' : 'toast-success');
         loadSheetDoctor_();   // refresh — clean groups drop off
       })
       .withFailureHandler(function (err) {
@@ -850,7 +873,12 @@ document.getElementById('exp-submit').addEventListener('click', () => {
       btn.textContent = 'Generate Export';
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
       document.getElementById('export-overlay').classList.remove('open');
-      showToast(`Generated ${result.rowCount} rows — opening sheet`, 'toast-success');
+      // F1 (cycle 12): say so when the range reached into the Timesheet cold
+      // archive — the rows are included now, but a manager exporting an old
+      // period should know the archive was part of the answer.
+      const archNote = result.archivedRowCount
+        ? ` (incl. ${result.archivedRowCount} archived)` : '';
+      showToast(`Generated ${result.rowCount} rows${archNote} — opening sheet`, 'toast-success');
       window.open(result.url, '_blank');
     })
     .withFailureHandler(err => {

@@ -1617,6 +1617,17 @@ function renderCoverageStrip_(slot, data) {
   // Hide entirely if no call activity today (avoids noise for non-CSR reps)
   if (noteCount === 0 && answered === 0) { slot.innerHTML = ''; return; }
 
+  // F5 (cycle 12): the server could not read this rep's notes Sheet, so
+  // noteCount is 0 by ignorance, not by fact. Rendering the normal strip would
+  // show "0% logged" in CRIT tone and a "File <every answered call> missing"
+  // CTA — telling the rep to redo work they already did. Say what actually
+  // happened instead (the errorStateHtml_ posture from batch J, inline).
+  if (data.noteCountUnavailable) {
+    slot.innerHTML = '<span class="ss-cov-pct warn" title="Your call-notes Sheet could not be read — the coverage figure is unavailable, not zero">' +
+      icon('warning', 11) + ' notes unavailable</span>';
+    return;
+  }
+
   // F(cycle-8): coerce the server values to numbers before they enter markup /
   // the inline onclick (esc() discipline for non-string slots).
   const covPct = data.noteCoverage != null ? Number(data.noteCoverage) : null;

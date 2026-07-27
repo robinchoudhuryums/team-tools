@@ -1745,6 +1745,13 @@ function fixPtoReconciliation(empId) {
 //     manager Day Edit, never an auto-swap.
 var TS_DOCTOR_WINDOW_DAYS = 92;   // ~a quarter — covers every open export period
 var TS_DOCTOR_MAX_GROUPS = 200;   // payload bound; narrow by fixing + re-running
+// Cycle-12 F2 — work bound on the DESTRUCTIVE collapse. Each collapsed row is
+// a deleteRow + an audit appendRow (~0.5s), and the whole run holds the ONE
+// project-wide ScriptLock, so every rep punch fails on waitLock(15000) for the
+// duration. 200 rows ≈ 100s worst case; the op is idempotent, so a larger
+// backlog drains over successive clicks instead of starving the floor (the
+// same reasoning that moved the Timesheet archive off 1am — INV-153).
+var TS_DOCTOR_FIX_MAX_ROWS = 200;
 
 /** Shared scan. Returns { byKey: { 'empId|date|type': {rows:[rowIdx…], times:[…]} },
  *  days: { 'empId|date': { in:[times], out:[times], name } } } over the window. */
@@ -1784,11 +1791,21 @@ function getTimesheetDoctor() {
     if (!callerEmp || !callerEmp.isManager) return { error: 'Manager access required.' };
     const scan = tsDoctorScan_();
     const duplicates = [], inverted = [];
+    // F2 (cycle 12): count EVERY finding, not just the ones that fit the
+    // payload cap — the old silent truncation made a 512-group backlog read as
+    // exactly 200, and the card ("Scan of the last 92 days" + a count) looked
+    // complete. Every sibling bounded reader returns a truncation signal
+    // (getCallNotesAuditLog, getAdminSheetView, getStorageHealth's kbEmbeds).
+    let totalDuplicates = 0, totalInverted = 0, totalDuplicateRows = 0;
     Object.keys(scan.byKey).forEach(function (k) {
       const g = scan.byKey[k];
-      if (g.rows.length > 1 && duplicates.length < TS_DOCTOR_MAX_GROUPS) {
-        duplicates.push({ empId: g.empId, name: g.name, date: g.date, type: g.type,
-          count: g.rows.length, times: g.times.slice() });
+      if (g.rows.length > 1) {
+        totalDuplicates++;
+        totalDuplicateRows += g.rows.length - 1;   // rows a collapse would delete
+        if (duplicates.length < TS_DOCTOR_MAX_GROUPS) {
+          duplicates.push({ empId: g.empId, name: g.name, date: g.date, type: g.type,
+            count: g.rows.length, times: g.times.slice() });
+        }
       }
     });
     Object.keys(scan.days).forEach(function (k) {
@@ -1797,8 +1814,11 @@ function getTimesheetDoctor() {
       if (d.in.length && d.out.length) {
         const firstIn = d.in.slice().sort()[0];
         const lastOut = d.out.slice().sort()[d.out.length - 1];
-        if (lastOut <= firstIn && inverted.length < TS_DOCTOR_MAX_GROUPS) {
-          inverted.push({ kind: 'clock', empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
+        if (lastOut <= firstIn) {
+          totalInverted++;
+          if (inverted.length < TS_DOCTOR_MAX_GROUPS) {
+            inverted.push({ kind: 'clock', empId: d.empId, name: d.name, date: d.date, clockIn: firstIn, clockOut: lastOut });
+          }
         }
       }
       // Lunch-pair inversion (operator ask): the lunch RETURN landing at or
@@ -1807,14 +1827,23 @@ function getTimesheetDoctor() {
       if (d.lo.length && d.li.length) {
         const firstLo = d.lo.slice().sort()[0];
         const lastLi = d.li.slice().sort()[d.li.length - 1];
-        if (lastLi <= firstLo && inverted.length < TS_DOCTOR_MAX_GROUPS) {
-          inverted.push({ kind: 'lunch', empId: d.empId, name: d.name, date: d.date, lunchOut: firstLo, lunchIn: lastLi });
+        if (lastLi <= firstLo) {
+          totalInverted++;
+          if (inverted.length < TS_DOCTOR_MAX_GROUPS) {
+            inverted.push({ kind: 'lunch', empId: d.empId, name: d.name, date: d.date, lunchOut: firstLo, lunchIn: lastLi });
+          }
         }
       }
     });
     duplicates.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
     inverted.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-    return { duplicates: duplicates, inverted: inverted, windowDays: TS_DOCTOR_WINDOW_DAYS };
+    return { duplicates: duplicates, inverted: inverted, windowDays: TS_DOCTOR_WINDOW_DAYS,
+      // F2: honest totals + the per-run collapse bound, so the client can say
+      // "showing 200 of 512" and "collapses up to 200 rows per run".
+      totalDuplicates: totalDuplicates, totalInverted: totalInverted,
+      totalDuplicateRows: totalDuplicateRows,
+      truncated: (totalDuplicates > duplicates.length) || (totalInverted > inverted.length),
+      fixMaxRows: TS_DOCTOR_FIX_MAX_ROWS };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -1845,15 +1874,25 @@ function fixTimesheetDuplicates(empIdFilter) {
           date: g.date, type: g.type, time: g.times[j] });
       }
     });
-    if (!toDelete.length) return { success: true, collapsed: 0 };
+    if (!toDelete.length) return { success: true, collapsed: 0, remaining: 0 };
     // Bottom-up so earlier deletions don't shift later row indices.
     toDelete.sort(function (a, b) { return b.rowIdx - a.rowIdx; });
-    toDelete.forEach(function (d) {
+    // F2 (cycle 12): BOUND the run. Previously this collapsed every group the
+    // 92-day scan found — regardless of what the button offered (the report is
+    // capped at TS_DOCTOR_MAX_GROUPS, so "Collapse 200 group(s)" could delete
+    // 500+ rows) — with no ceiling on how long the global ScriptLock was held.
+    // Slice bottom-up so the kept row per group is still the LAST one
+    // (INV-155: agreeing with findExistingPunch_ / managerSaveDay) whether or
+    // not this run reaches every group; the op stays idempotent, so the
+    // operator re-clicks until `remaining` is 0.
+    const remaining = Math.max(0, toDelete.length - TS_DOCTOR_FIX_MAX_ROWS);
+    const batch = toDelete.slice(0, TS_DOCTOR_FIX_MAX_ROWS);
+    batch.forEach(function (d) {
       sheet.deleteRow(d.rowIdx);
       writeAuditLog_({ id: d.empId, name: d.name }, 'PunchDelete', d.date, d.time, false, 0,
         'duplicate collapsed (sheet doctor); type=' + d.type, callerEmp.email);
     });
-    return { success: true, collapsed: toDelete.length };
+    return { success: true, collapsed: batch.length, remaining: remaining };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -2269,9 +2308,14 @@ function exportAdpRange(startDate, endDate) {
     if (startDate > endDate) return { error: 'Start date must be on or before end date.' };
     const result = generateExportSheet_(startDate, endDate, null);
     if (result.error) return result;
+    // F1 (cycle 12): record how many rows came from the cold archive, so the
+    // audit trail distinguishes "this export reached into archived payroll"
+    // from a normal current-period run.
     writeAuditLog_(emp, 'AdpExport', startDate + '..' + endDate, '', false, 0,
-      `${result.rowCount} rows → ${result.fileId}`);
-    return { success: true, url: result.url, fileName: result.fileName, rowCount: result.rowCount };
+      `${result.rowCount} rows → ${result.fileId}` +
+      (result.archivedRowCount ? `; archivedRows=${result.archivedRowCount}` : ''));
+    return { success: true, url: result.url, fileName: result.fileName, rowCount: result.rowCount,
+      archivedRowCount: result.archivedRowCount || 0 };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -8558,9 +8602,20 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   const rows = srcSheet.getDataRange().getValues();
   const toMoveRows = [];   // full row values, in sheet order
   const toDelete = [];     // 1-based sheet row indices
+  // Cycle-12 F3 — optional per-run bound (opts.maxRows). Without it a large
+  // FIRST enable can never finish: the append lands + flushes, then the deletes
+  // run ONE row at a time (~0.05–0.2s each), so a year of Timesheet rows
+  // (~20k for this team) blows the 6-minute execution ceiling — and because the
+  // append is already committed, every killed run RE-APPENDS the rows it did
+  // not manage to delete, duplicating payroll into the cold store while the
+  // live tab barely shrinks. Capping makes each run finite and monotonic (rows
+  // deleted this run are gone for good), so the backlog drains over successive
+  // nights. Callers that pass no maxRows are byte-identical to before.
+  const maxRows = (opts.maxRows > 0) ? opts.maxRows : 0;
   for (let i = headerRows; i < rows.length; i++) {
     const ms = parseRetentionDateMs_(rows[i][dateColIdx]);
     if (ms !== null && ms < cutoffMs) { toMoveRows.push(rows[i]); toDelete.push(i + 1); }
+    if (maxRows && toMoveRows.length >= maxRows) break;
   }
   if (!toMoveRows.length) return 0;
   // Normalize every moved row to a uniform rectangle (setValues requires it).
@@ -8664,6 +8719,13 @@ const TIMESHEET_ARCHIVE_TAB = 'TimesheetArchive';
 // below this clamps UP (never down to "archive more"), so an operator typo
 // like 7 can never rip current-period payroll rows out of the live tab.
 const TIMESHEET_ARCHIVE_MIN_DAYS = 120;
+// Cycle-12 F3 — rows moved per nightly run. The move holds the global
+// ScriptLock and deletes row-by-row, so an unbounded first enable (a year is
+// ~20k rows here) cannot finish inside the 6-minute ceiling — and a killed run
+// re-appends whatever it failed to delete, duplicating payroll into the archive
+// run after run. 2000 rows/night drains a multi-year backlog in a couple of
+// weeks of quiet 6pm runs while keeping each run comfortably finite.
+const TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN = 2000;
 
 /** Archive window in days: Script Property TIMESHEET_ARCHIVE_DAYS first, else
  *  CONFIG.TIMESHEET_ARCHIVE_DAYS. 0/neg/unparseable → 0 (disabled). A value in
@@ -8730,15 +8792,22 @@ function archiveOldTimesheetRows() {
       if (!live) { Logger.log('archiveOldTimesheetRows: no Timesheet tab.'); return; }
       const archive = getOrCreateTimesheetArchiveTab_(ss, live);
       moved = archiveSheetRowsOlderThan_(live, archive, ADP.DATE, cutoffMs,
-        { headerRows: 2, width: Math.max(live.getLastColumn(), 9) });
+        { headerRows: 2, width: Math.max(live.getLastColumn(), 9),
+          // F3 (cycle 12): bounded per run — see the constant.
+          maxRows: TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN });
     } finally {
       lock.releaseLock();
     }
     // Written on every ENABLED run (the CN archive convention) — a zero-moved
     // row is the Automation Health "last seen" heartbeat proving the job ran.
+    // F3: flag a run that hit the per-run bound, so a draining backlog is
+    // visible in the audit trail instead of looking like a normal small run.
+    const hitCap = (moved >= TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN);
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'TimesheetArchive', '', '', false, 0,
-      `archiveDays=${days}; rowsArchived=${moved}`);
-    Logger.log(`archiveOldTimesheetRows: moved ${moved} row(s) older than ${days} day(s) to ${TIMESHEET_ARCHIVE_TAB}.`);
+      `archiveDays=${days}; rowsArchived=${moved}` +
+      (hitCap ? `; hitPerRunCap=${TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : ''));
+    Logger.log(`archiveOldTimesheetRows: moved ${moved} row(s) older than ${days} day(s) to ${TIMESHEET_ARCHIVE_TAB}.` +
+      (hitCap ? ' Hit the per-run cap — more rows remain for the next run.' : ''));
   } catch (err) {
     Logger.log('archiveOldTimesheetRows failed: ' + err.message);
   }
@@ -10135,16 +10204,77 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
 
   const matched = [];
   const seenIds = new Set();
+  // Cycle-12 F1: the live-tab key set, used to drop an archive row that is
+  // byte-identical to a live one (see the archive read-through below).
+  const liveKeys = new Set();
+  let oldestLiveDate = null;
+  const rowKey = function (r) {
+    return String(r[ADP.EMP_ID]).trim() + '|' + normalizeDate_(r[ADP.DATE]) + '|' +
+      normalizeTime_(r[ADP.TIME]) + '|' + normalizeType_(String(r[ADP.COMMENTS]));
+  };
   for (let i = 2; i < rows.length; i++) {
     const rowDate = normalizeDate_(rows[i][ADP.DATE]);
+    // Track the live tab's coverage floor BEFORE the range filter — it decides
+    // whether the cold archive has to be consulted at all (F1).
+    if (rowDate && (oldestLiveDate === null || rowDate < oldestLiveDate)) oldestLiveDate = rowDate;
     if (rowDate < startDate || rowDate > endDate) continue;
     const rowId = String(rows[i][ADP.EMP_ID]).trim();
     if (allowedIds && !allowedIds.has(rowId)) continue;
     seenIds.add(rowId);
+    liveKeys.add(rowKey(rows[i]));
     const cleaned = rows[i].slice(0, 9);
     cleaned[ADP.COMMENTS] = '';
     matched.push(cleaned);
   }
+
+  // ── Cold-archive read-through (cycle-12 F1) ───────────────────────────────
+  // TIMESHEET_ARCHIVE_DAYS (INV-153) MOVES old payroll rows to a
+  // TimesheetArchive tab. That tab had NO reader anywhere, so once archiving
+  // was enabled a retroactive export (a payroll dispute, a corrected period)
+  // silently produced a PARTIAL .xlsx with {success:true} and an audit row
+  // that reported the truncated count as authoritative. Read the archive
+  // whenever the requested window reaches past the live tab's oldest row.
+  // Bounded by design: the common case (current period, inside the ≥120-day
+  // floor) never touches the archive, so it stays byte-identical to before.
+  // Read-only w.r.t. tab existence (getSheetByName, never create — the
+  // INV-133 discipline).
+  let archivedRowCount = 0;
+  if (oldestLiveDate === null || startDate < oldestLiveDate) {
+    try {
+      const archiveSheet = getAdpSS_().getSheetByName(TIMESHEET_ARCHIVE_TAB);
+      if (archiveSheet && archiveSheet.getLastRow() > 2) {
+        const aRows = archiveSheet.getDataRange().getValues();
+        for (let a = 2; a < aRows.length; a++) {
+          const aDate = normalizeDate_(aRows[a][ADP.DATE]);
+          if (!aDate || aDate < startDate || aDate > endDate) continue;
+          const aId = String(aRows[a][ADP.EMP_ID]).trim();
+          if (!aId) continue;
+          if (allowedIds && !allowedIds.has(aId)) continue;
+          // A mid-run archive failure appends before it deletes, so the SAME
+          // row can exist in both tabs (INV-132 "can only duplicate, never
+          // lose"). Exporting it twice would overstate payroll, so skip an
+          // exact live match. Genuine duplicate punch rows inside ONE tab are
+          // untouched — the sheet doctor (INV-159) is that fix.
+          if (liveKeys.has(rowKey(aRows[a]))) continue;
+          seenIds.add(aId);
+          const aCleaned = aRows[a].slice(0, 9);
+          aCleaned[ADP.COMMENTS] = '';
+          matched.push(aCleaned);
+          archivedRowCount++;
+        }
+      }
+    } catch (archErr) {
+      // REFUSE rather than return a short file. Producing a partial payroll
+      // export behind {success:true} is the exact F1 failure mode being fixed,
+      // so a broken archive read must be loud even though it costs the manager
+      // a retry. Ranges that do NOT reach the archive never get here.
+      console.warn('generateExportSheet_: archive read failed: ' + archErr.message);
+      return { error: 'The Timesheet cold archive could not be read (' + archErr.message +
+        '), and this date range reaches into it — the export would be incomplete. ' +
+        'Re-try, or narrow the range to ' + (oldestLiveDate || startDate) + ' or later.' };
+    }
+  }
+
   if (matched.length === 0) {
     return { error: `No punches found between ${startDate} and ${endDate}` +
                     (cycleFilter ? ` for ${cycleFilter} employees.` : '.') };
@@ -10189,7 +10319,10 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   } catch (shareErr) { console.warn('Export share failed: ' + shareErr.message); }
 
   return { fileId: newSs.getId(), url: newSs.getUrl(), fileName: name,
-    rowCount: matched.length, employeeCount };
+    rowCount: matched.length, employeeCount,
+    // F1: how many of rowCount came from the cold archive (0 in the normal
+    // current-period case). Additive — existing callers ignore it.
+    archivedRowCount: archivedRowCount };
 }
 
 
@@ -13314,11 +13447,26 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
  *  when the rep has no Sheet configured or it's unreachable. The `emp` arg
  *  only needs { id, name, callNotesSheetId } for getCallNotesSheet_. */
 function countCallNotesInRange_(emp, from, to) {
-  if (!emp || !emp.callNotesSheetId) return 0;
+  return cnCountNotesResult_(emp, from, to).count;
+}
+
+/** Cycle-12 F5 — the same count, but with the READ OUTCOME attached:
+ *  { count, unavailable }. `unavailable:true` means the rep's Sheet could not
+ *  be read (missing / unshared / transient Sheets failure), which is NOT the
+ *  same fact as "they logged zero notes" — the bare `return 0` catch made the
+ *  two indistinguishable, and every coverage surface then reported 0%: the
+ *  Clock strip rendered "0% logged" in CRIT tone plus "File N missing" for
+ *  EVERY answered call, telling a rep to redo notes they had already filed.
+ *  This is the cycle-10 "error reads as empty" class (D1/D2a) in the one
+ *  server helper it was never applied to. `unenrolled` is reported separately
+ *  because a rep with no Sheet configured legitimately has no coverage to
+ *  measure (INV-35), rather than a failed read. */
+function cnCountNotesResult_(emp, from, to) {
+  if (!emp || !emp.callNotesSheetId) return { count: 0, unavailable: false, unenrolled: true };
   try {
     const sheet = getCallNotesSheet_(emp);
     const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return 0;
+    if (lastRow < 2) return { count: 0, unavailable: false, unenrolled: false };
     // S2: counting only needs the DateLocal column — read 1 column instead
     // of the full 16-column row range (~16x fewer cells off the wire). Still
     // normalize each value (CN.DATE_LOCAL coercion gotcha).
@@ -13328,8 +13476,11 @@ function countCallNotesInRange_(emp, from, to) {
       const d = normalizeDate_(dateCol[i][0]);
       if (d >= from && d <= to) n++;
     }
-    return n;
-  } catch (e) { return 0; }
+    return { count: n, unavailable: false, unenrolled: false };
+  } catch (e) {
+    console.warn('cnCountNotesResult_ failed for ' + ((emp && emp.id) || '?') + ': ' + e.message);
+    return { count: 0, unavailable: true, unenrolled: false };
+  }
 }
 
 
@@ -13422,7 +13573,20 @@ function getDashboardMetrics(periodKey) {
 
     var roster = getEmployeeRosterRows_();
     var allNames = [];
-    for (var r = 1; r < roster.length; r++) { var nm = String(roster[r][EMP.NAME] || '').trim(); if (nm) allNames.push(nm); }
+    for (var r = 1; r < roster.length; r++) {
+      var nm = String(roster[r][EMP.NAME] || '').trim();
+      if (!nm) continue;
+      // F4 (cycle 12): skip rows with no email — the skip every sibling roster
+      // walk applies (getManagerDashboard, getTeammateStatus, getEmployeesList,
+      // computeMissedClockOuts_, and getCoveragePlan since cycle-9 L-2). These
+      // names are the cohort for INV-124's N=3 anonymization guard AND the
+      // team benchmark, so an offboarded/placeholder row (name kept, email
+      // cleared) whose name still appears in DQE history both inflated the
+      // cohort — un-hiding the team line on a day fewer than 3 CURRENT reps
+      // reported — and contaminated the average reps compare themselves to.
+      if (!String(roster[r][EMP.EMAIL] || '').trim()) continue;
+      allNames.push(nm);
+    }
 
     var MIN_COHORT = 3;
     var ownDq = (getCdrAgentMetrics_(from, to, [emp.name]).agents || {})[emp.name] || null;
@@ -13432,7 +13596,9 @@ function getDashboardMetrics(periodKey) {
 
     var teamAgg = dashboardTeamAggregate_(teamDqMap, MIN_COHORT);
     var teamTr = dashboardTeamTransfer_(teamTrMap, MIN_COHORT);
-    var noteCount = countCallNotesInRange_(emp, from, to);
+    // F5: a failed Sheet read must not read as "0 notes filed".
+    var noteRes = cnCountNotesResult_(emp, from, to);
+    var noteCount = noteRes.count;
 
     var result = {
       periodKey: periodKey, from: from, to: to, label: range.label,
@@ -13448,10 +13614,16 @@ function getDashboardMetrics(periodKey) {
       } : null,
       cohort: teamAgg.cohort,
       noteCount: noteCount,
-      noteCoverage: cnNoteCoverage_(noteCount, ownDq ? ownDq.totalAnswered : 0),
+      noteCoverage: noteRes.unavailable
+        ? null : cnNoteCoverage_(noteCount, ownDq ? ownDq.totalAnswered : 0),
+      noteCountUnavailable: !!noteRes.unavailable,   // F5
       kpiMinCohort: MIN_COHORT,
     };
-    if (useCache) { try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {} }
+    // F5: never stamp a degraded round as fresh — a failed notes read would
+    // otherwise be pinned for the full TTL (the L-3 / INV-129 rule).
+    if (useCache && !noteRes.unavailable) {
+      try { cache.put(cacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
+    }
     return result;
   } catch (err) { return { error: err.message }; }
 }
@@ -13503,7 +13675,12 @@ function getMyMetrics(date) {
     var allNames = [];
     for (var r = 1; r < roster.length; r++) {
       var nm = String(roster[r][EMP.NAME] || '').trim();
-      if (nm) allNames.push(nm);
+      if (!nm) continue;
+      // F4 (cycle 12): same no-email skip as getDashboardMetrics — this list is
+      // the cohort for the INV-124 N=3 anonymization guard and the team
+      // average. See the comment there for the full rationale.
+      if (!String(roster[r][EMP.EMAIL] || '').trim()) continue;
+      allNames.push(nm);
     }
     var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, allNames);
     var transfer = getCsrTransferPerRepDaily_(trendFrom, trendTo, allNames);
@@ -13541,7 +13718,10 @@ function getMyMetrics(date) {
       transferPct: metricsBuildKpiSeries_(trPRD, dates, emp.name, 'transferPct', MIN_COHORT),
     };
 
-    var noteCount = countCallNotesInRange_(emp, date, date);
+    // F5: distinguish "couldn't read the rep's Sheet" from "zero notes" — this
+    // result feeds the Clock coverage strip's "File N missing" CTA.
+    var noteRes = cnCountNotesResult_(emp, date, date);
+    var noteCount = noteRes.count;
 
     var result = {
       date: date,
@@ -13557,12 +13737,17 @@ function getMyMetrics(date) {
         attSeconds:   todayCdr.attSeconds,
       } : null,
       noteCount: noteCount,
-      noteCoverage: cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
+      noteCoverage: noteRes.unavailable
+        ? null : cnNoteCoverage_(noteCount, todayCdr ? todayCdr.totalAnswered : 0),
+      noteCountUnavailable: !!noteRes.unavailable,   // F5
       trend: trend,
       series: series,
       kpiMinCohort: MIN_COHORT,
     };
-    if (useMetricsCache) {
+    // F5: a failed notes read must not be cached as fresh — the Clock coverage
+    // strip reads this endpoint, so a 5-minute-pinned degraded result would
+    // outlive the transient failure that caused it (the L-3 rule).
+    if (useMetricsCache && !noteRes.unavailable) {
       try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return result;
@@ -13631,7 +13816,8 @@ function getMyMetricsRange(from, to) {
       }
     } catch (e) { trend = []; trendFailed = true; }
 
-    var noteCount = countCallNotesInRange_(emp, from, to);
+    var noteRes = cnCountNotesResult_(emp, from, to);   // F5
+    var noteCount = noteRes.count;
     var rangeResult = {
       from: from, to: to, repName: emp.name,
       cdr: c ? {
@@ -13645,11 +13831,15 @@ function getMyMetricsRange(from, to) {
         attSeconds:   c.attSeconds,
       } : null,
       noteCount: noteCount,
-      noteCoverage: cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
+      noteCoverage: noteRes.unavailable
+        ? null : cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
+      noteCountUnavailable: !!noteRes.unavailable,   // F5
       trend: trend,
     };
     if (trendFailed) rangeResult.trendUnavailable = true;   // L-3: honest partial, client-ignorable
-    if (useRangeCache && !trendFailed) {
+    // F5: a failed note read is the same class of partial as a failed trend
+    // read (L-3) — never stamp it into the cache as a fresh, confident 0.
+    if (useRangeCache && !trendFailed && !noteRes.unavailable) {
       try { rangeCache.put(rangeKey, JSON.stringify(rangeResult), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return rangeResult;
@@ -13729,8 +13919,12 @@ function getTeamMetrics(dateOrFrom, to) {
     Object.keys(repMap).forEach(function (name) {
       var rm = repMap[name];
       var cdr = cdrResult.agents[name] || null;
-      var noteCount = countCallNotesInRange_(
+      // F5: an unreadable per-rep Sheet must not render as "0 notes / 0%
+      // coverage" in a manager's team table — that reads as a rep who logged
+      // nothing, which is a performance judgement drawn from a failed read.
+      var noteRes = cnCountNotesResult_(
         { id: rm.repId, name: rm.repName, callNotesSheetId: rm.cnSheetId }, from, toDate);
+      var noteCount = noteRes.count;
 
       var rep = {
         repId: rm.repId, repName: rm.repName,
@@ -13743,16 +13937,21 @@ function getTeamMetrics(dateOrFrom, to) {
         tttSeconds:   cdr ? cdr.tttSeconds   : 0,
         attSeconds:   cdr ? cdr.attSeconds   : 0,
         noteCount: noteCount,
-        noteCoverage: cnNoteCoverage_(noteCount, cdr ? cdr.totalAnswered : 0),
+        noteCoverage: noteRes.unavailable
+          ? null : cnNoteCoverage_(noteCount, cdr ? cdr.totalAnswered : 0),
+        noteCountUnavailable: !!noteRes.unavailable,   // F5
         hasCdrData: !!cdr,
       };
-      if (cdr || noteCount > 0) {
+      // F5: a rep whose Sheet failed to read is still listed (their CDR row is
+      // real) — the row just says "—" for notes instead of "0".
+      if (cdr || noteCount > 0 || noteRes.unavailable) {
         reps.push(rep);
         teamTotals.rung += rep.totalRung;
         teamTotals.answered += rep.totalAnswered;
         teamTotals.missed += rep.totalMissed;
         teamTotals.tttSeconds += rep.tttSeconds;
         teamTotals.noteCount += noteCount;
+        if (noteRes.unavailable) teamTotals.noteCountPartial = true;   // F5
       }
     });
 
