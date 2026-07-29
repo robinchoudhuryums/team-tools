@@ -841,6 +841,44 @@ this section before touching the relevant area.
   "notes unavailable" / an em dash instead of a confident zero. This is the
   cycle-10 "error reads as empty" class (D1/D2a) in the one server helper it
   had never been applied to.
+- **`:root[data-compact]` is the POP-OUT, not a viewport breakpoint (A2,
+  cycle-13 — FIXED).** `data-compact="1"` is set from `?compact=1` by the
+  pop-out button (INV-38); it says nothing about how wide the window is. Three
+  components declared a fixed multi-column grid plus a `:root[data-compact]`
+  override and NO media query, so they never stacked on a phone: `.m-layout`
+  (`1.4fr 1fr` with a 42px hero numeral — and `metrics/script_metrics.html`
+  carried **zero** media queries, on a REP-facing tab), plus the shared
+  `.telemetry` strip and `.coach-kpis`, both `repeat(4, 1fr)`. The shell's own
+  breakpoints (`styles.html` 1023px / 540px) adapt `.metric-grid` and
+  `.emp-grid` but never reached these. Fixed with real media queries —
+  `.m-layout` stacks at ≤720px (before either column gets narrower than the
+  hero numeral), `.telemetry` + `.coach-kpis` go 2×2 at ≤540px. The compact
+  rules are `(0,2,0)` and still out-specify the media rules, so pop-out
+  geometry is unchanged. **A grid that stacks in compact almost always needs a
+  viewport breakpoint too — the two triggers are independent.** Pinned by the
+  A2 tripwire (each compact grid override has a matching media query).
+- **`timeToMins_` returns `null`, never `NaN` — and an ARITHMETIC caller must
+  guard EXPLICITLY (A3, cycle-13 — FIXED).** It used to return `NaN` on an
+  unparseable Timesheet TIME cell, which is the worst possible sentinel here
+  because every `NaN` comparison is FALSE and `NaN` arithmetic is contagious:
+  `getPunctualityReport` did `if (lateMin > grace) late++; else onTime++;`, so a
+  bad row fell through to the else and was scored **ON TIME** — and its
+  earliest-punch pick (`mins < r.days[d].in`) was also false against `NaN`, so
+  ONE bad row pinned the whole day even when a valid ClockIn existed on it;
+  `calcHours_` returned `NaN` and `totalHours += NaN` turned an entire
+  timesheet's total into `NaN`. Now `null`, so the callers' explicit
+  "not computed" branches fire: punctuality `continue`s, the timesheet counts
+  the day INCOMPLETE (**not** 0 hours — that would understate payroll
+  silently), the dashboard sparkline and the calendar omit it. `calcHours_`
+  propagates `null` for a corrupt CLOCK pair but a corrupt LUNCH pair only
+  drops the deduction (the "no lunch recorded" shape) rather than voiding an
+  otherwise-valid day. **THE TRAP:** `getCoveragePlan` does
+  `dayDelta * 1440 + timeToMins_(...)`, and `x + null` **coerces to `x`** —
+  placing the rep's shift at midnight, strictly WORSE than the `NaN` it
+  replaced (which merely dropped them from the buckets). Any new caller that
+  does arithmetic on the result needs an explicit `=== null` check, not a
+  truthiness test (`0` is a valid midnight). Pinned by the A3 behavioural +
+  caller-shape tripwires and the `timeToMins_nullOnUnparseable` smoke test.
 - **`color-mix` for a SEMANTIC colour must interpolate `in oklab`, never
   `in oklch` (V-1, cycle-12 visual audit — FIXED).** The four `-deep` aliases
   declare correct fallback hexes (`--warning-deep: #8a4500` amber,
@@ -1598,6 +1636,22 @@ this section before touching the relevant area.
   the `enter*` handler in the tool's partial. Adding a new tool:
   add a TOOLS entry + drop tab partials + `include()` them from
   `index.html`. The shell auto-rebuilds either way.
+  **ACTIVE STATE MUST BE EXPOSED, NOT JUST PAINTED (A11, cycle-13).** Both nav
+  levels set an `.active` class — `enterTool` on `.sb-link`/`.nav-btn`,
+  `showView` on `.tt-btn` — and a class is invisible to assistive tech, so a
+  screen-reader user was never told which TOOL or which TAB they were on. Both
+  now set `aria-current="page"` in the same pass (and remove it on the others);
+  any new nav surface must do the same. The rule generalizes to every stateful
+  control: a segmented toggle uses `aria-pressed` (the Dashboard period
+  switcher, kept in step by `clkDashSet_`) or, inside a `role="tablist"`,
+  `role="tab"` + `aria-selected` (the Coaching Mine⇄Team toggle — whose wrapper
+  already declared `role="tablist"` while its tabs carried no role at all — and
+  the CN composer tabs, which were already correct); a disclosure uses
+  `aria-expanded` + `aria-controls` (the Coverage day row, the CN
+  Training-Answers tray). **An inline `onclick` that toggles a class cannot keep
+  an attribute in step** — the CN tray's
+  `this.parentElement.classList.toggle('collapsed')` was extracted to
+  `cnToggleQaTray_` for exactly that reason. Pinned by the A11 tripwire.
 - **Tool view partials live in their own subfolder.** Time Clock's
   four views (`script_clock.html`, `script_timesheet.html`,
   `script_timeoff.html`, `script_manager.html`) are under `web-app/tc/`
@@ -3614,14 +3668,24 @@ this section before touching the relevant area.
   already handled by `.overlay.open` (fadein) + `.modal` (modalin) + the
   `#kb-drawer` slide — NOT re-declared. Inline animation params
   (`--circ/--target/--len/--d`) carry defaults so the INV-128 token tripwire
-  stays green. **Empty vs ERROR states (batch J):** the three empty-state
-  classes (`.cn-stack-empty`/`.cn-sf-empty`/`.m-empty`) render as quiet
-  dashed cards; a LOAD FAILURE must render `errorStateHtml_(msg)`
+  stays green. **Empty vs ERROR states (batch J; ENFORCED cycle-13 A12):** the
+  empty-state classes (`.cn-stack-empty`/`.cn-sf-empty`/`.m-empty`, plus the
+  shared `.no-data` and Training/EmpDocs' `.tr-empty`) render as quiet
+  dashed/muted cards; a LOAD FAILURE must render `errorStateHtml_(msg)`
   (script_core — warn-toned card + glyph + `role="alert"`, escapes
   internally) so "the fetch failed" never reads as "there's nothing here";
   `renderError` (boot) carries a Retry button. New tools should reuse
   `renderLoading` + `errorStateHtml_` + these classes rather than
-  hand-rolling spinners/animations.
+  hand-rolling spinners/animations. **The decision was stated as universal but
+  honored in only 2 of 11 tool partials (CN + Clock) until cycle-13 A12:**
+  Metrics, Training, and EmpDocs routed 16 failure sites — RPC failures AND
+  server-returned `data.error` — into their tool-local EMPTY-state container,
+  so a transient CDR outage rendered as a quiet day with no data (the likeliest
+  Metrics failure, on a rep-facing tab). All 16 now use `errorStateHtml_`.
+  **Call sites must DROP the outer `esc()`** — `errorStateHtml_` escapes
+  internally, so keeping it double-escapes. Pinned by the A12 tripwire, which
+  fails CI on any line mentioning an error/failure that also renders one of
+  those empty-state classes.
 
 Items identified during the V1–V4 + Round 2 redesign work that
 were intentionally deferred. The redesign itself is complete; these
@@ -3706,6 +3770,20 @@ manually for a fresh deploy or environment:
   single `clasp push -f` + New version. The redesign record (per-commit
   scope, before/after) is
   `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
+- **Cycle 13 batch 1 (A1/A2/A3/A11/A12) adds NO new operator state** — no new
+  Script Properties, no new triggers, no migrations, and no new CONFIG
+  constants. It is markup/CSS/ARIA plus one server-helper contract change, so
+  it deploys with the normal single `clasp push -f` + New version.
+  **Post-deploy: run `runAllTests()`** — `timeToMins_nullOnUnparseable` executes
+  only in the editor, alongside cycle 12's still-unrun
+  `cn_enrolledSheetId_trimsAndNullGuards` and `cn_appendBounded_capsAndRollsBack`.
+  **ONE behaviour change an operator should expect:** a Timesheet row whose TIME
+  cell is blank or unparseable (only reachable by a hand edit — the guarded
+  writers cannot produce one) now renders as an INCOMPLETE day and is excluded
+  from Punctuality, instead of silently scoring that day "on time" and turning
+  the timesheet's total hours into `NaN`. If a rep's incomplete-day count rises
+  after this deploy, the fix is to correct the offending cell (Manage → Day
+  Edit), not to re-check the code.
 - **The WHOLE of cycle 12 (all six batches) adds NO new operator state** — no
   new Script Properties, no new triggers, no migrations. Code-only CONFIG
   constants: `TS_DOCTOR_FIX_MAX_ROWS`, `TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN`,
@@ -4565,7 +4643,8 @@ carries the same number. `/cycle-status` surfaces it.
   (its first instruction is "do not make any changes to any files", so its
   Session Handoff Block still travels by paste). **Cycle 12 predates the
   adoption**, so its six implementation blocks + one cycle-summary block are not
-  on disk; cycle 13 onward will be.
+  on disk. Cycle 13 is the first that writes them: see
+  `.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md`.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
 
 **Command templates: synced to `claude-workflow-tools` v1.23.0 (2026-07-27).**
@@ -4790,8 +4869,23 @@ five batches:** the V-1 hue-drift bound + V-2/V-3 specificity pins (batch A);
 the F15 running-sentinel, F9 gate-coverage and F7 admin-count nets (batch B);
 the F14 column-L ban, F11 bounded-append, F16 no-silent-blank and F18
 truncation pins (batch C); and the F12 single-read, four F17 mirror guards and
-the eight V-item source pins (batches D/E) — **pure now 356, DOM 66** (the DOM
-addition is the F16 failure path driven in a real jsdom window). Editor suite
+the eight V-item source pins (batches D/E) — pure 330→356, DOM 66 (the DOM
+addition is the F16 failure path driven in a real jsdom window). **Cycle 13
+(batch 1) added six more — A1 (no span/div carries an inline `onclick`), A2
+(every compact grid override has a matching viewport breakpoint), A3 (two:
+`timeToMins_`/`calcHours_` behavioural + the caller-shape scan), A11 (nav +
+toggles expose ARIA state), A12 (no failure renders into an empty-state
+container) — putting the pure harness at 362, DOM unchanged at 66.** Two of
+those six did NOT bite on the first attempt and were tightened: the A1 scan was
+line-by-line and missed multi-line markup (it now scans the whole source, where
+`[^>]` matches newlines), and the A3 input list held only no-colon cases, all
+caught by the length guard, so it passed with the `isNaN` guard deleted (added
+`'ab:cd'`, `':'`, `'x:30'`, `'09:mm'`). **Editor-suite hazard found while
+writing the A3 smoke test: `_assertEq` compares via `JSON.stringify`, and
+`JSON.stringify(NaN)` is the string `"null"` — so `_assertEq(NaN, null)`
+PASSES.** Any null-vs-NaN assertion in `Tests.js` must use a strict
+`=== null` check via `_assertTrue`, or it is blind to the exact regression it
+exists to catch. Editor suite
 +6 in cycle 10 (sheet-doctor flow, legacy-hash dual-verify, self-test gate + 3
 omnibus gate cases) ≈ 297, +2 cycle-11 (updateTimeOff_dupApproveRejected;
 rejectsBadDate horizon cases) ≈ 299, +cycle-12: assertions folded into the
@@ -4799,7 +4893,8 @@ existing `archiveSheetRowsOlderThan_behavioral` (a maxRows case proving bounded
 AND monotonic progress), `test_sheetDoctor_detectsAndCollapsesDuplicates` and
 the `countCallNotesInRange_` smoke test, PLUS two new smoke tests for the
 cycle-12 pure helpers (`cn_enrolledSheetId_trimsAndNullGuards`,
-`cn_appendBounded_capsAndRollsBack`) ≈ 301. Use
+`cn_appendBounded_capsAndRollsBack`) ≈ 301, +1 cycle-13
+(`timeToMins_nullOnUnparseable`) ≈ 302. Use
 the Regression Scenarios below as the canonical full-system
 verification path.
 
@@ -5069,6 +5164,14 @@ INV-169 | **A payload-capped reader must return its pre-slice total**, and the c
 INV-170 | **`shortLabel` is the nav-label source on all three width-constrained surfaces** — mobile bottom nav, sidebar link, and sidebar sub-label — with the full `label` carried as a `title`. Set it on any tool label longer than ~9 characters. The nav is constrained on three surfaces at once: at the shipped 168px sidebar default the full labels CSS-ellipsised 2 of 7 tools, at 390px "Call Notes" was the one mobile label that wrapped, and the sub-label's two-line wrap pushed every sidebar nav item down 11px — so navigating MOVED the navigation. The two sidebar user fields (name, employee id) carry titles for the same reason. Verify: the V-5/6/7 pin (sidebar renders `shortLabel || label` + a full-label title; sub-label likewise; both user fields have titles) | Subsystem: Client (shell)
 INV-171 | **The gated-endpoint set and the admin-exclusive set are DERIVED from `Code.js` source, not hand-listed.** Every function returning `'Manager access required.'` or `'Admin access required.'` must be referenced by a gate test (the omnibus `test_managerGates_rejectNonManager` cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), and INV-136's stated count AND backticked names must equal what the code enforces — that count drifted four times (24→28→30→35) while calling itself authoritative. Trigger handlers are outside the set by construction (they THROW via `assertManagerCaller_`, so they carry no returned error string) and keep their own INV-44 tripwire. One reasoned allowlist entry: the private helper `managerAggregateFlagged_`, whose public wrappers are both covered. Verify: the F9 + F7 tripwires | Subsystem: Test Suite
 INV-172 | **The nightly self-test stamps a `{running:true, startedAt}` sentinel BEFORE the suite, and a STALE sentinel is a failure.** Extends INV-162: the outcome write happens only on a normal return or a CATCHABLE throw, and an Apps Script execution-limit kill is neither — so a chronically timing-out full suite left the PREVIOUS (green) result in place beside a FRESH heartbeat, i.e. the newest detector could not detect its own failure. `computeAutomationHealth_` derives `stuck` (running + older than `SELF_TEST_STUCK_MS` 2h); `automationProblems_` check (f) pushes it, so it rides the shell health dot AND the failure digest (INV-161); the Admin panel reports "never finished" INSTEAD of the stale pass/fail line, while a FRESH sentinel reads "Running now" and is not a problem. The sentinel is stamped AFTER the "test suite not present" early return, so a project without `Tests.js` never leaves one behind. Verify: the extended nightly-self-test pin (sentinel present + before the suite + carries startedAt + `stuck` from staleness + surfaced in problems and the panel) | Subsystem: Server + Client (Call Notes views)
+
+INV-173 | **Every interactive control is a real `<button>`/`<a>` — never a `<span>`/`<div>` with an inline `onclick`.** Such an element is unreachable by keyboard, exposes no role to assistive tech, and receives no focus ring, so a whole class of user is silently blocked. Six shipped that way past ten cycles and cycle 10's dedicated a11y batch (which fixed the calendar, tables, and note fields but not these): the Metrics preset chips, the Dashboard period switcher, the Coverage day disclosure, the Intake PPD preferred-device star, the Intake image-remove ×, and the CN Training-Answers disclosure. The Intake star is the sharpest case — it marks the device starred in the clinical email actually SENT to the agent, with no alternative path. The codebase's own pattern was already `<button type="button">` (`cn-filter-chip`, `cn-history-preset-btn`, `intk-rec-mini`) in the very same files, so this is consistency, not new ground. Converting needs a CSS reset (`appearance`/`background`/`border`/`padding`/`font`) to stay pixel-identical, and where both are set `font: inherit` must precede `font-size` because the shorthand resets it. Verify: the A1 tripwire, which scans the WHOLE partial source (`[^>]` matches newlines, so multi-line markup cannot slip past a per-line scan — bite-checked) | Subsystem: Client (all view partials)
+
+INV-174 | **Active/selected/expanded state is exposed to assistive tech, never carried by a CSS class alone.** `enterTool` (`.sb-link`/`.nav-btn`) and `showView` (`.tt-btn`) both toggle `.active`, and until cycle-13 A11 that was the ONLY signal — a screen-reader user was never told which of the seven tools or which sub-tab was active. Both now set `aria-current="page"` in the same pass. The rule covers every stateful control: `aria-pressed` on a standalone toggle (the Dashboard period switcher, kept in step by `clkDashSet_`); `role="tab"` + `aria-selected` inside a `role="tablist"` (the Coaching Mine⇄Team toggle, whose wrapper declared the tablist while its tabs carried no role at all; the CN composer tabs were already correct); `aria-expanded` + `aria-controls` on a disclosure (the Coverage day row, the CN Training-Answers tray). **An inline `onclick` that toggles a class cannot keep an attribute in step** — extract it (the CN tray's `classList.toggle('collapsed')` became `cnToggleQaTray_`). Verify: the A11 tripwire (render-side attribute + a handler that updates it, for all six surfaces) | Subsystem: Client (shell) + Client (all view partials)
+
+INV-175 | **A load failure renders `errorStateHtml_`, never an empty-state container.** Batch J made this the rule; it was honored in 2 of 11 tool partials until cycle-13 A12 found 16 sites in Metrics, Training, and EmpDocs rendering both RPC failures AND server-returned `data.error` into `.m-empty` / `.no-data` / `.tr-empty` — quiet muted cards visually indistinguishable from "no data for this date". On Metrics, which is rep-facing and CDR-backed, that is the likeliest failure mode of all. `errorStateHtml_` gives the warn tone, the glyph, and `role="alert"` so the failure is both visible and announced. **Call sites must DROP the outer `esc()`** — the helper escapes internally, so keeping it double-escapes. Verify: the A12 tripwire, which fails CI on any line mentioning an error/failure that also renders one of those empty-state classes | Subsystem: Client (Metrics / Training / Reference / Call Notes views)
+
+INV-176 | **`timeToMins_` returns `null` (never `NaN`), and an arithmetic caller must guard EXPLICITLY.** `NaN` is uniquely dangerous here: every comparison against it is false and it is contagious through arithmetic. `getPunctualityReport` scored an unparseable day ON TIME (it fell through `lateMin > grace` into the else) and one bad row pinned the whole day (the earliest-punch pick `mins < r.days[d].in` is also false against `NaN`); `calcHours_` returned `NaN` and `totalHours += NaN` voided an entire timesheet total. With `null` the callers' existing "not computed" branches fire: punctuality skips the row, the timesheet counts the day INCOMPLETE (**not** 0 hours — that would understate payroll silently), the dashboard sparkline and calendar omit it. `calcHours_` propagates `null` for a corrupt CLOCK pair but a corrupt LUNCH pair only drops the deduction, so one bad cell cannot void a valid 8-hour day. **THE TRAP:** `x + null` COERCES to `x`, so `getCoveragePlan`'s `dayDelta * 1440 + timeToMins_(...)` would place a shift at midnight — strictly worse than the `NaN` it replaced, which merely dropped the rep from the buckets. Arithmetic callers need an explicit `=== null` check, not a truthiness test (`0` is a valid midnight). Verify: the A3 behavioural pin (both rejection paths — no-colon AND colon-with-non-numeric, bite-checked), the caller-shape scan, and the `timeToMins_nullOnUnparseable` smoke test (which must use a strict `=== null` check — `_assertEq` compares via `JSON.stringify`, where `NaN` and `null` are both `"null"`) | Subsystem: Server
 
 ### Policy Configuration
 Policy threshold: 4/10

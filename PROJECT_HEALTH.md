@@ -1,11 +1,18 @@
 # Project Health — team-tools
 
 ## Current Standing
-**Cycle 12 (broad) closed 2026-07-27** — scanned, fully implemented across six
-batches, reflected, docs-synced, and merged (PR #143 → main, `3ad80d8`) in one
-session. **The operator deploy is the one piece still unconfirmed** (`clasp
-push -f` + New version + editor `runAllTests`); it also covers cycle 11's
-never-separately-deployed follow-up visual batch. Cycle 13 has not started.
+**Cycle 13 (broad) IN PROGRESS — scanned, batch 1 of 4 implemented.** The scan
+found 0 Critical / 0 High / 6 Medium / 7 Low; the interface lens produced four
+of the top five, the second cycle running in which it outscored the code lens.
+Batch 1 (A1 keyboard-reachable controls, A2 real viewport breakpoints, A3 the
+`NaN`→`null` time sentinel, A11 ARIA active state, A12 failures no longer
+dressed as empty states) is committed and pushed to
+`claude/broad-scan-yhkbe2` (`c651ce3`) — net 4, pure harness 356→362 with every
+new pin bite-checked, DOM 66, visual 20/20. Batches 2–4 (A4/A6/A8/A9;
+A5/A7/A10; A13) are scoped but not started; `/reflect` has not run, so no
+cycle-13 row exists in `metrics.csv` yet. Invariants 172→176 (INV-173..176).
+**The operator deploy remains unconfirmed and now covers cycles 11, 12 and 13
+batch 1** (`clasp push -f` + New version + editor `runAllTests`).
 Seams & Invariants audit due in 2 more subsystem cycles (counter 2 of 4).
 
 - **Cycle 8** (2026-07-10): net +14 (16 prod fixes − 2 deliberate fail-safe
