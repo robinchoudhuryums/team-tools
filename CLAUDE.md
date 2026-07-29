@@ -3312,7 +3312,32 @@ this section before touching the relevant area.
   aliases itself and every aliased agent would otherwise false-positive
   as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
   without taking down the rest of the panel. Every server string is
-  `esc()`'d before `innerHTML`. **"Jump to source" (Tier 1):** the panel
+  `esc()`'d before `innerHTML`.
+  **Queue inventory (sub-queue Phase 0) — OPT-IN, panel only.** The app has
+  always had queue data and always thrown it away: DQE rows whose Agent cell is
+  `A_Q_*`/`Backup CSR` are dropped by `isCdrQueueSentinel_`, **`CDR.QUEUE_EXT`
+  (col 4) is declared but read nowhere**, and the CSR Transfer tab's per-queue
+  `H:R` block is fetched on every read and ignored. `cdrQueueInventory_(from,to)`
+  is a READ-ONLY discovery scan reporting distinct queue identifiers, the
+  skipped `A_Q_*` aggregates, which Transfer `H:R` columns actually carry data,
+  and — the load-bearing one — **rows per (agent, date)**: whether DQE is one
+  row per (agent, queue, date) or one per (agent, date) decides whether
+  per-queue REP attribution exists in the data at all. The client
+  (`cnQueueInventoryHtml_`) states that verdict in plain language and keeps
+  "cannot determine" (an empty window) DISTINCT from the negative verdict.
+  **It is gated OFF by default and that gate is load-bearing:**
+  `computeAutomationHealth_(opts)` defaults `scanQueues` false because
+  `getAutomationHealthBadge` polls it **every 10 minutes per manager** and
+  `sendAutomationHealthDigest` runs it daily — both call it directly. Only
+  `getAutomationHealth()` opts in; `getDeployReadiness` passes
+  `{scanQueues:false}` (the `getStorageHealth({scanEmbeds:false})` precedent).
+  The DQE read is 3 columns (not the sibling's 34) and tail-capped at
+  `CDR_QUEUE_SCAN_MAX`, reporting `truncated` rather than silently describing
+  part of the sheet; lists cap at `CDR_QUEUE_LIST_CAP`. Deliberately NOT folded
+  into `getCdrAgentMetrics_`'s meta — that result is cached and consumed by
+  every Metrics call, so widening it would tax the hot path and force an INV-85
+  cache bump for a diagnostic. PHI-free (identifiers + tallies only).
+  **"Jump to source" (Tier 1):** the panel
   header carries an `Open AuditLog ↗` deep-link to the AuditLog TAB
   (`res.auditLogUrl` = `auditSheet.getParent().getUrl() + '#gid=' +
   auditSheet.getSheetId()`, built in a try/catch) — the raw source of the

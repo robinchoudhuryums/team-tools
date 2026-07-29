@@ -488,6 +488,13 @@ const CDR_EXPECTED_HEADERS = {
 const CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
 const CSRT = { DATE: 2, NAME: 3, TRANSFER_PCT: 4, TOTAL_CALLS: 5, TRANSFERRED: 6 };
 const CSR_TRANSFER_NUM_COLS = 19;   // A:S
+// Phase 0 (sub-queue discovery) — bounds for the READ-ONLY queue inventory
+// rendered in Admin → Automation Health. Tail-bounded like every other
+// diagnostic reader here; the payload cap keeps a sheet with dozens of queues
+// from bloating the panel (it reports `truncated` rather than silently
+// describing only part of itself).
+const CDR_QUEUE_SCAN_MAX = 4000;
+const CDR_QUEUE_LIST_CAP = 40;
 // Cycle-11 L-2 — expected headers for the columns CSRT actually reads
 // (1-indexed, so each key = the CSRT index + 1; a Node pin holds the two
 // aligned). The Transfer tab is written by the operator-owned
@@ -4685,11 +4692,16 @@ const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
  *  rows, INV-13 spirit) + the 5-min-cached CDR aggregate. Never throws — CDR
  *  unreachability degrades to { cdr: { ok:false, error } } so the rest of the
  *  panel still renders (same best-effort posture as the shift-stats overlay). */
-function getAutomationHealth() {
+function getAutomationHealth(opts) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
-    return computeAutomationHealth_();
+    // Phase 0: the panel wants the queue inventory; the 10-min-per-manager
+    // BADGE and the daily digest call computeAutomationHealth_ directly and so
+    // never pay for it. getDeployReadiness opts out explicitly (it only bands
+    // store config — the getStorageHealth({scanEmbeds:false}) precedent).
+    const scanQueues = !(opts && opts.scanQueues === false);
+    return computeAutomationHealth_({ scanQueues: scanQueues });
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4815,8 +4827,11 @@ function automationDetectorChecks_() {
   return checks;
 }
 
-function computeAutomationHealth_() {
+function computeAutomationHealth_(opts) {
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    // Default OFF: the three direct callers (badge, digest, deploy-readiness)
+    // must not pay for a diagnostic scan. Only getAutomationHealth() opts in.
+    const scanQueues = !!(opts && opts.scanQueues);
 
     // ── (e) detector liveness (Turn C) — pure writer↔parser round-trips ──
     const detectors = automationDetectorChecks_();
@@ -4916,6 +4931,13 @@ function computeAutomationHealth_() {
           unmatchedAgents: Object.keys(canonicalAgents).filter(function (a) { return !rosterSet[a]; }).sort(),
           rosterWithNoCdr: Object.keys(rosterSet).filter(function (n) { return !canonicalAgents[n]; }).sort(),
         };
+        // Phase 0 (sub-queue discovery) — opt-in, panel only. Best-effort: a
+        // failure here must never take down a health report that is otherwise
+        // fine, so it degrades to an error string inside its own field.
+        if (scanQueues) {
+          try { cdr.queueInventory = cdrQueueInventory_(from, to); }
+          catch (qErr) { cdr.queueInventory = { ok: false, error: qErr.message }; }
+        }
         // Turn C (the M-11 class): the off-roster diagnostic CHANNEL must
         // exist on the reader's meta — Team Metrics' unmatchedAgents sources
         // from it, and it was structurally absent (always-empty) until M-11.
@@ -5693,7 +5715,7 @@ function getDeployReadiness() {
     const storage = getStorageHealth({ scanEmbeds: false });   // #3 — deploy-readiness bands store config only, skip the Drive scan
     if (storage && storage.error) return { error: storage.error };
     let automation = {};
-    try { automation = getAutomationHealth() || {}; } catch (e) { automation = {}; }
+    try { automation = getAutomationHealth({ scanQueues: false }) || {}; } catch (e) { automation = {}; }
     const managerCount = getManagerEmails_().length;
     const res = deployReadinessItems_(storage, automation, managerCount);
     return {
@@ -13729,6 +13751,138 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames) {
     delete a._days;
   });
   return { perRepDaily: perRepDaily, agents: agents, meta: { columnWarning: colWarning } };
+}
+
+/** PHASE 0 (sub-queue work) — READ-ONLY queue inventory over the CDR feed.
+ *
+ *  The app has always had queue data and has always thrown it away: DQE rows
+ *  whose Agent cell is `A_Q_*` (or 'Backup CSR') are dropped by
+ *  isCdrQueueSentinel_, `CDR.QUEUE_EXT` (col 4) is declared but read NOWHERE,
+ *  and the CSR Transfer tab's per-queue H:R block is fetched into memory on
+ *  every read and ignored. Before building any per-queue UI we need FACTS
+ *  about the operator's actual sheet, because the whole design rests on one
+ *  assumption this repo cannot verify: that DQE carries one row per
+ *  (agent, queue, date) rather than one row per (agent, date). If it is the
+ *  latter, per-queue REP attribution does not exist in the data at all and the
+ *  feature has to change shape.
+ *
+ *  Cost: ONE narrow read of DQE (3 columns, not the sibling's 34) plus a
+ *  bounded tail of the Transfer tab. It is deliberately NOT folded into
+ *  getCdrAgentMetrics_'s meta — that result is cached and consumed by every
+ *  Metrics call, so widening it would tax the hot path and force an INV-85
+ *  cache bump for a diagnostic. Gated OFF by default for the same reason: the
+ *  10-minute-per-manager health BADGE and the daily digest call
+ *  computeAutomationHealth_ directly and must not pay for this.
+ *
+ *  PHI-free by construction: queue identifiers, agent-name counts, and row
+ *  tallies only — never call content.
+ */
+function cdrQueueInventory_(from, to) {
+  const out = {
+    ok: false, from: from, to: to,
+    queues: [], sentinels: [], transferCols: [],
+    rowsScanned: 0, rowsInWindow: 0,
+    agentDateRows: { max: 0, multiCount: 0, sampleMulti: [] },
+    truncated: false, error: null,
+  };
+  try {
+    const ss = getCdrSS_();
+    const sheet = ss.getSheetByName('DQE Historical Data');
+    if (!sheet) { out.error = 'DQE Historical Data sheet not found'; return out; }
+    const tz = ss.getSpreadsheetTimeZone();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) { out.ok = true; return out; }
+
+    // Bound the scan the same way every other tail reader here does. DQE is
+    // append-ordered by date, so the newest rows are the ones a 7-day window
+    // wants; a sheet longer than the cap reports truncated rather than
+    // silently describing only part of itself (the INV-169 posture).
+    const cap = CDR_QUEUE_SCAN_MAX;
+    const totalRows = lastRow - 1;
+    const startRow = totalRows > cap ? (lastRow - cap + 1) : 2;
+    out.truncated = totalRows > cap;
+    const nRows = lastRow - startRow + 1;
+    // Columns 2..4 = DATE, AGENT, QUEUE_EXT. Reading 3 columns instead of 34.
+    const vals = sheet.getRange(startRow, CDR.DATE, nRows, 3).getValues();
+    out.rowsScanned = nRows;
+
+    const queues = {};      // queue ext -> {rows, agents:{}}
+    const sentinels = {};   // A_Q_* / Backup CSR -> rows
+    const agentDate = {};   // "agent|date" -> row count
+    for (let i = 0; i < vals.length; i++) {
+      const agent = String(vals[i][1] || '').trim();
+      if (!agent) continue;
+      const dateIso = cdrRowDateIso_(vals[i][0], tz);
+      if (!dateIso || dateIso < from || dateIso > to) continue;
+      out.rowsInWindow++;
+      const queueRaw = String(vals[i][2] == null ? '' : vals[i][2]).trim();
+      if (isCdrQueueSentinel_(agent)) {
+        sentinels[agent] = (sentinels[agent] || 0) + 1;
+        continue;   // queue-AGGREGATE row: not a rep row, never an agent/date key
+      }
+      // The gate question. If DQE is one row per (agent, date), every count
+      // here is 1 and per-queue rep attribution is not in the data.
+      const key = agent + '|' + dateIso;
+      agentDate[key] = (agentDate[key] || 0) + 1;
+      const qk = queueRaw || '(blank)';
+      if (!queues[qk]) queues[qk] = { queue: qk, rows: 0, agents: {} };
+      queues[qk].rows++;
+      queues[qk].agents[agent] = true;
+    }
+
+    Object.keys(agentDate).forEach(function (k) {
+      const n = agentDate[k];
+      if (n > out.agentDateRows.max) out.agentDateRows.max = n;
+      if (n > 1) {
+        out.agentDateRows.multiCount++;
+        if (out.agentDateRows.sampleMulti.length < 3) {
+          out.agentDateRows.sampleMulti.push({ key: k, rows: n });
+        }
+      }
+    });
+    out.queues = Object.keys(queues).map(function (k) {
+      return { queue: k, rows: queues[k].rows, agents: Object.keys(queues[k].agents).length };
+    }).sort(function (a, b) { return b.rows - a.rows; }).slice(0, CDR_QUEUE_LIST_CAP);
+    out.sentinels = Object.keys(sentinels).map(function (k) {
+      return { name: k, rows: sentinels[k] };
+    }).sort(function (a, b) { return b.rows - a.rows; }).slice(0, CDR_QUEUE_LIST_CAP);
+
+    // The Transfer tab's per-queue block (H:R). Header text tells us what the
+    // queues are CALLED there; the populated count tells us whether the
+    // columns actually carry data or are a reserved-but-empty block.
+    try {
+      const trSheet = ss.getSheetByName(CSR_TRANSFER_TAB);
+      if (trSheet) {
+        const trLast = trSheet.getLastRow();
+        const headers = trSheet.getRange(1, 1, 1, CSR_TRANSFER_NUM_COLS).getDisplayValues()[0];
+        if (trLast >= 2) {
+          const trCap = Math.min(trLast - 1, CDR_QUEUE_SCAN_MAX);
+          const trStart = trLast - trCap + 1;
+          const trVals = trSheet.getRange(trStart, 1, trCap, CSR_TRANSFER_NUM_COLS).getDisplayValues();
+          // Columns H..R are 0-indexed 7..17 — everything between the counts
+          // CSRT reads and the trailing Comments column.
+          for (let c = 7; c <= 17; c++) {
+            let populated = 0;
+            for (let r = 0; r < trVals.length; r++) {
+              const cell = String(trVals[r][c] == null ? '' : trVals[r][c]).trim();
+              if (cell !== '' && cell !== '0') populated++;
+            }
+            out.transferCols.push({
+              col: c + 1, header: String(headers[c] || '').trim(), populated: populated, scanned: trVals.length,
+            });
+          }
+        }
+      }
+    } catch (trErr) {
+      out.transferError = trErr.message;   // best-effort — the DQE half still reports
+    }
+
+    out.ok = true;
+    return out;
+  } catch (e) {
+    out.error = e.message;
+    return out;
+  }
 }
 
 // ── Metrics public endpoints ──────────────────────────────────────────

@@ -314,6 +314,10 @@ sb.CN_STATE = { deptConfig: { emailTemplates: [] } };
 const cnExtTemplatesAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesAll_');
 const cnExtTemplatesFor_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesFor_');
 const cnExtTemplateOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplateOptionsHtml_');
+// Phase 0 (sub-queue discovery) — the Automation Health queue-inventory render.
+// Self-contained by design (no panel closures), so it loads standalone on
+// esc + icon like cnExtEmailPillHtml_.
+const cnQueueInventoryHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnQueueInventoryHtml_');
 // Quick-link picker (surveys/reviews) — reads CN_STATE.deptConfig.externalLinks + esc.
 const cnExtLinksAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinksAll_');
 const cnExtLinkOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinkOptionsHtml_');
@@ -5172,6 +5176,98 @@ test('A11: nav + segmented toggles expose their active state', () => {
   const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
   assert.ok(/aria-expanded="false" aria-controls=/.test(mgr), 'the coverage day disclosure is marked');
   assert.ok(/btn\.setAttribute\('aria-expanded'/.test(mgr), 'covToggleDay_ keeps aria-expanded in step');
+});
+
+// ── Phase 0 (CDR sub-queue discovery) ───────────────────────────────────────
+console.log('\nPhase 0 — CDR sub-queue discovery');
+
+// The inventory exists to answer ONE question, so the render must state the
+// verdict unambiguously in BOTH directions. A diagnostic that reads the same
+// whether or not the data supports the feature is worthless.
+test('Phase 0: the queue inventory states the row-shape verdict both ways', () => {
+  const base = { ok: true, from: '2026-07-22', to: '2026-07-29', rowsScanned: 100,
+    queues: [], sentinels: [], transferCols: [] };
+
+  const yes = cnQueueInventoryHtml_(Object.assign({}, base, {
+    rowsInWindow: 40,
+    agentDateRows: { max: 3, multiCount: 12, sampleMulti: [{ key: 'Avery Blake|2026-07-28', rows: 3 }] },
+  }));
+  assert.ok(/Per-queue rep attribution IS available/.test(yes), 'multi-row agent-days read as available');
+  assert.ok(yes.indexOf('Avery Blake on 2026-07-28') > 0, 'the sample renders agent + date readably');
+
+  const no = cnQueueInventoryHtml_(Object.assign({}, base, {
+    rowsInWindow: 40, agentDateRows: { max: 1, multiCount: 0, sampleMulti: [] },
+  }));
+  assert.ok(/NOT in this data/.test(no), 'one-row-per-agent-day reads as NOT available');
+  assert.ok(no.indexOf('Per-queue rep attribution IS available') < 0, 'the two verdicts are mutually exclusive');
+
+  // No rows is a THIRD state — "cannot determine" must not read as "no".
+  const none = cnQueueInventoryHtml_(Object.assign({}, base, {
+    rowsInWindow: 0, agentDateRows: { max: 0, multiCount: 0, sampleMulti: [] },
+  }));
+  assert.ok(/cannot be determined/.test(none), 'an empty window is undetermined, not a negative verdict');
+  assert.ok(none.indexOf('NOT in this data') < 0, 'an empty window must not assert the negative');
+
+  // A failed scan surfaces as an error, never as an empty inventory (INV-175).
+  const bad = cnQueueInventoryHtml_({ ok: false, error: 'CDR unreachable' });
+  assert.ok(/Queue inventory unavailable/.test(bad) && bad.indexOf('CDR unreachable') > 0,
+    'a failed scan says so');
+});
+
+test('Phase 0: queue identifiers from the sheet are escaped', () => {
+  const h = cnQueueInventoryHtml_({
+    ok: true, from: 'a', to: 'b', rowsScanned: 5, rowsInWindow: 5,
+    agentDateRows: { max: 1, multiCount: 0, sampleMulti: [] },
+    queues: [{ queue: '<img src=x onerror=alert(1)>', rows: 3, agents: 2 }],
+    sentinels: [{ name: 'A_Q_<b>x</b>', rows: 1 }],
+    transferCols: [{ col: 8, header: '"><script>', populated: 4, scanned: 5 }],
+  });
+  // These strings cross a repo trust boundary (the CDR sheet is written by
+  // call-data-reporting), the same boundary the Metrics esc() gotcha names.
+  assert.ok(h.indexOf('<img src=x') < 0, 'a queue name cannot inject markup');
+  assert.ok(h.indexOf('A_Q_<b>') < 0, 'a sentinel name cannot inject markup');
+  assert.ok(h.indexOf('"><script>') < 0, 'a Transfer header cannot inject markup');
+  assert.ok(h.indexOf('&lt;img') > 0, 'it renders escaped rather than being dropped');
+});
+
+// The scan is a full-sheet read. getAutomationHealthBadge polls it every 10
+// MINUTES per manager and sendAutomationHealthDigest runs it daily — both call
+// computeAutomationHealth_ directly, so the default must be OFF. This pin is
+// the thing standing between a diagnostic and a recurring cost regression.
+test('Phase 0: the queue scan is opt-in — badge, digest and deploy-readiness skip it', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.ok(/function computeAutomationHealth_\(opts\)[\s\S]{0,400}?const scanQueues = !!\(opts && opts\.scanQueues\);/.test(src),
+    'computeAutomationHealth_ defaults scanQueues OFF');
+  assert.ok(/if \(scanQueues\) \{[\s\S]{0,200}?cdrQueueInventory_\(/.test(src),
+    'the inventory only runs behind the flag');
+  assert.ok(/getAutomationHealth\(\{ scanQueues: false \}\)/.test(src),
+    'getDeployReadiness opts out explicitly');
+  // The two direct callers must pass no opts at all — adding one would be the
+  // regression this pin exists to catch.
+  const badge = src.slice(src.indexOf('function getAutomationHealthBadge'));
+  assert.ok(/automationProblems_\(computeAutomationHealth_\(\)\)/.test(badge.slice(0, 1200)),
+    'the 10-min badge poll calls computeAutomationHealth_ with no opts');
+  const digest = src.slice(src.indexOf('function sendAutomationHealthDigest'));
+  assert.ok(/report = computeAutomationHealth_\(\);/.test(digest.slice(0, 2000)),
+    'the daily digest calls computeAutomationHealth_ with no opts');
+});
+
+// The reader must stay READ-ONLY and bounded — it is a discovery tool wired
+// into a manager panel, not a data path.
+test('Phase 0: cdrQueueInventory_ is read-only, bounded and PHI-free', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const m = src.match(/function cdrQueueInventory_\(from, to\) \{[\s\S]*?\n\}/);
+  assert.ok(m, 'cdrQueueInventory_ is present');
+  const body = m[0];
+  assert.ok(!/setValue|appendRow|getRange\([^)]*\)\.set|deleteRow|insertSheet/.test(body),
+    'the inventory never writes');
+  assert.ok(/CDR_QUEUE_SCAN_MAX/.test(body) && /truncated/.test(body),
+    'the scan is capped AND reports truncation (INV-169)');
+  assert.ok(/CDR_QUEUE_LIST_CAP/.test(body), 'the payload lists are capped');
+  // It reads 3 columns, not the sibling's 34 — the cost claim in its own doc
+  // comment. A widened read here silently multiplies the panel's cost.
+  assert.ok(/getRange\(startRow, CDR\.DATE, nRows, 3\)/.test(body),
+    'the DQE read stays narrow (DATE/AGENT/QUEUE_EXT only)');
 });
 
 // A13: the three section-heading classes render as real <h2>s, so heading
