@@ -5087,11 +5087,15 @@ test('A12: load failures never render into an empty-state container', () => {
 
 // A1: the six click-only controls are <button>s now. A bare span/div with an
 // inline onclick is unreachable by keyboard and has no role for assistive tech.
+// Cycle-13 batch 5: GENERALIZED from a hand-listed five files to every scanned
+// partial, derived from PARSE_GUARD_PARTIALS (which itself auto-tracks
+// index.html's include() calls). A hand-copied file list is the exact class
+// cycle-11's M-4 retired — a new tool's partial could otherwise ship outside
+// the net with CI green.
+const A11Y_SCAN_PARTIALS = PARSE_GUARD_PARTIALS.concat(['modals.html']);
 test('A1: no interactive element is a bare span/div with an inline onclick', () => {
-  const files = ['metrics/script_metrics.html', 'tc/script_clock.html', 'tc/script_manager.html',
-                 'intake/script_intake.html', 'cn/script_callnotes.html'];
   const offenders = [];
-  files.forEach((f) => {
+  A11Y_SCAN_PARTIALS.forEach((f) => {
     const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
     // Scan the WHOLE source, not line by line: `[^>]` matches newlines, so a
     // tag whose onclick sits on a later line than its `<span` is still caught.
@@ -5111,6 +5115,47 @@ test('A1: no interactive element is a bare span/div with an inline onclick', () 
     offenders.join('\n  '));
 });
 
+// A11 GENERALIZED (cycle-13 batch 5): the specific-surface checks below are
+// kept as regression pins, but the RULE is now machine-enforced across every
+// scanned partial — wherever a state class is toggled, an ARIA attribute must be
+// set in the same function. Running it surfaced eight more instances than the
+// six the scan found by hand (the CN flag toolbar, both CN sub-tab strips, the
+// KB tree item and the KB editor type toggle), which is the whole point of
+// promoting a convention to a tripwire.
+const A11Y_STATE_CLASSES = ['active', 'on', 'selected', 'current'];
+// Decorative-only toggles: no state a user could act on, nothing to announce.
+// Keep this list tiny and reasoned — each entry is a claim that the class is
+// pure presentation.
+const A11Y_DECORATIVE = {
+  'kb/script_kb.html:kbDrawerSetSearching_': 'a loading spinner — the search status is conveyed by the results region',
+  'tc/script_clock.html:clkApplySky_': 'the two cross-fading sky gradient LAYERS behind the clock card',
+};
+test('A11 (rule): every state-class toggle also sets an ARIA attribute', () => {
+  const offenders = [];
+  A11Y_SCAN_PARTIALS.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
+    const re = new RegExp("classList\\.(?:toggle|add)\\('(" + A11Y_STATE_CLASSES.join('|') + ")'", 'g');
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      // Locate the enclosing function by walking back to the nearest declaration.
+      const before = src.slice(0, m.index);
+      const decl = [...before.matchAll(/function\s+([A-Za-z0-9_]+)\s*\(/g)].pop();
+      const fnName = decl ? decl[1] : '(anonymous)';
+      if (A11Y_DECORATIVE[f + ':' + fnName]) continue;
+      // The function body from its declaration to the next top-level one.
+      const start = decl ? decl.index : Math.max(0, m.index - 400);
+      const nextDecl = src.indexOf('\nfunction ', m.index);
+      const body = src.slice(start, nextDecl > 0 ? nextDecl : m.index + 600);
+      if (/aria-[a-z]+|setAttribute\('aria|removeAttribute\('aria/.test(body)) continue;
+      offenders.push(f + ':' + before.split('\n').length + ' in ' + fnName + '()');
+    }
+  });
+  assert.deepStrictEqual(offenders, [],
+    'a CSS class is invisible to assistive tech — set aria-current / aria-pressed / ' +
+    'aria-selected / aria-checked alongside it (or add a reasoned A11Y_DECORATIVE entry):\n  ' +
+    offenders.join('\n  '));
+});
+
 // A11: active state must be exposed to assistive tech, not just painted.
 test('A11: nav + segmented toggles expose their active state', () => {
   const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
@@ -5127,6 +5172,41 @@ test('A11: nav + segmented toggles expose their active state', () => {
   const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
   assert.ok(/aria-expanded="false" aria-controls=/.test(mgr), 'the coverage day disclosure is marked');
   assert.ok(/btn\.setAttribute\('aria-expanded'/.test(mgr), 'covToggleDay_ keeps aria-expanded in step');
+});
+
+// A13: the three section-heading classes render as real <h2>s, so heading
+// navigation — the primary way a screen-reader user moves through a dense page
+// — works below the view's <h1>. They were <div>/<span>, so every view had a
+// heading outline exactly one level deep. Scanning by CLASS (not by counting
+// tags) means a NEW card added as a div fails, which is the drift that matters.
+const A13_HEADING_CLASSES = ['card-label', 'tr-card-title', 'dash-seclabel'];
+test('A13: section-heading classes render as <h2>, not div/span', () => {
+  const offenders = [];
+  let seen = 0;
+  A11Y_SCAN_PARTIALS.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
+    A13_HEADING_CLASSES.forEach((cls) => {
+      const re = new RegExp('<([a-z0-9]+)\\s+class="' + cls + '\\b', 'g');
+      let m;
+      while ((m = re.exec(src)) !== null) {
+        seen++;
+        if (m[1] === 'h2') continue;
+        offenders.push(f + ':' + src.slice(0, m.index).split('\n').length + ' <' + m[1] + ' class="' + cls + '"');
+      }
+    });
+  });
+  assert.deepStrictEqual(offenders, [],
+    'a card section heading must be an <h2> so it joins the document outline:\n  ' +
+    offenders.join('\n  '));
+  // Guard the guard: if a rename silently emptied the scan it would pass vacuously.
+  assert.ok(seen >= 27, 'expected the 27 known heading sites, found ' + seen);
+  // The UA h2 margin must be zeroed or every card grows a gap above its label.
+  const s = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.card-label \{[\s\S]{0,240}?margin-top: 0;/.test(s), '.card-label zeroes the UA h2 margin-top');
+  const tr = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_training.html'), 'utf8');
+  assert.ok(/\.tr-card-title \{[\s\S]{0,240}?margin: 0;/.test(tr), '.tr-card-title zeroes the UA h2 margin');
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/\.dash-seclabel \{[\s\S]{0,240}?margin: 0;/.test(clk), '.dash-seclabel zeroes the UA h2 margin');
 });
 
 // A2: `:root[data-compact]` is the POP-OUT, not a viewport breakpoint. Any grid

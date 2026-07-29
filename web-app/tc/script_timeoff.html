@@ -241,7 +241,7 @@ function renderTimeOffView(area, data) {
   let reqHtml = '';
   if (data.allRequests && data.allRequests.length > 0) {
     reqHtml = `<hr class="section-divider">
-      <div class="card-label" style="margin-bottom:10px">Your Requests</div>
+      <h2 class="card-label" style="margin-bottom:10px">Your Requests</h2>
       <div class="req-list">` +
       data.allRequests.map(r => {
         const p = r.date.split('-');
@@ -485,7 +485,7 @@ function renderTimesheetSideRail_(d) {
       </div>
     </div>
     <div class="card" style="margin-top:14px">
-      <div class="card-label">Recent activity</div>
+      <h2 class="card-label">Recent activity</h2>
       ${recentHtml}
     </div>`;
 }

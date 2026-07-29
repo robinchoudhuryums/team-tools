@@ -14,15 +14,18 @@ Updated: 2026-07-29
 - Cycle 13's broad scan is COMPLETE (3 stages). It found 0 Critical / 0 High /
   6 Medium / 7 Low, with the interface lens producing the top four findings —
   the second cycle running in which that lens outscored the code lens.
-- Batches 1, 2 and 3 (+ the open follow-on items) are IMPLEMENTED, committed
-  and pushed to `claude/broad-scan-yhkbe2`; /sync-docs ran after batch 1 and
-  batches 2 and 3 applied their own doc edits. Not deployed.
+- ALL FIVE BATCHES (1, 2, 3, 5, 4) plus the open follow-on items are
+  IMPLEMENTED. Batches 1–3 are committed and pushed to
+  `claude/broad-scan-yhkbe2`; batches 5 and 4 are implemented and tested but
+  were NOT yet committed at the time this line was written. /sync-docs ran
+  after batch 1; every later batch applied its own doc edits. Not deployed.
 - Verbatim summary blocks are at `.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md`,
-  `13-A4-A6-A8-A9-broad-implement.md` and
-  `13-A5-A7-A10-followons-broad-implement.md`.
-- Every cycle-13 finding is now implemented EXCEPT A13 (batch 4). FO-6 was
-  analysed and deliberately deferred — see Open follow-on items.
-- Next concrete step: run batch 4 (A13), or close the cycle with /reflect.
+  `13-A4-A6-A8-A9-broad-implement.md`,
+  `13-A5-A7-A10-followons-broad-implement.md` and
+  `13-batch5-batch4-broad-implement.md`.
+- **Every cycle-13 finding is now implemented.** FO-6 is the one item
+  deliberately deferred, with its analysis recorded below.
+- Next concrete step: close the cycle with /reflect.
 
 ## Completed this cycle
 - A1  | metrics/, tc/script_clock.html, tc/script_manager.html, intake/, cn/ | six click-only span/div controls → <button type="button"> with a pixel-identical CSS reset
@@ -45,6 +48,11 @@ Updated: 2026-07-29
 - FO-4 | Tests.js | _assertEq tells NaN from null via a stringify REPLACER (byte-identical for every non-NaN value — a recursive walker would have shifted ~300 unrunnable editor assertions)
 - FO-5 | Code.js | removed two dead response fields + the orphaned helper/constant (supersedes batch 2's A8)
 - Tests | test/client/run.js (+7 pins, 366→373, all bite-checked; 2 more existing pins updated as part of the fix)
+- B5-1 | test/client/run.js, cn/, kb/ | GENERALIZED both a11y tripwires to A11Y_SCAN_PARTIALS (derived from PARSE_GUARD_PARTIALS) — the rule then surfaced 8 instances the hand scan missed; all 8 fixed
+- B5-2 | CLAUDE.md | added a `### Visual Audit Stage` section to the Cycle Workflow Config (the visual lens as a standing /broad-scan stage — .claude/commands/ is template-synced, so it must live here)
+- B5-3 | call-notes/, call-notes-legacy/, incoming/ (29 files) + Code.js, intake/, CLAUDE.md, README.md | DELETED the three frozen directories; provenance comments repointed at git history
+- A13  | tc/script_manager.html (15), tc/script_clock.html (5), tc/script_timeoff.html (2), train/script_training.html (5), styles.html | 27 section-heading div/span → <h2> + UA-margin resets; measured pixel-identical
+- Tests | test/client/run.js (373→375, both bite-checked), test/visual/a13-measure.mjs (new spot-measure tool)
 
 ## Pending / not yet done
 - **CARRIED FROM CYCLE 12 — the operator deploy is still UNCONFIRMED**, and now
@@ -61,10 +69,9 @@ Updated: 2026-07-29
   `INSTANCE_IS_PROD=false`.** An unset value now reads as production, so without
   it devScrubRoster_/devShowConfig_ refuse and the nightly self-test drops to
   smoke (visibly — it says so on the Admin self-test line). PROD is unaffected.
-- Remaining cycle-13 finding:
-  - Batch 4 (interface completeness, ~½–1 day): A13 — no heading outline below h1
-- /sync-docs has RUN (commit adb2ee7) and batch 2 applied its own deferred edit.
-  No documentation work is outstanding.
+- No cycle-13 finding remains unimplemented.
+- /sync-docs has RUN (commit adb2ee7) and every later batch applied its own doc
+  edits. No documentation work is outstanding.
 
 ## Open follow-on items
 - A11 correction: the CN composer tabs already carried role="tab" + aria-selected;
@@ -121,14 +128,32 @@ Updated: 2026-07-29
 - FO-5 SUPERSEDES batch 2's A8 (which hardened a helper that turned out to be
   dead). Recorded rather than hidden — the honest end state is that the path
   should not exist.
+- B5-2 put the Visual Audit Stage in CLAUDE.md, NOT in
+  `.claude/commands/broad-scan.md`: that directory is verified byte-identical to
+  claude-workflow-tools v1.23.0, so a local edit would be silently reverted by
+  the next /sync-commands.
+- B5-3 deleted the three frozen directories rather than continuing to carry
+  them. Frozen Subsystems is now a deletion RECORD, so the reasoning survives
+  the files; two source comments were repointed at git history (last present as
+  of 9586b29) rather than dropped.
+- A13 converted with a balanced-tag depth walk, not a closing-tag regex, and was
+  verified by MEASURING rather than reasoning. `.tr-card-title` is unreachable
+  by the scenario matrix, hence `test/visual/a13-measure.mjs`.
+- That measurement was WRONG first: measured in a plain div it reported
+  `display: inline -> block`, which is a fixture artifact (both classes live in
+  flex heads, which blockify any child). Re-measured in the real parents: all
+  three identical. Recorded in the harness README.
+- `.kicker` stays a div (an eyebrow above a heading is not a heading) and
+  `.rail-card` was already `<h4>` — neither is an A13 omission.
 
 ## Where I left off
-Batches 1–3 plus every open follow-on are implemented, tested (373 pure + 66 DOM
-+ 20/20 visual, all green), documented, committed and pushed to
-`claude/broad-scan-yhkbe2`. Nothing doc-wise is outstanding. Only A13 (batch 4 —
-no heading outline below h1) remains unimplemented, and FO-6 is deliberately
-deferred with its analysis recorded above. Next: run batch 4, or close the cycle
-with /reflect (which should also record the proposed INV-177 — dev-ness requires
-BOTH instance markers). TWO operator actions now gate delivery: the carried
-deploy (cycles 11–13) and, on the DEV project only, adding
-`INSTANCE_IS_PROD=false`.
+ALL FIVE batches plus every open follow-on are implemented, tested (375 pure +
+66 DOM + 20/20 visual, all green), documented, committed and pushed to
+`claude/broad-scan-yhkbe2`. Every cycle-13 finding is done; FO-6 is the one
+deliberate deferral, with its analysis recorded above. Nothing doc-wise is
+outstanding. Next: **close the cycle with /reflect**, which should record the
+three proposed invariants — INV-177 (dev-ness requires BOTH instance markers),
+INV-178 (a section heading is an `<h2>`), INV-179 (tripwires scan a DERIVED file
+list, never a hand-copied one — found short three times now). TWO operator
+actions gate delivery: the carried deploy (cycles 11–13) and, on the DEV project
+only, adding `INSTANCE_IS_PROD=false`.

@@ -221,7 +221,9 @@
 
   .dash-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
   .dash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; row-gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-  .dash-seclabel { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  /* A13 (cycle 13): an <h2>, not a span — margin:0 zeroes the UA h2 default so
+     the flex head row is pixel-identical. */
+  .dash-seclabel { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0; }
   /* Segmented chip — tinted track, sliding white highlight, labels above it. */
   .dash-seg { position: relative; display: flex; background: var(--paper-2); border-radius: 8px; padding: 3px; min-width: 212px; }
   .dash-seg-hi { position: absolute; top: 3px; bottom: 3px; left: 3px; background: var(--paper-card); border-radius: 6px;
@@ -446,7 +448,7 @@ function renderClockView(area) {
         <div id="dash-cards">${clkDashSkeleton_()}</div>
         <div class="dash-pair dash-foot">
           <div class="card">
-            <div class="card-label">Today's Punches</div>
+            <h2 class="card-label">Today's Punches</h2>
             ${renderPunchHistory(s.punches)}
           </div>
           <div id="teammate-card-slot"></div>
@@ -600,7 +602,7 @@ function clkDashCarouselHtml_(key, title) {
     return '<div class="dash-sld">' + card + '</div>';
   }).join('');
   return '<div class="dash-card">' +
-    '<div class="dash-card-head"><span class="dash-seclabel">' + esc(title) + '</span>' + clkDashSegHtml_(key) + '</div>' +
+    '<div class="dash-card-head"><h2 class="dash-seclabel">' + esc(title) + '</h2>' + clkDashSegHtml_(key) + '</div>' +
     '<div class="dash-vp"><div class="dash-trk" id="dash-trk-' + key + '" style="transform:translateX(-' + (i * 100) + '%)">' + slides + '</div></div>' +
   '</div>';
 }
@@ -771,7 +773,7 @@ function clkRenderDashboardExtras_() {
   var leftLabel = canSp ? 'Spanish Inbox' : 'Training';
   var leftBody = canSp ? clkDashSpanishCard_(x.spanish, x.spanishPending) : clkDashTrainingCard_(x.training);
   var card = function (label, body) {
-    return '<div class="dash-card"><div class="dash-card-head"><span class="dash-seclabel">' + esc(label) + '</span></div>' + body + '</div>';
+    return '<div class="dash-card"><div class="dash-card-head"><h2 class="dash-seclabel">' + esc(label) + '</h2></div>' + body + '</div>';
   };
   host.innerHTML = '<div class="dash-pair">' + card(leftLabel, leftBody) + card('Requests', clkDashRequestsCard_(x.requests)) + '</div>';
 }
@@ -1712,7 +1714,7 @@ function loadTeammateStatus() {
     else slot.innerHTML = '';
   } else {
     slot.innerHTML =
-      '<div class="card"><div class="card-label with-count"><span>Team Right Now</span></div>' +
+      '<div class="card"><h2 class="card-label with-count"><span>Team Right Now</span></h2>' +
       '<div class="emp-grid">' +
         '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
           '<div class="skel skel-bar" style="width:70%;height:11px"></div></div></div>' +
@@ -1764,10 +1766,10 @@ function renderTeammateCard(slot, teammates) {
 
   slot.innerHTML = `
     <div class="card">
-      <div class="card-label with-count">
+      <h2 class="card-label with-count">
         <span>Team Right Now</span>
         <span style="font-family:var(--mono);font-size:11px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:.04em">${summary}</span>
-      </div>
+      </h2>
       <div class="emp-grid">${cardsHtml}</div>
     </div>`;
 }

@@ -14354,7 +14354,9 @@ function getMetricsAmbient() {
 
 // ════════════════════════════════════════════════════════════════════════════
 //  INTAKE MODULE  —  PPD + PMD/PAP account-creation forms
-//  Ported from the bound "form-generator" Apps Script (incoming/form-generator).
+//  Ported from the bound "form-generator" Apps Script. That reference copy was
+//  DELETED in cycle 13 once the port was settled — it lives in git history at
+//  incoming/form-generator/, last present as of commit 9586b29.
 //  Web-app rewrite: the bound tool used the active sheet's cells as the form;
 //  here each form is a web form whose answers arrive as a payload, render a
 //  branded email (esc_'d throughout — closing the original's raw-interpolation

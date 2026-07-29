@@ -519,7 +519,9 @@ function kbRenderTree_() {
       '</button>' +
       '<div class="kb-dept-body">';   // §8 — wrap items so collapse can animate (max-height)
     byDept[d].forEach(function (it) {
-      html += '<button class="kb-item' + (it.id === KB_STATE.currentId ? ' on' : '') + '" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
+      html += '<button class="kb-item' + (it.id === KB_STATE.currentId ? ' on' : '') + '"' +
+        (it.id === KB_STATE.currentId ? ' aria-current="page"' : '') +   // A11
+        ' data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
         '<span class="kb-item-line">' + icon(kbItemIcon_(it), 13) + ' ' + esc(it.title) +
         (it.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '') + '</span></button>';   // #4 (admins only receive drafts)
     });
@@ -985,7 +987,12 @@ function kbRequestArticlePrompt_(query) {
 
 function kbOpenItem_(id, anchor) {
   KB_STATE.currentId = id; KB_STATE.landing = false;
-  document.querySelectorAll('.kb-item').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-kb-id') === id); });
+  document.querySelectorAll('.kb-item').forEach(function (b) {
+    // A11 rule: the open article is navigational state — expose it, don't just paint it.
+    var on = b.getAttribute('data-kb-id') === id;
+    b.classList.toggle('on', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
   var main = document.getElementById('kb-main'); if (!main) return;
   main.innerHTML = loSweep();
   var requested = currentView;
@@ -1276,8 +1283,8 @@ function kbConvertFromEditor_() {
       // so the article textarea + live preview render the converted markdown.
       var ta = document.getElementById('kb-tt-article');
       var te = document.getElementById('kb-tt-embed');
-      if (ta) ta.classList.add('on');
-      if (te) te.classList.remove('on');
+      kbTypeTabSet_(ta, true);    // A11 — same helper, so the converter path can't drift
+      kbTypeTabSet_(te, false);
       kbRenderEditorBody_();
       kbShowConvertWarnings_(res.warnings);
     })
@@ -1361,8 +1368,8 @@ function kbRenderEditor_() {
       '<div class="field"><label>Department</label><input type="text" id="kb-ed-dept" list="kb-dept-list" value="' + esc(e.department) + '" placeholder="e.g. Sales, Power, Billing">' + datalist + '</div>' +
       '<div class="field"><label>Title</label><input type="text" id="kb-ed-title" value="' + esc(e.title) + '" placeholder="Article / document title"></div>' +
       '<div class="field"><label>Type</label><div class="kb-typetog">' +
-        '<button type="button" id="kb-tt-article" class="' + (e.type !== 'embed' ? 'on' : '') + '" onclick="kbEditorSetType_(\'article\')">Article (markdown)</button>' +
-        '<button type="button" id="kb-tt-embed" class="' + (e.type === 'embed' ? 'on' : '') + '" onclick="kbEditorSetType_(\'embed\')">Embed Drive doc</button>' +
+        '<button type="button" id="kb-tt-article" class="' + (e.type !== 'embed' ? 'on' : '') + '" aria-pressed="' + (e.type !== 'embed') + '" onclick="kbEditorSetType_(\'article\')">Article (markdown)</button>' +
+        '<button type="button" id="kb-tt-embed" class="' + (e.type === 'embed' ? 'on' : '') + '" aria-pressed="' + (e.type === 'embed') + '" onclick="kbEditorSetType_(\'embed\')">Embed Drive doc</button>' +
       '</div></div>' +
       '<div id="kb-ed-body"></div>' +
     '</div>' +
@@ -1375,12 +1382,22 @@ function kbRenderEditor_() {
   kbRenderEditorBody_();
 }
 
+/** A11 (cycle 13) — set one editor type-tab's visual AND exposed state. Both
+ *  call sites (kbEditorSetType_ and the Doc-converter path, which mirrors it)
+ *  go through this so the class and the attribute can never drift apart. */
+function kbTypeTabSet_(el, on) {
+  if (!el) return;
+  el.classList.toggle('on', !!on);
+  el.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
 function kbEditorSetType_(t) {
   // snapshot current inputs before switching
   kbSnapshotEditor_();
   KB_EDIT.type = t;
-  document.getElementById('kb-tt-article').classList.toggle('on', t !== 'embed');
-  document.getElementById('kb-tt-embed').classList.toggle('on', t === 'embed');
+  // A11 rule: aria-pressed rides alongside the `.on` class on both segments.
+  kbTypeTabSet_(document.getElementById('kb-tt-article'), t !== 'embed');
+  kbTypeTabSet_(document.getElementById('kb-tt-embed'), t === 'embed');
   kbRenderEditorBody_();
 }
 

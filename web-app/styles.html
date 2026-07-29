@@ -395,12 +395,15 @@
   /* Batch J — secondary labels are sentence-case Inter Tight; the
      mono-uppercase micro-label register is reserved for kickers, chips,
      and table headers. */
+  /* A13 (cycle 13): rendered as <h2> so each card contributes a heading to the
+     document outline. margin-top zeroes the UA h2 default; every other h2 UA
+     style (font-size/weight) is already overridden by this rule. */
   .card-label {
     font-family: var(--ui);
     font-size: var(--text-sm); font-weight: 600;
     color: var(--muted);
     letter-spacing: -.01em;
-    margin-bottom: 16px;
+    margin-top: 0; margin-bottom: 16px;
     display: flex; align-items: center; gap: 10px;
   }
   .card-label.with-count { justify-content: space-between; }

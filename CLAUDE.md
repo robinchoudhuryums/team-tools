@@ -63,8 +63,9 @@ Apps Script project under its own directory, synced via `clasp`.
      `mtRenderTable_` component, see Key Design Decisions).
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
    - **Intake** — patient-intake forms ported from the bound
-     `form-generator` Apps Script (kept in `incoming/form-generator/`
-     for reference). Four tabs: **PPD** (Patient Profile &
+     `form-generator` Apps Script (that reference copy was DELETED in
+     cycle 13 — see the Frozen Subsystems note; it is in git history).
+     Four tabs: **PPD** (Patient Profile &
      recommendation — a 46-item intake (Q1–Q45 plus the lettered but
      full-weight Q39a; the progress ring's denominator is 46, see the
      PPD-controls gotcha) that drives the clinical
@@ -194,17 +195,15 @@ Apps Script project under its own directory, synced via `clasp`.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
-- **call-notes/** — Legacy Workspace Add-on scaffold; superseded by
-  the Call Notes module inside `web-app/`. Kept on disk for reference
-  during the transition. New work happens in `web-app/cn/` and the
-  Call-Notes section of `web-app/Code.js`. The Workspace Add-on path
-  is abandoned because admin policy on the org domain prevents
-  install of Marketplace Add-ons without ticket-driven allowlisting;
-  the web-app pattern works today with zero admin involvement.
+The Workspace Add-on path (the old `call-notes/` scaffold) is abandoned
+because admin policy on the org domain prevents install of Marketplace
+Add-ons without ticket-driven allowlisting; the web-app pattern works
+today with zero admin involvement. **`web-app/` is now the only project
+directory** — see Frozen Subsystems for what was removed and why.
 
 ## Development
 
-Each project is a separate clasp project.
+`web-app/` is the only clasp project.
 
 ```bash
 cd <project-name>
@@ -1658,7 +1657,24 @@ this section before touching the relevant area.
   Training-Answers tray). **An inline `onclick` that toggles a class cannot keep
   an attribute in step** — the CN tray's
   `this.parentElement.classList.toggle('collapsed')` was extracted to
-  `cnToggleQaTray_` for exactly that reason. Pinned by the A11 tripwire.
+  `cnToggleQaTray_` for exactly that reason. Pinned by the A11 tripwire (which
+  batch 5 GENERALIZED from six hand-listed surfaces to a rule over every scanned
+  partial — that promotion immediately surfaced eight more instances, so treat
+  the tripwire, not this paragraph, as the enumeration).
+  **A SECTION HEADING IS AN `<h2>`, NOT A STYLED `<div>` (A13, cycle-13).**
+  Heading navigation is the primary way a screen-reader user moves through a
+  dense page, and every view rendered exactly ONE heading — its `<h1>` — then
+  used `<div>`/`<span>` for every card label below it, so that navigation
+  stopped at the page title on ~30 surfaces. The three section-heading classes
+  (`.card-label` 20 sites, `.tr-card-title` 5, `.dash-seclabel` 2) now render as
+  `<h2>`. Each class already fully specified its own typography, so the
+  conversion needed only a UA-margin reset (`margin-top: 0` on `.card-label`,
+  which already set `margin-bottom`; `margin: 0` on the other two, which sit in
+  flex head rows) — the render is pixel-identical, verified by re-shooting the
+  visual matrix. `.kicker` stays a `<div>` (an eyebrow ABOVE a heading is not
+  itself one) and `.rail-card` was already using `<h4>`. Pinned by the A13
+  tripwire, which scans by CLASS rather than counting tags, so a NEW card added
+  as a div fails.
 - **Tool view partials live in their own subfolder.** Time Clock's
   four views (`script_clock.html`, `script_timesheet.html`,
   `script_timeoff.html`, `script_manager.html`) are under `web-app/tc/`
@@ -4920,7 +4936,11 @@ stamps `hitPerRunCap` only on a genuinely truncated run) → 366. Batch 3 +
 follow-ons added seven (A5 dev-detection, A7 header-only export guard, A10
 grade-before-lock, FO-2 the last inverted primary, FO-3 the shift-header wrap,
 FO-4 `_assertEq` NaN-vs-null, plus the FO-5 dead-field removals folded into the
-A8 and F18 pins) → 373.** Two of
+A8 and F18 pins) → 373. Batch 5 GENERALIZED the two a11y pins from a hand-listed
+file set to `A11Y_SCAN_PARTIALS` (derived from `PARSE_GUARD_PARTIALS`, so a new
+tool's partial cannot ship outside the net) — the state-class rule then surfaced
+eight instances the hand scan had missed → 374; batch 4 added the A13
+heading-class scan → 375.** Two of
 those six did NOT bite on the first attempt and were tightened: the A1 scan was
 line-by-line and missed multi-line markup (it now scans the whole source, where
 `[^>]` matches newlines), and the A3 input list held only no-colon cases, all
@@ -5218,6 +5238,42 @@ INV-174 | **Active/selected/expanded state is exposed to assistive tech, never c
 INV-175 | **A load failure renders `errorStateHtml_`, never an empty-state container.** Batch J made this the rule; it was honored in 2 of 11 tool partials until cycle-13 A12 found 16 sites in Metrics, Training, and EmpDocs rendering both RPC failures AND server-returned `data.error` into `.m-empty` / `.no-data` / `.tr-empty` — quiet muted cards visually indistinguishable from "no data for this date". On Metrics, which is rep-facing and CDR-backed, that is the likeliest failure mode of all. `errorStateHtml_` gives the warn tone, the glyph, and `role="alert"` so the failure is both visible and announced. **Call sites must DROP the outer `esc()`** — the helper escapes internally, so keeping it double-escapes. Verify: the A12 tripwire, which fails CI on any line mentioning an error/failure that also renders one of those empty-state classes | Subsystem: Client (Metrics / Training / Reference / Call Notes views)
 
 INV-176 | **`timeToMins_` returns `null` (never `NaN`), and an arithmetic caller must guard EXPLICITLY.** `NaN` is uniquely dangerous here: every comparison against it is false and it is contagious through arithmetic. `getPunctualityReport` scored an unparseable day ON TIME (it fell through `lateMin > grace` into the else) and one bad row pinned the whole day (the earliest-punch pick `mins < r.days[d].in` is also false against `NaN`); `calcHours_` returned `NaN` and `totalHours += NaN` voided an entire timesheet total. With `null` the callers' existing "not computed" branches fire: punctuality skips the row, the timesheet counts the day INCOMPLETE (**not** 0 hours — that would understate payroll silently), the dashboard sparkline and calendar omit it. `calcHours_` propagates `null` for a corrupt CLOCK pair but a corrupt LUNCH pair only drops the deduction, so one bad cell cannot void a valid 8-hour day. **THE TRAP:** `x + null` COERCES to `x`, so `getCoveragePlan`'s `dayDelta * 1440 + timeToMins_(...)` would place a shift at midnight — strictly worse than the `NaN` it replaced, which merely dropped the rep from the buckets. Arithmetic callers need an explicit `=== null` check, not a truthiness test (`0` is a valid midnight). Verify: the A3 behavioural pin (both rejection paths — no-colon AND colon-with-non-numeric, bite-checked), the caller-shape scan, and the `timeToMins_nullOnUnparseable` smoke test (which must use a strict `=== null` check — `_assertEq` compares via `JSON.stringify`, where `NaN` and `null` are both `"null"`) | Subsystem: Server
+
+### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
+
+**A `/broad-scan` of this project is not complete until the interface has been
+LOOKED AT, not only read.** This is a project-local requirement recorded here
+rather than in `.claude/commands/broad-scan.md`, because that directory is
+verified byte-identical to `claude-workflow-tools` and a local edit would be
+silently overwritten by the next `/sync-commands`. Every audit command's first
+instruction is to read CLAUDE.md, so this reaches them.
+
+**Why it is mandatory, in the project's own numbers:** cycle 12 shipped 13
+production fixes and **9 came from a visual addendum the operator had to ASK
+for** — eleven prior code-lens cycles could not reach the class. Cycle 13 then
+found its top four items through the same lens. The two cycles agree: the code
+lens is at diminishing returns here and the interface lens is not.
+
+Run it as **Stage 1.5**, between the broad pass and the deep dives:
+1. `cd test/visual && node build.mjs && node shoot.mjs` (needs `npm ci` there
+   once; Chromium is pre-installed in the web container).
+2. Read `report.json` — a `missing` entry means the scenario rendered a LOADER,
+   not the real view. Add the fixture before trusting that screenshot.
+3. Actually OPEN the 20 PNGs. Compare light vs dark and wide vs compact vs
+   mobile for the same scenario; that pairing is what surfaces theme and
+   breakpoint defects.
+4. Re-shoot after ANY change to `styles*.html`, `styles_design_tokens.html`, or
+   a view partial's CSS, and verify the fix by MEASURING the new render. V-9
+   (cycle 12) and A2/FO-3 (cycle 13) were each wrong on the first reasoned
+   attempt and right only after measurement.
+
+**Split findings by what you can actually verify** — structural facts (a missing
+breakpoint, a roleless control, a token that resolves wrong) are findings;
+appearance judgements are OPERATOR VISUAL CHECKS written as Regression
+Scenarios. Never report "this looks cramped" as a finding.
+
+**The harness is NOT in CI** (it needs Chromium and human eyes), so nothing
+enforces this except this entry.
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -5887,8 +5943,9 @@ S72 | Coverage planner (#3) | Subsystem: Server, Client (Time Clock views)
   Expected: `getCoveragePlan` is manager-gated, read-only, range-capped (1–14 days), PHI-free (names + schedule + PTO status). Per-tz shifts (v1). The hourly distinct-rep math matches the pure `coverageBucketHours_` (Node-pinned); every server string `esc()`'d. INV-127.
 
 ### Frozen Subsystems
-- Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
-- Bound form-generator reference (`incoming/form-generator/`) — the pre-port bound Apps Script the Intake module was rewritten from; kept on disk as porting reference only. Replaced by `web-app/intake/` + the Intake endpoint family (shipped). No unfreeze condition anticipated — delete-candidate once the operator confirms the port needs no further reference. Skipped by default; name it explicitly to audit.
+- **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.
+- **To consult them:** `git show 9586b29:incoming/form-generator/filterRecommendations.js` (or `git checkout 9586b29 -- incoming/form-generator` into a scratch worktree). Nothing needs unfreezing to read them.
+- The Frozen-Subsystem MECHANISM stays documented here for future use — a subsystem that is superseded but still on disk belongs in this section so audits skip it by default.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.

@@ -82,16 +82,15 @@ Script project synced via [clasp](https://github.com/google/clasp).
   `styles.html` and consumes the canonical design tokens directly —
   new tools should reach for these before adding tool-local
   variants.
-- **call-notes/** — Legacy Workspace Add-on scaffold; superseded by
-  the Call Notes module inside `web-app/`. Kept on disk for reference
-  during the transition. The Add-on path was abandoned because admin
-  policy on the org domain blocks Marketplace install without
-  ticket-driven allowlisting; the web-app pattern works today with
-  zero admin involvement.
+`web-app/` is the only project directory. The legacy Workspace Add-on
+scaffold and the pre-port bound `form-generator` script were deleted in
+cycle 13 — the Add-on path was abandoned because admin policy on the org
+domain blocks Marketplace install without ticket-driven allowlisting, and
+the form-generator port shipped. Both live in git history.
 
 ## Development
 
-From any project folder: `clasp pull` to sync down, `clasp push -f` to
+From `web-app/`: `clasp pull` to sync down, `clasp push -f` to
 deploy changes. After `clasp push`, cut a new deployment version in
 the Apps Script editor (Deploy → Manage deployments → Edit → Version:
 New version) so users see the change on next load.

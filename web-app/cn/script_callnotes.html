@@ -2530,10 +2530,10 @@ function cnRenderActiveForm_() {
         <div class="rail-card">
           <h4><span>Flags</span><span class="sub">categorize</span></h4>
           <div class="rail-flags" role="group" aria-label="Flag this note">
-            <button type="button" class="flag-btn action"   data-flag="action"   aria-label="Flag for action" title="Flag for action (follow-up)">${icon('flag', 12)}<span class="flag-lbl">Action</span></button>
-            <button type="button" class="flag-btn training" data-flag="training" aria-label="Flag for training" title="Flag for training (need clarification)">${icon('bulb', 12)}<span class="flag-lbl">Training</span></button>
-            <button type="button" class="flag-btn review"   data-flag="review"   aria-label="Review candidate" title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)}<span class="flag-lbl">Review</span></button>
-            <button type="button" class="flag-btn urgent"   data-flag="urgent"   aria-label="Mark urgent" title="Mark urgent">${icon('warning', 12)}<span class="flag-lbl">Urgent</span></button>
+            <button type="button" class="flag-btn action"   data-flag="action"   aria-pressed="false" aria-label="Flag for action" title="Flag for action (follow-up)">${icon('flag', 12)}<span class="flag-lbl">Action</span></button>
+            <button type="button" class="flag-btn training" data-flag="training" aria-pressed="false" aria-label="Flag for training" title="Flag for training (need clarification)">${icon('bulb', 12)}<span class="flag-lbl">Training</span></button>
+            <button type="button" class="flag-btn review"   data-flag="review"   aria-pressed="false" aria-label="Review candidate" title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)}<span class="flag-lbl">Review</span></button>
+            <button type="button" class="flag-btn urgent"   data-flag="urgent"   aria-pressed="false" aria-label="Mark urgent" title="Mark urgent">${icon('warning', 12)}<span class="flag-lbl">Urgent</span></button>
           </div>
         </div>
 
@@ -2994,7 +2994,11 @@ function cnSetFormFlags_(form, flagsArray) {
   form.dataset.flag = primary;
   // Sync button .on classes
   form.querySelectorAll('.flag-btn[data-flag]').forEach(function (b) {
-    b.classList.toggle('on', filtered.indexOf(b.dataset.flag) >= 0);
+    // A11 rule: the class is invisible to assistive tech — keep aria-pressed
+    // in step so a screen reader is told which flags are selected.
+    const on = filtered.indexOf(b.dataset.flag) >= 0;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   // Training-q row visibility — show when training is one of the selected flags
   const trainingRow = document.getElementById('cn-training-q-row');
@@ -6290,7 +6294,7 @@ function cnRenderManageView(area) {
     <div id="cn-mgr-action-badge" style="margin-bottom:10px"></div>
     ${exportBtnRow}
     <div class="toolbar-tabs" role="group" aria-label="Manager queue" style="margin-bottom:14px">
-      <button class="toolbar-tab active" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
+      <button class="toolbar-tab active" aria-current="page" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
       <button class="toolbar-tab" data-mqueue="review" onclick="cnMgrLoadQueue_('review')">Review Candidates</button>
       <button class="toolbar-tab" data-mqueue="rep" onclick="cnMgrLoadRepView_()">Per-Rep View</button>
       <button class="toolbar-tab" data-mqueue="stats" onclick="cnMgrLoadStatsView_()">Stats</button>
@@ -6359,7 +6363,10 @@ function cnOpenExportModal_() {
 
 function cnMgrLoadQueue_(kind) {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.mqueue === kind);
+    const on = b.dataset.mqueue === kind;
+      b.classList.toggle('active', on);
+      // A11 rule: expose the active sub-tab, don't just paint it.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
   if (host) host.innerHTML = loSkeleton(4);
@@ -6393,7 +6400,10 @@ function cnMgrLoadQueue_(kind) {
 
 function cnMgrLoadRepView_() {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.mqueue === 'rep');
+    const on = b.dataset.mqueue === 'rep';
+      b.classList.toggle('active', on);
+      // A11 rule: expose the active sub-tab, don't just paint it.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
   if (!host) return;
@@ -6748,7 +6758,10 @@ function cnMgrRenderQueue_(host, results) {
 
 function cnMgrLoadStatsView_() {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.mqueue === 'stats');
+    const on = b.dataset.mqueue === 'stats';
+      b.classList.toggle('active', on);
+      // A11 rule: expose the active sub-tab, don't just paint it.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
   if (!host) return;
@@ -6882,7 +6895,10 @@ function cnStatsDrillDown_(repId) {
 
 function cnMgrLoadSearchView_() {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.mqueue === 'search');
+    const on = b.dataset.mqueue === 'search';
+      b.classList.toggle('active', on);
+      // A11 rule: expose the active sub-tab, don't just paint it.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
   if (!host) return;
@@ -7584,7 +7600,8 @@ function enterCallNotesAdminView(area) {
   // route the existing slots into show/hide panes.
   var tab = function (key, label) {
     return '<button class="toolbar-tab' + (CN_STATE.adminTab === key ? ' active' : '') +
-      '" data-admin-tab="' + key + '" onclick="cnAdminTab_(\'' + key + '\')">' + label + '</button>';
+      '" data-admin-tab="' + key + '"' + (CN_STATE.adminTab === key ? ' aria-current="page"' : '') +   // A11
+      ' onclick="cnAdminTab_(\'' + key + '\')">' + label + '</button>';
   };
   if (!CN_STATE.adminTab) CN_STATE.adminTab = 'overview';
   var paneStyle = function (key) { return CN_STATE.adminTab === key ? '' : 'display:none'; };
@@ -7838,7 +7855,9 @@ function cnRenderDeployReadinessHtml_(res) {
 function cnAdminTab_(key) {
   CN_STATE.adminTab = key;
   document.querySelectorAll('.cn-admin-tabs .toolbar-tab').forEach(function (b) {
-    b.classList.toggle('active', b.getAttribute('data-admin-tab') === key);
+    const on = b.getAttribute('data-admin-tab') === key;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');   // A11
   });
   document.querySelectorAll('.cn-admin-pane').forEach(function (p) {
     p.style.display = (p.getAttribute('data-pane') === key) ? '' : 'none';
