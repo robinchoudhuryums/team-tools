@@ -4567,9 +4567,12 @@ test('F5: a failed note-count read is reported, never rendered as a confident ze
   assert.ok(/unavailable: true/.test(helper), 'the catch reports unavailable instead of a bare 0');
   assert.ok(/unenrolled/.test(helper),
     'an unenrolled rep (INV-35) is distinguished from a FAILED read — only the latter is an error');
-  const wrapper = extractRawFunction('Code.js', 'countCallNotesInRange_');
-  assert.ok(/cnCountNotesResult_\(emp, from, to\)\.count/.test(wrapper),
-    'the numeric helper delegates — one read path, so the two can never diverge');
+  // A4 (cycle 13): this used to assert the `countCallNotesInRange_` wrapper
+  // DELEGATED to the helper. That wrapper is gone — it had no production
+  // callers, so keeping it preserved the 0-on-error shape under the obvious
+  // name. There is now exactly ONE count path by construction, which is a
+  // stronger guarantee than the delegation check it replaces; the A4 pin below
+  // keeps the wrapper from coming back.
   // Every surface that turns the count into user-facing coverage must null the
   // percentage and flag the round.
   ['getDashboardMetrics', 'getMyMetrics', 'getMyMetricsRange', 'getTeamMetrics'].forEach((fn) => {
@@ -4733,7 +4736,12 @@ test('F14: every column-L read goes through cnEnrolledSheetId_ (no raw truthines
 test('F3-sibling: archiveOldCallNotes bounds the whole run, not just one rep', () => {
   const src = extractRawFunction('Code.js', 'archiveOldCallNotes');
   assert.ok(/CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN/.test(src), 'a per-run budget exists');
-  assert.ok(/if \(budget <= 0\) break;/.test(src),
+  // A4/A9 (cycle 13): matched `if (budget <= 0) break;` literally until A9 gave
+  // the guard a body (it now records whether an ENROLLED rep was left unvisited,
+  // so a clean final run stops stamping hitPerRunCap). The invariant being
+  // guarded is unchanged: the REP LOOP — not just the per-rep mover — stops when
+  // the shared budget is spent.
+  assert.ok(/if \(budget <= 0\) \{?[\s\S]{0,260}?break;/.test(src),
     'the REP LOOP stops when the budget is spent — a per-rep cap would not bound ' +
     'a walk that calls the mover once per rep inside one execution + one lock');
   assert.ok(/budget -= moved/.test(src), 'the budget is shared across reps, not reset per rep');
@@ -5103,6 +5111,74 @@ test('A2: compact-mode grid overrides have a matching viewport breakpoint', () =
   const c = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
   assert.ok(/@media \(max-width: 540px\) \{ \.coach-kpis \{ grid-template-columns:repeat\(2, 1fr\); \} \}/.test(c),
     '.coach-kpis goes 2x2 at a narrow viewport');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-13 batch 2 pins.
+console.log('\ncycle 13 — A4 / A6 / A8 / A9 fix pins');
+
+// A4: cycle-12 F5 replaced the 0-on-error count helper with the
+// outcome-carrying cnCountNotesResult_ but kept the old wrapper "for the
+// callers that only want the number". There were none — only its own two tests,
+// which ASSERTED it returns 0 on an unreadable Sheet, i.e. pinned the exact
+// behaviour F5 removed and kept the unsafe variant alive under the obvious name.
+test('A4: the 0-on-error count wrapper is gone; only the outcome-carrying helper remains', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.ok(code.indexOf('function countCallNotesInRange_(') < 0,
+    'countCallNotesInRange_ must not be re-introduced — use cnCountNotesResult_(…).count ' +
+    'and decide what to do with .unavailable');
+  assert.ok(/function cnCountNotesResult_\(/.test(code), 'cnCountNotesResult_ is the surviving helper');
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  // Comments explaining the removal are fine; a CALL is not.
+  const calls = tests.split('\n').filter((l) =>
+    /countCallNotesInRange_\s*\(/.test(l) && !/^\s*(\/\/|\*)/.test(l.trim()));
+  assert.deepStrictEqual(calls, [], 'Tests.js still calls the removed wrapper:\n  ' + calls.join('\n  '));
+});
+
+// A6: the ONE RPC in the KB partial with no withFailureHandler, whose success
+// path ALSO opened `if (!res || res.error) return;`. It refreshes the tree after
+// a save/delete, so both paths silently left the admin looking at a stale list.
+test('A6: kbReloadTree_ surfaces a failed refresh instead of returning silently', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const fn = kb.slice(kb.indexOf('function kbReloadTree_('));
+  const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
+  assert.ok(/withFailureHandler/.test(body), 'kbReloadTree_ has a failure handler');
+  assert.ok(!/if \(!res \|\| res\.error\) return;/.test(body),
+    'the success path must not bare-return on a server error');
+  assert.ok((body.match(/showToast|stale\(/g) || []).length >= 2,
+    'BOTH paths (RPC failure and res.error) surface something to the user');
+  // Every RPC in this partial now has a failure handler.
+  const runs = (kb.match(/google\.script\.run/g) || []).length;
+  const fails = (kb.match(/withFailureHandler/g) || []).length;
+  assert.ok(fails >= runs, `every KB RPC has a failure handler (${runs} calls, ${fails} handlers)`);
+});
+
+// A8: the F5 class one surface over — a failed TimeOffRequests read reported as
+// "nothing planned". Latent today (no consumer), fixed so a future reader does
+// not inherit the confident zero.
+test('A8: getUpcomingAnnualPlanned_ returns null, not 0, on a failed read', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const fn = code.slice(code.indexOf('function getUpcomingAnnualPlanned_('));
+  const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
+  assert.ok(!/catch \(e\) \{ return 0; \}/.test(body),
+    'the bare `catch { return 0 }` must not come back — it makes a failed read ' +
+    'indistinguishable from "nothing planned"');
+  assert.ok(/catch[\s\S]{0,160}?return null;/.test(body), 'the catch returns null');
+});
+
+// A9: `budget <= 0` also fires when the LAST rep consumed exactly the remaining
+// rows and nothing was left — so a clean final run stamped hitPerRunCap and an
+// operator watching a backlog drain could not tell it had finished.
+test('A9: the CN archive stamps hitPerRunCap only when work actually remained', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const fn = code.slice(code.indexOf('function archiveOldCallNotes('));
+  const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
+  assert.ok(!/const capped = budget <= 0 \?/.test(body),
+    'the stamp must not key off `budget <= 0` — that fires on a clean final run too');
+  assert.ok(/const capped = truncated\s*\n?\s*\?/.test(body), 'the stamp keys off `truncated`');
+  // `truncated` is only set when an ENROLLED rep remained unvisited.
+  assert.ok(/if \(budget <= 0\) \{[\s\S]{0,220}?cnEnrolledSheetId_\(roster\[k\]\)[\s\S]{0,80}?truncated = true;/.test(body),
+    'truncated is set only when a remaining rep is actually enrolled');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

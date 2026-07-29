@@ -705,7 +705,20 @@ function getEmployeeState() {
 
 /** Sum of future-dated PENDING annual-bucket leave days for an employee.
  *  Approved future PTO is already deducted from the balance on approval, so
- *  only pending requests are "planned but not yet reflected" (the amber pips). */
+ *  only pending requests are "planned but not yet reflected" (the amber pips).
+ *
+ *  A8 (cycle 13): returns NULL — not 0 — when the read fails. The bare
+ *  `catch { return 0 }` made "the TimeOffRequests read failed" indistinguishable
+ *  from "you have nothing planned" — the F5 class one surface over.
+ *  HONESTY NOTE: this is currently a LATENT fix, not a user-visible one. The
+ *  only consumer of `annualPlannedUpcoming` was `renderPtoMini_`, removed in
+ *  cycle 8 when the Dashboard redesign relocated Annual PTO to the Time/PTO
+ *  tab — and that tile computes its own pending-planned total client-side from
+ *  `data.allRequests` (INV-72). So the field ships on `getEmployeeState` with
+ *  nobody reading it. Fixed anyway because the shape is wrong and a future
+ *  reader would inherit the confident zero; the DEAD FIELD itself is a separate
+ *  question (removing it is a response-shape change) and is recorded as a
+ *  follow-on, not done here. */
 function getUpcomingAnnualPlanned_(empId, todayIso) {
   try {
     const rows = getOrCreateTimeOffSheet_().getDataRange().getValues();
@@ -720,7 +733,10 @@ function getUpcomingAnnualPlanned_(empId, todayIso) {
       if (ded && ded.bucket === 'annual') days += ded.days;
     }
     return days;
-  } catch (e) { return 0; }
+  } catch (e) {
+    console.warn('getUpcomingAnnualPlanned_ failed for ' + empId + ': ' + e.message);
+    return null;
+  }
 }
 
 function recordPunch(punchType, custom) {
@@ -8780,9 +8796,26 @@ function archiveOldCallNotes() {
     // 6-minute ceiling re-appended everything it had not deleted, duplicating
     // PHI into the cold archive night after night.
     let budget = CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN;
+    // A9 (cycle 13): report the cap as hit only when it actually TRUNCATED the
+    // run — i.e. the budget ran out while reps still had work. `budget <= 0`
+    // alone also fires when the last rep's move consumed exactly the remaining
+    // rows and nothing was left to do, so a CLEAN final run stamped
+    // `hitPerRunCap=2000` and an operator watching a first-enable backlog drain
+    // (INV-153's documented "expect several nights of capped runs") had no way
+    // to tell that it had finished.
+    // Residual (accepted): a remaining enrolled rep might itself have had no
+    // archivable notes, so this can still over-report by one run at the very
+    // end of a drain. It can no longer over-report on a run that visited every
+    // rep, which is the case an operator actually watches.
+    let truncated = false;
     try {
       for (let r = 1; r < roster.length; r++) {
-        if (budget <= 0) break;
+        if (budget <= 0) {
+          for (let k = r; k < roster.length; k++) {
+            if (cnEnrolledSheetId_(roster[k])) { truncated = true; break; }
+          }
+          break;
+        }
         const sheetId = cnEnrolledSheetId_(roster[r]);
         if (!sheetId) continue;
         const emp = {
@@ -8803,7 +8836,10 @@ function archiveOldCallNotes() {
     } finally {
       lock.releaseLock();
     }
-    const capped = budget <= 0 ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN}` : '';
+    // A9: `truncated`, not `budget <= 0` — see the loop above. Wording matches
+    // the Timesheet twin so both audit trails read the same way.
+    const capped = truncated
+      ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : '';
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
       `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}`);
     Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
@@ -13671,17 +13707,25 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     ? Math.round((noteCount / answeredCalls) * 100) : null;
 }
 
-/** Counts a rep's call notes whose DateLocal falls in [from, to] inclusive.
+// A4 (cycle 13) — `countCallNotesInRange_` was REMOVED. Cycle 12's F5 replaced
+// it with the outcome-carrying `cnCountNotesResult_` below and kept it as "a
+// thin numeric wrapper for the callers that only want the number" — but a
+// repo-wide search found NO such callers; the only references left were its own
+// two tests, which asserted it returns 0 on an unreadable Sheet. That left the
+// silently-degrading variant alive under the most obvious name, pinned by tests
+// that enshrined the very behaviour F5 existed to remove, waiting for the next
+// author to reach for it. Anything that needs the number takes
+// `cnCountNotesResult_(emp, from, to).count` and decides what to do with
+// `.unavailable` — which is the whole point.
+
+/** Counts a rep's call notes whose DateLocal falls in [from, to] inclusive,
+ *  WITH the read outcome attached: { count, unavailable, unenrolled }.
  *  Centralizes the normalizeDate_ read so the Metrics note-count can never
  *  diverge again (see the CN.DATE_LOCAL gotcha — a raw String() read silently
- *  misses every row because Sheets coerces the column to a Date). Returns 0
- *  when the rep has no Sheet configured or it's unreachable. The `emp` arg
- *  only needs { id, name, callNotesSheetId } for getCallNotesSheet_. */
-function countCallNotesInRange_(emp, from, to) {
-  return cnCountNotesResult_(emp, from, to).count;
-}
-
-/** Cycle-12 F5 — the same count, but with the READ OUTCOME attached:
+ *  misses every row because Sheets coerces the column to a Date). The `emp` arg
+ *  only needs { id, name, callNotesSheetId } for getCallNotesSheet_.
+ *
+ *  Cycle-12 F5 — the read OUTCOME is the reason this shape exists:
  *  { count, unavailable }. `unavailable:true` means the rep's Sheet could not
  *  be read (missing / unshared / transient Sheets failure), which is NOT the
  *  same fact as "they logged zero notes" — the bare `return 0` catch made the

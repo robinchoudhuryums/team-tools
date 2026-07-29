@@ -1294,12 +1294,27 @@ function kbShowConvertWarnings_(warnings) {
   w.slice(0, 3).forEach(function (msg) { showToast(msg, 'toast-warn'); });
 }
 
+/** A6 (cycle 13) — this used to swallow BOTH failure paths: it carried no
+ *  withFailureHandler (the only RPC in this partial without one, 29 of 30 had
+ *  it) and its success path opened `if (!res || res.error) return;`. It runs
+ *  after a save/delete/publish/revert to refresh the tree, so a failed refresh
+ *  left the admin looking at a tree that did NOT show the item they had just
+ *  saved — or still showed one they had just deleted — with no signal at all.
+ *  The natural response to that is to save again. The write itself already
+ *  succeeded, so the toast says exactly that: the change landed, the list is
+ *  stale, reload to see it. */
 function kbReloadTree_() {
+  var stale = function (msg) {
+    showToast((msg || 'Could not refresh the Reference list') +
+      ' — your change was saved, but this list is out of date. Reload to see it.', 'toast-warn');
+  };
   google.script.run.withSuccessHandler(function (res) {
-    if (!res || res.error) return;
+    if (!res || res.error) { stale(res && res.error); return; }
     KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager; KB_STATE.isAdmin = !!res.isAdmin;
     var si = document.getElementById('kb-search');
     if (si && si.value.trim().length >= 2) kbDoSearch_(si.value); else kbRenderTree_();
+  }).withFailureHandler(function (err) {
+    stale(err && err.message);
   }).getReferenceTree();
 }
 

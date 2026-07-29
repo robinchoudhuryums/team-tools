@@ -831,8 +831,15 @@ this section before touching the relevant area.
   a **"File N missing"** CTA where N was every answered call, telling a rep to
   redo work they had already filed. Use the outcome-carrying
   **`cnCountNotesResult_(emp, from, to)` → `{count, unavailable, unenrolled}`**
-  for anything user-facing; `countCallNotesInRange_` is now a thin numeric
-  wrapper kept for the callers that only want the number. `unenrolled` (no
+  for anything user-facing. **`countCallNotesInRange_` NO LONGER EXISTS (A4,
+  cycle 13).** F5 kept it as "a thin numeric wrapper for the callers that only
+  want the number", but there were none — the sole remaining references were its
+  own two tests, which ASSERTED it returns 0 on an unreadable Sheet. That left
+  the silently-degrading variant alive under the most obvious name, pinned by
+  tests enshrining the exact behaviour F5 existed to remove, waiting for the
+  next author to reach for it. There is now ONE count path by construction; take
+  `.count` off the result and decide what to do with `.unavailable`, which is
+  the whole point. `unenrolled` (no
   Sheet configured, INV-35) is deliberately DISTINCT from `unavailable` (the
   Sheet exists but could not be read) — only the latter is an error. Every
   coverage surface nulls `noteCoverage` and sets `noteCountUnavailable` /
@@ -2588,17 +2595,19 @@ this section before touching the relevant area.
 - **Note coverage + count have a single source of truth.**
   `cnNoteCoverage_(noteCount, answeredCalls)` (whole-number percent,
   or null when there's no answered-call denominator) and
-  `countCallNotesInRange_(emp, from, to)` (date-normalized note count)
+  `cnCountNotesResult_(emp, from, to)` → `{count, unavailable, unenrolled}`
+  (date-normalized note count WITH the read outcome; A4 removed the numeric-only
+  `countCallNotesInRange_` wrapper — see the gotcha above)
   are used by `getMyMetrics`, `getTeamMetrics` (per-rep + team
   totals), and `managerGetShiftStats`. They exist so the three
   callsites can't drift apart — the F1 regression (raw
   `String(CN.DATE_LOCAL)` reads silently returning 0 coverage)
   happened because the count was duplicated inline. New Metrics /
   Stats surfaces must reuse these helpers rather than re-deriving the
-  ratio; `countCallNotesInRange_` honors the `CN.DATE_LOCAL`
+  ratio; `cnCountNotesResult_` honors the `CN.DATE_LOCAL`
   normalize gotcha. Same maintenance discipline as `CN_EMAIL_PALETTE`
   and `LEAVE_DEDUCTION_CLIENT`. Both helpers use bounded reads instead
-  of pulling each rep's full history: `countCallNotesInRange_` reads
+  of pulling each rep's full history: `cnCountNotesResult_` reads
   only the DateLocal column (~16x fewer cells), and
   `managerGetShiftStats` reads just the requested date's contiguous
   row slice — both rely on notes being appended in DateLocal order,
@@ -3770,10 +3779,14 @@ manually for a fresh deploy or environment:
   single `clasp push -f` + New version. The redesign record (per-commit
   scope, before/after) is
   `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
-- **Cycle 13 batch 1 (A1/A2/A3/A11/A12) adds NO new operator state** — no new
-  Script Properties, no new triggers, no migrations, and no new CONFIG
-  constants. It is markup/CSS/ARIA plus one server-helper contract change, so
-  it deploys with the normal single `clasp push -f` + New version.
+- **Cycle 13 batches 1–2 add NO new operator state** — no new Script
+  Properties, no new triggers, no migrations, and no new CONFIG
+  constants. Batch 2 (A4/A6/A8/A9) is server-helper + client-toast only; its one
+  operator-visible effect is that the nightly `CallNotesArchive` audit row now
+  stamps `hitPerRunCap` ONLY when an enrolled rep was left unvisited, so a clean
+  final run of a draining backlog no longer reads as "still capped" (A9).
+  Batch 1 is markup/CSS/ARIA plus one server-helper contract change. Both
+  deploy with the normal single `clasp push -f` + New version.
   **Post-deploy: run `runAllTests()`** — `timeToMins_nullOnUnparseable` executes
   only in the editor, alongside cycle 12's still-unrun
   `cn_enrolledSheetId_trimsAndNullGuards` and `cn_appendBounded_capsAndRollsBack`.
@@ -4875,7 +4888,10 @@ addition is the F16 failure path driven in a real jsdom window). **Cycle 13
 (every compact grid override has a matching viewport breakpoint), A3 (two:
 `timeToMins_`/`calcHours_` behavioural + the caller-shape scan), A11 (nav +
 toggles expose ARIA state), A12 (no failure renders into an empty-state
-container) — putting the pure harness at 362, DOM unchanged at 66.** Two of
+container) — putting the pure harness at 362, DOM unchanged at 66. Batch 2
+added four more (A4 the removed 0-on-error wrapper stays removed, A6
+`kbReloadTree_` surfaces both failure paths, A8 null-not-0, A9 the archive
+stamps `hitPerRunCap` only on a genuinely truncated run) → 366.** Two of
 those six did NOT bite on the first attempt and were tightened: the A1 scan was
 line-by-line and missed multi-line markup (it now scans the whole source, where
 `[^>]` matches newlines), and the A3 input list held only no-colon cases, all
@@ -4891,7 +4907,8 @@ omnibus gate cases) ≈ 297, +2 cycle-11 (updateTimeOff_dupApproveRejected;
 rejectsBadDate horizon cases) ≈ 299, +cycle-12: assertions folded into the
 existing `archiveSheetRowsOlderThan_behavioral` (a maxRows case proving bounded
 AND monotonic progress), `test_sheetDoctor_detectsAndCollapsesDuplicates` and
-the `countCallNotesInRange_` smoke test, PLUS two new smoke tests for the
+the `cnCountNotesResult_` smoke tests (renamed from `countCallNotesInRange_*`
+by cycle-13 A4), PLUS two new smoke tests for the
 cycle-12 pure helpers (`cn_enrolledSheetId_trimsAndNullGuards`,
 `cn_appendBounded_capsAndRollsBack`) ≈ 301, +1 cycle-13
 (`timeToMins_nullOnUnparseable`) ≈ 302. Use

@@ -14,12 +14,12 @@ Updated: 2026-07-29
 - Cycle 13's broad scan is COMPLETE (3 stages). It found 0 Critical / 0 High /
   6 Medium / 7 Low, with the interface lens producing the top four findings —
   the second cycle running in which that lens outscored the code lens.
-- Batch 1 (A1, A2, A3, A11, A12) is IMPLEMENTED on branch
-  `claude/broad-scan-yhkbe2`. Not committed, not pushed, not deployed.
-- The verbatim summary block is at
-  `.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md`.
-- Next concrete step: commit + push this batch, then decide whether to run the
-  remaining batches (2–4 below) this cycle or close it here.
+- Batches 1 and 2 are IMPLEMENTED, committed and pushed to
+  `claude/broad-scan-yhkbe2`; /sync-docs ran between them. Not deployed.
+- Verbatim summary blocks are at `.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md`
+  and `.cycle/blocks/13-A4-A6-A8-A9-broad-implement.md`.
+- Next concrete step: run batch 3 (A5, A7, A10), or close the cycle with
+  /reflect.
 
 ## Completed this cycle
 - A1  | metrics/, tc/script_clock.html, tc/script_manager.html, intake/, cn/ | six click-only span/div controls → <button type="button"> with a pixel-identical CSS reset
@@ -28,22 +28,29 @@ Updated: 2026-07-29
 - A11 | script_core.html, tc/, train/script_coaching.html, cn/ | aria-current on both nav levels, aria-pressed on the period switcher, role=tab/aria-selected on the Coaching toggle, aria-expanded on two disclosures
 - A12 | metrics/, train/script_training.html, train/script_empdocs.html | 16 load-failure sites routed from empty-state containers to errorStateHtml_
 - Tests | test/client/run.js (+6 pins, 356→362, all bite-checked), Tests.js (+1 editor smoke test)
+- /sync-docs | CLAUDE.md, PROJECT_HEALTH.md | 4 checks run; 2 new gotchas, 2 decisions updated, counts corrected, INV-173..176 added (172→176)
+- A4  | Code.js, Tests.js, CLAUDE.md | DELETED countCallNotesInRange_ (no production callers; its 2 tests pinned the 0-on-error shape F5 removed) — both repointed to cnCountNotesResult_
+- A6  | kb/script_kb.html | kbReloadTree_ surfaces BOTH failure paths (it was the one KB RPC with no withFailureHandler AND a bare `return` on res.error)
+- A8  | Code.js | getUpcomingAnnualPlanned_ returns null not 0 on a failed read (LATENT — the field has no client reader since cycle 8; scan over-claimed)
+- A9  | Code.js | the CallNotesArchive audit row stamps hitPerRunCap only when an enrolled rep was left unvisited, not on a clean final run
+- Tests | test/client/run.js (+4 batch-2 pins, 362→366, all bite-checked; 2 cycle-12 pins updated as part of the fix and re-bite-checked)
 
 ## Pending / not yet done
-- **Commit + push batch 1.** Nothing from cycle 13 is committed yet.
 - **CARRIED FROM CYCLE 12 — the operator deploy is still UNCONFIRMED**, and now
-  also carries this batch and cycle 11's never-separately-deployed visual batch:
+  also carries cycle 13 batches 1–2 and cycle 11's never-separately-deployed
+  visual batch:
   1. `cd web-app && clasp push -f`
   2. Apps Script editor → Deploy → Manage deployments → Edit → Version:
      **New version** → Deploy
-  3. Run `runAllTests()` in the editor — three smoke tests execute ONLY there:
-     cycle 13's `timeToMins_nullOnUnparseable` plus cycle 12's still-unrun
+  3. Run `runAllTests()` in the editor — these execute ONLY there: cycle 13's
+     `timeToMins_nullOnUnparseable` and the two renamed
+     `metrics_cnCountNotesResult_*` tests, plus cycle 12's still-unrun
      `cn_enrolledSheetId_trimsAndNullGuards` and `cn_appendBounded_capsAndRollsBack`.
 - Remaining cycle-13 findings, batched for a follow-up /broad-implement:
-  - Batch 2 (silent degradation + docs, ~2.5–4h): A4, A6, A8, A9
   - Batch 3 (robustness + operator safety, ~3–5h): A5, A7, A10
   - Batch 4 (interface completeness, ~½–1 day): A13
-- /sync-docs is needed — see the DOCUMENTATION UPDATES NEEDED section of the block.
+- /sync-docs has RUN (commit adb2ee7) and batch 2 applied its own deferred edit.
+  No documentation work is outstanding.
 
 ## Open follow-on items
 - A11 correction: the CN composer tabs already carried role="tab" + aria-selected;
@@ -59,8 +66,11 @@ Updated: 2026-07-29
   is "null" — so any future `_assertEq(x, null)` is blind to a NaN regression.
   Cycle 13's editor test uses strict `=== null` instead. A general fix (make
   _assertEq distinguish them) is unclaimed.
-- Carried from cycle 12: `getSpanishInboxStats.pendingList` is a dead field
-  (no client reads it); the other TimesheetArchive readers
+- TWO dead response fields now, worth one small batch that clears both:
+  `getEmployeeState.annualPlannedUpcoming` (found in batch 2 — its only reader,
+  renderPtoMini_, was removed in cycle 8) and, carried from cycle 12,
+  `getSpanishInboxStats.pendingList`. Both are response-shape changes.
+- Carried from cycle 12: the other TimesheetArchive readers
   (buildTimesheetForEmployee_, getPunctualityReport, tsDoctorScan_) are still
   live-tab-only.
 
@@ -77,13 +87,23 @@ Updated: 2026-07-29
   go 2×2 at 540px, matching their existing compact geometry.
 - errorStateHtml_ call sites DROP the outer esc() — it escapes internally, so
   keeping esc() would double-escape.
-- Every new pin was bite-checked. Two failed to bite first time and were
-  tightened; that step is not optional and caught both.
+- Every new pin was bite-checked. Three failed to bite first time and were
+  tightened; that step is not optional and caught all three.
+- A4 DELETED the wrapper rather than keeping it with a comment: leaving a
+  0-on-error helper under the obvious name is what the finding was.
+- A8 was fixed even though it is LATENT (no client reads the field). The shape
+  was wrong and a future reader would inherit the confident zero; the dead field
+  itself is a separate, out-of-scope change.
+- When a fix breaks an existing pin, UPDATE the pin as part of the fix and
+  re-bite-check it — batch 2 broke two cycle-12 pins (F5's delegation clause,
+  F3-sibling's literal break match) and both were repaired deliberately, not
+  reactively.
 
 ## Where I left off
-Batch 1 (A1/A2/A3/A11/A12) is implemented, fully tested (362 pure + 66 DOM +
-20/20 visual, all green), and written up in
-`.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md` — but NOT committed. Commit
-and push to `claude/broad-scan-yhkbe2` first. Then either run batch 2 (A4, A6,
-A8, A9 — the silent-degradation + doc-drift set) or close the cycle with
-/reflect and /sync-docs.
+Batches 1 and 2 are implemented, tested (366 pure + 66 DOM + 20/20 visual, all
+green), documented, committed and pushed to `claude/broad-scan-yhkbe2`.
+/sync-docs is done and nothing doc-wise is outstanding. Next: either run
+batch 3 (A5 nightly self-test fails open, A7 export bails before the archive
+read-through, A10 four store reads inside the global lock) or close the cycle
+with /reflect. The operator deploy — still covering cycles 11, 12 and 13 — is
+the one thing blocking any of this from reaching users.
