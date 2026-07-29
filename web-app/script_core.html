@@ -807,9 +807,12 @@ function enterTool(toolKey, tabKey) {
     if (toolKey !== 'timeClock') enterTool('timeClock', 'clock');
     return;
   }
-  // Update sidebar/mobile-nav active state
+  // Update sidebar/mobile-nav active state. A11 (cycle 13): mirror it onto
+  // aria-current so the active TOOL is announced, not just painted.
   document.querySelectorAll('.sb-link[data-tool], .nav-btn[data-tool]').forEach(b => {
-    b.classList.toggle('active', b.dataset.tool === toolKey);
+    const on = b.dataset.tool === toolKey;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   // Swap the sidebar sub-label
   const lbl = document.getElementById('sb-tool-label');
@@ -951,9 +954,13 @@ function showView(view) {
   // always carry ?tool= and never read this key, so skipping the write
   // loses nothing.
   if (!COMPACT_MODE) { try { localStorage.setItem('umsLastView', view); } catch (e) {} }
-  // Tab bar active state
+  // Tab bar active state. A11 (cycle 13): `aria-current` rides alongside the
+  // `.active` class — the class alone is invisible to assistive tech, so a
+  // screen-reader user was never told which sub-tab they were on.
   document.querySelectorAll('.tt-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === view);
+    const on = b.dataset.tab === view;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const area = document.getElementById('view-area');
   if (!area) return;

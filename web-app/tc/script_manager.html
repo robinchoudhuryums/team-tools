@@ -19,7 +19,11 @@
   /* #3 / §5b — week heatmap (days × hours) replacing the stacked per-day strips */
   .cov-heat { display: grid; gap: 3px; align-items: center; margin: 6px 0 4px; }
   .cov-heat .ch-hr { font-family: var(--mono); font-size: 9px; color: var(--muted); text-align: center; }
-  .cov-day-lbl { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+  /* A1 (cycle 13): <button>, not <div> — expanding a day's rep detail had no
+     keyboard path. Reset keeps it visually identical to the div it replaced. */
+  .cov-day-lbl { appearance: none; -webkit-appearance: none; background: none; border: 0; padding: 0;
+    font-family: inherit; text-align: left;
+    font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; cursor: pointer; display: flex; align-items: center; gap: 5px; }
   .cov-day-lbl:hover { color: var(--accent); }
   .cov-day-lbl .chev { color: var(--muted-3); display: inline-flex; }
   .cov-day-lbl .hol { font-family: var(--mono); font-size: 9px; color: var(--warning-deep); }
@@ -129,8 +133,8 @@ function renderPtoReconCard_(res) {
     '</div>';
   }).join('');
   return '<div class="card" style="border-color:var(--danger)">' +
-    '<div class="card-label with-count"><span>PTO Balance Drift</span>' +
-      '<span class="count-pill danger">' + res.reps.length + '</span></div>' +
+    '<h2 class="card-label with-count"><span>PTO Balance Drift</span>' +
+      '<span class="count-pill danger">' + res.reps.length + '</span></h2>' +
     '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">These reps have more than one <em>approved</em> time-off row on the same date and were likely double-deducted (the H1 bug, now prevented for new requests). “Credit &amp; reconcile” credits the over-charge back and marks the duplicate rows reconciled (idempotent); or correct manually via Adjust.</div>' +
     rows +
   '</div>';
@@ -226,21 +230,21 @@ function renderSheetDoctorCard_(res) {
         ' inverted pair(s) — fix these, then re-run to see the rest.</div>'
     : '';
   return '<div class="card" style="border-color:var(--warn)">' +
-    '<div class="card-label with-count"><span>Timesheet Doctor</span>' +
-      '<span class="count-pill warn">' + total + '</span></div>' +
+    '<h2 class="card-label with-count"><span>Timesheet Doctor</span>' +
+      '<span class="count-pill warn">' + total + '</span></h2>' +
     '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Scan of the last ' +
       esc(String(res.windowDays)) + ' days. Duplicate rows predate the live sequence guard; ' +
       'collapsing keeps the latest row per punch (the row Day Edit already shows). ' +
       'Inverted in/out pairs are report-only — correct them via Day Edit.</div>' +
     truncNote +
-    (dups ? '<div class="card-label" style="margin:6px 0 2px">Duplicate punches</div>' + dups : '') +
+    (dups ? '<h2 class="card-label" style="margin:6px 0 2px">Duplicate punches</h2>' + dups : '') +
     (dupRows
       ? '<div style="margin:8px 0 4px"><button class="pending-btn pb-approve" onclick="fixSheetDoctorDups_(this)">' +
           icon('check', 14) + 'Collapse ' + willFix + ' duplicate row(s)' +
           (willFix < dupRows ? ' (of ' + dupRows + ' — re-run for the rest)' : '') +
           '</button></div>'
       : '') +
-    (invs ? '<div class="card-label" style="margin:10px 0 2px">Inverted in/out &amp; lunch pairs</div>' + invs : '') +
+    (invs ? '<h2 class="card-label" style="margin:10px 0 2px">Inverted in/out &amp; lunch pairs</h2>' + invs : '') +
   '</div>';
 }
 
@@ -305,8 +309,8 @@ function renderAdjustQueueCard_(requests) {
     '</div>';
   }).join('');
   return '<div class="card">' +
-    '<div class="card-label with-count"><span>Pending Punch Adjustments</span>' +
-      '<span class="count-pill warn">' + requests.length + '</span></div>' +
+    '<h2 class="card-label with-count"><span>Pending Punch Adjustments</span>' +
+      '<span class="count-pill warn">' + requests.length + '</span></h2>' +
     '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Employee-requested punch corrections. Approve writes the adjustment to the timesheet; deny discards it.</div>' +
     rows +
   '</div>';
@@ -580,21 +584,21 @@ function renderManagerView(area, data) {
     <div id="mgr-adjust-queue"></div>
 
     <div class="card">
-      <div class="card-label with-count">
+      <h2 class="card-label with-count">
         <span>Live Status</span>
         <span class="count-pill">${counts.clocked_in}/${totalEmp} in</span>
-      </div>
+      </h2>
       ${liveHtml}
     </div>
 
     <div class="card">
-      <div class="card-label with-count">
+      <h2 class="card-label with-count">
         <span>Pending Time Off</span>
         <span style="display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0">
           ${data.pending.length > 0 ? `<span class="count-pill ${data.pending.length>0?'warn':''}">${data.pending.length}</span>` : ''}
           <button class="refresh-btn" id="mgr-add-timeoff">${icon('plus', 12)}Add Time Off</button>
         </span>
-      </div>
+      </h2>
       ${data.pending.length > 1 ? `<div id="mgr-bulk-bar" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--paper-2)">
         <label style="display:flex;align-items:center;gap:6px;margin:0;font-size:12px;font-family:var(--ui);text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink);cursor:pointer">
           <input type="checkbox" id="mgr-select-all" style="width:auto;margin:0"> Select all
@@ -607,28 +611,28 @@ function renderManagerView(area, data) {
     </div>
 
     <div class="card">
-      <div class="card-label with-count">
+      <h2 class="card-label with-count">
         <span>Missed Clock-Outs · last ${data.missedLookbackDays}d</span>
         ${data.missedPunches.length > 0 ? `<span class="count-pill danger">${data.missedPunches.length}</span>` : ''}
-      </div>
+      </h2>
       ${missedHtml}
     </div>
 
     <div class="card">
-      <div class="card-label">Export ADP Upload</div>
+      <h2 class="card-label">Export ADP Upload</h2>
       <button class="export-btn-large" id="mgr-export">${icon('download', 16)}Generate ADP Export</button>
     </div>
 
     <div class="card">
-      <div class="card-label with-count">
+      <h2 class="card-label with-count">
         <span>Recent Punches · within ${data.mgrDeleteWindowDays}d to delete</span>
         ${recent.length > 0 ? `<span class="count-pill">${recent.length}</span>` : ''}
-      </div>
+      </h2>
       ${recentHtml}
     </div>
 
     <div class="card">
-      <div class="card-label">Recent Activity</div>
+      <h2 class="card-label">Recent Activity</h2>
       ${auditHtml}
       ${auditFootnote}
     </div>`;
@@ -1177,11 +1181,11 @@ function renderAnalyticsSection(data) {
   return `
     <div class="metric-grid" style="grid-template-columns:1fr 1fr;margin-bottom:0">
       <div class="card" style="margin-bottom:16px">
-        <div class="card-label">Punch Activity · last 7 days</div>
+        <h2 class="card-label">Punch Activity · last 7 days</h2>
         <div style="display:flex;align-items:flex-end;gap:2px;height:100px;padding:4px 0">${bars}</div>
       </div>
       <div class="card" style="margin-bottom:16px">
-        <div class="card-label">Time Off · this month</div>
+        <h2 class="card-label">Time Off · this month</h2>
         <div style="font-size:28px;font-weight:600;color:var(--ink);margin:12px 0 4px">${toTotal}</div>
         <div style="font-size:12px;color:var(--muted)">requests total</div>
         <div style="font-size:13px;margin-top:8px;display:flex;gap:12px">${toParts.join('')}</div>
@@ -1261,7 +1265,15 @@ function covLoad_() {
 // an understaffed risk callout. Per-day rep detail expands on clicking the day.
 var COV_HOUR_START = 6, COV_HOUR_END = 21;
 function covFmtHr_(h) { var hh = (h % 24); var ap = hh < 12 ? 'a' : 'p'; var h12 = hh % 12 || 12; return h12 + ap; }
-function covToggleDay_(id) { var el = document.getElementById(id); if (el) el.style.display = (el.style.display === 'none') ? '' : 'none'; }
+function covToggleDay_(id, btn) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var open = (el.style.display === 'none');
+  el.style.display = open ? '' : 'none';
+  // A11: mirror the open state onto the trigger. `btn` is optional so an older
+  // cached render (or a direct call) still toggles rather than throwing.
+  if (btn && btn.setAttribute) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
 
 function covRepsHtml_(day) {
   if (!day.reps || !day.reps.length) return '<div style="font-size:12px;color:var(--muted)">No reps scheduled.</div>';
@@ -1342,11 +1354,16 @@ function covRender_(data) {
     var byHour = {};
     (day.hours || []).forEach(function (x) { byHour[x.hour] = x; });
     var detailId = 'cov-d-' + di;
-    grid += '<div class="cov-day-lbl' + (day.closed ? ' is-closed' : '') + '" onclick="covToggleDay_(\'' + detailId + '\')">' +
+    // A1 + A11: a keyboard-reachable disclosure button. aria-expanded/-controls
+    // tell assistive tech whether this day's rep detail is open; covToggleDay_
+    // keeps the attribute in step.
+    grid += '<button type="button" class="cov-day-lbl' + (day.closed ? ' is-closed' : '') +
+      '" aria-expanded="false" aria-controls="' + detailId +
+      '" onclick="covToggleDay_(\'' + detailId + '\', this)">' +
       '<span class="chev">' + icon('chevronRight', 12) + '</span>' +
       esc(day.weekday.slice(0, 3)) + ' ' + esc(String(day.date).slice(5)) +
       (day.holidayName ? ' <span class="hol">' + esc(day.holidayName) + '</span>' : '') +
-      (day.closed ? ' <span class="cov-closed-tag">closed</span>' : '') + '</div>';
+      (day.closed ? ' <span class="cov-closed-tag">closed</span>' : '') + '</button>';
     hours.forEach(function (hr, hi) {
       var x = byHour[hr] || { confirmed: 0, tentative: 0 };
       var c = x.confirmed || 0, t = x.tentative || 0;
@@ -1367,11 +1384,11 @@ function covRender_(data) {
   grid += '</div>';
 
   var risk = risks.length
-    ? '<div class="panel cov-risk" data-tone="destructive"><div class="card-label">Understaffed slots</div>' +
+    ? '<div class="panel cov-risk" data-tone="destructive"><h2 class="card-label">Understaffed slots</h2>' +
         '<div class="cov-risk-list">' +
         risks.map(function (r) { return '<div class="cov-risk-item">' + r + '</div>'; }).join('') +
         '</div></div>'
-    : '<div class="panel cov-risk" data-tone="sage"><div class="card-label">Coverage</div>' +
+    : '<div class="panel cov-risk" data-tone="sage"><h2 class="card-label">Coverage</h2>' +
         '<div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) +
         ' All business hours meet the ' + esc(String(minStaff)) + '-rep minimum in this range.</div></div>';
 

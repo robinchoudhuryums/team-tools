@@ -1,12 +1,41 @@
 # Project Health — team-tools
 
 ## Current Standing
-**Cycle 12 (broad) closed 2026-07-27** — scanned, fully implemented across six
-batches, reflected, docs-synced, and merged (PR #143 → main, `3ad80d8`) in one
-session. **The operator deploy is the one piece still unconfirmed** (`clasp
-push -f` + New version + editor `runAllTests`); it also covers cycle 11's
-never-separately-deployed follow-up visual batch. Cycle 13 has not started.
-Seams & Invariants audit due in 2 more subsystem cycles (counter 2 of 4).
+**Cycle 14 (CDR sub-queue feature) IN PROGRESS — Phase 0 of 4 implemented.**
+Operator-requested feature work, not an audit cycle: departments with sub-queues
+had no way to view sub-queue detail separately or transparently. Approved design
+(2026-07-29): discovery first, MANAGER SURFACES ONLY — which drops the phase that
+could have defeated INV-124's N=3 anonymization — and expandable per-queue rows
+plus segmented contribution bars. **Phase 0 is a read-only queue inventory in
+Admin → Automation Health and it is a GATE**: the whole design rests on DQE
+carrying a row per (agent, queue, date), which this repo cannot verify (the CDR
+fixture writes one row per agent, and `CDR.QUEUE_EXT` had been declared-but-unread
+for years). Pushed as `5610f6f`; net 0 by design — a diagnostic, not a fix. Pure
+harness 375→379, all four pins bite-checked; DOM 66. Phases 1–4 unstarted.
+
+**Cycle 13 (broad) CLOSED 2026-07-29 — reflected net +8 (9 prod fixes − 1 new
+failure mode; 12 defensive).** The scan found 0 Critical / 0 High / 6 Medium /
+7 Low, with the interface lens producing the top four findings — the second
+cycle running in which it outscored the code lens. All five batches shipped
+(A1/A2/A3/A11/A12; A4/A6/A8/A9; A5/A7/A10 + FO-2..FO-5; the tripwire
+generalization + visual-stage doc + frozen-dir deletion; A13). Headliners: six
+keyboard-unreachable controls including one that marks the device in the
+clinical email actually sent; `metrics/script_metrics.html` carried ZERO media
+queries on a rep-facing tab; 16 load-failure sites rendered as "no data"; and no
+heading outline below `<h1>` on ~30 views. **The reflection corrected its own
+batch reports in two directions** — promoting eight interface fixes wrongly
+scored defensive, and counting one new failure mode the batches reported as zero
+— landing at the same net from a different composition. Most structurally
+significant: deriving the a11y scan list from `PARSE_GUARD_PARTIALS`, which
+immediately found eight defects the human audit missed. Should have been
+deferred: A8, hardened on a scan over-claim and deleted entirely one batch
+later. Pure 356→375, DOM 66, visual 20/20. Invariants 172→179.
+
+**The operator deploy remains unconfirmed and now covers cycles 11, 12, 13 and
+14 Phase 0** (`clasp push -f` + New version + editor `runAllTests`) — and for
+Phase 0 the deploy IS the deliverable, since the inventory is how it reports.
+A dev-project-only action is also outstanding: add `INSTANCE_IS_PROD=false`.
+Seams & Invariants audit due in 1 more subsystem cycle (counter 3 of 4).
 
 - **Cycle 8** (2026-07-10): net +14 (16 prod fixes − 2 deliberate fail-safe
   tradeoffs; 34 defensive). Headliners: the automated payroll export ran
@@ -98,6 +127,31 @@ PRs #118, #120–#123, all merged on green).
   Timezone Correctness 8 · Concurrency Safety 8.5 · Test Coverage 8 ·
   Code Clarity & Docs 8.5 · Apps Script Best Practices 9 · Manager UX 8 ·
   Employee UX 7.5 · Automation Reliability 7.5
+- **Cycle 13** (2026-07-29, broad): net **+8** (9 prod fixes − 1 Low fail-safe;
+  12 defensive, 0 features). 0 Critical / 0 High / 6 Medium / 7 Low; the
+  interface lens produced the top FOUR findings — the second consecutive cycle
+  it outscored the code lens, which is why a Visual Audit Stage is now a
+  standing requirement of `/broad-scan` (recorded in CLAUDE.md, since
+  `.claude/commands/` is template-synced and would be reverted). Headliners:
+  six click-only span/div controls with no keyboard path — one of them the
+  Intake star that marks the device in the clinical email actually SENT;
+  `metrics/script_metrics.html` with ZERO media queries on a rep-facing tab, so
+  the split never stacked on a phone; 16 load-failure sites rendering into the
+  designed EMPTY state, so a transient CDR outage read as a quiet day; and no
+  heading outline below `<h1>` on ~30 views, leaving heading navigation — an SR
+  user's primary movement mechanism — stopping at the page title. **The
+  reflection corrected its own implementation blocks in BOTH directions**
+  (promoting eight interface fixes wrongly scored defensive; counting one new
+  failure mode reported as zero), landing at the same net from a different
+  composition — read `13-a-reflect.md`, not the batch blocks. Most
+  structurally significant: deriving the a11y scan list from
+  `PARSE_GUARD_PARTIALS` instead of hand-listing six files, which immediately
+  surfaced eight live defects the audit had missed (the third time a
+  hand-copied scan set has been found short — now INV-179). Should have been
+  deferred: A8, hardened on a scan over-claim and deleted outright one batch
+  later. Also: 29 files across three frozen directories deleted. Pure 356→375
+  (19 pins, all bite-checked; 3 tightened after failing to bite), DOM 66,
+  visual 20/20, editor +1. Invariants 172→179.
 - **The cycle's defining failure class was Silent Degradation** — both Highs
   were detectors that could never fire: H-1 coaching-overdue (space-form stamp
   vs a T-only parser — the accountability digest NEVER nagged since Coaching

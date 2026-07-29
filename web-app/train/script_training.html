@@ -128,8 +128,10 @@
   .tr-card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card);
     padding: 14px 16px; margin-bottom: 18px; max-width: 100%; }
   .tr-card-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  /* A13 (cycle 13): an <h2>, not a span — margin:0 zeroes the UA h2 default so
+     the flex head row is pixel-identical. */
   .tr-card-title { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--muted); }
+    text-transform: uppercase; color: var(--muted); margin: 0; }
   .tr-card-badge { font-family: var(--mono); font-size: 11px; color: var(--muted);
     background: var(--paper-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; flex-shrink: 0; }
   .tr-empty-well { border: 1px dashed var(--line); border-radius: 10px; padding: 18px 16px;
@@ -189,7 +191,7 @@ function trainLoadMy_() {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
       var el = document.getElementById('tr-home-content');
-      if (el) el.innerHTML = '<div class="tr-empty">Could not load training: ' + esc((err && err.message) || err) + '</div>';
+      if (el) el.innerHTML = errorStateHtml_('Could not load training: ' + ((err && err.message) || err));   // A12
     })
     .getMyTraining();
 }
@@ -198,7 +200,7 @@ function trainRenderMy_() {
   var el = document.getElementById('tr-home-content');
   if (!el) return;
   var data = TRAIN_STATE.my || {};
-  if (data.error) { el.innerHTML = '<div class="tr-empty">' + esc(data.error) + '</div>'; return; }
+  if (data.error) { el.innerHTML = errorStateHtml_(data.error); return; }   // A12
   var items = data.items || [];
   if (!items.length) {
     el.innerHTML = '<div class="tr-empty">Nothing assigned right now — you’re all caught up.</div>';
@@ -318,7 +320,7 @@ function trainOpenReader_(itemId) {
     .withFailureHandler(function (err) {
       if (TRAIN_STATE.readerItemId !== itemId) return;
       var o = document.getElementById('train-reader-overlay');
-      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
+      if (o) o.querySelector('.body').innerHTML = errorStateHtml_((err && err.message) || err);   // A12
     })
     .getReferenceItem(itemId);
 }
@@ -327,7 +329,7 @@ function trainRenderReader_(item) {
   var overlay = document.getElementById('train-reader-overlay');
   if (!overlay) return;
   if (!item || item.error) {
-    overlay.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((item && item.error) || 'Not found.') + '</div>';
+    overlay.querySelector('.body').innerHTML = errorStateHtml_((item && item.error) || 'Not found.');   // A12
     return;
   }
   var body;
@@ -380,7 +382,7 @@ function trainOpenQuiz_(quizId) {
       if (TRAIN_STATE.quizTaking !== quizId) return;
       if (!quiz || quiz.error) {
         var o = document.getElementById('train-quiz-overlay');
-        if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((quiz && quiz.error) || 'Quiz not found.') + '</div>';
+        if (o) o.querySelector('.body').innerHTML = errorStateHtml_((quiz && quiz.error) || 'Quiz not found.');   // A12
         return;
       }
       TRAIN_STATE.quizDef = quiz;
@@ -389,7 +391,7 @@ function trainOpenQuiz_(quizId) {
     .withFailureHandler(function (err) {
       if (TRAIN_STATE.quizTaking !== quizId) return;
       var o = document.getElementById('train-quiz-overlay');
-      if (o) o.querySelector('.body').innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
+      if (o) o.querySelector('.body').innerHTML = errorStateHtml_((err && err.message) || err);   // A12
     })
     .getQuiz(quizId);
 }
@@ -528,7 +530,7 @@ function trainLoadMgr_() {
     failed = true;
     if (currentView !== requestedView) return;
     var el = document.getElementById('tr-mgr-content');
-    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc((err && err.message) || err) + '</div>';
+    if (el) el.innerHTML = errorStateHtml_('Could not load: ' + ((err && err.message) || err));   // A12
   }
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.dash = d; done(); }).withFailureHandler(onFail).getTrainingDashboard();
   google.script.run.withSuccessHandler(function (d) { TRAIN_STATE.kbTree = d; done(); }).withFailureHandler(onFail).getReferenceTree();
@@ -548,7 +550,7 @@ function trainRenderMgr_() {
   var el = document.getElementById('tr-mgr-content');
   if (!el) return;
   var dash = TRAIN_STATE.dash || {};
-  if (dash.error) { el.innerHTML = '<div class="tr-empty">' + esc(dash.error) + '</div>'; return; }
+  if (dash.error) { el.innerHTML = errorStateHtml_(dash.error); return; }   // A12
   var kbItems = (TRAIN_STATE.kbTree && TRAIN_STATE.kbTree.items) || [];
   var emps = (TRAIN_STATE.emps && TRAIN_STATE.emps.employees) || [];
 
@@ -620,7 +622,7 @@ function trainRenderMgr_() {
     });
     withCov.sort(function (a, b) { return a.pct - b.pct || a.r.name.localeCompare(b.r.name); });
 
-    h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Completion matrix</span>' +
+    h += '<div class="tr-card"><div class="tr-card-h"><h2 class="tr-card-title">Completion matrix</h2>' +
         '<span class="tr-card-badge">' + reps.length + ' rep · ' + N + ' item</span></div>' +
       '<div class="tr-legend">' +
         '<span><span class="sw" style="background:var(--accent)"></span>Done</span>' +
@@ -657,7 +659,7 @@ function trainRenderMgr_() {
   // Active assignments (revoke).
   var assigns = dash.assignments || [];
   if (assigns.length) {
-    h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Active assignments</span>' +
+    h += '<div class="tr-card"><div class="tr-card-h"><h2 class="tr-card-title">Active assignments</h2>' +
         '<span class="tr-card-badge">' + assigns.length + '</span></div>' +
       '<table class="tr-table"><thead><tr>' +
       '<th>Item</th><th>Assigned to</th><th>Due</th><th>Assigned</th><th></th></tr></thead><tbody>';
@@ -669,7 +671,7 @@ function trainRenderMgr_() {
     h += '</tbody></table></div>';
   }
   // Quizzes — authoring (T2).
-  h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Quizzes</span>' +
+  h += '<div class="tr-card"><div class="tr-card-h"><h2 class="tr-card-title">Quizzes</h2>' +
       (quizzes.length ? '<span class="tr-card-badge">' + quizzes.length + '</span>' : '') + '</div>';
   if (quizzes.length) {
     h += '<table class="tr-table"><thead><tr><th>Quiz</th><th>Questions</th><th>Pass</th><th>Linked item</th><th></th></tr></thead><tbody>';
@@ -692,11 +694,11 @@ function trainRenderMgr_() {
   var qa = (TRAIN_STATE.quizAnalytics && TRAIN_STATE.quizAnalytics.quizzes) || [];
   if (!qa.length && TRAIN_STATE.quizAnalytics && TRAIN_STATE.quizAnalytics.error) {
     // E12 — panel-level degradation: the rest of Team Training renders.
-    h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Quiz analytics</span></div>' +
-      '<div class="tr-empty" style="padding:10px">' + esc(TRAIN_STATE.quizAnalytics.error) + ' — re-enter the tab to retry.</div></div>';
+    h += '<div class="tr-card"><div class="tr-card-h"><h2 class="tr-card-title">Quiz analytics</h2></div>' +
+      errorStateHtml_(TRAIN_STATE.quizAnalytics.error + ' — re-enter the tab to retry.') + '</div>';   // A12
   }
   if (qa.length) {
-    h += '<div class="tr-card"><div class="tr-card-h"><span class="tr-card-title">Quiz analytics</span>' +
+    h += '<div class="tr-card"><div class="tr-card-h"><h2 class="tr-card-title">Quiz analytics</h2>' +
         '<span class="tr-card-badge">' + qa.length + '</span></div>' +
       '<table class="tr-table"><thead><tr><th>Quiz</th><th>Attempts</th><th>Passed</th><th>Pass rate</th><th>Avg score</th><th>Avg tries</th></tr></thead><tbody>';
     qa.forEach(function (q) {

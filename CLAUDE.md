@@ -63,8 +63,9 @@ Apps Script project under its own directory, synced via `clasp`.
      `mtRenderTable_` component, see Key Design Decisions).
      Backs the CDR Report spreadsheet (`CONFIG.CDR_SS_ID`).
    - **Intake** — patient-intake forms ported from the bound
-     `form-generator` Apps Script (kept in `incoming/form-generator/`
-     for reference). Four tabs: **PPD** (Patient Profile &
+     `form-generator` Apps Script (that reference copy was DELETED in
+     cycle 13 — see the Frozen Subsystems note; it is in git history).
+     Four tabs: **PPD** (Patient Profile &
      recommendation — a 46-item intake (Q1–Q45 plus the lettered but
      full-weight Q39a; the progress ring's denominator is 46, see the
      PPD-controls gotcha) that drives the clinical
@@ -194,17 +195,16 @@ Apps Script project under its own directory, synced via `clasp`.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
-- **call-notes/** — Legacy Workspace Add-on scaffold; superseded by
-  the Call Notes module inside `web-app/`. Kept on disk for reference
-  during the transition. New work happens in `web-app/cn/` and the
-  Call-Notes section of `web-app/Code.js`. The Workspace Add-on path
-  is abandoned because admin policy on the org domain prevents
-  install of Marketplace Add-ons without ticket-driven allowlisting;
-  the web-app pattern works today with zero admin involvement.
+The Workspace Add-on path (the old `call-notes/` scaffold — **deleted from the
+tree in cycle 13**, see Frozen Subsystems) is abandoned
+because admin policy on the org domain prevents install of Marketplace
+Add-ons without ticket-driven allowlisting; the web-app pattern works
+today with zero admin involvement. **`web-app/` is now the only project
+directory** — see Frozen Subsystems for what was removed and why.
 
 ## Development
 
-Each project is a separate clasp project.
+`web-app/` is the only clasp project.
 
 ```bash
 cd <project-name>
@@ -831,8 +831,15 @@ this section before touching the relevant area.
   a **"File N missing"** CTA where N was every answered call, telling a rep to
   redo work they had already filed. Use the outcome-carrying
   **`cnCountNotesResult_(emp, from, to)` → `{count, unavailable, unenrolled}`**
-  for anything user-facing; `countCallNotesInRange_` is now a thin numeric
-  wrapper kept for the callers that only want the number. `unenrolled` (no
+  for anything user-facing. **`countCallNotesInRange_` NO LONGER EXISTS (A4,
+  cycle 13).** F5 kept it as "a thin numeric wrapper for the callers that only
+  want the number", but there were none — the sole remaining references were its
+  own two tests, which ASSERTED it returns 0 on an unreadable Sheet. That left
+  the silently-degrading variant alive under the most obvious name, pinned by
+  tests enshrining the exact behaviour F5 existed to remove, waiting for the
+  next author to reach for it. There is now ONE count path by construction; take
+  `.count` off the result and decide what to do with `.unavailable`, which is
+  the whole point. `unenrolled` (no
   Sheet configured, INV-35) is deliberately DISTINCT from `unavailable` (the
   Sheet exists but could not be read) — only the latter is an error. Every
   coverage surface nulls `noteCoverage` and sets `noteCountUnavailable` /
@@ -841,6 +848,44 @@ this section before touching the relevant area.
   "notes unavailable" / an em dash instead of a confident zero. This is the
   cycle-10 "error reads as empty" class (D1/D2a) in the one server helper it
   had never been applied to.
+- **`:root[data-compact]` is the POP-OUT, not a viewport breakpoint (A2,
+  cycle-13 — FIXED).** `data-compact="1"` is set from `?compact=1` by the
+  pop-out button (INV-38); it says nothing about how wide the window is. Three
+  components declared a fixed multi-column grid plus a `:root[data-compact]`
+  override and NO media query, so they never stacked on a phone: `.m-layout`
+  (`1.4fr 1fr` with a 42px hero numeral — and `metrics/script_metrics.html`
+  carried **zero** media queries, on a REP-facing tab), plus the shared
+  `.telemetry` strip and `.coach-kpis`, both `repeat(4, 1fr)`. The shell's own
+  breakpoints (`styles.html` 1023px / 540px) adapt `.metric-grid` and
+  `.emp-grid` but never reached these. Fixed with real media queries —
+  `.m-layout` stacks at ≤720px (before either column gets narrower than the
+  hero numeral), `.telemetry` + `.coach-kpis` go 2×2 at ≤540px. The compact
+  rules are `(0,2,0)` and still out-specify the media rules, so pop-out
+  geometry is unchanged. **A grid that stacks in compact almost always needs a
+  viewport breakpoint too — the two triggers are independent.** Pinned by the
+  A2 tripwire (each compact grid override has a matching media query).
+- **`timeToMins_` returns `null`, never `NaN` — and an ARITHMETIC caller must
+  guard EXPLICITLY (A3, cycle-13 — FIXED).** It used to return `NaN` on an
+  unparseable Timesheet TIME cell, which is the worst possible sentinel here
+  because every `NaN` comparison is FALSE and `NaN` arithmetic is contagious:
+  `getPunctualityReport` did `if (lateMin > grace) late++; else onTime++;`, so a
+  bad row fell through to the else and was scored **ON TIME** — and its
+  earliest-punch pick (`mins < r.days[d].in`) was also false against `NaN`, so
+  ONE bad row pinned the whole day even when a valid ClockIn existed on it;
+  `calcHours_` returned `NaN` and `totalHours += NaN` turned an entire
+  timesheet's total into `NaN`. Now `null`, so the callers' explicit
+  "not computed" branches fire: punctuality `continue`s, the timesheet counts
+  the day INCOMPLETE (**not** 0 hours — that would understate payroll
+  silently), the dashboard sparkline and the calendar omit it. `calcHours_`
+  propagates `null` for a corrupt CLOCK pair but a corrupt LUNCH pair only
+  drops the deduction (the "no lunch recorded" shape) rather than voiding an
+  otherwise-valid day. **THE TRAP:** `getCoveragePlan` does
+  `dayDelta * 1440 + timeToMins_(...)`, and `x + null` **coerces to `x`** —
+  placing the rep's shift at midnight, strictly WORSE than the `NaN` it
+  replaced (which merely dropped them from the buckets). Any new caller that
+  does arithmetic on the result needs an explicit `=== null` check, not a
+  truthiness test (`0` is a valid midnight). Pinned by the A3 behavioural +
+  caller-shape tripwires and the `timeToMins_nullOnUnparseable` smoke test.
 - **`color-mix` for a SEMANTIC colour must interpolate `in oklab`, never
   `in oklch` (V-1, cycle-12 visual audit — FIXED).** The four `-deep` aliases
   declare correct fallback hexes (`--warning-deep: #8a4500` amber,
@@ -1598,6 +1643,39 @@ this section before touching the relevant area.
   the `enter*` handler in the tool's partial. Adding a new tool:
   add a TOOLS entry + drop tab partials + `include()` them from
   `index.html`. The shell auto-rebuilds either way.
+  **ACTIVE STATE MUST BE EXPOSED, NOT JUST PAINTED (A11, cycle-13).** Both nav
+  levels set an `.active` class — `enterTool` on `.sb-link`/`.nav-btn`,
+  `showView` on `.tt-btn` — and a class is invisible to assistive tech, so a
+  screen-reader user was never told which TOOL or which TAB they were on. Both
+  now set `aria-current="page"` in the same pass (and remove it on the others);
+  any new nav surface must do the same. The rule generalizes to every stateful
+  control: a segmented toggle uses `aria-pressed` (the Dashboard period
+  switcher, kept in step by `clkDashSet_`) or, inside a `role="tablist"`,
+  `role="tab"` + `aria-selected` (the Coaching Mine⇄Team toggle — whose wrapper
+  already declared `role="tablist"` while its tabs carried no role at all — and
+  the CN composer tabs, which were already correct); a disclosure uses
+  `aria-expanded` + `aria-controls` (the Coverage day row, the CN
+  Training-Answers tray). **An inline `onclick` that toggles a class cannot keep
+  an attribute in step** — the CN tray's
+  `this.parentElement.classList.toggle('collapsed')` was extracted to
+  `cnToggleQaTray_` for exactly that reason. Pinned by the A11 tripwire (which
+  batch 5 GENERALIZED from six hand-listed surfaces to a rule over every scanned
+  partial — that promotion immediately surfaced eight more instances, so treat
+  the tripwire, not this paragraph, as the enumeration).
+  **A SECTION HEADING IS AN `<h2>`, NOT A STYLED `<div>` (A13, cycle-13).**
+  Heading navigation is the primary way a screen-reader user moves through a
+  dense page, and every view rendered exactly ONE heading — its `<h1>` — then
+  used `<div>`/`<span>` for every card label below it, so that navigation
+  stopped at the page title on ~30 surfaces. The three section-heading classes
+  (`.card-label` 20 sites, `.tr-card-title` 5, `.dash-seclabel` 2) now render as
+  `<h2>`. Each class already fully specified its own typography, so the
+  conversion needed only a UA-margin reset (`margin-top: 0` on `.card-label`,
+  which already set `margin-bottom`; `margin: 0` on the other two, which sit in
+  flex head rows) — the render is pixel-identical, verified by re-shooting the
+  visual matrix. `.kicker` stays a `<div>` (an eyebrow ABOVE a heading is not
+  itself one) and `.rail-card` was already using `<h4>`. Pinned by the A13
+  tripwire, which scans by CLASS rather than counting tags, so a NEW card added
+  as a div fails.
 - **Tool view partials live in their own subfolder.** Time Clock's
   four views (`script_clock.html`, `script_timesheet.html`,
   `script_timeoff.html`, `script_manager.html`) are under `web-app/tc/`
@@ -2534,17 +2612,19 @@ this section before touching the relevant area.
 - **Note coverage + count have a single source of truth.**
   `cnNoteCoverage_(noteCount, answeredCalls)` (whole-number percent,
   or null when there's no answered-call denominator) and
-  `countCallNotesInRange_(emp, from, to)` (date-normalized note count)
+  `cnCountNotesResult_(emp, from, to)` → `{count, unavailable, unenrolled}`
+  (date-normalized note count WITH the read outcome; A4 removed the numeric-only
+  `countCallNotesInRange_` wrapper — see the gotcha above)
   are used by `getMyMetrics`, `getTeamMetrics` (per-rep + team
   totals), and `managerGetShiftStats`. They exist so the three
   callsites can't drift apart — the F1 regression (raw
   `String(CN.DATE_LOCAL)` reads silently returning 0 coverage)
   happened because the count was duplicated inline. New Metrics /
   Stats surfaces must reuse these helpers rather than re-deriving the
-  ratio; `countCallNotesInRange_` honors the `CN.DATE_LOCAL`
+  ratio; `cnCountNotesResult_` honors the `CN.DATE_LOCAL`
   normalize gotcha. Same maintenance discipline as `CN_EMAIL_PALETTE`
   and `LEAVE_DEDUCTION_CLIENT`. Both helpers use bounded reads instead
-  of pulling each rep's full history: `countCallNotesInRange_` reads
+  of pulling each rep's full history: `cnCountNotesResult_` reads
   only the DateLocal column (~16x fewer cells), and
   `managerGetShiftStats` reads just the requested date's contiguous
   row slice — both rely on notes being appended in DateLocal order,
@@ -3233,7 +3313,32 @@ this section before touching the relevant area.
   aliases itself and every aliased agent would otherwise false-positive
   as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
   without taking down the rest of the panel. Every server string is
-  `esc()`'d before `innerHTML`. **"Jump to source" (Tier 1):** the panel
+  `esc()`'d before `innerHTML`.
+  **Queue inventory (sub-queue Phase 0) — OPT-IN, panel only.** The app has
+  always had queue data and always thrown it away: DQE rows whose Agent cell is
+  `A_Q_*`/`Backup CSR` are dropped by `isCdrQueueSentinel_`, **`CDR.QUEUE_EXT`
+  (col 4) is declared but read nowhere**, and the CSR Transfer tab's per-queue
+  `H:R` block is fetched on every read and ignored. `cdrQueueInventory_(from,to)`
+  is a READ-ONLY discovery scan reporting distinct queue identifiers, the
+  skipped `A_Q_*` aggregates, which Transfer `H:R` columns actually carry data,
+  and — the load-bearing one — **rows per (agent, date)**: whether DQE is one
+  row per (agent, queue, date) or one per (agent, date) decides whether
+  per-queue REP attribution exists in the data at all. The client
+  (`cnQueueInventoryHtml_`) states that verdict in plain language and keeps
+  "cannot determine" (an empty window) DISTINCT from the negative verdict.
+  **It is gated OFF by default and that gate is load-bearing:**
+  `computeAutomationHealth_(opts)` defaults `scanQueues` false because
+  `getAutomationHealthBadge` polls it **every 10 minutes per manager** and
+  `sendAutomationHealthDigest` runs it daily — both call it directly. Only
+  `getAutomationHealth()` opts in; `getDeployReadiness` passes
+  `{scanQueues:false}` (the `getStorageHealth({scanEmbeds:false})` precedent).
+  The DQE read is 3 columns (not the sibling's 34) and tail-capped at
+  `CDR_QUEUE_SCAN_MAX`, reporting `truncated` rather than silently describing
+  part of the sheet; lists cap at `CDR_QUEUE_LIST_CAP`. Deliberately NOT folded
+  into `getCdrAgentMetrics_`'s meta — that result is cached and consumed by
+  every Metrics call, so widening it would tax the hot path and force an INV-85
+  cache bump for a diagnostic. PHI-free (identifiers + tallies only).
+  **"Jump to source" (Tier 1):** the panel
   header carries an `Open AuditLog ↗` deep-link to the AuditLog TAB
   (`res.auditLogUrl` = `auditSheet.getParent().getUrl() + '#gid=' +
   auditSheet.getSheetId()`, built in a try/catch) — the raw source of the
@@ -3614,14 +3719,24 @@ this section before touching the relevant area.
   already handled by `.overlay.open` (fadein) + `.modal` (modalin) + the
   `#kb-drawer` slide — NOT re-declared. Inline animation params
   (`--circ/--target/--len/--d`) carry defaults so the INV-128 token tripwire
-  stays green. **Empty vs ERROR states (batch J):** the three empty-state
-  classes (`.cn-stack-empty`/`.cn-sf-empty`/`.m-empty`) render as quiet
-  dashed cards; a LOAD FAILURE must render `errorStateHtml_(msg)`
+  stays green. **Empty vs ERROR states (batch J; ENFORCED cycle-13 A12):** the
+  empty-state classes (`.cn-stack-empty`/`.cn-sf-empty`/`.m-empty`, plus the
+  shared `.no-data` and Training/EmpDocs' `.tr-empty`) render as quiet
+  dashed/muted cards; a LOAD FAILURE must render `errorStateHtml_(msg)`
   (script_core — warn-toned card + glyph + `role="alert"`, escapes
   internally) so "the fetch failed" never reads as "there's nothing here";
   `renderError` (boot) carries a Retry button. New tools should reuse
   `renderLoading` + `errorStateHtml_` + these classes rather than
-  hand-rolling spinners/animations.
+  hand-rolling spinners/animations. **The decision was stated as universal but
+  honored in only 2 of 11 tool partials (CN + Clock) until cycle-13 A12:**
+  Metrics, Training, and EmpDocs routed 16 failure sites — RPC failures AND
+  server-returned `data.error` — into their tool-local EMPTY-state container,
+  so a transient CDR outage rendered as a quiet day with no data (the likeliest
+  Metrics failure, on a rep-facing tab). All 16 now use `errorStateHtml_`.
+  **Call sites must DROP the outer `esc()`** — `errorStateHtml_` escapes
+  internally, so keeping it double-escapes. Pinned by the A12 tripwire, which
+  fails CI on any line mentioning an error/failure that also renders one of
+  those empty-state classes.
 
 Items identified during the V1–V4 + Round 2 redesign work that
 were intentionally deferred. The redesign itself is complete; these
@@ -3686,19 +3801,35 @@ manually for a fresh deploy or environment:
   Script Properties → COPY sheets + your-inbox recipients; PHI stores start
   EMPTY). `npm run push:dev` / `push:prod` (via `scripts/push-env.sh`) target
   each; `push:dev` restores the committed prod `.clasp.json` so a bare
-  `clasp push` still hits prod. **Two OPTIONAL Script Properties tag an
-  instance — both UNSET on prod = zero behavior change:** `INSTANCE_LABEL`
+  `clasp push` still hits prod. **Two Script Properties tag an instance —
+  both UNSET on prod = zero behavior change:** `INSTANCE_LABEL`
   (e.g. `DEV`) renders a top banner (`getEmployeeState.instanceLabel` →
-  `.instance-banner`) so the two tabs can't be confused; `INSTANCE_IS_PROD=true`
-  (set on prod) makes the destructive `TEST_`-row writers (`runAllTests` /
-  `setupTestEnvironment`) REFUSE via `assertNotProdInstance_`. Dev-only tooling
+  `.instance-banner`) so the two tabs can't be confused; `INSTANCE_IS_PROD`
+  (`true` on prod) makes the destructive `TEST_`-row writers (`runAllTests` /
+  `setupTestEnvironment`) REFUSE via `assertNotProdInstance_`.
+  **A5 (cycle 13) — DEV NOW REQUIRES BOTH, and `INSTANCE_IS_PROD` must be
+  EXPLICITLY `false` on the dev project.** `isDevInstance_()` is the single
+  predicate (`assertDevInstance_` and `runNightlySelfTest` both route through
+  it), and an UNSET `INSTANCE_IS_PROD` now resolves to NOT-dev. The old test was
+  "label set AND not `isProdInstance_()`", and `isProdInstance_()` is false
+  whenever the property is unset — which is prod's DEFAULT state. So dev-ness
+  was inferred from the mere PRESENCE of a banner label, and labelling prod (a
+  thing this very paragraph recommends) silently flipped prod into dev:
+  `runNightlySelfTest` would run the FULL destructive `runAllTests` against live
+  payroll/audit/PHI every night at 1am (`assertNotProdInstance_` does NOT catch
+  it — that only fires on `INSTANCE_IS_PROD === 'true'`), and `devScrubRoster_`
+  would anonymize the LIVE roster. Failure direction is now "a dev tool refuses
+  until dev is fully configured" instead of "prod quietly behaves like dev".
+  **Operator action on an EXISTING dev project: add `INSTANCE_IS_PROD=false`**,
+  or `devScrubRoster_`/`devShowConfig_` will refuse and the nightly run will
+  drop to smoke — which it now SAYS, via a note on the Admin → Automation
+  Health self-test line rather than silently. Dev-only tooling
   (`web-app/DevTools.js`: `devScrubRoster_(keeperEmail)` anonymizes a copied
   roster so dev's per-employee emails can't reach real staff; `devShowConfig_()`)
-  is `assertDevInstance_`-guarded (runs only when `INSTANCE_LABEL` is set and
-  `INSTANCE_IS_PROD` is not) so it can never mutate the live roster even though
-  it deploys to both. Pinned by the instance-guard Node tests + the DEV-banner
-  DOM test. Deploy: the same `clasp push -f` + New version; the two new
-  properties are optional and prod is unaffected until you set them.
+  is `assertDevInstance_`-guarded so it can never mutate the live roster even
+  though it deploys to both. Pinned by the instance-guard Node tests (incl. the
+  A5 "a LABEL alone is NOT dev" case) + the DEV-banner DOM test. Deploy: the
+  same `clasp push -f` + New version; prod is unaffected until you set them.
 - **The 2026-06 redesign + deferred follow-ons #1–#4 + niceties #8–#10
   add NO new operator state** — no new Script Properties, no new triggers,
   no migrations. The new endpoints (`getMyMetricsRange`,
@@ -3706,6 +3837,46 @@ manually for a fresh deploy or environment:
   single `clasp push -f` + New version. The redesign record (per-commit
   scope, before/after) is
   `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
+- **Cycle 14 Phase 0 (CDR sub-queue discovery) adds NO new operator state** — no
+  Script Property, trigger, migration, or CONFIG constant. But **the deploy IS
+  the deliverable**: the queue inventory is how Phase 0 answers whether DQE
+  carries a row per (agent, queue, date) or per (agent, date), and that answer
+  decides whether the rest of the sub-queue feature can be built as designed.
+  After deploying, open **Manage → Admin → Automation Health** and read the
+  "Queue inventory · discovery" block. Two code-only constants
+  (`CDR_QUEUE_SCAN_MAX`, `CDR_QUEUE_LIST_CAP`) bound the scan. One
+  operator-visible cost note: the inventory runs whenever the Admin tab is
+  opened (the Overview summary and the detail panels share ONE
+  `getAutomationHealth` fetch by design), NOT on the 10-minute health-badge
+  poll or the daily digest — those call `computeAutomationHealth_` directly and
+  the scan is opt-in.
+- **Cycle 13 batch 3 changes ONE operator requirement (A5) and adds no other
+  state.** An existing DEV project must add `INSTANCE_IS_PROD=false` — an unset
+  value now reads as production, so without it `devScrubRoster_`/`devShowConfig_`
+  refuse and the nightly self-test drops to smoke (and says so on the Admin
+  self-test line). PROD is unaffected: with neither property set it behaves
+  exactly as before. Nothing else in batch 3 or the follow-ons adds Script
+  Properties, triggers, migrations, or CONFIG constants; two DEAD response
+  fields were REMOVED (`getEmployeeState.annualPlannedUpcoming`,
+  `getSpanishInboxStats.pendingList`) — neither had any client reader.
+- **Cycle 13 batches 1–2 add NO new operator state** — no new Script
+  Properties, no new triggers, no migrations, and no new CONFIG
+  constants. Batch 2 (A4/A6/A8/A9) is server-helper + client-toast only; its one
+  operator-visible effect is that the nightly `CallNotesArchive` audit row now
+  stamps `hitPerRunCap` ONLY when an enrolled rep was left unvisited, so a clean
+  final run of a draining backlog no longer reads as "still capped" (A9).
+  Batch 1 is markup/CSS/ARIA plus one server-helper contract change. Both
+  deploy with the normal single `clasp push -f` + New version.
+  **Post-deploy: run `runAllTests()`** — `timeToMins_nullOnUnparseable` executes
+  only in the editor, alongside cycle 12's still-unrun
+  `cn_enrolledSheetId_trimsAndNullGuards` and `cn_appendBounded_capsAndRollsBack`.
+  **ONE behaviour change an operator should expect:** a Timesheet row whose TIME
+  cell is blank or unparseable (only reachable by a hand edit — the guarded
+  writers cannot produce one) now renders as an INCOMPLETE day and is excluded
+  from Punctuality, instead of silently scoring that day "on time" and turning
+  the timesheet's total hours into `NaN`. If a rep's incomplete-day count rises
+  after this deploy, the fix is to correct the offending cell (Manage → Day
+  Edit), not to re-check the code.
 - **The WHOLE of cycle 12 (all six batches) adds NO new operator state** — no
   new Script Properties, no new triggers, no migrations. Code-only CONFIG
   constants: `TS_DOCTOR_FIX_MAX_ROWS`, `TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN`,
@@ -4077,7 +4248,7 @@ manually for a fresh deploy or environment:
     - `sendDeptRequestReminderDigest` (DeptRequests v2, daily manager-tz 10am — PHI-free summary push to `MANAGER_EMAILS` of OPEN department requests past their SLA, grouped by dept; silent when none. Heartbeat-stamped `deptReqReminder`. INV-138)
     - `sendManagerDailyBrief` (daily manager-tz 8am — the consolidated manager morning brief behind the `managerDailyBrief` feature flag, default OFF. While off it only stamps its `managerBrief` heartbeat (installing it is harmless); while on it sends ONE per-manager branded email consolidating urgent notes / missed clock-outs / overdue training-docs-coaching / dept-SLA overdue, and those four handlers suppress their separate MANAGER emails (employee-facing reminders + weekly digests + the failure watchdog are untouched). Silent on an all-clear morning. INV-151)
     - `archiveOldTimesheetRows` (Timesheet cold-archive, daily manager-tz **6pm** — moved off 1am in cycle 8: 1am CT is mid-shift for IST/PHT and the move holds the global ScriptLock, so a large first run could starve offshore punches; 6pm CT is the all-team quiet window. MOVES Timesheet rows older than `TIMESHEET_ARCHIVE_DAYS` to a `TimesheetArchive` tab in the same ADP spreadsheet; NEVER deletes (payroll is keep-forever — no purge tier exists for it); sub-floor windows clamp UP to `TIMESHEET_ARCHIVE_MIN_DAYS` (120); no-ops while the window is 0 (the default). INV-153)
-    - `runNightlySelfTest` (self-test, daily manager-tz 1am — the K-A alternative to editor-suite CI: runs `runSmokeTests` on any instance (pure logic, zero writes) and the FULL `runAllTests` suite ONLY on the DEV blue-green instance (`INSTANCE_LABEL` set, `INSTANCE_IS_PROD` not true). Heartbeat `selfTest`; outcome persists to Script Property `SELF_TEST_LAST_RESULT`, surfaces in Automation Health + the shell health dot + the failure digest, and a failing run also emails MANAGER_EMAILS the failed test names. INV-162)
+    - `runNightlySelfTest` (self-test, daily manager-tz 1am — the K-A alternative to editor-suite CI: runs `runSmokeTests` on any instance (pure logic, zero writes) and the FULL `runAllTests` suite ONLY on a confirmed dev instance (`isDevInstance_()` — BOTH `INSTANCE_LABEL` set and `INSTANCE_IS_PROD` explicitly not 'true'; unset = prod, A5). Heartbeat `selfTest`; outcome persists to Script Property `SELF_TEST_LAST_RESULT`, surfaces in Automation Health + the shell health dot + the failure digest, and a failing run also emails MANAGER_EMAILS the failed test names. INV-162)
   The install + remove TARGETS arrays both list all sixteen, so re-running
   install dedupes cleanly (a missing entry would silently duplicate that
   trigger on the next install). Triggers do not survive an Apps Script project re-clone. After
@@ -4565,7 +4736,14 @@ carries the same number. `/cycle-status` surfaces it.
   (its first instruction is "do not make any changes to any files", so its
   Session Handoff Block still travels by paste). **Cycle 12 predates the
   adoption**, so its six implementation blocks + one cycle-summary block are not
-  on disk; cycle 13 onward will be.
+  on disk. Cycle 13 is the first that writes them, and is the reference example
+  of a complete set: four `*-broad-implement.md` blocks plus `13-a-reflect.md`.
+  **Read the REFLECT block for a closed cycle's tally, not the implementation
+  blocks** — cycle 13's reflection corrected its own batch reports in two
+  directions (promoting eight interface fixes wrongly scored defensive, and
+  counting one new failure mode the batches had reported as zero), so the two
+  sources disagree by construction and the reflect block is the later, honest
+  one.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
 
 **Command templates: synced to `claude-workflow-tools` v1.23.0 (2026-07-27).**
@@ -4790,16 +4968,48 @@ five batches:** the V-1 hue-drift bound + V-2/V-3 specificity pins (batch A);
 the F15 running-sentinel, F9 gate-coverage and F7 admin-count nets (batch B);
 the F14 column-L ban, F11 bounded-append, F16 no-silent-blank and F18
 truncation pins (batch C); and the F12 single-read, four F17 mirror guards and
-the eight V-item source pins (batches D/E) — **pure now 356, DOM 66** (the DOM
-addition is the F16 failure path driven in a real jsdom window). Editor suite
+the eight V-item source pins (batches D/E) — pure 330→356, DOM 66 (the DOM
+addition is the F16 failure path driven in a real jsdom window). **Cycle 13
+(batch 1) added six more — A1 (no span/div carries an inline `onclick`), A2
+(every compact grid override has a matching viewport breakpoint), A3 (two:
+`timeToMins_`/`calcHours_` behavioural + the caller-shape scan), A11 (nav +
+toggles expose ARIA state), A12 (no failure renders into an empty-state
+container) — putting the pure harness at 362, DOM unchanged at 66. Batch 2
+added four more (A4 the removed 0-on-error wrapper stays removed, A6
+`kbReloadTree_` surfaces both failure paths, A8 null-not-0, A9 the archive
+stamps `hitPerRunCap` only on a genuinely truncated run) → 366. Batch 3 +
+follow-ons added seven (A5 dev-detection, A7 header-only export guard, A10
+grade-before-lock, FO-2 the last inverted primary, FO-3 the shift-header wrap,
+FO-4 `_assertEq` NaN-vs-null, plus the FO-5 dead-field removals folded into the
+A8 and F18 pins) → 373. Batch 5 GENERALIZED the two a11y pins from a hand-listed
+file set to `A11Y_SCAN_PARTIALS` (derived from `PARSE_GUARD_PARTIALS`, so a new
+tool's partial cannot ship outside the net) — the state-class rule then surfaced
+eight instances the hand scan had missed → 374; batch 4 added the A13
+heading-class scan → 375. Cycle 14's Phase 0 added four more (the queue
+inventory's three-state verdict, its escaping of CDR-sourced strings, the
+read-only/bounded reader shape, and — the load-bearing one — that the scan
+stays OPT-IN so the 10-minute-per-manager health badge and the daily digest
+never pay for a full-sheet read) → 379.** Two of
+those six did NOT bite on the first attempt and were tightened: the A1 scan was
+line-by-line and missed multi-line markup (it now scans the whole source, where
+`[^>]` matches newlines), and the A3 input list held only no-colon cases, all
+caught by the length guard, so it passed with the `isNaN` guard deleted (added
+`'ab:cd'`, `':'`, `'x:30'`, `'09:mm'`). **Editor-suite hazard found while
+writing the A3 smoke test: `_assertEq` compares via `JSON.stringify`, and
+`JSON.stringify(NaN)` is the string `"null"` — so `_assertEq(NaN, null)`
+PASSES.** Any null-vs-NaN assertion in `Tests.js` must use a strict
+`=== null` check via `_assertTrue`, or it is blind to the exact regression it
+exists to catch. Editor suite
 +6 in cycle 10 (sheet-doctor flow, legacy-hash dual-verify, self-test gate + 3
 omnibus gate cases) ≈ 297, +2 cycle-11 (updateTimeOff_dupApproveRejected;
 rejectsBadDate horizon cases) ≈ 299, +cycle-12: assertions folded into the
 existing `archiveSheetRowsOlderThan_behavioral` (a maxRows case proving bounded
 AND monotonic progress), `test_sheetDoctor_detectsAndCollapsesDuplicates` and
-the `countCallNotesInRange_` smoke test, PLUS two new smoke tests for the
+the `cnCountNotesResult_` smoke tests (renamed from `countCallNotesInRange_*`
+by cycle-13 A4), PLUS two new smoke tests for the
 cycle-12 pure helpers (`cn_enrolledSheetId_trimsAndNullGuards`,
-`cn_appendBounded_capsAndRollsBack`) ≈ 301. Use
+`cn_appendBounded_capsAndRollsBack`) ≈ 301, +1 cycle-13
+(`timeToMins_nullOnUnparseable`) ≈ 302. Use
 the Regression Scenarios below as the canonical full-system
 verification path.
 
@@ -4880,7 +5090,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally`. DOCUMENTED EXCEPTIONS (cycle-11 seams audit): the intake send endpoints (`intakeSendPPD`/`intakeSendAcct_`) are deliberately lock-free — append-only writes (atomic in Sheets) with an in-body MailApp send that the M-7 no-mail-in-lock rule would otherwise force out; `kbRecordView`/`recordClientError` use the USER lock (batch K-B — diagnostics appends must not queue punch writes) | Subsystem: Server
@@ -5058,7 +5268,7 @@ INV-158 | **Witness-class audit rows are loss-visible (cycle-10 C4).** The three
 INV-159 | **Timesheet sheet doctor (batch L)** — the `getPtoReconciliation`/`fixPtoReconciliation` pattern on the Timesheet. `getTimesheetDoctor` is manager-gated (INV-02), READ-ONLY, windowed (`TS_DOCTOR_WINDOW_DAYS`=92, two-row header, `normalizeDate_/Time_/Type_` coercion discipline): duplicate rows per (emp, date, punch type) — pre-INV-155 leftovers — plus INVERTED pairs, both clock (last ClockOut ≤ first ClockIn — the mis-keyed AM/PM class that `calcHours_`'s pinned C3 overnight wrap renders as a huge day) and lunch (last LunchIn ≤ first LunchOut; last-vs-first so a legitimate multi-lunch day never false-flags), each entry tagged `kind: 'clock'|'lunch'`. `fixTimesheetDuplicates(empIdFilter?)` is manager-gated, LOCKED (INV-01), IDEMPOTENT: a fresh in-lock re-scan (never client row indices) collapses each duplicate group to the LAST appended row — the same row `findExistingPunch_` updates and `managerSaveDay` displays (INV-155) — deleting earlier rows bottom-up with `duplicate collapsed (sheet doctor)` PunchDelete audit rows (INV-08); the optional empId filter scopes a run (the integration test uses it so a test can never collapse a real rep's rows). Inverted pairs are REPORT-ONLY (Day Edit is the fix — the C3 operator decision). **Cycle-12 F2 — the detector is TRUNCATION-HONEST and the collapse is BOUNDED.** `getTimesheetDoctor` returns `totalDuplicates` / `totalInverted` / `totalDuplicateRows` alongside the payload-capped lists plus a `truncated` flag and the server's `fixMaxRows`, because it previously stopped collecting at `TS_DOCTOR_MAX_GROUPS` (200) with NO signal — a 512-group backlog read as exactly 200 and the card looked complete (every sibling bounded reader — `getCallNotesAuditLog`, `getAdminSheetView`, `getStorageHealth`'s `kbEmbeds` — returns one). `fixTimesheetDuplicates` is bounded by `TS_DOCTOR_FIX_MAX_ROWS` (200) and returns `remaining`: it previously collapsed EVERY group the 92-day scan found regardless of what the button offered (so "Collapse 200 group(s)" could delete 500+ rows — a consent mismatch on a destructive, audited payroll op) with no ceiling on how long the ONE project-wide ScriptLock was held (~0.5s per row = deleteRow + audit appendRow, so every rep punch fails on `waitLock(15000)` meanwhile — the same starvation reasoning that moved the archive off 1am). The batch is a slice of the DESCENDING-rowIdx list, so bottom-up deletion and INV-155 last-row-wins hold on a PARTIAL run (a group's final row is never in the delete list at all); the op stays idempotent, so the operator re-clicks until `remaining` is 0. Surfaced as a lazy warn card beside the PTO-drift card in the Manager Dashboard (renders only when findings exist; uiConfirm-gated collapse; the card shows "showing N of M", labels the button with what the run will actually do, and the toast reports the leftover). Pinned by the batch-L Node pins (coercion scan / last-row-wins — bite-checked / report-only) + `test_sheetDoctor_detectsAndCollapsesDuplicates` + the two omnibus gate cases | Subsystem: Server + Client (Time Clock views)
 INV-160 | **EmpDocs hashes are NUL-delimited for new writes; legacy space-form hashes stay valid via DUAL-VERIFY (C13, batch L).** `empDocContentHash_`/`empDocSignatureHash_` take a trailing `delim` param DEFAULTING to the NUL escape (the `computeFormSubmissionHash_` discipline — the old space join was field-boundary ambiguous since titles/bodies contain spaces); `EMPDOC_HASH_DELIM_LEGACY` (' ') is the legacy form. EVERY recompute site dual-verifies: `acknowledgeDoc`'s integrity gate via `empDocContentHashMatches_` (a pre-C13 doc must still SIGN), and `verifyDocSignature` for both the content check and the signature recompute — where the blank-stored-ContentHash fallback uses ITS OWN era's content hash per attempt (a pre-change sign hashed a space-form expect; a post-change sign hashes the NUL form). Genuine tamper still trips BOTH forms. INV-135's conditional-trailing-append byte-stability is preserved in both forms; callers still pass RAW stored cell strings. Pinned by the C13 Node pin (NUL default — bite-checked; dual-verify wiring) + `test_empdocs_legacyHashDualVerify` (legacy hash verifies + signs; tamper still detected) | Subsystem: Server
 INV-161 | **The automation-failure derivation is SINGLE-SOURCED (batch K-E): `automationProblems_(report)`** — stale digest heartbeats (never-ran is NOT a problem), the stale-reconcile F1 signal, personal-sheet sync-fails, a RECENT lost tamper-witness (INV-158), dead detectors, and a failing nightly self-test (INV-162). BOTH consumers — `sendAutomationHealthDigest` and the manager shell health badge `getAutomationHealthBadge()` (manager-gated INV-02, returns only `{failing, count}`, 10-min org-wide cache, best-effort: any failure yields a silent `{failing:false}` since the digest/panel are the backstops) — consume it, so the badge and the daily email can never disagree. The shell polls the badge every 10 min for managers and lights a danger `.sb-health-dot` on the Manage nav buttons (`data-tool` selectors — the badge-selector gotcha). Pinned by the updated detector-wiring tripwire (helper covers every failure class; digest AND badge consume it; badge gated) + the omnibus gate case | Subsystem: Server + Client (shell)
-INV-162 | **Nightly in-project self-test (the K-A alternative to editor-suite CI).** `runNightlySelfTest` is a trigger handler (daily manager-tz 1am; INV-44 `assertManagerCaller_` gate; in BOTH TARGETS arrays): it heartbeat-stamps `selfTest` BEFORE running (trigger liveness observable even if the suite crashes — the INV-151 posture), then runs `runSmokeTests` (pure logic, ZERO spreadsheet writes — safe on prod by construction) on any instance, and the FULL `runAllTests` suite ONLY on the DEV blue-green instance (`INSTANCE_LABEL` set AND `INSTANCE_IS_PROD` not 'true'; `assertNotProdInstance_` stays the backstop). The outcome persists to Script Property `SELF_TEST_LAST_RESULT` ({date, mode, pass, fail, skip[, error]}; a CRASHED run records fail:1 + the error), is returned by `computeAutomationHealth_().selfTest` (rendered in the Admin Automation panel; null = never ran, not an error), and a fail>0 result rides `automationProblems_` (INV-161 — health dot + failure digest) AND emails MANAGER_EMAILS the failed test names directly (best-effort INV-14, PHI-free). It tests the DEPLOYED code nightly — post-deploy regression detection, not pre-merge CI; the Node harness in GitHub Actions remains the pre-merge gate. Pinned by the self-test Node pin (heartbeat-first — bite-checked; dev-only full suite; problems/health wiring) + `test_triggerGate_selfTest_nonManagerThrows`; the trigger-wiring/gate-type/DIGEST-labels tripwires auto-cover the handler + heartbeat key | Subsystem: Server
+INV-162 | **Nightly in-project self-test (the K-A alternative to editor-suite CI).** `runNightlySelfTest` is a trigger handler (daily manager-tz 1am; INV-44 `assertManagerCaller_` gate; in BOTH TARGETS arrays): it heartbeat-stamps `selfTest` BEFORE running (trigger liveness observable even if the suite crashes — the INV-151 posture), then runs `runSmokeTests` (pure logic, ZERO spreadsheet writes — safe on prod by construction) on any instance, and the FULL `runAllTests` suite ONLY on a CONFIRMED dev instance — `isDevInstance_()`, which requires `INSTANCE_LABEL` set AND `INSTANCE_IS_PROD` **explicitly present and not 'true'** (A5, cycle 13: an UNSET marker is prod's default state, so the old label-only inference let a labelled PROD project run the full destructive suite against live payroll nightly; `assertNotProdInstance_` is NOT a backstop for that, since it only fires on `INSTANCE_IS_PROD === 'true'`). A half-configured instance runs smoke and records a `note` saying why, surfaced on the Admin self-test line. The outcome persists to Script Property `SELF_TEST_LAST_RESULT` ({date, mode, pass, fail, skip[, error]}; a CRASHED run records fail:1 + the error), is returned by `computeAutomationHealth_().selfTest` (rendered in the Admin Automation panel; null = never ran, not an error), and a fail>0 result rides `automationProblems_` (INV-161 — health dot + failure digest) AND emails MANAGER_EMAILS the failed test names directly (best-effort INV-14, PHI-free). It tests the DEPLOYED code nightly — post-deploy regression detection, not pre-merge CI; the Node harness in GitHub Actions remains the pre-merge gate. Pinned by the self-test Node pin (heartbeat-first — bite-checked; dev-only full suite; problems/health wiring) + `test_triggerGate_selfTest_nonManagerThrows`; the trigger-wiring/gate-type/DIGEST-labels tripwires auto-cover the handler + heartbeat key | Subsystem: Server
 INV-163 | *(number claimed by cycle 11's /reflect but never written to this library — its two proposals were lost between the reflection and the next sync-docs. Left deliberately vacant rather than reused, so the cycle-11 metrics note stays traceable; cycle-12 proposals start at INV-165.)* | — | —
 INV-164 | *(as INV-163 — vacant, cycle-11 proposal never recorded.)* | — | —
 INV-165 | **A `color-mix` producing a SEMANTIC colour must interpolate `in oklab`, never `in oklch`.** oklch interpolates hue on the POLAR arc, so mixing a chromatic token toward a near-neutral drags it through other hue families (light `--ink` sits at hue ≈264, so amber travelled 70→0→264 THROUGH RED: `--warning-deep` resolved to hue 355, `--danger-deep` 330, `--success-deep` 204 across ~254 consumers, and the SAME token meant a different hue family per theme). Hue-SAFE mixes may stay on oklch — `--selection-bg` (mixes with `transparent`), `--border-strong`/`--ring-focus` (low-chroma neutral pair) — as may the `@supports` probe, which only tests "is color-mix supported at all". Reading the token file MISLEADS here (the `@supports` fallback hexes above each mix are correct), and the `--muted-2` tripwire measures LUMINANCE, which a pure hue rotation leaves untouched. Verify: the V-1 tripwire — source-level `in oklab` on all four `-deep` aliases in BOTH mode blocks, plus a computed hue-drift bound ≤20° from each source token (worst measured 10°) | Subsystem: Client (shell)
@@ -5069,6 +5279,54 @@ INV-169 | **A payload-capped reader must return its pre-slice total**, and the c
 INV-170 | **`shortLabel` is the nav-label source on all three width-constrained surfaces** — mobile bottom nav, sidebar link, and sidebar sub-label — with the full `label` carried as a `title`. Set it on any tool label longer than ~9 characters. The nav is constrained on three surfaces at once: at the shipped 168px sidebar default the full labels CSS-ellipsised 2 of 7 tools, at 390px "Call Notes" was the one mobile label that wrapped, and the sub-label's two-line wrap pushed every sidebar nav item down 11px — so navigating MOVED the navigation. The two sidebar user fields (name, employee id) carry titles for the same reason. Verify: the V-5/6/7 pin (sidebar renders `shortLabel || label` + a full-label title; sub-label likewise; both user fields have titles) | Subsystem: Client (shell)
 INV-171 | **The gated-endpoint set and the admin-exclusive set are DERIVED from `Code.js` source, not hand-listed.** Every function returning `'Manager access required.'` or `'Admin access required.'` must be referenced by a gate test (the omnibus `test_managerGates_rejectNonManager` cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), and INV-136's stated count AND backticked names must equal what the code enforces — that count drifted four times (24→28→30→35) while calling itself authoritative. Trigger handlers are outside the set by construction (they THROW via `assertManagerCaller_`, so they carry no returned error string) and keep their own INV-44 tripwire. One reasoned allowlist entry: the private helper `managerAggregateFlagged_`, whose public wrappers are both covered. Verify: the F9 + F7 tripwires | Subsystem: Test Suite
 INV-172 | **The nightly self-test stamps a `{running:true, startedAt}` sentinel BEFORE the suite, and a STALE sentinel is a failure.** Extends INV-162: the outcome write happens only on a normal return or a CATCHABLE throw, and an Apps Script execution-limit kill is neither — so a chronically timing-out full suite left the PREVIOUS (green) result in place beside a FRESH heartbeat, i.e. the newest detector could not detect its own failure. `computeAutomationHealth_` derives `stuck` (running + older than `SELF_TEST_STUCK_MS` 2h); `automationProblems_` check (f) pushes it, so it rides the shell health dot AND the failure digest (INV-161); the Admin panel reports "never finished" INSTEAD of the stale pass/fail line, while a FRESH sentinel reads "Running now" and is not a problem. The sentinel is stamped AFTER the "test suite not present" early return, so a project without `Tests.js` never leaves one behind. Verify: the extended nightly-self-test pin (sentinel present + before the suite + carries startedAt + `stuck` from staleness + surfaced in problems and the panel) | Subsystem: Server + Client (Call Notes views)
+
+INV-173 | **Every interactive control is a real `<button>`/`<a>` — never a `<span>`/`<div>` with an inline `onclick`.** Such an element is unreachable by keyboard, exposes no role to assistive tech, and receives no focus ring, so a whole class of user is silently blocked. Six shipped that way past ten cycles and cycle 10's dedicated a11y batch (which fixed the calendar, tables, and note fields but not these): the Metrics preset chips, the Dashboard period switcher, the Coverage day disclosure, the Intake PPD preferred-device star, the Intake image-remove ×, and the CN Training-Answers disclosure. The Intake star is the sharpest case — it marks the device starred in the clinical email actually SENT to the agent, with no alternative path. The codebase's own pattern was already `<button type="button">` (`cn-filter-chip`, `cn-history-preset-btn`, `intk-rec-mini`) in the very same files, so this is consistency, not new ground. Converting needs a CSS reset (`appearance`/`background`/`border`/`padding`/`font`) to stay pixel-identical, and where both are set `font: inherit` must precede `font-size` because the shorthand resets it. Verify: the A1 tripwire, which scans the WHOLE partial source (`[^>]` matches newlines, so multi-line markup cannot slip past a per-line scan — bite-checked) | Subsystem: Client (all view partials)
+
+INV-174 | **Active/selected/expanded state is exposed to assistive tech, never carried by a CSS class alone.** `enterTool` (`.sb-link`/`.nav-btn`) and `showView` (`.tt-btn`) both toggle `.active`, and until cycle-13 A11 that was the ONLY signal — a screen-reader user was never told which of the seven tools or which sub-tab was active. Both now set `aria-current="page"` in the same pass. The rule covers every stateful control: `aria-pressed` on a standalone toggle (the Dashboard period switcher, kept in step by `clkDashSet_`); `role="tab"` + `aria-selected` inside a `role="tablist"` (the Coaching Mine⇄Team toggle, whose wrapper declared the tablist while its tabs carried no role at all; the CN composer tabs were already correct); `aria-expanded` + `aria-controls` on a disclosure (the Coverage day row, the CN Training-Answers tray). **An inline `onclick` that toggles a class cannot keep an attribute in step** — extract it (the CN tray's `classList.toggle('collapsed')` became `cnToggleQaTray_`). Verify: the A11 tripwire (render-side attribute + a handler that updates it, for all six surfaces) | Subsystem: Client (shell) + Client (all view partials)
+
+INV-175 | **A load failure renders `errorStateHtml_`, never an empty-state container.** Batch J made this the rule; it was honored in 2 of 11 tool partials until cycle-13 A12 found 16 sites in Metrics, Training, and EmpDocs rendering both RPC failures AND server-returned `data.error` into `.m-empty` / `.no-data` / `.tr-empty` — quiet muted cards visually indistinguishable from "no data for this date". On Metrics, which is rep-facing and CDR-backed, that is the likeliest failure mode of all. `errorStateHtml_` gives the warn tone, the glyph, and `role="alert"` so the failure is both visible and announced. **Call sites must DROP the outer `esc()`** — the helper escapes internally, so keeping it double-escapes. Verify: the A12 tripwire, which fails CI on any line mentioning an error/failure that also renders one of those empty-state classes | Subsystem: Client (Metrics / Training / Reference / Call Notes views)
+
+INV-176 | **`timeToMins_` returns `null` (never `NaN`), and an arithmetic caller must guard EXPLICITLY.** `NaN` is uniquely dangerous here: every comparison against it is false and it is contagious through arithmetic. `getPunctualityReport` scored an unparseable day ON TIME (it fell through `lateMin > grace` into the else) and one bad row pinned the whole day (the earliest-punch pick `mins < r.days[d].in` is also false against `NaN`); `calcHours_` returned `NaN` and `totalHours += NaN` voided an entire timesheet total. With `null` the callers' existing "not computed" branches fire: punctuality skips the row, the timesheet counts the day INCOMPLETE (**not** 0 hours — that would understate payroll silently), the dashboard sparkline and calendar omit it. `calcHours_` propagates `null` for a corrupt CLOCK pair but a corrupt LUNCH pair only drops the deduction, so one bad cell cannot void a valid 8-hour day. **THE TRAP:** `x + null` COERCES to `x`, so `getCoveragePlan`'s `dayDelta * 1440 + timeToMins_(...)` would place a shift at midnight — strictly worse than the `NaN` it replaced, which merely dropped the rep from the buckets. Arithmetic callers need an explicit `=== null` check, not a truthiness test (`0` is a valid midnight). Verify: the A3 behavioural pin (both rejection paths — no-colon AND colon-with-non-numeric, bite-checked), the caller-shape scan, and the `timeToMins_nullOnUnparseable` smoke test (which must use a strict `=== null` check — `_assertEq` compares via `JSON.stringify`, where `NaN` and `null` are both `"null"`) | Subsystem: Server
+
+INV-177 | **Dev-ness requires BOTH instance markers — `INSTANCE_LABEL` set AND `INSTANCE_IS_PROD` explicitly not `'true'`.** An UNSET marker resolves to PRODUCTION, because unset is production's default state. The old test was "label set AND not `isProdInstance_()`", and `isProdInstance_()` is false whenever the property is unset — so dev-ness was inferred from the mere PRESENCE of a banner label, and labelling prod (which the blue-green docs recommend) silently flipped prod into dev: `runNightlySelfTest` would run the full destructive `runAllTests` against live payroll/audit/PHI nightly, and `devScrubRoster_` would anonymize the LIVE roster. `assertNotProdInstance_` is NOT a backstop — it only fires on `INSTANCE_IS_PROD === 'true'`. `isDevInstance_()` is the single predicate; `assertDevInstance_` and `runNightlySelfTest` both route through it, and a half-configured instance says why on the Admin self-test line rather than degrading silently. This is the second time an absent marker was read as an affirmative signal, hence a library entry rather than a gotcha. Verify: the A5 dev-detection pin, including its "a LABEL alone is NOT dev" case | Subsystem: Server
+INV-178 | **A section heading is an `<h2>`, not a styled `<div>`.** Heading navigation is the primary way a screen-reader user moves through a dense page; every view rendered exactly ONE heading (its `<h1>`) and used `<div>`/`<span>` for every card label below it, so that navigation stopped at the page title on ~30 surfaces. The three section-heading classes (`.card-label` 20 sites, `.tr-card-title` 5, `.dash-seclabel` 2) render as `<h2>`. Each class already fully specified its own typography, so the conversion is a UA-margin reset and nothing else (`margin-top: 0` on `.card-label`, which already set `margin-bottom`; `margin: 0` on the other two, which sit in flex head rows). `.kicker` stays a `<div>` (an eyebrow ABOVE a heading is not itself one) and `.rail-card` was already `<h4>`. **VERIFY BY MEASURING INSIDE THE REAL PARENT** — a plain-div fixture reports `display: inline -> block` for the two span cases, which is pure artifact, since both live in `display: flex` heads that blockify any child. Verify: the A13 class-scan tripwire (scans by CLASS, so a NEW card added as a div fails) + `test/visual/a13-measure.mjs` | Subsystem: Client (all view partials)
+INV-179 | **When a convention is worth a tripwire, scan a DERIVED file list (`PARSE_GUARD_PARTIALS`), never a hand-copied one.** Hand-listed scan sets have been found short three times — cycle-9 M-10 (a newly-included JS partial outside every harness list), cycle-11 M-4 (four hand copies of the registry/DOM coverage lists), cycle-13 B5-1 (the a11y pins named six files by hand). The last is the clearest evidence: the moment the list was derived, the SAME rule surfaced eight live defects the human audit had missed. A hand-copied list silently narrows as the codebase grows, and CI stays green while it does. Verify: the `A11Y_SCAN_PARTIALS` derivation plus the existing `PARSE_GUARD_PARTIALS` ↔ `index.html` `include()` coupling check | Subsystem: Test Suite
+
+### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
+
+**A `/broad-scan` of this project is not complete until the interface has been
+LOOKED AT, not only read.** This is a project-local requirement recorded here
+rather than in `.claude/commands/broad-scan.md`, because that directory is
+verified byte-identical to `claude-workflow-tools` and a local edit would be
+silently overwritten by the next `/sync-commands`. Every audit command's first
+instruction is to read CLAUDE.md, so this reaches them.
+
+**Why it is mandatory, in the project's own numbers:** cycle 12 shipped 13
+production fixes and **9 came from a visual addendum the operator had to ASK
+for** — eleven prior code-lens cycles could not reach the class. Cycle 13 then
+found its top four items through the same lens. The two cycles agree: the code
+lens is at diminishing returns here and the interface lens is not.
+
+Run it as **Stage 1.5**, between the broad pass and the deep dives:
+1. `cd test/visual && node build.mjs && node shoot.mjs` (needs `npm ci` there
+   once; Chromium is pre-installed in the web container).
+2. Read `report.json` — a `missing` entry means the scenario rendered a LOADER,
+   not the real view. Add the fixture before trusting that screenshot.
+3. Actually OPEN the 20 PNGs. Compare light vs dark and wide vs compact vs
+   mobile for the same scenario; that pairing is what surfaces theme and
+   breakpoint defects.
+4. Re-shoot after ANY change to `styles*.html`, `styles_design_tokens.html`, or
+   a view partial's CSS, and verify the fix by MEASURING the new render. V-9
+   (cycle 12) and A2/FO-3 (cycle 13) were each wrong on the first reasoned
+   attempt and right only after measurement.
+
+**Split findings by what you can actually verify** — structural facts (a missing
+breakpoint, a roleless control, a token that resolves wrong) are findings;
+appearance judgements are OPERATOR VISUAL CHECKS written as Regression
+Scenarios. Never report "this looks cramped" as a finding.
+
+**The harness is NOT in CI** (it needs Chromium and human eyes), so nothing
+enforces this except this entry.
 
 ### Policy Configuration
 Policy threshold: 4/10
@@ -5738,8 +5996,9 @@ S72 | Coverage planner (#3) | Subsystem: Server, Client (Time Clock views)
   Expected: `getCoveragePlan` is manager-gated, read-only, range-capped (1–14 days), PHI-free (names + schedule + PTO status). Per-tz shifts (v1). The hourly distinct-rep math matches the pure `coverageBucketHours_` (Node-pinned); every server string `esc()`'d. INV-127.
 
 ### Frozen Subsystems
-- Legacy Call Notes Add-on (`call-notes/`, `call-notes-legacy/`) — superseded by the Call Notes module in `web-app/cn/` + `Code.js`; the Workspace Add-on path is abandoned because org admin policy blocks Marketplace install without ticket-driven allowlisting. Unfreeze only if the org adopts Marketplace Add-ons (not anticipated). Skipped by default; name it explicitly to audit. (These dirs are not in the Subsystems list above — this entry documents why.)
-- Bound form-generator reference (`incoming/form-generator/`) — the pre-port bound Apps Script the Intake module was rewritten from; kept on disk as porting reference only. Replaced by `web-app/intake/` + the Intake endpoint family (shipped). No unfreeze condition anticipated — delete-candidate once the operator confirms the port needs no further reference. Skipped by default; name it explicitly to audit.
+- **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.
+- **To consult them:** `git show 9586b29:incoming/form-generator/filterRecommendations.js` (or `git checkout 9586b29 -- incoming/form-generator` into a scratch worktree). Nothing needs unfreezing to read them.
+- The Frozen-Subsystem MECHANISM stays documented here for future use — a subsystem that is superseded but still on disk belongs in this section so audits skip it by default.
 
 ### Deploy Command
 Server: `cd web-app && clasp push -f`, then Apps Script editor → Deploy → Manage deployments → Edit current deployment → Version: **New version** → Deploy. Web app picks up the change on next page load.

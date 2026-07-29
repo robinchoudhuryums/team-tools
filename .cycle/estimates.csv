@@ -58,3 +58,5 @@ date,cycle,action,estimate,estimated_hours,actual_hours,calibration_note
 2026-07-27,12,V-10 — invisible zero-hour bars,S,0.25,0.25,on estimate
 2026-07-27,12,V-11 — Coaching onto mtRenderTable_,S/M,2.0,0.75,"2.7x UNDER: the component's rowClass hook already existed, so it was a config translation, not a rebuild"
 2026-07-27,12,V-12 — differentiate the two chip rows,S,0.5,0.5,on estimate
+2026-07-29,13,A13 - no heading outline below h1,M,6.0,1.5,"4x UNDER: each heading class already fully specified its typography, so it was a tag swap plus a UA-margin reset, not a restyle. The balanced-tag replacer and the measurement tool were most of the time."
+2026-07-29,13,Batches 1-3 (A1-A12 + follow-ons),-,,,"NOT RECOVERABLE: estimates were given in chat when the batches were proposed but never written here at the time, so there is no baseline to compare. Process fix: write the estimate row when the batch is PROPOSED, not at reflect."

@@ -1479,6 +1479,10 @@
     display: flex; flex-direction: column; gap: 8px;
   }
   .cn-qa-label {
+    /* A1 (cycle 13): <button>, not <div> — the tray renders EXPANDED, so a
+       keyboard user could always read the answers, but collapsing was
+       unreachable. Reset keeps it identical to the div it replaced. */
+    appearance: none; -webkit-appearance: none; background: none; border: 0; padding: 0;
     display: inline-flex; align-items: center; gap: 6px;
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     color: var(--success-deep); letter-spacing: .14em; text-transform: uppercase;
@@ -2526,10 +2530,10 @@ function cnRenderActiveForm_() {
         <div class="rail-card">
           <h4><span>Flags</span><span class="sub">categorize</span></h4>
           <div class="rail-flags" role="group" aria-label="Flag this note">
-            <button type="button" class="flag-btn action"   data-flag="action"   aria-label="Flag for action" title="Flag for action (follow-up)">${icon('flag', 12)}<span class="flag-lbl">Action</span></button>
-            <button type="button" class="flag-btn training" data-flag="training" aria-label="Flag for training" title="Flag for training (need clarification)">${icon('bulb', 12)}<span class="flag-lbl">Training</span></button>
-            <button type="button" class="flag-btn review"   data-flag="review"   aria-label="Review candidate" title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)}<span class="flag-lbl">Review</span></button>
-            <button type="button" class="flag-btn urgent"   data-flag="urgent"   aria-label="Mark urgent" title="Mark urgent">${icon('warning', 12)}<span class="flag-lbl">Urgent</span></button>
+            <button type="button" class="flag-btn action"   data-flag="action"   aria-pressed="false" aria-label="Flag for action" title="Flag for action (follow-up)">${icon('flag', 12)}<span class="flag-lbl">Action</span></button>
+            <button type="button" class="flag-btn training" data-flag="training" aria-pressed="false" aria-label="Flag for training" title="Flag for training (need clarification)">${icon('bulb', 12)}<span class="flag-lbl">Training</span></button>
+            <button type="button" class="flag-btn review"   data-flag="review"   aria-pressed="false" aria-label="Review candidate" title="Review candidate (great call — worth a 5-star ask)">${icon('thumbsUp', 12)}<span class="flag-lbl">Review</span></button>
+            <button type="button" class="flag-btn urgent"   data-flag="urgent"   aria-pressed="false" aria-label="Mark urgent" title="Mark urgent">${icon('warning', 12)}<span class="flag-lbl">Urgent</span></button>
           </div>
         </div>
 
@@ -2990,7 +2994,11 @@ function cnSetFormFlags_(form, flagsArray) {
   form.dataset.flag = primary;
   // Sync button .on classes
   form.querySelectorAll('.flag-btn[data-flag]').forEach(function (b) {
-    b.classList.toggle('on', filtered.indexOf(b.dataset.flag) >= 0);
+    // A11 rule: the class is invisible to assistive tech — keep aria-pressed
+    // in step so a screen reader is told which flags are selected.
+    const on = filtered.indexOf(b.dataset.flag) >= 0;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   // Training-q row visibility — show when training is one of the selected flags
   const trainingRow = document.getElementById('cn-training-q-row');
@@ -4733,6 +4741,17 @@ function cnLatestManagerReply_(sub) {
   return { message: '', by: '' };
 }
 
+/** A11 (cycle 13) — Training-Answers tray disclosure. Replaces the inline
+ *  `this.parentElement.classList.toggle('collapsed')`, which flipped the class
+ *  but left aria-expanded stale, so assistive tech was told the tray was open
+ *  after it had been collapsed. */
+function cnToggleQaTray_(btn) {
+  const tray = btn && btn.parentElement;
+  if (!tray) return;
+  const collapsed = tray.classList.toggle('collapsed');
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+
 function cnRenderTrainingQATray_() {
   const host = document.getElementById('cn-training-qa-tray');
   if (!host) return;
@@ -4753,8 +4772,9 @@ function cnRenderTrainingQATray_() {
     `;
   }).join('');
   host.innerHTML =
-    `<div class="cn-qa-label" onclick="this.parentElement.classList.toggle('collapsed')">${icon('bulb', 11)}<span>Training Answers · ${qa.length}</span> ${icon('chevronDown', 10)}</div>` +
-    `<div class="cn-qa-cards">${cards}</div>`;
+    // A1 + A11: keyboard-reachable disclosure with its open state exposed.
+    `<button type="button" class="cn-qa-label" aria-expanded="true" aria-controls="cn-qa-cards" onclick="cnToggleQaTray_(this)">${icon('bulb', 11)}<span>Training Answers · ${qa.length}</span> ${icon('chevronDown', 10)}</button>` +
+    `<div class="cn-qa-cards" id="cn-qa-cards">${cards}</div>`;
 }
 
 function cnToggleResolved_(noteId) {
@@ -4901,7 +4921,7 @@ function cnRenderComposerTabStrip_(active, noteId) {
     ? ''
     : ' onclick="cnSwitchComposerTab_(\'department\')"';
   return `<div class="cn-composer-tabs" role="tablist" aria-label="Email composer mode">
-    <button type="button" role="tab" class="${deptCls}" aria-selected="${active === 'department'}"${deptOnclick} title="${esc(deptTitle)}">
+    <button type="button" role="tab" class="${deptCls}" aria-selected="${active === 'department'}"${deptDisabled ? ' aria-disabled="true"' : ''}${deptOnclick} title="${esc(deptTitle)}">
       ${icon('mail', 13)} Department
     </button>
     <button type="button" role="tab" class="${extCls}" aria-selected="${active === 'external'}" onclick="cnSwitchComposerTab_('external')" title="Send to a customer or provider">
@@ -6274,7 +6294,7 @@ function cnRenderManageView(area) {
     <div id="cn-mgr-action-badge" style="margin-bottom:10px"></div>
     ${exportBtnRow}
     <div class="toolbar-tabs" role="group" aria-label="Manager queue" style="margin-bottom:14px">
-      <button class="toolbar-tab active" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
+      <button class="toolbar-tab active" aria-current="page" data-mqueue="training" onclick="cnMgrLoadQueue_('training')">Training</button>
       <button class="toolbar-tab" data-mqueue="review" onclick="cnMgrLoadQueue_('review')">Review Candidates</button>
       <button class="toolbar-tab" data-mqueue="rep" onclick="cnMgrLoadRepView_()">Per-Rep View</button>
       <button class="toolbar-tab" data-mqueue="stats" onclick="cnMgrLoadStatsView_()">Stats</button>
@@ -6343,7 +6363,10 @@ function cnOpenExportModal_() {
 
 function cnMgrLoadQueue_(kind) {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.mqueue === kind);
+    const on = b.dataset.mqueue === kind;
+      b.classList.toggle('active', on);
+      // A11 rule: expose the active sub-tab, don't just paint it.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
   if (host) host.innerHTML = loSkeleton(4);
@@ -6377,7 +6400,10 @@ function cnMgrLoadQueue_(kind) {
 
 function cnMgrLoadRepView_() {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.mqueue === 'rep');
+    const on = b.dataset.mqueue === 'rep';
+      b.classList.toggle('active', on);
+      // A11 rule: expose the active sub-tab, don't just paint it.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
   if (!host) return;
@@ -6732,7 +6758,10 @@ function cnMgrRenderQueue_(host, results) {
 
 function cnMgrLoadStatsView_() {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.mqueue === 'stats');
+    const on = b.dataset.mqueue === 'stats';
+      b.classList.toggle('active', on);
+      // A11 rule: expose the active sub-tab, don't just paint it.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
   if (!host) return;
@@ -6866,7 +6895,10 @@ function cnStatsDrillDown_(repId) {
 
 function cnMgrLoadSearchView_() {
   document.querySelectorAll('.toolbar-tab[data-mqueue]').forEach(function (b) {
-    b.classList.toggle('active', b.dataset.mqueue === 'search');
+    const on = b.dataset.mqueue === 'search';
+      b.classList.toggle('active', on);
+      // A11 rule: expose the active sub-tab, don't just paint it.
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   const host = document.getElementById('cn-mgr-results');
   if (!host) return;
@@ -7568,7 +7600,8 @@ function enterCallNotesAdminView(area) {
   // route the existing slots into show/hide panes.
   var tab = function (key, label) {
     return '<button class="toolbar-tab' + (CN_STATE.adminTab === key ? ' active' : '') +
-      '" data-admin-tab="' + key + '" onclick="cnAdminTab_(\'' + key + '\')">' + label + '</button>';
+      '" data-admin-tab="' + key + '"' + (CN_STATE.adminTab === key ? ' aria-current="page"' : '') +   // A11
+      ' onclick="cnAdminTab_(\'' + key + '\')">' + label + '</button>';
   };
   if (!CN_STATE.adminTab) CN_STATE.adminTab = 'overview';
   var paneStyle = function (key) { return CN_STATE.adminTab === key ? '' : 'display:none'; };
@@ -7822,7 +7855,9 @@ function cnRenderDeployReadinessHtml_(res) {
 function cnAdminTab_(key) {
   CN_STATE.adminTab = key;
   document.querySelectorAll('.cn-admin-tabs .toolbar-tab').forEach(function (b) {
-    b.classList.toggle('active', b.getAttribute('data-admin-tab') === key);
+    const on = b.getAttribute('data-admin-tab') === key;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');   // A11
   });
   document.querySelectorAll('.cn-admin-pane').forEach(function (p) {
     p.style.display = (p.getAttribute('data-pane') === key) ? '' : 'none';
@@ -8658,6 +8693,82 @@ function cnSetSysFromHealth_(res) {
   cnSetSysCard_('cdr', 'CDR', cdrTone, cdrVal, cdrSub);
 }
 
+/** PHASE 0 (sub-queue work) — renders the READ-ONLY queue inventory inside the
+ *  Automation Health CDR block. Self-contained (no panel closures) so it stays
+ *  Node-testable like the other pure render helpers.
+ *
+ *  Its job is to answer ONE question before any per-queue UI gets designed:
+ *  does DQE carry one row per (agent, queue, date) or one row per
+ *  (agent, date)? If the latter, per-queue REP attribution does not exist in
+ *  the data and the whole feature has to change shape — so the verdict is
+ *  stated first and in plain language, not buried under the tables.
+ *  Every server string is esc()'d (the Metrics/CN innerHTML rule). */
+function cnQueueInventoryHtml_(q) {
+  var box = function (tone, html) {
+    var c = tone === 'warn'
+      ? 'color:var(--warning-deep);background:var(--warn-soft)'
+      : (tone === 'good' ? 'color:var(--success-deep);background:var(--accent-soft)'
+                         : 'color:var(--ink);background:var(--paper-2)');
+    return '<div style="font-size:12px;' + c + ';border-radius:6px;padding:6px 10px">' + html + '</div>';
+  };
+  if (!q || q.ok !== true) {
+    return box('warn', icon('warning', 11) + ' Queue inventory unavailable: ' +
+      esc((q && q.error) || 'unknown error') + '.');
+  }
+  var h = '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.12em;' +
+    'text-transform:uppercase;margin:12px 0 6px">Queue inventory · discovery</div>';
+
+  // ── the gate verdict ──
+  var ad = q.agentDateRows || {};
+  if (!q.rowsInWindow) {
+    h += box('warn', icon('warning', 11) + ' No CDR rows in ' + esc(q.from || '') + ' → ' + esc(q.to || '') +
+      ', so the row shape cannot be determined. Widen the window or check the feed.');
+  } else if (ad.max > 1) {
+    var sample = (ad.sampleMulti || []).map(function (s) {
+      return esc(String(s.key).replace('|', ' on ')) + ' (' + s.rows + ')';
+    }).join(', ');
+    h += box('good', icon('checkCircle', 11) + ' <strong>Per-queue rep attribution IS available.</strong> ' +
+      esc(ad.multiCount) + ' agent-day(s) carry more than one row (max ' + esc(ad.max) + ')' +
+      (sample ? ' — e.g. ' + sample : '') + '.');
+  } else {
+    h += box('warn', icon('warning', 11) + ' <strong>Per-queue rep attribution is NOT in this data.</strong> ' +
+      'Every agent-day in the window has exactly one DQE row, so a rep’s numbers cannot be split by queue. ' +
+      'Queue-level metrics would have to come from the A_Q_* rows below instead.');
+  }
+
+  var rows = function (title, items, render) {
+    if (!items || !items.length) {
+      return '<div style="font-size:12px;color:var(--muted);margin-top:8px">' + title + ': none found.</div>';
+    }
+    return '<div style="font-size:12px;margin-top:8px"><strong>' + title + '</strong> (' + items.length + ')' +
+      '<div style="margin-top:4px;display:grid;grid-template-columns:1fr auto;gap:2px 10px">' +
+      items.map(render).join('') + '</div></div>';
+  };
+
+  h += rows('Queue identifiers (DQE col 4)', q.queues, function (x) {
+    return '<div style="min-width:0;overflow-wrap:anywhere">' + esc(x.queue) + '</div>' +
+      '<div style="font-family:var(--mono);color:var(--muted);white-space:nowrap">' +
+      esc(x.rows) + ' row · ' + esc(x.agents) + ' agent</div>';
+  });
+  h += rows('Queue-aggregate rows currently skipped', q.sentinels, function (x) {
+    return '<div style="min-width:0;overflow-wrap:anywhere">' + esc(x.name) + '</div>' +
+      '<div style="font-family:var(--mono);color:var(--muted);white-space:nowrap">' + esc(x.rows) + ' row</div>';
+  });
+  var tc = (q.transferCols || []).filter(function (c) { return c.header || c.populated; });
+  h += rows('Transfer per-queue columns (H:R)', tc, function (x) {
+    return '<div style="min-width:0;overflow-wrap:anywhere">' + esc(x.header || '(col ' + x.col + ', no header)') + '</div>' +
+      '<div style="font-family:var(--mono);color:' + (x.populated ? 'var(--muted)' : 'var(--muted-3)') +
+      ';white-space:nowrap">' + esc(x.populated) + ' / ' + esc(x.scanned) + ' populated</div>';
+  });
+  if (q.transferError) {
+    h += '<div style="font-size:12px;color:var(--warning-deep);margin-top:4px">' + icon('warning', 11) +
+      ' Transfer tab not read: ' + esc(q.transferError) + '</div>';
+  }
+  h += '<div style="font-size:11px;color:var(--muted);margin-top:8px">Scanned ' + esc(q.rowsScanned) +
+    ' row(s), ' + esc(q.rowsInWindow) + ' in window' + (q.truncated ? ' · <strong>capped</strong> — older rows not scanned' : '') + '.</div>';
+  return h;
+}
+
 function cnRenderHealthPanel_(res) {
   var tz = res.managerTzAbbr || '';
   var okLine = function (txt) {
@@ -8739,6 +8850,7 @@ function cnRenderHealthPanel_(res) {
       cdrParts.push('<div style="font-size:12px;color:var(--muted)">' + icon('info', 11) + ' ' + cdr.rosterWithNoCdr.length +
         ' roster name(s) with no CDR rows this week: ' + esc(cdr.rosterWithNoCdr.join(', ')) + '</div>');
     }
+    if (cdr.queueInventory) cdrParts.push(cnQueueInventoryHtml_(cdr.queueInventory));
   }
   var cdrHtml = cdrParts.join('<div style="height:6px"></div>');
 
@@ -8845,6 +8957,10 @@ function cnSelfTestHtml_(st) {
     '</span> · ' + esc(String(st.pass)) + ' passed / ' + esc(String(st.skip)) + ' skipped · ' +
     esc(st.mode) + ' mode · ' + esc(st.date) +
     (st.error ? ' · <span style="color:var(--danger-deep)">' + esc(st.error) + '</span>' : '') +
+    // A5 (cycle 13): a labelled instance with no explicit INSTANCE_IS_PROD runs
+    // SMOKE (an unset marker is treated as production). Say so, or the operator
+    // has no way to tell the downgrade from a settled choice.
+    (st.note ? '<div style="margin-top:3px;color:var(--warning-deep)">' + icon('warning', 11) + ' ' + esc(st.note) + '</div>' : '') +
   '</div>';
 }
 

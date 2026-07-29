@@ -50,17 +50,21 @@ function enterCoachingView() {
   if (isMgr && window.COACH_PREFILL) COACH_MODE = 'team';
   else COACH_MODE = isMgr ? coachReadMode_() : 'mine';
 
+  // A11 (cycle 13): the wrapper already declared role="tablist" but the tabs
+  // carried no role and no selected state, so the `.on` class was the only
+  // signal. Complete the pattern: role="tab" + aria-selected + aria-controls
+  // pointing at the panel below (which now declares role="tabpanel").
   var toggle = isMgr
-    ? '<div class="coach-modes" role="tablist">' +
-        '<button class="coach-mode' + (COACH_MODE === 'mine' ? ' on' : '') + '" data-coach-mode="mine">' + icon('bulb', 13) + ' My Coaching</button>' +
-        '<button class="coach-mode' + (COACH_MODE === 'team' ? ' on' : '') + '" data-coach-mode="team">' + icon('manage', 13) + ' Team Coaching</button>' +
+    ? '<div class="coach-modes" role="tablist" aria-label="Coaching view">' +
+        '<button class="coach-mode' + (COACH_MODE === 'mine' ? ' on' : '') + '" role="tab" aria-controls="coach-content" aria-selected="' + (COACH_MODE === 'mine') + '" data-coach-mode="mine">' + icon('bulb', 13) + ' My Coaching</button>' +
+        '<button class="coach-mode' + (COACH_MODE === 'team' ? ' on' : '') + '" role="tab" aria-controls="coach-content" aria-selected="' + (COACH_MODE === 'team') + '" data-coach-mode="team">' + icon('manage', 13) + ' Team Coaching</button>' +
       '</div>'
     : '';
   area.innerHTML =
     (COMPACT_MODE ? '<div class="compact-header">' + icon('thumbsUp', 16) + ' Coaching</div>' : '') +
     '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '"><h1 class="view-title">Coaching</h1></div>' +
     toggle +
-    '<div id="coach-content"></div>';
+    '<div id="coach-content"' + (isMgr ? ' role="tabpanel"' : '') + '></div>';
   coachDispatchMode_();
 }
 
@@ -74,7 +78,9 @@ function coachSwitchMode_(mode) {
   COACH_MODE = mode;
   coachWriteMode_(mode);
   document.querySelectorAll('.coach-mode').forEach(function (b) {
-    b.classList.toggle('on', b.getAttribute('data-coach-mode') === mode);
+    var on = b.getAttribute('data-coach-mode') === mode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');   // A11
   });
   coachDispatchMode_();
 }
@@ -409,6 +415,10 @@ document.addEventListener('click', function (e) {
 .coach-kpi-num.crit { color:var(--danger-deep); }
 .coach-kpi-lbl { margin-top:4px; font:600 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
 :root[data-compact] .coach-kpis { grid-template-columns:repeat(2, 1fr); }
+/* A2 (cycle 13): the compact rule above is the POP-OUT, not a viewport
+   breakpoint — four KPI cells stayed four cells on a phone. Matches the
+   2×2 the shared .telemetry twin now takes at the same width. */
+@media (max-width: 540px) { .coach-kpis { grid-template-columns:repeat(2, 1fr); } }
 .coach-sevbar { display:flex; flex-wrap:wrap; gap:14px; margin:0 0 14px; }
 .coach-sevstat { display:inline-flex; align-items:center; gap:6px; font-size:.9rem; }
 .coach-sevstat b { font-variant-numeric:tabular-nums; color:var(--ink); }

@@ -464,7 +464,9 @@ function sanitizeTagsArray_(arr) {
 // the "Spreadsheet TZ ≠ script TZ" gotcha in call-data-reporting/CLAUDE.md.
 // AvgAbdWait (col AG / index 33) and CsrAvgAbdWait (col AH / index 34) are
 // also duration columns, but are intentionally NOT read by any metric today,
-// so they are omitted from this enum to avoid a dead-but-tempting entry. If
+// so they are omitted from this enum to avoid a dead-but-tempting entry —
+// `QUEUE_EXT` below was exactly such an entry for years (declared, read
+// NOWHERE) until cycle 14's Phase 0 queue inventory finally consumed it. If
 // you ever wire them in: re-add them here AND to CDR_EXPECTED_HEADERS, and
 // read them through getDisplayValues() (never getValue()) or the phantom
 // timezone offset (INV-64) will silently corrupt the parsed seconds.
@@ -484,10 +486,20 @@ const CDR_EXPECTED_HEADERS = {
 // (H:R), Comments. Date is M/D/YYYY (handled by cdrRowDateIso_) and Transfer %
 // is a "29.79%" string — both read via getDisplayValues() per the CDR
 // spreadsheet-tz gotcha (INV-64). Only the first columns feed the trend; the
-// per-queue breakdown is read-but-ignored for now.
+// per-queue H:R block is still read-but-ignored by THIS reader (the range is
+// fetched either way, so using it later costs nothing). Since cycle 14's
+// Phase 0 it is no longer wholly unread: `cdrQueueInventory_` reports which of
+// those columns carry data, as input to the sub-queue feature's design.
 const CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
 const CSRT = { DATE: 2, NAME: 3, TRANSFER_PCT: 4, TOTAL_CALLS: 5, TRANSFERRED: 6 };
 const CSR_TRANSFER_NUM_COLS = 19;   // A:S
+// Phase 0 (sub-queue discovery) — bounds for the READ-ONLY queue inventory
+// rendered in Admin → Automation Health. Tail-bounded like every other
+// diagnostic reader here; the payload cap keeps a sheet with dozens of queues
+// from bloating the panel (it reports `truncated` rather than silently
+// describing only part of itself).
+const CDR_QUEUE_SCAN_MAX = 4000;
+const CDR_QUEUE_LIST_CAP = 40;
 // Cycle-11 L-2 — expected headers for the columns CSRT actually reads
 // (1-indexed, so each key = the CSRT index + 1; a Node pin holds the two
 // aligned). The Transfer tab is written by the operator-owned
@@ -644,14 +656,47 @@ function assertNotProdInstance_(label) {
       '(INSTANCE_IS_PROD is set). Run it on the DEV Apps Script project — see docs/deployment.md.');
   }
 }
-/** Throws UNLESS this is a clearly-labeled DEV instance (INSTANCE_LABEL set AND
- *  INSTANCE_IS_PROD not 'true'). The bulletproof guard for dev-only tooling that
- *  MUTATES sheets (the roster scrubber). Prod has no INSTANCE_LABEL → refuses, so
- *  a misfire can never touch the team's live roster. */
+/**
+ * THE dev-instance predicate (A5, cycle 13). An instance counts as DEV only
+ * when it carries BOTH markers: an `INSTANCE_LABEL` **and** an `INSTANCE_IS_PROD`
+ * that is explicitly present and not 'true'.
+ *
+ * WHY the second half is load-bearing: the old test was
+ * `label set && !isProdInstance_()`, and `isProdInstance_()` is false whenever
+ * the property is UNSET — which is the DEFAULT state of production (both
+ * properties are documented as optional, and prod today has neither). So the
+ * old predicate inferred "dev" from the mere PRESENCE of a banner label, and
+ * labelling prod — something the docs actively recommend so the two tabs can't
+ * be confused — silently flipped prod into dev:
+ *   • `runNightlySelfTest` would run the FULL `runAllTests` suite against live
+ *     payroll / audit / PHI sheets every night at 1am. `assertNotProdInstance_`
+ *     does NOT catch this: it only throws when INSTANCE_IS_PROD === 'true'.
+ *     `cleanupTestData()` sweeps at the end, but a run killed by the 6-minute
+ *     ceiling (exactly what F15's sentinel exists to detect) leaves `TEST_`
+ *     rows behind in the Timesheet and AuditLog.
+ *   • `devScrubRoster_` would ANONYMIZE THE LIVE ROSTER — replacing every
+ *     employee email with `@example.invalid` and blanking column L.
+ * An absent marker is now AMBIGUOUS and resolves to NOT-dev, so the failure
+ * direction is "a dev tool refuses until you finish configuring dev" instead of
+ * "a prod instance quietly behaves like dev".
+ */
+function isDevInstance_() {
+  if (!instanceLabel_()) return false;
+  let raw = null;
+  try { raw = PropertiesService.getScriptProperties().getProperty('INSTANCE_IS_PROD'); }
+  catch (e) { return false; }
+  if (raw === null || String(raw).trim() === '') return false;   // unset = ambiguous = not dev
+  return String(raw).trim().toLowerCase() !== 'true';
+}
+
+/** Throws UNLESS `isDevInstance_()` — the bulletproof guard for dev-only tooling
+ *  that MUTATES sheets (the roster scrubber). */
 function assertDevInstance_(label) {
-  if (!instanceLabel_() || isProdInstance_()) {
-    throw new Error((label || 'This dev tool') + ' refuses to run: this is not a labeled DEV instance ' +
-      '(set Script Property INSTANCE_LABEL on the dev project — never on prod). See docs/deployment.md.');
+  if (!isDevInstance_()) {
+    throw new Error((label || 'This dev tool') + ' refuses to run: this is not a confirmed DEV instance. ' +
+      'A dev project needs BOTH Script Properties — INSTANCE_LABEL (e.g. "DEV") and ' +
+      'INSTANCE_IS_PROD set explicitly to "false". An UNSET INSTANCE_IS_PROD is treated as ' +
+      'production, because that is prod\'s default state. See docs/deployment.md.');
   }
 }
 
@@ -692,35 +737,22 @@ function getEmployeeState() {
       sickLeave: emp.sickLeave,
       annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
       sickLeaveMax:   CONFIG.SICK_LEAVE_MAX   || 10,
-      // Future-dated PENDING annual days (not yet deducted) — the Clock PTO pips
-      // mark these amber: still in the green balance but tentatively committed.
-      annualPlannedUpcoming: getUpcomingAnnualPlanned_(emp.id, today),
+      // Cycle-13 follow-on: `annualPlannedUpcoming` was REMOVED here, along with
+      // its `getUpcomingAnnualPlanned_` helper. Its only reader was
+      // `renderPtoMini_`, deleted in cycle 8 when the Dashboard redesign moved
+      // Annual PTO to the Time/PTO tab — and that tile computes its own
+      // pending-planned total client-side from `data.allRequests` (INV-72). The
+      // field had been shipped on every getEmployeeState call, and a whole
+      // TimeOffRequests read performed for it, with nobody reading either. Batch
+      // 2's A8 hardened that helper's error path; this supersedes it — the
+      // honest end state was that the whole path was dead. (INV-74 / the L11
+      // "misleading dead code" class.)
       flags: getClientFeatureFlags_(),
       // Blue-green: a short label ('DEV') shown as a banner so an isolated dev
       // instance can't be mistaken for the team's live one. '' on prod → no banner.
       instanceLabel: instanceLabel_(),
     };
   } catch (err) { return { error: err.message }; }
-}
-
-/** Sum of future-dated PENDING annual-bucket leave days for an employee.
- *  Approved future PTO is already deducted from the balance on approval, so
- *  only pending requests are "planned but not yet reflected" (the amber pips). */
-function getUpcomingAnnualPlanned_(empId, todayIso) {
-  try {
-    const rows = getOrCreateTimeOffSheet_().getDataRange().getValues();
-    let days = 0;
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][TO.EMP_ID]).trim() !== empId) continue;
-      const d = normalizeDate_(rows[i][TO.DATE]);
-      if (!d || d <= todayIso) continue;   // future-dated only
-      const st = String(rows[i][TO.STATUS] || '').toLowerCase().trim();
-      if (st !== 'pending') continue;
-      const ded = getLeaveDeduction_(String(rows[i][TO.TYPE]));
-      if (ded && ded.bucket === 'annual') days += ded.days;
-    }
-    return days;
-  } catch (e) { return 0; }
 }
 
 function recordPunch(punchType, custom) {
@@ -1067,7 +1099,10 @@ function getManagerDashboard() {
     Object.keys(sparkPunchMap).forEach(key => {
       const p = sparkPunchMap[key];
       if (p.ClockIn && p.ClockOut) {
-        sparkHoursMap[key] = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+        // A3: a null (unparseable) result is left OUT of the map, so the
+        // sparkline reads that day as 0/no-data rather than plotting NaN.
+        const h = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+        if (h !== null) sparkHoursMap[key] = h;
       }
     });
     liveStatus.forEach(ls => {
@@ -4662,11 +4697,16 @@ const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
  *  rows, INV-13 spirit) + the 5-min-cached CDR aggregate. Never throws — CDR
  *  unreachability degrades to { cdr: { ok:false, error } } so the rest of the
  *  panel still renders (same best-effort posture as the shift-stats overlay). */
-function getAutomationHealth() {
+function getAutomationHealth(opts) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { error: 'Admin access required.' };
-    return computeAutomationHealth_();
+    // Phase 0: the panel wants the queue inventory; the 10-min-per-manager
+    // BADGE and the daily digest call computeAutomationHealth_ directly and so
+    // never pay for it. getDeployReadiness opts out explicitly (it only bands
+    // store config — the getStorageHealth({scanEmbeds:false}) precedent).
+    const scanQueues = !(opts && opts.scanQueues === false);
+    return computeAutomationHealth_({ scanQueues: scanQueues });
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4792,8 +4832,11 @@ function automationDetectorChecks_() {
   return checks;
 }
 
-function computeAutomationHealth_() {
+function computeAutomationHealth_(opts) {
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    // Default OFF: the three direct callers (badge, digest, deploy-readiness)
+    // must not pay for a diagnostic scan. Only getAutomationHealth() opts in.
+    const scanQueues = !!(opts && opts.scanQueues);
 
     // ── (e) detector liveness (Turn C) — pure writer↔parser round-trips ──
     const detectors = automationDetectorChecks_();
@@ -4893,6 +4936,13 @@ function computeAutomationHealth_() {
           unmatchedAgents: Object.keys(canonicalAgents).filter(function (a) { return !rosterSet[a]; }).sort(),
           rosterWithNoCdr: Object.keys(rosterSet).filter(function (n) { return !canonicalAgents[n]; }).sort(),
         };
+        // Phase 0 (sub-queue discovery) — opt-in, panel only. Best-effort: a
+        // failure here must never take down a health report that is otherwise
+        // fine, so it degrades to an error string inside its own field.
+        if (scanQueues) {
+          try { cdr.queueInventory = cdrQueueInventory_(from, to); }
+          catch (qErr) { cdr.queueInventory = { ok: false, error: qErr.message }; }
+        }
         // Turn C (the M-11 class): the off-roster diagnostic CHANNEL must
         // exist on the reader's meta — Team Metrics' unmatchedAgents sources
         // from it, and it was structurally absent (always-empty) until M-11.
@@ -4958,6 +5008,10 @@ function computeAutomationHealth_() {
           date: String(st.date || ''), mode: String(st.mode || ''),
           pass: Number(st.pass) || 0, fail: Number(st.fail) || 0, skip: Number(st.skip) || 0,
           error: String(st.error || ''),
+          // A5: a half-configured instance (labelled, but no explicit
+          // INSTANCE_IS_PROD) runs SMOKE and says why, so the downgrade is
+          // visible in the panel instead of looking like a settled choice.
+          note: String(st.note || ''),
           // F15: the RUNNING sentinel. A run that was KILLED (execution-time
           // limit — not catchable, so the outcome write never happens) leaves
           // this set. `stuck` = it has been "running" far longer than any real
@@ -5096,9 +5150,23 @@ function runNightlySelfTest() {
       Logger.log('runNightlySelfTest: test suite not present in this project — skipping.');
       return;
     }
-    const isDev = !!props.getProperty('INSTANCE_LABEL') &&
-      String(props.getProperty('INSTANCE_IS_PROD') || '').toLowerCase() !== 'true';
+    // A5 (cycle 13): the full suite runs ONLY on a CONFIRMED dev instance —
+    // both markers present (isDevInstance_). The old inline test inferred dev
+    // from the presence of INSTANCE_LABEL alone, so labelling prod (which the
+    // docs recommend, to tell the two tabs apart) silently promoted this to
+    // `runAllTests` against live payroll every night; assertNotProdInstance_
+    // does not catch it, because it only fires on INSTANCE_IS_PROD === 'true'.
+    const isDev = isDevInstance_();
     const mode = isDev ? 'full' : 'smoke';
+    // …and say so when a HALF-configured dev instance gets downgraded, rather
+    // than silently running smoke forever. A labelled instance with no explicit
+    // INSTANCE_IS_PROD is exactly the ambiguous case; the note rides the stored
+    // result into Automation Health so the operator can finish the setup.
+    const needsMarker = !isDev && !!instanceLabel_();
+    const note = needsMarker
+      ? 'Full suite skipped: INSTANCE_LABEL is set but INSTANCE_IS_PROD is not. ' +
+        'Set it explicitly ("false" on dev, "true" on prod) — an unset value is treated as production.'
+      : '';
     // F15 (cycle 12) — RUNNING sentinel. The heartbeat above proves the TRIGGER
     // fired, but the outcome below is written only on a normal return or a
     // CATCHABLE throw. An Apps Script execution-time-limit kill is not
@@ -5122,6 +5190,7 @@ function runNightlySelfTest() {
     const res = {
       date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
       mode: mode, pass: _TEST_STATE.pass, fail: _TEST_STATE.fail, skip: _TEST_STATE.skip,
+      note: note,   // A5 — surfaced in the Admin panel; '' on a settled instance
     };
     try { props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify(res)); } catch (e) {}
     if (res.fail > 0) {
@@ -5651,7 +5720,7 @@ function getDeployReadiness() {
     const storage = getStorageHealth({ scanEmbeds: false });   // #3 — deploy-readiness bands store config only, skip the Drive scan
     if (storage && storage.error) return { error: storage.error };
     let automation = {};
-    try { automation = getAutomationHealth() || {}; } catch (e) { automation = {}; }
+    try { automation = getAutomationHealth({ scanQueues: false }) || {}; } catch (e) { automation = {}; }
     const managerCount = getManagerEmails_().length;
     const res = deployReadinessItems_(storage, automation, managerCount);
     return {
@@ -8777,9 +8846,26 @@ function archiveOldCallNotes() {
     // 6-minute ceiling re-appended everything it had not deleted, duplicating
     // PHI into the cold archive night after night.
     let budget = CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN;
+    // A9 (cycle 13): report the cap as hit only when it actually TRUNCATED the
+    // run — i.e. the budget ran out while reps still had work. `budget <= 0`
+    // alone also fires when the last rep's move consumed exactly the remaining
+    // rows and nothing was left to do, so a CLEAN final run stamped
+    // `hitPerRunCap=2000` and an operator watching a first-enable backlog drain
+    // (INV-153's documented "expect several nights of capped runs") had no way
+    // to tell that it had finished.
+    // Residual (accepted): a remaining enrolled rep might itself have had no
+    // archivable notes, so this can still over-report by one run at the very
+    // end of a drain. It can no longer over-report on a run that visited every
+    // rep, which is the case an operator actually watches.
+    let truncated = false;
     try {
       for (let r = 1; r < roster.length; r++) {
-        if (budget <= 0) break;
+        if (budget <= 0) {
+          for (let k = r; k < roster.length; k++) {
+            if (cnEnrolledSheetId_(roster[k])) { truncated = true; break; }
+          }
+          break;
+        }
         const sheetId = cnEnrolledSheetId_(roster[r]);
         if (!sheetId) continue;
         const emp = {
@@ -8800,7 +8886,10 @@ function archiveOldCallNotes() {
     } finally {
       lock.releaseLock();
     }
-    const capped = budget <= 0 ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN}` : '';
+    // A9: `truncated`, not `budget <= 0` — see the loop above. Wording matches
+    // the Timesheet twin so both audit trails read the same way.
+    const capped = truncated
+      ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : '';
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
       `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}`);
     Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
@@ -10295,7 +10384,17 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
 function generateExportSheet_(startDate, endDate, cycleFilter) {
   const sourceSheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sourceSheet.getDataRange().getValues();
-  if (rows.length < 3) return { error: 'No timesheet data found.' };
+  // A7 (cycle 13): this used to be `if (rows.length < 3) return {error}` — an
+  // early return that fired BEFORE the F1 cold-archive read-through below, so
+  // once INV-153 archival had drained the live tab a retroactive payroll export
+  // refused with a misleading "no data" instead of reading the archive that
+  // holds it. Only the HEADER is genuinely required from the live tab (the
+  // export copies its two header rows verbatim); zero DATA rows is a legitimate
+  // state that the archive can still satisfy.
+  if (rows.length < 2) {
+    return { error: 'The Timesheet tab has no header rows — the export cannot be built. ' +
+                    'Check the ' + CONFIG.ADP_TAB + ' tab in the ADP spreadsheet.' };
+  }
 
   let allowedIds = null;
   let employeeCount = 0;
@@ -10483,7 +10582,11 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
     if (pm.ClockIn) {
       if (pm.ClockOut) {
         hoursWorked = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut || null, pm.LunchIn || null);
-        totalHours += hoursWorked; daysWorked++;
+        // A3: a null (unparseable time cell) reads as an INCOMPLETE day rather
+        // than adding NaN to the period total — `totalHours += NaN` used to
+        // turn the whole timesheet's total into NaN off one bad cell.
+        if (hoursWorked === null) { isIncomplete = true; incompleteCount++; }
+        else { totalHours += hoursWorked; daysWorked++; }
       } else if (dateStr === todayStr) inProgress = true;
         else if (dateStr < todayStr) { isIncomplete = true; incompleteCount++; }
     }
@@ -10532,7 +10635,10 @@ function buildCalendarForEmployee_(emp, year, month) {
   Object.keys(punchesByDate).forEach(dateStr => {
     const p = punchesByDate[dateStr];
     if (p.ClockIn && p.ClockOut) {
-      hoursByDate[dateStr] = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+      // A3: leave an unparseable day OUT of the map (calendar shows no hours
+      // badge) rather than writing NaN into it.
+      const h = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+      if (h !== null) hoursByDate[dateStr] = h;
     } else if (p.ClockIn && dateStr === todayStr) {
       hoursByDate[dateStr] = 'inProgress';
     }
@@ -11241,8 +11347,14 @@ function getCoveragePlan(fromDate, toDate) {
         const tentative = (pto === 'Pending');
         const conv = convertDateTime_(localDate, startHH, r.tz, mgrTz);
         const dayDelta = daysBetween_(fromDate, conv.date);
-        const absStart = dayDelta * 1440 + timeToMins_(conv.time);
-        if (!off) intervals.push({ rep: r.id, absStart: absStart, absEnd: absStart + r.sched.lengthMin, tentative: tentative });
+        const convMins = timeToMins_(conv.time);
+        // A3: timeToMins_ now returns null (not NaN) on an unparseable time.
+        // `dayDelta * 1440 + null` would COERCE to 0 and place the rep's shift
+        // at midnight — worse than the old NaN, which merely dropped them from
+        // the buckets. conv.time comes from convertDateTime_ so this is
+        // defensive, but the coercion makes an explicit guard mandatory.
+        const absStart = (convMins === null) ? null : dayDelta * 1440 + convMins;
+        if (!off && absStart !== null) intervals.push({ rep: r.id, absStart: absStart, absEnd: absStart + r.sched.lengthMin, tentative: tentative });
         if (dd >= 0 && dd < numDays) {
           const endConv = convertDateTime_(localDate, endHH, r.tz, mgrTz);
           days[dd].reps.push({
@@ -11312,6 +11424,12 @@ function getPunctualityReport(fromDate, toDate) {
       const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
       if (type !== 'ClockIn' && type !== 'LunchOut') continue;
       const mins = timeToMins_(normalizeTime_(rows[i][ADP.TIME]));
+      // A3 (cycle 13): SKIP an unparseable time outright. It used to be NaN,
+      // and because every NaN comparison is false it (a) never lost the
+      // earliest-punch race, so one bad row pinned the day at NaN even when a
+      // valid ClockIn existed on it, and (b) fell through the `lateMin > grace`
+      // test into the else, scoring the day ON TIME.
+      if (mins === null) continue;
       if (!r.days[d]) r.days[d] = {};
       if (type === 'ClockIn') { if (r.days[d].in == null || mins < r.days[d].in) r.days[d].in = mins; }
       else { if (r.days[d].lunch == null || mins < r.days[d].lunch) r.days[d].lunch = mins; }
@@ -11491,10 +11609,15 @@ function getSpanishInboxStats(days) {
       address: addr, days: d,
       resolved: resolvedCount, pending: pending.length,
       avgMinutes: avg, medianMinutes: median,
-      // F18: `pending` (the count) is authoritative; pendingList is capped, so
-      // say so rather than letting the rendered list imply completeness.
-      pendingList: pending.slice(0, SPANISH_PENDING_LIST_CAP),
-      pendingListCap: SPANISH_PENDING_LIST_CAP,
+      // Cycle-13 follow-on: `pendingList` / `pendingListCap` were REMOVED. The
+      // list had NO client reader — both the Spanish tab and the Dashboard card
+      // use the separate, uncapped, live-read `getSpanishInboxPending`, which is
+      // richer (age, snippet, permalink) and deliberately never cached because
+      // it carries request content. F18 correctly flagged the silent cap on this
+      // field, but the honest fix for a capped list nobody renders is to stop
+      // shipping it: it put PHI-adjacent subjects into the 5-minute CacheService
+      // entry for no reader. `pending` (the COUNT) is unaffected and remains
+      // authoritative.
       membersConfigured: Object.keys(members).length,
       threadsScanned: threads.length,
     };
@@ -11644,9 +11767,6 @@ function getSpanishInboxThreadBody(threadId) {
 // stored as a NUMBER cell (immune to the Sheets date-coercion class).
 const SPANISH_RESOLVED_TAB = 'SpanishManualResolved';
 const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays cheap
-// F18: pendingList payload cap. The `pending` COUNT is always complete; only
-// the rendered list is capped, so the response says so (pendingListCap).
-const SPANISH_PENDING_LIST_CAP = 25;
 
 function getOrCreateSpanishResolvedSheet_() {
   const ss = getAdpSS_();
@@ -12925,17 +13045,47 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
 
 function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
   let inMins = timeToMins_(clockIn), outMins = timeToMins_(clockOut);
+  // A3 (cycle 13): an unparseable clock pair yields NULL, not NaN. Callers all
+  // already have a "hours not computed" branch (the incomplete-day path), so
+  // null routes a corrupt cell there instead of poisoning a running total.
+  if (inMins === null || outMins === null) return null;
   if (outMins <= inMins) outMins += 1440;
   let lunchMins = 0;
   if (lunchOut && lunchIn) {
     let lo = timeToMins_(lunchOut), li = timeToMins_(lunchIn);
-    if (li <= lo) li += 1440;
-    lunchMins = li - lo;
+    // A3: a corrupt LUNCH pair must not void the whole day — the clock pair is
+    // still good, so drop the deduction (the same shape as a missing lunch).
+    if (lo !== null && li !== null) {
+      if (li <= lo) li += 1440;
+      lunchMins = li - lo;
+    }
   }
   return (outMins - inMins - lunchMins) / 60;
 }
 
-function timeToMins_(t) { const p = String(t).split(':'); return parseInt(p[0],10)*60 + parseInt(p[1],10); }
+/**
+ * "HH:mm[:ss]" → minutes past midnight, or NULL when the cell can't be parsed
+ * (A3, cycle 13). It used to return NaN, which is the worst possible sentinel
+ * here because NaN comparisons are all FALSE and NaN arithmetic is contagious:
+ *   • getPunctualityReport did `if (lateMin > grace) late++; else onTime++;` —
+ *     so a NaN day fell through to the ELSE and was scored ON TIME, inflating a
+ *     metric managers use in performance conversations. Its earliest-punch pick
+ *     (`mins < r.days[d].in`) is also false against NaN, so ONE bad row poisoned
+ *     the whole day even when a valid ClockIn existed on it.
+ *   • calcHours_ returned NaN, and `totalHours += NaN` turned an entire
+ *     timesheet's total into NaN.
+ * Returning null makes both callers' explicit null checks fire instead. The
+ * guarded writers can't produce such a cell — this is recovery from a
+ * hand-edited / corrupted Timesheet TIME cell, which the two-way-Sheet-entry
+ * design makes a real (if uncommon) case.
+ */
+function timeToMins_(t) {
+  const p = String(t == null ? '' : t).split(':');
+  if (p.length < 2) return null;
+  const h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
 // Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
 const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop
 const TIMEOFF_MAX_DAYS_BACK  = 90;    // retroactive filing window
@@ -13608,6 +13758,138 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames) {
   return { perRepDaily: perRepDaily, agents: agents, meta: { columnWarning: colWarning } };
 }
 
+/** PHASE 0 (sub-queue work) — READ-ONLY queue inventory over the CDR feed.
+ *
+ *  The app has always had queue data and has always thrown it away: DQE rows
+ *  whose Agent cell is `A_Q_*` (or 'Backup CSR') are dropped by
+ *  isCdrQueueSentinel_, `CDR.QUEUE_EXT` (col 4) is declared but read NOWHERE,
+ *  and the CSR Transfer tab's per-queue H:R block is fetched into memory on
+ *  every read and ignored. Before building any per-queue UI we need FACTS
+ *  about the operator's actual sheet, because the whole design rests on one
+ *  assumption this repo cannot verify: that DQE carries one row per
+ *  (agent, queue, date) rather than one row per (agent, date). If it is the
+ *  latter, per-queue REP attribution does not exist in the data at all and the
+ *  feature has to change shape.
+ *
+ *  Cost: ONE narrow read of DQE (3 columns, not the sibling's 34) plus a
+ *  bounded tail of the Transfer tab. It is deliberately NOT folded into
+ *  getCdrAgentMetrics_'s meta — that result is cached and consumed by every
+ *  Metrics call, so widening it would tax the hot path and force an INV-85
+ *  cache bump for a diagnostic. Gated OFF by default for the same reason: the
+ *  10-minute-per-manager health BADGE and the daily digest call
+ *  computeAutomationHealth_ directly and must not pay for this.
+ *
+ *  PHI-free by construction: queue identifiers, agent-name counts, and row
+ *  tallies only — never call content.
+ */
+function cdrQueueInventory_(from, to) {
+  const out = {
+    ok: false, from: from, to: to,
+    queues: [], sentinels: [], transferCols: [],
+    rowsScanned: 0, rowsInWindow: 0,
+    agentDateRows: { max: 0, multiCount: 0, sampleMulti: [] },
+    truncated: false, error: null,
+  };
+  try {
+    const ss = getCdrSS_();
+    const sheet = ss.getSheetByName('DQE Historical Data');
+    if (!sheet) { out.error = 'DQE Historical Data sheet not found'; return out; }
+    const tz = ss.getSpreadsheetTimeZone();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) { out.ok = true; return out; }
+
+    // Bound the scan the same way every other tail reader here does. DQE is
+    // append-ordered by date, so the newest rows are the ones a 7-day window
+    // wants; a sheet longer than the cap reports truncated rather than
+    // silently describing only part of itself (the INV-169 posture).
+    const cap = CDR_QUEUE_SCAN_MAX;
+    const totalRows = lastRow - 1;
+    const startRow = totalRows > cap ? (lastRow - cap + 1) : 2;
+    out.truncated = totalRows > cap;
+    const nRows = lastRow - startRow + 1;
+    // Columns 2..4 = DATE, AGENT, QUEUE_EXT. Reading 3 columns instead of 34.
+    const vals = sheet.getRange(startRow, CDR.DATE, nRows, 3).getValues();
+    out.rowsScanned = nRows;
+
+    const queues = {};      // queue ext -> {rows, agents:{}}
+    const sentinels = {};   // A_Q_* / Backup CSR -> rows
+    const agentDate = {};   // "agent|date" -> row count
+    for (let i = 0; i < vals.length; i++) {
+      const agent = String(vals[i][1] || '').trim();
+      if (!agent) continue;
+      const dateIso = cdrRowDateIso_(vals[i][0], tz);
+      if (!dateIso || dateIso < from || dateIso > to) continue;
+      out.rowsInWindow++;
+      const queueRaw = String(vals[i][2] == null ? '' : vals[i][2]).trim();
+      if (isCdrQueueSentinel_(agent)) {
+        sentinels[agent] = (sentinels[agent] || 0) + 1;
+        continue;   // queue-AGGREGATE row: not a rep row, never an agent/date key
+      }
+      // The gate question. If DQE is one row per (agent, date), every count
+      // here is 1 and per-queue rep attribution is not in the data.
+      const key = agent + '|' + dateIso;
+      agentDate[key] = (agentDate[key] || 0) + 1;
+      const qk = queueRaw || '(blank)';
+      if (!queues[qk]) queues[qk] = { queue: qk, rows: 0, agents: {} };
+      queues[qk].rows++;
+      queues[qk].agents[agent] = true;
+    }
+
+    Object.keys(agentDate).forEach(function (k) {
+      const n = agentDate[k];
+      if (n > out.agentDateRows.max) out.agentDateRows.max = n;
+      if (n > 1) {
+        out.agentDateRows.multiCount++;
+        if (out.agentDateRows.sampleMulti.length < 3) {
+          out.agentDateRows.sampleMulti.push({ key: k, rows: n });
+        }
+      }
+    });
+    out.queues = Object.keys(queues).map(function (k) {
+      return { queue: k, rows: queues[k].rows, agents: Object.keys(queues[k].agents).length };
+    }).sort(function (a, b) { return b.rows - a.rows; }).slice(0, CDR_QUEUE_LIST_CAP);
+    out.sentinels = Object.keys(sentinels).map(function (k) {
+      return { name: k, rows: sentinels[k] };
+    }).sort(function (a, b) { return b.rows - a.rows; }).slice(0, CDR_QUEUE_LIST_CAP);
+
+    // The Transfer tab's per-queue block (H:R). Header text tells us what the
+    // queues are CALLED there; the populated count tells us whether the
+    // columns actually carry data or are a reserved-but-empty block.
+    try {
+      const trSheet = ss.getSheetByName(CSR_TRANSFER_TAB);
+      if (trSheet) {
+        const trLast = trSheet.getLastRow();
+        const headers = trSheet.getRange(1, 1, 1, CSR_TRANSFER_NUM_COLS).getDisplayValues()[0];
+        if (trLast >= 2) {
+          const trCap = Math.min(trLast - 1, CDR_QUEUE_SCAN_MAX);
+          const trStart = trLast - trCap + 1;
+          const trVals = trSheet.getRange(trStart, 1, trCap, CSR_TRANSFER_NUM_COLS).getDisplayValues();
+          // Columns H..R are 0-indexed 7..17 — everything between the counts
+          // CSRT reads and the trailing Comments column.
+          for (let c = 7; c <= 17; c++) {
+            let populated = 0;
+            for (let r = 0; r < trVals.length; r++) {
+              const cell = String(trVals[r][c] == null ? '' : trVals[r][c]).trim();
+              if (cell !== '' && cell !== '0') populated++;
+            }
+            out.transferCols.push({
+              col: c + 1, header: String(headers[c] || '').trim(), populated: populated, scanned: trVals.length,
+            });
+          }
+        }
+      }
+    } catch (trErr) {
+      out.transferError = trErr.message;   // best-effort — the DQE half still reports
+    }
+
+    out.ok = true;
+    return out;
+  } catch (e) {
+    out.error = e.message;
+    return out;
+  }
+}
+
 // ── Metrics public endpoints ──────────────────────────────────────────
 
 /** Single source of truth for the note-to-call coverage ratio shown in
@@ -13619,17 +13901,25 @@ function cnNoteCoverage_(noteCount, answeredCalls) {
     ? Math.round((noteCount / answeredCalls) * 100) : null;
 }
 
-/** Counts a rep's call notes whose DateLocal falls in [from, to] inclusive.
+// A4 (cycle 13) — `countCallNotesInRange_` was REMOVED. Cycle 12's F5 replaced
+// it with the outcome-carrying `cnCountNotesResult_` below and kept it as "a
+// thin numeric wrapper for the callers that only want the number" — but a
+// repo-wide search found NO such callers; the only references left were its own
+// two tests, which asserted it returns 0 on an unreadable Sheet. That left the
+// silently-degrading variant alive under the most obvious name, pinned by tests
+// that enshrined the very behaviour F5 existed to remove, waiting for the next
+// author to reach for it. Anything that needs the number takes
+// `cnCountNotesResult_(emp, from, to).count` and decides what to do with
+// `.unavailable` — which is the whole point.
+
+/** Counts a rep's call notes whose DateLocal falls in [from, to] inclusive,
+ *  WITH the read outcome attached: { count, unavailable, unenrolled }.
  *  Centralizes the normalizeDate_ read so the Metrics note-count can never
  *  diverge again (see the CN.DATE_LOCAL gotcha — a raw String() read silently
- *  misses every row because Sheets coerces the column to a Date). Returns 0
- *  when the rep has no Sheet configured or it's unreachable. The `emp` arg
- *  only needs { id, name, callNotesSheetId } for getCallNotesSheet_. */
-function countCallNotesInRange_(emp, from, to) {
-  return cnCountNotesResult_(emp, from, to).count;
-}
-
-/** Cycle-12 F5 — the same count, but with the READ OUTCOME attached:
+ *  misses every row because Sheets coerces the column to a Date). The `emp` arg
+ *  only needs { id, name, callNotesSheetId } for getCallNotesSheet_.
+ *
+ *  Cycle-12 F5 — the read OUTCOME is the reason this shape exists:
  *  { count, unavailable }. `unavailable:true` means the rep's Sheet could not
  *  be read (missing / unshared / transient Sheets failure), which is NOT the
  *  same fact as "they logged zero notes" — the bare `return 0` catch made the
@@ -14223,7 +14513,9 @@ function getMetricsAmbient() {
 
 // ════════════════════════════════════════════════════════════════════════════
 //  INTAKE MODULE  —  PPD + PMD/PAP account-creation forms
-//  Ported from the bound "form-generator" Apps Script (incoming/form-generator).
+//  Ported from the bound "form-generator" Apps Script. That reference copy was
+//  DELETED in cycle 13 once the port was settled — it lives in git history at
+//  incoming/form-generator/, last present as of commit 9586b29.
 //  Web-app rewrite: the bound tool used the active sheet's cells as the form;
 //  here each form is a web form whose answers arrive as a payload, render a
 //  branded email (esc_'d throughout — closing the original's raw-interpolation
@@ -17969,20 +18261,33 @@ function getQuiz(quizId) {
  *  score + per-question right/wrong ONLY — never the correct options
  *  (spec §9.4). Unlimited retries; attempt # rides back for display. */
 function submitQuizAttempt(quizId, answers) {
+  // ── A10 (cycle 13): auth, assignment check and GRADING run BEFORE the lock ──
+  // This is the F12 shape the project already ruled against: every one of these
+  // reads sat inside the ONE project-wide ScriptLock that every punch write
+  // contends for, on a 15s waitLock ceiling. None of them is transactional —
+  // they only decide whether to accept the submission and what score it gets.
+  // Hoisting them means an unauthorized / unknown-quiz / unassigned request
+  // never takes the lock at all, and two of the four store reads leave it.
+  // What DELIBERATELY stays inside (below): the attempt append, the completions
+  // dedup (a read-check-write that guards against a double completion row), and
+  // the post-append attempt count, which must observe the row just written.
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
+  quizId = String(quizId || '').trim();
+  let quiz, a;
+  try {
+    quiz = trainReadQuizzes_()[quizId];
+    if (!quiz) return { success: false, error: 'Quiz not found.' };
+    a = trainEffectiveForEmp_(trainReadAssignments_(), emp.id)['quiz:' + quizId];
+    if (!a) return { success: false, error: 'That quiz is not assigned to you.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  if (!Array.isArray(answers)) answers = [];
+  const graded = trainGradeQuiz_(quiz.questions, answers);   // pure
+  const passed = graded.scorePct >= quiz.passPct;
+
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
-    quizId = String(quizId || '').trim();
-    const quiz = trainReadQuizzes_()[quizId];
-    if (!quiz) return { success: false, error: 'Quiz not found.' };
-    const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
-    const a = eff['quiz:' + quizId];
-    if (!a) return { success: false, error: 'That quiz is not assigned to you.' };
-    if (!Array.isArray(answers)) answers = [];
-    const graded = trainGradeQuiz_(quiz.questions, answers);
-    const passed = graded.scorePct >= quiz.passPct;
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const attemptId = Utilities.getUuid();

@@ -21,7 +21,17 @@ npm ci                 # playwright package only (browser download is skipped
 node build.mjs         # composes web-app/ partials -> page.html (generated)
 node shoot.mjs         # all 20 scenarios -> shots/*.png + report.json
 node shoot.mjs cn-log compact   # substring filter: only matching scenarios
+node a13-measure.mjs   # spot-measure: is a tag swap really pixel-identical?
 ```
+
+`a13-measure.mjs` exists because a screenshot cannot answer "did this element
+change size" for a surface the matrix does not reach (Team Training is behind
+the `develop` tool's manager tab; the matrix lands on My Training). It renders
+the old and new markup side by side and diffs computed style + bounding box.
+**Measure inside the REAL parent** — its first version put the elements in a
+plain `<div>` and reported `display: inline -> block` for two of three cases,
+which was pure fixture artifact: both live in `display: flex` heads, where any
+child is blockified regardless. Same rule as the RPC fixtures below.
 
 Chromium resolution order (`shoot.mjs`): `CHROMIUM_PATH` env var → newest
 `chromium-*` under `PLAYWRIGHT_BROWSERS_PATH` or `/opt/pw-browsers` (the

@@ -314,6 +314,10 @@ sb.CN_STATE = { deptConfig: { emailTemplates: [] } };
 const cnExtTemplatesAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesAll_');
 const cnExtTemplatesFor_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplatesFor_');
 const cnExtTemplateOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtTemplateOptionsHtml_');
+// Phase 0 (sub-queue discovery) — the Automation Health queue-inventory render.
+// Self-contained by design (no panel closures), so it loads standalone on
+// esc + icon like cnExtEmailPillHtml_.
+const cnQueueInventoryHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnQueueInventoryHtml_');
 // Quick-link picker (surveys/reviews) — reads CN_STATE.deptConfig.externalLinks + esc.
 const cnExtLinksAll_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinksAll_');
 const cnExtLinkOptionsHtml_ = loadFunction(sb, 'cn/script_callnotes.html', 'cnExtLinkOptionsHtml_');
@@ -1089,27 +1093,48 @@ instCtx.PropertiesService = { getScriptProperties: function () {
   } };
 } };
 vm.createContext(instCtx);
-['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'assertDevInstance_'].forEach(function (fn) {
+['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'isDevInstance_', 'assertDevInstance_'].forEach(function (fn) {
   vm.runInContext(extractRawFunction('Code.js', fn), instCtx, { filename: 'Code.js#' + fn });
 });
 test('instance guards: prod default (no props) — destructive tests OK, dev tools refuse', () => {
   instCtx._p = {};
   assert.strictEqual(instCtx.instanceLabel_(), '');
   assert.strictEqual(instCtx.isProdInstance_(), false);
+  assert.strictEqual(instCtx.isDevInstance_(), false);
   assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));   // prod today still runs runAllTests
-  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a labeled DEV instance/);
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/);
 });
 test('instance guards: INSTANCE_IS_PROD=true blocks destructive tests AND dev tools', () => {
   instCtx._p = { INSTANCE_IS_PROD: 'true', INSTANCE_LABEL: 'PROD' };
   assert.strictEqual(instCtx.isProdInstance_(), true);
+  assert.strictEqual(instCtx.isDevInstance_(), false);
   assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /PRODUCTION instance/);
-  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a labeled DEV instance/);
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/);
 });
-test('instance guards: a labeled DEV instance allows both dev tools and the full suite', () => {
+// A5 (cycle 13) — THE fail-open case this suite used to ASSERT as correct.
+// It previously read `{ INSTANCE_LABEL: 'DEV' }` (no INSTANCE_IS_PROD) and
+// asserted the dev tools were allowed. But that property set is equally the
+// state of a PROD project whose operator added a banner label — which the docs
+// recommend — and it let devScrubRoster_ anonymize the live roster and the
+// nightly job run the full destructive suite against live payroll. An UNSET
+// marker is ambiguous and must now resolve to NOT-dev.
+test('instance guards: a LABEL alone is NOT dev — the ambiguous case fails closed (A5)', () => {
   instCtx._p = { INSTANCE_LABEL: 'DEV' };
   assert.strictEqual(instCtx.instanceLabel_(), 'DEV');
+  assert.strictEqual(instCtx.isDevInstance_(), false,
+    'a label with no explicit INSTANCE_IS_PROD is ambiguous — prod labels itself too');
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/);
+});
+test('instance guards: BOTH markers present → dev tools and the full suite are allowed', () => {
+  instCtx._p = { INSTANCE_LABEL: 'DEV', INSTANCE_IS_PROD: 'false' };
+  assert.strictEqual(instCtx.isDevInstance_(), true);
   assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));
   assert.doesNotThrow(() => instCtx.assertDevInstance_('devScrubRoster_'));
+  // Whitespace/casing must not resurrect the ambiguous case.
+  instCtx._p = { INSTANCE_LABEL: 'DEV', INSTANCE_IS_PROD: '   ' };
+  assert.strictEqual(instCtx.isDevInstance_(), false, 'blank is still unset');
+  instCtx._p = { INSTANCE_LABEL: 'DEV', INSTANCE_IS_PROD: ' TRUE ' };
+  assert.strictEqual(instCtx.isDevInstance_(), false, 'TRUE in any casing is prod');
 });
 test('TRIPWIRE: destructive test writers + dev tools carry the right instance guard', () => {
   assert.ok(/assertNotProdInstance_\(/.test(extractRawFunction('Tests.js', 'runAllTests')),
@@ -4567,9 +4592,12 @@ test('F5: a failed note-count read is reported, never rendered as a confident ze
   assert.ok(/unavailable: true/.test(helper), 'the catch reports unavailable instead of a bare 0');
   assert.ok(/unenrolled/.test(helper),
     'an unenrolled rep (INV-35) is distinguished from a FAILED read — only the latter is an error');
-  const wrapper = extractRawFunction('Code.js', 'countCallNotesInRange_');
-  assert.ok(/cnCountNotesResult_\(emp, from, to\)\.count/.test(wrapper),
-    'the numeric helper delegates — one read path, so the two can never diverge');
+  // A4 (cycle 13): this used to assert the `countCallNotesInRange_` wrapper
+  // DELEGATED to the helper. That wrapper is gone — it had no production
+  // callers, so keeping it preserved the 0-on-error shape under the obvious
+  // name. There is now exactly ONE count path by construction, which is a
+  // stronger guarantee than the delegation check it replaces; the A4 pin below
+  // keeps the wrapper from coming back.
   // Every surface that turns the count into user-facing coverage must null the
   // percentage and flag the round.
   ['getDashboardMetrics', 'getMyMetrics', 'getMyMetricsRange', 'getTeamMetrics'].forEach((fn) => {
@@ -4733,7 +4761,12 @@ test('F14: every column-L read goes through cnEnrolledSheetId_ (no raw truthines
 test('F3-sibling: archiveOldCallNotes bounds the whole run, not just one rep', () => {
   const src = extractRawFunction('Code.js', 'archiveOldCallNotes');
   assert.ok(/CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN/.test(src), 'a per-run budget exists');
-  assert.ok(/if \(budget <= 0\) break;/.test(src),
+  // A4/A9 (cycle 13): matched `if (budget <= 0) break;` literally until A9 gave
+  // the guard a body (it now records whether an ENROLLED rep was left unvisited,
+  // so a clean final run stops stamping hitPerRunCap). The invariant being
+  // guarded is unchanged: the REP LOOP — not just the per-rep mover — stops when
+  // the shared budget is spent.
+  assert.ok(/if \(budget <= 0\) \{?[\s\S]{0,260}?break;/.test(src),
     'the REP LOOP stops when the budget is spent — a per-rep cap would not bound ' +
     'a walk that calls the mover once per rep inside one execution + one lock');
   assert.ok(/budget -= moved/.test(src), 'the budget is shared across reps, not reset per rep');
@@ -4815,9 +4848,19 @@ test('F18: payload-capped readers report the pre-slice total', () => {
   const kb = extractRawFunction('Code.js', 'kbGetReviewDue');
   assert.ok(/KB_REVIEW_DUE_CAP/.test(kb) && /total: items\.length/.test(kb),
     'kbGetReviewDue returns the pre-slice total');
+  // Cycle-13 follow-on: this used to assert getSpanishInboxStats DECLARED its
+  // pendingList cap. That list had no client reader at all (both surfaces use
+  // the uncapped, live-read getSpanishInboxPending), so the honest fix for a
+  // capped list nobody renders was to stop shipping it — which also keeps
+  // PHI-adjacent subjects out of the 5-minute CacheService entry. F18's rule is
+  // unchanged for the readers that DO render a capped list; this one is simply
+  // no longer such a reader.
   const sp = extractRawFunction('Code.js', 'getSpanishInboxStats');
-  assert.ok(/SPANISH_PENDING_LIST_CAP/.test(sp) && /pendingListCap/.test(sp),
-    'getSpanishInboxStats declares its pendingList cap');
+  // Strip comments first — the removal note names the field it removed.
+  const spCode = sp.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  assert.ok(!/pendingList\s*[:=]/.test(spCode),
+    'the reader-less pendingList must not come back — getSpanishInboxPending is the live list');
+  assert.ok(/pending: pending\.length/.test(sp), 'the pending COUNT is still returned and complete');
 
   // Client: "showing N of M", and NOTHING when the list is complete or when an
   // older server omits the total (so a not-yet-redeployed server is safe).
@@ -4971,6 +5014,510 @@ test('V-14: the visual fixture\'s coverage numbers satisfy the server formula', 
   const rangeAns = Number(/getMyMetricsRange: \{[\s\S]{0,400}?totalAnswered: (\d+)/.exec(mock)[1]);
   assert.strictEqual(Math.round((rangeCount / rangeAns) * 100), rangeCov,
     'the range fixture must satisfy the same formula (it reused the single-day cdr)');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-13 pins.
+console.log('\ncycle 13 — A1 / A2 / A3 / A11 / A12 fix pins');
+
+// A3: timeToMins_ returned NaN on an unparseable cell, and NaN's comparisons
+// are ALL false — so getPunctualityReport scored the day ON TIME (it fell
+// through `lateMin > grace` into the else) and calcHours_ poisoned the running
+// total. Behavioural: drive the real extracted functions.
+test('A3: timeToMins_ returns null (never NaN) for an unparseable time', () => {
+  const b = buildSandbox([]);
+  vm.runInContext(extractRawFunction('Code.js', 'timeToMins_'), b, { filename: 'Code.js#timeToMins_' });
+  vm.runInContext(extractRawFunction('Code.js', 'calcHours_'), b, { filename: 'Code.js#calcHours_' });
+  const t = b.timeToMins_, c = b.calcHours_;
+  assert.strictEqual(t('09:30:00'), 570, 'a valid time still parses');
+  assert.strictEqual(t('9:05'), 545, 'a bare H:mm still parses');
+  // NOTE both rejection paths must be covered: no-colon (length < 2) AND
+  // has-a-colon-but-not-numeric (the isNaN guard). A list of only the former
+  // passes even with the isNaN guard deleted — bite-checked.
+  ['', '9am', 'abc', null, undefined, 'Sat Dec 30 1899',
+   'ab:cd', ':', '::', 'x:30', '09:mm'].forEach((bad) => {
+    assert.strictEqual(t(bad), null, 'unparseable → null, not NaN: ' + String(bad));
+  });
+  // The NaN sentinel's actual damage, pinned: a null must not be scored as
+  // "on time" (0 minutes late) by a `> grace` test.
+  assert.strictEqual(t('9am') > 5, false, 'null is not > grace…');
+  assert.strictEqual(t('9am') === null, true, '…and the caller can SEE it, unlike NaN');
+
+  assert.strictEqual(c('09:00:00', '17:00:00', null, null), 8, 'valid pair unchanged');
+  assert.strictEqual(c('22:00:00', '06:00:00', null, null), 8, 'C3 overnight wrap preserved');
+  assert.strictEqual(c('09:00:00', '17:00:00', '12:00:00', '13:00:00'), 7, 'lunch deduction unchanged');
+  assert.strictEqual(c('bogus', '17:00:00', null, null), null, 'corrupt clock pair → null, not NaN');
+  assert.strictEqual(c('09:00:00', 'bogus', null, null), null, 'corrupt clock-out → null');
+  // A corrupt LUNCH pair must not void an otherwise-good day.
+  assert.strictEqual(c('09:00:00', '17:00:00', 'bogus', '13:00:00'), 8,
+    'a corrupt lunch pair drops the deduction, it does not null the day');
+});
+
+test('A3: the calcHours_ callers route null to their incomplete-day branch', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.ok(/if \(hoursWorked === null\) \{ isIncomplete = true; incompleteCount\+\+; \}\s*\n\s*else \{ totalHours \+= hoursWorked; daysWorked\+\+; \}/.test(src),
+    'buildTimesheetForEmployee_ must not add a null/NaN into totalHours');
+  assert.ok(/const h = calcHours_[\s\S]{0,120}?if \(h !== null\) sparkHoursMap\[key\] = h;/.test(src),
+    'the live-status sparkline drops an unparseable day rather than plotting it');
+  assert.ok(/const h = calcHours_[\s\S]{0,120}?if \(h !== null\) hoursByDate\[dateStr\] = h;/.test(src),
+    'the calendar drops an unparseable day rather than badging NaN hours');
+  assert.ok(/if \(mins === null\) continue;/.test(src),
+    'getPunctualityReport skips an unparseable punch instead of scoring it on time');
+  // The coverage planner does ARITHMETIC on the result — `x + null` coerces to
+  // x, which would silently place a shift at midnight. It must guard explicitly.
+  assert.ok(/const absStart = \(convMins === null\) \? null : dayDelta \* 1440 \+ convMins;/.test(src),
+    'getCoveragePlan must not let a null coerce to 0 in absStart');
+});
+
+// A12: a LOAD FAILURE must render errorStateHtml_ (warn card + role=alert), not
+// the designed empty-state class — batch J's decision, previously applied only
+// in CN + Clock. Scan the three partials that violated it.
+test('A12: load failures never render into an empty-state container', () => {
+  [['metrics/script_metrics.html', ['m-empty', 'no-data']],
+   ['train/script_training.html', ['tr-empty']],
+   ['train/script_empdocs.html', ['tr-empty']]].forEach(([file, emptyCls]) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', file), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (!/\.error|err\.message|err && err\.message|e && e\.message|Failed to load|Could not load/.test(line)) return;
+      emptyCls.forEach((cls) => {
+        assert.ok(line.indexOf('class="' + cls) < 0,
+          file + ':' + (i + 1) + ' renders a failure into .' + cls +
+          ' (the empty-state card) — use errorStateHtml_:\n  ' + line.trim());
+      });
+    });
+    assert.ok(src.indexOf('errorStateHtml_') > 0, file + ' uses errorStateHtml_');
+  });
+});
+
+// A1: the six click-only controls are <button>s now. A bare span/div with an
+// inline onclick is unreachable by keyboard and has no role for assistive tech.
+// Cycle-13 batch 5: GENERALIZED from a hand-listed five files to every scanned
+// partial, derived from PARSE_GUARD_PARTIALS (which itself auto-tracks
+// index.html's include() calls). A hand-copied file list is the exact class
+// cycle-11's M-4 retired — a new tool's partial could otherwise ship outside
+// the net with CI green.
+const A11Y_SCAN_PARTIALS = PARSE_GUARD_PARTIALS.concat(['modals.html']);
+test('A1: no interactive element is a bare span/div with an inline onclick', () => {
+  const offenders = [];
+  A11Y_SCAN_PARTIALS.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
+    // Scan the WHOLE source, not line by line: `[^>]` matches newlines, so a
+    // tag whose onclick sits on a later line than its `<span` is still caught.
+    // A per-line scan missed exactly that and passed a reverted fix —
+    // bite-checked.
+    const re = /<(div|span|tr|td|li)\b[^>]*?onclick=/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      // The shared modal's stopPropagation shim is a container, not a control.
+      if (src.slice(m.index, m.index + 200).indexOf('onclick="event.stopPropagation()"') >= 0) continue;
+      const lineNo = src.slice(0, m.index).split('\n').length;
+      offenders.push(f + ':' + lineNo + ' ' + m[0].replace(/\s+/g, ' ').slice(0, 90));
+    }
+  });
+  assert.deepStrictEqual(offenders, [],
+    'use <button type="button"> for a control — a span/div with onclick is keyboard-unreachable:\n  ' +
+    offenders.join('\n  '));
+});
+
+// A11 GENERALIZED (cycle-13 batch 5): the specific-surface checks below are
+// kept as regression pins, but the RULE is now machine-enforced across every
+// scanned partial — wherever a state class is toggled, an ARIA attribute must be
+// set in the same function. Running it surfaced eight more instances than the
+// six the scan found by hand (the CN flag toolbar, both CN sub-tab strips, the
+// KB tree item and the KB editor type toggle), which is the whole point of
+// promoting a convention to a tripwire.
+const A11Y_STATE_CLASSES = ['active', 'on', 'selected', 'current'];
+// Decorative-only toggles: no state a user could act on, nothing to announce.
+// Keep this list tiny and reasoned — each entry is a claim that the class is
+// pure presentation.
+const A11Y_DECORATIVE = {
+  'kb/script_kb.html:kbDrawerSetSearching_': 'a loading spinner — the search status is conveyed by the results region',
+  'tc/script_clock.html:clkApplySky_': 'the two cross-fading sky gradient LAYERS behind the clock card',
+};
+test('A11 (rule): every state-class toggle also sets an ARIA attribute', () => {
+  const offenders = [];
+  A11Y_SCAN_PARTIALS.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
+    const re = new RegExp("classList\\.(?:toggle|add)\\('(" + A11Y_STATE_CLASSES.join('|') + ")'", 'g');
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      // Locate the enclosing function by walking back to the nearest declaration.
+      const before = src.slice(0, m.index);
+      const decl = [...before.matchAll(/function\s+([A-Za-z0-9_]+)\s*\(/g)].pop();
+      const fnName = decl ? decl[1] : '(anonymous)';
+      if (A11Y_DECORATIVE[f + ':' + fnName]) continue;
+      // The function body from its declaration to the next top-level one.
+      const start = decl ? decl.index : Math.max(0, m.index - 400);
+      const nextDecl = src.indexOf('\nfunction ', m.index);
+      const body = src.slice(start, nextDecl > 0 ? nextDecl : m.index + 600);
+      if (/aria-[a-z]+|setAttribute\('aria|removeAttribute\('aria/.test(body)) continue;
+      offenders.push(f + ':' + before.split('\n').length + ' in ' + fnName + '()');
+    }
+  });
+  assert.deepStrictEqual(offenders, [],
+    'a CSS class is invisible to assistive tech — set aria-current / aria-pressed / ' +
+    'aria-selected / aria-checked alongside it (or add a reasoned A11Y_DECORATIVE entry):\n  ' +
+    offenders.join('\n  '));
+});
+
+// A11: active state must be exposed to assistive tech, not just painted.
+test('A11: nav + segmented toggles expose their active state', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  assert.ok(/\.tt-btn'\)\.forEach\([\s\S]{0,240}?aria-current/.test(core),
+    'the tab bar sets aria-current alongside .active');
+  assert.ok(/sb-link\[data-tool\][\s\S]{0,240}?aria-current/.test(core),
+    'the sidebar/mobile nav sets aria-current alongside .active');
+  const clock = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/dash-seg-opt[\s\S]{0,200}?aria-pressed/.test(clock), 'the period switcher renders aria-pressed');
+  assert.ok(/o\.setAttribute\('aria-pressed'/.test(clock), 'clkDashSet_ keeps aria-pressed in step');
+  const coach = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  assert.ok(/role="tab"[^>]*aria-selected/.test(coach), 'the coaching tablist marks its tabs');
+  assert.ok(/b\.setAttribute\('aria-selected'/.test(coach), 'coachSwitchMode_ keeps aria-selected in step');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/aria-expanded="false" aria-controls=/.test(mgr), 'the coverage day disclosure is marked');
+  assert.ok(/btn\.setAttribute\('aria-expanded'/.test(mgr), 'covToggleDay_ keeps aria-expanded in step');
+});
+
+// ── Phase 0 (CDR sub-queue discovery) ───────────────────────────────────────
+console.log('\nPhase 0 — CDR sub-queue discovery');
+
+// The inventory exists to answer ONE question, so the render must state the
+// verdict unambiguously in BOTH directions. A diagnostic that reads the same
+// whether or not the data supports the feature is worthless.
+test('Phase 0: the queue inventory states the row-shape verdict both ways', () => {
+  const base = { ok: true, from: '2026-07-22', to: '2026-07-29', rowsScanned: 100,
+    queues: [], sentinels: [], transferCols: [] };
+
+  const yes = cnQueueInventoryHtml_(Object.assign({}, base, {
+    rowsInWindow: 40,
+    agentDateRows: { max: 3, multiCount: 12, sampleMulti: [{ key: 'Avery Blake|2026-07-28', rows: 3 }] },
+  }));
+  assert.ok(/Per-queue rep attribution IS available/.test(yes), 'multi-row agent-days read as available');
+  assert.ok(yes.indexOf('Avery Blake on 2026-07-28') > 0, 'the sample renders agent + date readably');
+
+  const no = cnQueueInventoryHtml_(Object.assign({}, base, {
+    rowsInWindow: 40, agentDateRows: { max: 1, multiCount: 0, sampleMulti: [] },
+  }));
+  assert.ok(/NOT in this data/.test(no), 'one-row-per-agent-day reads as NOT available');
+  assert.ok(no.indexOf('Per-queue rep attribution IS available') < 0, 'the two verdicts are mutually exclusive');
+
+  // No rows is a THIRD state — "cannot determine" must not read as "no".
+  const none = cnQueueInventoryHtml_(Object.assign({}, base, {
+    rowsInWindow: 0, agentDateRows: { max: 0, multiCount: 0, sampleMulti: [] },
+  }));
+  assert.ok(/cannot be determined/.test(none), 'an empty window is undetermined, not a negative verdict');
+  assert.ok(none.indexOf('NOT in this data') < 0, 'an empty window must not assert the negative');
+
+  // A failed scan surfaces as an error, never as an empty inventory (INV-175).
+  const bad = cnQueueInventoryHtml_({ ok: false, error: 'CDR unreachable' });
+  assert.ok(/Queue inventory unavailable/.test(bad) && bad.indexOf('CDR unreachable') > 0,
+    'a failed scan says so');
+});
+
+test('Phase 0: queue identifiers from the sheet are escaped', () => {
+  const h = cnQueueInventoryHtml_({
+    ok: true, from: 'a', to: 'b', rowsScanned: 5, rowsInWindow: 5,
+    agentDateRows: { max: 1, multiCount: 0, sampleMulti: [] },
+    queues: [{ queue: '<img src=x onerror=alert(1)>', rows: 3, agents: 2 }],
+    sentinels: [{ name: 'A_Q_<b>x</b>', rows: 1 }],
+    transferCols: [{ col: 8, header: '"><script>', populated: 4, scanned: 5 }],
+  });
+  // These strings cross a repo trust boundary (the CDR sheet is written by
+  // call-data-reporting), the same boundary the Metrics esc() gotcha names.
+  assert.ok(h.indexOf('<img src=x') < 0, 'a queue name cannot inject markup');
+  assert.ok(h.indexOf('A_Q_<b>') < 0, 'a sentinel name cannot inject markup');
+  assert.ok(h.indexOf('"><script>') < 0, 'a Transfer header cannot inject markup');
+  assert.ok(h.indexOf('&lt;img') > 0, 'it renders escaped rather than being dropped');
+});
+
+// The scan is a full-sheet read. getAutomationHealthBadge polls it every 10
+// MINUTES per manager and sendAutomationHealthDigest runs it daily — both call
+// computeAutomationHealth_ directly, so the default must be OFF. This pin is
+// the thing standing between a diagnostic and a recurring cost regression.
+test('Phase 0: the queue scan is opt-in — badge, digest and deploy-readiness skip it', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.ok(/function computeAutomationHealth_\(opts\)[\s\S]{0,400}?const scanQueues = !!\(opts && opts\.scanQueues\);/.test(src),
+    'computeAutomationHealth_ defaults scanQueues OFF');
+  assert.ok(/if \(scanQueues\) \{[\s\S]{0,200}?cdrQueueInventory_\(/.test(src),
+    'the inventory only runs behind the flag');
+  assert.ok(/getAutomationHealth\(\{ scanQueues: false \}\)/.test(src),
+    'getDeployReadiness opts out explicitly');
+  // The two direct callers must pass no opts at all — adding one would be the
+  // regression this pin exists to catch.
+  const badge = src.slice(src.indexOf('function getAutomationHealthBadge'));
+  assert.ok(/automationProblems_\(computeAutomationHealth_\(\)\)/.test(badge.slice(0, 1200)),
+    'the 10-min badge poll calls computeAutomationHealth_ with no opts');
+  const digest = src.slice(src.indexOf('function sendAutomationHealthDigest'));
+  assert.ok(/report = computeAutomationHealth_\(\);/.test(digest.slice(0, 2000)),
+    'the daily digest calls computeAutomationHealth_ with no opts');
+});
+
+// The reader must stay READ-ONLY and bounded — it is a discovery tool wired
+// into a manager panel, not a data path.
+test('Phase 0: cdrQueueInventory_ is read-only, bounded and PHI-free', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const m = src.match(/function cdrQueueInventory_\(from, to\) \{[\s\S]*?\n\}/);
+  assert.ok(m, 'cdrQueueInventory_ is present');
+  const body = m[0];
+  assert.ok(!/setValue|appendRow|getRange\([^)]*\)\.set|deleteRow|insertSheet/.test(body),
+    'the inventory never writes');
+  assert.ok(/CDR_QUEUE_SCAN_MAX/.test(body) && /truncated/.test(body),
+    'the scan is capped AND reports truncation (INV-169)');
+  assert.ok(/CDR_QUEUE_LIST_CAP/.test(body), 'the payload lists are capped');
+  // It reads 3 columns, not the sibling's 34 — the cost claim in its own doc
+  // comment. A widened read here silently multiplies the panel's cost.
+  assert.ok(/getRange\(startRow, CDR\.DATE, nRows, 3\)/.test(body),
+    'the DQE read stays narrow (DATE/AGENT/QUEUE_EXT only)');
+});
+
+// A13: the three section-heading classes render as real <h2>s, so heading
+// navigation — the primary way a screen-reader user moves through a dense page
+// — works below the view's <h1>. They were <div>/<span>, so every view had a
+// heading outline exactly one level deep. Scanning by CLASS (not by counting
+// tags) means a NEW card added as a div fails, which is the drift that matters.
+const A13_HEADING_CLASSES = ['card-label', 'tr-card-title', 'dash-seclabel'];
+test('A13: section-heading classes render as <h2>, not div/span', () => {
+  const offenders = [];
+  let seen = 0;
+  A11Y_SCAN_PARTIALS.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
+    A13_HEADING_CLASSES.forEach((cls) => {
+      const re = new RegExp('<([a-z0-9]+)\\s+class="' + cls + '\\b', 'g');
+      let m;
+      while ((m = re.exec(src)) !== null) {
+        seen++;
+        if (m[1] === 'h2') continue;
+        offenders.push(f + ':' + src.slice(0, m.index).split('\n').length + ' <' + m[1] + ' class="' + cls + '"');
+      }
+    });
+  });
+  assert.deepStrictEqual(offenders, [],
+    'a card section heading must be an <h2> so it joins the document outline:\n  ' +
+    offenders.join('\n  '));
+  // Guard the guard: if a rename silently emptied the scan it would pass vacuously.
+  assert.ok(seen >= 27, 'expected the 27 known heading sites, found ' + seen);
+  // The UA h2 margin must be zeroed or every card grows a gap above its label.
+  const s = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.card-label \{[\s\S]{0,240}?margin-top: 0;/.test(s), '.card-label zeroes the UA h2 margin-top');
+  const tr = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_training.html'), 'utf8');
+  assert.ok(/\.tr-card-title \{[\s\S]{0,240}?margin: 0;/.test(tr), '.tr-card-title zeroes the UA h2 margin');
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/\.dash-seclabel \{[\s\S]{0,240}?margin: 0;/.test(clk), '.dash-seclabel zeroes the UA h2 margin');
+});
+
+// A2: `:root[data-compact]` is the POP-OUT, not a viewport breakpoint. Any grid
+// that stacks in compact needs a real media query too, or it never stacks on a
+// phone.
+test('A2: compact-mode grid overrides have a matching viewport breakpoint', () => {
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/@media \(max-width: 720px\)[\s\S]{0,200}?\.m-layout \{ grid-template-columns: 1fr;/.test(m),
+    '.m-layout stacks at a narrow VIEWPORT, not only in the pop-out');
+  const s = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/@media \(max-width: 540px\)[\s\S]{0,700}?\.telemetry \{ grid-template-columns: repeat\(2, 1fr\); \}/.test(s),
+    '.telemetry goes 2x2 at a narrow viewport');
+  const c = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  assert.ok(/@media \(max-width: 540px\) \{ \.coach-kpis \{ grid-template-columns:repeat\(2, 1fr\); \} \}/.test(c),
+    '.coach-kpis goes 2x2 at a narrow viewport');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-13 batch 2 pins.
+console.log('\ncycle 13 — A4 / A6 / A8 / A9 fix pins');
+
+// A4: cycle-12 F5 replaced the 0-on-error count helper with the
+// outcome-carrying cnCountNotesResult_ but kept the old wrapper "for the
+// callers that only want the number". There were none — only its own two tests,
+// which ASSERTED it returns 0 on an unreadable Sheet, i.e. pinned the exact
+// behaviour F5 removed and kept the unsafe variant alive under the obvious name.
+test('A4: the 0-on-error count wrapper is gone; only the outcome-carrying helper remains', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.ok(code.indexOf('function countCallNotesInRange_(') < 0,
+    'countCallNotesInRange_ must not be re-introduced — use cnCountNotesResult_(…).count ' +
+    'and decide what to do with .unavailable');
+  assert.ok(/function cnCountNotesResult_\(/.test(code), 'cnCountNotesResult_ is the surviving helper');
+  const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
+  // Comments explaining the removal are fine; a CALL is not.
+  const calls = tests.split('\n').filter((l) =>
+    /countCallNotesInRange_\s*\(/.test(l) && !/^\s*(\/\/|\*)/.test(l.trim()));
+  assert.deepStrictEqual(calls, [], 'Tests.js still calls the removed wrapper:\n  ' + calls.join('\n  '));
+});
+
+// A6: the ONE RPC in the KB partial with no withFailureHandler, whose success
+// path ALSO opened `if (!res || res.error) return;`. It refreshes the tree after
+// a save/delete, so both paths silently left the admin looking at a stale list.
+test('A6: kbReloadTree_ surfaces a failed refresh instead of returning silently', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const fn = kb.slice(kb.indexOf('function kbReloadTree_('));
+  const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
+  assert.ok(/withFailureHandler/.test(body), 'kbReloadTree_ has a failure handler');
+  assert.ok(!/if \(!res \|\| res\.error\) return;/.test(body),
+    'the success path must not bare-return on a server error');
+  assert.ok((body.match(/showToast|stale\(/g) || []).length >= 2,
+    'BOTH paths (RPC failure and res.error) surface something to the user');
+  // Every RPC in this partial now has a failure handler.
+  const runs = (kb.match(/google\.script\.run/g) || []).length;
+  const fails = (kb.match(/withFailureHandler/g) || []).length;
+  assert.ok(fails >= runs, `every KB RPC has a failure handler (${runs} calls, ${fails} handlers)`);
+});
+
+// A8: the F5 class one surface over — a failed TimeOffRequests read reported as
+// "nothing planned". Latent today (no consumer), fixed so a future reader does
+// not inherit the confident zero.
+// SUPERSEDED by the cycle-13 follow-on batch: A8 hardened this helper's error
+// path, then the follow-on established that BOTH the helper and the
+// `annualPlannedUpcoming` field it fed were dead — the only reader
+// (renderPtoMini_) was deleted in cycle 8, and the Time/PTO tile computes its
+// own total client-side (INV-72). The honest end state is that the whole path is
+// gone, which is a stronger guarantee than a hardened catch. This pin now keeps
+// it from being reintroduced.
+test('A8/follow-on: the dead annualPlannedUpcoming path stays removed', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const stripped = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  assert.ok(stripped.indexOf('function getUpcomingAnnualPlanned_') < 0,
+    'the helper stays removed — a whole TimeOffRequests read per getEmployeeState call, for no reader');
+  assert.ok(!/annualPlannedUpcoming\s*:/.test(stripped),
+    'the field stays off the getEmployeeState response');
+});
+
+// A9: `budget <= 0` also fires when the LAST rep consumed exactly the remaining
+// rows and nothing was left — so a clean final run stamped hitPerRunCap and an
+// operator watching a backlog drain could not tell it had finished.
+test('A9: the CN archive stamps hitPerRunCap only when work actually remained', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const fn = code.slice(code.indexOf('function archiveOldCallNotes('));
+  const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
+  assert.ok(!/const capped = budget <= 0 \?/.test(body),
+    'the stamp must not key off `budget <= 0` — that fires on a clean final run too');
+  assert.ok(/const capped = truncated\s*\n?\s*\?/.test(body), 'the stamp keys off `truncated`');
+  // `truncated` is only set when an ENROLLED rep remained unvisited.
+  assert.ok(/if \(budget <= 0\) \{[\s\S]{0,220}?cnEnrolledSheetId_\(roster\[k\]\)[\s\S]{0,80}?truncated = true;/.test(body),
+    'truncated is set only when a remaining rep is actually enrolled');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-13 batch 3 pins.
+console.log('\ncycle 13 — A5 / A7 / A10 fix pins');
+
+// A5: dev-ness must come from BOTH markers. The old inline test in
+// runNightlySelfTest (and assertDevInstance_) inferred it from INSTANCE_LABEL
+// alone, so labelling prod promoted the nightly job to the full destructive
+// suite against live payroll — and assertNotProdInstance_ does not catch it,
+// because that only fires on INSTANCE_IS_PROD === 'true'.
+test('A5: dev-detection is single-sourced and requires an explicit non-prod marker', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const pred = extractRawFunction('Code.js', 'isDevInstance_');
+  assert.ok(/INSTANCE_IS_PROD/.test(pred) && /raw === null \|\| String\(raw\)\.trim\(\) === ''/.test(pred),
+    'an UNSET INSTANCE_IS_PROD is ambiguous and must resolve to NOT-dev');
+  // Both consumers route through the one predicate — no second inline copy.
+  assert.ok(/if \(!isDevInstance_\(\)\)/.test(extractRawFunction('Code.js', 'assertDevInstance_')),
+    'assertDevInstance_ delegates to the predicate');
+  const self = extractRawFunction('Code.js', 'runNightlySelfTest');
+  assert.ok(/const isDev = isDevInstance_\(\);/.test(self),
+    'runNightlySelfTest delegates to the predicate');
+  assert.ok(!/getProperty\('INSTANCE_LABEL'\)\s*&&/.test(self),
+    'the old inline label-only inference must not come back');
+  // A half-configured instance says WHY it was downgraded, and the panel shows it.
+  assert.ok(/needsMarker/.test(self) && /note:\s*note/.test(self),
+    'a downgraded run records a note explaining the missing marker');
+  assert.ok(/note: String\(st\.note \|\| ''\)/.test(code),
+    'computeAutomationHealth_ carries the note through');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/st\.note \?/.test(cn), 'the Admin self-test block renders the note');
+});
+
+// A7: the "no data" early return fired BEFORE the F1 cold-archive read-through,
+// so once archival drained the live tab a retroactive payroll export refused
+// with a misleading error instead of reading the archive holding the rows.
+test('A7: the export requires only a HEADER from the live tab, not data rows', () => {
+  const fn = extractRawFunction('Code.js', 'generateExportSheet_');
+  assert.ok(!/if \(rows\.length < 3\) return \{ error: 'No timesheet data found\.' \};/.test(fn),
+    'the < 3 early return must not come back — it short-circuits the archive read-through');
+  assert.ok(/if \(rows\.length < 2\)/.test(fn), 'only the two header rows are genuinely required');
+  // The archive block must still be reachable from the empty-live-tab state.
+  const guardIdx = fn.indexOf('rows.length < 2');
+  const archiveIdx = fn.indexOf('TIMESHEET_ARCHIVE_TAB');
+  assert.ok(guardIdx >= 0 && archiveIdx > guardIdx, 'the archive read-through comes after the header guard');
+  assert.ok(/oldestLiveDate === null \|\| startDate < oldestLiveDate/.test(fn),
+    'a live tab with no data rows (oldestLiveDate null) still consults the archive');
+});
+
+// A10: the F12 shape — non-transactional reads inside the ONE project-wide lock
+// that every punch write contends for.
+test('A10: submitQuizAttempt grades before taking the lock', () => {
+  const fn = extractRawFunction('Code.js', 'submitQuizAttempt');
+  const lockIdx = fn.indexOf('lock.waitLock(15000)');
+  assert.ok(lockIdx > 0, 'the lock is still taken (INV-01)');
+  const before = fn.slice(0, lockIdx);
+  const after = fn.slice(lockIdx);
+  ['getEmployeeInfo_(', 'trainReadQuizzes_(', 'trainReadAssignments_(', 'trainGradeQuiz_(']
+    .forEach((call) => {
+      assert.ok(before.indexOf(call) >= 0, call + ' runs BEFORE the lock');
+      assert.ok(after.indexOf(call) < 0, call + ' must not also run inside the lock');
+    });
+  // These are transactional and MUST stay inside.
+  assert.ok(after.indexOf('trainReadCompletions_(') >= 0,
+    'the completions dedup is a read-check-write and stays inside the lock');
+  assert.ok(after.indexOf('appendRow(') >= 0, 'the appends stay inside the lock');
+  assert.ok(/finally \{ lock\.releaseLock\(\); \}/.test(fn), 'the lock is released in finally (INV-01)');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-13 follow-on pins.
+console.log('\ncycle 13 — follow-on fix pins');
+
+// FO-2: V-8 removed the inverted --ink-on--ink primary from .btn-modal-ok
+// precisely because it read as disabled/error on "Generate ADP Export" — but
+// that on-page button is a DIFFERENT class and kept the vocabulary V-8 retired.
+// The app has ONE primary vocabulary; this was the last holdout.
+test('FO-2: no button is still on the retired inverted --ink primary', () => {
+  const st = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const rule = st.slice(st.indexOf('  .export-btn-large {'));
+  const body = rule.slice(0, rule.indexOf('}'));
+  assert.ok(/background: var\(--accent\)/.test(body),
+    '.export-btn-large matches .btn-modal-ok / .actions .prime — one primary vocabulary');
+  assert.ok(!/background: var\(--ink\)/.test(body),
+    'the inverted --ink primary must not survive on the money-facing export button');
+  // INV-165: the old hover mixed `in oklch`, which drags hue on the polar arc.
+  const hover = st.slice(st.indexOf('  .export-btn-large:hover {'));
+  assert.ok(!/oklch/.test(hover.slice(0, hover.indexOf('}'))),
+    'the hover uses --accent-2, not an oklch mix (INV-165)');
+});
+
+// FO-3: V-4 made .ss-hours wrap INTERNALLY between its two readouts, but the
+// parent row had no flex-wrap at all — so in the 360px Dashboard rail the hours
+// readout ran past the card edge. An inner wrap cannot help when the parent row
+// has nowhere to wrap to.
+test('FO-3: the shift-strip header row can wrap, not just its hours readout', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const rule = clk.slice(clk.indexOf('  .shift-strip-head {'));
+  const body = rule.slice(0, rule.indexOf('}'));
+  assert.ok(/display: flex/.test(body) && /flex-wrap: wrap/.test(body),
+    '.shift-strip-head must wrap — five children on one line overflow a 360px rail');
+  // The V-4 inner rule must survive alongside it.
+  assert.ok(/\.ss-hours \.ss-val \{ white-space: nowrap; \}/.test(clk),
+    'V-4 still holds: an individual duration never breaks inside itself');
+});
+
+// FO-4: JSON.stringify(NaN) is the string "null", so _assertEq(NaN, null) used
+// to PASS — the editor suite was blind to exactly the sentinel class A3 fixed.
+test('FO-4: _assertEq can tell NaN from null (and is otherwise unchanged)', () => {
+  const ctx = { JSON, Object, Array, isNaN, Infinity, console, Error };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_describe_'), ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_assertEq'), ctx);
+  const throws = (fn) => { try { fn(); return false; } catch (e) { return true; } };
+  assert.ok(throws(() => ctx._assertEq(NaN, null)), 'NaN vs null must FAIL');
+  assert.ok(throws(() => ctx._assertEq({ a: NaN }, { a: null })), 'a NESTED NaN vs null must FAIL');
+  assert.ok(!throws(() => ctx._assertEq(NaN, NaN)), 'NaN vs NaN still passes');
+  assert.ok(!throws(() => ctx._assertEq(null, null)), 'null vs null still passes');
+  // Byte-identical to plain JSON.stringify for every non-NaN value — ~300
+  // existing editor assertions compare objects through here and cannot be run
+  // outside the Apps Script editor, so the serialization must not shift.
+  [[1, 2], { a: 1 }, 'x', null, true, { a: [1, { b: 2 }] }, { a: undefined }, undefined]
+    .forEach((v) => {
+      assert.strictEqual(ctx._describe_(v), JSON.stringify(v),
+        'unchanged serialization for ' + JSON.stringify(v));
+    });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -105,7 +105,15 @@
 
   /* Live shift strip = the control surface (header + ribbon + punch buttons). */
   .shift-strip { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); box-shadow: var(--shadow-sm); padding: 14px 16px; margin: 14px 0; }
-  .shift-strip-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  /* Cycle-13 follow-on: `flex-wrap: wrap` was MISSING, so the five children
+     (label · state pill · spacer · coverage · hours) were forced onto one line
+     and the hours readout ran past the card edge in the 360px Dashboard rail —
+     "5h 54m worked · 32m lunch" clipped mid-word. V-4 (cycle 12) had already
+     made `.ss-hours` wrap INTERNALLY between its two readouts, but an inner
+     wrap cannot help when the PARENT row has nowhere to wrap to. `.ss-grow` is
+     `flex: 1` with a 0 basis, so it contributes nothing to line-breaking and
+     wide layout is unchanged; it just fills whatever is left on its own line. */
+  .shift-strip-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; }
   /* #4 — break schedule chips under the ribbon */
   .clk-brk-sched { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
   .clk-brk-label { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
@@ -213,12 +221,18 @@
 
   .dash-card { background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
   .dash-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; row-gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-  .dash-seclabel { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  /* A13 (cycle 13): an <h2>, not a span — margin:0 zeroes the UA h2 default so
+     the flex head row is pixel-identical. */
+  .dash-seclabel { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0; }
   /* Segmented chip — tinted track, sliding white highlight, labels above it. */
   .dash-seg { position: relative; display: flex; background: var(--paper-2); border-radius: 8px; padding: 3px; min-width: 212px; }
   .dash-seg-hi { position: absolute; top: 3px; bottom: 3px; left: 3px; background: var(--paper-card); border-radius: 6px;
     box-shadow: var(--shadow-sm); transition: transform .35s cubic-bezier(.4, 0, .2, 1); }
-  .dash-seg-opt { flex: 1; text-align: center; padding: 5px 6px; font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .02em;
+  /* A1 (cycle 13): <button>, not <span> — the period switcher had no keyboard
+     path at all and no alternative route to Yesterday/MTD/YTD. The reset keeps
+     it pixel-identical to the span it replaced. */
+  .dash-seg-opt { appearance: none; -webkit-appearance: none; background: none; border: 0;
+    flex: 1; text-align: center; padding: 5px 6px; font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .02em;
     cursor: pointer; position: relative; z-index: 1; color: var(--muted); white-space: nowrap; }
   .dash-seg-opt.on { color: var(--ink); }
   /* Carousel viewport + track. align-items:flex-start is LOAD-BEARING — without
@@ -434,7 +448,7 @@ function renderClockView(area) {
         <div id="dash-cards">${clkDashSkeleton_()}</div>
         <div class="dash-pair dash-foot">
           <div class="card">
-            <div class="card-label">Today's Punches</div>
+            <h2 class="card-label">Today's Punches</h2>
             ${renderPunchHistory(s.punches)}
           </div>
           <div id="teammate-card-slot"></div>
@@ -588,7 +602,7 @@ function clkDashCarouselHtml_(key, title) {
     return '<div class="dash-sld">' + card + '</div>';
   }).join('');
   return '<div class="dash-card">' +
-    '<div class="dash-card-head"><span class="dash-seclabel">' + esc(title) + '</span>' + clkDashSegHtml_(key) + '</div>' +
+    '<div class="dash-card-head"><h2 class="dash-seclabel">' + esc(title) + '</h2>' + clkDashSegHtml_(key) + '</div>' +
     '<div class="dash-vp"><div class="dash-trk" id="dash-trk-' + key + '" style="transform:translateX(-' + (i * 100) + '%)">' + slides + '</div></div>' +
   '</div>';
 }
@@ -600,10 +614,16 @@ function clkDashSegHtml_(key, labels) {
   labels = labels || CLK_DASH_LABELS;
   var i = CLK_DASH[key] || 0, n = labels.length;
   var w = 'calc((100% - 6px) / ' + n + ')';
+  // A1: keyboard-reachable <button>. A11: aria-pressed carries the active
+  // state — the `.on` class alone is invisible to assistive tech, so a screen
+  // reader could not tell which period was showing.
   var html = labels.map(function (lbl, idx) {
-    return '<span class="dash-seg-opt' + (idx === i ? ' on' : '') + '" onclick="clkDashSet_(\'' + key + '\',' + idx + ')">' + esc(lbl) + '</span>';
+    return '<button type="button" class="dash-seg-opt' + (idx === i ? ' on' : '') +
+      '" aria-pressed="' + (idx === i ? 'true' : 'false') +
+      '" onclick="clkDashSet_(\'' + key + '\',' + idx + ')">' + esc(lbl) + '</button>';
   }).join('');
-  return '<div class="dash-seg"><div class="dash-seg-hi" style="width:' + w + ';transform:translateX(' + (i * 100) + '%)"></div>' + html + '</div>';
+  return '<div class="dash-seg" role="group" aria-label="Period">' +
+    '<div class="dash-seg-hi" style="width:' + w + ';transform:translateX(' + (i * 100) + '%)"></div>' + html + '</div>';
 }
 
 /** Switch a carousel to period index — transform-only (track + highlight); no
@@ -617,7 +637,11 @@ function clkDashSet_(key, idx) {
   if (seg) {
     var hi = seg.querySelector('.dash-seg-hi');
     if (hi) hi.style.transform = 'translateX(' + (idx * 100) + '%)';
-    seg.querySelectorAll('.dash-seg-opt').forEach(function (o, j) { o.classList.toggle('on', j === idx); });
+    // A11: keep aria-pressed in step with the `.on` class on every switch.
+    seg.querySelectorAll('.dash-seg-opt').forEach(function (o, j) {
+      o.classList.toggle('on', j === idx);
+      o.setAttribute('aria-pressed', j === idx ? 'true' : 'false');
+    });
   }
   clkDashFit_(key);   // re-fit the viewport to the newly-active slide
 }
@@ -749,7 +773,7 @@ function clkRenderDashboardExtras_() {
   var leftLabel = canSp ? 'Spanish Inbox' : 'Training';
   var leftBody = canSp ? clkDashSpanishCard_(x.spanish, x.spanishPending) : clkDashTrainingCard_(x.training);
   var card = function (label, body) {
-    return '<div class="dash-card"><div class="dash-card-head"><span class="dash-seclabel">' + esc(label) + '</span></div>' + body + '</div>';
+    return '<div class="dash-card"><div class="dash-card-head"><h2 class="dash-seclabel">' + esc(label) + '</h2></div>' + body + '</div>';
   };
   host.innerHTML = '<div class="dash-pair">' + card(leftLabel, leftBody) + card('Requests', clkDashRequestsCard_(x.requests)) + '</div>';
 }
@@ -1690,7 +1714,7 @@ function loadTeammateStatus() {
     else slot.innerHTML = '';
   } else {
     slot.innerHTML =
-      '<div class="card"><div class="card-label with-count"><span>Team Right Now</span></div>' +
+      '<div class="card"><h2 class="card-label with-count"><span>Team Right Now</span></h2>' +
       '<div class="emp-grid">' +
         '<div class="emp-card emp-card-compact"><div class="emp-card-top"><div class="skel skel-avatar"></div>' +
           '<div class="skel skel-bar" style="width:70%;height:11px"></div></div></div>' +
@@ -1742,10 +1766,10 @@ function renderTeammateCard(slot, teammates) {
 
   slot.innerHTML = `
     <div class="card">
-      <div class="card-label with-count">
+      <h2 class="card-label with-count">
         <span>Team Right Now</span>
         <span style="font-family:var(--mono);font-size:11px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:.04em">${summary}</span>
-      </div>
+      </h2>
       <div class="emp-grid">${cardsHtml}</div>
     </div>`;
 }

@@ -1,110 +1,115 @@
 # Cycle State
 
 ## Current
-Cycle: 13
-Phase: idle
-Scope: —
+Cycle: 14
+Phase: implement
+Scope: CDR sub-queue feature (operator-requested; Phase 0 of 4)
 Test Command: manual
-Subsystem cycles since last Seams audit: 2 (cycle 11 was the seams audit;
-  /reflect increments — cadence is every 4, so 2 more subsystem cycles before
+Subsystem cycles since last Seams audit: 3 (cycle 11 was the seams audit;
+  /reflect increments — cadence is every 4, so 1 more subsystem cycle before
   the next Seams & Invariants audit is due)
-Updated: 2026-07-27
-
-NUMBERING NOTE: `Cycle: 13` is RESERVED, not started. CLAUDE.md's rule is that
-the number increments when a NEW audit cycle BEGINS (a fresh `/broad-scan` or
-`/audit` after the prior `/reflect`); it was set here at cycle-12 close-out on
-the operator's instruction. No cycle-13 audit has run, so nothing should be
-recorded against 13 until one does — and if the next audit is a Seams audit or
-a targeted cycle, it still takes this number.
+Updated: 2026-07-29
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing in progress. Cycle 12 is closed: audit + visual addendum, all 27
-  findings shipped across six batches, reflected (net 11), docs synced, and
-  PR #143 merged to main on green CI (3ad80d8).
+- Cycle 13 is CLOSED; its whole block is in `.cycle/HISTORY.md`. Use the
+  REFLECT block (`.cycle/blocks/13-a-reflect.md`) for its tally — it corrected
+  the four implementation blocks in two directions (net 9 − 1 = 8, not the 8 − 0
+  they reported between them).
+- This cycle is NOT an audit cycle. It is operator-requested feature work:
+  departments with sub-queues have no way to view sub-queue detail separately
+  or with transparency in the combined view.
+- **Approved design (operator answered 2026-07-29):** discovery FIRST;
+  MANAGER SURFACES ONLY (which removes the INV-124 per-queue anonymization
+  problem entirely); view shape = expandable per-queue rows PLUS segmented
+  contribution bars.
+- Phase 0 is IMPLEMENTED and pushed. Phases 1–4 are unstarted.
+- Next concrete step: the operator deploys and reads the queue inventory in
+  Manage → Admin → Automation Health. **That output gates Phase 1.**
 
 ## Completed this cycle
-- (nothing yet — cycle 13 has not started)
+- Phase 0 | Code.js | NEW read-only `cdrQueueInventory_(from,to)` — distinct QUEUE_EXT values (col 4, declared since the CDR enum and read NOWHERE until now), the skipped A_Q_*/Backup CSR aggregates, which Transfer H:R columns carry data, and rows-per-(agent,date) — the gate question
+- Phase 0 | Code.js | gating: `computeAutomationHealth_(opts)` defaults scanQueues OFF because the health BADGE polls it every 10 min per manager and the digest runs it daily; only `getAutomationHealth()` opts in, `getDeployReadiness` passes false
+- Phase 0 | cn/script_callnotes.html | NEW self-contained `cnQueueInventoryHtml_` — verdict first in plain language, three distinct states (available / NOT in this data / cannot determine), every server string esc()'d
+- Phase 0 | CLAUDE.md | Automation Health decision documents the inventory, why it is opt-in, and why it is not folded into the cached getCdrAgentMetrics_ meta
+- Tests | test/client/run.js (+4 pins, 375→379, all four bite-checked)
 
 ## Pending / not yet done
-- **CARRIED FROM CYCLE 12 — the operator deploy is still UNCONFIRMED.** Cycle 12
-  was closed out on instruction before the deploy was verified, so this is the
-  one piece of cycle-12 work still outstanding:
+- **THE DEPLOY IS NOW BLOCKING — it is how Phase 0 delivers its answer**, and it
+  still carries cycle 11's visual batch plus all of cycles 12–13:
   1. `cd web-app && clasp push -f`
   2. Apps Script editor → Deploy → Manage deployments → Edit → Version:
      **New version** → Deploy
-  3. Run `runAllTests()` in the editor — the F3 bounded-move behavioural case,
-     the F2 sheet-doctor contract, the F6 cache-reset effect and the two NEW
-     smoke tests (`cn_enrolledSheetId_trimsAndNullGuards`,
-     `cn_appendBounded_capsAndRollsBack`) execute ONLY there.
-  Expect three visible changes: the anonymized team line may hide on days it
-  previously showed (F4 cohort fix), every modal primary is now `--accent` green
-  (V-8, one shared class behind ~25 call sites), and sidebar/mobile nav labels
-  are SHORT with the full label on hover (V-5/6/7).
-  NOTE this deploy also covers cycle 11's follow-up visual batch, which was
-  never separately deployed.
-- Cycle 12's handoff blocks are NOT on disk. The `.cycle/blocks/` convention was
-  adopted mid-cycle with the v1.23.0 command sync (template R19), so cycle 12's
-  six implementation blocks + one cycle-summary block exist only in that
-  session's scrollback. They can be reconstructed from the record, but only as
-  RECONSTRUCTIONS — a reconstruction filed as the verbatim block is worse than
-  an absent one. Cycle 13 onward writes them automatically.
+  3. Open Manage → Admin → Automation Health, read "Queue inventory · discovery"
+  4. Run `runAllTests()` in the editor — these execute ONLY there: cycle 13's
+     `timeToMins_nullOnUnparseable`, the two renamed `metrics_cnCountNotesResult_*`,
+     plus cycle 12's still-unrun `cn_enrolledSheetId_trimsAndNullGuards` and
+     `cn_appendBounded_capsAndRollsBack`.
+- **CARRIED (cycle 13 A5), DEV PROJECT ONLY: add Script Property
+  `INSTANCE_IS_PROD=false`.** An unset value now reads as production, so without
+  it devScrubRoster_/devShowConfig_ refuse and the nightly self-test drops to
+  smoke (visibly). PROD is unaffected.
+- Phase 1 (~1 day) — queue-aware readers behind an opt-in argument (existing
+  callers byte-identical); `CDR_QUEUE_GROUPS` Script Property for the
+  queue→department mapping (sanitize-on-read, the DR_SLA_TARGETS pattern, so
+  `call-data-reporting` needs no change); add col 4 + H:R to the header
+  validators; bump `CDR_CACHE_KEY` (INV-85); multi-queue rows in the CDR fixture.
+- Phase 2 (~1 day) — Team Metrics scope switcher (Combined / By department /
+  By queue) with expandable per-queue rows + segmented contribution bars,
+  reusing `mtRenderTable_` and its `rowClass` hook.
+- Phase 4 (~½ day, deferrable) — Admin editor for the mapping.
+- Phase 3 was DROPPED with the manager-only scope decision.
 
 ## Open follow-on items
-Carried forward from cycle 12 (see the HISTORY.md block for the full list):
-- `Code.js getSpanishInboxStats` | `pendingList` is a DEAD field — no client
-  reads it (both the Spanish tab and the dashboard card use the separate,
-  uncapped `getSpanishInboxPending`). Its F18 cap flag is therefore
-  correct-but-unobservable; removing the field is the real cleanup, deferred as
-  a response-shape change.
-- `Code.js` | the OTHER Timesheet-archive readers are still live-tab-only:
-  `buildTimesheetForEmployee_` (employee calendar), `getPunctualityReport`,
-  `tsDoctorScan_`. F1 fixed the money path (the ADP export) only.
-- `tc/script_clock.html loadCoverageStrip_` | blanks the strip on a COLD-miss
-  failure. Deliberate + documented as the SWR keep-last-good rule, so F16 left
-  it alone — but it is the one remaining place a failed load reads as absence.
-- `tc/script_clock.html` | the clock card's AMBER gradient end is ~1.5:1 against
-  white for `.clk-time` ITSELF, not just the AM/PM span V-2 fixed. A card-level
-  design call (scrim, or a darker amber end) — needs an operator decision.
-- `Code.js archiveOldTimesheetRows` | `hitPerRunCap` reads "more remain" on a run
-  that moved exactly the cap with nothing left. Cosmetic, audit-note only.
-- V-9's other two dead-space instances (dashboard rail 284px shorter than the
-  main column; Metrics hero 119px shorter than its rail) are shorter COLUMNS
-  with no stretched card — rebalancing means moving content between columns, an
-  operator design call.
-- **V-13 (deferred by decision)** — Metrics' four competing date controls +
-  30-point sparklines rendered into ~145×40px with no axis or baseline. A
-  redesign needing an operator opinion, not a defect.
-- No visual Regression Scenarios exist yet (72 scenarios, none visual). The
-  freshly-synced `/broad-scan` emits OPERATOR VISUAL CHECKS in exactly the
-  Regression-Scenario format for direct promotion, so the next scan should
-  start producing them.
-- `/pr-review` is the one template command not installed (it sits under the
-  template's separate "Per-Change Review" heading, not Tier 3).
+- The CDR fixture writes one row per agent with NO queue, so no test exercises
+  the multi-queue path. Extend it in Phase 1, where there is aggregation logic
+  worth protecting.
+- FO-6 (the remaining TimesheetArchive readers) — carried from cycle 13,
+  ANALYSED and DEFERRED, and the analysis is the point:
+    • `buildTimesheetForEmployee_` and `getPunctualityReport` SHOULD read through
+      behind the export's "window predates the live floor" gate (~½ day).
+    • `tsDoctorScan_` must NOT — `fixTimesheetDuplicates` deletes by LIVE-tab
+      index, so surfacing archived duplicates would report findings the fix
+      cannot act on. That is an operator design decision.
+  Nothing is broken: archival is OFF by default and the ≥120-day floor keeps
+  recent data live.
+- INV-177/178/179 were proposed by cycle 13's /reflect but are NOT yet written
+  to the library — that is /sync-docs' job.
 
 ## Decisions made (so the next session doesn't re-litigate)
-- Cycle 12's full decision record lives in its HISTORY.md block. The two worth
-  carrying into any future work on the same surfaces:
-  - A `max-height` on a GRID CONTAINER does not constrain its row (measured: a
-    long article grew the page to 13.7k px and the reader's internal scroll was
-    gone). Caps on a content-sized-but-capped grid belong on the ITEMS. This is
-    now a Common Gotcha in CLAUDE.md.
-  - `/reflect` Q1 counts a user-visible interface defect as a PRODUCTION FIX
-    (template R18, adopted this cycle). Cycles ≤11 scored those as
-    defensive/structural and excluded them from `net_score`, so cumulative
-    `net_score` spans two rules at the 11/12 boundary — deliberate, documented
-    upstream, and nothing was rewritten retroactively.
+- Phase 0 exists because the design rests on ONE assumption this repo cannot
+  verify: that DQE carries a row per (agent, queue, date). The fixture writes
+  one row per agent, so nothing here could confirm it.
+- The queue scan is OPT-IN and that gate is load-bearing, not tidiness:
+  `getAutomationHealthBadge` polls `computeAutomationHealth_` every 10 minutes
+  per manager. A full-sheet read there is a recurring cost regression.
+- The inventory is NOT folded into `getCdrAgentMetrics_`'s meta even though the
+  rows are already in memory there — that result is cached and consumed by every
+  Metrics call, so widening it would tax the hot path and force an INV-85 cache
+  bump for a diagnostic.
+- The render keeps "cannot be determined" (empty window) DISTINCT from the
+  negative verdict. An undetermined scan reading as a negative answer would kill
+  the feature on no evidence.
+- Manager-only scope was chosen deliberately: it drops Phase 3 and with it the
+  only part of the feature that could create a privacy regression (a per-queue
+  split defeating INV-124's N=3 anonymization on a thinly-staffed queue).
+- Queue→department mapping goes in a Script Property, not a CDR sheet tab —
+  the sheet is owned by `call-data-reporting`, and a property needs no
+  cross-repo change.
 
 ## Where I left off
-Cycle 12 is CLOSED and merged (PR #143 → main, 3ad80d8); its block is archived
-in `.cycle/HISTORY.md` and this file is reset. The ONLY outstanding cycle-12
-work is the operator deploy above — do that first, and if `runAllTests()`
-surfaces anything, it belongs to cycle 12, not 13. Otherwise cycle 13 starts
-with a fresh `/broad-scan` (or `/audit`); the Seams audit is due in 2 more
-subsystem cycles. The command templates are current (workflow-tools v1.23.0,
-19/20 installed), so the next `/broad-scan` will include the interface lens and
-the next implement/reflect will persist their blocks to `.cycle/blocks/`.
+Phase 0 is implemented, tested (379 pure + 66 DOM, all four new pins
+bite-checked), documented and pushed to `claude/broad-scan-yhkbe2`. Block:
+`.cycle/blocks/14-phase0-broad-implement.md`. Nothing else in the feature is
+started.
 
-## History
-Closed-cycle records live in `.cycle/HISTORY.md` (append-only, newest first).
-This file holds ONLY the current cycle — see CLAUDE.md "Cycle State & Memory"
-for the close-out procedure.
+**Phase 0 is a GATE, and the deploy is how it reports.** After deploying, read
+Manage → Admin → Automation Health → "Queue inventory · discovery":
+- If it says **per-queue rep attribution IS available**, proceed to Phase 1 as
+  planned.
+- If it says **NOT in this data**, the approved design (per-queue splits of REP
+  numbers) cannot be built as specified and the feature becomes queue-health
+  from the `A_Q_*` aggregates — closer to the dedicated-Queues-tab option the
+  operator did not pick. **Take that back to the operator; do not silently
+  redesign.**
+- If it says **cannot be determined**, the 7-day window had no rows — check the
+  feed before concluding anything.

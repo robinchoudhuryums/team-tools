@@ -253,9 +253,34 @@ function _clearCdrCacheForDate_(date) {
 
 // ── Assertions ────────────────────────────────────────────────────────────
 
+/**
+ * Deep-ish equality via JSON.stringify — with the NaN hole closed (cycle-13
+ * follow-on). `JSON.stringify(NaN)` is the string `"null"`, and so is
+ * `JSON.stringify(null)`, so `_assertEq(NaN, null)` used to PASS. That made the
+ * helper blind to exactly the class cycle-13 A3 was fixing (a NaN sentinel that
+ * should have become null), and any future null-vs-NaN test written with it
+ * would have been decorative. `_describe_` disambiguates the three values that
+ * JSON collapses — NaN, Infinity, -Infinity, and undefined-inside-an-object —
+ * before the comparison, so they can never compare equal to null again.
+ */
+function _describe_(v) {
+  // A JSON.stringify REPLACER, deliberately — not a hand-rolled walker. The
+  // replacer fires for every value at every depth, so a nested NaN is caught
+  // too, while every OTHER value serializes byte-identically to the plain
+  // JSON.stringify this helper used before. That matters: ~300 existing editor
+  // assertions compare objects through here, and a stricter walker would have
+  // changed unrelated semantics (e.g. `{a: undefined}` vs `{}`) in a suite that
+  // cannot be run outside the Apps Script editor.
+  return JSON.stringify(v, function (k, val) {
+    if (typeof val === 'number' && isNaN(val)) return '<<NaN>>';
+    if (val === Infinity) return '<<Infinity>>';
+    if (val === -Infinity) return '<<-Infinity>>';
+    return val;
+  });
+}
 function _assertEq(actual, expected, msg) {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
+  const a = _describe_(actual);
+  const e = _describe_(expected);
   if (a !== e) {
     throw new Error((msg || 'Assertion failed') +
       `\n  expected: ${e}` +
@@ -833,6 +858,7 @@ function _runAllTests() {
   _smokeTest('calcHours_withLunch',                test_calcHours_withLunch);
   _smokeTest('calcHours_overnight',                test_calcHours_overnight);
   _smokeTest('calcHours_overnightWithLunch',       test_calcHours_overnightWithLunch);
+  _smokeTest('timeToMins_nullOnUnparseable',       test_timeToMins_nullOnUnparseable);
 
   _smokeTest('daysBetween_basic',                  test_daysBetween_basic);
   _smokeTest('daysBetween_negative',               test_daysBetween_negative);
@@ -1113,8 +1139,8 @@ function _runAllTests() {
   _smokeTest('metrics_cdrRosterHash_orderInsensitive',  test_metrics_cdrRosterHash_orderInsensitive);
   _smokeTest('metrics_cdrRosterHash_distinctSetsDiffer', test_metrics_cdrRosterHash_distinctSetsDiffer);
   _smokeTest('metrics_cdrRosterHash_emptyIsAll',        test_metrics_cdrRosterHash_emptyIsAll);
-  _smokeTest('metrics_countCallNotesInRange_noSheetReturnsZero', test_metrics_countCallNotesInRange_noSheetReturnsZero);
-  _integrationTest('metrics_countCallNotesInRange_countsToday',  test_metrics_countCallNotesInRange_countsToday);
+  _smokeTest('metrics_cnCountNotesResult_noSheetReturnsZero', test_metrics_cnCountNotesResult_noSheetReturnsZero);
+  _integrationTest('metrics_cnCountNotesResult_countsToday',  test_metrics_cnCountNotesResult_countsToday);
 
   // ── Automation trigger gates (INV-44) ──────────────────────────────────
   _integrationTest('triggerGate_eodDigest_nonManagerThrows',    test_triggerGate_eodDigest_nonManagerThrows);
@@ -1281,6 +1307,28 @@ function test_calcHours_overnight() {
 function test_calcHours_overnightWithLunch() {
   // 22:00 → 06:00 with 02:00-03:00 lunch = 7 hours
   _assertEqClose(calcHours_('22:00:00','06:00:00','02:00:00','03:00:00'), 7.0);
+}
+/** A3 (cycle 13) — timeToMins_ returns NULL, never NaN, on an unparseable
+ *  Timesheet TIME cell. NaN's comparisons are all false, so the old sentinel
+ *  made getPunctualityReport score such a day ON TIME and made
+ *  `totalHours += calcHours_(...)` NaN out an entire timesheet total. */
+function test_timeToMins_nullOnUnparseable() {
+  _assertEq(timeToMins_('09:30:00'), 570, 'valid HH:mm:ss still parses');
+  _assertEq(timeToMins_('9:05'), 545, 'bare H:mm still parses');
+  // MUST use a strict === null check, NOT _assertEq: it compares via
+  // JSON.stringify, and JSON.stringify(NaN) is the string "null" — so
+  // _assertEq(NaN, null) PASSES and the test would be blind to the exact
+  // regression it exists to catch.
+  // Both rejection paths are covered: no colon, and a colon with non-numeric
+  // parts (a list of only the former passes with the isNaN guard deleted).
+  ['', '9am', 'abc', 'ab:cd', ':', 'x:30', '09:mm', null, undefined].forEach(function (bad) {
+    _assertTrue(timeToMins_(bad) === null, 'unparseable "' + bad + '" must be null, got ' + timeToMins_(bad));
+  });
+  // calcHours_ propagates the null instead of returning NaN…
+  _assertTrue(calcHours_('bogus', '17:00:00', null, null) === null, 'corrupt clock pair → null');
+  _assertTrue(calcHours_('09:00:00', 'bogus', null, null) === null, 'corrupt clock-out → null');
+  // …but a corrupt LUNCH pair only drops the deduction; the day is still valid.
+  _assertEqClose(calcHours_('09:00:00', '17:00:00', 'bogus', '13:00:00'), 8.0);
 }
 
 // ── Date math ──
@@ -4161,7 +4209,7 @@ function test_auditRow_deletePunch_hasActorEmail() {
 //  ────────────────────────────────────────────────────────────────────────
 //  Pure-logic coverage for the CDR data-layer helpers + the shared note-
 //  coverage helper (S1). One integration test guards the F1 regression class:
-//  countCallNotesInRange_ must read CN.DATE_LOCAL through normalizeDate_ so a
+//  cnCountNotesResult_ must read CN.DATE_LOCAL through normalizeDate_ so a
 //  Sheets-coerced Date doesn't silently zero the count. CDR endpoints
 //  (getMyMetrics / getTeamMetrics) aren't integration-tested here because they
 //  require the external CDR Report spreadsheet (CDR_SS_ID), which isn't part
@@ -4241,15 +4289,20 @@ function test_metrics_cdrRosterHash_emptyIsAll() {
   _assertEq(cdrRosterHash_(null), 'all', 'null roster → "all"');
 }
 
-// ── countCallNotesInRange_ (S1 shared count helper) — pure guards ──
+// ── cnCountNotesResult_ (S1 shared count helper) — pure guards ──
+// A4 (cycle 13): these used to drive the removed `countCallNotesInRange_`
+// wrapper and ASSERT it returned 0 on an unreadable Sheet — pinning the exact
+// silently-degrading behaviour cycle-12 F5 existed to remove, and keeping the
+// unsafe variant alive under the obvious name for the next author to find.
+// They now drive the outcome-carrying helper directly, which is the only
+// count helper left.
 
-function test_metrics_countCallNotesInRange_noSheetReturnsZero() {
-  _assertEq(countCallNotesInRange_({ id: 'X', name: 'Y', callNotesSheetId: null }, '2026-01-01', '2026-12-31'), 0,
-    'Rep with no call-notes Sheet → 0');
-  _assertEq(countCallNotesInRange_(null, '2026-01-01', '2026-12-31'), 0, 'Null emp → 0');
-  // Cycle-12 F5 — the outcome-carrying sibling. An UNENROLLED rep is not a
-  // failed read (INV-35), but an unreadable Sheet id must report unavailable
-  // so no coverage surface renders a confident 0% / "File N missing".
+function test_metrics_cnCountNotesResult_noSheetReturnsZero() {
+  // Cycle-12 F5 — an UNENROLLED rep is not a failed read (INV-35), but an
+  // unreadable Sheet id must report unavailable so no coverage surface renders
+  // a confident 0% / "File N missing".
+  _assertEq(cnCountNotesResult_(null, '2026-01-01', '2026-12-31').count, 0, 'Null emp → count 0');
+  _assertEq(cnCountNotesResult_(null, '2026-01-01', '2026-12-31').unenrolled, true, 'Null emp → unenrolled');
   const un = cnCountNotesResult_({ id: 'X', name: 'Y', callNotesSheetId: null }, '2026-01-01', '2026-12-31');
   _assertEq(un.count, 0, 'unenrolled → count 0');
   _assertEq(un.unavailable, false, 'unenrolled is NOT an unavailable read');
@@ -4260,9 +4313,9 @@ function test_metrics_countCallNotesInRange_noSheetReturnsZero() {
   _assertEq(bad.unavailable, true, 'unreadable Sheet → unavailable:true (NOT indistinguishable from zero notes)');
 }
 
-// ── countCallNotesInRange_ (integration) — guards the F1 regression class ──
+// ── cnCountNotesResult_ (integration) — guards the F1 regression class ──
 
-function test_metrics_countCallNotesInRange_countsToday() {
+function test_metrics_cnCountNotesResult_countsToday() {
   _clearTestCallNotes();
   const ctx = _asUser(_TEST_INDIA_EMAIL, function () {
     const emp = getEmployeeInfo_();
@@ -4273,9 +4326,11 @@ function test_metrics_countCallNotesInRange_countsToday() {
   });
   // The note date is stored as a 'yyyy-MM-dd' string that Sheets coerces to a
   // Date on read. If the helper ever drops normalizeDate_, this count goes to 0.
-  _assertEq(countCallNotesInRange_(ctx.emp, ctx.today, ctx.today), 2,
+  const todayRes = cnCountNotesResult_(ctx.emp, ctx.today, ctx.today);
+  _assertEq(todayRes.count, 2,
     'Counts both of today\'s notes (regression guard for the CN.DATE_LOCAL coercion bug)');
-  _assertEq(countCallNotesInRange_(ctx.emp, '2000-01-01', '2000-01-02'), 0,
+  _assertEq(todayRes.unavailable, false, 'a successful read is not flagged unavailable');
+  _assertEq(cnCountNotesResult_(ctx.emp, '2000-01-01', '2000-01-02').count, 0,
     'Out-of-range window counts 0');
   _clearTestCallNotes();
 }
