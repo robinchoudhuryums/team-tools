@@ -644,14 +644,47 @@ function assertNotProdInstance_(label) {
       '(INSTANCE_IS_PROD is set). Run it on the DEV Apps Script project — see docs/deployment.md.');
   }
 }
-/** Throws UNLESS this is a clearly-labeled DEV instance (INSTANCE_LABEL set AND
- *  INSTANCE_IS_PROD not 'true'). The bulletproof guard for dev-only tooling that
- *  MUTATES sheets (the roster scrubber). Prod has no INSTANCE_LABEL → refuses, so
- *  a misfire can never touch the team's live roster. */
+/**
+ * THE dev-instance predicate (A5, cycle 13). An instance counts as DEV only
+ * when it carries BOTH markers: an `INSTANCE_LABEL` **and** an `INSTANCE_IS_PROD`
+ * that is explicitly present and not 'true'.
+ *
+ * WHY the second half is load-bearing: the old test was
+ * `label set && !isProdInstance_()`, and `isProdInstance_()` is false whenever
+ * the property is UNSET — which is the DEFAULT state of production (both
+ * properties are documented as optional, and prod today has neither). So the
+ * old predicate inferred "dev" from the mere PRESENCE of a banner label, and
+ * labelling prod — something the docs actively recommend so the two tabs can't
+ * be confused — silently flipped prod into dev:
+ *   • `runNightlySelfTest` would run the FULL `runAllTests` suite against live
+ *     payroll / audit / PHI sheets every night at 1am. `assertNotProdInstance_`
+ *     does NOT catch this: it only throws when INSTANCE_IS_PROD === 'true'.
+ *     `cleanupTestData()` sweeps at the end, but a run killed by the 6-minute
+ *     ceiling (exactly what F15's sentinel exists to detect) leaves `TEST_`
+ *     rows behind in the Timesheet and AuditLog.
+ *   • `devScrubRoster_` would ANONYMIZE THE LIVE ROSTER — replacing every
+ *     employee email with `@example.invalid` and blanking column L.
+ * An absent marker is now AMBIGUOUS and resolves to NOT-dev, so the failure
+ * direction is "a dev tool refuses until you finish configuring dev" instead of
+ * "a prod instance quietly behaves like dev".
+ */
+function isDevInstance_() {
+  if (!instanceLabel_()) return false;
+  let raw = null;
+  try { raw = PropertiesService.getScriptProperties().getProperty('INSTANCE_IS_PROD'); }
+  catch (e) { return false; }
+  if (raw === null || String(raw).trim() === '') return false;   // unset = ambiguous = not dev
+  return String(raw).trim().toLowerCase() !== 'true';
+}
+
+/** Throws UNLESS `isDevInstance_()` — the bulletproof guard for dev-only tooling
+ *  that MUTATES sheets (the roster scrubber). */
 function assertDevInstance_(label) {
-  if (!instanceLabel_() || isProdInstance_()) {
-    throw new Error((label || 'This dev tool') + ' refuses to run: this is not a labeled DEV instance ' +
-      '(set Script Property INSTANCE_LABEL on the dev project — never on prod). See docs/deployment.md.');
+  if (!isDevInstance_()) {
+    throw new Error((label || 'This dev tool') + ' refuses to run: this is not a confirmed DEV instance. ' +
+      'A dev project needs BOTH Script Properties — INSTANCE_LABEL (e.g. "DEV") and ' +
+      'INSTANCE_IS_PROD set explicitly to "false". An UNSET INSTANCE_IS_PROD is treated as ' +
+      'production, because that is prod\'s default state. See docs/deployment.md.');
   }
 }
 
@@ -692,51 +725,22 @@ function getEmployeeState() {
       sickLeave: emp.sickLeave,
       annualLeaveMax: CONFIG.ANNUAL_LEAVE_MAX || 15,
       sickLeaveMax:   CONFIG.SICK_LEAVE_MAX   || 10,
-      // Future-dated PENDING annual days (not yet deducted) — the Clock PTO pips
-      // mark these amber: still in the green balance but tentatively committed.
-      annualPlannedUpcoming: getUpcomingAnnualPlanned_(emp.id, today),
+      // Cycle-13 follow-on: `annualPlannedUpcoming` was REMOVED here, along with
+      // its `getUpcomingAnnualPlanned_` helper. Its only reader was
+      // `renderPtoMini_`, deleted in cycle 8 when the Dashboard redesign moved
+      // Annual PTO to the Time/PTO tab — and that tile computes its own
+      // pending-planned total client-side from `data.allRequests` (INV-72). The
+      // field had been shipped on every getEmployeeState call, and a whole
+      // TimeOffRequests read performed for it, with nobody reading either. Batch
+      // 2's A8 hardened that helper's error path; this supersedes it — the
+      // honest end state was that the whole path was dead. (INV-74 / the L11
+      // "misleading dead code" class.)
       flags: getClientFeatureFlags_(),
       // Blue-green: a short label ('DEV') shown as a banner so an isolated dev
       // instance can't be mistaken for the team's live one. '' on prod → no banner.
       instanceLabel: instanceLabel_(),
     };
   } catch (err) { return { error: err.message }; }
-}
-
-/** Sum of future-dated PENDING annual-bucket leave days for an employee.
- *  Approved future PTO is already deducted from the balance on approval, so
- *  only pending requests are "planned but not yet reflected" (the amber pips).
- *
- *  A8 (cycle 13): returns NULL — not 0 — when the read fails. The bare
- *  `catch { return 0 }` made "the TimeOffRequests read failed" indistinguishable
- *  from "you have nothing planned" — the F5 class one surface over.
- *  HONESTY NOTE: this is currently a LATENT fix, not a user-visible one. The
- *  only consumer of `annualPlannedUpcoming` was `renderPtoMini_`, removed in
- *  cycle 8 when the Dashboard redesign relocated Annual PTO to the Time/PTO
- *  tab — and that tile computes its own pending-planned total client-side from
- *  `data.allRequests` (INV-72). So the field ships on `getEmployeeState` with
- *  nobody reading it. Fixed anyway because the shape is wrong and a future
- *  reader would inherit the confident zero; the DEAD FIELD itself is a separate
- *  question (removing it is a response-shape change) and is recorded as a
- *  follow-on, not done here. */
-function getUpcomingAnnualPlanned_(empId, todayIso) {
-  try {
-    const rows = getOrCreateTimeOffSheet_().getDataRange().getValues();
-    let days = 0;
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][TO.EMP_ID]).trim() !== empId) continue;
-      const d = normalizeDate_(rows[i][TO.DATE]);
-      if (!d || d <= todayIso) continue;   // future-dated only
-      const st = String(rows[i][TO.STATUS] || '').toLowerCase().trim();
-      if (st !== 'pending') continue;
-      const ded = getLeaveDeduction_(String(rows[i][TO.TYPE]));
-      if (ded && ded.bucket === 'annual') days += ded.days;
-    }
-    return days;
-  } catch (e) {
-    console.warn('getUpcomingAnnualPlanned_ failed for ' + empId + ': ' + e.message);
-    return null;
-  }
 }
 
 function recordPunch(punchType, custom) {
@@ -4977,6 +4981,10 @@ function computeAutomationHealth_() {
           date: String(st.date || ''), mode: String(st.mode || ''),
           pass: Number(st.pass) || 0, fail: Number(st.fail) || 0, skip: Number(st.skip) || 0,
           error: String(st.error || ''),
+          // A5: a half-configured instance (labelled, but no explicit
+          // INSTANCE_IS_PROD) runs SMOKE and says why, so the downgrade is
+          // visible in the panel instead of looking like a settled choice.
+          note: String(st.note || ''),
           // F15: the RUNNING sentinel. A run that was KILLED (execution-time
           // limit — not catchable, so the outcome write never happens) leaves
           // this set. `stuck` = it has been "running" far longer than any real
@@ -5115,9 +5123,23 @@ function runNightlySelfTest() {
       Logger.log('runNightlySelfTest: test suite not present in this project — skipping.');
       return;
     }
-    const isDev = !!props.getProperty('INSTANCE_LABEL') &&
-      String(props.getProperty('INSTANCE_IS_PROD') || '').toLowerCase() !== 'true';
+    // A5 (cycle 13): the full suite runs ONLY on a CONFIRMED dev instance —
+    // both markers present (isDevInstance_). The old inline test inferred dev
+    // from the presence of INSTANCE_LABEL alone, so labelling prod (which the
+    // docs recommend, to tell the two tabs apart) silently promoted this to
+    // `runAllTests` against live payroll every night; assertNotProdInstance_
+    // does not catch it, because it only fires on INSTANCE_IS_PROD === 'true'.
+    const isDev = isDevInstance_();
     const mode = isDev ? 'full' : 'smoke';
+    // …and say so when a HALF-configured dev instance gets downgraded, rather
+    // than silently running smoke forever. A labelled instance with no explicit
+    // INSTANCE_IS_PROD is exactly the ambiguous case; the note rides the stored
+    // result into Automation Health so the operator can finish the setup.
+    const needsMarker = !isDev && !!instanceLabel_();
+    const note = needsMarker
+      ? 'Full suite skipped: INSTANCE_LABEL is set but INSTANCE_IS_PROD is not. ' +
+        'Set it explicitly ("false" on dev, "true" on prod) — an unset value is treated as production.'
+      : '';
     // F15 (cycle 12) — RUNNING sentinel. The heartbeat above proves the TRIGGER
     // fired, but the outcome below is written only on a normal return or a
     // CATCHABLE throw. An Apps Script execution-time-limit kill is not
@@ -5141,6 +5163,7 @@ function runNightlySelfTest() {
     const res = {
       date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
       mode: mode, pass: _TEST_STATE.pass, fail: _TEST_STATE.fail, skip: _TEST_STATE.skip,
+      note: note,   // A5 — surfaced in the Admin panel; '' on a settled instance
     };
     try { props.setProperty(SELF_TEST_RESULT_PROP, JSON.stringify(res)); } catch (e) {}
     if (res.fail > 0) {
@@ -10334,7 +10357,17 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange) {
 function generateExportSheet_(startDate, endDate, cycleFilter) {
   const sourceSheet = getAdpSS_().getSheetByName(CONFIG.ADP_TAB);
   const rows = sourceSheet.getDataRange().getValues();
-  if (rows.length < 3) return { error: 'No timesheet data found.' };
+  // A7 (cycle 13): this used to be `if (rows.length < 3) return {error}` — an
+  // early return that fired BEFORE the F1 cold-archive read-through below, so
+  // once INV-153 archival had drained the live tab a retroactive payroll export
+  // refused with a misleading "no data" instead of reading the archive that
+  // holds it. Only the HEADER is genuinely required from the live tab (the
+  // export copies its two header rows verbatim); zero DATA rows is a legitimate
+  // state that the archive can still satisfy.
+  if (rows.length < 2) {
+    return { error: 'The Timesheet tab has no header rows — the export cannot be built. ' +
+                    'Check the ' + CONFIG.ADP_TAB + ' tab in the ADP spreadsheet.' };
+  }
 
   let allowedIds = null;
   let employeeCount = 0;
@@ -11549,10 +11582,15 @@ function getSpanishInboxStats(days) {
       address: addr, days: d,
       resolved: resolvedCount, pending: pending.length,
       avgMinutes: avg, medianMinutes: median,
-      // F18: `pending` (the count) is authoritative; pendingList is capped, so
-      // say so rather than letting the rendered list imply completeness.
-      pendingList: pending.slice(0, SPANISH_PENDING_LIST_CAP),
-      pendingListCap: SPANISH_PENDING_LIST_CAP,
+      // Cycle-13 follow-on: `pendingList` / `pendingListCap` were REMOVED. The
+      // list had NO client reader — both the Spanish tab and the Dashboard card
+      // use the separate, uncapped, live-read `getSpanishInboxPending`, which is
+      // richer (age, snippet, permalink) and deliberately never cached because
+      // it carries request content. F18 correctly flagged the silent cap on this
+      // field, but the honest fix for a capped list nobody renders is to stop
+      // shipping it: it put PHI-adjacent subjects into the 5-minute CacheService
+      // entry for no reader. `pending` (the COUNT) is unaffected and remains
+      // authoritative.
       membersConfigured: Object.keys(members).length,
       threadsScanned: threads.length,
     };
@@ -11702,9 +11740,6 @@ function getSpanishInboxThreadBody(threadId) {
 // stored as a NUMBER cell (immune to the Sheets date-coercion class).
 const SPANISH_RESOLVED_TAB = 'SpanishManualResolved';
 const SPANISH_RESOLVED_SCAN = 1000;   // bounded tail — the map read stays cheap
-// F18: pendingList payload cap. The `pending` COUNT is always complete; only
-// the rendered list is capped, so the response says so (pendingListCap).
-const SPANISH_PENDING_LIST_CAP = 25;
 
 function getOrCreateSpanishResolvedSheet_() {
   const ss = getAdpSS_();
@@ -18065,20 +18100,33 @@ function getQuiz(quizId) {
  *  score + per-question right/wrong ONLY — never the correct options
  *  (spec §9.4). Unlimited retries; attempt # rides back for display. */
 function submitQuizAttempt(quizId, answers) {
+  // ── A10 (cycle 13): auth, assignment check and GRADING run BEFORE the lock ──
+  // This is the F12 shape the project already ruled against: every one of these
+  // reads sat inside the ONE project-wide ScriptLock that every punch write
+  // contends for, on a 15s waitLock ceiling. None of them is transactional —
+  // they only decide whether to accept the submission and what score it gets.
+  // Hoisting them means an unauthorized / unknown-quiz / unassigned request
+  // never takes the lock at all, and two of the four store reads leave it.
+  // What DELIBERATELY stays inside (below): the attempt append, the completions
+  // dedup (a read-check-write that guards against a double completion row), and
+  // the post-append attempt count, which must observe the row just written.
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
+  quizId = String(quizId || '').trim();
+  let quiz, a;
+  try {
+    quiz = trainReadQuizzes_()[quizId];
+    if (!quiz) return { success: false, error: 'Quiz not found.' };
+    a = trainEffectiveForEmp_(trainReadAssignments_(), emp.id)['quiz:' + quizId];
+    if (!a) return { success: false, error: 'That quiz is not assigned to you.' };
+  } catch (err) { return { success: false, error: err.message }; }
+  if (!Array.isArray(answers)) answers = [];
+  const graded = trainGradeQuiz_(quiz.questions, answers);   // pure
+  const passed = graded.scorePct >= quiz.passPct;
+
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
-    quizId = String(quizId || '').trim();
-    const quiz = trainReadQuizzes_()[quizId];
-    if (!quiz) return { success: false, error: 'Quiz not found.' };
-    const eff = trainEffectiveForEmp_(trainReadAssignments_(), emp.id);
-    const a = eff['quiz:' + quizId];
-    if (!a) return { success: false, error: 'That quiz is not assigned to you.' };
-    if (!Array.isArray(answers)) answers = [];
-    const graded = trainGradeQuiz_(quiz.questions, answers);
-    const passed = graded.scorePct >= quiz.passPct;
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
     const attemptId = Utilities.getUuid();

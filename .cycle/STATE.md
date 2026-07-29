@@ -14,12 +14,15 @@ Updated: 2026-07-29
 - Cycle 13's broad scan is COMPLETE (3 stages). It found 0 Critical / 0 High /
   6 Medium / 7 Low, with the interface lens producing the top four findings —
   the second cycle running in which that lens outscored the code lens.
-- Batches 1 and 2 are IMPLEMENTED, committed and pushed to
-  `claude/broad-scan-yhkbe2`; /sync-docs ran between them. Not deployed.
-- Verbatim summary blocks are at `.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md`
-  and `.cycle/blocks/13-A4-A6-A8-A9-broad-implement.md`.
-- Next concrete step: run batch 3 (A5, A7, A10), or close the cycle with
-  /reflect.
+- Batches 1, 2 and 3 (+ the open follow-on items) are IMPLEMENTED, committed
+  and pushed to `claude/broad-scan-yhkbe2`; /sync-docs ran after batch 1 and
+  batches 2 and 3 applied their own doc edits. Not deployed.
+- Verbatim summary blocks are at `.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md`,
+  `13-A4-A6-A8-A9-broad-implement.md` and
+  `13-A5-A7-A10-followons-broad-implement.md`.
+- Every cycle-13 finding is now implemented EXCEPT A13 (batch 4). FO-6 was
+  analysed and deliberately deferred — see Open follow-on items.
+- Next concrete step: run batch 4 (A13), or close the cycle with /reflect.
 
 ## Completed this cycle
 - A1  | metrics/, tc/script_clock.html, tc/script_manager.html, intake/, cn/ | six click-only span/div controls → <button type="button"> with a pixel-identical CSS reset
@@ -34,6 +37,14 @@ Updated: 2026-07-29
 - A8  | Code.js | getUpcomingAnnualPlanned_ returns null not 0 on a failed read (LATENT — the field has no client reader since cycle 8; scan over-claimed)
 - A9  | Code.js | the CallNotesArchive audit row stamps hitPerRunCap only when an enrolled rep was left unvisited, not on a clean final run
 - Tests | test/client/run.js (+4 batch-2 pins, 362→366, all bite-checked; 2 cycle-12 pins updated as part of the fix and re-bite-checked)
+- A5   | Code.js, cn/, CLAUDE.md | ONE isDevInstance_ predicate requiring BOTH markers; assertDevInstance_ had the IDENTICAL hole (devScrubRoster_ could anonymize the LIVE roster) so both route through it; a downgraded run says why on the Admin self-test line
+- A7   | Code.js | the export needs only HEADERS from the live tab, so a drained live tab no longer short-circuits the F1 archive read-through
+- A10  | Code.js | submitQuizAttempt grades BEFORE the lock; rejections never take it. Completions dedup + post-append count deliberately stay inside
+- FO-2 | styles.html | .export-btn-large off the inverted --ink primary V-8 retired (and off an INV-165-banned oklch mix)
+- FO-3 | tc/script_clock.html | .shift-strip-head can wrap — V-4's inner wrap could not help a parent row with nowhere to wrap to
+- FO-4 | Tests.js | _assertEq tells NaN from null via a stringify REPLACER (byte-identical for every non-NaN value — a recursive walker would have shifted ~300 unrunnable editor assertions)
+- FO-5 | Code.js | removed two dead response fields + the orphaned helper/constant (supersedes batch 2's A8)
+- Tests | test/client/run.js (+7 pins, 366→373, all bite-checked; 2 more existing pins updated as part of the fix)
 
 ## Pending / not yet done
 - **CARRIED FROM CYCLE 12 — the operator deploy is still UNCONFIRMED**, and now
@@ -46,33 +57,33 @@ Updated: 2026-07-29
      `timeToMins_nullOnUnparseable` and the two renamed
      `metrics_cnCountNotesResult_*` tests, plus cycle 12's still-unrun
      `cn_enrolledSheetId_trimsAndNullGuards` and `cn_appendBounded_capsAndRollsBack`.
-- Remaining cycle-13 findings, batched for a follow-up /broad-implement:
-  - Batch 3 (robustness + operator safety, ~3–5h): A5, A7, A10
-  - Batch 4 (interface completeness, ~½–1 day): A13
+- **NEW OPERATOR ACTION (A5), DEV PROJECT ONLY: add Script Property
+  `INSTANCE_IS_PROD=false`.** An unset value now reads as production, so without
+  it devScrubRoster_/devShowConfig_ refuse and the nightly self-test drops to
+  smoke (visibly — it says so on the Admin self-test line). PROD is unaffected.
+- Remaining cycle-13 finding:
+  - Batch 4 (interface completeness, ~½–1 day): A13 — no heading outline below h1
 - /sync-docs has RUN (commit adb2ee7) and batch 2 applied its own deferred edit.
   No documentation work is outstanding.
 
 ## Open follow-on items
 - A11 correction: the CN composer tabs already carried role="tab" + aria-selected;
   the scan over-claimed that instance. Only aria-disabled was missing (added).
-- Noticed in the visual matrix, NOT fixed (out of scope for this batch):
-  "Generate ADP Export" on the Manager Dashboard is still a near-black full-width
-  bar — V-8 fixed the shared modal primary for exactly this reason, but this
-  on-page button is a different class.
-- Noticed in the visual matrix, NOT fixed: the Clock shift-strip's
-  "5h 54m worked · 32m lunch" appears to overflow / overlap the "File N missing"
-  chip at wide width. Pre-existing.
-- `_assertEq` in Tests.js compares via JSON.stringify, and JSON.stringify(NaN)
-  is "null" — so any future `_assertEq(x, null)` is blind to a NaN regression.
-  Cycle 13's editor test uses strict `=== null` instead. A general fix (make
-  _assertEq distinguish them) is unclaimed.
-- TWO dead response fields now, worth one small batch that clears both:
-  `getEmployeeState.annualPlannedUpcoming` (found in batch 2 — its only reader,
-  renderPtoMini_, was removed in cycle 8) and, carried from cycle 12,
-  `getSpanishInboxStats.pendingList`. Both are response-shape changes.
-- Carried from cycle 12: the other TimesheetArchive readers
-  (buildTimesheetForEmployee_, getPunctualityReport, tsDoctorScan_) are still
-  live-tab-only.
+- **FO-6 (the remaining TimesheetArchive readers) — ANALYSED, DEFERRED, and the
+  analysis is the point.** They are NOT one job:
+    • buildTimesheetForEmployee_ (employee calendar + manager timesheet) and
+      getPunctualityReport SHOULD read through, behind the same "only when the
+      window predates the live floor" gate the export uses — otherwise an
+      archived month renders blank. ~M (½ day): shared helper + dedup + tests.
+    • tsDoctorScan_ must NOT read through. fixTimesheetDuplicates deletes rows by
+      LIVE-tab index, so surfacing archived duplicates would report findings the
+      fix cannot act on and risks acting on the wrong index. That is an operator
+      design decision, which is why it was not folded into batch 3.
+  Nothing is currently broken: archival is OFF by default and the ≥120-day floor
+  keeps recent data live.
+- The 16-site `getSheetByName(CONFIG.ADP_TAB)` inventory taken during the FO-6
+  assessment is worth keeping — most sites are writers or recent-window
+  dashboards that correctly stay live-only; only the two readers above qualify.
 
 ## Decisions made (so the next session doesn't re-litigate)
 - timeToMins_ returns **null**, not 0 or -1 — callers already had explicit
@@ -96,14 +107,28 @@ Updated: 2026-07-29
   itself is a separate, out-of-scope change.
 - When a fix breaks an existing pin, UPDATE the pin as part of the fix and
   re-bite-check it — batch 2 broke two cycle-12 pins (F5's delegation clause,
-  F3-sibling's literal break match) and both were repaired deliberately, not
-  reactively.
+  F3-sibling's literal break match) and batch 3 broke two more (the A8 helper
+  pin, the F18 pendingList clause). All four were repaired deliberately.
+- A5 fixed the SHARED predicate rather than the one caller named in the finding:
+  assertDevInstance_ had the identical hole and guards a roster mutator, so
+  patching only the self-test would have left the worse instance open.
+- A5 accepts a real cost — an existing dev project must add INSTANCE_IS_PROD
+  =false or its tooling refuses — because the alternative is a labelled PROD
+  that anonymizes its own roster. The refusal is loud and names the property.
+- FO-4 used a JSON.stringify REPLACER, not a recursive walker: the walker also
+  changed how `{a: undefined}` compares, a semantics shift across ~300 editor
+  assertions that cannot be run outside the Apps Script editor.
+- FO-5 SUPERSEDES batch 2's A8 (which hardened a helper that turned out to be
+  dead). Recorded rather than hidden — the honest end state is that the path
+  should not exist.
 
 ## Where I left off
-Batches 1 and 2 are implemented, tested (366 pure + 66 DOM + 20/20 visual, all
-green), documented, committed and pushed to `claude/broad-scan-yhkbe2`.
-/sync-docs is done and nothing doc-wise is outstanding. Next: either run
-batch 3 (A5 nightly self-test fails open, A7 export bails before the archive
-read-through, A10 four store reads inside the global lock) or close the cycle
-with /reflect. The operator deploy — still covering cycles 11, 12 and 13 — is
-the one thing blocking any of this from reaching users.
+Batches 1–3 plus every open follow-on are implemented, tested (373 pure + 66 DOM
++ 20/20 visual, all green), documented, committed and pushed to
+`claude/broad-scan-yhkbe2`. Nothing doc-wise is outstanding. Only A13 (batch 4 —
+no heading outline below h1) remains unimplemented, and FO-6 is deliberately
+deferred with its analysis recorded above. Next: run batch 4, or close the cycle
+with /reflect (which should also record the proposed INV-177 — dev-ness requires
+BOTH instance markers). TWO operator actions now gate delivery: the carried
+deploy (cycles 11–13) and, on the DEV project only, adding
+`INSTANCE_IS_PROD=false`.

@@ -253,9 +253,34 @@ function _clearCdrCacheForDate_(date) {
 
 // ── Assertions ────────────────────────────────────────────────────────────
 
+/**
+ * Deep-ish equality via JSON.stringify — with the NaN hole closed (cycle-13
+ * follow-on). `JSON.stringify(NaN)` is the string `"null"`, and so is
+ * `JSON.stringify(null)`, so `_assertEq(NaN, null)` used to PASS. That made the
+ * helper blind to exactly the class cycle-13 A3 was fixing (a NaN sentinel that
+ * should have become null), and any future null-vs-NaN test written with it
+ * would have been decorative. `_describe_` disambiguates the three values that
+ * JSON collapses — NaN, Infinity, -Infinity, and undefined-inside-an-object —
+ * before the comparison, so they can never compare equal to null again.
+ */
+function _describe_(v) {
+  // A JSON.stringify REPLACER, deliberately — not a hand-rolled walker. The
+  // replacer fires for every value at every depth, so a nested NaN is caught
+  // too, while every OTHER value serializes byte-identically to the plain
+  // JSON.stringify this helper used before. That matters: ~300 existing editor
+  // assertions compare objects through here, and a stricter walker would have
+  // changed unrelated semantics (e.g. `{a: undefined}` vs `{}`) in a suite that
+  // cannot be run outside the Apps Script editor.
+  return JSON.stringify(v, function (k, val) {
+    if (typeof val === 'number' && isNaN(val)) return '<<NaN>>';
+    if (val === Infinity) return '<<Infinity>>';
+    if (val === -Infinity) return '<<-Infinity>>';
+    return val;
+  });
+}
 function _assertEq(actual, expected, msg) {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
+  const a = _describe_(actual);
+  const e = _describe_(expected);
   if (a !== e) {
     throw new Error((msg || 'Assertion failed') +
       `\n  expected: ${e}` +

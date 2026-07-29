@@ -1089,27 +1089,48 @@ instCtx.PropertiesService = { getScriptProperties: function () {
   } };
 } };
 vm.createContext(instCtx);
-['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'assertDevInstance_'].forEach(function (fn) {
+['instanceLabel_', 'isProdInstance_', 'assertNotProdInstance_', 'isDevInstance_', 'assertDevInstance_'].forEach(function (fn) {
   vm.runInContext(extractRawFunction('Code.js', fn), instCtx, { filename: 'Code.js#' + fn });
 });
 test('instance guards: prod default (no props) — destructive tests OK, dev tools refuse', () => {
   instCtx._p = {};
   assert.strictEqual(instCtx.instanceLabel_(), '');
   assert.strictEqual(instCtx.isProdInstance_(), false);
+  assert.strictEqual(instCtx.isDevInstance_(), false);
   assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));   // prod today still runs runAllTests
-  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a labeled DEV instance/);
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/);
 });
 test('instance guards: INSTANCE_IS_PROD=true blocks destructive tests AND dev tools', () => {
   instCtx._p = { INSTANCE_IS_PROD: 'true', INSTANCE_LABEL: 'PROD' };
   assert.strictEqual(instCtx.isProdInstance_(), true);
+  assert.strictEqual(instCtx.isDevInstance_(), false);
   assert.throws(() => instCtx.assertNotProdInstance_('runAllTests'), /PRODUCTION instance/);
-  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a labeled DEV instance/);
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/);
 });
-test('instance guards: a labeled DEV instance allows both dev tools and the full suite', () => {
+// A5 (cycle 13) — THE fail-open case this suite used to ASSERT as correct.
+// It previously read `{ INSTANCE_LABEL: 'DEV' }` (no INSTANCE_IS_PROD) and
+// asserted the dev tools were allowed. But that property set is equally the
+// state of a PROD project whose operator added a banner label — which the docs
+// recommend — and it let devScrubRoster_ anonymize the live roster and the
+// nightly job run the full destructive suite against live payroll. An UNSET
+// marker is ambiguous and must now resolve to NOT-dev.
+test('instance guards: a LABEL alone is NOT dev — the ambiguous case fails closed (A5)', () => {
   instCtx._p = { INSTANCE_LABEL: 'DEV' };
   assert.strictEqual(instCtx.instanceLabel_(), 'DEV');
+  assert.strictEqual(instCtx.isDevInstance_(), false,
+    'a label with no explicit INSTANCE_IS_PROD is ambiguous — prod labels itself too');
+  assert.throws(() => instCtx.assertDevInstance_('devScrubRoster_'), /not a confirmed DEV instance/);
+});
+test('instance guards: BOTH markers present → dev tools and the full suite are allowed', () => {
+  instCtx._p = { INSTANCE_LABEL: 'DEV', INSTANCE_IS_PROD: 'false' };
+  assert.strictEqual(instCtx.isDevInstance_(), true);
   assert.doesNotThrow(() => instCtx.assertNotProdInstance_('runAllTests'));
   assert.doesNotThrow(() => instCtx.assertDevInstance_('devScrubRoster_'));
+  // Whitespace/casing must not resurrect the ambiguous case.
+  instCtx._p = { INSTANCE_LABEL: 'DEV', INSTANCE_IS_PROD: '   ' };
+  assert.strictEqual(instCtx.isDevInstance_(), false, 'blank is still unset');
+  instCtx._p = { INSTANCE_LABEL: 'DEV', INSTANCE_IS_PROD: ' TRUE ' };
+  assert.strictEqual(instCtx.isDevInstance_(), false, 'TRUE in any casing is prod');
 });
 test('TRIPWIRE: destructive test writers + dev tools carry the right instance guard', () => {
   assert.ok(/assertNotProdInstance_\(/.test(extractRawFunction('Tests.js', 'runAllTests')),
@@ -4823,9 +4844,19 @@ test('F18: payload-capped readers report the pre-slice total', () => {
   const kb = extractRawFunction('Code.js', 'kbGetReviewDue');
   assert.ok(/KB_REVIEW_DUE_CAP/.test(kb) && /total: items\.length/.test(kb),
     'kbGetReviewDue returns the pre-slice total');
+  // Cycle-13 follow-on: this used to assert getSpanishInboxStats DECLARED its
+  // pendingList cap. That list had no client reader at all (both surfaces use
+  // the uncapped, live-read getSpanishInboxPending), so the honest fix for a
+  // capped list nobody renders was to stop shipping it — which also keeps
+  // PHI-adjacent subjects out of the 5-minute CacheService entry. F18's rule is
+  // unchanged for the readers that DO render a capped list; this one is simply
+  // no longer such a reader.
   const sp = extractRawFunction('Code.js', 'getSpanishInboxStats');
-  assert.ok(/SPANISH_PENDING_LIST_CAP/.test(sp) && /pendingListCap/.test(sp),
-    'getSpanishInboxStats declares its pendingList cap');
+  // Strip comments first — the removal note names the field it removed.
+  const spCode = sp.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  assert.ok(!/pendingList\s*[:=]/.test(spCode),
+    'the reader-less pendingList must not come back — getSpanishInboxPending is the live list');
+  assert.ok(/pending: pending\.length/.test(sp), 'the pending COUNT is still returned and complete');
 
   // Client: "showing N of M", and NOTHING when the list is complete or when an
   // older server omits the total (so a not-yet-redeployed server is safe).
@@ -5156,14 +5187,20 @@ test('A6: kbReloadTree_ surfaces a failed refresh instead of returning silently'
 // A8: the F5 class one surface over — a failed TimeOffRequests read reported as
 // "nothing planned". Latent today (no consumer), fixed so a future reader does
 // not inherit the confident zero.
-test('A8: getUpcomingAnnualPlanned_ returns null, not 0, on a failed read', () => {
+// SUPERSEDED by the cycle-13 follow-on batch: A8 hardened this helper's error
+// path, then the follow-on established that BOTH the helper and the
+// `annualPlannedUpcoming` field it fed were dead — the only reader
+// (renderPtoMini_) was deleted in cycle 8, and the Time/PTO tile computes its
+// own total client-side (INV-72). The honest end state is that the whole path is
+// gone, which is a stronger guarantee than a hardened catch. This pin now keeps
+// it from being reintroduced.
+test('A8/follow-on: the dead annualPlannedUpcoming path stays removed', () => {
   const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
-  const fn = code.slice(code.indexOf('function getUpcomingAnnualPlanned_('));
-  const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
-  assert.ok(!/catch \(e\) \{ return 0; \}/.test(body),
-    'the bare `catch { return 0 }` must not come back — it makes a failed read ' +
-    'indistinguishable from "nothing planned"');
-  assert.ok(/catch[\s\S]{0,160}?return null;/.test(body), 'the catch returns null');
+  const stripped = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  assert.ok(stripped.indexOf('function getUpcomingAnnualPlanned_') < 0,
+    'the helper stays removed — a whole TimeOffRequests read per getEmployeeState call, for no reader');
+  assert.ok(!/annualPlannedUpcoming\s*:/.test(stripped),
+    'the field stays off the getEmployeeState response');
 });
 
 // A9: `budget <= 0` also fires when the LAST rep consumed exactly the remaining
@@ -5179,6 +5216,132 @@ test('A9: the CN archive stamps hitPerRunCap only when work actually remained', 
   // `truncated` is only set when an ENROLLED rep remained unvisited.
   assert.ok(/if \(budget <= 0\) \{[\s\S]{0,220}?cnEnrolledSheetId_\(roster\[k\]\)[\s\S]{0,80}?truncated = true;/.test(body),
     'truncated is set only when a remaining rep is actually enrolled');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-13 batch 3 pins.
+console.log('\ncycle 13 — A5 / A7 / A10 fix pins');
+
+// A5: dev-ness must come from BOTH markers. The old inline test in
+// runNightlySelfTest (and assertDevInstance_) inferred it from INSTANCE_LABEL
+// alone, so labelling prod promoted the nightly job to the full destructive
+// suite against live payroll — and assertNotProdInstance_ does not catch it,
+// because that only fires on INSTANCE_IS_PROD === 'true'.
+test('A5: dev-detection is single-sourced and requires an explicit non-prod marker', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const pred = extractRawFunction('Code.js', 'isDevInstance_');
+  assert.ok(/INSTANCE_IS_PROD/.test(pred) && /raw === null \|\| String\(raw\)\.trim\(\) === ''/.test(pred),
+    'an UNSET INSTANCE_IS_PROD is ambiguous and must resolve to NOT-dev');
+  // Both consumers route through the one predicate — no second inline copy.
+  assert.ok(/if \(!isDevInstance_\(\)\)/.test(extractRawFunction('Code.js', 'assertDevInstance_')),
+    'assertDevInstance_ delegates to the predicate');
+  const self = extractRawFunction('Code.js', 'runNightlySelfTest');
+  assert.ok(/const isDev = isDevInstance_\(\);/.test(self),
+    'runNightlySelfTest delegates to the predicate');
+  assert.ok(!/getProperty\('INSTANCE_LABEL'\)\s*&&/.test(self),
+    'the old inline label-only inference must not come back');
+  // A half-configured instance says WHY it was downgraded, and the panel shows it.
+  assert.ok(/needsMarker/.test(self) && /note:\s*note/.test(self),
+    'a downgraded run records a note explaining the missing marker');
+  assert.ok(/note: String\(st\.note \|\| ''\)/.test(code),
+    'computeAutomationHealth_ carries the note through');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/st\.note \?/.test(cn), 'the Admin self-test block renders the note');
+});
+
+// A7: the "no data" early return fired BEFORE the F1 cold-archive read-through,
+// so once archival drained the live tab a retroactive payroll export refused
+// with a misleading error instead of reading the archive holding the rows.
+test('A7: the export requires only a HEADER from the live tab, not data rows', () => {
+  const fn = extractRawFunction('Code.js', 'generateExportSheet_');
+  assert.ok(!/if \(rows\.length < 3\) return \{ error: 'No timesheet data found\.' \};/.test(fn),
+    'the < 3 early return must not come back — it short-circuits the archive read-through');
+  assert.ok(/if \(rows\.length < 2\)/.test(fn), 'only the two header rows are genuinely required');
+  // The archive block must still be reachable from the empty-live-tab state.
+  const guardIdx = fn.indexOf('rows.length < 2');
+  const archiveIdx = fn.indexOf('TIMESHEET_ARCHIVE_TAB');
+  assert.ok(guardIdx >= 0 && archiveIdx > guardIdx, 'the archive read-through comes after the header guard');
+  assert.ok(/oldestLiveDate === null \|\| startDate < oldestLiveDate/.test(fn),
+    'a live tab with no data rows (oldestLiveDate null) still consults the archive');
+});
+
+// A10: the F12 shape — non-transactional reads inside the ONE project-wide lock
+// that every punch write contends for.
+test('A10: submitQuizAttempt grades before taking the lock', () => {
+  const fn = extractRawFunction('Code.js', 'submitQuizAttempt');
+  const lockIdx = fn.indexOf('lock.waitLock(15000)');
+  assert.ok(lockIdx > 0, 'the lock is still taken (INV-01)');
+  const before = fn.slice(0, lockIdx);
+  const after = fn.slice(lockIdx);
+  ['getEmployeeInfo_(', 'trainReadQuizzes_(', 'trainReadAssignments_(', 'trainGradeQuiz_(']
+    .forEach((call) => {
+      assert.ok(before.indexOf(call) >= 0, call + ' runs BEFORE the lock');
+      assert.ok(after.indexOf(call) < 0, call + ' must not also run inside the lock');
+    });
+  // These are transactional and MUST stay inside.
+  assert.ok(after.indexOf('trainReadCompletions_(') >= 0,
+    'the completions dedup is a read-check-write and stays inside the lock');
+  assert.ok(after.indexOf('appendRow(') >= 0, 'the appends stay inside the lock');
+  assert.ok(/finally \{ lock\.releaseLock\(\); \}/.test(fn), 'the lock is released in finally (INV-01)');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-13 follow-on pins.
+console.log('\ncycle 13 — follow-on fix pins');
+
+// FO-2: V-8 removed the inverted --ink-on--ink primary from .btn-modal-ok
+// precisely because it read as disabled/error on "Generate ADP Export" — but
+// that on-page button is a DIFFERENT class and kept the vocabulary V-8 retired.
+// The app has ONE primary vocabulary; this was the last holdout.
+test('FO-2: no button is still on the retired inverted --ink primary', () => {
+  const st = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const rule = st.slice(st.indexOf('  .export-btn-large {'));
+  const body = rule.slice(0, rule.indexOf('}'));
+  assert.ok(/background: var\(--accent\)/.test(body),
+    '.export-btn-large matches .btn-modal-ok / .actions .prime — one primary vocabulary');
+  assert.ok(!/background: var\(--ink\)/.test(body),
+    'the inverted --ink primary must not survive on the money-facing export button');
+  // INV-165: the old hover mixed `in oklch`, which drags hue on the polar arc.
+  const hover = st.slice(st.indexOf('  .export-btn-large:hover {'));
+  assert.ok(!/oklch/.test(hover.slice(0, hover.indexOf('}'))),
+    'the hover uses --accent-2, not an oklch mix (INV-165)');
+});
+
+// FO-3: V-4 made .ss-hours wrap INTERNALLY between its two readouts, but the
+// parent row had no flex-wrap at all — so in the 360px Dashboard rail the hours
+// readout ran past the card edge. An inner wrap cannot help when the parent row
+// has nowhere to wrap to.
+test('FO-3: the shift-strip header row can wrap, not just its hours readout', () => {
+  const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  const rule = clk.slice(clk.indexOf('  .shift-strip-head {'));
+  const body = rule.slice(0, rule.indexOf('}'));
+  assert.ok(/display: flex/.test(body) && /flex-wrap: wrap/.test(body),
+    '.shift-strip-head must wrap — five children on one line overflow a 360px rail');
+  // The V-4 inner rule must survive alongside it.
+  assert.ok(/\.ss-hours \.ss-val \{ white-space: nowrap; \}/.test(clk),
+    'V-4 still holds: an individual duration never breaks inside itself');
+});
+
+// FO-4: JSON.stringify(NaN) is the string "null", so _assertEq(NaN, null) used
+// to PASS — the editor suite was blind to exactly the sentinel class A3 fixed.
+test('FO-4: _assertEq can tell NaN from null (and is otherwise unchanged)', () => {
+  const ctx = { JSON, Object, Array, isNaN, Infinity, console, Error };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_describe_'), ctx);
+  vm.runInContext(extractRawFunction('Tests.js', '_assertEq'), ctx);
+  const throws = (fn) => { try { fn(); return false; } catch (e) { return true; } };
+  assert.ok(throws(() => ctx._assertEq(NaN, null)), 'NaN vs null must FAIL');
+  assert.ok(throws(() => ctx._assertEq({ a: NaN }, { a: null })), 'a NESTED NaN vs null must FAIL');
+  assert.ok(!throws(() => ctx._assertEq(NaN, NaN)), 'NaN vs NaN still passes');
+  assert.ok(!throws(() => ctx._assertEq(null, null)), 'null vs null still passes');
+  // Byte-identical to plain JSON.stringify for every non-NaN value — ~300
+  // existing editor assertions compare objects through here and cannot be run
+  // outside the Apps Script editor, so the serialization must not shift.
+  [[1, 2], { a: 1 }, 'x', null, true, { a: [1, { b: 2 }] }, { a: undefined }, undefined]
+    .forEach((v) => {
+      assert.strictEqual(ctx._describe_(v), JSON.stringify(v),
+        'unchanged serialization for ' + JSON.stringify(v));
+    });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

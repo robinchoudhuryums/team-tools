@@ -1833,19 +1833,31 @@
   /* Primary export button — ink-on-paper. Matches the dark-fill primary
      CTA pattern (e.g. CA's `.toolbar-tab[active]`); inverts cleanly in
      dark mode via the token overlay. */
+  /* Cycle-13 follow-on to V-8: this was the LAST surviving inverted button —
+     `--ink` on `--ink`, i.e. a near-black full-width bar in light mode and a
+     near-WHITE one in dark. V-8 removed exactly that vocabulary from the shared
+     modal primary `.btn-modal-ok` for exactly this reason ("near-black on
+     'Generate ADP Export', the money-facing action, reads as disabled/error"),
+     but this on-page button is a different class and was not covered. The app
+     has ONE primary vocabulary — `--accent` green — so it now matches
+     `.btn-modal-ok` / `.actions .prime` exactly, keeping its own geometry
+     (full width, icon gap). The old hover also mixed `in oklch`, which INV-165
+     bans for a semantic colour; moving to `--accent-2` removes the mix
+     entirely. */
   .export-btn-large {
     width: 100%; padding: 13px 15px;
-    background: var(--ink); color: var(--paper-card);
-    border: none; border-radius: var(--radius);
+    background: var(--accent); color: var(--paper-card);
+    border: 1px solid var(--accent); border-radius: var(--radius);
     font-family: var(--ui);
-    font-size: 13px; font-weight: 500;
+    font-size: 13px; font-weight: 600;
     cursor: pointer; letter-spacing: .02em;
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
+    transition: background var(--t) var(--ease), border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
   }
   .export-btn-large svg { width: 16px; height: 16px; }
   .export-btn-large:hover {
-    background: color-mix(in oklch, var(--ink), var(--accent) 18%);
+    background: var(--accent-2);
+    border-color: var(--accent-2);
     box-shadow: var(--shadow-sm);
   }
   .export-btn-large:disabled { opacity: .5; cursor: not-allowed; }

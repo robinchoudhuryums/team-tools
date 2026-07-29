@@ -105,7 +105,15 @@
 
   /* Live shift strip = the control surface (header + ribbon + punch buttons). */
   .shift-strip { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); box-shadow: var(--shadow-sm); padding: 14px 16px; margin: 14px 0; }
-  .shift-strip-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  /* Cycle-13 follow-on: `flex-wrap: wrap` was MISSING, so the five children
+     (label · state pill · spacer · coverage · hours) were forced onto one line
+     and the hours readout ran past the card edge in the 360px Dashboard rail —
+     "5h 54m worked · 32m lunch" clipped mid-word. V-4 (cycle 12) had already
+     made `.ss-hours` wrap INTERNALLY between its two readouts, but an inner
+     wrap cannot help when the PARENT row has nowhere to wrap to. `.ss-grow` is
+     `flex: 1` with a 0 basis, so it contributes nothing to line-breaking and
+     wide layout is unchanged; it just fills whatever is left on its own line. */
+  .shift-strip-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; }
   /* #4 — break schedule chips under the ribbon */
   .clk-brk-sched { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
   .clk-brk-label { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }

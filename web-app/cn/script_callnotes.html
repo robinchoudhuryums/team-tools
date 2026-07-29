@@ -8861,6 +8861,10 @@ function cnSelfTestHtml_(st) {
     '</span> · ' + esc(String(st.pass)) + ' passed / ' + esc(String(st.skip)) + ' skipped · ' +
     esc(st.mode) + ' mode · ' + esc(st.date) +
     (st.error ? ' · <span style="color:var(--danger-deep)">' + esc(st.error) + '</span>' : '') +
+    // A5 (cycle 13): a labelled instance with no explicit INSTANCE_IS_PROD runs
+    // SMOKE (an unset marker is treated as production). Say so, or the operator
+    // has no way to tell the downgrade from a settled choice.
+    (st.note ? '<div style="margin-top:3px;color:var(--warning-deep)">' + icon('warning', 11) + ' ' + esc(st.note) + '</div>' : '') +
   '</div>';
 }
 
