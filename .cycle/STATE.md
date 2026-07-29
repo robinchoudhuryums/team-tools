@@ -2,11 +2,11 @@
 
 ## Current
 Cycle: 13
-Phase: implement
+Phase: reflect (complete — cycle 13 is closed)
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 2 (cycle 11 was the seams audit;
-  /reflect increments — cadence is every 4, so 2 more subsystem cycles before
+Subsystem cycles since last Seams audit: 3 (cycle 11 was the seams audit;
+  /reflect increments — cadence is every 4, so 1 more subsystem cycle before
   the next Seams & Invariants audit is due)
 Updated: 2026-07-29
 
@@ -147,13 +147,26 @@ Updated: 2026-07-29
   `.rail-card` was already `<h4>` — neither is an A13 omission.
 
 ## Where I left off
-ALL FIVE batches plus every open follow-on are implemented, tested (375 pure +
-66 DOM + 20/20 visual, all green), documented, committed and pushed to
-`claude/broad-scan-yhkbe2`. Every cycle-13 finding is done; FO-6 is the one
-deliberate deferral, with its analysis recorded above. Nothing doc-wise is
-outstanding. Next: **close the cycle with /reflect**, which should record the
-three proposed invariants — INV-177 (dev-ness requires BOTH instance markers),
-INV-178 (a section heading is an `<h2>`), INV-179 (tripwires scan a DERIVED file
-list, never a hand-copied one — found short three times now). TWO operator
-actions gate delivery: the carried deploy (cycles 11–13) and, on the DEV project
-only, adding `INSTANCE_IS_PROD=false`.
+**Cycle 13 is CLOSED.** All five batches plus every open follow-on are
+implemented, tested (375 pure + 66 DOM + 20/20 visual, all green), documented,
+committed and pushed to `claude/broad-scan-yhkbe2`. /reflect has run:
+net 9 − 1 = 8, block at `.cycle/blocks/13-a-reflect.md`, metrics + estimates
+appended, seam counter now 3 of 4. It CORRECTED the batch self-reports in two
+directions (B5-1's eight ARIA instances promoted to a production fix; A5's
+dev-config requirement counted as a Low new failure mode) — same net, different
+composition, so a verifier should use the reflect block's tally, not the
+implementation blocks'. INV-177/178/179 are proposed but NOT yet written to the
+library (that is /sync-docs' job).
+
+Next: the operator has approved **Phase 0 of the CDR sub-queue work** — a
+read-only queue inventory added to the existing Automation Health CDR block
+(distinct QUEUE_EXT values, distinct A_Q_* sentinel names, populated Transfer
+H:R headers, rows-per-agent-per-date). Scope for the whole feature is
+MANAGER-ONLY (so no INV-124 anonymization work), and the chosen view shape is
+expandable per-queue rows PLUS segmented contribution bars. Phase 0 is a GATE:
+if DQE turns out to be one row per agent per day, per-queue rep attribution
+does not exist in the data and the design must change — come back to the
+operator rather than silently redesigning.
+
+TWO operator actions still gate delivery of cycles 11–13: the carried deploy and,
+on the DEV project only, adding `INSTANCE_IS_PROD=false`.
