@@ -195,7 +195,8 @@ Apps Script project under its own directory, synced via `clasp`.
   Adding a new tool: append an entry to `TOOLS`, drop a partial in
   `web-app/<tool>/script_*.html`, `include()` it from `index.html`,
   add server endpoints to `Code.js` alongside existing ones.
-The Workspace Add-on path (the old `call-notes/` scaffold) is abandoned
+The Workspace Add-on path (the old `call-notes/` scaffold — **deleted from the
+tree in cycle 13**, see Frozen Subsystems) is abandoned
 because admin policy on the org domain prevents install of Marketplace
 Add-ons without ticket-driven allowlisting; the web-app pattern works
 today with zero admin involvement. **`web-app/` is now the only project
@@ -3836,6 +3837,19 @@ manually for a fresh deploy or environment:
   single `clasp push -f` + New version. The redesign record (per-commit
   scope, before/after) is
   `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
+- **Cycle 14 Phase 0 (CDR sub-queue discovery) adds NO new operator state** — no
+  Script Property, trigger, migration, or CONFIG constant. But **the deploy IS
+  the deliverable**: the queue inventory is how Phase 0 answers whether DQE
+  carries a row per (agent, queue, date) or per (agent, date), and that answer
+  decides whether the rest of the sub-queue feature can be built as designed.
+  After deploying, open **Manage → Admin → Automation Health** and read the
+  "Queue inventory · discovery" block. Two code-only constants
+  (`CDR_QUEUE_SCAN_MAX`, `CDR_QUEUE_LIST_CAP`) bound the scan. One
+  operator-visible cost note: the inventory runs whenever the Admin tab is
+  opened (the Overview summary and the detail panels share ONE
+  `getAutomationHealth` fetch by design), NOT on the 10-minute health-badge
+  poll or the daily digest — those call `computeAutomationHealth_` directly and
+  the scan is opt-in.
 - **Cycle 13 batch 3 changes ONE operator requirement (A5) and adds no other
   state.** An existing DEV project must add `INSTANCE_IS_PROD=false` — an unset
   value now reads as production, so without it `devScrubRoster_`/`devShowConfig_`
@@ -4722,8 +4736,14 @@ carries the same number. `/cycle-status` surfaces it.
   (its first instruction is "do not make any changes to any files", so its
   Session Handoff Block still travels by paste). **Cycle 12 predates the
   adoption**, so its six implementation blocks + one cycle-summary block are not
-  on disk. Cycle 13 is the first that writes them: see
-  `.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md`.
+  on disk. Cycle 13 is the first that writes them, and is the reference example
+  of a complete set: four `*-broad-implement.md` blocks plus `13-a-reflect.md`.
+  **Read the REFLECT block for a closed cycle's tally, not the implementation
+  blocks** — cycle 13's reflection corrected its own batch reports in two
+  directions (promoting eight interface fixes wrongly scored defensive, and
+  counting one new failure mode the batches had reported as zero), so the two
+  sources disagree by construction and the reflect block is the later, honest
+  one.
 - `PROJECT_HEALTH.md` (repo root) — Current Standing + Score History.
 
 **Command templates: synced to `claude-workflow-tools` v1.23.0 (2026-07-27).**
@@ -4965,7 +4985,11 @@ A8 and F18 pins) → 373. Batch 5 GENERALIZED the two a11y pins from a hand-list
 file set to `A11Y_SCAN_PARTIALS` (derived from `PARSE_GUARD_PARTIALS`, so a new
 tool's partial cannot ship outside the net) — the state-class rule then surfaced
 eight instances the hand scan had missed → 374; batch 4 added the A13
-heading-class scan → 375.** Two of
+heading-class scan → 375. Cycle 14's Phase 0 added four more (the queue
+inventory's three-state verdict, its escaping of CDR-sourced strings, the
+read-only/bounded reader shape, and — the load-bearing one — that the scan
+stays OPT-IN so the 10-minute-per-manager health badge and the daily digest
+never pay for a full-sheet read) → 379.** Two of
 those six did NOT bite on the first attempt and were tightened: the A1 scan was
 line-by-line and missed multi-line markup (it now scans the whole source, where
 `[^>]` matches newlines), and the A3 input list held only no-colon cases, all
@@ -5066,7 +5090,7 @@ Client (Training views):
 Client (public forms):
   web-app/form_public.html
 Test Suite:
-  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
+  web-app/Tests.js, test/client/harness.js, test/client/run.js, test/client/dom/boot.js, test/client/dom/runDom.js, test/visual/build.mjs, test/visual/mock.js, test/visual/shoot.mjs, test/visual/a13-measure.mjs, test/visual/package.json, .github/workflows/client-tests.yml, scripts/cycle-context.mjs, package.json
 
 ### Invariant Library
 INV-01 | All mutating server functions acquire `LockService.getScriptLock()` with `waitLock(15000)` and release in `finally`. DOCUMENTED EXCEPTIONS (cycle-11 seams audit): the intake send endpoints (`intakeSendPPD`/`intakeSendAcct_`) are deliberately lock-free — append-only writes (atomic in Sheets) with an in-body MailApp send that the M-7 no-mail-in-lock rule would otherwise force out; `kbRecordView`/`recordClientError` use the USER lock (batch K-B — diagnostics appends must not queue punch writes) | Subsystem: Server
@@ -5263,6 +5287,10 @@ INV-174 | **Active/selected/expanded state is exposed to assistive tech, never c
 INV-175 | **A load failure renders `errorStateHtml_`, never an empty-state container.** Batch J made this the rule; it was honored in 2 of 11 tool partials until cycle-13 A12 found 16 sites in Metrics, Training, and EmpDocs rendering both RPC failures AND server-returned `data.error` into `.m-empty` / `.no-data` / `.tr-empty` — quiet muted cards visually indistinguishable from "no data for this date". On Metrics, which is rep-facing and CDR-backed, that is the likeliest failure mode of all. `errorStateHtml_` gives the warn tone, the glyph, and `role="alert"` so the failure is both visible and announced. **Call sites must DROP the outer `esc()`** — the helper escapes internally, so keeping it double-escapes. Verify: the A12 tripwire, which fails CI on any line mentioning an error/failure that also renders one of those empty-state classes | Subsystem: Client (Metrics / Training / Reference / Call Notes views)
 
 INV-176 | **`timeToMins_` returns `null` (never `NaN`), and an arithmetic caller must guard EXPLICITLY.** `NaN` is uniquely dangerous here: every comparison against it is false and it is contagious through arithmetic. `getPunctualityReport` scored an unparseable day ON TIME (it fell through `lateMin > grace` into the else) and one bad row pinned the whole day (the earliest-punch pick `mins < r.days[d].in` is also false against `NaN`); `calcHours_` returned `NaN` and `totalHours += NaN` voided an entire timesheet total. With `null` the callers' existing "not computed" branches fire: punctuality skips the row, the timesheet counts the day INCOMPLETE (**not** 0 hours — that would understate payroll silently), the dashboard sparkline and calendar omit it. `calcHours_` propagates `null` for a corrupt CLOCK pair but a corrupt LUNCH pair only drops the deduction, so one bad cell cannot void a valid 8-hour day. **THE TRAP:** `x + null` COERCES to `x`, so `getCoveragePlan`'s `dayDelta * 1440 + timeToMins_(...)` would place a shift at midnight — strictly worse than the `NaN` it replaced, which merely dropped the rep from the buckets. Arithmetic callers need an explicit `=== null` check, not a truthiness test (`0` is a valid midnight). Verify: the A3 behavioural pin (both rejection paths — no-colon AND colon-with-non-numeric, bite-checked), the caller-shape scan, and the `timeToMins_nullOnUnparseable` smoke test (which must use a strict `=== null` check — `_assertEq` compares via `JSON.stringify`, where `NaN` and `null` are both `"null"`) | Subsystem: Server
+
+INV-177 | **Dev-ness requires BOTH instance markers — `INSTANCE_LABEL` set AND `INSTANCE_IS_PROD` explicitly not `'true'`.** An UNSET marker resolves to PRODUCTION, because unset is production's default state. The old test was "label set AND not `isProdInstance_()`", and `isProdInstance_()` is false whenever the property is unset — so dev-ness was inferred from the mere PRESENCE of a banner label, and labelling prod (which the blue-green docs recommend) silently flipped prod into dev: `runNightlySelfTest` would run the full destructive `runAllTests` against live payroll/audit/PHI nightly, and `devScrubRoster_` would anonymize the LIVE roster. `assertNotProdInstance_` is NOT a backstop — it only fires on `INSTANCE_IS_PROD === 'true'`. `isDevInstance_()` is the single predicate; `assertDevInstance_` and `runNightlySelfTest` both route through it, and a half-configured instance says why on the Admin self-test line rather than degrading silently. This is the second time an absent marker was read as an affirmative signal, hence a library entry rather than a gotcha. Verify: the A5 dev-detection pin, including its "a LABEL alone is NOT dev" case | Subsystem: Server
+INV-178 | **A section heading is an `<h2>`, not a styled `<div>`.** Heading navigation is the primary way a screen-reader user moves through a dense page; every view rendered exactly ONE heading (its `<h1>`) and used `<div>`/`<span>` for every card label below it, so that navigation stopped at the page title on ~30 surfaces. The three section-heading classes (`.card-label` 20 sites, `.tr-card-title` 5, `.dash-seclabel` 2) render as `<h2>`. Each class already fully specified its own typography, so the conversion is a UA-margin reset and nothing else (`margin-top: 0` on `.card-label`, which already set `margin-bottom`; `margin: 0` on the other two, which sit in flex head rows). `.kicker` stays a `<div>` (an eyebrow ABOVE a heading is not itself one) and `.rail-card` was already `<h4>`. **VERIFY BY MEASURING INSIDE THE REAL PARENT** — a plain-div fixture reports `display: inline -> block` for the two span cases, which is pure artifact, since both live in `display: flex` heads that blockify any child. Verify: the A13 class-scan tripwire (scans by CLASS, so a NEW card added as a div fails) + `test/visual/a13-measure.mjs` | Subsystem: Client (all view partials)
+INV-179 | **When a convention is worth a tripwire, scan a DERIVED file list (`PARSE_GUARD_PARTIALS`), never a hand-copied one.** Hand-listed scan sets have been found short three times — cycle-9 M-10 (a newly-included JS partial outside every harness list), cycle-11 M-4 (four hand copies of the registry/DOM coverage lists), cycle-13 B5-1 (the a11y pins named six files by hand). The last is the clearest evidence: the moment the list was derived, the SAME rule surfaced eight live defects the human audit had missed. A hand-copied list silently narrows as the codebase grows, and CI stays green while it does. Verify: the `A11Y_SCAN_PARTIALS` derivation plus the existing `PARSE_GUARD_PARTIALS` ↔ `index.html` `include()` coupling check | Subsystem: Test Suite
 
 ### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
 

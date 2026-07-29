@@ -464,7 +464,9 @@ function sanitizeTagsArray_(arr) {
 // the "Spreadsheet TZ ≠ script TZ" gotcha in call-data-reporting/CLAUDE.md.
 // AvgAbdWait (col AG / index 33) and CsrAvgAbdWait (col AH / index 34) are
 // also duration columns, but are intentionally NOT read by any metric today,
-// so they are omitted from this enum to avoid a dead-but-tempting entry. If
+// so they are omitted from this enum to avoid a dead-but-tempting entry —
+// `QUEUE_EXT` below was exactly such an entry for years (declared, read
+// NOWHERE) until cycle 14's Phase 0 queue inventory finally consumed it. If
 // you ever wire them in: re-add them here AND to CDR_EXPECTED_HEADERS, and
 // read them through getDisplayValues() (never getValue()) or the phantom
 // timezone offset (INV-64) will silently corrupt the parsed seconds.
@@ -484,7 +486,10 @@ const CDR_EXPECTED_HEADERS = {
 // (H:R), Comments. Date is M/D/YYYY (handled by cdrRowDateIso_) and Transfer %
 // is a "29.79%" string — both read via getDisplayValues() per the CDR
 // spreadsheet-tz gotcha (INV-64). Only the first columns feed the trend; the
-// per-queue breakdown is read-but-ignored for now.
+// per-queue H:R block is still read-but-ignored by THIS reader (the range is
+// fetched either way, so using it later costs nothing). Since cycle 14's
+// Phase 0 it is no longer wholly unread: `cdrQueueInventory_` reports which of
+// those columns carry data, as input to the sub-queue feature's design.
 const CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
 const CSRT = { DATE: 2, NAME: 3, TRANSFER_PCT: 4, TOTAL_CALLS: 5, TRANSFERRED: 6 };
 const CSR_TRANSFER_NUM_COLS = 19;   // A:S
