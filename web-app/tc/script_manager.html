@@ -19,7 +19,11 @@
   /* #3 / §5b — week heatmap (days × hours) replacing the stacked per-day strips */
   .cov-heat { display: grid; gap: 3px; align-items: center; margin: 6px 0 4px; }
   .cov-heat .ch-hr { font-family: var(--mono); font-size: 9px; color: var(--muted); text-align: center; }
-  .cov-day-lbl { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+  /* A1 (cycle 13): <button>, not <div> — expanding a day's rep detail had no
+     keyboard path. Reset keeps it visually identical to the div it replaced. */
+  .cov-day-lbl { appearance: none; -webkit-appearance: none; background: none; border: 0; padding: 0;
+    font-family: inherit; text-align: left;
+    font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; cursor: pointer; display: flex; align-items: center; gap: 5px; }
   .cov-day-lbl:hover { color: var(--accent); }
   .cov-day-lbl .chev { color: var(--muted-3); display: inline-flex; }
   .cov-day-lbl .hol { font-family: var(--mono); font-size: 9px; color: var(--warning-deep); }
@@ -1261,7 +1265,15 @@ function covLoad_() {
 // an understaffed risk callout. Per-day rep detail expands on clicking the day.
 var COV_HOUR_START = 6, COV_HOUR_END = 21;
 function covFmtHr_(h) { var hh = (h % 24); var ap = hh < 12 ? 'a' : 'p'; var h12 = hh % 12 || 12; return h12 + ap; }
-function covToggleDay_(id) { var el = document.getElementById(id); if (el) el.style.display = (el.style.display === 'none') ? '' : 'none'; }
+function covToggleDay_(id, btn) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var open = (el.style.display === 'none');
+  el.style.display = open ? '' : 'none';
+  // A11: mirror the open state onto the trigger. `btn` is optional so an older
+  // cached render (or a direct call) still toggles rather than throwing.
+  if (btn && btn.setAttribute) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
 
 function covRepsHtml_(day) {
   if (!day.reps || !day.reps.length) return '<div style="font-size:12px;color:var(--muted)">No reps scheduled.</div>';
@@ -1342,11 +1354,16 @@ function covRender_(data) {
     var byHour = {};
     (day.hours || []).forEach(function (x) { byHour[x.hour] = x; });
     var detailId = 'cov-d-' + di;
-    grid += '<div class="cov-day-lbl' + (day.closed ? ' is-closed' : '') + '" onclick="covToggleDay_(\'' + detailId + '\')">' +
+    // A1 + A11: a keyboard-reachable disclosure button. aria-expanded/-controls
+    // tell assistive tech whether this day's rep detail is open; covToggleDay_
+    // keeps the attribute in step.
+    grid += '<button type="button" class="cov-day-lbl' + (day.closed ? ' is-closed' : '') +
+      '" aria-expanded="false" aria-controls="' + detailId +
+      '" onclick="covToggleDay_(\'' + detailId + '\', this)">' +
       '<span class="chev">' + icon('chevronRight', 12) + '</span>' +
       esc(day.weekday.slice(0, 3)) + ' ' + esc(String(day.date).slice(5)) +
       (day.holidayName ? ' <span class="hol">' + esc(day.holidayName) + '</span>' : '') +
-      (day.closed ? ' <span class="cov-closed-tag">closed</span>' : '') + '</div>';
+      (day.closed ? ' <span class="cov-closed-tag">closed</span>' : '') + '</button>';
     hours.forEach(function (hr, hi) {
       var x = byHour[hr] || { confirmed: 0, tentative: 0 };
       var c = x.confirmed || 0, t = x.tentative || 0;

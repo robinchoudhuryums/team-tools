@@ -1067,7 +1067,10 @@ function getManagerDashboard() {
     Object.keys(sparkPunchMap).forEach(key => {
       const p = sparkPunchMap[key];
       if (p.ClockIn && p.ClockOut) {
-        sparkHoursMap[key] = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+        // A3: a null (unparseable) result is left OUT of the map, so the
+        // sparkline reads that day as 0/no-data rather than plotting NaN.
+        const h = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+        if (h !== null) sparkHoursMap[key] = h;
       }
     });
     liveStatus.forEach(ls => {
@@ -10483,7 +10486,11 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
     if (pm.ClockIn) {
       if (pm.ClockOut) {
         hoursWorked = calcHours_(pm.ClockIn, pm.ClockOut, pm.LunchOut || null, pm.LunchIn || null);
-        totalHours += hoursWorked; daysWorked++;
+        // A3: a null (unparseable time cell) reads as an INCOMPLETE day rather
+        // than adding NaN to the period total — `totalHours += NaN` used to
+        // turn the whole timesheet's total into NaN off one bad cell.
+        if (hoursWorked === null) { isIncomplete = true; incompleteCount++; }
+        else { totalHours += hoursWorked; daysWorked++; }
       } else if (dateStr === todayStr) inProgress = true;
         else if (dateStr < todayStr) { isIncomplete = true; incompleteCount++; }
     }
@@ -10532,7 +10539,10 @@ function buildCalendarForEmployee_(emp, year, month) {
   Object.keys(punchesByDate).forEach(dateStr => {
     const p = punchesByDate[dateStr];
     if (p.ClockIn && p.ClockOut) {
-      hoursByDate[dateStr] = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+      // A3: leave an unparseable day OUT of the map (calendar shows no hours
+      // badge) rather than writing NaN into it.
+      const h = calcHours_(p.ClockIn, p.ClockOut, p.LunchOut || null, p.LunchIn || null);
+      if (h !== null) hoursByDate[dateStr] = h;
     } else if (p.ClockIn && dateStr === todayStr) {
       hoursByDate[dateStr] = 'inProgress';
     }
@@ -11241,8 +11251,14 @@ function getCoveragePlan(fromDate, toDate) {
         const tentative = (pto === 'Pending');
         const conv = convertDateTime_(localDate, startHH, r.tz, mgrTz);
         const dayDelta = daysBetween_(fromDate, conv.date);
-        const absStart = dayDelta * 1440 + timeToMins_(conv.time);
-        if (!off) intervals.push({ rep: r.id, absStart: absStart, absEnd: absStart + r.sched.lengthMin, tentative: tentative });
+        const convMins = timeToMins_(conv.time);
+        // A3: timeToMins_ now returns null (not NaN) on an unparseable time.
+        // `dayDelta * 1440 + null` would COERCE to 0 and place the rep's shift
+        // at midnight — worse than the old NaN, which merely dropped them from
+        // the buckets. conv.time comes from convertDateTime_ so this is
+        // defensive, but the coercion makes an explicit guard mandatory.
+        const absStart = (convMins === null) ? null : dayDelta * 1440 + convMins;
+        if (!off && absStart !== null) intervals.push({ rep: r.id, absStart: absStart, absEnd: absStart + r.sched.lengthMin, tentative: tentative });
         if (dd >= 0 && dd < numDays) {
           const endConv = convertDateTime_(localDate, endHH, r.tz, mgrTz);
           days[dd].reps.push({
@@ -11312,6 +11328,12 @@ function getPunctualityReport(fromDate, toDate) {
       const type = normalizeType_(String(rows[i][ADP.COMMENTS]));
       if (type !== 'ClockIn' && type !== 'LunchOut') continue;
       const mins = timeToMins_(normalizeTime_(rows[i][ADP.TIME]));
+      // A3 (cycle 13): SKIP an unparseable time outright. It used to be NaN,
+      // and because every NaN comparison is false it (a) never lost the
+      // earliest-punch race, so one bad row pinned the day at NaN even when a
+      // valid ClockIn existed on it, and (b) fell through the `lateMin > grace`
+      // test into the else, scoring the day ON TIME.
+      if (mins === null) continue;
       if (!r.days[d]) r.days[d] = {};
       if (type === 'ClockIn') { if (r.days[d].in == null || mins < r.days[d].in) r.days[d].in = mins; }
       else { if (r.days[d].lunch == null || mins < r.days[d].lunch) r.days[d].lunch = mins; }
@@ -12925,17 +12947,47 @@ function notifyEmployeeOfDecision_(emp, date, type, notes, newStatus) {
 
 function calcHours_(clockIn, clockOut, lunchOut, lunchIn) {
   let inMins = timeToMins_(clockIn), outMins = timeToMins_(clockOut);
+  // A3 (cycle 13): an unparseable clock pair yields NULL, not NaN. Callers all
+  // already have a "hours not computed" branch (the incomplete-day path), so
+  // null routes a corrupt cell there instead of poisoning a running total.
+  if (inMins === null || outMins === null) return null;
   if (outMins <= inMins) outMins += 1440;
   let lunchMins = 0;
   if (lunchOut && lunchIn) {
     let lo = timeToMins_(lunchOut), li = timeToMins_(lunchIn);
-    if (li <= lo) li += 1440;
-    lunchMins = li - lo;
+    // A3: a corrupt LUNCH pair must not void the whole day — the clock pair is
+    // still good, so drop the deduction (the same shape as a missing lunch).
+    if (lo !== null && li !== null) {
+      if (li <= lo) li += 1440;
+      lunchMins = li - lo;
+    }
   }
   return (outMins - inMins - lunchMins) / 60;
 }
 
-function timeToMins_(t) { const p = String(t).split(':'); return parseInt(p[0],10)*60 + parseInt(p[1],10); }
+/**
+ * "HH:mm[:ss]" → minutes past midnight, or NULL when the cell can't be parsed
+ * (A3, cycle 13). It used to return NaN, which is the worst possible sentinel
+ * here because NaN comparisons are all FALSE and NaN arithmetic is contagious:
+ *   • getPunctualityReport did `if (lateMin > grace) late++; else onTime++;` —
+ *     so a NaN day fell through to the ELSE and was scored ON TIME, inflating a
+ *     metric managers use in performance conversations. Its earliest-punch pick
+ *     (`mins < r.days[d].in`) is also false against NaN, so ONE bad row poisoned
+ *     the whole day even when a valid ClockIn existed on it.
+ *   • calcHours_ returned NaN, and `totalHours += NaN` turned an entire
+ *     timesheet's total into NaN.
+ * Returning null makes both callers' explicit null checks fire instead. The
+ * guarded writers can't produce such a cell — this is recovery from a
+ * hand-edited / corrupted Timesheet TIME cell, which the two-way-Sheet-entry
+ * design makes a real (if uncommon) case.
+ */
+function timeToMins_(t) {
+  const p = String(t == null ? '' : t).split(':');
+  if (p.length < 2) return null;
+  const h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
 // Cycle-11 L-11 — time-off date sanity horizon (see the submit paths).
 const TIMEOFF_MAX_DAYS_AHEAD = 370;   // ~a year of planned leave + slop
 const TIMEOFF_MAX_DAYS_BACK  = 90;    // retroactive filing window

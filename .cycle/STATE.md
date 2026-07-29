@@ -2,109 +2,88 @@
 
 ## Current
 Cycle: 13
-Phase: idle
-Scope: —
+Phase: implement
+Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 2 (cycle 11 was the seams audit;
   /reflect increments — cadence is every 4, so 2 more subsystem cycles before
   the next Seams & Invariants audit is due)
-Updated: 2026-07-27
-
-NUMBERING NOTE: `Cycle: 13` is RESERVED, not started. CLAUDE.md's rule is that
-the number increments when a NEW audit cycle BEGINS (a fresh `/broad-scan` or
-`/audit` after the prior `/reflect`); it was set here at cycle-12 close-out on
-the operator's instruction. No cycle-13 audit has run, so nothing should be
-recorded against 13 until one does — and if the next audit is a Seams audit or
-a targeted cycle, it still takes this number.
+Updated: 2026-07-29
 
 ## In progress (facts to carry forward — NOT judgments)
-- Nothing in progress. Cycle 12 is closed: audit + visual addendum, all 27
-  findings shipped across six batches, reflected (net 11), docs synced, and
-  PR #143 merged to main on green CI (3ad80d8).
+- Cycle 13's broad scan is COMPLETE (3 stages). It found 0 Critical / 0 High /
+  6 Medium / 7 Low, with the interface lens producing the top four findings —
+  the second cycle running in which that lens outscored the code lens.
+- Batch 1 (A1, A2, A3, A11, A12) is IMPLEMENTED on branch
+  `claude/broad-scan-yhkbe2`. Not committed, not pushed, not deployed.
+- The verbatim summary block is at
+  `.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md`.
+- Next concrete step: commit + push this batch, then decide whether to run the
+  remaining batches (2–4 below) this cycle or close it here.
 
 ## Completed this cycle
-- (nothing yet — cycle 13 has not started)
+- A1  | metrics/, tc/script_clock.html, tc/script_manager.html, intake/, cn/ | six click-only span/div controls → <button type="button"> with a pixel-identical CSS reset
+- A2  | metrics/, styles.html, train/script_coaching.html | real viewport media queries for .m-layout (≤720px), .telemetry and .coach-kpis (≤540px) — `:root[data-compact]` is the pop-out, not a breakpoint
+- A3  | Code.js | timeToMins_ returns null not NaN; calcHours_ propagates it; all four callers guarded (getCoveragePlan needed an EXPLICIT guard — `x + null` coerces to 0)
+- A11 | script_core.html, tc/, train/script_coaching.html, cn/ | aria-current on both nav levels, aria-pressed on the period switcher, role=tab/aria-selected on the Coaching toggle, aria-expanded on two disclosures
+- A12 | metrics/, train/script_training.html, train/script_empdocs.html | 16 load-failure sites routed from empty-state containers to errorStateHtml_
+- Tests | test/client/run.js (+6 pins, 356→362, all bite-checked), Tests.js (+1 editor smoke test)
 
 ## Pending / not yet done
-- **CARRIED FROM CYCLE 12 — the operator deploy is still UNCONFIRMED.** Cycle 12
-  was closed out on instruction before the deploy was verified, so this is the
-  one piece of cycle-12 work still outstanding:
+- **Commit + push batch 1.** Nothing from cycle 13 is committed yet.
+- **CARRIED FROM CYCLE 12 — the operator deploy is still UNCONFIRMED**, and now
+  also carries this batch and cycle 11's never-separately-deployed visual batch:
   1. `cd web-app && clasp push -f`
   2. Apps Script editor → Deploy → Manage deployments → Edit → Version:
      **New version** → Deploy
-  3. Run `runAllTests()` in the editor — the F3 bounded-move behavioural case,
-     the F2 sheet-doctor contract, the F6 cache-reset effect and the two NEW
-     smoke tests (`cn_enrolledSheetId_trimsAndNullGuards`,
-     `cn_appendBounded_capsAndRollsBack`) execute ONLY there.
-  Expect three visible changes: the anonymized team line may hide on days it
-  previously showed (F4 cohort fix), every modal primary is now `--accent` green
-  (V-8, one shared class behind ~25 call sites), and sidebar/mobile nav labels
-  are SHORT with the full label on hover (V-5/6/7).
-  NOTE this deploy also covers cycle 11's follow-up visual batch, which was
-  never separately deployed.
-- Cycle 12's handoff blocks are NOT on disk. The `.cycle/blocks/` convention was
-  adopted mid-cycle with the v1.23.0 command sync (template R19), so cycle 12's
-  six implementation blocks + one cycle-summary block exist only in that
-  session's scrollback. They can be reconstructed from the record, but only as
-  RECONSTRUCTIONS — a reconstruction filed as the verbatim block is worse than
-  an absent one. Cycle 13 onward writes them automatically.
+  3. Run `runAllTests()` in the editor — three smoke tests execute ONLY there:
+     cycle 13's `timeToMins_nullOnUnparseable` plus cycle 12's still-unrun
+     `cn_enrolledSheetId_trimsAndNullGuards` and `cn_appendBounded_capsAndRollsBack`.
+- Remaining cycle-13 findings, batched for a follow-up /broad-implement:
+  - Batch 2 (silent degradation + docs, ~2.5–4h): A4, A6, A8, A9
+  - Batch 3 (robustness + operator safety, ~3–5h): A5, A7, A10
+  - Batch 4 (interface completeness, ~½–1 day): A13
+- /sync-docs is needed — see the DOCUMENTATION UPDATES NEEDED section of the block.
 
 ## Open follow-on items
-Carried forward from cycle 12 (see the HISTORY.md block for the full list):
-- `Code.js getSpanishInboxStats` | `pendingList` is a DEAD field — no client
-  reads it (both the Spanish tab and the dashboard card use the separate,
-  uncapped `getSpanishInboxPending`). Its F18 cap flag is therefore
-  correct-but-unobservable; removing the field is the real cleanup, deferred as
-  a response-shape change.
-- `Code.js` | the OTHER Timesheet-archive readers are still live-tab-only:
-  `buildTimesheetForEmployee_` (employee calendar), `getPunctualityReport`,
-  `tsDoctorScan_`. F1 fixed the money path (the ADP export) only.
-- `tc/script_clock.html loadCoverageStrip_` | blanks the strip on a COLD-miss
-  failure. Deliberate + documented as the SWR keep-last-good rule, so F16 left
-  it alone — but it is the one remaining place a failed load reads as absence.
-- `tc/script_clock.html` | the clock card's AMBER gradient end is ~1.5:1 against
-  white for `.clk-time` ITSELF, not just the AM/PM span V-2 fixed. A card-level
-  design call (scrim, or a darker amber end) — needs an operator decision.
-- `Code.js archiveOldTimesheetRows` | `hitPerRunCap` reads "more remain" on a run
-  that moved exactly the cap with nothing left. Cosmetic, audit-note only.
-- V-9's other two dead-space instances (dashboard rail 284px shorter than the
-  main column; Metrics hero 119px shorter than its rail) are shorter COLUMNS
-  with no stretched card — rebalancing means moving content between columns, an
-  operator design call.
-- **V-13 (deferred by decision)** — Metrics' four competing date controls +
-  30-point sparklines rendered into ~145×40px with no axis or baseline. A
-  redesign needing an operator opinion, not a defect.
-- No visual Regression Scenarios exist yet (72 scenarios, none visual). The
-  freshly-synced `/broad-scan` emits OPERATOR VISUAL CHECKS in exactly the
-  Regression-Scenario format for direct promotion, so the next scan should
-  start producing them.
-- `/pr-review` is the one template command not installed (it sits under the
-  template's separate "Per-Change Review" heading, not Tier 3).
+- A11 correction: the CN composer tabs already carried role="tab" + aria-selected;
+  the scan over-claimed that instance. Only aria-disabled was missing (added).
+- Noticed in the visual matrix, NOT fixed (out of scope for this batch):
+  "Generate ADP Export" on the Manager Dashboard is still a near-black full-width
+  bar — V-8 fixed the shared modal primary for exactly this reason, but this
+  on-page button is a different class.
+- Noticed in the visual matrix, NOT fixed: the Clock shift-strip's
+  "5h 54m worked · 32m lunch" appears to overflow / overlap the "File N missing"
+  chip at wide width. Pre-existing.
+- `_assertEq` in Tests.js compares via JSON.stringify, and JSON.stringify(NaN)
+  is "null" — so any future `_assertEq(x, null)` is blind to a NaN regression.
+  Cycle 13's editor test uses strict `=== null` instead. A general fix (make
+  _assertEq distinguish them) is unclaimed.
+- Carried from cycle 12: `getSpanishInboxStats.pendingList` is a dead field
+  (no client reads it); the other TimesheetArchive readers
+  (buildTimesheetForEmployee_, getPunctualityReport, tsDoctorScan_) are still
+  live-tab-only.
 
 ## Decisions made (so the next session doesn't re-litigate)
-- Cycle 12's full decision record lives in its HISTORY.md block. The two worth
-  carrying into any future work on the same surfaces:
-  - A `max-height` on a GRID CONTAINER does not constrain its row (measured: a
-    long article grew the page to 13.7k px and the reader's internal scroll was
-    gone). Caps on a content-sized-but-capped grid belong on the ITEMS. This is
-    now a Common Gotcha in CLAUDE.md.
-  - `/reflect` Q1 counts a user-visible interface defect as a PRODUCTION FIX
-    (template R18, adopted this cycle). Cycles ≤11 scored those as
-    defensive/structural and excluded them from `net_score`, so cumulative
-    `net_score` spans two rules at the 11/12 boundary — deliberate, documented
-    upstream, and nothing was rewritten retroactively.
+- timeToMins_ returns **null**, not 0 or -1 — callers already had explicit
+  null/"not computed" branches, and null is the only sentinel that fails LOUD
+  in a comparison while NaN fails silently.
+- A corrupt LUNCH pair drops the deduction rather than voiding the day. Voiding
+  it would turn one bad cell into a lost 8-hour day.
+- An unparseable day in buildTimesheetForEmployee_ counts as INCOMPLETE, not as
+  0 hours — the latter would understate payroll silently.
+- `.m-layout` stacks at 720px (not 540px) so the split collapses before either
+  column gets narrower than the 42px hero numeral. `.telemetry`/`.coach-kpis`
+  go 2×2 at 540px, matching their existing compact geometry.
+- errorStateHtml_ call sites DROP the outer esc() — it escapes internally, so
+  keeping esc() would double-escape.
+- Every new pin was bite-checked. Two failed to bite first time and were
+  tightened; that step is not optional and caught both.
 
 ## Where I left off
-Cycle 12 is CLOSED and merged (PR #143 → main, 3ad80d8); its block is archived
-in `.cycle/HISTORY.md` and this file is reset. The ONLY outstanding cycle-12
-work is the operator deploy above — do that first, and if `runAllTests()`
-surfaces anything, it belongs to cycle 12, not 13. Otherwise cycle 13 starts
-with a fresh `/broad-scan` (or `/audit`); the Seams audit is due in 2 more
-subsystem cycles. The command templates are current (workflow-tools v1.23.0,
-19/20 installed), so the next `/broad-scan` will include the interface lens and
-the next implement/reflect will persist their blocks to `.cycle/blocks/`.
-
-## History
-Closed-cycle records live in `.cycle/HISTORY.md` (append-only, newest first).
-This file holds ONLY the current cycle — see CLAUDE.md "Cycle State & Memory"
-for the close-out procedure.
+Batch 1 (A1/A2/A3/A11/A12) is implemented, fully tested (362 pure + 66 DOM +
+20/20 visual, all green), and written up in
+`.cycle/blocks/13-A1-A3-A11-A12-broad-implement.md` — but NOT committed. Commit
+and push to `claude/broad-scan-yhkbe2` first. Then either run batch 2 (A4, A6,
+A8, A9 — the silent-degradation + doc-drift set) or close the cycle with
+/reflect and /sync-docs.

@@ -218,7 +218,11 @@
   .dash-seg { position: relative; display: flex; background: var(--paper-2); border-radius: 8px; padding: 3px; min-width: 212px; }
   .dash-seg-hi { position: absolute; top: 3px; bottom: 3px; left: 3px; background: var(--paper-card); border-radius: 6px;
     box-shadow: var(--shadow-sm); transition: transform .35s cubic-bezier(.4, 0, .2, 1); }
-  .dash-seg-opt { flex: 1; text-align: center; padding: 5px 6px; font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .02em;
+  /* A1 (cycle 13): <button>, not <span> — the period switcher had no keyboard
+     path at all and no alternative route to Yesterday/MTD/YTD. The reset keeps
+     it pixel-identical to the span it replaced. */
+  .dash-seg-opt { appearance: none; -webkit-appearance: none; background: none; border: 0;
+    flex: 1; text-align: center; padding: 5px 6px; font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .02em;
     cursor: pointer; position: relative; z-index: 1; color: var(--muted); white-space: nowrap; }
   .dash-seg-opt.on { color: var(--ink); }
   /* Carousel viewport + track. align-items:flex-start is LOAD-BEARING — without
@@ -600,10 +604,16 @@ function clkDashSegHtml_(key, labels) {
   labels = labels || CLK_DASH_LABELS;
   var i = CLK_DASH[key] || 0, n = labels.length;
   var w = 'calc((100% - 6px) / ' + n + ')';
+  // A1: keyboard-reachable <button>. A11: aria-pressed carries the active
+  // state — the `.on` class alone is invisible to assistive tech, so a screen
+  // reader could not tell which period was showing.
   var html = labels.map(function (lbl, idx) {
-    return '<span class="dash-seg-opt' + (idx === i ? ' on' : '') + '" onclick="clkDashSet_(\'' + key + '\',' + idx + ')">' + esc(lbl) + '</span>';
+    return '<button type="button" class="dash-seg-opt' + (idx === i ? ' on' : '') +
+      '" aria-pressed="' + (idx === i ? 'true' : 'false') +
+      '" onclick="clkDashSet_(\'' + key + '\',' + idx + ')">' + esc(lbl) + '</button>';
   }).join('');
-  return '<div class="dash-seg"><div class="dash-seg-hi" style="width:' + w + ';transform:translateX(' + (i * 100) + '%)"></div>' + html + '</div>';
+  return '<div class="dash-seg" role="group" aria-label="Period">' +
+    '<div class="dash-seg-hi" style="width:' + w + ';transform:translateX(' + (i * 100) + '%)"></div>' + html + '</div>';
 }
 
 /** Switch a carousel to period index — transform-only (track + highlight); no
@@ -617,7 +627,11 @@ function clkDashSet_(key, idx) {
   if (seg) {
     var hi = seg.querySelector('.dash-seg-hi');
     if (hi) hi.style.transform = 'translateX(' + (idx * 100) + '%)';
-    seg.querySelectorAll('.dash-seg-opt').forEach(function (o, j) { o.classList.toggle('on', j === idx); });
+    // A11: keep aria-pressed in step with the `.on` class on every switch.
+    seg.querySelectorAll('.dash-seg-opt').forEach(function (o, j) {
+      o.classList.toggle('on', j === idx);
+      o.setAttribute('aria-pressed', j === idx ? 'true' : 'false');
+    });
   }
   clkDashFit_(key);   // re-fit the viewport to the newly-active slide
 }

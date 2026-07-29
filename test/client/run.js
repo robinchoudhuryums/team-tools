@@ -4973,5 +4973,137 @@ test('V-14: the visual fixture\'s coverage numbers satisfy the server formula', 
     'the range fixture must satisfy the same formula (it reused the single-day cdr)');
 });
 
+// ---------------------------------------------------------------------------
+// Cycle-13 pins.
+console.log('\ncycle 13 — A1 / A2 / A3 / A11 / A12 fix pins');
+
+// A3: timeToMins_ returned NaN on an unparseable cell, and NaN's comparisons
+// are ALL false — so getPunctualityReport scored the day ON TIME (it fell
+// through `lateMin > grace` into the else) and calcHours_ poisoned the running
+// total. Behavioural: drive the real extracted functions.
+test('A3: timeToMins_ returns null (never NaN) for an unparseable time', () => {
+  const b = buildSandbox([]);
+  vm.runInContext(extractRawFunction('Code.js', 'timeToMins_'), b, { filename: 'Code.js#timeToMins_' });
+  vm.runInContext(extractRawFunction('Code.js', 'calcHours_'), b, { filename: 'Code.js#calcHours_' });
+  const t = b.timeToMins_, c = b.calcHours_;
+  assert.strictEqual(t('09:30:00'), 570, 'a valid time still parses');
+  assert.strictEqual(t('9:05'), 545, 'a bare H:mm still parses');
+  // NOTE both rejection paths must be covered: no-colon (length < 2) AND
+  // has-a-colon-but-not-numeric (the isNaN guard). A list of only the former
+  // passes even with the isNaN guard deleted — bite-checked.
+  ['', '9am', 'abc', null, undefined, 'Sat Dec 30 1899',
+   'ab:cd', ':', '::', 'x:30', '09:mm'].forEach((bad) => {
+    assert.strictEqual(t(bad), null, 'unparseable → null, not NaN: ' + String(bad));
+  });
+  // The NaN sentinel's actual damage, pinned: a null must not be scored as
+  // "on time" (0 minutes late) by a `> grace` test.
+  assert.strictEqual(t('9am') > 5, false, 'null is not > grace…');
+  assert.strictEqual(t('9am') === null, true, '…and the caller can SEE it, unlike NaN');
+
+  assert.strictEqual(c('09:00:00', '17:00:00', null, null), 8, 'valid pair unchanged');
+  assert.strictEqual(c('22:00:00', '06:00:00', null, null), 8, 'C3 overnight wrap preserved');
+  assert.strictEqual(c('09:00:00', '17:00:00', '12:00:00', '13:00:00'), 7, 'lunch deduction unchanged');
+  assert.strictEqual(c('bogus', '17:00:00', null, null), null, 'corrupt clock pair → null, not NaN');
+  assert.strictEqual(c('09:00:00', 'bogus', null, null), null, 'corrupt clock-out → null');
+  // A corrupt LUNCH pair must not void an otherwise-good day.
+  assert.strictEqual(c('09:00:00', '17:00:00', 'bogus', '13:00:00'), 8,
+    'a corrupt lunch pair drops the deduction, it does not null the day');
+});
+
+test('A3: the calcHours_ callers route null to their incomplete-day branch', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.ok(/if \(hoursWorked === null\) \{ isIncomplete = true; incompleteCount\+\+; \}\s*\n\s*else \{ totalHours \+= hoursWorked; daysWorked\+\+; \}/.test(src),
+    'buildTimesheetForEmployee_ must not add a null/NaN into totalHours');
+  assert.ok(/const h = calcHours_[\s\S]{0,120}?if \(h !== null\) sparkHoursMap\[key\] = h;/.test(src),
+    'the live-status sparkline drops an unparseable day rather than plotting it');
+  assert.ok(/const h = calcHours_[\s\S]{0,120}?if \(h !== null\) hoursByDate\[dateStr\] = h;/.test(src),
+    'the calendar drops an unparseable day rather than badging NaN hours');
+  assert.ok(/if \(mins === null\) continue;/.test(src),
+    'getPunctualityReport skips an unparseable punch instead of scoring it on time');
+  // The coverage planner does ARITHMETIC on the result — `x + null` coerces to
+  // x, which would silently place a shift at midnight. It must guard explicitly.
+  assert.ok(/const absStart = \(convMins === null\) \? null : dayDelta \* 1440 \+ convMins;/.test(src),
+    'getCoveragePlan must not let a null coerce to 0 in absStart');
+});
+
+// A12: a LOAD FAILURE must render errorStateHtml_ (warn card + role=alert), not
+// the designed empty-state class — batch J's decision, previously applied only
+// in CN + Clock. Scan the three partials that violated it.
+test('A12: load failures never render into an empty-state container', () => {
+  [['metrics/script_metrics.html', ['m-empty', 'no-data']],
+   ['train/script_training.html', ['tr-empty']],
+   ['train/script_empdocs.html', ['tr-empty']]].forEach(([file, emptyCls]) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', file), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (!/\.error|err\.message|err && err\.message|e && e\.message|Failed to load|Could not load/.test(line)) return;
+      emptyCls.forEach((cls) => {
+        assert.ok(line.indexOf('class="' + cls) < 0,
+          file + ':' + (i + 1) + ' renders a failure into .' + cls +
+          ' (the empty-state card) — use errorStateHtml_:\n  ' + line.trim());
+      });
+    });
+    assert.ok(src.indexOf('errorStateHtml_') > 0, file + ' uses errorStateHtml_');
+  });
+});
+
+// A1: the six click-only controls are <button>s now. A bare span/div with an
+// inline onclick is unreachable by keyboard and has no role for assistive tech.
+test('A1: no interactive element is a bare span/div with an inline onclick', () => {
+  const files = ['metrics/script_metrics.html', 'tc/script_clock.html', 'tc/script_manager.html',
+                 'intake/script_intake.html', 'cn/script_callnotes.html'];
+  const offenders = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(path.join(__dirname, '../../web-app', f), 'utf8');
+    // Scan the WHOLE source, not line by line: `[^>]` matches newlines, so a
+    // tag whose onclick sits on a later line than its `<span` is still caught.
+    // A per-line scan missed exactly that and passed a reverted fix —
+    // bite-checked.
+    const re = /<(div|span|tr|td|li)\b[^>]*?onclick=/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      // The shared modal's stopPropagation shim is a container, not a control.
+      if (src.slice(m.index, m.index + 200).indexOf('onclick="event.stopPropagation()"') >= 0) continue;
+      const lineNo = src.slice(0, m.index).split('\n').length;
+      offenders.push(f + ':' + lineNo + ' ' + m[0].replace(/\s+/g, ' ').slice(0, 90));
+    }
+  });
+  assert.deepStrictEqual(offenders, [],
+    'use <button type="button"> for a control — a span/div with onclick is keyboard-unreachable:\n  ' +
+    offenders.join('\n  '));
+});
+
+// A11: active state must be exposed to assistive tech, not just painted.
+test('A11: nav + segmented toggles expose their active state', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  assert.ok(/\.tt-btn'\)\.forEach\([\s\S]{0,240}?aria-current/.test(core),
+    'the tab bar sets aria-current alongside .active');
+  assert.ok(/sb-link\[data-tool\][\s\S]{0,240}?aria-current/.test(core),
+    'the sidebar/mobile nav sets aria-current alongside .active');
+  const clock = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
+  assert.ok(/dash-seg-opt[\s\S]{0,200}?aria-pressed/.test(clock), 'the period switcher renders aria-pressed');
+  assert.ok(/o\.setAttribute\('aria-pressed'/.test(clock), 'clkDashSet_ keeps aria-pressed in step');
+  const coach = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  assert.ok(/role="tab"[^>]*aria-selected/.test(coach), 'the coaching tablist marks its tabs');
+  assert.ok(/b\.setAttribute\('aria-selected'/.test(coach), 'coachSwitchMode_ keeps aria-selected in step');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/aria-expanded="false" aria-controls=/.test(mgr), 'the coverage day disclosure is marked');
+  assert.ok(/btn\.setAttribute\('aria-expanded'/.test(mgr), 'covToggleDay_ keeps aria-expanded in step');
+});
+
+// A2: `:root[data-compact]` is the POP-OUT, not a viewport breakpoint. Any grid
+// that stacks in compact needs a real media query too, or it never stacks on a
+// phone.
+test('A2: compact-mode grid overrides have a matching viewport breakpoint', () => {
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/@media \(max-width: 720px\)[\s\S]{0,200}?\.m-layout \{ grid-template-columns: 1fr;/.test(m),
+    '.m-layout stacks at a narrow VIEWPORT, not only in the pop-out');
+  const s = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/@media \(max-width: 540px\)[\s\S]{0,700}?\.telemetry \{ grid-template-columns: repeat\(2, 1fr\); \}/.test(s),
+    '.telemetry goes 2x2 at a narrow viewport');
+  const c = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
+  assert.ok(/@media \(max-width: 540px\) \{ \.coach-kpis \{ grid-template-columns:repeat\(2, 1fr\); \} \}/.test(c),
+    '.coach-kpis goes 2x2 at a narrow viewport');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -2533,6 +2533,15 @@
     .emp-grid { grid-template-columns: repeat(2, 1fr); }
     .hero-clock-time { font-size: 40px; }
     .view-title { font-size: 22px; }
+    /* A2 (cycle 13): the shared 4-up telemetry strip had ONLY a
+       `:root[data-compact]` override — that is the POP-OUT, not a viewport
+       breakpoint, so four cells stayed four cells on a phone. 2×2 keeps each
+       cell wide enough for its label + tabular value. The compact rule below
+       is unchanged and still wins inside the pop-out. */
+    .telemetry { grid-template-columns: repeat(2, 1fr); }
+    .telemetry .tel-cell:nth-child(2) { border-right: none; }
+    .telemetry .tel-cell:nth-child(1),
+    .telemetry .tel-cell:nth-child(2) { border-bottom: 1px solid var(--line); }
   }
 
   /* Stale-while-revalidate "Refreshing…" pill — shown while a view instant-paints

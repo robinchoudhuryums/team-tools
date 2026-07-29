@@ -1479,6 +1479,10 @@
     display: flex; flex-direction: column; gap: 8px;
   }
   .cn-qa-label {
+    /* A1 (cycle 13): <button>, not <div> — the tray renders EXPANDED, so a
+       keyboard user could always read the answers, but collapsing was
+       unreachable. Reset keeps it identical to the div it replaced. */
+    appearance: none; -webkit-appearance: none; background: none; border: 0; padding: 0;
     display: inline-flex; align-items: center; gap: 6px;
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     color: var(--success-deep); letter-spacing: .14em; text-transform: uppercase;
@@ -4733,6 +4737,17 @@ function cnLatestManagerReply_(sub) {
   return { message: '', by: '' };
 }
 
+/** A11 (cycle 13) — Training-Answers tray disclosure. Replaces the inline
+ *  `this.parentElement.classList.toggle('collapsed')`, which flipped the class
+ *  but left aria-expanded stale, so assistive tech was told the tray was open
+ *  after it had been collapsed. */
+function cnToggleQaTray_(btn) {
+  const tray = btn && btn.parentElement;
+  if (!tray) return;
+  const collapsed = tray.classList.toggle('collapsed');
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+
 function cnRenderTrainingQATray_() {
   const host = document.getElementById('cn-training-qa-tray');
   if (!host) return;
@@ -4753,8 +4768,9 @@ function cnRenderTrainingQATray_() {
     `;
   }).join('');
   host.innerHTML =
-    `<div class="cn-qa-label" onclick="this.parentElement.classList.toggle('collapsed')">${icon('bulb', 11)}<span>Training Answers · ${qa.length}</span> ${icon('chevronDown', 10)}</div>` +
-    `<div class="cn-qa-cards">${cards}</div>`;
+    // A1 + A11: keyboard-reachable disclosure with its open state exposed.
+    `<button type="button" class="cn-qa-label" aria-expanded="true" aria-controls="cn-qa-cards" onclick="cnToggleQaTray_(this)">${icon('bulb', 11)}<span>Training Answers · ${qa.length}</span> ${icon('chevronDown', 10)}</button>` +
+    `<div class="cn-qa-cards" id="cn-qa-cards">${cards}</div>`;
 }
 
 function cnToggleResolved_(noteId) {
@@ -4901,7 +4917,7 @@ function cnRenderComposerTabStrip_(active, noteId) {
     ? ''
     : ' onclick="cnSwitchComposerTab_(\'department\')"';
   return `<div class="cn-composer-tabs" role="tablist" aria-label="Email composer mode">
-    <button type="button" role="tab" class="${deptCls}" aria-selected="${active === 'department'}"${deptOnclick} title="${esc(deptTitle)}">
+    <button type="button" role="tab" class="${deptCls}" aria-selected="${active === 'department'}"${deptDisabled ? ' aria-disabled="true"' : ''}${deptOnclick} title="${esc(deptTitle)}">
       ${icon('mail', 13)} Department
     </button>
     <button type="button" role="tab" class="${extCls}" aria-selected="${active === 'external'}" onclick="cnSwitchComposerTab_('external')" title="Send to a customer or provider">

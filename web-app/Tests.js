@@ -833,6 +833,7 @@ function _runAllTests() {
   _smokeTest('calcHours_withLunch',                test_calcHours_withLunch);
   _smokeTest('calcHours_overnight',                test_calcHours_overnight);
   _smokeTest('calcHours_overnightWithLunch',       test_calcHours_overnightWithLunch);
+  _smokeTest('timeToMins_nullOnUnparseable',       test_timeToMins_nullOnUnparseable);
 
   _smokeTest('daysBetween_basic',                  test_daysBetween_basic);
   _smokeTest('daysBetween_negative',               test_daysBetween_negative);
@@ -1281,6 +1282,28 @@ function test_calcHours_overnight() {
 function test_calcHours_overnightWithLunch() {
   // 22:00 → 06:00 with 02:00-03:00 lunch = 7 hours
   _assertEqClose(calcHours_('22:00:00','06:00:00','02:00:00','03:00:00'), 7.0);
+}
+/** A3 (cycle 13) — timeToMins_ returns NULL, never NaN, on an unparseable
+ *  Timesheet TIME cell. NaN's comparisons are all false, so the old sentinel
+ *  made getPunctualityReport score such a day ON TIME and made
+ *  `totalHours += calcHours_(...)` NaN out an entire timesheet total. */
+function test_timeToMins_nullOnUnparseable() {
+  _assertEq(timeToMins_('09:30:00'), 570, 'valid HH:mm:ss still parses');
+  _assertEq(timeToMins_('9:05'), 545, 'bare H:mm still parses');
+  // MUST use a strict === null check, NOT _assertEq: it compares via
+  // JSON.stringify, and JSON.stringify(NaN) is the string "null" — so
+  // _assertEq(NaN, null) PASSES and the test would be blind to the exact
+  // regression it exists to catch.
+  // Both rejection paths are covered: no colon, and a colon with non-numeric
+  // parts (a list of only the former passes with the isNaN guard deleted).
+  ['', '9am', 'abc', 'ab:cd', ':', 'x:30', '09:mm', null, undefined].forEach(function (bad) {
+    _assertTrue(timeToMins_(bad) === null, 'unparseable "' + bad + '" must be null, got ' + timeToMins_(bad));
+  });
+  // calcHours_ propagates the null instead of returning NaN…
+  _assertTrue(calcHours_('bogus', '17:00:00', null, null) === null, 'corrupt clock pair → null');
+  _assertTrue(calcHours_('09:00:00', 'bogus', null, null) === null, 'corrupt clock-out → null');
+  // …but a corrupt LUNCH pair only drops the deduction; the day is still valid.
+  _assertEqClose(calcHours_('09:00:00', '17:00:00', 'bogus', '13:00:00'), 8.0);
 }
 
 // ── Date math ──

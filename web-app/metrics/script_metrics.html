@@ -200,6 +200,12 @@
 
 /* ── Preset chips ──────────────────────────────────────────────── */
 .m-preset-chip {
+  /* A1 (cycle 13): these are <button>s, not spans — a bare span with an inline
+     onclick is unreachable by keyboard and invisible to assistive tech. The
+     reset keeps the chip looking identical to the span it replaced (`font:
+     inherit` must precede font-size, since the shorthand resets it). */
+  appearance: none; -webkit-appearance: none;
+  font: inherit;
   display: inline-block;
   font-size: 0.75rem;
   padding: 2px 8px;
@@ -353,6 +359,20 @@
 :root[data-compact] .m-hero-value { font-size: 42px; }
 :root[data-compact] .m-hero-value .unit { font-size: 18px; }
 :root[data-compact] .m-hero-spark svg { height: 40px; }
+
+/* ── Narrow viewports (A2, cycle 13) ─────────────────────────────────
+   `:root[data-compact]` above is the POP-OUT (?compact=1), NOT a viewport
+   breakpoint — the two are different triggers, and Metrics carried no media
+   query at all, so a 1.4fr/1fr grid with a 42px hero numeral never stacked on
+   a phone. My Stats is rep-facing, so this is a rep-visible surface. The
+   shell's own breakpoints are 1023px (mobile chrome) / 540px; stack at 720px
+   so the split collapses before the columns get narrower than the hero
+   numeral, matching .timeoff-layout's 900px precedent in styles.html. */
+@media (max-width: 720px) {
+  .m-layout { grid-template-columns: 1fr; gap: var(--space-sm); }
+  .m-hero-value { font-size: 42px; }
+  .m-hero-value .unit { font-size: 18px; }
+}
 
 /* §6 — My Stats trend-window presets (shared .toolbar-tabs) */
 .m-preset-tabs { margin-left: auto; }
@@ -531,8 +551,13 @@ function mLoadMyStats_(opts) {
     done();
     // If a stale view is already on screen, keep it rather than blanking it.
     if (painted) { showToast('Couldn’t refresh metrics — showing last loaded', 'toast-warn'); return; }
+    // A12 (cycle 13): a LOAD FAILURE renders errorStateHtml_ (warn-toned card +
+    // glyph + role=alert), never .m-empty — the designed empty-state card. The
+    // batch-J decision is that "the fetch failed" must never read as "there's
+    // nothing here"; .m-empty is a quiet dashed card visually indistinguishable
+    // from a genuinely empty day, which is the likeliest CDR failure mode.
     document.getElementById('m-my-content').innerHTML =
-      '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
+      errorStateHtml_('Failed to load metrics: ' + (err.message || err));
   };
   if (isRange) {
     google.script.run.withSuccessHandler(ok).withFailureHandler(fail).getMyMetricsRange(M_STATE.myFrom, M_STATE.myTo);
@@ -550,7 +575,7 @@ function mRenderMyStats_(data) {
   // here, stranding the loSweep loader (the throw landed only in the error
   // beacon, invisible to the rep). Same guard shape as spanishRender_.
   if (!data || data.error) {
-    el.innerHTML = '<div class="m-empty">' + esc((data && data.error) || 'No data returned — try again.') + '</div>';
+    el.innerHTML = errorStateHtml_((data && data.error) || 'No data returned — try again.');   // A12
     return;
   }
   M_STATE.myData = data;
@@ -878,11 +903,12 @@ function enterMetricsTeamView() {
       '<input type="date" id="m-team-to" value="' + M_STATE.teamTo + '">' +
       '<button class="refresh-btn" onclick="mLoadTeamMetrics_({force:true})" title="Refresh">' + icon('refresh', 14) + '</button>' +
     '</div>' +
+    // A1: <button>, not <span> — keyboard-reachable and announced as a control.
     '<div class="m-controls" style="margin-top:calc(-1 * var(--space-xs))">' +
-      '<span class="m-preset-chip" onclick="mTeamPreset_(\'today\')">Today</span>' +
-      '<span class="m-preset-chip" onclick="mTeamPreset_(\'yesterday\')">Yesterday</span>' +
-      '<span class="m-preset-chip" onclick="mTeamPreset_(\'week\')">Last 7 Days</span>' +
-      '<span class="m-preset-chip" onclick="mTeamPreset_(\'month\')">Last 30 Days</span>' +
+      '<button type="button" class="m-preset-chip" onclick="mTeamPreset_(\'today\')">Today</button>' +
+      '<button type="button" class="m-preset-chip" onclick="mTeamPreset_(\'yesterday\')">Yesterday</button>' +
+      '<button type="button" class="m-preset-chip" onclick="mTeamPreset_(\'week\')">Last 7 Days</button>' +
+      '<button type="button" class="m-preset-chip" onclick="mTeamPreset_(\'month\')">Last 30 Days</button>' +
     '</div>' +
     '<div id="m-team-content"><div class="m-loading"><span class="lo-glyph">' + icon('chart', 26) + '</span> Loading metrics&hellip;</div></div>';
 
@@ -955,8 +981,8 @@ function mLoadTeamMetrics_(opts) {
       if (currentView !== requestedView || seq !== M_STATE.teamSeq) { done(); return; }
       done();
       if (painted) { showToast('Couldn’t refresh metrics — showing last loaded', 'toast-warn'); return; }
-      document.getElementById('m-team-content').innerHTML =
-        '<div class="m-empty">Failed to load metrics: ' + esc(err.message || err) + '</div>';
+      document.getElementById('m-team-content').innerHTML =   // A12
+        errorStateHtml_('Failed to load metrics: ' + (err.message || err));
     })
     .getTeamMetrics(from, to);
 }
@@ -967,7 +993,7 @@ function mRenderTeamMetrics_(data) {
 
   // Cycle-9 L-26: null-guard BEFORE .error (see mRenderMyStats_).
   if (!data || data.error) {
-    el.innerHTML = '<div class="m-empty">' + esc((data && data.error) || 'No data returned — try again.') + '</div>';
+    el.innerHTML = errorStateHtml_((data && data.error) || 'No data returned — try again.');   // A12
     return;
   }
 
@@ -1170,7 +1196,7 @@ function spanishLoad_() {
     })
     .withFailureHandler(function (e) {
       if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
-      body.innerHTML = '<div class="no-data">' + esc((e && e.message) || 'Failed to load') + '</div>';
+      body.innerHTML = errorStateHtml_((e && e.message) || 'Failed to load');   // A12
     })
     .getSpanishInboxStats(SPANISH_STATE.days);
 }
@@ -1186,7 +1212,7 @@ function spanishFmtDur_(mins) {
 
 function spanishRender_(d) {
   var body = document.getElementById('spanish-body'); if (!body) return;
-  if (!d || d.error) { body.innerHTML = '<div class="no-data">' + esc((d && d.error) || 'No data') + '</div>'; return; }
+  if (!d || d.error) { body.innerHTML = errorStateHtml_((d && d.error) || 'No data'); return; }   // A12
   var total = d.resolved + d.pending;
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Inbox <b>' + esc(d.address) + '</b> · ' +
     esc(String(d.threadsScanned || 0)) + ' threads scanned' +
@@ -1238,7 +1264,7 @@ function spanishLoadPending_() {
     .withSuccessHandler(function (d) {
       if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending' || seq !== SPANISH_STATE.listSeq) return;
       var s = document.getElementById('spanish-list'); if (!s) return;
-      if (!d || d.error) { s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((d && d.error) || 'Could not load tasks') + '</div>'; return; }
+      if (!d || d.error) { s.innerHTML = errorStateHtml_((d && d.error) || 'Could not load tasks'); return; }   // A12
       var list = d.pending || [];
       if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Pending tasks</div><div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) + ' Nothing pending — all caught up.</div>'; return; }
       s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Pending tasks · ' + list.length + '</div>' +
@@ -1246,7 +1272,7 @@ function spanishLoadPending_() {
     })
     .withFailureHandler(function (e) {
       if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'pending' || seq !== SPANISH_STATE.listSeq) return;
-      var s = document.getElementById('spanish-list'); if (s) s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((e && e.message) || 'Could not load tasks') + '</div>';
+      var s = document.getElementById('spanish-list'); if (s) s.innerHTML = errorStateHtml_((e && e.message) || 'Could not load tasks');   // A12
     })
     .getSpanishInboxPending(SPANISH_STATE.days);
 }
@@ -1262,7 +1288,7 @@ function spanishLoadResolved_() {
     .withSuccessHandler(function (d) {
       if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved' || seq !== SPANISH_STATE.listSeq) return;
       var s = document.getElementById('spanish-list'); if (!s) return;
-      if (!d || d.error) { s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((d && d.error) || 'Could not load resolved') + '</div>'; return; }
+      if (!d || d.error) { s.innerHTML = errorStateHtml_((d && d.error) || 'Could not load resolved'); return; }   // A12
       var list = d.resolved || [];
       if (!list.length) { s.innerHTML = '<div class="day-section-label" style="margin:6px 0 8px">Resolved</div><div style="font-size:13px;color:var(--muted)">No resolved requests in this period.</div>'; return; }
       s.innerHTML = '<div class="day-section-label" style="margin:6px 0 10px">Resolved · ' + list.length + '</div>' +
@@ -1270,7 +1296,7 @@ function spanishLoadResolved_() {
     })
     .withFailureHandler(function (e) {
       if (currentView !== 'metricsSpanish' || SPANISH_STATE.tab !== 'resolved' || seq !== SPANISH_STATE.listSeq) return;
-      var s = document.getElementById('spanish-list'); if (s) s.innerHTML = '<div class="no-data" style="margin-top:8px">' + esc((e && e.message) || 'Could not load resolved') + '</div>';
+      var s = document.getElementById('spanish-list'); if (s) s.innerHTML = errorStateHtml_((e && e.message) || 'Could not load resolved');   // A12
     })
     .getSpanishInboxResolved(SPANISH_STATE.days);
 }
