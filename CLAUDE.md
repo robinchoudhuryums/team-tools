@@ -1739,11 +1739,18 @@ this section before touching the relevant area.
   INV-94 dup-date guard extended to the →Approved transition) made
   `fixPtoReconciliation_creditsAndIdempotent`'s setup unreachable — the test
   approved two same-date rows to simulate the legacy H1 damage the repair
-  endpoint exists to undo. Such a fixture must now forge the legacy row
-  DIRECTLY (sheet write + manual `adjustLeaveBalance_`), which is also more
-  faithful: that is how the damage exists in production. This is the
-  "update the test doubles as part of the fix" rule — it was missed, and the
-  editor-only suite meant three cycles passed before anyone saw it.
+  endpoint exists to undo. Such a fixture must forge the legacy row DIRECTLY
+  (sheet write + manual `adjustLeaveBalance_`), which is also more faithful:
+  that is how the damage exists in production. **THE TRAP, which cost a second
+  failed run:** `hasActiveTimeOffOnDate_` excludes ONLY the row being approved,
+  and matches Pending OR Approved — so TWO PENDING rows on one date make the
+  **FIRST** approval fail, not the second. A fix that assumes only the second
+  call is blocked (as the first attempt here did) still fails. The fixture must
+  never hold two ACTIVE rows on the date at the moment it calls the endpoint:
+  approve ONE row through the front door, then append the duplicate
+  already-Approved. This is the "update the test doubles as part of the fix"
+  rule — it was missed, and the editor-only suite meant three cycles passed
+  before anyone saw it.
   **Mid-body skips
   are honest (cycle-8 M-14):** a test whose fixture/optional config is
   unavailable calls `_skipTest(reason)` — recorded as SKIP, never PASS
