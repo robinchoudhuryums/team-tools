@@ -1,17 +1,37 @@
 # Project Health — team-tools
 
 ## Current Standing
-**Cycle 14 (CDR sub-queue feature) IN PROGRESS — Phase 0 of 4 implemented.**
-Operator-requested feature work, not an audit cycle: departments with sub-queues
-had no way to view sub-queue detail separately or transparently. Approved design
-(2026-07-29): discovery first, MANAGER SURFACES ONLY — which drops the phase that
-could have defeated INV-124's N=3 anonymization — and expandable per-queue rows
-plus segmented contribution bars. **Phase 0 is a read-only queue inventory in
-Admin → Automation Health and it is a GATE**: the whole design rests on DQE
-carrying a row per (agent, queue, date), which this repo cannot verify (the CDR
-fixture writes one row per agent, and `CDR.QUEUE_EXT` had been declared-but-unread
-for years). Pushed as `5610f6f`; net 0 by design — a diagnostic, not a fix. Pure
-harness 375→379, all four pins bite-checked; DOM 66. Phases 1–4 unstarted.
+**Cycle 14 (CDR sub-queue feature) IN PROGRESS — Phase 0 + a RE-SCOPED Phase 1
+shipped; Phase 2 (the UI) unstarted.** Operator-requested feature work, not an
+audit cycle: departments with sub-queues had no way to view sub-queue detail
+separately or transparently. Approved design (2026-07-29): discovery first,
+MANAGER SURFACES ONLY — which drops the phase that could have defeated
+INV-124's N=3 anonymization — and expandable per-queue rows plus segmented
+contribution bars.
+
+**Phase 0 was a GATE and it returned the NEGATIVE verdict, which is the most
+valuable thing this cycle produced.** Measured against the live sheet: **DQE
+carries ONE row per (agent, date)**, so answered / missed / % answered /
+talk-time can never be split by queue. `CDR.QUEUE_EXT` (col 4) — declared in
+the enum for years and read nowhere — turned out to hold comma-separated
+MEMBERSHIP lists (`103,108`, and `108,103` / `103,138,108`: the same sets in
+different orders), a dimension of the AGENT rather than of the call. Building
+the approved design on DQE would have been impossible, and the two-hour
+discovery step is what caught it instead of a day of Phase 1 work.
+
+**Phase 1 was re-scoped on that evidence and shipped.** The `CSR Transfer
+Historical Data` tab IS keyed by rep, so its per-queue H:R block (11 queues,
+406–2886 populated rows each) is genuine per-rep attribution — for transfers.
+`getCsrTransferPerRepDaily_` now reads it behind `opts.withQueues` (default
+OFF, because the three existing callers cache their assembled payloads),
+discovering columns BY HEADER NAME so nothing can drift against the
+operator-owned `call-data-reporting` repo, and reporting `queueTotal` /
+`queueUnattributed` so a partial breakdown can never read as complete
+(INV-180). Given a live consumer rather than shipped dead: the admin queue
+inventory now renders windowed per-queue transfer totals through that reader.
+Pure harness 375→382, DOM 66; all 7 cycle-14 pins bite-checked, two of which
+needed tightening after failing to bite. Net 0 by design — Phase 0 and Phase 1
+are a diagnostic and a capability, not fixes.
 
 **Cycle 13 (broad) CLOSED 2026-07-29 — reflected net +8 (9 prod fixes − 1 new
 failure mode; 12 defensive).** The scan found 0 Critical / 0 High / 6 Medium /

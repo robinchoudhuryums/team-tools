@@ -485,11 +485,13 @@ const CDR_EXPECTED_HEADERS = {
 // Transfer %, Total Calls, Total Calls Transferred, then per-queue A_Q_* counts
 // (H:R), Comments. Date is M/D/YYYY (handled by cdrRowDateIso_) and Transfer %
 // is a "29.79%" string — both read via getDisplayValues() per the CDR
-// spreadsheet-tz gotcha (INV-64). Only the first columns feed the trend; the
-// per-queue H:R block is still read-but-ignored by THIS reader (the range is
-// fetched either way, so using it later costs nothing). Since cycle 14's
-// Phase 0 it is no longer wholly unread: `cdrQueueInventory_` reports which of
-// those columns carry data, as input to the sub-queue feature's design.
+// spreadsheet-tz gotcha (INV-64). The first columns feed the trend; the
+// per-queue H:R block is read on demand by this same reader via
+// `opts.withQueues` (cycle-14 Phase 1) — it is the ONLY place per-queue REP
+// attribution exists, because Phase 0 proved DQE carries one row per
+// (agent, date). Phase 0's `cdrQueueInventory_` also reports which of those
+// columns carry data. The range is fetched either way, so reading them costs
+// nothing extra.
 const CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
 const CSRT = { DATE: 2, NAME: 3, TRANSFER_PCT: 4, TOTAL_CALLS: 5, TRANSFERRED: 6 };
 const CSR_TRANSFER_NUM_COLS = 19;   // A:S

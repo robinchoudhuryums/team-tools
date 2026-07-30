@@ -258,6 +258,19 @@ this section before touching the relevant area.
   H:MM:SS strings via `cdrParseHms_()`. Never use `getValue()` for
   these columns. Same gotcha exists in `call-data-reporting`'s
   `Data.gs` — see that repo's CLAUDE.md for the full explanation.
+- **DQE has ONE row per (agent, date) — per-queue rep metrics do not exist
+  (cycle-14 Phase 0).** Measured against the operator's live sheet, not
+  assumed. Two consequences worth knowing before anyone re-opens this:
+  (a) `answered`/`missed`/`% answered`/talk-time can never be broken down by
+  queue, because the row carrying them is not queue-scoped; (b) **`CDR.QUEUE_EXT`
+  (col 4) is NOT a queue key** — it holds comma-separated MEMBERSHIP lists
+  (`103,108`, and `108,103` / `103,138,108` — the same sets in different
+  orders), i.e. which extensions an agent covered that day. It is a dimension
+  of the AGENT, not of the call, and anything reading it must treat it as an
+  unordered set. Per-queue attribution exists only for TRANSFERS — see the
+  Phase 1 Key Design Decision. The `A_Q_*` queue-aggregate rows
+  `isCdrQueueSentinel_` skips are real but far too sparse to build a series on
+  (8 queues / ~12 rows in a week).
 - **CDR enrichment in `managerGetShiftStats` is best-effort.**
   The CDR overlay that adds `cdr` and `noteCoverage` fields to each
   rep's shift-stats card is wrapped in a try/catch. If the CDR
@@ -2628,6 +2641,39 @@ this section before touching the relevant area.
   `vector-effect: non-scaling-stroke` to the polyline: it moves the §4
   draw-in `stroke-dasharray` to screen space, where `--len:600`
   under-runs the stretched path and the "drawn" end state shows a gap).
+- **Per-queue attribution exists ONLY for TRANSFERS (cycle-14 Phase 1).** Phase
+  0's inventory settled the question against the operator's real sheet: **DQE
+  carries ONE row per (agent, date)**, so `answered` / `missed` / `% answered` /
+  talk-time can NEVER be split by queue — a future request for that should be
+  answered "not in this data", not re-investigated. The `CSR Transfer
+  Historical Data` tab is the exception: it is keyed by `CSR Rep Name`, so its
+  per-queue `H:R` block IS per-rep attribution. `getCsrTransferPerRepDaily_`
+  reads it behind **`opts.withQueues`, DEFAULT OFF** — attaching per-rep
+  `queues {name: count}` to both the range aggregate and the per-day shape.
+  Four rules, each load-bearing:
+   - **The opt-in default is the compatibility contract, not tidiness.** The
+     three pre-Phase-1 callers (`getDashboardMetrics` ×2, `getMyMetrics`'s
+     trend) CACHE their assembled results, so a flipped default would change
+     those payloads with no INV-85 cache bump. Pinned by a test that counts
+     3-arg vs opted-in call sites.
+   - **Columns are discovered BY HEADER NAME** (`csrTransferQueueColumns_`,
+     bounded to `CSRT_QUEUE_COL_FIRST/LAST` = 0-indexed 7..17; 18 is Comments,
+     6 is the grand total). The headers are written by the operator-owned
+     `call-data-reporting` repo — name-reading is self-correcting under a
+     reorder inside the block and creates no parallel source of truth to drift.
+     Never replace it with a hardcoded queue list.
+   - **The counts are a COMPONENT of `transferred`, never a partition of it.**
+     A real sheet routes some transfers to destinations with no `A_Q_` column.
+     `queueTotal` + `queueUnattributed` are reported so a UI can say "9 of 14
+     attributed"; `transferred` is NEVER derived by summing queues (INV-180).
+   - **A zero or blank cell is ABSENCE, not a queue with zero traffic** —
+     otherwise every rep would appear to staff every queue. Accumulation is
+     `+=` on collision, matching the cycle-9 L-14 rule the two totals already
+     follow, so the per-day shape and the range aggregate cannot disagree.
+  Queue→department GROUPING is deliberately unbuilt: plausible groupings are
+  inferable from the names (FieldOps + FieldOps_Power) but that is a guess
+  about the operator's business, and an empty-by-default property with no
+  consumer is dead code. It belongs with the Phase-2 "By department" switcher.
 - **Note coverage + count have a single source of truth.**
   `cnNoteCoverage_(noteCount, answeredCalls)` (whole-number percent,
   or null when there's no answered-call denominator) and
@@ -3357,6 +3403,14 @@ this section before touching the relevant area.
   into `getCdrAgentMetrics_`'s meta — that result is cached and consumed by
   every Metrics call, so widening it would tax the hot path and force an INV-85
   cache bump for a diagnostic. PHI-free (identifiers + tallies only).
+  Since Phase 1 the block also renders **"Transfers by queue · in window"** —
+  windowed transferred totals + contributing rep count per queue, sourced
+  THROUGH the production reader (`getCsrTransferPerRepDaily_(…, {withQueues:
+  true})`) rather than a second hand-rolled scan, so the Phase-1 code path is
+  exercised on live data. It is a separate read of the Transfer tab from the
+  occupancy scan above because they answer different questions ("do these
+  columns carry data historically" vs "how much landed in the window"); both
+  ride the same `scanQueues` gate.
   **"Jump to source" (Tier 1):** the panel
   header carries an `Open AuditLog ↗` deep-link to the AuditLog TAB
   (`res.auditLogUrl` = `auditSheet.getParent().getUrl() + '#gid=' +
@@ -3869,6 +3923,15 @@ manually for a fresh deploy or environment:
   `getAutomationHealth` fetch by design), NOT on the 10-minute health-badge
   poll or the daily digest — those call `computeAutomationHealth_` directly and
   the scan is opt-in.
+  **Phase 1 (transfer-only per-queue attribution) adds NO operator state
+  either** — no Script Property, trigger, migration, or CONFIG constant, and
+  deliberately NO queue→department grouping property (see the Phase 1 Key
+  Design Decision for why that waits for Phase 2). Two code-only constants
+  (`CSRT_QUEUE_COL_FIRST/LAST`) bound the H:R block. Its only visible effect is
+  a **"Transfers by queue · in window"** list in the same Automation Health
+  block, costing one additional read of the Transfer tab on that same
+  Admin-tab open. **Nothing rep- or manager-facing shows queues yet** — the
+  Metrics UI is Phase 2 and is unstarted.
 - **Cycle 13 batch 3 changes ONE operator requirement (A5) and adds no other
   state.** An existing DEV project must add `INSTANCE_IS_PROD=false` — an unset
   value now reads as production, so without it `devScrubRoster_`/`devShowConfig_`
@@ -5008,7 +5071,9 @@ heading-class scan → 375. Cycle 14's Phase 0 added four more (the queue
 inventory's three-state verdict, its escaping of CDR-sourced strings, the
 read-only/bounded reader shape, and — the load-bearing one — that the scan
 stays OPT-IN so the 10-minute-per-manager health badge and the daily digest
-never pay for a full-sheet read) → 379.** Two of
+never pay for a full-sheet read) → 379. Phase 1 added three more (header-name
+column discovery with the REAL bounds read from source, the opt-in call-site
+count, and the component-not-partition contract) → 382.** Two of
 those six did NOT bite on the first attempt and were tightened: the A1 scan was
 line-by-line and missed multi-line markup (it now scans the whole source, where
 `[^>]` matches newlines), and the A3 input list held only no-colon cases, all
@@ -5310,6 +5375,8 @@ INV-176 | **`timeToMins_` returns `null` (never `NaN`), and an arithmetic caller
 INV-177 | **Dev-ness requires BOTH instance markers — `INSTANCE_LABEL` set AND `INSTANCE_IS_PROD` explicitly not `'true'`.** An UNSET marker resolves to PRODUCTION, because unset is production's default state. The old test was "label set AND not `isProdInstance_()`", and `isProdInstance_()` is false whenever the property is unset — so dev-ness was inferred from the mere PRESENCE of a banner label, and labelling prod (which the blue-green docs recommend) silently flipped prod into dev: `runNightlySelfTest` would run the full destructive `runAllTests` against live payroll/audit/PHI nightly, and `devScrubRoster_` would anonymize the LIVE roster. `assertNotProdInstance_` is NOT a backstop — it only fires on `INSTANCE_IS_PROD === 'true'`. `isDevInstance_()` is the single predicate; `assertDevInstance_` and `runNightlySelfTest` both route through it, and a half-configured instance says why on the Admin self-test line rather than degrading silently. This is the second time an absent marker was read as an affirmative signal, hence a library entry rather than a gotcha. Verify: the A5 dev-detection pin, including its "a LABEL alone is NOT dev" case | Subsystem: Server
 INV-178 | **A section heading is an `<h2>`, not a styled `<div>`.** Heading navigation is the primary way a screen-reader user moves through a dense page; every view rendered exactly ONE heading (its `<h1>`) and used `<div>`/`<span>` for every card label below it, so that navigation stopped at the page title on ~30 surfaces. The three section-heading classes (`.card-label` 20 sites, `.tr-card-title` 5, `.dash-seclabel` 2) render as `<h2>`. Each class already fully specified its own typography, so the conversion is a UA-margin reset and nothing else (`margin-top: 0` on `.card-label`, which already set `margin-bottom`; `margin: 0` on the other two, which sit in flex head rows). `.kicker` stays a `<div>` (an eyebrow ABOVE a heading is not itself one) and `.rail-card` was already `<h4>`. **VERIFY BY MEASURING INSIDE THE REAL PARENT** — a plain-div fixture reports `display: inline -> block` for the two span cases, which is pure artifact, since both live in `display: flex` heads that blockify any child. Verify: the A13 class-scan tripwire (scans by CLASS, so a NEW card added as a div fails) + `test/visual/a13-measure.mjs` | Subsystem: Client (all view partials)
 INV-179 | **When a convention is worth a tripwire, scan a DERIVED file list (`PARSE_GUARD_PARTIALS`), never a hand-copied one.** Hand-listed scan sets have been found short three times — cycle-9 M-10 (a newly-included JS partial outside every harness list), cycle-11 M-4 (four hand copies of the registry/DOM coverage lists), cycle-13 B5-1 (the a11y pins named six files by hand). The last is the clearest evidence: the moment the list was derived, the SAME rule surfaced eight live defects the human audit had missed. A hand-copied list silently narrows as the codebase grows, and CI stays green while it does. Verify: the `A11Y_SCAN_PARTIALS` derivation plus the existing `PARSE_GUARD_PARTIALS` ↔ `index.html` `include()` coupling check | Subsystem: Test Suite
+
+INV-180 | **Per-queue transfer counts are a COMPONENT of `transferred`, never a partition of it.** The `CSR Transfer Historical Data` H:R block attributes some transfers to a named queue, but a real sheet routes others to destinations with no `A_Q_` column — so summing the queues UNDER-REPORTS the total. `getCsrTransferPerRepDaily_(…, {withQueues:true})` therefore reports `queueTotal` (the attributed subtotal) and `queueUnattributed` (the remainder) alongside the untouched `transferred`, so a consumer can say "9 of 14 attributed" instead of implying the breakdown is complete; `transferred` is NEVER derived from the queue sum. Related: a ZERO or BLANK queue cell is ABSENCE, not a queue with zero traffic (recording it would make every rep appear to staff every queue), and per-queue reading is opt-in because the three pre-Phase-1 callers cache their assembled payloads (INV-85). Verify: the Phase-1 pins (attributed-subtotal-not-substitute, zero/blank skipped, opt-in call-site count — all bite-checked) + `test_metrics_csrTransferQueues_optInAndTransparent` | Subsystem: Server
 
 ### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
 
