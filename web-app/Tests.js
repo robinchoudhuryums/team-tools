@@ -2698,40 +2698,42 @@ function test_getPtoReconciliation_nonManagerRejected() {
 function test_fixPtoReconciliation_creditsAndIdempotent() {
   _clearTestState(_TEST_PH_ID);
   const sheet = getOrCreateTimeOffSheet_();
-  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', '2099-01-01 09:00:00']);
-  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', '2099-01-01 09:00:01']);
-  SpreadsheetApp.flush();
-  // Sheets coerces the appended SubmittedAt strings to Dates; updateTimeOffStatus
-  // now matches normalizeAuditTs_(cell) (M1), so read the keys BACK the same
-  // way the production flow does (the dashboard sends the normalized string to
-  // the client, which echoes it on approve).
-  const lastRowIdx = sheet.getLastRow();
-  const stored = sheet.getRange(lastRowIdx - 1, TO.SUBMITTED_AT + 1, 2, 1).getValues();
-  const sa1 = normalizeAuditTs_(stored[0][0]), sa2 = normalizeAuditTs_(stored[1][0]);
-  const before = _getBalance(_TEST_PH_ID, 'annual');
-  // CYCLE 11 M-1 / INV-94: the dup-date guard now ALSO runs on the →Approved
-  // transition, so the second updateTimeOffStatus call is CORRECTLY rejected —
-  // that guard is the last thing that could still CREATE this damage. The
-  // fixture therefore has to reproduce the state the way it actually exists in
-  // production: one legitimate approval through the front door, plus a LEGACY
-  // duplicate written directly to the sheet (pre-INV-94 rows are exactly that),
-  // with its deduction applied by hand. Approving row 2 through the endpoint is
-  // no longer a reachable path and must not be used to build the fixture.
+  // CYCLE 11 M-1 / INV-94 — the dup-date guard runs on the →Approved transition
+  // and excludes ONLY the row being approved. So TWO Pending rows on one date
+  // make even the FIRST approval fail: approving row 1 sees row 2 sitting
+  // Pending on the same date and refuses. (The earlier fix here assumed only
+  // the SECOND call was blocked; it was not, and the test still failed.)
   //
-  // fixPtoReconciliation is unaffected by how the rows got there: it re-scans
-  // in-lock and keys on (rep, date) Approved-row count.
+  // The fixture must therefore never hold two ACTIVE rows on the date at the
+  // moment it calls the endpoint. It builds the H1 damage the way it actually
+  // exists in production instead: ONE legitimate approval through the front
+  // door, then a LEGACY duplicate written straight to the sheet (pre-INV-94
+  // rows are exactly that) with its deduction applied by hand.
+  // fixPtoReconciliation does not care how the rows got there — it re-scans
+  // in-lock and keys on the (rep, date) Approved-row count.
+  //
+  // M-1's own rejection is covered by test_updateTimeOff_dupApproveRejected;
+  // duplicating it here would only re-introduce the two-active-rows state this
+  // test has to avoid.
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Pending', '2099-01-01 09:00:00']);
+  SpreadsheetApp.flush();
+  // Sheets coerces the appended SubmittedAt string to a Date; updateTimeOffStatus
+  // matches normalizeAuditTs_(cell) (M1), so read the key BACK the same way the
+  // production flow does (the dashboard sends the normalized string to the
+  // client, which echoes it on approve).
+  const pendingRow = sheet.getLastRow();
+  const sa1 = normalizeAuditTs_(sheet.getRange(pendingRow, TO.SUBMITTED_AT + 1).getValue());
+  const before = _getBalance(_TEST_PH_ID, 'annual');
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa1, 'Approved'));
-    const dup = updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa2, 'Approved');
-    _assertEq(dup.success, false, 'INV-94 M-1: the second same-date approval is rejected');
-    _assertContains(dup.error, 'double-book');
   });
-  // Now forge the legacy duplicate: flip row 2 to Approved directly and apply
-  // the deduction it would have taken before the guard existed.
-  sheet.getRange(lastRowIdx, TO.STATUS + 1).setValue('Approved');
+  _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 1.0, 0.001, 'the legitimate approval deducted 1');
+  // Forge the legacy duplicate: an already-Approved row plus the deduction it
+  // would have taken before the guard existed. adjustLeaveBalance_ invalidates
+  // the roster cache itself.
+  sheet.appendRow([_TEST_PH_ID, 'Test PH User', _TEST_DATE_FUTURE, 'Full Day', '', 'Approved', '2099-01-01 09:00:01']);
   SpreadsheetApp.flush();
   adjustLeaveBalance_(_TEST_PH_ID, 'annual', -1.0);
-  invalidateRosterCache_();
   _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 2.0, 0.001, 'double-deducted by 2');
 
   let res;
