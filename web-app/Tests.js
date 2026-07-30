@@ -938,6 +938,7 @@ function _runAllTests() {
   _integrationTest('punchAdjust_approveAgedPastWindowRejected', test_punchAdjust_approveAgedPastWindowRejected);
   _integrationTest('recordPunch_immediateAdjustGatedByFlag',   test_recordPunch_immediateAdjustGatedByFlag);
   _integrationTest('managerSaveDayRange_appliesAcrossDays',    test_managerSaveDayRange_appliesAcrossDays);
+  _integrationTest('managerSaveDayRange_rejectsFutureTimeToday', test_managerSaveDayRange_rejectsFutureTimeToday);
   _integrationTest('managerSaveDayRange_nonManagerRejected',   test_managerSaveDayRange_nonManagerRejected);
   _integrationTest('reconcileCallNotes_nonManagerRejected',    test_reconcileCallNotes_nonManagerRejected);
   _integrationTest('reconcileCallNotes_backfillsHandEntered',  test_reconcileCallNotes_backfillsHandEntered);
@@ -1808,7 +1809,15 @@ function test_managerSaveDayRange_appliesAcrossDays() {
   const isoCt = function (offsetDays) {
     return Utilities.formatDate(new Date(Date.now() + offsetDays * 86400000), CONFIG.TIMEZONE, 'yyyy-MM-dd');
   };
-  const from = isoCt(-2), to = isoCt(0);
+  // The window deliberately ENDS YESTERDAY. It used to end today, which made
+  // this test TIME-OF-DAY DEPENDENT and silently flaky since cycle 9: the L-4
+  // guard rejects a same-day slot time that is still in the FUTURE in the
+  // TARGET employee's tz, and the target here is PH (Asia/Manila) while the
+  // range is computed in CONFIG.TIMEZONE (Asia/Kolkata) — so a run before
+  // 09:00 Manila failed on a correct guard. Nothing about INV-108 (additive
+  // application across days) needs today to be in the window; the guard itself
+  // is pinned deterministically by the sibling test below.
+  const from = isoCt(-3), to = isoCt(-1);
   let res;
   _asUser(_TEST_MGR_EMAIL, () => {
     res = managerSaveDayRange(_TEST_PH_ID, from, to, { ClockIn: '09:00', LunchOut: '', LunchIn: '', ClockOut: '' }, 'range test');
@@ -1818,6 +1827,37 @@ function test_managerSaveDayRange_appliesAcrossDays() {
   _assertEq(res.punchesWritten, 3, 'one punch written per day');
   _assertNotNull(findExistingPunch_(_TEST_PH_ID, from, 'ClockIn'), 'ClockIn written on the from-date');
   _assertNotNull(findExistingPunch_(_TEST_PH_ID, to, 'ClockIn'), 'ClockIn written on the to-date');
+}
+
+/** INV-05 / cycle-9 L-4 — a range ending TODAY must reject a slot time that is
+ *  still in the future in the TARGET employee's tz. This guard had NO test: the
+ *  only thing exercising it was the accidental, time-of-day-dependent failure
+ *  of the sibling test above, which is not coverage. Deterministic by deriving
+ *  the future time FROM the target's own clock; honestly SKIPs near midnight
+ *  there (cycle-8 M-14: a skip is recorded as SKIP, never as a pass). */
+function test_managerSaveDayRange_rejectsFutureTimeToday() {
+  _clearTestState(_TEST_PH_ID);
+  const emp = lookupEmployeeById_(_TEST_PH_ID);
+  if (!emp) { _skipTest('PH test employee not provisioned'); }
+  const tz = empTz_(emp);
+  const nowHour = parseInt(Utilities.formatDate(new Date(), tz, 'H'), 10);
+  if (nowHour > 21) { _skipTest('within 2h of midnight in ' + tz + ' — no headroom for a same-day future time'); }
+  const todayThere = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  const futureHH = String(nowHour + 2).padStart(2, '0') + ':00';
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const r = managerSaveDayRange(_TEST_PH_ID, todayThere, todayThere,
+      { ClockIn: futureHH, LunchOut: '', LunchIn: '', ClockOut: '' }, 'future guard test');
+    _assertEq(r.success, false, 'a future same-day slot time is rejected');
+    _assertContains(r.error, 'future time today');
+  });
+  // The SAME range with a past time must still be accepted — otherwise the
+  // guard would be rejecting on the date rather than the time.
+  const pastHH = String(Math.max(0, nowHour - 1)).padStart(2, '0') + ':00';
+  _asUser(_TEST_MGR_EMAIL, () => {
+    const ok = managerSaveDayRange(_TEST_PH_ID, todayThere, todayThere,
+      { ClockIn: pastHH, LunchOut: '', LunchIn: '', ClockOut: '' }, 'past time control');
+    _assertSuccess(ok);
+  });
 }
 
 function test_managerSaveDayRange_nonManagerRejected() {
@@ -2652,10 +2692,29 @@ function test_fixPtoReconciliation_creditsAndIdempotent() {
   const stored = sheet.getRange(lastRowIdx - 1, TO.SUBMITTED_AT + 1, 2, 1).getValues();
   const sa1 = normalizeAuditTs_(stored[0][0]), sa2 = normalizeAuditTs_(stored[1][0]);
   const before = _getBalance(_TEST_PH_ID, 'annual');
+  // CYCLE 11 M-1 / INV-94: the dup-date guard now ALSO runs on the →Approved
+  // transition, so the second updateTimeOffStatus call is CORRECTLY rejected —
+  // that guard is the last thing that could still CREATE this damage. The
+  // fixture therefore has to reproduce the state the way it actually exists in
+  // production: one legitimate approval through the front door, plus a LEGACY
+  // duplicate written directly to the sheet (pre-INV-94 rows are exactly that),
+  // with its deduction applied by hand. Approving row 2 through the endpoint is
+  // no longer a reachable path and must not be used to build the fixture.
+  //
+  // fixPtoReconciliation is unaffected by how the rows got there: it re-scans
+  // in-lock and keys on (rep, date) Approved-row count.
   _asUser(_TEST_MGR_EMAIL, () => {
     _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa1, 'Approved'));
-    _assertSuccess(updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa2, 'Approved'));
+    const dup = updateTimeOffStatus(_TEST_PH_ID, _TEST_DATE_FUTURE, sa2, 'Approved');
+    _assertEq(dup.success, false, 'INV-94 M-1: the second same-date approval is rejected');
+    _assertContains(dup.error, 'double-book');
   });
+  // Now forge the legacy duplicate: flip row 2 to Approved directly and apply
+  // the deduction it would have taken before the guard existed.
+  sheet.getRange(lastRowIdx, TO.STATUS + 1).setValue('Approved');
+  SpreadsheetApp.flush();
+  adjustLeaveBalance_(_TEST_PH_ID, 'annual', -1.0);
+  invalidateRosterCache_();
   _assertEqClose(_getBalance(_TEST_PH_ID, 'annual'), before - 2.0, 0.001, 'double-deducted by 2');
 
   let res;

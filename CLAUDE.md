@@ -1712,7 +1712,26 @@ this section before touching the relevant area.
   `TEST_CDR_SS_ID`) for the Metrics integration tests; `getCdrSS_`
   honors a `_TEST_OVERRIDE_CDR_SS_ID` global so those tests read the
   fixture instead of the real CDR Report (`_withTestCdr_` resets the
-  in-memory + CacheService CDR caches around each). **Mid-body skips
+  in-memory + CacheService CDR caches around each). **Two editor-test hazards, both found by the cycle-14 run
+  after `runAllTests` had not been run since cycle 10.** (a) **A test that
+  writes "today" in a TARGET employee's tz is time-of-day dependent.**
+  `managerSaveDayRange_appliesAcrossDays` built its range in `CONFIG.TIMEZONE`
+  (Asia/Kolkata) but targeted the PH employee, and the INV-05/L-4 guard
+  evaluates "is this slot time still in the future" in the TARGET's tz — so any
+  run before 09:00 Manila failed on a CORRECT guard. It had been silently flaky
+  since cycle 9. Windows that don't need today should end YESTERDAY; a test that
+  genuinely needs the boundary must derive its times from the target's own clock
+  and SKIP near midnight there. (b) **A fix that closes a creation path breaks
+  every test that used that path to build its fixture.** Cycle 11's M-1 (the
+  INV-94 dup-date guard extended to the →Approved transition) made
+  `fixPtoReconciliation_creditsAndIdempotent`'s setup unreachable — the test
+  approved two same-date rows to simulate the legacy H1 damage the repair
+  endpoint exists to undo. Such a fixture must now forge the legacy row
+  DIRECTLY (sheet write + manual `adjustLeaveBalance_`), which is also more
+  faithful: that is how the damage exists in production. This is the
+  "update the test doubles as part of the fix" rule — it was missed, and the
+  editor-only suite meant three cycles passed before anyone saw it.
+  **Mid-body skips
   are honest (cycle-8 M-14):** a test whose fixture/optional config is
   unavailable calls `_skipTest(reason)` — recorded as SKIP, never PASS
   (13 sites used to `_assertTrue(true, '…skipped')`, inflating the
