@@ -5270,6 +5270,69 @@ test('Phase 0: cdrQueueInventory_ is read-only, bounded and PHI-free', () => {
     'the DQE read stays narrow (DATE/AGENT/QUEUE_EXT only)');
 });
 
+// ── Phase 1 (sub-queue, transfer-only) ──────────────────────────────────────
+console.log('\nPhase 1 — transfer-only per-queue attribution');
+
+// Columns are read BY HEADER NAME, which is what makes a reorder inside the
+// H:R block self-correcting and avoids a hardcoded queue list that could drift
+// against the operator-owned call-data-reporting repo.
+test('Phase 1: queue columns are discovered from the header row, blanks skipped', () => {
+  const fn = extractRawFunction('Code.js', 'csrTransferQueueColumns_');
+  // Read the REAL bounds out of Code.js rather than injecting literals — an
+  // injected 7/17 cannot notice the constants moving, which is exactly the
+  // drift this test is for (bite-checked: widening LAST to 18 now fails here).
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const first = Number((src.match(/const CSRT_QUEUE_COL_FIRST = (\d+);/) || [])[1]);
+  const last = Number((src.match(/const CSRT_QUEUE_COL_LAST = (\d+);/) || [])[1]);
+  assert.strictEqual(first, 7, 'the queue block starts at column H (0-indexed 7)');
+  assert.strictEqual(last, 17, 'the queue block ends at column R (0-indexed 17) — 18 is Comments');
+  const csrTransferQueueColumns_ = new Function(
+    'CSRT_QUEUE_COL_FIRST', 'CSRT_QUEUE_COL_LAST',
+    fn + '; return csrTransferQueueColumns_;')(first, last);
+
+  const hdr = new Array(19).fill('');
+  hdr[7] = 'A_Q_Sales'; hdr[8] = '  '; hdr[9] = 'A_Q_Billing'; hdr[17] = 'A_Q_Denials';
+  assert.deepStrictEqual(csrTransferQueueColumns_(hdr),
+    [{ col: 7, queue: 'A_Q_Sales' }, { col: 9, queue: 'A_Q_Billing' }, { col: 17, queue: 'A_Q_Denials' }],
+    'blank and whitespace-only headers are skipped; the rest keep their column index');
+  // Columns OUTSIDE H:R must never be treated as queues — col 6 is
+  // "Total Calls Transferred" and col 18 is Comments.
+  const wide = new Array(19).fill('');
+  wide[6] = 'Total Calls Transferred'; wide[18] = 'Comments';
+  assert.deepStrictEqual(csrTransferQueueColumns_(wide), [], 'the block is bounded to H:R');
+  assert.deepStrictEqual(csrTransferQueueColumns_(null), [], 'a missing header row degrades to no queues');
+});
+
+// The opt-in default is the whole compatibility story: three production callers
+// pass 3 args, and their assembled results are CACHED. If the default flipped
+// on, those payloads would change shape without an INV-85 cache bump.
+test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 args', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  assert.ok(/function getCsrTransferPerRepDaily_\(from, to, rosterNames, opts\) \{\s*\n\s*const withQueues = !!\(opts && opts\.withQueues\);/.test(src),
+    'withQueues defaults OFF');
+  // Every call site, excluding the definition itself.
+  const calls = (src.match(/getCsrTransferPerRepDaily_\((?!from, to, rosterNames, opts)/g) || []).length;
+  const optedIn = (src.match(/getCsrTransferPerRepDaily_\([^)]*\{ withQueues: true \}\)/g) || []).length;
+  assert.strictEqual(calls - optedIn, 3,
+    'exactly the 3 pre-Phase-1 callers remain 3-arg (getDashboardMetrics x2 + the getMyMetrics trend)');
+  assert.strictEqual(optedIn, 1, 'exactly one caller opts in — the admin queue inventory');
+});
+
+// The counts are a COMPONENT of `transferred`, not a partition of it: a real
+// sheet routes some transfers to destinations with no A_Q_ column. Deriving the
+// total by summing queues would silently under-report.
+test('Phase 1: the attributed subtotal is reported alongside the total, never instead of it', () => {
+  const fn = extractRawFunction('Code.js', 'getCsrTransferPerRepDaily_');
+  assert.ok(/a\.queueTotal = qt;/.test(fn), 'queueTotal is the summed attribution');
+  assert.ok(/a\.queueUnattributed = Math\.max\(0, a\.transferred - qt\);/.test(fn),
+    'the remainder is reported, so a partial breakdown cannot read as complete');
+  assert.ok(!/a\.transferred = qt|transferred = .*queueTotal/.test(fn),
+    'transferred is NEVER derived from the queue sum');
+  // A zero or blank cell is absence, not a queue with zero traffic — otherwise
+  // every rep would appear to staff every queue.
+  assert.ok(/if \(!isFinite\(n\) \|\| n === 0\) continue;/.test(fn), 'zero and non-numeric cells are skipped');
+});
+
 // A13: the three section-heading classes render as real <h2>s, so heading
 // navigation — the primary way a screen-reader user moves through a dense page
 // — works below the view's <h1>. They were <div>/<span>, so every view had a
