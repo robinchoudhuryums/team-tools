@@ -485,14 +485,26 @@ const CDR_EXPECTED_HEADERS = {
 // Transfer %, Total Calls, Total Calls Transferred, then per-queue A_Q_* counts
 // (H:R), Comments. Date is M/D/YYYY (handled by cdrRowDateIso_) and Transfer %
 // is a "29.79%" string — both read via getDisplayValues() per the CDR
-// spreadsheet-tz gotcha (INV-64). Only the first columns feed the trend; the
-// per-queue H:R block is still read-but-ignored by THIS reader (the range is
-// fetched either way, so using it later costs nothing). Since cycle 14's
-// Phase 0 it is no longer wholly unread: `cdrQueueInventory_` reports which of
-// those columns carry data, as input to the sub-queue feature's design.
+// spreadsheet-tz gotcha (INV-64). The first columns feed the trend; the
+// per-queue H:R block is read on demand by this same reader via
+// `opts.withQueues` (cycle-14 Phase 1) — it is the ONLY place per-queue REP
+// attribution exists, because Phase 0 proved DQE carries one row per
+// (agent, date). Phase 0's `cdrQueueInventory_` also reports which of those
+// columns carry data. The range is fetched either way, so reading them costs
+// nothing extra.
 const CSR_TRANSFER_TAB = 'CSR Transfer Historical Data';
 const CSRT = { DATE: 2, NAME: 3, TRANSFER_PCT: 4, TOTAL_CALLS: 5, TRANSFERRED: 6 };
 const CSR_TRANSFER_NUM_COLS = 19;   // A:S
+// Phase 1 (sub-queue, transfer-only) — the per-queue block. Phase 0's inventory
+// confirmed DQE carries ONE row per (agent, date), so answered/missed/talk-time
+// can NEVER be split by queue. The Transfer tab is the one place per-queue REP
+// attribution exists: it is keyed by `CSR Rep Name` and columns H:R hold a
+// per-queue transferred count. Those columns are read BY HEADER NAME, not by a
+// hardcoded list — the headers are written by the operator-owned
+// call-data-reporting repo, so name-reading is self-correcting under a reorder
+// and needs no parallel source of truth to drift. (0-indexed 7..17.)
+const CSRT_QUEUE_COL_FIRST = 7;
+const CSRT_QUEUE_COL_LAST = 17;
 // Phase 0 (sub-queue discovery) — bounds for the READ-ONLY queue inventory
 // rendered in Admin → Automation Health. Tail-bounded like every other
 // diagnostic reader here; the payload cap keeps a sheet with dozens of queues
@@ -13701,7 +13713,25 @@ function validateCsrTransferColumns_(sheet) {
   return _csrTransferWarning;
 }
 
-function getCsrTransferPerRepDaily_(from, to, rosterNames) {
+/** Reads the H:R header row into `[{col, queue}]`, skipping blanks. Pure given
+ *  the header array so it unit-tests without a sheet. Reading by NAME is what
+ *  makes a reorder inside the block self-correcting. */
+function csrTransferQueueColumns_(headers) {
+  const out = [];
+  if (!headers) return out;
+  for (let c = CSRT_QUEUE_COL_FIRST; c <= CSRT_QUEUE_COL_LAST; c++) {
+    const name = String(headers[c] == null ? '' : headers[c]).trim();
+    if (name) out.push({ col: c, queue: name });
+  }
+  return out;
+}
+
+/** Phase 1 — `opts.withQueues` adds per-queue transfer counts. DEFAULT OFF, so
+ *  the three existing 3-arg callers (getDashboardMetrics ×2, getMyMetrics's
+ *  trend) are byte-identical and their cached payloads keep their shape (no
+ *  INV-85 bump needed). */
+function getCsrTransferPerRepDaily_(from, to, rosterNames, opts) {
+  const withQueues = !!(opts && opts.withQueues);
   const ss = getCdrSS_();
   const sheet = ss.getSheetByName(CSR_TRANSFER_TAB);
   if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
@@ -13711,6 +13741,10 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames) {
   if (lastRow < 2) return { perRepDaily: {}, agents: {}, meta: { columnWarning: colWarning } };
   const range = sheet.getRange(2, 1, lastRow - 1, CSR_TRANSFER_NUM_COLS);
   const displays = range.getDisplayValues();
+  // Header row is a separate 1-row read — the data range starts at row 2.
+  const queueCols = withQueues
+    ? csrTransferQueueColumns_(sheet.getRange(1, 1, 1, CSR_TRANSFER_NUM_COLS).getDisplayValues()[0])
+    : [];
   const aliasMap = getCdrNameMap_();
   const useRoster = rosterNames && rosterNames.length > 0;
   const nameSet = {};
@@ -13749,13 +13783,51 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames) {
     const a = agents[name];
     a.totalCalls += totalCalls; a.transferred += transferred;
     if (!a._days[dateIso]) { a._days[dateIso] = true; a.daysActive++; }
+    // Phase 1 — per-queue counts, ACCUMULATED on collision exactly like the
+    // two totals above (the cycle-9 L-14 rule: an alias row + a raw row
+    // collapsing to one canonical (rep, date) must not make the per-day shape
+    // and the range aggregate disagree).
+    if (withQueues && queueCols.length) {
+      const prd = perRepDaily[dateIso][name];
+      if (!prd.queues) prd.queues = {};
+      if (!a.queues) a.queues = {};
+      for (let q = 0; q < queueCols.length; q++) {
+        const qn = queueCols[q].queue;
+        const cell = String(displays[i][queueCols[q].col] || '').replace(/,/g, '').trim();
+        if (cell === '') continue;
+        const n = Number(cell);
+        if (!isFinite(n) || n === 0) continue;
+        prd.queues[qn] = (prd.queues[qn] || 0) + n;
+        a.queues[qn] = (a.queues[qn] || 0) + n;
+      }
+    }
   }
   Object.keys(agents).forEach(function (k) {
     const a = agents[k];
     a.transferPct = a.totalCalls > 0 ? Math.round((a.transferred / a.totalCalls) * 1000) / 10 : null;
     delete a._days;
+    // TRANSPARENCY (the operator's actual ask): the per-queue counts are a
+    // COMPONENT of `transferred`, not a partition of it — the sheet may route
+    // transfers somewhere that has no A_Q_ column. Reporting the attributed
+    // subtotal alongside the total lets the UI say "N of M attributed" rather
+    // than implying the breakdown is complete. NEVER derive `transferred` by
+    // summing queues.
+    if (withQueues) {
+      a.queues = a.queues || {};
+      let qt = 0;
+      Object.keys(a.queues).forEach(function (q) { qt += a.queues[q]; });
+      a.queueTotal = qt;
+      a.queueUnattributed = Math.max(0, a.transferred - qt);
+    }
   });
-  return { perRepDaily: perRepDaily, agents: agents, meta: { columnWarning: colWarning } };
+  const meta = { columnWarning: colWarning };
+  if (withQueues) {
+    meta.queueColumns = queueCols.map(function (q) { return q.queue; });
+    // An empty block is worth surfacing: it means the H:R headers are blank,
+    // which reads identically to "no transfers" unless we say so.
+    if (!queueCols.length) meta.queueWarning = 'No per-queue headers found in columns H:R of ' + CSR_TRANSFER_TAB + '.';
+  }
+  return { perRepDaily: perRepDaily, agents: agents, meta: meta };
 }
 
 /** PHASE 0 (sub-queue work) — READ-ONLY queue inventory over the CDR feed.
@@ -13880,6 +13952,36 @@ function cdrQueueInventory_(from, to) {
       }
     } catch (trErr) {
       out.transferError = trErr.message;   // best-effort — the DQE half still reports
+    }
+
+    // PHASE 1 consumer. The occupancy counts above answer "do these columns
+    // carry data at all" over a long tail; this answers "how many transfers
+    // landed in each queue IN THE WINDOW, and how many reps contributed" —
+    // and it does so through the REAL reader, so the production code path is
+    // exercised on live data rather than only by fixtures. Costs one extra
+    // read of the Transfer tab on an admin panel that already does a
+    // 34-column full-sheet DQE read; best-effort like everything else here.
+    try {
+      const tr = getCsrTransferPerRepDaily_(from, to, null, { withQueues: true });
+      const totals = {}, reps = {};
+      const ag = tr.agents || {};
+      Object.keys(ag).forEach(function (nm) {
+        const qs = ag[nm].queues || {};
+        Object.keys(qs).forEach(function (q) {
+          totals[q] = (totals[q] || 0) + qs[q];
+          if (!reps[q]) reps[q] = {};
+          reps[q][nm] = true;
+        });
+      });
+      out.transferQueueTotals = Object.keys(totals).map(function (q) {
+        return { queue: q, transferred: totals[q], reps: Object.keys(reps[q]).length };
+      }).sort(function (a, b) { return b.transferred - a.transferred; }).slice(0, CDR_QUEUE_LIST_CAP);
+      out.transferQueueMeta = {
+        columns: (tr.meta && tr.meta.queueColumns) || [],
+        warning: (tr.meta && tr.meta.queueWarning) || null,
+      };
+    } catch (qErr) {
+      out.transferQueueError = qErr.message;
     }
 
     out.ok = true;

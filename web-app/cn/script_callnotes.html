@@ -8764,6 +8764,24 @@ function cnQueueInventoryHtml_(q) {
     h += '<div style="font-size:12px;color:var(--warning-deep);margin-top:4px">' + icon('warning', 11) +
       ' Transfer tab not read: ' + esc(q.transferError) + '</div>';
   }
+  // PHASE 1 — windowed per-queue transfer totals, from the real reader. This is
+  // the attribution that DOES exist: the Transfer tab is per-rep, so these are
+  // splittable by rep, which the DQE metrics are not.
+  if (q.transferQueueError) {
+    h += '<div style="font-size:12px;color:var(--warning-deep);margin-top:4px">' + icon('warning', 11) +
+      ' Per-queue transfer read failed: ' + esc(q.transferQueueError) + '</div>';
+  } else if (q.transferQueueTotals) {
+    h += rows('Transfers by queue · in window', q.transferQueueTotals, function (x) {
+      return '<div style="min-width:0;overflow-wrap:anywhere">' + esc(x.queue) + '</div>' +
+        '<div style="font-family:var(--mono);color:var(--muted);white-space:nowrap">' +
+        esc(x.transferred) + ' transferred · ' + esc(x.reps) + ' rep</div>';
+    });
+    var tqm = q.transferQueueMeta || {};
+    if (tqm.warning) {
+      h += '<div style="font-size:12px;color:var(--warning-deep);margin-top:4px">' + icon('warning', 11) +
+        ' ' + esc(tqm.warning) + '</div>';
+    }
+  }
   h += '<div style="font-size:11px;color:var(--muted);margin-top:8px">Scanned ' + esc(q.rowsScanned) +
     ' row(s), ' + esc(q.rowsInWindow) + ' in window' + (q.truncated ? ' · <strong>capped</strong> — older rows not scanned' : '') + '.</div>';
   return h;

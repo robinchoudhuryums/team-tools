@@ -3,7 +3,7 @@
 ## Current
 Cycle: 14
 Phase: implement
-Scope: CDR sub-queue feature (operator-requested; Phase 0 of 4)
+Scope: CDR sub-queue feature (operator-requested; Phase 0 + re-scoped Phase 1 done)
 Test Command: manual
 Subsystem cycles since last Seams audit: 3 (cycle 11 was the seams audit;
   /reflect increments — cadence is every 4, so 1 more subsystem cycle before
@@ -22,9 +22,20 @@ Updated: 2026-07-29
   MANAGER SURFACES ONLY (which removes the INV-124 per-queue anonymization
   problem entirely); view shape = expandable per-queue rows PLUS segmented
   contribution bars.
-- Phase 0 is IMPLEMENTED and pushed. Phases 1–4 are unstarted.
-- Next concrete step: the operator deploys and reads the queue inventory in
-  Manage → Admin → Automation Health. **That output gates Phase 1.**
+- Phase 0 IMPLEMENTED, DEPLOYED, and its GATE HAS REPORTED. Verdict: **DQE
+  carries ONE row per (agent, date)** — so answered/missed/%answered/talk-time
+  can NEVER be split by queue. Col 4 turned out to hold comma-separated
+  MEMBERSHIP lists (`103,108`, and `108,103` — same set, different order), a
+  dimension of the agent, not of the call.
+- **But the Transfer tab CAN be split**: it is keyed by `CSR Rep Name` and its
+  H:R block has 11 real queues (406–2886 populated rows each). The operator
+  approved re-scoping to TRANSFER-ONLY, and **Phase 1 is now IMPLEMENTED** on
+  that basis.
+- Phase 2 (the UI half) is unstarted. Phase 4 (Admin editor) is moot unless
+  Phase 2 needs grouping.
+- Next concrete step: decide whether to build Phase 2 (the Team Metrics scope
+  switcher on the Transfer KPI). The data layer is ready and has a live
+  consumer in the admin panel.
 
 ## Completed this cycle
 - Phase 0 | Code.js | NEW read-only `cdrQueueInventory_(from,to)` — distinct QUEUE_EXT values (col 4, declared since the CDR enum and read NOWHERE until now), the skipped A_Q_*/Backup CSR aggregates, which Transfer H:R columns carry data, and rows-per-(agent,date) — the gate question
@@ -48,21 +59,25 @@ Updated: 2026-07-29
   `INSTANCE_IS_PROD=false`.** An unset value now reads as production, so without
   it devScrubRoster_/devShowConfig_ refuse and the nightly self-test drops to
   smoke (visibly). PROD is unaffected.
-- Phase 1 (~1 day) — queue-aware readers behind an opt-in argument (existing
-  callers byte-identical); `CDR_QUEUE_GROUPS` Script Property for the
-  queue→department mapping (sanitize-on-read, the DR_SLA_TARGETS pattern, so
-  `call-data-reporting` needs no change); add col 4 + H:R to the header
-  validators; bump `CDR_CACHE_KEY` (INV-85); multi-queue rows in the CDR fixture.
-- Phase 2 (~1 day) — Team Metrics scope switcher (Combined / By department /
-  By queue) with expandable per-queue rows + segmented contribution bars,
-  reusing `mtRenderTable_` and its `rowClass` hook.
-- Phase 4 (~½ day, deferrable) — Admin editor for the mapping.
-- Phase 3 was DROPPED with the manager-only scope decision.
+- Phase 2 (~1 day, UNSTARTED — the remaining half of the ask) — Team Metrics
+  scope switcher on the TRANSFER KPI, with expandable per-queue rows +
+  segmented contribution bars, reusing `mtRenderTable_` and its `rowClass`
+  hook. The data layer is ready; nothing rep- or manager-facing shows queues
+  yet outside the admin panel.
+- Phase 3 was DROPPED with the manager-only scope decision. Phase 4 (Admin
+  editor for grouping) is moot unless Phase 2 needs grouping.
+- Re-run `runAllTests()` — `metrics_csrTransferQueues_optInAndTransparent`
+  executes ONLY in the editor. Expect 284 total, 0 failed.
 
 ## Open follow-on items
-- The CDR fixture writes one row per agent with NO queue, so no test exercises
-  the multi-queue path. Extend it in Phase 1, where there is aggregation logic
-  worth protecting.
+- **Queue GROUPING was deliberately NOT built in Phase 1.** Plausible groupings
+  are inferable from the names (FieldOps + FieldOps_Power, PowerChairs +
+  Manual_Mobility) but that is a GUESS about the operator's business, and an
+  empty-by-default Script Property plus an Admin editor with no consumer would
+  be dead code twice over. It belongs in Phase 2, where the "By department"
+  switcher makes it load-bearing and the operator can confirm the groupings.
+- The DQE `A_Q_*` sentinel rows remain unused — 8 queues / 12 rows in a week is
+  too sparse to build a series on.
 - FO-6 (the remaining TimesheetArchive readers) — carried from cycle 13,
   ANALYSED and DEFERRED, and the analysis is the point:
     • `buildTimesheetForEmployee_` and `getPunctualityReport` SHOULD read through
@@ -97,19 +112,21 @@ Updated: 2026-07-29
   cross-repo change.
 
 ## Where I left off
-Phase 0 is implemented, tested (379 pure + 66 DOM, all four new pins
-bite-checked), documented and pushed to `claude/broad-scan-yhkbe2`. Block:
-`.cycle/blocks/14-phase0-broad-implement.md`. Nothing else in the feature is
-started.
+Phase 0 AND the re-scoped Phase 1 are implemented and tested (382 pure + 66 DOM,
+all four Phase-1 pins bite-checked — one needed tightening because it injected
+literal column bounds instead of reading them). Blocks:
+`.cycle/blocks/14-phase0-broad-implement.md` and
+`14-phase1-transfer-only-broad-implement.md`.
 
-**Phase 0 is a GATE, and the deploy is how it reports.** After deploying, read
-Manage → Admin → Automation Health → "Queue inventory · discovery":
-- If it says **per-queue rep attribution IS available**, proceed to Phase 1 as
-  planned.
-- If it says **NOT in this data**, the approved design (per-queue splits of REP
-  numbers) cannot be built as specified and the feature becomes queue-health
-  from the `A_Q_*` aggregates — closer to the dedicated-Queues-tab option the
-  operator did not pick. **Take that back to the operator; do not silently
-  redesign.**
-- If it says **cannot be determined**, the 7-day window had no rows — check the
-  feed before concluding anything.
+**The gate has already reported — do not re-run it as if undecided.** DQE is one
+row per (agent, date); per-queue splits of answered/missed/talk-time are
+impossible and any future request for them should be answered "not in this
+data". Per-queue attribution exists ONLY for transfers, via the Transfer tab's
+H:R block, which Phase 1 now reads (opt-in, header-name-driven, with the
+attributed subtotal reported alongside the total so a partial breakdown cannot
+read as complete).
+
+Next: decide on Phase 2 (the Team Metrics switcher on the Transfer KPI). Also
+outstanding — CLAUDE.md has NOT yet been updated with the Phase 1 contract
+(that is /sync-docs' job), INV-177/178/179 are still unwritten to the library,
+and on the DEV project only, `INSTANCE_IS_PROD=false` is still unset.

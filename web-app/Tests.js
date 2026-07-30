@@ -528,20 +528,36 @@ function _setupTestCdrFixture_() {
   const mdyyyy = _TEST_CDR_DATE.replace(/^(\d{4})-(\d{2})-(\d{2})$/, function (m, y, mo, d) {
     return parseInt(mo, 10) + '/' + parseInt(d, 10) + '/' + y;   // 2026-05-15 -> 5/15/2026
   });
-  const mkTRow = function (name, pctStr, totalCalls, transferred) {
+  // PHASE 1 — the fixture now carries a per-queue H:R block. Before this it had
+  // NONE, so nothing could catch a queue-aggregation bug. `queues` is
+  // {queueName: count} keyed by the header names below; the counts deliberately
+  // sum to LESS than `transferred` so the queueTotal/queueUnattributed
+  // transparency contract is actually exercised (a real sheet routes some
+  // transfers to destinations with no A_Q_ column).
+  const _TQ_HEADERS = ['A_Q_Sales', 'A_Q_Billing', 'A_Q_Spanish'];
+  const mkTRow = function (name, pctStr, totalCalls, transferred, queues) {
     const r = new Array(CSR_TRANSFER_NUM_COLS).fill('');
     r[CSRT.DATE] = mdyyyy; r[CSRT.NAME] = name; r[CSRT.TRANSFER_PCT] = pctStr;
     r[CSRT.TOTAL_CALLS] = totalCalls; r[CSRT.TRANSFERRED] = transferred;
+    if (queues) {
+      _TQ_HEADERS.forEach(function (qn, k) {
+        if (queues[qn] != null) r[CSRT_QUEUE_COL_FIRST + k] = queues[qn];
+      });
+    }
     return r;
   };
   const theader = new Array(CSR_TRANSFER_NUM_COLS).fill('');
   theader[CSRT.DATE] = 'Date'; theader[CSRT.NAME] = 'CSR Rep Name';
   theader[CSRT.TRANSFER_PCT] = 'Transfer %'; theader[CSRT.TOTAL_CALLS] = 'Total Calls';
   theader[CSRT.TRANSFERRED] = 'Total Calls Transferred';
+  _TQ_HEADERS.forEach(function (qn, k) { theader[CSRT_QUEUE_COL_FIRST + k] = qn; });
   const trows = [
     theader,
-    mkTRow(_TEST_INDIA_NAME, '29.79%', 47, 14),
-    mkTRow(_TEST_PH_NAME,    '10.00%', 20, 2),
+    // 6 + 3 = 9 of India's 14 transfers are queue-attributed (5 unattributed).
+    mkTRow(_TEST_INDIA_NAME, '29.79%', 47, 14, { 'A_Q_Sales': 6, 'A_Q_Billing': 3 }),
+    // 2 of PH's 2 are attributed, and A_Q_Billing is blank rather than 0 —
+    // both "empty cell" and "zero" must be skipped, not counted as a queue.
+    mkTRow(_TEST_PH_NAME,    '10.00%', 20, 2,  { 'A_Q_Spanish': 2, 'A_Q_Sales': 0 }),
   ];
   const trange = tsheet.getRange(1, 1, trows.length, CSR_TRANSFER_NUM_COLS);
   trange.setNumberFormat('@');
@@ -1098,6 +1114,7 @@ function _runAllTests() {
   _integrationTest('metrics_getTeamMetrics_cdrIntegration',     test_metrics_getTeamMetrics_cdrIntegration);
   _integrationTest('metrics_cdrFixture_durationsUseDisplayValues', test_metrics_cdrFixture_durationsUseDisplayValues);
   _integrationTest('metrics_csrTransferFixture_parsesDateAndPercent', test_metrics_csrTransferFixture_parsesDateAndPercent);
+  _integrationTest('metrics_csrTransferQueues_optInAndTransparent', test_metrics_csrTransferQueues_optInAndTransparent);
   _integrationTest('metrics_getTeamMetrics_nonManagerRejected', test_metrics_getTeamMetrics_nonManagerRejected);
   _integrationTest('metrics_getMyMetrics_cdrUnavailableErrors', test_metrics_getMyMetrics_cdrUnavailableErrors);
 
@@ -5818,6 +5835,44 @@ function test_metrics_csrTransferFixture_parsesDateAndPercent() {
     _assertEq(day[_TEST_INDIA_NAME].transferPct, 29.79, "Transfer % string parsed to a number");
     const filtered = getCsrTransferPerRepDaily_(_TEST_CDR_DATE, _TEST_CDR_DATE, ['Nobody Here']);
     _assertTrue(!filtered.perRepDaily[_TEST_CDR_DATE], "roster filter drops non-matching reps");
+  });
+}
+
+/** PHASE 1 (sub-queue, transfer-only) — per-queue transfer attribution is
+ *  OPT-IN and additive. Phase 0 proved DQE cannot be split by queue; the
+ *  Transfer tab can, because it is keyed by rep. */
+function test_metrics_csrTransferQueues_optInAndTransparent() {
+  if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
+  _withTestCdr_(function () {
+    const names = [_TEST_INDIA_NAME, _TEST_PH_NAME];
+    // DEFAULT OFF: the three production callers pass 3 args and must see the
+    // exact shape they saw before Phase 1.
+    const off = getCsrTransferPerRepDaily_(_TEST_CDR_DATE, _TEST_CDR_DATE, names);
+    _assertTrue(off.agents[_TEST_INDIA_NAME].queues === undefined, 'no queues field when not opted in');
+    _assertTrue(off.meta.queueColumns === undefined, 'no queueColumns in meta when not opted in');
+    _assertTrue(off.perRepDaily[_TEST_CDR_DATE][_TEST_INDIA_NAME].queues === undefined,
+      'no per-day queues when not opted in');
+
+    const on = getCsrTransferPerRepDaily_(_TEST_CDR_DATE, _TEST_CDR_DATE, names, { withQueues: true });
+    const ind = on.agents[_TEST_INDIA_NAME];
+    _assertEq(ind.queues['A_Q_Sales'], 6, 'per-queue count read by HEADER NAME');
+    _assertEq(ind.queues['A_Q_Billing'], 3, 'second queue column read');
+    _assertEq(ind.transferred, 14, 'the total is unchanged by the opt-in');
+    // TRANSPARENCY: queues are a COMPONENT of transferred, never a partition.
+    _assertEq(ind.queueTotal, 9, 'attributed subtotal is the sum of the queues');
+    _assertEq(ind.queueUnattributed, 5, '14 transferred - 9 attributed = 5 unattributed');
+
+    const ph = on.agents[_TEST_PH_NAME];
+    _assertEq(ph.queues['A_Q_Spanish'], 2, "the other rep's queue is separate");
+    _assertTrue(ph.queues['A_Q_Sales'] === undefined, 'a ZERO cell is not recorded as a queue');
+    _assertTrue(ph.queues['A_Q_Billing'] === undefined, 'a BLANK cell is not recorded as a queue');
+    _assertEq(ph.queueUnattributed, 0, 'fully attributed rep has no remainder');
+
+    // The per-day shape carries the same breakdown (the UI needs both).
+    _assertEq(on.perRepDaily[_TEST_CDR_DATE][_TEST_INDIA_NAME].queues['A_Q_Sales'], 6,
+      'per-day queues mirror the aggregate');
+    // Columns are DISCOVERED from the header row, so a reorder is self-correcting.
+    _assertTrue(on.meta.queueColumns.indexOf('A_Q_Spanish') >= 0, 'discovered queue headers ride in meta');
   });
 }
 
