@@ -177,6 +177,22 @@
   .kb-related-t { flex: 1; min-width: 0; }
   .kb-related-meta { font-size: .74rem; color: var(--muted); flex-shrink: 0; }
   :root[data-compact] .kb-wrap { grid-template-columns: 1fr; height: auto; max-height: none; }
+  /* F2 (cycle 16) — the A2 rule: `:root[data-compact]` is the POP-OUT, not a
+     viewport breakpoint, and the two triggers are independent. This file had
+     ZERO media queries, so the 280px tree track (a FIXED length — it does not
+     yield) held its full width on a phone and the `1fr` reader absorbed the
+     whole shortfall: MEASURED in Chromium at 390px, .kb-side 280px and
+     .kb-main **70px**. Reference is the mid-call lookup tool every rep uses,
+     so its reader being 70px wide is the whole feature failing on mobile.
+     Stacked, the item cap above still applies per column — each keeps its own
+     internal scroll (the V-9 model: the cap must stay on the ITEMS, never move
+     to the container). */
+  @media (max-width: 720px) {
+    .kb-wrap { grid-template-columns: 1fr; min-height: 0; }
+    /* Stacked, a viewport-tall tree would push the reader entirely below the
+       fold; cap the tree and let the reader take the height it needs. */
+    .kb-wrap > .kb-side { max-height: 45vh; }
+  }
   /* - KB slide-over drawer (shell capability) - sits ABOVE the overlay layer
      (z 50) so it stays readable + usable while the email composer or other
      modals are open (the core focusin trap exempts it); survives Call Notes'

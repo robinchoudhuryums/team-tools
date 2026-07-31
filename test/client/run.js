@@ -4648,6 +4648,87 @@ test('F5: a failed note-count read is reported, never rendered as a confident ze
 });
 
 // ---------------------------------------------------------------------------
+// Cycle-16 F1 / F5 — the SAME rule as F5 above, in the two surfaces it had
+// never reached. The F5 pin enumerates four functions that consume
+// cnCountNotesResult_; managerGetShiftStats counts INLINE (it needs flags,
+// emails and the median too, not just a count), so it was invisible to that
+// list and kept swallowing the per-rep read into totalNotes:0 — a CRIT-toned
+// 0% coverage badge on the manager's end-of-shift performance table, drawn
+// from a failed read. getTeamMetrics nulled its PER-REP coverage but computed
+// the TEAM total unconditionally, so the rail said "partial" while the hint
+// below it said "below 80%".
+console.log('\ncycle 16 — F1 / F5 note-outcome fix pins');
+
+test('F1: managerGetShiftStats carries the read outcome instead of reporting zeros', () => {
+  const fn = extractRawFunction('Code.js', 'managerGetShiftStats');
+  assert.ok(/notesUnavailable: false/.test(fn),
+    'the per-rep stats object declares the outcome field');
+  // The catch must SET it — a console.warn alone is what the bug was.
+  const catchIdx = fn.indexOf('catch (e)');
+  assert.ok(catchIdx > 0, 'the per-rep try/catch is still there');
+  const catchBody = fn.slice(catchIdx, fn.indexOf('}', fn.indexOf('{', catchIdx)) + 1);
+  assert.ok(/stats\.notesUnavailable = true/.test(catchBody),
+    'the per-rep read failure must be RECORDED, not only logged:\n  ' + catchBody.trim());
+  // Coverage is a ratio over a count we may not have.
+  assert.ok(/notesUnavailable\s*\?\s*null\s*:\s*cnNoteCoverage_/.test(fn.replace(/\s+/g, ' ')),
+    'noteCoverage is null when the notes read failed, never a percentage of an unknown');
+  // Client: every column derived from that read renders the unavailable cell.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/function cnStatsUnavailCell_\(/.test(cn), 'the shared unavailable cell exists');
+  const tbl = cn.slice(cn.indexOf('function cnMgrRenderStats_'));
+  const body = tbl.slice(0, tbl.indexOf('\nfunction ', 10));
+  // Anchor on the COLUMN-DEFINITION shape (`key: 'x', label:`). A bare
+  // `key: 'x'` also matches the default-sort object in the same function, which
+  // made this assert read the wrong line entirely (it bit on the first run).
+  ['totalNotes', 'action', 'training', 'review', 'emails', 'median'].forEach((key) => {
+    const at = body.indexOf("key: '" + key + "', label:");
+    assert.ok(at > 0, "the '" + key + "' column definition is still there");
+    const cell = body.slice(at, body.indexOf('\n', at));
+    assert.ok(/notesUnavailable/.test(cell),
+      "the '" + key + "' column renders 0 for a rep whose Sheet could not be read:\n  " + cell.trim());
+  });
+});
+
+test('F5: the TEAM coverage total is null when any rep Sheet was unreadable', () => {
+  const fn = extractRawFunction('Code.js', 'getTeamMetrics');
+  assert.ok(/noteCountPartial\s*\?\s*null\s*:\s*cnNoteCoverage_/.test(fn.replace(/\s+/g, ' ')),
+    'teamTotals.noteCoverage must not be computed from a partial note count');
+  // The client's "below 80%" hint is gated on the value being non-null, so the
+  // null is what actually suppresses the judgement — pin both halves.
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/t\.noteCoverage != null && t\.noteCoverage < 80/.test(m),
+    'the team-wide coverage hint only renders for a real (non-null) coverage figure');
+});
+
+// Cycle-16 F4 — the coverage planner's PTO overlay is best-effort by design,
+// but silence was not: with ptoMap empty EVERY rep counts as working, so the
+// grid renders green on a day half the team is off. A planner whose whole
+// purpose is understaffing detection must not fail toward "fully staffed".
+test('F4: a failed PTO overlay is surfaced, never rendered as full staffing', () => {
+  const fn = extractRawFunction('Code.js', 'getCoveragePlan');
+  assert.ok(/ptoUnavailable = true/.test(fn),
+    'the PTO catch records the failure instead of swallowing it');
+  assert.ok(/ptoUnavailable: ptoUnavailable/.test(fn),
+    'the flag reaches the client on the response');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const render = mgr.slice(mgr.indexOf('function covRender_'));
+  const body = render.slice(0, render.indexOf('\nfunction ', 10));
+  assert.ok(/data\.ptoUnavailable/.test(body), 'covRender_ reads the flag');
+  assert.ok(/role="alert"/.test(body),
+    'the warning is announced, not just coloured (the errorStateHtml_ posture)');
+  // The all-clear is the ONE conclusion a missing overlay makes unsafe.
+  // Scope the search to the risk TERNARY (between `risks.length` and the
+  // all-clear string) — a `lastIndexOf` over the whole body finds the banner's
+  // own mention of the flag and passes even with the guard deleted, which is
+  // exactly how this assert failed its first bite-check.
+  const riskIdx = body.indexOf('risks.length');
+  const clearIdx = body.indexOf('All business hours meet');
+  assert.ok(riskIdx > 0 && clearIdx > riskIdx, 'the risk ternary and its all-clear branch are still there');
+  assert.ok(body.slice(riskIdx, clearIdx).indexOf('data.ptoUnavailable') >= 0,
+    'the green "all business hours meet the minimum" all-clear is gated on the PTO read having succeeded');
+});
+
+// ---------------------------------------------------------------------------
 // F9 / F7 — the access-gate coverage net.
 //
 // INV-02/31/136 are the project's most load-bearing invariants, and the ONLY
@@ -5575,16 +5656,84 @@ test('A13: section-heading classes render as <h2>, not div/span', () => {
 // A2: `:root[data-compact]` is the POP-OUT, not a viewport breakpoint. Any grid
 // that stacks in compact needs a real media query too, or it never stacks on a
 // phone.
-test('A2: compact-mode grid overrides have a matching viewport breakpoint', () => {
-  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
-  assert.ok(/@media \(max-width: 720px\)[\s\S]{0,200}?\.m-layout \{ grid-template-columns: 1fr;/.test(m),
-    '.m-layout stacks at a narrow VIEWPORT, not only in the pop-out');
-  const s = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
-  assert.ok(/@media \(max-width: 540px\)[\s\S]{0,700}?\.telemetry \{ grid-template-columns: repeat\(2, 1fr\); \}/.test(s),
-    '.telemetry goes 2x2 at a narrow viewport');
-  const c = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
-  assert.ok(/@media \(max-width: 540px\) \{ \.coach-kpis \{ grid-template-columns:repeat\(2, 1fr\); \} \}/.test(c),
-    '.coach-kpis goes 2x2 at a narrow viewport');
+//
+// Cycle-16 F3: GENERALIZED from three hand-listed fixes to the RULE. The old
+// version asserted that cycle-13's three specific fixes (.m-layout, .telemetry,
+// .coach-kpis) were still in place — so a FOURTH instance sailed past with CI
+// green, and four had accumulated: .kb-wrap (whose file had zero media queries
+// at all — the Reference reader measured 70px at 390px), .cnv-trio (114/104/94
+// on the app's most-used form), .cnv-row and .intk-row. This is the same
+// promotion A1/A11 got in cycle-13 batch 5, and the reason is stated seven
+// lines below in the A1 comment: a hand-copied list is the class cycle-11's
+// M-4 retired. Derive the set; never enumerate it.
+//
+// Rule: for every selector that `:root[data-compact]` re-columns, the SAME
+// selector must also appear inside some @media block with a
+// grid-template-columns declaration. Direction is deliberately not checked —
+// .rail-flags legitimately goes 2-up → 4-up in the pop-out (denser icon rail),
+// which is the inverse of stacking and not a defect — so it is allowlisted
+// WITH that reason rather than silently skipped.
+const A2_INVERSE_OK = {
+  // selector → why a viewport breakpoint is not required
+  'rail-flags': 'compact widens 2-up → 4-up (icon-only rail); the inverse of stacking',
+};
+// A grid whose BASE track function is intrinsically responsive (auto-fill /
+// auto-fit / min() / clamp()) already reflows with the viewport — it needs no
+// breakpoint, and adding one would be noise. `.m-kpi-grid` is the live example:
+// `repeat(auto-fill, minmax(140px, 1fr))` drops to 2 columns at 390px on its
+// own, and its compact override exists only to PIN 3 columns in the pop-out.
+// This is a property of the rule, not a per-selector exception, so it belongs
+// here rather than in the allowlist above.
+const A2_INTRINSIC = /auto-fill|auto-fit|\bmin\(|\bclamp\(/;
+test('A2: EVERY compact-mode grid override has a matching viewport breakpoint', () => {
+  // Strip CSS comments so a commented-out rule can neither create nor satisfy
+  // an obligation.
+  const decomment = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '');
+  const gaps = [];
+  let checked = 0;
+  A11Y_SCAN_PARTIALS.concat(['styles.html']).forEach((rel) => {
+    const p = path.join(__dirname, '../../web-app', rel);
+    if (!fs.existsSync(p)) return;
+    const src = decomment(fs.readFileSync(p, 'utf8'));
+    // Selectors re-columned under :root[data-compact].
+    const compactSels = new Set();
+    const re = /:root\[data-compact\][^{]*?\.([a-zA-Z0-9_-]+)[^{]*\{[^}]*grid-template-columns/g;
+    let m;
+    while ((m = re.exec(src))) compactSels.add(m[1]);
+    if (!compactSels.size) return;
+    // Every @media BLOCK in the file, brace-matched (a line/indent-based scan
+    // misses both single-line and deeply nested blocks — the false-negative
+    // that let this rule look satisfied).
+    const mediaBodies = [];
+    let idx = 0;
+    while ((idx = src.indexOf('@media', idx)) >= 0) {
+      const open = src.indexOf('{', idx);
+      if (open < 0) break;
+      let depth = 0, end = open;
+      for (let i = open; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+      }
+      mediaBodies.push(src.slice(open, end));
+      idx = end > idx ? end : idx + 6;
+    }
+    const media = mediaBodies.join('\n');
+    compactSels.forEach((sel) => {
+      if (A2_INVERSE_OK[sel]) return;
+      // The BASE declaration (outside any @media / :root[data-compact] rule).
+      const baseM = new RegExp(
+        '(?:^|[},])\\s*\\.' + sel + '\\b[^{}]*\\{([^}]*)\\}', 'm').exec(src);
+      if (baseM && A2_INTRINSIC.test(baseM[1])) return;   // already reflows
+      checked++;
+      const covered = new RegExp('\\.' + sel + '\\b[^{}]*\\{[^}]*grid-template-columns').test(media);
+      if (!covered) gaps.push(rel + ': .' + sel);
+    });
+  });
+  assert.ok(checked >= 8, 'the scan found the compact grid overrides (got ' + checked + ')');
+  assert.deepStrictEqual(gaps, [],
+    'these grids re-column in the POP-OUT but never at a narrow VIEWPORT, so they ' +
+    'keep their desktop tracks on a phone:\n  ' + gaps.join('\n  ') +
+    '\nAdd a @media breakpoint, or allowlist in A2_INVERSE_OK WITH a reason.');
 });
 
 // ---------------------------------------------------------------------------

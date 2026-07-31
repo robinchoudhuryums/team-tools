@@ -4082,6 +4082,8 @@ function managerGetShiftStats(date) {
         emailsSent: 0,
         medianCompletionSeconds: null,
         shiftSpan: null,
+        // F1 (cycle 16): the read OUTCOME rides with the numbers — see the catch.
+        notesUnavailable: false,
       };
       const completionTimes = [];
       const noteTimes = [];
@@ -4124,7 +4126,20 @@ function managerGetShiftStats(date) {
           }
         }
       } catch (e) {
+        // F1 (cycle 16) — this catch used to swallow the failure and fall
+        // through, so the rep was pushed below with totalNotes:0, every
+        // flagCount 0 and emailsSent:0, and line ~4159 then computed
+        // noteCoverage from that zero against their REAL CDR answered count.
+        // The manager's end-of-shift Stats table therefore rendered a rep
+        // whose Sheet could not be opened identically to a rep who logged
+        // nothing all shift — a CRIT-toned 0% coverage badge drawn from a
+        // failed read. Exactly the cycle-12 F5 class (INV-129: "a failed
+        // note-count read must be SURFACED, never rendered as 0"), in the one
+        // surface F5 missed because this function counts inline (it needs
+        // flags/emails/median too, not just the count) rather than through
+        // cnCountNotesResult_. Carry the outcome instead.
         console.warn('managerGetShiftStats skipped rep ' + repId + ': ' + e.message);
+        stats.notesUnavailable = true;
       }
       if (completionTimes.length > 0) {
         completionTimes.sort(function (a, b) { return a - b; });
@@ -4156,7 +4171,11 @@ function managerGetShiftStats(date) {
           tttFormatted:  cdr.tttFormatted,
           attFormatted:  cdr.attFormatted,
         } : null;
-        reps[ri].noteCoverage = cnNoteCoverage_(reps[ri].totalNotes, cdr ? cdr.totalAnswered : 0);
+        // F1 (cycle 16): coverage is a ratio over a note count we may not have.
+        // With an unreadable Sheet the numerator is unknown, not zero, so the
+        // ratio is null and the client renders an em dash (INV-129).
+        reps[ri].noteCoverage = reps[ri].notesUnavailable
+          ? null : cnNoteCoverage_(reps[ri].totalNotes, cdr ? cdr.totalAnswered : 0);
       }
     } catch (cdrErr) {
       console.warn('managerGetShiftStats CDR enrichment failed: ' + cdrErr.message);
@@ -11376,6 +11395,8 @@ function getCoveragePlan(fromDate, toDate) {
     const padStart = addDaysIso_(fromDate, -1);
     const padEnd = addDaysIso_(toDate, 1);
     const ptoMap = {};
+    // F4 (cycle 16): the read OUTCOME, not just the data. See the catch.
+    let ptoUnavailable = false;
     try {
       const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
       for (let i = 1; i < trows.length; i++) {
@@ -11387,7 +11408,16 @@ function getCoveragePlan(fromDate, toDate) {
         if (!ptoMap[eid]) ptoMap[eid] = {};
         if (ptoMap[eid][dt] !== 'Approved') ptoMap[eid][dt] = (st === 'approved') ? 'Approved' : 'Pending';
       }
-    } catch (e) { /* PTO overlay best-effort — coverage still renders */ }
+    } catch (e) {
+      // F4 (cycle 16) — best-effort is right (a coverage grid with no PTO
+      // overlay still beats no grid at all), but SILENT was not. With ptoMap
+      // empty every rep counts as working, so the hourly strip renders green /
+      // adequate on a day half the team is off: this planner exists to flag
+      // understaffing, and its failure mode was the single most reassuring
+      // answer it can give. Same class as INV-129 — degrade, but say so.
+      ptoUnavailable = true;
+      console.warn('getCoveragePlan: PTO overlay unavailable — ' + e.message);
+    }
 
     // Holidays for the years spanned.
     const holMap = {};
@@ -11459,7 +11489,10 @@ function getCoveragePlan(fromDate, toDate) {
     const bizStart = (CONFIG.COVERAGE_BUSINESS_START_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_START_HOUR : 8;
     const bizEnd = (CONFIG.COVERAGE_BUSINESS_END_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_END_HOUR : 17;
     return { from: fromDate, to: toDate, managerTz: mgrTz, minStaff: minStaff, goodStaff: goodStaff, days: days,
-             businessStartHour: bizStart, businessEndHour: bizEnd, weekdaysOnly: weekdaysOnly };
+             businessStartHour: bizStart, businessEndHour: bizEnd, weekdaysOnly: weekdaysOnly,
+             // F4: additive — a client on an older deploy ignores it and renders
+             // exactly as before; the current client renders a warn banner.
+             ptoUnavailable: ptoUnavailable };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -14816,7 +14849,16 @@ function getTeamMetrics(dateOrFrom, to) {
     teamTotals.pctAnswered = teamTotals.rung > 0
       ? Math.round((teamTotals.answered / teamTotals.rung) * 1000) / 10 : 0;
     teamTotals.tttFormatted = cdrFmtHms_(teamTotals.tttSeconds);
-    teamTotals.noteCoverage = cnNoteCoverage_(teamTotals.noteCount, teamTotals.answered);
+    // F5 (cycle 16): the PER-REP coverage is already nulled when that rep's
+    // Sheet failed (see the rep block above), but the TEAM total was computed
+    // unconditionally from the understated sum — so the rail row said "partial"
+    // while the hint four lines below it in the client rendered a confident
+    // "Team-wide coverage below 80%" from the same contaminated number. A
+    // coverage figure assembled from an incomplete numerator is not a coverage
+    // figure (INV-129); noteCount still rides so the count itself is visible
+    // beside its `noteCountPartial` warning.
+    teamTotals.noteCoverage = teamTotals.noteCountPartial
+      ? null : cnNoteCoverage_(teamTotals.noteCount, teamTotals.answered);
 
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
 

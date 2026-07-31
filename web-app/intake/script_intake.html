@@ -228,6 +228,27 @@
   .intk-thumb .rm { appearance: none; -webkit-appearance: none; border: 0; padding: 0; font-family: inherit;
     position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; background: var(--destructive); color: #fff; font-size: 11px; line-height: 16px; text-align: center; cursor: pointer; }
   :root[data-compact] .intk-row { grid-template-columns: 1fr; }
+  /* F3 (cycle 16) — the A2 rule: this had a compact override and no viewport
+     breakpoint, so a phone kept the 2-up desktop split. MEASURED at 390px:
+     157px per column, i.e. 157px for question text like "Do you have
+     consistent or frequent numbness/tingling in hands, feet or legs?" on a
+     46-question clinical intake. The existing 760px query stacks the PPD
+     LAYOUT (rail above form), which leaves each half ~350px and is still fine;
+     2-up only stops working further down, hence a separate breakpoint. */
+  @media (max-width: 560px) {
+    .intk-row { grid-template-columns: 1fr; gap: 6px; align-items: stretch; }
+    .intk-row.secondary .q { padding-left: 10px; }
+    /* The help tooltip is absolutely positioned from the glyph with
+       `left: -10px`, and the glyph sits at the END of the question text. In a
+       157px column the 58vw bubble still landed inside the 324px row; once the
+       question spans the full row the glyph moves right and the bubble ran
+       ~110px past it — MEASURED as document scrollWidth 468 vs a 390 viewport,
+       i.e. stacking the rows made the whole page scroll sideways. Anchor the
+       bubble's RIGHT edge to the glyph at narrow widths so it opens leftward
+       into space that exists. Scoped to this breakpoint: wide and pop-out
+       rendering are untouched. */
+    .intk-row .intk-help::after { left: auto; right: -10px; width: min(320px, 76vw); }
+  }
 
   /* Buttons — primary = accent bg / paper text (dark-mode inverts to dark text);
      secondary = paper-card bg / line border. */

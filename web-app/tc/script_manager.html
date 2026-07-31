@@ -1335,6 +1335,17 @@ function covRender_(data) {
   var bizEnd = (typeof data.businessEndHour === 'number') ? data.businessEndHour : (COV_HOUR_END + 1);
   var hours = []; for (var h = bizStart; h < bizEnd; h++) hours.push(h);
 
+  // F4 (cycle 16): the PTO overlay is best-effort server-side. When it fails,
+  // ptoMap is empty and EVERY rep counts as working — so this grid renders
+  // green on a day half the team is off. Say so loudly: an understaffing
+  // planner that silently reports full staffing is worse than one that
+  // refuses to answer. role="alert" matches the errorStateHtml_ posture.
+  var ptoWarn = data.ptoUnavailable
+    ? '<div class="error-state" role="alert" style="margin-bottom:10px">' + icon('warning', 16) +
+      ' Time-off data could not be read, so this grid shows every rep as working — ' +
+      'approved and pending PTO is NOT reflected. Treat the staffing bands as an upper bound and reload.</div>'
+    : '';
+
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Times in ' + esc(data.managerTz || '') +
     ' · business hours ' + covFmtHr_(bizStart) + '–' + covFmtHr_(bizEnd) +
     '. Shifts use each rep’s roster Schedule override (column O) when set, else their timezone’s default. Hours with fewer than ' + esc(String(minStaff)) + ' working reps are flagged — click a day for the rep breakdown.</div>';
@@ -1388,11 +1399,19 @@ function covRender_(data) {
         '<div class="cov-risk-list">' +
         risks.map(function (r) { return '<div class="cov-risk-item">' + r + '</div>'; }).join('') +
         '</div></div>'
-    : '<div class="panel cov-risk" data-tone="sage"><h2 class="card-label">Coverage</h2>' +
-        '<div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) +
-        ' All business hours meet the ' + esc(String(minStaff)) + '-rep minimum in this range.</div></div>';
+    // F4: the all-clear is the one conclusion a missing PTO overlay makes
+    // unsafe — with no PTO applied, "no understaffed hours" is guaranteed
+    // rather than earned. Downgrade it to a neutral, explicitly-conditional
+    // statement instead of a green check.
+    : (data.ptoUnavailable
+        ? '<div class="panel cov-risk" data-tone="warn"><h2 class="card-label">Coverage</h2>' +
+            '<div style="font-size:13px;color:var(--muted)">' + icon('warning', 14) +
+            ' No understaffed hours found — but time-off data is missing, so this is not an all-clear.</div></div>'
+        : '<div class="panel cov-risk" data-tone="sage"><h2 class="card-label">Coverage</h2>' +
+            '<div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) +
+            ' All business hours meet the ' + esc(String(minStaff)) + '-rep minimum in this range.</div></div>');
 
-  body.innerHTML = note + legend + grid + risk;
+  body.innerHTML = ptoWarn + note + legend + grid + risk;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
