@@ -119,7 +119,6 @@ const CONFIG = {
   // inside team-tools. The deployer account must have view access to
   // the CDR Report spreadsheet.
   CDR_SS_ID:         'YOUR_CDR_SPREADSHEET_ID',
-  CDR_DEPARTMENT:    'CSR',
   CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
   CDR_CACHE_KEY:     'cdr_metrics_v3',   // v3 — meta gained offRosterAgents (INV-85: bump on shape change)
   CDR_ALERT_THRESHOLD: 85,  // % Answered below this → warn badge on Metrics sidebar
@@ -148,7 +147,6 @@ const CONFIG = {
   CALL_NOTES: {
     NOTES_TAB:           'Notes',
     ARCHIVE_TAB:         'NotesArchive', // cold-archive tab in each per-rep Sheet (archiveOldCallNotes moves old rows here)
-    SUBFORM_COL_JSON:    true,           // store SubformData as JSON blob in column P
     DELETE_WINDOW_SECONDS: 300,          // 5 min — self-undo on a just-created note
     NOTE_RETENTION_DAYS: 0,              // rolling auto-delete of old notes; 0 = disabled (irreversible PHI delete; CN_NOTE_RETENTION_DAYS Script Property overrides)
     NOTE_ARCHIVE_DAYS: 0,               // SAFE tier — move notes older than this to a NotesArchive tab (data preserved, live tab bounded); 0 = disabled (CN_NOTE_ARCHIVE_DAYS Script Property overrides)
@@ -193,10 +191,10 @@ const CONFIG = {
     // { label, url } where url is an http(s) link.
     EXTERNAL_LINKS: [],
     EOD_WARNING_HOUR:    17,             // 5pm; trigger walks roster, sends per-rep tz match
-    EOD_WARNING_WINDOW_MINUTES: 30,      // ± window around the rep's local 5pm
+    // DEAD — retained deliberately, read NOWHERE. The EOD gate is local-hour
+    // EQUALITY against EOD_WARNING_HOUR (an hourly trigger), not a ± window.
+    EOD_WARNING_WINDOW_MINUTES: 30,
     DR_SLA_DEFAULT_HOURS: 48,            // DeptRequests v2 — default resolution SLA (per-dept overrides via DR_SLA_TARGETS)
-    TRAINING_DIGEST_WEEKDAY: 5,          // Friday — sent to MANAGER_EMAILS
-    REVIEW_DIGEST_WEEKDAY:   5,
     DEPARTMENT_EMAILS: {
       'Sales':            'sales@universalmedsupply.com',
       'Eligibility MM&R': 'eligibility@universalmedsupply.com',
@@ -307,6 +305,36 @@ const EMP = {
   DEPARTMENTS:13,     // column N — dept names the rep staffs (DeptRequests v2 inbox routing)
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
 };
+/**
+ * The ONE roster-INCLUSION predicate: a row counts as a CURRENT employee iff
+ * it carries a non-blank email. Returns the trimmed email, or '' — so a caller
+ * writes `if (!empRosterEmail_(row)) continue;` and also has the value.
+ *
+ * WHY A PREDICATE (cycle-15 F3 — the INV-167 shape, on a second column):
+ * offboarding here means clearing the email while KEEPING the name (so history
+ * still reads), and a name-only row is not a person to count. FOURTEEN walks
+ * each decided that for themselves, and they did not agree:
+ *   • NINE tested raw truthiness  — `if (!rows[i][EMP.EMAIL]) continue;`
+ *   • THREE tested trimmed        — `if (!String(...||'').trim()) continue;`
+ *   • TWO tested nothing at all   — getTeamMetrics (acts on it) and
+ *     getPunctualityReport (harmless — it self-filters on `!dates.length`).
+ * So a WHITESPACE-ONLY email cell made the first two groups DISAGREE, exactly
+ * as column L did before `cnEnrolledSheetId_` (INV-167), and getTeamMetrics
+ * admitted an offboarded rep outright: its gate is
+ * `if (cdr || noteCount > 0 || …)`, and an offboarded name still matching DQE
+ * history satisfies it — so a departed employee got a full row in the
+ * manager's team table AND their volume flowed into teamTotals.
+ * Trimming here makes every walk agree on one answer; it can only NARROW the
+ * four raw-truthiness call sites (a whitespace-only cell is now excluded),
+ * which is the correct direction and matches INV-167's resolution.
+ *
+ * NOT an authorization check — `getEmployeeInfo_` still identifies the caller.
+ * This governs only whether a roster ROW is counted in a team-wide walk.
+ */
+function empRosterEmail_(row) {
+  return String((row && row[EMP.EMAIL]) || '').trim();
+}
+
 const TO  = { EMP_ID:0, EMP_NAME:1, DATE:2, TYPE:3, NOTES:4, STATUS:5, SUBMITTED_AT:6 };
 // Shared AuditLog columns (the ADP-spreadsheet AuditLog tab — writeAuditLog_ /
 // getOrCreateAuditSheet_ header order). Batch 3 (cycle-8): the AuditLog was the
@@ -493,6 +521,18 @@ const CDR = {
   TTT: 9, ATT: 10,
 };
 const CDR_EXPECTED_HEADERS = {
+  // F2 (cycle 15) — col 4 (QUEUE_EXT) is READ by cdrQueueInventory_ but is
+  // deliberately NOT validated here yet, and that is a KNOWN, bounded gap.
+  // Validation is substring-based, so an entry whose text does not appear in
+  // the real header raises a FALSE "Column drift" warning and flips the
+  // Automation Health CDR card amber — the exact class of always-wrong health
+  // signal cycle 15 removed elsewhere. The header text of col 4 in the
+  // `call-data-reporting`-owned sheet has never been recorded here, so adding
+  // one would be a guess. TO CLOSE: read the real col-4 header from the DQE
+  // tab and add `4: '<that text>',` below. Meanwhile the exposure is small —
+  // a column INSERTED at 4 shifts 5..10 and IS caught by the entries below;
+  // only an in-place repurpose of col 4 slips through, and the inventory that
+  // reads it is a manual diagnostic, not a metric.
   2: 'Date', 3: 'Agent', 5: 'Unique', 6: 'Rung', 7: 'Missed',
   8: 'Answered', 9: 'TTT', 10: 'ATT',
 };
@@ -1021,7 +1061,7 @@ function getManagerDashboard() {
     const employees = [];
     const empById = {};
     for (let i = 1; i < empRows.length; i++) {
-      if (!empRows[i][EMP.EMAIL]) continue;
+      if (!empRosterEmail_(empRows[i])) continue;   // F3: one predicate
       let tzRaw = empRows[i][EMP.TIMEZONE];
       if (tzRaw === null || tzRaw === undefined) tzRaw = '';
       const tz = String(tzRaw).trim() || CONFIG.TIMEZONE;
@@ -2137,7 +2177,7 @@ function getTeammateStatus() {
     const rows = getEmployeeRosterRows_();
     const employees = [];
     for (let i = 1; i < rows.length; i++) {
-      if (!rows[i][EMP.EMAIL]) continue;
+      if (!empRosterEmail_(rows[i])) continue;   // F3: one predicate
       const id = String(rows[i][EMP.ID]).trim();
       let tzRaw = rows[i][EMP.TIMEZONE];
       if (tzRaw === null || tzRaw === undefined) tzRaw = '';
@@ -2189,7 +2229,7 @@ function getEmployeesList() {
     const rows = getEmployeeRosterRows_();
     const employees = [];
     for (let i = 1; i < rows.length; i++) {
-      if (!rows[i][EMP.EMAIL]) continue;
+      if (!empRosterEmail_(rows[i])) continue;   // F3: one predicate
       let tzRaw = rows[i][EMP.TIMEZONE];
       if (tzRaw === null || tzRaw === undefined) tzRaw = '';
       const tz = String(tzRaw).trim() || CONFIG.TIMEZONE;
@@ -3306,7 +3346,7 @@ function getEnrolledCallNotesReps() {
     const rows = getEmployeeRosterRows_();
     const reps = [];
     for (let i = 1; i < rows.length; i++) {
-      if (!rows[i][EMP.EMAIL]) continue;
+      if (!empRosterEmail_(rows[i])) continue;   // F3: one predicate
       // Cycle-9 L-11: TRIMMED check, matching getCallNotesEnrollment +
       // provisionCallNotesSheet's no-clobber test — a whitespace-only column-L
       // cell showed the rep as enrolled in the Per-Rep picker (whose reads
@@ -3332,7 +3372,7 @@ function getCallNotesEnrollment() {
     const rows = getEmployeeRosterRows_();
     const enrolled = [], unenrolled = [];
     for (let i = 1; i < rows.length; i++) {
-      if (!rows[i][EMP.EMAIL]) continue;
+      if (!empRosterEmail_(rows[i])) continue;   // F3: one predicate
       const rec = {
         id: String(rows[i][EMP.ID]).trim(),
         name: String(rows[i][EMP.NAME]).trim(),
@@ -9239,6 +9279,10 @@ function installAutomationTriggers() {
   ScriptApp.newTrigger('sendCallNotesEodDigest')
     .timeBased().everyHours(1).create();
   // Weekly manager digests for training queue + review candidates
+  // Weekday is HARDCODED here on purpose. Two CONFIG knobs (TRAINING_/
+  // REVIEW_DIGEST_WEEKDAY) used to imply it was configurable while being read
+  // nowhere — editing them was a silent no-op — so they were removed (F1).
+  // To move the digest, change the day here and re-run installAutomationTriggers().
   ScriptApp.newTrigger('sendCallNotesWeeklyDigests')
     .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(8)
     .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
@@ -9396,7 +9440,7 @@ function computeMissedClockOuts_() {
   const now = new Date();
   const employees = {};
   for (let i = 1; i < empRows.length; i++) {
-    if (!empRows[i][EMP.EMAIL]) continue;
+    if (!empRosterEmail_(empRows[i])) continue;   // F3: one predicate
     let tzRaw = empRows[i][EMP.TIMEZONE];
     if (tzRaw === null || tzRaw === undefined) tzRaw = '';
     const tz = safeTimezone_(String(tzRaw).trim());
@@ -9975,7 +10019,7 @@ function trainOverdueForRoster_(todayIso) {
   const rows = getEmployeeRosterRows_();
   const out = [];
   for (let r = 1; r < rows.length; r++) {
-    if (!rows[r][EMP.EMAIL]) continue;
+    if (!empRosterEmail_(rows[r])) continue;   // F3: one predicate
     const empId = String(rows[r][EMP.ID]).trim();
     const empName = String(rows[r][EMP.NAME]).trim();
     const eff = trainEffectiveForEmp_(assignments, empId);
@@ -11319,7 +11363,7 @@ function getCoveragePlan(fromDate, toDate) {
       // SCHEDULE alone, so an offboarded/placeholder row (name kept, email
       // cleared) silently counted as a full working shift every day,
       // inflating the confirmed band against COVERAGE_MIN_STAFF/GOOD.
-      if (!String(roster[i][EMP.EMAIL] || '').trim()) continue;
+      if (!empRosterEmail_(roster[i])) continue;   // F3: one predicate
       const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
       // Turn D: per-rep column-O override (INV-127's per-tz-only limitation removed).
       const schedRaw = String(roster[i][EMP.SCHEDULE] || '').trim();
@@ -11438,6 +11482,11 @@ function getPunctualityReport(fromDate, toDate) {
     for (let i = 1; i < roster.length; i++) {
       const id = String(roster[i][EMP.ID]).trim(); if (!id) continue;
       const name = String(roster[i][EMP.NAME] || '').trim(); if (!name) continue;
+      // F3: joins the other eight walks on ONE predicate. Behaviour here is
+      // unchanged in practice — an offboarded row has no punches in range, so
+      // the `if (!dates.length) return` below already dropped it — but relying
+      // on that is relying on a coincidence downstream, not on a rule.
+      if (!empRosterEmail_(roster[i])) continue;
       const tz = safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE);
       // Turn D: per-rep column-O override (late-start grading uses the rep's REAL shift).
       const sched = empShiftSchedule_({ scheduleRaw: String(roster[i][EMP.SCHEDULE] || '').trim() }, tz);
@@ -14054,19 +14103,24 @@ function cdrQueueInventory_(from, to) {
     out.truncated = totalRows > cap;
     const nRows = lastRow - startRow + 1;
     // Columns 2..4 = DATE, AGENT, QUEUE_EXT. Reading 3 columns instead of 34.
-    const vals = sheet.getRange(startRow, CDR.DATE, nRows, 3).getValues();
+    // Offsets are DERIVED from the enum rather than written as 0/1/2, so the
+    // read follows a column move instead of silently reading its neighbour.
+    const qFirst = CDR.DATE;
+    const qWidth = (CDR.QUEUE_EXT - CDR.DATE) + 1;
+    const oDate = CDR.DATE - qFirst, oAgent = CDR.AGENT - qFirst, oQueue = CDR.QUEUE_EXT - qFirst;
+    const vals = sheet.getRange(startRow, qFirst, nRows, qWidth).getValues();
     out.rowsScanned = nRows;
 
     const queues = {};      // queue ext -> {rows, agents:{}}
     const sentinels = {};   // A_Q_* / Backup CSR -> rows
     const agentDate = {};   // "agent|date" -> row count
     for (let i = 0; i < vals.length; i++) {
-      const agent = String(vals[i][1] || '').trim();
+      const agent = String(vals[i][oAgent] || '').trim();
       if (!agent) continue;
-      const dateIso = cdrRowDateIso_(vals[i][0], tz);
+      const dateIso = cdrRowDateIso_(vals[i][oDate], tz);
       if (!dateIso || dateIso < from || dateIso > to) continue;
       out.rowsInWindow++;
-      const queueRaw = String(vals[i][2] == null ? '' : vals[i][2]).trim();
+      const queueRaw = String(vals[i][oQueue] == null ? '' : vals[i][oQueue]).trim();
       if (isCdrQueueSentinel_(agent)) {
         sentinels[agent] = (sentinels[agent] || 0) + 1;
         continue;   // queue-AGGREGATE row: not a rep row, never an agent/date key
@@ -14329,7 +14383,7 @@ function getDashboardMetrics(periodKey) {
       // cleared) whose name still appears in DQE history both inflated the
       // cohort — un-hiding the team line on a day fewer than 3 CURRENT reps
       // reported — and contaminated the average reps compare themselves to.
-      if (!String(roster[r][EMP.EMAIL] || '').trim()) continue;
+      if (!empRosterEmail_(roster[r])) continue;   // F3: one predicate
       allNames.push(nm);
     }
 
@@ -14424,7 +14478,7 @@ function getMyMetrics(date) {
       // F4 (cycle 12): same no-email skip as getDashboardMetrics — this list is
       // the cohort for the INV-124 N=3 anonymization guard and the team
       // average. See the comment there for the full rationale.
-      if (!String(roster[r][EMP.EMAIL] || '').trim()) continue;
+      if (!empRosterEmail_(roster[r])) continue;   // F3: one predicate
       allNames.push(nm);
     }
     var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, allNames);
@@ -14624,6 +14678,12 @@ function getTeamMetrics(dateOrFrom, to) {
     var repMap = {};
     for (var r = 1; r < roster.length; r++) {
       var name = String(roster[r][EMP.NAME]).trim();
+      // F3 (cycle 15): an offboarded row keeps its NAME and clears its email.
+      // Without this skip such a row still matched DQE history by name, so a
+      // departed employee got a full row in the manager's team table and their
+      // volume flowed into teamTotals. Seven sibling walks already skipped;
+      // this one did not.
+      if (!empRosterEmail_(roster[r])) continue;
       var cnSheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
       if (name) {
         rosterNames.push(name);
@@ -14973,7 +15033,7 @@ function getIntakeAgents() {
     const rows = getEmployeeRosterRows_();
     const agents = [];
     for (let i = 1; i < rows.length; i++) {
-      if (!rows[i][EMP.EMAIL]) continue;
+      if (!empRosterEmail_(rows[i])) continue;   // F3: one predicate
       agents.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
     }
     agents.sort((a, b) => a.name.localeCompare(b.name));
@@ -18246,7 +18306,7 @@ function getTrainingDashboard() {
     const rows = getEmployeeRosterRows_();
     const emps = [];
     for (let i = 1; i < rows.length; i++) {
-      if (!rows[i][EMP.EMAIL]) continue;
+      if (!empRosterEmail_(rows[i])) continue;   // F3: one predicate
       emps.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
     }
     emps.sort(function (a, b) { return a.name.localeCompare(b.name); });

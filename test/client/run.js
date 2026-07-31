@@ -1567,6 +1567,10 @@ COUPLING_REGISTRY.forEach((c) => {
 // in CLAUDE.md) that cannot be machine-checked — kept in the index so the
 // full inventory lives in ONE place.
 const MIRROR_INDEX = [
+  // Cycle-15 F4: the visual fixture is a MIRROR too — it was outside this
+  // registry and had already drifted from the server fold.
+  { pair: 'test/visual mock.js groupQueueRows_/CDR_QUEUE_GROUPS ↔ Code.js (F4)',
+    guards: ['F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-for-byte'] },
   { pair: 'LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ (INV-72)',
     guards: ['every LEAVE_DEDUCTION_CLIENT entry matches the server deduction',
              'TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT keys'] },
@@ -4570,19 +4574,38 @@ test('F3: archiveSheetRowsOlderThan_ honors a per-run bound; the Timesheet calle
 
 // F4: the INV-124 cohort guard + team average were computed over a roster that
 // still included offboarded/placeholder rows every sibling walk excludes.
-test('F4: both Metrics roster walks apply the no-email skip (INV-124 cohort integrity)', () => {
+test('F3: roster inclusion goes through ONE predicate (INV-124 cohort + F3)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  // (a) The predicate TRIMS — the whole point. A whitespace-only email cell
+  // must read as "not a current employee" everywhere, or the walks disagree
+  // exactly as column L's did before cnEnrolledSheetId_ (INV-167).
+  const pred = extractRawFunction('Code.js', 'empRosterEmail_');
+  assert.ok(/\.trim\(\)/.test(pred) && /EMP\.EMAIL/.test(pred),
+    'empRosterEmail_ reads EMP.EMAIL and trims');
+
+  // (b) DERIVED, not a hand list (INV-179): no raw inclusion guard may exist
+  // anywhere in Code.js. This catches a NEW walk written in the old style,
+  // which a hand-listed set never would.
+  const stripped = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const raw = stripped.match(/if \(![^)\n]*\[EMP\.EMAIL\][^)\n]*\)\s*continue/g) || [];
+  assert.deepStrictEqual(raw, [],
+    'no roster walk may hand-roll the no-email skip — route it through empRosterEmail_');
+
+  // (c) The two regressions this family exists for stay fixed by NAME, since
+  // those are the walks where being wrong is expensive: the Metrics cohort
+  // (cycle-12 F4 — a stale row un-hides the N=3 anonymized team line) and the
+  // manager team table (cycle-15 F3 — a departed rep in the table and totals).
+  ['getDashboardMetrics', 'getMyMetrics', 'getTeamMetrics', 'getCoveragePlan']
+    .forEach((fn) => {
+      assert.ok(/empRosterEmail_\(/.test(extractRawFunction('Code.js', fn)),
+        fn + ' routes roster inclusion through empRosterEmail_');
+    });
+  // …and in the two cohort walks the skip must still precede the collection.
   ['getDashboardMetrics', 'getMyMetrics'].forEach((fn) => {
-    const src = extractRawFunction('Code.js', fn);
-    assert.ok(/EMP\.EMAIL/.test(src),
-      fn + ' must skip roster rows with no email — they enter the N=3 cohort count and the team average');
-    // The skip has to precede the push, not merely appear somewhere.
-    assert.ok(src.indexOf('EMP.EMAIL') < src.indexOf('allNames.push'),
+    const b = extractRawFunction('Code.js', fn);
+    assert.ok(b.indexOf('empRosterEmail_') < b.indexOf('allNames.push'),
       fn + ' checks the email BEFORE collecting the name');
   });
-  // getCoveragePlan is the sibling that already had it (cycle-9 L-2) — if that
-  // regresses, this family is broken again.
-  assert.ok(/EMP\.EMAIL/.test(extractRawFunction('Code.js', 'getCoveragePlan')),
-    'getCoveragePlan keeps its cycle-9 L-2 no-email skip');
 });
 
 // F5: a swallowed per-rep-Sheet read error was indistinguishable from "zero
@@ -5266,8 +5289,21 @@ test('Phase 0: cdrQueueInventory_ is read-only, bounded and PHI-free', () => {
   assert.ok(/CDR_QUEUE_LIST_CAP/.test(body), 'the payload lists are capped');
   // It reads 3 columns, not the sibling's 34 — the cost claim in its own doc
   // comment. A widened read here silently multiplies the panel's cost.
-  assert.ok(/getRange\(startRow, CDR\.DATE, nRows, 3\)/.test(body),
-    'the DQE read stays narrow (DATE/AGENT/QUEUE_EXT only)');
+  // F2 (cycle 15): the width is DERIVED from the enum rather than the literal
+  // 3, so the read follows a column move instead of reading its neighbour.
+  // Assert the derivation AND that it still evaluates to 3 columns — the cost
+  // claim in the function's own doc comment.
+  assert.ok(/getRange\(startRow, qFirst, nRows, qWidth\)/.test(body),
+    'the DQE read is bounded by enum-derived offsets');
+  assert.ok(/qWidth = \(CDR\.QUEUE_EXT - CDR\.DATE\) \+ 1/.test(body),
+    'the width comes from the enum, not a literal');
+  const enumSrc = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8')
+    .match(/const CDR = \{[\s\S]*?\}/)[0];
+  const gi = (k) => Number(enumSrc.match(new RegExp(k + ':\\s*(\\d+)'))[1]);
+  assert.strictEqual((gi('QUEUE_EXT') - gi('DATE')) + 1, 3,
+    'DATE..QUEUE_EXT is still 3 columns — a wider span multiplies the panel cost');
+  // …and every offset used is enum-derived, never a bare index.
+  assert.ok(!/vals\[i\]\[[0-9]\]/.test(body), 'no bare positional index into the read');
 });
 
 // ── Phase 1 (sub-queue, transfer-only) ──────────────────────────────────────
@@ -5830,6 +5866,84 @@ test('CDR: both name-list renders cap and SAY what was cut', () => {
     assert.ok(/expected when the CDR Report covers other departments/.test(src),
       fn + ' frames off-roster agents as expected, not as a fault');
   });
+});
+
+// ─── F4: the visual fixture must not REIMPLEMENT server logic ────────────────
+// It used to hand-roll the queue->department fold and had already drifted (it
+// omitted the per-group queues.sort()), so the screenshot showed an ordering
+// the server cannot produce. The fixture now carries VERBATIM copies; these
+// pins are what make "verbatim" true rather than aspirational.
+test('F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-for-byte', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+
+  const srvFn = code.match(/function groupQueueRows_\(queueRows, groups\) \{[\s\S]*?\n\}/);
+  const mockFn = mock.match(/function groupQueueRows_\(queueRows, groups\) \{[\s\S]*?\n\}/);
+  assert.ok(srvFn && mockFn, 'both copies are present');
+  assert.strictEqual(mockFn[0], srvFn[0],
+    'test/visual/mock.js groupQueueRows_ has drifted from Code.js — copy it verbatim');
+
+  // The Ungrouped sentinel the fold compares against.
+  const srvUng = code.match(/const CDR_QUEUE_UNGROUPED = '([^']+)'/)[1];
+  const mockUng = mock.match(/const CDR_QUEUE_UNGROUPED = '([^']+)'/)[1];
+  assert.strictEqual(mockUng, srvUng, 'the Ungrouped sentinel must match');
+
+  // The GROUPS mapping is operator-editable via Script Property, so this is
+  // the half that will drift in practice.
+  const norm = (b) => b.replace(/\s+/g, ' ').trim();
+  const srvG = norm(code.match(/CDR_QUEUE_GROUPS: \{([\s\S]*?)\n  \},/)[1]);
+  const mockG = norm(mock.match(/const MOCK_CDR_QUEUE_GROUPS = \{([\s\S]*?)\n\};/)[1]);
+  assert.strictEqual(mockG, srvG,
+    'the fixture group mapping has drifted from the CONFIG seed');
+
+  // …and the fixture must actually CALL it rather than keep a private fold.
+  assert.ok(/groupRows: groupQueueRows_\(/.test(mock),
+    'the fixture calls the shared fold instead of reimplementing it');
+});
+
+// ─── F1: a declared-but-unread CONFIG key is a defect ────────────────────────
+// The next reader assumes it is wired. TRAINING_/REVIEW_DIGEST_WEEKDAY looked
+// like knobs for the weekly digest while the trigger hardcoded FRIDAY, so
+// editing them was a silent no-op; CDR_DEPARTMENT had a doc comment claiming
+// it filtered. Derived, not hand-listed (INV-179).
+test('F1: every CONFIG key has a reader (dead declarations are defects)', () => {
+  const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const root = path.join(__dirname, '../../web-app');
+  let hay = '';
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
+    const f = path.join(d, e.name);
+    if (e.isDirectory()) return walk(f);
+    if (/\.(js|html)$/.test(e.name)) hay += strip(fs.readFileSync(f, 'utf8')) + '\n';
+  });
+  walk(root);
+
+  const code = fs.readFileSync(path.join(root, 'Code.js'), 'utf8');
+  const st = code.indexOf('const CONFIG = {') + 'const CONFIG = {'.length;
+  let d = 1, i = st;
+  while (d) { if (code[i] === '{') d++; else if (code[i] === '}') d--; i++; }
+  const bodyRaw = code.slice(st, i);          // comments intact — the DEAD marker lives there
+  const body = strip(bodyRaw);
+
+  // A key is LIVE if it is read anywhere outside the CONFIG literal itself —
+  // `.KEY` covers both CONFIG.X.KEY and the local-alias form
+  // (`const cfg = CONFIG.SHIFT_SCHEDULE; cfg.DEFAULT`).
+  const outside = hay.split(body).join('');
+  // Deliberately retained, read nowhere — each must SAY so at its declaration.
+  const ALLOW = { EOD_WARNING_WINDOW_MINUTES: 'documented dead; the EOD gate is hour-equality' };
+  const dead = [];
+  const keyRe = /^\s{2,4}([A-Z][A-Z_0-9]+)\s*:/gm;
+  let m;
+  while ((m = keyRe.exec(body))) {
+    const k = m[1];
+    if (ALLOW[k]) {
+      assert.ok(new RegExp('DEAD[\\s\\S]{0,200}' + k).test(bodyRaw),
+        k + ' is allowlisted as dead but its declaration does not say so');
+      continue;
+    }
+    if (!new RegExp('\\.' + k + '\\b').test(outside)) dead.push(k);
+  }
+  assert.deepStrictEqual(dead, [],
+    'CONFIG keys declared but never read — wire them, remove them, or allowlist with a reason');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
