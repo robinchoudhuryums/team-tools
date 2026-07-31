@@ -5751,5 +5751,86 @@ test('FO-4: _assertEq can tell NaN from null (and is otherwise unchanged)', () =
     });
 });
 
+// ─── CDR name-match health: only the PAIRED set is a signal ──────────────
+// A status card toned off either RAW direction can never go green on a shared
+// CDR feed (the Report covers the whole phone system; the roster set is every
+// named employee incl. managers/PTO), and a permanently-amber health card is
+// worse than none — it trains the reader to ignore it.
+test('CDR: likely name mismatches pair the two directions, not either alone', () => {
+  const ctx = { String, Array, Object };
+  vm.createContext(ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'cdrNameTokens_'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'cdrLikelyNameMismatches_'), ctx);
+  const pair = ctx.cdrLikelyNameMismatches_;
+
+  // The real case: one person spelled two ways. Their calls are silently
+  // missing from every metric until an alias is added.
+  const hit = pair(['Bob Smith'], ['Smith, Bob', 'Dana Wu']);
+  assert.strictEqual(hit.length, 1, 'a reordered/punctuated name pairs');
+  // Field-wise: the objects are built in the vm realm, so deepStrictEqual
+  // fails on prototype identity even when the values match.
+  assert.strictEqual(hit[0].roster, 'Bob Smith', 'carries the roster spelling');
+  assert.strictEqual(hit[0].cdr, 'Smith, Bob', 'carries the CDR spelling to alias');
+
+  // A middle initial still pairs (2 shared tokens).
+  assert.strictEqual(pair(['Bob Smith'], ['Bob J. Smith']).length, 1, 'middle initial pairs');
+
+  // A shared SURNAME alone must NOT pair — coincidence on any real roster.
+  assert.strictEqual(pair(['Bob Smith'], ['Jane Smith']).length, 0,
+    'one shared token is not a mismatch');
+  assert.strictEqual(pair(['Maria Garcia'], ['Maria Rodriguez']).length, 0,
+    'a shared FIRST name is not a mismatch either');
+
+  // Either direction empty ⇒ nothing to pair. This is what makes the card
+  // reach green: strangers in the feed with no matching roster gap are silent.
+  assert.strictEqual(pair([], ['Smith, Bob', 'Al Vance']).length, 0, 'no roster gap ⇒ silent');
+  assert.strictEqual(pair(['Bob Smith'], []).length, 0, 'no unmatched agents ⇒ silent');
+  assert.strictEqual(pair(null, null).length, 0, 'missing inputs never throw');
+
+  // A whole other department in the feed must not raise a single pair.
+  assert.strictEqual(
+    pair(['Robin Choudhury'], ['Al Vance', 'Dana Wu', 'Kim Park', 'Lee Ann Fox']).length, 0,
+    'unrelated departments stay silent');
+});
+
+test('CDR: the health card tones off likelyMismatches, never the raw lists', () => {
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const src = stripComments(extractRawFunction('cn/script_callnotes.html', 'cnSetSysFromHealth_'));
+  // The tone/value/sub expressions must key off the paired set. Comments are
+  // stripped first: this very function EXPLAINS why the raw lists are unusable,
+  // so an un-stripped scan trips on its own rationale.
+  assert.ok(/likelyMismatches/.test(src), 'the card reads likelyMismatches');
+  const toneLine = (src.match(/var cdrTone\s*=.*/) || [''])[0];
+  assert.ok(/likely/.test(toneLine), 'cdrTone keys off the paired count');
+  assert.ok(!/unmatchedAgents|rosterWithNoCdr/.test(toneLine),
+    'cdrTone must NOT key off either raw direction (both are permanently non-empty)');
+  // The raw counts must not drive the card's value/sub text either.
+  assert.ok(!/unmatchedAgents|rosterWithNoCdr/.test(src),
+    'the status card derives from likelyMismatches alone');
+});
+
+test('CDR: both name-list renders cap and SAY what was cut', () => {
+  // Per-file because the shared-helper NAME differs; a loose whole-function
+  // scan for the remainder text passes on the mismatch block alone (caught by
+  // bite-check), so each assertion is bound to the LIST HELPER and to the two
+  // raw lists routing through it.
+  [['cn/script_callnotes.html', 'cnRenderHealthPanel_', 'nameList'],
+   ['metrics/script_metrics.html', 'mRenderTeamMetrics_', 'mNameList_']].forEach(([file, fn, helper]) => {
+    const src = extractRawFunction(file, fn);
+    assert.ok(/likelyMismatches/.test(src), fn + ' surfaces the paired set');
+    // The helper itself must name the remainder — never truncate silently.
+    const helperBody = new RegExp(helper + ' = function[\\s\\S]{0,400}?more<\\/em>');
+    assert.ok(helperBody.test(src), fn + ': ' + helper + ' names the cut remainder');
+    // …and BOTH permanently-non-empty lists must go through it.
+    ['unmatchedAgents', 'rosterWithNoCdr'].forEach((list) => {
+      assert.ok(new RegExp(helper + '\\((?:cdr|data)\\.' + list + '\\)').test(src),
+        fn + ': ' + list + ' is capped via ' + helper);
+    });
+    // The raw unmatched list must no longer read as a warning here.
+    assert.ok(/expected when the CDR Report covers other departments/.test(src),
+      fn + ' frames off-roster agents as expected, not as a fault');
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

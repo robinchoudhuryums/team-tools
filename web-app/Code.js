@@ -4968,6 +4968,9 @@ function computeAutomationHealth_(opts) {
           unmatchedAgents: Object.keys(canonicalAgents).filter(function (a) { return !rosterSet[a]; }).sort(),
           rosterWithNoCdr: Object.keys(rosterSet).filter(function (n) { return !canonicalAgents[n]; }).sort(),
         };
+        // The ACTIONABLE subset — neither raw direction can drive the status
+        // card without pinning it amber forever (see cdrLikelyNameMismatches_).
+        cdr.likelyMismatches = cdrLikelyNameMismatches_(cdr.rosterWithNoCdr, cdr.unmatchedAgents);
         // Phase 0 (sub-queue discovery) — opt-in, panel only. Best-effort: a
         // failure here must never take down a health report that is otherwise
         // fine, so it degrades to an error string inside its own field.
@@ -13374,6 +13377,76 @@ function isCdrQueueSentinel_(agent) {
   return /^A_Q_/.test(agent) || agent === 'Backup CSR';
 }
 
+/** Normalize a person-name to comparable lowercase alpha tokens.
+ *  "Smith, Bob J." -> ['bob','j','smith'] (sorted, deduped, empties dropped). */
+function cdrNameTokens_(name) {
+  var toks = String(name || '').toLowerCase()
+    .replace(/[^a-z]+/g, ' ').trim().split(/\s+/)
+    .filter(function (t) { return !!t; });
+  var seen = {}, out = [];
+  for (var i = 0; i < toks.length; i++) {
+    if (!seen[toks[i]]) { seen[toks[i]] = true; out.push(toks[i]); }
+  }
+  return out.sort();
+}
+
+/**
+ * Pair the two CDR name-mismatch directions into the ACTIONABLE subset.
+ *
+ * Neither raw direction is a usable health signal on its own, and toning a
+ * status card off either one leaves it permanently amber:
+ *   • `unmatchedAgents` — the CDR Report covers the WHOLE phone system (it is
+ *     owned by `call-data-reporting`), while our roster is one team, so every
+ *     other department's agents sit in it forever. There is no department
+ *     filter — CONFIG.CDR_DEPARTMENT is declared and read nowhere.
+ *   • `rosterWithNoCdr` — the roster set is every NAMED employee row, so
+ *     managers, admin staff, and anyone on PTO across the whole window are in
+ *     it forever.
+ *
+ * The intersection IS meaningful: a roster rep with no call data whose name
+ * closely resembles an unmatched CDR agent is almost certainly one person
+ * spelled two ways, which means their calls are silently missing from every
+ * metric. That set is normally EMPTY and clears itself once an alias is added.
+ *
+ * Match rule: normalized-equal, OR >= 2 shared name tokens. Two shared tokens
+ * (not one) because a shared SURNAME alone is a coincidence on any real
+ * roster. A nickname that shares only a surname ("Robert Smith" vs "Bob
+ * Smith") is therefore a deliberate false NEGATIVE — under-reporting is the
+ * safe direction for something that drives a warning, and the raw lists are
+ * still rendered beneath it for the human to scan.
+ *
+ * PURE: no sheet/Session access, so the Node harness drives it directly.
+ */
+function cdrLikelyNameMismatches_(rosterWithNoCdr, unmatchedAgents) {
+  var roster = Array.isArray(rosterWithNoCdr) ? rosterWithNoCdr : [];
+  var agents = Array.isArray(unmatchedAgents) ? unmatchedAgents : [];
+  if (!roster.length || !agents.length) return [];
+
+  var agentToks = agents.map(function (a) {
+    var t = cdrNameTokens_(a);
+    return { name: a, toks: t, key: t.join(' ') };
+  });
+
+  var out = [];
+  for (var i = 0; i < roster.length; i++) {
+    var rTok = cdrNameTokens_(roster[i]);
+    if (!rTok.length) continue;
+    var rKey = rTok.join(' ');
+    for (var j = 0; j < agentToks.length; j++) {
+      var a = agentToks[j];
+      if (!a.toks.length) continue;
+      var shared = 0;
+      for (var k = 0; k < rTok.length; k++) {
+        if (a.toks.indexOf(rTok[k]) !== -1) shared++;
+      }
+      if (rKey === a.key || shared >= 2) {
+        out.push({ roster: roster[i], cdr: a.name });
+      }
+    }
+  }
+  return out;
+}
+
 var _cdrColumnsValidated = false;
 var _cdrColumnWarning = null;
 function validateCdrColumns_(sheet) {
@@ -13439,7 +13512,10 @@ function cdrRosterHash_(rosterNames) {
 
 /**
  * Core CDR data reader. Fetches per-agent DQE metrics for a date range,
- * filtered to CONFIG.CDR_DEPARTMENT's roster. Returns raw per-agent stats.
+ * filtered to the `rosterNames` passed in (pass null/[] for an unfiltered
+ * read). NOTE: there is no department filter — CONFIG.CDR_DEPARTMENT is
+ * declared and read NOWHERE; this comment used to claim otherwise. Agents
+ * dropped by the roster filter are reported in `meta.offRosterAgents`.
  * Isolated so a future Neon swap replaces only this function.
  */
 function getCdrAgentMetrics_(from, to, rosterNames) {
@@ -14699,6 +14775,9 @@ function getTeamMetrics(dateOrFrom, to) {
       teamTotals: teamTotals,
       unmatchedAgents: unmatchedAgents,
       rosterWithNoCdr: rosterWithNoCdr,
+      // The actionable intersection of the two directions above — see
+      // cdrLikelyNameMismatches_ for why neither list alone is a signal.
+      likelyMismatches: cdrLikelyNameMismatches_(rosterWithNoCdr, unmatchedAgents),
       trend: trendData,
       // Phase 2 — the "By queue" mode's rows, largest first, and the metadata
       // the client needs to tell "no transfer data" apart from "the read

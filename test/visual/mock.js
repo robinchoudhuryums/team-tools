@@ -117,7 +117,17 @@
       totals.noteCoverage = Math.round((totals.noteCount / totals.answered) * 100);
       return {
         from: todayIso, to: todayIso, date: todayIso, reps: reps, teamTotals: totals,
-        unmatchedAgents: [], rosterWithNoCdr: [], trend: trend30(),
+        // Name-match diagnostics. On a shared CDR feed BOTH raw lists are
+        // normally non-empty (other departments; non-phone staff / PTO), so an
+        // all-empty fixture would never show the states a real manager sees.
+        // `likelyMismatches` is the DERIVED intersection — exactly what
+        // cdrLikelyNameMismatches_ returns for the two lists below: only
+        // "Smith, Bob" ↔ "Bob Smith" share 2 name tokens. "Jo Tran" shares
+        // just a surname with "Ada Tran" and must NOT pair.
+        unmatchedAgents: ['Ada Tran', 'Casey Lund', 'Dana Wu', 'Smith, Bob'],
+        rosterWithNoCdr: ['Bob Smith', 'Jo Tran', 'Robin Choudhury'],
+        likelyMismatches: [{ roster: 'Bob Smith', cdr: 'Smith, Bob' }],
+        trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
         queueRows: Object.keys(tq).map(function (q) {
           return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };

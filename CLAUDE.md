@@ -271,6 +271,30 @@ this section before touching the relevant area.
   Phase 1 Key Design Decision. The `A_Q_*` queue-aggregate rows
   `isCdrQueueSentinel_` skips are real but far too sparse to build a series on
   (8 queues / ~12 rows in a week).
+- **A diagnostic that can never be clean is worse than none — the CDR
+  name-match card (cycle 15).** Both roster↔CDR mismatch directions are
+  PERMANENTLY non-empty on this deployment, so neither can drive a status
+  card: `unmatchedAgents` lists every CDR agent not on our roster, but the CDR
+  Report covers the WHOLE phone system (it is owned by `call-data-reporting`)
+  while our roster is one team — **there is no department filter;
+  `CONFIG.CDR_DEPARTMENT` is declared and read NOWHERE** (its only other
+  mention was a `getCdrAgentMetrics_` doc comment claiming it filtered, now
+  corrected). Reported 78 strangers in practice. The reverse list
+  `rosterWithNoCdr` fails identically: the roster set is every NAMED employee
+  row, so managers, admin staff, and anyone on PTO across the whole window are
+  in it forever — swapping the tone to it just moves the always-amber problem.
+  The **intersection** is the signal: a roster rep with no call data whose name
+  resembles an unmatched CDR agent is one person spelled two ways, which means
+  their calls are silently missing from every metric. `cdrLikelyNameMismatches_`
+  (pure, Node-pinned) pairs them on **normalized-equal OR ≥2 shared name
+  tokens** — two, not one, because a shared surname is a coincidence on any
+  real roster; a nickname sharing only a surname ("Robert Smith" vs "Bob
+  Smith") is a deliberate false NEGATIVE, since under-reporting is the safe
+  direction for something that raises a warning. That set is normally EMPTY,
+  so the card reaches green, and it names the exact `Agent Alias Overrides`
+  row to add. **The general rule: before toning a health indicator off a
+  count, ask what that count reads on a healthy production system — if the
+  answer is not zero, it is reference detail, not a signal.**
 - **CDR enrichment in `managerGetShiftStats` is best-effort.**
   The CDR overlay that adds `cdr` and `noteCoverage` fields to each
   rep's shift-stats card is wrapped in a try/catch. If the CDR
@@ -3415,6 +3439,13 @@ this section before touching the relevant area.
   as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
   without taking down the rest of the panel. Every server string is
   `esc()`'d before `innerHTML`.
+  **The CDR status card tones off `likelyMismatches` — NEVER either raw name
+  list** (see the "a diagnostic that can never be clean" gotcha): both raw
+  directions are permanently non-empty on a real deployment, so either one
+  pins the card amber forever. The two raw lists still render beneath it as
+  muted reference detail, capped with an explicit "+N more" (INV-169), and
+  joined with a MIDDOT because a name can itself contain a comma
+  ("Smith, Bob" comma-joined reads as two agents).
   **Queue inventory (sub-queue Phase 0) — OPT-IN, panel only.** The app has
   always had queue data and always thrown it away: DQE rows whose Agent cell is
   `A_Q_*`/`Backup CSR` are dropped by `isCdrQueueSentinel_`, **`CDR.QUEUE_EXT`
