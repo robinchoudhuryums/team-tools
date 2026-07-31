@@ -79,12 +79,28 @@ Updated: 2026-07-31
   `!dates.length`); it was routed through the predicate for consistency only.
 
 ## Where I left off
-Cycle 15's audit and implementation are both COMPLETE and committed (c2bbbbd,
-pushed). 396 pure + 69 DOM green.
+**Cycle 15 is CLOSED, merged (PR #150, `737e6dc` on main), and the invariant
+backlog is clear.** Nothing is half-finished in the repo.
 
-Next: **/reflect for cycle 15**, which must resolve FOUR accumulated invariant
-candidates (two from cycle 14, two from this cycle) — cycle 14's went unadopted
-and a second cycle of drift would repeat exactly the F5 failure this cycle just
-fixed in INV-169.
+**Start a fresh cycle here.** The branch `claude/broad-scan-yhkbe2` was merged,
+so it has been RESTARTED from `origin/main` — do not stack onto merged history.
 
-The deploy is the long pole: it now carries cycles 11 through 15.
+The ONE thing gating value delivery is not code: **the deploy now carries cycles
+11 through 15.** Every fix in that span — the CDR health card, the roster
+predicate, the whole sub-queue feature, two cycles of interface work — is
+sitting behind `clasp push -f` + New version. Ask about it before starting
+another audit cycle; auditing further only deepens the undeployed backlog.
+
+Suggested next moves, in order of value:
+1. **Deploy** (operator), then `runAllTests()` — expect 286, 0 failed.
+2. **F2's one-line close:** read the col-4 header off the DQE tab and add
+   `4: '<that text>',` to CDR_EXPECTED_HEADERS. Deliberately NOT guessed.
+3. A normal `/broad-scan` cycle (16) — the seams cadence is reset to 0, so the
+   next seams audit is not due for 4 subsystem cycles.
+
+Two process rules earned recently, both still live:
+- **Before concluding work is lost, check the REMOTE.** The local checkout
+  rewound twice in cycle 14; both times `git reset --hard origin/<branch>`
+  restored everything.
+- **Read the guard before diagnosing which call it rejected** (cycle 14's
+  wrong `hasActiveTimeOffOnDate_` diagnosis cost a full operator round-trip).

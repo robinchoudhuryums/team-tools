@@ -1,6 +1,55 @@
 # Project Health — team-tools
 
 ## Current Standing
+**Cycle 15 (Seams & Invariants — the cadence audit) CLOSED 2026-07-31 —
+reflected net +1 (2 prod fixes − 1 new failure mode; 4 defensive).** The audit
+found 0 Critical / 0 High / 2 Medium / 3 Low, and that thin profile is the
+finding: 64/64 tests CLAUDE.md names as guards exist, `Object.keys(TOOLS).length`
+= 7, triggers = 16 and the "fourteen localStorage keys" claim all verify
+mechanically, and two suspected defects were checked and CLEARED rather than
+reported. **Axis-B lowest: Parallel Source-of-Truth Drift** — F3 (one question
+answered fourteen ways), F4 (a fixture paraphrasing server logic, outside
+MIRROR_INDEX) and F5 (the library contradicting the code) are one category, and
+it is the category a seams audit exists for.
+
+**The two production fixes.** An operator question opened the cycle: Team
+Metrics and Automation Health reported "78 CDR agent(s) not matched to roster".
+That count can never reach zero — the CDR Report covers the whole phone system
+while our roster is one team, and `CONFIG.CDR_DEPARTMENT` was declared, read
+NOWHERE, and carried a doc comment claiming it filtered the read. The health
+card toned off it and sat permanently amber; the obvious swap
+(`rosterWithNoCdr`) fails identically because that set is every named employee
+with no calls. The card now tones off the INTERSECTION
+(`cdrLikelyNameMismatches_`): a roster rep with no call data whose name
+resembles an unmatched CDR agent is one person spelled two ways, so their calls
+are silently missing from every metric. Normally empty → the card reaches green,
+and it names the exact `Agent Alias Overrides` row to add. Then **F3**: roster
+INCLUSION was decided independently by FOURTEEN walks that disagreed — nine
+tested raw truthiness, three trimmed, two tested nothing — so a whitespace-only
+email cell split them (the INV-167 shape on a second column), and
+`getTeamMetrics` ACTED on it: its gate is `cdr || noteCount > 0 || …`, which an
+offboarded name still matching DQE history satisfies, putting a departed
+employee in the manager's team table with their volume in `teamTotals`. One
+predicate (`empRosterEmail_`) now answers it everywhere.
+
+**One half was deliberately REVERTED.** Adding col 4 to `CDR_EXPECTED_HEADERS`
+was implemented and backed out: that validator substring-matches and the real
+col-4 header text in the `call-data-reporting`-owned sheet has never been
+recorded here, so a guess raises a FALSE "Column drift" warning and flips the
+CDR card amber — the identical always-wrong-signal defect fixed hours earlier
+the same cycle. Shipped the safe half (enum-derived offsets); left a one-line
+operator close.
+
+**Process notes worth carrying.** The audit sampled NINE roster walks;
+implementation found FOURTEEN — an audit that samples named functions can
+undercount, which is the argument for deriving scan sets (INV-179) over
+enumerating them. The reflection CORRECTED the implementation self-report in
+both directions (+1 production fix the batch never covered, +1 new failure mode
+it reported as zero) at the same net, the cycle-13 pattern. Pure harness
+394→396, DOM 69; eight revert scenarios bite-checked. **Six invariants adopted
+(INV-181–186)**, clearing a backlog that had accumulated across two cycles —
+including INV-181/182, which cycle 14 proposed and never wrote.
+
 **Cycle 14 (CDR sub-queue feature) — Phases 0, 1, 2 and 4 shipped; the
 operator's ask is MET.** Operator-requested feature work, not an audit cycle:
 departments with sub-queues had no way to view sub-queue detail separately or
@@ -309,3 +358,9 @@ backlog was implemented):
 | 2026-07-09 | 7 | net +14 (14 prod fixes − 0 new failure modes; 24 defensive; 1 capability; overall 8/10 at scan) | Broad scan broke the no-High streak with TWO silent-dead detectors (H-1 coaching overdue never fired since ship; H-2 payroll export tz) → entire ~35-finding backlog shipped same-cycle (Turns 1–8) + verification/residuals (A), Seams & Invariants audit (B — INV-72 mirror finally tripwired; CN draft-persister live bug found+fixed), detector-liveness monitoring (C), per-rep schedules col O (D). Factory+boundary class fixes tripwired. INV library →149. Pure 230→248, DOM 48→55. Deployed + editor-verified (258/259 → assertion-idiom fix #123). |
 | 2026-07-10 | 8 | net +14 (16 prod fixes − 2 deliberate fail-safe tradeoffs; 34 defensive) | Fresh 7-agent scan (0 Critical / 1 High / 15 Medium / ~31 Low) → backlog minus 4 deferrals implemented. Headliners: mid-final-day payroll export missing PH afternoon punches; dead Retry buttons; multi-dept sends bypassing DeptRequests v2. Defining theme: TEST INTEGRITY (any-index scans, reverse INV-72 mirror, honest SKIPs, NUL-byte cleanup, paren-anchored extraction). Pure 248→277, DOM 55→59. |
 | 2026-07-21 | 9 | net +9 (10 prod fixes − 1 deliberate fail-safe tradeoff; 37 defensive) | Fresh 8-agent scan (0 Critical / 1 High / 11 Medium / ~36 Low, 0 retracted) → ENTIRE backlog across 7 batches, PR #136. Headliners: "Coach on this" dead since the Manage reorg; Day Edit rewriting untouched live punches. Class-retiring tripwires: no-mail-in-lock, payload-contract, registry-key nets. Pure 289→302, DOM 60→61. |
+| 2026-07-24 | 10 | net +33 (34 prod fixes − 1 new failure mode; 38 defensive) | *(backfilled from `.cycle/metrics.csv`.)* The largest cycle to date. Headliners: `recordPunch` gained the server-side next-action state machine (INV-155) so a stale window can no longer append duplicate punches; the intake PHI store became integrity-guarded around the send (INV-157); witness-class audit rows became loss-visible (INV-158). Batches K/L added the Timesheet sheet doctor (INV-159), NUL-delimited EmpDocs hashes with legacy dual-verify (INV-160), the single-sourced failure derivation behind the shell health dot (INV-161) and the nightly in-project self-test (INV-162). |
+| 2026-07-24 | 11 | net +5 (5 prod fixes − 0 new failure modes; 28 defensive) | *(backfilled.)* The previous **Seams & Invariants** audit. Hardened the tripwire layer itself: the payload-contract extractor became balanced-brace + depth-masked, the SUBMITTED_AT scan gained a line-whitelist closing the alias hole, the no-mail-in-lock region extended to the last `releaseLock()` and went transitive, and the registry-literal nets were derived from ONE list instead of four hand copies — all bite-checked. Plus the V-1…V-10 visual batch. |
+| 2026-07-27 | 12 | net +11 (13 prod fixes − 2 fail-safe new failure modes; 17 defensive) | *(backfilled.)* **9 of the 13 fixes came from an operator-requested VISUAL addendum the code lens structurally could not reach** — the strongest evidence for the Visual Audit Stage now mandated in CLAUDE.md. Headliners: `color-mix(in oklch)` interpolated hue on the polar arc so `--warning-deep` resolved RED across ~254 consumers (V-1); AM/PM at 1.20–2.00:1 on the clock card (V-2); a swallowed per-rep Sheet read rendered as a confident 0% telling reps to re-file work (F5); the column-L predicate `cnEnrolledSheetId_` (F14/INV-167). |
+| 2026-07-29 | 13 | net +8 (9 prod fixes − 1 fail-safe new failure mode; 12 defensive) | *(backfilled.)* The interface lens produced the top four findings for the SECOND consecutive cycle: six click-only `span`/`div` controls keyboard-unreachable (A1), compact-mode grids with no viewport breakpoint on a rep-facing tab (A2), nav state carried by CSS class alone so a screen-reader user was never told where they were (A11), 16 load-failure sites rendering into the EMPTY-state container (A12), and ~30 surfaces with no heading outline below the `h1` (A13). `timeToMins_` returned NaN, scoring corrupt rows ON TIME (A3). |
+| 2026-07-31 | 14 | net 0 (0 prod fixes − 0 new failure modes; 4 capabilities; 3 defensive) | *(backfilled.)* Operator-requested FEATURE work, not an audit — net 0 is by design. **The headline is a NEGATIVE result:** Phase 0 was a cheap read-only gate built to test whether the approved design was buildable, and it was not (DQE carries one row per (agent, date)), invalidating the original scope before any of it was written. Re-scoped to transfer-only and shipped: queue inventory, per-queue transfer reader, Combined/By-department/By-queue UI, operator-supplied grouping. |
+| 2026-07-31 | 15 | net +1 (2 prod fixes − 1 new failure mode; 4 defensive) | **Seams & Invariants** (cadence 4 of 4). 0 Critical / 0 High / 2 Medium / 3 Low. Fixes: the CDR health card toned off a count that can never reach zero (permanently amber → now tones off the actionable pairing and names the alias to add); and `getTeamMetrics` counted offboarded name-only roster rows into the manager's team table and totals (F3 → one `empRosterEmail_` predicate across 14 walks). Also removed 4 declared-but-unread CONFIG keys — two were knobs against a hardcoded FRIDAY, i.e. a silent no-op for an operator moving the weekly digest. Adopted INV-181–186, clearing a two-cycle backlog. Pure 394→396, DOM 69. |
