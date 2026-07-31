@@ -123,6 +123,23 @@ const CONFIG = {
   CDR_CACHE_TTL:     300,  // 5 min — matches the Department Dashboard's cache
   CDR_CACHE_KEY:     'cdr_metrics_v3',   // v3 — meta gained offRosterAgents (INV-85: bump on shape change)
   CDR_ALERT_THRESHOLD: 85,  // % Answered below this → warn badge on Metrics sidebar
+  // Cycle-14 Phase 4 — queue → department grouping for the Metrics
+  // "By department" view. OPERATOR-SUPPLIED (2026-07-31), not inferred: Phase 1
+  // deliberately shipped no grouping because guessing it from queue names would
+  // have been a guess about the business. Seeded here (the DEPARTMENT_EMAILS /
+  // DR_SLA_TARGETS pattern) so it works on deploy with no operator action;
+  // Script Property `CDR_QUEUE_GROUPS` overrides without a redeploy.
+  //
+  // Sub-queues are DISJOINT from their parent (operator-confirmed): a transfer
+  // lands in exactly one column, so a group total is a plain SUM of its
+  // members. If that ever changes, `groupQueueRows_` must stop summing — see
+  // its comment.
+  CDR_QUEUE_GROUPS: {
+    'Sales':            ['A_Q_Sales', 'A_Q_PAP', 'A_Q_Sales_MWC'],
+    'Customer Success': ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'],
+    'Field Operations': ['A_Q_FieldOps', 'A_Q_FieldOps_Power'],
+    'Power':            ['A_Q_PowerChairs', 'A_Q_PAK', 'A_Q_BackUp_Power'],
+  },
 
   // ── Call Notes module ────────────────────────────────────────────────
   // The rolling-note panel; per-rep notes write to the rep's own Sheet
@@ -512,6 +529,9 @@ const CSRT_QUEUE_COL_LAST = 17;
 // describing only part of itself).
 const CDR_QUEUE_SCAN_MAX = 4000;
 const CDR_QUEUE_LIST_CAP = 40;
+// Phase 4 — the bucket for a queue that no group claims. A gap to close, not
+// a department, so it always sorts last.
+const CDR_QUEUE_UNGROUPED = 'Ungrouped';
 // Cycle-11 L-2 — expected headers for the columns CSRT actually reads
 // (1-indexed, so each key = the CSRT index + 1; a Node pin holds the two
 // aligned). The Transfer tab is written by the operator-owned
@@ -13830,6 +13850,84 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames, opts) {
   return { perRepDaily: perRepDaily, agents: agents, meta: meta };
 }
 
+/** Phase 4 — resolved queue→department map. Script Property `CDR_QUEUE_GROUPS`
+ *  first, else the CONFIG seed. SANITIZE-ON-READ (the getStateTaxRates_ / L-12
+ *  rule): a hand-edited property holding anything but {string: [string]}
+ *  degrades to the CONFIG fallback rather than being returned as-is, and a
+ *  queue listed under two groups is kept only in the FIRST — the grouping is a
+ *  partition, and silently double-counting a queue is exactly the class INV-180
+ *  exists to prevent. */
+function getCdrQueueGroups_() {
+  var fallback = CONFIG.CDR_QUEUE_GROUPS || {};
+  var raw = null;
+  try { raw = PropertiesService.getScriptProperties().getProperty('CDR_QUEUE_GROUPS'); } catch (e) { raw = null; }
+  var src = fallback;
+  if (raw) {
+    try {
+      var parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) src = parsed;
+    } catch (e) { /* corrupt blob → CONFIG fallback */ }
+  }
+  var out = {}, claimed = {};
+  Object.keys(src).forEach(function (g) {
+    var name = String(g || '').trim();
+    if (!name || !Array.isArray(src[g])) return;
+    var members = [];
+    src[g].forEach(function (q) {
+      var qn = String(q == null ? '' : q).trim();
+      if (!qn || claimed[qn]) return;   // first group wins — never double-count
+      claimed[qn] = true;
+      members.push(qn);
+    });
+    if (members.length) out[name] = members;
+  });
+  return out;
+}
+
+/** Phase 4 — fold per-queue rows into department rows. PURE (given rows +
+ *  groups) so it unit-tests without a sheet.
+ *
+ *  Sub-queues are DISJOINT from their parents (operator-confirmed 2026-07-31),
+ *  so a group total is a plain SUM of its members. If 8x8 ever rolls sub-queue
+ *  traffic up into the parent column, this MUST change — summing would then
+ *  report a group at roughly 1.5x its real volume. The `reps` count is a UNION,
+ *  not a sum: one rep working two queues in a group is one rep.
+ *
+ *  A queue in no group lands in a single trailing "Ungrouped" row rather than
+ *  being dropped or exploded into pseudo-groups — an unmapped queue must stay
+ *  visible and legible as unmapped. */
+function groupQueueRows_(queueRows, groups) {
+  var rows = queueRows || [];
+  var map = groups || {};
+  var owner = {};
+  Object.keys(map).forEach(function (g) {
+    map[g].forEach(function (q) { if (!(q in owner)) owner[q] = g; });
+  });
+  var acc = {}, order = [];
+  rows.forEach(function (r) {
+    var g = owner[r.queue] || CDR_QUEUE_UNGROUPED;
+    if (!acc[g]) { acc[g] = { group: g, transferred: 0, reps: 0, queues: [] }; order.push(g); }
+    acc[g].transferred += (r.transferred || 0);
+    acc[g].reps = Math.max(acc[g].reps, r.reps || 0);   // see below
+    acc[g].queues.push({ queue: r.queue, transferred: r.transferred || 0, reps: r.reps || 0 });
+  });
+  // `reps` per queue is a COUNT, not a roster, so a true union is not
+  // recoverable here — max() is the tightest correct LOWER bound (the group has
+  // at least as many reps as its busiest queue). Labelled as such in the UI so
+  // it is never read as a total.
+  return order.map(function (g) {
+    var e = acc[g];
+    e.queues.sort(function (a, b) { return b.transferred - a.transferred; });
+    return e;
+  }).sort(function (a, b) {
+    // Ungrouped always sorts last, whatever its volume — it is a gap to close,
+    // not a department to compare against.
+    if (a.group === CDR_QUEUE_UNGROUPED) return 1;
+    if (b.group === CDR_QUEUE_UNGROUPED) return -1;
+    return b.transferred - a.transferred;
+  });
+}
+
 /** PHASE 0 (sub-queue work) — READ-ONLY queue inventory over the CDR feed.
  *
  *  The app has always had queue data and has always thrown it away: DQE rows
@@ -14483,8 +14581,30 @@ function getTeamMetrics(dateOrFrom, to) {
     }
 
     var cdrResult = getCdrAgentMetrics_(from, toDate, rosterNames);
+    // Cycle-14 Phase 2 — per-queue TRANSFER attribution. BEST-EFFORT, the same
+    // posture as the CDR overlay in managerGetShiftStats (INV-67): the Transfer
+    // tab is optional, and a manager's whole team table must not disappear
+    // because one auxiliary tab is unreachable. On failure `transferMeta.error`
+    // is set and the client renders an error strip (INV-175) while the rest of
+    // the table stands.
+    var trAgents = {}, transferMeta = { available: false, error: null, queueColumns: [] };
+    try {
+      var trRes = getCsrTransferPerRepDaily_(from, toDate, rosterNames, { withQueues: true });
+      if (trRes.meta && trRes.meta.error) {
+        transferMeta.error = trRes.meta.error;
+      } else {
+        trAgents = trRes.agents || {};
+        transferMeta.available = true;
+        transferMeta.queueColumns = (trRes.meta && trRes.meta.queueColumns) || [];
+        transferMeta.queueWarning = (trRes.meta && trRes.meta.queueWarning) || null;
+      }
+    } catch (trErr) {
+      transferMeta.error = trErr.message;
+    }
     var reps = [];
-    var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0 };
+    var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0,
+      transferred: 0, queueTotal: 0 };
+    var teamQueues = {};        // queue -> {transferred, reps:{}}
     var unmatchedAgents = [];
 
     Object.keys(repMap).forEach(function (name) {
@@ -14513,6 +14633,16 @@ function getTeamMetrics(dateOrFrom, to) {
         noteCountUnavailable: !!noteRes.unavailable,   // F5
         hasCdrData: !!cdr,
       };
+      // Phase 2 — transfers + their per-queue split. INV-180: `queues` is a
+      // COMPONENT of `transferred`, so `queueUnattributed` rides along and the
+      // total is never derived by summing queues.
+      var tr = trAgents[name] || null;
+      rep.transferred = tr ? tr.transferred : 0;
+      rep.transferPct = tr ? tr.transferPct : null;
+      rep.queues = (tr && tr.queues) || {};
+      rep.queueTotal = tr ? (tr.queueTotal || 0) : 0;
+      rep.queueUnattributed = tr ? (tr.queueUnattributed || 0) : 0;
+      rep.hasTransferData = !!tr;
       // F5: a rep whose Sheet failed to read is still listed (their CDR row is
       // real) — the row just says "—" for notes instead of "0".
       if (cdr || noteCount > 0 || noteRes.unavailable) {
@@ -14523,6 +14653,16 @@ function getTeamMetrics(dateOrFrom, to) {
         teamTotals.tttSeconds += rep.tttSeconds;
         teamTotals.noteCount += noteCount;
         if (noteRes.unavailable) teamTotals.noteCountPartial = true;   // F5
+        // Phase 2 — team roll-up + the by-queue view's rows. Only reps that
+        // made the table contribute, so the two modes always describe the same
+        // population.
+        teamTotals.transferred += rep.transferred;
+        teamTotals.queueTotal += rep.queueTotal;
+        Object.keys(rep.queues).forEach(function (q) {
+          if (!teamQueues[q]) teamQueues[q] = { queue: q, transferred: 0, reps: {} };
+          teamQueues[q].transferred += rep.queues[q];
+          teamQueues[q].reps[rep.repName] = true;
+        });
       }
     });
 
@@ -14544,6 +14684,13 @@ function getTeamMetrics(dateOrFrom, to) {
 
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
 
+    // Phase 2/4 — computed once so the by-queue and by-department views are
+    // literally the same numbers folded two ways.
+    var qRows = Object.keys(teamQueues).map(function (q) {
+      return { queue: q, transferred: teamQueues[q].transferred,
+               reps: Object.keys(teamQueues[q].reps).length };
+    }).sort(function (a, b) { return b.transferred - a.transferred; });
+
     return {
       from: from,
       to: toDate,
@@ -14553,6 +14700,14 @@ function getTeamMetrics(dateOrFrom, to) {
       unmatchedAgents: unmatchedAgents,
       rosterWithNoCdr: rosterWithNoCdr,
       trend: trendData,
+      // Phase 2 — the "By queue" mode's rows, largest first, and the metadata
+      // the client needs to tell "no transfer data" apart from "the read
+      // failed" (INV-175).
+      transferMeta: transferMeta,
+      queueRows: qRows,
+      // Phase 4 — the "By department" mode. Derived server-side from the same
+      // qRows the by-queue mode uses, so the two views can never disagree.
+      groupRows: groupQueueRows_(qRows, getCdrQueueGroups_()),
       meta: { rowsScanned: cdrResult.meta.rowsScanned, rowsMatched: cdrResult.meta.rowsMatched,
               columnWarning: cdrResult.meta.columnWarning, computeMs: Date.now() - t0 },
     };

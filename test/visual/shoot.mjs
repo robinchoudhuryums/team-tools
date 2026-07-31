@@ -44,6 +44,11 @@ const SCENARIOS = [
   ['cn-log-dark-wide',      { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'dark',  ''],
   ['metrics-light-wide',    { tool: 'metrics',   tab: null },         WIDE, 'light', ''],
   ['metrics-dark-wide',     { tool: 'metrics',   tab: null },         WIDE, 'dark',  ''],
+  // Cycle-14 Phase 2 — Team Metrics was never in the matrix, and it is now the
+  // home of the sub-queue views (segmented bars are exactly what code review
+  // cannot verify).
+  ['metrics-team-light-wide', { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'light', ''],
+  ['metrics-team-dark-wide',  { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'dark',  ''],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
   ['intake-dark-wide',      { tool: 'intake',    tab: null },         WIDE, 'dark',  ''],
   ['reference-light-wide',  { tool: 'reference', tab: null },         WIDE, 'light', ''],

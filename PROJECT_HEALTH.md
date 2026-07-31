@@ -1,37 +1,39 @@
 # Project Health — team-tools
 
 ## Current Standing
-**Cycle 14 (CDR sub-queue feature) IN PROGRESS — Phase 0 + a RE-SCOPED Phase 1
-shipped; Phase 2 (the UI) unstarted.** Operator-requested feature work, not an
-audit cycle: departments with sub-queues had no way to view sub-queue detail
-separately or transparently. Approved design (2026-07-29): discovery first,
-MANAGER SURFACES ONLY — which drops the phase that could have defeated
-INV-124's N=3 anonymization — and expandable per-queue rows plus segmented
-contribution bars.
+**Cycle 14 (CDR sub-queue feature) — Phases 0, 1, 2 and 4 shipped; the
+operator's ask is MET.** Operator-requested feature work, not an audit cycle:
+departments with sub-queues had no way to view sub-queue detail separately or
+transparently. Design approved 2026-07-29: discovery first, MANAGER SURFACES
+ONLY (dropping the phase that could have defeated INV-124's N=3 anonymization),
+expandable per-queue rows plus segmented contribution bars.
 
-**Phase 0 was a GATE and it returned the NEGATIVE verdict, which is the most
-valuable thing this cycle produced.** Measured against the live sheet: **DQE
-carries ONE row per (agent, date)**, so answered / missed / % answered /
-talk-time can never be split by queue. `CDR.QUEUE_EXT` (col 4) — declared in
-the enum for years and read nowhere — turned out to hold comma-separated
-MEMBERSHIP lists (`103,108`, and `108,103` / `103,138,108`: the same sets in
-different orders), a dimension of the AGENT rather than of the call. Building
-the approved design on DQE would have been impossible, and the two-hour
-discovery step is what caught it instead of a day of Phase 1 work.
+**Phase 0 was a GATE and it returned the NEGATIVE verdict — the most valuable
+thing this cycle produced.** Measured against the live sheet: **DQE carries ONE
+row per (agent, date)**, so answered / missed / % answered / talk-time can never
+be split by queue. `CDR.QUEUE_EXT` (col 4) — declared in the enum for years and
+read nowhere — holds comma-separated MEMBERSHIP lists (`103,108` vs `108,103`),
+a dimension of the AGENT rather than of the call. Two hours of discovery
+replaced a day of Phase 1 work landing on sand.
 
-**Phase 1 was re-scoped on that evidence and shipped.** The `CSR Transfer
-Historical Data` tab IS keyed by rep, so its per-queue H:R block (11 queues,
-406–2886 populated rows each) is genuine per-rep attribution — for transfers.
-`getCsrTransferPerRepDaily_` now reads it behind `opts.withQueues` (default
-OFF, because the three existing callers cache their assembled payloads),
-discovering columns BY HEADER NAME so nothing can drift against the
-operator-owned `call-data-reporting` repo, and reporting `queueTotal` /
-`queueUnattributed` so a partial breakdown can never read as complete
-(INV-180). Given a live consumer rather than shipped dead: the admin queue
-inventory now renders windowed per-queue transfer totals through that reader.
-Pure harness 375→382, DOM 66; all 7 cycle-14 pins bite-checked, two of which
-needed tightening after failing to bite. Net 0 by design — Phase 0 and Phase 1
-are a diagnostic and a capability, not fixes.
+**Phases 1, 2 and 4 were re-scoped on that evidence and shipped.** The `CSR
+Transfer Historical Data` tab IS keyed by rep, so its per-queue H:R block is
+genuine per-rep attribution — for transfers. `getCsrTransferPerRepDaily_` reads
+it behind `opts.withQueues` (default OFF; the three existing callers cache their
+payloads), discovering columns BY HEADER NAME so nothing drifts against the
+operator-owned `call-data-reporting` repo. Team Metrics gained a Combined / By
+department / By queue switcher: the combined view shows each rep's transfer
+total with a segmented contribution bar and an expandable per-queue split.
+**INV-180 is enforced visually as well as in the payload** — the unattributed
+remainder is its own segment and the detail states "N of M attributed", because
+a bar built from queues alone would imply a completeness the data does not have.
+Grouping is OPERATOR-SUPPLIED, not inferred (Sales / Customer Success / Field
+Operations / Power), seeded in CONFIG with a Script Property override; sub-queues
+are disjoint from parents so a group total is a plain sum, and an unmapped queue
+lands in a trailing "Ungrouped" row rather than being absorbed. Pure harness
+375→391, DOM 66→69, visual matrix 20→22 (Team Metrics had never been shot). All
+16 cycle-14 pins bite-checked; three needed tightening after failing to bite.
+Net 0 by design — a diagnostic plus three capabilities, no defects fixed.
 
 **Cycle 13 (broad) CLOSED 2026-07-29 — reflected net +8 (9 prod fixes − 1 new
 failure mode; 12 defensive).** The scan found 0 Critical / 0 High / 6 Medium /

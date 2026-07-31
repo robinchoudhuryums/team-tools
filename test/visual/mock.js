@@ -77,6 +77,74 @@
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 88.5,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
       noteCount: 218, noteCoverage: 86, trend: trend30() },
+    // Cycle-14 Phase 2 — Team Metrics with the per-queue transfer split. The
+    // shape mirrors getTeamMetrics exactly, INCLUDING the INV-180 contract:
+    // queueTotal is the SUM of `queues` and queueUnattributed is the remainder
+    // against `transferred`, never a free-floating number. Getting that wrong
+    // is how V-14 produced a screenshot the server could not have produced.
+    getTeamMetrics: (function () {
+      var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues) {
+        var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
+        return { repId: id, repName: name, totalRung: rung, totalAnswered: ans,
+          totalMissed: missed, pctAnswered: Math.round((ans / rung) * 1000) / 10,
+          tttFormatted: '3:12:44', attFormatted: att, tttSeconds: 11564, attSeconds: 281,
+          noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, hasCdrData: true,
+          transferred: transferred, transferPct: Math.round((transferred / ans) * 1000) / 10,
+          queues: queues, queueTotal: qt, queueUnattributed: Math.max(0, transferred - qt),
+          hasTransferData: true };
+      };
+      var reps = [
+        mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }),
+        mk('E-1077', 'Sam Ortiz', 38, 36, 2, '0:05:02', 30, 83, 9, { A_Q_PowerChairs: 5, A_Q_FieldOps: 2, A_Q_Spanish: 1 }),
+        mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_CSR: 12, A_Q_Legacy_Unmapped: 4 }),
+        mk('E-1104', 'Leo Kim', 29, 27, 2, '0:04:20', 18, 67, 3, {}),
+      ];
+      var tq = {};
+      reps.forEach(function (r) {
+        Object.keys(r.queues).forEach(function (q) {
+          if (!tq[q]) tq[q] = { queue: q, transferred: 0, reps: {} };
+          tq[q].transferred += r.queues[q]; tq[q].reps[r.repName] = true;
+        });
+      });
+      var totals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0, transferred: 0, queueTotal: 0 };
+      reps.forEach(function (r) {
+        totals.rung += r.totalRung; totals.answered += r.totalAnswered; totals.missed += r.totalMissed;
+        totals.tttSeconds += r.tttSeconds; totals.noteCount += r.noteCount;
+        totals.transferred += r.transferred; totals.queueTotal += r.queueTotal;
+      });
+      totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
+      totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
+      totals.noteCoverage = Math.round((totals.noteCount / totals.answered) * 100);
+      return {
+        from: todayIso, to: todayIso, date: todayIso, reps: reps, teamTotals: totals,
+        unmatchedAgents: [], rosterWithNoCdr: [], trend: trend30(),
+        transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
+        queueRows: Object.keys(tq).map(function (q) {
+          return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
+        }).sort(function (a, b) { return b.transferred - a.transferred; }),
+        groupRows: (function () {
+          var GROUPS = { 'Sales': ['A_Q_Sales', 'A_Q_PAP', 'A_Q_Sales_MWC'],
+            'Customer Success': ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'],
+            'Field Operations': ['A_Q_FieldOps', 'A_Q_FieldOps_Power'],
+            'Power': ['A_Q_PowerChairs', 'A_Q_PAK', 'A_Q_BackUp_Power'] };
+          var owner = {};
+          Object.keys(GROUPS).forEach(function (g) { GROUPS[g].forEach(function (q) { if (!(q in owner)) owner[q] = g; }); });
+          var acc = {}, order = [];
+          Object.keys(tq).forEach(function (q) {
+            var g = owner[q] || 'Ungrouped';
+            if (!acc[g]) { acc[g] = { group: g, transferred: 0, reps: 0, queues: [] }; order.push(g); }
+            acc[g].transferred += tq[q].transferred;
+            acc[g].reps = Math.max(acc[g].reps, Object.keys(tq[q].reps).length);
+            acc[g].queues.push({ queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length });
+          });
+          return order.map(function (g) { return acc[g]; }).sort(function (a, b) {
+            if (a.group === 'Ungrouped') return 1;
+            if (b.group === 'Ungrouped') return -1;
+            return b.transferred - a.transferred; });
+        })(),
+        meta: { rowsScanned: 900, rowsMatched: 120, columnWarning: null, computeMs: 84 },
+      };
+    })(),
     getDashboardMetrics: function (period) {
       return { period: period, label: period === 'yesterday' ? 'Yesterday' : (period === 'mtd' ? 'Month to date' : 'Year to date'),
         own: { answered: 41, missed: 5, pctAnswered: 89.1, attFormatted: '4:41', noteCount: 35, noteCoverage: 85, transferPct: 8.2 },   // V-14: 35/41 = 85%
