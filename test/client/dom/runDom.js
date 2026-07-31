@@ -627,6 +627,61 @@ test('mRenderTrendSection_: 5 KPI cards, dual lines, cohort note; suppressed tea
   assert.ok(/team 2:20/.test(html), 'team avg talk falls back to the last non-null day (140s)');
 });
 
+// ── Cycle-14 Phase 2 — sub-queue disclosure + scope switch ──────────────────
+// The static visual harness cannot CLICK, so the two interactive halves of
+// Phase 2 are verified here in a real DOM instead of left unchecked.
+test('Phase 2: the transfers disclosure reveals its detail row and updates aria-expanded', () => {
+  const h = boot();
+  const w = h.window;
+  const rep = { repId: 'E-1042', repName: 'Avery Blake', totalRung: 46, totalAnswered: 41,
+    totalMissed: 5, pctAnswered: 89.1, attFormatted: '0:04:41', attSeconds: 281,
+    noteCount: 35, noteCoverage: 85, noteCountUnavailable: false,
+    transferred: 14, queues: { A_Q_Sales: 6, A_Q_Billing: 3 }, queueTotal: 9, queueUnattributed: 5 };
+  const html = w.mtRenderTable_({
+    rows: [rep],
+    columns: [{ key: 'repName', label: 'Rep', name: true, cell: function (r) { return w.esc(r.repName); } },
+      { key: 'transferred', label: 'Transfers', numeric: true, cell: function (r) {
+          const rid = 'm-q-' + r.repId;
+          return '<button type="button" class="m-qtoggle" aria-expanded="false" aria-controls="' + rid +
+            '" onclick="mToggleQueueRow_(this)">' + w.esc(r.transferred) + '</button>'; } }],
+    rowId: function (r) { return 'm-q-' + r.repId; },
+    detailRow: function (r) { return w.mQueueDetailHtml_(r); },
+  });
+  const host = w.document.createElement('div');
+  host.innerHTML = html;
+  w.document.body.appendChild(host);
+
+  const row = w.document.getElementById('m-q-E-1042');
+  const btn = host.querySelector('.m-qtoggle');
+  assert.ok(row, 'the detail row is emitted with the id the button controls');
+  assert.strictEqual(row.hasAttribute('hidden'), true, 'collapsed by default');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'false', 'button starts collapsed');
+  // The detail must carry the INV-180 fraction, not just the queue rows.
+  assert.ok(/9 of 14 transfers attributed/.test(row.textContent), 'the attributed fraction is in the DOM');
+
+  w.mToggleQueueRow_(btn);
+  assert.strictEqual(row.hasAttribute('hidden'), false, 'expands');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'true', 'aria-expanded follows the visual state');
+  w.mToggleQueueRow_(btn);
+  assert.strictEqual(row.hasAttribute('hidden'), true, 'collapses again');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'false', 'and the attribute follows back');
+});
+
+test('Phase 2: the scope switch re-renders and survives a missing dataset', () => {
+  const h = boot();
+  const w = h.window;
+  // No teamData cached — the switch must not throw (it fires before any load
+  // on a fast double-click).
+  w.mQueueScope_('queue');
+  assert.strictEqual(w.M_STATE.teamScope, 'queue', 'scope recorded without data present');
+  w.mQueueScope_('combined');
+  assert.strictEqual(w.M_STATE.teamScope, 'combined', 'toggles back');
+  // Anything not 'queue' normalises to combined — a stray value cannot wedge
+  // the view into a mode with no renderer.
+  w.mQueueScope_('nonsense');
+  assert.strictEqual(w.M_STATE.teamScope, 'combined', 'unknown scope falls back to combined');
+});
+
 test('mRenderTrendSection_ degrades to empty when series is absent (old server)', () => {
   const h = boot();
   assert.strictEqual(h.window.mRenderTrendSection_({}), '', 'no series → no section');

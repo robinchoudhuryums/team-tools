@@ -3,7 +3,7 @@
 ## Current
 Cycle: 14
 Phase: implement
-Scope: CDR sub-queue feature (operator-requested; Phase 0 + re-scoped Phase 1 done)
+Scope: CDR sub-queue feature (operator-requested; Phases 0, 1 and 2 done)
 Test Command: manual
 Subsystem cycles since last Seams audit: 3 (cycle 11 was the seams audit;
   /reflect increments — cadence is every 4, so 1 more subsystem cycle before
@@ -31,11 +31,12 @@ Updated: 2026-07-29
   H:R block has 11 real queues (406–2886 populated rows each). The operator
   approved re-scoping to TRANSFER-ONLY, and **Phase 1 is now IMPLEMENTED** on
   that basis.
-- Phase 2 (the UI half) is unstarted. Phase 4 (Admin editor) is moot unless
-  Phase 2 needs grouping.
-- Next concrete step: decide whether to build Phase 2 (the Team Metrics scope
-  switcher on the Transfer KPI). The data layer is ready and has a live
-  consumer in the admin panel.
+- **Phase 2 is IMPLEMENTED**: Team Metrics has a Combined / By-queue switcher,
+  with a segmented contribution bar + expandable per-queue detail on the
+  Transfers column. The operator's ask is met for transfers.
+- Next concrete step: close cycle 14 with /reflect, or build the grouping
+  ("By department") that is the last unbuilt piece — it needs the operator to
+  name the groupings, which they can now do from the live queue rows.
 
 ## Completed this cycle
 - Phase 0 | Code.js | NEW read-only `cdrQueueInventory_(from,to)` — distinct QUEUE_EXT values (col 4, declared since the CDR enum and read NOWHERE until now), the skipped A_Q_*/Backup CSR aggregates, which Transfer H:R columns carry data, and rows-per-(agent,date) — the gate question
@@ -43,6 +44,14 @@ Updated: 2026-07-29
 - Phase 0 | cn/script_callnotes.html | NEW self-contained `cnQueueInventoryHtml_` — verdict first in plain language, three distinct states (available / NOT in this data / cannot determine), every server string esc()'d
 - Phase 0 | CLAUDE.md | Automation Health decision documents the inventory, why it is opt-in, and why it is not folded into the cached getCdrAgentMetrics_ meta
 - Tests | test/client/run.js (+4 pins, 375→379, all four bite-checked)
+- Phase 1 | Code.js | `getCsrTransferPerRepDaily_(…, {withQueues})` — per-rep per-queue transfer counts, columns discovered BY HEADER NAME, opt-in so the three caching callers stay byte-identical; queueTotal/queueUnattributed enforce component-not-partition (INV-180)
+- Phase 1 | Code.js + cn/ | the admin queue inventory gained "Transfers by queue · in window", sourced THROUGH the new reader so it is exercised on live data
+- Phase 1 | Tests.js | the CDR fixture's Transfer tab gained a 3-queue H:R block summing to LESS than the total, plus a zero and a blank cell
+- Phase 2 | script_core.html | `mtRenderTable_` gained OPTIONAL detailRow/rowId — additive, the other two callers render identically
+- Phase 2 | Code.js | `getTeamMetrics` returns per-rep queues + `queueRows` + `transferMeta`; the transfer read is best-effort (INV-67) so the team table survives a Transfer-tab outage
+- Phase 2 | metrics/ | Combined / By-queue switcher; segmented contribution bar with the unattributed remainder drawn, expandable per-queue detail stating "N of M attributed"
+- Phase 2 | test/visual/ | Team Metrics added to the matrix (20 → 22) with a contract-accurate fixture — it had never been visually covered
+- Tests | pure 379→387, DOM 66→68; all 8 new pins bite-checked; the Phase-1 opt-in pin updated to NAME its callers rather than count them
 
 ## Pending / not yet done
 - **THE DEPLOY IS NOW BLOCKING — it is how Phase 0 delivers its answer**, and it
@@ -59,15 +68,15 @@ Updated: 2026-07-29
   `INSTANCE_IS_PROD=false`.** An unset value now reads as production, so without
   it devScrubRoster_/devShowConfig_ refuse and the nightly self-test drops to
   smoke (visibly). PROD is unaffected.
-- Phase 2 (~1 day, UNSTARTED — the remaining half of the ask) — Team Metrics
-  scope switcher on the TRANSFER KPI, with expandable per-queue rows +
-  segmented contribution bars, reusing `mtRenderTable_` and its `rowClass`
-  hook. The data layer is ready; nothing rep- or manager-facing shows queues
-  yet outside the admin panel.
-- Phase 3 was DROPPED with the manager-only scope decision. Phase 4 (Admin
-  editor for grouping) is moot unless Phase 2 needs grouping.
-- Re-run `runAllTests()` — `metrics_csrTransferQueues_optInAndTransparent`
-  executes ONLY in the editor. Expect 284 total, 0 failed.
+- Phase 3 was DROPPED with the manager-only scope decision.
+- Phase 4 (queue GROUPING / "By department") is the one unbuilt piece. It needs
+  the OPERATOR to name the groupings — inferring them from queue names is a
+  guess about their business. They can now do that from the live queue rows.
+- Re-run `runAllTests()` — `metrics_getTeamMetrics_queueBreakdown` executes
+  ONLY in the editor. Expect 285 total, 0 failed.
+- /sync-docs has NOT run for Phase 2: CLAUDE.md needs the two modes, the UI
+  transparency contract, mtRenderTable_'s new optional detail-row capability,
+  and the visual matrix 20 → 22.
 
 ## Open follow-on items
 - **Queue GROUPING was deliberately NOT built in Phase 1.** Plausible groupings
@@ -112,21 +121,29 @@ Updated: 2026-07-29
   cross-repo change.
 
 ## Where I left off
-Phase 0 AND the re-scoped Phase 1 are implemented and tested (382 pure + 66 DOM,
-all four Phase-1 pins bite-checked — one needed tightening because it injected
-literal column bounds instead of reading them). Blocks:
-`.cycle/blocks/14-phase0-broad-implement.md` and
-`14-phase1-transfer-only-broad-implement.md`.
+Phases 0, 1 and 2 are implemented and tested (387 pure + 68 DOM + 22 visual
+scenarios, all eight Phase-2 pins bite-checked). Blocks:
+`.cycle/blocks/14-phase0-`, `14-phase1-transfer-only-`,
+`14-phase2-broad-implement.md`.
 
-**The gate has already reported — do not re-run it as if undecided.** DQE is one
-row per (agent, date); per-queue splits of answered/missed/talk-time are
-impossible and any future request for them should be answered "not in this
-data". Per-queue attribution exists ONLY for transfers, via the Transfer tab's
-H:R block, which Phase 1 now reads (opt-in, header-name-driven, with the
-attributed subtotal reported alongside the total so a partial breakdown cannot
-read as complete).
+**The operator's ask is MET for transfers.** Metrics → Team Metrics now has a
+Combined / By-queue switcher; the combined view shows each rep's transfer total
+with a segmented contribution bar and an expandable per-queue breakdown that
+states "N of M attributed" — the transparency half of the request.
 
-Next: decide on Phase 2 (the Team Metrics switcher on the Transfer KPI). Also
-outstanding — CLAUDE.md has NOT yet been updated with the Phase 1 contract
-(that is /sync-docs' job), INV-177/178/179 are still unwritten to the library,
-and on the DEV project only, `INSTANCE_IS_PROD=false` is still unset.
+**The gate has already reported — do not re-open it.** DQE is one row per
+(agent, date); answered/missed/talk-time can never be split by queue, and
+`CDR.QUEUE_EXT` is a membership list, not a queue key.
+
+Next, either:
+- **/reflect** to close cycle 14 (three phases, net 0 by design — a diagnostic
+  plus two capabilities, no defects fixed), or
+- **Phase 4, queue GROUPING ("By department")** — the last unbuilt piece. It
+  needs the OPERATOR to name the groupings; inferring them from queue names
+  (FieldOps + FieldOps_Power?) is a guess about their business. They can now
+  read the real queue rows in Team Metrics and tell us.
+
+Also outstanding: /sync-docs has not run for Phase 2 (CLAUDE.md needs the two
+modes, the UI transparency contract, `mtRenderTable_`'s new optional detail-row
+capability, and the visual matrix 20 → 22); `runAllTests` should be re-run
+(expect 285); and on the DEV project only, `INSTANCE_IS_PROD=false` is unset.

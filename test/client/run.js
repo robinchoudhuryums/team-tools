@@ -5313,9 +5313,25 @@ test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 ar
   // Every call site, excluding the definition itself.
   const calls = (src.match(/getCsrTransferPerRepDaily_\((?!from, to, rosterNames, opts)/g) || []).length;
   const optedIn = (src.match(/getCsrTransferPerRepDaily_\([^)]*\{ withQueues: true \}\)/g) || []).length;
+  // THE load-bearing number: the pre-Phase-1 callers cache their assembled
+  // payloads, so this must stay 3 no matter how many new callers opt in.
   assert.strictEqual(calls - optedIn, 3,
     'exactly the 3 pre-Phase-1 callers remain 3-arg (getDashboardMetrics x2 + the getMyMetrics trend)');
-  assert.strictEqual(optedIn, 1, 'exactly one caller opts in — the admin queue inventory');
+  // Name the opted-in callers rather than counting them — a bare count has to
+  // be edited every time the feature grows (Phase 2 tripped it immediately),
+  // which trains the next author to bump the number instead of thinking. This
+  // form still fails on an UNDECLARED opt-in, which is the case worth catching.
+  const OPTED_IN_CALLERS = ['cdrQueueInventory_', 'getTeamMetrics'];
+  const owners = [];
+  const re = /getCsrTransferPerRepDaily_\([^)]*\{ withQueues: true \}\)/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const decl = [...src.slice(0, m.index).matchAll(/function\s+([A-Za-z0-9_]+)\s*\(/g)].pop();
+    owners.push(decl ? decl[1] : '(anonymous)');
+  }
+  assert.deepStrictEqual(owners.sort(), OPTED_IN_CALLERS.slice().sort(),
+    'only declared callers opt in — add yours to OPTED_IN_CALLERS deliberately');
+  assert.strictEqual(optedIn, OPTED_IN_CALLERS.length, 'no duplicate opt-in inside one caller');
 });
 
 // The counts are a COMPONENT of `transferred`, not a partition of it: a real
@@ -5331,6 +5347,87 @@ test('Phase 1: the attributed subtotal is reported alongside the total, never in
   // A zero or blank cell is absence, not a queue with zero traffic — otherwise
   // every rep would appear to staff every queue.
   assert.ok(/if \(!isFinite\(n\) \|\| n === 0\) continue;/.test(fn), 'zero and non-numeric cells are skipped');
+});
+
+// ── Phase 2 (sub-queue UI on the Transfer KPI) ──────────────────────────────
+console.log('\nPhase 2 — sub-queue views');
+
+const mQueueHue_ = loadFunction(sb, 'metrics/script_metrics.html', 'mQueueHue_');
+const mQueueBarHtml_ = loadFunction(sb, 'metrics/script_metrics.html', 'mQueueBarHtml_');
+const mQueueDetailHtml_ = loadFunction(sb, 'metrics/script_metrics.html', 'mQueueDetailHtml_');
+
+test('Phase 2: a queue keeps the same colour across renders and both modes', () => {
+  assert.strictEqual(mQueueHue_('A_Q_Sales'), mQueueHue_('A_Q_Sales'), 'deterministic');
+  assert.notStrictEqual(mQueueHue_('A_Q_Sales'), mQueueHue_('A_Q_Billing'), 'distinct names differ');
+  assert.ok(mQueueHue_('') >= 0 && mQueueHue_(null) >= 0, 'degenerate names do not throw');
+});
+
+// INV-180 in the UI: a bar drawn from queues ALONE would imply the breakdown
+// is complete. The unattributed remainder must be its own segment.
+test('Phase 2: the contribution bar renders the unattributed remainder', () => {
+  const rep = { transferred: 14, queues: { 'A_Q_Sales': 6, 'A_Q_Billing': 3 }, queueTotal: 9, queueUnattributed: 5 };
+  const bar = mQueueBarHtml_(rep);
+  assert.ok(/m-qseg-rest/.test(bar), 'the remainder is drawn, not dropped');
+  const widths = [...bar.matchAll(/width:([\d.]+)%/g)].map((m) => Number(m[1]));
+  assert.strictEqual(widths.length, 3, 'two queues + the remainder');
+  assert.ok(Math.abs(widths.reduce((a, b) => a + b, 0) - 100) < 0.05, 'segments total 100%');
+  // A fully attributed rep has no remainder segment.
+  const full = mQueueBarHtml_({ transferred: 2, queues: { 'A_Q_Spanish': 2 }, queueTotal: 2, queueUnattributed: 0 });
+  assert.ok(!/m-qseg-rest/.test(full), 'no phantom remainder when fully attributed');
+  assert.strictEqual(mQueueBarHtml_({ transferred: 0, queues: {} }), '', 'no bar when there is nothing to show');
+});
+
+test('Phase 2: the detail states the attributed fraction and escapes queue names', () => {
+  const h = mQueueDetailHtml_({ transferred: 14, queues: { 'A_Q_<img src=x>': 9 }, queueTotal: 9, queueUnattributed: 5 });
+  assert.ok(h.indexOf('9 of 14 transfers attributed') > 0,
+    'the fraction is stated in words, not left to the bar');
+  // Queue names cross the call-data-reporting trust boundary (the Metrics
+  // esc() gotcha names exactly this).
+  assert.ok(h.indexOf('<img src=x') < 0 && h.indexOf('&lt;img') > 0, 'queue names are escaped');
+  assert.ok(/Not attributed to a queue/.test(h), 'the remainder is a named row, not a silent gap');
+  // A rep with transfers but NO queue attribution must say so rather than
+  // render an empty box that reads as a failed load.
+  const none = mQueueDetailHtml_({ transferred: 3, queues: {}, queueTotal: 0, queueUnattributed: 3 });
+  assert.ok(/No transfer landed in a named queue/.test(none), 'zero-attribution is stated');
+});
+
+test('Phase 2: mtRenderTable_ detail rows are additive and the disclosure is real', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const fn = core.slice(core.indexOf('function mtRenderTable_'));
+  assert.ok(/if \(opts\.detailRow && opts\.rowId\)/.test(fn),
+    'a caller passing neither renders exactly as before');
+  assert.ok(/replace\(\/\[\^\\w\.\$-\]\/g, ''\)/.test(fn.slice(0, 3000)),
+    'the detail row id is charset-restricted like the sort handler (cycle-11 L-15)');
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  // INV-173/174: a real <button> carrying aria-expanded, kept in step by a
+  // handler rather than a CSS class alone.
+  assert.ok(/<button type="button" class="m-qtoggle" aria-expanded="false" aria-controls="/.test(m),
+    'the disclosure is a button with aria-controls');
+  assert.ok(/btn\.setAttribute\('aria-expanded'/.test(m), 'mToggleQueueRow_ keeps aria-expanded in step');
+  // The wrapper is emitted AFTER the buttons in source order, so assert both
+  // exist rather than assuming they are adjacent.
+  assert.ok(/role="tablist"/.test(m), 'the scope switcher is a tablist');
+  assert.ok(/role="tab" aria-selected="' \+ \(on \? 'true' : 'false'\)/.test(m),
+    'each scope button carries aria-selected reflecting its state');
+});
+
+// The whole team table must not vanish because one auxiliary tab is
+// unreachable — and a failure must not read as "no transfers" (INV-175).
+test('Phase 2: a failed transfer read degrades to an error strip, not an empty table', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const fn = extractRawFunction('Code.js', 'getTeamMetrics');
+  // Anchor on the INNER try — the function body opens with an outer one.
+  const guarded = fn.slice(fn.indexOf('var trAgents'));
+  assert.ok(/try \{[\s\S]{0,600}?getCsrTransferPerRepDaily_/.test(guarded),
+    'the transfer read sits inside its own try');
+  assert.ok(/\} catch \(trErr\) \{[\s\S]{0,120}?transferMeta\.error = trErr\.message;/.test(guarded),
+    'a throw degrades to transferMeta.error (the INV-67 best-effort posture)');
+  assert.ok(/transferMeta: transferMeta/.test(fn), 'the outcome rides back to the client');
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/tmeta\.error[\s\S]{0,300}?errorStateHtml_\('Transfer data unavailable/.test(m),
+    'the client renders an error, never a silent zero');
+  assert.ok(src.indexOf('teamTotals.transferred += rep.transferred') > 0,
+    'team totals accumulate transfers for the by-queue footnote');
 });
 
 // A13: the three section-heading classes render as real <h2>s, so heading

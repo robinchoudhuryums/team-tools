@@ -1111,6 +1111,7 @@ function _runAllTests() {
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
+  _integrationTest('metrics_getTeamMetrics_queueBreakdown', test_metrics_getTeamMetrics_queueBreakdown);
   _integrationTest('metrics_getTeamMetrics_cdrIntegration',     test_metrics_getTeamMetrics_cdrIntegration);
   _integrationTest('metrics_cdrFixture_durationsUseDisplayValues', test_metrics_cdrFixture_durationsUseDisplayValues);
   _integrationTest('metrics_csrTransferFixture_parsesDateAndPercent', test_metrics_csrTransferFixture_parsesDateAndPercent);
@@ -5876,6 +5877,41 @@ function test_metrics_csrTransferQueues_optInAndTransparent() {
     // Columns are DISCOVERED from the header row, so a reorder is self-correcting.
     _assertTrue(on.meta.queueColumns.indexOf('A_Q_Spanish') >= 0, 'discovered queue headers ride in meta');
   });
+}
+
+/** PHASE 2 — the Team Metrics table carries the per-queue transfer split, and
+ *  the by-queue rows aggregate it. Fixture: India 14 transferred (Sales 6 +
+ *  Billing 3 = 9 attributed, 5 not), PH 2 transferred (Spanish 2, fully
+ *  attributed). */
+function test_metrics_getTeamMetrics_queueBreakdown() {
+  if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
+  const r = _withTestCdr_(function () {
+    return _asUser(_TEST_MGR_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
+  });
+  _assertNull(r.error, 'getTeamMetrics should not error with the CDR fixture present');
+  _assertTrue(r.transferMeta && r.transferMeta.available === true, 'the transfer read succeeded');
+
+  let india = null;
+  for (let i = 0; i < r.reps.length; i++) { if (r.reps[i].repName === _TEST_INDIA_NAME) india = r.reps[i]; }
+  _assertNotNull(india, 'India rep present');
+  _assertEq(india.transferred, 14, 'rep total transfers');
+  _assertEq(india.queues['A_Q_Sales'], 6, 'per-queue split on the rep row');
+  // INV-180 — the split is a COMPONENT of the total, and the remainder rides
+  // along so a UI cannot imply the breakdown is complete.
+  _assertEq(india.queueTotal, 9, 'attributed subtotal');
+  _assertEq(india.queueUnattributed, 5, 'unattributed remainder');
+
+  // The by-queue rows describe the SAME population as the rep rows.
+  _assertEq(r.teamTotals.transferred, 16, 'team transfers = 14 + 2');
+  _assertEq(r.teamTotals.queueTotal, 11, 'team attributed = 9 + 2');
+  let sales = null;
+  for (let i = 0; i < r.queueRows.length; i++) { if (r.queueRows[i].queue === 'A_Q_Sales') sales = r.queueRows[i]; }
+  _assertNotNull(sales, 'queueRows carries the by-queue view');
+  _assertEq(sales.transferred, 6, 'queue row total');
+  _assertEq(sales.reps, 1, 'only one fixture rep contributed to that queue');
+  // Sorted largest-first so the UI needs no client-side sort.
+  _assertTrue(r.queueRows[0].transferred >= r.queueRows[r.queueRows.length - 1].transferred,
+    'queue rows are sorted by volume desc');
 }
 
 function test_metrics_getTeamMetrics_cdrIntegration() {

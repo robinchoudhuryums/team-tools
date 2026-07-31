@@ -14483,8 +14483,30 @@ function getTeamMetrics(dateOrFrom, to) {
     }
 
     var cdrResult = getCdrAgentMetrics_(from, toDate, rosterNames);
+    // Cycle-14 Phase 2 — per-queue TRANSFER attribution. BEST-EFFORT, the same
+    // posture as the CDR overlay in managerGetShiftStats (INV-67): the Transfer
+    // tab is optional, and a manager's whole team table must not disappear
+    // because one auxiliary tab is unreachable. On failure `transferMeta.error`
+    // is set and the client renders an error strip (INV-175) while the rest of
+    // the table stands.
+    var trAgents = {}, transferMeta = { available: false, error: null, queueColumns: [] };
+    try {
+      var trRes = getCsrTransferPerRepDaily_(from, toDate, rosterNames, { withQueues: true });
+      if (trRes.meta && trRes.meta.error) {
+        transferMeta.error = trRes.meta.error;
+      } else {
+        trAgents = trRes.agents || {};
+        transferMeta.available = true;
+        transferMeta.queueColumns = (trRes.meta && trRes.meta.queueColumns) || [];
+        transferMeta.queueWarning = (trRes.meta && trRes.meta.queueWarning) || null;
+      }
+    } catch (trErr) {
+      transferMeta.error = trErr.message;
+    }
     var reps = [];
-    var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0 };
+    var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0,
+      transferred: 0, queueTotal: 0 };
+    var teamQueues = {};        // queue -> {transferred, reps:{}}
     var unmatchedAgents = [];
 
     Object.keys(repMap).forEach(function (name) {
@@ -14513,6 +14535,16 @@ function getTeamMetrics(dateOrFrom, to) {
         noteCountUnavailable: !!noteRes.unavailable,   // F5
         hasCdrData: !!cdr,
       };
+      // Phase 2 — transfers + their per-queue split. INV-180: `queues` is a
+      // COMPONENT of `transferred`, so `queueUnattributed` rides along and the
+      // total is never derived by summing queues.
+      var tr = trAgents[name] || null;
+      rep.transferred = tr ? tr.transferred : 0;
+      rep.transferPct = tr ? tr.transferPct : null;
+      rep.queues = (tr && tr.queues) || {};
+      rep.queueTotal = tr ? (tr.queueTotal || 0) : 0;
+      rep.queueUnattributed = tr ? (tr.queueUnattributed || 0) : 0;
+      rep.hasTransferData = !!tr;
       // F5: a rep whose Sheet failed to read is still listed (their CDR row is
       // real) — the row just says "—" for notes instead of "0".
       if (cdr || noteCount > 0 || noteRes.unavailable) {
@@ -14523,6 +14555,16 @@ function getTeamMetrics(dateOrFrom, to) {
         teamTotals.tttSeconds += rep.tttSeconds;
         teamTotals.noteCount += noteCount;
         if (noteRes.unavailable) teamTotals.noteCountPartial = true;   // F5
+        // Phase 2 — team roll-up + the by-queue view's rows. Only reps that
+        // made the table contribute, so the two modes always describe the same
+        // population.
+        teamTotals.transferred += rep.transferred;
+        teamTotals.queueTotal += rep.queueTotal;
+        Object.keys(rep.queues).forEach(function (q) {
+          if (!teamQueues[q]) teamQueues[q] = { queue: q, transferred: 0, reps: {} };
+          teamQueues[q].transferred += rep.queues[q];
+          teamQueues[q].reps[rep.repName] = true;
+        });
       }
     });
 
@@ -14553,6 +14595,14 @@ function getTeamMetrics(dateOrFrom, to) {
       unmatchedAgents: unmatchedAgents,
       rosterWithNoCdr: rosterWithNoCdr,
       trend: trendData,
+      // Phase 2 — the "By queue" mode's rows, largest first, and the metadata
+      // the client needs to tell "no transfer data" apart from "the read
+      // failed" (INV-175).
+      transferMeta: transferMeta,
+      queueRows: Object.keys(teamQueues).map(function (q) {
+        return { queue: q, transferred: teamQueues[q].transferred,
+                 reps: Object.keys(teamQueues[q].reps).length };
+      }).sort(function (a, b) { return b.transferred - a.transferred; }),
       meta: { rowsScanned: cdrResult.meta.rowsScanned, rowsMatched: cdrResult.meta.rowsMatched,
               columnWarning: cdrResult.meta.columnWarning, computeMs: Date.now() - t0 },
     };

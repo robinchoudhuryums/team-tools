@@ -199,6 +199,44 @@
 }
 
 /* ── Preset chips ──────────────────────────────────────────────── */
+/* ── Phase 2 — sub-queue views on the Transfer KPI ── */
+.m-scope { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.m-scope-btn {
+  appearance: none; -webkit-appearance: none; font: inherit; font-size: var(--text-xs);
+  background: var(--paper-2); color: var(--muted); border: 1px solid var(--line);
+  border-radius: var(--radius-pill); padding: 3px 12px; cursor: pointer;
+}
+.m-scope-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.m-scope-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.m-scope-hint { font-family: var(--mono); font-size: 11px; color: var(--muted-2); margin-left: 4px; }
+/* The disclosure lives inside a numeric cell, so it must not look like a pill
+   competing with the value — it IS the value, plus a chevron. */
+.m-qtoggle {
+  appearance: none; -webkit-appearance: none; font: inherit; font-variant-numeric: tabular-nums;
+  background: none; border: 0; padding: 0; color: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.m-qtoggle:hover { color: var(--accent); }
+.m-qtoggle svg { transition: transform .18s ease; }
+.m-qtoggle.open svg { transform: rotate(180deg); }
+.m-qbar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; margin-top: 3px; min-width: 60px; }
+.m-qseg { display: block; height: 100%; }
+.m-qseg-rest { background: var(--muted-3); }
+.m-qdetail { padding: 8px 4px 4px; }
+.m-qrow { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: var(--text-xs); }
+.m-qdot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; display: inline-block; }
+.m-qdot-rest { background: var(--muted-3); }
+.m-qname { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.m-qval { font-family: var(--mono); color: var(--muted); }
+.m-qnone { color: var(--muted); font-style: italic; }
+.m-qfoot { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--muted-2); }
+/* A2/INV: a real VIEWPORT breakpoint, not a data-compact override — the two
+   triggers are independent, and this table is manager-facing on tablets. */
+@media (max-width: 720px) {
+  .m-qbar { min-width: 40px; }
+  .m-scope-hint { width: 100%; margin-left: 0; }
+}
 .m-preset-chip {
   /* A1 (cycle 13): these are <button>s, not spans — a bare span with an inline
      onclick is unreachable by keyboard and invisible to assistive tech. The
@@ -861,6 +899,7 @@ function mSortReps_(reps, sort) {
       case 'attSeconds': return r.attSeconds || 0;
       case 'noteCount': return r.noteCount || 0;
       case 'noteCoverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
+      case 'transferred': return r.transferred || 0;   // Phase 2
       default: return 0;
     }
   };
@@ -879,6 +918,90 @@ function mTeamSort_(key) {
   if (M_STATE.teamData) mRenderTeamMetrics_(M_STATE.teamData);
 }
 // (mTh_ removed — header rendering now lives in the shared mtRenderTable_, #3.)
+
+// ── Phase 2 — sub-queue views on the TRANSFER KPI ─────────────────────
+// Phase 0 established that only transfers can be split per rep per queue, so
+// this is deliberately scoped to that one column. Two modes: COMBINED (rep
+// rows, each showing its total with a segmented contribution bar and an
+// expandable per-queue breakdown) and BY QUEUE (queue rows). The operator
+// asked for both "separately" and "together with transparency" — the segmented
+// bar plus the disclosure is what makes the combined view transparent rather
+// than a single opaque number.
+
+/** Deterministic palette index for a queue name, so a queue keeps its colour
+ *  across renders and across the two modes. Pure — Node-pinned. */
+function mQueueHue_(name) {
+  var h = 0, s = String(name || '');
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+
+/** Segmented contribution bar. INV-180: the queue segments are a COMPONENT of
+ *  `transferred`, so any unattributed remainder is drawn as its own muted
+ *  segment — a bar that rendered only the queues would silently imply the
+ *  breakdown was complete. Returns '' when there is nothing to show. */
+function mQueueBarHtml_(rep) {
+  var total = rep.transferred || 0;
+  if (!total) return '';
+  var names = Object.keys(rep.queues || {}).sort(function (a, b) {
+    return (rep.queues[b] - rep.queues[a]) || a.localeCompare(b);
+  });
+  var segs = names.map(function (q) {
+    var pct = (rep.queues[q] / total) * 100;
+    return '<span class="m-qseg" style="width:' + pct.toFixed(2) + '%;background:hsl(' +
+      mQueueHue_(q) + ' 55% 45%)" title="' + esc(q) + ': ' + esc(rep.queues[q]) + '"></span>';
+  }).join('');
+  var rest = rep.queueUnattributed || 0;
+  if (rest > 0) {
+    segs += '<span class="m-qseg m-qseg-rest" style="width:' + ((rest / total) * 100).toFixed(2) +
+      '%" title="' + esc(rest) + ' not attributed to a queue"></span>';
+  }
+  return '<span class="m-qbar" aria-hidden="true">' + segs + '</span>';
+}
+
+/** The expandable per-queue detail for one rep. Always states the attributed
+ *  fraction in words, so the number is honest even with the bar hidden. */
+function mQueueDetailHtml_(rep) {
+  var total = rep.transferred || 0;
+  if (!total) return '';
+  var names = Object.keys(rep.queues || {}).sort(function (a, b) {
+    return (rep.queues[b] - rep.queues[a]) || a.localeCompare(b);
+  });
+  var rows = names.map(function (q) {
+    return '<div class="m-qrow"><span class="m-qdot" style="background:hsl(' + mQueueHue_(q) +
+      ' 55% 45%)"></span><span class="m-qname">' + esc(q) + '</span>' +
+      '<span class="m-qval">' + esc(rep.queues[q]) + '</span></div>';
+  }).join('');
+  if (!names.length) {
+    rows = '<div class="m-qrow m-qnone">No transfer landed in a named queue.</div>';
+  }
+  var rest = rep.queueUnattributed || 0;
+  if (rest > 0) {
+    rows += '<div class="m-qrow"><span class="m-qdot m-qdot-rest"></span>' +
+      '<span class="m-qname">Not attributed to a queue</span>' +
+      '<span class="m-qval">' + esc(rest) + '</span></div>';
+  }
+  return '<div class="m-qdetail">' + rows +
+    '<div class="m-qfoot">' + esc(rep.queueTotal || 0) + ' of ' + esc(total) +
+    ' transfers attributed to a queue.</div></div>';
+}
+
+/** Toggles a detail row. A13/INV-174: the disclosure is a real <button> and its
+ *  aria-expanded is kept in step here, not left to a CSS class. */
+function mToggleQueueRow_(btn) {
+  var id = btn.getAttribute('aria-controls');
+  var row = document.getElementById(id);
+  if (!row) return;
+  var open = row.hasAttribute('hidden');
+  if (open) row.removeAttribute('hidden'); else row.setAttribute('hidden', '');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('open', open);
+}
+
+function mQueueScope_(scope) {
+  M_STATE.teamScope = (scope === 'queue') ? 'queue' : 'combined';
+  if (M_STATE.teamData) mRenderTeamMetrics_(M_STATE.teamData);
+}
 
 // ── Team Metrics view (manager-only) ──────────────────────────────────
 
@@ -1070,6 +1193,52 @@ function mRenderTeamMetrics_(data) {
     html += '<div class="m-empty">No activity data for ' + esc(data.date) + '.</div>';
   } else {
     html += '<div class="m-section-title">Per-Rep Breakdown</div>';
+    // Phase 2 — the sub-queue scope switcher. Only rendered when the Transfer
+    // read actually produced queues; with none there is nothing to switch
+    // between, and an inert control would be worse than no control.
+    var tmeta = data.transferMeta || {};
+    var hasQueues = !!(data.queueRows && data.queueRows.length);
+    var scope = (M_STATE.teamScope === 'queue' && hasQueues) ? 'queue' : 'combined';
+    if (tmeta.error) {
+      // INV-175: a failed auxiliary read says so; it must not read as "this
+      // team made no transfers".
+      html += errorStateHtml_('Transfer data unavailable: ' + tmeta.error +
+        ' — the rest of the table is unaffected.');
+    } else if (hasQueues) {
+      var segBtn = function (key, label) {
+        var on = (scope === key);
+        return '<button type="button" role="tab" aria-selected="' + (on ? 'true' : 'false') + '"' +
+          ' class="m-scope-btn' + (on ? ' on' : '') + '" onclick="mQueueScope_(\'' + key + '\')">' +
+          esc(label) + '</button>';
+      };
+      html += '<div class="m-scope" role="tablist" aria-label="Transfer breakdown">' +
+        segBtn('combined', 'Combined') + segBtn('queue', 'By queue') +
+        '<span class="m-scope-hint">' + esc(data.queueRows.length) + ' queue(s) · transfers only</span></div>';
+      if (tmeta.queueWarning) {
+        html += '<div class="m-hint">' + icon('warning', 14) + ' ' + esc(tmeta.queueWarning) + '</div>';
+      }
+    }
+
+    if (scope === 'queue') {
+      // BY QUEUE — the "separately" half of the ask. Rows are queues, so this
+      // answers "which queue is taking the volume" without a rep dimension.
+      html += mtRenderTable_({
+        rows: data.queueRows,
+        columns: [
+          { key: 'queue', label: 'Queue', name: true, cell: function (q) {
+              return '<span class="m-qdot" style="background:hsl(' + mQueueHue_(q.queue) +
+                ' 55% 45%)"></span>' + esc(q.queue); } },
+          { key: 'transferred', label: 'Transferred', numeric: true, cell: function (q) { return esc(q.transferred); } },
+          { key: 'reps', label: 'Reps', numeric: true, cell: function (q) { return esc(q.reps); } },
+        ],
+      });
+      var attributed = (data.teamTotals && data.teamTotals.queueTotal) || 0;
+      var totalTr = (data.teamTotals && data.teamTotals.transferred) || 0;
+      html += '<div class="m-hint">' + icon('info', 14) + ' ' + esc(attributed) + ' of ' +
+        esc(totalTr) + ' team transfers are attributed to a queue' +
+        (totalTr > attributed ? '; the remainder went to destinations with no queue column.' : '.') +
+        '</div>';
+    } else {
     // #3 — render via the shared mtRenderTable_ component (also used by the CN
     // manager Stats table). Rows pre-sorted here; mTeamSort_ re-renders.
     var reps = mSortReps_(data.reps, M_STATE.teamSort || { key: 'pctAnswered', dir: 'desc' });
@@ -1088,8 +1257,22 @@ function mRenderTeamMetrics_(data) {
         // not "0" — a zero here reads as a rep who logged nothing.
         { key: 'noteCount', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return r.noteCountUnavailable ? '<span style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>' : esc(r.noteCount); } },
         { key: 'noteCoverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
-      ],
+      ].concat(hasQueues ? [
+        // Phase 2 — the TRANSFERS column is the only one that can carry a
+        // per-queue split (Phase 0). Total + segmented bar + a real disclosure
+        // button (INV-173/174) whose aria-controls points at the detail row
+        // mtRenderTable_ emits.
+        { key: 'transferred', label: 'Transfers', numeric: true, sortable: true, cell: function (r) {
+            if (!r.transferred) return '<span style="color:var(--muted)">0</span>';
+            var rid = 'm-q-' + String(r.repId).replace(/[^\w.$-]/g, '');
+            return '<button type="button" class="m-qtoggle" aria-expanded="false" aria-controls="' + rid + '"' +
+              ' onclick="mToggleQueueRow_(this)" title="Show the per-queue split">' +
+              esc(r.transferred) + ' ' + icon('chevronDown', 10) + '</button>' + mQueueBarHtml_(r); } },
+      ] : []),
+      rowId: hasQueues ? function (r) { return 'm-q-' + String(r.repId); } : null,
+      detailRow: hasQueues ? function (r) { return mQueueDetailHtml_(r); } : null,
     });
+    }
   }
 
   // Unmatched agents warning

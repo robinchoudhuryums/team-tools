@@ -1353,10 +1353,26 @@ function mtRenderTable_(opts) {
     // Optional per-row class (e.g. tone tint) — additive; existing callers that
     // don't pass opts.rowClass render an unclassed <tr> exactly as before.
     var rc = opts.rowClass ? opts.rowClass(r) : '';
-    return '<tr' + (rc ? ' class="' + esc(rc) + '"' : '') + '>' + cols.map(function (c) {
+    var tr = '<tr' + (rc ? ' class="' + esc(rc) + '"' : '') + '>' + cols.map(function (c) {
       var tdCls = c.numeric ? ' class="m-num"' : (c.name ? ' class="m-name"' : '');
       return '<td' + tdCls + '>' + (c.cell ? c.cell(r) : '') + '</td>';
     }).join('') + '</tr>';
+    // Cycle-14 Phase 2 — optional expandable DETAIL row. Additive: a caller
+    // that passes neither detailRow nor rowId renders exactly as before. The
+    // caller owns the disclosure BUTTON (so it can put it in whichever column
+    // it likes) and must point its aria-controls at this row's id; the id is
+    // charset-restricted here for the same reason the sort handler is
+    // (cycle-11 L-15 — entity-escaping is the wrong neutralizer inside an
+    // attribute that the browser decodes before use).
+    if (opts.detailRow && opts.rowId) {
+      var detail = opts.detailRow(r);
+      if (detail) {
+        var rid = String(opts.rowId(r)).replace(/[^\w.$-]/g, '');
+        tr += '<tr class="mt-detail" id="' + rid + '" hidden>' +
+          '<td colspan="' + cols.length + '">' + detail + '</td></tr>';
+      }
+    }
+    return tr;
   }).join('');
   return '<div class="m-table-wrap"><table class="m-table"><thead><tr>' + thead +
     '</tr></thead><tbody>' + body + '</tbody></table></div>';
