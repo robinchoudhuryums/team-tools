@@ -929,22 +929,100 @@ this section before touching the relevant area.
   "notes unavailable" / an em dash instead of a confident zero. This is the
   cycle-10 "error reads as empty" class (D1/D2a) in the one server helper it
   had never been applied to.
+  **TWO SURFACES ESCAPED THAT SWEEP UNTIL CYCLE 16 — and the reason is worth
+  knowing, because it is how the next one will escape too.** The sentence above
+  ("every coverage surface") was written against the set of functions that CALL
+  `cnCountNotesResult_`, and both misses were outside it:
+  (a) **`managerGetShiftStats` counts INLINE** — it needs flags, emails and the
+  completion median off the same read, so a count-only helper cannot serve it,
+  and it therefore appeared in no search for the helper. Its per-rep catch
+  swallowed the failure and pushed the rep with `totalNotes:0`, every
+  `flagCount` 0 and `emailsSent:0`, then computed `noteCoverage` from that zero
+  against the rep's REAL CDR answered count — so the manager's END-OF-SHIFT
+  PERFORMANCE table showed a rep whose Sheet could not be opened identically to
+  one who logged nothing all shift, CRIT-toned 0% badge included. It now carries
+  `notesUnavailable` on the stats object, nulls the coverage, and the client
+  renders an em dash across all six note-derived columns (Notes / Action /
+  Training / Review / Emails / Median — they all come from that one read) with
+  the sort comparator returning −1 so they group with the other unknowns.
+  (b) **`getTeamMetrics` nulled the PER-REP coverage but computed the TEAM total
+  unconditionally**, so the rail row said "partial — at least one rep Sheet was
+  unreadable" while the hint four lines below it rendered a confident
+  "Team-wide coverage below 80%" from the same contaminated numerator.
+  **The generalizable rule: an aggregate is a coverage surface even when it
+  never touches the helper.** Ask what a function DERIVES from a best-effort
+  read, not which helper it calls.
 - **`:root[data-compact]` is the POP-OUT, not a viewport breakpoint (A2,
-  cycle-13 — FIXED).** `data-compact="1"` is set from `?compact=1` by the
-  pop-out button (INV-38); it says nothing about how wide the window is. Three
-  components declared a fixed multi-column grid plus a `:root[data-compact]`
-  override and NO media query, so they never stacked on a phone: `.m-layout`
+  cycle-13; FOUR MORE instances found and fixed in cycle-16 F3).**
+  `data-compact="1"` is set from `?compact=1` by the pop-out button (INV-38); it
+  says nothing about how wide the window is. Cycle 13 found three components
+  that declared a fixed multi-column grid plus a `:root[data-compact]` override
+  and NO media query, so they never stacked on a phone: `.m-layout`
   (`1.4fr 1fr` with a 42px hero numeral — and `metrics/script_metrics.html`
   carried **zero** media queries, on a REP-facing tab), plus the shared
   `.telemetry` strip and `.coach-kpis`, both `repeat(4, 1fr)`. The shell's own
   breakpoints (`styles.html` 1023px / 540px) adapt `.metric-grid` and
   `.emp-grid` but never reached these. Fixed with real media queries —
   `.m-layout` stacks at ≤720px (before either column gets narrower than the
-  hero numeral), `.telemetry` + `.coach-kpis` go 2×2 at ≤540px. The compact
-  rules are `(0,2,0)` and still out-specify the media rules, so pop-out
-  geometry is unchanged. **A grid that stacks in compact almost always needs a
-  viewport breakpoint too — the two triggers are independent.** Pinned by the
-  A2 tripwire (each compact grid override has a matching media query).
+  hero numeral), `.telemetry` + `.coach-kpis` go 2×2 at ≤540px.
+  **Cycle 16 found FOUR more, all MEASURED at 390px rather than reasoned about:**
+  `.kb-wrap` 280px tree / **70px reader** (a fixed `280px` track does not
+  yield, so the `1fr` column absorbs the entire shortfall — and
+  `kb/script_kb.html` had **zero** media queries, the same shape as metrics in
+  cycle 13, on the rep-facing mid-call lookup tool); `.cnv-trio` 114 / 104 /
+  94px on the app's most-used form; `.intk-row` 157 / 157px on a 46-question
+  clinical intake; `.cnv-row` holding a 130px fixed label column. All now carry
+  breakpoints (kb ≤720px; trio 2-up ≤720px then stacked ≤480px; intk-row
+  ≤560px — the existing 760px query stacks the PPD *layout*, which still leaves
+  ~350px per half, so 2-up only fails further down).
+  **Pop-out geometry is unchanged because `:root[data-compact] .cnv-row` is
+  specificity `(0,3,0)`** — `:root` pseudo-class + `[data-compact]` attribute +
+  class — not `(0,2,0)` as this entry claimed until cycle 16. It out-specifies a
+  `.cnv-row.full` media rule at `(0,2,0)`; VERIFIED BY MEASUREMENT (compact at
+  480px and 700px both still render `84px 1fr`), which is the only way to be
+  sure of a specificity claim you are relying on.
+  **A grid that stacks in compact almost always needs a viewport breakpoint too
+  — the two triggers are independent.**
+  **Pinned by the A2 tripwire, which since cycle-16 F3 SCANS THE RULE rather
+  than asserting three known fixes** (it previously hard-checked `.m-layout` /
+  `.telemetry` / `.coach-kpis`, which is exactly why four more accumulated with
+  CI green — the INV-179 lesson, and the same promotion A1/A11 got in cycle-13
+  batch 5). It derives its file set from `A11Y_SCAN_PARTIALS` + `styles.html`
+  and brace-matches every `@media` block. TWO carve-outs, both deliberate:
+  `A2_INVERSE_OK` (`.rail-flags` widens 2-up → 4-up in the pop-out — the
+  INVERSE of stacking, so no breakpoint is owed; allowlisted WITH that reason)
+  and `A2_INTRINSIC` (a base using `auto-fill`/`auto-fit`/`min()`/`clamp()`
+  already reflows — `.m-kpi-grid` is `repeat(auto-fill, minmax(140px,1fr))` and
+  its compact override exists only to PIN 3 columns). The second is a property
+  of the RULE, so it lives in the rule, not the allowlist.
+  **A side effect worth remembering: stacking a row can EXPOSE a latent
+  overflow elsewhere in it.** Stacking `.intk-row` moved the help glyph to the
+  end of a full-width question, and its `left:-10px` / 58vw tooltip then ran
+  past the row — measured as document `scrollWidth` 468 against a 390 viewport,
+  i.e. the whole page scrolled sideways. Right-anchoring the bubble inside the
+  same breakpoint restores 390/390. Re-measure `scrollWidth` vs `clientWidth`
+  after any stacking change; a squeezed layout and an overflowing one look
+  identical in a screenshot.
+- **A best-effort overlay whose ABSENCE is reassuring must announce itself
+  (F4, cycle-16 — FIXED).** `getCoveragePlan`'s PTO read was wrapped in
+  `catch (e) { /* best-effort — coverage still renders */ }`. Best-effort was
+  the right call (a coverage grid with no PTO overlay still beats no grid), but
+  SILENT was not: with `ptoMap` empty **every rep counts as working**, so the
+  hourly strip renders green/adequate on a day half the team is off, and the
+  "All business hours meet the N-rep minimum" all-clear becomes *guaranteed
+  rather than earned*. A planner whose entire purpose is understaffing
+  detection had, as its failure mode, the single most reassuring answer it can
+  give — with no signal anywhere in the response for the client to render.
+  It now returns `ptoUnavailable` (additive; an older client ignores it), the
+  manager view shows a `role="alert"` banner stating PTO is not reflected and
+  the bands are an UPPER BOUND, and the green all-clear is downgraded to a
+  neutral "No understaffed hours found — but time-off data is missing, so this
+  is not an all-clear." **The test to apply to any `catch` around an overlay:
+  if the empty overlay makes the output MORE reassuring rather than less, the
+  degradation must be visible.** Same family as the note-count entry above and
+  INV-129; the difference is that here the swallowed read feeds a *judgement*
+  (a staffing band, an all-clear) rather than a number, so suppressing the
+  judgement matters as much as flagging the data.
 - **`timeToMins_` returns `null`, never `NaN` — and an ARITHMETIC caller must
   guard EXPLICITLY (A3, cycle-13 — FIXED).** It used to return `NaN` on an
   unparseable Timesheet TIME cell, which is the worst possible sentinel here
@@ -4030,6 +4108,22 @@ manually for a fresh deploy or environment:
   single `clasp push -f` + New version. The redesign record (per-commit
   scope, before/after) is
   `docs/design_handoff_team_tools_redesign/IMPLEMENTATION_PLAN.md`.
+- **Cycle 16 (F1–F5) adds NO new operator state** — no Script Properties, no
+  triggers, no migrations, no new CONFIG constants. Three response fields are
+  ADDITIVE (`notesUnavailable` on each `managerGetShiftStats` rep,
+  `ptoUnavailable` on `getCoveragePlan`), and two existing fields
+  (`teamTotals.noteCoverage`, `reps[].noteCoverage`) can now be `null` where
+  every client consumer already guarded on `!= null` — so a client on a
+  not-yet-redeployed server renders exactly as before. Deploys with the normal
+  single `clasp push -f` + New version. **Post-deploy: run `runAllTests()`** —
+  the Apps Script suite cannot execute off-editor, so scenarios S37 / S72 / S42
+  rest on the Node pins until it is run. **ONE behaviour change an operator
+  should expect:** on the manager Stats tab and the Coverage planner, a rep or a
+  day whose underlying read failed now shows an em dash / a warning banner
+  instead of zeros and a green all-clear. If "0 notes" rows or clean coverage
+  days turn into dashes and warnings after this deploy, that is the fix
+  reporting a failure that was previously invisible — investigate the rep's
+  Sheet or the TimeOffRequests read, not the code.
 - **Cycle 14 Phase 0 (CDR sub-queue discovery) adds NO new operator state** — no
   Script Property, trigger, migration, or CONFIG constant. But **the deploy IS
   the deliverable**: the queue inventory is how Phase 0 answers whether DQE
@@ -5216,7 +5310,18 @@ count, and the component-not-partition contract) → 382. Phase 2 added five
 escaping, the shared component's optional detail row, and best-effort
 degradation) → 387; Phase 4 added four (sum-not-max, Ungrouped-last,
 count-once, sanitize-on-read + mode-only-with-data) → 391. DOM 66 → 69 and the
-visual matrix 20 → 22 (Team Metrics had never been shot).** Two of
+visual matrix 20 → 22 (Team Metrics had never been shot). Cycle 15 (seams) added
+five → 396 — the CDR name-match pairing, the health-card tone source, the capped
+name lists, the fixture-mirror pin and the every-CONFIG-key-has-a-reader scan
+(this running total had stopped at 391 until cycle-16's /sync-docs caught up).
+Cycle 16 added three → **399**: the F1 note-outcome pin (server field + catch +
+null coverage + all six client columns), the F5 team-total-null pin, and the F4
+PTO-surfaced pin (banner, `role="alert"`, and the all-clear gated on the read
+having succeeded). It also GENERALIZED the A2 tripwire from three hand-listed
+fixes to a derived rule-scan — see the A2 gotcha; that promotion immediately
+surfaced a fifth candidate (`.m-kpi-grid`) which was verified NOT a defect and
+resolved as a rule refinement, not an allowlist entry. DOM stays 69, visual 22.**
+Two of
 those six did NOT bite on the first attempt and were tightened: the A1 scan was
 line-by-line and missed multi-line markup (it now scans the whole source, where
 `[^>]` matches newlines), and the A3 input list held only no-colon cases, all
@@ -5378,7 +5483,7 @@ INV-48 | Optimistic UI on the Call Notes hot path: `cnSubmitActiveForm_`, `cnTog
 INV-49 | `setCallNoteTrainingReply(repId, noteId, reply)` is manager-gated, locked, and rejects calls on non-training-flagged notes (parallels INV-34's resolve-only-on-action rule). Merges the reply + author email + reply timestamp into the target rep's `subformData.trainingReply` / `trainingReplyBy` / `trainingReplyAt` keys (no schema migration). Round 2 · 8g also appends `{role:'manager', kind:'reply', message, at, by}` to `subformData.feedback[]` for the multi-turn Q&A thread. Empty reply clears the three trainingReply keys but does NOT remove prior feedback[] entries (the thread is append-only). Writes a `CallNoteTrainingReply` audit row with the manager's email as actor. **Do NOT retire the legacy `trainingReply` write** (investigated as B4): it is the clearable "current answer" pointer — distinct from the append-only `feedback[]` history — and several readers key off it precisely so a *cleared* reply disappears (the 'answered' filter, the ambient QA count, `getMyTrainingQA`, the digest helper). Removing the write + making those readers feedback[]-aware would make a clear a no-op (feedback[] always wins), regressing S35. A safe retirement would first redefine clear as a `feedback[]` retraction marker — deferred | Subsystem: Server
 INV-50 | `setCallNotePinned(noteId, pinned)` is caller-scoped (operates on the caller's own per-rep Sheet), locked, and enforces `CN_PIN_LIMIT` (currently 3) inside the lock so two parallel pin requests can't both squeak past the cap. Pin state lives in `subformData.pinned` (boolean) + `subformData.pinnedAt` (timestamp). Writes a `CallNotePin` audit row | Subsystem: Server
 INV-51 | `getMyPinnedCallNotes` returns the caller's pinned notes across ALL dates (no date filter), sorted newest-pinned first. The Log view's pinned tray spans the rep's entire pin history — a complex case pinned last week is still visible today | Subsystem: Server
-INV-52 | `managerGetShiftStats(date)` is manager-gated, read-only across all enrolled reps' Sheets. Per-rep aggregates: `totalNotes`, `flagCounts {action, training, review}`, `resolvedCount`, `emailsSent`, `medianCompletionSeconds`, `shiftSpan {first, last}`. Median (not mean) is used for completion seconds; outliers > 30 min are stored as null in `subformData.completionSeconds` upstream so they never enter the dataset. A broken per-rep Sheet doesn't fail the run — caught and logged, skipping that rep | Subsystem: Server
+INV-52 | `managerGetShiftStats(date)` is manager-gated, read-only across all enrolled reps' Sheets. Per-rep aggregates: `totalNotes`, `flagCounts {action, training, review}`, `resolvedCount`, `emailsSent`, `medianCompletionSeconds`, `shiftSpan {first, last}`. Median (not mean) is used for completion seconds; outliers > 30 min are stored as null in `subformData.completionSeconds` upstream so they never enter the dataset. A broken per-rep Sheet doesn't fail the run — but since cycle-16 F1 it no longer "skips that rep" silently either (this clause described the defect): the rep is returned with **`notesUnavailable: true`** and a **null `noteCoverage`**, and the client renders an em dash across all six note-derived columns instead of the zeros that read as "logged nothing all shift". See the note-count gotcha — this surface counts INLINE, which is why the cycle-12 F5 sweep never reached it | Subsystem: Server
 INV-53 | Voice-to-text dictation is opt-in via `CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED` (default false). When true, `cnVoiceMicMarkup_` renders mic buttons next to Issue and Resolution; clicking uses `webkitSpeechRecognition`, which in Chrome routes audio to Google's speech-to-text service — NOT covered by a typical Google Workspace BAA. The flag must stay false until the operator confirms the org's HIPAA stance. When false, the UI never renders the mic (no DOM surface for accidents) | Subsystem: Server + Client (Call Notes views)
 INV-54 | Form-completion timer captures duration from the first input event in the active form to the submit. Start time persists to `localStorage['umsCallNotesFormStartedAt']` so a mid-form reload doesn't reset the clock. On submit, `cnFormTimerEndAndGet_` returns elapsed seconds (capped at 30 min as null — rep walked away mid-note). The value rides into the server payload as `payload.subformData.completionSeconds`; the manager Stats tab medians over notes that captured one | Subsystem: Client (Call Notes views)
 INV-55 | Sticky form auto-saves the active draft to `localStorage['umsCallNotesActiveFormDraft']` on every input (debounced 400ms via `cnPersistActiveFormDraft_`). On Log view enter, `cnRestoreActiveFormDraft_` restores values + flag + training-question if a draft is present, with a "Draft restored" toast. Successful submit and explicit Clear Note both clear the draft via `cnClearStickyFormDraft_` — any new form-clearing path must call it too or the draft will resurrect on next load | Subsystem: Client (Call Notes views)
@@ -5457,7 +5562,7 @@ INV-123 | **Training T4 — overdue digest + quiz analytics.** `sendTrainingOver
 INV-124 | **Metrics anonymized team-avg is cohort-guarded; only aggregates leave the server.** `getMyMetrics` (rep-callable, caller-identified) reads the WHOLE roster's per-rep-per-day matrix (`getCdrDailyBreakdown_().perRepDaily` for DQE + `getCsrTransferPerRepDaily_()` for the separate **`CSR Transfer Historical Data`** tab) to compute a team benchmark, but returns ONLY aggregates: `series.{pctAnswered,answered,missed,attSeconds,transferPct}` as `[{date, own, team, cohort}]`. The `team` value is the pure `metricsTeamAvgSeries_` mean over reporting reps and is **null whenever that day's cohort < `kpiMinCohort` (3)** — so a small team can't be back-solved to an individual (the #5 privacy boundary). No individual rep's row is ever returned. **The roster filter that defines the cohort SKIPS rows with no `EMP.EMAIL` (cycle-12 F4)** — the skip every sibling roster walk applies (`getManagerDashboard`, `getTeammateStatus`, `getEmployeesList`, `computeMissedClockOuts_`, and `getCoveragePlan` since cycle-9 L-2). Both `getMyMetrics` and `getDashboardMetrics` had omitted it, so an offboarded/placeholder row (name kept, email cleared) whose name still appears in DQE history both INFLATED the cohort — un-hiding the team line on a day fewer than 3 CURRENT reps reported, i.e. weakening the very guard this invariant exists for — and contaminated the average reps are told to benchmark against. Consequence of the fix to expect on a small team: the team line may now be hidden on days it previously showed. The Transfer reader uses `getDisplayValues()` + the shared `cdrRowDateIso_` (Date is `M/D/YYYY`) + `metricsParsePercent_` (`"29.79%"`) per the CDR spreadsheet-tz discipline (INV-64), and since cycle 9 (L-14) its per-day `(rep, date)` cell ACCUMULATES on a collision (matching its `agents` aggregate + the DQE sibling's `prd.rung +=`) instead of overwriting — two rows collapsing to one canonical name on one date (an alias + a raw row, a duplicate import) previously made the per-day series keep only the last row while the aggregate double-counted; the single-row path keeps the sheet's stored pct byte-identical, only a genuine collision recomputes pct from the summed counts. The legacy `cdr`/`trend`/`noteCount`/`noteCoverage` fields are preserved (back-compat). Client (`metrics/script_metrics.html`) renders own (accent) vs team (muted dashed) sparklines per KPI with the cohort note; every server string is `esc()`'d (the Metrics-`esc()` gotcha). Pinned by `metricsParsePercent_` / `metricsTeamAvgSeries_` / `metricsBuildKpiSeries_` Node tests + `test_metrics_csrTransferFixture_parsesDateAndPercent` + the `mRenderTrendSection_` DOM test | Subsystem: Server + Client (Metrics views)
 INV-125 | **Tag-trend analytics (#5).** `getCallNotesTagTrends()` is manager-gated (INV-02/31), read-only, cached (`cn_tag_trends_v1`, 5 min — invalidated alongside the taxonomy cache by the tag-admin ops via `invalidateCnTaxonomyCache_`), and PHI-free (tags + dates only). It reuses the taxonomy's bounded 2-column scan (`SubformData` tags + `DateLocal`) across enrolled reps but buckets by ISO week over the trailing `CN_TAG_TRENDS_WEEKS` (12) instead of total+lastSeen; archived tags are excluded and a window pre-filter (yyyy-MM-dd lexical = chronological) bounds the events array. The week-bucketing is the pure, Node-pinned `cnTrendWeekStarts_` (Monday-anchored, tz-safe day math via `cnIsoToDayNum_`/`cnDayNumToIso_`) + `cnTagTrendsFromEvents_` (bucket → sort by total → top-`CN_TAG_TRENDS_TOPK` (12) → this-wk-vs-prior delta). Client renders a per-tag sparkline + total + delta in the Admin "Tag Trends" panel (`#cn-admin-trends`), every tag label `esc()`'d (the Metrics/CN gotcha). Pinned by the `cnTrendWeekStarts_`/`cnTagTrendsFromEvents_` Node tests + the `getCallNotesTagTrends` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Call Notes views)
 INV-126 | **KB review-due workflow (#4).** The KB schema gained trailing `ReviewedAt`/`ReviewedBy` columns (KB enum + `KB_HEADERS`); back-compat like `CN_HEADERS` (legacy rows read undefined and fall back to `UpdatedAt`), and `getOrCreateKbSheet_` self-heals the header width once post-deploy. **Editing counts as reviewing** — `kbSaveItem` stamps `ReviewedAt`/`ReviewedBy` on every save. `kbMarkReviewed(id)` is the no-edit "still accurate" path: manager-gated (INV-02), locked (INV-01), audited (`KbItemReviewed`), bumps only the two cells (no cache invalidation — the tree cache doesn't carry review state and `kbGetReviewDue` reads live). `kbGetReviewDue()` is manager-gated, read-only, PHI-free: items whose last review (or legacy last-edit) is older than `CONFIG.KB.REVIEW_DUE_DAYS` (90), sorted by 30-day usage desc via the factored `kbUsageCounts_` (shared with `kbGetUsageStats`). KB timestamp cells are recovered in the KB spreadsheet's OWN tz via `kbCellDateIso_` (Sheets-coercion discipline). Client renders a manager-only "Review due" block atop the Reference tree with Open + Mark-reviewed. Pinned by the `kbGetReviewDue`/`kbMarkReviewed` cases in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Reference views)
-INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's shift via `empShiftSchedule_` (roster column-O per-rep override wins, else the per-tz schedule — the v1 per-tz-only limitation was removed in Turn D, INV-149) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Since cycle 9 (L-2) the roster walk skips rows with no EMAIL (sibling parity with `getManagerDashboard`/`getTeammateStatus`/`getEmployeesList`) — a name-only offboarded/placeholder row used to count as a full working shift every day, inflating the confirmed band. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped), and a rep row whose shift STARTS on the previous manager-tz day carries `startsPrevDay` → the client renders "(from prev. day)" (cycle-8 — a bare "9:30 PM – 6:30 AM" on an IST rep's card read as THIS day's evening coverage). Coverage is shown as THREE bands (returned as `minStaff` / `goodStaff`): ≥ `COVERAGE_STAFF_GOOD` green ("good"), ≥ `COVERAGE_MIN_STAFF` amber ("acceptable"), < `COVERAGE_MIN_STAFF` red ("concerning") + listed in the Understaffed callout; the client bands on the CONFIRMED count. (This deploy: GOOD=7, MIN_STAFF=6.) Surfaced as the managerOnly `coverage` tab in the **Manage** module (moved from Time Clock; `enterCoverageView` in `tc/script_manager.html`, tab key unchanged); every server string `esc()`'d. Pinned by the `coverageBucketHours_` Node tests + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
+INV-127 | **Coverage planner (#3).** `getCoveragePlan(from, to)` is manager-gated (INV-02), read-only, range-capped (1–14 days), and PHI-free (names + per-tz schedule + PTO status only — never balances). For each manager-tz day it resolves each rep's shift via `empShiftSchedule_` (roster column-O per-rep override wins, else the per-tz schedule — the v1 per-tz-only limitation was removed in Turn D, INV-149) converted to the manager tz (`convertDateTime_`), overlays PTO (`Approved` = off, `Pending` = tentative), and overlays US holidays. Since cycle 9 (L-2) the roster walk skips rows with no EMAIL (sibling parity with `getManagerDashboard`/`getTeammateStatus`/`getEmployeesList`) — a name-only offboarded/placeholder row used to count as a full working shift every day, inflating the confirmed band. Cross-tz straddle is handled by padding rep-local dates ±1 and working in absolute manager-midnight minutes; the hourly distinct-rep concurrency bucketing is the pure, Node-pinned `coverageBucketHours_` (a confirmed rep is never double-counted as tentative; out-of-range clipped), and a rep row whose shift STARTS on the previous manager-tz day carries `startsPrevDay` → the client renders "(from prev. day)" (cycle-8 — a bare "9:30 PM – 6:30 AM" on an IST rep's card read as THIS day's evening coverage). Coverage is shown as THREE bands (returned as `minStaff` / `goodStaff`): ≥ `COVERAGE_STAFF_GOOD` green ("good"), ≥ `COVERAGE_MIN_STAFF` amber ("acceptable"), < `COVERAGE_MIN_STAFF` red ("concerning") + listed in the Understaffed callout; the client bands on the CONFIRMED count. (This deploy: GOOD=7, MIN_STAFF=6.) Surfaced as the managerOnly `coverage` tab in the **Manage** module (moved from Time Clock; `enterCoverageView` in `tc/script_manager.html`, tab key unchanged); every server string `esc()`'d. **The PTO overlay read is best-effort, and since cycle-16 F4 its failure is REPORTED: the response carries `ptoUnavailable` (additive), the client renders a `role="alert"` banner naming the bands as an upper bound, and the green all-clear is downgraded — with the overlay empty every rep counts as working, so silence made the planner report full staffing on a day half the team is off.** Pinned by the `coverageBucketHours_` Node tests + the F4 pin + the `getCoveragePlan` case in `test_managerGates_rejectNonManager` | Subsystem: Server + Client (Time Clock views)
 INV-128 | **Design-token hygiene tripwire.** `test/client/run.js` fails CI if any `var(--token)` referenced in a SHARED design-token-consuming partial is defined nowhere in `styles_design_tokens.html` (or the allowlist). It guards against the redesign foot-gun of referencing a renamed/typo'd CSS custom property that silently renders as the fallback/transparent. `form_public.html` is EXCLUDED (it's a standalone page that ships its own inline palette, not the token partial); the explicit allowlist is currently empty (every token resolves). SCOPE precision (cycle-10 audit note): the implementation builds its defined-token set from ALL shared HTML files, not the token partial alone — so a token declared only in a tool partial passes (behaviorally-correct CSS; weaker than the single-source rule this entry implies — e.g. the two `--lo-*` loader aliases live in `styles.html`). Adding a new `var(--x)` to a shared partial means declaring `--x` in `styles_design_tokens.html` (or, rarely, allowlisting it) | Subsystem: Test Suite
 INV-129 | `getMyMetricsRange(from, to)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates both dates (`^\d{4}-\d{2}-\d{2}$`, `from ≤ to`) and caps the span at 92 days. It returns the rep's OWN aggregate CDR metrics + an own-only per-day trend + note count for the range — NO team line and NO anonymized team series (those are INV-124's `getMyMetrics` single-day surface). Powers the My Stats Today/7D/30D range presets. Returns `cdr: null` (not an error) when the agent has no DQE data. Since cycle 9 (L-13) the assembled result is CacheService-cached per (rep, from, to) for `CDR_CACHE_TTL` — the exact L-1 pattern `getMyMetrics` uses (INV-67 stays literally true: `getCdrDailyBreakdown_` itself remains uncached, it just isn't re-called on a hit; error results never cached; bypassed under `_TEST_OVERRIDE_CDR_SS_ID`). **Cycle-11 L-3: "error results never cached" covers the PARTIAL failure too** — a thrown per-day trend read degrades to `trend: []` + `trendUnavailable: true` for that response but SKIPS the cache put, so a transient CDR failure can no longer pin an empty sparkline as fresh for the full TTL (Node-pinned). **Cycle-12 F5 generalizes the rule to the NOTE read and to the sibling endpoint caches:** a failed `cnCountNotesResult_` read degrades to `noteCountUnavailable: true` with `noteCoverage: null` and likewise skips the put — and the same guard now applies to `getMyMetrics`'s `metrics_my_v1:` cache and `getDashboardMetrics`'s `dash_metrics_v1:` cache, which previously would have pinned a degraded coverage figure for the full 5-minute TTL (the Clock strip reads `getMyMetrics`, so the stale round outlived the transient failure that caused it). Rule of thumb for any new result cache here: **cache only fully-successful rounds** | Subsystem: Server + Client (Metrics views)
 INV-130 | `getMyNoteHourBuckets(date)` is caller-scoped via `getEmployeeInfo_()`, read-only, validates the date, and returns a 24-element array of the caller's own LOGGED-NOTE counts bucketed by REP-LOCAL hour (`empTz_`) for that day — sourced from the rep's call-notes Sheet (the bounded `readCallNoteRowsInRange_` + `normalizeDate_`/`CN.TIMESTAMP` coercion guards), NOT from CDR. PHI-free (hour counts only). Not enrolled → all-zero buckets (never throws). Powers the Clock-view day-ribbon note-volume histogram | Subsystem: Server + Client (Time Clock views)
@@ -5862,7 +5967,8 @@ S37 | End-of-shift Stats tab with median completion time | Subsystem: Server, Cl
     - Inspect the per-rep cards
     - Pick a prior date that had activity
     - Submit a note as a rep (with optimistic UI tracking completion time), then re-open Stats for today
-  Expected: One card per enrolled rep. Each shows total notes, flag breakdown (action/training/review), resolved count, emails sent, median note completion time, shift span. Median is in `Xm Ys` format; outliers > 30 min are excluded from the median (stored as null upstream). Reps with no `completionSeconds` data (notes filed before the timer was instrumented) show "no data yet" for median. Stats refresh on date-picker change.
+    - **(cycle-16 F1)** Temporarily blank one rep's Employees column L, or point it at an id the deployer cannot open, then re-open the Stats tab for a date that rep worked
+  Expected: One card per enrolled rep. Each shows total notes, flag breakdown (action/training/review), resolved count, emails sent, median note completion time, shift span. Median is in `Xm Ys` format; outliers > 30 min are excluded from the median (stored as null upstream). Reps with no `completionSeconds` data (notes filed before the timer was instrumented) show "no data yet" for median. Stats refresh on date-picker change. **With an unreadable Sheet the rep is still LISTED (their CDR row is real) but every note-derived column — Notes / Action / Training / Review / Emails / Median — renders a warn-toned em dash with a "notes Sheet unreadable" tooltip, and Coverage renders an em dash, NOT `0` and NOT a CRIT-toned 0% badge.** Sorting by any of those columns groups the unavailable reps with the other unknowns rather than interleaving them with reps who genuinely logged zero. A rep with column L simply BLANK is not enrolled and does not appear at all (INV-35) — that is a different state from a failed read.
 
 S38 | Voice-to-text dictation (manual, behind flag) | Subsystem: Server, Client (Call Notes views)
   Steps:
@@ -6236,7 +6342,17 @@ S72 | Coverage planner (#3) | Subsystem: Server, Client (Time Clock views)
     - Confirm understaffed hours (< `CONFIG.COVERAGE_MIN_STAFF`, default 2) render in the warn/low tone; confirm a US holiday is labeled
     - Confirm an offshore (IST/PHT) rep's shift lands on the correct manager-tz hours (cross-tz straddle)
     - As a non-manager: the Coverage tab is hidden; calling `google.script.run...getCoveragePlan('2026-06-17','2026-06-17')` returns "Manager access required."
-  Expected: `getCoveragePlan` is manager-gated, read-only, range-capped (1–14 days), PHI-free (names + schedule + PTO status). Per-tz shifts (v1). The hourly distinct-rep math matches the pure `coverageBucketHours_` (Node-pinned); every server string `esc()`'d. INV-127.
+    - **(cycle-16 F4)** Temporarily rename the `TimeOffRequests` tab (or otherwise make it unreadable) and re-open Coverage for a range where reps have approved PTO
+  Expected: `getCoveragePlan` is manager-gated, read-only, range-capped (1–14 days), PHI-free (names + schedule + PTO status). Per-tz shifts (v1). The hourly distinct-rep math matches the pure `coverageBucketHours_` (Node-pinned); every server string `esc()`'d. INV-127. **With the PTO read broken, the grid still renders (best-effort by design) but a warn-toned `role="alert"` banner sits above it stating that time-off is NOT reflected and the bands are an upper bound; every rep shows as working; and the risk panel must NOT show the green "All business hours meet the N-rep minimum" check — it renders the neutral "No understaffed hours found — but time-off data is missing, so this is not an all-clear."** Restore the tab and confirm the banner disappears and the green all-clear returns.
+
+S73 | Phone-width layout of the four unbreakpointed grids (cycle-16 F2/F3) | Subsystem: Client (Reference views), Client (Call Notes views), Client (Intake views)
+  Steps:
+    - On a real phone, or DevTools at 390×844, open **Reference** and tap any article
+    - Open **Call Notes → Log** and look at the Callback / Caller / Relationship row
+    - Open **Intake → PPD** and scroll to a question with a help (i) glyph; hover/focus it
+    - In each view, check `document.documentElement.scrollWidth === clientWidth` in the console
+    - Re-open all three in the compact pop-out (480px) and at desktop width
+  Expected: Reference stacks — the tree sits above the reader and BOTH are full-width (~366px at 390px viewport), never a 280px tree beside a ~70px reader. The Call Notes trio stacks (or goes 2-up above 480px) so the phone number never wraps mid-value. PPD question text and its control each take the full row width. **No view scrolls horizontally** — `scrollWidth` equals `clientWidth`; in particular the PPD help tooltip opens LEFTWARD from the glyph and stays on-screen. Compact pop-out geometry and desktop layout are unchanged from before the fix (compact wins on specificity, `(0,3,0)` vs `(0,2,0)`).
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.
