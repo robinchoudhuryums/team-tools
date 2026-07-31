@@ -1,3 +1,47 @@
+// ── VERBATIM copies from web-app/Code.js — DO NOT EDIT BY HAND ──────────────
+// A fixture that reimplements server logic drifts silently and produces a
+// screenshot the server could not have produced (see README). These two are
+// pinned byte-identical to Code.js by the F4 mirror test in test/client/run.js.
+const CDR_QUEUE_UNGROUPED = 'Ungrouped';
+const MOCK_CDR_QUEUE_GROUPS = {
+    'Sales':            ['A_Q_Sales', 'A_Q_PAP', 'A_Q_Sales_MWC'],
+    'Customer Success': ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'],
+    'Field Operations': ['A_Q_FieldOps', 'A_Q_FieldOps_Power'],
+    'Power':            ['A_Q_PowerChairs', 'A_Q_PAK', 'A_Q_BackUp_Power'],
+};
+function groupQueueRows_(queueRows, groups) {
+  var rows = queueRows || [];
+  var map = groups || {};
+  var owner = {};
+  Object.keys(map).forEach(function (g) {
+    map[g].forEach(function (q) { if (!(q in owner)) owner[q] = g; });
+  });
+  var acc = {}, order = [];
+  rows.forEach(function (r) {
+    var g = owner[r.queue] || CDR_QUEUE_UNGROUPED;
+    if (!acc[g]) { acc[g] = { group: g, transferred: 0, reps: 0, queues: [] }; order.push(g); }
+    acc[g].transferred += (r.transferred || 0);
+    acc[g].reps = Math.max(acc[g].reps, r.reps || 0);   // see below
+    acc[g].queues.push({ queue: r.queue, transferred: r.transferred || 0, reps: r.reps || 0 });
+  });
+  // `reps` per queue is a COUNT, not a roster, so a true union is not
+  // recoverable here — max() is the tightest correct LOWER bound (the group has
+  // at least as many reps as its busiest queue). Labelled as such in the UI so
+  // it is never read as a total.
+  return order.map(function (g) {
+    var e = acc[g];
+    e.queues.sort(function (a, b) { return b.transferred - a.transferred; });
+    return e;
+  }).sort(function (a, b) {
+    // Ungrouped always sorts last, whatever its volume — it is a gap to close,
+    // not a department to compare against.
+    if (a.group === CDR_QUEUE_UNGROUPED) return 1;
+    if (b.group === CDR_QUEUE_UNGROUPED) return -1;
+    return b.transferred - a.transferred;
+  });
+}
+// ── end verbatim copies ─────────────────────────────────────────────────────
+
 // google.script.run mock + fixtures for the visual audit. Unknown endpoints
 // resolve through the failure handler and are logged to window.__MISSING__.
 (function () {
@@ -115,33 +159,30 @@
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
       totals.noteCoverage = Math.round((totals.noteCount / totals.answered) * 100);
+      var qRows = Object.keys(tq).map(function (q) {
+        return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
+      }).sort(function (a, b) { return b.transferred - a.transferred; });
       return {
         from: todayIso, to: todayIso, date: todayIso, reps: reps, teamTotals: totals,
-        unmatchedAgents: [], rosterWithNoCdr: [], trend: trend30(),
+        // Name-match diagnostics. On a shared CDR feed BOTH raw lists are
+        // normally non-empty (other departments; non-phone staff / PTO), so an
+        // all-empty fixture would never show the states a real manager sees.
+        // `likelyMismatches` is the DERIVED intersection — exactly what
+        // cdrLikelyNameMismatches_ returns for the two lists below: only
+        // "Smith, Bob" ↔ "Bob Smith" share 2 name tokens. "Jo Tran" shares
+        // just a surname with "Ada Tran" and must NOT pair.
+        unmatchedAgents: ['Ada Tran', 'Casey Lund', 'Dana Wu', 'Smith, Bob'],
+        rosterWithNoCdr: ['Bob Smith', 'Jo Tran', 'Robin Choudhury'],
+        likelyMismatches: [{ roster: 'Bob Smith', cdr: 'Smith, Bob' }],
+        trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
-        queueRows: Object.keys(tq).map(function (q) {
-          return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
-        }).sort(function (a, b) { return b.transferred - a.transferred; }),
-        groupRows: (function () {
-          var GROUPS = { 'Sales': ['A_Q_Sales', 'A_Q_PAP', 'A_Q_Sales_MWC'],
-            'Customer Success': ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'],
-            'Field Operations': ['A_Q_FieldOps', 'A_Q_FieldOps_Power'],
-            'Power': ['A_Q_PowerChairs', 'A_Q_PAK', 'A_Q_BackUp_Power'] };
-          var owner = {};
-          Object.keys(GROUPS).forEach(function (g) { GROUPS[g].forEach(function (q) { if (!(q in owner)) owner[q] = g; }); });
-          var acc = {}, order = [];
-          Object.keys(tq).forEach(function (q) {
-            var g = owner[q] || 'Ungrouped';
-            if (!acc[g]) { acc[g] = { group: g, transferred: 0, reps: 0, queues: [] }; order.push(g); }
-            acc[g].transferred += tq[q].transferred;
-            acc[g].reps = Math.max(acc[g].reps, Object.keys(tq[q].reps).length);
-            acc[g].queues.push({ queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length });
-          });
-          return order.map(function (g) { return acc[g]; }).sort(function (a, b) {
-            if (a.group === 'Ungrouped') return 1;
-            if (b.group === 'Ungrouped') return -1;
-            return b.transferred - a.transferred; });
-        })(),
+        queueRows: qRows,
+        // F4 (cycle 15): this fixture used to REIMPLEMENT the grouping fold by
+        // hand, and had already drifted — it omitted the per-group queues.sort()
+        // the server does, so the screenshot showed a group's queues in the
+        // wrong order. It now calls a VERBATIM copy of groupQueueRows_ (pinned
+        // byte-identical by the F4 mirror test), fed by the real CONFIG seed.
+        groupRows: groupQueueRows_(qRows, MOCK_CDR_QUEUE_GROUPS),
         meta: { rowsScanned: 900, rowsMatched: 120, columnWarning: null, computeMs: 84 },
       };
     })(),

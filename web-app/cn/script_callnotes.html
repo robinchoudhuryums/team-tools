@@ -8680,16 +8680,23 @@ function cnSetSysFromHealth_(res) {
   cnSetSysCard_('automation', 'Automation', autoTone, autoVal, autoSub);
 
   var cdr = res.cdr || { ok: false };
-  var unmatched = (cdr.unmatchedAgents && cdr.unmatchedAgents.length) || 0;
+  // The card tones off the PAIRED mismatches, never the raw unmatchedAgents
+  // count. The CDR Report covers the whole phone system while our roster is
+  // one team, so `unmatchedAgents` is permanently non-zero on a shared feed —
+  // a status card that can never go green trains the reader to ignore it.
+  // `rosterWithNoCdr` fails the same way (managers/admin staff/PTO weeks), so
+  // it is not a substitute. See cdrLikelyNameMismatches_ in Code.js.
+  var likely = (cdr.likelyMismatches && cdr.likelyMismatches.length) || 0;
   // L-2 (cycle 11): the Transfer tab's layout drift warns the same way DQE's does.
   var anyColWarn = cdr.columnWarning || cdr.transferColumnWarning;
-  var cdrTone = !cdr.ok ? 'warn' : (anyColWarn || unmatched > 0) ? 'warn' : 'ok';
+  var cdrTone = !cdr.ok ? 'warn' : (anyColWarn || likely > 0) ? 'warn' : 'ok';
   var cdrVal = !cdr.ok ? 'Unreachable'
-    : (anyColWarn ? 'Column drift' : (unmatched > 0 ? (unmatched + ' unmatched') : 'In sync'));
+    : (anyColWarn ? 'Column drift'
+      : (likely > 0 ? (likely + ' name mismatch' + (likely === 1 ? '' : 'es')) : 'In sync'));
   var cdrSub = !cdr.ok ? 'check CDR_SS_ID / access'
     : (cdr.columnWarning ? 'DQE layout changed'
       : (cdr.transferColumnWarning ? 'Transfer-tab layout changed'
-        : (unmatched > 0 ? 'agent name mismatch' : '0 unmatched agents')));
+        : (likely > 0 ? 'a rep’s calls may be missing' : 'reachable · names resolve')));
   cnSetSysCard_('cdr', 'CDR', cdrTone, cdrVal, cdrSub);
 }
 
@@ -8798,6 +8805,17 @@ function cnRenderHealthPanel_(res) {
   var secLabel = function (txt) {
     return '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin:14px 0 6px">' + txt + '</div>';
   };
+  // On a shared CDR feed the unmatched-agent list runs to dozens of names —
+  // a wall of text in a hint box. Show a readable head and SAY what was cut
+  // (the INV-169 posture: never truncate silently).
+  var NAME_CAP = 12;
+  var nameList = function (arr) {
+    var a = arr || [];
+    // Names can CONTAIN commas ("Smith, Bob"), so a comma-join reads as
+    // more entries than there are — separate with a middot.
+    var head = a.slice(0, NAME_CAP).join(' \u00b7 ');
+    return esc(head) + (a.length > NAME_CAP ? ' <em>+' + (a.length - NAME_CAP) + ' more</em>' : '');
+  };
 
   // (a) Personal-sheet sync failures
   var sf = res.syncFails || { count: 0, recent: [], windowDays: 30 };
@@ -8859,14 +8877,33 @@ function cnRenderHealthPanel_(res) {
       cdrParts.push(warnBox(icon('warning', 11) + ' Column drift in CSR Transfer Historical Data: ' +
         esc(cdr.transferColumnWarning) + ' — the Transfer KPI may be reading the wrong cells.'));
     }
+    // The one ACTIONABLE name finding: a roster rep with no call data whose
+    // name resembles an unmatched CDR agent — almost certainly one person
+    // spelled two ways, so their calls are missing from every metric. Names
+    // the exact alias row to add. Normally empty.
+    if (cdr.likelyMismatches && cdr.likelyMismatches.length > 0) {
+      var lmRows = cdr.likelyMismatches.slice(0, NAME_CAP).map(function (m) {
+        return '<div style="margin-top:3px">· <strong>' + esc(m.cdr) + '</strong> (CDR) → <strong>' +
+          esc(m.roster) + '</strong> (roster)</div>';
+      }).join('');
+      var lmMore = cdr.likelyMismatches.length > NAME_CAP
+        ? '<div style="margin-top:3px"><em>+' + (cdr.likelyMismatches.length - NAME_CAP) + ' more</em></div>' : '';
+      cdrParts.push(warnBox(icon('warning', 11) + ' ' + cdr.likelyMismatches.length +
+        ' likely name mismatch' + (cdr.likelyMismatches.length === 1 ? '' : 'es') +
+        ' — these reps’ calls are probably missing from Metrics. Add an <strong>Agent Alias Overrides</strong> row in the CDR Report (col A = CDR name, col B = roster name, exact):' +
+        lmRows + lmMore));
+    }
+    // Both raw directions are expected to be non-empty on a shared feed, so
+    // they are reference detail, not warnings (see cnSetSysFromHealth_).
     if (cdr.unmatchedAgents && cdr.unmatchedAgents.length > 0) {
-      cdrParts.push(warnBox(icon('warning', 11) + ' ' + cdr.unmatchedAgents.length +
-        ' CDR agent(s) not matched to the roster (add an Agent Alias Override or fix the Employees name): ' +
-        esc(cdr.unmatchedAgents.join(', '))));
+      cdrParts.push('<div style="font-size:12px;color:var(--muted)">' + icon('info', 11) + ' ' + cdr.unmatchedAgents.length +
+        ' CDR agent(s) not on this roster — expected when the CDR Report covers other departments: ' +
+        nameList(cdr.unmatchedAgents) + '</div>');
     }
     if (cdr.rosterWithNoCdr && cdr.rosterWithNoCdr.length > 0) {
       cdrParts.push('<div style="font-size:12px;color:var(--muted)">' + icon('info', 11) + ' ' + cdr.rosterWithNoCdr.length +
-        ' roster name(s) with no CDR rows this week: ' + esc(cdr.rosterWithNoCdr.join(', ')) + '</div>');
+        ' roster name(s) with no CDR rows this week — expected for non-phone staff and full-week PTO: ' +
+        nameList(cdr.rosterWithNoCdr) + '</div>');
     }
     if (cdr.queueInventory) cdrParts.push(cnQueueInventoryHtml_(cdr.queueInventory));
   }

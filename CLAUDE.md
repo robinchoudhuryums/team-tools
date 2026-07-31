@@ -271,6 +271,74 @@ this section before touching the relevant area.
   Phase 1 Key Design Decision. The `A_Q_*` queue-aggregate rows
   `isCdrQueueSentinel_` skips are real but far too sparse to build a series on
   (8 queues / ~12 rows in a week).
+- **A diagnostic that can never be clean is worse than none — the CDR
+  name-match card (cycle 15).** Both roster↔CDR mismatch directions are
+  PERMANENTLY non-empty on this deployment, so neither can drive a status
+  card: `unmatchedAgents` lists every CDR agent not on our roster, but the CDR
+  Report covers the WHOLE phone system (it is owned by `call-data-reporting`)
+  while our roster is one team — **there is no department filter;
+  `CONFIG.CDR_DEPARTMENT` is declared and read NOWHERE** (its only other
+  mention was a `getCdrAgentMetrics_` doc comment claiming it filtered, now
+  corrected). Reported 78 strangers in practice. The reverse list
+  `rosterWithNoCdr` fails identically: the roster set is every NAMED employee
+  row, so managers, admin staff, and anyone on PTO across the whole window are
+  in it forever — swapping the tone to it just moves the always-amber problem.
+  The **intersection** is the signal: a roster rep with no call data whose name
+  resembles an unmatched CDR agent is one person spelled two ways, which means
+  their calls are silently missing from every metric. `cdrLikelyNameMismatches_`
+  (pure, Node-pinned) pairs them on **normalized-equal OR ≥2 shared name
+  tokens** — two, not one, because a shared surname is a coincidence on any
+  real roster; a nickname sharing only a surname ("Robert Smith" vs "Bob
+  Smith") is a deliberate false NEGATIVE, since under-reporting is the safe
+  direction for something that raises a warning. That set is normally EMPTY,
+  so the card reaches green, and it names the exact `Agent Alias Overrides`
+  row to add. **The general rule: before toning a health indicator off a
+  count, ask what that count reads on a healthy production system — if the
+  answer is not zero, it is reference detail, not a signal.**
+- **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate
+  (cycle-15 F3).** Offboarding here means clearing the email while KEEPING the
+  name, so a name-only row is not a person to count. FOURTEEN walks each decided
+  that for themselves and did not agree: NINE tested raw truthiness
+  (`if (!rows[i][EMP.EMAIL]) continue;`), THREE trimmed, and TWO tested nothing.
+  A WHITESPACE-ONLY email cell therefore made the first two groups DISAGREE —
+  the identical shape column L had before `cnEnrolledSheetId_` (INV-167), on a
+  second column. The un-guarded pair mattered unequally: `getTeamMetrics` ACTS
+  on it (its gate is `if (cdr || noteCount > 0 || …)`, and an offboarded name
+  still matching DQE history satisfies it, so a departed employee got a full row
+  in the manager's team table AND their volume flowed into `teamTotals`), while
+  `getPunctualityReport` was harmless only by coincidence downstream
+  (`if (!dates.length) return` drops a rep with no punches). The predicate
+  returns the TRIMMED email or `''`, so it can only NARROW the nine raw call
+  sites — the correct direction, matching INV-167's resolution. It is NOT an
+  authorization check; `getEmployeeInfo_` still identifies the caller. Pinned by
+  the F3 tripwire, which bans the raw guard shape ANYWHERE in `Code.js` (derived,
+  not a hand list — INV-179) rather than enumerating today's fourteen walks.
+- **A declared-but-unread CONFIG key / enum member is a defect, not clutter
+  (cycle-15 F1/F2).** The next reader assumes it is wired. Removed:
+  `CDR_DEPARTMENT` (whose `getCdrAgentMetrics_` doc comment CLAIMED it filtered
+  the read — it never did; there is no department filter, which is why the CDR
+  name-match diagnostic is permanently non-empty), `TRAINING_DIGEST_WEEKDAY` /
+  `REVIEW_DIGEST_WEEKDAY` (the weekly-digest trigger hardcodes
+  `ScriptApp.WeekDay.FRIDAY`, so editing these was a SILENT no-op for an
+  operator trying to move the digest), and `CALL_NOTES.SUBFORM_COL_JSON` (a
+  toggle that never existed). `EOD_WARNING_WINDOW_MINUTES` is deliberately
+  retained and is now marked `DEAD` at its declaration — the allowlist entry in
+  the F1 tripwire REQUIRES that marker, so "retained on purpose" and "forgotten"
+  stay distinguishable. Same class in the enums: `CDR.QUEUE_EXT` was read by
+  cycle-14 Phase 0 yet stayed dead because the read used bare positional
+  offsets — now DERIVED from the enum, so the read follows a column move
+  instead of silently reading its neighbour. **Col 4 remains the one CDR column
+  absent from `CDR_EXPECTED_HEADERS`, deliberately and temporarily:** that
+  validator substring-matches, so an entry whose text is not in the real header
+  raises a FALSE "Column drift" warning and flips the CDR health card amber —
+  the same always-wrong-signal class this cycle removed. The real col-4 header
+  text in the `call-data-reporting`-owned sheet has never been recorded, and
+  guessing it is worse than the gap. **Operator: read the col-4 header off the
+  DQE tab and add `4: '<that text>',`** — a one-line close. Exposure meanwhile
+  is small (an INSERT at col 4 shifts 5..10 and IS caught; only an in-place
+  repurpose slips through, into a manual diagnostic rather than a metric).
+  Pinned by the F1 tripwire (every CONFIG key has a reader, allowlist must
+  self-declare).
 - **CDR enrichment in `managerGetShiftStats` is best-effort.**
   The CDR overlay that adds `cdr` and `noteCoverage` fields to each
   rep's shift-stats card is wrapped in a try/catch. If the CDR
@@ -3415,6 +3483,13 @@ this section before touching the relevant area.
   as unmatched. CDR failure degrades to a warning box (`cdr.ok:false`)
   without taking down the rest of the panel. Every server string is
   `esc()`'d before `innerHTML`.
+  **The CDR status card tones off `likelyMismatches` — NEVER either raw name
+  list** (see the "a diagnostic that can never be clean" gotcha): both raw
+  directions are permanently non-empty on a real deployment, so either one
+  pins the card amber forever. The two raw lists still render beneath it as
+  muted reference detail, capped with an explicit "+N more" (INV-169), and
+  joined with a MIDDOT because a name can itself contain a comma
+  ("Smith, Bob" comma-joined reads as two agents).
   **Queue inventory (sub-queue Phase 0) — OPT-IN, panel only.** The app has
   always had queue data and always thrown it away: DQE rows whose Agent cell is
   `A_Q_*`/`Backup CSR` are dropped by `isCdrQueueSentinel_`, **`CDR.QUEUE_EXT`
@@ -5197,7 +5272,14 @@ MUST mirror the real server contract** (two fixture-shape bugs — a wrong
 `coachAnalytics_` shape and a pre-formatted `lastPunchTimeMgr` — produced
 convincing fake defects before this rule), and a `report.json` `missing` entry
 means the scenario rendered a loader, not the real view — add the fixture
-before trusting the screenshot. See `test/visual/README.md`.
+before trusting the screenshot. **A fixture must never REIMPLEMENT server logic
+(cycle-15 F4):** the Team Metrics fixture hand-rolled the queue→department fold
+and had already drifted — it omitted the per-group `queues.sort()` — so every
+screenshot showed an ordering the server cannot produce. `mock.js` now carries
+VERBATIM copies of `groupQueueRows_`, `CDR_QUEUE_UNGROUPED` and the
+`CDR_QUEUE_GROUPS` seed under a DO-NOT-EDIT banner, pinned byte-identical by the
+F4 mirror test. Copy server logic in and pin it; never paraphrase it.
+See `test/visual/README.md`.
 
 ### Health Dimensions
 Overall, Correctness, Security & Access Control, Data Integrity, Timezone Correctness, Concurrency Safety, Test Coverage, Code Clarity & Docs, Apps Script Best Practices, Manager UX, Employee UX, Automation Reliability, UI/UX & Accessibility
@@ -5427,7 +5509,7 @@ INV-165 | **A `color-mix` producing a SEMANTIC colour must interpolate `in oklab
 INV-166 | **Text on a FIXED-palette surface must use a literal colour, never a theme token.** The clock card's sky gradient does not flip with the theme, so a `--muted`/`--ink` token on it tracks the theme while its background doesn't — `.ampm` measured 1.20–2.00:1 in dark mode on the live clock of a time-tracking app, because `styles.html`'s (0,3,0) `.hero .clk-time .ampm` beat the (0,2,0) `.clk-sky .clk-time` white override. Every other element on that card was already correctly hardcoded. Verify: `.clk-sky` descendants carry literal colours; measured contrast identical in both modes (3.89 / 2.45 / 1.52 against the gradient's blue end / midpoint / amber end) | Subsystem: Client (Time Clock views)
 INV-167 | **`cnEnrolledSheetId_(row)` is the ONLY reader of Employees column L**, returning the trimmed id or `''`, so a WHITESPACE-ONLY cell reads as not-enrolled everywhere. The test was hand-written 21 times and 11 copies tested RAW truthiness while 10 trimmed: with such a cell the trimmed group correctly showed the rep the enrollment splash while every untrimmed cross-rep walk called `openById(' ')`, threw into its per-rep try/catch, and SILENTLY omitted the rep from the aggregate (tag taxonomy, tag trends, the tag-transform walk, cross-rep search, shift stats, the unresolved-action badge, the CN export, team metrics, the EOD digest) — or, in Storage Health, reported a false "unreachable per-rep Sheet". The employee-object builders route through it as `cnEnrolledSheetId_(row) || null`, preserving their null-when-absent contract. Verify: the F14 global scan (no raw `EMP.CALL_NOTES_SHEET_ID` read outside the predicate + `provisionCallNotesSheet`'s setValue WRITE) + a 12-consumer delegation assert + the `cn_enrolledSheetId_trimsAndNullGuards` smoke test | Subsystem: Server
 INV-168 | **The append-only `SubformData` arrays are bounded by entry count AND serialized size, REFUSING rather than dropping.** `feedback[]` grows per manager reply/comment/rep ack/clarification and `externalEmails[]` per external send; unbounded, either walks the cell to its ~50k limit, past which EVERY later write on that note throws — including the flag/pin/resolve ops a rep uses daily. All four appends route through `cnAppendBounded_` (`CN_FEEDBACK_MAX_ENTRIES` 200 / `CN_EXTERNAL_EMAILS_MAX_ENTRIES` 100 / `CN_SUBFORM_MAX_CHARS` 45k), which pops the entry back off on refusal so the caller never half-mutates the record; refuse-not-drop because these arrays ARE the coaching/send record (the INV-96 posture). **The non-growing flag/resolve/pin writes are deliberately NOT size-gated** — they are the recovery path for an already-oversized note. The `externalEmails[]` stamp runs after a successful send, so its refusal only logs (INV-42). Verify: the F11 pins + `cn_appendBounded_capsAndRollsBack` | Subsystem: Server
-INV-169 | **A payload-capped reader must return its pre-slice total**, and the client must render "showing N of M" — and render NOTHING when the list is complete or the total is absent, so an un-redeployed server degrades to prior behaviour. `getDeptRequests` (`listCap` + `mineTotal`/`incomingTotal`/`allOpenTotal`, the magic 100 named `DR_LIST_CAP`), `kbGetReviewDue` (`total`/`cap`, and the landing pill shows the TRUE total, not the payload length), `getSpanishInboxStats` (`pendingListCap` — declared for correctness though NO client reads `pendingList`; see the follow-on). Distinct from a SCAN cap: `getDeptRequests` keeps its separate `truncated` flag, and a run can scan 4000 rows and still have >100 to show. Verify: the F18 pins on both sides of the wire | Subsystem: Server + Client (Metrics/Reference views)
+INV-169 | **A payload-capped reader must return its pre-slice total**, and the client must render "showing N of M" — and render NOTHING when the list is complete or the total is absent, so an un-redeployed server degrades to prior behaviour. `getDeptRequests` (`listCap` + `mineTotal`/`incomingTotal`/`allOpenTotal`, the magic 100 named `DR_LIST_CAP`), `kbGetReviewDue` (`total`/`cap`, and the landing pill shows the TRUE total, not the payload length), (`getSpanishInboxStats` was the third example, but cycle-13 FO-5 REMOVED both `pendingList` and `pendingListCap` as dead response fields — the honest resolution of a capped list no client reads is to delete it, not to cap it, and this entry kept citing them for two cycles after they were gone). Distinct from a SCAN cap: `getDeptRequests` keeps its separate `truncated` flag, and a run can scan 4000 rows and still have >100 to show. Verify: the F18 pins on both sides of the wire | Subsystem: Server + Client (Metrics/Reference views)
 INV-170 | **`shortLabel` is the nav-label source on all three width-constrained surfaces** — mobile bottom nav, sidebar link, and sidebar sub-label — with the full `label` carried as a `title`. Set it on any tool label longer than ~9 characters. The nav is constrained on three surfaces at once: at the shipped 168px sidebar default the full labels CSS-ellipsised 2 of 7 tools, at 390px "Call Notes" was the one mobile label that wrapped, and the sub-label's two-line wrap pushed every sidebar nav item down 11px — so navigating MOVED the navigation. The two sidebar user fields (name, employee id) carry titles for the same reason. Verify: the V-5/6/7 pin (sidebar renders `shortLabel || label` + a full-label title; sub-label likewise; both user fields have titles) | Subsystem: Client (shell)
 INV-171 | **The gated-endpoint set and the admin-exclusive set are DERIVED from `Code.js` source, not hand-listed.** Every function returning `'Manager access required.'` or `'Admin access required.'` must be referenced by a gate test (the omnibus `test_managerGates_rejectNonManager` cases or a dedicated `*_nonManagerRejected` / `*_nonManagerThrows` test), and INV-136's stated count AND backticked names must equal what the code enforces — that count drifted four times (24→28→30→35) while calling itself authoritative. Trigger handlers are outside the set by construction (they THROW via `assertManagerCaller_`, so they carry no returned error string) and keep their own INV-44 tripwire. One reasoned allowlist entry: the private helper `managerAggregateFlagged_`, whose public wrappers are both covered. Verify: the F9 + F7 tripwires | Subsystem: Test Suite
 INV-172 | **The nightly self-test stamps a `{running:true, startedAt}` sentinel BEFORE the suite, and a STALE sentinel is a failure.** Extends INV-162: the outcome write happens only on a normal return or a CATCHABLE throw, and an Apps Script execution-limit kill is neither — so a chronically timing-out full suite left the PREVIOUS (green) result in place beside a FRESH heartbeat, i.e. the newest detector could not detect its own failure. `computeAutomationHealth_` derives `stuck` (running + older than `SELF_TEST_STUCK_MS` 2h); `automationProblems_` check (f) pushes it, so it rides the shell health dot AND the failure digest (INV-161); the Admin panel reports "never finished" INSTEAD of the stale pass/fail line, while a FRESH sentinel reads "Running now" and is not a problem. The sentinel is stamped AFTER the "test suite not present" early return, so a project without `Tests.js` never leaves one behind. Verify: the extended nightly-self-test pin (sentinel present + before the suite + carries startedAt + `stuck` from staleness + surfaced in problems and the panel) | Subsystem: Server + Client (Call Notes views)
@@ -5445,6 +5527,13 @@ INV-178 | **A section heading is an `<h2>`, not a styled `<div>`.** Heading navi
 INV-179 | **When a convention is worth a tripwire, scan a DERIVED file list (`PARSE_GUARD_PARTIALS`), never a hand-copied one.** Hand-listed scan sets have been found short three times — cycle-9 M-10 (a newly-included JS partial outside every harness list), cycle-11 M-4 (four hand copies of the registry/DOM coverage lists), cycle-13 B5-1 (the a11y pins named six files by hand). The last is the clearest evidence: the moment the list was derived, the SAME rule surfaced eight live defects the human audit had missed. A hand-copied list silently narrows as the codebase grows, and CI stays green while it does. Verify: the `A11Y_SCAN_PARTIALS` derivation plus the existing `PARSE_GUARD_PARTIALS` ↔ `index.html` `include()` coupling check | Subsystem: Test Suite
 
 INV-180 | **Per-queue transfer counts are a COMPONENT of `transferred`, never a partition of it.** The `CSR Transfer Historical Data` H:R block attributes some transfers to a named queue, but a real sheet routes others to destinations with no `A_Q_` column — so summing the queues UNDER-REPORTS the total. `getCsrTransferPerRepDaily_(…, {withQueues:true})` therefore reports `queueTotal` (the attributed subtotal) and `queueUnattributed` (the remainder) alongside the untouched `transferred`, so a consumer can say "9 of 14 attributed" instead of implying the breakdown is complete; `transferred` is NEVER derived from the queue sum. Related: a ZERO or BLANK queue cell is ABSENCE, not a queue with zero traffic (recording it would make every rep appear to staff every queue), and per-queue reading is opt-in because the three pre-Phase-1 callers cache their assembled payloads (INV-85). Verify: the Phase-1 pins (attributed-subtotal-not-substitute, zero/blank skipped, opt-in call-site count — all bite-checked) + `test_metrics_csrTransferQueues_optInAndTransparent` | Subsystem: Server
+
+INV-181 | **A queue→department mapping is a PARTITION, and a group total is a plain SUM only because sub-queues are disjoint from parents.** A queue claimed by two groups is kept only in the FIRST — in both the resolver (`getCdrQueueGroups_`) and the fold (`groupQueueRows_`) — so a queue is counted exactly once. The plain sum is correct ONLY under the operator-confirmed fact (2026-07-31) that sub-queue traffic is NOT already rolled into the parent column; if 8x8 ever changes that, summing reports a group at roughly 1.5× its real volume and `groupQueueRows_` must change with it. A queue in no group lands in a trailing **`Ungrouped`** row that always sorts LAST regardless of volume — it is a gap to close, not a department to compare against. The group `reps` figure is `max()` across members, a deliberate **LOWER BOUND**: the per-queue figure is a COUNT, not a roster, so a true union is not recoverable, which is why the column is labelled "Reps (min)" rather than presented as a total. Verify: the four Phase-4 pins (sum-not-max, Ungrouped-last, count-once, sanitize-on-read + mode-only-with-data) plus `test_metrics_getTeamMetrics_queueGrouping`, which asserts group totals sum EXACTLY to queue totals — nothing dropped, nothing double-counted | Subsystem: Server + Client (Metrics views)
+INV-182 | **A shared component gains capability through OPTIONAL, GUARDED hooks — a caller passing none renders byte-identically.** That property is what makes it safe to extend a component with several live callers: `mtRenderTable_` took `rowClass` (cycle 12) and `detailRow`/`rowId` (cycle 14) without touching its existing three callers. The division of ownership is deliberate: the CALLER owns the disclosure `<button>` (so it can sit in whichever column suits that table), while the COMPONENT owns the row id's charset restriction — for the same reason the sort handler does (cycle-11 L-15: entity-escaping is the wrong neutralizer in an attribute the browser decodes before use). Verify: the Phase-2 additive-guard pin (the other callers' rendered output is unchanged) + the DOM disclosure test | Subsystem: Client (shell)
+INV-183 | **Roster INCLUSION goes through `empRosterEmail_(row)` — the ONE predicate.** It returns the TRIMMED email or `''`, so a caller writes `if (!empRosterEmail_(row)) continue;` and also has the value. Offboarding here means clearing the email while KEEPING the name (so history still reads), and a name-only row is not a person to count — but FOURTEEN walks each decided that for themselves and did not agree: NINE tested raw truthiness (`if (!rows[i][EMP.EMAIL]) continue;`), THREE tested trimmed, and TWO tested nothing at all. A WHITESPACE-ONLY email cell therefore made the first two groups DISAGREE, the identical shape column L had before `cnEnrolledSheetId_` (INV-167), on a second column. The un-guarded pair mattered unequally: `getTeamMetrics` ACTS on it — its gate is `if (cdr || noteCount > 0 || …)`, which an offboarded name still matching DQE history satisfies, so a departed employee got a full row in the manager's team table AND their volume flowed into `teamTotals` — while `getPunctualityReport` was harmless only by coincidence downstream (`if (!dates.length) return`). Trimming can only NARROW the nine raw sites, which is the correct direction and matches INV-167's resolution. **NOT an authorization check** — `getEmployeeInfo_` still identifies the caller; this governs only whether a roster ROW is counted in a team-wide walk. Verify: the F3 tripwire bans the raw guard shape ANYWHERE in `Code.js` (derived, not a hand list — INV-179), plus named assertions on the two expensive walks and skip-before-collect in the cohort pair | Subsystem: Server
+INV-184 | **A declared-but-unread CONFIG key or enum member is a DEFECT, not clutter — the next reader assumes it is wired.** Four were removed in cycle 15: `CDR_DEPARTMENT` (whose `getCdrAgentMetrics_` doc comment CLAIMED it filtered the read — it never did, which is why the CDR name-match diagnostic is permanently non-empty), `TRAINING_DIGEST_WEEKDAY` / `REVIEW_DIGEST_WEEKDAY` (the weekly-digest trigger hardcodes `ScriptApp.WeekDay.FRIDAY`, so an operator editing them to move the digest got a SILENT no-op), and `CALL_NOTES.SUBFORM_COL_JSON` (a toggle that never existed). **Deliberate retention is allowed but must SELF-DECLARE:** `EOD_WARNING_WINDOW_MINUTES` is marked `DEAD` at its declaration, and the tripwire's allowlist REQUIRES that marker — so "retained on purpose" and "forgotten" stay distinguishable in the file itself, not only in this document. The same class exists in the enums: `CDR.QUEUE_EXT` was read by cycle-14 Phase 0 yet stayed dead because the read used bare positional offsets (now derived from the enum). Verify: the F1 tripwire (every CONFIG key has a reader; the allowlist must self-declare) | Subsystem: Server
+INV-185 | **A test fixture must never REIMPLEMENT server logic — copy it VERBATIM and pin it byte-identical.** The Team Metrics visual fixture hand-rolled the queue→department fold and had ALREADY drifted: it omitted the per-group `queues.sort()`, so every By-department screenshot showed an ordering the server cannot produce. A paraphrase drifts silently and the harness then lies with total confidence — the failure mode its own README already documents twice (a wrong `coachAnalytics_` shape, a pre-formatted `lastPunchTimeMgr`). `test/visual/mock.js` now carries verbatim copies of `groupQueueRows_`, `CDR_QUEUE_UNGROUPED` and the `CDR_QUEUE_GROUPS` seed under a DO-NOT-EDIT banner. This makes the FIXTURE a mirror in the INV-72 sense, so it belongs in `MIRROR_INDEX` like any other parallel source. Verify: the F4 mirror pin (function source + sentinel + group mapping all byte-identical, and the fixture actually CALLS the shared fold) + its MIRROR_INDEX entry | Subsystem: Test Suite
+INV-186 | **Before toning a health indicator off a count, ask what that count reads on a HEALTHY production system — if the answer is not zero, it is reference detail, not a signal.** The Automation Health CDR card toned off `unmatchedAgents`, which is PERMANENTLY non-empty here: the CDR Report covers the whole phone system (it is owned by `call-data-reporting`) while our roster is one team, and there is no department filter. It read "78 unmatched" indefinitely, and a card that can never go green trains the reader to ignore it — strictly worse than having no card. The obvious swap is also wrong: `rosterWithNoCdr` is every NAMED employee with no calls, so managers, admin staff and full-window PTO pin it amber just as permanently. The signal is the INTERSECTION (`cdrLikelyNameMismatches_`): a roster rep with no call data whose name resembles an unmatched CDR agent is one person spelled two ways, so their calls are silently missing from every metric. That set is normally EMPTY — the card reaches green — and it names the exact `Agent Alias Overrides` row to add. **Known limit:** the pairing requires normalized-equality or ≥2 shared name tokens, so a nickname sharing only a surname is a deliberate false NEGATIVE (under-reporting is the safe direction for something that raises a warning), and the capped raw lists render beneath it for the human. Verify: `CDR: the health card tones off likelyMismatches, never the raw lists` (which strips comments first — the function explains why the raw lists are unusable and would otherwise trip on its own rationale) | Subsystem: Server + Client (shell)
 
 ### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
 
