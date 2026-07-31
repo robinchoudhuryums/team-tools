@@ -2677,10 +2677,39 @@ this section before touching the relevant area.
      otherwise every rep would appear to staff every queue. Accumulation is
      `+=` on collision, matching the cycle-9 L-14 rule the two totals already
      follow, so the per-day shape and the range aggregate cannot disagree.
-  Queue→department GROUPING is deliberately unbuilt: plausible groupings are
-  inferable from the names (FieldOps + FieldOps_Power) but that is a guess
-  about the operator's business, and an empty-by-default property with no
-  consumer is dead code. It belongs with the Phase-2 "By department" switcher.
+  **Phase 2 — the manager UI.** Team Metrics gained a `role="tablist"` scope
+  switcher over the same rows: **Combined** (per-rep, with the Transfers count
+  as a real `<button>` disclosure + a segmented contribution bar, expanding to
+  the per-queue split), **By department** (Phase 4, below) and **By queue**
+  (rows are queues). A mode renders ONLY when its data exists — an inert
+  switcher is worse than none. **INV-180 is enforced VISUALLY, not just in the
+  payload:** the bar draws the unattributed remainder as its own muted segment
+  and the detail states "N of M transfers attributed to a queue" in words; a
+  bar built from queues alone would silently imply completeness. Queue colour
+  is a deterministic hash (`mQueueHue_`) so a queue keeps its colour across
+  renders and across modes. The Transfer read inside `getTeamMetrics` is
+  BEST-EFFORT (the INV-67 posture) — a manager's whole team table must not
+  vanish because one auxiliary tab is unreachable; a throw degrades to
+  `transferMeta.error` and the client renders `errorStateHtml_` (INV-175).
+  `mtRenderTable_` gained OPTIONAL `detailRow(r)` + `rowId(r)` for this; a
+  caller passing neither renders byte-identically (see its own decision entry).
+  **Phase 4 — queue→department grouping (operator-supplied, NOT inferred).**
+  `CONFIG.CDR_QUEUE_GROUPS` seeds the four real departments (Sales / Customer
+  Success / Field Operations / Power); Script Property `CDR_QUEUE_GROUPS`
+  overrides without a redeploy; `getCdrQueueGroups_` sanitizes on read (the
+  L-12 rule) and a queue claimed by two groups is kept only in the FIRST —
+  the grouping is a PARTITION, and double-counting a queue is the INV-180 class.
+  The fold `groupQueueRows_(queueRows, groups)` is pure and Node-pinned.
+  **Sub-queues are DISJOINT from their parents (operator-confirmed 2026-07-31),
+  so a group total is a plain SUM of its members.** If 8x8 ever rolls sub-queue
+  traffic up into the parent column this MUST change — summing would then report
+  a group at ~1.5x its real volume. Two shapes worth knowing: a queue in no
+  group lands in a single trailing **"Ungrouped"** row that always sorts LAST
+  regardless of volume (it is a gap to close, not a department to compare
+  against), and the group `reps` figure is `max()` across member queues — a
+  LOWER BOUND, not a headcount, because the per-queue figure is a count rather
+  than a roster so a true union is not recoverable. The column is labelled
+  "Reps (min)" for exactly that reason.
 - **Note coverage + count have a single source of truth.**
   `cnNoteCoverage_(noteCount, answeredCalls)` (whole-number percent,
   or null when there's no answered-call denominator) and
@@ -3686,6 +3715,15 @@ this section before touching the relevant area.
   component with its overdue tint via `rowClass`, and the Coaching KPI strip was
   left-aligned to match its `.telemetry` twin (it was centred). A Node pin
   asserts the hand-rolled markup does not come back.
+  **Cycle-14 Phase 2 added the second optional hook: `detailRow(r)` + `rowId(r)`
+  emit a collapsed `<tr class="mt-detail" hidden>` beneath a row.** Additive
+  like `rowClass` — a caller passing neither renders byte-identically, which is
+  what makes it safe to extend a component with three live callers. The CALLER
+  owns the disclosure `<button>` (so it can sit in whichever column suits) and
+  must point its `aria-controls` at the row id; the id is charset-restricted in
+  the component for the same reason the sort handler is (cycle-11 L-15 —
+  entity-escaping is the wrong neutralizer in an attribute the browser decodes
+  before use).
 - **Admin sheet viewer (Tier 2 — `getAdminSheetView`).** A manager-gated
   (INV-02/31), read-only, PHI-free in-app table view of a SAFE, **allowlisted**
   tab, surfaced as the Call Notes → Admin **"Sheets"** sub-tab
@@ -3930,6 +3968,10 @@ manually for a fresh deploy or environment:
   `getAutomationHealth` fetch by design), NOT on the 10-minute health-badge
   poll or the daily digest — those call `computeAutomationHealth_` directly and
   the scan is opt-in.
+  **Phase 4 adds ONE optional Script Property, `CDR_QUEUE_GROUPS`** (see its own
+  entry below) — optional because the four real departments ship seeded in
+  CONFIG, so the "By department" mode works on deploy with no action. Phase 2
+  adds none.
   **Phase 1 (transfer-only per-queue attribution) adds NO operator state
   either** — no Script Property, trigger, migration, or CONFIG constant, and
   deliberately NO queue→department grouping property (see the Phase 1 Key
@@ -4550,6 +4592,20 @@ manually for a fresh deploy or environment:
   ribbon). Breaks + the break reminder still come from the per-tz schedule
   (the override changes start/length only). Overnight shifts are unsupported.
   `ROSTER_CACHE_KEY` bumped to `employee_roster_v8` for this column.
+- **Script Property `CDR_QUEUE_GROUPS`** (optional — cycle-14 Phase 4). JSON
+  `{"Department": ["A_Q_Queue", ...]}` mapping transfer queues to departments
+  for the Metrics → Team Metrics **"By department"** mode. **Unset is fine:**
+  `CONFIG.CDR_QUEUE_GROUPS` already ships the four operator-supplied groups
+  (Sales / Customer Success / Field Operations / Power), so the mode works on
+  deploy with no action. Set the property only to change the mapping without a
+  redeploy — e.g. when a new queue appears in the CSR Transfer tab's H:R block.
+  Sanitize-on-read: a corrupt blob degrades to the CONFIG seed, a non-array
+  member list is dropped, and **a queue listed under two departments is kept
+  only in the FIRST** (the grouping is a partition — double-counting is the
+  INV-180 class). Any queue not listed shows up under a trailing **"Ungrouped"**
+  row in the UI, so an unmapped queue is visible rather than silently absorbed —
+  that row is the cue to update this map. There is no Admin editor yet; edit the
+  property in Apps Script editor → Project Settings, or the CONFIG seed.
 - **Script Property `DR_SLA_TARGETS`** (optional, auto-managed) — JSON
   `{deptName: hours}` per-dept resolution-SLA overrides for DeptRequests, written
   by the Admin → Config **Dept-Request SLA targets** editor (`saveDeptRequestSla`,
@@ -5080,7 +5136,12 @@ read-only/bounded reader shape, and — the load-bearing one — that the scan
 stays OPT-IN so the 10-minute-per-manager health badge and the daily digest
 never pay for a full-sheet read) → 379. Phase 1 added three more (header-name
 column discovery with the REAL bounds read from source, the opt-in call-site
-count, and the component-not-partition contract) → 382.** Two of
+count, and the component-not-partition contract) → 382. Phase 2 added five
+(queue colour determinism, the remainder segment, the stated fraction +
+escaping, the shared component's optional detail row, and best-effort
+degradation) → 387; Phase 4 added four (sum-not-max, Ungrouped-last,
+count-once, sanitize-on-read + mode-only-with-data) → 391. DOM 66 → 69 and the
+visual matrix 20 → 22 (Team Metrics had never been shot).** Two of
 those six did NOT bite on the first attempt and were tightened: the A1 scan was
 line-by-line and missed multi-line markup (it now scans the whole source, where
 `[^>]` matches newlines), and the A3 input list held only no-colon cases, all

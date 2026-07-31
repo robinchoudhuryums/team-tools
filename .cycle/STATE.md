@@ -3,7 +3,7 @@
 ## Current
 Cycle: 14
 Phase: implement
-Scope: CDR sub-queue feature (operator-requested; Phases 0, 1 and 2 done)
+Scope: CDR sub-queue feature (operator-requested; Phases 0, 1, 2, 4 done)
 Test Command: manual
 Subsystem cycles since last Seams audit: 3 (cycle 11 was the seams audit;
   /reflect increments — cadence is every 4, so 1 more subsystem cycle before
@@ -34,9 +34,11 @@ Updated: 2026-07-29
 - **Phase 2 is IMPLEMENTED**: Team Metrics has a Combined / By-queue switcher,
   with a segmented contribution bar + expandable per-queue detail on the
   Transfers column. The operator's ask is met for transfers.
-- Next concrete step: close cycle 14 with /reflect, or build the grouping
-  ("By department") that is the last unbuilt piece — it needs the operator to
-  name the groupings, which they can now do from the live queue rows.
+- **Phase 4 (grouping) is IMPLEMENTED with OPERATOR-SUPPLIED groups** (2026-07-31):
+  Sales / Customer Success / Field Operations / Power. Sub-queues confirmed
+  DISJOINT from parents, so a group total is a plain SUM. Seeded in CONFIG,
+  overridable via Script Property `CDR_QUEUE_GROUPS`.
+- Next concrete step: close cycle 14 with /reflect. The feature is complete.
 
 ## Completed this cycle
 - Phase 0 | Code.js | NEW read-only `cdrQueueInventory_(from,to)` — distinct QUEUE_EXT values (col 4, declared since the CDR enum and read NOWHERE until now), the skipped A_Q_*/Backup CSR aggregates, which Transfer H:R columns carry data, and rows-per-(agent,date) — the gate question
@@ -121,29 +123,26 @@ Updated: 2026-07-29
   cross-repo change.
 
 ## Where I left off
-Phases 0, 1 and 2 are implemented and tested (387 pure + 68 DOM + 22 visual
-scenarios, all eight Phase-2 pins bite-checked). Blocks:
-`.cycle/blocks/14-phase0-`, `14-phase1-transfer-only-`,
-`14-phase2-broad-implement.md`.
+**Cycle 14's feature work is COMPLETE.** Phases 0, 1, 2 and 4 are implemented,
+tested (391 pure + 69 DOM + 22 visual scenarios; all 16 pins bite-checked) and
+documented (/sync-docs run for Phases 2 + 4). Blocks: `.cycle/blocks/14-phase0-`,
+`14-phase1-transfer-only-`, `14-phase2-`, and this batch's Phase-4 work is folded
+into the Phase-2 block plus the doc sync.
 
-**The operator's ask is MET for transfers.** Metrics → Team Metrics now has a
-Combined / By-queue switcher; the combined view shows each rep's transfer total
-with a segmented contribution bar and an expandable per-queue breakdown that
-states "N of M attributed" — the transparency half of the request.
+Metrics → Team Metrics now has Combined / By department / By queue. The operator's
+ask is met for transfers.
 
-**The gate has already reported — do not re-open it.** DQE is one row per
-(agent, date); answered/missed/talk-time can never be split by queue, and
-`CDR.QUEUE_EXT` is a membership list, not a queue key.
+**Do not re-open the gate.** DQE is one row per (agent, date); answered / missed /
+talk-time can never be split by queue, and `CDR.QUEUE_EXT` is a membership list.
 
-Next, either:
-- **/reflect** to close cycle 14 (three phases, net 0 by design — a diagnostic
-  plus two capabilities, no defects fixed), or
-- **Phase 4, queue GROUPING ("By department")** — the last unbuilt piece. It
-  needs the OPERATOR to name the groupings; inferring them from queue names
-  (FieldOps + FieldOps_Power?) is a guess about their business. They can now
-  read the real queue rows in Team Metrics and tell us.
+Two things a future session should know about the grouping:
+- The groups are OPERATOR-SUPPLIED, not inferred. Sub-queues are DISJOINT from
+  parents, so `groupQueueRows_` SUMS members. If 8x8 ever rolls sub-queue traffic
+  into the parent column, that sum becomes a ~1.5x overcount and must change.
+- `Backup CSR` is listed under Customer Success but is a DQE agent-row sentinel;
+  whether it exists as a Transfer H:R column was never confirmed. If it does not,
+  it simply never appears — harmless, but that is why.
 
-Also outstanding: /sync-docs has not run for Phase 2 (CLAUDE.md needs the two
-modes, the UI transparency contract, `mtRenderTable_`'s new optional detail-row
-capability, and the visual matrix 20 → 22); `runAllTests` should be re-run
-(expect 285); and on the DEV project only, `INSTANCE_IS_PROD=false` is unset.
+Next: **/reflect** to close cycle 14. Also outstanding: re-run `runAllTests`
+(expect 286 — two new integration tests this cycle), and on the DEV project only,
+`INSTANCE_IS_PROD=false`.

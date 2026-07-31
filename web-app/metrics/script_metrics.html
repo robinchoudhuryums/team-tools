@@ -999,8 +999,20 @@ function mToggleQueueRow_(btn) {
 }
 
 function mQueueScope_(scope) {
-  M_STATE.teamScope = (scope === 'queue') ? 'queue' : 'combined';
+  M_STATE.teamScope = (scope === 'queue' || scope === 'dept') ? scope : 'combined';
   if (M_STATE.teamData) mRenderTeamMetrics_(M_STATE.teamData);
+}
+
+/** Phase 4 — the per-department detail: the member queues that make up the
+ *  group total, largest first. Same disclosure machinery as the per-rep split. */
+function mGroupDetailHtml_(g) {
+  var rows = (g.queues || []).map(function (q) {
+    return '<div class="m-qrow"><span class="m-qdot" style="background:hsl(' + mQueueHue_(q.queue) +
+      ' 55% 45%)"></span><span class="m-qname">' + esc(q.queue) + '</span>' +
+      '<span class="m-qval">' + esc(q.transferred) + '</span></div>';
+  }).join('');
+  return '<div class="m-qdetail">' + rows +
+    '<div class="m-qfoot">' + esc((g.queues || []).length) + ' queue(s) in this group.</div></div>';
 }
 
 // ── Team Metrics view (manager-only) ──────────────────────────────────
@@ -1198,7 +1210,12 @@ function mRenderTeamMetrics_(data) {
     // between, and an inert control would be worse than no control.
     var tmeta = data.transferMeta || {};
     var hasQueues = !!(data.queueRows && data.queueRows.length);
-    var scope = (M_STATE.teamScope === 'queue' && hasQueues) ? 'queue' : 'combined';
+    // A mode is only reachable when its data exists — a switcher offering an
+    // empty view is worse than not offering it.
+    var want = M_STATE.teamScope;
+    var scope = 'combined';
+    if (hasQueues && want === 'queue') scope = 'queue';
+    if (hasQueues && want === 'dept' && data.groupRows && data.groupRows.length) scope = 'dept';
     if (tmeta.error) {
       // INV-175: a failed auxiliary read says so; it must not read as "this
       // team made no transfers".
@@ -1211,15 +1228,49 @@ function mRenderTeamMetrics_(data) {
           ' class="m-scope-btn' + (on ? ' on' : '') + '" onclick="mQueueScope_(\'' + key + '\')">' +
           esc(label) + '</button>';
       };
+      var hasGroups = !!(data.groupRows && data.groupRows.length);
       html += '<div class="m-scope" role="tablist" aria-label="Transfer breakdown">' +
-        segBtn('combined', 'Combined') + segBtn('queue', 'By queue') +
+        segBtn('combined', 'Combined') +
+        (hasGroups ? segBtn('dept', 'By department') : '') +
+        segBtn('queue', 'By queue') +
         '<span class="m-scope-hint">' + esc(data.queueRows.length) + ' queue(s) · transfers only</span></div>';
       if (tmeta.queueWarning) {
         html += '<div class="m-hint">' + icon('warning', 14) + ' ' + esc(tmeta.queueWarning) + '</div>';
       }
     }
 
-    if (scope === 'queue') {
+    if (scope === 'dept') {
+      // BY DEPARTMENT — group rows, each expanding to the member queues that
+      // produced the total. Sub-queues are DISJOINT from parents (operator
+      // confirmed), so the group figure is a plain sum of its members.
+      html += mtRenderTable_({
+        rows: data.groupRows,
+        columns: [
+          { key: 'group', label: 'Department', name: true, cell: function (g) {
+              var gid = 'm-g-' + String(g.group).replace(/[^\w.$-]/g, '');
+              return '<button type="button" class="m-qtoggle" aria-expanded="false" aria-controls="' + gid + '"' +
+                ' onclick="mToggleQueueRow_(this)" title="Show the member queues">' +
+                esc(g.group) + ' ' + icon('chevronDown', 10) + '</button>'; } },
+          { key: 'transferred', label: 'Transferred', numeric: true, cell: function (g) { return esc(g.transferred); } },
+          { key: 'queues', label: 'Queues', numeric: true, cell: function (g) { return esc((g.queues || []).length); } },
+          // `reps` is a lower bound, not a total — one rep can work several
+          // queues in a group and the per-queue figure is a count, not a
+          // roster, so a union is not recoverable. Labelled so it is never
+          // read as a headcount.
+          { key: 'reps', label: 'Reps (min)', numeric: true, cell: function (g) { return esc(g.reps); } },
+        ],
+        rowId: function (g) { return 'm-g-' + String(g.group); },
+        detailRow: function (g) { return mGroupDetailHtml_(g); },
+      });
+      var ung = null;
+      for (var gi = 0; gi < data.groupRows.length; gi++) {
+        if (data.groupRows[gi].group === 'Ungrouped') ung = data.groupRows[gi];
+      }
+      if (ung) {
+        html += '<div class="m-hint">' + icon('warning', 14) + ' ' + esc((ung.queues || []).length) +
+          ' queue(s) are not mapped to a department yet and are grouped as "Ungrouped".</div>';
+      }
+    } else if (scope === 'queue') {
       // BY QUEUE — the "separately" half of the ask. Rows are queues, so this
       // answers "which queue is taking the volume" without a rep dimension.
       html += mtRenderTable_({

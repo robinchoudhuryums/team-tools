@@ -667,6 +667,48 @@ test('Phase 2: the transfers disclosure reveals its detail row and updates aria-
   assert.strictEqual(btn.getAttribute('aria-expanded'), 'false', 'and the attribute follows back');
 });
 
+test('Phase 4: the by-department mode folds queues and keeps Ungrouped visible', () => {
+  const h = boot();
+  const w = h.window;
+  const groupRows = [
+    { group: 'Sales', transferred: 75, reps: 5,
+      queues: [{ queue: 'A_Q_Sales', transferred: 40, reps: 5 }, { queue: 'A_Q_PAP', transferred: 35, reps: 3 }] },
+    { group: 'Ungrouped', transferred: 900, reps: 9,
+      queues: [{ queue: 'A_Q_Legacy_Unmapped', transferred: 900, reps: 9 }] },
+  ];
+  const html = w.mtRenderTable_({
+    rows: groupRows,
+    columns: [{ key: 'group', label: 'Department', name: true, cell: function (g) {
+        const gid = 'm-g-' + String(g.group).replace(/[^\w.$-]/g, '');
+        return '<button type="button" class="m-qtoggle" aria-expanded="false" aria-controls="' + gid +
+          '" onclick="mToggleQueueRow_(this)">' + w.esc(g.group) + '</button>'; } },
+      { key: 'transferred', label: 'Transferred', numeric: true, cell: function (g) { return w.esc(g.transferred); } }],
+    rowId: function (g) { return 'm-g-' + String(g.group); },
+    detailRow: function (g) { return w.mGroupDetailHtml_(g); },
+  });
+  const host = w.document.createElement('div');
+  host.innerHTML = html;
+  w.document.body.appendChild(host);
+
+  // The member queues are in the DOM, collapsed, and expand on the same
+  // machinery as the per-rep split.
+  const row = w.document.getElementById('m-g-Sales');
+  assert.ok(row, 'the Sales detail row exists');
+  assert.strictEqual(row.hasAttribute('hidden'), true, 'collapsed by default');
+  assert.ok(/A_Q_Sales/.test(row.textContent) && /A_Q_PAP/.test(row.textContent),
+    'member queues are listed in the disclosure');
+  assert.ok(/2 queue\(s\) in this group/.test(row.textContent), 'the member count is stated');
+  const btn = host.querySelector('.m-qtoggle');
+  w.mToggleQueueRow_(btn);
+  assert.strictEqual(row.hasAttribute('hidden'), false, 'expands');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'true', 'aria follows');
+
+  // An unmapped queue must remain nameable in the UI, not silently absorbed.
+  const ung = w.document.getElementById('m-g-Ungrouped');
+  assert.ok(ung && /A_Q_Legacy_Unmapped/.test(ung.textContent),
+    'the Ungrouped bucket names the queues that need mapping');
+});
+
 test('Phase 2: the scope switch re-renders and survives a missing dataset', () => {
   const h = boot();
   const w = h.window;

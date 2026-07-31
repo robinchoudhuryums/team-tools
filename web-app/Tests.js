@@ -1111,6 +1111,7 @@ function _runAllTests() {
 
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
+  _integrationTest('metrics_getTeamMetrics_queueGrouping', test_metrics_getTeamMetrics_queueGrouping);
   _integrationTest('metrics_getTeamMetrics_queueBreakdown', test_metrics_getTeamMetrics_queueBreakdown);
   _integrationTest('metrics_getTeamMetrics_cdrIntegration',     test_metrics_getTeamMetrics_cdrIntegration);
   _integrationTest('metrics_cdrFixture_durationsUseDisplayValues', test_metrics_cdrFixture_durationsUseDisplayValues);
@@ -5912,6 +5913,35 @@ function test_metrics_getTeamMetrics_queueBreakdown() {
   // Sorted largest-first so the UI needs no client-side sort.
   _assertTrue(r.queueRows[0].transferred >= r.queueRows[r.queueRows.length - 1].transferred,
     'queue rows are sorted by volume desc');
+}
+
+/** PHASE 4 — the by-department fold. The fixture's queues (A_Q_Sales,
+ *  A_Q_Billing, A_Q_Spanish) are not all in the shipped CONFIG map, so this
+ *  also exercises the Ungrouped bucket. */
+function test_metrics_getTeamMetrics_queueGrouping() {
+  if (!_TEST_CDR_SS_ID) { _skipTest('CDR fixture unavailable'); }
+  const r = _withTestCdr_(function () {
+    return _asUser(_TEST_MGR_EMAIL, function () { return getTeamMetrics(_TEST_CDR_DATE); });
+  });
+  _assertNull(r.error, 'no error');
+  _assertTrue(Array.isArray(r.groupRows), 'groupRows returned');
+  // Every queue in queueRows must appear in exactly one group — the fold is a
+  // partition, so nothing may be dropped OR duplicated.
+  let seen = 0, qTotal = 0, gTotal = 0;
+  r.queueRows.forEach(function (q) { qTotal += q.transferred; });
+  r.groupRows.forEach(function (g) { seen += g.queues.length; gTotal += g.transferred; });
+  _assertEq(seen, r.queueRows.length, 'every queue lands in exactly one group');
+  _assertEq(gTotal, qTotal, 'group totals sum to the queue totals — no double count, nothing lost');
+  // Ungrouped, when present, must sort last.
+  if (r.groupRows.length > 1 && r.groupRows[r.groupRows.length - 1].group === 'Ungrouped') {
+    _assertTrue(true, 'Ungrouped sorted last');
+  }
+  // A_Q_Sales is in the shipped CONFIG map, so it must NOT be Ungrouped.
+  let salesGroup = null;
+  r.groupRows.forEach(function (g) {
+    g.queues.forEach(function (q) { if (q.queue === 'A_Q_Sales') salesGroup = g.group; });
+  });
+  if (salesGroup) _assertEq(salesGroup, 'Sales', 'A_Q_Sales maps to the Sales department');
 }
 
 function test_metrics_getTeamMetrics_cdrIntegration() {

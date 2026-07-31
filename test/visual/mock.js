@@ -94,9 +94,9 @@
           hasTransferData: true };
       };
       var reps = [
-        mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_FieldOps: 6, A_Q_Billing: 3 }),
+        mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }),
         mk('E-1077', 'Sam Ortiz', 38, 36, 2, '0:05:02', 30, 83, 9, { A_Q_PowerChairs: 5, A_Q_FieldOps: 2, A_Q_Spanish: 1 }),
-        mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_Billing: 12, A_Q_Denials: 4 }),
+        mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_CSR: 12, A_Q_Legacy_Unmapped: 4 }),
         mk('E-1104', 'Leo Kim', 29, 27, 2, '0:04:20', 18, 67, 3, {}),
       ];
       var tq = {};
@@ -122,6 +122,26 @@
         queueRows: Object.keys(tq).map(function (q) {
           return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
         }).sort(function (a, b) { return b.transferred - a.transferred; }),
+        groupRows: (function () {
+          var GROUPS = { 'Sales': ['A_Q_Sales', 'A_Q_PAP', 'A_Q_Sales_MWC'],
+            'Customer Success': ['A_Q_CSR', 'A_Q_Intake', 'Backup CSR', 'A_Q_Spanish'],
+            'Field Operations': ['A_Q_FieldOps', 'A_Q_FieldOps_Power'],
+            'Power': ['A_Q_PowerChairs', 'A_Q_PAK', 'A_Q_BackUp_Power'] };
+          var owner = {};
+          Object.keys(GROUPS).forEach(function (g) { GROUPS[g].forEach(function (q) { if (!(q in owner)) owner[q] = g; }); });
+          var acc = {}, order = [];
+          Object.keys(tq).forEach(function (q) {
+            var g = owner[q] || 'Ungrouped';
+            if (!acc[g]) { acc[g] = { group: g, transferred: 0, reps: 0, queues: [] }; order.push(g); }
+            acc[g].transferred += tq[q].transferred;
+            acc[g].reps = Math.max(acc[g].reps, Object.keys(tq[q].reps).length);
+            acc[g].queues.push({ queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length });
+          });
+          return order.map(function (g) { return acc[g]; }).sort(function (a, b) {
+            if (a.group === 'Ungrouped') return 1;
+            if (b.group === 'Ungrouped') return -1;
+            return b.transferred - a.transferred; });
+        })(),
         meta: { rowsScanned: 900, rowsMatched: 120, columnWarning: null, computeMs: 84 },
       };
     })(),

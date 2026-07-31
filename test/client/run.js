@@ -5430,6 +5430,77 @@ test('Phase 2: a failed transfer read degrades to an error strip, not an empty t
     'team totals accumulate transfers for the by-queue footnote');
 });
 
+// ── Phase 4 (queue → department grouping) ───────────────────────────────────
+console.log('\nPhase 4 — queue grouping');
+
+const groupQueueRows_ = (function () {
+  const fn = extractRawFunction('Code.js', 'groupQueueRows_');
+  return new Function('CDR_QUEUE_UNGROUPED', fn + '; return groupQueueRows_;')('Ungrouped');
+})();
+
+test('Phase 4: group totals SUM their members (sub-queues are disjoint)', () => {
+  const rows = [
+    { queue: 'A_Q_Sales', transferred: 40, reps: 5 },
+    { queue: 'A_Q_PAP', transferred: 25, reps: 3 },
+    { queue: 'A_Q_Sales_MWC', transferred: 10, reps: 2 },
+    { queue: 'A_Q_FieldOps', transferred: 30, reps: 4 },
+  ];
+  const groups = { 'Sales': ['A_Q_Sales', 'A_Q_PAP', 'A_Q_Sales_MWC'], 'Field Operations': ['A_Q_FieldOps'] };
+  const out = groupQueueRows_(rows, groups);
+  const sales = out.filter((g) => g.group === 'Sales')[0];
+  assert.strictEqual(sales.transferred, 75, 'a group total is the plain sum of its members');
+  assert.strictEqual(sales.queues.length, 3, 'members ride along for the disclosure');
+  assert.strictEqual(sales.queues[0].queue, 'A_Q_Sales', 'members sorted by volume desc');
+  // reps is a LOWER BOUND (max), never a sum — one rep can work several queues.
+  assert.strictEqual(sales.reps, 5, 'reps is the busiest member, not 5+3+2');
+  assert.ok(out[0].transferred >= out[out.length - 1].transferred, 'groups sorted by volume desc');
+});
+
+test('Phase 4: an unmapped queue stays VISIBLE as Ungrouped, sorted last', () => {
+  const rows = [
+    { queue: 'A_Q_Mystery', transferred: 900, reps: 9 },   // biggest, but unmapped
+    { queue: 'A_Q_Sales', transferred: 10, reps: 1 },
+  ];
+  const out = groupQueueRows_(rows, { 'Sales': ['A_Q_Sales'] });
+  assert.strictEqual(out.length, 2, 'the unmapped queue is not dropped');
+  assert.strictEqual(out[out.length - 1].group, 'Ungrouped',
+    'Ungrouped sorts LAST regardless of volume — it is a gap, not a department');
+  assert.strictEqual(out[out.length - 1].queues[0].queue, 'A_Q_Mystery', 'and it names the queue');
+});
+
+// A queue listed under two groups would be counted twice — the INV-180 class.
+test('Phase 4: a queue claimed by two groups is counted ONCE', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const fn = extractRawFunction('Code.js', 'getCdrQueueGroups_');
+  assert.ok(/if \(!qn \|\| claimed\[qn\]\) return;/.test(fn),
+    'the resolver drops a duplicate queue so the first group wins');
+  // And the folder itself is first-wins too, independently of the resolver.
+  const out = groupQueueRows_(
+    [{ queue: 'A_Q_Dup', transferred: 12, reps: 2 }],
+    { 'A': ['A_Q_Dup'], 'B': ['A_Q_Dup'] });
+  const total = out.reduce((n, g) => n + g.transferred, 0);
+  assert.strictEqual(total, 12, 'the queue contributes its volume once, not twice');
+  // Sanity: the operator-seeded CONFIG map must itself be a partition.
+  const seed = src.slice(src.indexOf('CDR_QUEUE_GROUPS: {'), src.indexOf('},', src.indexOf('CDR_QUEUE_GROUPS: {')));
+  const named = [...seed.matchAll(/'([^']+)'/g)].map((m) => m[1]).filter((x) => /^(A_Q_|Backup )/.test(x));
+  assert.strictEqual(named.length, new Set(named).size,
+    'no queue appears under two departments in the shipped seed');
+});
+
+test('Phase 4: the resolver sanitizes on read and the UI offers the mode only with data', () => {
+  const fn = extractRawFunction('Code.js', 'getCdrQueueGroups_');
+  assert.ok(/CONFIG\.CDR_QUEUE_GROUPS/.test(fn), 'CONFIG is the fallback');
+  assert.ok(/catch \(e\) \{ \/\* corrupt blob → CONFIG fallback \*\//.test(fn),
+    'a corrupt Script Property degrades to CONFIG rather than throwing');
+  assert.ok(/!Array\.isArray\(src\[g\]\)/.test(fn), 'a non-array member list is dropped');
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/hasGroups \? segBtn\('dept', 'By department'\) : ''/.test(m),
+    'the By-department button only renders when there are groups');
+  assert.ok(/want === 'dept' && data\.groupRows && data\.groupRows\.length/.test(m),
+    'and the mode is only reachable when its data exists');
+  assert.ok(/Reps \(min\)/.test(m), 'the reps column is labelled as a lower bound, not a total');
+});
+
 // A13: the three section-heading classes render as real <h2>s, so heading
 // navigation — the primary way a screen-reader user moves through a dense page
 // — works below the view's <h1>. They were <div>/<span>, so every view had a
