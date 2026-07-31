@@ -2,10 +2,12 @@
 
 ## Current
 Cycle: 15
-Phase: implement (F1–F5 complete; /reflect not yet run)
+Phase: reflect (complete — cycle 15 is closed)
 Scope: Seams & Invariants audit + implementation
 Test Command: manual
-Subsystem cycles since last Seams audit: 0 (cycle 15 IS the seams audit — counter reset)
+Subsystem cycles since last Seams audit: 0 (cycle 15 IS the seams audit, so the
+  RESET wins over /reflect's increment — zero subsystem cycles have elapsed SINCE
+  it. Setting 1 here would make the next seams audit fall due a cycle early.)
 Updated: 2026-07-31
 
 ## In progress (facts to carry forward — NOT judgments)
@@ -32,9 +34,15 @@ Updated: 2026-07-31
 - Tests | pure 394→396, DOM 69; 8 revert scenarios bite-checked; 2 stale pins updated as part of the fix.
 
 ## Pending / not yet done
-- **/reflect has NOT run for cycle 15.** Four invariant candidates are waiting:
-  INV-181/182 (cycle 14, unadopted) + roster-inclusion predicate and
-  declared-but-unread-is-a-defect (cycle 15). Adopt or reject all four.
+- **/reflect HAS run** (net 2 − 1 = 1; block `.cycle/blocks/15-a-reflect.md`).
+  It CORRECTED the implementation block in both directions — +1 production fix
+  (the CDR health-card fix predated the batch) and +1 new failure mode (the batch
+  reported zero). Trust the reflect block for the tally.
+- **SIX invariant candidates are now pending across two cycles** and none are in
+  the library: INV-181/182 (cycle 14, claimed-but-never-written — left VACANT per
+  the INV-163/164 precedent) and INV-183–186 (cycle 15). Adopting them is the
+  natural next task; a third cycle of accumulation repeats the exact F5 drift
+  this cycle just fixed.
 - **DEPLOY still outstanding** and now carries cycles 11–15:
   1. `cd web-app && clasp push -f`
   2. Apps Script editor → Deploy → Manage deployments → Edit → New version
