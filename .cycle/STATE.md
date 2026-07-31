@@ -2,7 +2,7 @@
 
 ## Current
 Cycle: 15
-Phase: reflect (complete — cycle 15 is closed)
+Phase: reflect (complete — cycle 15 is closed; invariants adopted)
 Scope: Seams & Invariants audit + implementation
 Test Command: manual
 Subsystem cycles since last Seams audit: 0 (cycle 15 IS the seams audit, so the
@@ -38,11 +38,13 @@ Updated: 2026-07-31
   It CORRECTED the implementation block in both directions — +1 production fix
   (the CDR health-card fix predated the batch) and +1 new failure mode (the batch
   reported zero). Trust the reflect block for the tally.
-- **SIX invariant candidates are now pending across two cycles** and none are in
-  the library: INV-181/182 (cycle 14, claimed-but-never-written — left VACANT per
-  the INV-163/164 precedent) and INV-183–186 (cycle 15). Adopting them is the
-  natural next task; a third cycle of accumulation repeats the exact F5 drift
-  this cycle just fixed.
+- **ALL SIX invariants are now ADOPTED** into the library (INV-181/182 from
+  cycle 14, INV-183–186 from cycle 15). Library is 186 entries, contiguous, no
+  duplicates. NOTE the reflection's initial call to leave 181/182 vacant was
+  WRONG and was corrected before adoption: the INV-163/164 vacancy precedent
+  applies to proposals that were LOST, and 181/182's full text was on disk in
+  `.cycle/blocks/14-a-reflect.md` — recoverable, so they keep their original
+  numbers rather than becoming a second pair of permanent holes.
 - **DEPLOY still outstanding** and now carries cycles 11–15:
   1. `cd web-app && clasp push -f`
   2. Apps Script editor → Deploy → Manage deployments → Edit → New version
