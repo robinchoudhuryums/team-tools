@@ -4729,6 +4729,109 @@ test('F4: a failed PTO overlay is surfaced, never rendered as full staffing', ()
 });
 
 // ---------------------------------------------------------------------------
+// Cycle-16 F9 — the PPD engine's weight filter FAILS CLOSED on catalog data it
+// cannot read, and the operator is told which rows are wrong.
+//
+// `parseInt('')` is NaN and every comparison against NaN is false, so a blank /
+// non-numeric / half-written capacity used to pass the filter for ANY patient
+// weight — the engine read it as unlimited capacity, on a clinical
+// recommendation whose output an agent acts on. The Offerings catalog is an
+// operator-maintained sheet, so a not-yet-filled capacity cell is ordinary.
+console.log('\ncycle 16 — F9 intake catalog fix pins');
+
+// The five shapes reproduced against the exact branch during the audit. Driven
+// through the REAL engine (not a re-implementation) so the pin cannot drift
+// from the code it guards.
+test('F9: an unreadable weight capacity EXCLUDES the product, never admits it', () => {
+  const HEAVY = { '38': '400 lbs' };
+  [['', 'blank'], ['   ', 'whitespace'], ['n/a', 'non-numeric'],
+   ['300-', 'half-written range'], ['-450', 'range with no minimum']].forEach(([cap, why]) => {
+    const cat = [['Std Captain', 'K0823', cap, 'C', 'pdf', 'img']];
+    const r = intakeFilterRecommendations_(HEAVY, cat);
+    assert.strictEqual(r.standard.length + r.complex.length, 0,
+      'a ' + why + ' capacity (' + JSON.stringify(cap) + ') must not be treated as UNLIMITED — ' +
+      'the engine recommended a chair to a 400 lb patient');
+  });
+});
+
+test('F9: well-formed capacities are completely unchanged', () => {
+  const mk = (cap) => [['Std Captain', 'K0823', cap, 'C', 'pdf', 'img']];
+  const hits = (w, cap) => {
+    const r = intakeFilterRecommendations_({ '38': String(w) }, mk(cap));
+    return r.standard.length + r.complex.length;
+  };
+  assert.strictEqual(hits(400, '300'), 0, 'over a flat cap → excluded');
+  assert.strictEqual(hits(400, '450'), 1, 'under a flat cap → recommended');
+  assert.strictEqual(hits(400, '300-450'), 1, 'inside a range → recommended');
+  assert.strictEqual(hits(250, '300-450'), 0, 'below a range minimum → excluded');
+  assert.strictEqual(hits(250, '350'), 1, 'ordinary case → recommended');
+  // A blank patient weight skips the filter entirely — documented behaviour
+  // (the Q39a note: "blank weight → standard logic"), NOT changed by F9.
+  const noWeight = intakeFilterRecommendations_({}, mk(''));
+  assert.strictEqual(noWeight.standard.length, 1,
+    'with no recorded patient weight the capacity filter does not run at all');
+});
+
+// The validator that keeps the fail-closed direction from being silent.
+const intakeCatalogIssues_ = new Function(
+  extractRawFunction('Code.js', 'intakeCatalogIssues_') + '; return intakeCatalogIssues_;')();
+
+test('F9: the catalog validator names the rows the engine cannot recommend', () => {
+  const rows = [
+    ['ok',      'K0823', '350',     'C', 'pdf', 'img'],   // clean
+    ['blank',   'K0824', '',        'S', 'pdf', 'img'],   // error: no capacity
+    ['bad',     'K0825', 'n/a',     'S', 'pdf', 'img'],   // error: non-numeric
+    ['halfrng', 'K0826', '300-',    'S', 'pdf', 'img'],   // error: unreadable range
+    ['inv',     'K0827', '450-300', 'S', 'pdf', 'img'],   // error: inverted range
+    ['seat',    'K0828', '350',     'x', 'pdf', 'img'],   // error: no s/c
+    ['endash',  'K0829', '300–450', 'S', 'pdf', 'img'], // warn: non-ASCII dash
+    ['noimg',   'K0830', '350',     'S', 'pdf', ''],      // warn: no image
+    ['',        '',      '',        '',  '',    ''],      // trailing blank row — ignored
+  ];
+  const issues = intakeCatalogIssues_(rows);
+  const errs = issues.filter((x) => x.severity === 'error');
+  const warns = issues.filter((x) => x.severity === 'warn');
+  const errRows = errs.map((x) => x.row).sort((a, b) => a - b);
+  // Sheet rows: the A2:F read means index 0 is sheet row 2.
+  assert.deepStrictEqual([...new Set(errRows)], [3, 4, 5, 6, 7],
+    'every unrecommendable row is named by its SHEET row (A2:F ⇒ index 0 is row 2)');
+  assert.ok(!issues.some((x) => x.hcpcs === 'K0823'), 'a clean row raises nothing');
+  assert.ok(!issues.some((x) => x.row === 10), 'a trailing blank row is not an error');
+  assert.ok(warns.some((x) => x.hcpcs === 'K0829' && /dash/.test(x.detail)),
+    'an EN dash reads as a flat cap, not a range — worth a warning');
+  assert.ok(warns.some((x) => x.hcpcs === 'K0830' && x.field === 'imageUrl'),
+    'a missing device image is a warning (the agent has nothing to send the patient)');
+  // A clean catalog must produce NOTHING, or the card can never reach green —
+  // the "what does this read on a healthy system" rule.
+  assert.deepStrictEqual(
+    intakeCatalogIssues_([['ok', 'K0823', '350', 'C', 'pdf', 'img']]), [],
+    'a well-formed catalog raises no issues at all');
+});
+
+test('F9: the catalog scan is OPT-IN and a failed read is distinguishable from clean', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const compute = extractRawFunction('Code.js', 'computeAutomationHealth_');
+  assert.ok(/const scanCatalog = !!\(opts && opts\.scanCatalog\)/.test(compute),
+    'defaults OFF — the 10-min-per-manager badge and the daily digest must not open the Intake store');
+  assert.ok(/intakeCatalog: scanCatalog \? getIntakeCatalogHealth_\(\) : null/.test(compute),
+    'null when unscanned, so the client can tell "not checked" from "clean"');
+  const gate = extractRawFunction('Code.js', 'getAutomationHealth');
+  assert.ok(/scanCatalog: scanQueues/.test(gate), 'only the panel opts in');
+  // A failed READ must not render as a clean catalog (INV-129).
+  const health = extractRawFunction('Code.js', 'getIntakeCatalogHealth_');
+  assert.ok(/ok: true/.test(health) && /ok: false/.test(health),
+    'the result carries the read OUTCOME, not just the issue lists');
+  // Client: escaping + the three distinct states.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const fn = cn.slice(cn.indexOf('function cnIntakeCatalogHtml_('));
+  const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
+  assert.ok(/if \(!cat\.ok\)/.test(body), 'an unreadable catalog says so instead of reading as clean');
+  assert.ok(/checkCircle/.test(body), 'a clean catalog reaches GREEN — a card that never can is worse than none');
+  assert.ok(!/\+ *(cat\.error|x\.detail|x\.hcpcs)\b/.test(body.replace(/esc\([^)]*\)/g, '')),
+    'every server-sourced string is esc()d before innerHTML');
+});
+
+// ---------------------------------------------------------------------------
 // F9 / F7 — the access-gate coverage net.
 //
 // INV-02/31/136 are the project's most load-bearing invariants, and the ONLY

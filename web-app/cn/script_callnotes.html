@@ -9013,8 +9013,53 @@ function cnRenderHealthPanel_(res) {
     secLabel('Automation last seen') + runsHtml +
     secLabel('Digest heartbeats') + (digestsHtml || '<div style="font-size:12px;color:var(--muted)">No digest data (server pre-dates heartbeats).</div>') +
     (detHtml ? secLabel('Detector liveness') + detHtml : '') +
+    (res.intakeCatalog ? secLabel('Intake Offerings catalog') + cnIntakeCatalogHtml_(res.intakeCatalog) : '') +
     secLabel('Nightly self-test') + cnSelfTestHtml_(res.selfTest) +
   '</div>';
+}
+
+/** F9 (cycle 16) — Offerings catalog shape. The PPD recommendation engine's
+ *  correctness depends on an operator-maintained sheet and nothing checked it;
+ *  since F9 an unreadable weight capacity EXCLUDES the product (fail closed),
+ *  which is safe but silent without this. A healthy catalog has ZERO errors, so
+ *  this card genuinely reaches green — the test CLAUDE.md sets for any health
+ *  indicator before it is allowed to carry a tone.
+ *  `null` is not passed here (the caller omits the section when unscanned), and
+ *  `ok:false` means the READ failed, which must not read as "clean". */
+function cnIntakeCatalogHtml_(cat) {
+  if (!cat.ok) {
+    return '<div style="font-size:12px;color:var(--warning-deep)">' + icon('warning', 11) +
+      ' Could not read the Offerings catalog: ' + esc(cat.error || 'unknown error') +
+      ' — the PPD recommendation engine reads this sheet, so this is worth fixing before the next intake.</div>';
+  }
+  var errs = cat.errors || [], warns = cat.warnings || [];
+  if (!errs.length && !warns.length) {
+    return '<div style="font-size:12px;color:var(--muted)">' + icon('checkCircle', 11) + ' ' +
+      esc(cat.totalRows) + ' catalog row(s), all well-formed.</div>';
+  }
+  var row = function (x, tone) {
+    return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:3px 0;font-size:12px">' +
+      '<span style="flex:0 0 90px;font-family:var(--mono);color:' + tone + '">row ' + esc(x.row) + '</span>' +
+      '<span style="flex:0 0 70px;font-weight:600">' + esc(x.hcpcs) + '</span>' +
+      '<span style="flex:1;min-width:220px">' + esc(x.field) + ': ' + esc(x.detail) + '</span>' +
+    '</div>';
+  };
+  var out = '';
+  if (errs.length) {
+    out += '<div style="font-size:12px;color:var(--danger-deep);font-weight:600;margin-bottom:2px">' +
+      icon('warning', 11) + ' ' + esc(errs.length) +
+      ' row(s) the engine cannot recommend — fix these in the Offerings sheet:</div>' +
+      errs.map(function (x) { return row(x, 'var(--danger-deep)'); }).join('');
+  }
+  if (warns.length) {
+    out += '<div style="font-size:12px;color:var(--warning-deep);font-weight:600;margin:6px 0 2px">' +
+      esc(warns.length) + ' row(s) that still work but are probably unintended:</div>' +
+      warns.map(function (x) { return row(x, 'var(--warning-deep)'); }).join('');
+  }
+  out += '<div style="font-size:11px;color:var(--muted);margin-top:6px">Row numbers are sheet rows in the ' +
+    'Offerings tab. A blank or non-numeric weight capacity EXCLUDES that chair for every patient with a ' +
+    'recorded weight (it used to be read as unlimited capacity — cycle-16 F9).</div>';
+  return out;
 }
 
 /** K-A alternative — the last nightly self-test outcome. null = never ran

@@ -59,6 +59,20 @@ const SCENARIOS = [
   ['cn-log-dark-compact',   { tool: 'callNotes', tab: 'callNotes' },  COMPACT, 'dark',  '?compact=1'],
   ['clock-light-mobile',    { tool: 'timeClock', tab: 'clock' },      MOBILE, 'light', ''],
   ['cn-log-light-mobile',   { tool: 'callNotes', tab: 'callNotes' },  MOBILE, 'light', ''],
+  // Cycle-16 Batch 4 — the matrix shot five of nine tools at ONE viewport, and
+  // that gap is why F2 survived two interface-focused cycles: Reference's
+  // reader measured 70px at 390px and `kb/script_kb.html` carried zero media
+  // queries, but the only Reference scenario was `reference-light-wide`, where
+  // the two-column shell is correct. Every REP-FACING tool now has a mobile
+  // scenario, and the two mid-task tools (the ones whose pop-out the KB drawer
+  // edge-tab treats as first-class) have a compact one.
+  ['reference-light-mobile',  { tool: 'reference', tab: null },              MOBILE,  'light', ''],
+  ['reference-light-compact', { tool: 'reference', tab: null },              COMPACT, 'light', '?compact=1'],
+  ['intake-light-mobile',     { tool: 'intake',    tab: null },              MOBILE,  'light', ''],
+  ['intake-light-compact',    { tool: 'intake',    tab: null },              COMPACT, 'light', '?compact=1'],
+  ['metrics-light-mobile',    { tool: 'metrics',   tab: null },              MOBILE,  'light', ''],
+  ['metrics-team-light-mobile', { tool: 'metrics', tab: 'metricsTeam' },     MOBILE,  'light', ''],
+  ['training-light-mobile',   { tool: 'develop',   tab: null },              MOBILE,  'light', ''],
 ];
 
 const only = process.argv[2] ? process.argv.slice(2) : null;
@@ -90,9 +104,36 @@ for (const [name, nav, vp, mode, query] of SCENARIOS) {
     await page.screenshot({ path: path.join(OUT, name + '-bottom.png') }); }
   const missing = await page.evaluate(() => Array.from(new Set(window.__MISSING__ || [])));
   const view = await page.evaluate(() => (typeof currentView !== 'undefined' ? currentView : '?'));
-  report.push({ name, view, missing, errors: Array.from(new Set(errors)).slice(0, 8) });
+  // Cycle-16 Batch 4 — the one thing a SCREENSHOT cannot tell you. CLAUDE.md's
+  // A2 gotcha states the rule ("a squeezed layout and an overflowing one look
+  // identical in a screenshot — re-measure scrollWidth vs clientWidth after any
+  // stacking change") and the harness never implemented it, so every check was
+  // a manual side-run. `overflowPx > 0` means the page scrolls sideways.
+  // Elements inside a legitimate overflow-x:auto scroller (the tool tab bar)
+  // do NOT count — only the DOCUMENT's own scroll width does.
+  const layout = await page.evaluate(() => ({
+    scrollW: document.documentElement.scrollWidth,
+    clientW: document.documentElement.clientWidth,
+  }));
+  const overflowPx = Math.max(0, layout.scrollW - layout.clientW);
+  report.push({
+    name, view, missing,
+    viewport: vp.width + 'x' + vp.height,
+    overflowPx,
+    errors: Array.from(new Set(errors)).slice(0, 8),
+  });
   await ctx.close();
 }
 await browser.close();
 fs.writeFileSync(path.join(HERE, 'report.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
+const overflowing = report.filter((r) => r.overflowPx > 0);
+if (overflowing.length) {
+  console.log('\nHORIZONTAL OVERFLOW (the page scrolls sideways — measure, do not eyeball):');
+  overflowing.forEach((r) => console.log('  ' + r.name + '  +' + r.overflowPx + 'px @ ' + r.viewport));
+}
+const fixtureGaps = report.filter((r) => r.missing.length);
+if (fixtureGaps.length) {
+  console.log('\nMISSING FIXTURES (these scenarios rendered a LOADER, not the real view):');
+  fixtureGaps.forEach((r) => console.log('  ' + r.name + '  ' + r.missing.join(', ')));
+}

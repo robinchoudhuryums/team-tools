@@ -4797,7 +4797,10 @@ function getAutomationHealth(opts) {
     // never pay for it. getDeployReadiness opts out explicitly (it only bands
     // store config — the getStorageHealth({scanEmbeds:false}) precedent).
     const scanQueues = !(opts && opts.scanQueues === false);
-    return computeAutomationHealth_({ scanQueues: scanQueues });
+    // F9 (cycle 16) — the Offerings catalog check rides the SAME opt-in gate as
+    // the queue scan, for the same reason: it opens the Intake spreadsheet, and
+    // the badge/digest callers must not pay for a diagnostic.
+    return computeAutomationHealth_({ scanQueues: scanQueues, scanCatalog: scanQueues });
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4928,6 +4931,8 @@ function computeAutomationHealth_(opts) {
     // Default OFF: the three direct callers (badge, digest, deploy-readiness)
     // must not pay for a diagnostic scan. Only getAutomationHealth() opts in.
     const scanQueues = !!(opts && opts.scanQueues);
+    // F9 (cycle 16) — same gate, same reason (this one opens the Intake store).
+    const scanCatalog = !!(opts && opts.scanCatalog);
 
     // ── (e) detector liveness (Turn C) — pure writer↔parser round-trips ──
     const detectors = automationDetectorChecks_();
@@ -5127,6 +5132,9 @@ function computeAutomationHealth_(opts) {
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
       selfTest: selfTest,     // K-A alternative — nightly self-test outcome
+      // F9 (cycle 16) — Offerings catalog shape. null when not scanned (the
+      // badge/digest path), so the client can tell "not checked" from "clean".
+      intakeCatalog: scanCatalog ? getIntakeCatalogHealth_() : null,
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
@@ -15021,6 +15029,100 @@ function getIntakeOfferings_() {
   return _intakeOfferingsCache;
 }
 
+/** F9 (cycle 16) — PURE catalog validator over the raw Offerings rows.
+ *
+ *  WHY THIS EXISTS: the PPD engine's correctness depends on an
+ *  operator-maintained spreadsheet, and nothing anywhere checked its shape. The
+ *  F9 fix makes a product with an unreadable weight capacity fail CLOSED (it is
+ *  excluded rather than treated as unlimited), which is the safe direction —
+ *  but on its own it turns a data-entry slip into a chair that silently stops
+ *  being recommended, with no way for the operator to find out. This names the
+ *  offending rows.
+ *
+ *  Checks only what the ENGINE actually reads, and only what is objectively
+ *  wrong — never taste. `severity: 'error'` means the row cannot be recommended
+ *  at all; 'warn' means it still works but is probably not what was intended.
+ *  Row numbers are 1-based SHEET rows (the A2:F read starts at row 2) so the
+ *  operator can jump straight to the cell. PHI-free by construction — the
+ *  Offerings catalog is product data. */
+function intakeCatalogIssues_(rows) {
+  const out = [];
+  (rows || []).forEach(function (r, i) {
+    const sheetRow = i + 2;                       // A2:F — index 0 is sheet row 2
+    const cell = function (n) { return String(r && r[n] == null ? '' : r[n]).trim(); };
+    const hcpcs = cell(1);
+    // A row with no HCPCS is already dropped by the engine (hcpcsNum === 0) and
+    // is almost always a trailing blank row — not worth reporting as an error.
+    if (!hcpcs) return;
+    const cap = cell(2);
+    const seat = cell(3).toLowerCase();
+    if (!cap) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+        detail: 'blank — the product is excluded for every patient with a recorded weight' });
+    } else if (cap.indexOf('-') >= 0) {
+      const parts = cap.split('-');
+      const lo = parseInt(parts[0], 10), hi = parseInt(parts[1], 10);
+      if (!isFinite(lo) || !isFinite(hi)) {
+        out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+          detail: 'unreadable range "' + cap + '" — expected e.g. "300-450"' });
+      } else if (lo > hi) {
+        out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+          detail: 'range "' + cap + '" is inverted (min above max) — it can never match' });
+      }
+    } else if (!isFinite(parseInt(cap, 10))) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+        detail: 'non-numeric "' + cap + '" — the product is excluded for every patient with a recorded weight' });
+    } else if (/[‐-―]/.test(cap)) {
+      // An EN/EM dash is not the ASCII '-' the range branch splits on, so
+      // "300–450" silently reads as a flat 300 cap. Stricter than intended
+      // rather than dangerous, hence warn — but it is never deliberate.
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'weight capacity',
+        detail: 'contains a non-ASCII dash — "' + cap + '" reads as a flat cap, not a range' });
+    }
+    // Seat type drives the solid-vs-captain gate. A blank cell is not fatal for
+    // an inherently-solid HCPCS (the engine has its own code list) but for
+    // anything else it means the row can never satisfy either branch.
+    if (!seat) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'seat type',
+        detail: 'blank — only recognised as solid-seat if ' + hcpcs + ' is on the engine\'s inherently-solid list' });
+    } else if (seat.indexOf('s') < 0 && seat.indexOf('c') < 0) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'seat type',
+        detail: '"' + cell(3) + '" contains neither "s" (solid) nor "c" (captain) — the row matches no seat branch' });
+    }
+    // E/F drive the result card's brochure link + device image. Documented as
+    // operator-required in the Operator State Checklist; blank means the agent
+    // gets no image to send the patient.
+    if (!cell(4)) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'pdfLink',
+        detail: 'blank — the HCPCS code renders with no brochure link' });
+    }
+    if (!cell(5)) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'imageUrl',
+        detail: 'blank — the result card renders no device image for the agent to send' });
+    }
+  });
+  return out;
+}
+
+/** Reads the catalog and validates it. Best-effort and SHAPED so an unreachable
+ *  Intake store is distinguishable from a clean catalog (the INV-129 rule — a
+ *  failed read must never render as "all good"). Cheap: the catalog is a few
+ *  dozen rows and already memoized per execution by getIntakeOfferings_. */
+function getIntakeCatalogHealth_() {
+  try {
+    const rows = getIntakeOfferings_();
+    const issues = intakeCatalogIssues_(rows);
+    return {
+      ok: true,
+      totalRows: rows.length,
+      errors: issues.filter(function (x) { return x.severity === 'error'; }),
+      warnings: issues.filter(function (x) { return x.severity === 'warn'; }),
+    };
+  } catch (e) {
+    return { ok: false, error: e.message, totalRows: null, errors: [], warnings: [] };
+  }
+}
+
 function getIntakeSubmissionSheet_(formType) {
   const ss = getIntakeSS_();
   let tab, headers;
@@ -15281,14 +15383,36 @@ function intakeFilterRecommendations_(answers, allProducts) {
       const offersSolid = isKnownSolid || sheetSaysSolid;
       const offersCaptain = seatCode.includes('c') && !isKnownSolid && !sheetSaysSolid;
 
+      // ── Weight capacity (F9, cycle 16 — FAIL CLOSED) ────────────────────
+      // `parseInt('')` is NaN and EVERY comparison against NaN is false, so a
+      // blank / non-numeric / half-written capacity cell used to pass this
+      // filter for ANY patient weight — the engine read it as unlimited
+      // capacity. Measured against the exact branch: '', '   ', 'n/a', '300-'
+      // and '-450' all admitted a 400 lb patient. The Offerings catalog is an
+      // operator-maintained sheet (a new product row with the capacity not yet
+      // filled in is ordinary), so the failure direction mattered: recommending
+      // a chair that cannot carry the patient.
+      //
+      // A capacity we cannot READ is not a capacity we can honour. Excluding
+      // the product matches the engine's own posture 40 lines above, where a
+      // catalog missing K0821 returns NO recommendations rather than silently
+      // dropping the mobile-home constraint. The complaint an agent gets is
+      // "this chair stopped appearing", which points at the catalog; the
+      // alternative complaint is a patient receiving unsuitable equipment.
+      // `getIntakeCatalogIssues_` surfaces the offending rows so the operator
+      // is not left guessing.
       if (patient.weight > 0) {
-        let minCap = 0, maxCap = 999;
-        if (product.weightCapacityStr.includes('-')) {
-          [minCap, maxCap] = product.weightCapacityStr.split('-').map(n => parseInt(n, 10));
+        const capRaw = product.weightCapacityStr.trim();
+        if (capRaw.indexOf('-') >= 0) {
+          const parts = capRaw.split('-');
+          const minCap = parseInt(parts[0], 10);
+          const maxCap = parseInt(parts[1], 10);
+          if (!isFinite(minCap) || !isFinite(maxCap)) return false;   // unreadable range
           if (patient.weight < minCap) return false;
           if (patient.weight > maxCap) return false;
         } else {
-          maxCap = parseInt(product.weightCapacityStr, 10);
+          const maxCap = parseInt(capRaw, 10);
+          if (!isFinite(maxCap)) return false;                        // unreadable cap
           if (patient.weight > maxCap) return false;
         }
       }
