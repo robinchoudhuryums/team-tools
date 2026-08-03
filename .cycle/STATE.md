@@ -95,6 +95,25 @@ Updated: 2026-08-03
   14's reflect block IS on disk (`.cycle/blocks/14-a-reflect.md`), so nothing is
   lost, but the archive is not contiguous. Left alone deliberately rather than
   silently reconstructing history.
+- **NEW (post-reflection, from the F9 operator check): the Offerings catalog has
+  no way to DISABLE a row.** The operator's column-C scan returned exactly one
+  malformed row — sheet row 23 / `E1161`, capacity blank — which they identify
+  as a scratch/exception entry, not a real product. But
+  `intakeFilterRecommendations_` skips a row ONLY when column B (HCPCS) is empty
+  (`hcpcsNum === 0 → return false`), so a scratch row carrying an HCPCS is a
+  live catalog member: pre-F9 its blank capacity passed the weight gate for
+  every patient, and post-F9 it is STILL eligible whenever **Q38 weight is
+  blank**, because the fix guards with `if (patient.weight > 0)`. The inert
+  state (empty column B) is documented nowhere as the mechanism. **Operator fix
+  for row 23: delete it, or clear B23.**
+- **NEW (same check): the engine's HCPCS numeric ladder only holds for
+  K-codes.** `hcpcsNum = parseInt(hcpcs.replace(/\D/g,''), 10)` maps
+  `K0821`–`K0864` to 821–864, and `isGroup3 = hcpcsNum >= 848` encodes exactly
+  that range. An **E-code lands above the cutoff by arithmetic accident** —
+  `E1161` → 1161 → silently classified Group 3. Nothing in the code says the
+  ladder assumes a K-code, so any E-code added later inherits it. NOT fixed:
+  the right shape (reject non-K rows? add a real category column?) is an
+  operator/clinical decision, not a code call.
 - **NEW (Batch 3): three raw `DR.STATUS` comparisons remain** outside
   `getDeptRequests`, deliberately out of F8's scope — `Code.js:12099`
   `drFindOpenRequest_`, `:12135` `markDeptRequestResolved_`, `:12413`

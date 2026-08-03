@@ -41,14 +41,36 @@ distinction had to be principled rather than convenient:
   hand-edited by the operator. A blank or `'n/a'` capacity is plausible, not
   hypothetical. Counted YES on the cycle-15 F3 precedent (live, reachable path;
   triggering row unverifiable from here).
+
+  **RESOLVED POST-REFLECTION — and the resolution changes the REASON, not the
+  score.** The operator ran the check: exactly ONE row in the live catalog has
+  an unreadable capacity, sheet row 23 / `E1161`, with column C **blank** — and
+  the operator identifies that row as a scratch/exception entry, not a real
+  product. So the scenario F9 was scored on (*a genuine chair recommended above
+  its weight capacity*) **did NOT happen**, and F9's clinical severity is much
+  lower than the reflection implies. It stays a production fix on "live and
+  reachable", but the honest reading is:
+
+  > The fail-open was reached by a row that should not have been in the
+  > recommendation pool at all.
+
+  That is a DIFFERENT and slightly worse-shaped finding, because it is not
+  about capacity data quality: **the Offerings catalog has no concept of a
+  disabled row.** `intakeFilterRecommendations_` skips a row only when column B
+  (HCPCS) is empty (`hcpcsNum === 0 → return false`), so a scratch entry with an
+  HCPCS is a live catalog member. Pre-F9 its blank capacity passed the weight
+  gate for every patient; post-F9 it is still eligible whenever **Q38 weight is
+  blank**, because the fix guards with `if (patient.weight > 0)`. Two follow-ons
+  logged below.
 - **F8's** malformed cell lives in a **code-written** column:
   `markDeptRequestResolved_` writes exactly `'resolved'` via `setValue`, so a
   padded status or blank `ResolvedAt` requires a manual edit of a tracking sheet
   nobody is asked to touch, or a failure between two `setValue` calls. Real
   correctness fix with a compounding blast radius; not a this-month event.
 
-**The F9 operator check has NOT come back.** Opening the Offerings sheet and
-reading column C is still what converts that YES from conditional to confirmed.
+**The F9 operator check CAME BACK** (see the resolution above): one malformed
+row, and it is a scratch entry rather than a real product. F9 stays YES; its
+clinical severity drops; a new structural finding replaces it.
 
 ## What this cycle actually was
 
@@ -129,7 +151,22 @@ its first run.
 - **DEPLOY is still pending** and now carries cycles 11–16: `clasp push -f` +
   New version, then `runAllTests()` from the editor. S1/S2 and F11's corrected
   queue-grouping assertion have never actually executed.
-- **Operator: read Offerings column C** — converts F9's conditional YES.
+- ~~Operator: read Offerings column C~~ — **DONE.** One malformed row (23 /
+  `E1161`, blank capacity), identified by the operator as a scratch entry. See
+  the resolution above.
+- **NEW FO-1 (from that check): the Offerings catalog has no way to DISABLE a
+  row.** The only inert state is an empty column B — undocumented anywhere as
+  the mechanism, and not obvious, since a row with an HCPCS reads as a real
+  product to the engine. Operator fix for row 23 is to delete it or clear B23;
+  leaving it keeps a non-product eligible for blank-weight intakes.
+- **NEW FO-2: the engine's HCPCS numeric ladder only holds for K-codes.**
+  `hcpcsNum = parseInt(hcpcs.replace(/\D/g,''), 10)` maps `K0821`–`K0864` to
+  821–864, and `isGroup3 = hcpcsNum >= 848` encodes that range. An **E-code**
+  lands far above the cutoff by arithmetic accident — `E1161` → 1161 → silently
+  classified Group 3. Nothing in the code expresses "this ladder assumes a
+  K-code", so any E-code added to the catalog later inherits the
+  misclassification. Not fixed: the right shape (reject non-K rows? a real
+  category column?) is an operator/clinical decision, not a code call.
 - Three raw `DR.STATUS` reads remain (`drFindOpenRequest_`,
   `markDeptRequestResolved_`, `deptRequestsOverdueOpen_`). A padded cell there
   means a duplicate request (INV-131) and a permanently nagging SLA digest.

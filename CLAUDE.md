@@ -764,6 +764,23 @@ this section before touching the relevant area.
   or inserting an Offerings column silently corrupts recommendations — keep the
   A–F contract, or update the engine + the fixture catalog in the tests
   together. The catalog is cached in-memory per execution (`_intakeOfferingsCache`).
+  **THERE IS NO "DISABLED ROW" — the ONLY inert state is an EMPTY column B
+  (HCPCS)**, because `intakeFilterRecommendations_` drops a row solely on
+  `hcpcsNum === 0`. Surfaced by the cycle-16 F9 operator check: the live catalog
+  held one scratch/exception row (`E1161`, capacity blank) that the operator did
+  not consider a product, but the engine did — pre-F9 its unreadable capacity
+  passed the weight gate for every patient, and post-F9 it is STILL eligible
+  whenever **Q38 weight is blank**, since the fix guards with
+  `if (patient.weight > 0)`. To retire a row: delete it, or clear its HCPCS
+  cell. Do NOT just blank the capacity — that is the fail-closed path, which
+  only suppresses the row for patients who HAVE a recorded weight.
+  **RELATED, and unfixed: the engine's HCPCS ladder is K-code-only.**
+  `hcpcsNum = parseInt(hcpcs.replace(/\D/g, ''), 10)` maps `K0821`–`K0864` to
+  821–864, and `isGroup3 = hcpcsNum >= 848` encodes exactly that range — so an
+  **E-code clears the Group-3 cutoff by arithmetic accident** (`E1161` → 1161).
+  Nothing in the code states the assumption. Adding any non-K HCPCS to this
+  catalog needs a deliberate decision (reject non-K rows? a real category
+  column?) — it is an operator/clinical call, not a code one.
 - **An operator-maintained data source that a DECISION ENGINE reads needs a
   shape check, and the fail direction on unreadable data must be CHOSEN (F9,
   cycle-16 — FIXED).** The PPD weight filter did
@@ -4364,7 +4381,14 @@ manually for a fresh deploy or environment:
   EN dash makes `"300–450"` read as a flat 300 cap. **Admin → Automation Health
   → "Intake Offerings catalog" lists every offending sheet row**, so after a
   catalog edit that panel is the check; a well-formed catalog reports "all
-  well-formed". The `PPDSubmissions` / `PMDSubmissions` / `PAPSubmissions`
+  well-formed". **To RETIRE a row, delete it or clear its column-B HCPCS — an
+  empty B is the only state the engine treats as inert.** A row you think of as
+  scratch or "an exception" is a live catalog member as long as it carries an
+  HCPCS, and blanking only its capacity is NOT a retirement: that is the
+  fail-closed path, which suppresses the row for patients with a recorded weight
+  while leaving it eligible whenever Q38 is blank. (The cycle-16 F9 check found
+  exactly this: one `E1161` row, capacity blank, that the operator did not
+  consider a product.) The `PPDSubmissions` / `PMDSubmissions` / `PAPSubmissions`
   PHI tabs auto-provision on first send (`getIntakeSubmissionSheet_`).
 - **Intake recipient addresses are Script-Property-backed.**
   `INTAKE_SALES_EMAIL` (PMD default), `INTAKE_SLEEP_EMAIL` (PAP default),
