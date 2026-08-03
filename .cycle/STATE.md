@@ -2,12 +2,14 @@
 
 ## Current
 Cycle: 16
-Phase: implement — COMPLETE (all scan findings implemented across three
-  sessions; `/sync-docs` done for all three). Only DEPLOY and `/reflect` remain.
+Phase: reflect — COMPLETE. Cycle 16 is CLOSED except for the DEPLOY, which is
+  an operator action. Block: `.cycle/blocks/16-a-reflect.md`; metrics row
+  appended (net 7 = 8 fixes − 1 new failure mode).
 Scope: broad
 Test Command: manual
-Subsystem cycles since last Seams audit: 1 (cycle 16 is a subsystem/broad cycle;
-  cycle 15 was the seams audit and reset the counter to 0)
+Subsystem cycles since last Seams audit: 2 (cycle 15 was the seams audit and
+  reset the counter to 0; cycles 15→16 have since completed. Cadence is every 4,
+  so the next Seams audit is due after cycle 18)
 Updated: 2026-08-03
 
 ## In progress (facts to carry forward — NOT judgments)
@@ -155,7 +157,12 @@ fixtures, 0 horizontal overflow), `node --check` clean. Nothing is half-finished
    editor — the Apps Script suite cannot run in the container, so S1/S2 and
    F11's corrected assertion have never actually executed.
 3. ~~`/sync-docs`~~ — **DONE for all three sessions.** Nothing owed.
-4. `/reflect` to close cycle 16. It should decide the invariant the F1–F5 block
+4. ~~`/reflect`~~ — **DONE.** Net 7 (8 production fixes − 1 new failure mode);
+   it CORRECTED the Batch-4/F9 self-report DOWNWARD (that block claimed 0 new
+   failure modes for the fail-closed weight filter; a chair silently vanishing
+   behind a pull-based detector is one, Low/fail-safe). INV-187/188 proposed.
+   The next cycle opens by moving this whole block into `HISTORY.md`.
+5. **Everything below this line is the residue cycle 16 deliberately left.** It should decide the invariant the F1–F5 block
    proposed (a surface aggregating a best-effort read must carry the outcome,
    and any judgement drawn from it suppressed when degraded) — three cycles have
    now fixed instances of that class one at a time — and consider a second on
