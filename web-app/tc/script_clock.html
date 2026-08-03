@@ -781,7 +781,12 @@ function clkRenderDashboardExtras_() {
 /** Pending-training card for non-Spanish agents (getMyTraining, rep-callable). */
 function clkDashTrainingCard_(res) {
   if (res === undefined) return clkDashSkelKpis_();   // card-shaped skeleton (operator pick 2026-07-10)
-  if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
+  // A12/INV-175: the extras loaders coerce every result to an object and set
+  // `.error` ONLY on a genuine failure (an empty training list arrives as
+  // `{items:[]}` and renders the normal card), so reaching here means the fetch
+  // failed — render the warn card, not `.dash-empty`. No outer esc(): the
+  // helper escapes internally.
+  if (!res || res.error) return errorStateHtml_((res && res.error) || 'No data');
   var items = res.items || [];
   var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'develop\',\'trainingHome\')">Open My Training →</a></div>';
   if (!items.length) return '<div class="dash-empty">No training assigned.</div>' + openLink;
@@ -807,7 +812,12 @@ function clkDashTrainingCard_(res) {
 
 function clkDashSpanishCard_(res, pendingRes) {
   if (res === undefined) return clkDashSkelKpis_();   // card-shaped skeleton (operator pick 2026-07-10)
-  if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
+  // A12/INV-175: the extras loaders coerce every result to an object and set
+  // `.error` ONLY on a genuine failure (an empty training list arrives as
+  // `{items:[]}` and renders the normal card), so reaching here means the fetch
+  // failed — render the warn card, not `.dash-empty`. No outer esc(): the
+  // helper escapes internally.
+  if (!res || res.error) return errorStateHtml_((res && res.error) || 'No data');
   var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsSpanish\')">Open Spanish Inbox →</a></div>';
   var pend = (pendingRes && pendingRes.pending) ? pendingRes.pending : null;
   // With pending requests, preview them (requester · age · snippet) + median
@@ -851,7 +861,12 @@ function clkSpNav_(delta) {
 
 function clkDashRequestsCard_(res) {
   if (res === undefined) return clkDashSkelKpis_();   // card-shaped skeleton (operator pick 2026-07-10)
-  if (!res || res.error) return '<div class="dash-empty">' + esc((res && res.error) || 'No data') + '</div>';
+  // A12/INV-175: the extras loaders coerce every result to an object and set
+  // `.error` ONLY on a genuine failure (an empty training list arrives as
+  // `{items:[]}` and renders the normal card), so reaching here means the fetch
+  // failed — render the warn card, not `.dash-empty`. No outer esc(): the
+  // helper escapes internally.
+  if (!res || res.error) return errorStateHtml_((res && res.error) || 'No data');
   var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsDeptReq\')">Open Dept Requests →</a></div>';
   if (res.deptStats) {   // manager — team aggregate
     var stats = res.deptStats, open = 0, resolved = 0;

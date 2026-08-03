@@ -2060,7 +2060,7 @@ function enterIntakeSentView(area) {
       if (!res || res.error) {
         done();
         if (painted) { if (typeof showToast === 'function') showToast('Couldn’t refresh sent list — showing last loaded', 'toast-warn'); return; }
-        host.innerHTML = '<div class="no-data">' + esc((res && res.error) || 'Failed to load submissions') + '</div>';
+        host.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load submissions');   // A12/INV-175
         return;
       }
       INTAKE_STATE.sent = res.submissions || [];
@@ -2074,7 +2074,7 @@ function enterIntakeSentView(area) {
       done();
       if (painted) { if (typeof showToast === 'function') showToast('Couldn’t refresh sent list — showing last loaded', 'toast-warn'); return; }
       var host = document.getElementById('intk-sent-list');
-      if (host) host.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load submissions') + '</div>';
+      if (host) host.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load submissions');   // A12/INV-175
     })
     .intakeListMySubmissions();
 }

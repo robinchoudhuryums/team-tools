@@ -38,7 +38,11 @@ function drRender_(area, data, errorMsg) {
         '<div class="cn-head-eyebrow">Tracked automatically from the department emails you send</div>' +
         '<h2 class="cn-head-title">Dept Requests</h2>' +
       '</div></div>';
-  if (errorMsg) { area.innerHTML = head + '<div class="dr-empty">' + esc(errorMsg) + '</div>'; return; }
+  // A12/INV-175: a LOAD FAILURE renders errorStateHtml_ (warn card + glyph +
+  // role="alert"), never .dr-empty — that is the same quiet muted card used
+  // below for "No tracked requests yet", so a failed RPC read as "you have no
+  // requests". errorStateHtml_ escapes internally, so NO outer esc() here.
+  if (errorMsg) { area.innerHTML = head + errorStateHtml_(errorMsg); return; }
 
   const intro = '<div class="dr-note">' + icon('outbox', 13) +
     ' Every department email you send from Call Notes is logged here. Resolve a request with the button below, ' +

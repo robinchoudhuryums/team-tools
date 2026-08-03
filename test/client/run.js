@@ -1571,6 +1571,10 @@ const MIRROR_INDEX = [
   // registry and had already drifted from the server fold.
   { pair: 'test/visual mock.js groupQueueRows_/CDR_QUEUE_GROUPS ↔ Code.js (F4)',
     guards: ['F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-for-byte'] },
+  // Cycle-16 F7: cycle-15 F4 pinned this sentinel in the visual FIXTURE and
+  // left the SHIPPING client on a bare literal — the mirror that mattered.
+  { pair: 'client M_QUEUE_UNGROUPED ↔ server CDR_QUEUE_UNGROUPED (INV-181)',
+    guards: ['F7: the client Ungrouped sentinel is named and mirrors the server'] },
   { pair: 'LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ (INV-72)',
     guards: ['every LEAVE_DEDUCTION_CLIENT entry matches the server deduction',
              'TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT keys'] },
@@ -5279,23 +5283,6 @@ test('A3: the calcHours_ callers route null to their incomplete-day branch', () 
 // A12: a LOAD FAILURE must render errorStateHtml_ (warn card + role=alert), not
 // the designed empty-state class — batch J's decision, previously applied only
 // in CN + Clock. Scan the three partials that violated it.
-test('A12: load failures never render into an empty-state container', () => {
-  [['metrics/script_metrics.html', ['m-empty', 'no-data']],
-   ['train/script_training.html', ['tr-empty']],
-   ['train/script_empdocs.html', ['tr-empty']]].forEach(([file, emptyCls]) => {
-    const src = fs.readFileSync(path.join(__dirname, '../../web-app', file), 'utf8');
-    src.split('\n').forEach((line, i) => {
-      if (!/\.error|err\.message|err && err\.message|e && e\.message|Failed to load|Could not load/.test(line)) return;
-      emptyCls.forEach((cls) => {
-        assert.ok(line.indexOf('class="' + cls) < 0,
-          file + ':' + (i + 1) + ' renders a failure into .' + cls +
-          ' (the empty-state card) — use errorStateHtml_:\n  ' + line.trim());
-      });
-    });
-    assert.ok(src.indexOf('errorStateHtml_') > 0, file + ' uses errorStateHtml_');
-  });
-});
-
 // A1: the six click-only controls are <button>s now. A bare span/div with an
 // inline onclick is unreachable by keyboard and has no role for assistive tech.
 // Cycle-13 batch 5: GENERALIZED from a hand-listed five files to every scanned
@@ -5304,6 +5291,142 @@ test('A12: load failures never render into an empty-state container', () => {
 // cycle-11's M-4 retired — a new tool's partial could otherwise ship outside
 // the net with CI green.
 const A11Y_SCAN_PARTIALS = PARSE_GUARD_PARTIALS.concat(['modals.html']);
+// NOTE: declared HERE rather than beside A1 below because A12 (immediately
+// following) is now the FIRST consumer — a `const` used before its
+// declaration is a TDZ error, not a hoist.
+
+// Cycle-16 F10: GENERALIZED from three hand-listed files to the RULE, the same
+// promotion A1/A11 got in cycle-13 batch 5 and A2 got earlier this cycle. The
+// old version scanned `metrics` + `training` + `empdocs` with a hand-copied
+// list of THEIR empty-state classes, so 28 violations sat behind it across SIX
+// other partials with CI green — including `train/script_coaching.html`, which
+// uses `.tr-empty`, a class the tripwire already knew, in a file it did not
+// scan. Derive both the FILE set and the CLASS set; enumerate neither.
+//
+// The class set is derived from the markup itself: any class whose name ends in
+// `-empty` or is `no-data` is an empty-state container by this codebase's own
+// naming convention (kb-empty, kbd-empty, dr-empty, dash-empty, tr-empty,
+// m-empty, cn-audit-hist-empty, cn-stack-empty, …). That means a NEW tool
+// inventing `foo-empty` is covered the day it ships.
+test('A12: load failures never render into an empty-state container', () => {
+  const EMPTY_CLASS = /class="([a-z0-9_ -]*(?:-empty|no-data)[a-z0-9_ -]*)"/g;
+  // A line that MENTIONS a failure. Kept broad on purpose — a false positive
+  // here costs one `errorStateHtml_` call; a false negative is the 28.
+  const FAILURE_LINE = /\.error|err\.message|err && err\.message|e && e\.message|Failed to load|Could not load|errorMsg/;
+  const violations = [];
+  let scanned = 0;
+  A11Y_SCAN_PARTIALS.forEach((rel) => {
+    const p = path.join(__dirname, '../../web-app', rel);
+    if (!fs.existsSync(p)) return;
+    scanned++;
+    const src = fs.readFileSync(p, 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (!FAILURE_LINE.test(line)) return;
+      if (line.indexOf('errorStateHtml_') >= 0) return;   // already correct
+      EMPTY_CLASS.lastIndex = 0;
+      let m;
+      while ((m = EMPTY_CLASS.exec(line))) {
+        violations.push(rel + ':' + (i + 1) + '  [.' + m[1] + ']  ' + line.trim().slice(0, 110));
+      }
+    });
+  });
+  assert.ok(scanned >= 9, 'the scan covers the tool partials (got ' + scanned + ')');
+  assert.deepStrictEqual(violations, [],
+    'these render a LOAD FAILURE into an empty-state container, so a failed fetch ' +
+    'reads as "there is nothing here" — use errorStateHtml_ (and DROP the outer ' +
+    'esc(), which double-escapes since the helper escapes internally):\n  ' +
+    violations.join('\n  '));
+});
+
+// The companion half: errorStateHtml_ escapes internally (INV-175), so wrapping
+// its argument in esc() renders `&amp;lt;` to the user. Cheap to get wrong when
+// converting a call site FROM the escaped empty-state form — which is exactly
+// what the F10 sweep did 28 times.
+test('A12: no call site double-escapes errorStateHtml_', () => {
+  const bad = [];
+  A11Y_SCAN_PARTIALS.concat(['script_core.html']).forEach((rel) => {
+    const p = path.join(__dirname, '../../web-app', rel);
+    if (!fs.existsSync(p)) return;
+    fs.readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
+      if (/errorStateHtml_\(\s*esc\(/.test(line)) bad.push(rel + ':' + (i + 1) + '  ' + line.trim().slice(0, 100));
+    });
+  });
+  assert.deepStrictEqual(bad, [],
+    'errorStateHtml_ escapes its own message — an outer esc() double-escapes:\n  ' + bad.join('\n  '));
+});
+
+// ── Cycle-16 Batch 3 fix pins (F6 / F7 / F8) ────────────────────────────────
+
+// F6: uiPrompt is the ONE dialog in the app that validates, and its input had
+// no accessible name and its error slot no live region — so a rejected value
+// was announced as nothing at all and the dialog read as simply refusing to
+// close. uiConfirm needs neither (no field, no validation), which is why this
+// pin is uiPrompt-only rather than a rule over both.
+test('F6: the uiPrompt input is named and its validator error is announced', () => {
+  const fn = extractRawFunction('script_core.html', 'uiPrompt');
+  assert.ok(/aria-labelledby="' \+ dlgTitleId/.test(fn),
+    'the input is NAMED by the dialog title (a placeholder is not a name)');
+  assert.ok(/aria-describedby="' \+ describedBy/.test(fn),
+    'the input is described by the message + the error slot');
+  assert.ok(/class="ui-dialog-err" id='[^']*\+ dlgErrId \+ '" role="alert"/.test(fn)
+    || /ui-dialog-err[\s\S]{0,120}?role="alert"[\s\S]{0,40}?display:none/.test(fn),
+    'the inline error slot is a live region, so a rejection is spoken');
+  // The describedBy must REACH the error id even when opts.message is absent —
+  // the message half is conditional, the error half never is.
+  assert.ok(/const describedBy = \(opts\.message \? dlgMsgId \+ ' ' : ''\) \+ dlgErrId/.test(fn),
+    'the error id is always in aria-describedby; only the message half is conditional');
+});
+
+// F7: the client found the unmapped-queue bucket by comparing against a bare
+// 'Ungrouped' literal. That hint is the ONLY signal an operator gets that a
+// queue is unmapped (INV-181) — a server-side rename would silently stop it
+// rendering while the row itself still appeared, i.e. the gap would look
+// closed. Cycle-15 F4 pinned this very constant in the visual FIXTURE while
+// the shipping client kept the literal.
+test('F7: the client Ungrouped sentinel is named and mirrors the server', () => {
+  const client = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  const m = /var M_QUEUE_UNGROUPED = '([^']+)'/.exec(client);
+  assert.ok(m, 'the client declares a named sentinel');
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const server = /(?:var|const) CDR_QUEUE_UNGROUPED = '([^']+)'/.exec(code);
+  assert.ok(server, 'the server declares CDR_QUEUE_UNGROUPED');
+  assert.strictEqual(m[1], server[1],
+    'client M_QUEUE_UNGROUPED must equal server CDR_QUEUE_UNGROUPED');
+  // And the render must USE it — a named constant beside a surviving literal
+  // is the same drift with extra steps.
+  const render = extractRawFunction('metrics/script_metrics.html', 'mRenderTeamMetrics_');
+  assert.ok(/=== M_QUEUE_UNGROUPED/.test(render), 'the group lookup compares against the constant');
+  assert.ok(!/'Ungrouped'/.test(render), 'no bare Ungrouped literal survives in the render');
+});
+
+// F8: this function read DR.STATUS raw on ONE line and normalized on every
+// other, so a whitespace-padded cell split the two — the INV-167/INV-183
+// whitespace class on a third column. Same fix shape: normalize ONCE, feed
+// every consumer the normalized value.
+test('F8: getDeptRequests normalizes DR.STATUS once and never re-reads it raw', () => {
+  // Strip comments FIRST. This function's fix comment quotes the raw read it
+  // removed, so a naive scan trips on its own rationale — the same trap the
+  // CDR health-card pin documents. (Bite-checked: it failed 3 !== 1 until the
+  // strip was added, and still fails 2 !== 1 if the raw comparison returns.)
+  const fn = extractRawFunction('Code.js', 'getDeptRequests')
+    .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(/const status = String\(r\[DR\.STATUS\] \|\| 'open'\)\.trim\(\)\.toLowerCase\(\)/.test(fn),
+    'the status is normalized once into a local');
+  assert.ok(/status: status,/.test(fn), 'the item ships the NORMALIZED status');
+  // The raw comparison this fix removed must not come back in any form.
+  const raw = fn.match(/r\[DR\.STATUS\]/g) || [];
+  assert.strictEqual(raw.length, 1,
+    'DR.STATUS is read exactly once (the normalize line); got ' + raw.length + ' reads');
+  // The second half: a row marked resolved with a blank/unparseable ResolvedAt
+  // has an UNKNOWN duration. The old code fell through to "now − created",
+  // pushing an ever-growing age into deptStats.durations every single day.
+  assert.ok(/isResolved\s*\?\s*\(\(resolvedMs && createdMs\)/.test(fn.replace(/\s*\n\s*/g, ' ')),
+    'a resolved row with no usable ResolvedAt yields null, not a growing age');
+  assert.ok(!/\(resolvedMs && createdMs\) \? Math\.round\(\(resolvedMs - createdMs\) \/ 60000\)\s*:\s*\(createdMs/
+    .test(fn.replace(/\s*\n\s*/g, ' ')),
+    'the old unconditional fallthrough is gone');
+});
+
 test('A1: no interactive element is a bare span/div with an inline onclick', () => {
   const offenders = [];
   A11Y_SCAN_PARTIALS.forEach((f) => {
@@ -6129,11 +6252,27 @@ test('F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-
   const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
 
-  const srvFn = code.match(/function groupQueueRows_\(queueRows, groups\) \{[\s\S]*?\n\}/);
-  const mockFn = mock.match(/function groupQueueRows_\(queueRows, groups\) \{[\s\S]*?\n\}/);
-  assert.ok(srvFn && mockFn, 'both copies are present');
-  assert.strictEqual(mockFn[0], srvFn[0],
-    'test/visual/mock.js groupQueueRows_ has drifted from Code.js — copy it verbatim');
+  // Cycle-16 F10 batch: DERIVE the copied set from the fixture's own
+  // DO-NOT-EDIT region instead of naming groupQueueRows_. A hand-listed pin
+  // covers the copy that existed when it was written and nothing after — the
+  // same shape as A2/A12, and `cnNoteCoverage_` was added to this region in
+  // the very next cycle. Every function declared between the banners must be
+  // byte-identical to Code.js.
+  const region = mock.slice(
+    mock.indexOf('VERBATIM copies from web-app/Code.js'),
+    mock.indexOf('── end verbatim copies'));
+  assert.ok(region.length > 0, 'the verbatim region banners are still present');
+  const copied = [...region.matchAll(/^function ([A-Za-z0-9_]+)\(/gm)].map((m) => m[1]);
+  assert.ok(copied.length >= 2,
+    'the verbatim region should hold the copied fns (found: ' + copied.join(', ') + ')');
+  copied.forEach((name) => {
+    const re = new RegExp('^function ' + name + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}', 'm');
+    const srvFn = code.match(re);
+    const mockFn = region.match(re);
+    assert.ok(srvFn, name + ' is in the fixture\'s verbatim region but not in Code.js');
+    assert.strictEqual(mockFn[0], srvFn[0],
+      'test/visual/mock.js ' + name + ' has DRIFTED from Code.js — copy it verbatim, never paraphrase it');
+  });
 
   // The Ungrouped sentinel the fold compares against.
   const srvUng = code.match(/const CDR_QUEUE_UNGROUPED = '([^']+)'/)[1];
@@ -6148,9 +6287,13 @@ test('F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-
   assert.strictEqual(mockG, srvG,
     'the fixture group mapping has drifted from the CONFIG seed');
 
-  // …and the fixture must actually CALL it rather than keep a private fold.
+  // …and the fixture must actually CALL each copy rather than keep a private
+  // paraphrase alongside it (the drift this whole pin exists to prevent).
   assert.ok(/groupRows: groupQueueRows_\(/.test(mock),
     'the fixture calls the shared fold instead of reimplementing it');
+  assert.ok(/noteCoverage = cnNoteCoverage_\(/.test(mock),
+    'the fixture calls cnNoteCoverage_ instead of inlining the percentage — the ' +
+    'server returns NULL when answered is 0, an inline Math.round returns NaN');
 });
 
 // ─── F1: a declared-but-unread CONFIG key is a defect ────────────────────────

@@ -7684,12 +7684,12 @@ function enterCallNotesAdminView(area) {
   google.script.run
     .withSuccessHandler(function (cfg) {
       if (currentView !== 'callNotesAdmin') return;
-      if (cfg.error) { area.innerHTML = '<div class="no-data">' + esc(cfg.error) + '</div>'; return; }
+      if (cfg.error) { area.innerHTML = errorStateHtml_(cfg.error); return; }   // A12/INV-175
       cnRenderAdminBody_(cfg);
     })
     .withFailureHandler(function (err) {
       if (currentView !== 'callNotesAdmin') return;
-      area.innerHTML = '<div class="no-data">' + esc(err.message || 'Failed to load config') + '</div>';
+      area.innerHTML = errorStateHtml_(err.message || 'Failed to load config');   // A12/INV-175
     })
     .getAdminConfig();
   // Round 2 · 8h — load KPI strip + tag taxonomy into the augment slot
@@ -8386,7 +8386,10 @@ function cnToggleAuditHistory_(btn, noteId) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
-      if (!res || res.error) { hist.innerHTML = '<div class="cn-audit-hist-empty">' + esc((res && res.error) || 'Could not load history') + '</div>'; return; }
+      // A12: `.cn-audit-hist-empty` is the designed empty card, used one line
+      // below for "No history found in the scan window." — a failed lookup must
+      // not read as a note with no audit trail. No outer esc().
+      if (!res || res.error) { hist.innerHTML = errorStateHtml_((res && res.error) || 'Could not load history'); return; }
       var hrows = res.rows || [];
       if (hrows.length === 0) { hist.innerHTML = '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
       hist.innerHTML = hrows.map(function (h) {
@@ -8400,7 +8403,7 @@ function cnToggleAuditHistory_(btn, noteId) {
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
-      hist.innerHTML = '<div class="cn-audit-hist-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
+      hist.innerHTML = errorStateHtml_('Could not load history: ' + (err.message || String(err)));   // A12
     })
     .getCallNoteAuditHistory(noteId);
 }

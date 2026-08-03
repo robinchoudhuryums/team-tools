@@ -5932,16 +5932,31 @@ function test_metrics_getTeamMetrics_queueGrouping() {
   r.groupRows.forEach(function (g) { seen += g.queues.length; gTotal += g.transferred; });
   _assertEq(seen, r.queueRows.length, 'every queue lands in exactly one group');
   _assertEq(gTotal, qTotal, 'group totals sum to the queue totals — no double count, nothing lost');
-  // Ungrouped, when present, must sort last.
-  if (r.groupRows.length > 1 && r.groupRows[r.groupRows.length - 1].group === 'Ungrouped') {
-    _assertTrue(true, 'Ungrouped sorted last');
+  // F11 (cycle 16) — this was:
+  //     if (… last group === 'Ungrouped') { _assertTrue(true, 'Ungrouped sorted last'); }
+  // The condition WAS the assertion, so the INV-181 regression it exists to
+  // catch (Ungrouped sorting anywhere but last) simply skipped the block and
+  // the test still passed. That is the cycle-8 M-14 class — 13 instances of
+  // `_assertTrue(true, …)` were removed then for inflating the pass count.
+  // Assert on the INDEX instead: if Ungrouped is present it must be last, and
+  // if it is absent there is nothing to check.
+  const ungIdx = r.groupRows.map(function (g) { return g.group; }).indexOf('Ungrouped');
+  if (ungIdx >= 0) {
+    _assertEq(ungIdx, r.groupRows.length - 1,
+      'Ungrouped sorts LAST regardless of volume — it is a gap to close, not a department (INV-181)');
   }
   // A_Q_Sales is in the shipped CONFIG map, so it must NOT be Ungrouped.
+  // F11: the old `if (salesGroup)` guard meant A_Q_Sales VANISHING from the
+  // fold — a real regression — silently skipped the assertion. The fixture
+  // GUARANTEES it (`mkTRow(_TEST_INDIA_NAME, …, { 'A_Q_Sales': 6, … })` in
+  // _setupTestCdrFixture_), so its absence is itself the failure. If this ever
+  // fails with `got: null`, check the fixture before the fold — that shape
+  // means A_Q_Sales produced no queue row at all, not that it grouped wrong.
   let salesGroup = null;
   r.groupRows.forEach(function (g) {
     g.queues.forEach(function (q) { if (q.queue === 'A_Q_Sales') salesGroup = g.group; });
   });
-  if (salesGroup) _assertEq(salesGroup, 'Sales', 'A_Q_Sales maps to the Sales department');
+  _assertEq(salesGroup, 'Sales', 'A_Q_Sales maps to the Sales department (and is still in the fold at all)');
 }
 
 function test_metrics_getTeamMetrics_cdrIntegration() {

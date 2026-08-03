@@ -2,12 +2,14 @@
 
 ## Current
 Cycle: 16
-Phase: implement (F1–F5, F9 + Batch 4 done; F6/F7/F8/F10/F11 not implemented)
+Phase: implement (ALL scan findings implemented — F1–F5, Batch 4, F9, then
+  F6/F7/F8/F10/F11. Nothing from the scan is outstanding; `/sync-docs` for the
+  last two sessions and `/reflect` remain)
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 16 is a subsystem/broad cycle;
   cycle 15 was the seams audit and reset the counter to 0)
-Updated: 2026-07-31
+Updated: 2026-08-03
 
 ## In progress (facts to carry forward — NOT judgments)
 - Cycle 15 is CLOSED and its block was archived to `.cycle/HISTORY.md` when this
@@ -24,7 +26,13 @@ Updated: 2026-07-31
   claims the code had made false and fixed a pre-existing drift (the running
   test count had stopped at cycle 14). **It has NOT run for Batch 4 / F9** — see
   the block's DOCUMENTATION UPDATES (six items).
-- The remaining findings (F6, F7, F8, F10, F11) are NOT implemented.
+- **Batch 2 + Batch 3 (F10, F11, the fixture mirror, F6, F7, F8) are
+  IMPLEMENTED** in a third session. Block:
+  `.cycle/blocks/16-batch2-batch3-broad-implement.md`. Pure 403→407, DOM 69,
+  visual 29/29 (0 missing, 0 overflow). **Every finding from the cycle-16 scan
+  is now implemented.**
+- `/sync-docs` has NOT run for Batch 4 / F9 (six items) NOR for Batch 2 /
+  Batch 3 (seven items). Both blocks list them.
 
 ## Completed this cycle
 - F1 | Code.js + cn/script_callnotes.html | `managerGetShiftStats` now carries `notesUnavailable`; coverage is null on a failed read; all six note-derived columns render an em dash instead of 0, and the sort comparator groups them with the other unknowns.
@@ -37,26 +45,16 @@ Updated: 2026-07-31
 - F9 | Code.js | The PPD weight filter fails CLOSED on an unreadable capacity (`parseInt('')` → NaN made `''`/`'n/a'`/`'300-'`/`'-450'` read as UNLIMITED). Well-formed behaviour verified byte-identical across 7 cases.
 - F9 companion | Code.js + cn/script_callnotes.html | Pure `intakeCatalogIssues_` validator + an "Intake Offerings catalog" card in Admin → Automation Health, on the SAME opt-in gate as the cycle-14 queue inventory so the 10-min badge and the daily digest never pay for it.
 - Tests | 4 new F9 pins, ALL bite-checked individually.
+- F10 | kb(10) cn(4) tc/manager(4) tc/clock(3) coaching(4) intake(2) deptreq(1) = 28 sites | Load failures now render `errorStateHtml_` instead of the tool's designed empty state; every converted site DROPS the outer `esc()` (the helper escapes internally).
+- F10 (tripwire) | test/client/run.js | A12 GENERALIZED — file set from `A11Y_SCAN_PARTIALS`, class set derived from the markup by naming convention (`-empty` / `no-data`). Plus a companion double-escape pin. `A11Y_SCAN_PARTIALS` moved above A12 (TDZ, not a hoist).
+- F11 | Tests.js | Replaced `_assertTrue(true, 'Ungrouped sorted last')` with a real index assertion and removed the `if (salesGroup)` guard that skipped the mapping check in exactly the failing case.
+- mirror | test/visual/mock.js | Verbatim `cnNoteCoverage_` inside the DO-NOT-EDIT region (INV-185); the F4 pin now DERIVES the copied set from that region instead of naming one function.
+- F6 | script_core.html | `uiPrompt` input gains `aria-labelledby` + `aria-describedby`; `.ui-dialog-err` gains `role="alert"` so a validator rejection is announced.
+- F7 | metrics/script_metrics.html | `M_QUEUE_UNGROUPED` named, used in both lookup and hint, pinned against the server constant, added to `MIRROR_INDEX`.
+- F8 | Code.js `getDeptRequests` | `DR.STATUS` normalized ONCE (the raw-vs-normalized split was the INV-167/183 whitespace class on a third column); a resolved row with no usable `ResolvedAt` now yields `null` elapsed instead of an ever-growing age that compounds into dept avg/median.
+- Tests | 3 new Batch-3 pins, ALL bite-checked (revert each → exactly its own pin fails).
 
 ## Pending / not yet done
-- **F6, F7, F8, F10, F11 are unimplemented.** In value order:
-  - **F10** — 28 load-failure sites across SIX partials render into empty-state
-    containers instead of `errorStateHtml_`; the A12 tripwire scans 3 of 9
-    partials. Same structural shape as F3, and the largest remaining item.
-    **Expect the count to GROW when A12 is generalized** — A2's generalization
-    immediately found a fifth instance the hand-derivation had missed, and
-    A12's hand-list is narrower.
-  - **F6** — `uiPrompt`'s input has no accessible name and its validation error
-    has no `role="alert"`.
-  - **F7** — `'Ungrouped'` hardcoded in `metrics/script_metrics.html:1267`,
-    mirroring `CDR_QUEUE_UNGROUPED` with no pin (the visual FIXTURE is pinned;
-    the shipping client is not).
-  - **F8** — a `resolved` DeptRequest with an unparseable ResolvedAt reports its
-    full age as resolution time, inflating dept avg/median forever; plus a raw
-    vs normalized status compare in the same function.
-  - **F11** — `Tests.js:5936` `_assertTrue(true, 'Ungrouped sorted last')` inside
-    the condition that IS the assertion; cannot fail. The cycle-8 M-14 class
-    returning. Low risk only because the pure harness pins the rule properly.
 - **DEPLOY of THIS cycle's changes** (the cycles-11–15 deploy is done):
   1. `cd web-app && clasp push -f`
   2. Apps Script editor → Deploy → Manage deployments → Edit → New version
@@ -86,10 +84,20 @@ Updated: 2026-07-31
   14's reflect block IS on disk (`.cycle/blocks/14-a-reflect.md`), so nothing is
   lost, but the archive is not contiguous. Left alone deliberately rather than
   silently reconstructing history.
-- `test/visual/mock.js:161` computes `totals.noteCoverage` inline instead of
-  calling shared logic — the INV-185 class (a fixture paraphrasing server logic),
-  the same shape cycle-15 F4 pinned for `groupQueueRows_`. It exercises the
-  unchanged path so F5 did not require touching it.
+- **NEW (Batch 3): three raw `DR.STATUS` comparisons remain** outside
+  `getDeptRequests`, deliberately out of F8's scope — `Code.js:12099`
+  `drFindOpenRequest_`, `:12135` `markDeptRequestResolved_`, `:12413`
+  `deptRequestsOverdueOpen_`. A padded cell there means a re-send opens a
+  DUPLICATE request (INV-131) and a resolved request nags in the SLA digest
+  forever. The right fix is a `drStatus_(row)` predicate + a tripwire banning
+  the raw read (the INV-167 shape), not three inline trims.
+- **NEW (Batch 3): Dept Requests has NO Regression Scenario at any subsystem.**
+  F8 changed it and there was nothing to walk.
+- **NEW (Batch 2): error states are unshot by the visual harness** — every
+  scenario fixtures the success path, so the 28 newly-converted surfaces have no
+  screenshot, and `errorStateHtml_`'s fit in the 400px KB drawer / narrow tree
+  column is unverified. A `*-error` variant driving `run.reject` is the natural
+  next extension of Batch 4.
 - Reference landing's `.kb-review-row` is cramped at 390px (title / "reviewed
   120d ago" / note / button overlap). Strictly better than the 70px panel it
   replaced; outside F2's scope, which was the column split.
@@ -124,35 +132,43 @@ Updated: 2026-07-31
   out-specifies the new 0-2-0 media rules.
 
 ## Where I left off
-Cycle 16 has now had TWO implementation sessions: F1–F5, then Batch 4 + F9.
-Everything is bite-checked and green (pure 403, DOM 69, visual 29/29 with zero
-missing fixtures and zero horizontal overflow, `node --check` clean). Nothing is
-half-finished.
+Cycle 16 has now had THREE implementation sessions: F1–F5, then Batch 4 + F9,
+then Batch 2 + Batch 3. **Every finding from the cycle-16 scan is implemented.**
+All green and bite-checked: pure **407**, DOM 69, visual 29/29 (0 missing
+fixtures, 0 horizontal overflow), `node --check` clean. Nothing is half-finished.
 
 **Next, in value order:**
 1. **Operator, 5 minutes:** open the Offerings sheet and check column C for
    blank/non-numeric cells. That answers whether F9 was LIVE or latent — the one
-   thing the net score above is honestly uncertain about. After deploying, the
-   new Admin → Automation Health card answers it automatically.
+   thing the net scores are honestly uncertain about. After deploying, the new
+   Admin → Automation Health card answers it automatically.
 2. **Deploy** (`clasp push -f` + New version), then `runAllTests()` from the
-   editor — the Apps Script suite cannot run in the container.
-3. **`/sync-docs`** for Batch 4 + F9 — the block lists SIX updates, including a
-   brand-new gotcha for the F9 class and an Operator-State note that column C
-   now excludes a row rather than being ignored.
-4. **Implement F10** (Batch 2) — 28 load-failure sites plus the A12
-   generalization, the cycle's structural theme and the largest item left.
-5. `/reflect` to close cycle 16. It should also decide the invariant the F1–F5
-   block proposed (a surface aggregating a best-effort read must carry the
-   outcome, and any judgement drawn from it suppressed when degraded) — three
-   cycles have now fixed instances of that class one at a time.
+   editor — the Apps Script suite cannot run in the container, so S1/S2 and
+   F11's corrected assertion have never actually executed.
+3. **`/sync-docs`** — now owed for BOTH sessions: six items from Batch 4 / F9
+   and seven from Batch 2 / Batch 3 (both blocks list them). Notable: the
+   INV-175 history needs rewriting, the running test count is 403 → 407, and
+   INV-183/167 must record that `DR.STATUS` is only PARTIALLY normalized.
+4. `/reflect` to close cycle 16. It should decide the invariant the F1–F5 block
+   proposed (a surface aggregating a best-effort read must carry the outcome,
+   and any judgement drawn from it suppressed when degraded) — three cycles have
+   now fixed instances of that class one at a time — and consider a second on
+   the tripwire-generalization theme (see below).
 
-Two things worth carrying:
-- **The cycle's theme holds and is half-done.** Two independent tripwires (A2,
-  A12) name the right rule and then scan a fixed list of past fixes. A2 is
-  generalized; A12 is F10 and still open.
-- **Batch 4 paid for itself on its first run** — the new mobile scenarios
-  immediately surfaced a clipped Training heading (measured 94px of text in an
-  18px box) that four interface-focused sessions had never seen. That instance
-  also shows a LIMIT of the A2 rule: it has no compact override, so no
-  derivation from `:root[data-compact]` will ever find it. Worth weighing when
-  generalizing A12.
+Three things worth carrying:
+- **The cycle's theme is now COMPLETE and it is the cycle's finding.** Two
+  independent tripwires (A2, A12) each named the right rule and then scanned a
+  fixed list of past fixes. Generalizing A2 immediately surfaced a fifth
+  candidate; generalizing A12 surfaced 28 violations across six partials — one
+  of them using a class the tripwire already knew, in a file it did not scan.
+  That is INV-179 twice in one cycle, and it argues the rule should be applied
+  PROACTIVELY to the remaining hand-listed scans rather than one per audit.
+- **A limit of that rule, worth stating before the next generalization:** the
+  clipped Training heading Batch 4 found is A2-FAMILY but no derivation from
+  `:root[data-compact]` will ever reach it, because that file has no compact
+  override to derive from. A derived scan is only as wide as the thing it
+  derives from.
+- **Two pins failed their first write this session, both tripping on the
+  code's own explanatory comments or the wrong occurrence of a string.** Strip
+  comments before scanning a function that documents what it removed — the CDR
+  health-card pin already learned this, and F8's pin re-learned it.

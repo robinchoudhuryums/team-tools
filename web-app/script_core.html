@@ -1543,18 +1543,34 @@ function uiPrompt(opts) {
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-labelledby', dlgTitleId);
+    // F6 (cycle 16): the input had NO accessible name — a screen-reader user
+    // tabbing in heard "edit, blank". The dialog's title and message carry the
+    // meaning but were not associated with the field, and a `placeholder` is
+    // not a name (it is not reliably announced and disappears on first
+    // keystroke). Point aria-labelledby at the title, and aria-describedby at
+    // the message + the error slot so a rejected value is announced too.
+    const dlgMsgId = 'ui-dialog-msg-' + _uiDialogSeq;
+    const dlgErrId = 'ui-dialog-err-' + _uiDialogSeq;
     const titleHtml = '<div class="modal-title" id="' + dlgTitleId + '">' + esc(opts.title || 'Enter value') + '</div>';
     const messageHtml = opts.message
-      ? '<div class="ui-dialog-body">' + esc(opts.message).replace(/\n/g, '<br>') + '</div>'
+      ? '<div class="ui-dialog-body" id="' + dlgMsgId + '">' + esc(opts.message).replace(/\n/g, '<br>') + '</div>'
       : '';
+    const describedBy = (opts.message ? dlgMsgId + ' ' : '') + dlgErrId;
     overlay.innerHTML =
       '<div class="modal ui-dialog-modal">'
         + titleHtml
         + messageHtml
         + '<div class="field" style="margin-top:8px">'
-          + '<input type="text" class="ui-dialog-input" value="' + esc(opts.initialValue || '') + '" placeholder="' + esc(opts.placeholder || '') + '">'
+          + '<input type="text" class="ui-dialog-input" aria-labelledby="' + dlgTitleId + '"'
+            + ' aria-describedby="' + describedBy + '"'
+            + ' value="' + esc(opts.initialValue || '') + '" placeholder="' + esc(opts.placeholder || '') + '">'
         + '</div>'
-        + '<div class="ui-dialog-err" style="display:none"></div>'
+        // F6: `role="alert"` so a validator rejection is ANNOUNCED. Without it
+        // the dialog stayed open, focus returned to the input, and nothing was
+        // said — it read as a dialog that simply refuses to close. The project
+        // already uses role="alert" for exactly this in form_public.html and
+        // errorStateHtml_; the one dialog that actually validates lacked it.
+        + '<div class="ui-dialog-err" id="' + dlgErrId + '" role="alert" style="display:none"></div>'
         + '<div class="modal-footer">'
           + '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>'
           + '<button type="button" class="btn-modal-ok ui-dialog-ok">' + esc(opts.confirmLabel || 'OK') + '</button>'

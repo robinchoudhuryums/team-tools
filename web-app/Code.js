@@ -12251,14 +12251,35 @@ function getDeptRequests() {
       const r = rows[i];
       if (!r[DR.REQ_ID]) continue;
       const createdMs = parseMs(r[DR.CREATED_AT]);
-      const resolvedMs = r[DR.STATUS] === 'resolved' ? parseMs(r[DR.RESOLVED_AT]) : null;
-      const elapsedMin = (resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000)
-                        : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
+      // F8 (cycle 16): NORMALIZE the status once. This line used to compare the
+      // RAW cell (`r[DR.STATUS] === 'resolved'`) while every other line in this
+      // function went through `String(r[DR.STATUS] || 'open')`, so a
+      // whitespace-padded cell made the two disagree: the item's `status` read
+      // 'resolved ' (so it was excluded from `incoming` and from `allOpen`) but
+      // this test was false, so `deptStats` counted it as OPEN. The INV-167 /
+      // INV-183 whitespace class on a third column.
+      const status = String(r[DR.STATUS] || 'open').trim().toLowerCase();
+      const isResolved = (status === 'resolved');
+      const resolvedMs = isResolved ? parseMs(r[DR.RESOLVED_AT]) : null;
+      // F8: a row marked resolved whose ResolvedAt is blank or unparseable has
+      // an UNKNOWN resolution time, not "however long it has been since it was
+      // created". The old fallthrough pushed that ever-growing age into
+      // deptStats.durations, so one such row inflated a department's average
+      // and median resolution time a little more every day. Reachable if a
+      // write fails between markDeptRequestResolved_'s two setValue calls, or
+      // via a manual sheet edit.
+      const elapsedMin =
+        isResolved
+          ? ((resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000) : null)
+          : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
       const slaHours = drSlaForToDept_(String(r[DR.TO_DEPT] || ''), slaCfg);   // F(cycle-8 M-5): strictest across a multi-dept send
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
-        status: String(r[DR.STATUS] || 'open'), resolvedAt: fmtTs(resolvedMs),
+        // F8: the NORMALIZED status, so every downstream consumer (the
+        // `incoming` filter, `deptStats`, `allOpen`, the client's chips) reads
+        // the same value a padded/mixed-case cell would otherwise split.
+        status: status, resolvedAt: fmtTs(resolvedMs),
         resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
         elapsedMin: elapsedMin,
         slaHours: slaHours, slaStatus: drSlaStatus_(elapsedMin, slaHours),

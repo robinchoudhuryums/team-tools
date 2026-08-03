@@ -94,7 +94,9 @@ function coachLoadMy_() {
     .withFailureHandler(function (err) {
       if (currentView !== requestedView || COACH_MODE !== 'mine') return;
       var e2 = document.getElementById('coach-content');
-      if (e2) e2.innerHTML = '<div class="tr-empty">' + esc((err && err.message) || err) + '</div>';
+      // A12/INV-175: a failure is not an empty state. errorStateHtml_ escapes
+      // internally, so the outer esc() is DROPPED (keeping it double-escapes).
+      if (e2) e2.innerHTML = errorStateHtml_((err && err.message) || err);
     })
     .getMyCoaching();
 }
@@ -103,7 +105,7 @@ function coachRenderMy_() {
   var el = document.getElementById('coach-content');
   if (!el) return;
   var data = COACH_STATE.my || {};
-  if (data.error) { el.innerHTML = '<div class="tr-empty">' + esc(data.error) + '</div>'; return; }
+  if (data.error) { el.innerHTML = errorStateHtml_(data.error); return; }   // A12
   var items = data.items || [];
   if (!items.length) {
     el.innerHTML = '<div class="tr-empty">No coaching yet. Feedback your manager leaves on specific calls shows up here.</div>';
@@ -177,7 +179,7 @@ function coachLoadMgr_() {
     failed = true;
     if (currentView !== requestedView || COACH_MODE !== 'team') return;
     var el = document.getElementById('coach-content');
-    if (el) el.innerHTML = '<div class="tr-empty">Could not load: ' + esc((err && err.message) || err) + '</div>';
+    if (el) el.innerHTML = errorStateHtml_('Could not load coaching: ' + ((err && err.message) || err));   // A12
   }
   google.script.run.withSuccessHandler(function (d) { COACH_STATE.dash = d; done(); }).withFailureHandler(onFail).getCoachingDashboard();
   google.script.run.withSuccessHandler(function (d) { COACH_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
@@ -187,7 +189,7 @@ function coachRenderMgr_() {
   var el = document.getElementById('coach-content');
   if (!el) return;
   var dash = COACH_STATE.dash || {};
-  if (dash.error) { el.innerHTML = '<div class="tr-empty">' + esc(dash.error) + '</div>'; return; }
+  if (dash.error) { el.innerHTML = errorStateHtml_(dash.error); return; }   // A12
   var emps = (COACH_STATE.emps && COACH_STATE.emps.employees) || [];
   var counts = dash.counts || { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 };
 
