@@ -40,6 +40,10 @@ function groupQueueRows_(queueRows, groups) {
     return b.transferred - a.transferred;
   });
 }
+function cnNoteCoverage_(noteCount, answeredCalls) {
+  return (answeredCalls && answeredCalls > 0)
+    ? Math.round((noteCount / answeredCalls) * 100) : null;
+}
 // ── end verbatim copies ─────────────────────────────────────────────────────
 
 // google.script.run mock + fixtures for the visual audit. Unknown endpoints
@@ -158,7 +162,7 @@ function groupQueueRows_(queueRows, groups) {
       });
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
-      totals.noteCoverage = Math.round((totals.noteCount / totals.answered) * 100);
+      totals.noteCoverage = cnNoteCoverage_(totals.noteCount, totals.answered);
       var qRows = Object.keys(tq).map(function (q) {
         return { queue: q, transferred: tq[q].transferred, reps: Object.keys(tq[q].reps).length };
       }).sort(function (a, b) { return b.transferred - a.transferred; });

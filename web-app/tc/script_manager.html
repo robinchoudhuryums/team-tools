@@ -1256,7 +1256,10 @@ function covLoad_() {
     .withSuccessHandler(function (data) { if (currentView !== requested || seq !== _covSeq) return; covRender_(data); })
     .withFailureHandler(function (err) {
       if (currentView !== requested || seq !== _covSeq) return;
-      body.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load coverage') + '</div>';
+      // A12/INV-175: `.no-data` is the designed EMPTY card, also used two
+      // lines below for "No coverage in range." — a failed RPC must not look
+      // like a quiet range with nobody scheduled. No outer esc().
+      body.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load coverage');
     })
     .getCoveragePlan(COV_STATE.from, COV_STATE.to);
 }
@@ -1325,8 +1328,8 @@ function covDayRisks_(day, byHour, hours, minStaff) {
 
 function covRender_(data) {
   var body = document.getElementById('cov-body'); if (!body) return;
-  if (!data || data.error) { body.innerHTML = '<div class="no-data">' + esc((data && data.error) || 'No data') + '</div>'; return; }
-  if (!data.days || !data.days.length) { body.innerHTML = '<div class="no-data">No coverage in range.</div>'; return; }
+  if (!data || data.error) { body.innerHTML = errorStateHtml_((data && data.error) || 'No data'); return; }   // A12
+  if (!data.days || !data.days.length) { body.innerHTML = '<div class="no-data">No coverage in range.</div>'; return; }   // genuinely empty — stays quiet
   var minStaff = data.minStaff || 2;
   var good = data.goodStaff || minStaff;   // ≥good = green; minStaff..good-1 = amber; <minStaff = red
   // Display + flag only business hours [start, end) (manager tz) — off-hours and
@@ -1334,6 +1337,17 @@ function covRender_(data) {
   var bizStart = (typeof data.businessStartHour === 'number') ? data.businessStartHour : COV_HOUR_START;
   var bizEnd = (typeof data.businessEndHour === 'number') ? data.businessEndHour : (COV_HOUR_END + 1);
   var hours = []; for (var h = bizStart; h < bizEnd; h++) hours.push(h);
+
+  // F4 (cycle 16): the PTO overlay is best-effort server-side. When it fails,
+  // ptoMap is empty and EVERY rep counts as working — so this grid renders
+  // green on a day half the team is off. Say so loudly: an understaffing
+  // planner that silently reports full staffing is worse than one that
+  // refuses to answer. role="alert" matches the errorStateHtml_ posture.
+  var ptoWarn = data.ptoUnavailable
+    ? '<div class="error-state" role="alert" style="margin-bottom:10px">' + icon('warning', 16) +
+      ' Time-off data could not be read, so this grid shows every rep as working — ' +
+      'approved and pending PTO is NOT reflected. Treat the staffing bands as an upper bound and reload.</div>'
+    : '';
 
   var note = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Times in ' + esc(data.managerTz || '') +
     ' · business hours ' + covFmtHr_(bizStart) + '–' + covFmtHr_(bizEnd) +
@@ -1388,11 +1402,19 @@ function covRender_(data) {
         '<div class="cov-risk-list">' +
         risks.map(function (r) { return '<div class="cov-risk-item">' + r + '</div>'; }).join('') +
         '</div></div>'
-    : '<div class="panel cov-risk" data-tone="sage"><h2 class="card-label">Coverage</h2>' +
-        '<div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) +
-        ' All business hours meet the ' + esc(String(minStaff)) + '-rep minimum in this range.</div></div>';
+    // F4: the all-clear is the one conclusion a missing PTO overlay makes
+    // unsafe — with no PTO applied, "no understaffed hours" is guaranteed
+    // rather than earned. Downgrade it to a neutral, explicitly-conditional
+    // statement instead of a green check.
+    : (data.ptoUnavailable
+        ? '<div class="panel cov-risk" data-tone="warn"><h2 class="card-label">Coverage</h2>' +
+            '<div style="font-size:13px;color:var(--muted)">' + icon('warning', 14) +
+            ' No understaffed hours found — but time-off data is missing, so this is not an all-clear.</div></div>'
+        : '<div class="panel cov-risk" data-tone="sage"><h2 class="card-label">Coverage</h2>' +
+            '<div style="font-size:13px;color:var(--muted)">' + icon('checkCircle', 14) +
+            ' All business hours meet the ' + esc(String(minStaff)) + '-rep minimum in this range.</div></div>');
 
-  body.innerHTML = note + legend + grid + risk;
+  body.innerHTML = ptoWarn + note + legend + grid + risk;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1476,16 +1498,16 @@ function punctLoad_() {
     .withSuccessHandler(function (data) { if (currentView !== requested || seq !== _punctSeq) return; punctRender_(data); })
     .withFailureHandler(function (err) {
       if (currentView !== requested || seq !== _punctSeq) return;
-      body.innerHTML = '<div class="no-data">' + esc((err && err.message) || 'Failed to load punctuality') + '</div>';
+      body.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load punctuality');   // A12
     })
     .getPunctualityReport(PUNCT_STATE.from, PUNCT_STATE.to);
 }
 
 function punctRender_(data) {
   var body = document.getElementById('punct-body'); if (!body) return;
-  if (!data || data.error) { body.innerHTML = '<div class="no-data">' + esc((data && data.error) || 'No data') + '</div>'; return; }
+  if (!data || data.error) { body.innerHTML = errorStateHtml_((data && data.error) || 'No data'); return; }   // A12
   var reps = data.reps || [];
-  if (!reps.length) { body.innerHTML = '<div class="no-data">No clock-ins in this range.</div>'; return; }
+  if (!reps.length) { body.innerHTML = '<div class="no-data">No clock-ins in this range.</div>'; return; }   // genuinely empty — stays quiet
   var totDays = 0, totOn = 0, totLateDays = 0, totLateMin = 0, worstAll = 0;
   reps.forEach(function (r) {
     totDays += r.days; totOn += r.onTime;

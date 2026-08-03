@@ -4082,6 +4082,8 @@ function managerGetShiftStats(date) {
         emailsSent: 0,
         medianCompletionSeconds: null,
         shiftSpan: null,
+        // F1 (cycle 16): the read OUTCOME rides with the numbers — see the catch.
+        notesUnavailable: false,
       };
       const completionTimes = [];
       const noteTimes = [];
@@ -4124,7 +4126,20 @@ function managerGetShiftStats(date) {
           }
         }
       } catch (e) {
+        // F1 (cycle 16) — this catch used to swallow the failure and fall
+        // through, so the rep was pushed below with totalNotes:0, every
+        // flagCount 0 and emailsSent:0, and line ~4159 then computed
+        // noteCoverage from that zero against their REAL CDR answered count.
+        // The manager's end-of-shift Stats table therefore rendered a rep
+        // whose Sheet could not be opened identically to a rep who logged
+        // nothing all shift — a CRIT-toned 0% coverage badge drawn from a
+        // failed read. Exactly the cycle-12 F5 class (INV-129: "a failed
+        // note-count read must be SURFACED, never rendered as 0"), in the one
+        // surface F5 missed because this function counts inline (it needs
+        // flags/emails/median too, not just the count) rather than through
+        // cnCountNotesResult_. Carry the outcome instead.
         console.warn('managerGetShiftStats skipped rep ' + repId + ': ' + e.message);
+        stats.notesUnavailable = true;
       }
       if (completionTimes.length > 0) {
         completionTimes.sort(function (a, b) { return a - b; });
@@ -4156,7 +4171,11 @@ function managerGetShiftStats(date) {
           tttFormatted:  cdr.tttFormatted,
           attFormatted:  cdr.attFormatted,
         } : null;
-        reps[ri].noteCoverage = cnNoteCoverage_(reps[ri].totalNotes, cdr ? cdr.totalAnswered : 0);
+        // F1 (cycle 16): coverage is a ratio over a note count we may not have.
+        // With an unreadable Sheet the numerator is unknown, not zero, so the
+        // ratio is null and the client renders an em dash (INV-129).
+        reps[ri].noteCoverage = reps[ri].notesUnavailable
+          ? null : cnNoteCoverage_(reps[ri].totalNotes, cdr ? cdr.totalAnswered : 0);
       }
     } catch (cdrErr) {
       console.warn('managerGetShiftStats CDR enrichment failed: ' + cdrErr.message);
@@ -4778,7 +4797,10 @@ function getAutomationHealth(opts) {
     // never pay for it. getDeployReadiness opts out explicitly (it only bands
     // store config — the getStorageHealth({scanEmbeds:false}) precedent).
     const scanQueues = !(opts && opts.scanQueues === false);
-    return computeAutomationHealth_({ scanQueues: scanQueues });
+    // F9 (cycle 16) — the Offerings catalog check rides the SAME opt-in gate as
+    // the queue scan, for the same reason: it opens the Intake spreadsheet, and
+    // the badge/digest callers must not pay for a diagnostic.
+    return computeAutomationHealth_({ scanQueues: scanQueues, scanCatalog: scanQueues });
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4909,6 +4931,8 @@ function computeAutomationHealth_(opts) {
     // Default OFF: the three direct callers (badge, digest, deploy-readiness)
     // must not pay for a diagnostic scan. Only getAutomationHealth() opts in.
     const scanQueues = !!(opts && opts.scanQueues);
+    // F9 (cycle 16) — same gate, same reason (this one opens the Intake store).
+    const scanCatalog = !!(opts && opts.scanCatalog);
 
     // ── (e) detector liveness (Turn C) — pure writer↔parser round-trips ──
     const detectors = automationDetectorChecks_();
@@ -5108,6 +5132,9 @@ function computeAutomationHealth_(opts) {
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
       selfTest: selfTest,     // K-A alternative — nightly self-test outcome
+      // F9 (cycle 16) — Offerings catalog shape. null when not scanned (the
+      // badge/digest path), so the client can tell "not checked" from "clean".
+      intakeCatalog: scanCatalog ? getIntakeCatalogHealth_() : null,
       auditScanComplete: scannedAll,
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
@@ -11376,6 +11403,8 @@ function getCoveragePlan(fromDate, toDate) {
     const padStart = addDaysIso_(fromDate, -1);
     const padEnd = addDaysIso_(toDate, 1);
     const ptoMap = {};
+    // F4 (cycle 16): the read OUTCOME, not just the data. See the catch.
+    let ptoUnavailable = false;
     try {
       const trows = getOrCreateTimeOffSheet_().getDataRange().getValues();
       for (let i = 1; i < trows.length; i++) {
@@ -11387,7 +11416,16 @@ function getCoveragePlan(fromDate, toDate) {
         if (!ptoMap[eid]) ptoMap[eid] = {};
         if (ptoMap[eid][dt] !== 'Approved') ptoMap[eid][dt] = (st === 'approved') ? 'Approved' : 'Pending';
       }
-    } catch (e) { /* PTO overlay best-effort — coverage still renders */ }
+    } catch (e) {
+      // F4 (cycle 16) — best-effort is right (a coverage grid with no PTO
+      // overlay still beats no grid at all), but SILENT was not. With ptoMap
+      // empty every rep counts as working, so the hourly strip renders green /
+      // adequate on a day half the team is off: this planner exists to flag
+      // understaffing, and its failure mode was the single most reassuring
+      // answer it can give. Same class as INV-129 — degrade, but say so.
+      ptoUnavailable = true;
+      console.warn('getCoveragePlan: PTO overlay unavailable — ' + e.message);
+    }
 
     // Holidays for the years spanned.
     const holMap = {};
@@ -11459,7 +11497,10 @@ function getCoveragePlan(fromDate, toDate) {
     const bizStart = (CONFIG.COVERAGE_BUSINESS_START_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_START_HOUR : 8;
     const bizEnd = (CONFIG.COVERAGE_BUSINESS_END_HOUR != null) ? CONFIG.COVERAGE_BUSINESS_END_HOUR : 17;
     return { from: fromDate, to: toDate, managerTz: mgrTz, minStaff: minStaff, goodStaff: goodStaff, days: days,
-             businessStartHour: bizStart, businessEndHour: bizEnd, weekdaysOnly: weekdaysOnly };
+             businessStartHour: bizStart, businessEndHour: bizEnd, weekdaysOnly: weekdaysOnly,
+             // F4: additive — a client on an older deploy ignores it and renders
+             // exactly as before; the current client renders a warn banner.
+             ptoUnavailable: ptoUnavailable };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -12210,14 +12251,35 @@ function getDeptRequests() {
       const r = rows[i];
       if (!r[DR.REQ_ID]) continue;
       const createdMs = parseMs(r[DR.CREATED_AT]);
-      const resolvedMs = r[DR.STATUS] === 'resolved' ? parseMs(r[DR.RESOLVED_AT]) : null;
-      const elapsedMin = (resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000)
-                        : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
+      // F8 (cycle 16): NORMALIZE the status once. This line used to compare the
+      // RAW cell (`r[DR.STATUS] === 'resolved'`) while every other line in this
+      // function went through `String(r[DR.STATUS] || 'open')`, so a
+      // whitespace-padded cell made the two disagree: the item's `status` read
+      // 'resolved ' (so it was excluded from `incoming` and from `allOpen`) but
+      // this test was false, so `deptStats` counted it as OPEN. The INV-167 /
+      // INV-183 whitespace class on a third column.
+      const status = String(r[DR.STATUS] || 'open').trim().toLowerCase();
+      const isResolved = (status === 'resolved');
+      const resolvedMs = isResolved ? parseMs(r[DR.RESOLVED_AT]) : null;
+      // F8: a row marked resolved whose ResolvedAt is blank or unparseable has
+      // an UNKNOWN resolution time, not "however long it has been since it was
+      // created". The old fallthrough pushed that ever-growing age into
+      // deptStats.durations, so one such row inflated a department's average
+      // and median resolution time a little more every day. Reachable if a
+      // write fails between markDeptRequestResolved_'s two setValue calls, or
+      // via a manual sheet edit.
+      const elapsedMin =
+        isResolved
+          ? ((resolvedMs && createdMs) ? Math.round((resolvedMs - createdMs) / 60000) : null)
+          : (createdMs ? Math.round((Date.now() - createdMs) / 60000) : null);
       const slaHours = drSlaForToDept_(String(r[DR.TO_DEPT] || ''), slaCfg);   // F(cycle-8 M-5): strictest across a multi-dept send
       const item = {
         requestId: String(r[DR.REQ_ID]), byName: String(r[DR.BY_NAME] || ''),
         toDept: String(r[DR.TO_DEPT] || ''), createdAt: fmtTs(createdMs),
-        status: String(r[DR.STATUS] || 'open'), resolvedAt: fmtTs(resolvedMs),
+        // F8: the NORMALIZED status, so every downstream consumer (the
+        // `incoming` filter, `deptStats`, `allOpen`, the client's chips) reads
+        // the same value a padded/mixed-case cell would otherwise split.
+        status: status, resolvedAt: fmtTs(resolvedMs),
         resolvedBy: String(r[DR.RESOLVED_BY] || ''), label: String(r[DR.LABEL] || ''),
         elapsedMin: elapsedMin,
         slaHours: slaHours, slaStatus: drSlaStatus_(elapsedMin, slaHours),
@@ -14816,7 +14878,16 @@ function getTeamMetrics(dateOrFrom, to) {
     teamTotals.pctAnswered = teamTotals.rung > 0
       ? Math.round((teamTotals.answered / teamTotals.rung) * 1000) / 10 : 0;
     teamTotals.tttFormatted = cdrFmtHms_(teamTotals.tttSeconds);
-    teamTotals.noteCoverage = cnNoteCoverage_(teamTotals.noteCount, teamTotals.answered);
+    // F5 (cycle 16): the PER-REP coverage is already nulled when that rep's
+    // Sheet failed (see the rep block above), but the TEAM total was computed
+    // unconditionally from the understated sum — so the rail row said "partial"
+    // while the hint four lines below it in the client rendered a confident
+    // "Team-wide coverage below 80%" from the same contaminated number. A
+    // coverage figure assembled from an incomplete numerator is not a coverage
+    // figure (INV-129); noteCount still rides so the count itself is visible
+    // beside its `noteCountPartial` warning.
+    teamTotals.noteCoverage = teamTotals.noteCountPartial
+      ? null : cnNoteCoverage_(teamTotals.noteCount, teamTotals.answered);
 
     reps.sort(function (a, b) { return a.repName.localeCompare(b.repName); });
 
@@ -14977,6 +15048,100 @@ function getIntakeOfferings_() {
   const last = sheet.getLastRow();
   _intakeOfferingsCache = last < 2 ? [] : sheet.getRange(2, 1, last - 1, 6).getValues();
   return _intakeOfferingsCache;
+}
+
+/** F9 (cycle 16) — PURE catalog validator over the raw Offerings rows.
+ *
+ *  WHY THIS EXISTS: the PPD engine's correctness depends on an
+ *  operator-maintained spreadsheet, and nothing anywhere checked its shape. The
+ *  F9 fix makes a product with an unreadable weight capacity fail CLOSED (it is
+ *  excluded rather than treated as unlimited), which is the safe direction —
+ *  but on its own it turns a data-entry slip into a chair that silently stops
+ *  being recommended, with no way for the operator to find out. This names the
+ *  offending rows.
+ *
+ *  Checks only what the ENGINE actually reads, and only what is objectively
+ *  wrong — never taste. `severity: 'error'` means the row cannot be recommended
+ *  at all; 'warn' means it still works but is probably not what was intended.
+ *  Row numbers are 1-based SHEET rows (the A2:F read starts at row 2) so the
+ *  operator can jump straight to the cell. PHI-free by construction — the
+ *  Offerings catalog is product data. */
+function intakeCatalogIssues_(rows) {
+  const out = [];
+  (rows || []).forEach(function (r, i) {
+    const sheetRow = i + 2;                       // A2:F — index 0 is sheet row 2
+    const cell = function (n) { return String(r && r[n] == null ? '' : r[n]).trim(); };
+    const hcpcs = cell(1);
+    // A row with no HCPCS is already dropped by the engine (hcpcsNum === 0) and
+    // is almost always a trailing blank row — not worth reporting as an error.
+    if (!hcpcs) return;
+    const cap = cell(2);
+    const seat = cell(3).toLowerCase();
+    if (!cap) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+        detail: 'blank — the product is excluded for every patient with a recorded weight' });
+    } else if (cap.indexOf('-') >= 0) {
+      const parts = cap.split('-');
+      const lo = parseInt(parts[0], 10), hi = parseInt(parts[1], 10);
+      if (!isFinite(lo) || !isFinite(hi)) {
+        out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+          detail: 'unreadable range "' + cap + '" — expected e.g. "300-450"' });
+      } else if (lo > hi) {
+        out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+          detail: 'range "' + cap + '" is inverted (min above max) — it can never match' });
+      }
+    } else if (!isFinite(parseInt(cap, 10))) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'weight capacity',
+        detail: 'non-numeric "' + cap + '" — the product is excluded for every patient with a recorded weight' });
+    } else if (/[‐-―]/.test(cap)) {
+      // An EN/EM dash is not the ASCII '-' the range branch splits on, so
+      // "300–450" silently reads as a flat 300 cap. Stricter than intended
+      // rather than dangerous, hence warn — but it is never deliberate.
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'weight capacity',
+        detail: 'contains a non-ASCII dash — "' + cap + '" reads as a flat cap, not a range' });
+    }
+    // Seat type drives the solid-vs-captain gate. A blank cell is not fatal for
+    // an inherently-solid HCPCS (the engine has its own code list) but for
+    // anything else it means the row can never satisfy either branch.
+    if (!seat) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'seat type',
+        detail: 'blank — only recognised as solid-seat if ' + hcpcs + ' is on the engine\'s inherently-solid list' });
+    } else if (seat.indexOf('s') < 0 && seat.indexOf('c') < 0) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'error', field: 'seat type',
+        detail: '"' + cell(3) + '" contains neither "s" (solid) nor "c" (captain) — the row matches no seat branch' });
+    }
+    // E/F drive the result card's brochure link + device image. Documented as
+    // operator-required in the Operator State Checklist; blank means the agent
+    // gets no image to send the patient.
+    if (!cell(4)) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'pdfLink',
+        detail: 'blank — the HCPCS code renders with no brochure link' });
+    }
+    if (!cell(5)) {
+      out.push({ row: sheetRow, hcpcs: hcpcs, severity: 'warn', field: 'imageUrl',
+        detail: 'blank — the result card renders no device image for the agent to send' });
+    }
+  });
+  return out;
+}
+
+/** Reads the catalog and validates it. Best-effort and SHAPED so an unreachable
+ *  Intake store is distinguishable from a clean catalog (the INV-129 rule — a
+ *  failed read must never render as "all good"). Cheap: the catalog is a few
+ *  dozen rows and already memoized per execution by getIntakeOfferings_. */
+function getIntakeCatalogHealth_() {
+  try {
+    const rows = getIntakeOfferings_();
+    const issues = intakeCatalogIssues_(rows);
+    return {
+      ok: true,
+      totalRows: rows.length,
+      errors: issues.filter(function (x) { return x.severity === 'error'; }),
+      warnings: issues.filter(function (x) { return x.severity === 'warn'; }),
+    };
+  } catch (e) {
+    return { ok: false, error: e.message, totalRows: null, errors: [], warnings: [] };
+  }
 }
 
 function getIntakeSubmissionSheet_(formType) {
@@ -15239,14 +15404,36 @@ function intakeFilterRecommendations_(answers, allProducts) {
       const offersSolid = isKnownSolid || sheetSaysSolid;
       const offersCaptain = seatCode.includes('c') && !isKnownSolid && !sheetSaysSolid;
 
+      // ── Weight capacity (F9, cycle 16 — FAIL CLOSED) ────────────────────
+      // `parseInt('')` is NaN and EVERY comparison against NaN is false, so a
+      // blank / non-numeric / half-written capacity cell used to pass this
+      // filter for ANY patient weight — the engine read it as unlimited
+      // capacity. Measured against the exact branch: '', '   ', 'n/a', '300-'
+      // and '-450' all admitted a 400 lb patient. The Offerings catalog is an
+      // operator-maintained sheet (a new product row with the capacity not yet
+      // filled in is ordinary), so the failure direction mattered: recommending
+      // a chair that cannot carry the patient.
+      //
+      // A capacity we cannot READ is not a capacity we can honour. Excluding
+      // the product matches the engine's own posture 40 lines above, where a
+      // catalog missing K0821 returns NO recommendations rather than silently
+      // dropping the mobile-home constraint. The complaint an agent gets is
+      // "this chair stopped appearing", which points at the catalog; the
+      // alternative complaint is a patient receiving unsuitable equipment.
+      // `getIntakeCatalogIssues_` surfaces the offending rows so the operator
+      // is not left guessing.
       if (patient.weight > 0) {
-        let minCap = 0, maxCap = 999;
-        if (product.weightCapacityStr.includes('-')) {
-          [minCap, maxCap] = product.weightCapacityStr.split('-').map(n => parseInt(n, 10));
+        const capRaw = product.weightCapacityStr.trim();
+        if (capRaw.indexOf('-') >= 0) {
+          const parts = capRaw.split('-');
+          const minCap = parseInt(parts[0], 10);
+          const maxCap = parseInt(parts[1], 10);
+          if (!isFinite(minCap) || !isFinite(maxCap)) return false;   // unreadable range
           if (patient.weight < minCap) return false;
           if (patient.weight > maxCap) return false;
         } else {
-          maxCap = parseInt(product.weightCapacityStr, 10);
+          const maxCap = parseInt(capRaw, 10);
+          if (!isFinite(maxCap)) return false;                        // unreadable cap
           if (patient.weight > maxCap) return false;
         }
       }

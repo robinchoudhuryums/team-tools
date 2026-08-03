@@ -443,6 +443,16 @@ var M_STATE = { myDate: null, teamFrom: null, teamTo: null,
   myMode: 'single', myFrom: '', myTo: '', myData: null,            // §6/#1 My Stats single date | aggregated range + cache
   teamSort: { key: 'pctAnswered', dir: 'desc' }, teamData: null };  // §6 sortable team table + cache
 
+// F7 (cycle 16) — MIRRORS the server's `CDR_QUEUE_UNGROUPED` (Code.js). The
+// "N queue(s) are not mapped to a department yet" hint is found by comparing a
+// group name against this sentinel, so a server-side rename silently stops the
+// hint rendering — and that hint is the ONLY thing telling an operator an
+// unmapped queue exists, which is the whole reason groupQueueRows_ emits the
+// bucket instead of dropping it (INV-181). Cycle-15 F4 pinned this same
+// constant in test/visual/mock.js while the SHIPPING client kept a bare
+// literal; named + pinned + in MIRROR_INDEX now.
+var M_QUEUE_UNGROUPED = 'Ungrouped';
+
 function mTodayIso_() {
   // Derive "today" in the employee's roster timezone (empTz/isoDateTz from
   // script_core.html) — NOT the browser's local time — so offshore reps
@@ -1264,11 +1274,12 @@ function mRenderTeamMetrics_(data) {
       });
       var ung = null;
       for (var gi = 0; gi < data.groupRows.length; gi++) {
-        if (data.groupRows[gi].group === 'Ungrouped') ung = data.groupRows[gi];
+        if (data.groupRows[gi].group === M_QUEUE_UNGROUPED) ung = data.groupRows[gi];
       }
       if (ung) {
         html += '<div class="m-hint">' + icon('warning', 14) + ' ' + esc((ung.queues || []).length) +
-          ' queue(s) are not mapped to a department yet and are grouped as "Ungrouped".</div>';
+          ' queue(s) are not mapped to a department yet and are grouped as "' +
+          esc(M_QUEUE_UNGROUPED) + '".</div>';
       }
     } else if (scope === 'queue') {
       // BY QUEUE — the "separately" half of the ask. Rows are queues, so this

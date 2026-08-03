@@ -177,6 +177,22 @@
   .kb-related-t { flex: 1; min-width: 0; }
   .kb-related-meta { font-size: .74rem; color: var(--muted); flex-shrink: 0; }
   :root[data-compact] .kb-wrap { grid-template-columns: 1fr; height: auto; max-height: none; }
+  /* F2 (cycle 16) — the A2 rule: `:root[data-compact]` is the POP-OUT, not a
+     viewport breakpoint, and the two triggers are independent. This file had
+     ZERO media queries, so the 280px tree track (a FIXED length — it does not
+     yield) held its full width on a phone and the `1fr` reader absorbed the
+     whole shortfall: MEASURED in Chromium at 390px, .kb-side 280px and
+     .kb-main **70px**. Reference is the mid-call lookup tool every rep uses,
+     so its reader being 70px wide is the whole feature failing on mobile.
+     Stacked, the item cap above still applies per column — each keeps its own
+     internal scroll (the V-9 model: the cap must stay on the ITEMS, never move
+     to the container). */
+  @media (max-width: 720px) {
+    .kb-wrap { grid-template-columns: 1fr; min-height: 0; }
+    /* Stacked, a viewport-tall tree would push the reader entirely below the
+       fold; cap the tree and let the reader take the height it needs. */
+    .kb-wrap > .kb-side { max-height: 45vh; }
+  }
   /* - KB slide-over drawer (shell capability) - sits ABOVE the overlay layer
      (z 50) so it stays readable + usable while the email composer or other
      modals are open (the core focusin trap exempts it); survives Call Notes'
@@ -430,13 +446,16 @@ function enterReferenceView(area) {
     .withSuccessHandler(function (res) {
       if (currentView !== requested) return;
       var el = document.getElementById('kb-tree'); if (!el) return;
-      if (!res || res.error) { el.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
+      // A12/INV-175: `.kb-empty` is the designed EMPTY card (used for "No
+      // prior versions yet", "This item is an embedded Drive doc"), so a failed
+      // load rendered as ordinary emptiness. No outer esc() — the helper escapes.
+      if (!res || res.error) { el.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load'); return; }
       KB_STATE.tree = res.items || []; KB_STATE.isManager = !!res.isManager; KB_STATE.isAdmin = !!res.isAdmin;
       kbRenderTree_();
       if (KB_STATE.landing) kbRenderLanding_();
       if (KB_STATE.isManager) { kbLoadUsageBlock_(); kbLoadReviewDueBlock_(); kbLoadContentRequestsBlock_(); }
     })
-    .withFailureHandler(function (err) { if (currentView === requested) { var el = document.getElementById('kb-tree'); if (el) el.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; } })
+    .withFailureHandler(function (err) { if (currentView === requested) { var el = document.getElementById('kb-tree'); if (el) el.innerHTML = errorStateHtml_(err.message || err); } })   // A12
     .getReferenceTree();
 
   var si = document.getElementById('kb-search');
@@ -459,7 +478,7 @@ function kbOpenSynonyms_() {
   google.script.run
     .withSuccessHandler(function (res) {
       var body = document.getElementById('kb-syn-body'); if (!body) return;
-      if (!res || res.error) { body.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed') + '</div>'; return; }
+      if (!res || res.error) { body.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load synonyms'); return; }   // A12
       var lines = (res.synonyms || []).map(function (g) { return g.join(', '); }).join('\n');
       body.innerHTML =
         '<div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">One synonym group per line, terms comma-separated. A search for any term in a group also matches the others.<br>e.g. <code>cpap, pap</code> &nbsp; <code>power chair, pmd, power wheelchair</code></div>' +
@@ -467,7 +486,7 @@ function kbOpenSynonyms_() {
         '<div class="kb-ed-foot"><button class="kb-btn" data-kb-synclose="1">Cancel</button>' +
         '<button class="kb-btn" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="kbSaveSynonyms_(this)">' + icon('check', 13) + ' Save</button></div>';
     })
-    .withFailureHandler(function (e) { var body = document.getElementById('kb-syn-body'); if (body) body.innerHTML = '<div class="kb-empty">' + esc((e && e.message) || 'Failed') + '</div>'; })
+    .withFailureHandler(function (e) { var body = document.getElementById('kb-syn-body'); if (body) body.innerHTML = errorStateHtml_((e && e.message) || 'Failed to load synonyms'); })   // A12
     .kbGetSearchConfig();
 }
 function kbSaveSynonyms_(btn) {
@@ -1004,13 +1023,13 @@ function kbOpenItem_(id, anchor) {
       // response painted item A while the tree highlighted item B, and the
       // feedback bar / bookmark star carried A's id.
       if (KB_STATE.currentId !== id) return;
-      if (!res || res.error) { main.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed') + '</div>'; return; }
+      if (!res || res.error) { main.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load this item'); return; }   // A12
       kbPanelRecordOpen_(res, 'reference');
       kbRenderItem_(res);
       kbLoadRelated_(id);   // #7 — "See also" from co-views
       if (anchor) kbScrollToAnchor_(document.getElementById('kb-main'), anchor);
     })
-    .withFailureHandler(function (err) { if (currentView === requested && KB_STATE.currentId === id) main.innerHTML = '<div class="kb-empty">' + esc(err.message || err) + '</div>'; })
+    .withFailureHandler(function (err) { if (currentView === requested && KB_STATE.currentId === id) main.innerHTML = errorStateHtml_(err.message || err); })   // A12
     .getReferenceItem(id);
 }
 
@@ -1098,7 +1117,7 @@ function kbOpenRevisions_(id) {
   google.script.run
     .withSuccessHandler(function (res) {
       var body = document.getElementById('kb-rev-body'); if (!body) return;
-      if (!res || res.error) { body.innerHTML = '<div class="kb-empty">' + esc((res && res.error) || 'Failed') + '</div>'; return; }
+      if (!res || res.error) { body.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load revisions'); return; }   // A12
       var items = res.items || [];
       if (!items.length) { body.innerHTML = '<div class="kb-empty">No prior versions yet. Edits from now on are captured here.</div>'; return; }
       body.innerHTML = items.map(function (r) {
@@ -1113,7 +1132,7 @@ function kbOpenRevisions_(id) {
         '</div>';
       }).join('');
     })
-    .withFailureHandler(function (err) { var body = document.getElementById('kb-rev-body'); if (body) body.innerHTML = '<div class="kb-empty">' + esc((err && err.message) || 'Failed') + '</div>'; })
+    .withFailureHandler(function (err) { var body = document.getElementById('kb-rev-body'); if (body) body.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load revisions'); })   // A12
     .kbGetRevisions(id);
 }
 
@@ -1925,7 +1944,7 @@ function kbDrawerOpenItem_(id, anchor) {
       // F(L-18): drop a stale out-of-order response — it painted item A while
       // the drawer (and its feedback/bookmark controls) belonged to item B.
       if (KB_DRAWER.itemId !== id) return;
-      if (!res || res.error) { body.innerHTML = '<div class="kbd-empty">' + esc((res && res.error) || 'Failed to load') + '</div>'; return; }
+      if (!res || res.error) { body.innerHTML = errorStateHtml_((res && res.error) || 'Failed to load'); return; }   // A12
       kbPanelRecordOpen_(res);
       var back = '<div class="kbd-reader-bar"><button class="kbd-back" onclick="kbDrawerBack_()">' + icon('chevronLeft', 12) + ' Back</button>' + kbBookmarkBtnHtml_(res, 'kbd-bm') + '</div>';   // #5
       if (res.type === 'embed') {
@@ -1941,7 +1960,7 @@ function kbDrawerOpenItem_(id, anchor) {
       }
     })
     .withFailureHandler(function (err) {
-      if (KB_DRAWER.open) body.innerHTML = '<div class="kbd-empty">' + esc((err && err.message) || 'Failed to load') + '</div>';
+      if (KB_DRAWER.open) body.innerHTML = errorStateHtml_((err && err.message) || 'Failed to load');   // A12
     })
     .getReferenceItem(id);
 }

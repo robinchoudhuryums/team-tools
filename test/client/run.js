@@ -1571,6 +1571,10 @@ const MIRROR_INDEX = [
   // registry and had already drifted from the server fold.
   { pair: 'test/visual mock.js groupQueueRows_/CDR_QUEUE_GROUPS ↔ Code.js (F4)',
     guards: ['F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-for-byte'] },
+  // Cycle-16 F7: cycle-15 F4 pinned this sentinel in the visual FIXTURE and
+  // left the SHIPPING client on a bare literal — the mirror that mattered.
+  { pair: 'client M_QUEUE_UNGROUPED ↔ server CDR_QUEUE_UNGROUPED (INV-181)',
+    guards: ['F7: the client Ungrouped sentinel is named and mirrors the server'] },
   { pair: 'LEAVE_DEDUCTION_CLIENT ↔ getLeaveDeduction_ (INV-72)',
     guards: ['every LEAVE_DEDUCTION_CLIENT entry matches the server deduction',
              'TIME_OFF_TYPES ⊆ LEAVE_DEDUCTION_CLIENT keys'] },
@@ -4648,6 +4652,190 @@ test('F5: a failed note-count read is reported, never rendered as a confident ze
 });
 
 // ---------------------------------------------------------------------------
+// Cycle-16 F1 / F5 — the SAME rule as F5 above, in the two surfaces it had
+// never reached. The F5 pin enumerates four functions that consume
+// cnCountNotesResult_; managerGetShiftStats counts INLINE (it needs flags,
+// emails and the median too, not just a count), so it was invisible to that
+// list and kept swallowing the per-rep read into totalNotes:0 — a CRIT-toned
+// 0% coverage badge on the manager's end-of-shift performance table, drawn
+// from a failed read. getTeamMetrics nulled its PER-REP coverage but computed
+// the TEAM total unconditionally, so the rail said "partial" while the hint
+// below it said "below 80%".
+console.log('\ncycle 16 — F1 / F5 note-outcome fix pins');
+
+test('F1: managerGetShiftStats carries the read outcome instead of reporting zeros', () => {
+  const fn = extractRawFunction('Code.js', 'managerGetShiftStats');
+  assert.ok(/notesUnavailable: false/.test(fn),
+    'the per-rep stats object declares the outcome field');
+  // The catch must SET it — a console.warn alone is what the bug was.
+  const catchIdx = fn.indexOf('catch (e)');
+  assert.ok(catchIdx > 0, 'the per-rep try/catch is still there');
+  const catchBody = fn.slice(catchIdx, fn.indexOf('}', fn.indexOf('{', catchIdx)) + 1);
+  assert.ok(/stats\.notesUnavailable = true/.test(catchBody),
+    'the per-rep read failure must be RECORDED, not only logged:\n  ' + catchBody.trim());
+  // Coverage is a ratio over a count we may not have.
+  assert.ok(/notesUnavailable\s*\?\s*null\s*:\s*cnNoteCoverage_/.test(fn.replace(/\s+/g, ' ')),
+    'noteCoverage is null when the notes read failed, never a percentage of an unknown');
+  // Client: every column derived from that read renders the unavailable cell.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/function cnStatsUnavailCell_\(/.test(cn), 'the shared unavailable cell exists');
+  const tbl = cn.slice(cn.indexOf('function cnMgrRenderStats_'));
+  const body = tbl.slice(0, tbl.indexOf('\nfunction ', 10));
+  // Anchor on the COLUMN-DEFINITION shape (`key: 'x', label:`). A bare
+  // `key: 'x'` also matches the default-sort object in the same function, which
+  // made this assert read the wrong line entirely (it bit on the first run).
+  ['totalNotes', 'action', 'training', 'review', 'emails', 'median'].forEach((key) => {
+    const at = body.indexOf("key: '" + key + "', label:");
+    assert.ok(at > 0, "the '" + key + "' column definition is still there");
+    const cell = body.slice(at, body.indexOf('\n', at));
+    assert.ok(/notesUnavailable/.test(cell),
+      "the '" + key + "' column renders 0 for a rep whose Sheet could not be read:\n  " + cell.trim());
+  });
+});
+
+test('F5: the TEAM coverage total is null when any rep Sheet was unreadable', () => {
+  const fn = extractRawFunction('Code.js', 'getTeamMetrics');
+  assert.ok(/noteCountPartial\s*\?\s*null\s*:\s*cnNoteCoverage_/.test(fn.replace(/\s+/g, ' ')),
+    'teamTotals.noteCoverage must not be computed from a partial note count');
+  // The client's "below 80%" hint is gated on the value being non-null, so the
+  // null is what actually suppresses the judgement — pin both halves.
+  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  assert.ok(/t\.noteCoverage != null && t\.noteCoverage < 80/.test(m),
+    'the team-wide coverage hint only renders for a real (non-null) coverage figure');
+});
+
+// Cycle-16 F4 — the coverage planner's PTO overlay is best-effort by design,
+// but silence was not: with ptoMap empty EVERY rep counts as working, so the
+// grid renders green on a day half the team is off. A planner whose whole
+// purpose is understaffing detection must not fail toward "fully staffed".
+test('F4: a failed PTO overlay is surfaced, never rendered as full staffing', () => {
+  const fn = extractRawFunction('Code.js', 'getCoveragePlan');
+  assert.ok(/ptoUnavailable = true/.test(fn),
+    'the PTO catch records the failure instead of swallowing it');
+  assert.ok(/ptoUnavailable: ptoUnavailable/.test(fn),
+    'the flag reaches the client on the response');
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  const render = mgr.slice(mgr.indexOf('function covRender_'));
+  const body = render.slice(0, render.indexOf('\nfunction ', 10));
+  assert.ok(/data\.ptoUnavailable/.test(body), 'covRender_ reads the flag');
+  assert.ok(/role="alert"/.test(body),
+    'the warning is announced, not just coloured (the errorStateHtml_ posture)');
+  // The all-clear is the ONE conclusion a missing overlay makes unsafe.
+  // Scope the search to the risk TERNARY (between `risks.length` and the
+  // all-clear string) — a `lastIndexOf` over the whole body finds the banner's
+  // own mention of the flag and passes even with the guard deleted, which is
+  // exactly how this assert failed its first bite-check.
+  const riskIdx = body.indexOf('risks.length');
+  const clearIdx = body.indexOf('All business hours meet');
+  assert.ok(riskIdx > 0 && clearIdx > riskIdx, 'the risk ternary and its all-clear branch are still there');
+  assert.ok(body.slice(riskIdx, clearIdx).indexOf('data.ptoUnavailable') >= 0,
+    'the green "all business hours meet the minimum" all-clear is gated on the PTO read having succeeded');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle-16 F9 — the PPD engine's weight filter FAILS CLOSED on catalog data it
+// cannot read, and the operator is told which rows are wrong.
+//
+// `parseInt('')` is NaN and every comparison against NaN is false, so a blank /
+// non-numeric / half-written capacity used to pass the filter for ANY patient
+// weight — the engine read it as unlimited capacity, on a clinical
+// recommendation whose output an agent acts on. The Offerings catalog is an
+// operator-maintained sheet, so a not-yet-filled capacity cell is ordinary.
+console.log('\ncycle 16 — F9 intake catalog fix pins');
+
+// The five shapes reproduced against the exact branch during the audit. Driven
+// through the REAL engine (not a re-implementation) so the pin cannot drift
+// from the code it guards.
+test('F9: an unreadable weight capacity EXCLUDES the product, never admits it', () => {
+  const HEAVY = { '38': '400 lbs' };
+  [['', 'blank'], ['   ', 'whitespace'], ['n/a', 'non-numeric'],
+   ['300-', 'half-written range'], ['-450', 'range with no minimum']].forEach(([cap, why]) => {
+    const cat = [['Std Captain', 'K0823', cap, 'C', 'pdf', 'img']];
+    const r = intakeFilterRecommendations_(HEAVY, cat);
+    assert.strictEqual(r.standard.length + r.complex.length, 0,
+      'a ' + why + ' capacity (' + JSON.stringify(cap) + ') must not be treated as UNLIMITED — ' +
+      'the engine recommended a chair to a 400 lb patient');
+  });
+});
+
+test('F9: well-formed capacities are completely unchanged', () => {
+  const mk = (cap) => [['Std Captain', 'K0823', cap, 'C', 'pdf', 'img']];
+  const hits = (w, cap) => {
+    const r = intakeFilterRecommendations_({ '38': String(w) }, mk(cap));
+    return r.standard.length + r.complex.length;
+  };
+  assert.strictEqual(hits(400, '300'), 0, 'over a flat cap → excluded');
+  assert.strictEqual(hits(400, '450'), 1, 'under a flat cap → recommended');
+  assert.strictEqual(hits(400, '300-450'), 1, 'inside a range → recommended');
+  assert.strictEqual(hits(250, '300-450'), 0, 'below a range minimum → excluded');
+  assert.strictEqual(hits(250, '350'), 1, 'ordinary case → recommended');
+  // A blank patient weight skips the filter entirely — documented behaviour
+  // (the Q39a note: "blank weight → standard logic"), NOT changed by F9.
+  const noWeight = intakeFilterRecommendations_({}, mk(''));
+  assert.strictEqual(noWeight.standard.length, 1,
+    'with no recorded patient weight the capacity filter does not run at all');
+});
+
+// The validator that keeps the fail-closed direction from being silent.
+const intakeCatalogIssues_ = new Function(
+  extractRawFunction('Code.js', 'intakeCatalogIssues_') + '; return intakeCatalogIssues_;')();
+
+test('F9: the catalog validator names the rows the engine cannot recommend', () => {
+  const rows = [
+    ['ok',      'K0823', '350',     'C', 'pdf', 'img'],   // clean
+    ['blank',   'K0824', '',        'S', 'pdf', 'img'],   // error: no capacity
+    ['bad',     'K0825', 'n/a',     'S', 'pdf', 'img'],   // error: non-numeric
+    ['halfrng', 'K0826', '300-',    'S', 'pdf', 'img'],   // error: unreadable range
+    ['inv',     'K0827', '450-300', 'S', 'pdf', 'img'],   // error: inverted range
+    ['seat',    'K0828', '350',     'x', 'pdf', 'img'],   // error: no s/c
+    ['endash',  'K0829', '300–450', 'S', 'pdf', 'img'], // warn: non-ASCII dash
+    ['noimg',   'K0830', '350',     'S', 'pdf', ''],      // warn: no image
+    ['',        '',      '',        '',  '',    ''],      // trailing blank row — ignored
+  ];
+  const issues = intakeCatalogIssues_(rows);
+  const errs = issues.filter((x) => x.severity === 'error');
+  const warns = issues.filter((x) => x.severity === 'warn');
+  const errRows = errs.map((x) => x.row).sort((a, b) => a - b);
+  // Sheet rows: the A2:F read means index 0 is sheet row 2.
+  assert.deepStrictEqual([...new Set(errRows)], [3, 4, 5, 6, 7],
+    'every unrecommendable row is named by its SHEET row (A2:F ⇒ index 0 is row 2)');
+  assert.ok(!issues.some((x) => x.hcpcs === 'K0823'), 'a clean row raises nothing');
+  assert.ok(!issues.some((x) => x.row === 10), 'a trailing blank row is not an error');
+  assert.ok(warns.some((x) => x.hcpcs === 'K0829' && /dash/.test(x.detail)),
+    'an EN dash reads as a flat cap, not a range — worth a warning');
+  assert.ok(warns.some((x) => x.hcpcs === 'K0830' && x.field === 'imageUrl'),
+    'a missing device image is a warning (the agent has nothing to send the patient)');
+  // A clean catalog must produce NOTHING, or the card can never reach green —
+  // the "what does this read on a healthy system" rule.
+  assert.deepStrictEqual(
+    intakeCatalogIssues_([['ok', 'K0823', '350', 'C', 'pdf', 'img']]), [],
+    'a well-formed catalog raises no issues at all');
+});
+
+test('F9: the catalog scan is OPT-IN and a failed read is distinguishable from clean', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const compute = extractRawFunction('Code.js', 'computeAutomationHealth_');
+  assert.ok(/const scanCatalog = !!\(opts && opts\.scanCatalog\)/.test(compute),
+    'defaults OFF — the 10-min-per-manager badge and the daily digest must not open the Intake store');
+  assert.ok(/intakeCatalog: scanCatalog \? getIntakeCatalogHealth_\(\) : null/.test(compute),
+    'null when unscanned, so the client can tell "not checked" from "clean"');
+  const gate = extractRawFunction('Code.js', 'getAutomationHealth');
+  assert.ok(/scanCatalog: scanQueues/.test(gate), 'only the panel opts in');
+  // A failed READ must not render as a clean catalog (INV-129).
+  const health = extractRawFunction('Code.js', 'getIntakeCatalogHealth_');
+  assert.ok(/ok: true/.test(health) && /ok: false/.test(health),
+    'the result carries the read OUTCOME, not just the issue lists');
+  // Client: escaping + the three distinct states.
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const fn = cn.slice(cn.indexOf('function cnIntakeCatalogHtml_('));
+  const body = fn.slice(0, fn.indexOf('\nfunction ', 10));
+  assert.ok(/if \(!cat\.ok\)/.test(body), 'an unreadable catalog says so instead of reading as clean');
+  assert.ok(/checkCircle/.test(body), 'a clean catalog reaches GREEN — a card that never can is worse than none');
+  assert.ok(!/\+ *(cat\.error|x\.detail|x\.hcpcs)\b/.test(body.replace(/esc\([^)]*\)/g, '')),
+    'every server-sourced string is esc()d before innerHTML');
+});
+
+// ---------------------------------------------------------------------------
 // F9 / F7 — the access-gate coverage net.
 //
 // INV-02/31/136 are the project's most load-bearing invariants, and the ONLY
@@ -5095,23 +5283,6 @@ test('A3: the calcHours_ callers route null to their incomplete-day branch', () 
 // A12: a LOAD FAILURE must render errorStateHtml_ (warn card + role=alert), not
 // the designed empty-state class — batch J's decision, previously applied only
 // in CN + Clock. Scan the three partials that violated it.
-test('A12: load failures never render into an empty-state container', () => {
-  [['metrics/script_metrics.html', ['m-empty', 'no-data']],
-   ['train/script_training.html', ['tr-empty']],
-   ['train/script_empdocs.html', ['tr-empty']]].forEach(([file, emptyCls]) => {
-    const src = fs.readFileSync(path.join(__dirname, '../../web-app', file), 'utf8');
-    src.split('\n').forEach((line, i) => {
-      if (!/\.error|err\.message|err && err\.message|e && e\.message|Failed to load|Could not load/.test(line)) return;
-      emptyCls.forEach((cls) => {
-        assert.ok(line.indexOf('class="' + cls) < 0,
-          file + ':' + (i + 1) + ' renders a failure into .' + cls +
-          ' (the empty-state card) — use errorStateHtml_:\n  ' + line.trim());
-      });
-    });
-    assert.ok(src.indexOf('errorStateHtml_') > 0, file + ' uses errorStateHtml_');
-  });
-});
-
 // A1: the six click-only controls are <button>s now. A bare span/div with an
 // inline onclick is unreachable by keyboard and has no role for assistive tech.
 // Cycle-13 batch 5: GENERALIZED from a hand-listed five files to every scanned
@@ -5120,6 +5291,142 @@ test('A12: load failures never render into an empty-state container', () => {
 // cycle-11's M-4 retired — a new tool's partial could otherwise ship outside
 // the net with CI green.
 const A11Y_SCAN_PARTIALS = PARSE_GUARD_PARTIALS.concat(['modals.html']);
+// NOTE: declared HERE rather than beside A1 below because A12 (immediately
+// following) is now the FIRST consumer — a `const` used before its
+// declaration is a TDZ error, not a hoist.
+
+// Cycle-16 F10: GENERALIZED from three hand-listed files to the RULE, the same
+// promotion A1/A11 got in cycle-13 batch 5 and A2 got earlier this cycle. The
+// old version scanned `metrics` + `training` + `empdocs` with a hand-copied
+// list of THEIR empty-state classes, so 28 violations sat behind it across SIX
+// other partials with CI green — including `train/script_coaching.html`, which
+// uses `.tr-empty`, a class the tripwire already knew, in a file it did not
+// scan. Derive both the FILE set and the CLASS set; enumerate neither.
+//
+// The class set is derived from the markup itself: any class whose name ends in
+// `-empty` or is `no-data` is an empty-state container by this codebase's own
+// naming convention (kb-empty, kbd-empty, dr-empty, dash-empty, tr-empty,
+// m-empty, cn-audit-hist-empty, cn-stack-empty, …). That means a NEW tool
+// inventing `foo-empty` is covered the day it ships.
+test('A12: load failures never render into an empty-state container', () => {
+  const EMPTY_CLASS = /class="([a-z0-9_ -]*(?:-empty|no-data)[a-z0-9_ -]*)"/g;
+  // A line that MENTIONS a failure. Kept broad on purpose — a false positive
+  // here costs one `errorStateHtml_` call; a false negative is the 28.
+  const FAILURE_LINE = /\.error|err\.message|err && err\.message|e && e\.message|Failed to load|Could not load|errorMsg/;
+  const violations = [];
+  let scanned = 0;
+  A11Y_SCAN_PARTIALS.forEach((rel) => {
+    const p = path.join(__dirname, '../../web-app', rel);
+    if (!fs.existsSync(p)) return;
+    scanned++;
+    const src = fs.readFileSync(p, 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (!FAILURE_LINE.test(line)) return;
+      if (line.indexOf('errorStateHtml_') >= 0) return;   // already correct
+      EMPTY_CLASS.lastIndex = 0;
+      let m;
+      while ((m = EMPTY_CLASS.exec(line))) {
+        violations.push(rel + ':' + (i + 1) + '  [.' + m[1] + ']  ' + line.trim().slice(0, 110));
+      }
+    });
+  });
+  assert.ok(scanned >= 9, 'the scan covers the tool partials (got ' + scanned + ')');
+  assert.deepStrictEqual(violations, [],
+    'these render a LOAD FAILURE into an empty-state container, so a failed fetch ' +
+    'reads as "there is nothing here" — use errorStateHtml_ (and DROP the outer ' +
+    'esc(), which double-escapes since the helper escapes internally):\n  ' +
+    violations.join('\n  '));
+});
+
+// The companion half: errorStateHtml_ escapes internally (INV-175), so wrapping
+// its argument in esc() renders `&amp;lt;` to the user. Cheap to get wrong when
+// converting a call site FROM the escaped empty-state form — which is exactly
+// what the F10 sweep did 28 times.
+test('A12: no call site double-escapes errorStateHtml_', () => {
+  const bad = [];
+  A11Y_SCAN_PARTIALS.concat(['script_core.html']).forEach((rel) => {
+    const p = path.join(__dirname, '../../web-app', rel);
+    if (!fs.existsSync(p)) return;
+    fs.readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
+      if (/errorStateHtml_\(\s*esc\(/.test(line)) bad.push(rel + ':' + (i + 1) + '  ' + line.trim().slice(0, 100));
+    });
+  });
+  assert.deepStrictEqual(bad, [],
+    'errorStateHtml_ escapes its own message — an outer esc() double-escapes:\n  ' + bad.join('\n  '));
+});
+
+// ── Cycle-16 Batch 3 fix pins (F6 / F7 / F8) ────────────────────────────────
+
+// F6: uiPrompt is the ONE dialog in the app that validates, and its input had
+// no accessible name and its error slot no live region — so a rejected value
+// was announced as nothing at all and the dialog read as simply refusing to
+// close. uiConfirm needs neither (no field, no validation), which is why this
+// pin is uiPrompt-only rather than a rule over both.
+test('F6: the uiPrompt input is named and its validator error is announced', () => {
+  const fn = extractRawFunction('script_core.html', 'uiPrompt');
+  assert.ok(/aria-labelledby="' \+ dlgTitleId/.test(fn),
+    'the input is NAMED by the dialog title (a placeholder is not a name)');
+  assert.ok(/aria-describedby="' \+ describedBy/.test(fn),
+    'the input is described by the message + the error slot');
+  assert.ok(/class="ui-dialog-err" id='[^']*\+ dlgErrId \+ '" role="alert"/.test(fn)
+    || /ui-dialog-err[\s\S]{0,120}?role="alert"[\s\S]{0,40}?display:none/.test(fn),
+    'the inline error slot is a live region, so a rejection is spoken');
+  // The describedBy must REACH the error id even when opts.message is absent —
+  // the message half is conditional, the error half never is.
+  assert.ok(/const describedBy = \(opts\.message \? dlgMsgId \+ ' ' : ''\) \+ dlgErrId/.test(fn),
+    'the error id is always in aria-describedby; only the message half is conditional');
+});
+
+// F7: the client found the unmapped-queue bucket by comparing against a bare
+// 'Ungrouped' literal. That hint is the ONLY signal an operator gets that a
+// queue is unmapped (INV-181) — a server-side rename would silently stop it
+// rendering while the row itself still appeared, i.e. the gap would look
+// closed. Cycle-15 F4 pinned this very constant in the visual FIXTURE while
+// the shipping client kept the literal.
+test('F7: the client Ungrouped sentinel is named and mirrors the server', () => {
+  const client = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
+  const m = /var M_QUEUE_UNGROUPED = '([^']+)'/.exec(client);
+  assert.ok(m, 'the client declares a named sentinel');
+  const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
+  const server = /(?:var|const) CDR_QUEUE_UNGROUPED = '([^']+)'/.exec(code);
+  assert.ok(server, 'the server declares CDR_QUEUE_UNGROUPED');
+  assert.strictEqual(m[1], server[1],
+    'client M_QUEUE_UNGROUPED must equal server CDR_QUEUE_UNGROUPED');
+  // And the render must USE it — a named constant beside a surviving literal
+  // is the same drift with extra steps.
+  const render = extractRawFunction('metrics/script_metrics.html', 'mRenderTeamMetrics_');
+  assert.ok(/=== M_QUEUE_UNGROUPED/.test(render), 'the group lookup compares against the constant');
+  assert.ok(!/'Ungrouped'/.test(render), 'no bare Ungrouped literal survives in the render');
+});
+
+// F8: this function read DR.STATUS raw on ONE line and normalized on every
+// other, so a whitespace-padded cell split the two — the INV-167/INV-183
+// whitespace class on a third column. Same fix shape: normalize ONCE, feed
+// every consumer the normalized value.
+test('F8: getDeptRequests normalizes DR.STATUS once and never re-reads it raw', () => {
+  // Strip comments FIRST. This function's fix comment quotes the raw read it
+  // removed, so a naive scan trips on its own rationale — the same trap the
+  // CDR health-card pin documents. (Bite-checked: it failed 3 !== 1 until the
+  // strip was added, and still fails 2 !== 1 if the raw comparison returns.)
+  const fn = extractRawFunction('Code.js', 'getDeptRequests')
+    .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(/const status = String\(r\[DR\.STATUS\] \|\| 'open'\)\.trim\(\)\.toLowerCase\(\)/.test(fn),
+    'the status is normalized once into a local');
+  assert.ok(/status: status,/.test(fn), 'the item ships the NORMALIZED status');
+  // The raw comparison this fix removed must not come back in any form.
+  const raw = fn.match(/r\[DR\.STATUS\]/g) || [];
+  assert.strictEqual(raw.length, 1,
+    'DR.STATUS is read exactly once (the normalize line); got ' + raw.length + ' reads');
+  // The second half: a row marked resolved with a blank/unparseable ResolvedAt
+  // has an UNKNOWN duration. The old code fell through to "now − created",
+  // pushing an ever-growing age into deptStats.durations every single day.
+  assert.ok(/isResolved\s*\?\s*\(\(resolvedMs && createdMs\)/.test(fn.replace(/\s*\n\s*/g, ' ')),
+    'a resolved row with no usable ResolvedAt yields null, not a growing age');
+  assert.ok(!/\(resolvedMs && createdMs\) \? Math\.round\(\(resolvedMs - createdMs\) \/ 60000\)\s*:\s*\(createdMs/
+    .test(fn.replace(/\s*\n\s*/g, ' ')),
+    'the old unconditional fallthrough is gone');
+});
+
 test('A1: no interactive element is a bare span/div with an inline onclick', () => {
   const offenders = [];
   A11Y_SCAN_PARTIALS.forEach((f) => {
@@ -5575,16 +5882,84 @@ test('A13: section-heading classes render as <h2>, not div/span', () => {
 // A2: `:root[data-compact]` is the POP-OUT, not a viewport breakpoint. Any grid
 // that stacks in compact needs a real media query too, or it never stacks on a
 // phone.
-test('A2: compact-mode grid overrides have a matching viewport breakpoint', () => {
-  const m = fs.readFileSync(path.join(__dirname, '../../web-app/metrics/script_metrics.html'), 'utf8');
-  assert.ok(/@media \(max-width: 720px\)[\s\S]{0,200}?\.m-layout \{ grid-template-columns: 1fr;/.test(m),
-    '.m-layout stacks at a narrow VIEWPORT, not only in the pop-out');
-  const s = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
-  assert.ok(/@media \(max-width: 540px\)[\s\S]{0,700}?\.telemetry \{ grid-template-columns: repeat\(2, 1fr\); \}/.test(s),
-    '.telemetry goes 2x2 at a narrow viewport');
-  const c = fs.readFileSync(path.join(__dirname, '../../web-app/train/script_coaching.html'), 'utf8');
-  assert.ok(/@media \(max-width: 540px\) \{ \.coach-kpis \{ grid-template-columns:repeat\(2, 1fr\); \} \}/.test(c),
-    '.coach-kpis goes 2x2 at a narrow viewport');
+//
+// Cycle-16 F3: GENERALIZED from three hand-listed fixes to the RULE. The old
+// version asserted that cycle-13's three specific fixes (.m-layout, .telemetry,
+// .coach-kpis) were still in place — so a FOURTH instance sailed past with CI
+// green, and four had accumulated: .kb-wrap (whose file had zero media queries
+// at all — the Reference reader measured 70px at 390px), .cnv-trio (114/104/94
+// on the app's most-used form), .cnv-row and .intk-row. This is the same
+// promotion A1/A11 got in cycle-13 batch 5, and the reason is stated seven
+// lines below in the A1 comment: a hand-copied list is the class cycle-11's
+// M-4 retired. Derive the set; never enumerate it.
+//
+// Rule: for every selector that `:root[data-compact]` re-columns, the SAME
+// selector must also appear inside some @media block with a
+// grid-template-columns declaration. Direction is deliberately not checked —
+// .rail-flags legitimately goes 2-up → 4-up in the pop-out (denser icon rail),
+// which is the inverse of stacking and not a defect — so it is allowlisted
+// WITH that reason rather than silently skipped.
+const A2_INVERSE_OK = {
+  // selector → why a viewport breakpoint is not required
+  'rail-flags': 'compact widens 2-up → 4-up (icon-only rail); the inverse of stacking',
+};
+// A grid whose BASE track function is intrinsically responsive (auto-fill /
+// auto-fit / min() / clamp()) already reflows with the viewport — it needs no
+// breakpoint, and adding one would be noise. `.m-kpi-grid` is the live example:
+// `repeat(auto-fill, minmax(140px, 1fr))` drops to 2 columns at 390px on its
+// own, and its compact override exists only to PIN 3 columns in the pop-out.
+// This is a property of the rule, not a per-selector exception, so it belongs
+// here rather than in the allowlist above.
+const A2_INTRINSIC = /auto-fill|auto-fit|\bmin\(|\bclamp\(/;
+test('A2: EVERY compact-mode grid override has a matching viewport breakpoint', () => {
+  // Strip CSS comments so a commented-out rule can neither create nor satisfy
+  // an obligation.
+  const decomment = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '');
+  const gaps = [];
+  let checked = 0;
+  A11Y_SCAN_PARTIALS.concat(['styles.html']).forEach((rel) => {
+    const p = path.join(__dirname, '../../web-app', rel);
+    if (!fs.existsSync(p)) return;
+    const src = decomment(fs.readFileSync(p, 'utf8'));
+    // Selectors re-columned under :root[data-compact].
+    const compactSels = new Set();
+    const re = /:root\[data-compact\][^{]*?\.([a-zA-Z0-9_-]+)[^{]*\{[^}]*grid-template-columns/g;
+    let m;
+    while ((m = re.exec(src))) compactSels.add(m[1]);
+    if (!compactSels.size) return;
+    // Every @media BLOCK in the file, brace-matched (a line/indent-based scan
+    // misses both single-line and deeply nested blocks — the false-negative
+    // that let this rule look satisfied).
+    const mediaBodies = [];
+    let idx = 0;
+    while ((idx = src.indexOf('@media', idx)) >= 0) {
+      const open = src.indexOf('{', idx);
+      if (open < 0) break;
+      let depth = 0, end = open;
+      for (let i = open; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+      }
+      mediaBodies.push(src.slice(open, end));
+      idx = end > idx ? end : idx + 6;
+    }
+    const media = mediaBodies.join('\n');
+    compactSels.forEach((sel) => {
+      if (A2_INVERSE_OK[sel]) return;
+      // The BASE declaration (outside any @media / :root[data-compact] rule).
+      const baseM = new RegExp(
+        '(?:^|[},])\\s*\\.' + sel + '\\b[^{}]*\\{([^}]*)\\}', 'm').exec(src);
+      if (baseM && A2_INTRINSIC.test(baseM[1])) return;   // already reflows
+      checked++;
+      const covered = new RegExp('\\.' + sel + '\\b[^{}]*\\{[^}]*grid-template-columns').test(media);
+      if (!covered) gaps.push(rel + ': .' + sel);
+    });
+  });
+  assert.ok(checked >= 8, 'the scan found the compact grid overrides (got ' + checked + ')');
+  assert.deepStrictEqual(gaps, [],
+    'these grids re-column in the POP-OUT but never at a narrow VIEWPORT, so they ' +
+    'keep their desktop tracks on a phone:\n  ' + gaps.join('\n  ') +
+    '\nAdd a @media breakpoint, or allowlist in A2_INVERSE_OK WITH a reason.');
 });
 
 // ---------------------------------------------------------------------------
@@ -5877,11 +6252,27 @@ test('F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-
   const code = fs.readFileSync(path.join(__dirname, '../../web-app/Code.js'), 'utf8');
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
 
-  const srvFn = code.match(/function groupQueueRows_\(queueRows, groups\) \{[\s\S]*?\n\}/);
-  const mockFn = mock.match(/function groupQueueRows_\(queueRows, groups\) \{[\s\S]*?\n\}/);
-  assert.ok(srvFn && mockFn, 'both copies are present');
-  assert.strictEqual(mockFn[0], srvFn[0],
-    'test/visual/mock.js groupQueueRows_ has drifted from Code.js — copy it verbatim');
+  // Cycle-16 F10 batch: DERIVE the copied set from the fixture's own
+  // DO-NOT-EDIT region instead of naming groupQueueRows_. A hand-listed pin
+  // covers the copy that existed when it was written and nothing after — the
+  // same shape as A2/A12, and `cnNoteCoverage_` was added to this region in
+  // the very next cycle. Every function declared between the banners must be
+  // byte-identical to Code.js.
+  const region = mock.slice(
+    mock.indexOf('VERBATIM copies from web-app/Code.js'),
+    mock.indexOf('── end verbatim copies'));
+  assert.ok(region.length > 0, 'the verbatim region banners are still present');
+  const copied = [...region.matchAll(/^function ([A-Za-z0-9_]+)\(/gm)].map((m) => m[1]);
+  assert.ok(copied.length >= 2,
+    'the verbatim region should hold the copied fns (found: ' + copied.join(', ') + ')');
+  copied.forEach((name) => {
+    const re = new RegExp('^function ' + name + '\\([^)]*\\) \\{[\\s\\S]*?\\n\\}', 'm');
+    const srvFn = code.match(re);
+    const mockFn = region.match(re);
+    assert.ok(srvFn, name + ' is in the fixture\'s verbatim region but not in Code.js');
+    assert.strictEqual(mockFn[0], srvFn[0],
+      'test/visual/mock.js ' + name + ' has DRIFTED from Code.js — copy it verbatim, never paraphrase it');
+  });
 
   // The Ungrouped sentinel the fold compares against.
   const srvUng = code.match(/const CDR_QUEUE_UNGROUPED = '([^']+)'/)[1];
@@ -5896,9 +6287,13 @@ test('F4: the visual fixture mirrors groupQueueRows_ and the CONFIG groups byte-
   assert.strictEqual(mockG, srvG,
     'the fixture group mapping has drifted from the CONFIG seed');
 
-  // …and the fixture must actually CALL it rather than keep a private fold.
+  // …and the fixture must actually CALL each copy rather than keep a private
+  // paraphrase alongside it (the drift this whole pin exists to prevent).
   assert.ok(/groupRows: groupQueueRows_\(/.test(mock),
     'the fixture calls the shared fold instead of reimplementing it');
+  assert.ok(/noteCoverage = cnNoteCoverage_\(/.test(mock),
+    'the fixture calls cnNoteCoverage_ instead of inlining the percentage — the ' +
+    'server returns NULL when answered is 0, an inline Math.round returns NaN');
 });
 
 // ─── F1: a declared-but-unread CONFIG key is a defect ────────────────────────

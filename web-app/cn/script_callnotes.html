@@ -127,6 +127,22 @@
   :root[data-compact] .cnv-trio { grid-template-columns: 1fr 1fr; gap: 8px; }
   :root[data-compact] .cnv-doc-frame { padding: 10px 10px 6px; }
   :root[data-compact] .cnv-row { grid-template-columns: 84px 1fr; padding: 5px 0; }
+  /* F3 (cycle 16) — the A2 rule (compact is the POP-OUT, not a breakpoint).
+     Both grids above had a compact override and NO viewport breakpoint, so on
+     a phone they kept their desktop tracks: MEASURED at 390px the trio was
+     114 / 104 / 94px — the callback number wrapped to two lines and the
+     relationship placeholder truncated — and .cnv-row held a 130px fixed label
+     column. This is the app's most-used form, on the rep-facing tab. */
+  @media (max-width: 720px) {
+    .cnv-trio { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .cnv-row { grid-template-columns: 96px 1fr; }
+    .cnv-row.full { grid-template-columns: 96px 1fr; }
+  }
+  @media (max-width: 480px) {
+    /* Below ~480px even 2-up leaves the phone number wrapping — stack. */
+    .cnv-trio { grid-template-columns: 1fr; gap: 6px; }
+    .cnv-row, .cnv-row.full { grid-template-columns: 1fr; gap: 2px; }
+  }
   /* below-doc copy hint sits just under the frame */
   .below-doc {
     font-family: var(--mono); font-size: 9px; font-weight: 500;
@@ -6820,14 +6836,19 @@ function cnStatsSortReps_(reps, sort) {
   var key = sort.key, dir = (sort.dir === 'asc') ? 1 : -1;
   var get = function (r) {
     var fc = r.flagCounts || {};
+    // F1 (cycle 16): a rep whose Sheet failed to read has no value for any
+    // note-derived column — sort them with the other unknowns (-1, the
+    // convention already used for median/pct/coverage below) rather than
+    // interleaving them with reps who genuinely logged zero.
+    var unk = !!r.notesUnavailable;
     switch (key) {
       case 'repName': return String(r.repName || '').toLowerCase();
-      case 'totalNotes': return r.totalNotes || 0;
-      case 'action': return fc.action || 0;
-      case 'training': return fc.training || 0;
-      case 'review': return fc.review || 0;
-      case 'emails': return r.emailsSent || 0;
-      case 'median': return (r.medianCompletionSeconds == null ? -1 : r.medianCompletionSeconds);
+      case 'totalNotes': return unk ? -1 : (r.totalNotes || 0);
+      case 'action': return unk ? -1 : (fc.action || 0);
+      case 'training': return unk ? -1 : (fc.training || 0);
+      case 'review': return unk ? -1 : (fc.review || 0);
+      case 'emails': return unk ? -1 : (r.emailsSent || 0);
+      case 'median': return (unk || r.medianCompletionSeconds == null ? -1 : r.medianCompletionSeconds);
       case 'pct': return (r.cdr && r.cdr.pctAnswered != null) ? r.cdr.pctAnswered : -1;
       case 'coverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
       default: return 0;
@@ -6842,6 +6863,13 @@ function cnStatsSort_(key) {
   CN_STATE.statsSort = s;
   var body = document.getElementById('cn-mgr-stats-body');
   if (body && CN_STATE.statsData) cnMgrRenderStats_(body, CN_STATE.statsData);
+}
+
+/** F1 (cycle 16) — the "this rep's Sheet could not be read" cell. One helper so
+ *  every column derived from that read renders the same em dash + reason
+ *  instead of a zero that reads as "logged nothing". */
+function cnStatsUnavailCell_() {
+  return '<span style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>';
 }
 
 // §7b/#3 — scannable table via the SHARED mtRenderTable_ component (also drives
@@ -6865,12 +6893,17 @@ function cnMgrRenderStats_(host, res) {
       onSort: 'cnStatsSort_',
       columns: [
         { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) { return '<a class="cn-stats-name-link" href="#" data-stats-rep-id="' + esc(r.repId) + '" onclick="event.preventDefault(); cnStatsDrillDown_(this.dataset.statsRepId)">' + esc(r.repName) + '</a>'; } },
-        { key: 'totalNotes', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return esc(r.totalNotes); } },
-        { key: 'action', label: 'Action', numeric: true, sortable: true, cell: function (r) { var fc = r.flagCounts || {}; return esc(fc.action || 0) + ((r.resolvedCount && fc.action) ? ' <span style="color:var(--muted);font-size:.85em">(' + esc(r.resolvedCount) + ' res)</span>' : ''); } },
-        { key: 'training', label: 'Training', numeric: true, sortable: true, cell: function (r) { return esc((r.flagCounts || {}).training || 0); } },
-        { key: 'review', label: 'Review', numeric: true, sortable: true, cell: function (r) { return esc((r.flagCounts || {}).review || 0); } },
-        { key: 'emails', label: 'Emails', numeric: true, sortable: true, cell: function (r) { return esc(r.emailsSent || 0); } },
-        { key: 'median', label: 'Median', numeric: true, sortable: true, cell: function (r) { return esc(cnStatsFmtDur_(r.medianCompletionSeconds)); } },
+        // F1 (cycle 16): a rep whose notes Sheet could not be read shows "—",
+        // not "0" — a zero here reads as a rep who logged nothing all shift.
+        // Same treatment as the Metrics team table's Notes column (F5).
+        { key: 'totalNotes', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return r.notesUnavailable ? '<span style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>' : esc(r.totalNotes); } },
+        // F1: every column below is derived from the SAME per-rep Sheet read, so
+        // when that read failed they are all unknown rather than zero.
+        { key: 'action', label: 'Action', numeric: true, sortable: true, cell: function (r) { if (r.notesUnavailable) return cnStatsUnavailCell_(); var fc = r.flagCounts || {}; return esc(fc.action || 0) + ((r.resolvedCount && fc.action) ? ' <span style="color:var(--muted);font-size:.85em">(' + esc(r.resolvedCount) + ' res)</span>' : ''); } },
+        { key: 'training', label: 'Training', numeric: true, sortable: true, cell: function (r) { return r.notesUnavailable ? cnStatsUnavailCell_() : esc((r.flagCounts || {}).training || 0); } },
+        { key: 'review', label: 'Review', numeric: true, sortable: true, cell: function (r) { return r.notesUnavailable ? cnStatsUnavailCell_() : esc((r.flagCounts || {}).review || 0); } },
+        { key: 'emails', label: 'Emails', numeric: true, sortable: true, cell: function (r) { return r.notesUnavailable ? cnStatsUnavailCell_() : esc(r.emailsSent || 0); } },
+        { key: 'median', label: 'Median', numeric: true, sortable: true, cell: function (r) { return r.notesUnavailable ? cnStatsUnavailCell_() : esc(cnStatsFmtDur_(r.medianCompletionSeconds)); } },
         { key: 'pct', label: '% Ans', numeric: true, sortable: true, cell: function (r) { var p = r.cdr ? r.cdr.pctAnswered : null; return (p == null) ? '<span style="color:var(--muted)">—</span>' : '<span class="' + pctCls(p) + '">' + esc(p) + '%</span>'; } },
         { key: 'coverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return (r.noteCoverage != null) ? covBadge(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
       ],
@@ -7651,12 +7684,12 @@ function enterCallNotesAdminView(area) {
   google.script.run
     .withSuccessHandler(function (cfg) {
       if (currentView !== 'callNotesAdmin') return;
-      if (cfg.error) { area.innerHTML = '<div class="no-data">' + esc(cfg.error) + '</div>'; return; }
+      if (cfg.error) { area.innerHTML = errorStateHtml_(cfg.error); return; }   // A12/INV-175
       cnRenderAdminBody_(cfg);
     })
     .withFailureHandler(function (err) {
       if (currentView !== 'callNotesAdmin') return;
-      area.innerHTML = '<div class="no-data">' + esc(err.message || 'Failed to load config') + '</div>';
+      area.innerHTML = errorStateHtml_(err.message || 'Failed to load config');   // A12/INV-175
     })
     .getAdminConfig();
   // Round 2 · 8h — load KPI strip + tag taxonomy into the augment slot
@@ -8353,7 +8386,10 @@ function cnToggleAuditHistory_(btn, noteId) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
-      if (!res || res.error) { hist.innerHTML = '<div class="cn-audit-hist-empty">' + esc((res && res.error) || 'Could not load history') + '</div>'; return; }
+      // A12: `.cn-audit-hist-empty` is the designed empty card, used one line
+      // below for "No history found in the scan window." — a failed lookup must
+      // not read as a note with no audit trail. No outer esc().
+      if (!res || res.error) { hist.innerHTML = errorStateHtml_((res && res.error) || 'Could not load history'); return; }
       var hrows = res.rows || [];
       if (hrows.length === 0) { hist.innerHTML = '<div class="cn-audit-hist-empty">No history found in the scan window.</div>'; return; }
       hist.innerHTML = hrows.map(function (h) {
@@ -8367,7 +8403,7 @@ function cnToggleAuditHistory_(btn, noteId) {
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
-      hist.innerHTML = '<div class="cn-audit-hist-empty">Failed: ' + esc(err.message || String(err)) + '</div>';
+      hist.innerHTML = errorStateHtml_('Could not load history: ' + (err.message || String(err)));   // A12
     })
     .getCallNoteAuditHistory(noteId);
 }
@@ -8980,8 +9016,53 @@ function cnRenderHealthPanel_(res) {
     secLabel('Automation last seen') + runsHtml +
     secLabel('Digest heartbeats') + (digestsHtml || '<div style="font-size:12px;color:var(--muted)">No digest data (server pre-dates heartbeats).</div>') +
     (detHtml ? secLabel('Detector liveness') + detHtml : '') +
+    (res.intakeCatalog ? secLabel('Intake Offerings catalog') + cnIntakeCatalogHtml_(res.intakeCatalog) : '') +
     secLabel('Nightly self-test') + cnSelfTestHtml_(res.selfTest) +
   '</div>';
+}
+
+/** F9 (cycle 16) — Offerings catalog shape. The PPD recommendation engine's
+ *  correctness depends on an operator-maintained sheet and nothing checked it;
+ *  since F9 an unreadable weight capacity EXCLUDES the product (fail closed),
+ *  which is safe but silent without this. A healthy catalog has ZERO errors, so
+ *  this card genuinely reaches green — the test CLAUDE.md sets for any health
+ *  indicator before it is allowed to carry a tone.
+ *  `null` is not passed here (the caller omits the section when unscanned), and
+ *  `ok:false` means the READ failed, which must not read as "clean". */
+function cnIntakeCatalogHtml_(cat) {
+  if (!cat.ok) {
+    return '<div style="font-size:12px;color:var(--warning-deep)">' + icon('warning', 11) +
+      ' Could not read the Offerings catalog: ' + esc(cat.error || 'unknown error') +
+      ' — the PPD recommendation engine reads this sheet, so this is worth fixing before the next intake.</div>';
+  }
+  var errs = cat.errors || [], warns = cat.warnings || [];
+  if (!errs.length && !warns.length) {
+    return '<div style="font-size:12px;color:var(--muted)">' + icon('checkCircle', 11) + ' ' +
+      esc(cat.totalRows) + ' catalog row(s), all well-formed.</div>';
+  }
+  var row = function (x, tone) {
+    return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:3px 0;font-size:12px">' +
+      '<span style="flex:0 0 90px;font-family:var(--mono);color:' + tone + '">row ' + esc(x.row) + '</span>' +
+      '<span style="flex:0 0 70px;font-weight:600">' + esc(x.hcpcs) + '</span>' +
+      '<span style="flex:1;min-width:220px">' + esc(x.field) + ': ' + esc(x.detail) + '</span>' +
+    '</div>';
+  };
+  var out = '';
+  if (errs.length) {
+    out += '<div style="font-size:12px;color:var(--danger-deep);font-weight:600;margin-bottom:2px">' +
+      icon('warning', 11) + ' ' + esc(errs.length) +
+      ' row(s) the engine cannot recommend — fix these in the Offerings sheet:</div>' +
+      errs.map(function (x) { return row(x, 'var(--danger-deep)'); }).join('');
+  }
+  if (warns.length) {
+    out += '<div style="font-size:12px;color:var(--warning-deep);font-weight:600;margin:6px 0 2px">' +
+      esc(warns.length) + ' row(s) that still work but are probably unintended:</div>' +
+      warns.map(function (x) { return row(x, 'var(--warning-deep)'); }).join('');
+  }
+  out += '<div style="font-size:11px;color:var(--muted);margin-top:6px">Row numbers are sheet rows in the ' +
+    'Offerings tab. A blank or non-numeric weight capacity EXCLUDES that chair for every patient with a ' +
+    'recorded weight (it used to be read as unlimited capacity — cycle-16 F9).</div>';
+  return out;
 }
 
 /** K-A alternative — the last nightly self-test outcome. null = never ran
