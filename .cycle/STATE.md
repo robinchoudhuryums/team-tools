@@ -2,9 +2,8 @@
 
 ## Current
 Cycle: 16
-Phase: implement (ALL scan findings implemented — F1–F5, Batch 4, F9, then
-  F6/F7/F8/F10/F11. Nothing from the scan is outstanding; `/sync-docs` for the
-  last two sessions and `/reflect` remain)
+Phase: implement — COMPLETE (all scan findings implemented across three
+  sessions; `/sync-docs` done for all three). Only DEPLOY and `/reflect` remain.
 Scope: broad
 Test Command: manual
 Subsystem cycles since last Seams audit: 1 (cycle 16 is a subsystem/broad cycle;
@@ -31,8 +30,18 @@ Updated: 2026-08-03
   `.cycle/blocks/16-batch2-batch3-broad-implement.md`. Pure 403→407, DOM 69,
   visual 29/29 (0 missing, 0 overflow). **Every finding from the cycle-16 scan
   is now implemented.**
-- `/sync-docs` has NOT run for Batch 4 / F9 (six items) NOR for Batch 2 /
-  Batch 3 (seven items). Both blocks list them.
+- `/sync-docs` HAS now run for ALL THREE sessions. (A line here previously said
+  it was outstanding for Batch 4 / F9 — that was wrong; commit `419d4c1` covered
+  F1–F5 and the Batch-4/F9 pass had already landed. Verified by grep, not by
+  memory.) The Batch 2 / Batch 3 pass applied nine edits: the INV-175 history
+  rewrite + its Subsystem widened to "all view partials", the empty-state class
+  set restated as a CONVENTION rather than a list, the running test count
+  403 → 407 with the two-pins-failed-first lesson, INV-181 (F7 mirror + F11
+  assertion), INV-185 (`cnNoteCoverage_` + derived copied set), INV-183 (the
+  `DR.STATUS` third column, flagged PARTIALLY closed), a new Common Gotchas
+  entry for the unknown-duration class, INV-83 + S54 for the `uiPrompt` a11y
+  contract, a new **S74** covering Dept Requests end to end, and the operator
+  entry extended with the two Batch-2/3 behaviour changes.
 
 ## Completed this cycle
 - F1 | Code.js + cn/script_callnotes.html | `managerGetShiftStats` now carries `notesUnavailable`; coverage is null on a failed read; all six note-derived columns render an em dash instead of 0, and the sort comparator groups them with the other unknowns.
@@ -145,10 +154,7 @@ fixtures, 0 horizontal overflow), `node --check` clean. Nothing is half-finished
 2. **Deploy** (`clasp push -f` + New version), then `runAllTests()` from the
    editor — the Apps Script suite cannot run in the container, so S1/S2 and
    F11's corrected assertion have never actually executed.
-3. **`/sync-docs`** — now owed for BOTH sessions: six items from Batch 4 / F9
-   and seven from Batch 2 / Batch 3 (both blocks list them). Notable: the
-   INV-175 history needs rewriting, the running test count is 403 → 407, and
-   INV-183/167 must record that `DR.STATUS` is only PARTIALLY normalized.
+3. ~~`/sync-docs`~~ — **DONE for all three sessions.** Nothing owed.
 4. `/reflect` to close cycle 16. It should decide the invariant the F1–F5 block
    proposed (a surface aggregating a best-effort read must carry the outcome,
    and any judgement drawn from it suppressed when degraded) — three cycles have
